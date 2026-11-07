@@ -805,6 +805,12 @@ typed. `sprintengine://verify/chat/ws-rich-live` replays a reply the first
 time it is opened after launch, so its diagram and its sum show as source
 until each block's closing line and the line break after it are in, then
 draw while the reply is still arriving. Both rest under Earlier.
+The main fixture chat ("Remote conversation launch") also has two subagents
+Studio started (one Codex, read-only and working; one Cursor, finished), an
+agent spawned by another agent, a `subagent.start` step, a sent message that
+quotes the reply before it, a linked local server and a plan's usage; in the
+conversation fixture they open at `sprintengine://verify/subagent/sub-review`
+and `sprintengine://verify/agent/agent-gateway`.
 `sprintengine://verify/chat/ws-notices` holds Studio's two kinds of message,
 an agent's news and a usage-limit resume, between the person's, and opens on
 "New" above the agent's news; `sprintengine://verify/chat/ws-files` holds a
@@ -851,7 +857,7 @@ nothing new.
 
 ### Stopping one agent
 
-A running agent's own screen (Agents ▸ the agent) offers "Stop this agent"
+A running agent's own screen (Subagents ▸ the agent) offers "Stop this subagent"
 (2026-10-24). It sends `stopSubagent`, naming the agent by the call that
 spawned it (its lane's id), and the chat, its turn and its other agents go
 on. The button says "Stopping…" until the agent reports its end, which closes
@@ -874,6 +880,90 @@ An agent's screen ends in a box where a message reaches it, sent as
 pairing that may operate its chats, and a chat whose listed
 `capabilities.messageSubagent` is `true`. Anywhere else there is no box, only a
 bar that says why and leads to the chat: the rule is the desktop's
-(`agentMessageOffer`). The Agents screen still lists only the agents a chat's CLI
-spawned. A sub-agent Studio started is not on it: the phone does not ask
-`watchSubagents` yet, which is a known gap.
+(`agentMessageOffer`).
+
+### Subagents
+
+The chat's Subagents screen (the working line's "See subagents", or the chat
+page's Subagents row) lists the chat's own subagents, as the desktop's panel
+lists the subagents of the agent in view: the agents its CLI spawned, read off
+its transcript, and the chats it started with Studio's `subagent.start`, which
+a desktop that advertises `conversation-subagents` names in `subagents` frames
+(asked for with `watchSubagents` after every fence). The ones still working,
+or waiting on you, come first, oldest first, then the finished ones newest
+first, each with the logo of the harness it runs on and its status in the
+desktop's words ("Working · 42s", "Waiting on you", "Done in 1m 4s", "Failed
+after 9s") and "Read-only" for one started to read and report. Only the chat's
+own are listed: an agent's own subagents are under it, by going into it, so a
+nested agent is never listed at the top. A desktop without the capability
+lists the agents the CLI spawned, as before, and the screen says the others
+show once the desktop is updated.
+
+A chat Studio started opens as a full chat of its own (`subagentLogic.ts`,
+`subagentThread`): its own socket, transcript, composer and page, followed by
+its ids, with "Subagent of …" under its title leading back to the chat that
+started it, popped back to rather than opened twice. It has a message box
+where the pairing may operate its chats; anywhere else no box, only a bar
+saying to speak to its parent, with a button to it. In the parent's transcript
+the `subagent.start` step reads as who it started ("Started a subagent ·
+Codex · gpt-5.5 · Read-only", with that harness's logo and the subagent's
+status), stays out of the turn's fold as an agent's card does, and opens the
+subagent, or the Subagents list where the desktop has not named it yet.
+
+An agent the CLI spawned opens on its own screen, as before, now with a card
+up to its parent ("Main chat", or "Parent agent" for one between) and its own
+subagents listed under its steps.
+
+### Quoting a reply
+
+A finished turn's footer has Quote beside Copy reply. It opens the reply's
+words, as they read (its Markdown taken off), in a box that selects and does
+not edit: no keyboard comes up, and the system's selection handles pick the
+passage. Quote selection (or Quote the whole reply, with nothing selected)
+puts the quote in the draft and opens its sheet to add a comment. The quote
+is the desktop's own token (`src/shared/quotes/chat-quotes.ts`, a byte
+mirror of the desktop's `src/shared/chat-quotes.ts`, held to it by
+`quoteLogic.regression.test.js`), numbered past every quote the chat holds in
+sight, so its number, its passage and its comment are the desktop's.
+
+A phone's text box cannot hold a chip among the words, so the draft keeps its
+quotes ahead of them and the composer draws each as a chip in the box, where
+pictures and files sit: its number in the quote's gold pill, the quote mark,
+and its comment or the start of its passage. Tapping a chip opens its sheet:
+the passage, the comment to edit, Take it out, and Go to source. A sent
+message draws each quote it carries as a chip where it stood, which opens the
+same sheet, read-only. Go to source scrolls to the reply that holds the
+passage, or says the reply is in an earlier part of the chat. Every quote of
+the chat, in the draft or sent, lights its passage in the reply with its
+number where the passage lies in one run of words; one that runs across
+formatting or a line break is not marked rather than half marked.
+
+A quote crosses as its token only where the desktop advertises
+`conversation-quote-tokens` and `conversation-hello`: the phone then names
+the capability in a `hello` ahead of every subscription (`clientCapabilities`),
+and the desktop sends tokens back to that socket. Anywhere else the phone
+sends the passage as a blockquote with the comment under it, the words an
+older desktop's agent reads, and reads quotes as words as it always did. A
+held or scheduled message reads its quotes as words in its bubble and row,
+and Copy message copies the passage and comment, never the address.
+
+### The chat's page
+
+The title pill opens the chat's page, the phone's form of the desktop's
+right-hand panel. It heads the chat with its harness's logo, its title, its
+project, its machine, and the harness and model in words ("Claude Code · Opus
+5.5"); a subagent's page has a card up to its parent first. Then what the
+agent touched (Changes, Subagents, Browser, Canvas, Library), then the facts
+that are controls of their own, as the desktop's panel carries them off the
+strip under its composer: Branch (with its worktree, opening the changed
+files), Pull request (opening it), Server (the local servers its agents
+linked, from a listed chat's `localServers`, and whether they answer, on the
+desktop), Permissions (the preset, opening the sheet that changes it where
+the pairing may), Context ("38%" and its tokens) and Usage. Usage reads the
+desktop's `usageLimits` frames (`conversation-usage-limits`, asked for with
+`watchUsageLimits` after every fence): the window of the chat's own plan
+nearest its limit on the row, in the warn tone near it and the error's at it,
+and every plan's windows in its own view. A desktop that sends none of these
+shows no row for them. What the phone had there stays: where the chat runs
+and how it is reached, the agent, Mark unread and Settle. The strip under the
+composer keeps its branch, changes, pull request and ring.

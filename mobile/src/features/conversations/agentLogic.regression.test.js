@@ -92,8 +92,8 @@ test("the Agents screen lists the working first and the finished newest first, w
   assert.deepEqual(summary.finished.map((item) => item.id), ["c", "a"]);
   assert.equal(summary.footer, "2 working · 2 finished · 45k tokens");
   assert.equal(summarizeAgents([]).footer, "");
-  assert.equal(workingLabel(lanes), "2 agents working");
-  assert.equal(workingLabel([lanes[1]]), "1 agent working");
+  assert.equal(workingLabel(lanes), "2 subagents working");
+  assert.equal(workingLabel([lanes[1]]), "1 subagent working");
   assert.equal(workingLabel([lanes[0]]), "Working");
 });
 
@@ -110,11 +110,11 @@ test("durations and clocks read the way the desktop reads them", () => {
 
 test("an agent's own Stop is offered only for one running, where the desktop and the chat's CLI can stop it", () => {
   const can = { stopsAgents: true, chatCanStop: true, live: true, stopping: false };
-  assert.deepEqual(agentStopOffer(lane(), can), { label: "Stop this agent", disabled: false });
+  assert.deepEqual(agentStopOffer(lane(), can), { label: "Stop this subagent", disabled: false });
   assert.equal(agentStopOffer(lane({ status: "done" }), can), null, "an ended agent has nothing to stop");
   assert.equal(agentStopOffer(lane(), { ...can, stopsAgents: false }), null, "an older desktop, or a pairing that only follows");
   assert.equal(agentStopOffer(lane(), { ...can, chatCanStop: false }), null, "a CLI that cannot stop one agent");
-  assert.deepEqual(agentStopOffer(lane(), { ...can, live: false }), { label: "Stop this agent", disabled: true });
+  assert.deepEqual(agentStopOffer(lane(), { ...can, live: false }), { label: "Stop this subagent", disabled: true });
   assert.deepEqual(agentStopOffer(lane(), { ...can, stopping: true }), { label: "Stopping…", disabled: true });
 });
 

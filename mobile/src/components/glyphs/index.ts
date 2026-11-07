@@ -88,6 +88,7 @@ export {
   LibraryGlyph,
   DownloadIcon,
   InstallUpdateIcon,
+  QuoteIcon,
 } from "./AppGlyphs";
 
 export {

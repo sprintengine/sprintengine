@@ -350,3 +350,55 @@ test("a scheduled frame is read entry by entry, with what each says of its send"
   assert.equal(many.messages.length, 50);
   assert.equal(parseConversationFrame(JSON.stringify({ type: "scheduled", messages: [] })), null, "a list must name its chat");
 });
+
+test("a subagents frame keeps each readable row and drops the rest alone", () => {
+  const key = { workspaceId: "ws", agentId: "parent" };
+  const row = {
+    workspaceId: "ws", agentId: "child", title: "Review", providerId: "codex-agent", modelId: "gpt-5",
+    readOnly: false, status: "completed", task: "Review the diff", startedAt: 10, endedAt: 70,
+    permissionPreset: "bypass", capabilities: { images: true, approvals: true, questions: true, planMode: false, interrupt: true, checkpoints: false, steer: "yes" },
+  };
+  const frame = parseConversationFrame(JSON.stringify({
+    type: "subagents", key,
+    subagents: [row, { ...row, agentId: "bad", status: "dancing" }, { ...row, agentId: "odd", permissionPreset: "wild" }, "junk"],
+  }));
+  assert.equal(frame.type, "subagents");
+  assert.deepEqual(frame.key, key);
+  assert.deepEqual(frame.subagents.map((entry) => entry.agentId), ["child", "odd"]);
+  assert.equal(frame.subagents[0].endedAt, 70);
+  assert.equal(frame.subagents[0].permissionPreset, "bypass");
+  assert.equal("steer" in frame.subagents[0].capabilities, false, "a flag in the wrong shape reads as unknown");
+  assert.equal("permissionPreset" in frame.subagents[1], false, "a preset this build does not know is left out");
+  assert.equal(parseConversationFrame(JSON.stringify({ type: "subagents", key: {}, subagents: [] })), null);
+  const many = Array.from({ length: 300 }, (_, index) => ({ ...row, agentId: `a${index}`, startedAt: index }));
+  const capped = parseConversationFrame(JSON.stringify({ type: "subagents", key, subagents: many }));
+  assert.equal(capped.subagents.length, 256);
+  assert.equal(capped.subagents[0].agentId, "a44", "the newest are kept, oldest first");
+});
+
+test("a listed chat's servers and a usage frame are read entry by entry", () => {
+  const thread = {
+    workspaceId: "ws", agentId: "a", title: "t", phase: "idle", createdAt: 1, updatedAt: 1, lastSeq: 0, providerId: "p", modelId: "m", turnCount: 0,
+    localServers: [
+      { id: "s1", url: "http://localhost:5173", title: "dev-site", port: 5173, state: "running" },
+      { id: "s2", url: "javascript:alert(1)", title: "x", port: 1, state: "running" },
+      { id: "s3", url: "http://localhost:9", title: "y", port: 9, state: "sleeping" },
+    ],
+  };
+  const sessions = parseConversationFrame(JSON.stringify({ type: "sessions", requestId: "r", sessions: [thread] }));
+  assert.deepEqual(sessions.sessions[0].localServers.map((server) => server.id), ["s1"]);
+  const usage = parseConversationFrame(JSON.stringify({
+    type: "usageLimits", key: { workspaceId: "ws", agentId: "a" }, notice: null, autoResume: true,
+    limits: [
+      { provider: "claude", plan: "max", observedAt: 5, windows: [
+        { id: "five_hour", label: "5-hour limit", usedPercent: 140, resetsAt: 10, status: "warning", observedAt: 5 },
+        { id: "bad", label: "x", usedPercent: "lots", resetsAt: null, status: "allowed", observedAt: 5 },
+      ] },
+      { provider: "", windows: [], observedAt: 1 },
+    ],
+  }));
+  assert.equal(usage.type, "usageLimits");
+  assert.equal(usage.limits.length, 1);
+  assert.deepEqual(usage.limits[0].windows.map((entry) => [entry.id, entry.usedPercent]), [["five_hour", 100]]);
+  assert.equal(parseConversationFrame(JSON.stringify({ type: "usageLimits", key: { workspaceId: "ws", agentId: "a" }, limits: "no" })), null);
+});

@@ -22,7 +22,9 @@ import {
   laneStepCount,
   placeAgentMessages,
 } from "./agentLogic";
-import { ToolStepRow, type StepDetailSource } from "./conversationParts";
+import { AgentListRow, ToolStepRow, type StepDetailSource } from "./conversationParts";
+import { ParentLink } from "./ParentLink";
+import { directLanes, parentRelation, type SubagentParent } from "./subagentLogic";
 import { toolDetailChat } from "./toolOutput";
 import { chatThreadCli } from "./launchLogic";
 import { useLiveConversation, type LiveConversationKey } from "./liveConversation";
@@ -37,12 +39,18 @@ export function ConversationAgentScreen({
   laneId,
   onBack,
   onChat,
+  onOpenAgent,
+  onOpenParentAgent,
 }: {
   conversation: LiveConversationKey;
   laneId: string;
   onBack: () => void;
   /** Back to the chat itself, past the list of its agents. */
   onChat: () => void;
+  /** One of this agent's own subagents, by the id of the call that spawned it. */
+  onOpenAgent: (laneId: string) => void;
+  /** The agent that spawned this one, where an agent did. */
+  onOpenParentAgent: (laneId: string) => void;
 }) {
   const styles = useThemedStyles(createStyles);
   const live = useLiveConversation(conversation);
@@ -70,9 +78,9 @@ export function ConversationAgentScreen({
   );
   if (!live || !lane || !source)
     return (
-      <Screen title="Agent" onBack={onBack} backLabel="All agents">
+      <Screen title="Subagent" onBack={onBack} backLabel="Back">
         <Text style={styles.meta}>
-          {live ? "This agent is in an earlier part of the chat." : "Open the chat to follow its agents."}
+          {live ? "This subagent is in an earlier part of the chat." : "Open the chat to follow its subagents."}
         </Text>
       </Screen>
     );
@@ -101,13 +109,25 @@ export function ConversationAgentScreen({
     messagesAgents: live.messagesAgents,
     chatCanMessage: live.effectiveThread.capabilities?.messageSubagent,
   });
+  // Up to whoever spawned it: the agent between, or the chat at the top.
+  const parentLane = lane.parentId ? live.lanes.find((candidate) => candidate.id === lane.parentId) : undefined;
+  const parent: SubagentParent = parentLane
+    ? { kind: "lane", laneId: parentLane.id, name: parentLane.task.trim() || laneLabel(parentLane) }
+    : { kind: "chat", agentId: conversation.agentId, name: live.effectiveThread.title, main: true };
+  // Its own subagents, never theirs: those are read by going into each.
+  const children = directLanes(live.lanes, lane.id);
   const said = (text: string, key: string | number) => (
     <View key={key} style={styles.said}>
       <MarkdownDocument body={text} variant="chat" reply streaming={running} onLinkBlocked={onLinkBlocked} />
     </View>
   );
   return (
-    <Screen title={laneLabel(lane)} onBack={onBack} backLabel="All agents">
+    <Screen title={laneLabel(lane)} onBack={onBack} backLabel="Back">
+      <ParentLink
+        relation={parentRelation(parent)}
+        name={parent.name}
+        onPress={parent.kind === "lane" ? () => onOpenParentAgent(parent.laneId) : onChat}
+      />
       <View style={styles.hero}>
         <CliLogo cli={chatThreadCli(live?.effectiveThread)} size={44} />
         <View style={styles.heroText}>
@@ -185,6 +205,25 @@ export function ConversationAgentScreen({
           <Text style={styles.meta}>Passed on through the main chat. It reads this at its next step.</Text>
         </View>
       ))}
+      {children.length ? (
+        <>
+          <Text accessibilityRole="header" style={styles.group}>
+            Subagents · {children.length}
+          </Text>
+          <View style={styles.children}>
+            {children.map((child, index) => (
+              <AgentListRow
+                key={child.id}
+                lane={child}
+                now={now}
+                first={index === 0}
+                cli={chatThreadCli(live.effectiveThread)}
+                onOpen={() => onOpenAgent(child.id)}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
       {!running ? (
         <>
           <Text accessibilityRole="header" style={styles.group}>
@@ -319,6 +358,13 @@ const createStyles = ({ colors }: Theme) =>
       backgroundColor: colors.bgSurface,
     },
     input: { ...typography.meta, fontSize: 15, color: colors.textPrimary, minHeight: 44 },
+    children: {
+      borderRadius: radius.overlay,
+      borderWidth: 1,
+      borderColor: colors.cardRing,
+      backgroundColor: colors.bgSurface,
+      overflow: "hidden",
+    },
     report: {
       padding: space.lg,
       borderRadius: radius.overlay,

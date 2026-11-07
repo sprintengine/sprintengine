@@ -444,9 +444,10 @@ words they carry rewritten as the frame around them is (`mapQuoteWords`),
 because a path percent-encoded inside an address is out of the rewrite's reach.
 A paired Studio asks by capability at both ends: it writes a blockquote for a
 machine without it, and turns any token that still reaches its send (a paste, a
-stashed prompt) into words there. The phone does not name the capability, so it
-reads words from any desktop, and writes what it always wrote; that it may draw
-chips one day needs only the name in its `hello`. A paired Studio's copy of a
+stashed prompt) into words there. The phone asks the same way: it names the
+capability in a `hello` ahead of each subscription only where the desktop lists
+both it and `conversation-hello`, writes tokens only there, and writes the
+blockquote and comment everywhere else. A paired Studio's copy of a
 chat keeps the words it was first sent, so a quote from before this reads as a
 blockquote. No version moves.
 A chat's rest and read state are the `conversation-lifecycle` capability: a
@@ -709,7 +710,9 @@ or a plan name a client does not know passes the validator, for a newer
 desktop to add one; the desktop client leaves such a plan out. The Studio
 RPC carries the command as an owner's method, `conversation.usageLimitResume`,
 but does not advertise the capability: its conversation topic carries no
-`usageLimits` frames.
+`usageLimits` frames. The phone asks with `watchUsageLimits` after each fence
+where the capability is listed, and reads `limits` alone for its chat page's
+Usage row; it sends no `usageLimitResume`.
 A held message that carries more than words is the
 `conversation-queued-attachments` capability (2026-10-25): a `send` with
 `queue` may carry `uploadIds` (pictures and files), `skills` and `mentions`,
@@ -765,8 +768,10 @@ of their own and not a member of the list, and why they are no part of
 the capability answers the request `invalid_frame` under its id, which nobody
 waits on, and a client asks only where it is advertised, or where the machine
 has not said; its chat then shows the agents its CLI spawned, as before. A
-desktop sends `subagents` frames only to a client that asked, so a phone, which
-does not, sees exactly what it saw. One row a client cannot read is dropped
+desktop sends `subagents` frames only to a client that asked. The phone asks
+after each fence where the capability is listed, and opens each row as a chat
+on a socket of its own; elsewhere it lists the agents the CLI spawned, as it
+always did. One row a client cannot read is dropped
 alone. The Studio RPC does not advertise it: its conversation topic carries no
 `subagents` frames, and a window on it reads the records themselves.
 A `send` may say when it was written, `composedAt` (epoch ms, the client's

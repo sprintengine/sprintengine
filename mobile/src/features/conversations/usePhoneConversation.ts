@@ -19,7 +19,9 @@ import {
   type ConversationPermissionPreset,
   type ConversationQueuedMessage,
   type ConversationScheduledMessage,
+  type ConversationSubagent,
   type ConversationThread,
+  type ConversationUsageLimitSnapshot,
 } from "../../api/conversationWire";
 import {
   declaresConversationHello,
@@ -28,6 +30,9 @@ import {
   declaresScheduledSends,
   declaresSteerSends,
   declaresAgentMessage,
+  declaresConversationSubagents,
+  declaresQuoteTokens,
+  declaresUsageLimits,
   declaresStopSubagent,
 } from "../../api/tailnetTransport";
 import type { MobileSession } from "../../api/types";
@@ -224,6 +229,12 @@ export function usePhoneConversation(
   // What the desktop keeps scheduled into this chat (`conversation-scheduled-sends`),
   // as its latest `scheduled` frame said, soonest first.
   const [desktopScheduled, setDesktopScheduled] = useState<ConversationScheduledMessage[]>([]);
+  // The chats this one started (`conversation-subagents`), as the desktop's
+  // latest `subagents` frame named them, oldest first.
+  const [subagents, setSubagents] = useState<ConversationSubagent[]>([]);
+  // What the desktop knows of the usage limits of the plans this chat runs on
+  // (`conversation-usage-limits`), as its latest `usageLimits` frame said.
+  const [usageLimits, setUsageLimits] = useState<ConversationUsageLimitSnapshot[]>([]);
   // Messages offered to the desktop to hold that its list does not name yet.
   const [handing, setHanding] = useState<HandingSend[]>([]);
   const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(
@@ -283,6 +294,14 @@ export function usePhoneConversation(
   const messagesAgents = !!session && declaresAgentMessage(session) && conversationCanOperate(session);
   // Whether the socket's probe can be the cheap `hello` rather than a `list`.
   const answersHello = !!session && declaresConversationHello(session);
+  // Whether the desktop names this chat's sub-agents when asked.
+  const watchesSubagents = !!session && declaresConversationSubagents(session);
+  const watchesUsageLimits = !!session && declaresUsageLimits(session);
+  // Whether a quote goes as its token, which the desktop expands for its
+  // agent and sends back to a socket that says it draws one. The `hello` that
+  // says so needs `conversation-hello` as well; without it the phone writes
+  // a blockquote, as it does for a desktop without tokens.
+  const quoteTokens = answersHello && !!session && declaresQuoteTokens(session);
   // Read by a send as it is made: a turn running, and messages the phone holds.
   const turnBusyRef = useRef(false);
   const phoneQueuedRef = useRef(0);
@@ -644,6 +663,8 @@ export function usePhoneConversation(
     setQueued([]);
     setDesktopHeld([]);
     setDesktopScheduled([]);
+    setSubagents([]);
+    setUsageLimits([]);
     setHanding([]);
     const recalledPage = pageHeld(eventsRef.current);
     setPage({ hasMore: recalledPage !== null, beforeCursor: recalledPage });
@@ -953,6 +974,11 @@ export function usePhoneConversation(
                     ),
                   );
               }
+            } else if (frame.type === "usageLimits") {
+              setUsageLimits(frame.limits);
+            } else if (frame.type === "subagents") {
+              // Whole each time, as `queued` is.
+              setSubagents(frame.subagents);
             } else if (frame.type === "scheduled") {
               // The desktop's word on what it keeps stands whole, as `queued`'s does.
               setDesktopScheduled(frame.messages);
@@ -1116,6 +1142,9 @@ export function usePhoneConversation(
           queuedAttachments: holdsAttachments,
           scheduledSends: holdsScheduled,
           hello: answersHello,
+          subagents: watchesSubagents,
+          usageLimits: watchesUsageLimits,
+          quoteTokens,
         },
       );
       stream.current = current;
@@ -1190,6 +1219,9 @@ export function usePhoneConversation(
     holdsQueued,
     holdsAttachments,
     answersHello,
+    watchesSubagents,
+    watchesUsageLimits,
+    quoteTokens,
   ]);
   const command = useCallback((input: ConversationCommand) => {
     if (!stream.current) throw new Error("Conversation is not connected yet.");
@@ -1642,6 +1674,14 @@ export function usePhoneConversation(
     messageAgent,
     /** Lanes whose Stop is on its way or taken, while the agent still runs. */
     stoppingAgentIds,
+    /** The chats this one started, where the desktop names them; empty otherwise. */
+    subagents,
+    /** Whether the desktop names them at all (`conversation-subagents`). */
+    watchesSubagents,
+    /** The usage limits of the plans this chat runs on, where the desktop says; empty otherwise. */
+    usageLimits,
+    /** Whether a quote goes as its token (`conversation-quote-tokens`); otherwise as a blockquote. */
+    quoteTokens,
     desktopHeld,
     handing,
     cancelHeld,

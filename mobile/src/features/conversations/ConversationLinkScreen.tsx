@@ -14,7 +14,7 @@ export function ConversationLinkScreen({
   onBack,
   onPairAgain,
   ...navigation
-}: Pick<Parameters<typeof ConversationScreen>[0], "onOpenAgents" | "onOpenAgent" | "onOpenPlan" | "onOpenChanges"> & {
+}: Pick<Parameters<typeof ConversationScreen>[0], "onOpenAgents" | "onOpenAgent" | "onOpenSubagent" | "onOpenPlan" | "onOpenChanges"> & {
   target: ConversationLink;
   onBack: () => void;
   onPairAgain?: () => void;

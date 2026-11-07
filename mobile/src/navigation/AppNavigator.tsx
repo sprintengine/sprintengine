@@ -38,6 +38,7 @@ import { ConversationScreen } from "../features/conversations/ConversationScreen
 import { ConversationLinkScreen } from "../features/conversations/ConversationLinkScreen";
 import { ChatLinkScreen } from "../features/conversations/ChatLinkScreen";
 import { routesInPlaceOfTop } from "../features/conversations/conversationListLogic";
+import { stepsBackTo } from "../features/conversations/subagentLogic";
 import { ConversationAgentsScreen } from "../features/conversations/ConversationAgentsScreen";
 import { ConversationAgentScreen } from "../features/conversations/ConversationAgentScreen";
 import { ConversationPlanScreen } from "../features/conversations/ConversationPlanScreen";
@@ -61,6 +62,34 @@ import { SnapshotWatch, useSessionData, useSnapshot } from "./SessionDataProvide
 import type { BacklogStackParamList, HomeStackParamList } from "./types";
 
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
+
+type ChatParams = { deviceId: string; workspaceId: string; agentId: string };
+const sameChat = (params: Partial<ChatParams> | undefined, chat: ChatParams) =>
+  params?.deviceId === chat.deviceId && params.workspaceId === chat.workspaceId && params.agentId === chat.agentId;
+
+/**
+ * Back to a chat's own screen, under the screens pushed over it (its
+ * subagents, their lists): popped to, so its socket, draft and place are as
+ * left. A chat not in the stack below is not opened afresh from here; Back
+ * stands in.
+ */
+function backToChat(
+  navigation: { getState: () => { routes: readonly { name: string; params?: object }[] }; pop: (count: number) => void; goBack: () => void },
+  chat: ChatParams,
+) {
+  const steps = stepsBackTo(navigation.getState().routes, (route) => {
+    if (route.name === "Conversation") {
+      const params = route.params as { deviceId?: string; thread?: { workspaceId: string; agentId: string } } | undefined;
+      return sameChat(
+        params?.thread ? { deviceId: params.deviceId, workspaceId: params.thread.workspaceId, agentId: params.thread.agentId } : undefined,
+        chat,
+      );
+    }
+    return route.name === "ConversationLink" && sameChat(route.params as ChatParams | undefined, chat);
+  });
+  if (steps) navigation.pop(steps);
+  else navigation.goBack();
+}
 
 /**
  * A chat in the top screen's place: a chat link's. Back from it is Back from
@@ -134,10 +163,19 @@ export function AppNavigator() {
               onOpeningTaken={() => navigation.setParams({ opening: undefined })}
               onBack={() => navigation.goBack()}
               onPairAgain={() => navigation.navigate("Pairing")}
+              parent={route.params.parent}
+              onOpenParent={
+                route.params.parent
+                  ? () => backToChat(navigation, { ...chat, agentId: route.params.parent!.agentId })
+                  : undefined
+              }
               // Pushed over the chat, which stays mounted beneath them and keeps
               // the one socket they read from.
               onOpenAgents={() => navigation.push("ConversationAgents", chat)}
               onOpenAgent={(laneId) => navigation.push("ConversationAgent", { ...chat, laneId })}
+              onOpenSubagent={({ thread, parent }) =>
+                navigation.push("Conversation", { deviceId: chat.deviceId, thread, parent })
+              }
               onOpenPlan={(requestId) => navigation.push("ConversationPlan", { ...chat, requestId })}
               onOpenChanges={(turnSeq) => navigation.push("ConversationChanges", { ...chat, turnSeq })}
               onOpenPullRequest={
@@ -166,6 +204,10 @@ export function AppNavigator() {
             conversation={route.params}
             onBack={() => navigation.goBack()}
             onOpenAgent={(laneId) => navigation.push("ConversationAgent", { ...route.params, laneId })}
+            // A chat of its own, on a socket of its own, stacked over its parent.
+            onOpenSubagent={({ thread, parent }) =>
+              navigation.push("Conversation", { deviceId: route.params.deviceId, thread, parent })
+            }
           />
         )}
       </HomeStack.Screen>
@@ -175,7 +217,19 @@ export function AppNavigator() {
             conversation={route.params}
             laneId={route.params.laneId}
             onBack={() => navigation.goBack()}
-            onChat={() => navigation.navigate("Conversation", route.params)}
+            onChat={() => backToChat(navigation, route.params)}
+            onOpenAgent={(laneId) => navigation.push("ConversationAgent", { ...route.params, laneId })}
+            onOpenParentAgent={(laneId) => {
+              const steps = stepsBackTo(
+                navigation.getState().routes as readonly { name: string; params?: object }[],
+                (candidate) =>
+                  candidate.name === "ConversationAgent" &&
+                  sameChat(candidate.params as ChatParams | undefined, route.params) &&
+                  (candidate.params as { laneId?: string } | undefined)?.laneId === laneId,
+              );
+              if (steps) navigation.pop(steps);
+              else navigation.push("ConversationAgent", { ...route.params, laneId });
+            }}
           />
         )}
       </HomeStack.Screen>
@@ -238,6 +292,9 @@ export function AppNavigator() {
             onPairAgain={() => navigation.navigate("Pairing")}
             onOpenAgents={() => navigation.push("ConversationAgents", route.params)}
             onOpenAgent={(laneId) => navigation.push("ConversationAgent", { ...route.params, laneId })}
+            onOpenSubagent={({ thread, parent }) =>
+              navigation.push("Conversation", { deviceId: route.params.deviceId, thread, parent })
+            }
             onOpenPlan={(requestId) => navigation.push("ConversationPlan", { ...route.params, requestId })}
             onOpenChanges={(turnSeq) => navigation.push("ConversationChanges", { ...route.params, turnSeq })}
           />

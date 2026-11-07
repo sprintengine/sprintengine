@@ -1,6 +1,13 @@
 import type { ConversationLifecycleApi } from "../api/conversationLifecycle";
 import type { ConversationApi, ConversationStreamHandlers } from "../api/tailnetConversations";
-import type { ConversationEvent, ConversationQueuedMessage, ConversationThread } from "../api/conversationWire";
+import type {
+  ConversationEvent,
+  ConversationQueuedMessage,
+  ConversationSubagent,
+  ConversationThread,
+  ConversationUsageLimitSnapshot,
+} from "../api/conversationWire";
+import { quoteToken } from "../shared/quotes/chat-quotes";
 import { chatOpenedKey } from "../features/conversations/conversationListLogic";
 
 // The conversation the screenshot harness opens. EXPO_PUBLIC_VERIFY_CONVERSATION
@@ -125,8 +132,9 @@ export const verifyConversation: ConversationThread = {
     messageSubagent: true,
   },
   // Runs in a WSL distribution on the paired desktop, so it wears that
-  // machine's mark; its pull request is open.
+  // machine's mark; its pull request is open, and its agents linked a server.
   host: { id: "wsl:Ubuntu", kind: "wsl", label: "WSL: Ubuntu", color: "teal" },
+  localServers: [{ id: "srv-site", url: "http://localhost:5173", title: "docs-site", port: 5173, state: "running" }],
   pullRequests: [
     { number: 42, state: "open", url: "https://github.com/acme/multicode/pull/42", title: "Launch a chat from the phone" },
     { number: 37, state: "closed", url: "https://github.com/acme/multicode/pull/37", title: "First try" },
@@ -371,6 +379,71 @@ const tool = (id: string, name: string, input: Record<string, unknown>, agoMs: n
 const done = (id: string, output: string, agoMs: number, extra: Record<string, unknown> = {}) =>
   event("tool_output", { turnId: extra.turnId ?? "turn-one", toolUseId: id, output, status: "ok", ...extra }, agoMs);
 
+// The passage the working turn's message quotes from the settled reply.
+const VERIFY_QUOTE = quoteToken({
+  turnId: "turn-zero",
+  n: 1,
+  quote: "Pressing and holding a toast holds its clock.",
+  exact: "Pressing and holding a toast holds its clock.",
+  prefix: "warn and error after 10 s. ",
+  suffix: " export const AUTO_DISMISS_MS",
+  comment: "And a swipe?",
+});
+
+// The chats the main chat started with Studio (`conversation-subagents`).
+export const VERIFY_SUBAGENTS: ConversationSubagent[] = [
+  {
+    workspaceId: "ws-studio",
+    agentId: "sub-review",
+    title: "Review the gateway change",
+    providerId: "codex-agent",
+    modelId: "gpt-5.5",
+    readOnly: true,
+    status: "working",
+    task: "Review the gateway change for scope mistakes",
+    startedAt: Date.now() - 18_000,
+    capabilities: { images: false, approvals: true, questions: true, planMode: false, interrupt: true, checkpoints: false },
+  },
+  {
+    workspaceId: "ws-studio",
+    agentId: "sub-docs",
+    title: "Write the pairing notes",
+    providerId: "cursor-agent",
+    modelId: "default",
+    readOnly: false,
+    status: "completed",
+    task: "Write the pairing notes for the docs",
+    startedAt: Date.now() - 50 * 60_000,
+    endedAt: Date.now() - 46 * 60_000,
+  },
+];
+
+// What the desktop knows of the plan the main chat runs on.
+const VERIFY_USAGE: ConversationUsageLimitSnapshot[] = [
+  {
+    provider: "claude",
+    plan: "Max",
+    observedAt: Date.now(),
+    windows: [
+      { id: "five_hour", label: "5-hour limit", usedPercent: 42, resetsAt: Date.now() + 2 * 3_600_000, status: "allowed", observedAt: Date.now() },
+      { id: "seven_day", label: "Weekly limit", usedPercent: 81, resetsAt: Date.now() + 3 * 86_400_000, status: "warning", observedAt: Date.now() },
+    ],
+  },
+];
+
+/** A subagent chat's own transcript: what it was asked, and where it is. */
+function subagentTurns(subagent: ConversationSubagent): ConversationEvent[] {
+  const owner = { ...verifyConversation, workspaceId: subagent.workspaceId, agentId: subagent.agentId, title: subagent.title };
+  const turn = { turnId: `${subagent.agentId}-one` };
+  const ended = subagent.status === "completed";
+  return [
+    event("user_message", { ...turn, text: subagent.task }, ended ? 50 * minutes : 18 * seconds, owner),
+    event("turn_started", turn, ended ? 50 * minutes : 18 * seconds, owner),
+    event("content_delta", { ...turn, text: ended ? "The notes are in `docs/pairing.md`: how to pair, what each grant allows, and how to revoke a phone." : "Reading the change to the gateway's tool table first." }, ended ? 46 * minutes : 15 * seconds, owner),
+    ...(ended ? [event("turn_completed", { ...turn, durationMs: 4 * 60_000 }, 46 * minutes, owner)] : []),
+  ];
+}
+
 // A turn that settled an hour ago: compacted on the way in, a run of steps
 // with one failure, a reply with code, and the cache reading it left behind.
 function settledTurn(): ConversationEvent[] {
@@ -427,7 +500,8 @@ function workingTurn(): ConversationEvent[] {
   const said = (parent: string, text: string, agoMs: number) =>
     event("subagent_message", { parentToolUseId: parent, text }, agoMs);
   return [
-    event("user_message", { ...turn, text: "Can the phone start a chat on the desktop now? Check the gateway and the mesh service." }, 252 * seconds),
+    // It quotes the last reply, as a chip (`conversation-quote-tokens`).
+    event("user_message", { ...turn, text: `${VERIFY_QUOTE} Does a swipe hold it too? And can the phone start a chat on the desktop now? Check the gateway and the mesh service.` }, 252 * seconds),
     event("turn_started", turn, 252 * seconds),
     event("content_delta", { ...turn, text: "I'll look at the gateway's tools and the mesh caller side by side." }, 250 * seconds),
     ...["studio-gateway-tools.ts", "tailnet-mesh-service.ts", "conversation-tools.ts", "tailnet-scopes.ts"].flatMap((file, index) => [
@@ -468,6 +542,18 @@ function workingTurn(): ConversationEvent[] {
     done("gw-read-2", "…", 29 * seconds, { parentToolUseId: "agent-gateway" }),
     said("agent-gateway", "The tool returns once the session is up, without waiting for the reply, so a phone can subscribe right after.", 25 * seconds),
     step("gw-read-3", "agent-gateway", "Read", { path: "src/main/tailnet-scopes.ts" }, 22 * seconds),
+    // An agent of its own, a level down: listed under it, not under the chat.
+    tool("agent-nested", "Task", { description: "Check the scopes table", subagent_type: "Explore", prompt: "Check the scopes table" }, 20 * seconds, {
+      subagentLane: true,
+      subagentType: "Explore",
+      parentToolUseId: "agent-gateway",
+    }),
+    event("subagent_status", { toolUseId: "agent-nested", status: "running", background: true, subagentType: "Explore", description: "Check the scopes table", taskId: "t-nested" }, 20 * seconds),
+    // A chat this one started with Studio, drawn as who it started.
+    tool("start-review", "mcp__sprintengine-studio__subagent_start", { cli: "codex", cliModel: "gpt-5.5", readOnly: true, task: "Review the gateway change" }, 18 * seconds, {
+      serverName: "sprintengine-studio",
+    }),
+    done("start-review", JSON.stringify({ subagentId: VERIFY_SUBAGENTS[0].agentId }), 17 * seconds),
     done("gw-read-3", "…", 21 * seconds, { parentToolUseId: "agent-gateway" }),
     step("gw-read-4", "agent-gateway", "Read", { path: "src/main/conversation-tools.ts" }, 8 * seconds),
     event("subagent_status", { toolUseId: "agent-gateway", status: "running", background: true, progressSummary: "reading conversation-tools.ts", usage: { totalTokens: 12_000, toolUses: 7, durationMs: 0 } }, 7 * seconds),
@@ -1014,7 +1100,16 @@ export const fakeConversationsApi: ConversationApi = {
   },
   open(key, _afterSeq, handlers, options) {
     listener = handlers;
-    const chat = fakeChat(key.workspaceId);
+    const started = VERIFY_SUBAGENTS.find((subagent) => subagent.agentId === key.agentId);
+    if (started && !fakeChats.has(`${key.workspaceId}/${key.agentId}`))
+      fakeChats.set(`${key.workspaceId}/${key.agentId}`, {
+        owner: { ...verifyConversation, agentId: started.agentId, title: started.title },
+        history: subagentTurns(started),
+        turnOpen: started.status !== "completed",
+        pending: 0,
+        desktopHeld: [],
+      });
+    const chat = started ? fakeChats.get(`${key.workspaceId}/${key.agentId}`)! : fakeChat(key.workspaceId);
     const { history, owner } = chat;
     // What this desktop holds for the chat, told to a stream that watches.
     const tellHeld = () => {
@@ -1031,6 +1126,10 @@ export const fakeConversationsApi: ConversationApi = {
       handlers.onFrame({ type: "synchronized", seq: sequence });
       handlers.onState("live");
       tellHeld();
+      // The main chat's subagents and its plan's usage, to a stream that asks.
+      if (options?.subagents && key.agentId === verifyConversation.agentId)
+        handlers.onFrame({ type: "subagents", key, subagents: VERIFY_SUBAGENTS });
+      if (options?.usageLimits) handlers.onFrame({ type: "usageLimits", key, limits: VERIFY_USAGE });
     });
     const publish = (entry: ConversationEvent) => {
       history.push(entry);

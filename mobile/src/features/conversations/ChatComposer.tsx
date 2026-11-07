@@ -82,6 +82,7 @@ export function ChatComposer({
   input,
   attachments = [],
   attachmentsLocked = false,
+  quotes,
   options,
   tags,
   picker,
@@ -100,6 +101,8 @@ export function ChatComposer({
    */
   attachments?: { key: string; name: string; uri?: string; file?: boolean; onRemove: () => void }[];
   attachmentsLocked?: boolean;
+  /** The quotes the draft carries, as chips over the words (`QuoteViews.tsx`). */
+  quotes?: ReactNode;
   /** What the "+" holds; no rows, no "+". `onSchedule` answers a Schedule row. */
   options?: {
     rows: readonly ComposerOption[];
@@ -171,6 +174,7 @@ export function ChatComposer({
           </Pressable>
         ) : null}
 
+        {quotes}
         {attachments.length ? (
           <View style={styles.tags}>
             {attachments.map((attachment) =>

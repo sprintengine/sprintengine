@@ -193,6 +193,24 @@ export function CopyIcon({ tone, size = iconSize.sm, label }: AppGlyphProps) {
   );
 }
 
+/**
+ * The quote mark, the desktop's `QuoteGlyph` coordinate for coordinate: two
+ * opening quotation marks, "carry these words into what I write next".
+ */
+export function QuoteIcon({ tone, size = iconSize.sm, label, ink }: AppGlyphProps) {
+  return (
+    <GlyphFrame viewBox="0 0 16 16" color={useInk(tone, ink)} size={size} label={label}>
+      <Path
+        d="M3 9.5h3V13H3V9.5Zm0 0c0-2.5.8-4.2 3-5.5M9.5 9.5h3V13h-3V9.5Zm0 0c0-2.5.8-4.2 3-5.5"
+        stroke="currentColor"
+        strokeWidth={STROKE}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
+  );
+}
+
 /** An arc and an arrow — refresh the git sheet. */
 export function RefreshIcon({ tone, size = iconSize.md, label }: AppGlyphProps) {
   return (
