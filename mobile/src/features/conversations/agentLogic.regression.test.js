@@ -92,8 +92,8 @@ test("the Agents screen lists the working first and the finished newest first, w
   assert.deepEqual(summary.finished.map((item) => item.id), ["c", "a"]);
   assert.equal(summary.footer, "2 working · 2 finished · 45k tokens");
   assert.equal(summarizeAgents([]).footer, "");
-  assert.equal(workingLabel(lanes), "2 agents working");
-  assert.equal(workingLabel([lanes[1]]), "1 agent working");
+  assert.equal(workingLabel(lanes), "2 subagents working");
+  assert.equal(workingLabel([lanes[1]]), "1 subagent working");
   assert.equal(workingLabel([lanes[0]]), "Working");
 });
 

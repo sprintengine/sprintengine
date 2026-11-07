@@ -27,6 +27,7 @@ import { ConversationChangesScreen } from "../features/conversations/Conversatio
 import { ConversationFileDiffScreen } from "../features/conversations/ConversationFileDiffScreen";
 import { useLiveConversation } from "../features/conversations/liveConversation";
 import {
+  VERIFY_SUBAGENTS,
   fakeConversationsApi,
   fakeLifecycleApi,
   verifyChatsOpened,
@@ -34,6 +35,7 @@ import {
   verifyQueuedMessage,
 } from "./fakeConversations";
 import { verifySession, verifySessions, verifySnapshot } from "./fixture";
+import { subagentThread } from "../features/conversations/subagentLogic";
 
 /**
  * The screenshot harness: the real app navigator fed a fixture desktop, so every
@@ -163,6 +165,8 @@ type VerifyConversationParamList = {
   ConversationPlan: { requestId: string };
   ConversationChanges: { turnSeq: number };
   ConversationFileDiff: { turnSeq: number; path: string };
+  /** A chat the fixture's chat started with Studio, opened over it (`sub-review`, `sub-docs`). */
+  Subagent: { agentId: string };
 };
 const ConversationStack = createNativeStackNavigator<VerifyConversationParamList>();
 const conversationLinking: LinkingOptions<VerifyConversationParamList> = {
@@ -178,6 +182,7 @@ const conversationLinking: LinkingOptions<VerifyConversationParamList> = {
       ConversationPlan: "plan/:requestId",
       ConversationChanges: { path: "changes/:turnSeq", parse: { turnSeq: Number } },
       ConversationFileDiff: { path: "diff/:turnSeq/:path", parse: { turnSeq: Number } },
+      Subagent: "subagent/:agentId",
     },
   },
 };
@@ -222,8 +227,24 @@ function VerifyConversationStack() {
               onOpenAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
               onOpenPlan={(requestId) => navigation.push("ConversationPlan", { requestId })}
               onOpenChanges={(turnSeq) => navigation.push("ConversationChanges", { turnSeq })}
+              onOpenSubagent={({ thread }) => navigation.push("Subagent", { agentId: thread.agentId })}
             />
           )}
+        </ConversationStack.Screen>
+        <ConversationStack.Screen name="Subagent">
+          {({ navigation, route }) => {
+            const subagent = VERIFY_SUBAGENTS.find((entry) => entry.agentId === route.params.agentId) ?? VERIFY_SUBAGENTS[0];
+            return (
+              <ConversationScreen
+                deviceId={verifySession.deviceId}
+                thread={subagentThread(subagent, verifyConversation)}
+                apiOverride={fakeConversationsApi}
+                parent={{ agentId: verifyConversation.agentId, name: verifyConversation.title, main: true }}
+                onOpenParent={() => navigation.popToTop()}
+                onBack={() => navigation.goBack()}
+              />
+            );
+          }}
         </ConversationStack.Screen>
         <ConversationStack.Screen name="ConversationAgents">
           {({ navigation }) => (
@@ -231,7 +252,7 @@ function VerifyConversationStack() {
               conversation={verifyChat}
               onBack={() => navigation.goBack()}
               onOpenAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
-              onOpenSubagent={() => undefined}
+              onOpenSubagent={({ thread }) => navigation.push("Subagent", { agentId: thread.agentId })}
             />
           )}
         </ConversationStack.Screen>

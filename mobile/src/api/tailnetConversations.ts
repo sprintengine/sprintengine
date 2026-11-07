@@ -290,6 +290,12 @@ export interface ConversationApi {
        */
       subagents?: boolean;
       /**
+       * The desktop advertises `conversation-usage-limits`: the stream asks it
+       * what it knows of the plans' usage limits (`watchUsageLimits`) after
+       * every fence.
+       */
+      usageLimits?: boolean;
+      /**
        * The desktop advertises `conversation-quote-tokens` (and
        * `conversation-hello`): the stream says in a `hello` ahead of each
        * subscription that this phone draws a quote's token.
@@ -402,6 +408,7 @@ export function createTailnetConversationsApi(input: {
         queuedSends && (!command.uploadIds?.length || queuedAttachments);
       const scheduledSends = options?.scheduledSends === true;
       const watchesSubagents = options?.subagents === true;
+      const watchesUsageLimits = options?.usageLimits === true;
       // Said only to a desktop that answers `hello` and expands tokens.
       const readsQuoteTokens = probeWithHello && options?.quoteTokens === true;
       // Sends this phone holds until the turn ends, in the order written.
@@ -825,7 +832,8 @@ export function createTailnetConversationsApi(input: {
                 unassembled.type === "synchronized" ||
                 unassembled.type === "queued" ||
                 unassembled.type === "scheduled" ||
-                unassembled.type === "subagents") &&
+                unassembled.type === "subagents" ||
+                unassembled.type === "usageLimits") &&
               unassembled.key &&
               (unassembled.key.workspaceId !== key.workspaceId ||
                 unassembled.key.agentId !== key.agentId)
@@ -962,6 +970,8 @@ export function createTailnetConversationsApi(input: {
                 send({ type: "watchScheduled", requestId: identifier() });
               if (watchesSubagents)
                 send({ type: "watchSubagents", requestId: identifier() });
+              if (watchesUsageLimits)
+                send({ type: "watchUsageLimits", requestId: identifier() });
             }
             if (
               frame.type === "commandResult" &&

@@ -29,7 +29,22 @@ import { SentPhotoSquares } from "./SentPhotoSquares";
 // Changes and Agents open the screens the phone already has. The Library, and
 // what the agent did in the browser and on a canvas, are views of this page.
 
-type View_ = "page" | "library" | "browser" | "canvas";
+type View_ = "page" | "library" | "browser" | "canvas" | "usage";
+
+/**
+ * A fact of the chat that is a control of its own, as the desktop's panel
+ * lists them: its branch, pull request, servers, permissions, context and
+ * usage. `view: "usage"` opens the page's own Usage view.
+ */
+export type ChatPageRow = {
+  key: string;
+  label: string;
+  meta: string | null;
+  sub?: string;
+  tone?: "muted" | "warn" | "error";
+  onPress?: () => void;
+  view?: "usage";
+};
 
 export type ChatPageAction = { label: string; sub?: string; onPress: () => void };
 export type ChatPageFact = { label: string; value: string };
@@ -57,12 +72,21 @@ export function ChatPage({
   onOpenAgents,
   subagents,
   parent,
+  rows = [],
+  usage = [],
+  onDismiss,
   actions,
   sent,
   images,
 }: {
   /** How many subagents the chat has, and how many work: the CLI's and Studio's alike. */
   subagents?: { total: number; working: number };
+  /** The chat's facts that are controls, under what its agent touched. */
+  rows?: ChatPageRow[];
+  /** Each plan's usage windows, for the Usage view. */
+  usage?: { plan: string; windows: { id: string; label: string; meta: string; sub: string; tone: "muted" | "warn" | "error" }[] }[];
+  /** iOS: told once the page has gone, for a sheet that opens after it (`useSheetHandoff`). */
+  onDismiss?: () => void;
   /** The chat a subagent was started from, as a card up to it. */
   parent?: { relation: string; name: string; onPress: () => void };
   visible: boolean;
@@ -145,7 +169,7 @@ export function ChatPage({
   };
 
   return (
-    <Modal animationType={reducedMotion ? "none" : "slide"} onRequestClose={back} visible={visible}>
+    <Modal animationType={reducedMotion ? "none" : "slide"} onDismiss={onDismiss} onRequestClose={back} visible={visible}>
       <View accessibilityViewIsModal style={[styles.root, { paddingTop: insets.top }]}>
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space["4xl"] }]}>
           {view === "page" ? (
@@ -198,6 +222,28 @@ export function ChatPage({
                   <Text style={styles.quiet}>What the agent touches shows up here.</Text>
                 )}
               </Group>
+
+              {rows.length ? (
+                <Group>
+                  {rows.map((item, index) => (
+                    <GroupRow
+                      key={item.key}
+                      first={index === 0}
+                      label={item.label}
+                      sub={item.sub}
+                      meta={item.meta}
+                      metaTone={item.tone === "warn" ? "warn" : item.tone === "error" ? "error" : "diff"}
+                      onPress={
+                        item.view === "usage"
+                          ? () => setView("usage")
+                          : item.onPress
+                            ? leaveFor(item.onPress)
+                            : undefined
+                      }
+                    />
+                  ))}
+                </Group>
+              ) : null}
 
               {facts.length ? (
                 <Group>
@@ -254,6 +300,30 @@ export function ChatPage({
                   )}
                 </>
               ) : null}
+            </>
+          ) : view === "usage" ? (
+            <>
+              <Text accessibilityRole="header" style={styles.viewTitle}>
+                Usage
+              </Text>
+              {usage.map((plan) => (
+                <View key={plan.plan}>
+                  <Text style={styles.section}>{plan.plan}</Text>
+                  <Group>
+                    {plan.windows.map((window, index) => (
+                      <GroupRow
+                        key={window.id}
+                        first={index === 0}
+                        label={window.label}
+                        sub={window.sub || undefined}
+                        meta={window.meta}
+                        metaTone={window.tone === "muted" ? "diff" : window.tone}
+                      />
+                    ))}
+                  </Group>
+                </View>
+              ))}
+              <Text style={styles.note}>As the agent last reported it to the desktop.</Text>
             </>
           ) : view === "browser" ? (
             <>
@@ -326,7 +396,7 @@ function GroupRow({
   label: string;
   sub?: string;
   meta?: string | null;
-  metaTone?: "muted" | "live" | "diff";
+  metaTone?: "muted" | "live" | "diff" | "warn" | "error";
   onPress?: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -353,7 +423,18 @@ function GroupRow({
       {meta ? (
         <Text
           numberOfLines={1}
-          style={[styles.rowMeta, metaTone === "live" ? styles.live : metaTone === "diff" ? styles.diff : null]}
+          style={[
+            styles.rowMeta,
+            metaTone === "live"
+              ? styles.live
+              : metaTone === "diff"
+                ? styles.diff
+                : metaTone === "warn"
+                  ? styles.warn
+                  : metaTone === "error"
+                    ? styles.error
+                    : null,
+          ]}
         >
           {meta}
         </Text>
@@ -403,6 +484,8 @@ const createStyles = ({ colors }: Theme) =>
     rowMeta: { ...typography.meta, color: colors.textMuted, maxWidth: 160 },
     live: { color: colors.markViolet },
     diff: { color: colors.textDefault },
+    warn: { color: colors.toneWarn },
+    error: { color: colors.toneError },
     quiet: { ...typography.meta, color: colors.textSubtle, padding: space.lg },
     fact: { paddingHorizontal: space.lg, paddingVertical: space.sm, gap: space["3xs"] },
     divided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderSubtle },

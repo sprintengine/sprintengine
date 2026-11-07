@@ -375,3 +375,30 @@ test("a subagents frame keeps each readable row and drops the rest alone", () =>
   assert.equal(capped.subagents.length, 256);
   assert.equal(capped.subagents[0].agentId, "a44", "the newest are kept, oldest first");
 });
+
+test("a listed chat's servers and a usage frame are read entry by entry", () => {
+  const thread = {
+    workspaceId: "ws", agentId: "a", title: "t", phase: "idle", createdAt: 1, updatedAt: 1, lastSeq: 0, providerId: "p", modelId: "m", turnCount: 0,
+    localServers: [
+      { id: "s1", url: "http://localhost:5173", title: "dev-site", port: 5173, state: "running" },
+      { id: "s2", url: "javascript:alert(1)", title: "x", port: 1, state: "running" },
+      { id: "s3", url: "http://localhost:9", title: "y", port: 9, state: "sleeping" },
+    ],
+  };
+  const sessions = parseConversationFrame(JSON.stringify({ type: "sessions", requestId: "r", sessions: [thread] }));
+  assert.deepEqual(sessions.sessions[0].localServers.map((server) => server.id), ["s1"]);
+  const usage = parseConversationFrame(JSON.stringify({
+    type: "usageLimits", key: { workspaceId: "ws", agentId: "a" }, notice: null, autoResume: true,
+    limits: [
+      { provider: "claude", plan: "max", observedAt: 5, windows: [
+        { id: "five_hour", label: "5-hour limit", usedPercent: 140, resetsAt: 10, status: "warning", observedAt: 5 },
+        { id: "bad", label: "x", usedPercent: "lots", resetsAt: null, status: "allowed", observedAt: 5 },
+      ] },
+      { provider: "", windows: [], observedAt: 1 },
+    ],
+  }));
+  assert.equal(usage.type, "usageLimits");
+  assert.equal(usage.limits.length, 1);
+  assert.deepEqual(usage.limits[0].windows.map((entry) => [entry.id, entry.usedPercent]), [["five_hour", 100]]);
+  assert.equal(parseConversationFrame(JSON.stringify({ type: "usageLimits", key: { workspaceId: "ws", agentId: "a" }, limits: "no" })), null);
+});

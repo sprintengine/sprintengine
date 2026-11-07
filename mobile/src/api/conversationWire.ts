@@ -103,6 +103,47 @@ export const CONVERSATION_SUBAGENTS_CAPABILITY = "conversation-subagents";
  * blockquote and read as words, as before.
  */
 export const CONVERSATION_QUOTE_TOKENS_CAPABILITY = "conversation-quote-tokens";
+/**
+ * The capability a desktop declares when it says what it knows of the usage
+ * limits of the plans its chats run on: `watchUsageLimits` has it send
+ * `usageLimits` frames for the chat the socket follows, now and on every
+ * change. Absent, the phone shows no Usage row.
+ */
+export const CONVERSATION_USAGE_LIMITS_CAPABILITY = "conversation-usage-limits";
+/** The most plans, and windows of one plan, a `usageLimits` frame names. */
+export const CONVERSATION_MAX_USAGE_LIMIT_PLANS = 8;
+export const CONVERSATION_MAX_USAGE_LIMIT_WINDOWS = 16;
+/** One of a plan's windows, as its agent last reported it. */
+export interface ConversationUsageLimitWindow {
+  /** Stable across readings: `five_hour`, `seven_day`, `codex:primary`. */
+  id: string;
+  label: string;
+  /** 0..100, or null when the agent said where the window stands but not how full it is. */
+  usedPercent: number | null;
+  resetsAt: number | null;
+  status: "allowed" | "warning" | "rejected";
+  observedAt: number;
+}
+/** One plan's windows. Only a subscription's: a plan billed by use has none. */
+export interface ConversationUsageLimitSnapshot {
+  provider: string;
+  plan?: string;
+  windows: ConversationUsageLimitWindow[];
+  observedAt: number;
+}
+/** The most local servers a listed chat carries. */
+export const CONVERSATION_MAX_LOCAL_SERVERS = 20;
+/**
+ * A local server a listed chat's agents linked, as the desktop last found its
+ * port: answering (`running`), nothing there (`stopped`), or coming up.
+ */
+export interface ConversationLocalServer {
+  id: string;
+  url: string;
+  title: string;
+  port: number;
+  state: "running" | "stopped" | "starting";
+}
 /** Where a sub-agent stands, as the desktop's panel says it. */
 export const CONVERSATION_SUBAGENT_STATUSES = [
   "starting",
@@ -311,6 +352,8 @@ export interface ConversationThread extends ConversationKey {
    * desktop, which then reads as before: a chat whose turn ended is at rest.
    */
   backgroundWork?: ConversationBackgroundWork;
+  /** The local servers its agents linked, from a desktop that lists them; at most 20. */
+  localServers?: ConversationLocalServer[];
 }
 /** A listed chat's background work: at least one count is above zero. */
 export interface ConversationBackgroundWork {
@@ -360,6 +403,8 @@ export type ConversationClientFrame =
   | { type: "hello"; requestId: string; clientCapabilities?: string[] }
   /** Needs `conversation-subagents`: sent after each subscription's fence. */
   | { type: "watchSubagents"; requestId: string }
+  /** Needs `conversation-usage-limits`: sent after each subscription's fence. */
+  | { type: "watchUsageLimits"; requestId: string }
   | {
       type: "subscribe";
       key: ConversationKey;
@@ -507,7 +552,9 @@ export type ConversationServerFrame =
   /** What the desktop keeps scheduled into `key`, soonest first, whole each time; empty once nothing is. */
   | { type: "scheduled"; key: ConversationKey; messages: ConversationScheduledMessage[] }
   /** The followed chat's sub-agents, oldest first, whole each time (`conversation-subagents`). */
-  | { type: "subagents"; key: ConversationKey; subagents: ConversationSubagent[] };
+  | { type: "subagents"; key: ConversationKey; subagents: ConversationSubagent[] }
+  /** What the desktop knows of the usage limits of the followed chat's plans (`conversation-usage-limits`). */
+  | { type: "usageLimits"; key: ConversationKey; limits: ConversationUsageLimitSnapshot[] };
 
 const MAX_WIRE_TEXT = 256 * 1024;
 const MAX_REASSEMBLED_BYTES = 32 * 1024 * 1024;
@@ -574,8 +621,10 @@ function threadWithCatalog(value: ConversationThread): ConversationThread {
     visitRewoundAt,
     snoozedUntil,
     backgroundWork,
+    localServers,
     ...rest
   } = value as ConversationThread & {
+    localServers?: unknown;
     models?: unknown;
     permissionPreset?: unknown;
     capabilities?: unknown;
@@ -610,6 +659,7 @@ function threadWithCatalog(value: ConversationThread): ConversationThread {
     ...(machine ? { host: machine } : {}),
     ...(prs.length ? { pullRequests: prs } : {}),
     ...(background ? { backgroundWork: background } : {}),
+    ...((servers) => (servers.length ? { localServers: servers } : {}))(parseConversationLocalServers(localServers)),
     ...lifecycle,
   };
 }
@@ -681,6 +731,74 @@ export function parseConversationSubagent(value: unknown): ConversationSubagent 
     ...(nonnegative(value.endedAt) ? { endedAt: value.endedAt } : {}),
     ...(typeof value.error === "string" && value.error ? { error: value.error.slice(0, 2_000) } : {}),
   };
+}
+
+/** A listed chat's local servers, each read on its own: one in the wrong shape is left out. */
+export function parseConversationLocalServers(value: unknown): ConversationLocalServer[] {
+  if (!Array.isArray(value)) return [];
+  const servers: ConversationLocalServer[] = [];
+  for (const entry of value) {
+    if (servers.length >= CONVERSATION_MAX_LOCAL_SERVERS) break;
+    if (
+      !record(entry) ||
+      !wireId(entry.id) ||
+      !boundedText(entry.url, 2_000) ||
+      !/^https?:\/\//u.test(entry.url) ||
+      !boundedText(entry.title, 500) ||
+      !Number.isSafeInteger(entry.port) ||
+      Number(entry.port) <= 0 ||
+      Number(entry.port) > 65_535 ||
+      (entry.state !== "running" && entry.state !== "stopped" && entry.state !== "starting")
+    )
+      continue;
+    servers.push({ id: entry.id, url: entry.url, title: entry.title, port: Number(entry.port), state: entry.state });
+  }
+  return servers;
+}
+
+const USAGE_STATUSES: readonly unknown[] = ["allowed", "warning", "rejected"];
+const instant = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/**
+ * A `usageLimits` frame's plans, each read on its own as the desktop's own
+ * reader does: a plan, or a window, this build cannot read is left out, so
+ * the row is not drawn wrong. Null when the list itself is not one.
+ */
+export function parseUsageLimitSnapshots(value: unknown): ConversationUsageLimitSnapshot[] | null {
+  if (!Array.isArray(value)) return null;
+  const plans: ConversationUsageLimitSnapshot[] = [];
+  for (const entry of value.slice(0, CONVERSATION_MAX_USAGE_LIMIT_PLANS)) {
+    if (!record(entry) || !boundedText(entry.provider, 100) || !entry.provider || !instant(entry.observedAt)) continue;
+    if (!Array.isArray(entry.windows)) continue;
+    const windows: ConversationUsageLimitWindow[] = [];
+    for (const window of entry.windows.slice(0, CONVERSATION_MAX_USAGE_LIMIT_WINDOWS)) {
+      if (
+        !record(window) ||
+        !wireId(window.id) ||
+        !boundedText(window.label, 200) ||
+        !(window.usedPercent === null || (typeof window.usedPercent === "number" && Number.isFinite(window.usedPercent))) ||
+        !(window.resetsAt === null || instant(window.resetsAt)) ||
+        !USAGE_STATUSES.includes(window.status) ||
+        !instant(window.observedAt)
+      )
+        continue;
+      windows.push({
+        id: window.id,
+        label: window.label,
+        usedPercent: window.usedPercent === null ? null : Math.min(100, Math.max(0, window.usedPercent as number)),
+        resetsAt: window.resetsAt as number | null,
+        status: window.status as ConversationUsageLimitWindow["status"],
+        observedAt: window.observedAt,
+      });
+    }
+    plans.push({
+      provider: entry.provider,
+      ...(boundedText(entry.plan, 100) && entry.plan ? { plan: entry.plan } : {}),
+      windows,
+      observedAt: entry.observedAt,
+    });
+  }
+  return plans;
 }
 
 /**
@@ -914,6 +1032,13 @@ export function parseConversationFrame(
             messages: parseScheduledMessages(frame.messages),
           }
         : null;
+    case "usageLimits": {
+      if (!wireKey(frame.key)) return null;
+      const limits = parseUsageLimitSnapshots(frame.limits);
+      return limits
+        ? { type: "usageLimits", key: { workspaceId: frame.key.workspaceId, agentId: frame.key.agentId }, limits }
+        : null;
+    }
     case "subagents": {
       if (!wireKey(frame.key) || !Array.isArray(frame.subagents)) return null;
       const subagents: ConversationSubagent[] = [];

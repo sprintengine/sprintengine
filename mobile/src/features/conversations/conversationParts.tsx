@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CliLogo } from "../../components/glyphs/CliLogo";
 import { useSecondsClock } from "../../components/useNow";
-import { MarkdownDocument } from "../../components/document/MarkdownDocument";
+import { MarkdownDocument, type QuoteMark } from "../../components/document/MarkdownDocument";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { fontWeight, iconSize, radius, space, typography, type Theme } from "../../theme/tokens";
@@ -270,11 +270,14 @@ export function TurnFold({
   parts,
   source,
   live = false,
+  marks,
 }: {
   label: string;
   failed: number;
   parts: FoldPart[];
   source: StepDetailSource;
+  /** Passages quotes mark in what the turn said. */
+  marks?: readonly QuoteMark[];
   /** The turn is still running: what it said may still be arriving. */
   live?: boolean;
 }) {
@@ -318,7 +321,14 @@ export function TurnFold({
               <ThinkingRow key={part.id} text={part.text} live={false} onNotice={onNotice} />
             ) : (
               <View key={part.id} style={styles.prose}>
-                <MarkdownDocument body={part.text} variant="chat" reply streaming={live} onLinkBlocked={onLinkBlocked} />
+                <MarkdownDocument
+                  body={part.text}
+                  variant="chat"
+                  reply
+                  streaming={live}
+                  onLinkBlocked={onLinkBlocked}
+                  marks={marks}
+                />
               </View>
             ),
           )}
@@ -494,6 +504,7 @@ export function SubagentStartRow({
           numberOfLines={1}
           style={[
             styles.status,
+            styles.statusKept,
             status.tone === "working"
               ? styles.statusWorking
               : status.tone === "waiting"
@@ -552,6 +563,7 @@ export function SubagentChatRow({
             numberOfLines={1}
             style={[
               styles.status,
+              styles.statusKept,
               status.tone === "working"
                 ? styles.statusWorking
                 : status.tone === "waiting"
@@ -640,6 +652,8 @@ const createStyles = ({ colors }: Theme) =>
       fontVariant: ["tabular-nums"],
     },
     statusWorking: { color: colors.accentPrimary, fontWeight: fontWeight.medium },
+    // A subagent's status is never cut for its name: the name gives way.
+    statusKept: { flexShrink: 0 },
     what: { ...typography.meta, fontSize: 13.5, color: colors.textMuted },
     now: { ...typography.meta, fontSize: 12.5, color: colors.textSubtle },
     agentRow: {

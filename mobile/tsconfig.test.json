@@ -19,6 +19,7 @@
     "src/features/conversations/chatActivity.ts",
     "src/features/conversations/subagentLogic.ts",
     "src/features/conversations/quoteLogic.ts",
+    "src/features/conversations/chatPanelLogic.ts",
     "src/features/conversations/photoPicks.ts",
     "src/api/tailnetTransport.ts",
     "src/api/conversationWire.ts",

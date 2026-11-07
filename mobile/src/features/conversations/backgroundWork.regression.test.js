@@ -98,7 +98,7 @@ test("a chat working in the background stays out of Earlier, however long ago it
 });
 
 test("the open chat's working line names the agents in the background, or the work alone", () => {
-  assert.equal(backgroundWorkLabel([lane("running"), lane("done")]), "1 agent working in background");
-  assert.equal(backgroundWorkLabel([], 3), "3 agents working in background", "the desktop's count, where the transcript shows fewer");
+  assert.equal(backgroundWorkLabel([lane("running"), lane("done")]), "1 subagent working in background");
+  assert.equal(backgroundWorkLabel([], 3), "3 subagents working in background", "the desktop's count, where the transcript shows fewer");
   assert.equal(backgroundWorkLabel([lane("done")], 0), "Working in background", "a monitor that will wake the agent");
 });

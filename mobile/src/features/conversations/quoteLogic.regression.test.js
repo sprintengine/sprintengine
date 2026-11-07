@@ -104,3 +104,12 @@ test("Go to source finds the reply that holds the passage in the quote's turn", 
   assert.equal(quoteSource(rows, { turnId: "t-2", exact: "gone now" }).id, "b", "its turn, where the words moved");
   assert.equal(quoteSource(rows, { turnId: "t-9", exact: "x" }), null);
 });
+
+test("a passage picked from the drawn words is those words, and found again", () => {
+  const drawn = markdownPlain(reply);
+  const start = drawn.indexOf("Then the loader");
+  const made = makeQuote({ turnId: "t", reply: drawn, drawn: true, start, end: start + "Then the loader runs twice".length, n: 1 });
+  assert.equal(made.quote.quote, "Then the loader runs twice");
+  assert.equal(made.quote.exact, "Then the loader runs twice");
+  assert.ok(quotes.locateQuote("First, the cache is cold. Then the loader runs twice. Then the cache is warm.", made.quote));
+});

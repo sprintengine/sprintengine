@@ -65,11 +65,14 @@ export function markdownPlain(markdown: string): string {
 export type QuoteRefusal = "empty" | "too_long";
 
 /**
- * The quote a selection of `reply` makes: the passage as its Markdown, which
- * the agent reads, and as drawn words with the words either side of it, which
- * find it again in the reply. The drawn occurrence is the one nearest where
- * the selection sits in the Markdown, so a phrase the reply says twice is
- * marked where it was picked.
+ * The quote a selection of `reply` makes: the passage, which the agent reads,
+ * and its words folded with the words either side of it, which find it again
+ * in the reply. The phone selects from the reply's drawn words (`drawn`, its
+ * Markdown read by `markdownPlain`), so a person picks words as they read
+ * them, not asterisks; the passage is then those words. Given the Markdown
+ * itself, the passage is its Markdown, as the desktop's is. The occurrence
+ * kept is the one nearest where the selection sits, so a phrase the reply
+ * says twice is marked where it was picked.
  */
 export function makeQuote(input: {
   turnId: string;
@@ -78,14 +81,17 @@ export function makeQuote(input: {
   end: number;
   n: number;
   comment?: string;
+  /** `reply` is already the drawn words, not Markdown. */
+  drawn?: boolean;
 }): { quote: ChatQuote } | { refused: QuoteRefusal } {
+  const plain = input.drawn ? (text: string) => text : markdownPlain;
   const from = Math.max(0, Math.min(input.start, input.end));
   const to = Math.min(input.reply.length, Math.max(input.start, input.end));
   const passage = input.reply.slice(from, to).trim();
   if (!passage) return { refused: "empty" };
-  const exact = fold(markdownPlain(passage));
+  const exact = fold(plain(passage));
   if (!exact) return { refused: "empty" };
-  const drawn = fold(markdownPlain(input.reply));
+  const drawn = fold(plain(input.reply));
   const aim = input.reply.length ? (from / input.reply.length) * drawn.length : 0;
   let at = -1;
   for (let found = drawn.indexOf(exact); found >= 0; found = drawn.indexOf(exact, found + 1))

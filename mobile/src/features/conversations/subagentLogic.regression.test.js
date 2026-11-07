@@ -86,3 +86,22 @@ test("a parent's link goes back to its screen under the top when it is there", (
   assert.equal(stepsBackTo(routes, (route) => route === "ConversationAgents" && false), null);
   assert.equal(stepsBackTo(["Conversation:parent"], () => true), null, "the top itself is not under the top");
 });
+
+test("a subagent the turn started stays in view, out of the turn's fold", () => {
+  const { foldTurns } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+  const read = { id: "r", name: "Read", input: { path: "a.ts" }, status: "ok" };
+  const start = { id: "s", name: "mcp__sprintengine-studio__subagent_start", serverName: "sprintengine-studio", input: {}, status: "ok" };
+  const grep = { id: "g", name: "Grep", input: { pattern: "x" }, status: "ok" };
+  const rows = foldTurns(
+    [
+      { kind: "tools", id: "t1", turn: "t", tools: [read, start, grep] },
+      { kind: "message", id: "m", role: "assistant", turn: "t", text: "Done.", at: 1 },
+    ],
+    () => ({ status: "done", steps: 2 }),
+  );
+  const kept = rows.filter((row) => row.kind === "tools");
+  assert.equal(kept.length, 1);
+  assert.deepEqual(kept[0].tools.map((tool) => tool.id), ["s"]);
+  const fold = rows.find((row) => row.kind === "fold");
+  assert.deepEqual(fold.parts.flatMap((part) => part.tools ?? []).map((tool) => tool.id), ["r", "g"]);
+});

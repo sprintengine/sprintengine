@@ -63,7 +63,7 @@ import { backgroundWorkLabel, formatElapsed, workingLabel } from "./agentLogic";
 import { useChats } from "./ChatsContext";
 import { followUpAction, followUpSendLabel, steerOffered } from "./followUp";
 import { chatHostMark, stripPullRequest } from "./chatMarks";
-import { PullRequestStripButton } from "./ChatMarkViews";
+import { openPullRequest, PullRequestStripButton } from "./ChatMarkViews";
 import { ChatComposer } from "./ChatComposer";
 import { ComposerStrip, STRIP_ITEM_HEIGHT, type ComposerStripEntry } from "./ComposerStrip";
 import { conversationChanges, diffPill, STRIP_DROP_ORDER } from "./composerStripLogic";
@@ -82,7 +82,8 @@ import { pickChatFile } from "./pickChatFile";
 import { attachmentsOnlyText, rememberSentFile, sentFileName, splitSentUploads } from "./chatFiles";
 import { useChatImages, useSentImages } from "./ConversationImage";
 import { SentPhotoSquares } from "./SentPhotoSquares";
-import { ChatPage } from "./ChatPage";
+import { ChatPage, type ChatPageRow } from "./ChatPage";
+import { serverWords, usageMeta, usageSub, usageTone, usageWindow } from "./chatPanelLogic";
 import { phoneChatActivity } from "./chatActivity";
 import { rememberSentPhoto, sentPhotoUri } from "./sentPhotos";
 import { AttachedFileCards } from "./AttachedFileCards";
@@ -134,6 +135,7 @@ import { ComposerQuoteChips, QuotedWords, QuotePicker, QuoteReplyButton, QuoteSh
 import {
   joinQuoteDraft,
   makeQuote,
+  markdownPlain,
   messageForDesktop,
   messageInline,
   quoteRefusalText,
@@ -149,6 +151,7 @@ import {
   type ChatQuoteToken,
 } from "../../shared/quotes/chat-quotes";
 import {
+  harnessName,
   isSubagentStart,
   parentRelation,
   subagentCounts,
@@ -1223,6 +1226,87 @@ export function ConversationScreen({
       readout={readout}
     />
   );
+  // The chat page's facts that are controls, as the desktop's panel lists
+  // them: the branch, the pull request, the servers its agents linked, the
+  // permissions, the context and the usage. What the strip shows stays there.
+  const usageNow = usageWindow(chat.usageLimits, chatThreadCli(activeThread));
+  const servers = serverWords(activeThread.localServers ?? listedThread.localServers);
+  // A reset later today reads as its time; one further off names its day too.
+  const clock = (at: number) =>
+    new Date(at).toLocaleString(
+      [],
+      at - Date.now() > 20 * 3_600_000
+        ? { weekday: "short", hour: "2-digit", minute: "2-digit" }
+        : { hour: "2-digit", minute: "2-digit" },
+    );
+  const pageRows: ChatPageRow[] = [
+    ...(branch
+      ? [
+          {
+            key: "branch",
+            label: "Branch",
+            meta: branch,
+            ...(worktree ? { sub: `In worktree ${worktree}` } : {}),
+            ...(openChanges ? { onPress: openChanges } : {}),
+          },
+        ]
+      : []),
+    ...(pr
+      ? [
+          {
+            key: "pr",
+            label: "Pull request",
+            meta: pr.text,
+            ...((title) => (title ? { sub: title } : {}))(
+              (activeThread.pullRequests ?? listedThread.pullRequests)?.find((entry) => entry.number === pr.mark.number)?.title,
+            ),
+            onPress: () => (onOpenPullRequest ? onOpenPullRequest(pr.mark.url) : openPullRequest(pr.mark)),
+          },
+        ]
+      : []),
+    ...(servers
+      ? [{ key: "server", label: (activeThread.localServers ?? listedThread.localServers ?? []).length > 1 ? "Servers" : "Server", meta: servers.meta, sub: `${servers.sub} · on ${session?.desktopName ?? "the desktop"}` }]
+      : []),
+    ...(preset
+      ? [
+          {
+            key: "permissions",
+            label: "Permissions",
+            meta: permissionLabel(preset),
+            ...(accessOffered && canAct ? { onPress: () => sheetHandoff.after(() => setSheet("permission")) } : {}),
+          },
+        ]
+      : []),
+    ...(ring && ringLabel
+      ? [{ key: "context", label: "Context", meta: `${ring.percentage}%`, sub: ringLabel, ...(ring.high ? { tone: "warn" as const } : {}) }]
+      : []),
+    ...(usageNow
+      ? [
+          {
+            key: "usage",
+            label: "Usage",
+            meta: usageMeta(usageNow.window),
+            sub: usageSub(usageNow.window, clock),
+            tone: usageTone(usageNow.window),
+            view: "usage" as const,
+          },
+        ]
+      : []),
+  ];
+  const usageViews = chat.usageLimits
+    .filter((plan) => plan.windows.length)
+    .map((plan) => ({
+      plan: [plan.provider === "claude" ? "Claude" : plan.provider === "codex" ? "Codex" : plan.provider, plan.plan]
+        .filter(Boolean)
+        .join(" · "),
+      windows: plan.windows.map((window) => ({
+        id: window.id,
+        label: window.label,
+        meta: usageMeta(window),
+        sub: usageSub(window, clock).replace(/^[^·]*· ?/u, ""),
+        tone: usageTone(window),
+      })),
+    }));
   // The queued bubble floats over the transcript's foot; the jump control
   // stands above it.
   // What waits: the desktop's list where it holds messages, the phone's own
@@ -1279,7 +1363,8 @@ export function ConversationScreen({
   // sent message's chip opens its quote.
   const quoteReply = useCallback((turn: string) => {
     const reply = replyCopyText(rowsNow.current, turn);
-    if (reply.trim()) setQuoting({ turn, reply });
+    // Picked from as it reads, its Markdown taken off.
+    if (reply.trim()) setQuoting({ turn, reply: markdownPlain(reply) });
   }, []);
   const openSentQuote = useCallback((quote: ChatQuoteToken) => setShownQuote({ quote, draft: false }), []);
   // A subagent this chat started, opened over it with the way back up.
@@ -1316,7 +1401,13 @@ export function ConversationScreen({
           subagents={item.kind === "tools" && item.tools.some(isSubagentStart) ? chat.subagents : undefined}
           onOpenQuote={item.kind === "message" && item.role === "user" ? openSentQuote : undefined}
           onQuoteReply={item.kind === "meta" && canOperate ? quoteReply : undefined}
-          marks={item.kind === "message" && item.role === "assistant" && item.turn ? marksByTurn.get(item.turn) : undefined}
+          marks={
+            (item.kind === "message" && item.role === "assistant") || item.kind === "fold"
+              ? item.turn
+                ? marksByTurn.get(item.turn)
+                : undefined
+              : undefined
+          }
           onOpenSubagent={openSubagent}
           onOpenAgents={onOpenAgents}
         />
@@ -1390,7 +1481,12 @@ export function ConversationScreen({
           // the last reply can scroll clear. Padding, not a spacer in the
           // footer: Android's scroll range did not take in a footer spacer
           // that grew after the list had laid out.
-          contentContainerStyle={[styles.transcript, styles.underFloat, { paddingBottom: space.lg + floatHeight }]}
+          contentContainerStyle={[
+            styles.transcript,
+            styles.underFloat,
+            parent ? styles.underParentLink : null,
+            { paddingBottom: space.lg + floatHeight },
+          ]}
           initialNumToRender={12}
           maxToRenderPerBatch={8}
           windowSize={7}
@@ -1906,6 +2002,7 @@ export function ConversationScreen({
           const made = makeQuote({
             turnId: quoting.turn,
             reply: quoting.reply,
+            drawn: true,
             ...selection,
             // Never a number this chat already used while its quotes are in sight.
             n: nextQuoteNumber([
@@ -1968,11 +2065,21 @@ export function ConversationScreen({
       />
       {/* The chat's page, which its title opens. */}
       <ChatPage
+        rows={pageRows}
+        usage={usageViews}
+        onDismiss={sheetHandoff.onDismiss}
         visible={pageOpen}
         onClose={() => setPageOpen(false)}
         title={chatTitle}
         cli={activeThread.models?.cli ?? cliForChatProvider(activeThread.providerId)}
-        chips={[project, machineMark?.label ?? session?.desktopName, shortModelLabel(activeThread)].filter(
+        // The harness and its model, as the desktop's panel heads a chat.
+        chips={[
+          project,
+          machineMark?.label ?? session?.desktopName,
+          [chatThreadCli(activeThread) ? harnessName(chatThreadCli(activeThread)!) : null, shortModelLabel(activeThread)]
+            .filter(Boolean)
+            .join(" · "),
+        ].filter(
           (chip): chip is string => Boolean(chip),
         )}
         facts={placeFacts({
@@ -1981,7 +2088,6 @@ export function ConversationScreen({
           address: session?.baseUrl ?? null,
           agent: thread.title && thread.title !== workspaceTitle ? thread.title : null,
           cliModel,
-          access: activeThread.permissionPreset ? permissionLabel(activeThread.permissionPreset) : null,
         })}
         activity={activity}
         diff={changes ? { added: changes.addedLines, removed: changes.removedLines, files: changes.files } : null}
@@ -2166,7 +2272,9 @@ const ConversationItem = memo(function ConversationItem({
     );
   }
   if (row.kind === "fold")
-    return <TurnFold label={row.label} failed={row.failed} parts={row.parts} source={source} live={streaming} />;
+    return (
+      <TurnFold label={row.label} failed={row.failed} parts={row.parts} source={source} live={streaming} marks={marks} />
+    );
   if (row.kind === "agent")
     return (
       <AgentLaneCard
@@ -2749,6 +2857,8 @@ const createStyles = ({ colors, cardShadowOpacity }: Theme) =>
     blockedText: { ...typography.meta, fontSize: 13.5, color: colors.textDefault },
     // Room at the top for the floating back button and title.
     underFloat: { paddingTop: 40 + space.xs + space.lg },
+    // A subagent's link to its parent stands under its title, so its first row starts lower.
+    underParentLink: { paddingTop: 40 + space.xs + space.lg + space.xl },
     landing: { opacity: 0 },
     landingNote: {
       ...StyleSheet.absoluteFillObject,
@@ -3072,7 +3182,6 @@ function placeFacts(input: {
   address: string | null;
   agent: string | null;
   cliModel: string | null;
-  access: string | null;
 }): { label: string; value: string }[] {
   const host = input.address?.replace(/^[a-z]+:\/\//iu, "").replace(/\/.*$/u, "") ?? null;
   return [
@@ -3086,6 +3195,5 @@ function placeFacts(input: {
     host ? { label: "Address", value: host } : null,
     input.agent ? { label: "Agent", value: input.agent } : null,
     input.cliModel ? { label: "Runs", value: input.cliModel } : null,
-    input.access ? { label: "Access", value: input.access } : null,
   ].filter((fact): fact is { label: string; value: string } => fact !== null);
 }

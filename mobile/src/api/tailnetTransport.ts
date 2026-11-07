@@ -235,6 +235,14 @@ export function declaresConversationSubagents(session: { tailnetCapabilities?: s
 }
 
 /**
+ * Whether the desktop says what it knows of its plans' usage limits
+ * (`conversation-usage-limits`). Absence is a NO: no Usage row.
+ */
+export function declaresUsageLimits(session: { tailnetCapabilities?: string[] }): boolean {
+  return session.tailnetCapabilities?.includes("conversation-usage-limits") ?? false;
+}
+
+/**
  * Whether the desktop expands a quote's token in a message it is sent
  * (`conversation-quote-tokens`). Absence is a NO: the phone writes a quote as
  * a blockquote, the words an older desktop's agent reads, and never says in

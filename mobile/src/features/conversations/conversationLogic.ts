@@ -15,6 +15,7 @@ import {
 import { cliForChatProvider, offeredPermissionPresets, PERMISSION_PRESET_OPTIONS } from "./launchLogic";
 import { applyContextEvent, type ContextReading } from "./contextUsage";
 import { keepUnchanged } from "./keepUnchanged";
+import { isSubagentStart } from "./subagentLogic";
 import { applyPromptCacheEvent, formatTokenCount, type PromptCacheReading } from "./promptCache";
 import { parseAttachedFiles, type AttachedFile } from "./attachedFiles";
 import { parseSentImages, type SentImage } from "./sentPhotos";
@@ -900,7 +901,29 @@ export function turnFoldLabel(state: TurnState, steps: number): string {
  * The fold stands where the turn's first folded row stood, so the agents and
  * the reply follow it as they do on the desktop.
  */
-export function foldTurns(rows: ConversationRow[], stateOf: (turn: string) => TurnState): ConversationRow[] {
+export function foldTurns(input: ConversationRow[], stateOf: (turn: string) => TurnState): ConversationRow[] {
+  // A subagent the turn started with Studio stays in view, as an agent's card
+  // does: its step is taken out of the run it was grouped in.
+  const rows = input.flatMap((row): ConversationRow[] => {
+    if (row.kind !== "tools" || !row.tools.some(isSubagentStart) || row.tools.every(isSubagentStart)) return [row];
+    const split: ConversationRow[] = [];
+    let run: MobileTool[] = [];
+    let starts = false;
+    const flush = () => {
+      if (run.length) split.push({ ...row, id: `${row.id}:${split.length}`, tools: run });
+      run = [];
+    };
+    for (const tool of row.tools) {
+      if (isSubagentStart(tool) !== starts) {
+        flush();
+        starts = !starts;
+      }
+      run.push(tool);
+    }
+    flush();
+    return split;
+  });
+  const startsOnly = (row: ConversationRow) => row.kind === "tools" && row.tools.every(isSubagentStart);
   const turnOf = (row: ConversationRow) =>
     row.kind === "tools" || row.kind === "reasoning"
       ? row.turn
@@ -911,7 +934,8 @@ export function foldTurns(rows: ConversationRow[], stateOf: (turn: string) => Tu
   // Only a step that is work counts: a turn whose steps all made a picture
   // for the person has nothing to fold, and its picture stays as it is.
   rows.forEach((row, index) => {
-    if (row.kind === "tools" && row.turn && row.tools.some((tool) => !stepShownToUser(tool))) lastStep.set(row.turn, index);
+    if (row.kind === "tools" && row.turn && !startsOnly(row) && row.tools.some((tool) => !stepShownToUser(tool)))
+      lastStep.set(row.turn, index);
   });
   const folds = new Map<string, Extract<ConversationRow, { kind: "fold" }>>();
   const out: ConversationRow[] = [];
@@ -923,7 +947,7 @@ export function foldTurns(rows: ConversationRow[], stateOf: (turn: string) => Tu
     const folded =
       turn !== undefined &&
       last !== undefined &&
-      (row.kind === "tools" ||
+      ((row.kind === "tools" && !startsOnly(row)) ||
         (row.kind === "reasoning" && index < last) ||
         (row.kind === "message" && index < last && !PICTURE.test(row.text)));
     if (!folded || turn === undefined || (row.kind !== "tools" && row.kind !== "message" && row.kind !== "reasoning")) {
