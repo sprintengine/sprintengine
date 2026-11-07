@@ -126,7 +126,20 @@ export function CanvasBoardScreen({
   const subtitle = [target.project !== undefined ? canvasProjectLabel(target.project) : null, machine].filter(Boolean).join(" · ");
 
   return (
-    <ScreenFrame backLabel="Back" onBack={onBack} subtitle={subtitle} title={target.name}>
+    <ScreenFrame
+      backLabel="Back"
+      onBack={onBack}
+      // In a Text of its own: a bare string in the header's View is no Text, and
+      // React Native refuses to draw one.
+      subtitle={
+        subtitle ? (
+          <Text numberOfLines={1} style={styles.subtitle}>
+            {subtitle}
+          </Text>
+        ) : undefined
+      }
+      title={target.name}
+    >
       <ScrollView contentContainerStyle={contentStyle} refreshControl={refreshControl}>
         <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={styles.stage}>
           {picture.kind === "error" ? (
@@ -187,6 +200,7 @@ export function CanvasBoardScreen({
 
 const createStyles = ({ colors }: Theme) =>
   StyleSheet.create({
+    subtitle: { ...typography.meta, color: colors.textMuted },
     stage: { alignSelf: "stretch", alignItems: "center" },
     frame: {
       borderRadius: radius.overlay,
