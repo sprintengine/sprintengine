@@ -55,10 +55,16 @@ export function ChatPage({
   diff,
   onOpenChanges,
   onOpenAgents,
+  subagents,
+  parent,
   actions,
   sent,
   images,
 }: {
+  /** How many subagents the chat has, and how many work: the CLI's and Studio's alike. */
+  subagents?: { total: number; working: number };
+  /** The chat a subagent was started from, as a card up to it. */
+  parent?: { relation: string; name: string; onPress: () => void };
   visible: boolean;
   onClose: () => void;
   title: string;
@@ -106,9 +112,9 @@ export function ChatPage({
           ...(onOpenChanges ? { onPress: leaveFor(onOpenChanges) } : {}),
         };
       case "agents": {
-        const agents = activity.agents ?? { total: 0, working: 0 };
+        const agents = subagents ?? activity.agents ?? { total: 0, working: 0 };
         return {
-          label: "Agents",
+          label: "Subagents",
           meta: agents.working ? `${agents.working} working` : "All done",
           live: agents.working > 0,
           ...(onOpenAgents ? { onPress: leaveFor(onOpenAgents) } : {}),
@@ -165,6 +171,11 @@ export function ChatPage({
                 ) : null}
               </View>
 
+              {parent ? (
+                <Group>
+                  <GroupRow first label={parent.name} sub={parent.relation} onPress={leaveFor(parent.onPress)} />
+                </Group>
+              ) : null}
               <Group>
                 {activity.order.length ? (
                   activity.order.map((kind, index) => {

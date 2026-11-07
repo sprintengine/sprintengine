@@ -1,6 +1,7 @@
 import * as LegacyFileSystem from "expo-file-system/legacy";
 
 import {
+  CONVERSATION_QUOTE_TOKENS_CAPABILITY,
   CONVERSATION_RESYNC_CLOSE_CODE,
   CONVERSATION_SCOPE_CLOSE_CODE,
   conversationCloseRetryAfterMs,
@@ -283,6 +284,17 @@ export interface ConversationApi {
        * (`watchScheduled`) after every fence.
        */
       scheduledSends?: boolean;
+      /**
+       * The desktop advertises `conversation-subagents`: the stream asks it to
+       * name the chat's sub-agents (`watchSubagents`) after every fence.
+       */
+      subagents?: boolean;
+      /**
+       * The desktop advertises `conversation-quote-tokens` (and
+       * `conversation-hello`): the stream says in a `hello` ahead of each
+       * subscription that this phone draws a quote's token.
+       */
+      quoteTokens?: boolean;
     },
   ): ConversationStream;
   uploadImage(input: {
@@ -389,6 +401,9 @@ export function createTailnetConversationsApi(input: {
       const holdable = (command: Extract<ConversationCommand, { kind: "send" }>) =>
         queuedSends && (!command.uploadIds?.length || queuedAttachments);
       const scheduledSends = options?.scheduledSends === true;
+      const watchesSubagents = options?.subagents === true;
+      // Said only to a desktop that answers `hello` and expands tokens.
+      const readsQuoteTokens = probeWithHello && options?.quoteTokens === true;
       // Sends this phone holds until the turn ends, in the order written.
       const outbox = new Map<
         string,
@@ -774,6 +789,16 @@ export function createTailnetConversationsApi(input: {
           next.onopen = () => {
             if (closed || socket !== next || dialing !== dialGeneration) return;
             handlers.onState("synchronizing");
+            // What this phone reads, said ahead of the subscription whose
+            // replay it shapes: a quote's token only reaches a socket that
+            // asked. Nobody waits on the answer, and a desktop from before
+            // the member drops it.
+            if (readsQuoteTokens)
+              send({
+                type: "hello",
+                requestId: identifier(),
+                clientCapabilities: [CONVERSATION_QUOTE_TOKENS_CAPABILITY],
+              });
             send({
               type: "subscribe",
               key,
@@ -799,7 +824,8 @@ export function createTailnetConversationsApi(input: {
               (unassembled.type === "snapshot" ||
                 unassembled.type === "synchronized" ||
                 unassembled.type === "queued" ||
-                unassembled.type === "scheduled") &&
+                unassembled.type === "scheduled" ||
+                unassembled.type === "subagents") &&
               unassembled.key &&
               (unassembled.key.workspaceId !== key.workspaceId ||
                 unassembled.key.agentId !== key.agentId)
@@ -934,6 +960,8 @@ export function createTailnetConversationsApi(input: {
                 send({ type: "watchQueued", requestId: identifier() });
               if (scheduledSends)
                 send({ type: "watchScheduled", requestId: identifier() });
+              if (watchesSubagents)
+                send({ type: "watchSubagents", requestId: identifier() });
             }
             if (
               frame.type === "commandResult" &&

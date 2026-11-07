@@ -231,6 +231,7 @@ function VerifyConversationStack() {
               conversation={verifyChat}
               onBack={() => navigation.goBack()}
               onOpenAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
+              onOpenSubagent={() => undefined}
             />
           )}
         </ConversationStack.Screen>
@@ -241,6 +242,8 @@ function VerifyConversationStack() {
               laneId={route.params.laneId}
               onBack={() => navigation.goBack()}
               onChat={() => navigation.popToTop()}
+              onOpenAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
+              onOpenParentAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
             />
           )}
         </ConversationStack.Screen>

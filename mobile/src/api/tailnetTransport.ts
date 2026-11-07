@@ -226,6 +226,25 @@ export function declaresAgentMessage(session: { tailnetCapabilities?: string[] }
 }
 
 /**
+ * Whether the desktop names a chat's sub-agents when asked
+ * (`conversation-subagents`). Absence is a NO: the phone does not ask, and a
+ * chat lists only the agents its CLI spawned, as before.
+ */
+export function declaresConversationSubagents(session: { tailnetCapabilities?: string[] }): boolean {
+  return session.tailnetCapabilities?.includes("conversation-subagents") ?? false;
+}
+
+/**
+ * Whether the desktop expands a quote's token in a message it is sent
+ * (`conversation-quote-tokens`). Absence is a NO: the phone writes a quote as
+ * a blockquote, the words an older desktop's agent reads, and never says in
+ * its `hello` that it reads tokens.
+ */
+export function declaresQuoteTokens(session: { tailnetCapabilities?: string[] }): boolean {
+  return session.tailnetCapabilities?.includes("conversation-quote-tokens") ?? false;
+}
+
+/**
  * Whether the desktop said its chat list carries each chat's title and
  * clocks, leaves settled chats out, and takes `conversation.settle` and
  * `conversation.visit` (`conversation-lifecycle`). Absence is a NO: an older

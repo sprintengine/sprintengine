@@ -308,7 +308,7 @@ export function agentStopOffer(
 ): { label: string; disabled: boolean } | null {
   if (lane.status !== 'running' || !chat.stopsAgents || !chat.chatCanStop) return null
   if (chat.stopping) return { label: 'Stopping…', disabled: true }
-  return { label: 'Stop this agent', disabled: !chat.live }
+  return { label: 'Stop this subagent', disabled: !chat.live }
 }
 
 /**

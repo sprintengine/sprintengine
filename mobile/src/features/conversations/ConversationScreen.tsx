@@ -12,6 +12,7 @@ import {
   CONVERSATION_MAX_IMAGES,
   type ConversationCommand,
   type ConversationPermissionPreset,
+  type ConversationSubagent,
   type ConversationThread,
 } from "../../api/conversationWire";
 import {
@@ -114,6 +115,7 @@ import {
 } from "./conversationLogic";
 import {
   AgentLaneCard,
+  SubagentStartRow,
   ThinkingRow,
   ToolGroup,
   TurnFold,
@@ -128,6 +130,14 @@ import { scheduledMessageStatus } from "../scheduled/scheduledMessages";
 import { defaultSendAt } from "../scheduled/sendTime";
 import { useDictation } from "../dictation/useDictation";
 import { usePublishConversation } from "./liveConversation";
+import {
+  isSubagentStart,
+  parentRelation,
+  subagentCounts,
+  subagentStartFacts,
+  subagentThread,
+  type SubagentChatParent,
+} from "./subagentLogic";
 import {
   promptCacheLine,
   promptCacheNeedsAttention,
@@ -178,7 +188,16 @@ export function ConversationScreen({
   opening,
   onOpeningTaken,
   initialSheet,
+  parent,
+  onOpenParent,
+  onOpenSubagent,
 }: {
+  /** A chat this one started, opened as a chat of its own over this one. */
+  onOpenSubagent?: (target: { thread: ConversationThread; parent: SubagentChatParent }) => void;
+  /** The chat this one was started from, when it is a subagent: its screen links back up to it. */
+  parent?: SubagentChatParent;
+  /** Goes to `parent`. */
+  onOpenParent?: () => void;
   deviceId: string;
   thread: ConversationThread;
   /**
@@ -250,10 +269,12 @@ export function ConversationScreen({
   // rather than opening a second socket (see liveConversation.ts).
   usePublishConversation(
     { deviceId, workspaceId: thread.workspaceId, agentId: thread.agentId },
-    { ...chat, deviceId, images },
+    { ...chat, deviceId, images, ...(parent ? { parent } : {}) },
   );
   const styles = useThemedStyles(createStyles);
   const inset = useScreenBottomInset();
+  // The chat's title as last drawn, for a subagent opened from it to name.
+  const chatTitleRef = useRef("");
   // The seconds that count ("Working · 42s") tick in their own text through
   // useSecondsClock; this clock only ages the quieter times, every 30 s.
   const now = useNow(false);
@@ -901,9 +922,22 @@ export function ConversationScreen({
   // an action is said where it happened: on its request's card, or in the
   // composer's tray, where it can be dismissed.
   const status = linkWords;
-  const chatTitle = chat.listedTitle || listedThread.chatTitle || workspaceTitle || thread.title || "Conversation";
-  // What the agent touched: the chat page's rows.
-  const activity = useMemo(() => phoneChatActivity(chat.rows, chat.lanes), [chat.rows, chat.lanes]);
+  // A subagent shares its parent's workspace, whose name is the parent's: it
+  // goes by its own.
+  const chatTitle = parent
+    ? chat.listedTitle || thread.title || "Subagent"
+    : chat.listedTitle || listedThread.chatTitle || workspaceTitle || thread.title || "Conversation";
+  // What the agent touched: the chat page's rows, the subagents it started
+  // with Studio among them.
+  const subagents = useMemo(() => subagentCounts(chat.lanes, chat.subagents), [chat.lanes, chat.subagents]);
+  const activity = useMemo(() => {
+    const read = phoneChatActivity(chat.rows, chat.lanes);
+    return subagents.total && !read.order.includes("agents")
+      ? { ...read, order: [...read.order.filter((kind) => kind !== "library"), "agents" as const, ...read.order.filter((kind) => kind === "library")] }
+      : read;
+  }, [chat.rows, chat.lanes, subagents.total]);
+  const hasSubagents = subagents.total > 0;
+  chatTitleRef.current = chatTitle;
   const cacheState = chat.promptCache ? promptCacheState(chat.promptCache, now) : null;
   const cacheRow =
     !chat.busy &&
@@ -1183,6 +1217,18 @@ export function ConversationScreen({
   const rowsNow = useRef(chat.rows);
   rowsNow.current = chat.rows;
   const replyText = useCallback((turn: string) => replyCopyText(rowsNow.current, turn), []);
+  // A subagent this chat started, opened over it with the way back up.
+  const openSubagent = useMemo(
+    () =>
+      onOpenSubagent
+        ? (subagent: ConversationSubagent) =>
+            onOpenSubagent({
+              thread: subagentThread(subagent, activeThread),
+              parent: { agentId: thread.agentId, name: chatTitleRef.current, main: !parent },
+            })
+        : undefined,
+    [onOpenSubagent, activeThread, thread.agentId, parent],
+  );
   // Each row is handed only what it draws: the clock to an agent's card, the
   // thread to a turn's footer. Typing, the clock and a delta to another row
   // then leave a row's props as they were, and its memo keeps it as drawn.
@@ -1196,10 +1242,15 @@ export function ConversationScreen({
           replyText={item.kind === "meta" ? replyText : undefined}
           source={source}
           now={item.kind === "agent" ? now : undefined}
-          cli={item.kind === "agent" ? chatThreadCli(activeThread) : null}
+          cli={item.kind === "agent" || (item.kind === "tools" && item.tools.some(isSubagentStart)) ? chatThreadCli(activeThread) : null}
           onOpenAgent={onOpenAgent}
           onOpenPlan={onOpenPlan}
           onOpenChanges={onOpenChanges}
+          // Only a row that starts a subagent reads the list, so the others
+          // keep their props as a subagent moves.
+          subagents={item.kind === "tools" && item.tools.some(isSubagentStart) ? chat.subagents : undefined}
+          onOpenSubagent={openSubagent}
+          onOpenAgents={onOpenAgents}
         />
       );
       // The divider rides the row it stands above, so it scrolls with it and
@@ -1213,7 +1264,7 @@ export function ConversationScreen({
         drawn
       );
     },
-    [activeThread, replyText, source, now, onOpenAgent, onOpenPlan, onOpenChanges, unreadRowId, styles.unreadCell, liveTurn, chat.turnBusy],
+    [activeThread, replyText, source, now, onOpenAgent, onOpenPlan, onOpenChanges, unreadRowId, styles.unreadCell, liveTurn, chat.turnBusy, chat.subagents, openSubagent, onOpenAgents],
   );
   return (
     <ScreenFrame ground="agent">
@@ -1246,6 +1297,20 @@ export function ConversationScreen({
               <Text accessibilityLiveRegion="polite" style={[styles.floatStatus, linkWords ? styles.warnInk : null]}>
                 {status}
               </Text>
+            ) : parent && onOpenParent ? (
+              // A subagent's way up, under its name, as the desktop's band
+              // over a subagent's chat leads back to its parent.
+              <Pressable
+                accessibilityHint="Goes to the chat that started this subagent."
+                accessibilityLabel={`Subagent of ${parent.name}`}
+                accessibilityRole="link"
+                hitSlop={space.sm}
+                onPress={onOpenParent}
+              >
+                <Text numberOfLines={1} style={styles.floatStatus}>
+                  Subagent of <Text style={styles.link}>{parent.name}</Text>
+                </Text>
+              </Pressable>
             ) : null}
           </View>
         </View>
@@ -1415,14 +1480,14 @@ export function ConversationScreen({
                   {chat.workingSince !== undefined ? (
                     <WorkingElapsed since={chat.workingSince} style={styles.workingTime} />
                   ) : null}
-                  {onOpenAgents && chat.lanes.length ? (
+                  {onOpenAgents && hasSubagents ? (
                     <Pressable
                       accessibilityRole="link"
                       hitSlop={space.md}
                       onPress={onOpenAgents}
                       style={styles.workingLink}
                     >
-                      <Text style={styles.link}>See agents</Text>
+                      <Text style={styles.link}>See subagents</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -1688,6 +1753,15 @@ export function ConversationScreen({
               />
             </View>
           </>
+        ) : parent ? (
+          // No box where a message would not go: the way to the parent instead.
+          <View style={styles.blockedBar}>
+            <Text style={styles.blockedText}>To reach this subagent, speak to {parent.name}.</Text>
+            <Text style={styles.meta}>This pairing may follow the chat but not drive it.</Text>
+            {onOpenParent ? (
+              <PrimaryButton label={`Go to ${parent.main ? "the main chat" : "the parent agent"}`} onPress={onOpenParent} />
+            ) : null}
+          </View>
         ) : (
           <Text style={styles.meta}>
             Read-only conversation. Grant conversation control when pairing to
@@ -1764,7 +1838,9 @@ export function ConversationScreen({
         activity={activity}
         diff={changes ? { added: changes.addedLines, removed: changes.removedLines, files: changes.files } : null}
         onOpenChanges={openChanges}
-        onOpenAgents={onOpenAgents && chat.lanes.length ? onOpenAgents : undefined}
+        onOpenAgents={onOpenAgents && hasSubagents ? onOpenAgents : undefined}
+        subagents={subagents}
+        parent={parent && onOpenParent ? { relation: parentRelation({ kind: "chat", ...parent }), name: parent.name, onPress: onOpenParent } : undefined}
         actions={[
           ...(markUnread
             ? [
@@ -1824,7 +1900,14 @@ const ConversationItem = memo(function ConversationItem({
   onOpenAgent,
   onOpenPlan,
   onOpenChanges,
+  subagents,
+  onOpenSubagent,
+  onOpenAgents,
 }: {
+  /** The chat's subagents; only a row that starts one is handed them. */
+  subagents?: ConversationSubagent[];
+  onOpenSubagent?: (subagent: ConversationSubagent) => void;
+  onOpenAgents?: () => void;
   row: ConversationRow;
   /** A reply, or a fold of its work, still arriving. */
   streaming: boolean;
@@ -1897,7 +1980,31 @@ const ConversationItem = memo(function ConversationItem({
       </Text>
     );
   if (row.kind === "reasoning") return <ThinkingRow text={row.text} live={streaming} onNotice={onNotice} />;
-  if (row.kind === "tools") return <ToolGroup tools={row.tools} source={source} />;
+  if (row.kind === "tools") {
+    const starts = row.tools.filter(isSubagentStart);
+    if (!starts.length) return <ToolGroup tools={row.tools} source={source} />;
+    const rest = row.tools.filter((tool) => !isSubagentStart(tool));
+    const chatCli = cli;
+    return (
+      <View>
+        {starts.map((tool) => {
+          const { subagentId } = subagentStartFacts(tool, chatCli);
+          const started = subagentId ? subagents?.find((candidate) => candidate.agentId === subagentId) : undefined;
+          return (
+            <SubagentStartRow
+              key={tool.id}
+              tool={tool}
+              chatCli={chatCli}
+              subagent={started}
+              now={Date.now()}
+              onOpen={started && onOpenSubagent ? () => onOpenSubagent(started) : onOpenAgents}
+            />
+          );
+        })}
+        {rest.length ? <ToolGroup tools={rest} source={source} /> : null}
+      </View>
+    );
+  }
   if (row.kind === "fold")
     return <TurnFold label={row.label} failed={row.failed} parts={row.parts} source={source} live={streaming} />;
   if (row.kind === "agent")
@@ -2470,6 +2577,15 @@ const createStyles = ({ colors, cardShadowOpacity }: Theme) =>
     },
     titlePillText: { ...typography.heading, color: colors.textPrimary, flexShrink: 1 },
     floatStatus: { ...typography.micro, color: colors.textMuted, paddingLeft: space.xl },
+    blockedBar: {
+      gap: space.sm,
+      padding: space.lg,
+      borderRadius: radius.overlay,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: colors.borderDefault,
+    },
+    blockedText: { ...typography.meta, fontSize: 13.5, color: colors.textDefault },
     // Room at the top for the floating back button and title.
     underFloat: { paddingTop: 40 + space.xs + space.lg },
     landing: { opacity: 0 },

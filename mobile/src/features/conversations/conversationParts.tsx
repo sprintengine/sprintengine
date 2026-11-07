@@ -27,6 +27,9 @@ import { ToolOutputPanel, type ToolDetailState } from "./ToolOutputPanel";
 import { ConversationPicture, type ChatImages, type SentImages } from "./ConversationImage";
 import { toolPicture } from "./conversationImageLogic";
 import { DisclosureGlyph, ThoughtGlyph, ToolKindGlyph } from "./toolGlyphs";
+import type { ConversationSubagent } from "../../api/conversationWire";
+import { chatSubagentName, chatSubagentStatus, subagentEnded, subagentStartFacts } from "./subagentLogic";
+import { cliForChatProvider } from "./launchLogic";
 import type { usePhoneConversation } from "./usePhoneConversation";
 
 // The pieces the chat and its agent screens draw alike: a quiet tool step, a
@@ -451,6 +454,131 @@ export function AgentListRow({
   );
 }
 
+/**
+ * `subagent.start` in the transcript: one row that says who was started and
+ * opens it as a chat, in place of a tool call and its JSON, as the desktop's
+ * row does. Where the desktop has not named the chat yet (or names none, an
+ * older one), it opens the chat's Subagents list.
+ */
+export function SubagentStartRow({
+  tool,
+  chatCli,
+  subagent,
+  now,
+  onOpen,
+}: {
+  tool: MobileTool;
+  chatCli: string | null;
+  subagent: ConversationSubagent | undefined;
+  now: number;
+  onOpen?: () => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const { cli, words } = subagentStartFacts(tool, chatCli);
+  const tick = useSecondsClock(!!subagent && !subagentEnded(subagent.status) && subagent.endedAt === undefined);
+  const status = subagent ? chatSubagentStatus(subagent, Math.max(now, tick)) : null;
+  return (
+    <Pressable
+      accessibilityRole={onOpen ? "button" : "text"}
+      accessibilityLabel={[words, status?.text, onOpen ? "Open it" : null].filter(Boolean).join(". ")}
+      disabled={!onOpen}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.step, pressed ? styles.pressed : null]}
+    >
+      <CliLogo cli={cli} size={iconSize.sm} />
+      <Text numberOfLines={1} style={styles.groupHead}>
+        {words}
+      </Text>
+      {status ? (
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.status,
+            status.tone === "working"
+              ? styles.statusWorking
+              : status.tone === "waiting"
+                ? styles.warnInk
+                : status.tone === "failed"
+                  ? styles.errorInk
+                  : null,
+          ]}
+        >
+          {status.text}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+/**
+ * A chat this one started (`subagent.start`) on a Subagents list: the logo of
+ * the harness it runs on, its name, how it stands, and its task. Tapping opens
+ * it as a chat of its own.
+ */
+export function SubagentChatRow({
+  subagent,
+  now,
+  onOpen,
+  first,
+}: {
+  subagent: ConversationSubagent;
+  now: number;
+  onOpen: () => void;
+  first: boolean;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const tick = useSecondsClock(!subagentEnded(subagent.status) && subagent.endedAt === undefined);
+  const status = chatSubagentStatus(subagent, Math.max(now, tick));
+  const name = chatSubagentName(subagent);
+  const task = subagent.task.trim() && subagent.task.trim() !== name ? subagent.task.trim() : "";
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={[name, status.text, subagent.readOnly ? "Read-only" : null, task || null]
+        .filter(Boolean)
+        .join(", ")}
+      onPress={onOpen}
+      style={({ pressed }) => [styles.agentRow, first ? null : styles.agentRowRule, pressed ? styles.pressed : null]}
+    >
+      <View style={styles.agentGlyph}>
+        <CliLogo cli={cliForChatProvider(subagent.providerId)} size={26} />
+      </View>
+      <View style={styles.laneBody}>
+        <View style={styles.laneTop}>
+          <Text numberOfLines={1} style={styles.rowWho}>
+            {name}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.status,
+              status.tone === "working"
+                ? styles.statusWorking
+                : status.tone === "waiting"
+                  ? styles.warnInk
+                  : status.tone === "failed"
+                    ? styles.errorInk
+                    : null,
+            ]}
+          >
+            {status.text}
+          </Text>
+        </View>
+        {task ? (
+          <Text numberOfLines={2} style={styles.rowWhat}>
+            {task}
+          </Text>
+        ) : null}
+        {subagent.readOnly || subagent.error ? (
+          <Text numberOfLines={1} style={[styles.now, subagent.error ? styles.errorInk : null]}>
+            {[subagent.readOnly ? "Read-only" : null, subagent.error ?? null].filter(Boolean).join(" · ")}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
 const createStyles = ({ colors }: Theme) =>
   StyleSheet.create({
     pressed: { opacity: 0.6 },
@@ -480,6 +608,7 @@ const createStyles = ({ colors }: Theme) =>
       borderLeftColor: colors.borderSubtle,
     },
     errorInk: { color: colors.toneError },
+    warnInk: { color: colors.toneWarn },
     prose: { paddingVertical: space.xs },
     thoughtPreview: { ...typography.body, fontSize: 14, color: colors.textSubtle, flexShrink: 1 },
     thought: { paddingTop: space["2xs"] },
