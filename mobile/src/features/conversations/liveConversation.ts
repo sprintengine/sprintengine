@@ -1,6 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { ChatImages } from "./ConversationImage";
 import type { usePhoneConversation } from "./usePhoneConversation";
+import type { SubagentChatParent } from "./subagentLogic";
 
 // The chat's Agents, agent-thread, plan and changed-files screens read the
 // live conversation without opening a second socket to the desktop.
@@ -18,6 +19,8 @@ export type LiveConversation = ReturnType<typeof usePhoneConversation> & {
   deviceId: string;
   /** The chat's pictures, as its transcript fetches them; null when the desktop does not serve them. */
   images: ChatImages | null;
+  /** The chat it was started from, when it is a subagent itself. */
+  parent?: SubagentChatParent;
 };
 export type LiveConversationKey = { deviceId: string; workspaceId: string; agentId: string };
 

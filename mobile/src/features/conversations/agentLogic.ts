@@ -255,11 +255,11 @@ export function summarizeAgents(lanes: AgentLane[]): {
   return { working, finished, tokens, footer }
 }
 
-/** The working line's words: "2 agents working" while agents run, else "Working". */
+/** The working line's words: "2 subagents working" while they run, else "Working". */
 export function workingLabel(lanes: AgentLane[]): string {
   const running = lanes.filter((lane) => lane.status === 'running').length
   if (!running) return 'Working'
-  return `${running} ${running === 1 ? 'agent' : 'agents'} working`
+  return `${running} ${running === 1 ? 'subagent' : 'subagents'} working`
 }
 
 /**
@@ -272,7 +272,7 @@ export function workingLabel(lanes: AgentLane[]): string {
 export function backgroundWorkLabel(lanes: AgentLane[], listedAgents = 0): string {
   const running = Math.max(lanes.filter((lane) => lane.status === 'running').length, listedAgents)
   if (!running) return 'Working in background'
-  return `${running} ${running === 1 ? 'agent' : 'agents'} working in background`
+  return `${running} ${running === 1 ? 'subagent' : 'subagents'} working in background`
 }
 
 // Said for the agents every Claude session has, when the session has not
@@ -308,7 +308,7 @@ export function agentStopOffer(
 ): { label: string; disabled: boolean } | null {
   if (lane.status !== 'running' || !chat.stopsAgents || !chat.chatCanStop) return null
   if (chat.stopping) return { label: 'Stopping…', disabled: true }
-  return { label: 'Stop this agent', disabled: !chat.live }
+  return { label: 'Stop this subagent', disabled: !chat.live }
 }
 
 /**

@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
-import { ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import * as markdownLibrary from "react-native-markdown-display";
 import Markdown, { AstRenderer, MarkdownIt, renderRules, type ASTNode, type RenderRules } from "react-native-markdown-display";
 
-import { useThemedStyles } from "../../theme/ThemeProvider";
+import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
+import { locateQuote } from "../../shared/quotes/chat-quotes";
 import { monoFontFamily } from "../../theme/fonts";
 import { radius, space, type Theme, fontWeight } from "../../theme/tokens";
 import { markdownRuns } from "./markdownRuns";
@@ -35,6 +36,8 @@ interface MarkdownDocumentProps {
    * such as the model's thinking, rather than the reply itself.
    */
   tone?: "default" | "muted";
+  /** Passages quotes mark in this reply, lit where they are drawn. Only a chat's variant draws them. */
+  marks?: readonly QuoteMark[];
 }
 
 // Stable instance: the library's default is constructed inside a default
@@ -120,6 +123,54 @@ function TableCell({
   return <View style={[style, width === undefined ? null : { width }]}>{children}</View>;
 }
 
+/** A passage a quote marks in a reply: found again by its words, as the desktop finds it. */
+export type QuoteMark = { n: number; exact: string; prefix: string; suffix: string; sent: boolean };
+
+// The marks reach each run of words by context, so marking a passage redraws
+// the words and nothing is parsed again.
+const QuoteMarksContext = createContext<readonly QuoteMark[] | null>(null);
+
+/**
+ * A run of words with any passage a quote marks lit in the quote's wash and
+ * followed by its number, as the desktop marks it. A passage that runs across
+ * formatting (bold in the middle, a line break) is not in any one run, and is
+ * left unmarked rather than half marked.
+ */
+function MarkedText({ content, style }: { content: string; style: StyleProp<TextStyle> }) {
+  const marks = useContext(QuoteMarksContext);
+  const { colors } = useTheme();
+  const found = marks?.length
+    ? marks
+        .map((mark) => ({ mark, at: locateQuote(content, mark) }))
+        .filter((entry): entry is { mark: QuoteMark; at: { start: number; end: number } } => entry.at !== null)
+        .sort((a, b) => a.at.start - b.at.start)
+    : [];
+  if (!found.length) return <Text style={style}>{content}</Text>;
+  const pieces: ReactNode[] = [];
+  let at = 0;
+  for (const { mark, at: range } of found) {
+    if (range.start < at) continue;
+    pieces.push(content.slice(at, range.start));
+    pieces.push(
+      <Text key={`${mark.n}:${range.start}`} style={{ backgroundColor: mark.sent ? colors.quoteTintSent : colors.quoteTint }}>
+        {content.slice(range.start, range.end)}
+      </Text>,
+    );
+    pieces.push(
+      <Text
+        key={`${mark.n}:${range.start}:n`}
+        accessibilityLabel={`Quote ${mark.n}`}
+        style={{ color: colors.quoteOnBadge, backgroundColor: mark.sent ? colors.quoteBadgeSent : colors.quoteBadge }}
+      >
+        {`\u2009${mark.n}\u2009`}
+      </Text>,
+    );
+    at = range.end;
+  }
+  pieces.push(content.slice(at));
+  return <Text style={style}>{pieces}</Text>;
+}
+
 /**
  * Full markdown render — headings, emphasis, links, inline and fenced code,
  * tables, nested lists, blockquotes — on the app's theme tokens.
@@ -131,6 +182,7 @@ export function MarkdownDocument({
   reply = false,
   streaming = false,
   tone = "default",
+  marks,
 }: MarkdownDocumentProps) {
   // They differ only in their values' literal types; all hand the same keys to the library.
   const factory = (
@@ -190,7 +242,8 @@ export function MarkdownDocument({
   const drawn = runs ? <View>{runs.map((run, index) => draw(run, index))}</View> : draw(body);
   // The reply's state reaches its fences by context, so a reply that stops
   // streaming redraws its diagrams and formulas without reparsing the rest.
-  return replyState ? <ReplyContext.Provider value={replyState}>{drawn}</ReplyContext.Provider> : drawn;
+  const marked = marks?.length ? <QuoteMarksContext.Provider value={marks}>{drawn}</QuoteMarksContext.Provider> : drawn;
+  return replyState ? <ReplyContext.Provider value={replyState}>{marked}</ReplyContext.Provider> : marked;
 }
 
 // Everything the library hardcodes in `lib/styles.js` (#000000 rules, #CCCCCC
@@ -412,6 +465,10 @@ const createChatMarkdown = (theme: Theme) => {
   });
   const rules: RenderRules = {
     ...base.rules,
+    // A run of a reply's words, with a passage a quote marks lit in it.
+    text: (node, _children, _parent, styles, inheritedStyles = {}) => (
+      <MarkedText key={node.key} content={node.content} style={[inheritedStyles, styles.text]} />
+    ),
     // A reply's fence may be a diagram or a formula (`ReplyFence`); anywhere
     // else, and any other fence, it is the code it is.
     fence: (node) => {
