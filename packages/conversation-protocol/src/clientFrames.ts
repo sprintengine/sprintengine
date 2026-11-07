@@ -29,6 +29,12 @@ import {
   type ConversationCancelSideQuestionRequest,
   type ConversationContextBreakdownRequest,
 } from './agentReads.js'
+import {
+  parseConversationChangesRequest,
+  type ConversationChangedFileRequest,
+  type ConversationChangesDiffRequest,
+  type ConversationWatchChangesRequest,
+} from './checkoutChanges.js'
 
 // The server half of the full contract: what a desktop accepts from a client.
 // `parseConversationClientFrame` (index.ts) is the lane as it first shipped
@@ -48,6 +54,9 @@ export type ConversationClientMessage =
   | ConversationWatchScheduledRequest
   | ConversationWatchUsageLimitsRequest
   | ConversationWatchSubagentsRequest
+  | ConversationWatchChangesRequest
+  | ConversationChangesDiffRequest
+  | ConversationChangedFileRequest
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -120,6 +129,9 @@ export function parseConversationClientMessage(value: unknown): ConversationClie
     return id(value.requestId) ? { type: 'watchUsageLimits', requestId: value.requestId } : null
   if (value.type === 'watchSubagents')
     return id(value.requestId) ? { type: 'watchSubagents', requestId: value.requestId } : null
+  // A chat's changes, read as the desktop's Diff tab reads them (checkoutChanges.ts).
+  if (value.type === 'watchChanges' || value.type === 'getChangesDiff' || value.type === 'getChangedFile')
+    return parseConversationChangesRequest(value)
   if (value.type === 'command' && record(value.command)) {
     const command = value.command
     // When the message was written, and whether the person confirmed one

@@ -53,9 +53,9 @@ import type {
  * `conversation-lifecycle`, whose
  * settle and visit are gateway tools this socket has no method for, and
  * `conversation-queued-sends`, `conversation-scheduled-sends` and
- * `conversation-usage-limits` and `conversation-subagents`, whose `queued`,
- * `scheduled`, `usageLimits` and `subagents` frames its conversation topic
- * does not carry.
+ * `conversation-usage-limits`, `conversation-subagents` and
+ * `conversation-changes`, whose `queued`, `scheduled`, `usageLimits`,
+ * `subagents` and `changes` frames its conversation topic does not carry.
  * Nor the lane's fork, side questions and context breakdown
  * (`conversation-fork`, `conversation-side-questions`,
  * `conversation-context-breakdown`): this socket forks by its own
@@ -91,6 +91,7 @@ export const STUDIO_RPC_CONVERSATION_CAPABILITIES: string[] = CONVERSATION_CAPAB
     capability !== 'conversation-scheduled-sends' &&
     capability !== 'conversation-usage-limits' &&
     capability !== 'conversation-subagents' &&
+    capability !== 'conversation-changes' &&
     capability !== 'conversation-queued-attachments' &&
     capability !== 'conversation-quote-tokens' &&
     capability !== 'conversation-permanent-approvals',

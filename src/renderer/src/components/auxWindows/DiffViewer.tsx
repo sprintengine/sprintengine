@@ -15,6 +15,8 @@ import { joinFilePath } from '../../utils/paths'
 import { BranchStepStrip, BRANCH_STEP_PANEL_ID } from './BranchStepStrip'
 import { branchItemsFrom, scopeNote, stripEntriesFrom, type BranchDiffItem } from './branchSteps'
 import { useBranchSteps } from './useBranchSteps'
+import { useDiffSourceReading, type DiffSourceReading, type DiffViewerSource } from './diffViewerSource'
+import type { ConversationChangedFileSide } from '../../../../../packages/conversation-protocol/src/checkoutChanges'
 import { remeasureMonacoFontsOnLoad, useCodeFontFamily } from '../../utils/fonts'
 import { useMonacoBaseTheme } from '../../hooks/useAppTheme'
 import { buildDiffFileList, findDiffFocusIndex, type DiffFileItem } from './diffFileList'
@@ -181,6 +183,15 @@ type Props = {
   onTourCurrentChange?: (current: TourHostState['current']) => void
   /** Whether this viewer is on screen now — `tour.goto` moves only a viewer the owner can see. Defaults to true. */
   visible?: boolean
+  /**
+   * A checkout on another machine, read from it (a paired machine's chat,
+   * `conversation-changes`): the same viewer, its branch steps and files read
+   * there in place of this computer's git. Null reads this computer's
+   * checkout. It has no folder here, so what opens one (Open in editor, the
+   * tree's menu, a separate window) and what belongs to this computer's
+   * checkout (tours, changelists) are not offered.
+   */
+  source?: DiffViewerSource | null
 }
 
 type DiffContent =
@@ -297,11 +308,39 @@ async function readRevSide(
   return { content: result.content, binary: result.content.includes(NUL), tooLarge: false }
 }
 
-async function loadDiffContent(repoRoot: string, item: DiffFileItem): Promise<DiffContent> {
+/** One side of a file as a source on another machine sent it, as this computer's reads say it. */
+function farSide(side: ConversationChangedFileSide): { content: string; binary: boolean; tooLarge: boolean } {
+  if (side.kind === 'too-large') return { content: '', binary: false, tooLarge: true }
+  if (side.kind === 'absent') return { content: '', binary: false, tooLarge: false }
+  return { content: side.content, binary: side.content.includes(NUL), tooLarge: false }
+}
+
+async function loadDiffContent(
+  repoRoot: string,
+  item: DiffFileItem,
+  source: DiffViewerSource | null = null,
+): Promise<DiffContent> {
   const language = detectLanguage(item.relativePath)
 
   if (isImageFile(item.path) || isImageFile(item.relativePath)) {
     return { state: 'binary' }
+  }
+
+  // A checkout on another machine: its machine reads both sides of the file,
+  // at the revisions it works out from the step, which is all it lets be read.
+  if (source) {
+    const selection = item.kind === 'branch' ? (item as BranchDiffItem).selection : undefined
+    if (!selection) return { state: 'error', message: 'This file cannot be read from here.' }
+    try {
+      const sides = await source.file(selection, item.relativePath)
+      const original = farSide(sides.original)
+      const modified = farSide(sides.modified)
+      if (original.tooLarge || modified.tooLarge) return { state: 'too-large' }
+      if (original.binary || modified.binary) return { state: 'binary' }
+      return { state: 'ready', original: original.content, modified: modified.content, language }
+    } catch (failure) {
+      return { state: 'error', message: failure instanceof Error ? failure.message : String(failure) }
+    }
   }
 
   if (item.kind === 'branch') {
@@ -578,12 +617,22 @@ export function DiffViewer({
   onTourOfferTaken,
   onTourCurrentChange,
   visible = true,
+  source = null,
 }: Props) {
-  const { status, directoryStatus, repoState, repoRoot: gitRoot, refresh: refreshGitStatus } = useGitStatus(repoRoot)
+  // A checkout on another machine is read from it: its machine's word on how
+  // it stands takes the place of `git status`, and its tick that of the tree
+  // revision. This computer's git is not asked about it at all.
+  const far = useDiffSourceReading(source)
+  const local = useGitStatus(source ? null : repoRoot)
+  const { status, directoryStatus, refresh: refreshGitStatus } = local
+  const repoState: GitRepoState = source ? farRepoState(far.reading) : local.repoState
+  const gitRoot = source ? source.root : local.repoRoot
   // Ticks once per completed status read of this repository — the cue that the
   // working tree moved under the open file. Given the RESOLVED root so it joins
   // the subscription the line above already opened.
-  const treeRevision = useGitTreeRevision(gitRoot)
+  const localTreeRevision = useGitTreeRevision(source ? null : gitRoot)
+  const treeRevision = source ? far.tick : localTreeRevision
+  const farSnapshot = far.reading.state === 'ready' ? far.reading.snapshot : null
   const isMac = window.api.platform === 'darwin'
   const monacoTheme = useMonacoBaseTheme()
 
@@ -594,10 +643,11 @@ export function DiffViewer({
   const steps = useBranchSteps(
     repoRoot,
     branchSteps,
-    status,
+    source ? treeRevision : status,
     focusStep && revealKey ? { selection: focusStep, key: revealKey } : null,
     keptStep,
     onKeepStep,
+    source ? { source, snapshot: farSnapshot } : null,
   )
   const stripEntries = useMemo(() => stripEntriesFrom(steps.snapshot), [steps.snapshot])
   const stepNote = useMemo(() => scopeNote(steps.snapshot), [steps.snapshot])
@@ -681,7 +731,8 @@ export function DiffViewer({
   // the working tree's or a commit step's: one list swapped for another under
   // the same mounted editor (tours/useTourMode). An agent's `paths` narrowing
   // below applies to the ordinary list only.
-  const tourState = useTourState({ workspaceId, host: tourHost, visible })
+  // Tours are written and played in this computer's checkouts.
+  const tourState = useTourState({ workspaceId: source ? null : workspaceId, host: tourHost, visible })
   const unnarrowedItems = branchSteps ? branchItems : workingItems
   // The agent's `paths` narrowing. The person owns it from the first click on
   // "Show all"; a new reveal (a new key) narrows again.
@@ -771,8 +822,13 @@ export function DiffViewer({
     complete: !branchSteps && !filterList && !pendingList && !narrowing,
     active: visible,
     currentKey: currentItem ? diffViewedKey(currentItem) : null,
-    load: (item) => loadDiffContent(repoRoot, item),
-    probe: (item) => probeDiffItem(repoRoot, item),
+    load: (item) => loadDiffContent(repoRoot, item, source),
+    // A file on another machine is read again whenever its machine says the
+    // checkout moved; a commit step's sides never do.
+    probe: (item) =>
+      source
+        ? Promise.resolve((item as BranchDiffItem).modifiedRev === 'worktree' ? `far:${treeRevision}` : 'revisions')
+        : probeDiffItem(repoRoot, item),
   })
   // Which file the content on screen was read for: a step keeps the previous
   // file's diff drawn while the next one loads, and that diff must not be
@@ -899,13 +955,14 @@ export function DiffViewer({
     setContent(next)
     hunkIndexRef.current = 0
     const loadingFor = diffViewedKey(currentItem)
-    void loadDiffContent(repoRoot, currentItem).then((next) => {
+    void loadDiffContent(repoRoot, currentItem, source).then((next) => {
       if (loadSeqRef.current !== token) return
       setContent(next)
       setContentFor(loadingFor)
     })
   }, [
     repoRoot,
+    source,
     currentItem?.path,
     currentItem?.kind,
     // Stepping to another commit leaves path and kind identical while both sides
@@ -939,7 +996,7 @@ export function DiffViewer({
     const loadToken = loadSeqRef.current
     liveSeqRef.current += 1
     const liveToken = liveSeqRef.current
-    void loadDiffContent(repoRoot, item).then((next) => {
+    void loadDiffContent(repoRoot, item, source).then((next) => {
       // A file switch during the read supersedes it: its own load is authoritative.
       if (loadSeqRef.current !== loadToken) return
       // And a LATER live re-read supersedes an earlier one: two ticks of the
@@ -949,7 +1006,7 @@ export function DiffViewer({
       setContent((previous) => (sameDiffContent(previous, next) ? previous : next))
       setContentFor(diffViewedKey(item))
     })
-  }, [liveRevision, repoRoot])
+  }, [liveRevision, repoRoot, source])
 
   // The steppers, reachable from the mount callback above the definitions they
   // point at. Monaco keybindings are registered ONCE, at mount, and a keybinding
@@ -1281,14 +1338,15 @@ export function DiffViewer({
         setBandError('Those lines are too long to add to the chat. Select fewer.')
         return false
       }
+      // A chat's own changes are quoted into that chat, wherever it runs.
       const accepted =
         variant === 'pane'
-          ? deliverQuoteToWorkspaceChat(workspaceId, quote.text) !== null
+          ? deliverQuoteToWorkspaceChat(workspaceId, quote.text, source?.chatAgentId) !== null
           : (await window.api.sendDiffToChat({ workspaceId, text: quote.text }).catch(() => null))?.accepted === true
       if (!accepted) setBandError('No open chat to add these lines to')
       return accepted
     },
-    [variant, workspaceId],
+    [variant, workspaceId, source],
   )
   const showInApp = useCallback(() => {
     if (!workspaceId) return
@@ -1765,17 +1823,22 @@ export function DiffViewer({
           </ToolbarButton>
         </Tooltip>
 
-        <ToolbarDivider />
+        {/* A file on another machine has no editor here to open in. */}
+        {source ? null : (
+          <>
+            <ToolbarDivider />
 
-        <Tooltip content="Open in editor" placement="bottom">
-          <ToolbarButton
-            ariaLabel="Open in editor"
-            disabled={!currentItem || (variant === 'pane' && !workspaceId)}
-            onClick={openInEditor}
-          >
-            <OpenInEditorGlyph />
-          </ToolbarButton>
-        </Tooltip>
+            <Tooltip content="Open in editor" placement="bottom">
+              <ToolbarButton
+                ariaLabel="Open in editor"
+                disabled={!currentItem || (variant === 'pane' && !workspaceId)}
+                onClick={openInEditor}
+              >
+                <OpenInEditorGlyph />
+              </ToolbarButton>
+            </Tooltip>
+          </>
+        )}
 
         <ToolbarDivider />
 
@@ -1849,7 +1912,7 @@ export function DiffViewer({
           onChange={(patch) => setSessionPrefs((prefs) => ({ ...prefs, ...patch }))}
         />
 
-        {workspaceId ? (
+        {workspaceId && !source ? (
           <TourMenu
             workspaceId={workspaceId}
             currentTourId={tourState.openTourId}
@@ -1861,16 +1924,19 @@ export function DiffViewer({
         ) : null}
 
         {/* The sticky preference's two writers, absorbed from T3's band. */}
-        {variant === 'pane' ? <OpenInWindowButton onClick={openInWindow} /> : null}
+        {/* The window reads this computer's checkout; a far one stays in the pane. */}
+        {variant === 'pane' && !source ? <OpenInWindowButton onClick={openInWindow} /> : null}
         {variant === 'window' && workspaceId ? <ShowInAppButton onClick={showInApp} /> : null}
       </Toolbar>
 
       {/* Below the toolbar, not above it: the region keeps one band above its
           toolbar. Shown until the person answers it once. */}
-      <StudioSkillSuggestion
-        skillId="studio-diff-tours"
-        className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2"
-      />
+      {source ? null : (
+        <StudioSkillSuggestion
+          skillId="studio-diff-tours"
+          className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2"
+        />
+      )}
 
       {/* THE FIRST CONTENT ROW, not a second chrome band. It names the two
           things being compared and carries this file's include box; hide the
@@ -2043,8 +2109,11 @@ export function DiffViewer({
               items={items}
               currentIndex={currentIndex}
               rootPath={treeRoot}
-              workspaceId={workspaceId}
+              workspaceId={source ? null : workspaceId}
               workspaceWindow={variant === 'pane'}
+              // A far checkout's files have nothing here for the tree's menu to
+              // act on, and opening one shows its diff.
+              readOnly={Boolean(source)}
               gitStatus={status}
               directoryStatus={directoryStatus}
               refreshGitStatus={refreshGitStatus}
@@ -2064,7 +2133,10 @@ export function DiffViewer({
           id={branchSteps && !tour.active ? BRANCH_STEP_PANEL_ID : undefined}
           role={branchSteps && !tour.active ? 'tabpanel' : undefined}
         >
-          {!tour.active && filterPending ? (
+          {source && far.reading.state === 'error' ? (
+            // The machine could not be asked, or would not say: in its words.
+            <CenteredError message={far.reading.message} />
+          ) : !tour.active && filterPending ? (
             // The lists are one IPC read behind the status snapshot. "No changed
             // files" during that beat would be a claim about the repository made
             // before anyone asked it anything.
@@ -2121,6 +2193,11 @@ export function DiffViewer({
       </div>
     </div>
   )
+}
+
+/** How a far checkout stands, as the viewer's own reading of a repository says it. */
+function farRepoState(reading: DiffSourceReading): GitRepoState {
+  return reading.state
 }
 
 function keyFor(item: DiffFileItem | undefined): string | null {

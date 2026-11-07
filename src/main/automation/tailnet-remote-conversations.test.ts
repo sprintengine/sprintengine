@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -25,6 +26,8 @@ import {
   type ConversationListWorkspace,
 } from './tailnet/tailnet-conversation-host'
 import { subagentChangesOf } from '../subagent-lifecycle'
+import { createConversationCheckoutChanges } from '../conversation-checkout-changes'
+import { TAILNET_CAPABILITIES } from './tailnet/tailnet-routes'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet/tailnet-devices'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
 import { createTailnetMeshStore } from './tailnet/tailnet-mesh-store'
@@ -171,6 +174,8 @@ async function startHarness(
     usageLimits?: ConversationUsageLimits
     /** The far end's chat records, which say what is a sub-agent of what. */
     subagentRecords?: () => ConversationListWorkspace['agents']
+    /** The far end reads its chats' changes, in its workspace folder, and reads them again this often. */
+    checkoutChanges?: { pollMs: number }
   } = {},
 ): Promise<Harness> {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'remote-conversation-host-'))
@@ -240,6 +245,14 @@ async function startHarness(
           }
         : {}),
       ...(options.usageLimits ? { usageLimits: options.usageLimits } : {}),
+      ...(options.checkoutChanges
+        ? {
+            checkoutChanges: createConversationCheckoutChanges({
+              checkoutOf: () => workspaceRoot,
+              pollMs: options.checkoutChanges.pollMs,
+            }),
+          }
+        : {}),
       ...(options.subagentRecords
         ? {
             workspaceOf: () => ({ name: 'Project', createdAt: 1, agents: options.subagentRecords!() }),
@@ -2083,4 +2096,202 @@ test('the client says it reads tokens ahead of its subscribe, unless the machine
   } finally {
     vi.useRealTimers()
   }
+})
+
+describe('a chat’s changes on a paired desktop', () => {
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Dev',
+        GIT_AUTHOR_EMAIL: 'dev@example.com',
+        GIT_COMMITTER_NAME: 'Dev',
+        GIT_COMMITTER_EMAIL: 'dev@example.com',
+      },
+    }).trim()
+  /** The far end's workspace as a checkout: a branch one commit ahead of `main`, and a change not yet committed. */
+  const checkout = (root: string) => {
+    git(root, 'init', '-q', '-b', 'main')
+    writeFileSync(join(root, 'calendar.ts'), 'export const days = 7\n')
+    writeFileSync(join(root, 'notes.md'), 'first\n')
+    git(root, 'add', 'calendar.ts', 'notes.md')
+    git(root, 'commit', '-q', '-m', 'Start')
+    git(root, 'checkout', '-q', '-b', 'feature/calendar')
+    writeFileSync(join(root, 'calendar.ts'), 'export const days = 7\nexport const weeks = 52\n')
+    git(root, 'commit', '-q', '-am', 'Count the weeks')
+    writeFileSync(join(root, 'notes.md'), 'first\nsecond\n')
+  }
+
+  test('are read from the machine they are on, live, on a grant that may only read', async () => {
+    const h = await startHarness({ checkoutChanges: { pollMs: 40 } })
+    try {
+      checkout(h.workspaceRoot)
+      const connectionId = await h.pair(['conversation:read'])
+      const listed = await h.mesh.listConversations(connectionId)
+      assert.ok(listed.ok, listed.ok ? '' : listed.message)
+      assert.equal(listed.changes, true, 'the list says the machine reads them')
+      assert.equal(listed.access, 'read')
+
+      const key = { connectionId, workspaceId, agentId }
+      const pane = follower(h.mesh, key)
+      await waitFor(pane.live, 'the follow goes live')
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      assert.equal(pane.of('changes').length, 0, 'nothing is read until a Diff tab asks')
+
+      assert.deepEqual(await h.mesh.conversationWatchChanges({ key, watching: true }), { ok: true })
+      await waitFor(() => pane.of('changes').length > 0, 'told how the checkout stands')
+      const first = pane.of('changes').at(-1)!
+      assert.equal(first.changes?.branch, 'feature/calendar')
+      assert.deepEqual(
+        first.changes?.steps.map((step) => step.subject),
+        ['Count the weeks'],
+      )
+      assert.equal(first.changes?.hasUncommitted, true)
+      assert.equal(first.changes?.scope, 'branch')
+
+      const span = await h.mesh.conversationChangesDiff({ key, selection: { kind: 'span' } })
+      assert.ok(span.ok, span.ok ? '' : span.message)
+      assert.deepEqual(span.files.map((file) => file.path).sort(), ['calendar.ts', 'notes.md'])
+      assert.deepEqual(
+        await h.mesh.conversationChangedFile({ key, selection: { kind: 'span' }, path: 'calendar.ts' }),
+        {
+          ok: true,
+          original: { kind: 'content', content: 'export const days = 7\n' },
+          modified: { kind: 'content', content: 'export const days = 7\nexport const weeks = 52\n' },
+        },
+      )
+      const hash = first.changes!.steps[0]!.hash
+      const commit = await h.mesh.conversationChangesDiff({ key, selection: { kind: 'commit', hash } })
+      assert.ok(commit.ok)
+      assert.deepEqual(
+        commit.files.map((file) => file.path),
+        ['calendar.ts'],
+      )
+
+      // Nothing the change does not list: an unchanged file, a path out of the checkout.
+      const unlisted = await h.mesh.conversationChangedFile({
+        key,
+        selection: { kind: 'uncommitted' },
+        path: 'calendar.ts',
+      })
+      assert.equal(unlisted.ok, false)
+      assert.equal(!unlisted.ok && unlisted.code, 'not_found')
+      const outside = await h.mesh.conversationChangedFile({
+        key,
+        selection: { kind: 'span' },
+        path: '../devices/devices.json',
+      })
+      assert.equal(outside.ok, false)
+      assert.equal(!outside.ok && outside.code, 'invalid_arguments')
+
+      // The agent edits a file already changed: the status reads the same, and still the tab is told.
+      writeFileSync(join(h.workspaceRoot, 'notes.md'), 'first\nsecond\nthird, said at more length\n')
+      await waitFor(
+        () => pane.of('changes').at(-1)!.revision !== first.revision,
+        'told again when a changed file changes',
+      )
+      assert.deepEqual(
+        await h.mesh.conversationChangedFile({ key, selection: { kind: 'uncommitted' }, path: 'notes.md' }),
+        {
+          ok: true,
+          original: { kind: 'content', content: 'first\n' },
+          modified: { kind: 'content', content: 'first\nsecond\nthird, said at more length\n' },
+        },
+      )
+
+      // A second window reading them is told at once, without asking the machine again.
+      const second = follower(h.mesh, key, 'pane-2')
+      await second.following
+      assert.deepEqual(await h.mesh.conversationWatchChanges({ key, watching: true }), { ok: true })
+      await waitFor(() => second.of('changes').length > 0, 'the second window is told')
+
+      // Once nobody reads them, nothing more is said.
+      await h.mesh.conversationWatchChanges({ key, watching: false })
+      await h.mesh.conversationWatchChanges({ key, watching: false })
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      const quiet = pane.of('changes').length
+      writeFileSync(join(h.workspaceRoot, 'fresh.ts'), 'new\n')
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      assert.equal(pane.of('changes').length, quiet)
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('a machine that does not advertise them is never asked, and the row stays its count', async () => {
+    const index = (TAILNET_CAPABILITIES as readonly string[]).indexOf('conversation-changes')
+    ;(TAILNET_CAPABILITIES as unknown as string[]).splice(index, 1)
+    let h: Harness | null = null
+    try {
+      h = await startHarness({ checkoutChanges: { pollMs: 40 } })
+      checkout(h.workspaceRoot)
+      const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
+      const listed = await h.mesh.listConversations(connectionId)
+      assert.ok(listed.ok)
+      assert.equal(listed.changes, false)
+      const key = { connectionId, workspaceId, agentId }
+      const pane = follower(h.mesh, key)
+      await waitFor(pane.live, 'the follow goes live')
+      const watched = await h.mesh.conversationWatchChanges({ key, watching: true })
+      assert.equal(watched.ok, false)
+      assert.match(!watched.ok ? watched.message : '', /Update SprintEngine Studio there/u)
+      const read = await h.mesh.conversationChangesDiff({ key, selection: { kind: 'span' } })
+      assert.equal(read.ok, false)
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      assert.equal(pane.of('changes').length, 0)
+      assert.equal(pane.link()?.state, 'live')
+    } finally {
+      ;(TAILNET_CAPABILITIES as unknown as string[]).splice(index, 0, 'conversation-changes')
+      await h?.close()
+    }
+  })
+
+  test('are asked for after each fence while a window reads them, and stopped when none does', async () => {
+    vi.useFakeTimers()
+    try {
+      const watches = (sent: Array<Record<string, unknown>>) => sent.filter((frame) => frame.type === 'watchChanges')
+      const d = drivenClient({ capabilities: ['conversation-changes'] })
+      await d.follow()
+      await vi.advanceTimersByTimeAsync(0)
+      d.fence(1)
+      assert.equal(watches(d.sent).length, 0, 'not asked while nobody reads them')
+      assert.deepEqual(d.client.watchChanges(d.key, true), { ok: true })
+      assert.equal(watches(d.sent).length, 1)
+      d.client.watchChanges(d.key, true)
+      assert.equal(watches(d.sent).length, 1, 'a second reader asks nothing more')
+      d.fence(2)
+      assert.equal(watches(d.sent).length, 2, 'each fence begins the watch afresh')
+      const said = { workspaceId, agentId }
+      d.handlers.at(-1)!.onFrame({ type: 'changes', key: said, changes: null, revision: 'none' })
+      assert.equal(d.frames.filter((frame) => frame.type === 'changes').length, 1)
+      // Another chat's are not this one's.
+      d.handlers
+        .at(-1)!
+        .onFrame({ type: 'changes', key: { workspaceId, agentId: 'other' }, changes: null, revision: 'x' })
+      assert.equal(d.frames.filter((frame) => frame.type === 'changes').length, 1)
+      d.client.watchChanges(d.key, false)
+      assert.equal(watches(d.sent).length, 2)
+      d.client.watchChanges(d.key, false)
+      assert.deepEqual(watches(d.sent).at(-1)?.stop, true, 'the last reader gone, the machine is told to stop')
+      d.fence(3)
+      assert.equal(watches(d.sent).length, 3, 'and not asked again after the next fence')
+      d.client.shutdown()
+
+      // A machine that has not said, or says it does not, is never asked.
+      for (const capabilities of [null, []]) {
+        const older = drivenClient({ capabilities })
+        await older.follow()
+        await vi.advanceTimersByTimeAsync(0)
+        older.fence(1)
+        older.client.watchChanges(older.key, true)
+        older.fence(2)
+        assert.equal(watches(older.sent).length, 0)
+        older.client.shutdown()
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

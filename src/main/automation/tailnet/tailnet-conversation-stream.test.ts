@@ -1668,3 +1668,150 @@ test('a desktop that says nothing of its sub-agents refuses the watch under its 
   assert.equal(stream.isClosed(), false)
   stream.close(1000, '')
 })
+
+test('a client that asks is told how a chat’s checkout stands until it says stop, and reads it on a read grant', async () => {
+  const socket = new Socket()
+  const gateway = host()
+  const watching = new Set<string>()
+  const asked: string[] = []
+  const changes = {
+    branch: 'feature/calendar',
+    baseOid: null,
+    scope: 'worktree' as const,
+    steps: [],
+    hasUncommitted: true,
+  }
+  gateway.watchChanges = (chat, listener) => {
+    watching.add(chat.agentId)
+    listener({ changes, revision: 'rev-1' })
+    return () => watching.delete(chat.agentId)
+  }
+  gateway.changesDiff = async (_chat, selection) => {
+    asked.push(`diff:${selection.kind}`)
+    return {
+      ok: true,
+      files: [{ path: 'a.ts', status: 'modified', additions: 1, deletions: 0 }],
+      additions: 1,
+      deletions: 0,
+    }
+  }
+  gateway.changedFile = async (_chat, _selection, path) => {
+    asked.push(`file:${path}`)
+    return path === 'a.ts'
+      ? { ok: true, original: { kind: 'content', content: 'a\n' }, modified: { kind: 'content', content: 'b\n' } }
+      : { ok: false, code: 'not_found', message: 'That file is not among these changes.' }
+  }
+  const stream = createTailnetConversationStream({
+    socket,
+    deviceId: 'device',
+    deviceName: 'laptop',
+    // Reading a chat's changes is following it: a read grant is enough.
+    scopes: ['conversation:read'],
+    host: gateway,
+    onClosed: () => {},
+    audit: () => {},
+  })
+  const output = () => socket.output() as Array<Frame & { data?: Record<string, unknown>; ok?: boolean }>
+  const said = () => output().filter((frame) => frame.type === 'changes')
+  const answer = (requestId: string) =>
+    output().find((frame) => frame.type === 'result' && frame.requestId === requestId)
+  socket.receive({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' } })
+  await tick()
+  assert.equal(watching.size, 0, 'an older client never asks, so nothing is read for it')
+  assert.equal(said().length, 0)
+  socket.receive({ type: 'watchChanges', requestId: 'changes-1' })
+  await waitFor(() => said().length === 1, 'told once it asks')
+  assert.deepEqual(said()[0], {
+    type: 'changes',
+    key: { workspaceId: 'w', agentId: 'a' },
+    changes,
+    revision: 'rev-1',
+  })
+
+  socket.receive({ type: 'getChangesDiff', requestId: 'diff-1', selection: { kind: 'span' } })
+  socket.receive({ type: 'getChangedFile', requestId: 'file-1', selection: { kind: 'span' }, path: 'a.ts' })
+  socket.receive({ type: 'getChangedFile', requestId: 'file-2', selection: { kind: 'span' }, path: 'b.ts' })
+  // Refused as a frame before the desktop is asked: a path out of the checkout.
+  socket.receive({ type: 'getChangedFile', requestId: 'file-3', selection: { kind: 'span' }, path: '../b.ts' })
+  await waitFor(() => Boolean(answer('file-2')), 'every read answered under its id')
+  assert.equal(answer('diff-1')?.ok, true)
+  assert.deepEqual((answer('file-1')?.data as { modified?: unknown })?.modified, { kind: 'content', content: 'b\n' })
+  assert.equal(answer('file-2')?.ok, false)
+  assert.equal(answer('file-2')?.code, 'not_found')
+  assert.deepEqual(asked, ['diff:span', 'file:a.ts', 'file:b.ts'])
+
+  socket.receive({ type: 'watchChanges', requestId: 'changes-2', stop: true })
+  await waitFor(() => watching.size === 0, 'stop ends the reading')
+  socket.receive({ type: 'watchChanges', requestId: 'changes-3' })
+  await waitFor(() => watching.size === 1, 'asked again, it reads again')
+  socket.receive({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'b' } })
+  await waitFor(() => watching.size === 0, 'the reading ends with the chat it was for')
+  stream.close(1000, '')
+})
+
+test('a device without a read grant is not told a chat’s changes, and the desktop is never asked', async () => {
+  let asked = 0
+  for (const frame of [
+    { type: 'watchChanges', requestId: 'changes-1' },
+    { type: 'getChangesDiff', requestId: 'diff-1', selection: { kind: 'span' } },
+    { type: 'getChangedFile', requestId: 'file-1', selection: { kind: 'span' }, path: 'a.ts' },
+  ]) {
+    const socket = new Socket()
+    const gateway = host()
+    gateway.watchChanges = () => {
+      asked++
+      return () => {}
+    }
+    gateway.changesDiff = async () => {
+      asked++
+      return { ok: true, files: [], additions: 0, deletions: 0 }
+    }
+    gateway.changedFile = async () => {
+      asked++
+      return { ok: true, original: { kind: 'absent' }, modified: { kind: 'absent' } }
+    }
+    const stream = createTailnetConversationStream({
+      socket,
+      deviceId: 'device',
+      deviceName: 'laptop',
+      scopes: [],
+      host: gateway,
+      onClosed: () => {},
+      audit: () => {},
+    })
+    socket.receive(frame)
+    await waitFor(
+      () => (socket.output() as Frame[]).some((said) => said.code === 'conversation_scope_required'),
+      `${frame.type} refused`,
+    )
+    stream.close(1000, '')
+  }
+  assert.equal(asked, 0)
+})
+
+test('a desktop that does not read a chat’s changes refuses under the id, and the socket stays open', async () => {
+  const socket = new Socket()
+  const stream = createTailnetConversationStream({
+    socket,
+    deviceId: 'device',
+    deviceName: 'laptop',
+    scopes: ['conversation:read'],
+    host: host(),
+    onClosed: () => {},
+    audit: () => {},
+  })
+  socket.receive({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' } })
+  await tick()
+  socket.receive({ type: 'watchChanges', requestId: 'changes-1' })
+  socket.receive({ type: 'getChangedFile', requestId: 'file-1', selection: { kind: 'span' }, path: 'a.ts' })
+  await waitFor(
+    () =>
+      (socket.output() as Array<Frame & { ok?: boolean }>).filter(
+        (frame) => frame.type === 'result' && frame.ok === false,
+      ).length === 2,
+    'both refused under their ids',
+  )
+  assert.equal((socket.output() as Frame[]).filter((frame) => frame.type === 'changes').length, 0)
+  assert.equal(stream.isClosed(), false)
+  stream.close(1000, '')
+})

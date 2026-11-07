@@ -278,6 +278,8 @@ export default function RemoteConversationPanel({
   // It saves an "always allow" rule an approval here chose, for its own workspace.
   const [permanentApprovals, setPermanentApprovals] = useState(false)
   const [quotes, setQuotes] = useState(false)
+  // The machine reads the chat's changes for this window's Diff tab.
+  const [hostChanges, setHostChanges] = useState(false)
   const [sendSkills, setSendSkills] = useState(false)
   // The machine opens a pull request for one of its chats (Create PR).
   const [hostPullRequests, setHostPullRequests] = useState(false)
@@ -344,6 +346,8 @@ export default function RemoteConversationPanel({
   permanentApprovalsRef.current = permanentApprovals
   const quotesRef = useRef(quotes)
   quotesRef.current = quotes
+  const hostChangesRef = useRef(hostChanges)
+  hostChangesRef.current = hostChanges
   const sendSkillsRef = useRef(sendSkills)
   sendSkillsRef.current = sendSkills
   const hostPullRequestsRef = useRef(hostPullRequests)
@@ -407,6 +411,7 @@ export default function RemoteConversationPanel({
           hostQueueAttachments: queuedSendsRef.current && queuedAttachmentsRef.current,
           permanentApprovals: permanentApprovalsRef.current,
           quotes: quotesRef.current,
+          hostChanges: hostChangesRef.current,
           skills: sendSkillsRef.current,
           steer: steerSendsRef.current,
           hostPullRequests: hostPullRequestsRef.current,
@@ -507,6 +512,7 @@ export default function RemoteConversationPanel({
         setQueuedAttachments(result.queuedAttachments === true)
         setPermanentApprovals(result.permanentApprovals === true)
         setQuotes(result.quotes === true)
+        setHostChanges(result.changes === true)
         setSendSkills(result.sendSkills === true)
         setHostPullRequests(result.createPullRequest === true)
         setSteerSends(result.steerSends === true)
@@ -684,12 +690,26 @@ export default function RemoteConversationPanel({
       publishRemoteChat(workspaceId, {
         agentId: remoteAgentId,
         ...(subagentOf ? { subagentOf } : {}),
+        key,
+        machineName,
+        hostChanges,
         transport,
         binding,
         subagents: hostSubagents,
         subagentTransport,
       }),
-    [workspaceId, remoteAgentId, subagentOf, transport, binding, hostSubagents, subagentTransport],
+    [
+      workspaceId,
+      remoteAgentId,
+      subagentOf,
+      key,
+      machineName,
+      hostChanges,
+      transport,
+      binding,
+      hostSubagents,
+      subagentTransport,
+    ],
   )
 
   const chat = (

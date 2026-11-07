@@ -12,6 +12,11 @@ import {
   parseConversationSideQuestionAnswer,
 } from '../../../../packages/conversation-protocol/src/agentReads'
 import {
+  parseConversationChangedFileSides,
+  parseConversationChangesDiff,
+  type ConversationChangesSelection,
+} from '../../../../packages/conversation-protocol/src/checkoutChanges'
+import {
   explainRejectedConversationMessage,
   parseConversationClientMessage,
   type ConversationClientMessage,
@@ -21,6 +26,7 @@ import {
   CONVERSATION_QUOTE_TOKENS_CAPABILITY,
   CONVERSATION_SCHEDULED_SENDS_CAPABILITY,
   CONVERSATION_SUBAGENTS_CAPABILITY,
+  CONVERSATION_CHANGES_CAPABILITY,
   CONVERSATION_USAGE_LIMITS_CAPABILITY,
   conversationPeerSupports,
 } from '../../../../packages/conversation-protocol/src/handshake'
@@ -56,6 +62,9 @@ import type {
   MeshScheduledMessage,
   MeshConversationUsageLimits,
   MeshSubagent,
+  MeshConversationChanges,
+  MeshChangedFileResult,
+  MeshChangesDiffResult,
 } from '../../../shared/tailnet-mesh'
 import { asRecord } from '../../../shared/records'
 import type { RemoteConversationCache, RemoteConversationCacheRecord } from './tailnet-remote-conversation-cache'
@@ -193,6 +202,21 @@ export type RemoteConversations = {
   ): Promise<{ ok: true } | { ok: false; message: string }>
   /** What fills the chat's context window, as its agent over there measures it (`conversation-context-breakdown`). */
   contextBreakdown(key: MeshConversationKey): Promise<ConversationContextBreakdownResult>
+  /**
+   * Have the machine say how the chat's checkout stands while a window here
+   * reads its changes (`conversation-changes`): each `watching: true` is one
+   * more reader and each `false` one fewer, and the machine is asked while
+   * there is any, after every fence, as `watchSubagents` is.
+   */
+  watchChanges(key: MeshConversationKey, watching: boolean): { ok: true } | { ok: false; code: string; message: string }
+  /** One step of the chat's changes over there: its files. */
+  changesDiff(key: MeshConversationKey, selection: ConversationChangesSelection): Promise<MeshChangesDiffResult>
+  /** Both sides of one file a step of the chat's changes lists over there. */
+  changedFile(
+    key: MeshConversationKey,
+    selection: ConversationChangesSelection,
+    path: string,
+  ): Promise<MeshChangedFileResult>
   /** Re-dial every follow waiting out a backoff or parked offline: a lid opening should reconnect at once. */
   onWake(): void
   /** Re-dial the parked follows on one machine: it just answered something else. */
@@ -268,6 +292,10 @@ type Follow = {
   usageLimits: MeshConversationUsageLimits | null
   /** The sub-agents the machine last said the conversation has, for a window that joins later. */
   subagents: MeshSubagent[] | null
+  /** How many windows here read the chat's changes: the machine is asked to say them while any do. */
+  changesReaders: number
+  /** How the machine last said the chat's checkout stands, for a window that reads it later. */
+  changes: MeshConversationChanges | null
 }
 type SnapshotFrame = Extract<ConversationParsedServerFrame, { type: 'snapshot' }>
 
@@ -629,7 +657,8 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
       frame.type === 'queued' ||
       frame.type === 'scheduled' ||
       frame.type === 'usageLimits' ||
-      frame.type === 'subagents'
+      frame.type === 'subagents' ||
+      frame.type === 'changes'
         ? frame.key
         : frame.type === 'event'
           ? { workspaceId: frame.event.workspaceId, agentId: frame.event.agentId }
@@ -728,6 +757,7 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
         watchScheduled(follow)
         watchUsageLimits(follow)
         watchSubagents(follow)
+        if (follow.changesReaders > 0) watchChanges(follow)
         return
       }
       case 'queued': {
@@ -754,6 +784,14 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
       case 'subagents': {
         follow.subagents = frame.subagents
         emit(follow, { type: 'subagents', subagents: frame.subagents })
+        return
+      }
+      case 'changes': {
+        // Said after a window here stopped reading: nobody is waiting on it.
+        if (follow.changesReaders === 0) return
+        const said: MeshConversationChanges = { type: 'changes', changes: frame.changes, revision: frame.revision }
+        follow.changes = said
+        emit(follow, said)
         return
       }
       case 'subscribeFailed': {
@@ -964,6 +1002,22 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
     send(follow, { type: 'watchSubagents', requestId: `subagents-${++follow.requestSequence}` })
   }
 
+  /**
+   * Ask the machine how the chat's checkout stands, or to stop saying, as the
+   * windows reading its changes come and go. Never of a machine that said it
+   * does not read them: its Changes row stays the count it was.
+   */
+  function watchChanges(follow: Follow, stop = false): void {
+    const capabilities = options.capabilitiesOf?.(follow.key.connectionId)
+    if (!conversationPeerSupports(capabilities ?? [], CONVERSATION_CHANGES_CAPABILITY)) return
+    if (!follow.synchronized) return
+    send(follow, {
+      type: 'watchChanges',
+      requestId: `changes-${++follow.requestSequence}`,
+      ...(stop ? { stop: true as const } : {}),
+    })
+  }
+
   function dispatch(follow: Follow, command: PendingCommand): void {
     if (!follow.synchronized) return
     command.sent = send(follow, command.frame)
@@ -1084,6 +1138,8 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
           scheduled: null,
           usageLimits: null,
           subagents: null,
+          changesReaders: 0,
+          changes: null,
         }
         created.loaded = options.cache.load(key).then(
           (record) => {
@@ -1132,6 +1188,7 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
       if (joined.scheduled) input.emit({ type: 'scheduled', messages: joined.scheduled })
       if (joined.usageLimits) input.emit(joined.usageLimits)
       if (joined.subagents) input.emit({ type: 'subagents', subagents: joined.subagents })
+      if (joined.changes && joined.changesReaders > 0) input.emit(joined.changes)
       return { ok: true }
     },
 
@@ -1299,6 +1356,41 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
             ...(read.stale ? { stale: true as const } : {}),
           }
         : { ok: false, reason: 'failed', message: 'That machine answered with a reading this build cannot read.' }
+    },
+
+    watchChanges(key, watching) {
+      const follow = follows.get(followIdOf(key))
+      if (!follow || follow.released)
+        return { ok: false, code: 'not_following', message: 'Open this conversation before reading its changes.' }
+      const before = follow.changesReaders
+      follow.changesReaders = Math.max(0, before + (watching ? 1 : -1))
+      if (before === 0 && follow.changesReaders > 0) watchChanges(follow)
+      else if (before > 0 && follow.changesReaders === 0) {
+        follow.changes = null
+        watchChanges(follow, true)
+      } else if (watching && follow.changes) {
+        // Another window reading them now is told what the first was.
+        emit(follow, follow.changes)
+      }
+      return { ok: true }
+    },
+
+    async changesDiff(key, selection) {
+      const answer = await request(key, (requestId) => ({ type: 'getChangesDiff', requestId, selection }))
+      if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
+      const read = parseConversationChangesDiff(answer.data)
+      return read
+        ? { ok: true, ...read }
+        : { ok: false, code: 'unavailable', message: 'That machine answered with changes this build cannot read.' }
+    },
+
+    async changedFile(key, selection, path) {
+      const answer = await request(key, (requestId) => ({ type: 'getChangedFile', requestId, selection, path }))
+      if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
+      const read = parseConversationChangedFileSides(answer.data)
+      return read
+        ? { ok: true, ...read }
+        : { ok: false, code: 'unavailable', message: 'That machine answered with a file this build cannot read.' }
     },
 
     onWake() {

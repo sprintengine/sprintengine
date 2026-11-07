@@ -1,4 +1,9 @@
 import { isSubagentRecord, type AgentState } from '../../../shared/agent-state'
+import type {
+  ConversationChangesAnswer,
+  ConversationChangesSaid,
+  ConversationCheckoutChangesHost,
+} from '../../conversation-checkout-changes'
 import {
   CONVERSATION_DEFAULT_MODEL_ID,
   CONVERSATION_MAX_FILE_SEARCH_RESULTS,
@@ -6,6 +11,9 @@ import {
   CONVERSATION_MAX_SUBAGENTS,
   parseConversationCommandsAnswer,
   parseConversationWireHighlight,
+  type ConversationChangedFileSides,
+  type ConversationChangesDiff,
+  type ConversationChangesSelection,
   type ConversationCommand,
   type ConversationForkCommand,
   type ConversationCommandsAnswer,
@@ -313,6 +321,27 @@ export type ConversationGatewayHost = {
     key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
     listener: (subagents: ConversationSubagent[]) => void,
   ): () => void
+  /**
+   * Follow how a chat's checkout stands, as this desktop's own Diff tab reads
+   * it (`conversation-changes`): told now, and again whenever it reads
+   * differently. Absent on a host built without `checkoutChanges`; returns
+   * what stops the following.
+   */
+  watchChanges?(
+    key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
+    listener: (said: ConversationChangesSaid) => void,
+  ): () => void
+  /** One step of a chat's changes: its files. Present where `watchChanges` is. */
+  changesDiff?(
+    key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
+    selection: ConversationChangesSelection,
+  ): Promise<ConversationChangesAnswer<ConversationChangesDiff>>
+  /** Both sides of one file a step of a chat's changes lists. Present where `watchChanges` is. */
+  changedFile?(
+    key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
+    selection: ConversationChangesSelection,
+    path: string,
+  ): Promise<ConversationChangesAnswer<ConversationChangedFileSides>>
   /**
    * Carry out one command under its client's id. `fingerprint`, where the
    * client's door computes one, is kept with the command's receipt: the same
@@ -667,6 +696,12 @@ export type ConversationRegistryLink = {
    * ended (`conversation-subagents`). Absent, nothing is watched.
    */
   subagentChanges?: (listener: () => void) => () => void
+  /**
+   * Reads a chat's changes in its checkout on this computer, as the Diff tab
+   * here reads them (`conversation-changes`). Absent, nothing is read and the
+   * requests are refused in words.
+   */
+  checkoutChanges?: ConversationCheckoutChangesHost
   /**
    * Studio's own folders of pictures (what chats sent, the pictures their steps
    * returned, pasted images). A step's picture is served from the chat's
@@ -1825,6 +1860,16 @@ export function createConversationGatewayHost(
       ? {
           watchSubagents: (key, listener) =>
             watchHeld({ list: subagentsOf, onChanged: registry.subagentChanges! }, key, listener),
+        }
+      : {}),
+    ...(registry.checkoutChanges
+      ? {
+          watchChanges: (key, listener) =>
+            registry.checkoutChanges!.watch({ workspaceId: key.workspaceId, agentId: key.agentId }, listener),
+          changesDiff: (key, selection) =>
+            registry.checkoutChanges!.diff({ workspaceId: key.workspaceId, agentId: key.agentId }, selection),
+          changedFile: (key, selection, path) =>
+            registry.checkoutChanges!.file({ workspaceId: key.workspaceId, agentId: key.agentId }, selection, path),
         }
       : {}),
     command(key, deviceId, commandId, command, fingerprint, carried) {

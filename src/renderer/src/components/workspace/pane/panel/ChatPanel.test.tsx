@@ -8,6 +8,9 @@ import { useWorkspaceStore } from '../../../../store/workspaceStore'
 import type { Workspace } from '../../../../types/workspace'
 import { ChatPanel } from './ChatPanel'
 import { panelFacts } from './panelFactsFixture'
+import { publishRemoteChat } from '../../../panels/agentChat/remoteChatRegistry'
+import type { ChatBinding } from '../../../panels/agentChat/chatBinding'
+import type { ConversationTransport } from '../../../panels/agentChat/conversationTransport'
 
 // The panel's own reading of the checkout, for a tab with no chat to say.
 const checkout = vi.hoisted(() => ({
@@ -116,6 +119,69 @@ test('on a paired machine what this computer cannot open says so, and nothing of
   expect(row('Terminal')?.textContent).toContain('On mac-mini')
   expect(row('Branch')?.textContent).toContain('agent/calendar')
   expect(row('Library')?.getAttribute('data-panel-row')).toBe('action')
+})
+
+// A chat on a paired machine as its pane publishes it here, with whether that
+// machine reads the chat's changes for this window (`conversation-changes`).
+function publishPaired(hostChanges: boolean) {
+  return publishRemoteChat(WS, {
+    agentId: AGENT,
+    key: { connectionId: 'connection-1', workspaceId: 'far-workspace', agentId: AGENT },
+    machineName: 'mac-mini',
+    hostChanges,
+    transport: {} as ConversationTransport,
+    binding: {} as ChatBinding,
+    subagents: [],
+    subagentTransport: () => ({}) as ConversationTransport,
+  })
+}
+
+test('on a paired machine that reads them, Changes opens the chat’s changes from there', () => {
+  seed()
+  const take = publishPaired(true)
+  try {
+    render()
+    act(() =>
+      publishChatPanelFacts(
+        WS,
+        AGENT,
+        panelFacts({ remote: true, machine: { name: 'mac-mini', identity: MACHINE }, changes: null }),
+      ),
+    )
+    // Shown with no count to say, as a chat here shows it: the tab says what there is.
+    expect(row('Changes')?.getAttribute('data-panel-row')).toBe('action')
+    expect(row('Files')?.getAttribute('data-panel-row'), 'Files stays on the machine').toBe('fact')
+    act(() => row('Changes')!.click())
+    const tabs = useWorkspaceStore.getState().workspaces[0]!.paneState?.tabs ?? []
+    expect(tabs.map((tab) => [tab.kind, tab.diff?.paired])).toEqual([
+      ['diff', { connectionId: 'connection-1', workspaceId: 'far-workspace', agentId: AGENT, machineName: 'mac-mini' }],
+    ])
+  } finally {
+    act(() => take())
+  }
+})
+
+test('on a paired machine that does not read them, Changes stays its count and opens nothing', () => {
+  seed()
+  const take = publishPaired(false)
+  try {
+    render()
+    act(() =>
+      publishChatPanelFacts(
+        WS,
+        AGENT,
+        panelFacts({
+          remote: true,
+          machine: { name: 'mac-mini', identity: MACHINE },
+          changes: { added: 3, removed: 1, phrase: '3 files added, 1 removed' },
+        }),
+      ),
+    )
+    expect(row('Changes')?.getAttribute('data-panel-row')).toBe('fact')
+    expect(row('Changes')?.textContent).toContain('+3')
+  } finally {
+    act(() => take())
+  }
 })
 
 test('a tab with no chat to say still reads its checkout', () => {

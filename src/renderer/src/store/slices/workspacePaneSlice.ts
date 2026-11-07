@@ -240,8 +240,10 @@ function normalizeTab(input: unknown): WorkspacePaneTab | null {
     // The step the viewer has open, carried for the same reason as the reveal
     // and dropped with it on a restart.
     const kept = normalizeDiffKept((raw.diff as { kept?: unknown }).kept)
+    const paired = normalizeDiffPaired((raw.diff as { paired?: unknown }).paired)
     tab.diff = {
       ...(repoRoot ? { repoRoot } : {}),
+      ...(paired ? { paired } : {}),
       focusPath,
       focusKind,
       ...(changelistId ? { changelistId } : {}),
@@ -252,6 +254,18 @@ function normalizeTab(input: unknown): WorkspacePaneTab | null {
     }
   }
   return tab
+}
+
+const pairedId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 200
+
+/** The chat on a paired machine a Diff tab reads the changes of, or null for one in the wrong shape. */
+function normalizeDiffPaired(value: unknown): NonNullable<NonNullable<WorkspacePaneTab['diff']>['paired']> | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Record<string, unknown>
+  if (!pairedId(raw.connectionId) || !pairedId(raw.workspaceId) || !pairedId(raw.agentId)) return null
+  const machineName = typeof raw.machineName === 'string' ? raw.machineName.slice(0, 200) : ''
+  return { connectionId: raw.connectionId, workspaceId: raw.workspaceId, agentId: raw.agentId, machineName }
 }
 
 /**

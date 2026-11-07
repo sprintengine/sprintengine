@@ -547,7 +547,16 @@ async function openRemoteChat(tab: Awaited<ReturnType<typeof mountPanel>>) {
   const publish = async (subagents: MeshSubagent[]) => {
     await tab.act(async () => {
       take()
-      take = publishRemoteChat('workspace', { agentId: 'far-agent', transport, binding, subagents, subagentTransport })
+      take = publishRemoteChat('workspace', {
+        agentId: 'far-agent',
+        key: { connectionId: 'connection', workspaceId: 'far-workspace', agentId: 'far-agent' },
+        machineName: 'mac-mini',
+        hostChanges: false,
+        transport,
+        binding,
+        subagents,
+        subagentTransport,
+      })
     })
   }
   const deliver = async (events: ConversationEvent[]) => {
