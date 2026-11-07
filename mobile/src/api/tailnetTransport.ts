@@ -297,6 +297,25 @@ export function declaresCliRuntimeCatalog(session: { tailnetCapabilities?: strin
 }
 
 /**
+ * Whether the desktop said `canvas.list` takes `scope: machine` and answers
+ * every board there with its project and id (`canvas-machine-boards`).
+ * Absence is a NO: the phone then lists one project's boards at a time, with
+ * no `scope`, as an older desktop has always answered, and says so.
+ */
+export function declaresCanvasMachineBoards(session: { tailnetCapabilities?: string[] }): boolean {
+  return session.tailnetCapabilities?.includes("canvas-machine-boards") ?? false;
+}
+
+/**
+ * Whether the desktop said `conversation.create` takes `noProject` in place of
+ * a workspace (`new-chat-no-project`): the chat runs in a folder of its own
+ * there. Absence is a NO: an older desktop refuses a call with no workspace.
+ */
+export function declaresNewChatNoProject(session: { tailnetCapabilities?: string[] }): boolean {
+  return session.tailnetCapabilities?.includes("new-chat-no-project") ?? false;
+}
+
+/**
  * The session with a fresh declaration folded in, or null when nothing moved —
  * so a foreground re-read that finds the same Studio writes nothing to storage.
  */

@@ -55,6 +55,8 @@ export function ChatPage({
   diff,
   onOpenChanges,
   onOpenAgents,
+  onOpenCanvas,
+  onOpenCanvases,
   actions,
   sent,
   images,
@@ -72,6 +74,10 @@ export function ChatPage({
   diff: { added: number | null; removed: number | null; files: number } | null;
   onOpenChanges?: () => void;
   onOpenAgents?: () => void;
+  /** The picture of the board the agent named; absent where it named none, or the desktop cannot show one. */
+  onOpenCanvas?: () => void;
+  /** The chat's desktop's boards, where this phone can read them. */
+  onOpenCanvases?: () => void;
   actions: ChatPageAction[];
   sent: SentImages | null;
   images: ChatImages | null;
@@ -126,7 +132,9 @@ export function ChatPage({
           label: "Canvas",
           meta: activity.canvas?.live ? "Drawing" : (activity.canvas?.board ?? null),
           live: activity.canvas?.live ?? false,
-          onPress: () => setView("canvas"),
+          // The board the agent named opens as its picture; otherwise this
+          // page's Canvas view says what is known.
+          onPress: onOpenCanvas ? leaveFor(onOpenCanvas) : () => setView("canvas"),
         };
       case "library":
         return {
@@ -277,7 +285,21 @@ export function ChatPage({
                   metaTone="live"
                 />
               </Group>
-              <Text style={styles.note}>The agent drew on this board on the desktop. Open its Canvas there to see it.</Text>
+              {onOpenCanvases ? (
+                <>
+                  <Text style={styles.note}>
+                    The agent drew on a board on the desktop without naming it. Its picture is among the desktop&apos;s
+                    boards.
+                  </Text>
+                  <View style={styles.after}>
+                    <Group>
+                      <GroupRow first label="The desktop's boards" onPress={leaveFor(onOpenCanvases)} />
+                    </Group>
+                  </View>
+                </>
+              ) : (
+                <Text style={styles.note}>The agent drew on this board on the desktop. Open its Canvas there to see it.</Text>
+              )}
             </>
           )}
         </ScrollView>
@@ -402,4 +424,5 @@ const createStyles = ({ colors }: Theme) =>
     picture: { marginBottom: space.lg },
     caption: { ...typography.meta, color: colors.textMuted, marginTop: space["2xs"] },
     note: { ...typography.meta, color: colors.textMuted },
+    after: { marginTop: space.lg },
   });

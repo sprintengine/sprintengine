@@ -33,7 +33,7 @@ test("rows come in the order the agent first touched each thing, the Library las
   );
   assert.deepEqual(activity.order, ["changes", "browser", "agents", "canvas", "library"]);
   assert.deepEqual(activity.browser, { live: true, url: "http://localhost:5173/export" });
-  assert.deepEqual(activity.canvas, { live: false, board: "export-flow" });
+  assert.deepEqual(activity.canvas, { live: false, board: "export-flow", ref: "export-flow" });
   assert.deepEqual(activity.agents, { total: 2, working: 1 });
   assert.equal(activity.sent.length, 1);
   assert.deepEqual(activity.steps.map((step) => step.tool.id), ["g1"]);
@@ -46,6 +46,20 @@ test("a step inside a folded turn counts, and an edit still running is live", ()
   );
   assert.deepEqual(activity.order, ["changes"]);
   assert.equal(activity.editing, true);
+});
+
+test("a board named by its id reads as its name, and keeps the id its picture is asked for by", () => {
+  const id = "canvas://ws_aaaaaaaaaaaaaaaaaaaaaaaa/arch.excalidraw";
+  const activity = phoneChatActivity(
+    [
+      tools("r1", [tool("c1", "mcp__sprintengine-studio__canvas_describe", { input: { board: id } })]),
+      tools("r2", [tool("c2", "mcp__sprintengine-studio__canvas_screenshot", { input: {} })]),
+    ],
+    [],
+  );
+  assert.deepEqual(activity.canvas, { live: false, board: "arch", ref: id });
+  const unnamed = phoneChatActivity([tools("r1", [tool("c1", "mcp__sprintengine-studio__canvas_list", { input: {} })])], []);
+  assert.deepEqual(unnamed.canvas, { live: false, board: null, ref: null });
 });
 
 test("the Browser row names the page's host", () => {

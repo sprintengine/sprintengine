@@ -72,6 +72,26 @@ export type HomeStackParamList = {
    * and Close. A new one is New chat with its "+"'s Schedule on.
    */
   Scheduled: undefined;
+  /**
+   * Every Canvas board on the paired desktops, by project. From a chat, its
+   * desktop alone (`deviceId`), with the chat's workspace and project.
+   */
+  Canvases: { deviceId?: string; workspaceId?: string; projectName?: string } | undefined;
+  /**
+   * One board as a picture, with Refresh and Continue in a new chat. Flat, so
+   * a deep link reaches it: `id` where the desktop gave one, else `path` in
+   * `workspaceId`'s project; `asker` is the chat it was opened from. A
+   * `project` absent is one nobody said, null a removed one.
+   */
+  CanvasBoard: {
+    deviceId: string;
+    name: string;
+    path: string;
+    id?: string | null;
+    project?: string | null;
+    workspaceId?: string | null;
+    asker?: string | null;
+  };
   Appearance: undefined;
   Pairing: undefined;
 };

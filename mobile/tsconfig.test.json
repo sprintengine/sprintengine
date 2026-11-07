@@ -33,6 +33,8 @@
     "src/features/scheduled/scheduledMessages.ts",
     "src/shared/cron/cron.ts",
     "src/api/tailnetWorkspaces.ts",
+    "src/api/canvasBoards.ts",
+    "src/features/canvas/canvasLogic.ts",
     "src/components/document/htmlSandbox.ts",
     "src/components/document/tableLayout.ts",
     "src/components/document/sourceHighlight.ts",

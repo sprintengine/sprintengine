@@ -17,7 +17,14 @@ const TAILNET_MCP_PATH = "/tailnet/v1/mcp";
 export const CONVERSATION_CREATE_TIMEOUT_MS = 60_000;
 
 export interface CreateConversationInput {
+  /** The project to start in; ignored with `noProject`. */
   workspaceId: string;
+  /**
+   * Start the chat under no project, in a folder of its own on the desktop,
+   * in place of `workspaceId`. Only to a desktop that advertises
+   * `new-chat-no-project`: an older one refuses a call with no workspace.
+   */
+  noProject?: boolean;
   /** The chat's first message. */
   prompt?: string;
   /** CLI plugin id from `cli.runtime.list`; omitted takes the desktop's last-selected CLI. */
@@ -90,7 +97,9 @@ export type CreateConversationResult =
  * the tool reads a present field as a choice.
  */
 export function buildConversationCreateArgs(input: CreateConversationInput): Record<string, unknown> {
-  const args: Record<string, unknown> = { workspaceId: input.workspaceId.trim() };
+  // "No project" takes the workspace's place, and no worktree: there is no
+  // checkout to cut one from.
+  const args: Record<string, unknown> = input.noProject ? { noProject: true } : { workspaceId: input.workspaceId.trim() };
   const prompt = input.prompt === undefined ? "" : plainLineBreaks(input.prompt).trim();
   if (prompt) args.prompt = prompt;
   if (input.cli?.trim()) args.cli = input.cli.trim();
@@ -101,7 +110,7 @@ export function buildConversationCreateArgs(input: CreateConversationInput): Rec
   if (input.newChat) args.newChat = true;
   // A worktree is where a new chat is born; the desktop refuses one asked
   // for a chat joining a workspace, so it is never sent without `newChat`.
-  if (input.newChat && input.worktree) args.worktree = true;
+  if (input.newChat && input.worktree && !input.noProject) args.worktree = true;
   const effort = input.effort?.trim();
   if (effort) args.effort = effort;
   return args;
