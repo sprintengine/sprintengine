@@ -23,6 +23,8 @@ export interface ChatListRow {
   projectName: string | null;
   /** The worktree's name when the chat's folder is one of its project's worktrees ("pool-02"). */
   worktree?: string | null;
+  /** A chat started without a project: `projectName` is "No project", and it wears that mark, not a folder. */
+  projectless?: boolean;
   /**
    * The workspace's own name: the chat's title summary ("WSL agent access
    * issue"), the line the desktop's sidebar leads with. Null when the
@@ -127,6 +129,8 @@ export interface ChatProjectGroup {
   key: string;
   projectName: string;
   projectHue: number | null;
+  /** The "No project" group, which wears that mark rather than a folder. */
+  projectless?: boolean;
   rows: ChatListRow[];
 }
 
@@ -144,7 +148,13 @@ export function groupChatsByProject(rows: readonly ChatListRow[], now: number): 
     const key = `${row.deviceId}|${row.projectKey ?? row.projectName ?? ""}`;
     let group = groups.get(key);
     if (!group) {
-      group = { key, projectName: row.projectName ?? "Other", projectHue: row.projectHue ?? null, rows: [] };
+      group = {
+        key,
+        projectName: row.projectName ?? "Other",
+        projectHue: row.projectHue ?? null,
+        ...(row.projectless ? { projectless: true } : {}),
+        rows: [],
+      };
       groups.set(key, group);
     }
     if (group.projectHue === null && row.projectHue != null) group.projectHue = row.projectHue;
@@ -211,6 +221,7 @@ export function buildChatRows(input: {
       desktopName: input.desktopName,
       projectName: workspace?.projectName ?? null,
       worktree: workspace?.worktree ?? null,
+      ...(workspace?.projectless ? { projectless: true } : {}),
       workspaceTitle: workspace?.name ?? null,
       projectKey: workspace?.projectKey ?? null,
       projectHue: workspace?.projectHue ?? null,
@@ -284,7 +295,8 @@ export const PROJECT_PICKS_LIMIT = 50;
  * the repository shares its key and is a different checkout on disk, and
  * merging the two would start the chat in whichever folder happened to win.
  * A workspace with no folder is dropped, since there is nowhere for a new
- * chat to run in it.
+ * chat to run in it, and so is a chat started without a project, whose
+ * folder is that chat's own.
  *
  * Listed with the projects used most first, as New chat on
  * the desktop lists them. The desktop is the one that knows: it counts every
@@ -299,14 +311,16 @@ export function pickableProjects(
     DesktopWorkspace,
     "workspaceId" | "projectName" | "folderPath" | "projectFrecency" | "projectLastUsedAt"
   > &
-    Partial<Pick<DesktopWorkspace, "projectFolder" | "worktree">>)[],
+    Partial<Pick<DesktopWorkspace, "projectFolder" | "worktree" | "projectless">>)[],
   picks?: Readonly<Record<string, number>> | null,
 ): PickableProject[] {
   const byFolder = new Map<string, PickableProject>();
   let desktopScores = false;
   for (const workspace of workspaces) {
     const folderPath = workspace.folderPath?.trim();
-    if (!folderPath) continue;
+    // A chat started without a project is one chat's folder, not a project:
+    // New starting there would start a chat inside another chat's files.
+    if (!folderPath || workspace.projectless) continue;
     const projectFolder = workspace.projectFolder?.trim() || folderPath;
     const worktree = workspace.worktree ?? null;
     const key = projectFolderKey(projectFolder);

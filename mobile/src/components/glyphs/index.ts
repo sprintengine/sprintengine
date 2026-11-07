@@ -69,6 +69,7 @@ export {
   DiffIcon,
   FilesIcon,
   FolderGlyph,
+  NoProjectGlyph,
   GitBranchGlyph,
   MoreIcon,
   PersonIcon,
