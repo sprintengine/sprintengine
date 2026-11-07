@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { selectedEntry, stripEntriesFrom } from './branchSteps'
 import { isWindowVisible, onWindowVisibilityChange } from '../../utils/windowActivity'
 import type { BranchStepDiff, BranchStepSelection, BranchStepsSnapshot } from '../../../../shared/electron-api'
+import type { DiffViewerSource } from './diffViewerSource'
 
 /**
  * The branch's steps and the selected step's diff
@@ -47,14 +48,20 @@ export function useBranchSteps(
   // agent's request the person had already moved on from.
   kept: { step: BranchStepSelection; afterReveal: string | null } | null = null,
   onKeep?: (kept: { step: BranchStepSelection; afterReveal: string | null }) => void,
+  // A checkout on another machine: its machine says how it stands (its
+  // snapshot, again as `revision` moves) and reads a step's files, in place of
+  // this computer's git.
+  far: { source: DiffViewerSource; snapshot: BranchStepsSnapshot | null } | null = null,
 ): BranchStepsState {
-  const [snapshot, setSnapshot] = useState<BranchStepsSnapshot | null>(null)
+  const [localSnapshot, setSnapshot] = useState<BranchStepsSnapshot | null>(null)
+  const snapshot = far ? far.snapshot : localSnapshot
+  const farSource = far?.source ?? null
   const [diff, setDiff] = useState<BranchStepDiff | null>(null)
   const [selection, setSelection] = useState<BranchStepSelection>(() => kept?.step ?? SPAN)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!enabled || !repoRoot || typeof window.api?.getBranchSteps !== 'function') {
+    if (farSource || !enabled || !repoRoot || typeof window.api?.getBranchSteps !== 'function') {
       setSnapshot(null)
       return
     }
@@ -93,7 +100,7 @@ export function useBranchSteps(
       stopWatching?.()
       stopVisibility()
     }
-  }, [repoRoot, enabled, revision])
+  }, [repoRoot, enabled, revision, farSource])
 
   // A repo change must not leave the previous repo's chips on screen while the
   // new snapshot is in flight — the selection would be resolved against a strip
@@ -137,7 +144,12 @@ export function useBranchSteps(
   }, [enabled, snapshot, selection])
 
   useEffect(() => {
-    if (!enabled || !repoRoot || typeof window.api?.getBranchStepDiff !== 'function') {
+    if (!enabled || !repoRoot || (!farSource && typeof window.api?.getBranchStepDiff !== 'function')) {
+      setDiff(null)
+      return
+    }
+    // Nothing to ask the machine until it has said the checkout is one.
+    if (far && !far.snapshot) {
       setDiff(null)
       return
     }
@@ -145,7 +157,9 @@ export function useBranchSteps(
     setLoading(true)
     void (async () => {
       try {
-        const next = await window.api.getBranchStepDiff(repoRoot, resolved)
+        const next = farSource
+          ? await farSource.stepDiff(resolved)
+          : await window.api.getBranchStepDiff(repoRoot, resolved)
         if (!cancelled) setDiff(next)
       } catch {
         if (!cancelled) setDiff(null)
@@ -157,7 +171,15 @@ export function useBranchSteps(
       cancelled = true
     }
     // `resolved` is a fresh object each render, so the key is its content.
-  }, [repoRoot, enabled, revision, resolved.kind, resolved.kind === 'commit' ? resolved.hash : ''])
+  }, [
+    repoRoot,
+    enabled,
+    revision,
+    farSource,
+    far !== null && far.snapshot !== null,
+    resolved.kind,
+    resolved.kind === 'commit' ? resolved.hash : '',
+  ])
 
   const select = useCallback((next: BranchStepSelection) => setSelection(next), [])
 

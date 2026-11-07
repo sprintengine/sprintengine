@@ -287,6 +287,17 @@ under their `requestId`, as it answers `watchQueued`.
   `error`. The `list` leaves sub-agents out. A desktop without it refuses
   `watchSubagents` as `invalid_frame`, and sends the frame only to a client
   that asked.
+- `conversation-changes`: a chat's changes, as the desktop's own Diff tab
+  reads them (`checkoutChanges.ts`). `{ type: 'watchChanges', requestId }` has
+  the desktop send a `changes` frame (`ConversationChangesFrame`: the chat's
+  `key`, its checkout's branch, base, scope, commits and whether anything is
+  uncommitted, or null, and a `revision`) now and whenever the checkout reads
+  differently, until `stop: true`. `getChangesDiff` names a step (`span`,
+  `uncommitted`, or a `commit` by hash) and is answered with its files;
+  `getChangedFile` names a step and a path the step lists and is answered with
+  the file's two sides. A client never names a revision or a folder. All of it
+  needs `conversation:read`. A desktop without it refuses each as
+  `invalid_frame`, and sends the frame only to a client that asked.
 
 `conversation-message-images` (`CONVERSATION_MESSAGE_IMAGES_CAPABILITY`)
 names no frame. A `user_message`'s `attachments` record each picture the

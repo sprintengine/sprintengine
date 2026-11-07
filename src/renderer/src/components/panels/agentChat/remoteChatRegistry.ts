@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-import type { MeshSubagent } from '../../../../../shared/tailnet-mesh'
+import type { MeshConversationKey, MeshSubagent } from '../../../../../shared/tailnet-mesh'
 import type { ChatBinding } from './chatBinding'
 import type { ConversationTransport } from './conversationTransport'
 
@@ -17,6 +17,14 @@ export type RemoteChatEntry = {
   agentId: string
   /** The chat it belongs to, for a sub-agent drawn in its parent's tab: never the chat a tab holds. */
   subagentOf?: string
+  /** The chat as its machine names it, which a surface reading it apart from the pane follows by. */
+  key: MeshConversationKey
+  machineName: string
+  /**
+   * The machine reads the chat's changes for this window, as its own Diff tab
+   * reads them (`conversation-changes`): Changes opens them in the Diff tab here.
+   */
+  hostChanges: boolean
   transport: ConversationTransport
   binding: ChatBinding
   /** The chat's sub-agents, as its machine last said. Empty for a machine that does not say. */
@@ -78,6 +86,12 @@ export function readRemoteChat(workspaceId: string, agentId: string | null): Rem
   let last: RemoteChatEntry | null = null
   for (const entry of chats.values()) if (!entry.subagentOf) last = entry
   return last
+}
+
+/** The chats on paired machines open in `workspaceId`, a tab's chats before the sub-agents drawn in them. */
+export function readRemoteChats(workspaceId: string): RemoteChatEntry[] {
+  const chats = [...(registry.get(workspaceId)?.values() ?? [])]
+  return [...chats.filter((entry) => !entry.subagentOf), ...chats.filter((entry) => entry.subagentOf)]
 }
 
 export function useRemoteChat(workspaceId: string, agentId: string | null): RemoteChatEntry | null {

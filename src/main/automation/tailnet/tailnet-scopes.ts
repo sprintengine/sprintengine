@@ -69,6 +69,10 @@ export const CONVERSATION_LANE_ACCESS: { readonly [T in ConversationClientMessag
   watchScheduled: FOLLOW,
   watchUsageLimits: FOLLOW,
   watchSubagents: FOLLOW,
+  // A chat's changes, as its Diff tab reads them: only the files a step lists.
+  watchChanges: FOLLOW,
+  getChangesDiff: FOLLOW,
+  getChangedFile: FOLLOW,
   // A device cancels only a question it asked itself.
   cancelSideQuestion: FOLLOW,
   askSideQuestion: DRIVE,

@@ -108,6 +108,8 @@ type Props = {
   workspaceId: string | null
   /** The pane's Diff tab runs in the workspace window; the diff window does not. */
   workspaceWindow: boolean
+  /** The files are on another machine: the tree offers no menu, and opening a file shows its diff. */
+  readOnly?: boolean
   gitStatus: GitStatusSnapshot | null
   directoryStatus: Record<string, GitFileStatus>
   refreshGitStatus: () => Promise<void>
@@ -124,6 +126,7 @@ export function DiffFileTree({
   rootPath,
   workspaceId,
   workspaceWindow,
+  readOnly = false,
   gitStatus,
   directoryStatus,
   refreshGitStatus,
@@ -198,7 +201,15 @@ export function DiffFileTree({
           directoryStatus={directoryStatus}
           refreshGitStatus={refreshGitStatus}
           rowDecoration={decorate}
-          onOpenFile={onOpenFile}
+          readOnly={readOnly}
+          onOpenFile={
+            readOnly
+              ? (path) => {
+                  const index = diffTreeIndexForPath(items, path, currentIndex)
+                  if (index >= 0) onSelectIndex(index)
+                }
+              : onOpenFile
+          }
           onActivateFile={(entry) => {
             const index = diffTreeIndexForPath(items, entry.path, currentIndex)
             if (index >= 0) onSelectIndex(index)

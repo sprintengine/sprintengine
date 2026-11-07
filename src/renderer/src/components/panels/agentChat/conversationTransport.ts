@@ -203,6 +203,13 @@ export type ConversationTransportCapabilities = {
    */
   hostUsageLimits: boolean
   /**
+   * The machine the chat runs on reads its changes for this window, as its own
+   * Diff tab reads them: Changes opens them here in the Diff tab, where it
+   * advertises that (`conversation-changes`). False here, where the Diff tab
+   * reads a local chat's checkout itself.
+   */
+  hostChanges: boolean
+  /**
    * The person's words can be passed to one agent of a chat here. Always for a
    * chat on this machine; a paired machine's says so where it advertises
    * `conversation-agent-message`.
@@ -443,6 +450,8 @@ const LOCAL_CAPABILITIES: ConversationTransportCapabilities = {
   hostSchedule: false,
   // And reads a local chat's usage limits, and sends its resume, itself.
   hostUsageLimits: false,
+  // Its Diff tab reads a local chat's checkout itself.
+  hostChanges: false,
   agentMessages: true,
 }
 
@@ -667,6 +676,8 @@ export function createRemoteConversationTransport(input: {
       hostSchedule: false,
       // Turned on from the machine's list, when it says what it knows of its usage limits.
       hostUsageLimits: false,
+      // Turned on from the machine's list, when it reads a chat's changes for this window.
+      hostChanges: false,
       agentMessages: false,
     },
     remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId },
@@ -679,6 +690,8 @@ export function createRemoteConversationTransport(input: {
         else if (frame.type === 'scheduled') input.onScheduled?.(frame.messages)
         else if (frame.type === 'usageLimits') input.onUsageLimits?.(frame)
         else if (frame.type === 'subagents') input.onSubagents?.(frame.subagents)
+        // A chat's changes are read by the Diff tab, which follows for itself.
+        else if (frame.type === 'changes') return
         else cb(frame)
       }),
     loadEarlier: (page) =>

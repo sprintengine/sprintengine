@@ -332,6 +332,15 @@ export const TAILNET_CAPABILITIES = [
   // agents a chat's CLI spawned for a machine without it.
   // CONVERSATION_SUBAGENTS_CAPABILITY.
   'conversation-subagents',
+  // A chat's changes read from a paired machine (2026-11-07), as this
+  // machine's own Diff tab reads them when its Changes row is pressed:
+  // `watchChanges` has the socket say, in `changes` frames, how the chat's
+  // checkout stands, `getChangesDiff` lists one step's files and
+  // `getChangedFile` reads one of them. Only a file a step lists is readable,
+  // at revisions worked out here, and a commit must be one of the branch's.
+  // A client keeps the read-only count for a machine without it.
+  // CONVERSATION_CHANGES_CAPABILITY.
+  'conversation-changes',
   // A phone's New chat as this machine's own (2026-10-05). They name gateway
   // tools' arguments and answers, not the conversation lane, so they carry no
   // `conversation-` prefix and are not the protocol package's to list:

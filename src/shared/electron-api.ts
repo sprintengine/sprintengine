@@ -5,6 +5,7 @@ import type { ClientCapability } from './client-capabilities'
 import type { AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
 import type { AgentNotificationMode } from './agent-notifications'
+import type { ConversationChangesSelection } from '../../packages/conversation-protocol/src/checkoutChanges'
 import type {
   ArtifactsSettingsView,
   ArtifactsSetupInput,
@@ -192,6 +193,8 @@ import type {
   MeshPairResult,
   MeshRequestPairingResult,
   TailnetForgetMachineResult,
+  MeshChangedFileResult,
+  MeshChangesDiffResult,
   MeshConversationCommand,
   MeshConversationCommandResult,
   MeshConversationFrame,
@@ -1324,6 +1327,23 @@ export type ElectronApi = {
     turnSeq: number
     path?: string
   }) => Promise<ConversationTurnDiffResult>
+  // A paired machine's chat's changes, as that machine's Diff tab reads them:
+  // one more or one fewer window reading them (its `changes` frames arrive on
+  // the chat's own session), one step's files, and one file's two sides. Needs
+  // `conversation-changes` there; the list says whether it has it.
+  meshConversationWatchChanges: (input: {
+    key: MeshConversationKey
+    watching: boolean
+  }) => Promise<{ ok: true } | { ok: false; code: string; message: string }>
+  meshConversationChangesDiff: (input: {
+    key: MeshConversationKey
+    selection: ConversationChangesSelection
+  }) => Promise<MeshChangesDiffResult>
+  meshConversationChangedFile: (input: {
+    key: MeshConversationKey
+    selection: ConversationChangesSelection
+    path: string
+  }) => Promise<MeshChangedFileResult>
   // The picture a step of a paired machine's chat made or looked at, as a data
   // URL. Needs `conversation-images` there; the list says whether it has it.
   meshConversationToolImage: (input: {

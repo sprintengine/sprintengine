@@ -93,6 +93,14 @@ export const CONVERSATION_AGENT_MESSAGE_CAPABILITY = 'conversation-agent-message
  */
 export const CONVERSATION_SUBAGENTS_CAPABILITY = 'conversation-subagents' as const
 /**
+ * A chat's changes may be read where it is followed, as the desktop's own Diff
+ * tab reads them (checkoutChanges.ts): `watchChanges` has the desktop say how
+ * the chat's checkout stands in `changes` frames, `getChangesDiff` lists one
+ * step's files and `getChangedFile` reads one of those files' two sides. Only
+ * a file a step lists is readable, at revisions the desktop works out itself.
+ */
+export const CONVERSATION_CHANGES_CAPABILITY = 'conversation-changes' as const
+/**
  * A chat may be handed off to a fresh session instead of compacted, as its
  * Handoff does on the desktop: `handoff` writes the chat's messages to a file
  * there and lets the provider session go, and the next message starts a new
@@ -306,6 +314,7 @@ export const CONVERSATION_CAPABILITIES = [
   CONVERSATION_PERMANENT_APPROVALS_CAPABILITY,
   CONVERSATION_QUOTE_TOKENS_CAPABILITY,
   CONVERSATION_SUBAGENTS_CAPABILITY,
+  CONVERSATION_CHANGES_CAPABILITY,
 ] as const
 
 export type ConversationCapability = (typeof CONVERSATION_CAPABILITIES)[number]

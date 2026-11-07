@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { selectModuleEnabled } from '../../../modules'
 import { dispatchFileReveal } from '../../../utils/fileReveal'
 import { openSubagentList } from './subagentViewStack'
+import { openPairedChanges } from './pairedChanges'
 import type { TranscriptEntry } from './conversationProjection'
 import { deriveChatActivity, sharedEditFolder, type ChatActivity, type ChatActivityKind } from './chatActivity'
 import {
@@ -146,8 +147,10 @@ export function useChatActivityCard({
       const pane = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.paneState
       switch (kind) {
         case 'changes':
-          // The Diff tab reads the workspace's checkout; with Git off there is
-          // no tab to open, and Files shows the same files.
+          // The Diff tab reads the workspace's checkout, or, for a chat on a
+          // paired machine, that machine's; with Git off there is no tab to
+          // open, and Files shows the same files.
+          if (gitEnabled && openPairedChanges(workspaceId, agentId)) return
           if (gitEnabled) openPaneTab(workspaceId, { kind: 'diff' })
           else openPaneTab(workspaceId, { kind: 'files' })
           return
