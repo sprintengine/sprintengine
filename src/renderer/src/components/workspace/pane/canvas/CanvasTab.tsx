@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { CanvasBoardState, CanvasPresence } from '../../../../../../shared/canvas/types'
+import type { CanvasPresence, CanvasRemoteAccess, CanvasRemoteLink } from '../../../../../../shared/canvas/types'
 import { canvasBoardName } from '../../../../../../shared/canvas/paths'
 import { useResolvedColorScheme } from '../../../../hooks/useAppTheme'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
@@ -12,7 +12,13 @@ import { CanvasBoardPicker } from './CanvasBoardPicker'
 import { CanvasFarBoard } from './CanvasFarBoard'
 import { CanvasExportDialog } from './CanvasExportDialog'
 import { canvasExportedToast, type CanvasBoardExporter, type CanvasExportFormats } from './canvasExport'
-import { canvasBoardSourceOf } from './canvasBoardSource'
+import {
+  canvasBoardClient,
+  canvasBoardSourceOf,
+  continueBoardInNewChat,
+  readCanvasBoardAccess,
+  type CanvasOpenedBoard,
+} from './canvasBoardSource'
 import { canvasPushMatchesBoard, shouldApplyCanvasPush } from './canvasSync'
 import { StudioSkillSuggestion } from '../../../studioSkills/StudioSkillSuggestion'
 
@@ -41,7 +47,9 @@ type CanvasTabProps = {
   active: boolean
 }
 
-type BoardState = { kind: 'loading' } | { kind: 'ready'; board: CanvasBoardState } | { kind: 'error'; message: string }
+type BoardState = { kind: 'loading' } | { kind: 'ready'; board: CanvasOpenedBoard } | { kind: 'error'; message: string }
+
+type AccessState = { kind: 'loading' } | CanvasRemoteAccess
 
 export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   const path = tab.canvas?.path ?? null
@@ -87,6 +95,34 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
     })
   }, [originKey])
   const far = source.kind === 'paired'
+  // The calls this tab and its editor make, to this machine's canvas or to the
+  // one a paired chat runs on: one code path for both (canvasBoardSource.ts).
+  const client = useMemo(() => canvasBoardClient(source), [source])
+  // Whether the paired machine's boards open in the editor here: a machine
+  // whose Studio predates `canvas-live-boards` shows them as pictures, and says so.
+  const [access, setAccess] = useState<AccessState>(() =>
+    far ? { kind: 'loading' } : { ok: true, live: true, canEdit: true },
+  )
+  const [accessAttempt, setAccessAttempt] = useState(0)
+  useEffect(() => {
+    let cancelled = false
+    if (!far) {
+      setAccess({ ok: true, live: true, canEdit: true })
+      return
+    }
+    setAccess({ kind: 'loading' })
+    void readCanvasBoardAccess(source).then((answer) => {
+      if (!cancelled) setAccess(answer)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [accessAttempt, far, source])
+  const known: CanvasRemoteAccess | null = 'kind' in access ? null : access
+  const pictures = known?.ok === true && !known.live
+  const editorReady = known?.ok === true && known.live
+  // A paired board's link, as main last said it: out of reach, back, read-only.
+  const [link, setLink] = useState<CanvasRemoteLink | null>(null)
   const theme = useResolvedColorScheme()
   // The ref every call names this board by. Memoised on its strings, so an
   // effect that depends on it runs when the board changes and only then.
@@ -112,7 +148,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   const miniature = tab.floating === true
 
   useLayoutEffect(() => {
-    if (sized || !path || miniature || far) return
+    if (sized || !path || miniature || !editorReady) return
     const host = hostRef.current
     if (!host) return
     const measure = (): boolean => {
@@ -127,7 +163,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
     })
     observer.observe(host)
     return () => observer.disconnect()
-  }, [far, miniature, path, sized])
+  }, [editorReady, miniature, path, sized])
 
   // Open the board and subscribe this window to it; close it on the way out, so
   // main stops pushing scenes to a tab that is gone. Re-runs on `attempt` for
@@ -136,15 +172,14 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   // Only this project's own board is ever made here. A board of another project
   // that is not there is an error the person is shown, never a new empty one.
   useEffect(() => {
-    if (!path || far) return
+    if (!path || !editorReady) return
     let cancelled = false
     setState({ kind: 'loading' })
     setPresence(null)
+    setLink(null)
     void (async () => {
       try {
-        const result = await window.api.canvasOpenBoard(
-          store ? { ...board, create: false } : { ...board, create: true },
-        )
+        const result = await client.open({ ...board, create: !store })
         if (cancelled) return
         setState(result.ok ? { kind: 'ready', board: result.value } : { kind: 'error', message: result.error.message })
       } catch {
@@ -157,12 +192,17 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
       // side, and skipping it after a failed open would leak the subscription
       // that a partially-successful open left behind.
       try {
-        void window.api.canvasCloseBoard(board)
+        client.close(board)
       } catch {
         // Main is already gone (the window is closing). Nothing to release.
       }
     }
-  }, [attempt, board, far, path, store])
+  }, [attempt, board, client, editorReady, path, store])
+
+  useEffect(() => {
+    if (!path || !editorReady) return
+    return client.onLink(board, setLink)
+  }, [board, client, editorReady, path])
 
   // Scenes from main are folded into the board this tab holds, whether or not
   // the editor is mounted yet. A push is the WHOLE board, so the newest one is
@@ -269,7 +309,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
       setExportError(null)
       try {
         const images = await exporter(formats)
-        const result = await window.api.canvasExportBoard({
+        const result = await client.exportBoard({
           ...board,
           ...(workspaceRoot ? { defaultDirectory: workspaceRoot } : {}),
           images,
@@ -289,8 +329,46 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
         setExportPending(false)
       }
     },
-    [board, path, workspaceRoot],
+    [board, client, path, workspaceRoot],
   )
+
+  // Carry on with this board in a chat of its own, on the machine the board is
+  // on: the row action of the picker, from the board's own menu.
+  const boardId = state.kind === 'ready' ? (state.board.id ?? null) : null
+  const continueInNewChat = useCallback(() => {
+    if (!path) return
+    void continueBoardInNewChat(source, workspaceId, {
+      id: boardId,
+      path,
+      name: canvasBoardName(path),
+      store: store ?? null,
+      project: null,
+      showsProject: false,
+      workspaceId: null,
+      elementCount: -1,
+      modifiedAt: 0,
+    }).then((started) => {
+      if (!started.ok)
+        showToast({ tone: 'error', title: 'Could not start the chat', description: started.error.message })
+    })
+  }, [boardId, path, source, store, workspaceId])
+
+  if (!known)
+    return (
+      <SuspenseFallback
+        label={`Asking ${source.kind === 'paired' ? source.machineName : 'this machine'} about its boards`}
+      />
+    )
+  if (!known.ok) {
+    return (
+      <EmptyState
+        title="The boards could not be reached"
+        body={known.message}
+        action={<PrimaryButton onClick={() => setAccessAttempt((n) => n + 1)}>Try again</PrimaryButton>}
+      />
+    )
+  }
+  const canEditHere = known.live && known.canEdit
 
   if (!path) {
     return (
@@ -301,23 +379,42 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
         initialScope={far || workspaceRoot ? 'project' : 'all'}
         onPick={pickBoard}
         openBoards={openBoards}
+        canCreate={canEditHere}
+        {...(far
+          ? {
+              note: !known.live
+                ? (known.reason ?? null)
+                : known.canEdit
+                  ? null
+                  : `This pairing can look at boards on ${source.machineName} but not add or change them.`,
+            }
+          : {})}
       />
     )
   }
 
-  // A board on the chat's own machine, when that is not this one.
-  if (source.kind === 'paired') {
+  // A paired machine whose Studio cannot carry its boards here: the picture it
+  // draws of one, and the reason in words.
+  if (source.kind === 'paired' && pictures) {
     return (
       <CanvasFarBoard
         source={source}
         workspaceId={workspaceId}
         board={{ path, ...(store ? { store } : {}) }}
+        reason={known.reason ?? null}
         onSwitchBoard={switchBoard}
       />
     )
   }
 
   const name = canvasBoardName(path)
+  // Read-only where this pairing may only look, and while a lost board cannot be saved.
+  const readOnly = (state.kind === 'ready' && !state.board.canEdit) || link?.canEdit === false || link?.state === 'gone'
+  const linkNote =
+    link?.message ??
+    (state.kind === 'ready' && !state.board.canEdit && far
+      ? `This pairing can look at boards on ${source.machineName} but not change them.`
+      : null)
 
   // No band of chrome above the editor. The pane's tab strip already carries
   // the board's name, and a second copy of it under a hairline was a strip of
@@ -332,10 +429,22 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   // editor takes the height back when it goes.
   return (
     <div className="relative flex h-full w-full flex-col">
-      <StudioSkillSuggestion
-        skillId="studio-canvas"
-        className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2"
-      />
+      {/* The skill is installed for the agents on the machine the chat runs
+          on, and only its own Studio offers it. */}
+      {far ? null : (
+        <StudioSkillSuggestion
+          skillId="studio-canvas"
+          className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2"
+        />
+      )}
+      {linkNote ? (
+        <p
+          role="status"
+          className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2 text-meta text-[color:var(--text-muted)]"
+        >
+          {linkNote}
+        </p>
+      ) : null}
       <div
         ref={hostRef}
         className={`relative min-h-0 w-full flex-1 bg-[color:var(--bg-app)]${miniature ? ' isolate' : ''}`}
@@ -361,11 +470,14 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
                 path={path}
                 {...(store ? { store } : {})}
                 initial={state.board}
+                client={client}
+                readOnly={readOnly}
                 name={name}
                 theme={theme}
                 active={active}
                 presence={presence}
                 onSwitchBoard={switchBoard}
+                onContinueInNewChat={far || boardId ? continueInNewChat : null}
                 onRevealFile={workspaceRoot ? revealFile : null}
                 onCopyPath={copyPath}
                 onExport={openExport}

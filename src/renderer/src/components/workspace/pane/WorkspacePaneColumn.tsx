@@ -11,6 +11,7 @@ import { useAgentBrowserAutoFloat } from './browser/useAgentBrowserAutoFloat'
 import { hiddenBrowserLayerStyle } from './WorkspacePaneBody'
 import { useRecordingWorkspaceIds } from './browser/recordingTabs'
 import { revealPoppedOutTab, showPaneTab, usePanePopOutHost } from './popout/panePopOutHost'
+import { canvasBoardSourceOf, watchPairedCanvasOpens } from './canvas/canvasBoardSource'
 
 // The pane column (browser-pane epic): the full-height column on the shell
 // row's right edge, beside the band, that hosts every retained
@@ -195,6 +196,39 @@ export function WorkspacePaneColumn({
       }),
     [activeWorkspaceId],
   )
+
+  // The same, for a chat on a paired machine: its agent's canvas.open is told
+  // over that machine's canvas lane while this window shows the chat, and the
+  // tab it opens is the board in the same editor (`canvas-live-boards`).
+  const pairedCanvasKey = useWorkspaceStore((s) => {
+    const origin = s.workspaces.find((w) => w.id === activeWorkspaceId)?.remoteOrigin
+    return origin
+      ? JSON.stringify([origin.connectionId, origin.machineName, origin.workspaceId, origin.sessionId ?? ''])
+      : ''
+  })
+  useEffect(() => {
+    if (!pairedCanvasKey || !activeWorkspaceId) return
+    const [connectionId, machineName, workspaceId, sessionId] = JSON.parse(pairedCanvasKey) as string[]
+    const source = canvasBoardSourceOf({
+      remoteOrigin: {
+        connectionId,
+        machineName,
+        workspaceId,
+        workspaceName: '',
+        workspaceRoot: null,
+        ...(sessionId ? { sessionId } : {}),
+      },
+    })
+    if (source.kind !== 'paired') return
+    return watchPairedCanvasOpens(source, ({ path, store }) => {
+      const opened = useWorkspaceStore.getState().openPaneTab(activeWorkspaceId, {
+        kind: 'canvas',
+        canvas: { path, ...(store ? { store } : {}) },
+        activate: false,
+      })
+      if (opened !== null) showPaneTab(activeWorkspaceId, opened)
+    })
+  }, [activeWorkspaceId, pairedCanvasKey])
 
   // tour.create from an agent: dock the Diff tab with the tour offered on it,
   // WITHOUT selecting it or opening the pane — an agent finishing its tour must

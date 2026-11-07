@@ -7,12 +7,13 @@ import { EmptyState, GhostButton, PrimaryButton } from '../../../ui'
 import { SuspenseFallback } from '../../../ui/SuspenseFallback'
 import { canvasPictureUrl, continueBoardInNewChat, type CanvasBoardSource } from './canvasBoardSource'
 
-// A board on a paired machine, in this desktop's pane.
+// A board on a paired machine whose Studio cannot carry it here.
 //
-// A picture, drawn over there by `canvas.screenshot`. The editor needs the whole
-// scene and a push of every change, and neither crosses the tailnet yet, so the
-// way to change a board on another machine is a chat on that machine: this says
-// so, in words, and offers it, rather than opening an editor that cannot save.
+// A machine with `canvas-live-boards` opens its boards in the same editor a
+// board here opens in (CanvasTab). One without it, a Studio built before the
+// canvas lane, can still draw a picture of a board with `canvas.screenshot`:
+// that is what this shows, with the reason in words and the way to change the
+// board from here, a chat on that machine.
 
 type FarBoard = { path: string; store?: string }
 
@@ -22,11 +23,14 @@ export function CanvasFarBoard({
   source,
   workspaceId,
   board,
+  reason,
   onSwitchBoard,
 }: {
   source: Extract<CanvasBoardSource, { kind: 'paired' }>
   workspaceId: string
   board: FarBoard
+  /** Why the board is a picture here, from the machine's answer. */
+  reason: string | null
   onSwitchBoard: () => void
 }) {
   const theme = useResolvedColorScheme()
@@ -95,7 +99,8 @@ export function CanvasFarBoard({
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[color:var(--border-subtle)] px-3 py-2">
         {/* A line of its own: a docked pane has no room for it beside the actions. */}
         <p className="w-full text-meta text-[color:var(--text-muted)]">
-          A picture of this board on {source.machineName}. To change it, continue in a new chat there.
+          {reason ?? `A picture of this board on ${source.machineName}.`} To change it from here, continue in a new chat
+          there.
         </p>
         <GhostButton onClick={onSwitchBoard} className="ml-auto">
           Boards

@@ -20,6 +20,7 @@ import {
   TAILNET_CONVERSATION_FILES_PATH,
   TAILNET_CONVERSATION_IMAGE_PATH,
   TAILNET_CONVERSATION_PATH,
+  TAILNET_CANVAS_PATH,
   TAILNET_EVENTS_PATH,
   TAILNET_IDENTITY_PATH,
   TAILNET_STREAM_PATH,
@@ -28,6 +29,7 @@ import {
   TAILNET_WS_TICKET_PATH,
 } from './tailnet-routes'
 import {
+  CANVAS_LANE_ACCESS,
   CONVERSATION_LANE_ACCESS,
   TAILNET_ROUTE_ACCESS,
   tailnetToolAccess,
@@ -96,6 +98,8 @@ const LEGACY_ROUTES: { [R in TailnetDeviceRoute]: (scopes: TailnetScope[]) => bo
   'conversation-commands:refresh': (scopes) =>
     legacy(scopes, 'conversation:read') && legacy(scopes, 'conversation:operate'),
   upload: (scopes) => legacy(scopes, 'conversation:operate'),
+  // Newer than the hand-written checks: a paired desktop's Canvas pane, on looking at boards.
+  canvas: (scopes) => legacy(scopes, 'workspace:read'),
 }
 
 test('each of the six scopes carries only permissions from the closed set, and none a device was never given', () => {
@@ -152,10 +156,11 @@ test('each upgrade path names its route, and every declared route is one some re
   assert.equal(tailnetUpgradeRouteOf(TAILNET_STREAM_PATH), 'stream')
   assert.equal(tailnetUpgradeRouteOf(TAILNET_EVENTS_PATH), 'events')
   assert.equal(tailnetUpgradeRouteOf(TAILNET_CONVERSATION_PATH), 'conversation')
+  assert.equal(tailnetUpgradeRouteOf(TAILNET_CANVAS_PATH), 'canvas')
   assert.equal(tailnetUpgradeRouteOf(TAILNET_MCP_PATH), null)
   // No entry in the table goes unconsulted: each is what some request is judged by.
   const resolved = new Set<string>([
-    ...[TAILNET_STREAM_PATH, TAILNET_EVENTS_PATH, TAILNET_CONVERSATION_PATH].map((path) =>
+    ...[TAILNET_STREAM_PATH, TAILNET_EVENTS_PATH, TAILNET_CONVERSATION_PATH, TAILNET_CANVAS_PATH].map((path) =>
       tailnetUpgradeRouteOf(path)!,
     ),
     tailnetDeviceRouteOf('GET', TAILNET_IDENTITY_PATH)!,
@@ -168,6 +173,28 @@ test('each upgrade path names its route, and every declared route is one some re
     tailnetDeviceRouteOf('POST', TAILNET_MCP_PATH)!,
   ])
   assert.deepEqual([...resolved].sort(), Object.keys(TAILNET_ROUTE_ACCESS).sort())
+})
+
+test('the canvas lane lets a device look at boards on read, and change them only on operate', () => {
+  const draws = new Set(['file', 'commit', 'human'])
+  for (const scopes of scopeSubsets()) {
+    const principal = tailnetDevicePrincipal(scopes)
+    const mayRead = legacy(scopes, 'workspace:read')
+    const mayOperate = legacy(scopes, 'workspace:operate')
+    assert.equal(
+      authorizeStudioAccess(principal, TAILNET_ROUTE_ACCESS.canvas).ok,
+      mayRead,
+      `canvas [${scopes.join(', ')}]`,
+    )
+    for (const [message, access] of Object.entries(CANVAS_LANE_ACCESS)) {
+      const decision = authorizeStudioAccess(principal, access)
+      assert.equal(
+        decision.ok,
+        draws.has(message) ? mayRead && mayOperate : mayRead,
+        `${message} [${scopes.join(', ')}]`,
+      )
+    }
+  }
 })
 
 test('every conversation lane frame is declared, and every set of scopes is answered as before', () => {

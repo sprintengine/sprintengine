@@ -105,6 +105,10 @@ import type {
   CanvasExportResult,
   CanvasMachineListing,
   CanvasPresence,
+  CanvasRemoteAccess,
+  CanvasRemoteBoardRef,
+  CanvasRemoteLink,
+  CanvasRemoteOpenRequest,
   CanvasResult,
   CanvasScenePush,
 } from './canvas/types'
@@ -805,6 +809,35 @@ export type ElectronApi = {
   onCanvasPresence: (cb: (presence: CanvasBoardRef & CanvasPresence) => void) => () => void
   /** An agent asked for a board in this workspace's pane (canvas.open); the tab opens docked. */
   onCanvasOpenRequest: (cb: (ref: CanvasBoardRef) => void) => () => void
+  // A paired chat's boards, on the machine it runs on (`canvas-live-boards`).
+  // Each is its `canvas*` twin with the machine named beside the board; the
+  // scene and presence pushes are the same `onCanvasScene` and
+  // `onCanvasPresence`, under the pane's own ref.
+  /** Whether that machine's boards can be edited from here, and by this pairing. */
+  canvasRemoteAccess: (connectionId: string) => Promise<CanvasRemoteAccess>
+  canvasRemoteOpen: (
+    input: CanvasRemoteBoardRef & { create?: boolean },
+  ) => Promise<CanvasResult<CanvasBoardState & { canEdit: boolean }>>
+  canvasRemoteClose: (input: CanvasRemoteBoardRef) => Promise<void>
+  canvasRemoteCommit: (
+    input: CanvasRemoteBoardRef & {
+      baseRevision: number
+      elements: CanvasElement[]
+      appState: Record<string, unknown>
+      files: Record<string, unknown>
+    },
+  ) => Promise<CanvasResult<{ revision: number; elements: CanvasElement[] | null }>>
+  canvasRemoteNoteHumanInput: (input: CanvasRemoteBoardRef) => void
+  /** Export the board as this desktop holds it into a folder picked here. */
+  canvasRemoteExport: (
+    input: CanvasRemoteBoardRef & { images?: CanvasExportImages },
+  ) => Promise<CanvasResult<CanvasExportResult>>
+  /** Hear a far chat's agent's `canvas.open`, while this window shows that chat. */
+  canvasRemoteWatch: (input: { connectionId: string; workspaceId: string }) => Promise<void>
+  canvasRemoteUnwatch: (input: { connectionId: string; workspaceId: string }) => Promise<void>
+  /** A paired board's link: out of reach, back, read-only or gone, in words. */
+  onCanvasRemoteLink: (cb: (link: CanvasRemoteLink) => void) => () => void
+  onCanvasRemoteOpenRequest: (cb: (request: CanvasRemoteOpenRequest) => void) => () => void
   // Diff tours (src/main/tours). The Diff viewer reads and plays them; the
   // workspace window docks a tour's Diff tab when an agent writes one.
   tourList: (workspaceId: string) => Promise<TourSummary[]>

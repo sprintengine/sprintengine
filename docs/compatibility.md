@@ -201,6 +201,23 @@ name on a machine, removed projects included, is now readable on
 `workspace:read`: there is no per-project scope. The phone does not use any of
 this. It only learned to show a board named by `id` as its name.
 
+`canvas-live-boards` (2026-11-07) lets a paired desktop's Canvas pane edit this
+machine's boards in its own editor. It names a new WebSocket, `canvas`, upgraded
+with a ticket as the conversation socket is, on `workspace:read`; a scene, a
+picture sent for one, taking the pen and making a board need `workspace:operate`,
+and the grant is read again on every message. A board is the ref this machine's
+own pane uses (a store board, or a `.excalidraw` file inside a project, under the
+same path rules), opened as a subscriber of this machine's canvas service, so
+every write goes through its one merge. Pictures travel as their own messages,
+once each way, and any message over the 1 MiB cap goes in `part` messages put
+back together at the other end, up to 32 MB. A desktop that does not see the
+capability shows a board as a picture through `canvas.screenshot`, as it did, and
+says why; a machine without it answers the socket 404, and one that runs no
+canvas service (a server with no desktop, or a Studio running its server out of
+process) does not advertise it and answers 503. An older desktop never opens the
+socket and loses nothing. No version bump: the route and the capability are new,
+and nothing that was there changed.
+
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is
 already parsing. Nothing a capability flag can describe should bump the version,

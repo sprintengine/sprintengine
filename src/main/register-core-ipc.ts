@@ -76,6 +76,7 @@ import { stat } from 'node:fs/promises'
 import { continueCanvasBoardInNewChat } from './canvas/canvas-board-chat'
 import { createProjectlessChatFolder } from './projectless-chat-folders'
 import { registerCanvasIpc } from './ipc/canvas-ipc'
+import { createNodeCanvasFs } from './canvas/canvas-node-fs'
 import { registerEditorRevealIpc } from './ipc/editor-reveal-ipc'
 import { registerToursIpc } from './ipc/tours-ipc'
 import { pickCanvasExportDirectory, revealCanvasBoardFile } from './ipc/canvas-export-dialog'
@@ -154,6 +155,8 @@ export function registerCoreIpc(
   registerCanvasIpc(ipcMain, services.canvasService, services.canvasSubscribers, {
     pickExportDirectory: pickCanvasExportDirectory,
     revealFile: revealCanvasBoardFile,
+    remote: () => services.automationService?.mesh().remoteCanvas ?? null,
+    exportFs: createNodeCanvasFs(),
     continueInNewChat: (input) =>
       continueCanvasBoardInNewChat(
         {
