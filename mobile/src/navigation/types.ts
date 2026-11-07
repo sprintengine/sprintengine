@@ -39,6 +39,11 @@ export type HomeStackParamList = {
     thread: import("../api/conversationWire").ConversationThread;
     /** New's first message, when it carries pictures: its words, and the pictures New uploaded to the chat. */
     opening?: import("../features/conversations/photoLaunch").ChatOpening;
+    /**
+     * The chat this one was started from, when it is a subagent: the list leaves
+     * it out, and its screen links back up to this.
+     */
+    parent?: import("../features/conversations/subagentLogic").SubagentChatParent;
   };
   ConversationLink: import("../features/conversations/conversationLogic").ConversationLink;
   /**

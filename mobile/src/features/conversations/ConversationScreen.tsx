@@ -12,6 +12,7 @@ import {
   CONVERSATION_MAX_IMAGES,
   type ConversationCommand,
   type ConversationPermissionPreset,
+  type ConversationSubagent,
   type ConversationThread,
 } from "../../api/conversationWire";
 import {
@@ -34,7 +35,7 @@ import {
 } from "../../components/glyphs";
 import { ContextRing } from "../../components/ContextRing";
 import { SheetOption } from "../../components/SheetOption";
-import { MarkdownDocument } from "../../components/document/MarkdownDocument";
+import { MarkdownDocument, type QuoteMark } from "../../components/document/MarkdownDocument";
 import { SourceBlock } from "../../components/document/SourceBlock";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useSheetHandoff } from "../../components/useSheetHandoff";
@@ -62,7 +63,7 @@ import { backgroundWorkLabel, formatElapsed, workingLabel } from "./agentLogic";
 import { useChats } from "./ChatsContext";
 import { followUpAction, followUpSendLabel, steerOffered } from "./followUp";
 import { chatHostMark, stripPullRequest } from "./chatMarks";
-import { PullRequestStripButton } from "./ChatMarkViews";
+import { openPullRequest, PullRequestStripButton } from "./ChatMarkViews";
 import { ChatComposer } from "./ChatComposer";
 import { ComposerStrip, STRIP_ITEM_HEIGHT, type ComposerStripEntry } from "./ComposerStrip";
 import { conversationChanges, diffPill, STRIP_DROP_ORDER } from "./composerStripLogic";
@@ -81,7 +82,8 @@ import { pickChatFile } from "./pickChatFile";
 import { attachmentsOnlyText, rememberSentFile, sentFileName, splitSentUploads } from "./chatFiles";
 import { useChatImages, useSentImages } from "./ConversationImage";
 import { SentPhotoSquares } from "./SentPhotoSquares";
-import { ChatPage } from "./ChatPage";
+import { ChatPage, type ChatPageRow } from "./ChatPage";
+import { serverWords, usageMeta, usageSub, usageTone, usageWindow } from "./chatPanelLogic";
 import { phoneChatActivity } from "./chatActivity";
 import { rememberSentPhoto, sentPhotoUri } from "./sentPhotos";
 import { AttachedFileCards } from "./AttachedFileCards";
@@ -114,6 +116,7 @@ import {
 } from "./conversationLogic";
 import {
   AgentLaneCard,
+  SubagentStartRow,
   ThinkingRow,
   ToolGroup,
   TurnFold,
@@ -128,6 +131,34 @@ import { scheduledMessageStatus } from "../scheduled/scheduledMessages";
 import { defaultSendAt } from "../scheduled/sendTime";
 import { useDictation } from "../dictation/useDictation";
 import { usePublishConversation } from "./liveConversation";
+import { ComposerQuoteChips, QuotedWords, QuotePicker, QuoteReplyButton, QuoteSheet } from "./QuoteViews";
+import {
+  joinQuoteDraft,
+  makeQuote,
+  markdownPlain,
+  messageForDesktop,
+  messageInline,
+  quoteRefusalText,
+  quoteSource,
+  splitQuoteDraft,
+} from "./quoteLogic";
+import {
+  nextQuoteNumber,
+  quoteAnchorKey,
+  quoteToken,
+  withQuoteComment,
+  withoutQuote,
+  type ChatQuoteToken,
+} from "../../shared/quotes/chat-quotes";
+import {
+  harnessName,
+  isSubagentStart,
+  parentRelation,
+  subagentCounts,
+  subagentStartFacts,
+  subagentThread,
+  type SubagentChatParent,
+} from "./subagentLogic";
 import {
   promptCacheLine,
   promptCacheNeedsAttention,
@@ -178,7 +209,16 @@ export function ConversationScreen({
   opening,
   onOpeningTaken,
   initialSheet,
+  parent,
+  onOpenParent,
+  onOpenSubagent,
 }: {
+  /** A chat this one started, opened as a chat of its own over this one. */
+  onOpenSubagent?: (target: { thread: ConversationThread; parent: SubagentChatParent }) => void;
+  /** The chat this one was started from, when it is a subagent: its screen links back up to it. */
+  parent?: SubagentChatParent;
+  /** Goes to `parent`. */
+  onOpenParent?: () => void;
   deviceId: string;
   thread: ConversationThread;
   /**
@@ -250,10 +290,12 @@ export function ConversationScreen({
   // rather than opening a second socket (see liveConversation.ts).
   usePublishConversation(
     { deviceId, workspaceId: thread.workspaceId, agentId: thread.agentId },
-    { ...chat, deviceId, images },
+    { ...chat, deviceId, images, ...(parent ? { parent } : {}) },
   );
   const styles = useThemedStyles(createStyles);
   const inset = useScreenBottomInset();
+  // The chat's title as last drawn, for a subagent opened from it to name.
+  const chatTitleRef = useRef("");
   // The seconds that count ("Working · 42s") tick in their own text through
   // useSecondsClock; this clock only ages the quieter times, every 30 s.
   const now = useNow(false);
@@ -296,6 +338,14 @@ export function ConversationScreen({
     (opening?.uploads ?? []).map((upload) => (sentFileName(upload.id) ? { ...upload, file: true as const } : upload)),
   );
   const [uploading, setUploading] = useState(false);
+  // The draft's quotes as chips and its words as the box holds them.
+  const draftQuotes = useMemo(() => splitQuoteDraft(text), [text]);
+  // A reply being quoted from (its turn and its Markdown), and a quote shown
+  // in its sheet: the draft's to edit, or a sent one's to read.
+  const [quoting, setQuoting] = useState<{ turn: string; reply: string } | null>(null);
+  const [shownQuote, setShownQuote] = useState<{ quote: ChatQuoteToken; draft: boolean } | null>(null);
+  // The passage Go to source last went to, lit in its reply.
+  const [markedQuote, setMarkedQuote] = useState<ChatQuoteToken | null>(null);
   const [sending, setSending] = useState(false);
   // A send waiting for the microphone to settle its last words. The ref holds
   // a second tap off before the state has drawn the button busy.
@@ -639,7 +689,7 @@ export function ConversationScreen({
           chat.setNotice("That time has passed. Pick one ahead.");
           return;
         }
-        const result = await chat.scheduleMessage(message.trim(), sendAt);
+        const result = await chat.scheduleMessage(messageForDesktop(message.trim(), chat.quoteTokens), sendAt);
         if (!mounted.current) return;
         if (!result.ok) {
           chat.setNotice(result.message);
@@ -663,7 +713,9 @@ export function ConversationScreen({
         alternate,
       });
       await queue(
-        message,
+        // A quote goes as its token where the desktop expands one, and as
+        // words everywhere else.
+        messageForDesktop(message, chat.quoteTokens),
         uploads.map((upload) => upload.id),
         action === "steer",
       );
@@ -901,9 +953,22 @@ export function ConversationScreen({
   // an action is said where it happened: on its request's card, or in the
   // composer's tray, where it can be dismissed.
   const status = linkWords;
-  const chatTitle = chat.listedTitle || listedThread.chatTitle || workspaceTitle || thread.title || "Conversation";
-  // What the agent touched: the chat page's rows.
-  const activity = useMemo(() => phoneChatActivity(chat.rows, chat.lanes), [chat.rows, chat.lanes]);
+  // A subagent shares its parent's workspace, whose name is the parent's: it
+  // goes by its own.
+  const chatTitle = parent
+    ? chat.listedTitle || thread.title || "Subagent"
+    : chat.listedTitle || listedThread.chatTitle || workspaceTitle || thread.title || "Conversation";
+  // What the agent touched: the chat page's rows, the subagents it started
+  // with Studio among them.
+  const subagents = useMemo(() => subagentCounts(chat.lanes, chat.subagents), [chat.lanes, chat.subagents]);
+  const activity = useMemo(() => {
+    const read = phoneChatActivity(chat.rows, chat.lanes);
+    return subagents.total && !read.order.includes("agents")
+      ? { ...read, order: [...read.order.filter((kind) => kind !== "library"), "agents" as const, ...read.order.filter((kind) => kind === "library")] }
+      : read;
+  }, [chat.rows, chat.lanes, subagents.total]);
+  const hasSubagents = subagents.total > 0;
+  chatTitleRef.current = chatTitle;
   const cacheState = chat.promptCache ? promptCacheState(chat.promptCache, now) : null;
   const cacheRow =
     !chat.busy &&
@@ -1161,6 +1226,87 @@ export function ConversationScreen({
       readout={readout}
     />
   );
+  // The chat page's facts that are controls, as the desktop's panel lists
+  // them: the branch, the pull request, the servers its agents linked, the
+  // permissions, the context and the usage. What the strip shows stays there.
+  const usageNow = usageWindow(chat.usageLimits, chatThreadCli(activeThread));
+  const servers = serverWords(activeThread.localServers ?? listedThread.localServers);
+  // A reset later today reads as its time; one further off names its day too.
+  const clock = (at: number) =>
+    new Date(at).toLocaleString(
+      [],
+      at - Date.now() > 20 * 3_600_000
+        ? { weekday: "short", hour: "2-digit", minute: "2-digit" }
+        : { hour: "2-digit", minute: "2-digit" },
+    );
+  const pageRows: ChatPageRow[] = [
+    ...(branch
+      ? [
+          {
+            key: "branch",
+            label: "Branch",
+            meta: branch,
+            ...(worktree ? { sub: `In worktree ${worktree}` } : {}),
+            ...(openChanges ? { onPress: openChanges } : {}),
+          },
+        ]
+      : []),
+    ...(pr
+      ? [
+          {
+            key: "pr",
+            label: "Pull request",
+            meta: pr.text,
+            ...((title) => (title ? { sub: title } : {}))(
+              (activeThread.pullRequests ?? listedThread.pullRequests)?.find((entry) => entry.number === pr.mark.number)?.title,
+            ),
+            onPress: () => (onOpenPullRequest ? onOpenPullRequest(pr.mark.url) : openPullRequest(pr.mark)),
+          },
+        ]
+      : []),
+    ...(servers
+      ? [{ key: "server", label: (activeThread.localServers ?? listedThread.localServers ?? []).length > 1 ? "Servers" : "Server", meta: servers.meta, sub: `${servers.sub} · on ${session?.desktopName ?? "the desktop"}` }]
+      : []),
+    ...(preset
+      ? [
+          {
+            key: "permissions",
+            label: "Permissions",
+            meta: permissionLabel(preset),
+            ...(accessOffered && canAct ? { onPress: () => sheetHandoff.after(() => setSheet("permission")) } : {}),
+          },
+        ]
+      : []),
+    ...(ring && ringLabel
+      ? [{ key: "context", label: "Context", meta: `${ring.percentage}%`, sub: ringLabel, ...(ring.high ? { tone: "warn" as const } : {}) }]
+      : []),
+    ...(usageNow
+      ? [
+          {
+            key: "usage",
+            label: "Usage",
+            meta: usageMeta(usageNow.window),
+            sub: usageSub(usageNow.window, clock),
+            tone: usageTone(usageNow.window),
+            view: "usage" as const,
+          },
+        ]
+      : []),
+  ];
+  const usageViews = chat.usageLimits
+    .filter((plan) => plan.windows.length)
+    .map((plan) => ({
+      plan: [plan.provider === "claude" ? "Claude" : plan.provider === "codex" ? "Codex" : plan.provider, plan.plan]
+        .filter(Boolean)
+        .join(" · "),
+      windows: plan.windows.map((window) => ({
+        id: window.id,
+        label: window.label,
+        meta: usageMeta(window),
+        sub: usageSub(window, clock).replace(/^[^·]*· ?/u, ""),
+        tone: usageTone(window),
+      })),
+    }));
   // The queued bubble floats over the transcript's foot; the jump control
   // stands above it.
   // What waits: the desktop's list where it holds messages, the phone's own
@@ -1183,6 +1329,56 @@ export function ConversationScreen({
   const rowsNow = useRef(chat.rows);
   rowsNow.current = chat.rows;
   const replyText = useCallback((turn: string) => replyCopyText(rowsNow.current, turn), []);
+  // Every passage a quote of this chat marks, by the turn it came from: the
+  // draft's first, then the sent messages', one mark per passage. Each turn's
+  // list is kept while it says the same, so a delta or a keystroke leaves a
+  // reply's props as they were.
+  const draftTokens = draftQuotes.quotes.map((quote) => quote.token).join("\n");
+  const marksHeld = useRef(new Map<string, { key: string; marks: QuoteMark[] }>());
+  const marksByTurn = useMemo(() => {
+    const seen = new Set<string>();
+    const byTurn = new Map<string, QuoteMark[]>();
+    const add = (quote: ChatQuoteToken, sent: boolean) => {
+      const key = quoteAnchorKey(quote);
+      if (seen.has(key)) return;
+      seen.add(key);
+      const list = byTurn.get(quote.turnId) ?? [];
+      list.push({ n: quote.n, exact: quote.exact, prefix: quote.prefix, suffix: quote.suffix, sent });
+      byTurn.set(quote.turnId, list);
+    };
+    for (const quote of splitQuoteDraft(draftTokens).quotes) add(quote, false);
+    if (markedQuote) add(markedQuote, false);
+    for (const row of chat.rows)
+      if (row.kind === "message" && row.role === "user") for (const quote of splitQuoteDraft(row.text).quotes) add(quote, true);
+    const out = new Map<string, QuoteMark[]>();
+    for (const [turn, marks] of byTurn) {
+      const key = JSON.stringify(marks);
+      const held = marksHeld.current.get(turn);
+      out.set(turn, held?.key === key ? held.marks : marks);
+      marksHeld.current.set(turn, { key, marks: out.get(turn)! });
+    }
+    return out;
+  }, [draftTokens, markedQuote, chat.rows]);
+  // Quoting: a finished turn's footer opens the reply to pick from, and a
+  // sent message's chip opens its quote.
+  const quoteReply = useCallback((turn: string) => {
+    const reply = replyCopyText(rowsNow.current, turn);
+    // Picked from as it reads, its Markdown taken off.
+    if (reply.trim()) setQuoting({ turn, reply: markdownPlain(reply) });
+  }, []);
+  const openSentQuote = useCallback((quote: ChatQuoteToken) => setShownQuote({ quote, draft: false }), []);
+  // A subagent this chat started, opened over it with the way back up.
+  const openSubagent = useMemo(
+    () =>
+      onOpenSubagent
+        ? (subagent: ConversationSubagent) =>
+            onOpenSubagent({
+              thread: subagentThread(subagent, activeThread),
+              parent: { agentId: thread.agentId, name: chatTitleRef.current, main: !parent },
+            })
+        : undefined,
+    [onOpenSubagent, activeThread, thread.agentId, parent],
+  );
   // Each row is handed only what it draws: the clock to an agent's card, the
   // thread to a turn's footer. Typing, the clock and a delta to another row
   // then leave a row's props as they were, and its memo keeps it as drawn.
@@ -1196,10 +1392,24 @@ export function ConversationScreen({
           replyText={item.kind === "meta" ? replyText : undefined}
           source={source}
           now={item.kind === "agent" ? now : undefined}
-          cli={item.kind === "agent" ? chatThreadCli(activeThread) : null}
+          cli={item.kind === "agent" || (item.kind === "tools" && item.tools.some(isSubagentStart)) ? chatThreadCli(activeThread) : null}
           onOpenAgent={onOpenAgent}
           onOpenPlan={onOpenPlan}
           onOpenChanges={onOpenChanges}
+          // Only a row that starts a subagent reads the list, so the others
+          // keep their props as a subagent moves.
+          subagents={item.kind === "tools" && item.tools.some(isSubagentStart) ? chat.subagents : undefined}
+          onOpenQuote={item.kind === "message" && item.role === "user" ? openSentQuote : undefined}
+          onQuoteReply={item.kind === "meta" && canOperate ? quoteReply : undefined}
+          marks={
+            (item.kind === "message" && item.role === "assistant") || item.kind === "fold"
+              ? item.turn
+                ? marksByTurn.get(item.turn)
+                : undefined
+              : undefined
+          }
+          onOpenSubagent={openSubagent}
+          onOpenAgents={onOpenAgents}
         />
       );
       // The divider rides the row it stands above, so it scrolls with it and
@@ -1213,7 +1423,7 @@ export function ConversationScreen({
         drawn
       );
     },
-    [activeThread, replyText, source, now, onOpenAgent, onOpenPlan, onOpenChanges, unreadRowId, styles.unreadCell, liveTurn, chat.turnBusy],
+    [activeThread, replyText, source, now, onOpenAgent, onOpenPlan, onOpenChanges, unreadRowId, styles.unreadCell, liveTurn, chat.turnBusy, chat.subagents, openSubagent, onOpenAgents, openSentQuote, quoteReply, canOperate, marksByTurn],
   );
   return (
     <ScreenFrame ground="agent">
@@ -1246,6 +1456,20 @@ export function ConversationScreen({
               <Text accessibilityLiveRegion="polite" style={[styles.floatStatus, linkWords ? styles.warnInk : null]}>
                 {status}
               </Text>
+            ) : parent && onOpenParent ? (
+              // A subagent's way up, under its name, as the desktop's band
+              // over a subagent's chat leads back to its parent.
+              <Pressable
+                accessibilityHint="Goes to the chat that started this subagent."
+                accessibilityLabel={`Subagent of ${parent.name}`}
+                accessibilityRole="link"
+                hitSlop={space.sm}
+                onPress={onOpenParent}
+              >
+                <Text numberOfLines={1} style={styles.floatStatus}>
+                  Subagent of <Text style={styles.link}>{parent.name}</Text>
+                </Text>
+              </Pressable>
             ) : null}
           </View>
         </View>
@@ -1257,7 +1481,12 @@ export function ConversationScreen({
           // the last reply can scroll clear. Padding, not a spacer in the
           // footer: Android's scroll range did not take in a footer spacer
           // that grew after the list had laid out.
-          contentContainerStyle={[styles.transcript, styles.underFloat, { paddingBottom: space.lg + floatHeight }]}
+          contentContainerStyle={[
+            styles.transcript,
+            styles.underFloat,
+            parent ? styles.underParentLink : null,
+            { paddingBottom: space.lg + floatHeight },
+          ]}
           initialNumToRender={12}
           maxToRenderPerBatch={8}
           windowSize={7}
@@ -1360,9 +1589,11 @@ export function ConversationScreen({
                         <AttachedFileCards files={carried.files.map((file) => ({ path: file.name }))} />
                       ) : null}
                       {item.text || !item.uploads?.length ? (
-                        <Text selectable style={styles.userText}>
-                          {item.text || "Image attachment"}
-                        </Text>
+                        <QuotedWords
+                          text={item.text || "Image attachment"}
+                          style={styles.userText}
+                          onOpenQuote={openSentQuote}
+                        />
                       ) : null}
                       <Text
                         accessibilityRole={item.stale ? "alert" : undefined}
@@ -1415,14 +1646,14 @@ export function ConversationScreen({
                   {chat.workingSince !== undefined ? (
                     <WorkingElapsed since={chat.workingSince} style={styles.workingTime} />
                   ) : null}
-                  {onOpenAgents && chat.lanes.length ? (
+                  {onOpenAgents && hasSubagents ? (
                     <Pressable
                       accessibilityRole="link"
                       hitSlop={space.md}
                       onPress={onOpenAgents}
                       style={styles.workingLink}
                     >
-                      <Text style={styles.link}>See agents</Text>
+                      <Text style={styles.link}>See subagents</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -1594,9 +1825,9 @@ export function ConversationScreen({
                         )
                       }
                     >
-                      <Text accessibilityLabel={`Scheduled message. ${scheduledMessageStatus(message, now)}: ${message.text}`} numberOfLines={3} style={styles.scheduledRow}>
+                      <Text accessibilityLabel={`Scheduled message. ${scheduledMessageStatus(message, now)}: ${messageInline(message.text)}`} numberOfLines={3} style={styles.scheduledRow}>
                         <Text style={styles.scheduledWhen}>{scheduledMessageStatus(message, now)}</Text>
-                        {`  ${message.text}`}
+                        {`  ${messageInline(message.text)}`}
                       </Text>
                     </ComposerTrayRow>
                   );
@@ -1667,10 +1898,18 @@ export function ConversationScreen({
                   // still while the microphone does the typing.
                   accessibilityLabel: "Message",
                   editable: !sending && dictation.state === "idle",
-                  onChangeText: setText,
+                  // The box holds the words; the quotes ride in front of them
+                  // as chips.
+                  onChangeText: (words) => setText(joinQuoteDraft(draftQuotes.quotes.map((quote) => quote.token), words)),
                   placeholder: dictationPlaceholder(dictation.state, dictation.source) ?? "Reply…",
-                  value: dictatedDraft(text, dictation.interim),
+                  value: dictatedDraft(draftQuotes.words, dictation.interim),
                 }}
+                quotes={
+                  <ComposerQuoteChips
+                    quotes={draftQuotes.quotes}
+                    onOpen={(quote) => setShownQuote({ quote, draft: true })}
+                  />
+                }
                 options={{
                   rows: optionRows,
                   disabled: !canAct || uploading,
@@ -1688,6 +1927,15 @@ export function ConversationScreen({
               />
             </View>
           </>
+        ) : parent ? (
+          // No box where a message would not go: the way to the parent instead.
+          <View style={styles.blockedBar}>
+            <Text style={styles.blockedText}>To reach this subagent, speak to {parent.name}.</Text>
+            <Text style={styles.meta}>This pairing may follow the chat but not drive it.</Text>
+            {onOpenParent ? (
+              <PrimaryButton label={`Go to ${parent.main ? "the main chat" : "the parent agent"}`} onPress={onOpenParent} />
+            ) : null}
+          </View>
         ) : (
           <Text style={styles.meta}>
             Read-only conversation. Grant conversation control when pairing to
@@ -1744,13 +1992,94 @@ export function ConversationScreen({
           ))}
         </BottomSheet>
       ) : null}
+      {/* Quoting: the reply to pick a passage from, and a quote's sheet. */}
+      <QuotePicker
+        reply={quoting?.reply ?? null}
+        onClose={() => setQuoting(null)}
+        onDismiss={sheetHandoff.onDismiss}
+        onQuote={(selection) => {
+          if (!quoting) return;
+          const made = makeQuote({
+            turnId: quoting.turn,
+            reply: quoting.reply,
+            drawn: true,
+            ...selection,
+            // Never a number this chat already used while its quotes are in sight.
+            n: nextQuoteNumber([
+              text,
+              ...chat.rows.flatMap((row) => (row.kind === "message" && row.role === "user" ? [row.text] : [])),
+              ...chat.optimistic.map((item) => item.text),
+              ...chat.desktopHeld.map((message) => message.text),
+              ...chat.desktopScheduled.map((message) => message.text),
+            ]),
+          });
+          if ("refused" in made) {
+            chat.setNotice(quoteRefusalText(made.refused));
+            return;
+          }
+          const token = quoteToken(made.quote);
+          setQuoting(null);
+          setText((current) => {
+            const parts = splitQuoteDraft(current);
+            return joinQuoteDraft([...parts.quotes.map((quote) => quote.token), token], parts.words);
+          });
+          // Its comment next, as the desktop opens its editor under the words.
+          const shown = splitQuoteDraft(token).quotes[0];
+          if (shown) sheetHandoff.after(() => setShownQuote({ quote: shown, draft: true }));
+        }}
+      />
+      <QuoteSheet
+        quote={shownQuote?.quote ?? null}
+        draft={shownQuote?.draft ?? false}
+        onClose={() => setShownQuote(null)}
+        {...(shownQuote?.draft
+          ? {
+              onSaveComment: (comment: string) => {
+                const token = shownQuote.quote.token;
+                setText((current) => withQuoteComment(current, token, comment));
+                setShownQuote(null);
+              },
+              onRemove: () => {
+                const token = shownQuote.quote.token;
+                setText((current) => withoutQuote(current, token));
+                setShownQuote(null);
+              },
+            }
+          : {})}
+        onGoToSource={() => {
+          if (!shownQuote) return;
+          const row = quoteSource(chat.rows, shownQuote.quote);
+          setShownQuote(null);
+          if (!row) {
+            chat.setNotice(
+              chat.page.hasMore
+                ? "That reply is in an earlier part of the chat. Scroll up to load it, then try again."
+                : "That reply is no longer in this chat.",
+            );
+            return;
+          }
+          const index = chat.rows.indexOf(row);
+          setMarkedQuote(shownQuote.quote);
+          list.current?.scrollToIndex({ index, viewPosition: 0.1, animated: !reducedMotion });
+        }}
+      />
       {/* The chat's page, which its title opens. */}
       <ChatPage
+        rows={pageRows}
+        usage={usageViews}
+        onDismiss={sheetHandoff.onDismiss}
         visible={pageOpen}
         onClose={() => setPageOpen(false)}
         title={chatTitle}
         cli={activeThread.models?.cli ?? cliForChatProvider(activeThread.providerId)}
-        chips={[project, machineMark?.label ?? session?.desktopName, shortModelLabel(activeThread)].filter(
+        // The harness and its model, as the desktop's panel heads a chat.
+        chips={[
+          project,
+          machineMark?.label ?? session?.desktopName,
+          [chatThreadCli(activeThread) ? harnessName(chatThreadCli(activeThread)!) : null, shortModelLabel(activeThread)]
+            .filter(Boolean)
+            .join(" · "),
+        ].filter(
           (chip): chip is string => Boolean(chip),
         )}
         facts={placeFacts({
@@ -1759,12 +2088,13 @@ export function ConversationScreen({
           address: session?.baseUrl ?? null,
           agent: thread.title && thread.title !== workspaceTitle ? thread.title : null,
           cliModel,
-          access: activeThread.permissionPreset ? permissionLabel(activeThread.permissionPreset) : null,
         })}
         activity={activity}
         diff={changes ? { added: changes.addedLines, removed: changes.removedLines, files: changes.files } : null}
         onOpenChanges={openChanges}
-        onOpenAgents={onOpenAgents && chat.lanes.length ? onOpenAgents : undefined}
+        onOpenAgents={onOpenAgents && hasSubagents ? onOpenAgents : undefined}
+        subagents={subagents}
+        parent={parent && onOpenParent ? { relation: parentRelation({ kind: "chat", ...parent }), name: parent.name, onPress: onOpenParent } : undefined}
         actions={[
           ...(markUnread
             ? [
@@ -1824,7 +2154,23 @@ const ConversationItem = memo(function ConversationItem({
   onOpenAgent,
   onOpenPlan,
   onOpenChanges,
+  subagents,
+  onOpenSubagent,
+  onOpenAgents,
+  onOpenQuote,
+  onQuoteReply,
+  marks,
 }: {
+  /** The passages quotes mark in this reply; only an agent's reply is handed them. */
+  marks?: readonly QuoteMark[];
+  /** A sent message's quote, opened in its sheet; only a person's message draws one. */
+  onOpenQuote?: (quote: ChatQuoteToken) => void;
+  /** Quote from a finished turn's reply; only a turn's footer offers it. */
+  onQuoteReply?: (turn: string) => void;
+  /** The chat's subagents; only a row that starts one is handed them. */
+  subagents?: ConversationSubagent[];
+  onOpenSubagent?: (subagent: ConversationSubagent) => void;
+  onOpenAgents?: () => void;
   row: ConversationRow;
   /** A reply, or a fold of its work, still arriving. */
   streaming: boolean;
@@ -1859,14 +2205,10 @@ const ConversationItem = memo(function ConversationItem({
       const images = row.images ?? [];
       const bubble = (words: string) => (
         <View style={styles.userLine}>
-          {messageCopyText(row.text) ? <CopyButton label="Copy message" text={row.text} /> : null}
+          {messageCopyText(row.text) ? <CopyButton label="Copy message" text={messageCopyText(row.text)} /> : null}
           <View style={styles.user}>
             {images.length ? <SentPhotoSquares images={images} sent={source.sentImages ?? null} /> : null}
-            {words ? (
-              <Text selectable style={styles.userText}>
-                {words}
-              </Text>
-            ) : null}
+            {words ? <QuotedWords text={words} style={styles.userText} onOpenQuote={onOpenQuote} /> : null}
           </View>
         </View>
       );
@@ -1883,7 +2225,14 @@ const ConversationItem = memo(function ConversationItem({
     }
     return (
       <View style={styles.message}>
-        <MarkdownDocument body={row.text} variant="chat" reply streaming={streaming} onLinkBlocked={onLinkBlocked} />
+        <MarkdownDocument
+          body={row.text}
+          variant="chat"
+          reply
+          streaming={streaming}
+          onLinkBlocked={onLinkBlocked}
+          marks={marks}
+        />
       </View>
     );
   }
@@ -1897,9 +2246,35 @@ const ConversationItem = memo(function ConversationItem({
       </Text>
     );
   if (row.kind === "reasoning") return <ThinkingRow text={row.text} live={streaming} onNotice={onNotice} />;
-  if (row.kind === "tools") return <ToolGroup tools={row.tools} source={source} />;
+  if (row.kind === "tools") {
+    const starts = row.tools.filter(isSubagentStart);
+    if (!starts.length) return <ToolGroup tools={row.tools} source={source} />;
+    const rest = row.tools.filter((tool) => !isSubagentStart(tool));
+    const chatCli = cli;
+    return (
+      <View>
+        {starts.map((tool) => {
+          const { subagentId } = subagentStartFacts(tool, chatCli);
+          const started = subagentId ? subagents?.find((candidate) => candidate.agentId === subagentId) : undefined;
+          return (
+            <SubagentStartRow
+              key={tool.id}
+              tool={tool}
+              chatCli={chatCli}
+              subagent={started}
+              now={Date.now()}
+              onOpen={started && onOpenSubagent ? () => onOpenSubagent(started) : onOpenAgents}
+            />
+          );
+        })}
+        {rest.length ? <ToolGroup tools={rest} source={source} /> : null}
+      </View>
+    );
+  }
   if (row.kind === "fold")
-    return <TurnFold label={row.label} failed={row.failed} parts={row.parts} source={source} live={streaming} />;
+    return (
+      <TurnFold label={row.label} failed={row.failed} parts={row.parts} source={source} live={streaming} marks={marks} />
+    );
   if (row.kind === "agent")
     return (
       <AgentLaneCard
@@ -1955,6 +2330,7 @@ const ConversationItem = memo(function ConversationItem({
     return row.reply && turn && replyText ? (
       <View style={styles.metaLine}>
         {line}
+        {onQuoteReply ? <QuoteReplyButton onPress={() => onQuoteReply(turn)} /> : null}
         <CopyButton label="Copy reply" text={() => replyText(turn)} />
       </View>
     ) : (
@@ -2041,7 +2417,7 @@ function QueuedEntry({
     <View pointerEvents="box-none" style={styles.queuedItem}>
       <View style={styles.queuedBubble}>
         <Text numberOfLines={6} style={styles.queuedText}>
-          {text}
+          {messageInline(text)}
         </Text>
       </View>
       <View style={styles.queuedLine}>
@@ -2470,8 +2846,19 @@ const createStyles = ({ colors, cardShadowOpacity }: Theme) =>
     },
     titlePillText: { ...typography.heading, color: colors.textPrimary, flexShrink: 1 },
     floatStatus: { ...typography.micro, color: colors.textMuted, paddingLeft: space.xl },
+    blockedBar: {
+      gap: space.sm,
+      padding: space.lg,
+      borderRadius: radius.overlay,
+      borderWidth: 1,
+      borderStyle: "dashed",
+      borderColor: colors.borderDefault,
+    },
+    blockedText: { ...typography.meta, fontSize: 13.5, color: colors.textDefault },
     // Room at the top for the floating back button and title.
     underFloat: { paddingTop: 40 + space.xs + space.lg },
+    // A subagent's link to its parent stands under its title, so its first row starts lower.
+    underParentLink: { paddingTop: 40 + space.xs + space.lg + space.xl },
     landing: { opacity: 0 },
     landingNote: {
       ...StyleSheet.absoluteFillObject,
@@ -2795,7 +3182,6 @@ function placeFacts(input: {
   address: string | null;
   agent: string | null;
   cliModel: string | null;
-  access: string | null;
 }): { label: string; value: string }[] {
   const host = input.address?.replace(/^[a-z]+:\/\//iu, "").replace(/\/.*$/u, "") ?? null;
   return [
@@ -2809,6 +3195,5 @@ function placeFacts(input: {
     host ? { label: "Address", value: host } : null,
     input.agent ? { label: "Agent", value: input.agent } : null,
     input.cliModel ? { label: "Runs", value: input.cliModel } : null,
-    input.access ? { label: "Access", value: input.access } : null,
   ].filter((fact): fact is { label: string; value: string } => fact !== null);
 }

@@ -54,6 +54,11 @@ export const verifySession: MobileSession = {
     "conversation-message-files",
     "conversation-stop-subagent",
     "conversation-agent-message",
+    // Subagents named, quotes as chips (said in a hello), and the plan's usage.
+    "conversation-hello",
+    "conversation-subagents",
+    "conversation-quote-tokens",
+    "conversation-usage-limits",
   ],
   // How the desktop draws itself, from its identity: New's strip and "Run on" wear it.
   machineMark: { kind: "laptop", color: "blue" },

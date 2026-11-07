@@ -1127,3 +1127,44 @@ test("a stale send can be let go of, and a confirmed one is never held back by t
   assert.deepEqual(commandsOn(f.sockets[0]).map((frame) => frame.commandId), ["confirmed"]);
   stream.close();
 });
+
+test("a desktop that takes quote tokens is told so ahead of each subscription, and no other is", async () => {
+  const f = fixture(), stream = f.open({ hello: true, quoteTokens: true });
+  await f.advance(); f.sockets[0].open();
+  const [first, second] = f.sockets[0].sent;
+  assert.equal(first.type, "hello", "said before the subscribe whose replay it shapes");
+  assert.deepEqual(first.clientCapabilities, ["conversation-quote-tokens"]);
+  assert.equal(second.type, "subscribe");
+  stream.close();
+  // Without `conversation-hello` the frame would be refused: nothing is said.
+  const g = fixture(), plain = g.open({ quoteTokens: true });
+  await g.advance(); g.sockets[0].open();
+  assert.equal(g.sockets[0].sent.some((frame) => frame.type === "hello"), false);
+  plain.close();
+  const h = fixture(), older = h.open({ hello: true });
+  await h.advance(); h.sockets[0].open();
+  assert.equal(h.sockets[0].sent.some((frame) => frame.clientCapabilities), false);
+  older.close();
+});
+
+test("the chat's subagents are asked for after every fence, and another chat's are never taken", async () => {
+  const f = fixture(), stream = f.open({ subagents: true });
+  await f.advance(); f.synchronize(f.sockets[0]);
+  const asks = (socket) => socket.sent.filter((frame) => frame.type === "watchSubagents");
+  assert.equal(asks(f.sockets[0]).length, 1);
+  const row = { ...key, agentId: "child", title: "Review", providerId: "codex-agent", modelId: "default", readOnly: true, status: "working", task: "Review the diff", startedAt: 5 };
+  f.sockets[0].frame({ type: "subagents", key, subagents: [row] });
+  f.sockets[0].frame({ type: "subagents", key: { ...key, agentId: "other" }, subagents: [row] });
+  const named = f.frames.filter((frame) => frame.type === "subagents");
+  assert.equal(named.length, 1, "a frame for another chat is dropped");
+  assert.equal(named[0].subagents[0].agentId, "child");
+  stream.foreground(11_000);
+  await f.advance();
+  f.synchronize(f.sockets[1]);
+  assert.equal(asks(f.sockets[1]).length, 1, "asked again on the new socket");
+  stream.close();
+  const g = fixture(), older = g.open({});
+  await g.advance(); g.synchronize(g.sockets[0]);
+  assert.equal(asks(g.sockets[0]).length, 0, "an older desktop is never asked");
+  older.close();
+});

@@ -87,6 +87,100 @@ export const CONVERSATION_STOP_SUBAGENT_CAPABILITY = "conversation-stop-subagent
  */
 export const CONVERSATION_AGENT_MESSAGE_CAPABILITY = "conversation-agent-message";
 /**
+ * The capability a desktop declares when it names a chat's sub-agents on
+ * request: `watchSubagents` has it send `subagents` frames for the chat the
+ * socket follows, now and whenever one starts, moves or ends. Each row is a
+ * chat of its own, followed by its ids as any chat is. Absent, the phone lists
+ * only the agents the chat's CLI spawned, as before.
+ */
+export const CONVERSATION_SUBAGENTS_CAPABILITY = "conversation-subagents";
+/**
+ * The capability both ends name for a quote to cross as its token
+ * (`[Quote 1](sprintengine-quote:?…)`) rather than as words. A desktop that
+ * advertises it expands a token it is sent into what its agent reads; the phone
+ * names it in its `hello` (`clientCapabilities`), and only then does the desktop
+ * leave tokens in that socket's messages. Absent, a quote is written as a
+ * blockquote and read as words, as before.
+ */
+export const CONVERSATION_QUOTE_TOKENS_CAPABILITY = "conversation-quote-tokens";
+/**
+ * The capability a desktop declares when it says what it knows of the usage
+ * limits of the plans its chats run on: `watchUsageLimits` has it send
+ * `usageLimits` frames for the chat the socket follows, now and on every
+ * change. Absent, the phone shows no Usage row.
+ */
+export const CONVERSATION_USAGE_LIMITS_CAPABILITY = "conversation-usage-limits";
+/** The most plans, and windows of one plan, a `usageLimits` frame names. */
+export const CONVERSATION_MAX_USAGE_LIMIT_PLANS = 8;
+export const CONVERSATION_MAX_USAGE_LIMIT_WINDOWS = 16;
+/** One of a plan's windows, as its agent last reported it. */
+export interface ConversationUsageLimitWindow {
+  /** Stable across readings: `five_hour`, `seven_day`, `codex:primary`. */
+  id: string;
+  label: string;
+  /** 0..100, or null when the agent said where the window stands but not how full it is. */
+  usedPercent: number | null;
+  resetsAt: number | null;
+  status: "allowed" | "warning" | "rejected";
+  observedAt: number;
+}
+/** One plan's windows. Only a subscription's: a plan billed by use has none. */
+export interface ConversationUsageLimitSnapshot {
+  provider: string;
+  plan?: string;
+  windows: ConversationUsageLimitWindow[];
+  observedAt: number;
+}
+/** The most local servers a listed chat carries. */
+export const CONVERSATION_MAX_LOCAL_SERVERS = 20;
+/**
+ * A local server a listed chat's agents linked, as the desktop last found its
+ * port: answering (`running`), nothing there (`stopped`), or coming up.
+ */
+export interface ConversationLocalServer {
+  id: string;
+  url: string;
+  title: string;
+  port: number;
+  state: "running" | "stopped" | "starting";
+}
+/** Where a sub-agent stands, as the desktop's panel says it. */
+export const CONVERSATION_SUBAGENT_STATUSES = [
+  "starting",
+  "working",
+  "needs_input",
+  "completed",
+  "failed",
+  "stopped",
+] as const;
+export type ConversationSubagentStatus = (typeof CONVERSATION_SUBAGENT_STATUSES)[number];
+/** The most sub-agents a `subagents` frame names: the newest, when a chat has started more. */
+export const CONVERSATION_MAX_SUBAGENTS = 256;
+/**
+ * A chat another chat started for one task (`conversation-subagents`). The
+ * chat list leaves it out, since it belongs to its parent, so it names what a
+ * listed chat names of itself beside what is a sub-agent's own: what it was
+ * asked, how it stands, and how it ended.
+ */
+export interface ConversationSubagent extends ConversationKey {
+  title: string;
+  providerId: string;
+  modelId: string;
+  sessionId?: string;
+  permissionPreset?: ConversationPermissionPreset;
+  capabilities?: ConversationThread["capabilities"];
+  /** Started to read and report, not to change anything. */
+  readOnly: boolean;
+  status: ConversationSubagentStatus;
+  /** The first line of its task; empty when it was given none to show. */
+  task: string;
+  startedAt: number;
+  /** When its task ended, once it has. */
+  endedAt?: number;
+  /** Why it failed, when it says. */
+  error?: string;
+}
+/**
  * The capability a desktop declares when it keeps a message scheduled into a
  * chat for a time and sends it then, whether or not the phone is awake:
  * `scheduleSend` hands it one, `sendScheduledNow` and `cancelScheduled` send
@@ -258,6 +352,8 @@ export interface ConversationThread extends ConversationKey {
    * desktop, which then reads as before: a chat whose turn ended is at rest.
    */
   backgroundWork?: ConversationBackgroundWork;
+  /** The local servers its agents linked, from a desktop that lists them; at most 20. */
+  localServers?: ConversationLocalServer[];
 }
 /** A listed chat's background work: at least one count is above zero. */
 export interface ConversationBackgroundWork {
@@ -298,7 +394,17 @@ export interface ConversationEvent {
 export type ConversationClientFrame =
   | { type: "list"; requestId: string }
   /** Needs `conversation-hello`: answered with a `result` naming the protocol and capabilities. */
-  | { type: "hello"; requestId: string }
+  /**
+   * `clientCapabilities` names what this phone reads, ahead of the `subscribe`
+   * whose replay it shapes: `conversation-quote-tokens` has the desktop leave a
+   * quote's token in what it sends this socket. A desktop from before the member
+   * drops it, and one from before `conversation-hello` refuses the frame.
+   */
+  | { type: "hello"; requestId: string; clientCapabilities?: string[] }
+  /** Needs `conversation-subagents`: sent after each subscription's fence. */
+  | { type: "watchSubagents"; requestId: string }
+  /** Needs `conversation-usage-limits`: sent after each subscription's fence. */
+  | { type: "watchUsageLimits"; requestId: string }
   | {
       type: "subscribe";
       key: ConversationKey;
@@ -444,7 +550,11 @@ export type ConversationServerFrame =
   /** What the desktop holds for `key`, whole each time; an empty list once nothing is. */
   | { type: "queued"; key: ConversationKey; messages: ConversationQueuedMessage[] }
   /** What the desktop keeps scheduled into `key`, soonest first, whole each time; empty once nothing is. */
-  | { type: "scheduled"; key: ConversationKey; messages: ConversationScheduledMessage[] };
+  | { type: "scheduled"; key: ConversationKey; messages: ConversationScheduledMessage[] }
+  /** The followed chat's sub-agents, oldest first, whole each time (`conversation-subagents`). */
+  | { type: "subagents"; key: ConversationKey; subagents: ConversationSubagent[] }
+  /** What the desktop knows of the usage limits of the followed chat's plans (`conversation-usage-limits`). */
+  | { type: "usageLimits"; key: ConversationKey; limits: ConversationUsageLimitSnapshot[] };
 
 const MAX_WIRE_TEXT = 256 * 1024;
 const MAX_REASSEMBLED_BYTES = 32 * 1024 * 1024;
@@ -511,8 +621,10 @@ function threadWithCatalog(value: ConversationThread): ConversationThread {
     visitRewoundAt,
     snoozedUntil,
     backgroundWork,
+    localServers,
     ...rest
   } = value as ConversationThread & {
+    localServers?: unknown;
     models?: unknown;
     permissionPreset?: unknown;
     capabilities?: unknown;
@@ -538,36 +650,155 @@ function threadWithCatalog(value: ConversationThread): ConversationThread {
   const machine = parseConversationHost(host);
   const prs = parseConversationPullRequests(pullRequests);
   const catalog = models === undefined ? null : parseConversationWireModels(models);
-  const flags = record(capabilities) ? capabilities : null;
-  const { permissionPresets: listed, steer, stopSubagent, messageSubagent, ...known } = flags ?? {};
-  const presets = Array.isArray(listed) ? listed.filter(isConversationWirePermissionPreset) : null;
+  const flags = readCapabilities(capabilities);
   return {
     ...rest,
     ...(isConversationWirePermissionPreset(permissionPreset) ? { permissionPreset } : {}),
     ...(catalog ? { models: catalog } : {}),
-    ...(flags
-      ? {
-          capabilities: {
-            ...(known as Omit<
-              NonNullable<ConversationThread["capabilities"]>,
-              "permissionPresets" | "steer" | "stopSubagent" | "messageSubagent"
-            >),
-            ...(presets ? { permissionPresets: presets } : {}),
-            // Kept only as a boolean: anything else reads as unknown, and
-            // unknown offers no Steer.
-            ...(typeof steer === "boolean" ? { steer } : {}),
-            // The same: unknown offers no agent a Stop.
-            ...(typeof stopSubagent === "boolean" ? { stopSubagent } : {}),
-            // The same: unknown draws no box.
-            ...(typeof messageSubagent === "boolean" ? { messageSubagent } : {}),
-          },
-        }
-      : {}),
+    ...(flags ? { capabilities: flags } : {}),
     ...(machine ? { host: machine } : {}),
     ...(prs.length ? { pullRequests: prs } : {}),
     ...(background ? { backgroundWork: background } : {}),
+    ...((servers) => (servers.length ? { localServers: servers } : {}))(parseConversationLocalServers(localServers)),
     ...lifecycle,
   };
+}
+
+/**
+ * What a listed chat (or a sub-agent's row) says it can do, or null where it
+ * says nothing. The presets are cut to those the wire defines, and the flags
+ * that are only ever optional are kept only as booleans: anything else reads
+ * as unknown, and unknown offers nothing (no Steer, no Stop, no box).
+ */
+function readCapabilities(value: unknown): ConversationThread["capabilities"] | null {
+  if (!record(value)) return null;
+  const { permissionPresets: listed, steer, stopSubagent, messageSubagent, ...known } = value;
+  const presets = Array.isArray(listed) ? listed.filter(isConversationWirePermissionPreset) : null;
+  return {
+    ...(known as Omit<
+      NonNullable<ConversationThread["capabilities"]>,
+      "permissionPresets" | "steer" | "stopSubagent" | "messageSubagent"
+    >),
+    ...(presets ? { permissionPresets: presets } : {}),
+    ...(typeof steer === "boolean" ? { steer } : {}),
+    ...(typeof stopSubagent === "boolean" ? { stopSubagent } : {}),
+    ...(typeof messageSubagent === "boolean" ? { messageSubagent } : {}),
+  };
+}
+
+const boundedText = (value: unknown, max: number): value is string =>
+  typeof value === "string" && value.length <= max;
+const wireId = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0 && value.length <= 200;
+
+/**
+ * One row of a `subagents` frame, held to the desktop's contract
+ * (`serverFrames.ts`'s `subagent`): null for a row in any other shape, which
+ * is dropped alone. A preset this build does not know is left out, as a listed
+ * chat's is.
+ */
+export function parseConversationSubagent(value: unknown): ConversationSubagent | null {
+  if (!record(value)) return null;
+  if (
+    !wireId(value.workspaceId) ||
+    !wireId(value.agentId) ||
+    !boundedText(value.title, 2_000) ||
+    !boundedText(value.providerId, 200) ||
+    !boundedText(value.modelId, 400) ||
+    (value.sessionId !== undefined && !wireId(value.sessionId)) ||
+    typeof value.readOnly !== "boolean" ||
+    !(CONVERSATION_SUBAGENT_STATUSES as readonly unknown[]).includes(value.status) ||
+    !boundedText(value.task, 2_000) ||
+    !nonnegative(value.startedAt)
+  )
+    return null;
+  const capabilities = readCapabilities(value.capabilities);
+  return {
+    workspaceId: value.workspaceId,
+    agentId: value.agentId,
+    title: value.title,
+    providerId: value.providerId,
+    modelId: value.modelId,
+    readOnly: value.readOnly,
+    status: value.status as ConversationSubagentStatus,
+    task: value.task,
+    startedAt: value.startedAt,
+    ...(value.sessionId === undefined ? {} : { sessionId: value.sessionId as string }),
+    ...(isConversationWirePermissionPreset(value.permissionPreset)
+      ? { permissionPreset: value.permissionPreset }
+      : {}),
+    ...(capabilities ? { capabilities } : {}),
+    ...(nonnegative(value.endedAt) ? { endedAt: value.endedAt } : {}),
+    ...(typeof value.error === "string" && value.error ? { error: value.error.slice(0, 2_000) } : {}),
+  };
+}
+
+/** A listed chat's local servers, each read on its own: one in the wrong shape is left out. */
+export function parseConversationLocalServers(value: unknown): ConversationLocalServer[] {
+  if (!Array.isArray(value)) return [];
+  const servers: ConversationLocalServer[] = [];
+  for (const entry of value) {
+    if (servers.length >= CONVERSATION_MAX_LOCAL_SERVERS) break;
+    if (
+      !record(entry) ||
+      !wireId(entry.id) ||
+      !boundedText(entry.url, 2_000) ||
+      !/^https?:\/\//u.test(entry.url) ||
+      !boundedText(entry.title, 500) ||
+      !Number.isSafeInteger(entry.port) ||
+      Number(entry.port) <= 0 ||
+      Number(entry.port) > 65_535 ||
+      (entry.state !== "running" && entry.state !== "stopped" && entry.state !== "starting")
+    )
+      continue;
+    servers.push({ id: entry.id, url: entry.url, title: entry.title, port: Number(entry.port), state: entry.state });
+  }
+  return servers;
+}
+
+const USAGE_STATUSES: readonly unknown[] = ["allowed", "warning", "rejected"];
+const instant = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
+
+/**
+ * A `usageLimits` frame's plans, each read on its own as the desktop's own
+ * reader does: a plan, or a window, this build cannot read is left out, so
+ * the row is not drawn wrong. Null when the list itself is not one.
+ */
+export function parseUsageLimitSnapshots(value: unknown): ConversationUsageLimitSnapshot[] | null {
+  if (!Array.isArray(value)) return null;
+  const plans: ConversationUsageLimitSnapshot[] = [];
+  for (const entry of value.slice(0, CONVERSATION_MAX_USAGE_LIMIT_PLANS)) {
+    if (!record(entry) || !boundedText(entry.provider, 100) || !entry.provider || !instant(entry.observedAt)) continue;
+    if (!Array.isArray(entry.windows)) continue;
+    const windows: ConversationUsageLimitWindow[] = [];
+    for (const window of entry.windows.slice(0, CONVERSATION_MAX_USAGE_LIMIT_WINDOWS)) {
+      if (
+        !record(window) ||
+        !wireId(window.id) ||
+        !boundedText(window.label, 200) ||
+        !(window.usedPercent === null || (typeof window.usedPercent === "number" && Number.isFinite(window.usedPercent))) ||
+        !(window.resetsAt === null || instant(window.resetsAt)) ||
+        !USAGE_STATUSES.includes(window.status) ||
+        !instant(window.observedAt)
+      )
+        continue;
+      windows.push({
+        id: window.id,
+        label: window.label,
+        usedPercent: window.usedPercent === null ? null : Math.min(100, Math.max(0, window.usedPercent as number)),
+        resetsAt: window.resetsAt as number | null,
+        status: window.status as ConversationUsageLimitWindow["status"],
+        observedAt: window.observedAt,
+      });
+    }
+    plans.push({
+      provider: entry.provider,
+      ...(boundedText(entry.plan, 100) && entry.plan ? { plan: entry.plan } : {}),
+      windows,
+      observedAt: entry.observedAt,
+    });
+  }
+  return plans;
 }
 
 /**
@@ -801,6 +1032,28 @@ export function parseConversationFrame(
             messages: parseScheduledMessages(frame.messages),
           }
         : null;
+    case "usageLimits": {
+      if (!wireKey(frame.key)) return null;
+      const limits = parseUsageLimitSnapshots(frame.limits);
+      return limits
+        ? { type: "usageLimits", key: { workspaceId: frame.key.workspaceId, agentId: frame.key.agentId }, limits }
+        : null;
+    }
+    case "subagents": {
+      if (!wireKey(frame.key) || !Array.isArray(frame.subagents)) return null;
+      const subagents: ConversationSubagent[] = [];
+      // The newest, when there are more than a frame names; oldest first. One
+      // unreadable row does not hide the rest.
+      for (const entry of frame.subagents.slice(-CONVERSATION_MAX_SUBAGENTS)) {
+        const read = parseConversationSubagent(entry);
+        if (read) subagents.push(read);
+      }
+      return {
+        type: "subagents",
+        key: { workspaceId: frame.key.workspaceId, agentId: frame.key.agentId },
+        subagents,
+      };
+    }
     default:
       return null;
   }
