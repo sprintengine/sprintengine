@@ -57,10 +57,21 @@ export function MachineGlyph({
   colour,
   size = iconSize.xs,
   label,
-}: GlyphProps & { kind: MachineKind; colour: MachineColour }) {
+  ink,
+}: GlyphProps & {
+  kind: MachineKind;
+  colour: MachineColour;
+  /**
+   * Beside a project's folder the glyph wears the folder's ink (its project's
+   * hue, or the row's ink for none) rather than the machine's own colour: two
+   * inks a few pixels apart read as a clash. The machine's colour marks it on
+   * every other surface.
+   */
+  ink?: string;
+}) {
   const { colors } = useTheme();
   return (
-    <GlyphFrame viewBox="0 0 16 16" color={machineMarkInk(colors, colour)} size={size} label={label}>
+    <GlyphFrame viewBox="0 0 16 16" color={ink ?? machineMarkInk(colors, colour)} size={size} label={label}>
       <DrawingParts parts={MACHINE_KIND_DRAWINGS[kind]} />
     </GlyphFrame>
   );

@@ -8,6 +8,7 @@ import { MobileSession } from "../../api/types";
 import {
   AppearanceIcon,
   BoltIcon,
+  CanvasGlyph,
   FolderGlyph,
   iconSize,
   RemoteMachineGlyph,
@@ -31,6 +32,8 @@ interface SettingsScreenProps {
   webTargetCount?: number;
   /** The scheduled agents on the paired desktops. Absent where the stack has no screen for them. */
   onOpenScheduled?: () => void;
+  /** Every Canvas board on the paired desktops. Absent where the stack has no screen for them. */
+  onOpenCanvases?: () => void;
   /** Home's chats under their projects, rather than newest first. */
   groupChatsByProject: boolean;
   onGroupChatsByProjectChange: (enabled: boolean) => void;
@@ -65,6 +68,7 @@ export function SettingsScreen({
   onOpenWeb,
   webTargetCount,
   onOpenScheduled,
+  onOpenCanvases,
   groupChatsByProject,
   onGroupChatsByProjectChange,
   steerFollowUps,
@@ -104,6 +108,15 @@ export function SettingsScreen({
             icon={<RemoteMachineGlyph size={iconSize.md} />}
             onPress={onOpenScheduled}
             title="Scheduled agents"
+          />
+        ) : null}
+        {onOpenCanvases ? (
+          <SettingsRow
+            accessibilityHint="Every board an agent drew on a desktop's Canvas, as a picture."
+            chevron
+            icon={<CanvasGlyph size={iconSize.md} />}
+            onPress={onOpenCanvases}
+            title="Canvases"
           />
         ) : null}
 

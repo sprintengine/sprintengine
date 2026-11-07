@@ -15,5 +15,7 @@ export * from './clientFrames.js'
 export * from './agentReads.js'
 // What a client's composer reads from the desktop beside the socket.
 export * from './composerReads.js'
+// A chat's changes, read as the desktop's own Diff tab reads them.
+export * from './checkoutChanges.js'
 // How a tool step is worded and toned, which every view of a conversation shares.
 export * from './presentation.js'

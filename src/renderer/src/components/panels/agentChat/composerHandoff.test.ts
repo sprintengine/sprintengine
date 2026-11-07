@@ -151,3 +151,43 @@ test('a quote goes to the sub-agent drawn in its parent’s place, not to the pa
     resetSubagentViews()
   }
 })
+
+test('a chat on a paired machine, which has no record here, takes the quote as a chat here does', async () => {
+  const { publishRemoteChat } = await import('./remoteChatRegistry')
+  chat({})
+  const take = publishRemoteChat('ws', {
+    agentId: 'far-chat',
+    key: { connectionId: 'connection-1', workspaceId: 'far-workspace', agentId: 'far-chat' },
+    machineName: 'mac-mini',
+    hostChanges: true,
+    transport: {} as never,
+    binding: {} as never,
+    subagents: [],
+    subagentTransport: () => ({}) as never,
+  })
+  const inserted: string[] = []
+  const unregister = registerMountedChatView({
+    workspaceId: 'ws',
+    agentId: 'far-chat',
+    isFocused: () => false,
+    toggleModelPicker: () => undefined,
+    insertQuote: (text) => inserted.push(text),
+  })
+  try {
+    expect(deliverQuoteToWorkspaceChat('ws', QUOTE)).toBe('far-chat')
+    expect(inserted).toEqual([QUOTE])
+  } finally {
+    unregister()
+    take()
+  }
+})
+
+test('a diff of one chat’s own changes quotes into that chat, not the one last worked with', () => {
+  chat({
+    first: { conversation: { providerId: 'claude', modelId: 'x' } },
+    second: { conversation: { providerId: 'claude', modelId: 'x' } },
+  })
+  fixtures.state.workspaces = [{ ...(fixtures.state.workspaces[0] as object), lastActiveAgentId: 'first' }]
+  expect(deliverQuoteToWorkspaceChat('ws', QUOTE, 'second')).toBe('second')
+  expect(fixtures.drafts.get('ws/second')?.text).toContain('const a = 1')
+})

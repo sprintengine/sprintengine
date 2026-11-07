@@ -51,21 +51,64 @@ export function projectFolderOf(folderPath: string | null, recordedRoot?: string
 }
 
 /**
+ * The root a chat started without a project runs under, segment by segment
+ * below the home folder: each such chat gets a folder of its own there,
+ * `~/.sprintengine/chats/<date>-<words>-<id>`, and the root plays the project.
+ * The desktop's `PROJECTLESS_CHATS_SEGMENTS`.
+ */
+const PROJECTLESS_CHATS_SEGMENTS = [".sprintengine", "chats"] as const;
+
+/** What the root is called wherever a project's name would be. The desktop's `PROJECTLESS_CHATS_LABEL`. */
+export const PROJECTLESS_CHATS_LABEL = "No project";
+
+function isProjectlessChatsRoot(path: string): boolean {
+  const segments = trimPath(path.trim()).split(/[\\/]+/u);
+  // Something must stand above `.sprintengine` (the home folder), or this is
+  // a relative path that only looks like the root.
+  if (segments.length < 3) return false;
+  const tail = segments.slice(-PROJECTLESS_CHATS_SEGMENTS.length).map((segment) => segment.toLowerCase());
+  return PROJECTLESS_CHATS_SEGMENTS.every((segment, index) => tail[index] === segment);
+}
+
+/**
+ * The "No project" root a path stands for, the root itself or a chat's own
+ * folder directly in it, or null for an ordinary folder. Only a DIRECT child:
+ * a folder the agent made inside its chat's folder is that chat's work. The
+ * desktop's `projectlessScopeOf`, by path shape alone, as the desktop reads it.
+ */
+export function projectlessScopeOf(path: string | null | undefined): string | null {
+  const trimmed = path?.trim() ? trimPath(path.trim()) : "";
+  if (!trimmed) return null;
+  if (isProjectlessChatsRoot(trimmed)) return trimmed;
+  const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  const parent = cut > 0 ? trimmed.slice(0, cut) : "";
+  return parent && isProjectlessChatsRoot(parent) ? parent : null;
+}
+
+/**
  * What a workspace's folder says about its project: the project's folder and
  * name, and the worktree's own name when the folder is one of the project's
  * worktrees rather than the project itself ("pool-02" under "multicode").
+ *
+ * A chat started without a project is filed under "No project", as the
+ * desktop's sidebar files it, not under its own folder's name
+ * (`2026-10-10-hello-ab12cd34`), which made every such chat a project of its
+ * own in a colour of its own.
  */
 export function workspaceProject(input: {
   folderPath: string | null;
   recordedRoot?: string | null;
-}): { projectFolder: string | null; projectName: string | null; worktree: string | null } {
+}): { projectFolder: string | null; projectName: string | null; worktree: string | null; projectless: boolean } {
+  const projectless = projectlessScopeOf(input.folderPath);
+  if (projectless) return { projectFolder: projectless, projectName: PROJECTLESS_CHATS_LABEL, worktree: null, projectless: true };
   const projectFolder = projectFolderOf(input.folderPath, input.recordedRoot);
-  if (!projectFolder || !input.folderPath) return { projectFolder: null, projectName: null, worktree: null };
+  if (!projectFolder || !input.folderPath) return { projectFolder: null, projectName: null, worktree: null, projectless: false };
   const own = comparablePath(input.folderPath) !== comparablePath(projectFolder);
   return {
     projectFolder,
     projectName: lastPathSegment(projectFolder),
     worktree: own ? lastPathSegment(input.folderPath) : null,
+    projectless: false,
   };
 }
 

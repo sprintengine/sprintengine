@@ -479,6 +479,12 @@ export interface FileExplorerTreeProps {
   onPathMoved?: (fromPath: string, toPath: string) => void
   onPathRemoved?: (path: string) => void
   rowDecoration?: (entry: FileTreeEntry) => FileExplorerRowDecoration | undefined
+  /**
+   * The rows name files that are not on this computer (a paired machine's
+   * diff): no menu, no drag, no drop and no delete, since nothing here can act
+   * on them. Moving through the rows and activating one still work.
+   */
+  readOnly?: boolean
   /** The element the tree scrolls in: reveal and the windowed row list measure against it. */
   scrollParentRef: React.RefObject<HTMLDivElement | null>
 }
@@ -507,6 +513,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     onPathMoved,
     onPathRemoved,
     rowDecoration,
+    readOnly = false,
     scrollParentRef,
   },
   ref,
@@ -1338,6 +1345,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   }
 
   const handleFolderDrop = (event: React.DragEvent<HTMLDivElement>, entry: Entry) => {
+    if (readOnly) return
     if (!entry.isDir || entry.gitDeleted || isPathsSource) return
 
     if (
@@ -1386,6 +1394,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   }
 
   const handleRootDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    if (readOnly) return
     if (isPathsSource) return
     if (hasExplorerMovePayload(event.dataTransfer) || activeMoveDragRef.current) return
     if (!hasNativeFileDrop(event.dataTransfer)) return
@@ -1404,6 +1413,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     event.preventDefault()
     event.stopPropagation()
     focusTree()
+    if (readOnly) return
 
     const entrySelected = entry ? selectedPaths.has(rowKeyOf(entry)) : false
     const contextSelection = entry && entrySelected ? selectedEntries : entry ? [entry] : []
@@ -2029,7 +2039,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       return
     }
 
-    if (event.key === 'Delete' || event.key === 'Backspace') {
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !readOnly) {
       event.preventDefault()
       await deleteEntries(selectedEntries.length ? selectedEntries : [currentEntry])
       return
@@ -2267,7 +2277,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
                 // decided.
                 data-row-wash={wash ?? undefined}
                 data-row-ignored={ignored ? 'true' : undefined}
-                draggable={!entry.gitDeleted && !isRenaming}
+                draggable={!readOnly && !entry.gitDeleted && !isRenaming}
                 onDragStart={(event) => handleDragStart(event, entry)}
                 onDragOver={(event) => handleFolderDragOver(event, entry)}
                 onDragLeave={(event) => handleFolderDragLeave(event, entry)}

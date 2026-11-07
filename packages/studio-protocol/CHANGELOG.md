@@ -4,6 +4,8 @@
 
 ### Added
 
+- The socket does not advertise `conversation-changes`: its conversation topic
+  carries no `changes` frames.
 - **The person's words for one agent** (`conversation-agent-message`, in
   `welcome.conversation`, owners): `conversation.messageSubagent` passes them to
   one agent a chat spawned, through that chat's model.

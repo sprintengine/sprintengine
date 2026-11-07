@@ -20,6 +20,32 @@ export type CanvasBoardRef = {
   store?: string
 }
 
+/**
+ * A board on the machine a paired chat runs on, as that chat's pane names it:
+ * its own ref, which pushes come back under, and where the board is over there.
+ */
+export type CanvasRemoteBoardRef = CanvasBoardRef & {
+  connectionId: string
+  /** The chat's workspace on the far machine. */
+  remoteWorkspaceId: string
+}
+
+/** Whether a paired machine's boards can be edited from here, and by this pairing. */
+export type CanvasRemoteAccess =
+  /** `reason` says, when `live` is false, why its boards are shown as pictures. */
+  { ok: true; live: boolean; canEdit: boolean; reason?: string } | { ok: false; message: string }
+
+/** A paired board's link, pushed on `canvas:remote-link` under the pane's own ref. */
+export type CanvasRemoteLink = CanvasBoardRef & {
+  state: 'live' | 'reconnecting' | 'gone'
+  canEdit: boolean
+  /** What the person is told; null while all is well. */
+  message: string | null
+}
+
+/** An agent's `canvas.open` on a paired machine, for the window showing that chat. */
+export type CanvasRemoteOpenRequest = { connectionId: string; workspaceId: string; path: string; store?: string }
+
 /** One board as the picker and `canvas.list` show it. */
 export type CanvasBoardSummary = {
   /** The board's global id, where the service knows its store. */

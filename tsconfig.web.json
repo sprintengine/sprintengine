@@ -27,6 +27,7 @@
     // its tools in the page (src/renderer/src/web/canvas/), with node:crypto
     // and node:path swapped for the browser's at build time.
     "src/main/canvas/canvas-service.ts",
+    "src/main/canvas/canvas-export.ts",
     "src/main/canvas/canvas-service-types.ts",
     "src/main/canvas/canvas-worker-host.ts",
     "src/main/canvas/protocol-canvas-fs.ts",

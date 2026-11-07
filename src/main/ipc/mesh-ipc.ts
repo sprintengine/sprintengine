@@ -43,6 +43,9 @@ import {
   MESH_CONVERSATION_TOOL_IMAGE_CHANNEL,
   MESH_CONVERSATION_ATTACHMENT_CHANNEL,
   MESH_CONVERSATION_TURN_DIFF_CHANNEL,
+  MESH_CONVERSATION_WATCH_CHANGES_CHANNEL,
+  MESH_CONVERSATION_CHANGES_DIFF_CHANNEL,
+  MESH_CONVERSATION_CHANGED_FILE_CHANNEL,
   MESH_CONVERSATION_UNFOLLOW_CHANNEL,
   MESH_CONVERSATION_FILE_SEARCH_CHANNEL,
   MESH_CONVERSATION_COMMANDS_CHANNEL,
@@ -313,6 +316,19 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
   ipcMain.handle(MESH_CONVERSATION_TURN_DIFF_CHANNEL, (_event, input: unknown) => {
     const record = asRecord(input) ?? {}
     return service.mesh().conversationTurnDiff({ key: record.key, turnSeq: record.turnSeq, path: record.path })
+  })
+  // A chat's changes on its machine, as that machine's Diff tab reads them.
+  ipcMain.handle(MESH_CONVERSATION_WATCH_CHANGES_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationWatchChanges({ key: record.key, watching: record.watching })
+  })
+  ipcMain.handle(MESH_CONVERSATION_CHANGES_DIFF_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationChangesDiff({ key: record.key, selection: record.selection })
+  })
+  ipcMain.handle(MESH_CONVERSATION_CHANGED_FILE_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationChangedFile({ key: record.key, selection: record.selection, path: record.path })
   })
   // A side question to a chat over there is answered by its agent there, and
   // may take a while: the invoke waits for it, as a local side question's does.

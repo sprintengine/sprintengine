@@ -13,6 +13,16 @@
 
 ### Added
 
+- **A chat's changes, where it is followed.** `CONVERSATION_CHANGES_CAPABILITY`
+  (`conversation-changes`) names a desktop that answers
+  `ConversationWatchChangesRequest` (`watchChanges`, and `stop: true` to end it)
+  with `ConversationChangesFrame`s (`changes`), `ConversationChangesDiffRequest`
+  (`getChangesDiff`) with a `ConversationChangesDiff`, and
+  `ConversationChangedFileRequest` (`getChangedFile`) with
+  `ConversationChangedFileSides`, read as the desktop's Diff tab reads the
+  chat's checkout. A step is `ConversationChangesSelection`; a path is checked
+  by `isConversationChangedPath`. An older desktop refuses each request under
+  its id. The pinned files are unchanged.
 - `CONVERSATION_AGENT_MESSAGE_CAPABILITY` (`conversation-agent-message`) names a
   desktop that takes the `messageSubagent` command (`toolUseId`, `message`):
   the person's words for one agent a chat spawned, delivered by that chat's

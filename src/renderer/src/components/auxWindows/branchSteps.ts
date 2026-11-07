@@ -27,6 +27,8 @@ export type BranchDiffItem = DiffFileItem & {
   modifiedRev: string | 'worktree' | null
   additions: number
   deletions: number
+  /** The step it was read for, by which a source on another machine reads its two sides. */
+  selection?: BranchStepSelection
 }
 
 /**
@@ -134,6 +136,7 @@ export function branchItemsFrom(
     modifiedRev: file.status === 'deleted' ? null : modifiedRev,
     additions: file.additions,
     deletions: file.deletions,
+    selection,
   }))
 }
 

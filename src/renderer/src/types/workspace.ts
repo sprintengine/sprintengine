@@ -717,6 +717,13 @@ export type WorkspacePaneTab = {
   // is the repository (a Diff tab opened from the pane's own + menu).
   diff?: {
     repoRoot?: string
+    /**
+     * A chat on a paired machine whose changes the tab reads, from that
+     * machine (`conversation-changes`), in place of a repository here: the chat
+     * as its machine names it, and that machine's name for words. Kept across
+     * a restart, as the tab is; opening a local diff retargets the tab off it.
+     */
+    paired?: { connectionId: string; workspaceId: string; agentId: string; machineName: string }
     focusPath: string | null
     focusKind: 'staged' | 'unstaged' | null
     /** Filter the viewer to one changelist (an agent's is `changelistOwnerId`); absent = all. */

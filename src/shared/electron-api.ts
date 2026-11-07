@@ -5,6 +5,7 @@ import type { ClientCapability } from './client-capabilities'
 import type { AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
 import type { AgentNotificationMode } from './agent-notifications'
+import type { ConversationChangesSelection } from '../../packages/conversation-protocol/src/checkoutChanges'
 import type {
   ArtifactsSettingsView,
   ArtifactsSetupInput,
@@ -105,6 +106,10 @@ import type {
   CanvasExportResult,
   CanvasMachineListing,
   CanvasPresence,
+  CanvasRemoteAccess,
+  CanvasRemoteBoardRef,
+  CanvasRemoteLink,
+  CanvasRemoteOpenRequest,
   CanvasResult,
   CanvasScenePush,
 } from './canvas/types'
@@ -192,6 +197,8 @@ import type {
   MeshPairResult,
   MeshRequestPairingResult,
   TailnetForgetMachineResult,
+  MeshChangedFileResult,
+  MeshChangesDiffResult,
   MeshConversationCommand,
   MeshConversationCommandResult,
   MeshConversationFrame,
@@ -805,6 +812,35 @@ export type ElectronApi = {
   onCanvasPresence: (cb: (presence: CanvasBoardRef & CanvasPresence) => void) => () => void
   /** An agent asked for a board in this workspace's pane (canvas.open); the tab opens docked. */
   onCanvasOpenRequest: (cb: (ref: CanvasBoardRef) => void) => () => void
+  // A paired chat's boards, on the machine it runs on (`canvas-live-boards`).
+  // Each is its `canvas*` twin with the machine named beside the board; the
+  // scene and presence pushes are the same `onCanvasScene` and
+  // `onCanvasPresence`, under the pane's own ref.
+  /** Whether that machine's boards can be edited from here, and by this pairing. */
+  canvasRemoteAccess: (connectionId: string) => Promise<CanvasRemoteAccess>
+  canvasRemoteOpen: (
+    input: CanvasRemoteBoardRef & { create?: boolean },
+  ) => Promise<CanvasResult<CanvasBoardState & { canEdit: boolean }>>
+  canvasRemoteClose: (input: CanvasRemoteBoardRef) => Promise<void>
+  canvasRemoteCommit: (
+    input: CanvasRemoteBoardRef & {
+      baseRevision: number
+      elements: CanvasElement[]
+      appState: Record<string, unknown>
+      files: Record<string, unknown>
+    },
+  ) => Promise<CanvasResult<{ revision: number; elements: CanvasElement[] | null }>>
+  canvasRemoteNoteHumanInput: (input: CanvasRemoteBoardRef) => void
+  /** Export the board as this desktop holds it into a folder picked here. */
+  canvasRemoteExport: (
+    input: CanvasRemoteBoardRef & { images?: CanvasExportImages },
+  ) => Promise<CanvasResult<CanvasExportResult>>
+  /** Hear a far chat's agent's `canvas.open`, while this window shows that chat. */
+  canvasRemoteWatch: (input: { connectionId: string; workspaceId: string }) => Promise<void>
+  canvasRemoteUnwatch: (input: { connectionId: string; workspaceId: string }) => Promise<void>
+  /** A paired board's link: out of reach, back, read-only or gone, in words. */
+  onCanvasRemoteLink: (cb: (link: CanvasRemoteLink) => void) => () => void
+  onCanvasRemoteOpenRequest: (cb: (request: CanvasRemoteOpenRequest) => void) => () => void
   // Diff tours (src/main/tours). The Diff viewer reads and plays them; the
   // workspace window docks a tour's Diff tab when an agent writes one.
   tourList: (workspaceId: string) => Promise<TourSummary[]>
@@ -1324,6 +1360,23 @@ export type ElectronApi = {
     turnSeq: number
     path?: string
   }) => Promise<ConversationTurnDiffResult>
+  // A paired machine's chat's changes, as that machine's Diff tab reads them:
+  // one more or one fewer window reading them (its `changes` frames arrive on
+  // the chat's own session), one step's files, and one file's two sides. Needs
+  // `conversation-changes` there; the list says whether it has it.
+  meshConversationWatchChanges: (input: {
+    key: MeshConversationKey
+    watching: boolean
+  }) => Promise<{ ok: true } | { ok: false; code: string; message: string }>
+  meshConversationChangesDiff: (input: {
+    key: MeshConversationKey
+    selection: ConversationChangesSelection
+  }) => Promise<MeshChangesDiffResult>
+  meshConversationChangedFile: (input: {
+    key: MeshConversationKey
+    selection: ConversationChangesSelection
+    path: string
+  }) => Promise<MeshChangedFileResult>
   // The picture a step of a paired machine's chat made or looked at, as a data
   // URL. Needs `conversation-images` there; the list says whether it has it.
   meshConversationToolImage: (input: {

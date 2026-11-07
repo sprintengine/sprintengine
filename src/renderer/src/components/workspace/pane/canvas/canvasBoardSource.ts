@@ -1,6 +1,16 @@
 import { isRecord } from '../../../../../../shared/records'
 import { canvasContinuePrompt, parseCanvasBoardId } from '../../../../../../shared/canvas/paths'
-import type { CanvasBoardSummary, CanvasResult } from '../../../../../../shared/canvas/types'
+import type {
+  CanvasBoardRef,
+  CanvasBoardState,
+  CanvasBoardSummary,
+  CanvasElement,
+  CanvasExportImages,
+  CanvasExportResult,
+  CanvasRemoteAccess,
+  CanvasRemoteLink,
+  CanvasResult,
+} from '../../../../../../shared/canvas/types'
 import { canvasFail, canvasOk } from '../../../../../../shared/canvas/types'
 import { SOLO_CHAT_TEMPLATE_ID } from '../../../../../../shared/layouts/templates'
 import { meshConversationSessionId } from '../../../../../../shared/tailnet-mesh'
@@ -116,6 +126,98 @@ export async function listCanvasBoards(
       showsProject: true,
     })),
   })
+}
+
+/** A board as the tab holds it: the scene, and whether this pairing may change it. */
+export type CanvasOpenedBoard = CanvasBoardState & { canEdit: boolean }
+
+type CanvasCommit = CanvasBoardRef & {
+  baseRevision: number
+  elements: CanvasElement[]
+  appState: Record<string, unknown>
+  files: Record<string, unknown>
+}
+
+/**
+ * The calls a Canvas tab and its editor make about a board, wherever it is.
+ * Here they are the canvas service's own IPC; for a paired chat they are the
+ * same calls carried to the machine the chat runs on (`canvas-live-boards`),
+ * whose answers and pushes come back under the tab's own ref. So the tab and
+ * the editor are one code path for both, and only this says which machine.
+ */
+export type CanvasBoardClient = {
+  open(ref: CanvasBoardRef & { create: boolean }): Promise<CanvasResult<CanvasOpenedBoard>>
+  close(ref: CanvasBoardRef): void
+  commit(input: CanvasCommit): Promise<CanvasResult<{ revision: number; elements: CanvasElement[] | null }>>
+  noteHumanInput(ref: CanvasBoardRef): void
+  exportBoard(
+    input: CanvasBoardRef & { defaultDirectory?: string; images: CanvasExportImages },
+  ): Promise<CanvasResult<CanvasExportResult>>
+  /** The board's link: a board here has none to lose, and never calls back. */
+  onLink(ref: CanvasBoardRef, callback: (link: CanvasRemoteLink) => void): () => void
+}
+
+const HERE_CLIENT: CanvasBoardClient = {
+  open: async (ref) => {
+    const opened = await window.api.canvasOpenBoard(ref)
+    return opened.ok ? canvasOk({ ...opened.value, canEdit: true }) : opened
+  },
+  close: (ref) => void window.api.canvasCloseBoard(ref),
+  commit: (input) => window.api.canvasCommitScene(input),
+  noteHumanInput: (ref) => window.api.canvasNoteHumanInput(ref),
+  exportBoard: (input) => window.api.canvasExportBoard(input),
+  onLink: () => () => undefined,
+}
+
+const sameBoard = (a: CanvasBoardRef, b: CanvasBoardRef): boolean =>
+  a.workspaceId === b.workspaceId && (a.store ?? '') === (b.store ?? '') && a.path === b.path
+
+/** The board calls for a source. Stable per source's strings, so an effect that names it runs once. */
+export function canvasBoardClient(source: CanvasBoardSource): CanvasBoardClient {
+  if (source.kind === 'here') return HERE_CLIENT
+  const far = { connectionId: source.connectionId, remoteWorkspaceId: source.remoteWorkspaceId }
+  return {
+    open: (ref) => window.api.canvasRemoteOpen({ ...ref, ...far }),
+    close: (ref) => void window.api.canvasRemoteClose({ ...ref, ...far }),
+    commit: (input) => window.api.canvasRemoteCommit({ ...input, ...far }),
+    noteHumanInput: (ref) => window.api.canvasRemoteNoteHumanInput({ ...ref, ...far }),
+    // Its folder is picked on this machine, so nothing of it is suggested.
+    exportBoard: ({ defaultDirectory: _unused, ...input }) => window.api.canvasRemoteExport({ ...input, ...far }),
+    onLink: (ref, callback) =>
+      window.api.onCanvasRemoteLink((link) => {
+        if (sameBoard(link, ref)) callback(link)
+      }),
+  }
+}
+
+/** Whether a source's boards open in the editor: always here; on a paired machine, as it says. */
+export async function readCanvasBoardAccess(source: CanvasBoardSource): Promise<CanvasRemoteAccess> {
+  if (source.kind === 'here') return { ok: true, live: true, canEdit: true }
+  try {
+    return await window.api.canvasRemoteAccess(source.connectionId)
+  } catch {
+    return { ok: false, message: `${source.machineName} could not be reached.` }
+  }
+}
+
+/**
+ * Hear an agent's `canvas.open` in a paired chat, the way a chat here hears it
+ * on `onCanvasOpenRequest`: only while this window shows that chat.
+ */
+export function watchPairedCanvasOpens(
+  source: Extract<CanvasBoardSource, { kind: 'paired' }>,
+  onOpen: (board: { path: string; store?: string }) => void,
+): () => void {
+  const target = { connectionId: source.connectionId, workspaceId: source.remoteWorkspaceId }
+  const stop = window.api.onCanvasRemoteOpenRequest((request) => {
+    if (request.connectionId !== target.connectionId || request.workspaceId !== target.workspaceId) return
+    onOpen({ path: request.path, ...(request.store ? { store: request.store } : {}) })
+  })
+  void window.api.canvasRemoteWatch(target).catch(() => undefined)
+  return () => {
+    stop()
+    void window.api.canvasRemoteUnwatch(target).catch(() => undefined)
+  }
 }
 
 /** How long a chat started in main is waited for here, before its tab is left to the agent's own `canvas.open`. */

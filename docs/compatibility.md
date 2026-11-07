@@ -198,8 +198,30 @@ path, from that project. Neither end needs a version bump: every new member is
 optional. A machine offering no canvas tools (a server with no desktop open)
 answers "Unknown tool", and the desktop says to open Studio there. Every board
 name on a machine, removed projects included, is now readable on
-`workspace:read`: there is no per-project scope. The phone does not use any of
-this. It only learned to show a board named by `id` as its name.
+`workspace:read`: there is no per-project scope. The phone reads the same
+tools on the same grant and by the same rule: every board on a machine with the
+capability, one project at a time on one without, said in words, and a
+picture of a board by its `id`, or by path from its project
+(`mobile/src/api/canvasBoards.ts`). Its Continue in a new chat starts a removed
+project's board under no project only where the machine advertises
+`new-chat-no-project`.
+
+`canvas-live-boards` (2026-11-07) lets a paired desktop's Canvas pane edit this
+machine's boards in its own editor. It names a new WebSocket, `canvas`, upgraded
+with a ticket as the conversation socket is, on `workspace:read`; a scene, a
+picture sent for one, taking the pen and making a board need `workspace:operate`,
+and the grant is read again on every message. A board is the ref this machine's
+own pane uses (a store board, or a `.excalidraw` file inside a project, under the
+same path rules), opened as a subscriber of this machine's canvas service, so
+every write goes through its one merge. Pictures travel as their own messages,
+once each way, and any message over the 1 MiB cap goes in `part` messages put
+back together at the other end, up to 32 MB. A desktop that does not see the
+capability shows a board as a picture through `canvas.screenshot`, as it did, and
+says why; a machine without it answers the socket 404, and one that runs no
+canvas service (a server with no desktop, or a Studio running its server out of
+process) does not advertise it and answers 503. An older desktop never opens the
+socket and loses nothing. No version bump: the route and the capability are new,
+and nothing that was there changed.
 
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is
@@ -769,6 +791,34 @@ on a socket of its own; elsewhere it lists the agents the CLI spawned, as it
 always did. One row a client cannot read is dropped
 alone. The Studio RPC does not advertise it: its conversation topic carries no
 `subagents` frames, and a window on it reads the records themselves.
+A chat's changes are the `conversation-changes` capability (2026-11-07): what
+the desktop's own Diff tab shows when its Changes row is pressed, read in the
+chat's checkout there. `{ type: 'watchChanges', requestId }` has the desktop
+send a `changes` frame (`ConversationChangesFrame`: the chat's `key`, its
+checkout as `changes` — branch, base, scope, its commits ahead of the default
+branch oldest first, at most `CONVERSATION_MAX_CHANGES_STEPS`, and whether
+anything is uncommitted — or null where it has no repository, and a
+`revision`) now and whenever the checkout reads differently, an edit to a file
+already changed included, until `{ type: 'watchChanges', requestId, stop: true }`,
+another `subscribe`, or the socket closing. The desktop reads the checkout every
+couple of seconds while a watch stands, and not at all otherwise.
+`getChangesDiff` names a step (`span`, `uncommitted`, or a `commit` by its
+hash) and is answered with its files and line counts; `getChangedFile` names a
+step and a path and is answered with the file's two sides
+(`ConversationChangedFileSides`: each its text, `absent`, or `too-large` past
+`CONVERSATION_MAX_CHANGED_FILE_BYTES`). Nothing else of the checkout is
+readable through it, which is why a client names no revision or folder: the
+path must be one the step lists as the desktop reads it then, the revisions are
+worked out there from the step, a commit must be one of the branch's own, a
+path is relative with no `..`, and a link in the working tree reads as what it
+points at, never as the file it names. All of it is `conversation:read`, as the
+transcript is; it writes nothing, so nothing here needs `conversation:operate`.
+It is additive: a desktop without it refuses each request `invalid_frame` under
+its id, and a client asks only where it is advertised, so a paired Changes row
+stays the read-only count it was. A desktop sends `changes` frames only to a
+client that asked, so a phone, which does not, sees exactly what it saw. The
+Studio RPC does not advertise it: its conversation topic carries no `changes`
+frames.
 A `send` may say when it was written, `composedAt` (epoch ms, the client's
 clock), and that the person confirmed one written long ago, `confirmedStale`
 (2026-10-20). A desktop that reads them records `composedAt` on the

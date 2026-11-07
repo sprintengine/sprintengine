@@ -1090,6 +1090,18 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   shows one: not the sidebar here, and not a phone's. A machine without the
   capability shows only the agents the
   chat's CLI spawned, as before. The phone does not ask, and shows those too.
+- **Its changes are the other machine's** (2026-11-07). Where the machine
+  advertises `conversation-changes`, the panel's Changes row opens the chat's
+  changes in the Diff tab here, read from that machine's checkout: the branch's
+  steps (all commits, uncommitted, each commit), each step's files and each
+  file's two sides, read again whenever the machine says the checkout moved.
+  Viewed marks and Add to chat work as they do for a chat here, and a quote
+  lands in that chat's composer. What opens a folder here (Open in editor, the
+  file tree's menu, the separate diff window) and this machine's tours and
+  changelists are not offered; the tab pops out of the pane like any other.
+  Only a file a step lists is readable, on `conversation:read`, and nothing is
+  written. A machine without the capability keeps the row as its count. Files
+  and Terminal stay on the machine.
 
 ### Terminals stay on the machine
 

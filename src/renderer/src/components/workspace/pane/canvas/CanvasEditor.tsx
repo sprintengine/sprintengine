@@ -47,6 +47,7 @@ import {
   CANVAS_PUSH_RETRY_MS,
 } from './canvasSync'
 import type { CanvasBoardExporter } from './canvasExport'
+import type { CanvasBoardClient } from './canvasBoardSource'
 import { canvasLinkAction } from './canvasLinks'
 
 // The live editor, and the ONE file in the tree that imports
@@ -198,6 +199,10 @@ type CanvasEditorProps = {
   store?: string
   /** The board as the tab last knew it. Read once, at mount. */
   initial: CanvasBoardState
+  /** Where the scene goes: this machine's canvas, or the one a paired chat runs on. */
+  client: CanvasBoardClient
+  /** The person may look but not draw: a pairing that only reads, or a board that can no longer be saved. */
+  readOnly: boolean
   /** The board's name — the editor's document name, and what an export is called. */
   name: string
   theme: ColorScheme
@@ -212,6 +217,8 @@ type CanvasEditorProps = {
   onSwitchBoard: () => void
   onRevealFile: (() => void) | null
   onCopyPath: () => void
+  /** Carry on with this board in a new chat on its own machine; null where it has no id to be named by. */
+  onContinueInNewChat: (() => void) | null
   /**
    * Export to a folder. Handed this editor's half of the job — flush what is on
    * screen to main, then render the pictures asked for — so the tab can run the
@@ -262,6 +269,8 @@ export default function CanvasEditor({
   path,
   store,
   initial,
+  client,
+  readOnly,
   name,
   theme,
   active,
@@ -269,6 +278,7 @@ export default function CanvasEditor({
   onSwitchBoard,
   onRevealFile,
   onCopyPath,
+  onContinueInNewChat,
   onExport,
 }: CanvasEditorProps) {
   // The API handle as STATE, not a module-level or file-level variable: two
@@ -291,6 +301,8 @@ export default function CanvasEditor({
   // it is given nothing to re-run on instead.
   const boardRef = useRef(board)
   boardRef.current = board
+  const clientRef = useRef(client)
+  clientRef.current = client
 
   // The revision this tab is at, and the newest one it has applied. They move
   // together; two names because they answer different questions — what to cite
@@ -408,9 +420,13 @@ export default function CanvasEditor({
     [startPushRetry],
   )
 
+  // Read by the commit, which must not be re-created when it changes.
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
+
   const commitNow = useCallback(async () => {
     const editor = apiRef.current
-    if (!editor || goneRef.current) return
+    if (!editor || goneRef.current || readOnlyRef.current) return
     const elements = editor.getSceneElementsIncludingDeleted() as unknown as CanvasElement[]
     const hash = sceneVersionHash(elements)
     if (!shouldCommitCanvasScene(hash, syncedHashRef.current)) return
@@ -420,9 +436,9 @@ export default function CanvasEditor({
     // before it.
     syncedHashRef.current = hash
     const baseRevision = revisionRef.current
-    let result: Awaited<ReturnType<typeof window.api.canvasCommitScene>>
+    let result: Awaited<ReturnType<CanvasBoardClient['commit']>>
     try {
-      result = await window.api.canvasCommitScene({
+      result = await client.commit({
         ...board,
         baseRevision,
         elements,
@@ -460,7 +476,7 @@ export default function CanvasEditor({
     // Main took exactly what was sent: what is on screen IS that revision.
     revisionRef.current = outcome.revision
     appliedRevisionRef.current = outcome.revision
-  }, [applyPush, board])
+  }, [applyPush, board, client])
 
   const cancelCommitTimer = useCallback(() => {
     if (commitTimerRef.current === null) return
@@ -559,7 +575,7 @@ export default function CanvasEditor({
       // a callback that outlives the component finds nothing rather than a
       // destroyed instance.
       apiRef.current = null
-      if (!editor) return
+      if (!editor || readOnlyRef.current) return
       const elements = editor.getSceneElementsIncludingDeleted() as unknown as CanvasElement[]
       const hash = sceneVersionHash(elements)
       if (!shouldCommitCanvasScene(hash, syncedHashRef.current)) return
@@ -567,8 +583,8 @@ export default function CanvasEditor({
       // Not awaited and not retried: the component is going away, and main
       // answers on its own timeline. A failure here loses at most the last
       // 400ms of drawing, which is the same thing a crash would lose.
-      void window.api
-        .canvasCommitScene({
+      void clientRef.current
+        .commit({
           ...boardRef.current,
           baseRevision: revisionRef.current,
           elements,
@@ -580,16 +596,17 @@ export default function CanvasEditor({
   }, [cancelCommitTimer, stopPushRetry])
 
   const noteHumanInput = useCallback(() => {
+    if (readOnlyRef.current) return
     const now = Date.now()
     if (!shouldNoteHumanInput(now, humanInputAtRef.current)) return
     humanInputAtRef.current = now
     try {
-      window.api.canvasNoteHumanInput(board)
+      client.noteHumanInput(board)
     } catch {
       // Fire-and-forget by contract: the person is drawing, and a missing
       // channel must not interrupt them.
     }
-  }, [board])
+  }, [board, client])
 
   /**
    * This editor's half of an export.
@@ -661,16 +678,19 @@ export default function CanvasEditor({
           {onRevealFile ? <MainMenu.Item onSelect={onRevealFile}>Reveal file</MainMenu.Item> : null}
           <MainMenu.Item onSelect={onCopyPath}>Copy path</MainMenu.Item>
           <MainMenu.Item onSelect={() => onExport(exportBoard)}>Export to folder…</MainMenu.Item>
+          {onContinueInNewChat ? (
+            <MainMenu.Item onSelect={onContinueInNewChat}>Continue in a new chat</MainMenu.Item>
+          ) : null}
         </MainMenu.Group>
         <MainMenu.Separator />
         <MainMenu.DefaultItems.SearchMenu />
         <MainMenu.DefaultItems.SaveAsImage />
         <MainMenu.Separator />
-        <MainMenu.DefaultItems.ChangeCanvasBackground />
-        <MainMenu.DefaultItems.ClearCanvas />
+        {readOnly ? null : <MainMenu.DefaultItems.ChangeCanvasBackground />}
+        {readOnly ? null : <MainMenu.DefaultItems.ClearCanvas />}
       </MainMenu>
     ),
-    [exportBoard, name, onCopyPath, onExport, onRevealFile, onSwitchBoard],
+    [exportBoard, name, onContinueInNewChat, onCopyPath, onExport, onRevealFile, onSwitchBoard, readOnly],
   )
 
   /**
@@ -715,6 +735,10 @@ export default function CanvasEditor({
       initialData={initialData}
       name={name}
       theme={theme}
+      // A board this pairing may only look at, or one that can no longer be
+      // saved: the editor's own view mode, which pans and zooms and draws
+      // nothing. The line above the editor says why.
+      viewModeEnabled={readOnly}
       langCode="en"
       aiEnabled={false}
       autoFocus={false}

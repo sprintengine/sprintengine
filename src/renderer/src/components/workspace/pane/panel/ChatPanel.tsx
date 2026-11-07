@@ -7,6 +7,7 @@ import { GitBranchGlyph } from '../../../AppIcons'
 import CliIcon from '../../../CliIcon'
 import { shortMachineName } from '../../../remote/machineRowModel'
 import { useChatActivity, type ChatActivityRow } from '../../../panels/agentChat/chatActivityStore'
+import { openPairedChanges, usePairedChanges } from '../../../panels/agentChat/pairedChanges'
 import { useChatPanelFacts, type ChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
 import { useShowSubagentFamily, useSubagentFamily } from '../../../panels/agentChat/subagentFamilyStore'
 import { subagentViewOwner, useSubagentViews } from '../../../panels/agentChat/subagentViewStack'
@@ -154,10 +155,14 @@ export function ChatPanel({ onClose, ...openNow }: ChatPanelProps) {
     `${tabs.filter((tab) => tab.kind === 'canvas').length}:${activity?.rows.find((row) => row.kind === 'canvas')?.meta ?? ''}`,
   )
 
-  // A chat on a paired machine works over there: its checkout and terminals
-  // cannot be opened from here.
+  // A chat on a paired machine works over there: its files and terminals
+  // cannot be opened from here. Its changes can, read from that machine, where
+  // it reads them for this window (`conversation-changes`); an older one keeps
+  // the row as its count.
   const farMachine = facts?.remote ? shortMachineName(facts.machine?.name ?? 'the other machine') : null
   const onFarMachine = farMachine ? `On ${farMachine}` : null
+  const pairedChanges = usePairedChanges(workspaceId, facts?.remote ? agentId : null)
+  const changesOpen = !farMachine || (pairedChanges !== null && gitEnabled)
 
   const record = agentId ? workspace?.agents?.[agentId] : undefined
   const name = facts?.name ?? top?.label ?? record?.name ?? workspace?.name ?? ''
@@ -169,7 +174,8 @@ export function ChatPanel({ onClose, ...openNow }: ChatPanelProps) {
   const activityRow = (kind: ChatActivityRow['kind']) => activity?.rows.find((row) => row.kind === kind)
   const openChanges = () => {
     if (activityRow('changes')) activity?.open('changes')
-    else openPaneTab(workspaceId, { kind: gitEnabled ? 'diff' : 'files' })
+    else if (!(gitEnabled && agentId && openPairedChanges(workspaceId, agentId)))
+      openPaneTab(workspaceId, { kind: gitEnabled ? 'diff' : 'files' })
   }
   const openFiles = () => {
     if (activityRow('files')) activity?.open('files')
@@ -208,7 +214,7 @@ export function ChatPanel({ onClose, ...openNow }: ChatPanelProps) {
       <ChatPanelOpenNow {...openNow} activity={activity} />
       <Section title="This chat" inset="flush">
         <PanelCard>
-          {shownChanges || !farMachine ? (
+          {shownChanges || changesOpen ? (
             <PanelRow
               glyph={<DiffGlyph className={`icon-sm ${activityTone(changesRow)}`} />}
               label="Changes"
@@ -221,7 +227,7 @@ export function ChatPanel({ onClose, ...openNow }: ChatPanelProps) {
                   />
                 ) : null
               }
-              onClick={farMachine ? null : openChanges}
+              onClick={changesOpen ? openChanges : null}
               ariaLabel={shownChanges ? `Changes, ${shownChanges.phrase}` : 'Changes'}
             />
           ) : null}

@@ -4,6 +4,7 @@ import { composerDraftStore } from './draftStore'
 import { mountedChatViewFor } from './mountedChatViews'
 import { insertQuoteIntoDraft } from './quoteSelection'
 import { readSubagentViews, subagentViewOwner } from './subagentViewStack'
+import { readRemoteChats } from './remoteChatRegistry'
 
 // A quote handed to a workspace's chat from somewhere else in the app (the
 // diff viewer's "Add to chat", in this window or another): set into that
@@ -20,13 +21,18 @@ import { readSubagentViews, subagentViewOwner } from './subagentViewStack'
  * one drawn here, else the one the workspace last worked with
  * (`lastActiveAgentId`), else the first. A workspace with several chats is
  * rare, and the quote going to one the person is not looking at is the
- * mistake this order is there to avoid.
+ * mistake this order is there to avoid. A chat on a paired machine has no
+ * record here, only the pane that holds it, and counts as one of them.
  */
 function tabChatOf(workspaceId: string): string | null {
   const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === workspaceId)
-  const chats = Object.entries(workspace?.agents ?? {})
+  const local = Object.entries(workspace?.agents ?? {})
     .filter(([, agent]) => agent.conversation && !isSubagentRecord(agent))
     .map(([agentId]) => agentId)
+  const remote = readRemoteChats(workspaceId)
+    .filter((entry) => !entry.subagentOf && !local.includes(entry.agentId))
+    .map((entry) => entry.agentId)
+  const chats = [...local, ...remote]
   if (chats.length <= 1) return chats[0] ?? null
   const drawn = chats.map((agentId) => mountedChatViewFor(workspaceId, agentId)).filter((view) => view !== null)
   const focused = drawn.find((view) => view.isFocused())
@@ -40,15 +46,16 @@ function tabChatOf(workspaceId: string): string | null {
 // The chat the person is looking at there: a sub-agent has no tab of its own to
 // be found by, but when one is drawn in its parent's place the quote is for it,
 // not for the parent hidden beneath it. A lane is part of the chat that holds it.
-function chatAgentOf(workspaceId: string): string | null {
-  const tabChat = tabChatOf(workspaceId)
+// A diff of one chat's own changes names that chat.
+function chatAgentOf(workspaceId: string, named?: string): string | null {
+  const tabChat = named ?? tabChatOf(workspaceId)
   const top = tabChat ? readSubagentViews(workspaceId, tabChat).at(-1) : undefined
   return top ? subagentViewOwner(top) : tabChat
 }
 
-export function deliverQuoteToWorkspaceChat(workspaceId: string, text: string): string | null {
+export function deliverQuoteToWorkspaceChat(workspaceId: string, text: string, chatAgentId?: string): string | null {
   if (!text.trim()) return null
-  const agentId = chatAgentOf(workspaceId)
+  const agentId = chatAgentOf(workspaceId, chatAgentId)
   if (!agentId) return null
   const view = mountedChatViewFor(workspaceId, agentId)
   if (view?.insertQuote) {

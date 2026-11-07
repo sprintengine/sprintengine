@@ -21,6 +21,7 @@ import {
   type ConversationQueuedFrame,
   type ConversationScheduledFrame,
   type ConversationSubagentsFrame,
+  type ConversationChangesFrame,
   type ConversationUsageLimitsFrame,
   type ConversationServerFrame,
   type ConversationWireErrorCode,
@@ -175,6 +176,7 @@ type OutgoingFrame =
   | ConversationScheduledFrame
   | ConversationUsageLimitsFrame
   | ConversationSubagentsFrame
+  | ConversationChangesFrame
 
 type LiveEntry = {
   kind: 'live'
@@ -229,6 +231,8 @@ export function createTailnetConversationStream(options: TailnetConversationStre
   let usageWatch: { chat: string; stop(): void } | null = null
   // And which sub-agents that chat has (`watchSubagents`).
   let subagentsWatch: { chat: string; stop(): void } | null = null
+  // And how that chat's checkout stands (`watchChanges`), until the client says stop.
+  let changesWatch: { chat: string; stop(): void } | null = null
   const stopQueuedWatch = (): void => {
     queuedWatch?.stop()
     queuedWatch = null
@@ -249,11 +253,16 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     subagentsWatch?.stop()
     subagentsWatch = null
   }
+  const stopChangesWatch = (): void => {
+    changesWatch?.stop()
+    changesWatch = null
+  }
   const stopWatches = (): void => {
     stopQueuedWatch()
     stopScheduledWatch()
     stopUsageWatch()
     stopSubagentsWatch()
+    stopChangesWatch()
   }
   let frameSequence = 0
   let subscriptionGeneration = 0
@@ -636,6 +645,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     if (scheduledWatch && scheduledWatch.chat !== chatId(key)) stopScheduledWatch()
     if (usageWatch && usageWatch.chat !== chatId(key)) stopUsageWatch()
     if (subagentsWatch && subagentsWatch.chat !== chatId(key)) stopSubagentsWatch()
+    if (changesWatch && changesWatch.chat !== chatId(key)) stopChangesWatch()
     currentKey = key
     // Every snapshot and fence names the conversation it belongs to, so a
     // client can refuse one for a conversation it no longer follows.
@@ -843,6 +853,39 @@ export function createTailnetConversationStream(options: TailnetConversationStre
       const wireKey = { workspaceId: key.workspaceId, agentId: key.agentId }
       const stop = host.watchSubagents(wireKey, (subagents) => sendLive({ type: 'subagents', key: wireKey, subagents }))
       subagentsWatch = { chat: chatId(key), stop }
+      return
+    }
+    // A chat's changes, read in its checkout here as the Diff tab here reads
+    // them. Only a file a step lists, at revisions worked out here.
+    if (frame.type === 'watchChanges') {
+      const key = requireKey(frame.requestId)
+      if (!key) return
+      if (!host.watchChanges) {
+        await result(frame.requestId, { ok: false, message: 'This desktop does not read a chat’s changes.' })
+        return
+      }
+      await result(frame.requestId, { ok: true })
+      stopChangesWatch()
+      if (frame.stop || closed || !currentKey || chatId(currentKey) !== chatId(key)) return
+      const wireKey = { workspaceId: key.workspaceId, agentId: key.agentId }
+      const stop = host.watchChanges(wireKey, (said) => sendLive({ type: 'changes', key: wireKey, ...said }))
+      changesWatch = { chat: chatId(key), stop }
+      return
+    }
+    if (frame.type === 'getChangesDiff' || frame.type === 'getChangedFile') {
+      const key = requireKey(frame.requestId)
+      if (!key) return
+      if (!host.changesDiff || !host.changedFile) {
+        await result(frame.requestId, { ok: false, message: 'This desktop does not read a chat’s changes.' })
+        return
+      }
+      const wireKey = { workspaceId: key.workspaceId, agentId: key.agentId }
+      await result(
+        frame.requestId,
+        frame.type === 'getChangesDiff'
+          ? await host.changesDiff(wireKey, frame.selection)
+          : await host.changedFile(wireKey, frame.selection, frame.path),
+      )
       return
     }
     if (frame.type === 'command') {

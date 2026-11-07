@@ -54,6 +54,7 @@ const READ_ONLY = {
   hostPullRequests: false,
   hostSchedule: false,
   hostUsageLimits: false,
+  hostChanges: false,
   agentMessages: false,
 } as const
 

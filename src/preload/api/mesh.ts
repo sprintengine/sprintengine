@@ -72,9 +72,14 @@ import {
   MESH_CONVERSATION_TOOL_IMAGE_CHANNEL,
   MESH_CONVERSATION_ATTACHMENT_CHANNEL,
   MESH_CONVERSATION_TURN_DIFF_CHANNEL,
+  MESH_CONVERSATION_WATCH_CHANGES_CHANNEL,
+  MESH_CONVERSATION_CHANGES_DIFF_CHANNEL,
+  MESH_CONVERSATION_CHANGED_FILE_CHANNEL,
   MESH_CONVERSATION_UNFOLLOW_CHANNEL,
   MESH_CONVERSATION_FILE_SEARCH_CHANNEL,
   MESH_CONVERSATION_COMMANDS_CHANNEL,
+  type MeshChangedFileResult,
+  type MeshChangesDiffResult,
   type MeshConversationFileSearchResult,
   type MeshConversationCommandsResult,
   type MeshConversationCommand,
@@ -90,6 +95,7 @@ import {
   type MeshPullRequestStateResult,
 } from '../../shared/tailnet-mesh'
 import type { PullRequestCheckoutPin } from '../../shared/git/pull-request-create'
+import type { ConversationChangesSelection } from '../../../packages/conversation-protocol/src/checkoutChanges'
 import type { ConversationMentionRef } from '../../shared/conversation/mentions'
 import type { ConversationAttachedFile } from '../../shared/conversation/attachedFiles'
 import type {
@@ -393,6 +399,24 @@ export const meshApi = {
     path?: string
   }): Promise<ConversationTurnDiffResult> =>
     ipcRenderer.invoke(MESH_CONVERSATION_TURN_DIFF_CHANNEL, input) as Promise<ConversationTurnDiffResult>,
+  meshConversationWatchChanges: (input: {
+    key: MeshConversationKey
+    watching: boolean
+  }): Promise<{ ok: true } | { ok: false; code: string; message: string }> =>
+    ipcRenderer.invoke(MESH_CONVERSATION_WATCH_CHANGES_CHANNEL, input) as Promise<
+      { ok: true } | { ok: false; code: string; message: string }
+    >,
+  meshConversationChangesDiff: (input: {
+    key: MeshConversationKey
+    selection: ConversationChangesSelection
+  }): Promise<MeshChangesDiffResult> =>
+    ipcRenderer.invoke(MESH_CONVERSATION_CHANGES_DIFF_CHANNEL, input) as Promise<MeshChangesDiffResult>,
+  meshConversationChangedFile: (input: {
+    key: MeshConversationKey
+    selection: ConversationChangesSelection
+    path: string
+  }): Promise<MeshChangedFileResult> =>
+    ipcRenderer.invoke(MESH_CONVERSATION_CHANGED_FILE_CHANNEL, input) as Promise<MeshChangedFileResult>,
   meshConversationToolImage: (input: {
     key: MeshConversationKey
     toolUseId: string
@@ -498,6 +522,9 @@ export const meshApi = {
   | 'meshConversationRestartSession'
   | 'meshConversationToolDetail'
   | 'meshConversationTurnDiff'
+  | 'meshConversationWatchChanges'
+  | 'meshConversationChangesDiff'
+  | 'meshConversationChangedFile'
   | 'meshConversationToolImage'
   | 'meshConversationAttachment'
   | 'meshConversationSearchFiles'

@@ -9,6 +9,9 @@ import type {
   ConversationHighlightColor,
   ConversationQueuedMessage,
   ConversationScheduledMessage,
+  ConversationChangedFileSides,
+  ConversationChangesDiff,
+  ConversationCheckoutChanges,
   ConversationSubagent,
   ConversationThread,
   ConversationUsageLimitNotice,
@@ -713,6 +716,26 @@ export type MeshConversationSubagents = { type: 'subagents'; subagents: MeshSuba
 /** A chat of a paired machine that belongs to another: followed by its ids, as any chat is. */
 export type MeshSubagent = ConversationSubagent
 
+/**
+ * How a chat's checkout stands on its machine, whole each time
+ * (`conversation-changes`), while a Diff tab here reads its changes: the
+ * branch's commits as steps, and a `revision` that moves whenever what the tab
+ * shows may have. `changes` is null where the machine has no repository to read.
+ */
+export type MeshConversationChanges = {
+  type: 'changes'
+  changes: ConversationCheckoutChanges | null
+  revision: string
+}
+
+/** One step of a paired machine's chat's changes: its files, or why they could not be read. */
+export type MeshChangesDiffResult =
+  ({ ok: true } & ConversationChangesDiff) | { ok: false; code: string; message: string }
+
+/** Both sides of one file of such a step, or why they could not be read. */
+export type MeshChangedFileResult =
+  ({ ok: true } & ConversationChangedFileSides) | { ok: false; code: string; message: string }
+
 export type MeshConversationFrame =
   | ConversationSessionFrame
   | MeshConversationLink
@@ -720,6 +743,7 @@ export type MeshConversationFrame =
   | MeshConversationScheduled
   | MeshConversationUsageLimits
   | MeshConversationSubagents
+  | MeshConversationChanges
 
 /**
  * `modelSwitch`: the machine advertises `conversation-models` — its list names
@@ -857,6 +881,12 @@ export type MeshConversationFrame =
  * in its chats here may ride as a token, which it expands for its agent. False
  * for a machine that would hand its agent the address, where Quote writes a
  * blockquote.
+ *
+ * `changes`: the machine advertises `conversation-changes` — a chat's Changes
+ * opens its changes here in the Diff tab, read from that machine's checkout
+ * (`meshConversationWatchChanges`, `meshConversationChangesDiff`,
+ * `meshConversationChangedFile`). False for a machine that does not, where the
+ * Changes row is that machine's counts and opens nothing.
  */
 export type MeshConversationListResult =
   | {
@@ -889,6 +919,7 @@ export type MeshConversationListResult =
       queuedAttachments?: boolean
       permanentApprovals?: boolean
       quotes?: boolean
+      changes?: boolean
       createPullRequest?: boolean
       rowMenu?: boolean
       markUnread?: boolean
@@ -1057,6 +1088,10 @@ export const MESH_CONVERSATION_COMMAND_CHANNEL = 'mesh:conversation-command'
 export const MESH_CONVERSATION_SEND_CHANNEL = 'mesh:conversation-send'
 export const MESH_CONVERSATION_TOOL_DETAIL_CHANNEL = 'mesh:conversation-tool-detail'
 export const MESH_CONVERSATION_TURN_DIFF_CHANNEL = 'mesh:conversation-turn-diff'
+/** A paired machine's chat's changes, as its Diff tab reads them (`conversation-changes`). */
+export const MESH_CONVERSATION_WATCH_CHANGES_CHANNEL = 'mesh:conversation-watch-changes'
+export const MESH_CONVERSATION_CHANGES_DIFF_CHANNEL = 'mesh:conversation-changes-diff'
+export const MESH_CONVERSATION_CHANGED_FILE_CHANNEL = 'mesh:conversation-changed-file'
 export const MESH_CONVERSATION_SIDE_QUESTION_CHANNEL = 'mesh:conversation-side-question'
 export const MESH_CONVERSATION_CANCEL_SIDE_QUESTION_CHANNEL = 'mesh:conversation-cancel-side-question'
 export const MESH_CONVERSATION_CONTEXT_BREAKDOWN_CHANNEL = 'mesh:conversation-context-breakdown'

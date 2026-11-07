@@ -42,6 +42,8 @@ import {
   type MeshPullRequestDraftResult,
   type MeshPullRequestPushResult,
   type MeshPullRequestStateResult,
+  type MeshChangedFileResult,
+  type MeshChangesDiffResult,
   type MeshConversationCommandResult,
   type MeshConversationFrame,
   type MeshConversationImageResult,
@@ -76,7 +78,9 @@ import type {
 import { parseImageAttachments } from '../../conversation-ipc-inputs'
 import {
   CONVERSATION_MAX_MESSAGE_CHARS,
+  isConversationChangedPath,
   isConversationHighlightColor,
+  parseConversationChangesSelection,
 } from '../../../../packages/conversation-protocol/src/public'
 import type { WorkspaceExtensions } from '../../../shared/workspace-extensions'
 import {
@@ -131,6 +135,11 @@ import { asRecord, isRecord } from '../../../shared/records'
 import { mayHoldQuotes, quotesToPlainText } from '../../../shared/chat-quotes'
 import { parseCliPermissionPreset } from '../../../shared/cli-permission-preset'
 import { powerActivity, type PowerActivity } from '../../power-activity'
+import {
+  createTailnetRemoteCanvas,
+  type TailnetRemoteCanvas,
+  type TailnetRemoteCanvasDeps,
+} from './tailnet-remote-canvas'
 
 // The Mesh: this Studio driving other machines.
 //
@@ -531,6 +540,18 @@ export type TailnetMeshService = {
   conversationToolDetail(input: { key: unknown; toolUseId: unknown }): Promise<ConversationToolDetailResult>
   conversationTurnDiff(input: { key: unknown; turnSeq: unknown; path?: unknown }): Promise<ConversationTurnDiffResult>
   /**
+   * A followed chat's changes, read from its machine as that machine's Diff tab
+   * reads them (`conversation-changes`): one more or one fewer window reading
+   * them, one step's files, and one file's two sides. Refused in words, without
+   * asking, for a machine that does not advertise it.
+   */
+  conversationWatchChanges(input: {
+    key: unknown
+    watching: unknown
+  }): Promise<{ ok: true } | { ok: false; code: string; message: string }>
+  conversationChangesDiff(input: { key: unknown; selection: unknown }): Promise<MeshChangesDiffResult>
+  conversationChangedFile(input: { key: unknown; selection: unknown; path: unknown }): Promise<MeshChangedFileResult>
+  /**
    * A side question asked of a followed conversation's agent over there, and
    * calling one off. Refused in words, without asking, for a machine that does
    * not advertise `conversation-side-questions`.
@@ -564,6 +585,12 @@ export type TailnetMeshService = {
    * name `conversation-message-images`.
    */
   conversationAttachment(input: { key: unknown; ref: unknown }): Promise<MeshConversationImageResult>
+  /**
+   * A paired chat's Canvas pane editing that machine's boards
+   * (`canvas-live-boards`, tailnet-remote-canvas.ts): the same calls the pane
+   * makes of this machine's canvas service, carried to that one's.
+   */
+  remoteCanvas: TailnetRemoteCanvas
   shutdown(): void
 }
 
@@ -641,6 +668,8 @@ export type TailnetMeshServiceOptions = {
     RemoteConversationsOptions,
     'retry' | 'requestTimeoutMs' | 'commandTimeoutMs' | 'listTimeoutMs' | 'livenessTimeoutMs' | 'saveDelayMs'
   >
+  /** Timing for a paired chat's boards; tests shorten it. */
+  canvas?: Pick<TailnetRemoteCanvasDeps, 'retry' | 'lingerMs' | 'requestTimeoutMs'>
   log?: (message: string) => void
 }
 
@@ -707,6 +736,22 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
 
   function connectionFor(connectionId: unknown): StoredMeshConnection | null {
     return typeof connectionId === 'string' ? store.find(connectionId) : null
+  }
+  /**
+   * A machine that does not read a chat's changes is told so in words, without
+   * a trip to the chat: its Changes row is the count it was
+   * (`conversation-changes`). Asked of the machine when this run has not heard
+   * what it serves yet, as a Diff tab restored before its chat is listed has not.
+   */
+  async function changesRefusal(connectionId: string): Promise<{ ok: false; code: string; message: string } | null> {
+    const connection = connectionFor(connectionId)
+    if (!connection) return null
+    if (tailnetPeerSupports(await knownCapabilities(connection), 'conversation-changes')) return null
+    return {
+      ok: false,
+      code: 'unsupported',
+      message: `${connection.machineName} cannot show a chat’s changes here yet. Update SprintEngine Studio there.`,
+    }
   }
 
   async function pair(input: { pairingUrl: unknown; deviceName?: unknown }): Promise<MeshPairResult> {
@@ -2675,6 +2720,8 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
           // An approval may be answered there with an "always allow" rule.
           permanentApprovals: tailnetPeerSupports(identity.value.capabilities, 'conversation-permanent-approvals'),
           quotes: tailnetPeerSupports(identity.value.capabilities, 'conversation-quote-tokens'),
+          // A chat's Changes opens its changes here, read from its checkout there.
+          changes: tailnetPeerSupports(identity.value.capabilities, 'conversation-changes'),
           createPullRequest: tailnetPeerSupports(identity.value.capabilities, 'chat-create-pull-request'),
           rowMenu: tailnetPeerSupports(identity.value.capabilities, 'chat-row-menu'),
           markUnread: tailnetPeerSupports(identity.value.capabilities, 'chat-mark-unread'),
@@ -3148,6 +3195,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     // Its followed conversations end, and what was kept of them goes too: a
     // transcript from a machine no longer paired is not this machine's to keep.
     void remoteConversations.forgetConnection(connectionId, 'This machine was removed from your mesh.')
+    remoteCanvas.forget(connectionId)
     store.forget(connectionId)
     syncReachabilityTimer()
     if (forgotten) broadcast({ kind: 'machine-forgotten', connectionId, machineName: forgotten.machineName })
@@ -3156,7 +3204,28 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     return forgotten ? { id: forgotten.id, machineName: forgotten.machineName } : null
   }
 
+  const remoteCanvas = createTailnetRemoteCanvas({
+    connection: (connectionId) => {
+      const connection = connectionFor(connectionId)
+      return connection
+        ? { endpoint: endpointOf(connection), token: connection.deviceToken, machineName: connection.machineName }
+        : null
+    },
+    identity: async (connectionId) => {
+      const connection = connectionFor(connectionId)
+      if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
+      const identity = await readRemoteIdentity({ endpoint: endpointOf(connection), token: connection.deviceToken })
+      if (!identity.ok) return identity
+      rememberCapabilities(connection.id, identity.value.capabilities)
+      return { ok: true, value: { scopes: identity.value.scopes, capabilities: identity.value.capabilities } }
+    },
+    knownCapabilities: (connectionId) => peerCapabilities.get(connectionId),
+    ...(options.canvas ? options.canvas : {}),
+    log: options.log,
+  })
+
   return {
+    remoteCanvas,
     start,
     onWake,
     async checkReachability(connectionId): Promise<MeshLiveState> {
@@ -3482,6 +3551,31 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       return remoteConversations.cancelSideQuestion(key, input.requestId)
     },
 
+    async conversationWatchChanges(input) {
+      const key = meshConversationKeyOf(input.key)
+      if (!key || typeof input.watching !== 'boolean')
+        return { ok: false, code: 'invalid_arguments', message: 'Name the conversation.' }
+      // Stopping is never refused: it only lets go of what was asked.
+      const refused = input.watching ? await changesRefusal(key.connectionId) : null
+      return refused ?? remoteConversations.watchChanges(key, input.watching)
+    },
+
+    async conversationChangesDiff(input): Promise<MeshChangesDiffResult> {
+      const key = meshConversationKeyOf(input.key)
+      const selection = parseConversationChangesSelection(input.selection)
+      if (!key || !selection)
+        return { ok: false, code: 'invalid_arguments', message: 'Name the conversation and step.' }
+      return (await changesRefusal(key.connectionId)) ?? remoteConversations.changesDiff(key, selection)
+    },
+
+    async conversationChangedFile(input): Promise<MeshChangedFileResult> {
+      const key = meshConversationKeyOf(input.key)
+      const selection = parseConversationChangesSelection(input.selection)
+      if (!key || !selection || !isConversationChangedPath(input.path))
+        return { ok: false, code: 'invalid_arguments', message: 'Name the conversation, the step and the file.' }
+      return (await changesRefusal(key.connectionId)) ?? remoteConversations.changedFile(key, selection, input.path)
+    },
+
     async conversationContextBreakdown(input): Promise<ConversationContextBreakdownResult> {
       const key = meshConversationKeyOf(input.key)
       if (!key) return { ok: false, reason: 'failed', message: 'Name the conversation.' }
@@ -3525,6 +3619,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       for (const connectionId of [...awayMachines.keys()]) forgetAway(connectionId)
       supervising = false
       remoteConversations.shutdown()
+      remoteCanvas.shutdown()
       for (const connectionId of [...watches.keys()]) stopWatch(connectionId)
       if (reachabilityTimer) clearInterval(reachabilityTimer)
       reachabilityTimer = null

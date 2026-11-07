@@ -33,6 +33,14 @@ export const TAILNET_CONVERSATION_PATH = `${TAILNET_ROUTE_PREFIX}/conversation`
  * already scoped for. Not the RPC stream: a watcher is not "connected" the
  * way a device driving this machine is, and must not count as one.
  */
+/**
+ * A paired desktop's Canvas pane on this machine's boards (`canvas-live-boards`):
+ * a WebSocket that opens a board, carries the person's scene to it and every
+ * accepted write back (tailnet-canvas-stream.ts). Upgraded with a ticket, as
+ * the conversation socket is, on `workspace:read`; a change needs
+ * `workspace:operate`.
+ */
+export const TAILNET_CANVAS_PATH = `${TAILNET_ROUTE_PREFIX}/canvas`
 export const TAILNET_EVENTS_PATH = `${TAILNET_ROUTE_PREFIX}/events`
 /**
  * One image from a paired device, staged for a conversation it may operate.
@@ -332,6 +340,15 @@ export const TAILNET_CAPABILITIES = [
   // agents a chat's CLI spawned for a machine without it.
   // CONVERSATION_SUBAGENTS_CAPABILITY.
   'conversation-subagents',
+  // A chat's changes read from a paired machine (2026-11-07), as this
+  // machine's own Diff tab reads them when its Changes row is pressed:
+  // `watchChanges` has the socket say, in `changes` frames, how the chat's
+  // checkout stands, `getChangesDiff` lists one step's files and
+  // `getChangedFile` reads one of them. Only a file a step lists is readable,
+  // at revisions worked out here, and a commit must be one of the branch's.
+  // A client keeps the read-only count for a machine without it.
+  // CONVERSATION_CHANGES_CAPABILITY.
+  'conversation-changes',
   // A phone's New chat as this machine's own (2026-10-05). They name gateway
   // tools' arguments and answers, not the conversation lane, so they carry no
   // `conversation-` prefix and are not the protocol package's to list:
@@ -385,6 +402,15 @@ export const TAILNET_CAPABILITIES = [
   // on it. A client that does not see it asks this workspace's boards alone,
   // as an older `canvas.list` answers them, and says so in words.
   'canvas-machine-boards',
+  // A paired desktop's Canvas pane edits this machine's boards as its own
+  // (2026-11-07): the `canvas` socket opens a board in this machine's canvas
+  // service, takes the person's scene and pictures, and pushes every accepted
+  // write, the agent's presence and an agent's `canvas.open` back. A board is
+  // a store board or a `.excalidraw` file in a project, by the ref the pane
+  // uses here. A client that does not see it shows a board as a picture, from
+  // `canvas.screenshot`, and says why. Not advertised by a machine that runs
+  // no canvas service.
+  'canvas-live-boards',
   // A paired desktop's Create PR on a chat here (2026-10-18): the
   // `conversation.pull_request_*` tools read whether the chat's checkout is
   // ready, draft the text with this machine's text generation settings, push

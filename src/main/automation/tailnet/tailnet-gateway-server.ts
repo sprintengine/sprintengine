@@ -41,6 +41,7 @@ import {
   TAILNET_EVENTS_PATH,
   TAILNET_STREAM_PATH,
   TAILNET_CONVERSATION_PATH,
+  TAILNET_CANVAS_PATH,
   TAILNET_CONVERSATION_IMAGE_PATH,
   TAILNET_CONVERSATION_FILES_PATH,
   TAILNET_CONVERSATION_COMMANDS_PATH,
@@ -58,6 +59,7 @@ import {
 } from './tailnet-oauth-http'
 import { isTailnetAddress } from './tailnet-interface'
 import { openConversationImage } from './tailnet-conversation-images'
+import { createTailnetCanvasStream, type TailnetCanvasHost, type TailnetCanvasStream } from './tailnet-canvas-stream'
 import { CONVERSATION_MAX_FILE_SEARCH_QUERY_CHARS } from '../../../../packages/conversation-protocol/src/public'
 import {
   ATTACHABLE_IMAGE_TYPES,
@@ -181,6 +183,12 @@ export type TailnetGatewayServerOptions = {
   peers: TailnetPeerResolver
   conversations?: ConversationGatewayHost
   /**
+   * This machine's canvas service, for a paired desktop's Canvas pane
+   * (`canvas-live-boards`). Absent on a machine that runs none, which then does
+   * not advertise the capability and answers the socket unavailable.
+   */
+  canvas?: TailnetCanvasHost
+  /**
    * Where a file a device sends with a message is kept (`upload?kind=file`):
    * Studio's own store, never a project's folder. Without it this build
    * refuses a file upload as unavailable; pictures are unaffected.
@@ -300,10 +308,12 @@ const TAILNET_CHANGE_PUSH_INTERVAL_MS = 1_000
 
 export function createTailnetGatewayServer(options: TailnetGatewayServerOptions): TailnetGatewayServer {
   // What this machine says it can do: every capability, but shrinking an
-  // upload where nothing here can.
-  const capabilities: readonly string[] = options.downscaleUpload
-    ? TAILNET_CAPABILITIES
-    : TAILNET_CAPABILITIES.filter((capability) => capability !== 'conversation-image-downscale')
+  // upload where nothing here can, and editing boards where no canvas runs.
+  const capabilities: readonly string[] = TAILNET_CAPABILITIES.filter(
+    (capability) =>
+      (capability !== 'conversation-image-downscale' || options.downscaleUpload) &&
+      (capability !== 'canvas-live-boards' || options.canvas),
+  )
   // The most an upload may be as it arrives.
   const uploadCeiling = options.downscaleUpload ? MAX_DOWNSCALED_UPLOAD_BYTES : MAX_ATTACHMENT_BYTES
   const now = options.now ?? (() => Date.now())
@@ -312,6 +322,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
   let unsubscribeRevocations: (() => void) | null = null
   const streams = new Set<StreamSession>()
   const conversationStreams = new Set<TailnetConversationStream>()
+  const canvasStreams = new Set<TailnetCanvasStream>()
   // Conversation images are opaque, short-lived inputs, not workspace files.
   // Stage them under a process-owned private directory so workspace symlinks
   // cannot redirect a remote upload into another part of the filesystem.
@@ -479,6 +490,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     const unsubscribeScopes = options.devices.onDeviceScopesChanged((device) => {
       for (const conversation of [...conversationStreams])
         if (conversation.deviceId === device.id) conversation.refreshScopes()
+      for (const canvas of [...canvasStreams]) if (canvas.deviceId === device.id) canvas.refreshScopes()
     })
     unsubscribeRevocations = () => {
       unsubscribeRevoked()
@@ -561,6 +573,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     for (const conversation of [...conversationStreams])
       conversation.close(WEBSOCKET_CLOSE_GOING_AWAY, 'Server stopping.')
     conversationStreams.clear()
+    for (const canvas of [...canvasStreams]) canvas.close(WEBSOCKET_CLOSE_GOING_AWAY, 'Server stopping.')
+    canvasStreams.clear()
     for (const state of Object.values(changePush)) {
       if (state.timer) clearTimeout(state.timer)
       state.timer = null
@@ -1640,6 +1654,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     // await and after this build says whether it streams conversations at all.
     if (
       route !== 'conversation' &&
+      route !== 'canvas' &&
       !authorizeStudioAccess(tailnetDevicePrincipal(device.scopes), TAILNET_ROUTE_ACCESS[route]).ok
     )
       return rejectUpgrade(socket, 403, 'tailnet_scope_required')
@@ -1695,6 +1710,45 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       })
       registration.stream = stream
       if (!stream.isClosed()) conversationStreams.add(stream)
+      if (head?.length) socket.emit('data', head)
+      return
+    }
+
+    if (path === TAILNET_CANVAS_PATH) {
+      if (!options.canvas) return rejectUpgrade(socket, 503, 'canvas_unavailable')
+      // As the conversation socket: the grant is read again after the await
+      // above, and on every message the socket carries after this.
+      const currentDevice = options.devices.listDevices().find((entry) => entry.id === device.id)
+      if (!currentDevice) return rejectUpgrade(socket, 401, 'unauthorized')
+      if (!authorizeStudioAccess(tailnetDevicePrincipal(currentDevice.scopes), TAILNET_ROUTE_ACCESS.canvas).ok)
+        return rejectUpgrade(socket, 403, 'workspace_scope_required')
+      options.devices.recordSeen(currentDevice.id, peerNode)
+      acceptUpgrade(socket, key)
+      const registration: { stream: TailnetCanvasStream | null } = { stream: null }
+      const stream = createTailnetCanvasStream({
+        socket,
+        deviceId: currentDevice.id,
+        scopes: () => options.devices.listDevices().find((entry) => entry.id === currentDevice.id)?.scopes ?? null,
+        host: options.canvas,
+        onClosed: () => {
+          if (registration.stream) canvasStreams.delete(registration.stream)
+        },
+        // The board and the outcome, never the drawing.
+        audit: (entry) =>
+          options.onToolCall?.({
+            context: contextFor(currentDevice, peerNode),
+            tool: entry.tool,
+            args: { ...entry.ref },
+            durationMs: entry.durationMs,
+            result: entry.ok
+              ? toolSuccess({ ok: true })
+              : toolError(entry.code ?? 'unavailable', 'The board was not changed.'),
+          }),
+        log: options.log,
+        now,
+      })
+      registration.stream = stream
+      if (!stream.isClosed()) canvasStreams.add(stream)
       if (head?.length) socket.emit('data', head)
       return
     }
@@ -1821,6 +1875,9 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     for (const conversation of [...conversationStreams]) {
       if (conversation.deviceId === deviceId)
         conversation.close(WEBSOCKET_CLOSE_REVOKED, 'This device has been revoked.')
+    }
+    for (const canvas of [...canvasStreams]) {
+      if (canvas.deviceId === deviceId) canvas.close(WEBSOCKET_CLOSE_REVOKED, 'This device has been revoked.')
     }
     for (const stream of [...eventStreams]) {
       if (stream.deviceId === deviceId)
@@ -2255,6 +2312,7 @@ export function tailnetUpgradeRouteOf(path: string): TailnetUpgradeRoute | null 
   if (path === TAILNET_STREAM_PATH) return 'stream'
   if (path === TAILNET_EVENTS_PATH) return 'events'
   if (path === TAILNET_CONVERSATION_PATH) return 'conversation'
+  if (path === TAILNET_CANVAS_PATH) return 'canvas'
   return null
 }
 

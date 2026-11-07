@@ -44,6 +44,7 @@ import { WEB_UPLOADS_DIRNAME } from '../web/web-uploads'
 import { attachmentImagesRoot } from '../../main/attachment-image-file'
 import { createConversationLaunchService } from '../../main/conversation-launch-service'
 import { createSubagentLifecycle, subagentChangesOf } from '../../main/subagent-lifecycle'
+import { createConversationCheckoutChanges } from '../../main/conversation-checkout-changes'
 import { createConversationImportService } from '../../main/conversation-import/conversation-import-service'
 import { createConversationModelCatalog } from '../../main/conversation-model-catalog'
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
@@ -946,6 +947,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         subagentChanges: subagentChangesOf({
           onEvent: (listener) => conversations.onEvent(listener),
           onRecords: (listener) => workspaceRegistry.subscribe(listener),
+        }),
+        // A paired machine's Diff tab for a chat here: read in the chat's own
+        // folder, and only a folder on this computer, as its counts are.
+        checkoutChanges: createConversationCheckoutChanges({
+          checkoutOf: ({ workspaceId, agentId }) => {
+            const record = workspaceRegistry.getRecord(workspaceId)
+            if (!record || record.environment) return null
+            return conversationWorkingRoot(record.agents[agentId], record.folderPath)
+          },
         }),
       },
     )

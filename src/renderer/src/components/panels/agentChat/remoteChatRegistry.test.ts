@@ -9,6 +9,9 @@ import { publishRemoteChat, readRemoteChat, resetRemoteChats } from './remoteCha
 
 const entry = (agentId: string, subagentIds: string[] = []) => ({
   agentId,
+  key: { connectionId: 'mac-mini', workspaceId: 'ws-far', agentId },
+  machineName: 'mac-mini',
+  hostChanges: false,
   transport: {} as ConversationTransport,
   binding: {} as ChatBinding,
   subagents: subagentIds.map((id) => ({ agentId: id }) as MeshSubagent),

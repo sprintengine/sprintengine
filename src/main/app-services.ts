@@ -174,6 +174,7 @@ import { createCanvasService } from './canvas/canvas-service'
 import { createCanvasStoreCatalogue } from './canvas/canvas-store-catalogue'
 import { createNodeCanvasFs, watchCanvasDirectory } from './canvas/canvas-node-fs'
 import { createCanvasSubscriberRegistry } from './canvas/canvas-subscribers'
+import { createCanvasRemoteSubscribers, isRemoteCanvasSubscriber } from './canvas/canvas-remote-subscribers'
 import { createCanvasWorkerHost } from './canvas/canvas-worker-host'
 import { createCanvasWorkerTransport, isCanvasWorkerWindow } from './canvas/canvas-worker-window'
 import { broadcastToWorkspaceWindows, isBrowserHostWebContents, listWorkspaceWindows } from './window-factory'
@@ -1722,6 +1723,9 @@ export function createAppServices(
   })
 
   const canvasSubscribers = createCanvasSubscriberRegistry()
+  // A board a paired desktop holds over the canvas lane is a subscriber too
+  // (canvas-remote-subscribers.ts): it hears every write a window here would.
+  const canvasRemoteSubscribers = createCanvasRemoteSubscribers()
   const canvasStoreCatalogue = createCanvasStoreCatalogue({
     userDataDir: app.getPath('userData'),
     listWorkspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
@@ -1743,8 +1747,14 @@ export function createAppServices(
         ?.folderPath ?? null,
     resolveBoardStore: (_workspaceId, workspaceRoot) => canvasBoardStoreDir(app.getPath('userData'), workspaceRoot),
     storeCatalogue: canvasStoreCatalogue,
-    broadcast: broadcastToWorkspaceWindows,
-    sendTo: canvasSubscribers.sendTo,
+    broadcast: (channel, payload) => {
+      broadcastToWorkspaceWindows(channel, payload)
+      canvasRemoteSubscribers.broadcast(channel, payload)
+    },
+    sendTo: (subscriberId, channel, payload) => {
+      if (isRemoteCanvasSubscriber(subscriberId)) canvasRemoteSubscribers.sendTo(subscriberId, channel, payload)
+      else canvasSubscribers.sendTo(subscriberId, channel, payload)
+    },
     watch: watchCanvasDirectory,
     worker: createCanvasWorkerHost({
       transport: createCanvasWorkerTransport({
@@ -1896,6 +1906,9 @@ export function createAppServices(
         // A picture a paired device uploads is sized for the model on receipt,
         // with this process's own image codec.
         downscaleUpload: (bytes, mediaType) => shellBridge.images.downscale(bytes, mediaType),
+        // A paired desktop's Canvas pane on the boards here, through the same
+        // canvas service this machine's windows and agents use.
+        canvas: canvasRemoteSubscribers.host(canvasService),
         // The live-state push (remote-sessions-ux): every window hears listener,
         // pairing, and connection changes the moment main does — the fix for pair
         // requests that could expire while only Settings, if open, would show them.

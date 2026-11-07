@@ -25,6 +25,7 @@ import { isStudioGatewayMutation } from './studio-gateway-tools'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
 import { createTailnetRemoteService, type TailnetRemoteService } from './tailnet/tailnet-service'
 import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
+import type { TailnetCanvasHost } from './tailnet/tailnet-canvas-stream'
 import type { ConversationImageDownscaler } from '../conversation-image-downscale'
 
 // Owns the always-on Studio MCP gateway lifecycle, local socket endpoint, and
@@ -64,6 +65,11 @@ type AutomationServiceOptions = {
    * came and `conversation-image-downscale` is not advertised.
    */
   downscaleUpload?: ConversationImageDownscaler
+  /**
+   * This machine's canvas service, for a paired desktop's Canvas pane
+   * (`canvas-live-boards`). Only the process that runs the service has one.
+   */
+  canvas?: TailnetCanvasHost
   /** Absolute path of the shipped stdio bridge script, when the app knows it. */
   resolveBridgeScriptPath?: () => string | null
   /**
@@ -187,6 +193,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
       isMutation: (tool) => isStudioGatewayMutation(tool, options.resolveGatewayTools),
       conversations: options.resolveConversationHost?.(),
       ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
+      ...(options.canvas ? { canvas: options.canvas } : {}),
       onToolCall: ({ context, tool, args, durationMs, result, error, servedBy }) => {
         // A token refused at the door is kept too, though nothing ran.
         if (

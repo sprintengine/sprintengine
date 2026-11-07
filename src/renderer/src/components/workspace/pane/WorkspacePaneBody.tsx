@@ -17,6 +17,7 @@ import { bringBackPaneTab, showPanePopOut } from './popout/panePopOutHost'
 import { paneTabLabel } from './paneTabItem'
 import { useRecordingTabIds } from './browser/recordingTabs'
 import { useAgentPresentTabIds } from './agentPresence'
+import { createPairedDiffSource } from '../../auxWindows/diffViewerSource'
 
 // The pane's content region: one layer per tab that needs to stay mounted
 // (terminal, browser, canvas) plus the active tab. Inactive retained layers are
@@ -120,6 +121,65 @@ function PanePoppedOutPlaceholder({ workspaceId, tab }: { workspaceId: string; t
         }
       />
     </div>
+  )
+}
+
+/**
+ * The Diff tab on a chat's changes on a paired machine, read from that machine
+ * (`conversation-changes`): the same viewer, stepping through the same branch,
+ * with its files and their two sides read over there. It follows the chat for
+ * itself, so it reads whether or not the chat's own pane is open here, and
+ * after a restart. A machine that does not read them says so in the viewer.
+ */
+function PairedDiffTab({
+  workspaceId,
+  paired,
+  tab,
+  active,
+  onDiffCountChange,
+}: {
+  workspaceId: string
+  paired: NonNullable<NonNullable<WorkspacePaneTab['diff']>['paired']>
+  tab: WorkspacePaneTab
+  active: boolean
+  onDiffCountChange?: (count: number | null) => void
+}) {
+  const { connectionId, workspaceId: remoteWorkspaceId, agentId, machineName } = paired
+  const source = useMemo(
+    () =>
+      createPairedDiffSource({
+        key: { connectionId, workspaceId: remoteWorkspaceId, agentId },
+        machineName: machineName || 'the other machine',
+      }),
+    [connectionId, remoteWorkspaceId, agentId, machineName],
+  )
+  // The step the viewer has open, kept as the local tab keeps it.
+  const keptStep = tab.diff?.kept ?? null
+  const keepStep = useCallback(
+    (kept: NonNullable<NonNullable<WorkspacePaneTab['diff']>['kept']>) => {
+      const store = useWorkspaceStore.getState()
+      const current = store.workspaces.find((w) => w.id === workspaceId)?.paneState?.tabs.find((t) => t.id === tab.id)
+      if (!current?.diff || JSON.stringify(current.diff.kept) === JSON.stringify(kept)) return
+      store.updatePaneTab(workspaceId, tab.id, { diff: { ...current.diff, kept } })
+    },
+    [workspaceId, tab.id],
+  )
+  return (
+    <DiffViewer
+      // One chat's changes to a mount: another chat's are another checkout.
+      key={source.root}
+      repoRoot={source.root}
+      source={source}
+      focusPath={null}
+      focusKind={null}
+      workspaceId={workspaceId}
+      variant="pane"
+      onItemCountChange={onDiffCountChange}
+      branchSteps
+      keptStep={keptStep}
+      onKeepStep={keepStep}
+      visible={active}
+    />
   )
 }
 
@@ -340,6 +400,20 @@ function PaneTabPanel({ workspaceId, tab, active, onDiffCountChange }: PaneTabPa
       // here opened the tab on a different repository than the row came from.
       // The derived root is the fallback for a Diff tab opened from the pane's
       // own + menu, which names no repository at all.
+      // A chat on a paired machine: its changes are read from there.
+      const paired = tab.diff?.paired
+      if (paired)
+        return selectModuleEnabled(moduleOverrides, 'git') ? (
+          <PairedDiffTab
+            workspaceId={workspaceId}
+            paired={paired}
+            tab={tab}
+            active={active}
+            onDiffCountChange={onDiffCountChange}
+          />
+        ) : (
+          <PaneUnavailable />
+        )
       const repoRoot = tab.diff?.repoRoot ?? diffRepoRoot
       return repoRoot && selectModuleEnabled(moduleOverrides, 'git') ? (
         <PaneDiffTab

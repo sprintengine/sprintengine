@@ -71,7 +71,31 @@ reads the desktop's own path convention for that
 `worktreeProjectLogic.ts`), which holds for every worktree the desktop cuts.
 A worktree made elsewhere by hand lists as a project of its own until the
 desktop sends the workspace's recorded `worktree.repoRoot`, which the phone
-reads first where it is sent.
+reads first where it is sent. The same reading names a pool slot that is
+named after its project (`demo-app-04` reads `demo-app`), a worktree cut from
+a worktree, a Windows path and an SSH machine's `ssh://` path.
+
+A chat started without a project, in a folder of its own under the desktop's
+`.sprintengine/chats`, lists as "No project" with that mark, in no colour, and
+all such chats of a desktop group together; New does not offer such a folder
+as a project. Before, each one was a project named after its folder.
+
+A project wears one colour on every row and on its header. The desktop hashes
+each workspace's hue from its repository, else from its own folder, so a
+project with no remote sent each pooled worktree in a colour of its own; the
+phone paints every workspace of the project in its checkout's hue where the
+checkout is listed, else the first worktree's (`oneHuePerProject`). Every row
+shows its colour at rest; a row with none draws its folder in the row's ink.
+Where a chat runs somewhere other than the desktop itself (a WSL distribution,
+an SSH machine), that machine's mark leads the project line in the folder's
+ink, as on the desktop's sidebar, and its name is in the row's spoken label;
+in the project view, where the row has no project line, the mark keeps its
+name beside it. Rows are filed by what the desktop's list says on each read,
+so a project renamed there regroups on the next one.
+
+The phone has no Working section and no By status view, so the desktop's
+rules for those have nothing to change here. A failed chat says Failed on its
+row and nothing on the bell, as before.
 
 Long-press a row, or use the chat header's More button, and choose Settle to
 settle the chat on its desktop (`conversation.settle`), which moves it to the
