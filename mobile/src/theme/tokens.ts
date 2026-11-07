@@ -117,6 +117,18 @@ export interface ThemeColors {
   toneWarnSoft: string;
   toneErrorSoft: string;
 
+  /**
+   * A quote of an earlier reply (`--sem-color-quote-*`): the chip's gold ink,
+   * its number's filled pill (thinner once sent) and the ink on it, and the
+   * wash over the passage it quotes in the reply (thinner once sent).
+   */
+  quoteInk: string;
+  quoteBadge: string;
+  quoteBadgeSent: string;
+  quoteOnBadge: string;
+  quoteTint: string;
+  quoteTintSent: string;
+
   /** The inverse-ink primary button: the site's "Download now" (neutral-900 on white, neutral-100 on black). */
   buttonBg: string;
   buttonInk: string;
@@ -221,6 +233,12 @@ const darkColors: ThemeColors = {
   toneGoodSoft: "rgba(48,208,88,0.18)",
   toneWarnSoft: "rgba(252,192,48,0.18)",
   toneErrorSoft: "rgba(252,120,124,0.18)",
+  quoteInk: "#fcc030",
+  quoteBadge: "#fcc030",
+  quoteBadgeSent: "rgba(252,192,48,0.55)",
+  quoteOnBadge: "#2e1f00",
+  quoteTint: "rgba(252,192,48,0.16)",
+  quoteTintSent: "rgba(252,192,48,0.08)",
 
   buttonBg: "#f5f5f5",
   buttonInk: "#171717",
@@ -310,6 +328,12 @@ const lightColors: ThemeColors = {
   toneGoodSoft: "rgba(18,107,47,0.16)",
   toneWarnSoft: "rgba(128,80,0,0.16)",
   toneErrorSoft: "rgba(192,32,32,0.14)",
+  quoteInk: "#9a6000",
+  quoteBadge: "#fcc030",
+  quoteBadgeSent: "rgba(252,192,48,0.55)",
+  quoteOnBadge: "#2e1f00",
+  quoteTint: "rgba(252,192,48,0.3)",
+  quoteTintSent: "rgba(252,192,48,0.14)",
 
   buttonBg: "#171717",
   buttonInk: "#ffffff",

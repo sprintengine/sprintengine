@@ -1,3 +1,4 @@
+import { quotesToReadableMarkdown } from "../../shared/quotes/chat-quotes";
 import type { ConversationRow } from "./conversationLogic";
 
 // What Copy puts on the clipboard from a chat, worked out here rather than in
@@ -37,5 +38,6 @@ export function replyCopyText(rows: readonly ConversationRow[], turn: string): s
  * no words to copy and so offers no Copy.
  */
 export function messageCopyText(text: string): string {
-  return text.trim() ? text : "";
+  // A quote it carries copies as its passage and comment, never as the address.
+  return text.trim() ? quotesToReadableMarkdown(text) : "";
 }
