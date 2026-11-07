@@ -237,7 +237,8 @@ Change them together with the Studio side; the policy for wire changes is
 `docs/compatibility.md` at the repository root.
 
 `docs/conversations.md` describes how the chat list and a chat behave in
-detail.
+detail, and `docs/canvases.md` how the phone lists a desktop's Canvas boards
+and shows one.
 
 ## Notes
 

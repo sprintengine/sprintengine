@@ -206,6 +206,8 @@ export function ConversationScreen({
   onOpenPlan,
   onOpenChanges,
   onOpenPullRequest,
+  onOpenCanvas,
+  onOpenCanvases,
   opening,
   onOpeningTaken,
   initialSheet,
@@ -244,6 +246,10 @@ export function ConversationScreen({
   onOpenPullRequest?: (url: string) => void;
   /** The files a checkpointed turn changed, by the turn's sequence number. */
   onOpenChanges?: (turnSeq: number) => void;
+  /** A picture of a board the agent drew on, as it named the board (an id or a bare name). */
+  onOpenCanvas?: (board: string) => void;
+  /** The boards on this chat's desktop, from this chat's project. */
+  onOpenCanvases?: (projectName: string | null) => void;
 }) {
   const { sessions, markDeviceRevoked } = useSessionData();
   const {
@@ -2092,6 +2098,10 @@ export function ConversationScreen({
         activity={activity}
         diff={changes ? { added: changes.addedLines, removed: changes.removedLines, files: changes.files } : null}
         onOpenChanges={openChanges}
+        onOpenCanvas={
+          onOpenCanvas && activity.canvas?.ref ? () => onOpenCanvas(activity.canvas!.ref!) : undefined
+        }
+        onOpenCanvases={onOpenCanvases ? () => onOpenCanvases(project) : undefined}
         onOpenAgents={onOpenAgents && hasSubagents ? onOpenAgents : undefined}
         subagents={subagents}
         parent={parent && onOpenParent ? { relation: parentRelation({ kind: "chat", ...parent }), name: parent.name, onPress: onOpenParent } : undefined}

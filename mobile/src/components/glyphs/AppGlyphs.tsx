@@ -56,6 +56,25 @@ export function FolderGlyph({ tone, size = iconSize.xs, label, ink }: AppGlyphPr
 }
 
 /**
+ * A speech bubble drawn in dashes: a chat with no project, where a project's
+ * folder would be. In the disabled ink, since "No project" is not a project
+ * and has no colour of its own. Desktop `NoProjectGlyph`.
+ */
+export function NoProjectGlyph({ tone = "textDisabled", size = iconSize.xs, label }: AppGlyphProps) {
+  return (
+    <GlyphFrame viewBox="0 0 16 16" color={useInk(tone)} size={size} label={label}>
+      <Path
+        d="M3.25 3.5h9.5c.7 0 1.25.55 1.25 1.25v5.5c0 .7-.55 1.25-1.25 1.25H7.5L4.75 13.5v-2H3.25C2.55 11.5 2 10.95 2 10.25v-5.5c0-.7.55-1.25 1.25-1.25Z"
+        stroke="currentColor"
+        strokeWidth={STROKE}
+        strokeLinejoin="round"
+        strokeDasharray="2 1.6"
+      />
+    </GlyphFrame>
+  );
+}
+
+/**
  * The Beam: a screen reached over the air — another machine, in general.
  * Desktop `remote-machine.svg`. A paired desktop that has said what it is wears
  * its own machine mark (`MachineGlyph`) instead.

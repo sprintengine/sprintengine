@@ -52,6 +52,9 @@ import { NewChatScreen } from "../features/conversations/NewChatScreen";
 import { routesAfterNewChat, routesAfterSchedule } from "../features/conversations/launchLogic";
 import { openWebTarget, WebTargetsScreen } from "../features/web/WebTargetsScreen";
 import { ScheduledAgentsScreen } from "../features/scheduled/ScheduledAgentsScreen";
+import { CanvasesScreen } from "../features/canvas/CanvasesScreen";
+import { CanvasBoardRoute } from "../features/canvas/CanvasBoardRoute";
+import { canvasTargetParams, chatCanvasBoard } from "../features/canvas/canvasLogic";
 import { readWebTargets } from "../features/web/webTargetsLogic";
 import { stackScreenOptions } from "./navigationTheme";
 import { PairingRoute, SettingsRoute } from "./routes";
@@ -179,6 +182,17 @@ export function AppNavigator() {
                 viewsPullRequests(chat.deviceId)
                   ? (url) => navigation.push("PullRequest", { deviceId: chat.deviceId, url })
                   : undefined
+              }
+              onOpenCanvas={(board) => {
+                const target = chatCanvasBoard(board, chat);
+                if (target) navigation.push("CanvasBoard", canvasTargetParams(target));
+              }}
+              onOpenCanvases={(projectName) =>
+                navigation.push("Canvases", {
+                  deviceId: chat.deviceId,
+                  workspaceId: chat.workspaceId,
+                  ...(projectName ? { projectName } : {}),
+                })
               }
             />
           );
@@ -360,6 +374,35 @@ export function AppNavigator() {
             onOpenDesktops={() => navigation.navigate("Desktop", { deviceId: "" })}
             onOpenWeb={() => navigation.navigate("Web")}
             onOpenScheduled={() => navigation.navigate("Scheduled")}
+            onOpenCanvases={() => navigation.navigate("Canvases")}
+          />
+        )}
+      </HomeStack.Screen>
+      <HomeStack.Screen name="Canvases" options={{ headerShown: false }}>
+        {({ navigation, route }) => (
+          <CanvasesScreen
+            chat={
+              route.params?.deviceId && route.params.workspaceId
+                ? {
+                    deviceId: route.params.deviceId,
+                    workspaceId: route.params.workspaceId,
+                    projectName: route.params.projectName ?? null,
+                  }
+                : null
+            }
+            onBack={() => navigation.goBack()}
+            onOpenBoard={(target) => navigation.push("CanvasBoard", canvasTargetParams(target))}
+            sessions={sessions}
+          />
+        )}
+      </HomeStack.Screen>
+      <HomeStack.Screen name="CanvasBoard" options={{ headerShown: false }}>
+        {({ navigation, route }) => (
+          <CanvasBoardRoute
+            onBack={() => navigation.goBack()}
+            onStarted={(deviceId, thread) => navigation.push("Conversation", { deviceId, thread })}
+            params={route.params}
+            sessions={sessions}
           />
         )}
       </HomeStack.Screen>

@@ -19,6 +19,8 @@ import { NoticesProvider } from "../features/notices/NoticesContext";
 import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
 import type { DeviceNotesStore } from "../storage/sessionStore";
 import { fakeWorkspacesApi } from "./fakeWorkspaces";
+import { fakeCanvasSource } from "./fakeCanvases";
+import { CanvasSourceContext } from "../features/canvas/CanvasSourceContext";
 import { ConversationScreen } from "../features/conversations/ConversationScreen";
 import { ConversationAgentsScreen } from "../features/conversations/ConversationAgentsScreen";
 import { ConversationAgentScreen } from "../features/conversations/ConversationAgentScreen";
@@ -110,6 +112,11 @@ const linking: LinkingOptions<VerifyRootParamList> = {
           ChatLink: "chat/:workspaceId",
           Notices: "notices",
           SettingsHome: "settings",
+          // Every board, and one board's picture (see fakeCanvases.ts):
+          //   sprintengine://verify/canvases
+          //   sprintengine://verify/canvas/dev_verify/export-flow?path=export-flow.excalidraw&workspaceId=ws-mobile
+          Canvases: "canvases",
+          CanvasBoard: "canvas/:deviceId/:name",
           Desktop: "desktop/:deviceId",
           Appearance: "appearance",
           Pairing: "pairing",
@@ -386,37 +393,39 @@ function VerifyShell() {
       <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
       <ToastProvider>
         <SessionDataContext.Provider value={sessionData}>
-          <ChatsProvider
-            activeDeviceId={verifySession.deviceId}
-            conversationsApiOverride={fakeConversationsApi}
-            lifecycleApiOverride={fakeLifecycleApi}
-            notesStore={verifyNotesStore}
-            sessions={verifySessions}
-            workspacesApiOverride={fakeWorkspacesApi}
-          >
-            <NoticesProvider store={null}>
-              {process.env.EXPO_PUBLIC_VERIFY_CONVERSATION ? (
-                <NavigationContainer linking={conversationLinking} theme={navigationTheme}>
-                  <VerifyConversationStack />
-                </NavigationContainer>
-              ) : (
-                <NavigationContainer linking={linking} theme={navigationTheme}>
-                  <VerifyRoot.Navigator screenOptions={{ headerShown: false }}>
-                    <VerifyRoot.Screen component={AppNavigator} name="App" />
-                    <VerifyRoot.Screen name="ChatLinkTwins">
-                      {({ navigation, route }) => (
-                        <ChatLinkTwins
-                          agent={route.params.agent}
-                          onOpen={(target) => navigation.navigate("App", { screen: "Conversation", params: target })}
-                          workspaceId={route.params.workspaceId}
-                        />
-                      )}
-                    </VerifyRoot.Screen>
-                  </VerifyRoot.Navigator>
-                </NavigationContainer>
-              )}
-            </NoticesProvider>
-          </ChatsProvider>
+          <CanvasSourceContext.Provider value={fakeCanvasSource}>
+            <ChatsProvider
+              activeDeviceId={verifySession.deviceId}
+              conversationsApiOverride={fakeConversationsApi}
+              lifecycleApiOverride={fakeLifecycleApi}
+              notesStore={verifyNotesStore}
+              sessions={verifySessions}
+              workspacesApiOverride={fakeWorkspacesApi}
+            >
+              <NoticesProvider store={null}>
+                {process.env.EXPO_PUBLIC_VERIFY_CONVERSATION ? (
+                  <NavigationContainer linking={conversationLinking} theme={navigationTheme}>
+                    <VerifyConversationStack />
+                  </NavigationContainer>
+                ) : (
+                  <NavigationContainer linking={linking} theme={navigationTheme}>
+                    <VerifyRoot.Navigator screenOptions={{ headerShown: false }}>
+                      <VerifyRoot.Screen component={AppNavigator} name="App" />
+                      <VerifyRoot.Screen name="ChatLinkTwins">
+                        {({ navigation, route }) => (
+                          <ChatLinkTwins
+                            agent={route.params.agent}
+                            onOpen={(target) => navigation.navigate("App", { screen: "Conversation", params: target })}
+                            workspaceId={route.params.workspaceId}
+                          />
+                        )}
+                      </VerifyRoot.Screen>
+                    </VerifyRoot.Navigator>
+                  </NavigationContainer>
+                )}
+              </NoticesProvider>
+            </ChatsProvider>
+          </CanvasSourceContext.Provider>
         </SessionDataContext.Provider>
       </ToastProvider>
     </PairingLinkProvider>

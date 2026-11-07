@@ -32,6 +32,12 @@ export interface DesktopWorkspace {
   /** The worktree's name when the folder is one of the project's worktrees; null or absent otherwise. */
   worktree?: string | null;
   /**
+   * A chat started without a project, in a folder of its own under the
+   * desktop's "No project" root: it lists as "No project", in no colour, as
+   * the desktop's sidebar files it. Absent or false otherwise.
+   */
+  projectless?: boolean;
+  /**
    * What makes two workspaces one project: the repository's canonical key when
    * the desktop knows one (every clone and worktree of a repo shares it), else
    * the project's folder. Null for a workspace with no folder, which is not a
@@ -120,17 +126,24 @@ export function readWorkspaceCheckout(data: unknown, folderPath: string | null):
 }
 
 /**
- * Calls one gateway tool and answers its structured content, or the failure in
- * the app's words. Both reads need `workspace:read`; a pairing without it is
- * refused as `unauthorized`.
+ * One gateway tool's whole answer: its structured content, and the content
+ * blocks beside it, which is where a picture rides (`canvas.screenshot`). A
+ * refusal keeps the tool's own `code` where it gave one, and `unknown_tool`
+ * for a desktop that has no such tool (an older Studio, or a server with no
+ * desktop open), so a caller can say what to do rather than pass on the
+ * gateway's sentence.
  */
-export function createGatewayToolCaller(options: { baseUrl: string; deviceToken: string }) {
+export type GatewayToolAnswer =
+  | { ok: true; structured: Record<string, unknown>; content: Record<string, unknown>[] }
+  | { ok: false; errorCode: NonNullable<ApiResult<never>["errorCode"]>; message: string; code: string | null };
+
+export function createGatewayToolResultCaller(options: { baseUrl: string; deviceToken: string }) {
   let requestCounter = 0;
-  return async function callTool(
+  return async function callToolResult(
     name: string,
     args: Record<string, unknown>,
     timeoutMs: number,
-  ): Promise<ApiResult<Record<string, unknown>>> {
+  ): Promise<GatewayToolAnswer> {
     let response: Response;
     try {
       response = await fetchWithTimeout(
@@ -143,15 +156,19 @@ export function createGatewayToolCaller(options: { baseUrl: string; deviceToken:
         timeoutMs,
       );
     } catch {
-      return { ok: false, errorCode: "desktop_unavailable", message: "The desktop did not answer. Is Tailscale up on both devices?" };
+      return { ok: false, errorCode: "desktop_unavailable", message: "The desktop did not answer. Is Tailscale up on both devices?", code: null };
     }
     const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-    if (response.status === 401) return unauthorizedResult(body);
+    if (response.status === 401) {
+      const refused = unauthorizedResult(body);
+      return { ok: false, errorCode: refused.errorCode ?? "unauthenticated", message: refused.message ?? "", code: null };
+    }
     if (!response.ok || !body) {
-      return { ok: false, errorCode: "desktop_unavailable", message: `The desktop answered ${response.status}.` };
+      return { ok: false, errorCode: "desktop_unavailable", message: `The desktop answered ${response.status}.`, code: null };
     }
     if (isRecord(body.error)) {
-      return { ok: false, errorCode: "invalid_payload", message: typeof body.error.message === "string" ? body.error.message : "The desktop refused the call." };
+      const message = typeof body.error.message === "string" ? body.error.message : "The desktop refused the call.";
+      return { ok: false, errorCode: "invalid_payload", message, code: /Unknown tool/u.test(message) ? "unknown_tool" : null };
     }
     const result = isRecord(body.result) ? body.result : null;
     const structured = result && isRecord(result.structuredContent) ? result.structuredContent : null;
@@ -159,12 +176,32 @@ export function createGatewayToolCaller(options: { baseUrl: string; deviceToken:
       const error = structured && isRecord(structured.error) ? structured.error : null;
       const code = typeof error?.code === "string" ? error.code : "tool_error";
       const message = typeof error?.message === "string" ? error.message : "The desktop refused the call.";
-      return { ok: false, errorCode: code === "tailnet_scope_required" ? "unauthorized" : "invalid_payload", message };
+      return { ok: false, errorCode: code === "tailnet_scope_required" ? "unauthorized" : "invalid_payload", message, code };
     }
     if (!structured) {
-      return { ok: false, errorCode: "invalid_payload", message: "The desktop returned no structured result." };
+      return { ok: false, errorCode: "invalid_payload", message: "The desktop returned no structured result.", code: null };
     }
-    return { ok: true, data: structured };
+    const content = Array.isArray(result?.content) ? result.content.filter(isRecord) : [];
+    return { ok: true, structured, content };
+  };
+}
+
+/**
+ * Calls one gateway tool and answers its structured content, or the failure in
+ * the app's words. Both reads need `workspace:read`; a pairing without it is
+ * refused as `unauthorized`.
+ */
+export function createGatewayToolCaller(options: { baseUrl: string; deviceToken: string }) {
+  const callToolResult = createGatewayToolResultCaller(options);
+  return async function callTool(
+    name: string,
+    args: Record<string, unknown>,
+    timeoutMs: number,
+  ): Promise<ApiResult<Record<string, unknown>>> {
+    const answer = await callToolResult(name, args, timeoutMs);
+    return answer.ok
+      ? { ok: true, data: answer.structured }
+      : { ok: false, errorCode: answer.errorCode, message: answer.message };
   };
 }
 
@@ -202,12 +239,15 @@ export function createTailnetWorkspacesApi(options: { baseUrl: string; deviceTok
         // desktop's own record wins where it sends one.
         const recorded = isRecord(entry.worktree) && typeof entry.worktree.repoRoot === "string" ? entry.worktree.repoRoot : null;
         const project = workspaceProject({ folderPath, recordedRoot: recorded });
-        const projectKey = canonicalKey
-          ? `repo:${canonicalKey}`
-          : project.projectFolder
-            ? `folder:${comparablePath(project.projectFolder)}`
-            : null;
-        const projectHue = isProjectHue(entry.projectHue) ? entry.projectHue : null;
+        // "No project" is one group per desktop, and not a project: no hue.
+        const projectKey = project.projectless
+          ? PROJECTLESS_PROJECT_KEY
+          : canonicalKey
+            ? `repo:${canonicalKey}`
+            : project.projectFolder
+              ? `folder:${comparablePath(project.projectFolder)}`
+              : null;
+        const projectHue = !project.projectless && isProjectHue(entry.projectHue) ? entry.projectHue : null;
         const lastUsedAt = typeof entry.projectLastUsedAt === "string" ? Date.parse(entry.projectLastUsedAt) : NaN;
         const settledAt = readSettledAt(entry.settledAt);
         workspaces.push({
@@ -217,6 +257,7 @@ export function createTailnetWorkspacesApi(options: { baseUrl: string; deviceTok
           folderPath,
           projectFolder: project.projectFolder,
           worktree: project.worktree,
+          ...(project.projectless ? { projectless: true } : {}),
           projectKey,
           projectHue,
           ...(typeof entry.projectFrecency === "number" && Number.isFinite(entry.projectFrecency) && entry.projectFrecency >= 0
@@ -225,7 +266,7 @@ export function createTailnetWorkspacesApi(options: { baseUrl: string; deviceTok
           ...(settledAt !== null ? { settledAt } : {}),
         });
       }
-      return { ok: true as const, data: workspaces };
+      return { ok: true as const, data: oneHuePerProject(workspaces) };
     },
 
     async readCheckout(workspace) {
@@ -234,6 +275,37 @@ export function createTailnetWorkspacesApi(options: { baseUrl: string; deviceTok
       return { ok: true as const, data: readWorkspaceCheckout(result.data, workspace.folderPath) };
     },
   };
+}
+
+/** The project key every "No project" chat of a desktop shares. */
+export const PROJECTLESS_PROJECT_KEY = "noproject:";
+
+/**
+ * Every workspace of one project in one colour.
+ *
+ * The desktop hashes each workspace's hue from its repository, else from its
+ * own folder. For a project with no remote, that makes each pooled worktree
+ * (`demo-app-04`, `demo-app-07`) a colour of its own while the phone files
+ * them all under `demo-app`: one header, rows in three hues. The project's own
+ * checkout is the colour the desktop's sidebar paints the project, so its hue
+ * wins where it is listed; else the first worktree's, in list order, so a
+ * re-read does not move it. The hue is never derived here (theme/projectHue.ts).
+ */
+export function oneHuePerProject<W extends Pick<DesktopWorkspace, "projectKey" | "projectHue" | "worktree">>(
+  workspaces: readonly W[],
+): W[] {
+  const hues = new Map<string, { hue: number; checkout: boolean }>();
+  for (const workspace of workspaces) {
+    if (!workspace.projectKey || workspace.projectHue === null) continue;
+    const checkout = !workspace.worktree;
+    const held = hues.get(workspace.projectKey);
+    if (held && (held.checkout || !checkout)) continue;
+    hues.set(workspace.projectKey, { hue: workspace.projectHue, checkout });
+  }
+  return workspaces.map((workspace) => {
+    const hue = workspace.projectKey ? hues.get(workspace.projectKey)?.hue : undefined;
+    return hue === undefined || hue === workspace.projectHue ? workspace : { ...workspace, projectHue: hue };
+  });
 }
 
 /**

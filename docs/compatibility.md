@@ -198,8 +198,13 @@ path, from that project. Neither end needs a version bump: every new member is
 optional. A machine offering no canvas tools (a server with no desktop open)
 answers "Unknown tool", and the desktop says to open Studio there. Every board
 name on a machine, removed projects included, is now readable on
-`workspace:read`: there is no per-project scope. The phone does not use any of
-this. It only learned to show a board named by `id` as its name.
+`workspace:read`: there is no per-project scope. The phone reads the same
+tools on the same grant and by the same rule: every board on a machine with the
+capability, one project at a time on one without, said in words, and a
+picture of a board by its `id`, or by path from its project
+(`mobile/src/api/canvasBoards.ts`). Its Continue in a new chat starts a removed
+project's board under no project only where the machine advertises
+`new-chat-no-project`.
 
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is

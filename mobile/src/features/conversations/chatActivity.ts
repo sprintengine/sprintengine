@@ -22,7 +22,12 @@ export type ChatActivity = {
   editing: boolean;
   agents: { total: number; working: number } | null;
   browser: { live: boolean; url: string | null } | null;
-  canvas: { live: boolean; board: string | null } | null;
+  /**
+   * `board` is the board's name; `ref` is the board as the agent named it, an
+   * id (`canvas://ws_…/arch.excalidraw`) or a bare name, which its picture is
+   * asked for by. Both null when the agent named none.
+   */
+  canvas: { live: boolean; board: string | null; ref: string | null } | null;
   /** The pictures the person sent, oldest first. */
   sent: SentImage[];
   /** The pictures the agent's steps made or read, newest first. */
@@ -83,7 +88,11 @@ export function phoneChatActivity(rows: readonly ConversationRow[], lanes: reado
         // A board named by its id (`canvas://ws_…/arch.excalidraw`) reads as its name.
         const named = stringValue(input.board).trim();
         const board = named.includes("://") ? named.slice(named.lastIndexOf("/") + 1).replace(/\.excalidraw$/iu, "") : named;
-        canvas = { live: running || Boolean(seen?.live), board: board || seen?.board || null };
+        canvas = {
+          live: running || Boolean(seen?.live),
+          board: board || seen?.board || null,
+          ref: named || seen?.ref || null,
+        };
       }
       const picture = toolPicture(tool);
       if (picture) steps.push({ tool, picture });

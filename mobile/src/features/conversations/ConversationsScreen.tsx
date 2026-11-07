@@ -14,6 +14,8 @@ import {
   GearIcon,
   iconSize,
   LifecycleGlyph,
+  MachineGlyph,
+  NoProjectGlyph,
   PlusIcon,
   RemoteMachineGlyph,
   ScheduleIcon,
@@ -57,6 +59,8 @@ type Section = {
   key: string;
   title: string | null;
   hue?: number | null;
+  /** The "No project" group, which wears that mark. */
+  projectless?: boolean;
   data: ChatListRow[];
   /** The Snoozed shelf: how many chats sleep on it, whether or not it is open. */
   shelf?: { count: number; open: boolean };
@@ -215,6 +219,7 @@ export function ConversationsScreen({
           key: group.key,
           title: group.projectName,
           hue: group.projectHue,
+          projectless: group.projectless,
           data: group.rows,
         })),
         ...shelf,
@@ -401,7 +406,12 @@ export function ConversationsScreen({
               open={section.shelf.open}
             />
           ) : view === "project" ? (
-            <ProjectHeader count={section.data.length} hue={section.hue ?? null} name={section.title ?? "Other"} />
+            <ProjectHeader
+              count={section.data.length}
+              hue={section.hue ?? null}
+              name={section.title ?? "Other"}
+              projectless={section.projectless === true}
+            />
           ) : section.title ? (
             <Text accessibilityRole="header" style={styles.sectionTitle}>
               {section.title}
@@ -727,7 +737,16 @@ const ChatRow = memo(function ChatRow({
           <View style={styles.line}>
             {project ? (
               <View style={styles.project}>
-                <FolderGlyph ink={projectInk} size={iconSize.xs} />
+                {/* Where the chat runs, when that is not the desktop itself,
+                  leads the line in the folder's ink, as on the desktop's
+                  sidebar (owner, 2026-11-07); its name is in the row's
+                  spoken label, and in its colour on the chat's own page. */}
+                {machine ? <MachineGlyph colour={machine.colour} ink={projectInk} kind={machine.kind} size={iconSize.xs} /> : null}
+                {row.projectless ? (
+                  <NoProjectGlyph size={iconSize.xs} />
+                ) : (
+                  <FolderGlyph ink={projectInk} size={iconSize.xs} />
+                )}
                 <Text numberOfLines={1} style={styles.projectText}>
                   {project}
                 </Text>
@@ -745,7 +764,7 @@ const ChatRow = memo(function ChatRow({
                 </Text>
               </View>
             ) : null}
-            {machine ? <MachineMarkLabel mark={machine} textStyle={styles.projectText} /> : null}
+            {machine && !project ? <MachineMarkLabel mark={machine} textStyle={styles.projectText} /> : null}
             <View style={styles.grow} />
             {seat}
           </View>
@@ -822,13 +841,23 @@ function ShelfHeader({ count, open, onToggle }: { count: number; open: boolean; 
 }
 
 /** A project in the project view: its folder in its hue, its name, and how many chats. */
-function ProjectHeader({ name, hue, count }: { name: string; hue: number | null; count: number }) {
+function ProjectHeader({
+  name,
+  hue,
+  count,
+  projectless,
+}: {
+  name: string;
+  hue: number | null;
+  count: number;
+  projectless: boolean;
+}) {
   const styles = useThemedStyles(createStyles);
   const { colors, isDark } = useTheme();
   const ink = projectHueColor(hue, isDark ? "dark" : "light") ?? colors.textMuted;
   return (
     <View accessibilityLabel={`${name}, ${count} ${count === 1 ? "chat" : "chats"}`} accessibilityRole="header" style={styles.projectHeader}>
-      <FolderGlyph ink={ink} size={iconSize.sm} />
+      {projectless ? <NoProjectGlyph size={iconSize.sm} /> : <FolderGlyph ink={ink} size={iconSize.sm} />}
       <Text numberOfLines={1} style={[styles.projectHeaderText, { color: ink }]}>
         {name}
       </Text>
