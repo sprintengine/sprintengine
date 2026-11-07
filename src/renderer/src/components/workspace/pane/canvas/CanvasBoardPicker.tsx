@@ -76,6 +76,13 @@ type CanvasBoardPickerProps = {
    * difference between "open it" and "why did my tab disappear".
    */
   openBoards?: readonly { path: string; store?: string | null }[]
+  /**
+   * Whether New board is offered: on this machine always; on a paired one,
+   * where its Studio carries boards here and this pairing may change them.
+   */
+  canCreate?: boolean
+  /** Said under the heading: why this list cannot do all a list here does. */
+  note?: string | null
 }
 
 type PickerState =
@@ -113,6 +120,8 @@ export function CanvasBoardPicker({
   initialScope = 'project',
   onPick,
   openBoards,
+  canCreate: canCreateProp,
+  note: sourceNote = null,
 }: CanvasBoardPickerProps) {
   const [scope, setScope] = useState<CanvasBoardScope>(initialScope)
   const [state, setState] = useState<PickerState>({ kind: 'loading' })
@@ -167,7 +176,7 @@ export function CanvasBoardPicker({
   }, [attempt, scope, source, workspaceId])
 
   // A picker that opened on every board still needs this project's names.
-  const canCreate = source.kind === 'here'
+  const canCreate = canCreateProp ?? source.kind === 'here'
   useEffect(() => {
     if (!canCreate || scope === 'project' || projectPaths !== null) return
     let cancelled = false
@@ -530,6 +539,7 @@ export function CanvasBoardPicker({
           ) : null}
         </div>
 
+        {sourceNote ? <p className="text-meta leading-4 text-[color:var(--text-subtle)]">{sourceNote}</p> : null}
         {state.kind === 'ready' && state.note ? (
           <p className="text-meta leading-4 text-[color:var(--text-subtle)]">{state.note}</p>
         ) : null}
@@ -544,7 +554,9 @@ export function CanvasBoardPicker({
             title={scope === 'all' ? 'No boards on this machine yet.' : 'No boards yet.'}
             body={
               source.kind === 'paired'
-                ? `Agents on ${source.machineName} draw boards there, and they are listed here.`
+                ? canCreate
+                  ? `Boards on ${source.machineName} are listed here. You and the agents there can both draw on them.`
+                  : `Agents on ${source.machineName} draw boards there, and they are listed here.`
                 : 'Boards are kept by the app, outside your repository — you and your agents can both draw on them. Export one to a folder when it belongs in the project.'
             }
           />

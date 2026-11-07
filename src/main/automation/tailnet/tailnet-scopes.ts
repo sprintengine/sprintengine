@@ -40,11 +40,14 @@ export const TAILNET_ROUTE_ACCESS = {
   'conversation-commands:refresh': { permissions: ['conversation:read', 'conversation:operate'] },
   // A picture or file staged for a message the device will send.
   upload: { permissions: ['conversation:read', 'conversation:operate'] },
+  // A paired desktop's Canvas pane on this machine's boards (`canvas-live-boards`):
+  // looking at one is a read; its messages are judged one by one below.
+  canvas: { permissions: ['workspace:read'] },
 } as const satisfies Readonly<Record<string, StudioAccess>>
 
 export type TailnetDeviceRoute = keyof typeof TAILNET_ROUTE_ACCESS
 /** The routes a ticket opens as a WebSocket upgrade; every other route is an HTTP request. */
-export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'events' | 'conversation'>
+export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'events' | 'conversation' | 'canvas'>
 export type TailnetHttpRoute = Exclude<TailnetDeviceRoute, TailnetUpgradeRoute>
 
 const FOLLOW: StudioAccess = { permissions: ['conversation:read'] }
@@ -77,6 +80,27 @@ export const CONVERSATION_LANE_ACCESS: { readonly [T in ConversationClientMessag
   cancelSideQuestion: FOLLOW,
   askSideQuestion: DRIVE,
   command: DRIVE,
+}
+
+const LOOK: StudioAccess = { permissions: ['workspace:read'] }
+const DRAW: StudioAccess = { permissions: ['workspace:read', 'workspace:operate'] }
+
+/** Every message a device sends on the canvas lane (`tailnet-canvas-stream.ts`). */
+export type CanvasLaneMessageType = 'open' | 'close' | 'watch' | 'file' | 'commit' | 'human'
+
+/**
+ * What each message on the canvas lane needs. Opening, closing and following a
+ * chat's `canvas.open` are looking at boards; a scene, a picture sent for one
+ * and taking the pen change one. Opening a board that is not there yet makes
+ * it, which the lane allows only to a device that may change boards.
+ */
+export const CANVAS_LANE_ACCESS: { readonly [T in CanvasLaneMessageType]: StudioAccess } = {
+  open: LOOK,
+  close: LOOK,
+  watch: LOOK,
+  file: DRAW,
+  commit: DRAW,
+  human: DRAW,
 }
 
 /** What a tool call over the tailnet needs: nothing a grant can give for a local-only tool, else its family's permission. */

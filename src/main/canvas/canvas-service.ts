@@ -56,6 +56,7 @@ import { validateEditRequest } from '../../shared/canvas/skeleton'
 import { lintScene } from '../../shared/canvas/lint'
 import { summariseChanges } from '../../shared/canvas/diff'
 import type { CanvasWorkerHost } from './canvas-worker-host'
+import { checkCanvasExport, writeCanvasExport } from './canvas-export'
 import { canvasReaderKey } from './canvas-service-types'
 import type { CanvasActor, CanvasService } from './canvas-service-types'
 import { errorMessage } from '../../shared/errors'
@@ -85,10 +86,6 @@ const ACTION_LOG_LIMIT = 50
 const READ_SNAPSHOT_LIMIT = 16
 /** A temp file older than this was left by a crash, not by a write in flight. */
 const STALE_TEMP_MS = 5 * 60 * 1000
-
-/** An exported picture past these is not something the tab rendered from a board. */
-const EXPORT_MAX_PNG_BASE64 = 64 * 1024 * 1024
-const EXPORT_MAX_SVG_CHARS = 64 * 1024 * 1024
 
 /** `listBoards` walks the project, so it is bounded on every axis. */
 const LIST_MAX_DEPTH = 6
@@ -1917,18 +1914,8 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
     directory: string,
     images: CanvasExportImages = {},
   ): Promise<CanvasResult<{ directory: string; files: string[] }>> {
-    if (typeof directory !== 'string' || !nodePath.isAbsolute(directory)) {
-      return canvasFail('invalid_path', 'An export needs an absolute folder to write into.')
-    }
-    if (images.png !== undefined && (typeof images.png !== 'string' || images.png.length > EXPORT_MAX_PNG_BASE64)) {
-      return canvasFail('too_large', 'The PNG image is not one this board could have produced.')
-    }
-    if (
-      images.svg !== undefined &&
-      (typeof images.svg !== 'string' || images.svg.length > EXPORT_MAX_SVG_CHARS || !/<svg[\s>]/i.test(images.svg))
-    ) {
-      return canvasFail('invalid_scene', 'The SVG image is not an SVG document.')
-    }
+    const checked = checkCanvasExport(directory, images)
+    if (!checked.ok) return checked
     const board = await ensureBoard(ref)
     if (!board.ok) return board
     const entry = board.value
@@ -1942,44 +1929,19 @@ export function createCanvasService(deps: CanvasServiceDeps): CanvasServiceInter
         appState: entry.appState,
         files: referencedFiles(entry),
       })
-      const outputs: Array<{ file: string; contents: string | Uint8Array }> = [
-        { file: nodePath.join(directory, `${name}${CANVAS_FILE_EXTENSION}`), contents: text },
-      ]
-      if (images.png) {
-        outputs.push({ file: nodePath.join(directory, `${name}.png`), contents: Buffer.from(images.png, 'base64') })
-      }
-      if (images.svg) outputs.push({ file: nodePath.join(directory, `${name}.svg`), contents: images.svg })
-      const exportFs = deps.exportFs ?? deps.fs
-      try {
-        await exportFs.mkdir(directory)
-      } catch (error) {
-        return fsFailure(`The folder ${directory} could not be created`, error)
-      }
-      const written: string[] = []
-      for (const output of outputs) {
+      const exported = await writeCanvasExport(deps.exportFs ?? deps.fs, {
+        directory,
+        name,
+        text,
+        images,
         // A legacy board exported into its own folder: the file already is
         // this board, and rewriting it would only wake the watcher.
-        if (
-          canvasBoardKeyPath(nodePath.resolve(output.file), platform) ===
-          canvasBoardKeyPath(entry.absolutePath, platform)
-        ) {
-          written.push(output.file)
-          continue
-        }
-        const temp = `${output.file}.${randomUUID()}.tmp`
-        try {
-          if (typeof output.contents === 'string') await exportFs.writeFile(temp, output.contents)
-          else if (exportFs.writeBytes) await exportFs.writeBytes(temp, output.contents)
-          else throw new Error('this filesystem cannot write binary files')
-          await exportFs.rename(temp, output.file)
-        } catch (error) {
-          await exportFs.unlink(temp).catch(() => {})
-          return fsFailure(`${output.file} could not be written`, error)
-        }
-        written.push(output.file)
-      }
+        isBoardItself: (file) =>
+          canvasBoardKeyPath(nodePath.resolve(file), platform) === canvasBoardKeyPath(entry.absolutePath, platform),
+      })
+      if (!exported.ok) return exported
       touch(entry)
-      return canvasOk({ directory, files: written })
+      return exported
     })
   }
 

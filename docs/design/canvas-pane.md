@@ -534,16 +534,30 @@ project's working tree unless the person puts it there.
   with the board open beside it. It starts in the board's folder, else the asking
   chat's project, else under no project: a folder that went away is never a
   reason to refuse the board.
-- **Paired machines.** A paired chat's picker lists that machine's boards through
-  `canvas.list` there (`canvas-machine-boards`; an older machine lists its project
-  and says so). A board is shown as a picture from `canvas.screenshot`, and
-  changed through a new chat on that machine, started by the mesh's
-  `conversation.create`. Live human editing of a far board is not built: the
-  editor needs the whole scene and a push of every change, which would take
-  board-only file routes on the tailnet so this desktop can run the canvas service
-  over `createProtocolCanvasFs`. New board is not offered on a paired chat for the
-  same reason. The phone shows the name of a board the agent used and says to open
-  it on the desktop; it has no list of boards.
+- **Paired machines.** A paired chat's Canvas pane is the same pane on the boards
+  of the machine the chat runs on (`canvas-live-boards`, owner request
+  2026-11-07). The picker lists that machine's boards through `canvas.list` there
+  (`canvas-machine-boards`), offers New board, and opens a board in the same
+  editor, through the same calls: `canvasBoardSource.ts` hands the tab and the
+  editor a client that is this machine's `canvas:*` IPC for a chat here and the
+  canvas lane for a paired one. The lane (`tailnet-canvas-stream.ts` over there,
+  `tailnet-remote-canvas.ts` here) is one WebSocket per paired machine: it opens a
+  board as a subscriber of that machine's canvas service, carries the person's
+  scene and pictures to it, and brings back every accepted write, the agent's
+  presence and an agent's `canvas.open`. That service is the only owner of the
+  board, so a person here, a window there and the agent are merged element by
+  element by one service with one revision, as two windows on one machine are;
+  this desktop never writes the file. Pictures cross once each way and anything
+  over the tailnet's 1 MiB message cap goes in parts. When the link drops the pane
+  says so, what the person draws is kept here and sent when the machine answers,
+  and the windows are handed the board again at a revision they have not seen. A
+  pairing without `workspace:operate` opens boards in the editor's view mode with
+  a line saying why. Export writes this desktop's copy into a folder picked here;
+  Reveal file is left out, as the file is on the other machine. A machine whose
+  Studio predates the lane still draws a board as a picture from
+  `canvas.screenshot` (`CanvasFarBoard`), with its reason, and offers a new chat
+  there. The phone shows the name of a board the agent used and says to open it
+  on the desktop; it has no list of boards.
 - **A web tab** lists the boards of the workspaces its server has, and says so.
   An orphaned store on a server needs an owner method of its own, since `files.*`
   roots name a workspace. Its store keys are derived from the workspace id and

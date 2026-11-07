@@ -971,9 +971,12 @@ test('tailnet', async () => {
         'mcp-oauth',
       ])
       // Every one the wire defines but shrinking an upload, which only a
-      // machine with an image codec advertises; this harness has none.
+      // machine with an image codec advertises, and editing boards, which only
+      // one running a canvas service does; this harness has neither.
       assert.deepEqual(
-        TAILNET_CAPABILITIES.filter((capability) => capability !== 'conversation-image-downscale'),
+        TAILNET_CAPABILITIES.filter(
+          (capability) => capability !== 'conversation-image-downscale' && capability !== 'canvas-live-boards',
+        ),
         body.capabilities,
       )
       // Nothing about this machine, its user, its workspaces, or its devices.
