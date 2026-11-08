@@ -5,9 +5,9 @@ changed.
 
 Motion here carries information first: **something is alive right now**, or
 **something just changed**. It is also allowed a little character (ruling
-2026-09-28): a working mark picks one of four patterns so a list of working
-chats does not tick in step, and a spawned agent is drawn as a small
-[agent glyph](../agent-glyph/component.md) that moves while it works. What motion
+2026-09-28): the working mark is a small wave rather than a spinner, and a
+spawned agent is drawn as a small [agent glyph](../agent-glyph/component.md)
+that moves while it works. What motion
 never does is decorate something at rest. A mark that moves while nothing is
 happening teaches people to ignore movement.
 
@@ -21,20 +21,22 @@ happening teaches people to ignore movement.
 
 ## Working mark
 
-A 3×3 grid of small square cells in `accent.primary`, 14px across, every cell
-resting dim. One of four patterns lights them, on a pure-CSS keyframe loop:
+Three dots in `status.good`, 14px across, that hop one after another and then
+rest: a wave passing through an ellipsis (owner ruling 2026-11-08). It replaced
+a 3×3 grid of cells that ran four patterns, one picked per chat.
 
-| Pattern | Movement |
-|---|---|
-| Orbit | a lit cell runs round the edge, trailing a fading tail; the centre holds still |
-| Ripple | a diagonal wave washes across, corner to corner |
-| Think | cells light in a shuffled order, like it is working something out |
-| Snake | a three-cell snake slithers round the edge; the centre holds still |
+The wave is twelve drawn frames laid side by side in one SVG strip, and the mark
+slides the strip one frame per step (`steps(12)` over 1.5s). That keeps it
+cheap: one transform loop per mark, where the grid ran eight, and the frames
+change only while the wave is passing. The second half of every loop is a rest
+in which nothing changes. Twelve frames over 1.5s is also one frame per tick
+of the app's motion clock, which holds every loop paused and steps it a few
+times a second.
 
-The pattern is picked from a seed, the id of the chat or agent that is working,
-so a chat keeps its pattern for as long as it works and a row of working chats
-spreads across all four. Use the mark where work is genuinely in flight and has
-no predictable end: an agent running, a job with no progress to report.
+Every mark hops on the same beat: a mark joins the wave where the others are,
+so a column of working chats moves together instead of flickering out of step.
+Use the mark where work is genuinely in flight and has no predictable end: an
+agent running, a job with no progress to report.
 
 It is **not** a spinner substitute. A spinner says "wait, this will finish"; the
 mark says "this is ongoing", which is why it lives on a row that stays readable
@@ -56,15 +58,15 @@ nothing depends on having seen the animation.
 | State | Treatment |
 |---|---|
 | Rest | no motion at all: the mark is absent, the pulse static |
-| Live | the mark's pattern cycles; the surface around it stays interactive |
+| Live | the wave runs; the surface around it stays interactive |
 | Changed | one pulse, then rest — never a repeat, never a loop |
-| Reduced motion | every working mark holds one still frame, the four corners and the centre lit; the pulse does not play |
+| Reduced motion | every working mark holds its first frame, three dots at rest; the pulse does not play |
 
 Reduced motion is handled in the stylesheet rather than in each component, so a
 consumer cannot forget it: the same class that animates is the class that
-carries the `prefers-reduced-motion` guard. The still frame is the same for all
-four patterns, so "working" reads one way to someone who has turned motion off.
-It is never a dot.
+carries the `prefers-reduced-motion` guard. The still frame, "•••", says
+"working" on its own to someone who has turned motion off. It is never a dot:
+three in a row are an ellipsis, a shape with a meaning, not a status disc.
 
 Every loop also holds still while the window is hidden or in the background,
 and a transcript row pauses its own when it scrolls out of view.
@@ -85,8 +87,6 @@ and a transcript row pauses its own when it scrolls out of view.
 
 - One liveness mark per row. A working mark *and* a spinner *and* a pulsing
   badge on the same row is three components saying one thing.
-- Seed the mark with the id of what is working, never with something that
-  changes while it works, or the pattern will jump.
 - Never pulse on a value the person just typed. The pulse means "this changed
   underneath you"; replaying their own edit back at them is noise.
 - Motion is not emphasis. Something important but static gets ink, weight or a

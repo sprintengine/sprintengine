@@ -99,7 +99,7 @@ export function ConversationFileDiffScreen({
         {view.status === "loading" ? (
           <View style={styles.state} accessibilityLiveRegion="polite">
             <View style={styles.loading}>
-              <WorkingMark seed={path} label="Loading diff" />
+              <WorkingMark label="Loading diff" />
               <Text style={styles.meta}>Loading diff…</Text>
             </View>
           </View>

@@ -45,7 +45,7 @@ export const SE_DEFAULTS: Record<'light' | 'dark', Record<SeToken, string>> = {
     'text-muted': '#646c78',
     link: '#2f6a4a',
     accent: '#2f6a4a',
-    danger: '#d92d2d',
+    danger: '#a14036',
     ...FONTS,
   },
   dark: {
@@ -57,7 +57,7 @@ export const SE_DEFAULTS: Record<'light' | 'dark', Record<SeToken, string>> = {
     'text-muted': '#9c9ca4',
     link: '#3f9468',
     accent: '#3f9468',
-    danger: '#fc787c',
+    danger: '#d17e75',
     ...FONTS,
   },
 }

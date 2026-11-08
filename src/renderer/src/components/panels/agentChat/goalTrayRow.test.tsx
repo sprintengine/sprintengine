@@ -5,7 +5,7 @@ import { GoalTrayRow } from './goalTrayRow'
 
 test('a goal the agent is working toward is named under the working mark, with its state in a word', () => {
   const html = renderToStaticMarkup(
-    <GoalTrayRow goal={{ objective: 'make the parser tests pass', status: 'active' }} seed="conv_1" />,
+    <GoalTrayRow goal={{ objective: 'make the parser tests pass', status: 'active' }} />,
   )
   expect(html).toContain('make the parser tests pass')
   expect(html).toContain('>Working<')
@@ -15,7 +15,7 @@ test('a goal the agent is working toward is named under the working mark, with i
 
 test('a paused goal wears the paused glyph and says so, with nothing to dismiss', () => {
   const html = renderToStaticMarkup(
-    <GoalTrayRow goal={{ objective: 'make the parser tests pass', status: 'paused' }} seed="conv_1" />,
+    <GoalTrayRow goal={{ objective: 'make the parser tests pass', status: 'paused' }} />,
   )
   expect(html).toContain('>Paused<')
   expect(html).not.toContain('Working toward the goal')
@@ -24,12 +24,12 @@ test('a paused goal wears the paused glyph and says so, with nothing to dismiss'
 
 test('a met goal says so and can be put away', () => {
   const html = renderToStaticMarkup(
-    <GoalTrayRow goal={{ objective: 'make the parser tests pass', status: 'complete' }} seed="conv_1" />,
+    <GoalTrayRow goal={{ objective: 'make the parser tests pass', status: 'complete' }} />,
   )
   expect(html).toContain('>Met<')
   expect(html).toContain('aria-label="Dismiss"')
 })
 
 test('no goal draws nothing', () => {
-  expect(renderToStaticMarkup(<GoalTrayRow goal={null} seed="conv_1" />)).toBe('')
+  expect(renderToStaticMarkup(<GoalTrayRow goal={null} />)).toBe('')
 })

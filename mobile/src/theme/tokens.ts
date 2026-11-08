@@ -223,16 +223,16 @@ const darkColors: ThemeColors = {
 
   toneNeutral: "#a3a3a3",
   toneAccent: "#3f9468",
-  toneGood: "#30d058",
+  toneGood: "#72ba88",
   toneWarn: "#fcc030",
-  toneError: "#fc787c",
+  toneError: "#d17e75",
   toneMerged: "#8957e5",
 
   toneNeutralSoft: "rgba(163,163,163,0.18)",
   toneAccentSoft: "rgba(63,148,104,0.16)",
-  toneGoodSoft: "rgba(48,208,88,0.18)",
+  toneGoodSoft: "rgba(114,186,136,0.18)",
   toneWarnSoft: "rgba(252,192,48,0.18)",
-  toneErrorSoft: "rgba(252,120,124,0.18)",
+  toneErrorSoft: "rgba(209,126,117,0.18)",
   quoteInk: "#fcc030",
   quoteBadge: "#fcc030",
   quoteBadgeSent: "rgba(252,192,48,0.55)",
@@ -313,21 +313,22 @@ const lightColors: ThemeColors = {
   accentPrimarySoft: "rgba(47,106,74,0.10)",
   accentPrimarySoftStrong: "rgba(47,106,74,0.18)",
 
-  // The system sheet's light status inks (emerald-700 #157f37, amber-800
-  // #9a6000, red-600 #d92d2d) sit at 3.8–4.1:1 as 12px pill text on a selected
-  // row; each is darkened along its own hue to clear 4.5:1 on bgSelected.
+  // The system sheet's light status inks (sage-700 #467c58, amber-800 #9a6000)
+  // sit near 4:1 as 12px pill text on a selected row; each is darkened along
+  // its own hue to clear 4.5:1 on bgSelected. Its clay-700 #a14036 already
+  // clears it, so the error ink is the sheet's own.
   toneNeutral: "#5f5f5f",
   toneAccent: "#2f6a4a",
-  toneGood: "#126b2f",
+  toneGood: "#396f49",
   toneWarn: "#805000",
-  toneError: "#c02020",
+  toneError: "#a14036",
   toneMerged: "#8957e5",
 
   toneNeutralSoft: "rgba(95,95,95,0.14)",
   toneAccentSoft: "rgba(47,106,74,0.12)",
-  toneGoodSoft: "rgba(18,107,47,0.16)",
+  toneGoodSoft: "rgba(57,111,73,0.16)",
   toneWarnSoft: "rgba(128,80,0,0.16)",
-  toneErrorSoft: "rgba(192,32,32,0.14)",
+  toneErrorSoft: "rgba(161,64,54,0.14)",
   quoteInk: "#9a6000",
   quoteBadge: "#fcc030",
   quoteBadgeSent: "rgba(252,192,48,0.55)",

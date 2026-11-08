@@ -1641,7 +1641,7 @@ export function ConversationScreen({
                 })}
               {chat.busy ? (
                 <View style={styles.working} accessibilityLiveRegion="polite">
-                  <WorkingMark seed={thread.agentId} label="Working" />
+                  <WorkingMark label="Working" />
                   <Text style={styles.workingText}>
                     {chat.retrying
                       ? retryLabel(chat.retrying)
@@ -1669,7 +1669,7 @@ export function ConversationScreen({
         />
         {!landed && chat.rows.length ? (
           <View pointerEvents="none" style={styles.landingNote}>
-            <WorkingMark seed={thread.agentId} label="Loading" />
+            <WorkingMark label="Loading" />
             <Text style={styles.meta}>Loading…</Text>
           </View>
         ) : null}

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, test, vi } from 'vitest'
 import { AgentGlyph } from './AgentGlyph'
 import { AGENT_CHARACTERS } from './agentGlyph/characters'
 import { AGENT_SEASON_POOLS, pickAgentCharacter, seasonFor } from './agentGlyph/seasons'
-import { WORKING_MARK_VARIANTS, WorkingMark } from './WorkingMark'
+import { WORKING_MARK_FRAMES, WorkingMark } from './WorkingMark'
 
 const localDate = (month: number, day: number) => new Date(2026, month - 1, day, 12)
 
@@ -99,22 +99,25 @@ test('every character draws in every state', () => {
       )
 })
 
-test('a chat keeps its working mark, and chats spread across the four', () => {
-  const variantOf = (seed: string) =>
-    /data-variant="(\w+)"/.exec(renderToStaticMarkup(createElement(WorkingMark, { label: 'Agent working', seed })))?.[1]
-  assert.equal(variantOf('agent-1'), variantOf('agent-1'))
-  const seen = new Set(Array.from({ length: 40 }, (_, index) => variantOf(`agent-${index}`)))
-  assert.deepEqual([...seen].sort(), [...WORKING_MARK_VARIANTS].sort())
-})
-
-test('a working mark is nine cells named by its label; the edge patterns hold the centre still', () => {
-  const markup = renderToStaticMarkup(createElement(WorkingMark, { label: 'Searching', variant: 'orbit' }))
+test('a working mark is one strip of the wave’s frames, named by its label', () => {
+  const markup = renderToStaticMarkup(createElement(WorkingMark, { label: 'Searching' }))
   assert.match(markup, /role="img"/)
   assert.match(markup, /aria-label="Searching"/)
-  assert.equal(markup.match(/<i /g)?.length, 9)
-  assert.equal(markup.match(/working-mark__cell--still/g)?.length, 1)
-  assert.equal(
-    renderToStaticMarkup(createElement(WorkingMark, { label: 'x', variant: 'ripple' })).includes('--still'),
-    false,
-  )
+  assert.equal(markup.match(/<svg /g)?.length, 1, 'one strip, so one loop for the motion clock to hold')
+  assert.match(markup, /class="working-mark__strip"/)
+  assert.equal(markup.match(/<circle /g)?.length, WORKING_MARK_FRAMES * 3)
+})
+
+test('the wave: the dots hop one after another, then rest, and the first frame is all three at rest', () => {
+  const markup = renderToStaticMarkup(createElement(WorkingMark, { label: 'Working' }))
+  const heights = [...markup.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)"/g)].map((m) => Number(m[2]))
+  const frames = Array.from({ length: WORKING_MARK_FRAMES }, (_, f) => heights.slice(f * 3, f * 3 + 3))
+  const rest = frames[0]![0]!
+  // Frame 0 is what reduced motion shows: "•••", nothing lifted.
+  assert.deepEqual(frames[0], [rest, rest, rest])
+  // Each dot leaves the ground one frame after the one before it.
+  const firstLift = [0, 1, 2].map((dot) => frames.findIndex((frame) => frame[dot]! < rest))
+  assert.deepEqual(firstLift, [1, 2, 3])
+  // The second half of the loop is a rest: nothing changes, so nothing redraws.
+  for (const frame of frames.slice(WORKING_MARK_FRAMES / 2 + 1)) assert.deepEqual(frame, [rest, rest, rest])
 })

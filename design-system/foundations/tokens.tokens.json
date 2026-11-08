@@ -121,15 +121,15 @@
         "$value": "#275842",
         "$description": "Deep forest green, hover step on light. Source: light --accent-primary-hover."
       },
-      "emerald-400": {
+      "sage-400": {
         "$type": "color",
-        "$value": "#30d058",
-        "$description": "Luminous success emerald for dark surfaces. Source: dark --tone-good."
+        "$value": "#72ba88",
+        "$description": "Soft success sage for dark surfaces: lighter and greyer than the signature green-500, so done never reads as the accent. Replaced a luminous #30d058 emerald that shouted beside everything else on the page (2026-11-08). Source: dark --tone-good."
       },
-      "emerald-700": {
+      "sage-700": {
         "$type": "color",
-        "$value": "#157f37",
-        "$description": "Deep success emerald for light surfaces (5.09:1 with white text). Source: light --tone-good."
+        "$value": "#467c58",
+        "$description": "Deep success sage for light surfaces (4.9:1 with white text). Lighter and yellower than the forest green-700 accent, so the two stay apart. Source: light --tone-good."
       },
       "amber-400": {
         "$type": "color",
@@ -144,17 +144,22 @@
       "coral-400": {
         "$type": "color",
         "$value": "#fc787c",
-        "$description": "Luminous error coral for dark surfaces. Source: dark --tone-error."
+        "$description": "Luminous identity red for dark surfaces: the red machine and file mark. No longer a status ink; errors take clay-400."
       },
       "red-600": {
         "$type": "color",
         "$value": "#d92d2d",
-        "$description": "Deep error red for light surfaces, carries white ink. Source: light --tone-error."
+        "$description": "Identity red for light surfaces: the red machine and file mark. No longer a status ink; errors take clay-700."
       },
-      "red-700": {
+      "clay-400": {
         "$type": "color",
-        "$value": "#b82424",
-        "$description": "Error and removed-line ink on light surfaces. One step below red-600, which drew lighter than the emerald-700 it pairs with in a diff count and read as a pink beside it."
+        "$value": "#d17e75",
+        "$description": "Error clay for dark surfaces: a dusty red at the sage's own softness, so a failure and a success read as one family. Replaced a pink #fc787c coral that sat outside the palette (2026-11-08). Source: dark --tone-error."
+      },
+      "clay-700": {
+        "$type": "color",
+        "$value": "#a14036",
+        "$description": "Error and removed-line ink on light surfaces (6.4:1 with white text). Deep enough to pair with sage-700 in a diff count without reading as a pink beside it. Source: light --tone-error."
       },
       "violet-500": {
         "$type": "color",
@@ -209,7 +214,7 @@
       "teal-700": {
         "$type": "color",
         "$value": "#0f766e",
-        "$description": "Deep identity teal for light surfaces (5.3:1 on white). Kept apart from the success emerald by hue. Source: light --sem-color-mark-teal."
+        "$description": "Deep identity teal for light surfaces (5.3:1 on white). Kept apart from the success sage by hue. Source: light --sem-color-mark-teal."
       },
       "teal-400": {
         "$type": "color",
@@ -702,8 +707,8 @@
         },
         "good": {
           "$type": "color",
-          "$value": "{ref.color.emerald-700}",
-          "$description": "Done / ready / healthy. Kept apart from the forest accent by brightness and saturation.",
+          "$value": "{ref.color.sage-700}",
+          "$description": "Done / ready / healthy, and the working mark's ink. A soft sage, kept apart from the forest accent by brightness and hue.",
           "$extensions": {
             "com.sprintengine": {
               "seeded": true,
@@ -711,8 +716,8 @@
               "use": "Completion and health marks: the done disc with its knocked-out check, in rows and status marks alike.",
               "doNotUse": "Anything decorative; never retune toward the accent green.",
               "modes": {
-                "light": "{ref.color.emerald-700}",
-                "dark": "{ref.color.emerald-400}"
+                "light": "{ref.color.sage-700}",
+                "dark": "{ref.color.sage-400}"
               }
             }
           }
@@ -736,7 +741,7 @@
         },
         "danger": {
           "$type": "color",
-          "$value": "{ref.color.red-700}",
+          "$value": "{ref.color.clay-700}",
           "$description": "Error / blocked / failed; destructive-action fill.",
           "$extensions": {
             "com.sprintengine": {
@@ -744,8 +749,8 @@
               "role": "status",
               "use": "Error marks, failed states, destructive-button fills, invalid-field borders.",
               "modes": {
-                "light": "{ref.color.red-700}",
-                "dark": "{ref.color.coral-400}"
+                "light": "{ref.color.clay-700}",
+                "dark": "{ref.color.clay-400}"
               }
             }
           }
@@ -781,7 +786,7 @@
         },
         "good-soft": {
           "$type": "color",
-          "$value": "rgba(21, 127, 55, 0.20)",
+          "$value": "rgba(70, 124, 88, 0.20)",
           "$description": "Soft success fill for banners and chips.",
           "$extensions": {
             "com.sprintengine": {
@@ -790,8 +795,8 @@
               "use": "Success banner and chip fills in inspectors and drawers.",
               "doNotUse": "Default panel chrome.",
               "modes": {
-                "light": "rgba(21, 127, 55, 0.20)",
-                "dark": "rgba(48, 208, 88, 0.18)"
+                "light": "rgba(70, 124, 88, 0.20)",
+                "dark": "rgba(114, 186, 136, 0.18)"
               }
             }
           }
@@ -815,7 +820,7 @@
         },
         "danger-soft": {
           "$type": "color",
-          "$value": "rgba(220, 40, 40, 0.16)",
+          "$value": "rgba(161, 64, 54, 0.16)",
           "$description": "Soft error fill for banners and chips.",
           "$extensions": {
             "com.sprintengine": {
@@ -824,15 +829,15 @@
               "use": "Error banner and chip fills in inspectors and drawers.",
               "doNotUse": "Default panel chrome.",
               "modes": {
-                "light": "rgba(220, 40, 40, 0.16)",
-                "dark": "rgba(252, 120, 124, 0.18)"
+                "light": "rgba(161, 64, 54, 0.16)",
+                "dark": "rgba(209, 126, 117, 0.18)"
               }
             }
           }
         },
         "good-faint": {
           "$type": "color",
-          "$value": "rgba(21, 127, 55, 0.10)",
+          "$value": "rgba(70, 124, 88, 0.10)",
           "$description": "The quietest success fill: a wash for a whole row that has finished while the person was elsewhere.",
           "$extensions": {
             "com.sprintengine": {
@@ -841,8 +846,8 @@
               "doNotUse": "Chips, banners, or anything smaller than a row \u2014 those take good-soft. Never as a hover or selection fill.",
               "components": ["list-row"],
               "modes": {
-                "light": "rgba(21, 127, 55, 0.10)",
-                "dark": "rgba(48, 208, 88, 0.10)"
+                "light": "rgba(70, 124, 88, 0.10)",
+                "dark": "rgba(114, 186, 136, 0.10)"
               }
             }
           }
@@ -851,7 +856,7 @@
       "diff": {
         "added": {
           "$type": "color",
-          "$value": "{ref.color.emerald-700}",
+          "$value": "{ref.color.sage-700}",
           "$description": "Added material in a diff \u2014 the same value as status.good, spent on a diff channel rather than on health (ruled 2026-09-09). The app has drawn added lines and added-file marks in this colour since before the system existed; the token is where that value now lives.",
           "$extensions": {
             "com.sprintengine": {
@@ -859,15 +864,15 @@
               "use": "The ink of an added line, an added-file mark, or the A status letter, and the hue a renderer derives its added-line wash from. One set of four so Monaco's theme, a gutter and any future unified renderer read the same values.",
               "doNotUse": "Health or success (that is status.good), a button fill, or chrome. Added-ness is a property of a line, not a state of the app.",
               "modes": {
-                "light": "{ref.color.emerald-700}",
-                "dark": "{ref.color.emerald-400}"
+                "light": "{ref.color.sage-700}",
+                "dark": "{ref.color.sage-400}"
               }
             }
           }
         },
         "removed": {
           "$type": "color",
-          "$value": "{ref.color.red-700}",
+          "$value": "{ref.color.clay-700}",
           "$description": "Removed material in a diff \u2014 the same value as status.danger, spent on a diff channel rather than on failure (ruled 2026-09-09). A deletion is not an error, and the shared value is a legibility inheritance, not a claim that it is.",
           "$extensions": {
             "com.sprintengine": {
@@ -875,8 +880,8 @@
               "use": "The ink of a removed line, a deleted-file name, or the D status letter, and the hue a renderer derives its removed-line wash from.",
               "doNotUse": "Errors or destructive actions (that is status.danger). A removed line is not a failure and must never be read as one.",
               "modes": {
-                "light": "{ref.color.red-700}",
-                "dark": "{ref.color.coral-400}"
+                "light": "{ref.color.clay-700}",
+                "dark": "{ref.color.clay-400}"
               }
             }
           }
@@ -1005,7 +1010,7 @@
         "teal": {
           "$type": "color",
           "$value": "{ref.color.teal-700}",
-          "$description": "Identity teal. Shell-script glyphs. A hue of its own so a coloured glyph never borrows the success emerald.",
+          "$description": "Identity teal. Shell-script glyphs. A hue of its own so a coloured glyph never borrows the success green.",
           "$extensions": {
             "com.sprintengine": {
               "role": "identity",

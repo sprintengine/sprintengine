@@ -248,7 +248,7 @@ export function SideQuestionDrawer({
               <InlineNotice tone="error" title={entry.error} />
             ) : (
               <p role="status" className="flex items-center gap-2 text-meta text-[color:var(--text-muted)]">
-                <WorkingMark label="Answering" seed={entry.id} />
+                <WorkingMark label="Answering" />
                 Answering…
               </p>
             )}

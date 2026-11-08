@@ -2230,7 +2230,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
                     agentCharacters ? (
                       <AgentGlyph agentId={trailMark.here.agentId} state="working" />
                     ) : (
-                      <WorkingMark label="Agent working" seed={trailMark.here.agentId} />
+                      <WorkingMark label="Agent working" />
                     )
                   ) : undefined,
                 }

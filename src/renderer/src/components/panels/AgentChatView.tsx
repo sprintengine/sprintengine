@@ -4540,7 +4540,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
               {sessionId !== null && !projection.activeTurn ? (
                 <BackgroundTasksTrayRow
                   tasks={projection.backgroundTasks}
-                  seed={sessionId}
                   onStop={operate ? () => void interrupt() : undefined}
                   stopping={pending === 'stopping'}
                 />
@@ -4549,7 +4548,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 turn, and where it stands: during its turns as between them.
                 Only for a live session, which says its goal again once it has
                 read the thread's. */}
-              {sessionId !== null ? <GoalTrayRow goal={projection.goal} seed={sessionId} /> : null}
+              {sessionId !== null ? <GoalTrayRow goal={projection.goal} /> : null}
               {requestPending ? null : (
                 <>
                   <ConversationTodoStrip entries={shapeEntries} activeTurn={projection.activeTurn} />

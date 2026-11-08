@@ -56,16 +56,16 @@
 }
 
 /* ── Working ─────────────────────────────────────────────────────────────
- * Something is running right now: the working mark, in accent ink — the
+ * Something is running right now: the working mark, in the success ink — the
  * app's one "working" mark (WorkingMark, components/liveness). Drawn here as
- * its still frame, the 3×3 grid with the four corners and the centre lit,
- * breathing; the product's own mark cycles one of four patterns. A live good
+ * its still frame, three dots at rest, breathing; the product's own mark is
+ * the wave, the dots hopping in turn. A live good
  * or accent tone is always drawn this way, never as a pulsing glyph. */
 .ds-status-dot--working {
   width: 14px;
   height: 14px;
-  background: var(--sem-color-accent-primary);
-  --ds-status-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Crect x='1' y='1' width='3' height='3' rx='0.8'/%3E%3Crect x='5.5' y='1' width='3' height='3' rx='0.8' fill-opacity='0.2'/%3E%3Crect x='10' y='1' width='3' height='3' rx='0.8'/%3E%3Crect x='1' y='5.5' width='3' height='3' rx='0.8' fill-opacity='0.2'/%3E%3Crect x='5.5' y='5.5' width='3' height='3' rx='0.8'/%3E%3Crect x='10' y='5.5' width='3' height='3' rx='0.8' fill-opacity='0.2'/%3E%3Crect x='1' y='10' width='3' height='3' rx='0.8'/%3E%3Crect x='5.5' y='10' width='3' height='3' rx='0.8' fill-opacity='0.2'/%3E%3Crect x='10' y='10' width='3' height='3' rx='0.8'/%3E%3C/svg%3E");
+  background: var(--sem-color-status-good);
+  --ds-status-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Ccircle cx='3.3' cy='8.9' r='1.35'/%3E%3Ccircle cx='7' cy='8.9' r='1.35'/%3E%3Ccircle cx='10.7' cy='8.9' r='1.35'/%3E%3C/svg%3E");
   animation: ds-status-dot-pulse 1200ms ease-in-out infinite;
 }
 

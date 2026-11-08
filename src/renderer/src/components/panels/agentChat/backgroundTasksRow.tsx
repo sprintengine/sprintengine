@@ -23,13 +23,10 @@ import { useConversationDisclosure } from './conversationViewState'
 
 export function BackgroundTasksTrayRow({
   tasks,
-  seed,
   onStop,
   stopping = false,
 }: {
   tasks: readonly ConversationBackgroundTask[]
-  /** The chat's id: what picks its working mark's pattern. */
-  seed: string
   /** Absent where the view cannot operate the chat. */
   onStop?: () => void
   /** A stop was asked for and the chat has not answered yet. */
@@ -66,7 +63,7 @@ export function BackgroundTasksTrayRow({
       }
       glyph={
         waiting ? (
-          <WorkingMark label="Waiting on background work" seed={seed} />
+          <WorkingMark label="Waiting on background work" />
         ) : (
           <ToolKindGlyph kind="command" className="icon-sm shrink-0 text-[color:var(--text-subtle)]" />
         )

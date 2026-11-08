@@ -400,7 +400,7 @@
   --tone-warn-on-tint: color-mix(in oklab, var(--tone-warn) 58%, var(--text-strong));
   /* Title ink for the sidebar's unseen-done row (good-soft fill + good ring):
      same mix-toward-ink formula as the two above, so it clears AA over its own
-     tint on every theme. No flagship-light literal: light's good (#157f37) is
+     tint on every theme. No flagship-light literal: light's good (#467c58) is
      already deep enough that the formula lands well past 4.5:1. */
   --tone-good-on-tint: color-mix(in oklab, var(--tone-good) 58%, var(--text-strong));
   /* The finished row's fill and ring (list-row --finished: status.good-faint
@@ -409,13 +409,17 @@
      override --tone-good, and the bundle's two literals would not follow. The
      ratios are the bundle's — 10% wash, 55% edge. */
   --tone-good-faint: color-mix(in oklab, var(--tone-good) 10%, transparent);
+  /* The working mark's dots and the elapsed time beside them. The success
+     green, so "working" and "done" read as one quiet green; a theme that
+     brings its own --tone-good brings its own working ink with it. */
+  --working-ink: var(--tone-good);
 
   /* Ink for solid --tone-error fills (danger buttons). Borrowing
      --text-on-accent broke here: that token is tuned for the blue accent and
-     flips to white on some dark themes (e.g. slate), leaving white-on-coral.
-     The error red is the light coral #fc787c on every theme except `light`,
+     flips to white on some dark themes (e.g. slate), leaving white-on-red.
+     The error red is the light clay #d17e75 on every theme except `light`,
      so near-black is the correct ink; the light theme overrides it to white
-     against its deeper #d92d2d. */
+     against its deeper #a14036. */
   --tone-error-ink: #08080c;
 
   /* Diff palette — file-status marks in Git surfaces, the +N/-N counts, and
@@ -675,28 +679,27 @@
   --accent-primary-soft: var(--sem-color-accent-soft);
   --accent-primary-soft-strong: var(--sem-color-accent-soft-strong);
 
-  /* Solid status tones overridden for light: the dark-theme hexes (#30d058,
-     #fcc030, #fc787c) are luminous-on-dark and wash out on white — the git
+  /* Solid status tones overridden for light: the dark-theme hexes (#72ba88,
+     #fcc030, #d17e75) are light-on-dark and wash out on white — the git
      count badge rendered white-on-bright-amber at ~1.6:1. These darker tones
      read as status dots on light and carry white badge text (≥4:1). */
   --tone-neutral: var(--sem-color-status-neutral);
   --tone-accent: #2f6a4a;
-  /* The bundle's light `good` is #157f37: #1a8f43 gave white-on-good and
-     good-on-white both 4.16:1 — under AA (4.5) for the white-text git/status
-     count badges — where #157f37 clears it at 5.09:1 both directions while
-     staying recognisably emerald. */
+  /* The bundle's light `good` is the sage #467c58: it clears AA (4.5) for the
+     white-text git/status count badges at 4.9:1 both directions, while
+     staying lighter than the forest accent so done never reads as a button. */
   --tone-good: var(--sem-color-status-good);
   --tone-warn: var(--sem-color-status-warn);
   --tone-error: var(--sem-color-status-danger);
-  /* Light theme uses a deeper red than the shared coral, so its danger ink
-     flips to white (near-black would be illegible on #d92d2d). */
+  /* Light theme uses a deeper red than the shared clay, so its danger ink
+     flips to white (near-black would be illegible on #a14036). */
   --tone-error-ink: #ffffff;
-  /* On-tint chip labels (flagship light): the raw tone over its own 12% fill
-     lands just under AA on near-white (error 4.02:1, warn 4.42:1 at 11px).
-     These crisper hand-tuned inks read better here than the base mix-toward-ink
-     formula and clear AA (error 4.84:1, warn 5.24:1). The fill stays
-     --tone-error/--tone-warn, so only the label darkens. */
-  --tone-error-on-tint: #c42424;
+  /* On-tint chip labels (flagship light). The clay error ink is deep enough
+     to be its own label (5.3:1 over its 12% fill). The raw warn tone lands just
+     under AA on near-white (4.42:1 at 11px), so it takes a crisper hand-tuned
+     ink that clears it (5.24:1) where the base mix-toward-ink formula reads
+     muddier. The fill stays --tone-warn, so only the label darkens. */
+  --tone-error-on-tint: var(--tone-error);
   --tone-warn-on-tint: #8a5600;
 
   --tone-neutral-soft: var(--sem-color-status-neutral-soft);
@@ -1533,28 +1536,29 @@
   --accent-primary-soft-strong: rgba(47, 106, 74, 0.2);
 
   /* Semantic tones tuned for the cream surfaces (luminous-on-dark hues wash
-     out here). `good` stays a deeper emerald, kept distinct from the forest
-     accent by brightness; the earned-status rule keeps the two greens apart in
+     out here). `good` and `error` are the house light sage and clay, the
+     same as the light theme's; `good` is kept distinct from the forest accent
+     by brightness; the earned-status rule keeps the two greens apart in
      practice (done renders no mark). */
   --tone-neutral: #6c6e5c;
   --tone-accent: #2f6a4a;
-  --tone-good: #157f37;
+  --tone-good: #467c58;
   --tone-warn: #9a6000;
-  --tone-error: #c42424;
+  --tone-error: #a14036;
   --tone-error-ink: #ffffff;
 
   --tone-neutral-soft: rgba(108, 110, 92, 0.16);
   --tone-accent-soft: rgba(47, 106, 74, 0.14);
-  --tone-good-soft: rgba(21, 127, 55, 0.18);
+  --tone-good-soft: rgba(70, 124, 88, 0.18);
   --tone-warn-soft: rgba(154, 96, 0, 0.18);
-  --tone-error-soft: rgba(196, 36, 36, 0.14);
+  --tone-error-soft: rgba(161, 64, 54, 0.14);
 
   /* Diff ink follows this theme's own good/error, so it agrees with the
      --tone-*-soft washes drawn behind it. Without this the ink came from
      the bundle's default palette and the wash from here, two hues for one
      idea. */
-  --sem-color-diff-added: #157f37;
-  --sem-color-diff-removed: #c42424;
+  --sem-color-diff-added: #467c58;
+  --sem-color-diff-removed: #a14036;
 
   --scrollbar-thumb: #d2d6c4;
   --scrollbar-thumb-hover: #bcc0ae;
@@ -3036,8 +3040,8 @@ samp,
  * someone, or a glyph whose process is running. (The name predates the rule
  * that the app draws no status dots; the class is a breath, not a dot.)
  * Color is overridden inline by the consuming element. Status semantics:
- * emerald #30d158 = running/live, amber #ffbf2f or #f2c45f =
- * needs-input/pending, red #ff787c = failed. The pulse is allowed because it
+ * the success green = running/live, amber = needs-input/pending, the error
+ * red = failed. The pulse is allowed because it
  * communicates state rather than decorating. */
 @keyframes status-dot-pulse {
   0%,
@@ -3055,113 +3059,48 @@ samp,
   animation: status-dot-pulse 1800ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Working mark — "an agent is working right now" on a workspace row
- * (WorkingMark.tsx): a 3×3 grid of accent cells animated by one of four
- * patterns, picked per chat. Every cell rests dim; a pattern lights cells with
- * opacity (and, for the ripple, scale) keyframes only, cheap to composite, no
- * per-frame JS. Each cell's delay into the loop is set inline by the component.
- * Reduced motion holds every pattern on one still frame: the four corners and
- * the centre lit.
+/* Working mark — "an agent is working right now" (WorkingMark.tsx): three
+ * dots that hop one after another, then rest. The component draws the wave's
+ * twelve frames side by side in one SVG strip; this slides the strip one frame
+ * at a time, so a mark is a single transform loop. `translateX(-100%)` in
+ * `steps(12)` moves exactly one 14px frame per step, on whole pixels.
+ * Reduced motion leaves the strip on its first frame: the three dots at rest.
  *
- * Paint containment bounds each mark to its own 14px box. Nothing in it
- * overflows (the ripple only scales a cell down), but without it the
+ * Paint containment bounds each mark to its own 14px box. Nothing paints
+ * outside it (the strip beyond the box is clipped), but without it the
  * compositor has to assume an animating transform may reach anywhere in the
  * scroller it sits in, and splits the rows painted after it into extra
  * layers of their own. */
 .working-mark {
-  display: inline-grid;
+  display: inline-block;
+  position: relative;
   flex-shrink: 0;
-  grid-template-columns: repeat(3, 3px);
-  grid-auto-rows: 3px;
-  gap: 1.5px;
-  place-content: center;
   width: 14px;
   height: 14px;
+  overflow: hidden;
   contain: paint;
+  color: var(--working-ink);
 }
 
-.working-mark__cell {
-  border-radius: 0.8px;
-  background: var(--accent-primary);
-  opacity: 0.16;
+.working-mark__strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1200%;
+  height: 100%;
+  fill: currentColor;
+  animation: working-mark-wave 1500ms steps(12) infinite;
 }
 
-@keyframes working-mark-orbit {
-  0% {
-    opacity: 1;
+@keyframes working-mark-wave {
+  to {
+    transform: translateX(-100%);
   }
-  12% {
-    opacity: 0.75;
-  }
-  30% {
-    opacity: 0.3;
-  }
-  45%,
-  100% {
-    opacity: 0.16;
-  }
-}
-
-@keyframes working-mark-ripple {
-  0%,
-  70%,
-  100% {
-    opacity: 0.16;
-    transform: scale(0.7);
-  }
-  35% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes working-mark-think {
-  0%,
-  40%,
-  100% {
-    opacity: 0.16;
-  }
-  15% {
-    opacity: 1;
-  }
-}
-
-/* Head plus two tail cells: each edge cell is lit for three of eight steps. */
-@keyframes working-mark-snake {
-  0%,
-  37% {
-    opacity: 1;
-  }
-  37.5%,
-  100% {
-    opacity: 0.16;
-  }
-}
-
-.working-mark--orbit .working-mark__cell {
-  animation: working-mark-orbit 1200ms linear infinite;
-}
-.working-mark--ripple .working-mark__cell {
-  animation: working-mark-ripple 1300ms ease-in-out infinite;
-}
-.working-mark--think .working-mark__cell {
-  animation: working-mark-think 1800ms ease-in-out infinite;
-}
-.working-mark--snake .working-mark__cell {
-  animation: working-mark-snake 1600ms linear infinite;
-}
-.working-mark .working-mark__cell--still {
-  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .working-mark .working-mark__cell {
+  .working-mark .working-mark__strip {
     animation: none;
-    opacity: 0.16;
-    transform: none;
-  }
-  .working-mark .working-mark__cell:nth-child(odd) {
-    opacity: 0.9;
   }
 }
 
@@ -3567,7 +3506,7 @@ samp,
  *   - a collapsed pane's docked tab layers (`data-pane-collapsed`, set by
  *     pane/WorkspacePaneBody.tsx), which a floating player keeps from being
  *     `inert`: the column stays interactive so the player can be dragged.
- * `aria-hidden` is not a condition: glyphs and working-mark cells carry it
+ * `aria-hidden` is not a condition: glyphs and the working mark's strip carry it
  * themselves while on screen.
  *
  * The loops do not run at the display's rate even on screen: the motion clock
@@ -3594,7 +3533,7 @@ samp,
   )
   :is(
     .status-dot-pulse,
-    .working-mark__cell,
+    .working-mark__strip,
     .agent-glyph__whole,
     .agent-glyph__eyes,
     .agent-glyph__antenna,
@@ -3883,8 +3822,8 @@ body:has([data-selection-pane]:focus-within)
 
 /* flexlayout-react: compact neutral IDE chrome.
  * Every chrome surface aliases the themed ink-scale tokens so theme switches
- * propagate to flexlayout without code changes. Semantic literals (drag-rect
- * emerald) stay hard-coded — they're "spawn success" not surface chrome.
+ * propagate to flexlayout without code changes. The drag rect wears the
+ * success green: it is "spawn success", not surface chrome.
  *
  * flexlayout 0.11 reads `--fl-*` variables, which its own stylesheet defines
  * only under a `.flexlayout__theme_*` class. The app sets no theme class and
@@ -3949,10 +3888,10 @@ body:has([data-selection-pane]:focus-within)
   --fl-splitter-size: var(--shell-card-gap);
   --fl-splitter-active-size: calc(var(--shell-card-gap) * 3);
 
-  /* Drag-rect emerald is semantic "spawn-success" motion, not surface chrome.
-     It stays constant across themes. */
-  --fl-color-drag-rect-border: rgba(48, 209, 88, 0.55);
-  --fl-color-drag-rect-background: rgba(48, 209, 88, 0.1);
+  /* The drag rect is semantic "spawn-success" motion, not surface chrome, so
+     it wears the theme's success green. */
+  --fl-color-drag-rect-border: color-mix(in srgb, var(--tone-good) 55%, transparent);
+  --fl-color-drag-rect-background: color-mix(in srgb, var(--tone-good) 10%, transparent);
   --fl-color-drag-rect: var(--text-strong);
 
   --fl-color-popup-border: var(--border-default);
@@ -4064,9 +4003,8 @@ body:has([data-selection-pane]:focus-within)
   }
 }
 
-/* The spawn flash's emerald stays literal — it's a one-shot status idiom, not
-   surface chrome.
-   design-tokens-allow-block: spawn emerald */
+/* The spawn flash is a one-shot success idiom, so it wears the theme's
+   success green (the sage on the house themes) rather than surface chrome. */
 .flexlayout__tab_button.agent-tab-spawn-flash {
   animation: agent-spawn-tab-flash 12800ms ease-out;
 }
@@ -4084,8 +4022,8 @@ body:has([data-selection-pane]:focus-within)
   z-index: 2;
   pointer-events: none;
   box-shadow:
-    inset 0 0 0 2px rgba(48, 209, 88, 0.95),
-    inset 0 0 28px rgba(48, 209, 88, 0.24);
+    inset 0 0 0 2px color-mix(in srgb, var(--tone-good) 95%, transparent),
+    inset 0 0 28px color-mix(in srgb, var(--tone-good) 24%, transparent);
   opacity: 0;
   animation: agent-spawn-panel-flash 12800ms ease-out;
 }
@@ -4093,17 +4031,17 @@ body:has([data-selection-pane]:focus-within)
 @keyframes agent-spawn-tab-flash {
   0%,
   78% {
-    border-color: #30d158;
+    border-color: var(--tone-good);
     box-shadow:
-      inset 0 0 0 1px rgba(48, 209, 88, 0.7),
-      0 0 18px rgba(48, 209, 88, 0.45);
+      inset 0 0 0 1px color-mix(in srgb, var(--tone-good) 70%, transparent),
+      0 0 18px color-mix(in srgb, var(--tone-good) 45%, transparent);
   }
 
   100% {
-    border-color: rgba(48, 209, 88, 0);
+    border-color: transparent;
     box-shadow:
-      inset 0 0 0 1px rgba(48, 209, 88, 0),
-      0 0 18px rgba(48, 209, 88, 0);
+      inset 0 0 0 1px transparent,
+      0 0 18px transparent;
   }
 }
 

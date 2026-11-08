@@ -172,16 +172,13 @@ export function SectionLabel({ children, count }: { children: string; count?: nu
  */
 export function StatusDot({
   tone = "neutral",
-  seed,
 }: {
   tone?: "neutral" | "live" | "good" | "warn" | "danger";
-  /** What picks a live row's working-mark pattern: the row's id. */
-  seed?: string;
 }) {
   const styles = useThemedStyles(createStyles);
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.status}>
-      {tone === "live" ? <WorkingMark seed={seed ?? "live"} /> : <StatusShape tone={tone} size={iconSize.xs} />}
+      {tone === "live" ? <WorkingMark /> : <StatusShape tone={tone} size={iconSize.xs} />}
     </View>
   );
 }

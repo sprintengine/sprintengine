@@ -779,7 +779,7 @@ the folded remainder takes `color.chart.other`, a neutral grey.
 - Motion means one of two things: *alive right now* (a working mark, a
   running agent's character, a spinner) or *just changed* (a reorder, a
   just-moved flash). It may carry a little personality while it says so
-  (ruling 2026-09-28): a working mark picks one of four patterns, and a spawned
+  (ruling 2026-09-28): a working mark is a small wave of hopping dots, and a spawned
   agent is a small character that moves while it works. What never moves is
   something at rest — ambient decoration on an idle surface is noise.
 - Motion is never the sole signal of a state change — the accessible name and

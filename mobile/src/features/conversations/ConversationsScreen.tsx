@@ -643,7 +643,7 @@ const ChatRow = memo(function ChatRow({
   // The time, or the working mark while it works: at the end of the project
   // line in the recent view, of the title line in the project view.
   const seat = working ? (
-    <WorkingMark color={colors.accentPrimary} seed={thread.agentId} size={12} />
+    <WorkingMark size={12} />
   ) : (
     <Text style={styles.time}>{time}</Text>
   );

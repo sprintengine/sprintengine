@@ -11,7 +11,7 @@ working mark for the same fact.
 A status is drawn as one of two things:
 
 - **Live work** (a good or accent tone, pulsing) is the **working mark**
-  (`WorkingMark`, `liveness`): a 3×3 grid of accent cells. This is the only
+  (`WorkingMark`, `liveness`): three dots that hop in turn. This is the only
   "working right now" mark, and the sidebar row, the tabs and the peek card all
   use it.
 - **Every other state** is a **lifecycle glyph** in the tone's ink: the same
@@ -36,7 +36,7 @@ beside text that names the state, or it carries an accessible name itself.
 | `--danger` | Ring with "×" | Failing; needs attention now |
 | `--merged` | Disc with a knocked-out check, merged ink | A landed change |
 | `--accent` | Quarter arc | Identity, not status: "this is the live one" |
-| `--working` | The working mark (3×3 grid) | Something is running right now |
+| `--working` | The working mark (three dots) | Something is running right now |
 
 Every tone has its own shape, so the states still read in grayscale. The
 colour only reinforces the shape.
@@ -46,7 +46,7 @@ colour only reinforces the shape.
 | State | Treatment |
 |---|---|
 | Rest | The tone's glyph, nothing else |
-| Live, working | `--working`. The working mark's cells light in its pattern |
+| Live, working | `--working`. The working mark's dots hop in turn |
 | Live, waiting | `--pulse` on a warn or danger glyph. A slow breath while it waits on someone (a pairing request, a recording) |
 
 The breath's 1800ms cycle is deliberately off the interaction ramp: those

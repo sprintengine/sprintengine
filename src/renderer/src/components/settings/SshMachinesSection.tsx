@@ -94,11 +94,7 @@ export function SshMachinesSection({ api = window.api }: { api?: Api }): React.J
               surface="card"
               icon={
                 machine.working ? (
-                  <WorkingMark
-                    label={`${machine.label}: ${machine.stateText}`}
-                    seed={machine.id}
-                    className="size-icon-lg"
-                  />
+                  <WorkingMark label={`${machine.label}: ${machine.stateText}`} className="size-icon-lg" />
                 ) : (
                   <MachineRowMark machine={sshMachineRef(machine)} />
                 )

@@ -33,7 +33,7 @@ export function ScheduledRuns({
             <RowButton data-scheduled-run-row={run.workspaceId} onClick={() => onOpen(run.workspaceId)}>
               <span className="flex size-icon-sm shrink-0 items-center justify-center">
                 {run.activity === 'working' ? (
-                  <WorkingMark label="Working" seed={run.workspaceId} />
+                  <WorkingMark label="Working" />
                 ) : run.activity === 'needs-input' ? (
                   <LifecycleGlyph state="needs_input" live={false} label="Waiting on you" />
                 ) : null}
