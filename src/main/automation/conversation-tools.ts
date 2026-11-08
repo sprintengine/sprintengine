@@ -7,6 +7,7 @@ import {
 } from '../../shared/modules/mcp-tools'
 import type { WorkspaceRegistryActor } from '../../shared/workspace-registry'
 import { MAX_CHAT_NAME_LENGTH, type ConversationLifecycle } from './conversation-lifecycle'
+import type { ConversationMove } from './conversation-move'
 import { CHAT_SEARCH_MAX_QUERY, type ChatSearchAnswer } from './conversation-search'
 import type {
   ConversationApprovalRuleRevokeResult,
@@ -57,6 +58,7 @@ export const CONVERSATION_MUTATION_TOOL_NAMES: readonly string[] = [
   'conversation.snooze',
   'conversation.highlight',
   'conversation.auto_settle',
+  'conversation.change_project',
 ]
 
 /**
@@ -89,6 +91,12 @@ export type ConversationToolsDeps = {
   lifecycle: Pick<ConversationLifecycle, 'settle' | 'visit' | 'markUnread' | 'snooze' | 'highlight' | 'setAutoSettle'> &
     // A paired desktop's chat management; absent where nothing can carry it out.
     Partial<Pick<ConversationLifecycle, 'rename' | 'setAutoCompact'>>
+  /**
+   * Moving a chat to another folder, and the project it is in
+   * (conversation-move.ts). Absent where this process cannot move a chat's
+   * history (a Studio server out of process), and the tool says so.
+   */
+  moveChat?: ConversationMove['move']
   /**
    * Remember that the calling agent started this chat, so the caller is told
    * when its turn ends or it waits on someone (agent-launch-notices.ts).
@@ -648,6 +656,54 @@ export function createConversationTools(deps: ConversationToolsDeps): McpToolReg
         const set = deps.lifecycle.setAutoSettle(args.workspaceId.trim(), args.enabled, lifecycleActor(context))
         if (!set.ok) return toolError(set.code, set.message)
         return toolSuccess(set)
+      },
+    },
+    {
+      name: 'conversation.change_project',
+      description:
+        'Move a chat on this machine to another folder, and so to the project that folder is in: the sidebar ' +
+        'files it under that project on every device, its Changes and files are read there, and its agent runs ' +
+        'there from its next turn, resuming the same conversation. Call it on your own chat (leave out ' +
+        '`workspaceId`) once you have made a new project, or moved your work into a folder of its own, and want ' +
+        'the chat to follow; not for a folder you are only looking at or working on from where you are. Asked ' +
+        'mid-turn of your own chat, the move is made once your turn completes (movesWhenTurnEnds: true): finish ' +
+        'your reply as usual, and expect your next turn to start in the new folder. The chat stays where it is ' +
+        'if the turn fails or is stopped, or a message reaches the chat first. Refused with "not_movable" for a ' +
+        'chat in a worktree or on another machine, and with "working" while any other agent in the chat works.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          folder: {
+            type: 'string',
+            description: "The folder's absolute path on this machine: the project's root, or a folder in it.",
+          },
+          workspaceId: {
+            type: 'string',
+            description: "The chat's workspaceId, from the conversation list. Defaults to your own chat.",
+          },
+        },
+        required: ['folder'],
+        additionalProperties: false,
+      },
+      handler: async (args, context) => {
+        if (typeof args.folder !== 'string' || !args.folder.trim()) {
+          return toolError('invalid_arguments', '"folder" is required.')
+        }
+        if (args.workspaceId !== undefined && (typeof args.workspaceId !== 'string' || !args.workspaceId.trim())) {
+          return toolError('invalid_arguments', '"workspaceId" must be a chat\'s id when provided.')
+        }
+        const caller = launchingAgentOf(context)
+        const workspaceId = typeof args.workspaceId === 'string' ? args.workspaceId.trim() : caller?.workspaceId
+        if (!workspaceId) return toolError('invalid_arguments', 'Name the chat to move: "workspaceId".')
+        if (!deps.moveChat) return toolError('unavailable', 'This machine cannot move its chats from here.')
+        const moved = await deps.moveChat(workspaceId, args.folder, lifecycleActor(context), caller)
+        if (!moved.ok) return toolError(moved.code, moved.message)
+        if (moved.movesWhenTurnEnds)
+          return toolSuccess({
+            ...moved,
+            note: 'This chat moves once your current turn completes, and your next turn starts in the new folder. Finish your reply as usual.',
+          })
+        return toolSuccess(moved)
       },
     },
     // ── A paired desktop's chat management ──────────────────────────────

@@ -581,6 +581,17 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   useEffect(() => {
     if (hostSession !== undefined) setSession(hostSession)
   }, [hostSession])
+  // A chat moved to another folder (`conversation.change_project`) had its
+  // session ended where it ran; the next send starts one in the new folder,
+  // resuming the same conversation there. A view that cannot start a session
+  // keeps the one its host lists.
+  const heldRootRef = useRef(workspaceRoot)
+  useEffect(() => {
+    if (heldRootRef.current === workspaceRoot) return
+    const moved = heldRootRef.current !== null && workspaceRoot !== null
+    heldRootRef.current = workspaceRoot
+    if (moved && transport.capabilities.startSession && hostSession === undefined) setSession(null)
+  }, [workspaceRoot, transport, hostSession])
   const sessionId = session?.sessionId ?? null
   const providerEntry = providers.find((entry) => entry.id === conversation?.providerId)
   const capabilities = session?.capabilities ?? providerEntry?.capabilities
