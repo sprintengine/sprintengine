@@ -142,6 +142,15 @@ export function bandStripMarks(rect: BandRect, layout: BandRect): Record<string,
   }
 }
 
+const BAND_CLEARANCE = '36px'
+
+function tabStandsInBand(node: TabNode): boolean {
+  const parent = node.getParent()
+  if (!(parent instanceof TabSetNode)) return false
+  const rect = parent.getRect()
+  return bandStripMarks(rect, parent.getModel().getRootRow()?.getRect() ?? rect) !== null
+}
+
 function countOpenTabs(model: Model | null): number {
   if (!model) return 0
   let count = 0
@@ -695,7 +704,7 @@ function WorkspaceLayoutBody({
   const renderNewAgentPanelRef = useRef(renderNewAgentPanel)
   renderNewAgentPanelRef.current = renderNewAgentPanel
 
-  const factory = useCallback(
+  const renderTabBody = useCallback(
     (node: TabNode) => {
       // A remote pane saved under its pre-rename name renders as the same pane.
       const component = canonicalMeshPaneComponent(node.getComponent())
@@ -848,6 +857,21 @@ function WorkspaceLayoutBody({
       }
     },
     [moduleOverrides, openSettingsOverlay, shouldKillTerminalOnUnmount, workspaceId],
+  )
+  // The pill floats over the top of a tab on the layout's top row, so whatever
+  // cannot scroll out from under it starts below it. A chat can, and runs to the
+  // top of the window (assets/index.css). One element for every tab and every
+  // row, so moving a tab between rows never remounts a terminal.
+  const factory = useCallback(
+    (node: TabNode) => (
+      <div
+        className="band-clear"
+        style={{ '--band-clearance': tabStandsInBand(node) ? BAND_CLEARANCE : '0px' } as React.CSSProperties}
+      >
+        {renderTabBody(node)}
+      </div>
+    ),
+    [renderTabBody],
   )
 
   const cleanupNode = useCallback(
@@ -1383,11 +1407,13 @@ function WorkspaceLayoutBody({
           ? ((node.getConfig() as { agentId?: string } | undefined)?.agentId ?? node.getId())
           : (meshConfig?.remoteAgentId ?? null)
 
-      // The only tab in the layout is the band's pill (owner ruling 2026-11-07):
-      // the chat's name, centred, which toggles the panel. It is the same tab
-      // restyled, never a strip turned off: `enableTabStrip` persists through the
-      // model and would refit every terminal as the tab count changed.
-      const pill = countOpenTabs(modelRef.current) === 1
+      // The selected tab of a strip on the top row is the pill floating on the
+      // card (owner rulings 2026-11-07 and 2026-11-08): the chat's name, centred,
+      // which toggles the panel. The strip's other tabs fold behind it and a notch
+      // says they are there; hovering the pill fans them out. They are the same
+      // tabs restyled, never a strip turned off: `enableTabStrip` persists through
+      // the model and would refit every terminal as the tab count changed.
+      const pill = node.isSelected() && tabStandsInBand(node)
       const tabNameSpan = (
         <span
           className={`min-w-0 truncate ${isLiveTab ? 'font-semibold' : ''}`}

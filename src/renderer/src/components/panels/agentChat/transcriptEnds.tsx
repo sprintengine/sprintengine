@@ -25,7 +25,7 @@ import type React from 'react'
 /** Above the first row: the gap, then whatever the head holds (Load earlier). */
 export function TranscriptHead({ children }: { children?: React.ReactNode }): React.JSX.Element {
   return (
-    <div data-transcript-head="" className="pt-4">
+    <div data-transcript-head="" className="pt-[calc(var(--band-clearance,0px)+1rem)]">
       {children}
     </div>
   )
