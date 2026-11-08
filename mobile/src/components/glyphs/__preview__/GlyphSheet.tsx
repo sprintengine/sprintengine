@@ -2,7 +2,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useTheme, useThemedStyles } from "../../../theme/ThemeProvider";
 import { space, typography, type Theme } from "../../../theme/tokens";
-import { WORKING_MARK_VARIANTS, WorkingMark } from "../../WorkingMark";
+import { WorkingMark } from "../../WorkingMark";
 import {
   AGENT_CHARACTERS,
   AgentGlyph,
@@ -96,12 +96,10 @@ export function GlyphSheet() {
               <Text style={styles.cellLabel}>{tone}</Text>
             </View>
           ))}
-          {WORKING_MARK_VARIANTS.map((variant) => (
-            <View key={variant} style={styles.cell}>
-              <WorkingMark seed={variant} size={iconSize.md} variant={variant} />
-              <Text style={styles.cellLabel}>{variant}</Text>
-            </View>
-          ))}
+          <View style={styles.cell}>
+            <WorkingMark size={iconSize.md} />
+            <Text style={styles.cellLabel}>working</Text>
+          </View>
         </View>
       </Section>
 

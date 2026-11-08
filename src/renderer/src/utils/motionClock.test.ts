@@ -107,7 +107,7 @@ const ACTIVE = { visible: true, focused: true }
 const settle = () => new Promise<void>((resolve) => queueMicrotask(resolve))
 
 test('a loop is caught paused where it stands, then advanced by real time on each tick', async () => {
-  const loop = cssAnimation('working-mark-orbit')
+  const loop = cssAnimation('working-mark-wave')
   const doc = fakeDocument([loop])
   const timers = fakeTimers()
   const clock = createMotionClock(doc, fakeActivity(ACTIVE), timers)
@@ -202,7 +202,7 @@ test('a burst of loops starting at once is one sweep, not one per loop', async (
   const clock = createMotionClock(doc, fakeActivity(ACTIVE), timers)
   await settle()
   sweeps = 0
-  for (let cell = 0; cell < 9; cell++) doc.startAnimation(cssAnimation('working-mark-orbit'))
+  for (let mark = 0; mark < 9; mark++) doc.startAnimation(cssAnimation('working-mark-wave'))
   await settle()
   assert.equal(sweeps, 1)
   assert.ok(doc.animations.every((loop) => loop.playState === 'paused'))

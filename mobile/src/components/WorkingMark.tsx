@@ -1,183 +1,129 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Animated, Easing, View } from "react-native";
 
-import { bakeKeyframes, type KeyframeStop, type KeyframeTiming } from "./glyphs/agentGlyph/keyframes";
-import { stablePick } from "./glyphs/agentGlyph/pick";
 import { useReducedMotion } from "./motion";
 import { useTheme } from "../theme/ThemeProvider";
 
-// WorkingMark — "an agent is working right now": a 3×3 grid of cells in the
-// accent, animated by one of four patterns. The desktop's mark
-// (components/ui/WorkingMark.tsx and its `working-mark` keyframes), pattern for
-// pattern. It replaces the three static dots: a dot has no shape, so working
-// read the same as waiting.
+// WorkingMark — "an agent is working right now": three dots that hop one after
+// another, then rest, like a wave passing through an ellipsis. The desktop's
+// mark (components/ui/WorkingMark.tsx and its `working-mark` rules), frame for
+// frame: the same twelve frames over 1.5s, stepped rather than eased, in the
+// success ink. A dot has no shape, but three in a row are an ellipsis, so
+// working never reads as waiting.
 //
-// Which pattern is picked by `seed` (a chat's or an agent's id) with the
-// desktop's hash, so a chat wears the same mark on both screens and a column of
-// working chats does not all move in step.
-//
-//   orbit  — a lit cell runs round the edge, trailing a fading tail
-//   ripple — a diagonal wave washes across, corner to corner
-//   think  — cells light in a shuffled order, like it is working something out
-//   snake  — a three-cell snake slithers round the edge
-//
-// One clock per mark on the native driver; each cell reads it through its own
-// table, the desktop's per-cell `animation-delay` baked in as a phase. Reduced
-// motion holds every pattern on the same still frame: the corners and the
-// centre lit.
+// Every mark on screen reads one shared clock on the native driver, so a
+// column of working chats hops together and the phone runs one animation
+// however many marks there are. Reduced motion holds the dots at rest: "•••".
 
-export const WORKING_MARK_VARIANTS = ["orbit", "ripple", "think", "snake"] as const;
-export type WorkingMarkVariant = (typeof WORKING_MARK_VARIANTS)[number];
+export const WORKING_MARK_FRAMES = 12;
+export const WORKING_MARK_PERIOD_MS = 1500;
 
-const REST_OPACITY = 0.16;
-const STILL_LIT_OPACITY = 0.9;
+// The desktop's geometry, in its 14-unit frame.
+const FRAME = 14;
+const DOT_X = [3.3, 7, 10.7];
+const DOT_R = 1.35;
+const REST_Y = 8.9;
+const HOP = 3.4;
+/** Frames a dot spends in the air, and how many frames each dot lags the last. */
+const HOP_FRAMES = 4;
+const LAG = 1;
 
-// The edge of the grid clockwise from the top-left, as row-major cell indexes.
-const RING = [0, 1, 2, 5, 8, 7, 6, 3];
-// The order `think` lights its cells in.
-const THINK_ORDER = [4, 0, 8, 2, 6, 1, 7, 3, 5];
-
-interface Pattern {
-  periodMs: number;
-  timing: KeyframeTiming;
-  opacity: readonly KeyframeStop[];
-  scale?: readonly KeyframeStop[];
-  /** Each cell's `animation-delay` in ms; null holds a cell still at rest. */
-  delays: (number | null)[];
-}
-
-const cells = (delay: (cell: number) => number | null) => Array.from({ length: 9 }, (_, cell) => delay(cell));
-
-const PATTERNS: Record<WorkingMarkVariant, Pattern> = {
-  orbit: {
-    periodMs: 1200,
-    timing: "linear",
-    opacity: [[0, 1], [0.12, 0.75], [0.3, 0.3], [0.45, REST_OPACITY], [1, REST_OPACITY]],
-    delays: cells((cell) => (RING.includes(cell) ? -1200 + RING.indexOf(cell) * 150 : null)),
-  },
-  ripple: {
-    periodMs: 1300,
-    timing: "ease-in-out",
-    opacity: [[0, REST_OPACITY], [0.35, 1], [0.7, REST_OPACITY], [1, REST_OPACITY]],
-    scale: [[0, 0.7], [0.35, 1], [0.7, 0.7], [1, 0.7]],
-    delays: cells((cell) => ((cell % 3) + Math.floor(cell / 3)) * 120),
-  },
-  think: {
-    periodMs: 1800,
-    timing: "ease-in-out",
-    opacity: [[0, REST_OPACITY], [0.15, 1], [0.4, REST_OPACITY], [1, REST_OPACITY]],
-    delays: cells((cell) => THINK_ORDER.indexOf(cell) * 200),
-  },
-  // Head plus two tail cells: each edge cell is lit for three of eight steps.
-  snake: {
-    periodMs: 1600,
-    timing: "linear",
-    opacity: [[0, 1], [0.37, 1], [0.375, REST_OPACITY], [1, REST_OPACITY]],
-    delays: cells((cell) => (RING.includes(cell) ? -1600 + RING.indexOf(cell) * 200 : null)),
-  },
-};
-
-interface CellTables {
-  opacity: ReturnType<typeof bakeKeyframes>;
-  scale?: ReturnType<typeof bakeKeyframes>;
-}
-
-// Baked once per pattern, not per mark: a list of working chats shares them.
-const bakedCache = new Map<WorkingMarkVariant, (CellTables | null)[]>();
-
-function bakedCells(variant: WorkingMarkVariant): (CellTables | null)[] {
-  const cached = bakedCache.get(variant);
-  if (cached) return cached;
-  const pattern = PATTERNS[variant];
-  const baked = pattern.delays.map((delay) => {
-    if (delay === null) return null;
-    // A negative delay starts the cell part-way through its loop. A positive
-    // one is taken the same way, which differs from CSS only in the first
-    // loop, before the desktop's cell would have started.
-    const phase = -delay / pattern.periodMs;
-    return {
-      opacity: bakeKeyframes(pattern.opacity, pattern.timing, phase),
-      scale: pattern.scale ? bakeKeyframes(pattern.scale, pattern.timing, phase) : undefined,
-    };
+/** How far a dot is lifted, in frame units, on each of the twelve frames. */
+function lifts(dot: number): number[] {
+  return Array.from({ length: WORKING_MARK_FRAMES }, (_, frame) => {
+    const t = frame - dot * LAG;
+    return t > 0 && t < HOP_FRAMES ? HOP * Math.sin((Math.PI * t) / HOP_FRAMES) : 0;
   });
-  bakedCache.set(variant, baked);
-  return baked;
+}
+
+// Each frame held flat for its twelfth of the loop: the desktop's steps(12).
+const HOLD = 1e-4;
+const STEP_INPUT = Array.from({ length: WORKING_MARK_FRAMES }, (_, frame) => [
+  frame / WORKING_MARK_FRAMES,
+  (frame + 1) / WORKING_MARK_FRAMES - HOLD,
+]).flat();
+
+// The one clock every mounted mark reads. Started by the first mark, stopped
+// when the last one goes.
+let shared: { value: Animated.Value; loop: Animated.CompositeAnimation; marks: number } | null = null;
+
+function useSharedClock(running: boolean): Animated.Value | null {
+  const [clock, setClock] = useState<Animated.Value | null>(null);
+  useEffect(() => {
+    if (!running) return;
+    if (!shared) {
+      const value = new Animated.Value(0);
+      const loop = Animated.loop(
+        Animated.timing(value, {
+          toValue: 1,
+          duration: WORKING_MARK_PERIOD_MS,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      );
+      loop.start();
+      shared = { value, loop, marks: 0 };
+    }
+    shared.marks += 1;
+    setClock(shared.value);
+    return () => {
+      if (!shared) return;
+      shared.marks -= 1;
+      if (shared.marks === 0) {
+        shared.loop.stop();
+        shared = null;
+      }
+    };
+  }, [running]);
+  return running ? clock : null;
 }
 
 export function WorkingMark({
-  seed,
   size = 12,
   color,
   label = "Working",
-  variant,
 }: {
-  /** What picks the pattern: the working chat's or agent's id. */
-  seed: string;
-  /** The grid's box in points. 12 draws the desktop's 3pt cells with a 1.5pt gap. */
+  /** The mark's box in points. 12 draws the desktop's 14px mark at phone scale. */
   size?: number;
-  /** Cell ink. Defaults to the theme's accent. */
+  /** Dot ink. Defaults to the theme's success green, the desktop's working ink. */
   color?: string;
   /** Accessible name, e.g. "Agent working". */
   label?: string;
-  /** A specific pattern instead of the seeded pick (previews). */
-  variant?: WorkingMarkVariant;
 }) {
   const { colors } = useTheme();
   const reducedMotion = useReducedMotion();
-  const pattern = variant ?? stablePick(seed, WORKING_MARK_VARIANTS);
-  const clock = useRef(new Animated.Value(0)).current;
+  const clock = useSharedClock(!reducedMotion);
+  const scale = size / FRAME;
+  const diameter = DOT_R * 2 * scale;
+  const ink = color ?? colors.toneGood;
 
-  useEffect(() => {
-    if (reducedMotion) return;
-    clock.setValue(0);
-    const loop = Animated.loop(
-      Animated.timing(clock, {
-        toValue: 1,
-        duration: PATTERNS[pattern].periodMs,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [clock, pattern, reducedMotion]);
-
-  const cellStyles = useMemo(
+  const lifted = useMemo(
     () =>
-      bakedCells(pattern).map((tables, cell) => {
-        if (reducedMotion) return { opacity: cell % 2 === 0 ? STILL_LIT_OPACITY : REST_OPACITY };
-        if (!tables) return { opacity: REST_OPACITY };
-        return {
-          opacity: clock.interpolate(tables.opacity),
-          transform: tables.scale ? [{ scale: clock.interpolate(tables.scale) }] : undefined,
-        };
+      DOT_X.map((_, dot) => {
+        if (!clock) return undefined;
+        const outputRange = lifts(dot)
+          .map((lift) => [-lift * scale, -lift * scale])
+          .flat();
+        return [{ translateY: clock.interpolate({ inputRange: STEP_INPUT, outputRange }) }];
       }),
-    [clock, pattern, reducedMotion],
+    [clock, scale],
   );
-
-  // The desktop's proportions at any size: 3pt cells, a 1.5pt gap, a 0.8pt
-  // corner, on a 12pt grid.
-  const cellSize = size / 4;
-  const step = cellSize * 1.5;
-  const ink = color ?? colors.accentPrimary;
 
   return (
     <View accessibilityLabel={label} accessibilityRole="image" accessible style={{ width: size, height: size }}>
-      {cellStyles.map((style, cell) => (
+      {DOT_X.map((x, dot) => (
         <Animated.View
-          key={cell}
-          style={[
-            {
-              position: "absolute",
-              left: (cell % 3) * step,
-              top: Math.floor(cell / 3) * step,
-              width: cellSize,
-              height: cellSize,
-              borderRadius: (cellSize * 0.8) / 3,
-              backgroundColor: ink,
-            },
-            style,
-          ]}
+          key={x}
+          style={{
+            position: "absolute",
+            left: (x - DOT_R) * scale,
+            top: (REST_Y - DOT_R) * scale,
+            width: diameter,
+            height: diameter,
+            borderRadius: diameter / 2,
+            backgroundColor: ink,
+            transform: lifted[dot],
+          }}
         />
       ))}
     </View>

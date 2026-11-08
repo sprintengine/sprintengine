@@ -379,11 +379,11 @@ export function WorkingElapsed({ since }: { since: number }) {
   const text = formatElapsedMs(since, now)
   if (!text) return null
   return (
-    // Accent ink, matching the dots it sits beside, so the pair reads as one
-    // status token rather than a mark plus an unrelated number. No aria-label
+    // The working ink, matching the dots it sits beside, so the pair reads as
+    // one status token rather than a mark plus an unrelated number. No aria-label
     // on a generic span (ignored there — the row's own review): the number is
     // the visible text and an sr-only sentence says what it measures.
-    <span className="tabular-nums text-[color:var(--accent-primary)]">
+    <span className="tabular-nums text-[color:var(--working-ink)]">
       <span aria-hidden="true">{text}</span>
       <span className="sr-only">Working for {text}</span>
     </span>

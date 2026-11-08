@@ -3279,7 +3279,7 @@ function WorkspaceSidebar({
             </RowTooltip>
           ) : working ? (
             <>
-              <WorkingMark label={activityLabel('working')} seed={conversation.key} />
+              <WorkingMark label={activityLabel('working')} />
               {lines[0]!.workingSince !== null ? <WorkingElapsed since={lines[0]!.workingSince} /> : null}
             </>
           ) : idleText ? (
@@ -5371,7 +5371,6 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
                     ? activityLabel(seatActivity)
                     : `Watching pull request #${rowWatchedPullRequest.number}`
                 }
-                seed={workspace.id}
               />
               {/* How long the turn has been running. The workspace-level
                   activity above decides WHETHER work is in flight (hooks are
@@ -5913,10 +5912,9 @@ function ConversationLineSeat({
   const phase = conversationSummaryPhase(session)
   const finishedAt = conversationFinishedAt(session)
   let content: React.ReactNode = null
-  if (phase === 'running' || phase === 'starting')
-    content = <WorkingMark label="Agent working" seed={session.agentId} />
+  if (phase === 'running' || phase === 'starting') content = <WorkingMark label="Agent working" />
   else if (watching !== null && (phase === 'completed' || phase === 'idle'))
-    content = <WorkingMark label={`Watching pull request #${watching}`} seed={session.agentId} />
+    content = <WorkingMark label={`Watching pull request #${watching}`} />
   else if (finishedAt !== null && formatRelativeMs(finishedAt, now)) {
     content = (
       <>

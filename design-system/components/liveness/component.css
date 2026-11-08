@@ -6,98 +6,34 @@
 
 /* ── working mark: alive right now, unbounded ─────────────────────────────── */
 
-/* A 3×3 grid of cells resting dim; a pattern lights them. Each cell's delay
- * into its pattern's loop is written by the consumer (--ds-cell-delay), so the
- * four patterns share one set of cells. */
+/* Three dots that hop one after another, then rest. The consumer draws the
+ * wave's twelve frames side by side in one SVG strip (.ds-working-mark-strip);
+ * this slides the strip one 14px frame per step, so a mark is one transform
+ * loop, and half of each loop is a rest in which nothing changes. */
 .ds-working-mark {
-  display: inline-grid;
+  display: inline-block;
+  position: relative;
   flex: none;
-  grid-template-columns: repeat(3, 3px);
-  grid-auto-rows: 3px;
-  gap: var(--sem-space-3xs);
-  place-content: center;
   width: 14px;
   height: 14px;
+  overflow: hidden;
+  contain: paint;
+  color: var(--sem-color-status-good);
 }
 
-.ds-working-mark-cell {
-  /* Softened, never round: a round cell would read as a dot. */
-  border-radius: 0.8px;
-  background: var(--sem-color-accent-primary);
-  opacity: 0.16;
-  animation-delay: var(--ds-cell-delay, 0s);
+.ds-working-mark-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1200%;
+  height: 100%;
+  fill: currentColor;
+  animation: ds-working-mark-wave 1500ms steps(12) infinite;
 }
 
-.ds-working-mark--orbit .ds-working-mark-cell {
-  animation: ds-working-mark-orbit 1.2s linear infinite;
-  animation-delay: var(--ds-cell-delay, 0s);
-}
-.ds-working-mark--ripple .ds-working-mark-cell {
-  animation: ds-working-mark-ripple 1.3s var(--sem-motion-ease-standard) infinite;
-  animation-delay: var(--ds-cell-delay, 0s);
-}
-.ds-working-mark--think .ds-working-mark-cell {
-  animation: ds-working-mark-think 1.8s var(--sem-motion-ease-standard) infinite;
-  animation-delay: var(--ds-cell-delay, 0s);
-}
-.ds-working-mark--snake .ds-working-mark-cell {
-  animation: ds-working-mark-snake 1.6s linear infinite;
-  animation-delay: var(--ds-cell-delay, 0s);
-}
-/* The edge patterns leave the centre cell at rest. */
-.ds-working-mark .ds-working-mark-cell--still {
-  animation: none;
-}
-
-@keyframes ds-working-mark-orbit {
-  0% {
-    opacity: 1;
-  }
-  12% {
-    opacity: 0.75;
-  }
-  30% {
-    opacity: 0.3;
-  }
-  45%,
-  100% {
-    opacity: 0.16;
-  }
-}
-
-@keyframes ds-working-mark-ripple {
-  0%,
-  70%,
-  100% {
-    opacity: 0.16;
-    transform: scale(0.7);
-  }
-  35% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes ds-working-mark-think {
-  0%,
-  40%,
-  100% {
-    opacity: 0.16;
-  }
-  15% {
-    opacity: 1;
-  }
-}
-
-/* Head plus two tail cells: each edge cell is lit for three of eight steps. */
-@keyframes ds-working-mark-snake {
-  0%,
-  37% {
-    opacity: 1;
-  }
-  37.5%,
-  100% {
-    opacity: 0.16;
+@keyframes ds-working-mark-wave {
+  to {
+    transform: translateX(-100%);
   }
 }
 
@@ -124,18 +60,12 @@
   }
 }
 
-/* One guard, every mark. Reduced motion keeps the INFORMATION — one still
- * frame, the four corners and the centre lit, still says "working" whichever
- * pattern was picked — and drops only the movement. */
+/* One guard, every mark. Reduced motion keeps the INFORMATION — the strip's
+ * first frame, three dots at rest, still says "working" — and drops only the
+ * movement. */
 @media (prefers-reduced-motion: reduce) {
-  .ds-working-mark .ds-working-mark-cell {
+  .ds-working-mark .ds-working-mark-strip {
     animation: none;
-    opacity: 0.16;
-    transform: none;
-  }
-
-  .ds-working-mark .ds-working-mark-cell:nth-child(odd) {
-    opacity: 0.9;
   }
 
   .ds-change-pulse {

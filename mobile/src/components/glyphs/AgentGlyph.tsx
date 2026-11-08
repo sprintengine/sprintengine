@@ -73,7 +73,7 @@ export function AgentGlyph({
       // The mark's 12pt grid in the glyph's 16pt box, as the desktop sets it.
       return (
         <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-          <WorkingMark label={label ?? "Agent working"} seed={agentId} size={(size * 3) / 4} />
+          <WorkingMark label={label ?? "Agent working"} size={(size * 3) / 4} />
         </View>
       );
     }

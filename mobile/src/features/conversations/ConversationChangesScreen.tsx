@@ -50,7 +50,7 @@ export function ConversationChangesScreen({
     >
       {view.status === "loading" ? (
         <View style={styles.loading} accessibilityLiveRegion="polite">
-          <WorkingMark seed={`${conversation.agentId}:${turnSeq}`} label="Loading changes" />
+          <WorkingMark label="Loading changes" />
           <Text style={styles.meta}>Loading changes…</Text>
         </View>
       ) : view.status === "offline" ? (

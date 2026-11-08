@@ -118,7 +118,7 @@ export function PullRequestScreen({
     >
       {view.status === "loading" ? (
         <View accessibilityLiveRegion="polite" style={styles.loading}>
-          <WorkingMark label="Loading pull request" seed={url} />
+          <WorkingMark label="Loading pull request" />
           <Text style={styles.meta}>Loading pull request…</Text>
         </View>
       ) : view.status === "error" ? (

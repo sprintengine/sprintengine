@@ -21,14 +21,7 @@ const GOAL_GLYPH: Readonly<Record<Exclude<ConversationGoalStatus, 'active'>, Lif
   complete: 'done',
 }
 
-export function GoalTrayRow({
-  goal,
-  seed,
-}: {
-  goal: ConversationGoal | null
-  /** The chat's id: what picks its working mark's pattern. */
-  seed: string
-}): JSX.Element | null {
+export function GoalTrayRow({ goal }: { goal: ConversationGoal | null }): JSX.Element | null {
   const [dismissed, setDismissed] = useState<string | null>(null)
   if (!goal) return null
   const key = `${goal.status}\0${goal.objective}`
@@ -39,7 +32,7 @@ export function GoalTrayRow({
       ariaLabel={`Goal, ${word.toLowerCase()}: ${goal.objective}`}
       glyph={
         goal.status === 'active' ? (
-          <WorkingMark label="Working toward the goal" seed={seed} />
+          <WorkingMark label="Working toward the goal" />
         ) : (
           <LifecycleGlyph state={GOAL_GLYPH[goal.status]} live={false} />
         )

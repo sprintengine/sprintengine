@@ -169,7 +169,7 @@ export function ConversationAgentScreen({
       {description ? <Text style={styles.meta}>{description}</Text> : null}
       {running && current ? (
         <View style={styles.nowBox}>
-          <WorkingMark seed={lane.id} label="Agent working" />
+          <WorkingMark label="Agent working" />
           <Text style={styles.nowText}>
             <Text style={styles.nowLabel}>Now </Text>
             {current}

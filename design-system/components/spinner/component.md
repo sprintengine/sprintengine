@@ -70,7 +70,7 @@ Loading overlay:
 | State | Treatment |
 |---|---|
 | Live | The arc rotates (spinner) / the working mark cycles (overlay), continuous |
-| Reduced motion | Spinner freezes to its at-rest arc; the working mark holds its still frame, the four corners and the centre lit. The shape and the label still say "working" |
+| Reduced motion | Spinner freezes to its at-rest arc; the working mark holds its still frame, three dots at rest. The shape and the label still say "working" |
 | Done | The mark unmounts. No completion flourish |
 
 A frozen spinner still reads: track + arc is the in-progress shape whether or

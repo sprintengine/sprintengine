@@ -250,7 +250,7 @@ export function TerminalLineView({
             )
           ) : line.working ? (
             <>
-              <WorkingMark label="Agent working" seed={line.key} />
+              <WorkingMark label="Agent working" />
               {line.workingSince !== null ? <WorkingElapsed since={line.workingSince} /> : null}
             </>
           ) : line.failed ? (

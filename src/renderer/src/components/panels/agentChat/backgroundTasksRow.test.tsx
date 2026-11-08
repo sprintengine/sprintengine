@@ -6,7 +6,7 @@ import { setConversationDisclosures } from './conversationViewState'
 
 test('a monitor reads as work the agent is waiting on, under the working mark', () => {
   const html = renderToStaticMarkup(
-    <BackgroundTasksTrayRow tasks={[{ taskId: 'm', kind: 'monitor', description: 'CI checks' }]} seed="conv_1" />,
+    <BackgroundTasksTrayRow tasks={[{ taskId: 'm', kind: 'monitor', description: 'CI checks' }]} />,
   )
   expect(html).toContain('Waiting on monitor: CI checks')
   expect(html).toContain('aria-label="Waiting on background work"')
@@ -15,7 +15,7 @@ test('a monitor reads as work the agent is waiting on, under the working mark', 
 
 test('a dev server left running is named quietly, with the shell mark', () => {
   const html = renderToStaticMarkup(
-    <BackgroundTasksTrayRow tasks={[{ taskId: 'c', kind: 'command', description: 'npm run dev' }]} seed="conv_1" />,
+    <BackgroundTasksTrayRow tasks={[{ taskId: 'c', kind: 'command', description: 'npm run dev' }]} />,
   )
   expect(html).toContain('Running: npm run dev')
   expect(html).toContain('data-tool-glyph="command"')
@@ -29,7 +29,6 @@ test('several are counted, then named', () => {
         { taskId: 'm', kind: 'monitor', description: 'CI checks' },
         { taskId: 'c', kind: 'command', description: 'npm run dev' },
       ]}
-      seed="conv_1"
     />,
   )
   expect(html).toContain('Waiting on 1 monitor and 1 command')
@@ -41,14 +40,14 @@ test('the row keeps to one line until it is opened, then lists one task a line',
     { taskId: 'a', kind: 'command' as const, description: 'sleep 20; until gh pr checks 209; do sleep 45; done' },
     { taskId: 'b', kind: 'command' as const, description: 'npm run dev' },
   ]
-  const closed = renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} seed="conv_1" />)
+  const closed = renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} />)
   expect(closed).toContain('aria-expanded="false"')
   expect(closed).toContain('truncate')
   expect(closed).not.toContain('<li')
 
   setConversationDisclosures(':', ['background-tasks'], true)
   try {
-    const opened = renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} seed="conv_1" />)
+    const opened = renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} />)
     expect(opened).toContain('aria-expanded="true"')
     expect(opened).not.toContain('truncate')
     expect(opened).not.toContain('npm run dev</span>')
@@ -60,18 +59,14 @@ test('the row keeps to one line until it is opened, then lists one task a line',
 })
 
 test('nothing running draws nothing', () => {
-  expect(renderToStaticMarkup(<BackgroundTasksTrayRow tasks={[]} seed="conv_1" />)).toBe('')
+  expect(renderToStaticMarkup(<BackgroundTasksTrayRow tasks={[]} />)).toBe('')
 })
 
 test('Stop is offered where the chat can be operated, and says when it has been asked', () => {
   const tasks = [{ taskId: 'm', kind: 'monitor' as const, description: 'CI checks' }]
-  expect(renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} seed="conv_1" />)).not.toContain('Stop')
-  expect(
-    renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} seed="conv_1" onStop={() => undefined} />),
-  ).toContain('>Stop<')
-  const stopping = renderToStaticMarkup(
-    <BackgroundTasksTrayRow tasks={tasks} seed="conv_1" onStop={() => undefined} stopping />,
-  )
+  expect(renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} />)).not.toContain('Stop')
+  expect(renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} onStop={() => undefined} />)).toContain('>Stop<')
+  const stopping = renderToStaticMarkup(<BackgroundTasksTrayRow tasks={tasks} onStop={() => undefined} stopping />)
   expect(stopping).toContain('Stopping…')
   expect(stopping).toContain('disabled')
 })

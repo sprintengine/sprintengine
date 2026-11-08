@@ -90,7 +90,7 @@ export function PullRequestFileScreen({
         ) : loading ? (
           <View accessibilityLiveRegion="polite" style={styles.state}>
             <View style={styles.loading}>
-              <WorkingMark label="Loading diff" seed={path} />
+              <WorkingMark label="Loading diff" />
               <Text style={styles.meta}>Loading diff…</Text>
             </View>
           </View>

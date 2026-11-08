@@ -300,9 +300,9 @@ function conversationPhaseDot(phase: string | null | undefined, working: boolean
 }
 
 /** What a tab's corner shows for its dot: the working mark for work, else the dot itself. */
-function activityDotMark(dot: AgentTabActivityDot | null, seed: string | undefined): React.ReactNode {
+function activityDotMark(dot: AgentTabActivityDot | null): React.ReactNode {
   if (!dot) return null
-  if (dot.tone === 'good' && dot.pulse) return <WorkingMark label={dot.label} seed={seed} />
+  if (dot.tone === 'good' && dot.pulse) return <WorkingMark label={dot.label} />
   return <StatusDot tone={dot.tone} pulse={dot.pulse} label={dot.label} />
 }
 
@@ -354,7 +354,7 @@ function renderTerminalRecencyIndicator(session: TerminalSessionSnapshot | undef
   // the tab's card already draw. Idle sessions show elapsed idle time instead,
   // beginning at 1m; sub-minute recency renders blank.
   if (isSessionWorking(session)) {
-    return <WorkingMark label="Working" seed={session.sessionId} />
+    return <WorkingMark label="Working" />
   }
   if (isSessionFailed(session)) {
     return <StatusDot tone="error" label="Failed" className="ml-0.5" />
@@ -1565,7 +1565,7 @@ function WorkspaceLayoutBody({
             <AgentTabIdentityPopover identity={remoteIdentity} lookupPullRequests={false}>
               {tabNameSpan}
               {machineMark}
-              {pill ? null : activityDotMark(dot, meshSessionId)}
+              {pill ? null : activityDotMark(dot)}
               {finishedAt !== null && !pill ? (
                 <TabRecencyText at={finishedAt} label={tabRecencyLabel('finished')} />
               ) : null}
@@ -1724,7 +1724,7 @@ function WorkspaceLayoutBody({
       // tab's own card use, so "working" reads one way everywhere.
       const trailing = (
         <>
-          {activityDotMark(activityDot, agentSessionId ?? undefined)}
+          {activityDotMark(activityDot)}
           {recencyIndicator}
           <PromptCacheMark reading={agentPromptCache} working={isWorking} />
         </>

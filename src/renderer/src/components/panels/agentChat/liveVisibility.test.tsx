@@ -50,7 +50,7 @@ test('an offscreen live row is marked for the stylesheet, and no inline play sta
         'div',
         { ref, 'data-testid': 'row' },
         createElement('span', { className: 'chat-shimmer__band' }),
-        late ? createElement('i', { className: 'working-mark__cell' }) : null,
+        late ? createElement('i', { className: 'working-mark__strip' }) : null,
       )
     }
     const host = dom.window.document.createElement('div')

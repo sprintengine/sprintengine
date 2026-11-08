@@ -144,15 +144,7 @@ export type ConversationPeekIdentity = {
  * more than "Working" — it says the agent is working AND what it is doing — so
  * a card that said both would be spending a line on the weaker half.
  */
-function LiveCorner({
-  status,
-  activeSubagents,
-  seed,
-}: {
-  status: ConversationPeekStatus
-  activeSubagents: number
-  seed?: string
-}) {
+function LiveCorner({ status, activeSubagents }: { status: ConversationPeekStatus; activeSubagents: number }) {
   const working = status.kind === 'working'
   const label = working && activeSubagents > 0 ? `${activeSubagents} running` : status.label
   return (
@@ -168,7 +160,7 @@ function LiveCorner({
               (`WorkingMark` is `role="img"` with a label by construction —
               it is the sidebar's mark, and this is the same mark, seeded the
               same way so the card moves like the row it opened from.) */}
-          <WorkingMark label={label} seed={seed} />
+          <WorkingMark label={label} />
           <span aria-hidden="true">{label}</span>
         </>
       ) : (
@@ -263,13 +255,7 @@ export function ConversationPeekCard({ identity, now }: { identity: Conversation
           className="min-w-0 flex-1 text-heading font-semibold text-[color:var(--text-strong)]"
         />
         <PullRequestPeekMark pullRequests={agent.pullRequests} now={now} />
-        {identity.status ? (
-          <LiveCorner
-            status={identity.status}
-            activeSubagents={agent.activeSubagents}
-            seed={agent.agentId ?? agent.sessionId ?? undefined}
-          />
-        ) : null}
+        {identity.status ? <LiveCorner status={identity.status} activeSubagents={agent.activeSubagents} /> : null}
       </div>
 
       <ul className="m-0 flex list-none flex-col gap-1 px-3 pb-2.5 pt-0.5">
