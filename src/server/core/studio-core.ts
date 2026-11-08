@@ -74,6 +74,7 @@ import {
   latestTurnEnd,
   onlyOwnChatTurn,
 } from '../../main/automation/conversation-lifecycle'
+import { createConversationMove, isDirectory, moveConversationStorage } from '../../main/automation/conversation-move'
 import { conversationSessionWorking, terminalAgentWorking } from '../../shared/conversation/phase'
 import { forkedAgentPatch, forkName } from '../../shared/conversation/fork'
 import {
@@ -716,6 +717,29 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     (options.listTerminalSessions?.() ?? []).some(
       (session) => session.kind === 'agent' && session.workspaceId === workspaceId && terminalAgentWorking(session),
     )
+  const chatWorking = (workspaceId: string) => {
+    const listed = conversations.listSessions({ workspaceId })
+    if (listed.ok && listed.sessions.some(conversationSessionWorking)) return true
+    return terminalWorking(workspaceId)
+  }
+  // An agent's own chat turn, and nothing else: no other chat or agent
+  // terminal of the workspace at work (`onlyOwnChatTurn`).
+  const onlyOwnTurn = (workspaceId: string, agentId: string) => {
+    const listed = conversations.listSessions({ workspaceId })
+    return listed.ok && onlyOwnChatTurn(listed.sessions, agentId) && !terminalWorking(workspaceId)
+  }
+  // A message held for the end of a turn: the scheduled messages, created
+  // below, hold the ones a paired machine queued and the ones that came due
+  // mid-turn.
+  const messageWaitingIn = (workspaceId: string) =>
+    scheduledMessages
+      .state()
+      .messages.some(
+        (message) =>
+          message.workspaceId === workspaceId &&
+          !message.failure &&
+          (message.queued === true || message.waitingSince !== undefined || message.sending === true),
+      )
   const conversationLifecycle = createConversationLifecycle({
     getRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
     updateWorkspaceFields: (workspaceId, patch, actor) =>
@@ -725,31 +749,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // A person's name, as a window's Rename writes one: locked, and stamped now.
     renameWorkspace: (workspaceId, name, actor) =>
       workspaceSyncService.renameWorkspace(workspaceId, name, true, actor, Date.now()),
-    isWorking: (workspaceId) => {
-      const listed = conversations.listSessions({ workspaceId })
-      if (listed.ok && listed.sessions.some(conversationSessionWorking)) return true
-      return terminalWorking(workspaceId)
-    },
+    isWorking: chatWorking,
     // A window's own Settle and Snooze: an agent at work, not one waiting on the person.
     isBusy: (workspaceId) => settlement.isBusy(workspaceId),
-    // An agent's own chat turn, and nothing else: no other chat or agent
-    // terminal of the workspace at work (`onlyOwnChatTurn`).
-    onlyTurnOf: (workspaceId, agentId) => {
-      const listed = conversations.listSessions({ workspaceId })
-      return listed.ok && onlyOwnChatTurn(listed.sessions, agentId) && !terminalWorking(workspaceId)
-    },
-    // A message held for the end of a turn: the scheduled messages, created
-    // below, hold the ones a paired machine queued and the ones that came due
-    // mid-turn.
-    messageWaiting: (workspaceId) =>
-      scheduledMessages
-        .state()
-        .messages.some(
-          (message) =>
-            message.workspaceId === workspaceId &&
-            !message.failure &&
-            (message.queued === true || message.waitingSince !== undefined || message.sending === true),
-        ),
+    onlyTurnOf: onlyOwnTurn,
+    messageWaiting: messageWaitingIn,
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Conversation settle', message })
     },
@@ -772,6 +776,30 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // that chat's events: every chat's, a distribution's or an SSH machine's
   // included. For the core's life, as the chats are.
   conversations.onEvent((event) => conversationLifecycle.onConversationEvent(event))
+  // Moving a chat to another folder and its project (conversation-move.ts):
+  // the chat's sessions end, its history goes to the new project's store, and
+  // its agent starts there on the next turn. A move its agent asked for waits
+  // on that agent's turn, as a settle does.
+  const conversationMove = createConversationMove({
+    getRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
+    updateWorkspaceFields: (workspaceId, patch, actor) =>
+      workspaceSyncService.updateWorkspaceFields(workspaceId, patch, actor),
+    isFolder: isDirectory,
+    isWorking: chatWorking,
+    onlyTurnOf: onlyOwnTurn,
+    messageWaiting: messageWaitingIn,
+    stopChats: async (workspaceId) => {
+      const listed = conversations.listSessions({ workspaceId })
+      const live = listed.ok ? listed.sessions.filter((session) => session.status !== 'stopped') : []
+      for (const session of live) await conversations.stopSession({ sessionId: session.sessionId })
+      await conversationRuntime.flushTranscripts()
+    },
+    moveStorage: moveConversationStorage,
+    log: (message) => {
+      void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Conversation move', message })
+    },
+  })
+  conversations.onEvent((event) => conversationMove.onConversationEvent(event))
 
   // The rest sweep (studio-settlement.ts): main settles a quiet chat and
   // wakes a resting one that works again, with or without a window open, on
@@ -1145,6 +1173,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     resolveAgentPermissionPreset,
     createConversationHost,
     conversationLifecycle,
+    conversationMove,
     /** The Settled chats settings, as the windows push them; the rest sweep reads them. */
     settledChatsSettings,
     /** The rest sweep, for the module run states the windows push. */

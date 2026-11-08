@@ -52,6 +52,7 @@ test("starting, settling, visiting, marking a chat unread and its row menu's mar
       'conversation.snooze',
       'conversation.highlight',
       'conversation.auto_settle',
+      'conversation.change_project',
     ],
   )
   for (const name of CONVERSATION_MUTATION_TOOL_NAMES) {

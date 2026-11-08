@@ -70,15 +70,41 @@ test('an entry whose parent was never written is relinked to the entry before it
 })
 
 test('a session filed under another folder (a long, hashed cwd) is still found', async () => {
+  const longCwd = `/Users/dev/${'nested-folder/'.repeat(16)}acme-app`
   const path = writeSession(
     [
       { type: 'user', uuid: 'a', parentUuid: null },
       { type: 'user', uuid: 'b', parentUuid: 'gone' },
     ],
-    '-Users-dev-acme-app-shortened-1a2b3c',
+    '-Users-dev-nested-folder-shortened-1a2b3c',
   )
-  expect(await ensureResumableTranscript(configDir, cwd, sessionId)).toMatchObject({ kind: 'repaired', links: 1 })
+  expect(await ensureResumableTranscript(configDir, longCwd, sessionId)).toMatchObject({ kind: 'repaired', links: 1 })
   expect(parents(path)).toEqual([null, 'a'])
+  // Its name is the CLI's to make, so nothing is copied under a name of ours.
+  expect(readdirSync(join(configDir, 'projects'))).toEqual(['-Users-dev-nested-folder-shortened-1a2b3c'])
+})
+
+// A chat moved to another folder (conversation-move.ts) resumes from there,
+// and the CLI looks for the session only in the folder kept for its cwd.
+test('a session left under the folder a chat was moved from is copied to its new folder, with its sub-agents', async () => {
+  const before = '/Users/dev/.sprintengine/chats/2026-11-08-make-an-app-ab12cd34'
+  const original = writeSession(
+    [
+      { type: 'user', uuid: 'a', parentUuid: null },
+      { type: 'assistant', uuid: 'b', parentUuid: 'a' },
+    ],
+    claudeProjectDirName(before),
+  )
+  const subagents = join(configDir, 'projects', claudeProjectDirName(before), sessionId, 'subagents')
+  mkdirSync(subagents, { recursive: true })
+  writeFileSync(join(subagents, 'agent-1.jsonl'), '{}\n')
+
+  expect(await ensureResumableTranscript(configDir, cwd, sessionId)).toEqual({ kind: 'ok', savedCostUsd: null })
+  const moved = join(configDir, 'projects', claudeProjectDirName(cwd))
+  expect(readFileSync(join(moved, `${sessionId}.jsonl`), 'utf8')).toBe(readFileSync(original, 'utf8'))
+  expect(readFileSync(join(moved, sessionId, 'subagents', 'agent-1.jsonl'), 'utf8')).toBe('{}\n')
+  // The folder it ran in keeps what it had.
+  expect(parents(original)).toEqual([null, 'a'])
 })
 
 test('a session with no file is reported missing and says nothing of its own', async () => {

@@ -177,6 +177,10 @@
       "sha256": "fd712db735bae797dc99470ec9e28561ff229c33563e57dd8bca166370e86542"
     },
     {
+      "name": "conversation.change_project",
+      "sha256": "443a05ea762c54601ea67b7b0c8cd1f9b76700250d4d589bb27f61664c5905d2"
+    },
+    {
       "name": "conversation.send",
       "sha256": "7e841da0f12b5de986e1e727dd2c9ec585354b19b742b8f7b4d8b99e24fd3962"
     },
@@ -617,6 +621,10 @@
     {
       "name": "conversation.auto_settle",
       "sha256": "fd712db735bae797dc99470ec9e28561ff229c33563e57dd8bca166370e86542"
+    },
+    {
+      "name": "conversation.change_project",
+      "sha256": "443a05ea762c54601ea67b7b0c8cd1f9b76700250d4d589bb27f61664c5905d2"
     },
     {
       "name": "conversation.send",
