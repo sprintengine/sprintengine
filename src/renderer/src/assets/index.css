@@ -4222,10 +4222,10 @@ body:has([data-selection-pane]:focus-within)
 }
 
 /* A tab's CONTENT is the CARD, the same card the sidebar and the pane are
-   (owner, 2026-09-09). The tabset used to be, with its strip inside it; since
-   the top row of strips went up into the window's band (owner ruling
-   2026-11-07) a strip stands on the frost above its card, in a split as at the
-   top, so a tabset paints nothing and draws no edge. The separator is the frost
+   (owner, 2026-09-09). The tabset used to be, with its strip inside it; a strip
+   under a split stands on the frost above its card, and the top row's float on
+   theirs (owner rulings 2026-11-07 and 2026-11-08), so a tabset paints nothing
+   and draws no edge. The separator is the frost
    showing through the splitter, and the card's own silhouette is its edge.
    `overflow: hidden` on the content is what keeps an xterm canvas inside the
    corners. */
@@ -4243,18 +4243,48 @@ body:has([data-selection-pane]:focus-within)
   overflow: hidden;
 }
 
-/* The strips in the window's band (WorkspaceLayout marks them). The band is 36px
-   and every piece of it lines up on that, so the strip takes the height rather
-   than leaving it to its tabs. The window drags from the band's ground under
-   them (WorkspaceBandGround), so whatever is pressed instead opts out here: a
-   drag region swallows the pointer before the app sees it. */
+/* The strips on the layout's top row (WorkspaceLayout marks them) float over
+   their card rather than standing above it (owner ruling 2026-11-08), so a chat
+   has the whole height of the window to write on. Taken out of the flow, the
+   strip leaves FlexLayout's content box the tabset's full height, and only what
+   is pressed takes the pointer: the card's own text stays selectable beside it. */
 .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 1;
   height: 36px;
   align-items: center;
+  background: transparent;
+  background-image: none !important;
+  border: none;
+  pointer-events: none;
 }
 
 .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_button {
   height: 36px;
+  pointer-events: auto;
+}
+
+/* A tab on the top row starts below the pill unless it can scroll out from
+   under it, which a chat can. */
+.band-clear {
+  height: 100%;
+  box-sizing: border-box;
+  padding-top: var(--band-clearance, 0px);
+}
+
+.band-clear:has([data-chat-composer]) {
+  padding-top: 0;
+}
+
+/* A subagent's own header does not scroll, so it starts below the pill and what
+   is under it needs no gap of its own. */
+.band-clear [data-subagent-header] {
+  margin-top: var(--band-clearance, 0px);
+}
+
+.band-clear [data-subagent-header] ~ * {
+  --band-clearance: 0px;
 }
 
 .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-start]) {
@@ -4276,6 +4306,12 @@ body:has([data-selection-pane]:focus-within)
   -webkit-app-region: no-drag;
 }
 
+/* Drag regions ignore what is painted over them, so the card has to say so
+   itself or the band's ground under it would swallow every press up here. */
+.flexlayout__layout .flexlayout__tab {
+  -webkit-app-region: no-drag;
+}
+
 /* A door or New chat has the card: the strips go with what they name. A tab's
    close takes `visibility` back for itself, so it is named as well, and the same
    goes for the workspaces retained behind this one: their strips stand on the
@@ -4287,26 +4323,28 @@ body:has([data-selection-pane]:focus-within)
   visibility: hidden !important;
 }
 
-/* The only tab in the layout is the band's pill: its name, centred over the
-   column with its "+" beside it, which toggles the panel. It closes from its
-   menu and the keyboard, so it wears no close of its own. */
+/* The pill: the selected tab of a top-row strip, its name centred over the
+   column. It floats on whatever scrolls under it, so it is opaque and lifted. It
+   closes from its menu and the keyboard, so it wears no close of its own. */
 .flexlayout__layout .flexlayout__tabset_tabbar_inner:has([data-tab-pill]) {
   justify-content: center;
 }
 
 .flexlayout__layout .flexlayout__tabset_tabbar_outer .flexlayout__tab_button:has([data-tab-pill]) {
+  position: relative;
   height: var(--control-xs);
   max-width: 430px;
   padding: 0 12px 0 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
-  background: var(--bg-hover);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
   color: var(--text-strong);
   font-weight: 500;
 }
 
 .flexlayout__layout .flexlayout__tab_button:has([data-tab-pill]):hover {
-  background: var(--bg-selected);
+  background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-surface);
 }
 
 .flexlayout__layout .flexlayout__tab_button:has([data-tab-pill]) .flexlayout__tab_button_trailing {
@@ -4315,6 +4353,80 @@ body:has([data-selection-pane]:focus-within)
 
 .flexlayout__layout .flexlayout__tab_button:has([data-tab-pill])::after {
   content: none;
+}
+
+/* The strip's other tabs fold away behind the pill, and come forward as pills of
+   their own while the pill is hovered or a key has reached one of them. They
+   stay in the strip, a width of nothing, so FlexLayout still measures, drags and
+   selects them. */
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_button--unselected {
+  max-width: 0;
+  height: var(--control-xs);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0 solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  opacity: 0;
+  transition:
+    max-width var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease);
+}
+
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]):is(:hover, :has(:focus-visible)) .flexlayout__tab_button--unselected {
+  max-width: 220px;
+  margin-left: 4px;
+  padding: 0 10px 0 8px;
+  border-width: 1px;
+  box-shadow: var(--shadow-popover);
+  opacity: 1;
+}
+
+/* The notch: the edge of what is folded behind the pill, showing past its right
+   side. Gone once the tabs have come forward. */
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]):has(.flexlayout__tab_button--unselected):not(:hover, :has(:focus-visible)) .flexlayout__tab_button:has([data-tab-pill]) {
+  margin-right: 8px;
+}
+
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]):has(.flexlayout__tab_button--unselected):not(:hover, :has(:focus-visible)) .flexlayout__tab_button:has([data-tab-pill])::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: auto;
+  right: -7px;
+  width: 6px;
+  height: auto;
+  border: 1px solid var(--border-subtle);
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: var(--bg-surface);
+  pointer-events: none;
+}
+
+/* While they are out the whole strip holds the pointer, so crossing a gap between
+   pills, or the way to the "+", does not fold them back up under it. */
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]):is(:hover, :has(:focus-visible)) {
+  pointer-events: auto;
+}
+
+/* The "+" waits with the folded tabs: nothing else stands on the conversation. */
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+
+.flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]):is(:hover, :has(:focus-visible)) .flexlayout__tab_toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_button--unselected,
+  .flexlayout__layout .flexlayout__tabset_tabbar_outer:has([data-band-strip]) .flexlayout__tab_toolbar {
+    transition: none;
+  }
 }
 
 /* Focused strip stays flat and identical to an unfocused one — focus is

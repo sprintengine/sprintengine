@@ -8,13 +8,14 @@
 // Two pieces, because FlexLayout's tab strips have to stand between them. They
 // cannot be lifted out of the layout: FlexLayout offers no portal for them, and
 // one tabset is one strip, so a split has several. So the layout reaches the top
-// of the column and its top row of strips IS the band, with `WorkspaceBandGround`
-// under them and `WorkspaceBand` over them:
+// of the column and its top row of strips floats on the card as a pill, with
+// `WorkspaceBandGround` under it and `WorkspaceBand` over it:
 //
 //   - The ground comes first in the tree. It paints the band and is the window's
-//     drag region, so the band still drags where nothing stands on it: past the
-//     tabs, with no workspace, and over a door. Controls standing on it opt out
-//     (the tab rules in assets/index.css, and `app-no-drag` here).
+//     drag region where no tab's card covers it: with no workspace, and over a
+//     door. Over a card, the thin strip along the window's top edge is what
+//     drags (`BAND_DRAG_EDGE`). Controls standing on it opt out (the tab rules
+//     in assets/index.css, and `app-no-drag` here).
 //   - The clusters come last and ignore the pointer between them, so a tab under
 //     the empty run is pressed, not the band. Each reports its width in
 //     `--band-inset-left` and `--band-inset-right`, which the strips at the
@@ -141,6 +142,10 @@ export function bandTrafficLightInset({
   return besideRail ? TRAFFIC_LIGHT_RESERVE - APP_RAIL_WIDTH : TRAFFIC_LIGHT_RESERVE
 }
 
+// A card runs to the window's top with the pill on it, so the window drags from
+// a sliver along the edge, last in the tree so it wins over the card's no-drag.
+const BAND_DRAG_EDGE = 'app-drag absolute inset-x-0 top-0 h-1.5'
+
 /** The band's ground and drag region, under the layout's strips. */
 export function WorkspaceBandGround() {
   return (
@@ -199,6 +204,7 @@ export function WorkspaceBand<MenuItem extends string>({
   const rightRef = useBandInset('--band-inset-right')
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-[var(--z-float)] flex h-[36px] items-center">
+      <div aria-hidden="true" className={BAND_DRAG_EDGE} />
       <div ref={leftRef} className="app-no-drag pointer-events-auto flex shrink-0 items-center">
         {trafficLightInset > 0 ? (
           // No control stands here: the traffic lights do, and a press on the

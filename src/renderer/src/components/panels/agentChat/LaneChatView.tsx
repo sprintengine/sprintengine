@@ -275,7 +275,7 @@ function LaneConversation({
         tabIndex={-1}
         role="log"
         aria-label={`${name} conversation`}
-        className={`chat-column-gutter min-h-0 flex-1 overflow-y-auto pb-6 pt-4 focus:outline-none ${FOCUS_RING_INSET_CLASS}`}
+        className={`chat-column-gutter min-h-0 flex-1 overflow-y-auto pb-6 pt-[calc(var(--band-clearance,0px)+1rem)] focus:outline-none ${FOCUS_RING_INSET_CLASS}`}
       >
         {rows.map((row) => (
           <React.Fragment key={row.id}>

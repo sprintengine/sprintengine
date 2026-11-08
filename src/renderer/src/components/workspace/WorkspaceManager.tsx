@@ -5289,7 +5289,7 @@ export default function WorkspaceManager() {
         <div className={`relative min-w-0 flex-1 flex-row ${narrowViewport && narrowSidebarShown ? 'hidden' : 'flex'}`}>
           {/* Content column: the workspace's card reaches its top, with the band
               over it and the band's ground under it (WorkspaceBand), so the
-              layout's top row of tab strips stands in the 36px band. */}
+              layout's top row of tab strips floats on the card as a pill. */}
           <div data-band-column="" className="relative flex min-w-0 flex-1 flex-col">
             <WorkspaceBandGround />
             <div className="relative flex min-h-0 flex-1 flex-row">
