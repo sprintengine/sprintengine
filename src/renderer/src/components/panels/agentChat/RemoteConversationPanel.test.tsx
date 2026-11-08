@@ -1146,7 +1146,7 @@ test("the ring of a chat over there opens what fills its window, read from that 
     await chat.act(async () =>
       chat.emit({ type: 'event', event: event('usage_updated', { contextWindow: 200_000, contextUsed: 76_000 }) }),
     )
-    const ring = () => chat.host.querySelector<HTMLButtonElement>('[data-panel-context]')!
+    const ring = () => chat.host.querySelector<HTMLButtonElement>('[data-composer-context]')!
     await chat.act(async () => ring().click())
     await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
     expect(chat.api.meshConversationContextBreakdown).toHaveBeenCalledExactlyOnceWith({ key })
@@ -1169,7 +1169,7 @@ test('none of the three where the machine does not take them, or lists its chat 
       await chat.act(async () =>
         chat.emit({ type: 'event', event: event('usage_updated', { contextWindow: 200_000, contextUsed: 76_000 }) }),
       )
-      await chat.act(async () => chat.host.querySelector<HTMLButtonElement>('[data-panel-context]')?.click())
+      await chat.act(async () => chat.host.querySelector<HTMLButtonElement>('[data-composer-context]')?.click())
       expect(chat.api.meshConversationContextBreakdown).not.toHaveBeenCalled()
       await chat.act(async () => chat.type('/btw which file flakes?'))
       await chat.act(async () => chat.enter())
@@ -2441,8 +2441,8 @@ test('a chat over there that a usage limit stopped says so in the tray, and its 
   try {
     await chat.act(async () => chat.emit(sessionLimitReached()))
     expect(chat.host.textContent).toContain("Claude's session limit is used up.")
-    // The strip draws that machine's reading of the plan, as a local chat's draws this one's.
-    const mark = chat.host.querySelector<HTMLElement>('[data-panel-usage-limits="claude"]')
+    // The composer draws that machine's reading of the plan, as a local chat's draws this one's.
+    const mark = chat.host.querySelector<HTMLElement>('[data-composer-usage-limits="claude"]')
     expect(mark?.getAttribute('aria-label')).toContain('on mac-mini')
     await chat.act(async () => chat.button('Resume at reset')!.click())
     expect(chat.api.meshConversationUsageLimitResume).toHaveBeenCalledExactlyOnceWith({ key, action: 'schedule' })
@@ -2559,7 +2559,7 @@ test('a pairing that may only follow sees the notice without its buttons; a mach
   try {
     await older.act(async () => older.emit(sessionLimitReached()))
     expect(older.host.textContent).not.toContain('session limit is used up')
-    expect(older.host.querySelector('[data-panel-usage-limits]')).toBeNull()
+    expect(older.host.querySelector('[data-composer-usage-limits]')).toBeNull()
   } finally {
     await older.unmount()
   }

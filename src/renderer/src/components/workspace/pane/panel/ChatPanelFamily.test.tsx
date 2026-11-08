@@ -308,7 +308,6 @@ test('the panel follows a lane: its head, the way back, and only its children, a
   try {
     await chatSays(tab, 'agent', {
       name: 'Router work',
-      context: { used: 60_000, total: 200_000 },
       permissionLabel: 'Auto',
       changes: { added: 105, removed: 12, phrase: '3 files added' },
     })
@@ -347,18 +346,15 @@ test('a lane has no record of its own, so nothing the chat measured is said of i
   try {
     await chatSays(tab, 'agent', {
       name: 'Router work',
-      context: { used: 60_000, total: 200_000 },
       permissionLabel: 'Auto',
       changes: { added: 105, removed: 12, phrase: '3 files added' },
     })
     await tab.deliver(transcript)
     await tab.act(() => pause(500))
-    expect(tab.row('Context')).toBeDefined()
     expect(tab.row('Changes')?.textContent).toContain('105')
     await tab.act(async () => tab.row('Find the router')!.click())
     await tab.act(() => pause(500))
-    expect(tab.row('Context'), 'the chat’s context is not the lane’s').toBeUndefined()
-    expect(tab.row('Changes')?.textContent, 'nor its changes').not.toContain('105')
+    expect(tab.row('Changes')?.textContent, 'the chat’s changes are not the lane’s').not.toContain('105')
     expect(tab.row('Permissions')?.textContent).toContain('Set by its parent')
     expect(tab.row('Tokens')?.textContent, 'what it spent is its own').toContain('9')
   } finally {
@@ -424,17 +420,12 @@ test('a sub-agent’s own chat reaches the head through what it says of itself',
   try {
     await tab.deliver(transcript)
     await tab.act(() => pause(500))
-    await chatSays(tab, 'agent', { name: 'Router work', context: { used: 60_000, total: 200_000 } })
-    await chatSays(tab, 'agent-reviewer', {
-      name: 'Design review',
-      modelLabel: 'Grok 4.7',
-      context: { used: 20_000, total: 200_000 },
-    })
+    await chatSays(tab, 'agent', { name: 'Router work' })
+    await chatSays(tab, 'agent-reviewer', { name: 'Design review', modelLabel: 'Grok 4.7' })
     await tab.act(async () => tab.row('Cursor')!.click())
     expect(tab.host.textContent).toContain('Chat of agent-reviewer')
     expect(tab.head()).toBe('Design review')
     expect(tab.panel().textContent).toContain('Grok 4.7')
-    expect(tab.row('Context')?.textContent, 'its own reading').toContain('10%')
   } finally {
     await tab.unmount()
   }

@@ -121,19 +121,15 @@ test('the words carry the state, and a pull request closed unmerged is left off 
 
 test('the strip draws the button only for a conversation that opened a pull request, and it opens it', async () => {
   const { PanelFactRows } = await import('./panelFactsFixture')
-  const none = await mount(<PanelFactRows context={null} now={NOW} />)
+  const none = await mount(<PanelFactRows now={NOW} />)
   expect(none.container.innerHTML).toBe('')
   await none.unmount()
 
-  const closedOnly = await mount(
-    <PanelFactRows context={null} pullRequests={[pr({ number: 2, state: 'closed' })]} now={NOW} />,
-  )
+  const closedOnly = await mount(<PanelFactRows pullRequests={[pr({ number: 2, state: 'closed' })]} now={NOW} />)
   expect(closedOnly.container.querySelector('[data-panel-pull-request]')).toBe(null)
   await closedOnly.unmount()
 
-  const one = await mount(
-    <PanelFactRows context={{ used: 40_000, total: 200_000 }} pullRequests={[pr({ number: 12 })]} now={NOW} />,
-  )
+  const one = await mount(<PanelFactRows pullRequests={[pr({ number: 12 })]} now={NOW} />)
   const button = one.container.querySelector<HTMLButtonElement>('[data-panel-pull-request]')
   expect(button?.textContent).toContain('#12')
   expect(button?.getAttribute('aria-label')).toMatch(
@@ -184,7 +180,6 @@ test('Create PR takes the slot, drafts, pushes, creates, and says on the strip w
   const holds: boolean[] = []
   const mounted = await mount(
     <PanelFactRows
-      context={null}
       pullRequests={[pr({ number: 2, state: 'merged' })]}
       createPullRequest={{
         host: localPullRequestHost('/Users/dev/app', { workspaceId: 'ws-1', agentId: 'agent-1' }),
@@ -411,7 +406,6 @@ test('a watched pull request says what it waits on, in words, and offers Stop wa
   const stopped: string[] = []
   const strip = await mount(
     <PanelFactRows
-      context={null}
       pullRequests={[pr({ number: 12, watch: { since: NOW, waitingOn: 'checks-failed', failedChecks: 1 } })]}
       onStopWatchingPullRequest={(url) => stopped.push(url)}
       now={NOW}
@@ -433,11 +427,7 @@ test('a watched pull request says what it waits on, in words, and offers Stop wa
 
   // Where the window cannot stop it (a paired machine's chat), it says the words and offers nothing.
   const elsewhere = await mount(
-    <PanelFactRows
-      context={null}
-      pullRequests={[pr({ number: 12, watch: { since: NOW, waitingOn: 'review' } })]}
-      now={NOW}
-    />,
+    <PanelFactRows pullRequests={[pr({ number: 12, watch: { since: NOW, waitingOn: 'review' } })]} now={NOW} />,
   )
   expect(elsewhere.container.querySelector('button[aria-label$="and Stop watching"]')).toBe(null)
   expect(elsewhere.container.textContent).toContain('#12 · Waiting for review')

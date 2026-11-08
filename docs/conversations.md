@@ -1087,7 +1087,7 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   composer, still set for its time. A machine without the capability, and a
   pairing that may only follow, offer no Schedule.
 - **Its usage limits are the other machine's** (2026-10-25). Where the machine
-  advertises `conversation-usage-limits`, the strip under the composer draws
+  advertises `conversation-usage-limits`, the composer, beside the model picker, draws
   the chat's plan as that machine's agents reported it, and the mark's list
   every plan there, named as that machine's; the tray draws the notice a usage
   limit left on the chat's turn there, with Resume at reset, Always resume at

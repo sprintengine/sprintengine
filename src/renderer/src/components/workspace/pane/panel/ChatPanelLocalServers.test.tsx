@@ -51,17 +51,12 @@ async function render(node: React.ReactNode): Promise<HTMLElement> {
 }
 
 test('a conversation with no servers draws nothing for them', async () => {
-  const none = await render(<PanelFactRows context={null} localServers={{ workspaceId: 'ws-1', servers: [] }} />)
+  const none = await render(<PanelFactRows localServers={{ workspaceId: 'ws-1', servers: [] }} />)
   expect(none.innerHTML).toBe('')
 })
 
 test('one server is named with its state, before the ring', async () => {
-  const one = await render(
-    <PanelFactRows
-      context={{ used: 40_000, total: 200_000 }}
-      localServers={{ workspaceId: 'ws-1', servers: [server()] }}
-    />,
-  )
+  const one = await render(<PanelFactRows localServers={{ workspaceId: 'ws-1', servers: [server()] }} />)
   const button = one.querySelector('[data-panel-local-servers]')
   expect(button?.textContent).toContain('localhost:5173')
   expect(button?.textContent).toContain('Running')
@@ -71,7 +66,6 @@ test('one server is named with its state, before the ring', async () => {
 test('several servers are counted with how many are up', async () => {
   const many = await render(
     <PanelFactRows
-      context={null}
       localServers={{
         workspaceId: 'ws-1',
         servers: [

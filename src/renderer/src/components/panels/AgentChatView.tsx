@@ -142,11 +142,11 @@ import {
 } from './agentChat/createPullRequest'
 import { localPullRequestHost } from './agentChat/pullRequestHost'
 import { conversationContextReading } from './agentChat/contextReading'
-import type { ContextBreakdownSource } from './agentChat/ContextBreakdown'
+import { ContextComposerButton, type ContextBreakdownSource } from './agentChat/ContextBreakdown'
 import { useConversationStripFacts } from './agentChat/conversationStripFacts'
 import { useChatActivityCard } from './agentChat/ChatActivityCard'
 import { usePublishChatPanelFacts, type ChatPanelPermissions } from './agentChat/chatPanelStore'
-import { useUsageLimitSnapshot } from './agentChat/usageLimits'
+import { UsageLimitsComposerButton, useUsageLimitSnapshot } from './agentChat/usageLimits'
 import { HostUsageLimitNoticeRow, UsageLimitResumeRow } from './agentChat/usageLimitResume'
 import {
   HostScheduledMessageRows,
@@ -2710,7 +2710,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const currentModelLabel = chatModelLabel ?? currentModel?.displayName ?? conversation.modelId
   // How full the context window is: the runtime's own report first, then the
   // CLI model catalog's window for this chat's model, then a provider
-  // catalog's context length (contextReading.ts). The strip's ring and the
+  // catalog's context length (contextReading.ts). The composer's ring and the
   // tray's nearly-full row read the one answer.
   const catalogContextWindow = useWorkspaceStore((state) =>
     chatCli && chatModel
@@ -4214,12 +4214,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Published rather than drawn here: the panel stands beside the chat. Each
   // field holds still from render to render unless it changed, so a streamed
   // token wakes nothing over there.
-  const contextUsed = contextReading?.used ?? null
-  const contextTotal = contextReading?.total ?? null
-  const panelContext = useMemo(
-    () => (contextUsed !== null && contextTotal !== null ? { used: contextUsed, total: contextTotal } : null),
-    [contextUsed, contextTotal],
-  )
   const changePermissionPresetRef = useRef(changePermissionPreset)
   changePermissionPresetRef.current = changePermissionPreset
   const selectPanelPermission = useCallback(
@@ -4259,8 +4253,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     remote: transport.kind === 'remote',
     branch: stripFacts.branch,
     changes: stripFacts.changes,
-    context: panelContext,
-    contextBreakdown: contextBreakdownSource,
     pullRequests: conversationPullRequests,
     ...(transport.kind !== 'remote'
       ? { onStopWatchingPullRequest: stopWatchingPullRequest }
@@ -4269,8 +4261,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         : {}),
     createPullRequest,
     localServers: stripLocalServers,
-    usageLimits: stripUsageLimits,
-    ...(usageLimitsElsewhere ? { usageLimitsElsewhere } : {}),
     permissions: panelPermissions,
     permissionLabel: chatCli ? agentPermissionChipLabel(permissionOptions, permissionPreset, permissionMode) : null,
   })
@@ -4974,6 +4964,17 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
 
                 <span className="flex-1" />
 
+                {/* What the next turn spends from, just before the model that
+                    spends it: this chat's window, then the account's limit. */}
+                {contextReading ? (
+                  <ContextComposerButton context={contextReading} source={contextBreakdownSource} />
+                ) : null}
+                {stripUsageLimits ? (
+                  <UsageLimitsComposerButton
+                    snapshot={stripUsageLimits}
+                    {...(usageLimitsElsewhere ? { elsewhere: usageLimitsElsewhere } : {})}
+                  />
+                ) : null}
                 {chatCli ? (
                   <EnginePickerChip
                     cli={chatCli}

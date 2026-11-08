@@ -2453,7 +2453,7 @@ test('a chat whose provider reads no images still attaches files of any kind und
   }
 })
 
-test('the panel names the context reading, its tooltip the token counts', async () => {
+test('the composer names the context reading, its tooltip the token counts', async () => {
   const chat = await mountChat({
     withPanel: true,
     events: [
@@ -2463,12 +2463,12 @@ test('the panel names the context reading, its tooltip the token counts', async 
   })
   try {
     // A button: it opens what fills the window (ContextBreakdown.tsx).
-    const ring = chat.host.querySelector<HTMLElement>('[data-panel-context]')
+    const ring = chat.host.querySelector<HTMLElement>('[data-composer-context]')
     const counts = `${(76_000).toLocaleString()} / ${(200_000).toLocaleString()} tokens`
     expect(ring?.getAttribute('aria-label')).toBe(`Context 38% used, ${counts} — show what fills it`)
     await chat.act(async () => ring!.focus())
     expect(chat.dom.window.document.querySelector('[role="tooltip"]')?.textContent).toBe(counts)
-    // The reading is the panel's; the old meter row above the composer is gone.
+    // The reading is the composer's ring; the old meter row above it is gone.
     expect(chat.host.textContent).not.toContain('Context used:')
   } finally {
     await chat.unmount()
@@ -2486,7 +2486,7 @@ test('a CLI chat’s ring takes its window from the CLI model catalog when the r
     events: [event('usage_updated', { contextUsed: 50_000 })],
   })
   try {
-    const ring = chat.host.querySelector('[data-panel-context]')
+    const ring = chat.host.querySelector('[data-composer-context]')
     expect(ring?.getAttribute('aria-label')).toMatch(/^Context 25% used, /)
   } finally {
     await chat.unmount()
@@ -2523,7 +2523,7 @@ test('the ring opens what fills the window, read from the chat’s agent', async
     events: [event('usage_updated', { contextWindow: 200_000, contextUsed: 76_000 })],
   })
   try {
-    const ring = () => chat.host.querySelector<HTMLButtonElement>('[data-panel-context]')!
+    const ring = () => chat.host.querySelector<HTMLButtonElement>('[data-composer-context]')!
     const note = () => chat.dom.window.document.querySelector('[data-context-breakdown-note]')?.textContent
     await chat.act(async () => ring().click())
     // The Studio protocol has no method for it yet: the panel opens on the
@@ -2553,13 +2553,13 @@ test('the ring opens what fills the window, read from the chat’s agent', async
   }
 })
 
-test('with no usage reported the strip draws no ring, rather than an empty one', async () => {
+test('with no usage reported the composer draws no ring, rather than an empty one', async () => {
   const chat = await mountChat({
     withPanel: true,
     providerModels: [{ id: 'mock-model', contextLength: 200_000 }],
   })
   try {
-    expect(chat.host.querySelector('[data-panel-context]')).toBeNull()
+    expect(chat.host.querySelector('[data-composer-context]')).toBeNull()
   } finally {
     await chat.unmount()
   }

@@ -20,12 +20,12 @@ meaning is "how full is the thing you are about to add to".
 
 ## Anatomy
 
-| Part | Class | Required |
-|---|---|---|
-| Hit target | `.ds-context-ring-anchor` | yes — a 24px focusable box around the mark |
-| Ring | `.ds-context-ring` | yes — a 16-unit `viewBox`, drawn at 14px |
-| Track | `.ds-context-ring-track` | yes — the unspent remainder, `border.strong` |
-| Fill | `.ds-context-ring-fill` | yes — the spent sweep, `accent.primary` |
+| Part       | Class                     | Required                                     |
+| ---------- | ------------------------- | -------------------------------------------- |
+| Hit target | `.ds-context-ring-anchor` | yes — a 24px focusable box around the mark   |
+| Ring       | `.ds-context-ring`        | yes — a 16-unit `viewBox`, drawn at 14px     |
+| Track      | `.ds-context-ring-track`  | yes — the unspent remainder, `border.strong` |
+| Fill       | `.ds-context-ring-fill`   | yes — the spent sweep, `accent.primary`      |
 
 The anchor is a real part, not padding. A 14px mark is below the minimum hit
 target, so the ring is wrapped in a `size.hit-target-min` box that takes the
@@ -41,7 +41,7 @@ which draws a visible dot at 0%.
 ## Variants
 
 - **Default** — `accent.primary` fill. Accent as INK, which is inside the
-  accent budget; the ring never takes an accent *fill* on its ground.
+  accent budget; the ring never takes an accent _fill_ on its ground.
 - **`--high`** — `status.warn` fill, past the warn threshold (80% in the
   product that ships it). A compaction is close, which is worth a glance
   before it happens rather than after. This is the only other tone the ring
@@ -50,12 +50,12 @@ which draws a visible dot at 0%.
 There is no size variant. 14px is the idiom.
 
 **With token counts.** Where the surface holds the counts behind the share (a
-conversation's composer strip does), the tooltip says them and nothing else —
+conversation's composer does), the tooltip says them and nothing else —
 "76,000 / 200,000 tokens" — and the accessible name says the share and the
 counts both: "Context 38% used, 76,000 / 200,000 tokens". The sweep already
 shows the share; the counts are what a glance cannot read off it.
 
-**As a button.** On a conversation's composer strip the ring opens what fills
+**As a button.** In a conversation's composer, beside the model picker, the ring opens what fills
 the window: a dialog popover with one stacked bar of the window (each content
 row in the categorical chart slots, in the order the agent lists them; free
 space as the track; the compaction buffer in `border.strong`), the rows in
@@ -69,12 +69,12 @@ same on every chat.
 
 ## States
 
-| State | Treatment |
-|---|---|
-| Rest | Track plus fill; the tooltip closed |
+| State                 | Treatment                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
+| Rest                  | Track plus fill; the tooltip closed                                                                |
 | Hover / focus-visible | The tooltip opens, naming the exact percentage — or the token counts, where the surface gives them |
-| Focus-visible | The anchor wears the product focus ring |
-| Value change | The sweep animates over `motion.duration.deliberate` |
+| Focus-visible         | The anchor wears the product focus ring                                                            |
+| Value change          | The sweep animates over `motion.duration.deliberate`                                               |
 
 **Not drawn at all** when there is no reading. A ring at 0% and a ring for a
 runtime that reports nothing are the same picture, and one of them is a lie —
