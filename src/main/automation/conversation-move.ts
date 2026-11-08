@@ -5,6 +5,7 @@ import { ensureWorkspaceStoreDir, workspaceStorePath } from '../workspace-store'
 import type { WorkspaceRegistryActor, WorkspaceRegistryRecord } from '../../shared/workspace-registry'
 import type { WorkspaceFieldsPatch, WorkspaceSyncCommandResult } from '../../shared/workspace-sync'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
+import { LOCAL_HOST_ID } from '../../shared/execution-host'
 import { comparablePath } from '../../shared/host-paths'
 import { isMachinePath } from '../../shared/machine-paths'
 import { isProjectlessChatsRoot } from '../../shared/projectless-chats'
@@ -108,7 +109,7 @@ export function createConversationMove(deps: ConversationMoveDeps) {
     const notMovable = (message: string): ConversationMoveFailure => ({ ok: false, code: 'not_movable', message })
     if (record.remoteOrigin)
       return notMovable('This chat lives on another machine. Ask the agent there, which moves it on that machine.')
-    if (record.hostId || isMachinePath(record.folderPath))
+    if ((record.hostId && record.hostId !== LOCAL_HOST_ID) || isMachinePath(record.folderPath))
       return notMovable('This chat runs on another machine of yours (WSL or SSH), where it stays.')
     if (record.worktree)
       return notMovable(

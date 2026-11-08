@@ -197,6 +197,13 @@ test('a chat in a worktree, on another machine, or opened from a paired one stay
   }
 })
 
+test('a chat recorded as on this computer by name is moved like any', async () => {
+  const f = fixture({ record: { hostId: 'local' as never } })
+  const result = await f.mover.move('ws-1', PROJECT, 'gateway')
+  assert.ok(result.ok)
+  assert.equal(f.stored.folderPath, PROJECT)
+})
+
 test('a history that cannot be moved leaves the record as it was', async () => {
   const f = fixture()
   const mover = createConversationMove({
