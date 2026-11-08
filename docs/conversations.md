@@ -782,6 +782,26 @@ about a workspace on the desktop doing the asking, and are not offered for a
 chat no window there has open. A machine without the capability answers the tools "Unknown tool", and
 its chats offer none of the four.
 
+**`conversation.change_project`** `{ folder, workspaceId? }` (2026-11-08)
+moves a chat to another folder on its machine, and so to the project that
+folder is in. It is for a chat's own agent: one started with no project that
+made one, or whose work moved to a folder of its own, leaves out
+`workspaceId` and names the folder. A chat's project is read off its folder,
+so the move is a change of `folderPath`; the chat's sessions end, its store
+folder (`conversations/<chat>`) goes to the new project's store, and its next
+turn starts the agent in the new folder, resuming the same session. A Claude
+Code session file is copied to the folder the CLI keeps for the new cwd when
+the chat resumes there. Asked mid-turn of the asking agent's own chat, the
+move waits for that turn to complete and answers `movesWhenTurnEnds: true`;
+it is let go on the signs a settle waiting on a turn is let go on. It answers
+`{ ok: true, workspaceId, folderPath, project }`, and is refused as
+`not_movable` for a worktree chat (the pool keeps its folder) and for a chat
+on another machine, as `working` while another agent there works, and as
+`not_a_folder` for a path that is not one. It needs `conversation:operate` and
+is audited. Nothing new crosses the wire: a paired device lists the chat under
+its new project from `workspace.list`, which the folder change moves, and its
+next message to the chat starts the session in the new folder there.
+
 Beyond its marks, a paired desktop manages a chat here as it manages one of
 its own, each part on a capability of its own (2026-10-25). Each is a gateway
 tool listed to paired devices only, on `conversation:operate` and audited; a
@@ -1116,7 +1136,6 @@ paired device starts is a chat, through `conversation.create`, and the machine
 dropdown in New chat offers a paired machine only for a Chat agent. Scheduled
 agents stay on the machine too: the phone neither lists nor runs them. A tab left open on a remote terminal by an earlier build reopens as
 an unavailable panel.
-
 
 ## Subagents as full chats
 

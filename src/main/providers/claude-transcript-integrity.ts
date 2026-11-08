@@ -15,7 +15,7 @@
 // cost total the CLI restores on resume, so that total is not booked again as
 // the first turn's cost.
 
-import { copyFile, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 // Entries the CLI links into the conversation chain.
@@ -34,18 +34,55 @@ export function claudeProjectDirName(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/gu, '-')
 }
 
+// The longest folder name the CLI keeps a cwd's sessions under as spelled;
+// past it the name is shortened and hashed, and only the CLI knows how.
+const CLI_DIR_NAME_LIMIT = 200
+
 async function findTranscript(configDir: string, cwd: string, sessionId: string): Promise<string | null> {
   const projects = join(configDir, 'projects')
-  const expected = join(projects, claudeProjectDirName(cwd), `${sessionId}.jsonl`)
-  if (await isFile(expected)) return expected
+  // The CLI names the folder after its cwd as the system resolves it.
+  const homes = [...new Set([cwd, await realpath(cwd).catch(() => cwd)].map(claudeProjectDirName))]
+  for (const home of homes) {
+    const expected = join(projects, home, `${sessionId}.jsonl`)
+    if (await isFile(expected)) return expected
+  }
   // A long cwd is shortened and hashed by the CLI, so the folder name above is
   // not always its own; the session id is unique across every project.
   const dirs = await readdir(projects).catch(() => [] as string[])
   for (const dir of dirs) {
     const candidate = join(projects, dir, `${sessionId}.jsonl`)
-    if (await isFile(candidate)) return candidate
+    if (await isFile(candidate)) return (await bringAlong(projects, dir, homes.at(-1)!, sessionId)) ?? candidate
   }
   return null
+}
+
+/**
+ * A session found under another folder than its cwd's: the chat was moved to
+ * another folder (conversation-move.ts), and the CLI, which resumes a session
+ * only from the folder kept for the cwd it runs in, would not find it. The
+ * session's file, and its folder of sub-agent transcripts beside it, are
+ * copied to the cwd's folder; the originals stay where they were. Null when
+ * the copy was not made, and the file is left where it was found.
+ */
+async function bringAlong(projects: string, from: string, home: string, sessionId: string): Promise<string | null> {
+  if (home.length > CLI_DIR_NAME_LIMIT) return null
+  try {
+    const target = join(projects, home)
+    await mkdir(target, { recursive: true })
+    const file = join(target, `${sessionId}.jsonl`)
+    await copyFile(join(projects, from, `${sessionId}.jsonl`), file)
+    const companion = join(projects, from, sessionId)
+    if (
+      await stat(companion).then(
+        (info) => info.isDirectory(),
+        () => false,
+      )
+    )
+      await cp(companion, join(target, sessionId), { recursive: true, force: false })
+    return file
+  } catch {
+    return null
+  }
 }
 
 async function isFile(path: string): Promise<boolean> {
