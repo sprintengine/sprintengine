@@ -46,6 +46,8 @@ import {
   captureRailWidthFractions,
   consumePendingAgentFlash,
   deleteTabPreservingRails,
+  ensureStandInPane,
+  holdsMeshConversationPane,
   registerModel,
   restoreRailWidthFractions,
   unregisterModel,
@@ -82,7 +84,7 @@ import { ChatExportMenuItems } from './ChatExportMenuItems'
 import { mountedChatViewFor } from '../panels/agentChat/mountedChatViews'
 import type { ChatExportAction } from '../../../../shared/chat-export'
 import { ModuleContributionBoundary } from '../../modules/ModuleContributionBoundary'
-import { remotePaneTabLabel } from './remoteBand/remoteSessionsModel'
+import { remoteOriginPaneSpec, remotePaneTabLabel } from './remoteBand/remoteSessionsModel'
 import { shortMachineName } from '../remote/machineRowModel'
 import {
   ContextMenu,
@@ -457,6 +459,11 @@ function WorkspaceLayoutBody({
   const workspaceRemoteName = useWorkspaceStore(
     (s) => s.workspaces.find((w) => w.id === workspaceId)?.remoteOrigin?.machineName ?? null,
   )
+  // What a stand-in for a paired machine's chat is: the chat its pane shows.
+  const workspaceRemoteOrigin = useWorkspaceStore(
+    (s) => s.workspaces.find((w) => w.id === workspaceId)?.remoteOrigin ?? null,
+  )
+  const workspaceName = useWorkspaceStore((s) => s.workspaces.find((w) => w.id === workspaceId)?.name ?? '')
   const workspaceMachineRef = useWorkspaceMachineRef(
     React.useMemo(
       () => ({
@@ -1926,6 +1933,22 @@ function WorkspaceLayoutBody({
 
   const isEmpty = countOpenTabs(modelRef.current) === 0
 
+  // A stand-in for a chat on a paired machine holds that chat's pane, always
+  // (`ensureStandInPane`). Checked on every render rather than once at mount:
+  // a layout restored without the pane, a workspace focused by any path, and a
+  // pane removed while mounted all come back here. The effect runs on mount
+  // too, which takes the close off a pane saved before it was protected.
+  const standInPane = React.useMemo(
+    () =>
+      workspaceRemoteOrigin ? remoteOriginPaneSpec({ name: workspaceName, remoteOrigin: workspaceRemoteOrigin }) : null,
+    [workspaceName, workspaceRemoteOrigin],
+  )
+  const standInLacksPane =
+    standInPane !== null && modelRef.current !== null && !holdsMeshConversationPane(modelRef.current, standInPane)
+  useEffect(() => {
+    if (standInPane && modelRef.current) ensureStandInPane(modelRef.current, standInPane)
+  }, [standInPane, standInLacksPane])
+
   // An empty workspace lands on the New chat surface, not on a launcher page of
   // its own (2026-09-03). The tab the "+" opens IS that surface — same composer,
   // same prompt box, same permission and connector controls — so a workspace
@@ -1938,12 +1961,13 @@ function WorkspaceLayoutBody({
   // The floor, not a one-shot: close the last tab and another opens, because a
   // workspace with no tabs has nothing to show and no way to start. The handler
   // is absent on background layers and outside standard workspaces, so neither
-  // gets a tab it never asked for.
+  // gets a tab it never asked for. A stand-in's floor is its chat's pane, put
+  // back above, never a blank New chat.
   const openNewAgentTabRef = useRef(onNewAgentTab)
   openNewAgentTabRef.current = onNewAgentTab
   // The handler's identity changes every render, so the effect watches whether
   // there is one rather than which one, and calls through the ref.
-  const canOpenNewAgentTab = Boolean(onNewAgentTab)
+  const canOpenNewAgentTab = Boolean(onNewAgentTab) && standInPane === null
   useEffect(() => {
     if (!isEmpty || !canOpenNewAgentTab) return
     openNewAgentTabRef.current?.()

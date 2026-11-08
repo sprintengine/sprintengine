@@ -4,11 +4,13 @@ import {
   isMeshConversationPane,
   meshConversationPresence,
   meshConversationSessionId,
+  parseMeshConversationSessionId,
   type MeshBrowse,
   type MeshConnection,
   type MeshConversation,
   type MeshConversationAccess,
   type MeshConversationManage,
+  type MeshConversationPaneSpec,
   type MeshMachineReachability,
 } from '../../../../../shared/tailnet-mesh'
 import type {
@@ -863,8 +865,27 @@ export function remoteWorkspaceName(agentTitle: string, remoteChatName: string |
  * that chat's settle off the sidebar while its own chat ran on.
  */
 export function remoteOriginChatWorkspaceId(origin: Pick<WorkspaceRemoteOrigin, 'workspaceId' | 'sessionId'>): string {
-  const match = origin.sessionId ? /^conversation:(.+):[^:]+$/.exec(origin.sessionId) : null
-  return match?.[1] ?? origin.workspaceId
+  return (origin.sessionId ? parseMeshConversationSessionId(origin.sessionId)?.workspaceId : null) ?? origin.workspaceId
+}
+
+/**
+ * The pane a remote-born row exists to show: the chat its session id names, on
+ * the machine it came from. Null for a row born before the session id was
+ * stamped, which says no more than the project it was opened from.
+ */
+export function remoteOriginPaneSpec(
+  workspace: Pick<Workspace, 'name' | 'remoteOrigin'>,
+): MeshConversationPaneSpec | null {
+  const origin = workspace.remoteOrigin
+  const chat = origin?.sessionId ? parseMeshConversationSessionId(origin.sessionId) : null
+  if (!origin || !chat) return null
+  return {
+    connectionId: origin.connectionId,
+    machineName: origin.machineName,
+    remoteWorkspaceId: chat.workspaceId,
+    remoteAgentId: chat.agentId,
+    title: remoteConversationTitle(workspace),
+  }
 }
 
 /**

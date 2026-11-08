@@ -1042,6 +1042,16 @@ export function meshConversationSessionId(workspaceId: string, agentId: string):
   return `conversation:${workspaceId}:${agentId}`
 }
 
+/**
+ * The chat and agent a `meshConversationSessionId` names, or null for any other
+ * string. The agent id is the last segment, so a workspace id with a colon in
+ * it reads whole.
+ */
+export function parseMeshConversationSessionId(sessionId: string): { workspaceId: string; agentId: string } | null {
+  const match = /^conversation:(.+):([^:]+)$/.exec(sessionId)
+  return match ? { workspaceId: match[1], agentId: match[2] } : null
+}
+
 /** The chat a remote conversation pane follows, and what its tab is called until that machine is read. */
 export type MeshConversationPaneSpec = {
   connectionId: string

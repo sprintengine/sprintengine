@@ -2,6 +2,7 @@ import { Actions, DockLocation, Model, RowNode, TabNode, TabSetNode, type IJsonM
 import { basename, isPathOrChild, pathSeparatorFor } from './paths'
 import {
   isMeshConversationPane,
+  meshConversationSessionId,
   meshConversationTab,
   type MeshConversationPaneSpec,
 } from '../../../shared/tailnet-mesh'
@@ -678,6 +679,83 @@ export function convertNewAgentTabToAgent(
   )
   model.doAction(Actions.selectTab(tabId))
   window.setTimeout(() => clearAgentSpawnFlash(model, agentId), AGENT_TAB_SPAWN_FLASH_CLEAR_MS)
+  return true
+}
+
+/**
+ * Whether a layout tab is the pane onto `pane`'s chat. Read by its config, not
+ * its id: a pane retyped from a new-agent tab keeps that tab's id.
+ */
+function isPaneOnto(node: TabNode, pane: MeshConversationPaneSpec): boolean {
+  if (!isMeshConversationPane(node.getComponent())) return false
+  const config = node.getConfig() as
+    Partial<Record<'connectionId' | 'remoteWorkspaceId' | 'remoteAgentId' | 'remoteSessionId', unknown>> | undefined
+  if (config?.connectionId !== pane.connectionId) return false
+  const sessionId = meshConversationSessionId(pane.remoteWorkspaceId, pane.remoteAgentId)
+  return (
+    config.remoteSessionId === sessionId ||
+    (config.remoteWorkspaceId === pane.remoteWorkspaceId && config.remoteAgentId === pane.remoteAgentId)
+  )
+}
+
+/** Whether a mounted layout holds the pane onto `pane`'s chat. */
+export function holdsMeshConversationPane(model: Model, pane: MeshConversationPaneSpec): boolean {
+  let found = false
+  model.visitNodes((node) => {
+    if (!found && node instanceof TabNode && isPaneOnto(node, pane)) found = true
+  })
+  return found
+}
+
+/**
+ * Give a stand-in for a chat on a paired machine (a workspace with
+ * `remoteOrigin`) the pane it exists to show, and keep that pane open. Before
+ * this, a stand-in whose only pane was closed fell to the empty-layout floor's
+ * New chat tab. Its row still matched the chat by session id, so a click on it
+ * opened a blank composer while the chat kept running over there.
+ *
+ * - The pane is there: it loses its close, so the strip's close, Primary+W and
+ *   a middle-click cannot leave the stand-in without its chat. A pane saved
+ *   before this gets the same on its next mount.
+ * - The only tab is a New chat tab (what the floor left behind): that same
+ *   node is retyped into the pane, as a spawn retypes it into an agent, so the
+ *   stand-in does not end up with the pane beside a blank tab.
+ * - Anything else, an empty layout included: the pane is added and selected.
+ *   Other tabs, a New chat opened with the "+" among them, stay as they are.
+ *
+ * Returns whether the layout changed.
+ */
+export function ensureStandInPane(model: Model, pane: MeshConversationPaneSpec): boolean {
+  const tabs: TabNode[] = []
+  model.visitNodes((node) => {
+    if (node instanceof TabNode) tabs.push(node)
+  })
+  const own = tabs.find((tab) => isPaneOnto(tab, pane))
+  if (own) {
+    if (!own.isEnableClose()) return false
+    model.doAction(Actions.updateNodeAttributes(own.getId(), { enableClose: false }))
+    return true
+  }
+  const tab = { ...meshConversationTab(pane), enableClose: false }
+  const lone = tabs.length === 1 ? tabs[0] : null
+  if (lone && lone.getComponent() === NEW_AGENT_TAB_COMPONENT) {
+    model.doAction(
+      Actions.updateNodeAttributes(lone.getId(), {
+        name: tab.name,
+        component: tab.component,
+        config: tab.config,
+        enableClose: false,
+      }),
+    )
+    model.doAction(Actions.selectTab(lone.getId()))
+    return true
+  }
+  const tabset = activeContentTabset(model)
+  model.doAction(
+    tabset
+      ? Actions.addNode({ type: 'tab', ...tab }, tabset.getId(), DockLocation.CENTER, -1, true)
+      : Actions.addNode({ type: 'tab', ...tab }, rootRowId(model), DockLocation.RIGHT, -1, true),
+  )
   return true
 }
 
