@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // The subscription's usage limits: a small bar on a Claude or Codex chat's
-// composer strip, beside the context ring, and the list it opens — every
+// composer, beside the context ring, and the list it opens — every
 // provider's windows in words, with a bar each, the warn tone at 90% or at the
 // limit, "reset" for a window whose reset has passed, and "as of" for a
 // reading old enough to say so.
@@ -11,8 +11,14 @@ import { afterEach, beforeEach, expect, test } from 'vitest'
 
 import type { UsageLimitSnapshot, UsageLimitsState } from '../../../../../shared/usage-limits'
 import { useUsageLimitsStore } from '../../../store/usageLimitsStore'
-import { PanelFactRows } from '../../workspace/pane/panel/panelFactsFixture'
-import { headlineWindow, UsageLimitsPanel, usageReadingAge, usageStripLabel, usageWindowWords } from './usageLimits'
+import {
+  headlineWindow,
+  UsageLimitsComposerButton,
+  UsageLimitsPanel,
+  usageReadingAge,
+  usageStripLabel,
+  usageWindowWords,
+} from './usageLimits'
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -156,17 +162,12 @@ test('with nothing reported the list says so rather than guess', async () => {
   expect(panel.querySelector('[data-usage-empty]')?.textContent).toMatch(/No usage limits reported yet/)
 })
 
-test('the row draws the bar, named in words', async () => {
-  const strip = await render(<PanelFactRows context={{ used: 20_000, total: 200_000 }} usageLimits={claude()} />)
-  const trigger = strip.querySelector<HTMLButtonElement>('[data-panel-usage-limits="claude"]')!
+test('the composer draws the bar, named in words', async () => {
+  const strip = await render(<UsageLimitsComposerButton snapshot={claude()} />)
+  const trigger = strip.querySelector<HTMLButtonElement>('[data-composer-usage-limits="claude"]')!
   expect(trigger.getAttribute('aria-label')).toBe('Claude usage limits: Weekly, 93% used · resets in 3d 4h')
   expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
   // The compact bar is the button's picture; the button carries the name.
   expect(trigger.querySelector('[data-meter]')?.getAttribute('aria-hidden')).toBe('true')
   expect(trigger.querySelector('[data-meter]')?.getAttribute('data-meter')).toBe('warn')
-})
-
-test('with no reading there is no row', async () => {
-  const strip = await render(<PanelFactRows context={{ used: 20_000, total: 200_000 }} usageLimits={null} />)
-  expect(strip.querySelector('[data-panel-usage-limits]')).toBe(null)
 })

@@ -10,13 +10,12 @@ import { formatTokenCount } from '../../../utils/tokenFormat'
 import { formatTimeOfDay } from '../../../utils/clockFormat'
 import {
   CONTEXT_RING_WARN_PERCENTAGE,
+  ContextRing,
   contextRingLabel,
   contextRingTokensLabel,
   GhostButton,
   IconButton,
   Popover,
-  type PopoverPlacement,
-  type PopoverTriggerArgs,
   RefreshIcon,
   Tooltip,
 } from '../../ui'
@@ -546,24 +545,21 @@ function focusIntoDialog(surface: HTMLElement): void {
 }
 
 /**
- * What fills the window, opened from the panel's Context row. The row is the
- * caller's: `renderTrigger` draws it, with the ring's words in hand.
+ * The composer's ring as a button, beside the model picker: the tooltip says
+ * the counts, as the bare ring's does, and a click or Enter opens what fills
+ * the window.
  */
-export function ContextPopover({
-  percentage,
+export function ContextComposerButton({
   context,
   source,
-  placement = 'bottom-end',
-  renderTrigger,
 }: {
-  percentage: number
   context: { used: number; total: number }
   source: ContextBreakdownSource | null
-  placement?: PopoverPlacement
-  renderTrigger: (args: PopoverTriggerArgs & { label: string; counts: string }) => React.ReactNode
-}): JSX.Element {
+}): JSX.Element | null {
   const [open, setOpen] = useState(false)
   const reading = useContextBreakdown(source, open)
+  if (context.total <= 0) return null
+  const percentage = (context.used / context.total) * 100
   const label = contextRingLabel(percentage, context)
   return (
     <Popover
@@ -571,13 +567,26 @@ export function ContextPopover({
       onOpenChange={setOpen}
       ariaLabel="Context window"
       popupRole="dialog"
-      placement={placement}
-      className="w-full"
+      placement="top-end"
       surfaceClassName="w-[360px] max-h-[min(560px,70vh)] overflow-y-auto p-3"
       onOpenAutoFocus={focusIntoDialog}
-      renderTrigger={(args) =>
-        renderTrigger({ ...args, label, counts: contextRingTokensLabel(context.used, context.total) })
-      }
+      renderTrigger={({ ref, triggerProps, togglePopover }) => (
+        // The tooltip says the counts, as the bare ring's does: the sweep
+        // already shows the share.
+        <Tooltip content={contextRingTokensLabel(context.used, context.total)} placement="top" wrapperClassName="flex">
+          <IconButton
+            ref={ref}
+            size="xs"
+            tone="subtle"
+            onClick={togglePopover}
+            {...triggerProps}
+            aria-label={`${label} — show what fills it`}
+            data-composer-context=""
+          >
+            <ContextRing usedPercentage={percentage} decorative />
+          </IconButton>
+        </Tooltip>
+      )}
     >
       <ContextBreakdownPanel context={context} source={source} reading={reading} onRefresh={reading.refresh} />
     </Popover>

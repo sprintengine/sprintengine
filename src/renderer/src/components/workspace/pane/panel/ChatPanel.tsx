@@ -24,7 +24,7 @@ import {
 import { remoteProjectName } from '../../sidebar/folderGroups'
 import { dispatchFileReveal } from '../../../../utils/fileReveal'
 import { DiffGlyph, FilesGlyph, LibraryGlyph, CanvasGlyph, TerminalGlyph } from '../paneKinds'
-import { ContextRow, PermissionsRow, PullRequestRow, ServerRow, TokensRow, UsageRow } from './ChatPanelFactRows'
+import { PermissionsRow, PullRequestRow, ServerRow, TokensRow } from './ChatPanelFactRows'
 import { ChatPanelOpenNow, type OpenNowProps } from './ChatPanelOpenNow'
 import { ChatPanelParentLink, ChatPanelSubagents } from './ChatPanelSubagents'
 import { laneFacts } from './chatPanelLaneFacts'
@@ -263,13 +263,11 @@ export function ChatPanel({ onClose, ...openNow }: ChatPanelProps) {
           {facts?.localServers ? <ServerRow localServers={facts.localServers} /> : null}
         </PanelCard>
       </Section>
-      {facts && (facts.permissions || facts.permissionLabel || facts.context || facts.tokens || facts.usageLimits) ? (
+      {facts && (facts.permissions || facts.permissionLabel || facts.tokens) ? (
         <Section title="Session" inset="flush">
           <PanelCard>
             <PermissionsRow facts={facts} />
-            <ContextRow facts={facts} />
             <TokensRow facts={facts} />
-            <UsageRow facts={facts} />
           </PanelCard>
         </Section>
       ) : null}

@@ -4,7 +4,7 @@ import type { ChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
 import { CreatePullRequestDialogHost, useCreatePullRequestFlow } from '../../../panels/agentChat/createPullRequest'
 import type { PullRequestHost } from '../../../panels/agentChat/pullRequestHost'
 import type { PullRequestForge } from '../../../../../../shared/git/pr-url'
-import { ContextRow, PermissionsRow, PullRequestRow, ServerRow, UsageRow } from './ChatPanelFactRows'
+import { PermissionsRow, PullRequestRow, ServerRow } from './ChatPanelFactRows'
 
 // For tests: the panel's control rows, drawn from the facts a chat publishes,
 // with the Create PR flow the chat view holds in real life held here instead.
@@ -20,12 +20,9 @@ export const panelFacts = (patch: Partial<ChatPanelFacts> = {}): ChatPanelFacts 
   remote: false,
   branch: null,
   changes: null,
-  context: null,
-  contextBreakdown: null,
   pullRequests: NO_PULL_REQUESTS,
   createPullRequest: null,
   localServers: null,
-  usageLimits: null,
   permissions: null,
   permissionLabel: null,
   ...patch,
@@ -65,8 +62,6 @@ export function PanelFactRows({
       <PullRequestRow facts={facts} {...(now !== undefined ? { now: () => now } : {})} />
       {facts.localServers ? <ServerRow localServers={facts.localServers} /> : null}
       <PermissionsRow facts={facts} />
-      <ContextRow facts={facts} />
-      <UsageRow facts={facts} />
       <CreatePullRequestDialogHost flow={flow} forge={forge} />
     </>
   )

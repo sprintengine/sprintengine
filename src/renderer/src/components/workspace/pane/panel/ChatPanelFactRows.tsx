@@ -1,11 +1,8 @@
 import React from 'react'
 
 import { pullRequestSlotChoice, CreatePullRequestControl } from '../../../panels/agentChat/createPullRequest'
-import { ContextPopover } from '../../../panels/agentChat/ContextBreakdown'
-import { UsageLimitsPopover } from '../../../panels/agentChat/usageLimits'
 import type { ChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
-import { ContextRing, PullRequestGlyph } from '../../../ui'
-import { Meter } from '../../../ui/Meter'
+import { PullRequestGlyph } from '../../../ui'
 import { PermissionFooter } from '../../agentComposer/spawnFooter'
 import { LocalServerGlyph } from '../../../AppIcons'
 import { localServersStripCopy } from '../../LocalServerMarks'
@@ -18,9 +15,9 @@ import { PanelRow } from './PanelRow'
 // The rows that are controls of their own, carried from the bar that used to
 // sit under the composer. Each still does what it did there: the pull request
 // opens and lists, "Create PR" runs its flow, the local servers open their menu
-// (read-only on a paired machine, as `elsewhere` says), and Context and Usage
-// open what they always opened. They read `ChatPanelFacts` and nothing else, so
-// a chat here and a chat on a paired machine draw them alike.
+// (read-only on a paired machine, as `elsewhere` says). They read
+// `ChatPanelFacts` and nothing else, so a chat here and a chat on a paired
+// machine draw them alike.
 
 const NO_NOW = (): number => Date.now()
 
@@ -121,31 +118,6 @@ function ShieldGlyph({ className }: { className?: string }) {
   )
 }
 
-export function ContextRow({ facts }: { facts: ChatPanelFacts }) {
-  const { context, contextBreakdown } = facts
-  if (!context || context.total <= 0) return null
-  const percentage = (context.used / context.total) * 100
-  return (
-    <ContextPopover
-      percentage={percentage}
-      context={context}
-      source={contextBreakdown}
-      renderTrigger={({ ref, triggerProps, togglePopover, label, counts }) => (
-        <PanelRow
-          tooltip={counts}
-          glyph={<ContextRing usedPercentage={percentage} decorative />}
-          label="Context"
-          meta={<span className="tabular-nums">{Math.round(percentage)}%</span>}
-          onClick={togglePopover}
-          ariaLabel={`${label} — show what fills it`}
-          buttonRef={ref}
-          buttonProps={{ ...triggerProps, 'data-panel-context': '' }}
-        />
-      )}
-    />
-  )
-}
-
 /** What an agent with no context reading of its own has spent. */
 export function TokensRow({ facts }: { facts: ChatPanelFacts }) {
   if (!facts.tokens) return null
@@ -154,40 +126,6 @@ export function TokensRow({ facts }: { facts: ChatPanelFacts }) {
       glyph={<UsageGlyph className="icon-sm" />}
       label="Tokens"
       meta={<span className="tabular-nums">{formatTokenCount(facts.tokens)}</span>}
-    />
-  )
-}
-
-export function UsageRow({ facts }: { facts: ChatPanelFacts }) {
-  const { usageLimits, usageLimitsElsewhere } = facts
-  if (!usageLimits) return null
-  return (
-    <UsageLimitsPopover
-      snapshot={usageLimits}
-      {...(usageLimitsElsewhere ? { elsewhere: usageLimitsElsewhere } : {})}
-      renderTrigger={({ ref, triggerProps, togglePopover, label, window, warn }) => (
-        <PanelRow
-          tooltip={label}
-          glyph={<UsageGlyph className="icon-sm" />}
-          label="Usage"
-          meta={
-            <>
-              {window?.usedPercent !== null && window?.usedPercent !== undefined ? (
-                <span className="tabular-nums">{Math.round(window.usedPercent)}%</span>
-              ) : null}
-              <Meter
-                compact
-                value={window ? (window.status === 'rejected' ? 100 : window.usedPercent) : null}
-                warn={warn}
-              />
-            </>
-          }
-          onClick={togglePopover}
-          ariaLabel={label}
-          buttonRef={ref}
-          buttonProps={{ ...triggerProps, 'data-panel-usage-limits': usageLimits.provider }}
-        />
-      )}
     />
   )
 }
