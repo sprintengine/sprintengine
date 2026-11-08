@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { canonicalMeshPaneComponent, isMeshConversationPane, MESH_CONVERSATION_COMPONENT } from './tailnet-mesh'
+import {
+  canonicalMeshPaneComponent,
+  isMeshConversationPane,
+  meshConversationSessionId,
+  MESH_CONVERSATION_COMPONENT,
+  parseMeshConversationSessionId,
+} from './tailnet-mesh'
 
 test('a remote conversation pane reads the same under its current and pre-rename layout names', () => {
   assert.equal(isMeshConversationPane(MESH_CONVERSATION_COMPONENT), true)
@@ -19,5 +25,20 @@ test('a remote terminal pane saved by an earlier build is a stale tab, not a rem
   for (const component of ['mesh-terminal', 'fleet-terminal']) {
     assert.equal(isMeshConversationPane(component), false)
     assert.equal(canonicalMeshPaneComponent(component), component)
+  }
+})
+
+test('a remote conversation session id reads back as the chat and agent it was made from', () => {
+  assert.deepEqual(parseMeshConversationSessionId(meshConversationSessionId('rw1', 'agent-1')), {
+    workspaceId: 'rw1',
+    agentId: 'agent-1',
+  })
+  // The agent id is the last segment, so a workspace id with a colon reads whole.
+  assert.deepEqual(parseMeshConversationSessionId(meshConversationSessionId('ws:1', 'agent-9')), {
+    workspaceId: 'ws:1',
+    agentId: 'agent-9',
+  })
+  for (const other of ['', 'conversation:', 'conversation:rw1', 'terminal:rw1:agent-1']) {
+    assert.equal(parseMeshConversationSessionId(other), null, other)
   }
 })
