@@ -658,7 +658,7 @@ function PlainTerminalPanelOnThisComputer({
   }
 
   return (
-    <div className="relative h-full bg-[color:var(--bg-app)]">
+    <div className="relative h-full bg-[color:var(--terminal-bg)]">
       <div
         ref={containerRef}
         tabIndex={0}

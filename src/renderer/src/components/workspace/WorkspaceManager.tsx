@@ -5286,7 +5286,9 @@ export default function WorkspaceManager() {
           the pane can (a) stand beside the band at full height and
           (b) float over the content column when maximised without reflowing
           the terminals underneath. */}
-        <div className={`relative min-w-0 flex-1 flex-row ${narrowViewport && narrowSidebarShown ? 'hidden' : 'flex'}`}>
+        <div
+          className={`window-content-ground relative min-w-0 flex-1 flex-row ${narrowViewport && narrowSidebarShown ? 'hidden' : 'flex'}`}
+        >
           {/* Content column: the workspace's card reaches its top, with the band
               over it and the band's ground under it (WorkspaceBand), so the
               layout's top row of tab strips floats on the card as a pill. */}

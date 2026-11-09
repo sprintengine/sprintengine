@@ -6,6 +6,14 @@ import { type Tone } from '../../ui'
 
 export type Activity = 'working' | 'failed' | 'needs-input' | 'idle'
 
+// A row's status seat. At rest it is as wide as what it says, so a row with
+// nothing to say gives its width to the title (owner ruling 2026-11-09: titles
+// were cropped with the room beside them empty). Only a hovered or focused row
+// reserves room for the actions that take the seat over. That can move a long
+// title's ellipsis on that one row, which nothing else on the row notices.
+export const ROW_SEAT_CLASS =
+  'relative ml-auto flex h-5 shrink-0 items-center justify-end group-hover:min-w-[44px] group-hover:pl-2 group-focus-within:min-w-[44px] group-focus-within:pl-2 group-data-[settle-flourish]:min-w-[44px] group-data-[settle-flourish]:pl-2'
+
 // No `shadow` member: the row's edge is not an accent's to carry. Selection's
 // 2px accent edge is drawn once by `SELECTION_EDGE_CLASS` below, on top of
 // whatever fill the row has — a neutral one, a highlight hue, or a status wash

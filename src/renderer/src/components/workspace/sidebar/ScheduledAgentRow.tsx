@@ -11,7 +11,7 @@ import {
 } from '../../../../../shared/scheduled-agents'
 import { pausedSinceWords } from '../../../utils/scheduledAgentsPause'
 import { ProjectLine, type FlatProjectLine, type RowMachine } from './rowParts'
-import { SELECTED_ROW_ACCENT, SELECTION_EDGE_CLASS } from './rowStyle'
+import { ROW_SEAT_CLASS, SELECTED_ROW_ACCENT, SELECTION_EDGE_CLASS } from './rowStyle'
 
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
@@ -161,7 +161,7 @@ export function ScheduledAgentRow({
   }
 
   const seat = (
-    <span className="relative ml-auto flex h-5 min-w-[44px] shrink-0 items-center justify-end pl-2">
+    <span className={ROW_SEAT_CLASS}>
       <span className="inline-flex items-center gap-1 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
         {paused ? (
           <Badge tone="neutral" ariaLabel={ownPause ? 'Paused' : 'Paused with every scheduled agent'}>

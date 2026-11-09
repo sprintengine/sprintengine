@@ -47,7 +47,6 @@ function render() {
         onCloseTab={() => undefined}
         onTabContextMenu={() => undefined}
         addControl={null}
-        onClose={() => undefined}
       />,
     ),
   )
@@ -203,4 +202,12 @@ test('no Subagents section without subagents, and no Session section with nothin
   act(() => publishChatPanelFacts(WS, AGENT, panelFacts()))
   expect(host.textContent).not.toContain('Subagents')
   expect(host.textContent).not.toContain('Session')
+})
+
+test('the head has no close of its own: the column closes from its toggle', () => {
+  seed({
+    agents: { [AGENT]: { id: AGENT, name: 'Calendar', conversation: { providerId: 'x', modelId: 'y' } } },
+  } as never)
+  render()
+  expect(host.querySelector('header button')).toBeNull()
 })

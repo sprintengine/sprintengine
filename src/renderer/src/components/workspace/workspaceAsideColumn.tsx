@@ -195,9 +195,8 @@ export function WorkspaceAsideColumn({
         >
           <span
             aria-hidden="true"
-            // Starts BELOW the 36px band, exactly like the app rail's hairline
-            // (AppRail.tsx): nothing draws a vertical line through the top bar.
-            className={`absolute bottom-0 top-[36px] left-1/2 w-px -translate-x-1/2 bg-[color:var(--accent-primary)] transition-opacity ${
+            // Full height, as the card it resizes is.
+            className={`absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[color:var(--accent-primary)] transition-opacity ${
               isResizing ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'
             }`}
           />

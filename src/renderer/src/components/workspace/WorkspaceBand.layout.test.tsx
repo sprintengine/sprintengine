@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -93,4 +96,11 @@ test('the launcher stands in the band with the sidebar hidden', () => {
   render({ sidebarCollapsed: true })
   expect(host.querySelector('[aria-label="Open sidebar"]')).not.toBeNull()
   expect(host.querySelector('[aria-label="New chat"]')).not.toBeNull()
+})
+
+test('the ground is the drag region for the whole band, and no card takes it back', () => {
+  render({})
+  expect(host.querySelector('.app-drag.chrome-bar')?.className).toContain('h-[36px]')
+  const css = readFileSync(join(process.cwd(), 'src/renderer/src/assets/index.css'), 'utf8')
+  expect(css).not.toMatch(/\.flexlayout__tab\s*\{[^}]*app-region/)
 })

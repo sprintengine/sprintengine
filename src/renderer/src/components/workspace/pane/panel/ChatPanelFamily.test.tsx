@@ -202,7 +202,6 @@ async function mountPanel({
         onCloseTab: () => undefined,
         onTabContextMenu: () => undefined,
         addControl: null,
-        onClose: () => undefined,
       }),
     )
   await act(async () => root.render(tree()))

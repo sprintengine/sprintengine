@@ -146,11 +146,24 @@ export function bandStripMarks(rect: BandRect, layout: BandRect): Record<string,
 
 const BAND_CLEARANCE = '36px'
 
-function tabStandsInBand(node: TabNode): boolean {
+/**
+ * What a tab tells its card about the band, from its strip's marks: how far down
+ * the pill reaches, and how wide a notch to cut at each end of the band the tab
+ * stands at. Null marks, a tab under a split, stand under none of it.
+ */
+export function bandClearVars(marks: Record<string, string> | null): Record<string, string> {
+  return {
+    '--band-clearance': marks ? BAND_CLEARANCE : '0px',
+    '--band-notch-left': marks && 'data-band-start' in marks ? 'var(--band-inset-left, 0px)' : '0px',
+    '--band-notch-right': marks && 'data-band-end' in marks ? 'var(--band-inset-right, 0px)' : '0px',
+  }
+}
+
+function tabBandMarks(node: TabNode): Record<string, string> | null {
   const parent = node.getParent()
-  if (!(parent instanceof TabSetNode)) return false
+  if (!(parent instanceof TabSetNode)) return null
   const rect = parent.getRect()
-  return bandStripMarks(rect, parent.getModel().getRootRow()?.getRect() ?? rect) !== null
+  return bandStripMarks(rect, parent.getModel().getRootRow()?.getRect() ?? rect)
 }
 
 function countOpenTabs(model: Model | null): number {
@@ -871,10 +884,7 @@ function WorkspaceLayoutBody({
   // row, so moving a tab between rows never remounts a terminal.
   const factory = useCallback(
     (node: TabNode) => (
-      <div
-        className="band-clear"
-        style={{ '--band-clearance': tabStandsInBand(node) ? BAND_CLEARANCE : '0px' } as React.CSSProperties}
-      >
+      <div className="band-clear" style={bandClearVars(tabBandMarks(node)) as React.CSSProperties}>
         {renderTabBody(node)}
       </div>
     ),
@@ -1420,7 +1430,7 @@ function WorkspaceLayoutBody({
       // says they are there; hovering the pill fans them out. They are the same
       // tabs restyled, never a strip turned off: `enableTabStrip` persists through
       // the model and would refit every terminal as the tab count changed.
-      const pill = node.isSelected() && tabStandsInBand(node)
+      const pill = node.isSelected() && tabBandMarks(node) !== null
       const tabNameSpan = (
         <span
           className={`min-w-0 truncate ${isLiveTab ? 'font-semibold' : ''}`}

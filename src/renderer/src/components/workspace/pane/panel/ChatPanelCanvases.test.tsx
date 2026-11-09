@@ -49,7 +49,6 @@ const panel = (
     onCloseTab={() => undefined}
     onTabContextMenu={() => undefined}
     addControl={null}
-    onClose={() => undefined}
   />
 )
 
