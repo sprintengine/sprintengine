@@ -104,11 +104,7 @@ test('a WSL machine’s update is its own toast, names the machine, and opens Ag
   showCliUpdateToast(WSL_ADVISORY)
   assert.ok(toast(), 'this PC’s toast stays')
   assert.equal(wslToast()?.title, 'Update available: Codex 0.41.0 (WSL: Ubuntu)')
-  assert.deepEqual(
-    (opened.diagnostics.at(-1) as { navigationTarget: unknown }).navigationTarget,
-    { kind: 'settings', ref: 'agents@wsl:Ubuntu' },
-    'the bell row lands on the machine too',
-  )
+  assert.deepEqual(opened.diagnostics, [], 'an update on offer is not a report for the bell')
 
   wslToast()
     ?.actions?.find((action) => action.id === 'settings')
@@ -146,10 +142,8 @@ test('an update that arrives while onboarding holds them waits, and is offered o
   const release = holdCliUpdateToasts()
   showCliUpdateToast(ADVISORY)
   assert.equal(toast(), undefined, 'nothing lands on the card')
-  assert.equal(opened.diagnostics.length, 1, 'the bell still has it')
   release()
   assert.equal(toast()?.title, 'Update available: Codex 0.41.0')
-  assert.equal(opened.diagnostics.length, 1, 'and is not told twice')
 })
 
 test('an offer already showing when onboarding begins is taken down and made again after', () => {

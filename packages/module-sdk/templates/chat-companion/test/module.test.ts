@@ -26,14 +26,26 @@ test('starting a summary opens a chat, and its end is announced', async () => {
   const [chat] = main.services.conversations.all()
   assert.match(String(chat?.events.find((event) => event.type === 'user_message')?.payload?.text), /README/)
 
-  // The agent finishes its turn.
+  // The agent finishes its turn: nothing went wrong, so the bell is left alone.
   main.services.conversations.emitEvent(started.conversation, { type: 'turn_completed' })
-  assert.deepEqual(
-    main.notifications.map((notification) => notification.title),
-    ['Project summary is ready'],
-  )
+  assert.deepEqual(main.notifications, [])
   assert.ok(main.emitted.some((event) => event.topic === 'conversations-changed'), 'windows are told to read again')
   assert.deepEqual(main.undeclared, [])
+})
+
+test('a turn that fails says so in the bell', async () => {
+  const main = createFakeMainHost({ manifest })
+  await registerMain(main.host)
+  const started = (await main.ipc.invoke(CHANNELS.start, { workspaceId: 'ws-app' })) as {
+    ok: boolean
+    conversation?: { workspaceId: string; agentId: string }
+  }
+  assert.ok(started.ok && started.conversation)
+  main.services.conversations.emitEvent(started.conversation, { type: 'turn_failed' })
+  assert.deepEqual(
+    main.notifications.map((notification) => notification.title),
+    ['Project summary did not finish'],
+  )
 })
 
 test('a bad request is answered, not thrown', async () => {

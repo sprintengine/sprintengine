@@ -9,7 +9,7 @@ Pick the smallest surface that does the job. `extension.create` takes a
 | --- | --- | --- | --- |
 | A command in the palette | `registerCommand` | — | blank |
 | A page of its own, opened from the Extensions drawer | `registerGlobalSurface({ id, label, Icon, Component })` + `@sprintengine/module-sdk/surface`; its count with `registerDoorBadge({ rowId: id })` | per data read | global-surface |
-| Tell the person something happened | main: `host.notify({ severity, title, target })` (the bell; `target` opens your door); renderer: `host.toast({ tone, message })` (transient) | — | — |
+| Tell the person something happened | main: `host.notify({ severity, title, target })` (the bell, for warnings and errors; `target` opens your door); renderer: `host.toast({ tone, message })` (transient) | — | — |
 | A panel inside a workspace | `registerPanel` + a `registerWorkspaceType` whose layout places it | per data read | panel |
 | A new kind of workspace, with a setup step | `registerWorkspaceType({ creationStep, createWorkspace })` | `storage` for its state | workspace-type |
 | One control in the top bar | `registerTopBarItem` | — | top-bar-item |

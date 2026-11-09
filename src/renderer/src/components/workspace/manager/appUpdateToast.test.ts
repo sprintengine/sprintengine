@@ -133,7 +133,7 @@ test('a found update raises no toast, and its download runs quietly', () => {
   assert.deepEqual(diagnostics.published, [])
 })
 
-test('the download landing says so once, points at the rail, and files a bell row', () => {
+test('the download landing says so once, points at the rail, and files no bell row', () => {
   const drive = createAppUpdateToastDriver()
   drive(state({ status: 'downloading', updateVersion: '0.7.0' }))
   drive(state({ status: 'downloaded', updateVersion: '0.7.0', downloaded: true }))
@@ -144,10 +144,7 @@ test('the download landing says so once, points at the rail, and files a bell ro
     'SprintEngine Studio 0.7.0 is ready. Restart from the update button on the rail to install it.',
   )
   assert.notEqual(toast()?.autoDismissMs, false, 'the lit glyph keeps saying it; the toast is news')
-  assert.deepEqual(
-    diagnostics.published.map(({ title, source }) => ({ title, source })),
-    [{ title: 'SprintEngine Studio 0.7.0 is ready', source: 'update' }],
-  )
+  assert.deepEqual(diagnostics.published, [], 'an update being ready is the glyph and the toast, not a report')
 
   // The hourly check comes and goes over the same download: not a second toast.
   useToastStore.setState({ toasts: [] })
@@ -228,6 +225,7 @@ test('the start after an update says how it went', () => {
   showAppUpdateOutcomeToast({ kind: 'updated', version: '0.7.0', fromVersion: '0.6.0', message: null })
   assert.equal(outcome()?.tone, 'good')
   assert.equal(outcome()?.title, 'Updated to SprintEngine Studio 0.7.0')
+  assert.deepEqual(diagnostics.published, [], 'an update that went fine files nothing')
   showAppUpdateOutcomeToast({
     kind: 'failed',
     version: '0.7.0',
@@ -236,6 +234,11 @@ test('the start after an update says how it went', () => {
   })
   assert.equal(outcome()?.tone, 'warn')
   assert.equal(outcome()?.title, 'Update to 0.7.0 did not install')
+  assert.deepEqual(
+    diagnostics.published.map(({ title, source }) => ({ title, source })),
+    [{ title: 'Update to 0.7.0 did not install', source: 'update' }],
+    'one that failed is a report',
+  )
   assert.equal(outcome()?.description, 'The installer did not finish, so SprintEngine Studio is still on 0.6.0.')
 })
 
@@ -250,11 +253,7 @@ test('a refused install going back to downloaded is not announced again', async 
   assert.equal(toast()?.title, 'Installing update')
   await settle()
   assert.equal(toast()?.title, 'Update not installed')
-  assert.equal(
-    diagnostics.published.filter(({ title }) => title === 'SprintEngine Studio 0.7.0 is ready').length,
-    1,
-    'one bell row for the ready update, not one per refusal',
-  )
+  assert.deepEqual(diagnostics.published, [], 'a refused restart speaks through its toast')
 })
 
 // Dismissing the downloaded toast and Later on a refusal are "not now" for this

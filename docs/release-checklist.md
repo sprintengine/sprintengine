@@ -330,7 +330,7 @@ GitHub settings.
 Every update is asked for: a check that finds one offers it, and nothing
 downloads until Download is pressed, unless Settings -> General -> Download
 updates automatically is on (it is off by default). The diagnostics log
-(Open logs on a notification in the bell) has a line for each step below: the
+(the Logs button in the bell's list) has a line for each step below: the
 check, the download at 25/50/75%, "Update downloaded" (after the file's sha512
 and, on Windows, its signature were checked), "Restart to update", each
 shutdown leg with its time, the installer's full command line, and the
@@ -339,7 +339,7 @@ hand-over. Read it first when an update misbehaves.
 What the person should see, in order:
 
 1. **Offered.** Help -> Check For Updates, or the hourly check: the toast
-   "SprintEngine Studio X is available" with Later and Download, a bell row,
+   "SprintEngine Studio X is available" with Later and Download,
    and Settings -> General shows "X available" with a Download button. Nothing
    downloads yet (no progress bar in Settings).
 2. **Downloading.** Press Download. The same toast becomes "Downloading
@@ -364,8 +364,8 @@ What the person should see, in order:
    icon and a progress bar: no wizard, nothing to click. No UAC prompt for a
    per-user installation. It closes itself when done.
 7. **Back.** The app starts again on its own with the normal launch plate, and
-   once it is up the toast "Updated to SprintEngine Studio X" appears (a bell
-   row too). Settings shows version X. If it came back on the old version, the
+   once it is up the toast "Updated to SprintEngine Studio X" appears. Settings
+   shows version X. If it came back on the old version, the
    toast is "Update to X did not install" with the reason instead.
 
 Also confirm:

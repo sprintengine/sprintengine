@@ -18,7 +18,6 @@
 
 import type { AppUpdateInstallOutcome, AppUpdateState } from '../../../../../shared/electron-api'
 import { publishDiagnosticSync } from '../../../utils/diagnostics'
-import { updateReadyNotice } from '../../../utils/feedNotifications'
 import { appUpdateKey, type AppUpdateStage } from '../../../utils/settingsUpdateBadges'
 import { useNotificationStore } from '../../../store/notificationStore'
 import { showToast, useToastStore } from '../../../store/toastStore'
@@ -118,14 +117,6 @@ function restartAction(busy: boolean) {
  */
 export function showAppUpdateReadyToast(state: Pick<AppUpdateState, 'updateVersion'> & Partial<AppUpdateState>): void {
   installNeedsAdmin = state.installRequiresAdmin === true
-  const notice = updateReadyNotice(APP_NAME, state.updateVersion, installNeedsAdmin)
-  publishDiagnosticSync({
-    level: 'info',
-    source: 'update',
-    title: notice.title,
-    message: notice.description,
-    navigationTarget: { kind: 'settings', ref: 'general' },
-  })
   phase = 'ready'
   readyVersion = state.updateVersion
   const opensNotes = Boolean(state.releaseNotesUrl) && typeof window.api?.updateOpenReleaseNotes === 'function'
@@ -206,13 +197,17 @@ export function showAppUpdateOutcomeToast(outcome: AppUpdateInstallOutcome): voi
     outcome.kind === 'updated'
       ? `${APP_NAME} was updated from ${outcome.fromVersion}.`
       : (outcome.message ?? `${APP_NAME} is still on ${outcome.fromVersion}.`)
-  publishDiagnosticSync({
-    level: outcome.kind === 'updated' ? 'info' : 'warning',
-    source: 'update',
-    title,
-    message: description,
-    navigationTarget: { kind: 'settings', ref: 'general' },
-  })
+  // Only the failure is a report for the bell; an update that went fine is the
+  // toast below and nothing more.
+  if (outcome.kind !== 'updated') {
+    publishDiagnosticSync({
+      level: 'warning',
+      source: 'update',
+      title,
+      message: description,
+      navigationTarget: { kind: 'settings', ref: 'general' },
+    })
+  }
   showToast({
     id: APP_UPDATE_OUTCOME_TOAST_ID,
     tone: outcome.kind === 'updated' ? 'good' : 'warn',

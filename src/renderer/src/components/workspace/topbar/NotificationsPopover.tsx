@@ -25,14 +25,14 @@ type RuntimeClipboardApi = {
 // Severity reads by shape, not a colored dot (StatusDot is deprecated). Error
 // maps to the `failed` glyph (ring + "×", error tone) and warning to the
 // `needs_input` glyph (ring + "!", warn tone) — the same shape-coded vocabulary
-// the rest of the app shell uses. Info is the calm default and earns no mark.
+// the rest of the app shell uses.
 const LEVEL_GLYPH: Partial<Record<DiagnosticLevel, LifecycleState>> = {
   error: 'failed',
   warning: 'needs_input',
 }
 
-// Severity filters offered in the popover header. Info has no chip — it is the
-// calm default that shows when no filter is engaged.
+// Severity filters offered in the popover header: the bell holds errors and
+// warnings, and nothing else (`reachesBell`).
 const LEVEL_FILTERS: ReadonlyArray<{ level: DiagnosticLevel; label: string }> = [
   { level: 'error', label: 'Errors' },
   { level: 'warning', label: 'Warnings' },
@@ -86,7 +86,7 @@ async function writeClipboardText(text: string): Promise<void> {
 
 // A fixed-width leading slot keeps every title on one optical baseline whether
 // or not the row carries a severity glyph. Reserving the slot is alignment, not
-// decoration — info rows stay mark-free.
+// decoration.
 function NotificationSeverityGlyph({ level }: { level: DiagnosticLevel }) {
   const glyph = LEVEL_GLYPH[level]
   return (
@@ -117,7 +117,8 @@ export function NotificationsPopover({
   onMarkRead: (id: string) => void
   onMarkAllRead: () => void
   onClear: () => void
-  onOpenLogs: () => void
+  /** Open the diagnostics log folder. Absent where the shell has none to open. */
+  onOpenLogs?: () => void
   /** Resolve a notification's Open action(s); empty when none is possible. */
   resolveActions?: (notification: AppNotification) => NotificationRowAction[]
 }) {
@@ -178,7 +179,7 @@ export function NotificationsPopover({
 
   const openLogsForNotification = (notification: AppNotification) => {
     onMarkRead(notification.id)
-    onOpenLogs()
+    onOpenLogs?.()
   }
 
   return (
@@ -221,9 +222,11 @@ export function NotificationsPopover({
                 <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-[color:var(--border-default)]" />
               </>
             ) : null}
-            <GhostButton size="xs" onClick={onOpenLogs}>
-              Logs
-            </GhostButton>
+            {onOpenLogs ? (
+              <GhostButton size="xs" onClick={onOpenLogs}>
+                Logs
+              </GhostButton>
+            ) : null}
             {notifications.length > 0 ? (
               <>
                 <GhostButton size="xs" onClick={onMarkAllRead}>
@@ -330,7 +333,7 @@ export function NotificationsPopover({
                               Could not copy
                             </span>
                           ) : null}
-                          {notification.logPath ? (
+                          {notification.logPath && onOpenLogs ? (
                             <OutlineButton size="xs" onClick={() => openLogsForNotification(notification)}>
                               Open logs
                             </OutlineButton>
