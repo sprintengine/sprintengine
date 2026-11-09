@@ -9,7 +9,6 @@ import { useNotificationStore } from '../../../store/notificationStore'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { cliUpdateKey } from '../../../utils/settingsUpdateBadges'
 import { cliUpdateNotice } from '../../../utils/feedNotifications'
-import { publishDiagnosticSync } from '../../../utils/diagnostics'
 import { useToastStore, showToast } from '../../../store/toastStore'
 import { cliRuntimeOnMachine } from '../newWorkspace/cliRuntimeOptions'
 import { hostPlatform } from '../../../clientCapabilities'
@@ -23,8 +22,8 @@ import { createCliOutputLatestLineReader, withLastOutputLine } from './cliUpdate
 // names the machine, and is its own toast beside this machine's for the same
 // CLI: they are two installs, updated separately.
 // It leaves after a minute (owner ruling 2026-09-18): a notice nobody asked
-// for should not sit in the corner until clicked, and the bell entry below
-// and the Settings row still say the same thing once it has gone.
+// for should not sit in the corner until clicked, and the Settings row and
+// its badges still say the same thing once it has gone.
 //
 // Leaving on its own is not a dismissal: the update's badges (the Settings
 // gear, Agents, the machine's segment and the row — owner ruling 2026-09-25)
@@ -52,8 +51,7 @@ function machineLabel(hostId: CliVersionAdvisory['hostId']): string | null {
 // corner and the onboarding cards are centred, so in a small window (900×600)
 // two update offers landed on the import card's own buttons. Main sends an
 // update once per version, so dropping it would lose it: it waits instead,
-// and is offered the moment the card is answered. The bell entry is not
-// held — it covers nothing.
+// and is offered the moment the card is answered.
 let holds = 0
 const heldAdvisories = new Map<string, CliVersionAdvisory>()
 // What each update toast up now is offering, so a hold that begins while one
@@ -94,21 +92,6 @@ export function useHoldCliUpdateToasts(): void {
 }
 
 export function showCliUpdateToast(advisory: CliVersionAdvisory): void {
-  const store = useWorkspaceStore.getState()
-  const displayName = (cli: string): string =>
-    store.pluginCatalogEntries.find((entry) => entry.id === cli)?.displayName ?? cli
-  const notice = cliUpdateNotice(advisory, displayName, machineLabel(advisory.hostId))
-  publishDiagnosticSync({
-    level: 'info',
-    source: 'cli',
-    title: notice.title,
-    message: advisory.currentVersion ? `Installed ${advisory.currentVersion}` : 'Installed version unknown',
-    // The bell's Open lands on the machine the update is for (`agents@<host>`).
-    navigationTarget: {
-      kind: 'settings',
-      ref: advisory.hostId === LOCAL_HOST_ID ? 'agents' : `agents@${advisory.hostId}`,
-    },
-  })
   if (holds > 0) heldAdvisories.set(toastId(advisory), advisory)
   else presentCliUpdateToast(advisory)
 }

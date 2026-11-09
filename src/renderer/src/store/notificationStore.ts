@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
-import type { AppNotification, DiagnosticLogEntry } from '../types/workspace'
+import type { AppNotification, DiagnosticLevel, DiagnosticLogEntry } from '../types/workspace'
 
 const NOTIFICATION_STORAGE_KEY = 'sprintengine-notifications'
 const MAX_NOTIFICATIONS = 120
@@ -19,6 +19,16 @@ type RailSeenSection = 'extensions'
 // (2026-09-16), and Automations as `automations` until scheduled agents
 // replaced it (2026-09-30).
 const RETIRED_NOTIFICATION_SOURCES: ReadonlySet<string> = new Set(['sprintengine', 'automations'])
+
+// The bell is for what went wrong (owner ruling 2026-11-09): errors and
+// warnings. A new model, an update being ready or a module's "done" are not
+// reports, and each has its own place to be found (a toast, the rail's update
+// glyph, a Settings badge). The one gate is here rather than at each poster, so
+// a poster added later, or a module's `notify`, cannot put routine news in the
+// list or under the badge.
+export function reachesBell(level: DiagnosticLevel): boolean {
+  return level === 'error' || level === 'warning'
+}
 
 type PersistedNotificationState = Pick<
   NotificationStore,
@@ -42,12 +52,14 @@ export function dropRetiredNotifications(notifications: unknown): AppNotificatio
     (notification): notification is AppNotification =>
       Boolean(notification) &&
       typeof notification === 'object' &&
-      !RETIRED_NOTIFICATION_SOURCES.has(String((notification as { source?: unknown }).source)),
+      !RETIRED_NOTIFICATION_SOURCES.has(String((notification as { source?: unknown }).source)) &&
+      reachesBell((notification as { level?: unknown }).level as DiagnosticLevel),
   )
 }
 
 // The persist `merge`: the stored state over the initial one, less any
-// notification from a retired source.
+// notification from a retired source and any routine row saved before the bell
+// narrowed to errors and warnings, so an upgrade does not leave them behind.
 export function mergePersistedNotificationState<T extends PersistedNotificationState>(
   persisted: unknown,
   current: T,
@@ -70,7 +82,8 @@ export function mergePersistedNotificationState<T extends PersistedNotificationS
 interface NotificationStore {
   notifications: AppNotification[]
   sectionSeenAt: Partial<Record<RailSeenSection, string>>
-  addNotification: (entry: DiagnosticLogEntry) => AppNotification
+  /** File one report. Null when its level does not reach the bell (`reachesBell`). */
+  addNotification: (entry: DiagnosticLogEntry) => AppNotification | null
   markRead: (id: string) => void
   markAllRead: () => void
   /** Opening a rail section reads everything its badge was counting. */
@@ -99,7 +112,8 @@ interface NotificationStore {
   filedModuleNotificationIds: string[]
   /**
    * File one delivered module notification, once. False when its delivery id
-   * was filed before (live and again from the backlog, or cleared since).
+   * was filed before (live and again from the backlog, or cleared since) or
+   * its level does not reach the bell.
    */
   fileModuleNotification: (deliveryId: string, entry: DiagnosticLogEntry) => boolean
   clearAll: () => void
@@ -114,6 +128,7 @@ export const useNotificationStore = create<NotificationStore>()(
       filedModuleNotificationIds: [],
 
       addNotification: (entry) => {
+        if (!reachesBell(entry.level)) return null
         const notification: AppNotification = {
           ...entry,
           read: false,
@@ -164,6 +179,7 @@ export const useNotificationStore = create<NotificationStore>()(
         }),
 
       fileModuleNotification: (deliveryId, entry) => {
+        if (!reachesBell(entry.level)) return false
         let filed = false
         set((state) => {
           if (state.filedModuleNotificationIds.includes(deliveryId)) return
