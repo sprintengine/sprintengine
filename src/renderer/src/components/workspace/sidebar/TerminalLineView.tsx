@@ -10,6 +10,7 @@ import { Tooltip, LinkButton, StatusDot, WorkingMark } from '../../ui'
 import CliIcon from '../../CliIcon'
 import { RemoteMachineGlyph } from '../../AppIcons'
 import { BranchChip, RowTooltip, WorkingElapsed } from './rowParts'
+import { ROW_SEAT_CLASS } from './rowStyle'
 import { PromptCacheMark } from '../PromptCacheMark'
 import { formatDiffCount } from '../../../utils/diffCount'
 
@@ -223,9 +224,8 @@ export function TerminalLineView({
       {line.text ? <span className="min-w-0 flex-1 truncate">{line.text}</span> : null}
       {/* The line's own seat: working mark + how long, the failure dot, a
           waiting mark when the row needs to say which line, else how long it
-          has sat idle. The seat's min-w is what the row's revealed actions
-          reserve (list-row's `data-actions` rule), so revealing never reflows. */}
-      <span className="relative ml-auto flex h-5 min-w-[44px] shrink-0 items-center justify-end pl-2">
+          has sat idle. */}
+      <span className={ROW_SEAT_CLASS}>
         <span
           className={`inline-flex items-center gap-1 ${
             seatOverlay

@@ -291,7 +291,6 @@ async function mountChat({
         onCloseTab: () => undefined,
         onTabContextMenu: () => undefined,
         addControl: null,
-        onClose: () => undefined,
       })
     : null
   await act(async () =>

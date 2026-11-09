@@ -11,16 +11,7 @@ import { openPairedChanges, usePairedChanges } from '../../../panels/agentChat/p
 import { useChatPanelFacts, type ChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
 import { useShowSubagentFamily, useSubagentFamily } from '../../../panels/agentChat/subagentFamilyStore'
 import { subagentViewOwner, useSubagentViews } from '../../../panels/agentChat/subagentViewStack'
-import {
-  DiffStatPill,
-  FrontTruncatedText,
-  IconButton,
-  MachineGlyph,
-  Section,
-  Tooltip,
-  TruncatedText,
-  WorktreeGlyph,
-} from '../../../ui'
+import { DiffStatPill, FrontTruncatedText, MachineGlyph, Section, TruncatedText, WorktreeGlyph } from '../../../ui'
 import { remoteProjectName } from '../../sidebar/folderGroups'
 import { dispatchFileReveal } from '../../../../utils/fileReveal'
 import { DiffGlyph, FilesGlyph, LibraryGlyph, CanvasGlyph, TerminalGlyph } from '../paneKinds'
@@ -53,21 +44,12 @@ import { useWorkspaceCheckoutFacts } from './useWorkspaceCheckoutFacts'
 // the room it leads to. Terminal and Browser select the tab that is there
 // first, as `openPaneTab` mints a new terminal every time.
 
-function CloseGlyph({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
-      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 function PanelHead({
   name,
   cli,
   words,
   machine,
   project,
-  onClose,
 }: {
   name: string
   cli: ChatPanelFacts['cli']
@@ -76,17 +58,9 @@ function PanelHead({
   machine: ChatPanelFacts['machine']
   /** The chat's project, where the sidebar's local groups cannot say it. */
   project: string | null
-  onClose: () => void
 }) {
   return (
-    <header className="relative flex flex-col items-center px-6 pb-1.5 pt-2 text-center">
-      <span className="absolute right-0 top-0">
-        <Tooltip content="Close panel" placement="bottom">
-          <IconButton aria-label="Close panel" onClick={onClose}>
-            <CloseGlyph className="icon-sm" />
-          </IconButton>
-        </Tooltip>
-      </span>
+    <header className="flex flex-col items-center px-6 pb-1.5 pt-2 text-center">
       {cli ? (
         <span className="mb-2 grid size-control-lg place-items-center rounded-full border border-[color:var(--border-default)] bg-[color:var(--bg-hover)]">
           <CliIcon cli={cli} className="icon-lg" />
@@ -124,11 +98,9 @@ function activityTone(row: ChatActivityRow | undefined): string {
   return ''
 }
 
-export type ChatPanelProps = OpenNowProps & {
-  onClose: () => void
-}
+export type ChatPanelProps = OpenNowProps
 
-export function ChatPanel({ onClose, ...openNow }: ChatPanelProps) {
+export function ChatPanel(openNow: ChatPanelProps) {
   const { workspaceId, tabs } = openNow
   const tabAgentId = useChatPanelTarget(workspaceId)
   const top = useSubagentViews(workspaceId, tabAgentId ?? '').at(-1)
@@ -200,15 +172,8 @@ export function ChatPanel({ onClose, ...openNow }: ChatPanelProps) {
   const filesRow = activityRow('files')
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto px-3 pb-4 pt-3" data-chat-panel="">
-      <PanelHead
-        name={name}
-        cli={cli}
-        words={words}
-        machine={facts?.machine ?? null}
-        project={project}
-        onClose={onClose}
-      />
+    <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto px-3 pb-4" data-chat-panel="">
+      <PanelHead name={name} cli={cli} words={words} machine={facts?.machine ?? null} project={project} />
       {family.parent ? <ChatPanelParentLink parent={family.parent} /> : null}
       <ChatPanelSubagents family={family} />
       <ChatPanelOpenNow {...openNow} activity={activity} />

@@ -4268,6 +4268,7 @@ body:has([data-selection-pane]:focus-within)
 /* A tab on the top row starts below the pill unless it can scroll out from
    under it, which a chat can. */
 .band-clear {
+  position: relative;
   height: 100%;
   box-sizing: border-box;
   padding-top: var(--band-clearance, 0px);
@@ -4275,6 +4276,39 @@ body:has([data-selection-pane]:focus-within)
 
 .band-clear:has([data-chat-composer]) {
   padding-top: 0;
+}
+
+/* A chat runs under the window's controls, so at the band's ends it cuts a notch
+   the width of what stands there, in its own colour: the text passes behind it
+   and never under the glyphs. A terminal starts below them and needs none. */
+.band-clear:has([data-chat-composer])::before,
+.band-clear:has([data-chat-composer])::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  height: var(--band-clearance, 0px);
+  background-color: var(--agent-surface);
+  pointer-events: none;
+}
+
+.band-clear:has([data-chat-composer])::before {
+  left: 0;
+  width: var(--band-notch-left, 0px);
+  border-bottom-right-radius: var(--shell-card-radius);
+}
+
+.band-clear:has([data-chat-composer])::after {
+  right: 0;
+  width: var(--band-notch-right, 0px);
+  border-bottom-left-radius: var(--shell-card-radius);
+}
+
+/* A terminal is one colour from the window's top edge down (owner ruling
+   2026-11-09: no top bar). Its text starts below the pill, as it cannot scroll
+   out from under it, but the ground the pill stands on is the terminal's own. */
+.band-clear:has(.xterm):not(:has([data-chat-composer])) {
+  background-color: var(--terminal-bg);
 }
 
 /* A subagent's own header does not scroll, so it starts below the pill and what
@@ -4306,11 +4340,9 @@ body:has([data-selection-pane]:focus-within)
   -webkit-app-region: no-drag;
 }
 
-/* Drag regions ignore what is painted over them, so the card has to say so
-   itself or the band's ground under it would swallow every press up here. */
-.flexlayout__layout .flexlayout__tab {
-  -webkit-app-region: no-drag;
-}
+/* A card says nothing about dragging on purpose. Drag regions ignore what is
+   painted over them, so the band's ground stays the window's drag region across
+   the card's top 36px, and only what opts out above takes a press up here. */
 
 /* A door or New chat has the card: the strips go with what they name. A tab's
    close takes `visibility` back for itself, so it is named as well, and the same
@@ -5015,9 +5047,9 @@ body:has([data-selection-pane]:focus-within)
   --bg-chrome-selected-resting: color-mix(in srgb, var(--bg-selected-resting) 50%, transparent);
 }
 /* …and handed to the frost ONLY — the app rail and the sidebar's chrome strip,
- * the two elements that paint --bg-canvas and so are made of the OS frost.
- * The sidebar's body, the workspace region and the pane are rounded opaque
- * cards (--shell-card-radius), so their rows keep the opaque ramp: a
+ * the two elements that paint --bg-canvas and so are made of the OS frost, and
+ * under glass the sidebar's body (below). The workspace region and the pane are
+ * rounded opaque cards (--shell-card-radius), so their rows keep the opaque ramp: a
  * translucent fill on an opaque ground reads a rung weak, which is why this is
  * a scope and not a second block of :root overrides. Nothing stacks: a row
  * wears one of these at a time, so it is one alpha step over the body tint,
@@ -5032,6 +5064,22 @@ body:has([data-selection-pane]:focus-within)
 }
 :root[data-window-material="glass"] body {
   background-color: color-mix(in srgb, var(--bg-app) 52%, transparent);
+}
+/* Under glass the frost is the left of the window and only the left (owner
+ * ruling 2026-11-09). The sidebar's body joins the rail on it, with the frost's
+ * row fills, and everything from the conversation rightward stands on the app's
+ * opaque ground at the full height of the window, so the gaps between the cards
+ * and the corners of the cards show no desktop through them. */
+:root[data-window-material="glass"] .sidebar-card {
+  background-color: transparent;
+  --bg-surface-raised: var(--bg-chrome-raised);
+  --bg-hover: var(--bg-chrome-hover);
+  --bg-active: var(--bg-chrome-active);
+  --bg-selected: var(--bg-chrome-selected);
+  --bg-selected-resting: var(--bg-chrome-selected-resting);
+}
+:root[data-window-material="glass"] .window-content-ground {
+  background-color: var(--bg-app);
 }
 /* The window's top 36px band, as one piece. Four strips sit on that line — the
  * app rail's traffic-light reserve, the sidebar chrome row, the workspace

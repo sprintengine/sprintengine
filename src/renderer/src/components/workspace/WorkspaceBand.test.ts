@@ -38,3 +38,18 @@ test('a strip on the top row stands in the band, and at its ends keeps clear of 
   })
   expect(bandStripMarks({ x: 0, y: 400, width: 1000, height: 400 }, layout), 'under a split it stays put').toBe(null)
 })
+
+test('a tab cuts a notch only at the band ends it stands at', async () => {
+  const { bandClearVars } = await import('./WorkspaceLayout')
+  const whole = bandClearVars({ 'data-band-strip': '', 'data-band-start': '', 'data-band-end': '' })
+  expect(whole['--band-clearance']).toBe('36px')
+  expect(whole['--band-notch-left']).toContain('--band-inset-left')
+  expect(whole['--band-notch-right']).toContain('--band-inset-right')
+  const leftOfSplit = bandClearVars({ 'data-band-strip': '', 'data-band-start': '' })
+  expect(leftOfSplit['--band-notch-right']).toBe('0px')
+  expect(bandClearVars(null)).toEqual({
+    '--band-clearance': '0px',
+    '--band-notch-left': '0px',
+    '--band-notch-right': '0px',
+  })
+})
