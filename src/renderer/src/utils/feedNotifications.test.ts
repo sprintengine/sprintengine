@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import type { DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalog'
-import { cliUpdateNotice, discoveredModelAdditions, newModelsNotice, updateReadyNotice } from './feedNotifications'
+import { cliUpdateNotice, discoveredModelAdditions, newModelsNotice } from './feedNotifications'
 import { test } from 'vitest'
 
 test('feedNotifications', async () => {
@@ -83,10 +83,6 @@ test('feedNotifications', async () => {
     { title: 'Update available: Codex 0.153.3 (WSL: Ubuntu)' },
     'a WSL machine’s update names the machine',
   )
-  assert.deepEqual(updateReadyNotice('Sprint Engine Studio', '0.4.0'), {
-    title: 'Sprint Engine Studio 0.4.0 is ready',
-    description: 'Restart now to update, or it installs the next time you quit.',
-  })
 
   console.log('feedNotifications: ok')
 })

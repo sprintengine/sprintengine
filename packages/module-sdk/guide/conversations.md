@@ -90,7 +90,8 @@ export const registerMain: RegisterMain = (host) => {
       if (event.type !== 'turn_completed') return
       off()
       const reply = await chats.reply(ref)              // the agent's last message of the turn
-      host.notify({ severity: 'info', title: 'Release notes drafted', body: reply.ok ? reply.text.slice(0, 200) : undefined })
+      if (!reply.ok) host.notify({ severity: 'warning', title: 'Release notes did not finish' })
+      else host.emit('release-notes-drafted', { text: reply.text.slice(0, 200) })
     })
     return started
   })

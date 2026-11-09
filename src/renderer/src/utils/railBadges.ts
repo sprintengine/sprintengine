@@ -33,7 +33,7 @@ import type { AppNotification, DiagnosticSource } from '../types/workspace'
 // A CLI update and hosted-model news badged an Agent CLIs row here until that
 // row left the drawer (owner ruling 2026-09-25). Both are about Settings ▸
 // Agents now: a CLI update wears the Settings badges while it is outstanding
-// (settingsUpdateBadges.ts), and model news stays a bell row with an Open.
+// (settingsUpdateBadges.ts), and model news is a toast and the picker's own mark.
 export const EXTENSIONS_NOTIFICATION_SOURCES: ReadonlySet<DiagnosticSource> = new Set<DiagnosticSource>(['marketplace'])
 
 /** Core source → drawer row, with no module knowledge of run doors. */
@@ -112,6 +112,21 @@ export function unreadByExtensionsRow(
     if (row && byRow[row]) byRow[row].push(notification)
   }
   return byRow
+}
+
+/**
+ * The bell's own badge: everything unread in its list, red when any is an error
+ * and gold when they are all warnings. Null when nothing is unread. The list
+ * holds only errors and warnings (`reachesBell`), so this is the count of
+ * reports the person has not read.
+ */
+export function bellBadge(notifications: readonly AppNotification[]): { count: number; tone: 'error' | 'warn' } | null {
+  const unread = notifications.filter((notification) => !notification.read)
+  if (unread.length === 0) return null
+  return {
+    count: unread.length,
+    tone: unread.some((notification) => notification.level === 'error') ? 'error' : 'warn',
+  }
 }
 
 // The loudest level decides the badge's tone: a failure is red, something

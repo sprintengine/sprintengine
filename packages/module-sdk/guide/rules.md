@@ -128,9 +128,9 @@ takes your surface id, not a made-up row name. Don't build your own "N waiting"
 strip or top-bar counter for something the row can wear.
 
 **Toast or bell?** A toast answers "did it work?" and leaves on its own; the
-bell (`notify` from `entry.main`) is for what the person must find again later.
-Don't toast what they need to act on next week, and don't notify for every
-click.
+bell (`notify` from `entry.main`, severity `warning` or `error`) is for what went
+wrong and must be found again later. Don't toast what they need to act on next
+week, and don't notify for every click: an `info` notify files nothing.
 
 ## Agents and untrusted input
 

@@ -33,7 +33,7 @@ export const registerMain: RegisterMain = (host) => {
     })
     if (!started.ok) return started
 
-    // Follow the one turn and say when it is done. Events stream from now on;
+    // Follow the one turn and say if it failed. Events stream from now on;
     // `transcript(ref)` replays what already happened.
     const ref = { workspaceId: request.workspaceId, agentId: started.conversation.agentId }
     let stop: (() => void) | undefined
@@ -42,11 +42,13 @@ export const registerMain: RegisterMain = (host) => {
       if (finished || (event.type !== 'turn_completed' && event.type !== 'turn_failed')) return
       finished = true
       stop?.()
-      host.notify({
-        severity: event.type === 'turn_completed' ? 'info' : 'warning',
-        title: event.type === 'turn_completed' ? 'Project summary is ready' : 'Project summary did not finish',
-        body: 'Open it from {{displayName}}.',
-      })
+      if (event.type === 'turn_failed') {
+        host.notify({
+          severity: 'warning',
+          title: 'Project summary did not finish',
+          body: 'Open it from {{displayName}}.',
+        })
+      }
     })
     if (finished) stop()
     return started
