@@ -1,6 +1,6 @@
 import React from 'react'
 
-import { ChipButton, PullRequestGlyph, Tooltip } from '../ui'
+import { ChipButton, PullRequestGlyph, TabsScroller, Tooltip } from '../ui'
 import { sameSelection, type StripEntry } from './branchSteps'
 import type { BranchStepSelection } from '../../../../shared/electron-api'
 
@@ -61,47 +61,46 @@ export function BranchStepStrip({
   return (
     <div className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)]">
       {entries.length > 1 ? (
-        <div
-          role="tablist"
-          aria-label="Branch steps"
-          onKeyDown={onKeyDown}
-          className="flex items-center gap-1 overflow-x-auto px-3 py-2"
-        >
-          {entries.map((entry, index) => {
-            const active = sameSelection(entry.selection, selection)
-            return (
-              <ChipButton
-                key={entry.key}
-                variant="outline"
-                selected={active}
-                role="tab"
-                aria-selected={active}
-                // The chip's own `selected` would also emit `aria-current`; a tab
-                // states its state as `aria-selected`, and two state attributes on
-                // one row make a screen reader read the choice twice.
-                aria-current={undefined}
-                aria-controls={BRANCH_STEP_PANEL_ID}
-                // Roving: one tab stop for the whole strip, on the selected chip.
-                tabIndex={index === selectedIndex ? 0 : -1}
-                onClick={() => onSelect(entry.selection)}
-                className="shrink-0 whitespace-nowrap"
-              >
-                {/* A merge commit is a branch that went into this one, so it
+        // Scrolls sideways with no scrollbar and a fade at each overflowing edge,
+        // as every tab strip does: a branch with many commits runs past a pane.
+        <TabsScroller className="px-2 py-2">
+          <div role="tablist" aria-label="Branch steps" onKeyDown={onKeyDown} className="flex items-center gap-1">
+            {entries.map((entry, index) => {
+              const active = sameSelection(entry.selection, selection)
+              return (
+                <ChipButton
+                  key={entry.key}
+                  variant="pill"
+                  selected={active}
+                  role="tab"
+                  aria-selected={active}
+                  // The chip's own `selected` would also emit `aria-current`; a tab
+                  // states its state as `aria-selected`, and two state attributes on
+                  // one row make a screen reader read the choice twice.
+                  aria-current={undefined}
+                  aria-controls={BRANCH_STEP_PANEL_ID}
+                  // Roving: one tab stop for the whole strip, on the selected chip.
+                  tabIndex={index === selectedIndex ? 0 : -1}
+                  onClick={() => onSelect(entry.selection)}
+                  className="shrink-0 whitespace-nowrap"
+                >
+                  {/* A merge commit is a branch that went into this one, so it
                     wears the system's merged mark — the same drawing every
                     other merged pull request in the app wears, rather than the
                     private fork this file used to keep. Decorative: the chip's
                     own label names the commit. */}
-                {entry.isMerge ? <PullRequestGlyph state="merged" className="icon-xs" /> : null}
-                {entry.hash ? (
-                  <span className="font-mono text-micro tabular-nums text-[color:var(--text-subtle)]">
-                    {entry.hash}
-                  </span>
-                ) : null}
-                <span className="max-w-[22ch] overflow-hidden text-ellipsis">{entry.label}</span>
-              </ChipButton>
-            )
-          })}
-        </div>
+                  {entry.isMerge ? <PullRequestGlyph state="merged" className="icon-xs" /> : null}
+                  {entry.hash ? (
+                    <span className="font-mono text-micro tabular-nums text-[color:var(--text-subtle)]">
+                      {entry.hash}
+                    </span>
+                  ) : null}
+                  <span className="max-w-[22ch] overflow-hidden text-ellipsis">{entry.label}</span>
+                </ChipButton>
+              )
+            })}
+          </div>
+        </TabsScroller>
       ) : null}
       {note ? (
         // The epic's honesty, at the length the panel has room for: the row's

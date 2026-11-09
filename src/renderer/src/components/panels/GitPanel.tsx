@@ -2281,7 +2281,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
        * notice, not in a subtitle nobody reads twice.
        */}
       <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-default)] pl-1.5 pr-1.5">
-        <TabsScroller className="flex min-w-0 flex-1 items-end self-stretch">
+        <TabsScroller className="flex min-w-0 flex-1 items-center self-stretch">
           <Tabs<GitPanelView>
             ariaLabel="Git panel views"
             idPrefix={gitTabsIdPrefix}
