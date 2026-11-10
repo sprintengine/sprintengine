@@ -185,7 +185,8 @@ export function DiffFileTree({
           </IconButton>
         </Tooltip>
       </div>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      {/* Both ways: the tree scrolls sideways to the end of its longest name. */}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
         <FileExplorerTree
           ref={treeRef}
           scrollParentRef={scrollRef}

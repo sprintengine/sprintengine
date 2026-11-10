@@ -15,9 +15,16 @@
  * holds focus, and drops to the resting fill with no edge when focus is
  * elsewhere — in the editor beside it, say. */
 
+/* As wide as its widest row and never narrower than its column: a name is
+ * never cut short, the column scrolls sideways to the end of the longest one,
+ * and every row spans that whole width, so a hovered or selected row still
+ * reads as a row when scrolled right. */
 .ds-file-tree {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
   padding: var(--sem-space-xs) var(--sem-space-2xs);
   font-family: var(--sem-font-family-ui);
   font-size: var(--sem-font-size-meta);
@@ -153,10 +160,8 @@
   height: var(--sem-icon-size-sm);
 }
 
+/* Whole, never truncated: the tree scrolls sideways instead. */
 .ds-file-tree-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
