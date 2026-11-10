@@ -2618,7 +2618,10 @@ export default function FileExplorer({ workspaceId }: Props) {
        * on, and the empty state below carries the path.
        */}
       {folderReadyPath && (
-        <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-default)] pl-2 pr-1.5">
+        // The pane's one rule, at `border.subtle` (principles.md, "Hairlines
+        // carry the structure"): a header's line at `border.default` outweighed
+        // the pane's own edge.
+        <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-subtle)] pl-2 pr-1.5">
           <div className="flex min-w-0 flex-1">
             <InboxSearchInput value={query} onChange={setQuery} ariaLabel="Search files" placeholder="Search files…" />
           </div>

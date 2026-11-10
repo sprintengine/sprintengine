@@ -174,8 +174,10 @@ export function DiffFileTree({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* The band names what the tree holds, where the editor window's names
-          its root: this tree is the diff's files, not a folder. */}
-      <div className="flex h-7 shrink-0 items-center gap-1 border-b border-[color:var(--border-subtle)] pl-3 pr-1">
+          its root: this tree is the diff's files, not a folder. No rule under
+          it: the column already stands under the file row's rule, and the name
+          is the top of the list it names. */}
+      <div className="flex h-7 shrink-0 items-center gap-1 pl-3 pr-1">
         <span className="min-w-0 flex-1 truncate text-meta font-medium text-[color:var(--text-strong)]">
           {fileCount} changed {fileCount === 1 ? 'file' : 'files'}
         </span>

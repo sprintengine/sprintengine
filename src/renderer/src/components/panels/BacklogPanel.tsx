@@ -13,6 +13,7 @@ import {
   InboxSearchInput,
   InlineNotice,
   LifecycleGlyph,
+  MENU_DIVIDER_CLASS,
   MenuItem,
   OutlineButton,
   OverflowMenu,
@@ -1678,7 +1679,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
   // could point it somewhere and then have no way back but the config file.
   const backlogRootNote =
     backlogLocation && !backlogLocation.isDefault ? (
-      <div className="flex items-center gap-2 border-t border-[color:var(--border-subtle)] px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
+      <div className="flex items-center gap-2 px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
         <TruncatedText
           as="span"
           text={`Backlog folder: ${backlogLocation.root}`}
@@ -1778,7 +1779,8 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
        * number; every narrowing lens labels its scope so the number never
        * reads as the whole backlog (T16 AC3).
        */}
-      <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-default)] pl-2 pr-1.5">
+      {/* The pane's one rule, subtle, as in Files and Git. */}
+      <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-subtle)] pl-2 pr-1.5">
         <div
           className="flex min-w-0 flex-1"
           onKeyDown={(event) => {
@@ -1817,10 +1819,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         {backlogOverflow}
       </div>
 
-      <StudioSkillSuggestion
-        skillId="studio-backlog"
-        className="shrink-0 border-b border-[color:var(--border-subtle)] px-3 py-2"
-      />
+      <StudioSkillSuggestion skillId="studio-backlog" className="shrink-0 px-3 py-2" />
 
       {actionError ? (
         <div className="shrink-0 px-3 py-2">
@@ -3127,7 +3126,10 @@ function BacklogEpicSearchEditor({
           setOpen(false)
         }}
       />
-      <div className="border-t border-[color:var(--border-subtle)] pt-1">
+      {/* Inset, as every menu divider is: a line that met the popover's border
+          read as the card splitting in two. */}
+      <div role="separator" className={MENU_DIVIDER_CLASS} />
+      <div>
         {/* `RowButton`, not `MenuOption`: these two commit an ACTION rather than
             a value, so neither of the option roles is honest, and the popover is
             a dialog the keyboard tabs into rather than a menu with roving focus —

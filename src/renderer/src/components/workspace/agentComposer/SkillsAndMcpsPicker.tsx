@@ -25,12 +25,13 @@ import {
   MENU_ITEM_STACKED_CLASS,
   OutlineButton,
   Popover,
+  type PopoverPlacement,
+  type PopoverProps,
+  ScrollArea,
   SegmentedControl,
   Spinner,
   StarGlyph,
   useWorkspaceSkills,
-  type PopoverPlacement,
-  type PopoverProps,
 } from '../../ui'
 import type { AgentComposerConnector } from './useAgentComposer'
 import { isImeKey } from '../../../utils/imeKey'
@@ -547,7 +548,7 @@ export function SkillsAndMcpsPicker({
     >
       <div className="flex max-h-[420px] w-[360px] flex-col overflow-hidden">
         {tabItems.length > 1 ? (
-          <div className="border-b border-[color:var(--border-subtle)] p-1.5">
+          <div className="p-1.5 pb-0">
             <SegmentedControl
               ariaLabel="Show"
               size="sm"
@@ -561,7 +562,7 @@ export function SkillsAndMcpsPicker({
             />
           </div>
         ) : null}
-        <div className="flex items-center gap-1 border-b border-[color:var(--border-subtle)] p-1 pl-2.5">
+        <div className="flex items-center gap-1 p-1 pl-2.5">
           <svg
             className="icon-xs shrink-0 text-[color:var(--text-disabled)]"
             viewBox="0 0 16 16"
@@ -596,13 +597,13 @@ export function SkillsAndMcpsPicker({
             className="min-w-0 flex-1 px-1 py-1 text-body"
           />
         </div>
-        <div
+        <ScrollArea
           ref={listRef}
           id={listId}
           role="listbox"
           aria-multiselectable="true"
           aria-label={includeMcps ? 'Skills and MCP servers' : 'Skills'}
-          className="min-h-0 flex-1 overflow-y-auto py-1"
+          className="flex-1 py-1"
         >
           {tab === 'skills' && skillInventory.loading && rows.length === 0 ? (
             <div className="flex items-center gap-2 px-2.5 py-3 text-meta text-[color:var(--text-muted)]" role="status">
@@ -677,8 +678,8 @@ export function SkillsAndMcpsPicker({
               </div>
             )
           })}
-        </div>
-        <div className="flex items-center justify-end border-t border-[color:var(--border-subtle)] px-2.5 py-1.5">
+        </ScrollArea>
+        <div className="flex items-center justify-end px-2.5 py-1.5">
           {/* The kit's text link: accent ink, underlined on hover, and no box
               at all — an action set in a footer line, which is the whole reason
               this was four utilities cancelling a button. */}

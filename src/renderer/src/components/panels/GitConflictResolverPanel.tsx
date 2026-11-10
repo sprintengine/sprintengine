@@ -154,13 +154,14 @@ export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) 
         }
       />
       {state.message ? (
-        <div className="shrink-0 border-b border-[color:var(--border-default)] px-3 py-2 text-meta text-[color:var(--text-muted)]">
-          {state.message}
-        </div>
+        <div className="shrink-0 px-3 py-2 text-meta text-[color:var(--text-muted)]">{state.message}</div>
       ) : null}
 
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(170px,32%)_minmax(0,1fr)]">
-        <div className="grid min-h-0 grid-cols-2 border-b border-[color:var(--border-default)]">
+        {/* Rules here only where code meets code: an editor's gutter runs edge to
+            edge, so the seams between the three editors and under each one's
+            title keep a subtle line. The status line above them takes none. */}
+        <div className="grid min-h-0 grid-cols-2 border-b border-[color:var(--border-subtle)]">
           <ConflictReadOnlyPane
             title="Pulled version"
             content={state.conflict.ours ?? ''}
@@ -248,8 +249,8 @@ function ConflictReadOnlyPane({
   const monacoTheme = useMonacoBaseTheme()
   const codeFontFamily = useCodeFontFamily()
   return (
-    <section className="flex min-h-0 flex-col border-r border-[color:var(--border-default)] last:border-r-0">
-      <div className="shrink-0 border-b border-[color:var(--border-default)] bg-[color:var(--bg-surface)] px-3 py-1.5 text-meta font-semibold text-[color:var(--text-default)]">
+    <section className="flex min-h-0 flex-col border-r border-[color:var(--border-subtle)] last:border-r-0">
+      <div className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-1.5 text-meta font-semibold text-[color:var(--text-default)]">
         {title}
       </div>
       {content ? (

@@ -371,6 +371,23 @@
             }
           }
         },
+        "unread": {
+          "$type": "color",
+          "$value": "rgba(32, 36, 40, 0.04)",
+          "$description": "An item the person has not seen yet, in a list they open to catch up: a translucent tint of the ink, so it shows on a white light-mode popover as well as on a dark raised one.",
+          "$extensions": {
+            "com.sprintengine": {
+              "role": "surface",
+              "use": "The unread rows of an inbox-like list inside an overlay — the notification popover. Paired with stronger title ink; the tint is the second channel, never the only one.",
+              "doNotUse": "Hover or selection (bg.hover / bg.selected), and a status: unread is not a tone. Never on bg.surface-raised in light mode as a solid — that is the same white, which is why this is a tint.",
+              "components": ["inbox-row"],
+              "modes": {
+                "light": "rgba(32, 36, 40, 0.04)",
+                "dark": "rgba(252, 252, 252, 0.035)"
+              }
+            }
+          }
+        },
         "well": {
           "$type": "color",
           "$value": "rgba(32, 36, 40, 0.05)",

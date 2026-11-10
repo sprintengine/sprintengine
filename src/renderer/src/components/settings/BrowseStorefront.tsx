@@ -10,6 +10,7 @@ import {
   GhostButton,
   InlineNotice,
   PrimaryButton,
+  ScrollArea,
   Spinner,
   StatusDot,
   TruncatedText,
@@ -170,7 +171,7 @@ export function PluginDetailPanel({
         onClose={onClose}
         leading={<PluginIcon iconUrl={resolveIconUrl(registryUrl, plugin.icon)} name={plugin.name} size={40} />}
       />
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto border-t border-[color:var(--border-subtle)] px-6 pb-4">
+      <ScrollArea className="mt-4 flex-1 px-6 pb-4">
         <p className="mt-4 text-body leading-5 text-[color:var(--text-default)]">{plugin.summary}</p>
 
         {displayTags.length ? (
@@ -256,8 +257,10 @@ export function PluginDetailPanel({
             </p>
           ) : null}
         </div>
-      </div>
-      <div className="border-t border-[color:var(--border-subtle)]">
+      </ScrollArea>
+      {/* Header, body and footer separated by space, as every dialog is; the
+          body fades at its scroll edges instead of a rule above and below. */}
+      <div>
         <ModalFooter>
           {sourceHref ? (
             <a
