@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { FocusRing, useFocusRing } from "./FocusRing";
-import { ChevronIcon, iconSize } from "./glyphs";
+import { CheckIcon, ChevronIcon, iconSize } from "./glyphs";
 import { useThemedStyles } from "../theme/ThemeProvider";
 import { radius, space, typography, type Theme, fontWeight } from "../theme/tokens";
 
@@ -101,6 +101,37 @@ export function SettingsRow({
   );
 }
 
+/**
+ * One of a few choices on a screen of its own (Appearance, Group chats): a
+ * row with a check, filled while chosen. Rows rather than a segmented tray,
+ * where the screen has room for them.
+ */
+export function SettingsChoice({
+  label,
+  selected,
+  onPress,
+  accessibilityLabel,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.choice, selected ? styles.choiceOn : null, pressed && !selected ? styles.pressed : null]}
+    >
+      <Text style={[styles.choiceLabel, selected ? styles.choiceLabelOn : null]}>{label}</Text>
+      {selected ? <CheckIcon size={iconSize.sm} tone="buttonInk" /> : null}
+    </Pressable>
+  );
+}
+
 /** The grey label over a run of rows. */
 export function SettingsGroupLabel({ children }: { children: string }) {
   const styles = useThemedStyles(createStyles);
@@ -162,6 +193,26 @@ const createStyles = ({ colors }: Theme) =>
       fontVariant: ["tabular-nums"],
       flexShrink: 1,
       textAlign: "right",
+    },
+    choice: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      minHeight: 56,
+      borderRadius: radius.overlay,
+      paddingHorizontal: space.lg,
+      paddingVertical: space.lg,
+    },
+    choiceOn: {
+      backgroundColor: colors.buttonBg,
+    },
+    choiceLabel: {
+      ...typography.body,
+      fontSize: 17,
+      color: colors.textPrimary,
+    },
+    choiceLabelOn: {
+      color: colors.buttonInk,
     },
     group: {
       ...typography.meta,

@@ -14,6 +14,7 @@ import { AppNavigator } from "../navigation/AppNavigator";
 import type { HomeStackParamList } from "../navigation/types";
 import { ChatsContext, ChatsProvider, useChats } from "../features/conversations/ChatsContext";
 import { ChatLinkScreen } from "../features/conversations/ChatLinkScreen";
+import { readChatGrouping } from "../features/conversations/chatGrouping";
 import type { ConversationTarget } from "../features/conversations/conversationLogic";
 import { NoticesProvider } from "../features/notices/NoticesContext";
 import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
@@ -119,6 +120,7 @@ const linking: LinkingOptions<VerifyRootParamList> = {
           CanvasBoard: "canvas/:deviceId/:name",
           Desktop: "desktop/:deviceId",
           Appearance: "appearance",
+          ChatGrouping: "grouping",
           Pairing: "pairing",
         },
       },
@@ -325,8 +327,9 @@ const verifyNotesStore: DeviceNotesStore = {
   getReadNoticeIds: async () => [],
   saveReadNoticeIds: asyncNoop,
   forgetRetiredNotes: asyncNoop,
-  getGroupChatsByProject: async () => false,
-  saveGroupChatsByProject: asyncNoop,
+  // EXPO_PUBLIC_VERIFY_CHAT_GROUPING=date (or project) photographs Home grouped that way.
+  getChatGrouping: async () => readChatGrouping(process.env.EXPO_PUBLIC_VERIFY_CHAT_GROUPING, null),
+  saveChatGrouping: asyncNoop,
   // EXPO_PUBLIC_VERIFY_FOLLOW_UP=steer photographs the chat with Steer chosen.
   getFollowUpBehavior: async () => (process.env.EXPO_PUBLIC_VERIFY_FOLLOW_UP === "steer" ? "steer" : "queue"),
   saveFollowUpBehavior: asyncNoop,

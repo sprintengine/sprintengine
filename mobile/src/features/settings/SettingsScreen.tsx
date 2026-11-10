@@ -18,6 +18,7 @@ import { SettingsGroupLabel, SettingsNote, SettingsRow } from "../../components/
 import { Toggle } from "../../components/Toggle";
 import { themePreferenceLabel, useThemePreference, useThemedStyles } from "../../theme/ThemeProvider";
 import { space, typography, type Theme } from "../../theme/tokens";
+import { CHAT_GROUPING_LABEL, type ChatGrouping } from "../conversations/chatGrouping";
 
 interface SettingsScreenProps {
   sessions: MobileSession[];
@@ -27,6 +28,7 @@ interface SettingsScreenProps {
   onBack?: () => void;
   onOpenDesktops: () => void;
   onOpenAppearance: () => void;
+  onOpenChatGrouping: () => void;
   /** Absent in the signed-out gate stack, which has no snapshot and no Web screen. */
   onOpenWeb?: () => void;
   webTargetCount?: number;
@@ -34,9 +36,8 @@ interface SettingsScreenProps {
   onOpenScheduled?: () => void;
   /** Every Canvas board on the paired desktops. Absent where the stack has no screen for them. */
   onOpenCanvases?: () => void;
-  /** Home's chats under their projects, rather than newest first. */
-  groupChatsByProject: boolean;
-  onGroupChatsByProjectChange: (enabled: boolean) => void;
+  /** How Home lists its chats: newest first, under their projects, or by date. */
+  chatGrouping: ChatGrouping;
   /** A message sent while an agent works goes into its turn now, rather than waiting for it to end. */
   steerFollowUps: boolean;
   onSteerFollowUpsChange: (enabled: boolean) => void;
@@ -65,12 +66,12 @@ export function SettingsScreen({
   onBack,
   onOpenDesktops,
   onOpenAppearance,
+  onOpenChatGrouping,
   onOpenWeb,
   webTargetCount,
   onOpenScheduled,
   onOpenCanvases,
-  groupChatsByProject,
-  onGroupChatsByProjectChange,
+  chatGrouping,
   steerFollowUps,
   onSteerFollowUpsChange,
 }: SettingsScreenProps) {
@@ -129,11 +130,13 @@ export function SettingsScreen({
           value={preference === "system" ? "System" : themePreferenceLabel[resolvedTheme.name]}
         />
         <SettingsRow
-          control={
-            <Toggle label="Group chats by project" onValueChange={onGroupChatsByProjectChange} value={groupChatsByProject} />
-          }
+          accessibilityHint="Newest first, by project, or by date."
+          accessibilityLabel={`Group chats: ${CHAT_GROUPING_LABEL[chatGrouping]}`}
+          chevron
           icon={<FolderGlyph size={iconSize.md} />}
-          title="Group chats by project"
+          onPress={onOpenChatGrouping}
+          title="Group chats"
+          value={CHAT_GROUPING_LABEL[chatGrouping]}
         />
         <SettingsRow
           control={

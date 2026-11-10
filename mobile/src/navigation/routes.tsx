@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { PairingScreen } from "../features/pairing/PairingScreen";
 import { WelcomeScreen } from "../features/pairing/WelcomeScreen";
+import { ChatGroupingScreen } from "../features/settings/ChatGroupingScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { useThemedStyles } from "../theme/ThemeProvider";
 import type { Theme } from "../theme/tokens";
@@ -89,6 +90,7 @@ export function SettingsRoute({
   onBack,
   onOpenDesktops,
   onOpenAppearance,
+  onOpenChatGrouping,
   onOpenWeb,
   onOpenScheduled,
   onOpenCanvases,
@@ -96,13 +98,14 @@ export function SettingsRoute({
   onBack?: () => void;
   onOpenDesktops: () => void;
   onOpenAppearance: () => void;
+  onOpenChatGrouping: () => void;
   onOpenWeb?: () => void;
   onOpenScheduled?: () => void;
   onOpenCanvases?: () => void;
 }) {
   // The web count is read from the snapshot, so it is read while this is open.
   const { sessions, snapshot, isFleetRefreshing, refreshFleet } = useSnapshot();
-  const { groupByProject, setGroupByProject, followUpBehavior, setFollowUpBehavior } = useChats();
+  const { chatGrouping, followUpBehavior, setFollowUpBehavior } = useChats();
 
   // Fleet summaries are one gateway read per online desktop, so they are fetched
   // when this screen comes into view rather than kept warm behind the tabs.
@@ -114,12 +117,12 @@ export function SettingsRoute({
 
   return (
     <SettingsScreen
-      groupChatsByProject={groupByProject}
+      chatGrouping={chatGrouping}
       isFleetRefreshing={isFleetRefreshing}
-      onGroupChatsByProjectChange={setGroupByProject}
       onSteerFollowUpsChange={(enabled) => setFollowUpBehavior(enabled ? "steer" : "queue")}
       onBack={onBack}
       onOpenAppearance={onOpenAppearance}
+      onOpenChatGrouping={onOpenChatGrouping}
       onOpenDesktops={onOpenDesktops}
       onOpenWeb={onOpenWeb}
       onOpenScheduled={onOpenScheduled}
@@ -130,6 +133,12 @@ export function SettingsRoute({
       webTargetCount={readWebTargets(snapshot).length}
     />
   );
+}
+
+/** Settings → Group chats, in both stacks Settings is mounted in. */
+export function ChatGroupingRoute({ onBack }: { onBack: () => void }) {
+  const { chatGrouping, setChatGrouping } = useChats();
+  return <ChatGroupingScreen grouping={chatGrouping} onBack={onBack} onChange={setChatGrouping} />;
 }
 
 const createStyles = ({ colors }: Theme) =>

@@ -30,6 +30,7 @@ import {
   chatWorkspaceKey,
   type ChatListRow,
 } from "./conversationListLogic";
+import type { ChatGrouping } from "./chatGrouping";
 import { conversationCanOperate, conversationEnabled } from "./conversationLogic";
 import { keepUnchanged } from "./keepUnchanged";
 import type { FollowUpBehavior } from "./followUp";
@@ -145,12 +146,12 @@ export interface ChatsValue {
    */
   visitChat: (chat: { deviceId: string; workspaceId: string }, trigger: VisitTrigger, turnEndedAt?: number | null) => void;
   /**
-   * Whether Home groups chats under their projects, as the desktop sidebar's
-   * project view does, rather than listing them newest first. A setting, not
-   * a control on the list: off unless turned on in Settings.
+   * How Home groups its chats: newest first (Recent), under their projects,
+   * or by the day they were last written in, as the desktop sidebar's views
+   * do. A setting, not a control on the list: Recent unless chosen in Settings.
    */
-  groupByProject: boolean;
-  setGroupByProject: (enabled: boolean) => void;
+  chatGrouping: ChatGrouping;
+  setChatGrouping: (grouping: ChatGrouping) => void;
   /**
    * What a message sent while an agent works does by default: wait for the
    * turn to end, or go into it now. A long press on the send does the other.
@@ -434,21 +435,21 @@ export function ChatsProvider({
     };
   }, [notesStore]);
 
-  const [groupByProject, setGroupByProjectState] = useState(false);
+  const [chatGrouping, setChatGroupingState] = useState<ChatGrouping>("recent");
   useEffect(() => {
     if (!notesStore) return;
     let live = true;
-    void notesStore.getGroupChatsByProject().then((enabled) => {
-      if (live) setGroupByProjectState(enabled);
+    void notesStore.getChatGrouping().then((grouping) => {
+      if (live) setChatGroupingState(grouping);
     });
     return () => {
       live = false;
     };
   }, [notesStore]);
-  const setGroupByProject = useCallback(
-    (enabled: boolean) => {
-      setGroupByProjectState(enabled);
-      void notesStore?.saveGroupChatsByProject(enabled);
+  const setChatGrouping = useCallback(
+    (grouping: ChatGrouping) => {
+      setChatGroupingState(grouping);
+      void notesStore?.saveChatGrouping(grouping);
     },
     [notesStore],
   );
@@ -744,8 +745,8 @@ export function ChatsProvider({
       snoozeChat,
       markUnreadChat,
       visitChat,
-      groupByProject,
-      setGroupByProject,
+      chatGrouping,
+      setChatGrouping,
       followUpBehavior,
       setFollowUpBehavior,
     }),
@@ -767,8 +768,8 @@ export function ChatsProvider({
       snoozeChat,
       markUnreadChat,
       visitChat,
-      groupByProject,
-      setGroupByProject,
+      chatGrouping,
+      setChatGrouping,
       followUpBehavior,
       setFollowUpBehavior,
     ],
