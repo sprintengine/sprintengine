@@ -100,3 +100,26 @@ test('past the wire bound the ids the person added are kept, and the CLI fills t
   assert.equal(ids.filter((id) => id === 'm3').length, 1)
   assert.equal(ids[ids.length - 2], `m${CONVERSATION_MAX_MODEL_OPTIONS - 2}`)
 })
+
+test('a paired device is not offered what the person removed, and is offered what they typed', async () => {
+  const catalog = catalogWith({
+    readDiscovered: async () => ({ 'claude-code': discovered([{ id: 'opus' }, { id: 'sonnet' }]) }),
+    userModels: () => ['typed-by-hand'],
+    removedModels: (cli) => (cli === 'claude-code' ? ['sonnet'] : undefined),
+  })
+  assert.deepEqual((await catalog('claude-agent'))?.options, [{ id: 'opus' }, { id: 'typed-by-hand' }])
+})
+
+test('with discovery failing, the typed ids still reach a paired device beside the seed', async () => {
+  const catalog = catalogWith({
+    readDiscovered: async () => {
+      throw new Error('unreadable')
+    },
+    userModels: () => ['typed-by-hand'],
+    removedModels: () => ['seed-b'],
+  })
+  assert.deepEqual((await catalog('claude-agent'))?.options, [
+    { id: 'seed-a', label: 'Seed A' },
+    { id: 'typed-by-hand' },
+  ])
+})

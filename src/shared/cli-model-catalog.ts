@@ -111,17 +111,27 @@ export type MergedCliModelCatalog = {
 //
 // User additions only apply when the plugin declares modelSelection — without
 // declared args the launch path could not pass the model anyway.
+//
+// `removedModels` are ids the person took off this CLI's list in Settings. They
+// are dropped from the CLI's own rows and from the seed, so a refresh that
+// lists them again does not bring them back; an id the person also typed is
+// still offered, because typing it is the newer word on the matter. They keep
+// counting as an answer: removing every row the CLI listed leaves an empty
+// list, not the manifest seed standing in for it.
 export function mergeCliModelCatalog(
   declared: PluginModelCatalog | undefined,
   userModels: string[] | undefined,
   discovered: DiscoveredCliModelCatalog | undefined,
   now: number,
+  removedModels?: readonly string[],
 ): MergedCliModelCatalog | undefined {
   if (!declared) return undefined
   const byId = new Map<string, MergedCliModelOption>()
+  const removed = new Set((removedModels ?? []).map((id) => (typeof id === 'string' ? id.trim() : '')))
   const add = (option: MergedCliModelOption): void => {
     const id = option.id.trim()
     if (!id) return
+    if (option.origin !== 'user' && removed.has(id)) return
     const existing = byId.get(id)
     if (!existing) {
       byId.set(id, { ...option, id })
@@ -154,6 +164,41 @@ export function mergeCliModelCatalog(
     if (typeof entry === 'string') add({ id: entry, origin: 'user' })
   }
   return { options: [...byId.values()], allowCustomId: declared.allowCustomId }
+}
+
+/** One row of a CLI's model list in Settings, and whether it can be put back. */
+export type CliModelListing = {
+  /** What the pickers offer, in their order. */
+  listed: MergedCliModelOption[]
+  /** What the CLI or the seed still offers that the person took off the list. */
+  removed: Array<{ id: string; label?: string }>
+  /** Every id the CLI or the seed offers, removed or not: what a removal has to remember. */
+  reportedIds: ReadonlySet<string>
+}
+
+// The list Settings edits. `listed` is the merge every picker makes, so what
+// the page shows and what a picker offers cannot disagree. A removed id the CLI
+// no longer reports has nothing to restore and is not shown; it stays stored,
+// so it stays gone if the CLI lists it again.
+export function cliModelListing(
+  declared: PluginModelCatalog | undefined,
+  userModels: string[] | undefined,
+  discovered: DiscoveredCliModelCatalog | undefined,
+  now: number,
+  removedModels: readonly string[] | undefined,
+): CliModelListing {
+  const merged = mergeCliModelCatalog(declared, userModels, discovered, now, removedModels)
+  if (!merged) return { listed: [], removed: [], reportedIds: new Set() }
+  const removed = new Set(removedModels ?? [])
+  const listedIds = new Set(merged.options.map((option) => option.id))
+  const offered = mergeCliModelCatalog(declared, undefined, discovered, now)?.options ?? []
+  return {
+    listed: merged.options,
+    removed: offered
+      .filter((option) => removed.has(option.id) && !listedIds.has(option.id))
+      .map((option) => ({ id: option.id, ...(option.label ? { label: option.label } : {}) })),
+    reportedIds: new Set(offered.map((option) => option.id)),
+  }
 }
 
 function isRecentlyFirstSeen(firstSeenAt: string | undefined, now: number): boolean {

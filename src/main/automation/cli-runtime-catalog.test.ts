@@ -170,3 +170,17 @@ test('model sources that cannot be read leave the rows without a catalog rather 
   assert.equal(clis.length, 3)
   for (const entry of clis) assert.equal('catalog' in entry, false)
 })
+
+test('the phone’s catalog honours what was typed and what was removed on this machine', async () => {
+  const clis = await list({
+    readCliModelSources: async () => ({
+      ...SOURCES,
+      removedModels: (cli) => (cli === 'claude-code' ? ['claude-sonnet-5'] : undefined),
+    }),
+  })
+  const models = catalogOf(clis, 'claude-code').models as Array<{ id: string }>
+  assert.deepEqual(
+    models.map((model) => model.id),
+    ['claude-opus-5', 'claude-opus-5[1m]', 'claude-haiku-5'],
+  )
+})

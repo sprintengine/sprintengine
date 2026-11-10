@@ -469,12 +469,13 @@ function normalizeCliRuntimes(
   const result: AppSettings['cliRuntimes'] = {}
   for (const [id, runtime] of Object.entries(merged)) {
     const models = normalizeUserModelList(runtime.models)
-    const { models: _dropped, ...rest } = runtime
+    const removedModels = normalizeUserModelList(runtime.removedModels)
+    const { models: _dropped, removedModels: _droppedRemoved, ...rest } = runtime
     // The per-CLI "run through WSL" switch is gone (a WSL distribution is a
     // machine of its own now); a copy persisted before that must not ride
     // back to main on the next write.
     delete (rest as Record<string, unknown>).useWsl
-    result[id] = models ? { ...rest, models } : rest
+    result[id] = { ...rest, ...(models ? { models } : {}), ...(removedModels ? { removedModels } : {}) }
   }
   return result
 }
@@ -1421,7 +1422,11 @@ export function createSettingsSlice(set: SettingsSliceSet): SettingsSlice {
         }
         state.appSettings.cliRuntimes[cli] = next
         // A plain copy for main: `next.models` can still be the draft's array.
-        runtime = { ...next, ...(next.models ? { models: [...next.models] } : {}) }
+        runtime = {
+          ...next,
+          ...(next.models ? { models: [...next.models] } : {}),
+          ...(next.removedModels ? { removedModels: [...next.removedModels] } : {}),
+        }
       })
       if (runtime) launchSettingsClient.update({ cliRuntimes: { [cli]: runtime } })
     },

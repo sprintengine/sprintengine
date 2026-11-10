@@ -40,17 +40,18 @@ export function discoveredModelAdditions(
 // One notice per refresh that introduced ids for INSTALLED CLIs: "New models
 // for Claude Code" + up to three names, then "and N more". Two CLIs in one
 // refresh make one notice naming both. Ids the person already added by hand
-// are not news and are left out.
+// are not news and are left out, as are ids they took off the list.
 export function newModelsNotice(input: {
   additions: Record<string, ReadonlyArray<Pick<DiscoveredCliModel, 'id' | 'displayName'>>>
   installed: ReadonlySet<string>
   userModels: (cli: string) => ReadonlyArray<string>
+  removedModels?: (cli: string) => ReadonlyArray<string>
   displayName: (cli: string) => string
 }): Notice | null {
   const perCli = Object.entries(input.additions)
     .filter(([cli]) => input.installed.has(cli))
     .map(([cli, models]) => {
-      const own = new Set(input.userModels(cli))
+      const own = new Set([...input.userModels(cli), ...(input.removedModels?.(cli) ?? [])])
       return { cli, models: models.filter((model) => !own.has(model.id)) }
     })
     .filter((entry) => entry.models.length > 0)

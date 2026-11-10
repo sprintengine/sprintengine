@@ -72,6 +72,8 @@ export type GatewayBackendDeps = Pick<
    * serve that tool leaves it out.
    */
   userCliModels?: (cli: string) => readonly string[] | undefined
+  /** The ids the person took off a CLI's list in Settings. */
+  removedCliModels?: (cli: string) => readonly string[] | undefined
 }
 
 /**
@@ -82,16 +84,17 @@ export type GatewayBackendDeps = Pick<
  */
 export function launchSettingsGatewayDeps(settings: {
   get(): AgentLaunchSettings
-}): Pick<GatewayBackendDeps, 'defaultChatCli' | 'projectUsage' | 'userCliModels'> {
+}): Pick<GatewayBackendDeps, 'defaultChatCli' | 'projectUsage' | 'userCliModels' | 'removedCliModels'> {
   return {
     defaultChatCli: () => effectiveAgentLaunchSettings(settings.get()).lastSelectedCli ?? null,
     projectUsage: () => settings.get().projectUsage,
     userCliModels: (cli) => settings.get().cliRuntimes[cli]?.models,
+    removedCliModels: (cli) => settings.get().cliRuntimes[cli]?.removedModels,
   }
 }
 
 export function createServerGatewayBackends(deps: GatewayBackendDeps): AutomationBackends {
-  const { userCliModels, ...backends } = deps
+  const { userCliModels, removedCliModels, ...backends } = deps
   return {
     ...backends,
     // The model picker's sources, read where the picker's are: the discovery
@@ -101,6 +104,7 @@ export function createServerGatewayBackends(deps: GatewayBackendDeps): Automatio
           readCliModelSources: async () => ({
             discovered: await readDiscoveredCliModelCatalogs().catch(() => ({})),
             userModels: userCliModels,
+            ...(removedCliModels ? { removedModels: removedCliModels } : {}),
           }),
         }
       : {}),
