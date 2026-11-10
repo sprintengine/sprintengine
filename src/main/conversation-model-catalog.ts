@@ -3,7 +3,7 @@
 //
 // A chat agent runs on one CLI, and its picker offers that CLI's catalog: what
 // the CLI reported about itself (the manifest's seed until it has), then the
-// ids the person added in Settings. The renderer builds that list from the
+// ids the person added in Settings, less the ids the person took off the list. The renderer builds that list from the
 // plugin catalog, the discovered catalogs and the CLI runtimes it holds; this
 // builds the same list in main from the same three sources — the plugin
 // registry, the discovery cache main keeps under userData, and the launch
@@ -33,6 +33,8 @@ export type ConversationModelCatalogDeps = {
   readDiscovered: () => Promise<Record<string, DiscoveredCliModelCatalog>>
   /** The ids the person added for a CLI in Settings. */
   userModels: (cli: string) => readonly string[] | undefined
+  /** The ids the person took off a CLI's list in Settings. */
+  removedModels?: (cli: string) => readonly string[] | undefined
   now?: () => number
 }
 
@@ -52,7 +54,13 @@ export function createConversationModelCatalog(
     const entry = deps.listClis().find((candidate) => candidate.id === cli)
     if (!entry) return null
     const discovered = await deps.readDiscovered().catch((): Record<string, DiscoveredCliModelCatalog> => ({}))
-    const merged = mergeCliModelCatalog(entry.modelSelection, [...(deps.userModels(cli) ?? [])], discovered[cli], now())
+    const merged = mergeCliModelCatalog(
+      entry.modelSelection,
+      [...(deps.userModels(cli) ?? [])],
+      discovered[cli],
+      now(),
+      deps.removedModels?.(cli),
+    )
     if (!merged) return null
     const listed = merged.options.filter(
       (option) => option.id !== CONVERSATION_DEFAULT_MODEL_ID && option.id.length <= MAX_MODEL_ID_CHARS,

@@ -144,3 +144,11 @@ test('a timeout or a failing exit is a sentence, never an empty catalog', async 
       error.message === '`codex debug models` exited with code 1: Error: not logged in',
   )
 })
+
+test('Codex: a notice a wrapper printed before the catalog does not cost the list', () => {
+  const stdout = `This Codex is managed by your organization.\n${JSON.stringify({ models: [{ slug: 'gpt-x', visibility: 'list' }] })}\n`
+  assert.deepEqual(
+    parseCodexDebugModels(stdout).map((model) => model.id),
+    ['gpt-x'],
+  )
+})

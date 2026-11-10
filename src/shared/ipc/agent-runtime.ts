@@ -21,6 +21,9 @@ export type CliRuntimeSettings = {
   // manifest's seed options. Terminal CLIs expose no live model catalog, so
   // this list is how users keep pace with new models.
   models?: string[]
+  // Ids the person took off this CLI's list. They stay off when a refresh lists
+  // them again, until Settings puts them back.
+  removedModels?: string[]
 }
 
 // Result of probing whether an agent CLI binary is installed and runnable.

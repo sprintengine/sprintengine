@@ -92,6 +92,8 @@ export type CliRuntimeSettings = {
   // User-added model ids for this CLI, merged with the plugin manifest's seed
   // options in pickers. Mirrors the shared electron-api type.
   models?: string[]
+  // Ids the person took off this CLI's list; a refresh does not bring them back.
+  removedModels?: string[]
 }
 
 // Whether an agent CLI's binary is actually installed/runnable on this machine,

@@ -45,8 +45,15 @@ What each CLI offers, verified on 2026-09-22:
    edited in Settings, never touched by a refresh, and shown after the probed
    rows. It is how a model the CLI accepts but does not advertise is offered
    (Claude Code 2.1.280 accepts `claude-opus-5-5` but does not list it).
+   `cliRuntimes[cli].removedModels` is the other half: ids the person took off
+   the list. They are filtered out of the CLI's rows and the seed, so a refresh
+   that lists one again does not bring it back; Settings shows them under "Show
+   removed" with a Restore. Both lists belong to the machine the CLI runs on: a
+   paired machine or a phone reads that machine's list through the same merge
+   (`mergeCliModelCatalog`) and has no copy of its own.
 3. **A failed or skipped probe changes nothing.** The last good catalog stays;
-   the Settings line says the probe failed and offers Refresh.
+   Settings says the probe failed or was skipped, and points at typing a model
+   in, which works whether or not discovery ever answers.
 4. **"New" is per machine.** A row carries `firstSeenAt`, the time a probe on
    this machine first listed its id, carried forward across refreshes. The chip
    shows for `NEW_FOR_DAYS` (30) after that. Rows from the first-ever probe for

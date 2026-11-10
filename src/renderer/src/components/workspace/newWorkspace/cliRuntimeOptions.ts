@@ -177,6 +177,7 @@ function legacyCliRuntimeOptions(
       cliRuntimes?.[value]?.models,
       discovered?.[value],
       now,
+      cliRuntimes?.[value]?.removedModels,
     )
     return {
       value,
@@ -341,6 +342,7 @@ export function buildAgentCliCatalog(
       cliRuntimes?.[id]?.models,
       discovered?.[id],
       now,
+      cliRuntimes?.[id]?.removedModels,
     )
     options.push({
       value: id,

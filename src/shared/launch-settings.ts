@@ -53,6 +53,8 @@ const READABLE_SCHEMA_VERSIONS: readonly number[] = [1, AGENT_LAUNCH_SETTINGS_SC
 export type AgentLaunchCliRuntimeSettings = {
   command: string
   models?: string[]
+  /** Ids the person took off this CLI's list; a refresh does not bring them back. */
+  removedModels?: string[]
 }
 
 export type AgentLaunchSettings = {
@@ -353,6 +355,9 @@ function normalizeCliRuntime(value: unknown): AgentLaunchCliRuntimeSettings | nu
     command: value.command,
     ...(Array.isArray(value.models)
       ? { models: value.models.filter((model): model is string => typeof model === 'string') }
+      : {}),
+    ...(Array.isArray(value.removedModels)
+      ? { removedModels: value.removedModels.filter((model): model is string => typeof model === 'string') }
       : {}),
   }
 }

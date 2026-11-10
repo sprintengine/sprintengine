@@ -1724,6 +1724,7 @@ export default function WorkspaceManager() {
             .map((entry) => entry!.cli),
         ),
         userModels: (cli) => state.appSettings.cliRuntimes?.[cli]?.models ?? [],
+        removedModels: (cli) => state.appSettings.cliRuntimes?.[cli]?.removedModels ?? [],
         displayName: (cli) => state.pluginCatalogEntries.find((entry) => entry.id === cli)?.displayName ?? cli,
       })
       if (!added) return

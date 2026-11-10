@@ -345,6 +345,8 @@ export type CliModelSources = {
   discovered: Record<string, DiscoveredCliModelCatalog>
   /** The ids the person added for a CLI in Settings. */
   userModels: (cli: string) => readonly string[] | undefined
+  /** The ids the person took off a CLI's list in Settings. */
+  removedModels?: (cli: string) => readonly string[] | undefined
 }
 
 type BacklogWriteBackends = {
@@ -3164,6 +3166,7 @@ function cliRuntimeCatalog(plugin: LoadedPlugin, sources: CliModelSources, now: 
     [...(sources.userModels(manifest.id) ?? [])],
     sources.discovered[manifest.id],
     now,
+    sources.removedModels?.(manifest.id),
   )
   const hostedVia = pluginHostedVia(manifest) ?? null
   return {

@@ -217,12 +217,17 @@ test('settingsSlice', async () => {
   const modelNormalized = normalizeAppSettings(
     {
       cliRuntimes: {
-        codex: { command: 'codex', models: [' gpt-5-codex ', '', 'gpt-5-codex', 'o4-mini'] },
+        codex: {
+          command: 'codex',
+          models: [' gpt-5-codex ', '', 'gpt-5-codex', 'o4-mini'],
+          removedModels: [' gpt-old ', '', 'gpt-old'],
+        },
       },
     },
     [],
   )
   assert.deepEqual(modelNormalized.cliRuntimes.codex.models, ['gpt-5-codex', 'o4-mini'])
+  assert.deepEqual(modelNormalized.cliRuntimes.codex.removedModels, ['gpt-old'])
   assert.equal(modelNormalized.cliRuntimes['claude-code'].models, undefined)
   assert.equal('cliModelDefaults' in modelNormalized, false)
   // cliModelCatalog: what each CLI reported about itself, app-owned and kept

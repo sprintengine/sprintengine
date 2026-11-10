@@ -435,6 +435,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     listClis: () => listPluginRegistryEntries(),
     readDiscovered: () => readDiscoveredCliModelCatalogs(),
     userModels: (cli) => agentLaunchSettings.get().cliRuntimes[cli]?.models,
+    removedModels: (cli) => agentLaunchSettings.get().cliRuntimes[cli]?.removedModels,
   })
 
   // Starting a chat for a caller with no window to start it in (a paired

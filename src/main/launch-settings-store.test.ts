@@ -122,6 +122,18 @@ test('update writes only the fields its patch names', async () => {
       codex: { command: 'codex', models: ['gpt-6'] },
     })
 
+    // What the person took off a CLI's list is stored with the rest of it.
+    result = store.update(
+      { cliRuntimes: { codex: { command: 'codex', models: ['gpt-6'], removedModels: ['gpt-5', 7] } } },
+      'ui',
+    )
+    assert.deepEqual(result.record.settings.cliRuntimes.codex, {
+      command: 'codex',
+      models: ['gpt-6'],
+      removedModels: ['gpt-5'],
+    })
+    result = store.update({ cliRuntimes: { codex: { command: 'codex', models: ['gpt-6'] } } }, 'ui')
+
     // One machine's settings, replaced whole; an id that is not a machine,
     // and an environment name no shell can export, are dropped.
     result = store.update(

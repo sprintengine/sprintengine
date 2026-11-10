@@ -129,3 +129,16 @@ test('a notice names an unlabelled id by the id itself', () => {
     { title: 'New model for OpenCode', description: 'openai/gpt-5.6 is in the picker.' },
   )
 })
+
+test('a model the person took off the list is not announced when a refresh lists it', () => {
+  assert.equal(
+    newModelsNotice({
+      additions: { codex: [{ id: 'gpt-x' }] },
+      installed: new Set(['codex']),
+      userModels: () => [],
+      removedModels: () => ['gpt-x'],
+      displayName: () => 'Codex',
+    }),
+    null,
+  )
+})
