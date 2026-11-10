@@ -196,6 +196,7 @@ import { showToast, useToastStore } from '../../store/toastStore'
 import { chatsWaitingOnYou, nextWaitingChatId } from './nextWaitingChat'
 import { createNewChatStay, NEW_CHAT_STAY_WATCH_MS, type NewChatStay } from './newChatStay'
 import { WorkspaceBand, WorkspaceBandGround } from './WorkspaceBand'
+import { CardCover } from './CardCover'
 import { paneShowsMenu } from '../../store/slices/workspacePaneSlice'
 import { GlobalSurfaceBarSlotContext } from './globalSurface/surfaceBarSlot'
 import { ModalSurfaceFrame } from './globalSurface/GlobalSurfaceShell'
@@ -5427,9 +5428,12 @@ export default function WorkspaceManager() {
                   close discards. Sits above the layers so it works whether or not
                   a workspace is active. */}
                       {newChatPanelState ? (
-                        <div
+                        // From the window's top, so the chat behind it cannot
+                        // show above it (CardCover), on the panel's own ground:
+                        // it runs to the top as the chat does.
+                        <CardCover
                           data-new-chat-door=""
-                          className="absolute inset-x-0 bottom-0 top-[36px] z-10 isolate overflow-auto rounded-[var(--shell-card-radius)] bg-[color:var(--bg-app)]"
+                          className="z-10 isolate overflow-auto rounded-[var(--shell-card-radius)] bg-[color:var(--agent-surface)]"
                         >
                           <React.Suspense fallback={<SuspenseFallback label="Loading new chat" />}>
                             {/* New chat opens the SAME launch surface the tab
@@ -5525,7 +5529,7 @@ export default function WorkspaceManager() {
                               bootComposer={newChatDoorTakesBootComposer}
                             />
                           </React.Suspense>
-                        </div>
+                        </CardCover>
                       ) : null}
                     </>
                   </div>
@@ -5547,14 +5551,15 @@ export default function WorkspaceManager() {
             the neutral surface ground — the themed canvas (sage in the green
             themes) stays the sidebar/chrome's identity only. */}
                   {activeGlobalSurfaceEntry ? (
-                    <div
+                    <CardCover
                       ref={setSurfaceRegionEl}
                       // Focusable, ring-less: the door's keyboard home when its rail did not
                       // replace the sidebar (see the focus effect above). `tabindex=-1` also
                       // makes a click on the door's own empty canvas land here instead of on
                       // `<body>`, which is what keeps Escape armed for the whole visit.
                       tabIndex={-1}
-                      className="absolute inset-x-0 bottom-0 top-[36px] z-[var(--z-pane)] overflow-hidden rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)] outline-none"
+                      // From the window's top, as New chat is (CardCover).
+                      className="z-[var(--z-pane)] overflow-hidden rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)] outline-none"
                     >
                       <GlobalSurfaceBarSlotContext.Provider value={surfaceBarSlot}>
                         {/* The rail lifts into the app sidebar's column; the surface just
@@ -5578,7 +5583,7 @@ export default function WorkspaceManager() {
                           </SurfaceExitContext.Provider>
                         </ContextRailSlotContext.Provider>
                       </GlobalSurfaceBarSlotContext.Provider>
-                    </div>
+                    </CardCover>
                   ) : null}
                   {/* The one first-run question the app cannot answer for itself. Held back
             while anything else owns the region — a door, the New chat door, the new
