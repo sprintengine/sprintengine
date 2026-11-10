@@ -27,14 +27,12 @@ const WORDMARK_SIZE: Record<WordmarkSize, { fontSize: number; lineHeight: number
  *   colour, and it scales with the OS font-size setting like everything else.
  * - **The accent is ink, never a fill.** That is what keeps the wordmark inside
  *   the one-accent-per-view budget: it colours letterforms and nothing else.
- * - **No mark glyph.** The mark is the application icon and nothing else,
- *   so no UI is coupled to it. The welcome screen shows
- *   the icon itself, as an image cut from the icon's master, never a mark
- *   redrawn beside the name.
+ * - **No mark glyph beside it.** The welcome screen shows the icon itself, as
+ *   an image cut from the icon's master, never a mark redrawn beside the name.
  *
- * It appears where the site shows it: at display size on the welcome screen and
- * at nav size in the header of the tab roots that carry the brand. Its green
- * "engine" is the only green text in the app.
+ * It appears under the icon on the welcome screen. The chat list's top bar,
+ * where it wrapped onto two lines at phone width, wears the "se" monogram
+ * instead (`SprintEngineMonogram`), as the desktop's rail does.
  */
 export function SprintEngineWordmark({ style, size = "title" }: { style?: TextStyle; size?: WordmarkSize }) {
   const { colors } = useTheme();

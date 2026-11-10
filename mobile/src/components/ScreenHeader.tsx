@@ -6,7 +6,7 @@ import { useThemedStyles } from "../theme/ThemeProvider";
 import { space, typography, type Theme, fontWeight } from "../theme/tokens";
 import { ChevronIcon, iconSize } from "./glyphs";
 import { IconButton } from "./IconButton";
-import { SprintEngineWordmark } from "./SprintEngineWordmark";
+import { SprintEngineMonogram } from "./SprintEngineMonogram";
 
 interface ScreenHeaderProps {
   title?: string;
@@ -19,8 +19,8 @@ interface ScreenHeaderProps {
   backLabel?: string;
   /** Header controls: the desktop picker, a create button. Keep it to two. */
   trailing?: ReactNode;
-  /** The wordmark in place of a title — the root screen that carries the brand. */
-  wordmark?: boolean;
+  /** The "se" monogram in place of a title — the root screen that carries the brand. */
+  monogram?: boolean;
   /**
    * A line under the title, for the chips a thread carries — the project, the
    * desktop. It sits BELOW the title
@@ -30,7 +30,7 @@ interface ScreenHeaderProps {
   subtitle?: ReactNode;
   /**
    * `nav` is the 17pt bar title every pushed screen wears. `large` is the 24pt
-   * one a root screen wears where it has no wordmark.
+   * one a root screen wears where it has no monogram.
    */
   titleScale?: "nav" | "large";
   /** Drop the hairline under the bar — for a screen whose own big title follows. */
@@ -60,7 +60,7 @@ export function ScreenHeader({
   onBack,
   backLabel,
   trailing,
-  wordmark,
+  monogram,
   subtitle,
   titleScale = "nav",
   flush = false,
@@ -70,7 +70,7 @@ export function ScreenHeader({
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
 
-  const hasContent = Boolean(title || eyebrow || onBack || trailing || wordmark || subtitle);
+  const hasContent = Boolean(title || eyebrow || onBack || trailing || monogram || subtitle);
 
   return (
     <View
@@ -93,7 +93,7 @@ export function ScreenHeader({
             </View>
           ) : null}
           <View style={styles.copy}>
-            {wordmark ? <SprintEngineWordmark size="header" /> : null}
+            {monogram ? <SprintEngineMonogram /> : null}
             {eyebrow ? (
               <Text numberOfLines={1} style={styles.eyebrow}>
                 {eyebrow}
@@ -130,7 +130,7 @@ const createStyles = ({ colors }: Theme) =>
       backgroundColor: colors.agentSurface,
     },
     // The site's 56px bar: a hairline under a canvas-coloured strip, the
-    // wordmark or title left and at most two icon actions right.
+    // monogram or title left and at most two icon actions right.
     headerBar: {
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.borderSubtle,

@@ -72,8 +72,8 @@ const LIST_POLL_MS = 15_000;
 
 /**
  * Home: chats across every paired desktop, in the desktop sidebar's shape
- * (design 2026-09-29-desktop-chat-parity, part five). The wordmark leads the
- * top bar, with search, the bell and Settings beside it; New floats over the
+ * (design 2026-09-29-desktop-chat-parity, part five). The "se" monogram leads
+ * the top bar, with search, the bell and Settings beside it; New floats over the
  * list. Search grows out of its button across the bar (`ExpandingSearch`),
  * so the list starts right under the bar. Grouping by project or by date is a
  * setting, not a control here.
@@ -341,7 +341,7 @@ export function ConversationsScreen({
           <CircleButton icon={<GearIcon size={iconSize.md} tone="textPrimary" />} label="Settings" onPress={onOpenSettings} />
         </Animated.View>
       }
-      wordmark
+      monogram
     >
       <SectionList<ChatListRow, Section>
         contentContainerStyle={content}
