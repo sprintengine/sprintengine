@@ -279,6 +279,35 @@ export function stripUserAgent(userAgent: string): string {
     .trim()
 }
 
+/**
+ * A response's body, or null once it runs past `max` bytes. Reading stops
+ * there and the rest is cancelled, so a page whose icon link points at a large
+ * file never has the whole file pulled into memory to be thrown away.
+ */
+export async function readFaviconBytes(response: Response, max: number): Promise<Buffer | null> {
+  if (Number(response.headers.get('content-length')) > max) {
+    await response.body?.cancel().catch(() => undefined)
+    return null
+  }
+  if (!response.body) {
+    const whole = Buffer.from(await response.arrayBuffer())
+    return whole.byteLength > max ? null : whole
+  }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) return Buffer.concat(chunks)
+    total += value.byteLength
+    if (total > max) {
+      await reader.cancel().catch(() => undefined)
+      return null
+    }
+    chunks.push(value)
+  }
+}
+
 // Fetched on the browser's own session: the page's cookies (an auth-gated dev
 // server) and the stripped user agent travel with it.
 async function fetchFaviconDataUrl(browserSession: Session, url: string): Promise<string | null> {
@@ -290,8 +319,8 @@ async function fetchFaviconDataUrl(browserSession: Session, url: string): Promis
     if (!response.ok) return null
     const type = response.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
     if (!type.startsWith('image/')) return null
-    const buffer = Buffer.from(await response.arrayBuffer())
-    if (buffer.byteLength === 0 || buffer.byteLength > MAX_FAVICON_BYTES) return null
+    const buffer = await readFaviconBytes(response, MAX_FAVICON_BYTES)
+    if (!buffer || buffer.byteLength === 0) return null
     return `data:${type};base64,${buffer.toString('base64')}`
   } catch {
     return null

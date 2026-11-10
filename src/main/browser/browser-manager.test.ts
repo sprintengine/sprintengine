@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import {
   ALLOWED_PERMISSIONS,
+  readFaviconBytes,
   TAB_MOVE_GRACE_MS,
   createAgentTabAssignments,
   createBrowserManager,
@@ -224,6 +225,26 @@ function electronUserAgent(appToken: string): string {
 
 test("a page cannot post system notifications under the app's name", () => {
   assert.equal(ALLOWED_PERMISSIONS.has('notifications'), false)
+})
+
+test('a favicon is read up to its cap and no further', async () => {
+  assert.deepEqual(await readFaviconBytes(new Response(new Uint8Array([1, 2, 3])), 8), Buffer.from([1, 2, 3]))
+  let pulled = 0
+  let cancelled = false
+  const endless = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulled += 1
+      controller.enqueue(new Uint8Array(4))
+    },
+    cancel() {
+      cancelled = true
+    },
+  })
+  assert.equal(await readFaviconBytes(new Response(endless), 8), null)
+  assert.equal(cancelled, true, 'the rest of the body is cancelled')
+  assert.ok(pulled <= 4, 'reading stops at the cap')
+  const declared = new Response(new Uint8Array(4), { headers: { 'content-length': '9000' } })
+  assert.equal(await readFaviconBytes(declared, 8), null)
 })
 
 test('a page may lock the pointer, as a game or 3D viewer does', () => {
