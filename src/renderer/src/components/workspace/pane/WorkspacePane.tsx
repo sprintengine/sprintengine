@@ -113,6 +113,9 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
 
   const tabs = paneState?.tabs ?? []
   const showsMenu = paneShowsMenu(paneState)
+  // Over the menu the strip floats over the list rather than standing above it
+  // (below). Over a narrow window the menu has no strip at all.
+  const stripFloats = showsMenu && !narrow
   // What the column is showing: nothing of the strip's while its menu is up,
   // so a retained tab parks and a kept one unmounts, as behind another tab.
   // `activeTabId` stands through the menu: it is where Back returns to.
@@ -260,8 +263,18 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
           column stays INTERACTIVE while a tab is floating (the player paints
           outside it), so the strip has to take itself out of the tab order —
           otherwise focus lands in chrome nobody can see. */}
+      {/* Over the menu the strip holds nothing but the close control, so it
+          floats over the list instead of standing above it: a band that drew
+          nothing still cut the list off at its foot when it scrolled. The
+          list starts at the pane's top and opens the strip's height down
+          (ChatPanel `underStrip`). The close control wears its pressed fill,
+          so it stays readable over what scrolls under it. A tool's strip has
+          tabs and controls in it, and stays a band in the flow. */}
       <div
-        className={`app-drag relative h-[36px] shrink-0 items-end pl-1.5 pr-1 ${narrow && showsMenu ? 'hidden' : 'flex'}`}
+        data-pane-strip={stripFloats ? 'floating' : 'band'}
+        className={`app-drag h-[36px] shrink-0 items-end pl-1.5 pr-1 ${narrow && showsMenu ? 'hidden' : 'flex'} ${
+          stripFloats ? 'absolute inset-x-0 top-0 z-[var(--z-sticky)]' : 'relative'
+        }`}
         inert={collapsedWithFloatingPlayer}
       >
         {/* A tool's strip: Back to the menu, then a glyph per open tab, which is
@@ -376,12 +389,17 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
         />
       </div>
       {/* The pane's body continues the card under the strip, so only its foot
-          rounds. `overflow-hidden` is what clips a terminal or a browser to the
+          rounds — or, with the strip floating over the menu, the body is the
+          whole card and rounds at every corner, as the ground behind it does. `overflow-hidden` is what clips a terminal or a browser to the
           corners. The gap toward the workspace card is this card's own margin
-          and reads --shell-card-gap, the same token the sidebar card uses on
+          and reads --shell-card-gap, the same token the sidebar column uses on
           its other side, so the two gaps in the shell cannot drift apart. It
           takes the same gap on its RIGHT, against the window edge. */}
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-b-[var(--shell-card-radius)] ml-[var(--shell-card-gap)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)]">
+      <div
+        className={`relative min-h-0 flex-1 overflow-hidden ml-[var(--shell-card-gap)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)] ${
+          stripFloats ? 'rounded-[var(--shell-card-radius)]' : 'rounded-b-[var(--shell-card-radius)]'
+        }`}
+      >
         {tabs.length > 0 ? (
           <WorkspacePaneBody
             workspaceId={workspaceId}
@@ -407,6 +425,7 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
         {showsMenu && paneOpen ? (
           <div className="absolute inset-0">
             <ChatPanel
+              underStrip={stripFloats}
               workspaceId={workspaceId}
               tabs={tabs}
               items={items}

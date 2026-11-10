@@ -38,7 +38,7 @@
 import React from 'react'
 import { IconButton, Tooltip } from '../ui'
 import { BandPanelToggle } from './BandPanelToggle'
-import { APP_RAIL_WIDTH, TRAFFIC_LIGHT_RESERVE } from './AppRail'
+import { TRAFFIC_LIGHT_RESERVE, appRailWidth, trafficLightOverhang } from './AppRail'
 import { AppMenuButton } from './SidebarChrome'
 import { WindowCaptionReserve } from './WindowControls'
 import type { WorkspaceId } from '../../types/workspace'
@@ -126,9 +126,11 @@ function NewChatButton({ onClick }: { onClick: () => void }) {
 
 /**
  * The room the band's left end leaves for the macOS traffic lights: what
- * they run past the rail's edge while the rail stands beside the strip, and
- * all of their reserve when the narrow layout has hidden the rail (a window
- * at its narrowest, zoomed in) and the strip starts at the window's edge.
+ * they run past the rail's edge while the rail stands beside the strip —
+ * nothing, now that a rail beside a collapsed sidebar widens to the lights'
+ * whole reserve (appRailWidth) — and all of their reserve when the narrow
+ * layout has hidden the rail (a window at its narrowest, zoomed in) and the
+ * strip starts at the window's edge.
  */
 export function bandTrafficLightInset({
   isMac,
@@ -142,7 +144,12 @@ export function bandTrafficLightInset({
   besideRail: boolean
 }): number {
   if (!isMac || isFullScreen || !sidebarCollapsed) return 0
-  return besideRail ? TRAFFIC_LIGHT_RESERVE - APP_RAIL_WIDTH : TRAFFIC_LIGHT_RESERVE
+  if (!besideRail) return TRAFFIC_LIGHT_RESERVE
+  return trafficLightOverhang({
+    isMac,
+    isFullScreen,
+    railWidth: appRailWidth({ isMac, isFullScreen, sidebarCollapsed }),
+  })
 }
 
 /** The band's ground and drag region, under the layout's strips. */
@@ -192,12 +199,12 @@ export function WorkspaceBand<MenuItem extends string>({
   // With the sidebar hidden, the app-menu (win-linux) and the open-sidebar /
   // search / New Agent launcher relocate here. The app rail stays put when the
   // sidebar collapses (app shell, 2026-09-05), so this strip starts at the rail's
-  // edge — but the macOS traffic lights run PAST that edge: the hiddenInset frame
-  // pins them at x:12 and they end at TRAFFIC_LIGHT_RESERVE (78), 22px beyond the
-  // 56px rail. The sidebar's own chrome row insets by that remainder when it is
-  // the strip beside the rail (SidebarChrome); when it is hidden this strip is,
-  // and takes the same inset — without it the launcher's first glyph sat under
-  // the green light. In fullscreen the lights are hidden and the inset collapses.
+  // edge. The macOS traffic lights end at TRAFFIC_LIGHT_RESERVE (78), past the
+  // rail's own 56px, and the rail beside a collapsed sidebar widens to cover them
+  // (appRailWidth): the strip, and the card under it, start after the lights
+  // rather than under the green one. Only when the narrow layout hides the rail
+  // does the strip itself start at the window's edge and inset for all of them.
+  // In fullscreen the lights are hidden and the inset collapses.
   const trafficLightInset = bandTrafficLightInset({ isMac, isFullScreen, sidebarCollapsed, besideRail })
   const leftRef = useBandInset('--band-inset-left')
   const rightRef = useBandInset('--band-inset-right')

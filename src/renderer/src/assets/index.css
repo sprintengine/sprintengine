@@ -260,6 +260,15 @@
      re-points it, and that one line is the whole switch between the top band's
      looks. */
   --bg-chrome-bar: var(--bg-canvas);
+  /* Ground for the window's LEFT side: the app rail and the sidebar column, top
+     to bottom and behind the traffic lights too. On a solid window it is the
+     surface the pane on the right stands on, so the left side stands apart
+     from the working area the way the pane does, and the sidebar's card and
+     the rail read as one piece of it. The glass and tinted block below hands it
+     back to the canvas, so there the left side stays made of the material. The
+     gap between the left side and the workspace card is not painted with it:
+     the rail and the sidebar column leave it to the canvas (bg-clip-content). */
+  --bg-side-canvas: var(--bg-surface);
   /* The one gap between the shell's three cards — sidebar | workspace | pane.
      ONE token because the two gaps have to measure the same: the eye reads an
      uneven frame as a mistake long before it reads it as a gap. It lives on the
@@ -5024,6 +5033,14 @@ body:has([data-selection-pane]:focus-within)
   --markdown-fade-end: var(--sem-space-3xl);
 }
 
+/* A list that scrolls up under chrome floating over it (the pane's menu under
+ * the pane's strip, workspace/pane/panel/ChatPanel.tsx) fades its top edge once
+ * something has gone up there, so the list is never cut off on a hard line.
+ * At rest it is drawn plain. Like the table above, the mask takes only alpha. */
+.scroll-fade-top[data-scrolled] {
+  mask-image: linear-gradient(to bottom, transparent, black var(--sem-space-xl));
+}
+
 .markdown-table-scroll:is([data-overflow-start], [data-overflow-end]) {
   mask-image: linear-gradient(
     to right,
@@ -5057,6 +5074,9 @@ body:has([data-selection-pane]:focus-within)
      canvas layer is also what keeps the layering rule above true — the body
      tint stays the only tint in the band. */
   --bg-chrome-bar: transparent;
+  /* The left side is chrome made of the material here, as it was before the
+     solid window gave it the pane's surface. */
+  --bg-side-canvas: var(--bg-canvas);
   /* A field in the chrome tints the frost instead of replacing it, so it stays
      the same material as the bar it sits in and reads as a field by its border
      and its depth rather than by being a different colour. Mixed from --bg-app,

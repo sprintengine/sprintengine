@@ -26,7 +26,7 @@
 import React from 'react'
 import { IconButton, MenuItem, Popover, Tooltip } from '../ui'
 import { MENU_LIST_CLASS } from '../ui/menuClasses'
-import { APP_RAIL_WIDTH, TRAFFIC_LIGHT_RESERVE } from './AppRail'
+import { APP_RAIL_WIDTH, trafficLightOverhang } from './AppRail'
 
 // The row's icon buttons are the kit's `IconButton` at its default `sm` step —
 // `size.control.xs`, the system's icon-button step (principles.md, "Space and
@@ -56,6 +56,9 @@ type SidebarChromeProps<MenuItem extends string> = {
   // (sidebarHoverReveal.tsx). The toggle then docks it rather than collapsing
   // something already collapsed, and says so.
   revealed?: boolean
+  // How wide the app rail beside this row stands (appRailWidth): the row insets
+  // for whatever of the traffic lights runs past it.
+  railWidth?: number
 }
 
 // Sidebar toggle: white (text-strong) while its
@@ -201,6 +204,7 @@ export function SidebarChrome<MenuItem extends string>({
   menuItems,
   onShowMenu,
   revealed = false,
+  railWidth = APP_RAIL_WIDTH,
 }: SidebarChromeProps<MenuItem>) {
   // Only rendered while the sidebar is expanded (the whole sidebar is hidden when
   // collapsed — the collapsed launcher lives in WorkspaceBand instead), or while
@@ -210,8 +214,10 @@ export function SidebarChrome<MenuItem extends string>({
   // (app shell, 2026-09-05), and the native macOS traffic lights start
   // in its top reserve — but the rail is a glyph column now, narrower than the
   // lights' 78px span, so the remainder of that span is this row's leading
-  // inset. In fullscreen the lights are hidden and the inset collapses.
-  const trafficLightInset = isMac && !isFullScreen ? TRAFFIC_LIGHT_RESERVE - APP_RAIL_WIDTH : 0
+  // inset. Shown at the edge, the sidebar is collapsed and the rail has widened
+  // to the whole span itself, so there is no remainder. In fullscreen the
+  // lights are hidden and the inset collapses.
+  const trafficLightInset = trafficLightOverhang({ isMac, isFullScreen, railWidth })
 
   return (
     // ONE row (owner, 2026-07-30): one chrome row per content region. Height-
