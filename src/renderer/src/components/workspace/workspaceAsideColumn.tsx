@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from 'react'
 
 import { FOCUS_RING_CLASS } from '../ui/tokens'
 import { startColumnResizeDrag } from './columnResizeDrag'
+import { CARD_COVER_CLASS } from './CardCover'
 import {
   WORKSPACE_ASIDE_DEFAULT_WIDTH,
   WORKSPACE_ASIDE_MIN_WIDTH,
@@ -160,14 +161,15 @@ export function WorkspaceAsideColumn({
         // Overlaying, it floats and takes the overlay pair: the modal shadow and
         // `--radius-lg`, as a floating tab does.
         // Filling: the column floats over the card row (the caller's
-        // `relative` wrapper) below the 36px band rather than
-        // growing beside the content, so the header's controls stay reachable
-        // and the terminals underneath keep their size — nothing reflows on
-        // maximise.
+        // `relative` wrapper) rather than growing beside the content, so the
+        // terminals underneath keep their size — nothing reflows on maximise.
+        // It covers the row from the window's top, as a door does, since the
+        // chat under it runs up under the band (CardCover); its tabs start
+        // below the band, where the band's controls stay reachable.
         overlay
           ? 'absolute bottom-[var(--shell-card-gap)] right-[var(--shell-card-gap)] top-[36px] z-[var(--z-pane)] rounded-[var(--radius-lg)] border border-[color:var(--border-default)] shadow-[var(--shadow-modal)]'
           : fill
-            ? 'absolute inset-x-0 bottom-0 top-[36px] z-[var(--z-pane)]'
+            ? `${CARD_COVER_CLASS} z-[var(--z-pane)]`
             : 'relative h-full',
         // Inset-card layout: no hairline on the inner edge.
         // The gap IS the separator and it is the CARD's margin, not this
@@ -202,7 +204,9 @@ export function WorkspaceAsideColumn({
           />
         </div>
       ) : null}
-      {children}
+      {/* What the tenant's layers measure from: the column's whole box, or
+          below the band while it fills. */}
+      <div className="relative min-h-0 flex-1">{children}</div>
     </aside>
   )
 }
