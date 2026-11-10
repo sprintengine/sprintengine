@@ -9,7 +9,7 @@ a backlog, a canvas, a browser and a pool of worktrees to work with.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/hero-dark.png">
-  <img alt="A chat in SprintEngine Studio: the sidebar lists chats by project, and the reply explains a symplectic integrator with typeset maths" src="docs/images/readme/hero-light.png">
+  <img alt="A chat in SprintEngine Studio: the sidebar lists chats by project beside the app rail, and the reply explains a symplectic integrator with typeset maths" src="docs/images/readme/hero-light.png">
 </picture>
 
 ## A look around
@@ -23,11 +23,11 @@ code and the steps the agent took to get there.
 
 ### Agents that fan out
 
-A chat can send work off to several agents at once. Each one shows what it is
-doing, how long it took and what it spent, and the Agents pane keeps the whole
-roster in view.
+A chat can send work off to several agents at once. Each one reports back into
+the chat with what it found and how long it took, and the chat's side pane lists
+them under Subagents beside its changes, files, branch and permissions.
 
-![Three agents reporting back into one chat, with the Agents pane listing them on the right](docs/images/readme/agents.png)
+![Three agents reporting back into one chat, with the chat's side pane listing them under Subagents](docs/images/readme/agents.png)
 
 ### A canvas the agent draws on
 
