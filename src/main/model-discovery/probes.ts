@@ -47,7 +47,7 @@ function text(value: unknown): string | undefined {
 export function parseCodexDebugModels(stdout: string): DiscoveredCliModel[] {
   let parsed: unknown
   try {
-    parsed = JSON.parse(stdout)
+    parsed = JSON.parse(codexJsonDocument(stdout))
   } catch {
     throw new CliModelProbeError('Codex did not print its model list as JSON.')
   }
@@ -85,6 +85,15 @@ export function parseCodexDebugModels(stdout: string): DiscoveredCliModel[] {
     models.push(model)
   }
   return dedupeById(models)
+}
+
+// The JSON document in Codex's output. A wrapper script around the binary, the
+// usual shape of a managed install, can print a notice of its own first, and
+// that line must not cost the whole list.
+function codexJsonDocument(stdout: string): string {
+  const start = stdout.search(/\{\s*"models"/)
+  const end = stdout.lastIndexOf('}')
+  return start >= 0 && end > start ? stdout.slice(start, end + 1) : stdout
 }
 
 function priorityOf(row: Record<string, unknown>): number {

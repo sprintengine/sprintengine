@@ -142,3 +142,8 @@ test('a probe drops the terminal override and turns the IDE lookup off', () => {
     CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: '1',
   })
 })
+
+test('a build that answers without a list fails in words, not with a type error', async () => {
+  const { deps } = fakeSdk(async () => undefined as unknown as ModelInfo[])
+  await assert.rejects(probeAgentSdkModels(CONTEXT, deps), /answered without a model list/)
+})

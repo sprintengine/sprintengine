@@ -129,7 +129,12 @@ export async function probeAgentSdkModels(
         context.timeoutMs,
       )
     })
-    return mapAgentSdkModels(await Promise.race([session.supportedModels(), deadline]))
+    const rows: unknown = await Promise.race([session.supportedModels(), deadline])
+    // A build older than the SDK's handshake answers without a list at all.
+    if (!Array.isArray(rows)) {
+      throw new CliModelProbeError(`${context.displayName} answered without a model list.`)
+    }
+    return mapAgentSdkModels(rows as ModelInfo[])
   } catch (error) {
     if (error instanceof CliModelProbeError) throw error
     const detail = error instanceof Error ? error.message : String(error)
