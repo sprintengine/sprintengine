@@ -493,6 +493,14 @@ export type AppSettings = {
    * move on their own (owner ruling 2026-09-09), and this is the opt-in.
    */
   sidebarWorkingSection: boolean
+  /**
+   * With the sidebar collapsed, resting the pointer at the window's left edge
+   * shows it over the workspace until the pointer moves away
+   * (workspace/sidebarHoverReveal.ts). Settings ▸ Appearance. On by default:
+   * it only ever acts in a state the person chose, at an edge they reach for
+   * on purpose, and it never changes whether the sidebar is collapsed.
+   */
+  sidebarHoverReveal: boolean
   /** How many quiet days settle a chat with Auto-settle on (Settings ▸ Settled chats), 1 to 90. */
   autoSettleAfterDays: number
   /**

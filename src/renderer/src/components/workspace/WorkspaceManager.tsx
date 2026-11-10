@@ -164,6 +164,7 @@ import {
   requestTerminalFocus,
 } from '../../utils/terminalFocusRequest'
 import { SidebarChrome } from './SidebarChrome'
+import { SidebarRevealFrame, SidebarRevealZones, useFineHover, useSidebarHoverReveal } from './sidebarHoverReveal'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useNarrowViewport } from '../../hooks/useNarrowViewport'
 import {
@@ -779,6 +780,16 @@ export default function WorkspaceManager() {
   useEffect(() => {
     setNarrowSidebarShown(false)
   }, [narrowViewport, windowActiveWorkspaceId, newChatPanelOpen, activeGlobalSurface])
+  // The collapsed sidebar shown at the window's left edge (Settings ▸
+  // Appearance). It goes away on the same moves that hand a phone's screen
+  // back to the content: choosing a chat, New chat, another surface.
+  const sidebarHoverRevealSetting = useWorkspaceStore((s) => s.appSettings.sidebarHoverReveal)
+  const fineHover = useFineHover()
+  const sidebarReveal = useSidebarHoverReveal({
+    enabled: sidebarCollapsed && sidebarHoverRevealSetting && fineHover && !narrowViewport,
+    dismissKey: `${windowActiveWorkspaceId ?? ''}|${newChatPanelOpen ? 'new' : ''}|${activeGlobalSurface ?? ''}`,
+  })
+  const sidebarRevealed = sidebarReveal.shown
   // Guards the async adoption against a second workspace creation landing before
   // the persisted `hasAdoptedAgentConfig` flag has been written.
   const adoptionInFlightRef = useRef(false)
@@ -5093,9 +5104,18 @@ export default function WorkspaceManager() {
         onOpenSearch={sidebarOpenSearch}
         menuItems={menubarItems}
         onShowMenu={sidebarShowMenu}
+        revealed={sidebarRevealed}
       />
     ),
-    [isFullScreen, sidebarToggle, sidebarNavigateBack, sidebarNavigateForward, sidebarOpenSearch, sidebarShowMenu],
+    [
+      isFullScreen,
+      sidebarToggle,
+      sidebarNavigateBack,
+      sidebarNavigateForward,
+      sidebarOpenSearch,
+      sidebarShowMenu,
+      sidebarRevealed,
+    ],
   )
   const contextRailSurfaceKey = activeGlobalSurfaceEntry?.id ?? null
   const sidebarContextRail = useMemo(
@@ -5175,7 +5195,12 @@ export default function WorkspaceManager() {
         {/* Kept mounted at a phone's width while the content has the screen,
           so the tree keeps its scroll and folds; `contents` leaves the
           desktop's row exactly as it was. */}
-        <div className={narrowViewport ? (narrowSidebarShown ? 'flex min-w-0 flex-1' : 'hidden') : 'contents'}>
+        {/* The rail and the sidebar are one region for the edge reveal: moving
+          between them keeps a shown sidebar out, leaving both puts it away. */}
+        <div
+          className={narrowViewport ? (narrowSidebarShown ? 'flex min-w-0 flex-1' : 'hidden') : 'contents'}
+          {...sidebarReveal.regionProps}
+        >
           <AppRail
             section={sidebarSection}
             onSelectSection={selectSidebarSection}
@@ -5213,54 +5238,58 @@ export default function WorkspaceManager() {
               />
             }
           />
-          <WorkspaceSidebar
-            workspaces={visibleWorkspaces}
-            activeWorkspaceId={windowActiveWorkspaceId}
-            workspaceWindowId={workspaceWindowId}
-            isDetachedWindow={!isPrimaryWorkspaceWindow}
-            sidebarCollapsed={narrowViewport ? false : sidebarCollapsed}
-            fillWidth={narrowViewport}
-            chromeSlot={sidebarChromeSlot}
-            contextRail={sidebarContextRail}
-            // Only a surface that brought a rail takes the column over.
-            contextRailActive={contextRailActive}
-            activityByWorkspaceId={activityByWorkspaceId}
-            residentWorkspaceIds={residentWorkspaceIds}
-            terminalRecencyByWorkspaceId={terminalRecencyByWorkspaceId}
-            conversationSessions={conversationSessions}
-            onUnseenDoneChange={setUnseenDoneIds}
-            onSnoozedWorkspacesChange={setSnoozedWorkspaceIds}
-            onOpenRemoteSession={sidebarOpenRemoteSession}
-            onSelectWorkspace={sidebarSelectWorkspace}
-            onMoveWorkspaceToNewWindow={sidebarMoveToNewWindow}
-            onMoveWorkspaceToMainWindow={sidebarMoveToMainWindow}
-            onForgetFolder={sidebarForgetFolder}
-            onNewChat={sidebarNewChat}
-            onNewScheduledAgent={sidebarNewScheduledAgent}
-            onOpenScheduledAgent={sidebarOpenScheduledAgent}
-            openScheduledAgentId={newChatPanelState?.editingScheduledAgentId ?? null}
-            onOpenRemoteScheduledAgent={sidebarOpenRemoteScheduledAgent}
-            openRemoteScheduledAgent={editingRemoteRef}
-            onOpenDraft={sidebarOpenDraft}
-            onDeleteDraft={sidebarDeleteDraft}
-            openDraftId={
-              newChatPanelState &&
-              newChatPanelState.mode !== 'extension' &&
-              !newChatPanelState.editingScheduledAgentId &&
-              !newChatPanelState.editingRemoteScheduledAgent
-                ? openNewChatDraftId
-                : null
-            }
-            newChatOpen={newChatPanelState !== null}
-            onNewChatInFolder={sidebarNewChatInFolder}
-            onNewChatOnMachine={sidebarNewChatOnMachine}
-            onRevealFolder={sidebarRevealFolder}
-            onDeleteSettledChat={sidebarDeleteSettledChat}
-            onDeleteSettledChatThere={sidebarDeleteSettledChatThere}
-            onSetSidebarCollapsed={setSidebarCollapsed}
-            sidebarWidth={sidebarWidth}
-            onSetSidebarWidth={setSidebarWidth}
-          />
+          <SidebarRevealZones reveal={sidebarReveal} />
+          <SidebarRevealFrame reveal={sidebarReveal}>
+            <WorkspaceSidebar
+              workspaces={visibleWorkspaces}
+              activeWorkspaceId={windowActiveWorkspaceId}
+              workspaceWindowId={workspaceWindowId}
+              isDetachedWindow={!isPrimaryWorkspaceWindow}
+              sidebarCollapsed={narrowViewport ? false : sidebarCollapsed && !sidebarRevealed}
+              fillWidth={narrowViewport}
+              revealed={sidebarRevealed}
+              chromeSlot={sidebarChromeSlot}
+              contextRail={sidebarContextRail}
+              // Only a surface that brought a rail takes the column over.
+              contextRailActive={contextRailActive}
+              activityByWorkspaceId={activityByWorkspaceId}
+              residentWorkspaceIds={residentWorkspaceIds}
+              terminalRecencyByWorkspaceId={terminalRecencyByWorkspaceId}
+              conversationSessions={conversationSessions}
+              onUnseenDoneChange={setUnseenDoneIds}
+              onSnoozedWorkspacesChange={setSnoozedWorkspaceIds}
+              onOpenRemoteSession={sidebarOpenRemoteSession}
+              onSelectWorkspace={sidebarSelectWorkspace}
+              onMoveWorkspaceToNewWindow={sidebarMoveToNewWindow}
+              onMoveWorkspaceToMainWindow={sidebarMoveToMainWindow}
+              onForgetFolder={sidebarForgetFolder}
+              onNewChat={sidebarNewChat}
+              onNewScheduledAgent={sidebarNewScheduledAgent}
+              onOpenScheduledAgent={sidebarOpenScheduledAgent}
+              openScheduledAgentId={newChatPanelState?.editingScheduledAgentId ?? null}
+              onOpenRemoteScheduledAgent={sidebarOpenRemoteScheduledAgent}
+              openRemoteScheduledAgent={editingRemoteRef}
+              onOpenDraft={sidebarOpenDraft}
+              onDeleteDraft={sidebarDeleteDraft}
+              openDraftId={
+                newChatPanelState &&
+                newChatPanelState.mode !== 'extension' &&
+                !newChatPanelState.editingScheduledAgentId &&
+                !newChatPanelState.editingRemoteScheduledAgent
+                  ? openNewChatDraftId
+                  : null
+              }
+              newChatOpen={newChatPanelState !== null}
+              onNewChatInFolder={sidebarNewChatInFolder}
+              onNewChatOnMachine={sidebarNewChatOnMachine}
+              onRevealFolder={sidebarRevealFolder}
+              onDeleteSettledChat={sidebarDeleteSettledChat}
+              onDeleteSettledChatThere={sidebarDeleteSettledChatThere}
+              onSetSidebarCollapsed={setSidebarCollapsed}
+              sidebarWidth={sidebarWidth}
+              onSetSidebarWidth={setSidebarWidth}
+            />
+          </SidebarRevealFrame>
         </div>
         {/* The content column and the workspace pane column share this row so
           the pane can (a) stand beside the band at full height and

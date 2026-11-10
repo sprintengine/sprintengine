@@ -734,6 +734,7 @@ export const defaultAppSettings = (): AppSettings => ({
   settleOnPullRequestMerge: true,
   keepChatsWithOpenPullRequest: true,
   sidebarWorkingSection: false,
+  sidebarHoverReveal: true,
   autoSettleAfterDays: DEFAULT_AUTO_SETTLE_AFTER_DAYS,
   browserAutoFloatAgentPreview: true,
   // A message sent mid-turn waits for the turn, as every one did before the
@@ -834,6 +835,9 @@ export function normalizeAppSettings(settings: Partial<AppSettings> | undefined,
     // about a default.
     ...normalizeSettledChatsSettings(settings),
     sidebarWorkingSection: settings?.sidebarWorkingSection === true,
+    // Only an explicit stored `false` turns it off: a profile from before the
+    // switch existed gets the default, like every other window behaviour here.
+    sidebarHoverReveal: settings?.sidebarHoverReveal !== false,
     // Only an explicit stored `false` turns the player off: it is the
     // feature's default, and an unreadable value should not hide an agent.
     browserAutoFloatAgentPreview: settings?.browserAutoFloatAgentPreview !== false,
@@ -1160,6 +1164,8 @@ export interface SettingsSliceActions {
   /** Keep a chat with an open pull request out of the idle rule (Settings ▸ Settled chats). */
   setKeepChatsWithOpenPullRequest: (enabled: boolean) => void
   setSidebarWorkingSection: (enabled: boolean) => void
+  /** Show the collapsed sidebar while the pointer rests at the window's left edge. */
+  setSidebarHoverReveal: (enabled: boolean) => void
   setAutoSettleAfterDays: (days: number) => void
   setBrowserAutoFloatAgentPreview: (enabled: boolean) => void
   setFollowUpBehavior: (behavior: FollowUpBehavior) => void
@@ -1873,6 +1879,11 @@ export function createSettingsSlice(set: SettingsSliceSet): SettingsSlice {
     setSidebarWorkingSection: (enabled) =>
       set((state) => {
         state.appSettings.sidebarWorkingSection = enabled === true
+      }),
+
+    setSidebarHoverReveal: (enabled) =>
+      set((state) => {
+        state.appSettings.sidebarHoverReveal = enabled === true
       }),
 
     setAutoSettleAfterDays: (days) =>
