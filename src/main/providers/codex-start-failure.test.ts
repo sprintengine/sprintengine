@@ -54,6 +54,7 @@ test('the message names the wait and the machine, and the database only above th
   )
   expect(formatBytes(740 * 1024 ** 2)).toBe('740 MB')
   expect(formatBytes(2 * 1024 ** 3)).toBe('2 GB')
+  expect(formatBytes(1024 ** 3 - 1)).toBe('1 GB')
 })
 
 test('the machine is the distribution, this desktop, or the server’s own host', () => {

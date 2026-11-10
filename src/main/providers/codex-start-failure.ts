@@ -54,9 +54,10 @@ export async function codexLogDatabaseBytes(codexHome: string): Promise<number |
 
 /** A size as a person reads it: `2.5 GB`, `740 MB`. */
 export function formatBytes(bytes: number): string {
-  const gb = bytes / 1024 ** 3
-  if (gb >= 1) return `${Number(gb.toFixed(1))} GB`
-  return `${Math.round(bytes / 1024 ** 2)} MB`
+  // Rounded first, so just under a gigabyte reads 1 GB, not 1024 MB.
+  const mb = Math.round(bytes / 1024 ** 2)
+  if (mb < 1024) return `${mb} MB`
+  return `${Number((bytes / 1024 ** 3).toFixed(1))} GB`
 }
 
 /** The failure's words, from what is known. */

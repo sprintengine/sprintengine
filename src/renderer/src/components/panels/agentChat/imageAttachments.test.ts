@@ -1,6 +1,11 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_EDGE, readImageAttachment } from './imageAttachments'
+import {
+  formatAttachmentBytes,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_EDGE,
+  readImageAttachment,
+} from './imageAttachments'
 
 // The renderer's image pipeline, with the browser parts stood in: an image that
 // decodes at a given size, a canvas whose encoder returns blobs of given sizes,
@@ -115,4 +120,9 @@ test('an image still over the limit after both encodes is refused, not cut short
   )
   expect(read).toEqual([])
   expect(revoked).toEqual(['blob:image'])
+})
+
+test('an attachment just under a megabyte reads 1.0 MB, not 1024 KB', () => {
+  expect(formatAttachmentBytes(1024 * 1024 - 1)).toBe('1.0 MB')
+  expect(formatAttachmentBytes(1023 * 1024)).toBe('1023 KB')
 })

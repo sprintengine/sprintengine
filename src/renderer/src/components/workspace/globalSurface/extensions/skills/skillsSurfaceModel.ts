@@ -306,7 +306,8 @@ export function formatSkillFileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
   if (bytes < 1024) return `${Math.round(bytes)} B`
   const kib = bytes / 1024
-  if (kib < 1024) return `${kib < 100 ? kib.toFixed(1) : Math.round(kib)} KB`
+  // Rounded first, so just under a megabyte reads 1.0 MB, not 1024 KB.
+  if (Math.round(kib) < 1024) return `${kib < 100 ? kib.toFixed(1) : Math.round(kib)} KB`
   const mib = kib / 1024
   return `${mib < 100 ? mib.toFixed(1) : Math.round(mib)} MB`
 }
