@@ -20,7 +20,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 
 import type { ScannedSkill, SkillFileRef, SkillSource } from '../../../../../../../shared/skills'
-import { GhostButton, InlineNotice, RowButton, Spinner, Tooltip } from '../../../../ui'
+import { GhostButton, InlineNotice, RowButton, ScrollArea, Spinner, Tooltip } from '../../../../ui'
 import { renderMarkdown, type MarkdownLinkResolver } from '../../../../../utils/markdown'
 import {
   defaultSkillFilePath,
@@ -70,13 +70,16 @@ export function SkillReader({
     if (pane) pane.scrollTop = 0
   }, [activePath])
 
+  // Both columns are ScrollAreas: the dialog around them draws no rule under
+  // its header or above its footer, so each column marks its own scroll edges
+  // with a fade, and only while something is hidden past them.
   return (
     <div className="grid h-full min-h-0 min-w-0 grid-cols-[280px_minmax(0,1fr)]">
-      <div className="flex min-h-0 flex-col gap-5 overflow-y-auto border-r border-[color:var(--border-subtle)] py-5 pl-6 pr-5">
+      <ScrollArea className="flex flex-col gap-5 border-r border-[color:var(--border-subtle)] py-5 pl-6 pr-5">
         {rail}
         <SkillFileList files={files} activePath={active?.path ?? ''} onOpen={setActivePath} />
-      </div>
-      <div ref={documentPane} className="min-h-0 min-w-0 overflow-y-auto px-8 py-5">
+      </ScrollArea>
+      <ScrollArea ref={documentPane} className="min-w-0 px-8 py-5">
         <div className="max-w-[74ch] min-w-0">
           {!active ? (
             <p className="text-body text-[color:var(--text-subtle)]">This skill lists no files.</p>
@@ -84,7 +87,7 @@ export function SkillReader({
             <SkillDocument file={active} read={read} files={files} onOpenFile={setActivePath} onRetry={retry} />
           )}
         </div>
-      </div>
+      </ScrollArea>
     </div>
   )
 }

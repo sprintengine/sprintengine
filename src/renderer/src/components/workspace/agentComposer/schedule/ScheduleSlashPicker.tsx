@@ -107,7 +107,7 @@ export const ScheduleSlashPicker = React.forwardRef<
               ))}
             </>
           )}
-          <div className="mt-1 border-t border-[color:var(--border-subtle)] px-2.5 pt-1.5 text-micro text-[color:var(--text-subtle)]">
+          <div className="mt-1 px-2.5 pt-1.5 text-micro text-[color:var(--text-subtle)]">
             ↑↓ choose · ⏎ schedule · esc dismiss
           </div>
         </div>

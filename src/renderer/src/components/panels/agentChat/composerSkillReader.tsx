@@ -107,7 +107,7 @@ export function useComposerSkillReader(workspaceRoot: string | null) {
   const reader = state ? (
     <Modal open onClose={close} label={state.name} size="workbench" layout="panel">
       <ModalHeader title={state.name} onClose={close} />
-      <div className="mt-4 min-h-0 flex-1 border-t border-[color:var(--border-subtle)]">
+      <div className="mt-2 min-h-0 flex-1">
         {state.target ? (
           <SkillReader key={state.target.source.id + state.target.skill.id} {...state.target} />
         ) : (

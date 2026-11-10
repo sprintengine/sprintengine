@@ -1744,7 +1744,7 @@ export default function SettingsPanel({
       ) : null}
 
       {chrome === 'panel' ? (
-        <div className="mt-6 flex justify-end border-t border-[color:var(--border-subtle)] pt-4">
+        <div className="mt-6 flex justify-end">
           <GhostButton size="md" onClick={onClose}>
             Done
           </GhostButton>
@@ -1862,14 +1862,17 @@ function ProfileSection({
       </div>
 
       {orgName ? (
-        <div className="grid gap-x-6 gap-y-3 border-t border-[color:var(--border-subtle)] pt-4 text-body sm:grid-cols-2">
+        <div className="grid gap-x-6 gap-y-3 text-body sm:grid-cols-2">
           <MetaCell label="Organization" value={orgName} />
         </div>
       ) : null}
 
       {message ? <p className="text-body leading-5 text-[color:var(--text-muted)]">{message}</p> : null}
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-[color:var(--border-subtle)] pt-4">
+      {/* The page's actions follow its facts by space, not under a rule: the
+          page already sits in a modal that draws none (principles.md,
+          "Hairlines carry the structure"). */}
+      <div className="flex flex-wrap items-center gap-3 pt-1">
         <OutlineButton size="md" onClick={onRefresh} disabled={pending}>
           Refresh account
         </OutlineButton>

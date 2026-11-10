@@ -9,7 +9,7 @@ import {
   type InstalledFontFamilies,
 } from '../../utils/localFonts'
 import { CheckIcon, ChevronDownIcon } from '../AppIcons'
-import { Input, MenuOption, Popover, TriggerButton } from '../ui'
+import { Input, MenuOption, Popover, ScrollArea, TriggerButton } from '../ui'
 import { fontPickerOptions, selectedFontOptionKey, type FontPickerOption } from './fontPickerModel'
 
 type FontFamilyPickerProps = {
@@ -206,7 +206,9 @@ export function FontFamilyPicker({
       }}
     >
       <div className="flex w-72 flex-col">
-        <div className="border-b border-[color:var(--border-subtle)] p-1.5">
+        {/* The field draws no rule under it: the popover is an overlay, and the
+            list's top edge fades once fonts scroll beneath the field. */}
+        <div className="p-1.5 pb-0">
           <Input
             variant="quiet"
             size="sm"
@@ -346,7 +348,7 @@ function FontOptionList({
   }, [listRef, monospace])
 
   return (
-    <div ref={listRef} id={listId} role="listbox" aria-label={label} className="max-h-72 overflow-y-auto py-1">
+    <ScrollArea ref={listRef} id={listId} role="listbox" aria-label={label} className="max-h-72 py-1">
       {options.map((option) => (
         <FontOptionRow
           key={option.key}
@@ -370,7 +372,7 @@ function FontOptionList({
           No fonts match.
         </p>
       ) : null}
-    </div>
+    </ScrollArea>
   )
 }
 

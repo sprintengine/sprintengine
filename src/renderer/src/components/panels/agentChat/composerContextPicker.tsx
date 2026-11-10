@@ -12,11 +12,12 @@ import type { ConversationCommand } from '../../../../../shared/conversation/com
 import {
   ChipButton,
   InlineSkillPicker,
+  type InlineSkillPickerHandle,
   LinkButton,
   MenuOption,
   Popover,
+  ScrollArea,
   StarGlyph,
-  type InlineSkillPickerHandle,
 } from '../../ui'
 import { AttachmentChip } from '../../ui/AttachmentChip'
 import { recentFileVisit, workspaceFileVisits } from '../../../utils/recentFileVisits'
@@ -231,7 +232,7 @@ const InlineMentionPicker = forwardRef<
         renderTrigger={() => null}
         surfaceClassName="w-[var(--popover-trigger-width)]"
       >
-        <div ref={listRef} id={listId} className="max-h-64 overflow-y-auto py-1">
+        <ScrollArea ref={listRef} id={listId} className="max-h-64 py-1">
           {loading || error || rows.length === 0 ? (
             <p role="status" className="px-3 py-2 text-meta text-[color:var(--text-muted)]">
               {error ??
@@ -252,8 +253,8 @@ const InlineMentionPicker = forwardRef<
               {row.path}
             </MenuOption>
           ))}
-        </div>
-        <div className="border-t border-[color:var(--border-subtle)] px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
+        </ScrollArea>
+        <div className="px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
           ↑↓ choose · enter or tab attach · esc dismiss
         </div>
       </Popover>

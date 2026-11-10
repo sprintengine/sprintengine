@@ -27,6 +27,7 @@ import {
   InlineNotice,
   OutlineButton,
   PrimaryButton,
+  ScrollArea,
   Section,
   Spinner,
 } from '../../../../ui'
@@ -126,7 +127,7 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
           />
         }
       />
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto border-t border-[color:var(--border-subtle)] px-3 pb-3">
+      <ScrollArea className="mt-4 flex-1 px-3 pb-3">
         {plugin.description ? (
           <p className="px-3 pt-4 text-body leading-relaxed text-[color:var(--text-default)]">{plugin.description}</p>
         ) : null}
@@ -303,8 +304,10 @@ export function PluginDetailPane(props: PluginDetailPaneProps): JSX.Element {
             }. Update refreshes the items already installed.`}
           </p>
         ) : null}
-      </div>
-      <div className="border-t border-[color:var(--border-subtle)]">
+      </ScrollArea>
+      {/* No rule above the footer, or under the header: a dialog is
+          separated by space, and the body above fades at its scroll edges. */}
+      <div>
         <ModalFooter>
           {external ? (
             <GhostButton size="md" className="mr-auto" onClick={() => void window.api.openExternal(external)}>

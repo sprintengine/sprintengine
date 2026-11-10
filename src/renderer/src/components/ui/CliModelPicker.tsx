@@ -25,6 +25,7 @@ import {
 } from './cliRuntimeCatalog'
 import type { AgentCli } from '../../types/workspace'
 import { isImeKey } from '../../utils/imeKey'
+import { ScrollArea } from './ScrollArea'
 
 export type { CliRuntimeOption, CliRuntimePickerOption } from './cliRuntimeCatalog'
 
@@ -480,9 +481,7 @@ export function CliModelPopoverSurface({
             ordinary field, because this input takes focus the moment the
             popover opens: without it the surface opens with a focused element
             and nothing marking it. */}
-        <div
-          className={`flex items-center gap-2 border-b border-[color:var(--border-subtle)] px-3 py-2 ${FOCUS_RING_WITHIN_INPUT_CLASS}`}
-        >
+        <div className={`flex items-center gap-2 px-3 py-2 ${FOCUS_RING_WITHIN_INPUT_CLASS}`}>
           <SearchGlyph />
           <input
             ref={searchRef}
@@ -516,12 +515,7 @@ export function CliModelPopoverSurface({
             <span className="ml-1.5 text-[color:var(--text-subtle)]">{groupNote.note}</span>
           </p>
         ) : null}
-        <div
-          id={listId}
-          role="listbox"
-          aria-label={ariaLabel}
-          className="max-h-[300px] min-h-0 flex-1 overflow-y-auto p-1"
-        >
+        <ScrollArea id={listId} role="listbox" aria-label={ariaLabel} className="max-h-[300px] flex-1 p-1">
           {visible.length === 0 ? (
             <p className="px-2 py-3 text-meta text-[color:var(--text-subtle)]">
               {searching ? 'No models match.' : 'No models here yet.'}
@@ -546,9 +540,13 @@ export function CliModelPopoverSurface({
               />
             ))
           )}
-        </div>
+        </ScrollArea>
 
-        {/* ONE trailing row, not a stack of them (owner, 2026-09-05). Permissions
+        {/* No rules in this popover: the search row and this trailing row are
+            told apart from the list by space, and the list's own edges fade
+            while models are scrolled past them (components/scroll-area).
+
+            ONE trailing row, not a stack of them (owner, 2026-09-05). Permissions
             and effort are both settings about the row above, and they used to sit
             on two bordered bands — the permission chip alone on one, the effort
             chip alone on the next. They belong on the same line, so this row owns
@@ -564,7 +562,7 @@ export function CliModelPopoverSurface({
         {permissionControl ||
         (showReasoning &&
           (showReasoningLevels ? hasReasoningAxes(reasoningAxes) : hasContextWindows(reasoningAxes))) ? (
-          <div className="flex flex-wrap items-center gap-1 border-t border-[color:var(--border-subtle)] px-1.5 py-1">
+          <div className="flex flex-wrap items-center gap-1 px-1.5 py-1">
             <span className="flex-1" />
             {/* Two controls, not one composed trigger: context window and effort
                 are separate decisions about the chosen model, and "Auto ·

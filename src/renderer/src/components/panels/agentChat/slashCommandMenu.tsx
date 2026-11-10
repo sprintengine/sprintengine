@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ConversationCommand } from '../../../../../shared/conversation/commands'
-import { MenuOption, Popover, Spinner, TruncatedText } from '../../ui'
+import { MenuOption, Popover, ScrollArea, Spinner, TruncatedText } from '../../ui'
 import { renderChatSkillMention } from '../../../utils/skillInvocation'
 
 // The `/` menu: the commands the chat's CLI said it runs in this folder, with
@@ -168,7 +168,7 @@ export function SlashCommandMenu({
             natural width. The shell measures the surface once, before it has
             the composer's width to wear, and a list as wide as its longest
             description would be clamped left off the composer's edge. */}
-        <div ref={listRef} className="max-h-72 overflow-y-auto py-1 [contain:inline-size]">
+        <ScrollArea ref={listRef} className="max-h-72 py-1 [contain:inline-size]">
           {/* The listbox the field points into holds the rows alone: a status
               line or the key hints inside it would be read as options. */}
           <div role="listbox" id={listId} aria-label="Commands">
@@ -211,8 +211,8 @@ export function SlashCommandMenu({
             ))}
           </div>
           {notice}
-        </div>
-        <div className="flex items-center gap-2 border-t border-[color:var(--border-subtle)] px-2.5 py-1.5 text-micro text-[color:var(--text-subtle)]">
+        </ScrollArea>
+        <div className="flex items-center gap-2 px-2.5 py-1.5 text-micro text-[color:var(--text-subtle)]">
           <span>↑↓ choose · ⏎ or tab insert · esc dismiss</span>
           {skillsHint ? <span className="ml-auto">$ for Studio skills</span> : null}
         </div>
