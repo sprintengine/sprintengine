@@ -4,8 +4,9 @@ import { bandTrafficLightInset } from './WorkspaceBand'
 
 const mac = { isMac: true, isFullScreen: false, sidebarCollapsed: true }
 
-test('beside the rail, the band leaves room for what the traffic lights run past it', () => {
-  expect(bandTrafficLightInset({ ...mac, besideRail: true })).toBe(TRAFFIC_LIGHT_RESERVE - APP_RAIL_WIDTH)
+test('beside the rail the band leaves no room: the rail beside a collapsed sidebar covers the traffic lights', () => {
+  expect(TRAFFIC_LIGHT_RESERVE).toBeGreaterThan(APP_RAIL_WIDTH)
+  expect(bandTrafficLightInset({ ...mac, besideRail: true })).toBe(0)
 })
 
 test('with the rail hidden by the narrow layout, the band leaves room for all of the traffic lights', () => {

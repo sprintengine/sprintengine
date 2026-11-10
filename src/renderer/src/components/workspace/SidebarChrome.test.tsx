@@ -3,6 +3,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, test, vi } from 'vitest'
 
+import { APP_RAIL_WIDTH, TRAFFIC_LIGHT_RESERVE } from './AppRail'
 import { SidebarChrome } from './SidebarChrome'
 
 async function renderChrome(revealed: boolean) {
@@ -43,5 +44,41 @@ test('a collapsed sidebar shown at the edge offers to stay open, through the sam
   expect(toggle?.getAttribute('aria-pressed')).toBe('false')
   await act(async () => toggle?.click())
   expect(onToggleSidebar).toHaveBeenCalledTimes(1)
+  await unmount()
+})
+
+async function renderMacChrome(railWidth?: number) {
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  await act(async () =>
+    root.render(
+      <SidebarChrome
+        isMac
+        isFullScreen={false}
+        onToggleSidebar={() => undefined}
+        onNavigateBack={() => undefined}
+        onNavigateForward={() => undefined}
+        onOpenSearch={() => undefined}
+        menuItems={[]}
+        onShowMenu={() => undefined}
+        railWidth={railWidth}
+      />,
+    ),
+  )
+  const reserve = () => host.querySelector<HTMLElement>('.chrome-bar > [aria-hidden="true"]')
+  return { reserve, unmount: () => act(async () => root.unmount()) }
+}
+
+test('beside the rail at its own measure, the row insets for what the traffic lights run past it', async () => {
+  const { reserve, unmount } = await renderMacChrome(APP_RAIL_WIDTH)
+  expect(reserve()?.style.width).toBe(`${TRAFFIC_LIGHT_RESERVE - APP_RAIL_WIDTH}px`)
+  await unmount()
+})
+
+test('beside a rail widened over the traffic lights (shown at the edge while collapsed), the row needs no inset', async () => {
+  const { reserve, unmount } = await renderMacChrome(TRAFFIC_LIGHT_RESERVE)
+  expect(reserve()).toBe(null)
   await unmount()
 })

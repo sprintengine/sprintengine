@@ -348,7 +348,14 @@ export function useSidebarHoverReveal({
  * sidebar's frame, so once it is out it covers the inner strip and that strip
  * takes no clicks meant for it.
  */
-export function SidebarRevealZones({ reveal }: { reveal: SidebarHoverReveal }) {
+export function SidebarRevealZones({
+  reveal,
+  railWidth = APP_RAIL_WIDTH,
+}: {
+  reveal: SidebarHoverReveal
+  /** How wide the rail stands (appRailWidth): the inner strip runs along its edge. */
+  railWidth?: number
+}) {
   if (!reveal.enabled) return null
   // `app-no-drag`: the rail is a window drag region, and a drag region gets
   // no pointer events, so a strip over it has to opt out to hear the pointer.
@@ -366,7 +373,7 @@ export function SidebarRevealZones({ reveal }: { reveal: SidebarHoverReveal }) {
         aria-hidden="true"
         data-sidebar-reveal-zone="rail"
         className={strip}
-        style={{ top: TITLE_BAR_HEIGHT_PX, left: APP_RAIL_WIDTH }}
+        style={{ top: TITLE_BAR_HEIGHT_PX, left: railWidth }}
         {...reveal.zoneProps}
       />
     </>
@@ -381,7 +388,16 @@ export function SidebarRevealZones({ reveal }: { reveal: SidebarHoverReveal }) {
  * rather than across it, and the inner one is the panel that slides
  * (`.sidebar-reveal`, assets/index.css: the drawer elevation and motion).
  */
-export function SidebarRevealFrame({ reveal, children }: { reveal: SidebarHoverReveal; children: React.ReactNode }) {
+export function SidebarRevealFrame({
+  reveal,
+  railWidth = APP_RAIL_WIDTH,
+  children,
+}: {
+  reveal: SidebarHoverReveal
+  /** How wide the rail stands (appRailWidth): the sidebar comes out from behind it. */
+  railWidth?: number
+  children: React.ReactNode
+}) {
   const { shown, phase } = reveal
   return (
     <div
@@ -389,7 +405,7 @@ export function SidebarRevealFrame({ reveal, children }: { reveal: SidebarHoverR
       className={
         shown ? 'pointer-events-none absolute inset-y-0 right-0 z-[var(--z-drawer)] flex overflow-hidden' : 'contents'
       }
-      style={shown ? { left: APP_RAIL_WIDTH } : undefined}
+      style={shown ? { left: railWidth } : undefined}
     >
       <div
         data-reveal={shown ? phase : undefined}
