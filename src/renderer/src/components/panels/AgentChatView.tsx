@@ -4397,8 +4397,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                 // No padding or margin of its own above or below the rows: the
                 // list cannot see one, and its end would stop short of it. The
                 // gap at either end is the list's header and footer
-                // (transcriptEnds.tsx).
-                className={`chat-column-gutter h-full overflow-y-auto ${TRANSCRIPT_SCROLL_PADDING_CLASS} focus:outline-none ${FOCUS_RING_INSET_CLASS}`}
+                // (transcriptEnds.tsx). Positioned so the quote badges drawn
+                // inside it scroll with the words they number
+                // (quoteHighlights.tsx).
+                className={`chat-column-gutter relative h-full overflow-y-auto ${TRANSCRIPT_SCROLL_PADDING_CLASS} focus:outline-none ${FOCUS_RING_INSET_CLASS}`}
                 tabIndex={0}
                 ListHeaderComponent={
                   <TranscriptHead>
