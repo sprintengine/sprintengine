@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { DiscoveredCliModelCatalog } from '../../../../shared/cli-model-catalog'
 import { useAnsiPlainText } from '../../hooks/useAnsiPlainText'
 import type { AgentCliAvailabilityMap } from '../../../../shared/electron-api'
 import {
@@ -35,11 +34,11 @@ import {
 } from '../workspace/newWorkspace/cliRuntimeOptions'
 import { orderInstalledFirst, type AgentsMachine, type MachineCliAvailability } from './agentsMachine'
 import { CliInstallControl } from './CliInstallControl'
-import { modelDiscoveryLine } from './modelDiscoveryLine'
+import { CliModelList } from './CliModelList'
+import type { CliModelRefreshOutcome } from './modelDiscoveryLine'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import type { SettingsUpdateBadge } from '../../utils/settingsUpdateBadges'
 import { isImeKey } from '../../utils/imeKey'
-import { useRelativeNowFor } from '../../hooks/useRelativeNow'
 
 // The bare shell runtime is the machine's own `sh`, not a CLI this app
 // installs or updates. Asked `--version`, bash answers with its whole banner
@@ -54,7 +53,6 @@ const BARE_SHELL_CLI = 'generic-shell'
 // utilities by stylesheet order, not string order.
 const MONO_FIELD = 'font-mono'
 const ROW_FIELD = 'w-60 max-w-full font-mono'
-const EMPTY_USER_MODELS: string[] = []
 const NO_AVAILABILITY: AgentCliAvailabilityMap = {}
 
 const MACHINE_HELP_ID = 'settings-agents-machine-help'
@@ -132,9 +130,12 @@ export type CliUpdateRequest = {
   onSettled?: () => void
 }
 
+// Per CLI: which are being asked now, and what the last Refresh of each found.
+type ModelRefreshState = { running: Record<string, boolean>; outcomes: Record<string, CliModelRefreshOutcome> }
+
 export type AgentCliRuns = {
-  modelRefresh: { running: boolean; errors: Record<string, string> }
-  refreshCliModels: () => Promise<void>
+  modelRefresh: ModelRefreshState
+  refreshCliModels: (cli: string) => Promise<void>
   cliUpdateRuns: Record<string, CliUpdateRun>
   runCliUpdate: (request: CliUpdateRequest) => Promise<void>
   open: OpenCliRow | null
@@ -150,41 +151,51 @@ export type AgentCliRuns = {
 export function useAgentCliRuns(): AgentCliRuns {
   const cliRuntimes = useWorkspaceStore((s) => s.appSettings.cliRuntimes)
   const hosts = useWorkspaceStore((s) => s.appSettings.hosts)
-  const pluginCatalogEntries = useWorkspaceStore((s) => s.pluginCatalogEntries)
   const refreshCliAvailability = useWorkspaceStore((s) => s.refreshCliAvailability)
   const refreshCliVersionAdvisories = useWorkspaceStore((s) => s.refreshCliVersionAdvisories)
   const setCliModelCatalog = useWorkspaceStore((s) => s.setCliModelCatalog)
 
-  // The last Refresh: whether one is running, and why each CLI's probe failed.
-  // A failed probe keeps the last good list (the answer carries no catalog for
-  // it), so only the line changes.
-  const [modelRefresh, setModelRefresh] = useState<{ running: boolean; errors: Record<string, string> }>({
-    running: false,
-    errors: {},
-  })
-  const refreshCliModels = useCallback(async () => {
-    const api = typeof window === 'undefined' ? null : window.api
-    if (typeof api?.cliModelsDiscover !== 'function') return
-    setModelRefresh((current) => ({ ...current, running: true }))
-    try {
-      const result = await api.cliModelsDiscover({
-        force: true,
-        cliRuntimes,
-        previous: useWorkspaceStore.getState().appSettings.cliModelCatalog,
-      })
-      const errors: Record<string, string> = {}
-      for (const entry of result.entries) {
-        if (entry.catalog) setCliModelCatalog(entry.cli, entry.catalog)
-        if (entry.error) errors[entry.cli] = entry.error
+  // The last Refresh of each CLI. A failed probe keeps the last good list (the
+  // answer carries no catalog for it), so only the words change. One CLI at a
+  // time: the button sits on that CLI's list, and its answer is about that CLI.
+  const [modelRefresh, setModelRefresh] = useState<ModelRefreshState>({ running: {}, outcomes: {} })
+  const refreshCliModels = useCallback(
+    async (cli: string) => {
+      const api = typeof window === 'undefined' ? null : window.api
+      if (typeof api?.cliModelsDiscover !== 'function') return
+      setModelRefresh((current) => ({ ...current, running: { ...current.running, [cli]: true } }))
+      let outcome: CliModelRefreshOutcome | null = null
+      try {
+        const result = await api.cliModelsDiscover({
+          force: true,
+          clis: [cli],
+          cliRuntimes,
+          previous: useWorkspaceStore.getState().appSettings.cliModelCatalog,
+        })
+        for (const entry of result.entries) {
+          if (entry.catalog) setCliModelCatalog(entry.cli, entry.catalog)
+          if (entry.cli === cli && (entry.error || entry.skipped)) {
+            outcome = {
+              ...(entry.error ? { error: entry.error } : {}),
+              ...(entry.skipped ? { skipped: entry.skipped } : {}),
+              at: Date.now(),
+            }
+          }
+        }
+      } catch (error) {
+        outcome = { error: error instanceof Error ? error.message : String(error), at: Date.now() }
       }
-      setModelRefresh({ running: false, errors })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const errors: Record<string, string> = {}
-      for (const plugin of pluginCatalogEntries) errors[plugin.id] = message
-      setModelRefresh({ running: false, errors })
-    }
-  }, [cliRuntimes, pluginCatalogEntries, setCliModelCatalog])
+      setModelRefresh((current) => {
+        const running = { ...current.running }
+        delete running[cli]
+        const outcomes = { ...current.outcomes }
+        if (outcome) outcomes[cli] = outcome
+        else delete outcomes[cli]
+        return { running, outcomes }
+      })
+    },
+    [cliRuntimes, setCliModelCatalog],
+  )
 
   // Per-CLI, per-machine Update runs (the version advisory's button).
   // `running` while the command is in flight; afterwards the notice says what
@@ -309,6 +320,7 @@ export function AgentClisSection({
   const checkCliVersions = useWorkspaceStore((s) => s.checkCliVersions)
   const setCliRuntime = useWorkspaceStore((s) => s.setCliRuntime)
   const forgetCliModels = useWorkspaceStore((s) => s.forgetCliModels)
+  const lastSelectedModel = useWorkspaceStore((s) => s.appSettings.lastSelectedAgentModel)
   const installedPluginRows = useMemo(() => orderInstalledPlugins(pluginCatalogEntries), [pluginCatalogEntries])
 
   const cliAvailability = wsl ? (machineAvailability?.map ?? NO_AVAILABILITY) : localAvailability
@@ -399,18 +411,6 @@ export function AgentClisSection({
             {rows.map(({ plugin, state }) => {
               const localCommand = cliRuntimeForPlugin(plugin.id, cliRuntimes).command
               const command = wsl ? (ownSettings.cliCommands[plugin.id] ?? '') : localCommand
-              const declaredModels = plugin.modelSelection?.options ?? []
-              // What the picker offers before the user's own ids: the CLI's
-              // own list once it has answered, else the manifest seed
-              // (mergeCliModelCatalog in src/shared/cli-model-catalog.ts).
-              const discoveredCatalog = cliModelCatalog?.[plugin.id]
-              const discoveredModels = discoveredCatalog?.models ?? []
-              const listedModels =
-                discoveredModels.length > 0
-                  ? discoveredModels.map((model) => ({ id: model.id, label: model.displayName }))
-                  : declaredModels
-              const allowCustomModels = Boolean(plugin.modelSelection?.allowCustomId)
-              const userModels = cliRuntimes?.[plugin.id]?.models ?? EMPTY_USER_MODELS
               // The registry advisory for this CLI on the machine shown: main
               // compares the version detection found there.
               const advisory = checkCliVersions ? cliVersionAdvisories?.[plugin.id] : undefined
@@ -578,23 +578,31 @@ export function AgentClisSection({
                     }}
                   />
 
-                  {!wsl && listedModels.length > 0 ? (
-                    <div className="flex gap-2 text-body leading-5">
-                      <span className="shrink-0 text-[color:var(--text-muted)]">Models</span>
-                      <span className="min-w-0 font-mono text-[color:var(--text-default)]">
-                        {listedModels.map((model) => model.label ?? model.id).join(' · ')}
-                      </span>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-2 divide-y divide-[color:var(--border-subtle)]">
+                  <div className="mt-3 divide-y divide-[color:var(--border-subtle)]">
                     {!wsl && plugin.modelSelection ? (
-                      <CliModelsRow
+                      <CliModelList
                         name={plugin.displayName}
-                        catalog={discoveredCatalog}
-                        error={modelRefresh.errors[plugin.id] ?? null}
-                        refreshing={modelRefresh.running}
-                        onRefresh={() => void refreshCliModels()}
+                        declared={plugin.modelSelection}
+                        catalog={cliModelCatalog?.[plugin.id]}
+                        userModels={cliRuntimes?.[plugin.id]?.models}
+                        removedModels={cliRuntimes?.[plugin.id]?.removedModels}
+                        refreshing={modelRefresh.running[plugin.id] === true}
+                        outcome={modelRefresh.outcomes[plugin.id] ?? null}
+                        selectedModel={
+                          lastSelectedModel?.cli === plugin.id && lastSelectedModel.model
+                            ? lastSelectedModel.model
+                            : null
+                        }
+                        onRefresh={() => void refreshCliModels(plugin.id)}
+                        onEdit={(edit, retired) => {
+                          setCliRuntime(plugin.id, { models: edit.models, removedModels: edit.removedModels })
+                          // A removed id leaves every picker, so it must stop
+                          // being the remembered launch default too, or each
+                          // spawn surface that named it keeps passing
+                          // `--model <removed id>`. A chat already on it keeps
+                          // running: its picker shows the row as "Not listed".
+                          if (retired.length > 0) forgetCliModels(plugin.id, retired)
+                        }}
                       />
                     ) : null}
                     <SettingsRow
@@ -635,28 +643,6 @@ export function AgentClisSection({
                       />
                     </SettingsRow>
 
-                    {!wsl && allowCustomModels ? (
-                      <PluginModelSettings
-                        displayName={plugin.displayName}
-                        userModels={userModels}
-                        onUserModelsChange={(models) => {
-                          setCliRuntime(plugin.id, { models })
-                          // Retiring an id must also retire it as a remembered
-                          // launch default, or every spawn surface that named
-                          // it keeps passing `--model <deleted id>` and the
-                          // agent dies on a model nothing offers. Only ids the
-                          // picker no longer lists are forgotten: an id the
-                          // CLI reported (or, before it has, the manifest
-                          // seeds) is still a real model, and the user only
-                          // removed their own copy.
-                          const remaining = new Set(models)
-                          const stillOffered = new Set(listedModels.map((option) => option.id))
-                          const retired = userModels.filter((id) => !remaining.has(id) && !stillOffered.has(id))
-                          if (retired.length > 0) forgetCliModels(plugin.id, retired)
-                        }}
-                      />
-                    ) : null}
-
                     {!wsl && plugin.auth ? (
                       <CliCredentialRow
                         pluginId={plugin.id}
@@ -672,36 +658,6 @@ export function AgentClisSection({
         </section>
       )}
     </>
-  )
-}
-
-// One CLI's model list: where the rows in its picker came from, with the one
-// manual trigger. The words come from modelDiscoveryLine, and the row keeps
-// its own clock so "checked 2m ago" ages without the tab re-rendering around
-// it. Refresh re-asks every installed CLI
-// past the freshness window, and the answer replaces each CLI's list.
-function CliModelsRow({
-  name,
-  catalog,
-  error,
-  refreshing,
-  onRefresh,
-}: {
-  name: string
-  catalog: DiscoveredCliModelCatalog | undefined
-  error: string | null
-  refreshing: boolean
-  onRefresh: () => void
-}) {
-  const line = (now: number) => modelDiscoveryLine({ name, catalog, error, now })
-  const now = useRelativeNowFor(line)
-  return (
-    <SettingsRow label="Model list" help={line(now)}>
-      <OutlineButton size="xs" disabled={refreshing} onClick={onRefresh}>
-        {refreshing ? <Spinner className="icon-sm" /> : null}
-        Refresh
-      </OutlineButton>
-    </SettingsRow>
   )
 }
 
@@ -765,7 +721,7 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
   }
 
   return (
-    <div className="py-2.5 first:pt-0 last:pb-0">
+    <div className="px-3 py-2.5 first:pt-0 last:pb-0">
       <div className="text-body font-medium text-[color:var(--text-strong)]">{label}</div>
       <div className="mt-2 space-y-1.5">
         {configured ? (
@@ -830,72 +786,6 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
         <div aria-live="polite" className="text-meta leading-5 text-[color:var(--text-muted)] empty:hidden">
           {message}
         </div>
-      </div>
-    </div>
-  )
-}
-
-// Per-plugin custom model ids. The studio does not persist an app-level default
-// model (the CLI's own default is used when no per-surface override is set), so
-// this is purely the user-extended id list. Rendered only when the plugin
-// declares modelSelection with `allowCustomId` — without declared launch args a
-// model could not be passed, and terminal CLIs expose no live model catalog, so
-// this list is how new models are adopted between plugin updates. Rendered
-// inline inside the per-plugin configuration disclosure.
-function PluginModelSettings({
-  displayName,
-  userModels,
-  onUserModelsChange,
-}: {
-  displayName: string
-  userModels: string[]
-  onUserModelsChange: (models: string[]) => void
-}) {
-  const [draftModel, setDraftModel] = useState('')
-  const addDraftModel = (): void => {
-    const model = draftModel.trim()
-    if (!model) return
-    if (!userModels.includes(model)) onUserModelsChange([...userModels, model])
-    setDraftModel('')
-  }
-  return (
-    <div className="py-2.5 first:pt-0 last:pb-0">
-      <div className="text-body font-medium text-[color:var(--text-strong)]">Custom model ids</div>
-      <div className="mt-2 space-y-1">
-        {userModels.map((model) => (
-          <div key={model} className="group -mx-1 flex h-control-md items-center gap-2 rounded-sm px-1">
-            <span className="min-w-0 flex-1 truncate font-mono text-body text-[color:var(--text-default)]">
-              {model}
-            </span>
-            <GhostButton
-              size="xs"
-              onClick={() => onUserModelsChange(userModels.filter((id) => id !== model))}
-              className="invisible focus-visible:visible group-focus-within:visible group-hover:visible"
-            >
-              Remove
-              <span className="sr-only">
-                {' '}
-                {model} from {displayName} models
-              </span>
-            </GhostButton>
-          </div>
-        ))}
-        <Input
-          value={draftModel}
-          aria-label={`Add a model id for ${displayName}`}
-          placeholder="Add model id and press Enter"
-          onChange={(event) => setDraftModel(event.target.value)}
-          onKeyDown={(event) => {
-            if (isImeKey(event)) return
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              addDraftModel()
-            }
-          }}
-          size="md"
-          variant="well"
-          className={MONO_FIELD}
-        />
       </div>
     </div>
   )

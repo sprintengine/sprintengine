@@ -220,7 +220,7 @@ test('switching machines shows that machine’s CLIs and its own command overrid
   // Detect and install run on that machine, with its command.
   expect(detectCalls.at(-1)).toEqual(['codex', { command: '/home/dev/.local/bin/codex', hostId: 'wsl:Ubuntu' }])
   // Only what is the machine's: the CLI-wide rows stay with this PC.
-  expect(host.textContent).not.toContain('Model list')
+  expect(host.querySelector('section[aria-label^="Models for"]')).toBe(null)
 
   const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
   await act(async () => {
@@ -429,4 +429,127 @@ test('the bare shell row shows no version, not the shell banner', async () => {
   await renderSection(LOCAL, null)
   expect(host.textContent).toContain('0.40.0')
   expect(host.textContent).not.toContain('GNU bash')
+})
+
+// The model list, against a CLI that declares a model selection.
+function withModels(overrides: Record<string, unknown> = {}): void {
+  fixtures.state = {
+    ...fixtures.state,
+    pluginCatalogEntries: [
+      {
+        ...plugin('codex', 'Codex'),
+        modelSelection: { options: [{ id: 'seed-1', label: 'Seed One' }], allowCustomId: true },
+      },
+    ],
+    appSettings: {
+      ...(fixtures.state.appSettings as Record<string, unknown>),
+      cliRuntimes: { codex: { command: 'codex', ...overrides } },
+    },
+  }
+}
+
+const forgotten: unknown[][] = []
+
+async function openModels(): Promise<HTMLElement> {
+  fixtures.state.forgetCliModels = (...args: unknown[]) => void forgotten.push(args)
+  await renderSection(LOCAL, null)
+  await openRow('Codex')
+  const section = host.querySelector<HTMLElement>('section[aria-label="Models for Codex"]')
+  expect(section).toBeTruthy()
+  return section!
+}
+
+async function typeModel(section: HTMLElement, value: string): Promise<void> {
+  const field = section.querySelector<HTMLInputElement>('input[aria-label="Add a model id for Codex"]')!
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  await act(async () => {
+    setValue.call(field, value)
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const add = Array.from(section.querySelectorAll('button')).find((button) => button.textContent === 'Add')!
+  await act(async () => add.click())
+}
+
+test('a typed model is written to the CLI’s runtime, trimmed', async () => {
+  withModels()
+  await typeModel(await openModels(), '  gpt-typed  ')
+  expect(runtimeWrites).toEqual([['codex', { models: ['gpt-typed'], removedModels: [] }]])
+})
+
+test('a duplicate is refused where it was typed, and writes nothing', async () => {
+  withModels()
+  const section = await openModels()
+  await typeModel(section, 'seed-1')
+  expect(section.textContent).toContain("seed-1 is already in Codex's list.")
+  expect(runtimeWrites).toEqual([])
+})
+
+test('removing a listed model remembers the removal and retires it as a launch default', async () => {
+  withModels()
+  forgotten.length = 0
+  const section = await openModels()
+  const remove = section.querySelector<HTMLElement>('button[aria-label="Remove seed-1 from Codex models"]')!
+  await act(async () => remove.click())
+  expect(runtimeWrites).toEqual([['codex', { models: [], removedModels: ['seed-1'] }]])
+  expect(forgotten).toEqual([['codex', ['seed-1']]])
+})
+
+test('removing the model new chats start with says what they will use instead', async () => {
+  withModels()
+  ;(fixtures.state.appSettings as Record<string, unknown>).lastSelectedAgentModel = { cli: 'codex', model: 'seed-1' }
+  const section = await openModels()
+  expect(section.textContent).toContain('New chats')
+  const remove = section.querySelector<HTMLElement>('button[aria-label="Remove seed-1 from Codex models"]')!
+  await act(async () => remove.click())
+  expect(section.textContent).toContain("New Codex chats will now use Codex's own default model.")
+})
+
+test('a removed model can be brought back from the list', async () => {
+  withModels({ removedModels: ['seed-1'] })
+  const section = await openModels()
+  expect(section.querySelector('button[aria-label="Remove seed-1 from Codex models"]')).toBe(null)
+  const show = Array.from(section.querySelectorAll('button')).find(
+    (button) => button.textContent === 'Show removed (1)',
+  )!
+  await act(async () => show.click())
+  const restore = Array.from(section.querySelectorAll('button')).find((button) =>
+    button.textContent?.startsWith('Restore'),
+  )!
+  await act(async () => restore.click())
+  expect(runtimeWrites).toEqual([['codex', { models: [], removedModels: [] }]])
+})
+
+test('a Refresh that fails says so over the list and points at typing, asking only that CLI', async () => {
+  withModels()
+  const calls: unknown[] = []
+  ;(window as unknown as { api: Record<string, unknown> }).api.cliModelsDiscover = async (input: unknown) => {
+    calls.push(input)
+    return {
+      entries: [{ cli: 'codex', catalog: null, error: 'Codex listed no models.' }],
+      startedAt: '',
+      finishedAt: '',
+    }
+  }
+  const section = await openModels()
+  const refresh = Array.from(section.querySelectorAll('button')).find((button) => button.textContent === 'Refresh')!
+  await act(async () => refresh.click())
+  expect(section.textContent).toContain('Codex did not list its models.')
+  expect(section.textContent).toContain('To use another model, type its id.')
+  expect((calls[0] as { clis: string[]; force: boolean }).clis).toEqual(['codex'])
+  // Nothing was lost: the seed is still on the list and the field still takes an id.
+  expect(section.textContent).toContain('Seed One')
+  expect(section.querySelector('input[aria-label="Add a model id for Codex"]')).toBeTruthy()
+})
+
+test('a Refresh that skipped the CLI says why, where it used to say nothing', async () => {
+  withModels()
+  ;(window as unknown as { api: Record<string, unknown> }).api.cliModelsDiscover = async () => ({
+    entries: [{ cli: 'codex', catalog: null, skipped: 'not-installed' }],
+    startedAt: '',
+    finishedAt: '',
+  })
+  const section = await openModels()
+  const refresh = Array.from(section.querySelectorAll('button')).find((button) => button.textContent === 'Refresh')!
+  await act(async () => refresh.click())
+  expect(section.textContent).toContain('Codex is not installed on this machine.')
 })
