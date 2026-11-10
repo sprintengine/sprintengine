@@ -15,3 +15,11 @@ and the PR body; use ! or a BREAKING CHANGE: footer for an incompatible change.
 - [ ] If the change is user-visible: checked in the running app (`npm run dev`), and said how above
 - [ ] If it touches a conversation: works in a chat on a paired machine, and said how above (`AGENTS.md`)
 - [ ] If it crosses the tailnet or mobile wire: read `docs/compatibility.md`
+
+### Risk
+
+<!-- What could this break, and for whom: a paired machine, the phone, Windows, release? "Low: copy only" is a fine answer. -->
+
+### How to revert
+
+<!-- Revert the merge commit, or what else it takes: a wire capability, a migrated file, a setting. -->
