@@ -16,11 +16,11 @@ unstyleable, slow, invisible to touch, and inconsistent between browsers.
 
 ## Anatomy
 
-| Part | Class | Required |
-|---|---|---|
-| Trigger | — | the consumer's own element, carrying `aria-describedby` only while the surface is shown |
-| Surface | `.ds-tooltip` | yes — `role="tooltip"`, a stable `id`, `hidden` at rest |
-| Title | `.ds-tooltip-title` | no — the identifier the description elaborates |
+| Part    | Class               | Required                                                                                |
+| ------- | ------------------- | --------------------------------------------------------------------------------------- |
+| Trigger | —                   | the consumer's own element, carrying `aria-describedby` only while the surface is shown |
+| Surface | `.ds-tooltip`       | yes — `role="tooltip"`, a stable `id`, `hidden` at rest                                 |
+| Title   | `.ds-tooltip-title` | no — the identifier the description elaborates                                          |
 
 The surface lives at the end of `<body>`, not beside its trigger, so it escapes
 every scroll container and stacking context on the page. Position comes from
@@ -40,17 +40,17 @@ disclosed on hover.
 
 ## States
 
-| State | Treatment |
-|---|---|
-| Rest | `hidden` — out of view and out of the accessibility tree |
-| Shown from pointer | Appears after a short hover delay over the trigger (~200 ms shipped) |
-| Shown from keyboard | Appears immediately on `:focus-visible` |
-| Default side | Above the trigger, `6px` clear of it, horizontally centred |
-| Overridden | A consumer may name a side per trigger — load-bearing where the default has no room (see the ruling below) |
-| Flipped | The opposite side, when the chosen one has no room; then clamped inside the viewport |
+| State               | Treatment                                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Rest                | `hidden` — out of view and out of the accessibility tree                                                   |
+| Shown from pointer  | Appears after a short hover delay over the trigger (~200 ms shipped)                                       |
+| Shown from keyboard | Appears immediately on `:focus-visible`                                                                    |
+| Default side        | Above the trigger, `6px` clear of it, horizontally centred                                                 |
+| Overridden          | A consumer may name a side per trigger — load-bearing where the default has no room (see the ruling below) |
+| Flipped             | The opposite side, when the chosen one has no room; then clamped inside the viewport                       |
 
-The surface has no entrance animation. It is neither *alive right now* nor
-*just changed* — the two things motion is allowed to mean — and the pointer
+The surface has no entrance animation. It is neither _alive right now_ nor
+_just changed_ — the two things motion is allowed to mean — and the pointer
 delay already does the pacing a fade would be reaching for.
 
 ## Usage
@@ -84,7 +84,11 @@ a window — name the side per trigger instead of relying on the flip.
 **Restate a value only when it is actually cut off.** When the tooltip's job is
 to repeat a title the row truncated, compare `scrollWidth` with `clientWidth`
 and attach only when it overflows — on text that fits it repeats what the
-person can already read. A tooltip that instead *adds* a description the row
+person can already read. Where being cut off depends on where a container is
+scrolled rather than on the label's own box (a file tree that scrolls
+sideways), ask at the moment the tooltip would open, when the delay runs out
+or on keyboard focus (`shouldOpen` in the app's primitive), instead of
+listening to every scroll of every row. A tooltip that instead _adds_ a description the row
 has no room for is a different job, and that description has to stay reachable
 without hovering.
 
@@ -92,12 +96,12 @@ without hovering.
 without one — in the detail pane, an overflow menu, or the accessible name of
 the control itself.
 
-**Rebuilding it in a framework:** the requirement is that the *document* holds
+**Rebuilding it in a framework:** the requirement is that the _document_ holds
 one surface at a time, not that one surface object is reused. A component that
 portals its surface on open and tears it down on close satisfies it, and keeps
 each trigger's content and `aria-describedby` wiring local — which is what
 ships. What this component exists to prevent is 200 rows putting 200 surfaces in
-the document *at rest*; a per-trigger component that renders nothing until shown
+the document _at rest_; a per-trigger component that renders nothing until shown
 does not do that. When a subtree forces `data-mode`, mirror that mode onto the
 surface — it sits on the body and would otherwise be lit by the document's mode
 instead of the container's.
@@ -130,7 +134,7 @@ drifts do not resolve the same way, so each is ruled on its own.
 
 **Type and padding — the spec wins; the code moved.** Shipped was
 `font.size.micro` (11px) with 8/4px padding, which put the tooltip a type step
-*below* the 12px row it exists to make readable. That is backwards for a
+_below_ the 12px row it exists to make readable. That is backwards for a
 component whose entire job is to show what the surface could not. Now
 `font.size.meta` at 10/6px.
 
@@ -138,7 +142,7 @@ component whose entire job is to show what the surface could not. Now
 per document, positioned by `--ds-tooltip-top/left`" described an
 implementation, not a property. What actually matters is that a 200-row list
 does not put 200 surfaces in the document, and the shipped component already
-guarantees that: the portal is created *on open* and torn down on close, so the
+guarantees that: the portal is created _on open_ and torn down on close, so the
 document holds one at a time regardless of how many triggers exist. A singleton
 surface driven by custom properties would need a global controller and would
 have to re-derive each trigger's content and `aria-describedby` wiring, trading
