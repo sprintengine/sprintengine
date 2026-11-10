@@ -166,16 +166,18 @@ test("an unreadable grouping reads as the old switch said, and no storage keeps 
   assert.equal(await store.getChatGrouping(), "date");
 });
 
-test("a message sent mid-turn queues until Steer is chosen, and the choice survives a relaunch", async () => {
+test("a message sent mid-turn steers until Queue is chosen, and the choice survives a relaunch", async () => {
   const adapter = memoryAdapter();
   const store = createDeviceNotesStore(adapter);
-  assert.equal(await store.getFollowUpBehavior(), "queue", "never chosen is what the phone always did");
+  assert.equal(await store.getFollowUpBehavior(), "steer", "never chosen steers");
 
+  await store.saveFollowUpBehavior("queue");
+  assert.equal(await createDeviceNotesStore(adapter).getFollowUpBehavior(), "queue");
   await store.saveFollowUpBehavior("steer");
   assert.equal(await createDeviceNotesStore(adapter).getFollowUpBehavior(), "steer");
 
   await adapter.setItem("multicode.mobile.followUpBehavior.v1", "sideways");
-  assert.equal(await createDeviceNotesStore(adapter).getFollowUpBehavior(), "queue", "an unknown value reads as Queue");
+  assert.equal(await createDeviceNotesStore(adapter).getFollowUpBehavior(), "steer", "an unknown value reads as Steer");
 });
 
 test("with storage unavailable the notes still apply for the session, they just do not survive it", async () => {

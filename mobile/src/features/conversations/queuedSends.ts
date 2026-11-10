@@ -185,7 +185,7 @@ export function queuedLine(bubble: QueuedBubble, live: boolean): string {
   if (bubble.where === "desktop")
     return bubble.failure !== undefined ? `Not sent: ${bubble.failure}` : "Queued on the desktop · sends when this turn ends";
   if (bubble.where === "handing") return live ? "Queuing on the desktop…" : "Queued · goes to the desktop when connected";
-  return live ? "Queued · sends when this turn ends" : "Queued · sends when connected";
+  return live ? "Queued on this phone · sends when this turn ends" : "Queued on this phone · sends when connected";
 }
 
 /**
