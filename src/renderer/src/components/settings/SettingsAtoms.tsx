@@ -1,4 +1,5 @@
 import React from 'react'
+import { createPortal } from 'react-dom'
 import { SettingRow, Switch } from '../ui'
 
 export { SettingCard } from '../ui'
@@ -6,11 +7,27 @@ export { SettingCard } from '../ui'
 export type MetaTone = 'positive' | 'muted'
 
 /**
+ * Where a Settings page's name and chrome go when the surface bar carries
+ * them. Inside the modal (and the door), the bar reads "Settings › <page>",
+ * so the page's own heading would be a second big title stacked under the
+ * first. The bar provides a slot in its trailing cluster; the page header
+ * portals its meta and actions into it and keeps its heading for assistive
+ * technology only. Null where Settings renders without a bar (a bare panel,
+ * the tests), and the header draws itself in place as it always did.
+ */
+export const SettingsBarSlotContext = React.createContext<{ el: HTMLElement | null } | null>(null)
+
+/**
  * The page header every Settings tab opens with (2026-09-06): the tab's name
  * as the one heading, and a trailing cluster for
  * the page's chrome — a count, a freshness note, glyph buttons. It is the
  * page saying its own name, so the rail can stay a rail; it carries no
  * sentence under it. What a setting does is said once, on its row.
+ *
+ * Under a surface bar that already names the page (`SettingsBarSlotContext`),
+ * the name is said once, in the bar: the heading stays in the document for
+ * a screen reader's outline, and the meta and actions ride the bar beside the
+ * close. One band of chrome per page, not a bar and then a title row.
  */
 export function SettingsPageHeader({
   title,
@@ -25,6 +42,25 @@ export function SettingsPageHeader({
   /** The page's chrome: glyph buttons and at most one text button. */
   actions?: React.ReactNode
 }) {
+  const barSlot = React.useContext(SettingsBarSlotContext)
+  if (barSlot) {
+    return (
+      <>
+        <h3 id={id} className="sr-only">
+          {title}
+        </h3>
+        {barSlot.el && (meta || actions)
+          ? createPortal(
+              <>
+                {meta ? <span className="mr-1 text-meta text-[color:var(--text-subtle)]">{meta}</span> : null}
+                {actions}
+              </>,
+              barSlot.el,
+            )
+          : null}
+      </>
+    )
+  }
   return (
     <div className="mb-5 flex min-h-control-md items-center justify-between gap-3">
       <h3 id={id} className="min-w-0 truncate text-title font-semibold text-[color:var(--text-strong)]">

@@ -86,7 +86,6 @@
   justify-content: space-between;
   gap: var(--sem-space-lg);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
 }
 
 .ds-drawer-title {

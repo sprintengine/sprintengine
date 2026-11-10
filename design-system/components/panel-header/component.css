@@ -18,16 +18,27 @@
   box-sizing: border-box;
   min-height: var(--sem-size-control-md);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
   background: var(--sem-color-bg-surface);
   font-family: var(--sem-font-family-ui);
 }
 
 /* One divider per panel, and when a search row follows it belongs under the
  * search — the line that says "the list starts here". This modifier hands
- * the hairline to that row instead of drawing two. */
+ * the hairline to that row instead of drawing two. A header over a
+ * `scroll-area` body takes it too: the body's top fade is the edge, and only
+ * while content is scrolled beneath. */
 .ds-panel-header--flush {
   border-bottom: 0;
+}
+
+/* Inside an overlay — a dialog, a popover, a drawer — space separates. No
+ * rule, and no ground of its own: the shell's is the one surface, and a band
+ * painted `bg.surface` over a raised popover is a strip a shade off the card
+ * it sits in. */
+.ds-panel-header--overlay {
+  border-bottom: 0;
+  background: transparent;
 }
 
 /* Title cluster: dot, title, count, scope on one baseline. min-width lets

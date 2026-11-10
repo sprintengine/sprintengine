@@ -64,14 +64,18 @@ export function Toolbar({
   /** Names the REGION the band acts on ("Changed files"), never "Toolbar" — a
    *  window with three toolbars must not present three identical landmarks. */
   ariaLabel,
-  /** For a band already sitting under a hairline (a tab strip, a PanelHeader).
-   *  Two rules 30px apart is a ladder, not a structure. */
-  borderless = false,
+  /** No rule by default: a band of ghost glyphs reads as the top of the region
+   *  it acts on, and the content under it starts where the glyphs stop. Two
+   *  rules 30px apart (a tab strip's and the band's) were a ladder, not a
+   *  structure. `rule` draws one `border.subtle` hairline under the band, for
+   *  a band over a surface that does not mark its own top — a diff editor's
+   *  gutter runs edge to edge, and without a line the glyphs float on it. */
+  edge = 'none',
   children,
   className,
 }: {
   ariaLabel: string
-  borderless?: boolean
+  edge?: 'rule' | 'none'
   children: React.ReactNode
   className?: string
 }): JSX.Element {
@@ -180,9 +184,9 @@ export function Toolbar({
       }}
       className={[
         'flex h-control-sm items-center gap-0.5 px-1.5',
-        // One hairline, at the bottom, and it is the band's whole separation:
-        // no fill, no shadow, no second rule above.
-        borderless ? '' : 'border-b border-[color:var(--border-subtle)]',
+        // At most one hairline, at the bottom, and only when asked: no fill,
+        // no shadow, no second rule above.
+        edge === 'rule' ? 'border-b border-[color:var(--border-subtle)]' : '',
         className ?? '',
       ].join(' ')}
     >

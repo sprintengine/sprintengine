@@ -120,7 +120,7 @@ export function GitChangesToolbar({
   return (
     // Borderless: the view strip above already draws a hairline, and two rules
     // 30px apart is a ladder rather than a structure.
-    <Toolbar ariaLabel="Changed files" borderless className="shrink-0">
+    <Toolbar ariaLabel="Changed files" className="shrink-0">
       <Tooltip content="Refresh the working tree" placement="bottom">
         <ToolbarButton ariaLabel="Refresh the working tree" disabled={busy} onClick={onRefresh}>
           <RefreshIcon />

@@ -34,6 +34,13 @@ import { useGlobalSurfaceBarSlot } from './surfaceBarSlot'
 export type GlobalSurfaceBar = {
   /** The surface name. Rendered as the page-region heading. */
   title: React.ReactNode
+  /**
+   * The page inside the surface, for a surface whose rail picks pages
+   * (Settings). The bar then reads as a breadcrumb — "Settings › General" —
+   * and the page does not open on a second big title of its own: one name per
+   * band, and the band is the bar.
+   */
+  crumb?: string
   /** Trailing controls, right-aligned; optional. */
   actions?: React.ReactNode
 }
@@ -60,23 +67,54 @@ export const ModalSurfaceChromeContext = React.createContext<{
   onBarPresence: (present: boolean) => void
 } | null>(null)
 
+// The bar's name, with the page as a breadcrumb when there is one. The surface
+// name steps back to muted ink once a page follows it: the page is what the
+// person is looking at, and the surface is where it lives.
+function BarTitle({
+  title,
+  crumb,
+  className,
+}: {
+  title: React.ReactNode
+  crumb?: string
+  className: string
+}): JSX.Element {
+  if (!crumb) return <h2 className={`truncate text-[color:var(--text-strong)] ${className}`}>{title}</h2>
+  return (
+    <h2 className={`flex min-w-0 items-baseline gap-2 ${className}`}>
+      <span className="shrink-0 text-[color:var(--text-muted)]">{title}</span>
+      <span aria-hidden="true" className="shrink-0 text-[color:var(--text-disabled)]">
+        ›
+      </span>
+      <span className="truncate text-[color:var(--text-strong)]">{crumb}</span>
+    </h2>
+  )
+}
+
 // The one modal title bar (owner, 2026-09-01): a step taller than the door bar
 // and at the title type step — a dialog names itself more loudly than a page
 // whose name rides the app strip — with the X as the one close. Rendered by
 // the shell when the body supplies a bar (its actions join the trailing
 // cluster), and by ModalSurfaceFrame as the fallback otherwise.
+//
+// No rule under it: a modal is an overlay, and space separates there
+// (principles.md, "Hairlines carry the structure"). A body that scrolls marks
+// the edge with its own top fade (`ScrollArea`), and only while something is
+// scrolled beneath the bar.
 function ModalSurfaceBar({
   title,
+  crumb,
   actions,
   onClose,
 }: {
   title: string
+  crumb?: string
   actions?: React.ReactNode
   onClose: () => void
 }): JSX.Element {
   return (
-    <div className="flex shrink-0 items-center gap-4 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-5 py-3">
-      <h2 className="truncate text-title font-semibold tracking-tight text-[color:var(--text-strong)]">{title}</h2>
+    <div className="flex shrink-0 items-center gap-4 bg-[color:var(--bg-surface)] px-5 py-3">
+      <BarTitle title={title} crumb={crumb} className="text-title font-semibold tracking-tight" />
       <div className="ml-auto flex shrink-0 items-center gap-1.5">
         {actions}
         <CloseIconButton size="md" aria-label="Close" onClick={onClose} />
@@ -220,12 +258,17 @@ export function GlobalSurfaceShell({
         // Automations' own bar becomes the selected automation mid-visit, and
         // the dialog must keep saying "Automations". The surface's bar actions
         // join the trailing cluster beside the X.
-        <ModalSurfaceBar title={modalChrome.label} actions={bar.actions} onClose={modalChrome.close} />
+        <ModalSurfaceBar
+          title={modalChrome.label}
+          crumb={bar.crumb}
+          actions={bar.actions}
+          onClose={modalChrome.close}
+        />
       ) : null}
       {bar && !liftBar && !modalChrome ? (
         <div className="flex h-[36px] shrink-0 items-center gap-2.5 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3">
           {showBack && onBack ? <BarBackChevron onBack={onBack} /> : null}
-          <h2 className="truncate text-body font-semibold text-[color:var(--text-strong)]">{bar.title}</h2>
+          <BarTitle title={bar.title} crumb={bar.crumb} className="text-body font-semibold" />
           {bar.actions ? <div className="ml-auto flex items-center gap-1.5">{bar.actions}</div> : null}
         </div>
       ) : null}
@@ -237,7 +280,7 @@ export function GlobalSurfaceShell({
             // pinned to the right edge of the slot.
             <div data-control-tab-context={controlTabContext} className="contents">
               {showBack && onBack ? <BarBackChevron onBack={onBack} inGutter /> : null}
-              <h2 className="truncate text-body font-semibold text-[color:var(--text-strong)]">{bar.title}</h2>
+              <BarTitle title={bar.title} crumb={bar.crumb} className="text-body font-semibold" />
               {bar.actions ? <div className="ml-auto flex shrink-0 items-center gap-1.5">{bar.actions}</div> : null}
             </div>,
             barSlot.el,
@@ -279,12 +322,17 @@ export function GlobalSurfaceShell({
             // 2026-09-01: the raised tone read as washed out, especially in
             // dark mode) — the same ground the app sidebar has, so the modal
             // reads as a small app. The door fallback keeps the raised tone.
-            className={`flex min-h-0 shrink-0 flex-col border-r border-[color:var(--border-subtle)] ${
+            //
+            // And in a modal the change of ground IS the edge: a rule down
+            // the seam as well said the same boundary twice, inside a shell
+            // that already draws its own. The door fallback keeps the rule —
+            // there the rail stands in a pane beside the app sidebar.
+            className={`flex min-h-0 shrink-0 flex-col ${
               // Owner ruled the MODAL rail darker (2026-09-01); the door
               // fallback keeps the raised ground the brand checklist mandates.
               modalChrome
                 ? 'bg-[color:var(--bg-app)]' /* door-surfaces-allow: modal rail only, owner 2026-09-01 */
-                : 'bg-[color:var(--bg-surface-raised)]'
+                : 'border-r border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)]'
             }`}
           >
             {rail}

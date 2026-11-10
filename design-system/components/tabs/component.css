@@ -12,7 +12,7 @@
   align-items: center;
   gap: var(--sem-space-2xs);
   padding-block: var(--sem-space-2xs);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 /* A parent container owns the row border — needed when the tab row shares

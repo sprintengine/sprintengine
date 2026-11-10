@@ -188,6 +188,19 @@ export const LIST_CURSOR_MARK_CLASS =
   'pointer-events-none absolute inset-y-1 left-0 w-0.5 rounded-full bg-[color:var(--text-strong)]'
 
 /**
+ * The section label: the quiet sub-header for a run of rows inside one list —
+ * "Today" and "Yesterday" in the notification list, a picker's groups.
+ * design-system/components/section, "The section label".
+ *
+ * Quieter than a section title on purpose (meta, regular weight, muted ink)
+ * and never ruled: the label is the boundary, and a hairline above it as well
+ * says the same thing twice. Spacing stays with the caller, on the rows' own
+ * left inset — a label opening a popover's list and one following a run of
+ * rows sit in different company.
+ */
+export const SECTION_LABEL_CLASS = 'text-meta font-normal text-[color:var(--text-muted)]'
+
+/**
  * The floating chrome — the four values that make something read as an overlay
  * rather than as part of the page: `radius.overlay` (7px, on the 3/7/9 ramp),
  * the strong border, the raised ground, and the popover elevation, which is

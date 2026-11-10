@@ -12,7 +12,7 @@ import { useChatPanelFacts, type ChatPanelFacts } from '../../../panels/agentCha
 import { useShowSubagentFamily, useSubagentFamily } from '../../../panels/agentChat/subagentFamilyStore'
 import { subagentViewOwner, useSubagentViews } from '../../../panels/agentChat/subagentViewStack'
 import { DiffStatPill, FrontTruncatedText, MachineGlyph, Section, TruncatedText, WorktreeGlyph } from '../../../ui'
-import { useScrolledFromTop } from '../../../ui/useScrolledFromTop'
+import { useScrollEdges } from '../../../ui/useScrollEdges'
 import { remoteProjectName } from '../../sidebar/folderGroups'
 import { dispatchFileReveal } from '../../../../utils/fileReveal'
 import { DiffGlyph, FilesGlyph, LibraryGlyph, CanvasGlyph, TerminalGlyph } from '../paneKinds'
@@ -110,7 +110,8 @@ export type ChatPanelProps = OpenNowProps & {
 
 export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
   const { workspaceId, tabs } = openNow
-  const scroll = useScrolledFromTop<HTMLDivElement>()
+  const listRef = React.useRef<HTMLDivElement>(null)
+  useScrollEdges(listRef)
   const tabAgentId = useChatPanelTarget(workspaceId)
   const top = useSubagentViews(workspaceId, tabAgentId ?? '').at(-1)
   useShowSubagentFamily(workspaceId, tabAgentId)
@@ -182,16 +183,15 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
 
   return (
     <div
-      ref={scroll.ref}
-      onScroll={underStrip ? scroll.onScroll : undefined}
+      ref={listRef}
       // Under the floating strip the strip's height is the list's own top
       // padding, so at rest the list sits where it did below a strip in the
       // flow, and scrolled it runs up to the pane's top edge instead of being
-      // cut at the foot of a band that draws nothing. `scroll-fade-top`
-      // (assets/index.css) fades that edge only while something is up there.
-      className={`flex h-full min-h-0 flex-col gap-1 overflow-y-auto px-3 pb-4 ${underStrip ? 'scroll-fade-top pt-[36px]' : ''}`}
+      // cut at the foot of a band that draws nothing. The shared scroll-edge
+      // fade (`useScrollEdges`, `.scroll-edge-fade`) marks that edge only while
+      // something is up there, and the foot the same way.
+      className={`flex h-full min-h-0 flex-col gap-1 overflow-y-auto px-3 pb-4 ${underStrip ? 'scroll-edge-fade pt-[36px]' : ''}`}
       data-chat-panel=""
-      {...(underStrip && scroll.scrolled ? { 'data-scrolled': '' } : {})}
     >
       <PanelHead name={name} cli={cli} words={words} machine={facts?.machine ?? null} project={project} />
       {family.parent ? <ChatPanelParentLink parent={family.parent} /> : null}

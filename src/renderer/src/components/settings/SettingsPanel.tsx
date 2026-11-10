@@ -25,6 +25,7 @@ import { resolveProjectKnowledgeConfig } from '../../utils/projectKnowledge'
 import { basename } from '../../utils/paths'
 import { formatRelativeMsAgo } from '../../utils/relativeTime'
 import { useRelativeNowFor } from '../../hooks/useRelativeNow'
+import { ScrollArea } from '../ui/ScrollArea'
 import { WorkspacePanel } from '../ui/WorkspacePanel'
 import {
   Badge,
@@ -68,6 +69,7 @@ import { executionHostLabel, LOCAL_HOST_ID, type ExecutionHostId } from '../../.
 import {
   MetaCell,
   SettingCard,
+  SettingsBarSlotContext,
   SettingsPageHeader,
   SettingsRow,
   SettingsSectionTitle,
@@ -1138,6 +1140,11 @@ export default function SettingsPanel({
   const githubTokenInputVisible = githubTokenStatus !== null && (githubTokenEditing || !githubTokenStatus.configured)
 
   const activeTab = visibleSettingsTabs.find((tab) => tab.id === activeSettingsTab) ?? visibleSettingsTabs[0]
+  // The bar's trailing slot, which each page's header portals its meta and
+  // actions into (see `SettingsBarSlotContext`). State, not a ref: the page
+  // header has to re-render once the slot exists to move into it.
+  const [barSlotEl, setBarSlotEl] = useState<HTMLElement | null>(null)
+  const barSlot = useMemo(() => ({ el: barSlotEl }), [barSlotEl])
 
   const idleSuspendDescriptor = getSettingDescriptor('terminal-idle-suspend-minutes')
   const keepRecentAliveDescriptor = getSettingDescriptor('terminal-keep-recent-alive')
@@ -1746,6 +1753,16 @@ export default function SettingsPanel({
     </div>
   )
 
+  // "Settings › <page>": the bar names the page, so the page does not open on
+  // a second big title (SettingsPageHeader keeps its heading for a screen
+  // reader and moves its meta and actions into this slot). The slot is
+  // `contents`, so an empty one adds no gap beside the close.
+  const barFor = (crumb: string) => ({
+    title: 'Settings',
+    crumb,
+    actions: <span ref={setBarSlotEl} className="contents" />,
+  })
+
   if (chrome === 'door') {
     // The door owns the bar (its name rides the app strip) and the rail column;
     // this contributes the categories and the body, and nothing else. No Close
@@ -1754,12 +1771,14 @@ export default function SettingsPanel({
     return (
       <GlobalSurfaceShell
         ariaLabel="Settings"
-        bar={{ title: 'Settings' }}
+        bar={barFor(activeTab.label)}
         rail={sidebarNode}
         onBack={doorBack.onBack}
         canGoBack={doorBack.canGoBack}
       >
-        <div className="h-full min-h-0 overflow-y-auto px-5 py-4 [scrollbar-gutter:stable]">{bodyContent}</div>
+        <SettingsBarSlotContext.Provider value={barSlot}>
+          <ScrollArea className="h-full px-5 py-4 [scrollbar-gutter:stable]">{bodyContent}</ScrollArea>
+        </SettingsBarSlotContext.Provider>
       </GlobalSurfaceShell>
     )
   }
@@ -1772,8 +1791,10 @@ export default function SettingsPanel({
     // ModalSurfaceChromeContext puts the closing X in the bar; the shell
     // suppresses the chevron there, so no onBack is passed.
     return (
-      <GlobalSurfaceShell ariaLabel="Settings" bar={{ title: 'Settings' }} rail={sidebarNode}>
-        <div className="h-full min-h-0 overflow-y-auto px-5 py-4 [scrollbar-gutter:stable]">{bodyContent}</div>
+      <GlobalSurfaceShell ariaLabel="Settings" bar={barFor(activeTab.label)} rail={sidebarNode}>
+        <SettingsBarSlotContext.Provider value={barSlot}>
+          <ScrollArea className="h-full px-5 py-4 [scrollbar-gutter:stable]">{bodyContent}</ScrollArea>
+        </SettingsBarSlotContext.Provider>
       </GlobalSurfaceShell>
     )
   }

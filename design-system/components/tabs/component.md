@@ -33,8 +33,9 @@ transparent 1px edge, so being chosen never reflows the row. The row keeps
 
 ## Variants
 
-- **Default** — the row draws its own `border.subtle`-weight structure with a
-  `border.default` hairline.
+- **Default** — the row draws one `border.subtle` hairline. Subtle, not
+  `border.default`: the strip is chrome over a pane, and at the stronger step
+  its rule outweighed the pane's own edge.
 - **`--borderless`** — no hairline; a parent container owns the row's border.
   Needed when the tab row shares its band with trailing inline controls —
   one chrome band, one line. It keeps no block padding of its own: the band

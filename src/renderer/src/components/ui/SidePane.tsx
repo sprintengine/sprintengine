@@ -1,12 +1,10 @@
 import React from 'react'
-import { CloseIconButton } from './Buttons'
-import { TruncatedText } from './TruncatedText'
 
 // SidePane — pure chrome primitive for the side columns that sit alongside
 // a board or list. Owns the width preset, the single hairline divider, and
-// the flex column. Does NOT own the header (callers compose either
-// PanelHeader for primary-column inboxes or SidePaneHeader for the simpler
-// closable-aside pattern) or the scroll body (kept caller-owned because
+// the flex column. Does NOT own the header (callers compose PanelHeader,
+// which draws one `border.subtle` rule in a pane) or the scroll body (kept
+// caller-owned because
 // keyboard handlers and list semantics vary per surface).
 //
 // Renders as <aside> by default (secondary content). Use `as="section"` for
@@ -85,43 +83,5 @@ export function SidePane({
     <aside className={classes} aria-label={ariaLabel} aria-labelledby={ariaLabelledBy}>
       {children}
     </aside>
-  )
-}
-
-// SidePaneHeader — the simple title+count+close header used by the
-// closable secondary asides (running agents, an active review).
-// Detail panes with bespoke headers (a detail inspector) compose their
-// own headers inside SidePane directly and do not use this component.
-//
-// Anatomy matches PanelHeader's title rhythm (13 px semibold) so a board
-// and its detail aside read as one family. No status dot here; the close
-// is the only chrome.
-
-type SidePaneHeaderProps = {
-  title: string
-  /** Optional trailing count or short status. Display only — must not host
-   *  interactive elements. */
-  count?: React.ReactNode
-  onClose: () => void
-  /** Accessible name for the close button. Required: blanket "Close" is
-   *  ambiguous when several side panes can be open in the same view. */
-  closeLabel: string
-  titleId?: string
-}
-
-export function SidePaneHeader({ title, count, onClose, closeLabel, titleId }: SidePaneHeaderProps) {
-  return (
-    <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-default)] px-3 py-2">
-      <TruncatedText
-        as="h3"
-        id={titleId}
-        text={title}
-        className="text-body font-semibold tracking-tight text-[color:var(--text-strong)]"
-      />
-      <div className="flex shrink-0 items-center gap-2 text-micro text-[color:var(--text-muted)]">
-        {count !== undefined && count !== null ? <span className="tabular-nums">{count}</span> : null}
-        <CloseIconButton aria-label={closeLabel} onClick={onClose} />
-      </div>
-    </header>
   )
 }

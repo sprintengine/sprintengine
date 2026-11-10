@@ -26,6 +26,7 @@ import { backdropHasNoTerminal } from '../palette/paletteBackdrop'
 import { acquireTerminalRepaintPause } from '../../utils/terminalRepaintPause'
 import { CloseIconButton, DangerButton, GhostButton, PrimaryButton } from './Buttons'
 import { FocusTrap } from './FocusTrap'
+import { OverlaySurfaceContext } from './overlaySurface'
 import { TruncatedText } from './TruncatedText'
 import { FOCUS_RING_INSET_CLASS, OVERLAY_SHELL_CLASS, overlayWidthStyle, type OverlayWidth } from './tokens'
 
@@ -201,7 +202,7 @@ export function Modal({
           // where focus was until the first Tab.
           className={`overlay-shell-enter ${OVERLAY_SHELL_CLASS} ${layout === 'panel' ? PANEL_LAYOUT_CLASS : SCROLL_LAYOUT_CLASS} ${FOCUS_RING_INSET_CLASS}`}
         >
-          {children}
+          <OverlaySurfaceContext.Provider value={true}>{children}</OverlaySurfaceContext.Provider>
         </div>
       </FocusTrap>
     </div>

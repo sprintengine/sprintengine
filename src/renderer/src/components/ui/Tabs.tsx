@@ -355,8 +355,10 @@ export function Tabs<T extends string = string>({
         onReorder ? 'relative' : '',
         dropMarkerX !== null ? 'cursor-grabbing' : '',
         // Off the row's hairline: a raised pill stood on a line reads as sitting
-        // in it, and the line is the row's, not the tab's.
-        borderless ? '' : 'border-b border-[color:var(--border-default)] py-1',
+        // in it, and the line is the row's, not the tab's. `border.subtle`: the
+        // strip is chrome over a pane, and a rule at `border.default` there
+        // outweighed the pane's own edge.
+        borderless ? '' : 'border-b border-[color:var(--border-subtle)] py-1',
         className ?? '',
       ]
         .filter(Boolean)
@@ -582,20 +584,19 @@ type TabsScrollerProps = {
  *   ancestor.
  */
 export function TabsScroller({ children, className }: TabsScrollerProps) {
-  const { ref, onScroll, style } = useFadingScroll<HTMLDivElement>([children], { claimWheel: true })
+  const { ref, className: fadeClass } = useFadingScroll<HTMLDivElement>([children], { claimWheel: true })
   return (
     <div
       ref={ref}
-      onScroll={onScroll}
       className={[
         // The inline padding is the room a pill's shadow and focus ring need
         // past its edge inside a clip that would otherwise cut them off.
         'strip-scroll overflow-x-auto overflow-y-hidden px-1',
+        fadeClass,
         className ?? '',
       ]
         .filter(Boolean)
         .join(' ')}
-      style={style}
     >
       {children}
     </div>

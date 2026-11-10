@@ -193,9 +193,13 @@ So the item forwards, unchanged:
 
 ## Divider
 
-`border.subtle`, 1px, with `space.2xs` (4px) of air above and below. A group
-label is the *alternative* to a divider, not an addition to it: one or the other
-says "a new group starts here", and both together says it twice.
+`border.subtle`, 1px, with `space.2xs` (4px) of air above and below, **inset**
+to the item's own horizontal padding (`space.md`) so it stops where the rows'
+text stops. A divider that ran to the surface's border met the border, and a
+line touching the frame reads as the frame dividing — two panels — where a line
+floating inside it reads as a pause between groups. A group label is the
+*alternative* to a divider, not an addition to it: one or the other says "a new
+group starts here", and both together says it twice.
 
 A group label is `font.size.micro` at `text.subtle`, on the item's own
 horizontal inset so the heading and its rows share a left edge — quieter than

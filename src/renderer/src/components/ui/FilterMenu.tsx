@@ -151,7 +151,10 @@ function FilterGroup({
     <div
       role="group"
       aria-label={label}
-      className={`py-1 ${divider ? 'mt-1 border-t border-[color:var(--border-subtle)] pt-1.5' : ''}`}
+      // Space between groups, not a rule: each group already opens on its own
+      // heading, and the menu spec makes a heading the ALTERNATIVE to a
+      // separator — a rule above a label says the same boundary twice.
+      className={`py-1 ${divider ? 'mt-1.5' : ''}`}
     >
       <p className={`${MENU_GROUP_LABEL_CLASS} pb-0.5`}>{label}</p>
       {items.map((item) => {

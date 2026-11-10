@@ -11,6 +11,8 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
 import { CloseIconButton } from './Buttons'
 import { FocusTrap } from './FocusTrap'
+import { OverlaySurfaceContext } from './overlaySurface'
+import { ScrollArea } from './ScrollArea'
 import { TruncatedText } from './TruncatedText'
 import { MODAL_SURFACE_SELECTOR } from './Modal'
 import { FOCUS_RING_INSET_CLASS } from './tokens'
@@ -209,7 +211,10 @@ function DrawerRoot({ open, onClose, title, ariaLabel, closeLabel, width = 360, 
           // ring in the kit.
           className={`drawer-panel absolute inset-y-0 right-0 flex h-full max-w-full flex-col border-l border-[color:var(--border-strong)] bg-[color:var(--bg-surface)] ${FOCUS_RING_INSET_CLASS}`}
         >
-          <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[color:var(--border-default)] px-3 py-2">
+          {/* No rule under the header: a drawer is an overlay, and space
+              separates there. The body is a ScrollArea, so the edge is marked
+              by its top fade, and only while a row is scrolled beneath. */}
+          <header className="flex shrink-0 items-center justify-between gap-3 px-3 py-2">
             <TruncatedText
               as="h2"
               id={titleId}
@@ -219,7 +224,7 @@ function DrawerRoot({ open, onClose, title, ariaLabel, closeLabel, width = 360, 
             <CloseIconButton aria-label={closeLabel ?? `Close ${title}`} onClick={onClose} />
           </header>
 
-          {open ? children : retained}
+          <OverlaySurfaceContext.Provider value={true}>{open ? children : retained}</OverlaySurfaceContext.Provider>
         </div>
       </FocusTrap>
     </div>
@@ -228,14 +233,14 @@ function DrawerRoot({ open, onClose, title, ariaLabel, closeLabel, width = 360, 
 
 function DrawerBody({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
+    <ScrollArea
       className={[
-        'min-h-0 flex-1 overflow-auto px-3 py-3 text-[length:var(--text-size-sm)] text-[color:var(--text-default)]',
+        'flex-1 px-3 py-3 text-[length:var(--text-size-sm)] text-[color:var(--text-default)]',
         className ?? '',
       ].join(' ')}
     >
       {children}
-    </div>
+    </ScrollArea>
   )
 }
 

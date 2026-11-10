@@ -123,6 +123,9 @@ for the tokens.
 - `Chip` (the static fact chip) and `ChipButton` (a pill that toggles, filters
   or wears an identity `tint`). `ChipButton` takes `variant: 'pill'` for a line
   of filters over a gallery: a control-height, fully rounded pill on the well.
+- `GlobalSurfaceBar` takes an optional `crumb`: the page inside a surface whose
+  rail picks pages, drawn as a breadcrumb after the title ("Settings ›
+  General"). A host that predates it draws the title alone.
 - `SafeMarkdown`: agent Markdown drawn like a chat reply, with raw HTML shown
   as text, http(s)-only links (`links: 'open' | 'copy' | 'none'`) and no
   fetched images.

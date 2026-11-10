@@ -171,16 +171,19 @@ test('over the menu the strip floats over the list, which starts at the pane’s
   assert.ok(strip?.classList.contains('absolute'), 'out of the flow, so the list is not pushed below it')
   assert.ok(button(container, 'Close panel'), 'the close control still stands in it, over the list')
   const list = container.querySelector<HTMLElement>('[data-chat-panel]')
-  assert.ok(list?.classList.contains('scroll-fade-top'), 'the list fades its top edge once scrolled')
+  assert.ok(list?.classList.contains('scroll-edge-fade'), 'the list fades its top edge once scrolled')
   assert.ok(list?.classList.contains('pt-[36px]'), 'at rest the list sits where it did below the strip')
-  assert.equal(list?.hasAttribute('data-scrolled'), false, 'at its top the list is drawn plain')
+  assert.equal(list?.hasAttribute('data-scroll-start'), false, 'at its top the list is drawn plain')
   if (list) {
+    // jsdom lays nothing out: give the list the overflow a browser would measure.
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, value: 600 })
+    Object.defineProperty(list, 'clientHeight', { configurable: true, value: 200 })
     list.scrollTop = 48
     act(() => {
       list.dispatchEvent(new dom.window.Event('scroll'))
     })
   }
-  assert.equal(list?.hasAttribute('data-scrolled'), true, 'scrolled away from its top, the list says so')
+  assert.equal(list?.hasAttribute('data-scroll-start'), true, 'scrolled away from its top, the list says so')
 })
 
 test('a tool’s strip stays a band above the tab', async () => {

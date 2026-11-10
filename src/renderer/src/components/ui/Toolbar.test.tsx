@@ -330,20 +330,23 @@ test('Toolbar', async () => {
       view.unmount()
     })
 
-    run('the band draws one hairline, and --borderless drops it', () => {
-      const withRule = mount(band())
-      assert.match(withRule.band.getAttribute('class') ?? '', /border-b border-\[color:var\(--border-subtle\)\]/)
+    run('the band draws no rule by default, and edge="rule" draws one subtle hairline', () => {
+      const bare = mount(band())
       assert.ok(
-        !/bg-\[color:/.test(withRule.band.getAttribute('class') ?? ''),
+        !/border-b/.test(bare.band.getAttribute('class') ?? ''),
+        'a band of ghost glyphs is the top of its region; two rules 30px apart is a ladder',
+      )
+      assert.ok(
+        !/bg-\[color:/.test(bare.band.getAttribute('class') ?? ''),
         'no ground: a band that painted one would read as a second surface on the pane',
       )
 
-      const bare = mount(
-        <Toolbar ariaLabel="Diff" borderless>
+      const withRule = mount(
+        <Toolbar ariaLabel="Diff" edge="rule">
           <ToolbarButton ariaLabel="Next difference">{glyph}</ToolbarButton>
         </Toolbar>,
       )
-      assert.ok(!/border-b/.test(bare.band.getAttribute('class') ?? ''), 'two rules 30px apart is a ladder')
+      assert.match(withRule.band.getAttribute('class') ?? '', /border-b border-\[color:var\(--border-subtle\)\]/)
 
       withRule.unmount()
       bare.unmount()

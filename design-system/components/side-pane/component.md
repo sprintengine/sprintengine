@@ -4,8 +4,10 @@ The column that shares the page. A side pane sits in the document flow beside
 a board or list, separated by one hairline — no portal, no scrim, no shadow,
 no layer. It is where a detail, a runner list, or an active review lives when
 the person needs it *and* the content it describes at the same time.
-Extracted from the source product's `SidePane` and `SidePaneHeader`
-primitives (`src/renderer/src/components/ui/`).
+Extracted from the shipped `SidePane` primitive
+(`src/renderer/src/components/ui/SidePane.tsx`). Its header, in the app, is the
+[panel header](../panel-header/component.md): the separate closable-aside
+header it once had was retired on 2026-11-10 with no caller left.
 
 It is deliberately **not** a drawer variant. The overlay family's defining
 question is "does this surface cover the page?" — a drawer answers yes
@@ -75,8 +77,8 @@ pane seems to need a full border, it is trying to be a card inside a panel —
 reconsider the surface.
 
 **The header is one chrome band.** Title left, count and close right,
-`space.sm`/`space.lg` inset, one `border.default` rule beneath — a working
-edge over the scrolling body, matching the drawer's header. A toolbar stacked
+`space.sm`/`space.lg` inset, one `border.subtle` rule beneath — the pane
+header's edge, so a board and its aside read as one family. A toolbar stacked
 under it is the second band the composition rules exist to prevent.
 
 **Element choice is a semantic claim.** `<aside>` for the pane that supports

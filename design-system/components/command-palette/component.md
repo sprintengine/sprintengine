@@ -22,7 +22,7 @@ see Material.
 |---|---|---|
 | Scrim | `.ds-command-palette-scrim` | yes — full-viewport `overlay.scrim` at `z.modal`, dismissing on a press that both starts and ends on it; a plain tone, blurred as well only over a conversation with no terminal in view (see Material) |
 | Shell | `.ds-command-palette` | yes — the modal shell's chrome at the `palette` width step (600px, capped `95vw`) on the glass ground, clipping its own corners |
-| Band | `.ds-command-palette-band` | yes — the one band of chrome: the strip and the field, one `border.default` hairline beneath |
+| Band | `.ds-command-palette-band` | yes — the one band of chrome: the strip and the field; no rule beneath |
 | Scope strip | `.ds-command-palette-tabs` | yes — a borderless [tabs](../tabs/component.md) strip, `role="tablist"` labelled "Search in": All, then the five narrowings |
 | Query row | `.ds-command-palette-query` | yes — `space.lg`/`space.xl` insets, no hairline of its own |
 | Leading hint | `.ds-command-palette-hint` | yes — the kit's search glyph in `text.disabled`; it is decoration and says so |
@@ -43,17 +43,19 @@ see Material.
 **The shell is the modal's, not its own — except its ground.** Radius, border,
 elevation and width all come from the overlay scale; the palette's local
 additions are the glass ground (Material, below) and `overflow: hidden`, so
-the band's hairline is clipped by the shell's corners. It keeps its own scrim
+the list's fade and the rows' fills are clipped by the shell's corners. It keeps its own scrim
 only because it sits at **15vh from the top** rather than centred, which no
 dialog does — a launcher belongs under the person's hands, not in the middle
 of the screen.
 
-**One band of chrome, two lines in it.** The strip and the field share a band
-that draws a single hairline, under the field; the strip is the tabs
-component's borderless variant, so the active tab's own accent underline is
-the only mark between the two lines. A hairline under the strip *and* one
-under the field would be the two stacked bands of chrome the principles
-reject on sight. Everything else the palette knows is in the list.
+**One band of chrome, two lines in it, and no rule under it.** The strip and
+the field share a band; the strip is the tabs component's borderless variant,
+so the active tab's own accent underline is the only mark between the two
+lines. The palette is an overlay, so space separates the band from the list,
+and the list is a [scroll-area](../scroll-area/component.md): its top edge
+fades only once results have scrolled beneath the field. The hairline the band
+used to draw said "the list starts here" over a list that plainly did.
+Everything else the palette knows is in the list.
 
 ## Material
 
