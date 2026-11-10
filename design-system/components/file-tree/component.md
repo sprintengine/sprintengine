@@ -30,20 +30,20 @@ render inside their own bands.
 
 ## Anatomy
 
-| Part       | Class                      | Required                                                                                            |
-| ---------- | -------------------------- | --------------------------------------------------------------------------------------------------- |
-| Tree       | `.ds-file-tree`            | yes — `role="tree"`, one tab stop, `aria-label` naming the root                                     |
-| Band       | `.ds-file-tree-band`       | no — the chrome row over a tree with no root row: the root's name, then the filter and collapse-all |
-| Band title | `.ds-file-tree-band-title` | with the band — folder glyph and the root's name; the full path is its tooltip                      |
-| Row        | `.ds-file-tree-row`        | yes — `role="treeitem"`, `aria-level`, `aria-selected`, `aria-expanded` on folders                  |
-| Depth      | `--ds-file-tree-depth`     | yes — a unitless level; one level is `space.lg + space.3xs`, the chevron's advance plus a hair      |
-| Twisty     | `.ds-file-tree-twisty`     | yes — the chevron; `--leaf` on a file keeps the slot and drops the mark                             |
-| Glyph      | `.ds-file-tree-glyph`      | yes — the reserved 16px slot: the file's kind glyph, or the folder glyph                            |
-| Name       | `.ds-file-tree-name`       | yes — truncates from the end; tinted by git status (`--modified`, `--added`, `--deleted`)           |
-| Badge      | `.ds-file-tree-badge`      | no — display-only status letter: `A`, `M`, `R`, `D`, `!`                                            |
-| Meta       | `.ds-file-tree-meta`       | no — display-only trailing counts before the badge: the diff's `+N −N`, in the `diff.*` inks        |
-| Pinned     | `.ds-file-tree-pinned`     | no — the open file when it lies outside the root (below); `role="group"`, outside the tree          |
-| Agent      | `.ds-file-tree-agent`      | no — an agent at work on the row (below): the verb or count, then the agent's mark                  |
+| Part       | Class                      | Required                                                                                                              |
+| ---------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Tree       | `.ds-file-tree`            | yes — `role="tree"`, one tab stop, `aria-label` naming the root                                                       |
+| Band       | `.ds-file-tree-band`       | no — the chrome row over a tree with no root row: the root's name, then the filter and collapse-all                   |
+| Band title | `.ds-file-tree-band-title` | with the band — folder glyph and the root's name; the full path is its tooltip                                        |
+| Row        | `.ds-file-tree-row`        | yes — `role="treeitem"`, `aria-level`, `aria-selected`, `aria-expanded` on folders                                    |
+| Depth      | `--ds-file-tree-depth`     | yes — a unitless level; one level is `space.lg + space.3xs`, the chevron's advance plus a hair                        |
+| Twisty     | `.ds-file-tree-twisty`     | yes — the chevron; `--leaf` on a file keeps the slot and drops the mark                                               |
+| Glyph      | `.ds-file-tree-glyph`      | yes — the reserved 16px slot: the file's kind glyph, or the folder glyph                                              |
+| Name       | `.ds-file-tree-name`       | yes — whole, never truncated (the tree scrolls sideways); tinted by git status (`--modified`, `--added`, `--deleted`) |
+| Badge      | `.ds-file-tree-badge`      | no — display-only status letter: `A`, `M`, `R`, `D`, `!`                                                              |
+| Meta       | `.ds-file-tree-meta`       | no — display-only trailing counts before the badge: the diff's `+N −N`, in the `diff.*` inks                          |
+| Pinned     | `.ds-file-tree-pinned`     | no — the open file when it lies outside the root (below); `role="group"`, outside the tree                            |
+| Agent      | `.ds-file-tree-agent`      | no — an agent at work on the row (below): the verb or count, then the agent's mark                                    |
 
 ## Variants
 
@@ -144,6 +144,38 @@ taller; the rename field that replaces a name is 20px for that reason. The
 fixed pitch is also what lets a folder past a thousand rows be windowed by
 arithmetic instead of measurement.
 
+**Names are never cut short.** The tree is as wide as its widest row and
+never narrower than its column, and the column scrolls both ways, as a desktop
+IDE's project tree does: a name deep in a folder runs past the right edge, and
+scrolling right (a trackpad swipe, shift and the wheel, or the scrollbar, in
+the app's scrollbar styling) reads the rest. Every row spans the whole scrolled
+width, so its hover and selection fills, its washes and its git tint still read
+as a row when scrolled right, and the indent and chevrons stay on their columns.
+
+A row's content is at least as wide as the column at rest
+(`--file-tree-span`, the column less the tree's gutter), so the trailing marks
+(the status letter, the diff's counts, the agent trail) stand at the column's
+right edge as they always did; on a row whose name runs past the edge they
+follow the name. The root row's path is chrome, not a name: it takes the room
+the row has, truncates there, and never makes the tree wider.
+
+Hovering a name while part of it is out of view shows it whole in the
+[tooltip](../tooltip/component.md), on the kit's delay and default side. A name
+that is all in view gets none: whether it is cut off depends on where the tree
+is scrolled, so it is asked as the tooltip would open (`shouldOpen`), not
+measured on every scroll.
+
+When the keyboard moves the cursor or a reveal lands on a file, the tree
+scrolls sideways as well as down until the name's start shows: back to the
+tree's left edge if that shows it, otherwise with the row's chevron one level
+in from the left edge.
+
+A windowed tree (past a thousand rows) mounts only the rows in view, so its
+width cannot come from layout without changing as rows recycle. It is held to
+the widest row there is, worked out from every row's depth and name measured in
+the rows' own type, and does not narrow while the rows and the column stay the
+same.
+
 **Colour has three channels, one each.** The glyph's hue is the file's kind;
 the name's tint is its git status; the row's ink is whether it is ignored.
 Selection lifts the fill and the ink, and removes any wash, but never repaints
@@ -196,6 +228,8 @@ channels, the two selection tiers, and the one-tab-stop keyboard contract.
 - The agent trail says itself in words to assistive tech: a visually hidden
   _an agent is editing this_ on a file, _an agent is reading 3 files in here_
   on a folder. The verb, the count and the agent's mark are hidden from it.
+- The sideways tooltip restates a name that is on screen in part; the whole
+  name is the row's text, so a screen reader reads it in full either way.
 - The pinned block is a `role="group"` beside the tree, not a treeitem, and
   names itself in full — file, _outside this workspace_, and
   the folder — since its visible folder may be truncated.
