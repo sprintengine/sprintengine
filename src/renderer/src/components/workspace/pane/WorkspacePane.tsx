@@ -285,7 +285,7 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
                 tabs need, so the "+" after it sits right of the last tab, and
                 the empty run after that is the spacer's, which drags the
                 window. */}
-            <TabsScroller className="flex min-w-0 flex-initial items-end self-stretch">
+            <TabsScroller className="flex min-w-0 flex-initial items-center self-stretch">
               <Tabs
                 ariaLabel="Pane tabs"
                 className="app-no-drag"

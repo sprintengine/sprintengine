@@ -3933,8 +3933,42 @@ body:has([data-selection-pane]:focus-within)
   background-image: none !important;
 }
 
-/* Tabs are flat captions on the terminal ground — no filled pills, no borders,
-   no radius. Identity is carried by ink weight plus the underline.
+/* Every tab in the app is a pill (owner ruling 2026-11-09). The chosen tab is
+   raised on its own small surface; the others are its shape at rest, no edge
+   and no ground until the pointer finds them, so a row of them stays a row and
+   not a row of alarms. The kit's Tabs and the windows that draw their own strip
+   wear these two classes; a strip of FlexLayout's wears the same values in the
+   rules below, because it is that library's markup and its sheet is unlayered.
+
+   In a layer so a tab's own utilities (an agent's outline and wash, a disabled
+   opacity) still win: Tailwind v4 emits them into `utilities`, and an unlayered
+   rule here would beat every one. */
+@layer components {
+  .tab-pill {
+    border: 1px solid transparent;
+    border-radius: var(--sem-radius-pill);
+    color: var(--text-muted);
+  }
+
+  .tab-pill:hover:not(.tab-pill--selected, :disabled) {
+    background-color: var(--bg-hover);
+    color: var(--text-strong);
+  }
+
+  .tab-pill--selected {
+    border-color: var(--border-subtle);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-popover);
+    color: var(--text-strong);
+    font-weight: 500;
+  }
+
+  .tab-pill--selected:hover {
+    background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-surface);
+  }
+}
+
+/* A strip of FlexLayout's: the same pill, and no underline.
 
    Every selector below is prefixed with `.flexlayout__layout` because
    flexlayout's own combined.css is bundled AFTER this file (WorkspaceLayout
@@ -3944,47 +3978,40 @@ body:has([data-selection-pane]:focus-within)
   position: relative;
   margin: 0;
   padding: 0 12px;
-  height: 28px;
+  height: var(--control-xs);
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: var(--text-size-xs);
-  border: none;
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sem-radius-pill);
   background: transparent;
   background-image: none !important;
-  transition: color var(--motion-fast) var(--motion-ease);
+  transition:
+    color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease);
 }
 
-/* Active tab: ink change + the same 2px inset underline the panel switches
-   use. The accent belongs to the focused tabset only; in
-   an unfocused tabset the active tab keeps a neutral underline + default ink
-   so tiled grids stay quiet. Focus is never color-only — underline hue and
-   ink weight move together. */
+/* The chosen tab's pill. Under a tiled grid the focused tabset is the only one
+   that lifts it and takes the strong ink, so the grid stays quiet and focus is
+   never a colour alone: shadow and ink weight move together. */
 .flexlayout__layout .flexlayout__tab_button--selected {
-  background: transparent;
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
   color: var(--text-default);
+  font-weight: 500;
   box-shadow: none;
-}
-
-.flexlayout__layout .flexlayout__tab_button--selected::after {
-  content: '';
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--border-strong);
-  pointer-events: none;
 }
 
 .flexlayout__layout .flexlayout__tabset-selected .flexlayout__tab_button--selected {
   color: var(--text-strong);
+  box-shadow: var(--shadow-popover);
 }
 
-.flexlayout__layout .flexlayout__tabset-selected .flexlayout__tab_button--selected::after {
-  background: var(--accent-primary);
+/* `background-image` is held off with !important above against combined.css's
+   gradients, so the hover wash has to say so too. */
+.flexlayout__layout .flexlayout__tab_button--selected:hover {
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover)) !important;
 }
 
 .flexlayout__layout .flexlayout__tab_button--unselected {
@@ -3993,6 +4020,7 @@ body:has([data-selection-pane]:focus-within)
 
 @media (hover: hover) {
   .flexlayout__layout .flexlayout__tab_button--unselected:hover {
+    background: var(--bg-hover);
     color: var(--text-default);
   }
 }
@@ -4077,7 +4105,6 @@ body:has([data-selection-pane]:focus-within)
 .flexlayout__tab_button.tab-highlight-red.flexlayout__tab_button--selected {
   background: rgba(255, 90, 95, 0.2);
   border-color: rgba(255, 90, 95, 0.6);
-  box-shadow: inset 0 -2px 0 #ff5a5f;
 }
 .flexlayout__tab_button.tab-highlight-orange {
   border-color: rgba(255, 140, 66, 0.4);
@@ -4087,7 +4114,6 @@ body:has([data-selection-pane]:focus-within)
 .flexlayout__tab_button.tab-highlight-orange.flexlayout__tab_button--selected {
   background: rgba(255, 140, 66, 0.2);
   border-color: rgba(255, 140, 66, 0.6);
-  box-shadow: inset 0 -2px 0 #ff8c42;
 }
 .flexlayout__tab_button.tab-highlight-amber {
   border-color: rgba(255, 191, 47, 0.4);
@@ -4097,7 +4123,6 @@ body:has([data-selection-pane]:focus-within)
 .flexlayout__tab_button.tab-highlight-amber.flexlayout__tab_button--selected {
   background: rgba(255, 191, 47, 0.18);
   border-color: rgba(255, 191, 47, 0.6);
-  box-shadow: inset 0 -2px 0 #ffbf2f;
 }
 .flexlayout__tab_button.tab-highlight-green {
   border-color: rgba(48, 209, 88, 0.4);
@@ -4107,7 +4132,6 @@ body:has([data-selection-pane]:focus-within)
 .flexlayout__tab_button.tab-highlight-green.flexlayout__tab_button--selected {
   background: rgba(48, 209, 88, 0.18);
   border-color: rgba(48, 209, 88, 0.6);
-  box-shadow: inset 0 -2px 0 #30d158;
 }
 .flexlayout__tab_button.tab-highlight-blue {
   border-color: rgba(92, 124, 255, 0.45);
@@ -4117,7 +4141,6 @@ body:has([data-selection-pane]:focus-within)
 .flexlayout__tab_button.tab-highlight-blue.flexlayout__tab_button--selected {
   background: rgba(92, 124, 255, 0.2);
   border-color: rgba(92, 124, 255, 0.65);
-  box-shadow: inset 0 -2px 0 #5c7cff;
 }
 .flexlayout__tab_button.tab-highlight-purple {
   border-color: rgba(167, 139, 250, 0.45);
@@ -4127,7 +4150,6 @@ body:has([data-selection-pane]:focus-within)
 .flexlayout__tab_button.tab-highlight-purple.flexlayout__tab_button--selected {
   background: rgba(167, 139, 250, 0.2);
   border-color: rgba(167, 139, 250, 0.65);
-  box-shadow: inset 0 -2px 0 #a78bfa;
 }
 .flexlayout__tab_button.tab-highlight-pink {
   border-color: rgba(255, 126, 179, 0.45);
@@ -4137,16 +4159,8 @@ body:has([data-selection-pane]:focus-within)
 .flexlayout__tab_button.tab-highlight-pink.flexlayout__tab_button--selected {
   background: rgba(255, 126, 179, 0.2);
   border-color: rgba(255, 126, 179, 0.65);
-  box-shadow: inset 0 -2px 0 #ff7eb3;
 }
 /* design-tokens-allow-end */
-
-/* A highlighted tab's selected underline keeps its user-chosen hue (the inset
-   box-shadow rules above); suppress the accent ::after so two underlines never
-   stack. */
-.flexlayout__layout .flexlayout__tab_button[class*="tab-highlight-"].flexlayout__tab_button--selected::after {
-  display: none;
-}
 
 .flexlayout__tab_button_content {
   font-size: var(--text-size-xs);
@@ -4187,7 +4201,7 @@ body:has([data-selection-pane]:focus-within)
   padding: 0;
 }
 
-/* The per-tab close sits inside the tab's own 28px button, so widening it to
+/* The per-tab close sits inside the tab's own pill, so widening it to
    24px would push the label. Negative margin keeps the flow advance it had
    (12px glyph + the 6px gap this file already gives it) while the box the
    pointer and the a11y tree see is the full 24px. */
@@ -4206,8 +4220,8 @@ body:has([data-selection-pane]:focus-within)
   outline-offset: calc(-1 * var(--focus-ring-offset));
 }
 
-/* The strip stands on the frost above its card, a slim caption row of 28px tabs
-   and not a raised toolbar. Focus is signaled per-tab (accent underline + ink),
+/* The strip stands on the frost above its card, a slim caption row of pills
+   and not a raised toolbar. Focus is signaled per-tab (the pill's lift + ink),
    so the focused tabset gets no raised bar of its own. */
 .flexlayout__layout .flexlayout__tabset_tabbar_outer {
   border-bottom: none;
@@ -4462,7 +4476,7 @@ body:has([data-selection-pane]:focus-within)
 }
 
 /* Focused strip stays flat and identical to an unfocused one — focus is
-   carried by the active tab's accent underline + strong ink, never a raised
+   carried by the active tab's lifted pill + strong ink, never a raised
    bar. (`tabset-selected` sits on the strip element itself, so this is a
    compound selector, not a descendant one.) */
 .flexlayout__layout .flexlayout__tabset_tabbar_outer.flexlayout__tabset-selected {

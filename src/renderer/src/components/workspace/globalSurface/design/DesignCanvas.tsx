@@ -114,7 +114,7 @@ export function DesignCanvas({
           this system lives in clipped from the left-hand end on the right, with
           the full path one hover or focus away. */}
       <div className="flex h-[36px] shrink-0 items-center gap-2 border-b border-[color:var(--border-default)] px-3">
-        <TabsScroller className="flex min-w-0 flex-1 items-end self-stretch">
+        <TabsScroller className="flex min-w-0 flex-1 items-center self-stretch">
           <Tabs<DesignCanvasTabId>
             ariaLabel={`${view.identity.name} contents`}
             idPrefix={idPrefix}
