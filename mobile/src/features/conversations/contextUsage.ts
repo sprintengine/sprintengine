@@ -1,6 +1,7 @@
 // How much of the model's context window a chat holds, folded from its
-// `usage_updated` events, for the ring at the right of the composer's strip
-// (the desktop's ContextRing, design-system/components/context-ring).
+// `usage_updated` events, for the Context row of the chat's page (the
+// desktop's ContextRing, design-system/components/context-ring, says the same
+// as a ring).
 //
 // The desktop reports the window on `usage_updated` as `contextWindow` (the
 // window's size in tokens) and `contextUsed` (the tokens in context now). ACP

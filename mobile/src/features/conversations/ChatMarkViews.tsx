@@ -105,39 +105,6 @@ export function PullRequestMarkButton({ mark, onOpen }: { mark: PullRequestMarkV
   );
 }
 
-/**
- * The open chat strip's pull request: the state's drawing and the desktop's
- * words for it ("Open PR #42"), opening it in the browser. Drawn at the
- * strip's item height and padded out to the touch floor.
- */
-export function PullRequestStripButton({
-  pr,
-  height,
-  onOpen,
-}: {
-  pr: { mark: PullRequestMarkView; text: string };
-  height: number;
-  /** Opens it in the phone's own viewer; absent, the browser. */
-  onOpen?: () => void;
-}) {
-  const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      accessibilityLabel={pullRequestMarkLabel(pr.mark, !!onOpen)}
-      accessibilityRole={onOpen ? "button" : "link"}
-      hitSlop={touchSlop(height)}
-      onPress={onOpen ?? (() => openPullRequest(pr.mark))}
-      style={({ pressed }) => [styles.pr, styles.prStrip, { minHeight: height }, pressed ? styles.pressed : null]}
-    >
-      <PullRequestStateGlyph color={colors[pr.mark.tone]} size={iconSize.xs} state={pr.mark.state} />
-      <Text numberOfLines={1} style={styles.prText}>
-        {pr.text}
-      </Text>
-    </Pressable>
-  );
-}
-
 /** A picture: a frame with a hill and the sun. */
 function PhotoGlyph({ color, size = iconSize.sm }: { color: string; size?: number }) {
   return (
@@ -275,9 +242,6 @@ const createStyles = ({ colors }: Theme) =>
     },
     pressed: {
       backgroundColor: colors.bgHover,
-    },
-    prStrip: {
-      paddingHorizontal: space.sm,
     },
     prText: {
       ...typography.meta,

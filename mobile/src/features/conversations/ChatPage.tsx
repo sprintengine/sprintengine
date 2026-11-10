@@ -33,8 +33,8 @@ type View_ = "page" | "library" | "browser" | "canvas" | "usage";
 
 /**
  * A fact of the chat that is a control of its own, as the desktop's panel
- * lists them: its branch, pull request, servers, permissions, context and
- * usage. `view: "usage"` opens the page's own Usage view.
+ * lists them: its branch, pull request, servers, model, permissions, context
+ * and usage. `view: "usage"` opens the page's own Usage view.
  */
 export type ChatPageRow = {
   key: string;
@@ -100,7 +100,7 @@ export function ChatPage({
   /** The details the header's popover said: machine, address, agent, access. */
   facts: ChatPageFact[];
   activity: ChatActivity;
-  /** The chat's changed lines, as the composer strip counts them. */
+  /** The chat's changed lines, every turn's added up (`conversationChanges`). */
   diff: { added: number | null; removed: number | null; files: number } | null;
   onOpenChanges?: () => void;
   onOpenAgents?: () => void;

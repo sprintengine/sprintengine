@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState, type ReactNode } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 
 import { BottomSheet } from "../../components/BottomSheet";
 import { MoreIcon, iconSize } from "../../components/glyphs";
 import { SheetOption } from "../../components/SheetOption";
 import { useSheetHandoff } from "../../components/useSheetHandoff";
 import { useThemedStyles } from "../../theme/ThemeProvider";
-import { radius, space, touchSlop, typography, type Theme } from "../../theme/tokens";
+import { radius, space, touchSlop, type Theme } from "../../theme/tokens";
 import { layoutComposerStrip, type StripEntrySpec } from "./composerStripLogic";
 
 /** How far the strip runs up under the composer's box. */
@@ -15,8 +15,6 @@ export const STRIP_TUCK = space.xl;
 export const STRIP_ITEM_HEIGHT = 32;
 const OVERFLOW_WIDTH = 28;
 const GAP = space["3xs"];
-/** How long a long-pressed item's words stay on the line. */
-const READOUT_MS = 3_000;
 
 /** One thing the strip can say. */
 export type ComposerStripEntry = {
@@ -38,49 +36,24 @@ export type ComposerStripEntry = {
 };
 
 /**
- * The strip tucked under the composer's box, one piece with it: rounded at
+ * The strip tucked under New's composer box, one piece with it: rounded at
  * the bottom only, inset from the box's sides, its top hidden under the box's
- * lower edge (the desktop's New chat strip).
+ * lower edge (the desktop's New chat strip). An open chat has none: what it
+ * would say is on the chat's page.
  *
  * Always one line. Every item is measured at its natural width off screen;
  * `layoutComposerStrip` decides what stays, how far the branch shrinks from
- * the front, and what goes to the "⋮". `pinned` (the chat's pull request and
- * its context ring) sits at the right and never leaves; the line gives way
- * around it at the width it is drawn at, `pinnedWidth` until it has been.
- * `readout` replaces the items with one line of words for a moment: what a
- * long-pressed glyph means.
+ * the front, and what goes to the "⋮".
  */
-export function ComposerStrip({
-  entries,
-  pinned,
-  pinnedWidth = 0,
-  readout,
-  onReadoutDone,
-}: {
-  entries: readonly ComposerStripEntry[];
-  pinned?: ReactNode;
-  pinnedWidth?: number;
-  readout?: string | null;
-  onReadoutDone?: () => void;
-}) {
+export function ComposerStrip({ entries }: { entries: readonly ComposerStripEntry[] }) {
   const styles = useThemedStyles(createStyles);
   const [width, setWidth] = useState(0);
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const [moreOpen, setMoreOpen] = useState(false);
   // What a row opens (a sheet, a popover) waits for this sheet to go.
   const handoff = useSheetHandoff();
-  // The pinned end as drawn: it never leaves, so its own layout is its width.
-  const [pinnedDrawn, setPinnedDrawn] = useState<number | null>(null);
   const measure = (key: string, value: number) =>
     setMeasured((current) => (Math.abs((current[key] ?? -1) - value) < 0.5 ? current : { ...current, [key]: value }));
-
-  const done = useRef(onReadoutDone);
-  done.current = onReadoutDone;
-  useEffect(() => {
-    if (!readout) return;
-    const timer = setTimeout(() => done.current?.(), READOUT_MS);
-    return () => clearTimeout(timer);
-  }, [readout]);
 
   const specs = useMemo(() => {
     const out: StripEntrySpec[] = [];
@@ -113,7 +86,6 @@ export function ComposerStrip({
           width,
           gap: GAP,
           entries: specs,
-          pinnedWidth: pinned ? (pinnedDrawn ?? pinnedWidth) : 0,
           overflowWidth: OVERFLOW_WIDTH,
         })
       : null;
@@ -148,11 +120,7 @@ export function ComposerStrip({
       </View>
 
       <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)} style={styles.line}>
-        {readout ? (
-          <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.readout}>
-            {readout}
-          </Text>
-        ) : layout ? (
+        {layout ? (
           <>
             {entries
               .filter((entry) => layout.visible.includes(entry.id))
@@ -176,19 +144,6 @@ export function ComposerStrip({
               </Pressable>
             ) : null}
           </>
-        ) : null}
-        {/* Pinned right by its margin, not a spacer: a spacer would take a gap
-            of its own that the layout does not count. */}
-        {pinned ? (
-          <View
-            onLayout={(event) => {
-              const drawn = event.nativeEvent.layout.width;
-              setPinnedDrawn((current) => (current !== null && Math.abs(current - drawn) < 0.5 ? current : drawn));
-            }}
-            style={styles.pinned}
-          >
-            {pinned}
-          </View>
         ) : null}
       </View>
 
@@ -247,7 +202,6 @@ const createStyles = ({ colors }: Theme) =>
     fixed: { flexShrink: 0 },
     // The branch alone may shrink; its label is already cut to fit.
     shrink: { flexShrink: 1, minWidth: 0 },
-    pinned: { flexDirection: "row", alignItems: "center", gap: GAP, flexShrink: 0, marginLeft: "auto" },
     more: {
       width: OVERFLOW_WIDTH,
       height: STRIP_ITEM_HEIGHT,
@@ -258,11 +212,4 @@ const createStyles = ({ colors }: Theme) =>
     },
     upright: { transform: [{ rotate: "90deg" }] },
     pressed: { backgroundColor: colors.bgHover },
-    readout: {
-      ...typography.meta,
-      color: colors.textMuted,
-      fontVariant: ["tabular-nums"],
-      paddingHorizontal: space.sm,
-      flexShrink: 1,
-    },
   });

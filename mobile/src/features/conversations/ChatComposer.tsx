@@ -61,16 +61,17 @@ type ComposerInput = {
  * desktop's New chat composer): one box, rounder than a card, holding the
  * words, the pictures they carry, and on the same ground with no rule between
  * them the controls. Left to right: the "+" (pictures, where the chat takes
- * them), a tag for each choice that is not the default, the model picker (the
- * access lives in its sheet, as the desktop's engine picker keeps it), the
- * microphone, and a small round send in the accent, or stop while a reply
+ * them), a tag for each choice that is not the default, New's model picker
+ * (the access lives in its sheet, as the desktop's engine picker keeps it; an
+ * open chat's model is on its page), the microphone, and a small round send in the accent, or stop while a reply
  * runs. Every control but the send is ghost. While a reply runs and words
  * are in the box, the send queues or steers them (drawn as which) and a ghost
  * stop sits beside it, so the reply can still be stopped without emptying the
  * box first.
  *
  * The box wears `composerSurface`, one step above the conversation's ground,
- * washing 55% toward it at the bottom. `strip` is drawn tucked under the box.
+ * washing 55% toward it at the bottom. `strip`, New's, is drawn tucked under
+ * the box.
  *
  * A chat's box stops growing at five or six lines and scrolls inside. Once
  * the words pass that, an expand control sits in the box's top corner and

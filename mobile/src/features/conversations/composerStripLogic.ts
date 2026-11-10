@@ -1,6 +1,7 @@
-// The strip tucked under the composer: where the chat runs and what it has
-// changed, on one line, with the context ring pinned to its right. Pure, so
-// the regression suite reads the same rules the strip draws by.
+// The strip tucked under New's composer: where the chat will run, on one
+// line. Pure, so the regression suite reads the same rules the strip draws by.
+// An open chat has no strip; what the chat changed is added up here too, for
+// its page.
 //
 // The strip is ALWAYS one line: it never wraps at
 // any width. Every item keeps its natural width except the branch, the one
@@ -8,9 +9,8 @@
 // output" → "…cli-update-output") because the end of a branch's name is the
 // part that tells two branches apart. When even that is not enough, items
 // leave the line in a fixed order for the "⋮" at its end, which lists them,
-// each still actionable: the branch, then the diff counts, then the machine,
-// which is a glyph alone and costs the line least. The pinned end, the pull
-// request and the context ring, is never dropped.
+// each still actionable: the branch, then the project, then the machine,
+// which is a glyph alone and costs the line least, then Worktree.
 //
 // Widths are measured on screen (onLayout); this file only decides.
 
@@ -73,28 +73,26 @@ export type StripLayout = {
  * Which items stay on the line at `width`, and what the branch reads.
  *
  * Items leave in ascending `drop` order. A step that leaves anything hidden
- * pays for the "⋮" too. The pinned ring (`pinnedWidth`, 0 for none) is never
- * dropped; at a width too narrow even for it alone, everything else is hidden
- * and the line is left to clip, which no phone reaches.
+ * pays for the "⋮" too. At a width too narrow even for the "⋮" alone,
+ * everything is hidden behind it and the line is left to clip, which no phone
+ * reaches.
  */
 export function layoutComposerStrip(input: {
   width: number;
   gap: number;
   entries: readonly StripEntrySpec[];
-  pinnedWidth: number;
   overflowWidth: number;
 }): StripLayout {
-  const { width, gap, entries, pinnedWidth, overflowWidth } = input;
+  const { width, gap, entries, overflowWidth } = input;
   const order = [...entries].sort((a, b) => a.drop - b.drop);
   for (let dropped = 0; dropped <= order.length; dropped += 1) {
     const gone = new Set(order.slice(0, dropped).map((entry) => entry.id));
     const shown = entries.filter((entry) => !gone.has(entry.id));
     const overflow = gone.size > 0;
-    const slots = shown.length + (overflow ? 1 : 0) + (pinnedWidth > 0 ? 1 : 0);
+    const slots = shown.length + (overflow ? 1 : 0);
     const fixed =
       shown.reduce((total, entry) => total + (entry.kind === "item" ? entry.width : entry.chromeWidth), 0) +
       (overflow ? overflowWidth : 0) +
-      pinnedWidth +
       Math.max(0, slots - 1) * gap;
     const branch = shown.find((entry): entry is StripBranchSpec => entry.kind === "branch");
     let branchLabel: string | null = null;
@@ -115,14 +113,13 @@ export function layoutComposerStrip(input: {
 }
 
 /**
- * The order items leave the line in: lowest first. New's Worktree is a choice
- * rather than a fact, and leaves last; the "⋮" still toggles it. The ring
- * and the pull request are not listed: they are the line's pinned end and
- * never leave.
+ * The order items leave the line in: lowest first. `diff` is the slot New's
+ * project takes. Worktree is a choice rather than a fact, and leaves last;
+ * the "⋮" still toggles it.
  */
 export const STRIP_DROP_ORDER = { branch: 1, diff: 2, machine: 3, worktree: 4 } as const;
 
-/** What the chat's turns changed, added up for the strip. */
+/** What the chat's turns changed, added up for its page. */
 export type ConversationChanges = {
   files: number;
   /** Lines in and out, summed over the turns that counted them; null when none did. */
@@ -133,7 +130,7 @@ export type ConversationChanges = {
 };
 
 /**
- * The chat's changes as the strip counts them: every turn's, added up. A file
+ * The chat's changes as its page counts them: every turn's, added up. A file
  * two turns touched counts in both, and a line rewritten twice is two lines in
  * and out: it is the agent's work, not the net diff. Null when no turn
  * changed anything.
@@ -154,34 +151,4 @@ export function conversationChanges(turns: readonly ChangedTurn[]): Conversation
     removedLines: lined.length ? lined.reduce((total, changes) => total + (changes.removedLines ?? 0), 0) : null,
     openable,
   };
-}
-
-/**
- * The strip's diff counts as a split pill (Claude
- * Code's): a green half "+N" and a red half "−M", one pill with no gap. A
- * half with nothing to say is not drawn, never "+0" or "−0"; with both at 0
- * there is no pill. Where no turn counted its lines the pill is one neutral
- * half naming the files, so changes that can be opened are not hidden for
- * want of a count.
- */
-export type DiffPill =
-  | { kind: "lines"; added: number | null; removed: number | null; label: string }
-  | { kind: "files"; files: number; label: string };
-
-export function diffPill(changes: ConversationChanges | null): DiffPill | null {
-  if (!changes) return null;
-  if (changes.addedLines !== null && changes.removedLines !== null) {
-    const added = changes.addedLines > 0 ? changes.addedLines : null;
-    const removed = changes.removedLines > 0 ? changes.removedLines : null;
-    if (added === null && removed === null) return null;
-    return { kind: "lines", added, removed, label: diffPillLabel(changes.addedLines, changes.removedLines) };
-  }
-  if (changes.files <= 0) return null;
-  const files = `${changes.files} ${changes.files === 1 ? "file" : "files"}`;
-  return { kind: "files", files: changes.files, label: `${files} changed` };
-}
-
-/** "3 lines added, 2 removed": what a screen reader says for the pill. */
-export function diffPillLabel(added: number, removed: number): string {
-  return `${added} ${added === 1 ? "line" : "lines"} added, ${removed} removed`;
 }

@@ -15,7 +15,7 @@ interface ScreenChromeProps {
   onBack?: () => void;
   backLabel?: string;
   trailing?: ReactNode;
-  wordmark?: boolean;
+  monogram?: boolean;
   subtitle?: ReactNode;
   titleScale?: "nav" | "large";
   flush?: boolean;

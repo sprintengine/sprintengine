@@ -125,11 +125,11 @@ export function pullRequestMark(
 }
 
 /**
- * The pull request on an open chat's strip, in the desktop's strip words:
+ * The pull request an open chat names, in the desktop's strip words:
  * "Open PR #42", or "Merged PR #39" once the chat's work went in (an open one
  * wins over a merged one). A chat whose pull requests all closed unmerged has
- * none to offer. It sits at the line's pinned end beside the context ring,
- * where a person finishing with a chat looks, and opens in the browser.
+ * none to offer. On the phone it is the Pull request row of the chat's page,
+ * which opens it.
  */
 export function stripPullRequest(
   pullRequests: readonly ConversationPullRequest[] | null | undefined,

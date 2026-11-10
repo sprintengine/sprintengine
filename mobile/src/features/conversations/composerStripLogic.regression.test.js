@@ -3,10 +3,10 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-// The strip under the composer: always one line. Only the branch shrinks, and
+// The strip under New's composer: always one line. Only the branch shrinks, and
 // from the front, dropping whole leading segments before it cuts a word; then
-// items leave for the "⋮" in a fixed order (branch → diff → machine), and the
-// ring never does.
+// items leave for the "⋮" in a fixed order (branch → diff → machine). The
+// chat's changes, added up for its page, are worked out here too.
 
 const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
 const {
@@ -14,8 +14,6 @@ const {
   MIN_BRANCH_CHARS,
   STRIP_DROP_ORDER,
   conversationChanges,
-  diffPill,
-  diffPillLabel,
   frontTruncateBranch,
   layoutComposerStrip,
 } = require(path.join(buildRoot, "src/features/conversations/composerStripLogic.js"));
@@ -51,7 +49,7 @@ test("below the floor the branch does not shrink further: it leaves the line", (
 });
 
 // A strip at phone scale: an 8pt monospace advance, a 22pt machine glyph, a
-// 70pt pill, a 32pt "⋮" and a 32pt ring, 4pt apart.
+// 70pt item in the diff slot and a 32pt "⋮", 4pt apart.
 const CHAR = 8;
 const entries = (branch = "fix/cli-update-output") => [
   { kind: "item", id: "machine", width: 22, drop: STRIP_DROP_ORDER.machine },
@@ -59,13 +57,12 @@ const entries = (branch = "fix/cli-update-output") => [
   { kind: "item", id: "diff", width: 70, drop: STRIP_DROP_ORDER.diff },
 ];
 const layout = (width, extra = {}) =>
-  layoutComposerStrip({ width, gap: 4, entries: entries(), pinnedWidth: 32, overflowWidth: 32, ...extra });
-// Everything whole: 22 + (16 + 21·8) + 70 + 32 + 3 gaps of 4.
-const FULL = 22 + 16 + 21 * CHAR + 70 + 32 + 3 * 4;
+  layoutComposerStrip({ width, gap: 4, entries: entries(), overflowWidth: 32, ...extra });
+// Everything whole: 22 + (16 + 21·8) + 70 + 2 gaps of 4.
+const FULL = 22 + 16 + 21 * CHAR + 70 + 2 * 4;
 
-test("the drop order is branch, then diff, then the machine glyph, then New's Worktree; the ring is not in it", () => {
+test("the drop order is branch, then diff, then the machine glyph, then Worktree", () => {
   assert.deepEqual(STRIP_DROP_ORDER, { branch: 1, diff: 2, machine: 3, worktree: 4 });
-  assert.ok(!("ring" in STRIP_DROP_ORDER));
 });
 
 test("with room, everything is on the line, the branch whole, and no ⋮", () => {
@@ -89,20 +86,20 @@ test("as the line narrows the branch shrinks from the front first, nothing leave
   assert.deepEqual(cut.hidden, []);
 });
 
-test("then the branch leaves, then the diff, then the machine; the ring stays", () => {
+test("then the branch leaves, then the diff, then the machine", () => {
   // The branch at its floor: anything narrower moves it to the ⋮.
   const floor = FULL - (21 - MIN_BRANCH_CHARS) * CHAR;
   assert.equal(layout(floor).branchLabel?.length, MIN_BRANCH_CHARS);
   const noBranch = layout(floor - 1);
   assert.deepEqual(noBranch, { visible: ["machine", "diff"], hidden: ["branch"], branchLabel: null, overflow: true });
-  // machine + diff + ⋮ + ring + 3 gaps = 22 + 70 + 32 + 32 + 12 = 168.
-  assert.deepEqual(layout(168).visible, ["machine", "diff"]);
-  const noDiff = layout(167);
+  // machine + diff + ⋮ + 2 gaps = 22 + 70 + 32 + 8 = 132.
+  assert.deepEqual(layout(132).visible, ["machine", "diff"]);
+  const noDiff = layout(131);
   assert.deepEqual(noDiff.visible, ["machine"]);
   assert.deepEqual(noDiff.hidden, ["branch", "diff"]);
-  // machine + ⋮ + ring + 2 gaps = 94.
-  assert.deepEqual(layout(94).visible, ["machine"]);
-  const bare = layout(93);
+  // machine + ⋮ + 1 gap = 58.
+  assert.deepEqual(layout(58).visible, ["machine"]);
+  const bare = layout(57);
   assert.deepEqual(bare.visible, []);
   assert.deepEqual(bare.hidden, ["machine", "branch", "diff"], "hidden in the line's own order");
   assert.equal(bare.overflow, true, "everything hidden is still reachable");
@@ -115,8 +112,7 @@ test("the strip never wraps: whatever the width, what is shown fits on one line"
     const used =
       shown.reduce((total, entry) => total + (entry.kind === "item" ? entry.width : entry.chromeWidth + result.branchLabel.length * CHAR), 0) +
       (result.overflow ? 32 : 0) +
-      32 +
-      (shown.length + (result.overflow ? 1 : 0)) * 4;
+      Math.max(0, shown.length + (result.overflow ? 1 : 0) - 1) * 4;
     if (result.visible.length) assert.ok(used <= width, `${width}: ${used} drawn`);
     assert.equal(result.overflow, result.hidden.length > 0, "the ⋮ only when something is hidden");
     // Items leave in order: once the diff is gone the branch is gone too, and so on.
@@ -125,19 +121,18 @@ test("the strip never wraps: whatever the width, what is shown fits on one line"
   }
 });
 
-test("a strip with no ring and only some items still drops in order", () => {
+test("a strip with only some items still drops in order", () => {
   const result = layoutComposerStrip({
     width: 60,
     gap: 4,
-    pinnedWidth: 0,
     overflowWidth: 32,
     entries: [{ kind: "item", id: "diff", width: 70, drop: STRIP_DROP_ORDER.diff }],
   });
   assert.deepEqual(result, { visible: [], hidden: ["diff"], branchLabel: null, overflow: true });
   assert.deepEqual(
-    layoutComposerStrip({ width: 300, gap: 4, pinnedWidth: 32, overflowWidth: 32, entries: [] }),
+    layoutComposerStrip({ width: 300, gap: 4, overflowWidth: 32, entries: [] }),
     { visible: [], hidden: [], branchLabel: null, overflow: false },
-    "the ring alone, and no ⋮",
+    "nothing to say, and no ⋮",
   );
 });
 
@@ -153,23 +148,4 @@ test("the chat's changes add up every turn's, and only checkpointed turns open, 
   assert.equal(changes.addedLines, 15);
   assert.equal(changes.removedLines, 2);
   assert.deepEqual(changes.openable.map((turn) => turn.id), ["c", "a"]);
-});
-
-test("the pill draws a half only for what is there: the four cases", () => {
-  const pill = (addedLines, removedLines) => diffPill({ files: 1, addedLines, removedLines, openable: [] });
-  assert.deepEqual(pill(3, 2), { kind: "lines", added: 3, removed: 2, label: "3 lines added, 2 removed" });
-  assert.deepEqual(pill(3, 0), { kind: "lines", added: 3, removed: null, label: "3 lines added, 0 removed" }, "no −0");
-  assert.deepEqual(pill(0, 2), { kind: "lines", added: null, removed: 2, label: "0 lines added, 2 removed" }, "no +0");
-  assert.equal(pill(0, 0), null, "nothing to say, no pill");
-  assert.equal(diffPill(null), null);
-  assert.equal(diffPillLabel(1, 1), "1 line added, 1 removed");
-});
-
-test("where no turn counted its lines the pill names the files instead", () => {
-  assert.deepEqual(diffPill({ files: 3, addedLines: null, removedLines: null, openable: [] }), {
-    kind: "files",
-    files: 3,
-    label: "3 files changed",
-  });
-  assert.equal(diffPill({ files: 0, addedLines: null, removedLines: null, openable: [] }), null);
 });
