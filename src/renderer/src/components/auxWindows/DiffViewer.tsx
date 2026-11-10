@@ -1795,8 +1795,11 @@ export function DiffViewer({
           ceiling of five (design-system/components/toolbar). Grouped, not
           enumerated: the hunk arrows, the file's editor, the file stepper and
           the collapse toggle are four things about WHAT you are reading; the
-          counter, the layout toggle and the gear are about HOW. */}
-      <Toolbar ariaLabel="Diff" edge="rule">
+          counter, the layout toggle and the gear are about HOW.
+          No rule under it: the glyphs are the top of the region, and the
+          region's one rule is under the file row below, directly over the
+          code, whose gutter runs edge to edge and needs a line to stop at. */}
+      <Toolbar ariaLabel="Diff">
         {/* An agent's new tour, waiting: at the front of the band, where a narrow
             pane cannot clip it off. */}
         {tour.offerChip}
@@ -1934,7 +1937,7 @@ export function DiffViewer({
       {source ? null : (
         <StudioSkillSuggestion
           skillId="studio-diff-tours"
-          className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2"
+          className="shrink-0 bg-[color:var(--bg-surface)] px-3 py-2"
         />
       )}
 
@@ -2091,7 +2094,7 @@ export function DiffViewer({
         // the change is still here, one link away.
         <div
           role="status"
-          className="flex h-7 shrink-0 items-center gap-1.5 border-b border-[color:var(--border-subtle)] px-3 text-meta text-[color:var(--text-muted)]"
+          className="flex h-7 shrink-0 items-center gap-1.5 px-3 text-meta text-[color:var(--text-muted)]"
         >
           <span className="truncate">
             Showing {narrowedCounts.shown} of {narrowedCounts.total} changed{' '}

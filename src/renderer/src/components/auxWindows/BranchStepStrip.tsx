@@ -59,7 +59,9 @@ export function BranchStepStrip({
   if (entries.length <= 1 && !note) return null
 
   return (
-    <div className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)]">
+    // No rule beneath: the toolbar under it draws none either, and the strip
+    // and the band are one chrome region over the diff, told apart by space.
+    <div className="shrink-0 bg-[color:var(--bg-surface)]">
       {entries.length > 1 ? (
         // Scrolls sideways with no scrollbar and a fade at each overflowing edge,
         // as every tab strip does: a branch with many commits runs past a pane.

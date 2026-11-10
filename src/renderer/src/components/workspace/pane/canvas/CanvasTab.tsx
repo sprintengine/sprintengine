@@ -430,17 +430,16 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   return (
     <div className="relative flex h-full w-full flex-col">
       {/* The skill is installed for the agents on the machine the chat runs
-          on, and only its own Studio offers it. */}
+          on, and only its own Studio offers it. Neither notice draws a rule:
+          they stand on the surface and the board on the app ground, and the
+          change of ground is the edge. */}
       {far ? null : (
-        <StudioSkillSuggestion
-          skillId="studio-canvas"
-          className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2"
-        />
+        <StudioSkillSuggestion skillId="studio-canvas" className="shrink-0 bg-[color:var(--bg-surface)] px-3 py-2" />
       )}
       {linkNote ? (
         <p
           role="status"
-          className="shrink-0 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-3 py-2 text-meta text-[color:var(--text-muted)]"
+          className="shrink-0 bg-[color:var(--bg-surface)] px-3 py-2 text-meta text-[color:var(--text-muted)]"
         >
           {linkNote}
         </p>

@@ -468,7 +468,7 @@ export default function DiagnosticsContent({ headerActions }: Props) {
   return (
     <div data-control-tab-scope className="flex h-full flex-col overflow-hidden font-mono text-meta">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-[color:var(--border-default)] px-4 py-2.5">
+      <div className="flex items-center justify-between border-b border-[color:var(--border-subtle)] px-4 py-2.5">
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold text-[color:var(--text-strong)]">Performance Diagnostics</span>
           <span className="text-micro text-[color:var(--text-muted)]">dev · polling {PROCESS_METRICS_POLL_MS}ms</span>
@@ -488,8 +488,9 @@ export default function DiagnosticsContent({ headerActions }: Props) {
         </div>
       </div>
 
-      {/* Global summary */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)] px-4 py-2">
+      {/* Global summary. Its raised ground is its edge; a rule under it as
+          well drew the same boundary twice, one band under the header's. */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 bg-[color:var(--bg-surface-raised)] px-4 py-2">
         <SummaryStat label="Terminals" value={String(totals.terminalCount)} />
         <SummaryStat label="Live" value={String(totals.liveTerminalCount)} />
         <SummaryStat label="Runtime-visible" value={String(totals.visibleTerminalCount)} />

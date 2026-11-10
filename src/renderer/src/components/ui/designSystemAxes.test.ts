@@ -186,7 +186,9 @@ test('designSystemAxes', async () => {
       // 8 → 7: shared attachment chips now use the documented radius ramp.
       // 7 → 6, 2026-10-01: the worktree switch took the raised chip's shell,
       // and its bare `rounded` went with the box it drew by hand.
-      'components/workspace': 5, // 2026-11-05: the New chat tile's hand-drawn outcome chip went with the tile's redraw
+      // 5 → 4, 2026-11-10: the notification row took the ramp's `rounded-sm`
+      // when its actions moved to hover.
+      'components/workspace': 4, // 2026-11-05: the New chat tile's hand-drawn outcome chip went with the tile's redraw
       // 35 → 34, 2026-09-06: the retired plan door's plan column was deleted
       // with its door (a70ba0931).
       // 34 → 26, 2026-09-08: SwitchboardBoardPanel, SwitchboardWorkspacePanel and
@@ -322,16 +324,20 @@ test('designSystemAxes', async () => {
     // palette's field band, the filter menu's group rule and the retired side
     // pane header. ONLY EVER EDIT DOWNWARD.
     rule: {
-      'components/auxWindows': 8,
+      // 2026-11-10, the hand-built headers: the Git pane down to its one
+      // chrome rule, the diff to the one over its code, the composer pickers,
+      // the account menu, the plugin and skill dialogs and Settings' footers
+      // separated by space and edge fades instead.
+      'components/auxWindows': 4,
       'components/backlog': 1,
-      'components/diagnostics': 9,
+      'components/diagnostics': 8,
       'components/htmlArtifact': 2,
       'components/memory': 1,
-      'components/panels': 30,
-      'components/settings': 9,
-      'components/ui': 13,
+      'components/panels': 16,
+      'components/settings': 3,
+      'components/ui': 9,
       'components/usage': 2,
-      'components/workspace': 28,
+      'components/workspace': 14,
       'components/worktree': 1,
       utils: 5,
     },
