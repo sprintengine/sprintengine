@@ -184,6 +184,10 @@
   /* A tint of the ink, not a solid, so it reads the same on every theme's
      surface: the groove of a segmented control, the ground of a code well. */
   --bg-well: var(--sem-color-bg-well);
+  /* An unread row in an inbox-like overlay list (the notification popover):
+     a tint of the ink, because in light mode the raised popover is the same
+     white as a surface and a solid step there would not show. */
+  --bg-unread: var(--sem-color-bg-unread);
   /* The selection EDGE: the 2px inset edge worn by the selected row of the
      pane the keyboard is driving (design-system/patterns/selection.html). The
      fill says WHAT HAPPENED and the edge says WHERE YOU ARE; no status state

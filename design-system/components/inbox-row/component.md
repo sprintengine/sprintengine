@@ -55,6 +55,13 @@ One `--selected` row per screen, as everywhere — see `patterns/selection`.
 | Focus-visible | `focus.ring` |
 | Selected / resting | As the variants above |
 | Disabled | `opacity: 0.5`, `cursor: not-allowed`, stays in layout |
+| Unread | `bg.unread` under the row and the title at `text.primary`; read rows step their ink down. For a catch-up list in an overlay (the notification popover). A tint of the ink, not a solid: in light mode a raised popover is the same white as a surface, and a solid step there did not show |
+
+**Row actions are revealed, not standing.** In a catch-up list a row's actions
+appear on hover and on keyboard focus, over the row's trailing metadata (the
+time) rather than beside it, so revealing them never reflows the row. At most
+two: the most useful action first (Open, where something resolves one), and a
+kebab holding the rest, which is also their non-hover path.
 
 Search field: the wrapper draws the focus ring when the input inside it has
 focus — the input is the tab stop, but the border box a person sees is the

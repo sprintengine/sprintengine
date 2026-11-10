@@ -60,6 +60,7 @@
   --sem-color-bg-app: var(--ref-color-mist-100);
   --sem-color-bg-surface: var(--ref-color-white);
   --sem-color-bg-surface-raised: var(--ref-color-white);
+  --sem-color-bg-unread: rgba(32, 36, 40, 0.04);
   --sem-color-bg-well: rgba(32, 36, 40, 0.05);
   --sem-color-bg-hover: var(--ref-color-mist-150);
   --sem-color-bg-active: var(--ref-color-mist-200);
@@ -205,6 +206,7 @@
   --sem-color-bg-app: var(--ref-color-ink-950);
   --sem-color-bg-surface: var(--ref-color-ink-900);
   --sem-color-bg-surface-raised: var(--ref-color-ink-875);
+  --sem-color-bg-unread: rgba(252, 252, 252, 0.035);
   --sem-color-bg-well: rgba(252, 252, 252, 0.06);
   --sem-color-bg-hover: var(--ref-color-ink-850);
   --sem-color-bg-active: var(--ref-color-ink-825);
