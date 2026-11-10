@@ -20,11 +20,16 @@ import { quoteSourceOf, quoteSources, rangeForQuote, QUOTE_SOURCE_ATTRIBUTE } fr
 // scrolls and re-rendered on every token of a reply, so nothing here touches
 // them. The words are painted through the CSS Custom Highlight API, as Find in
 // chat paints its matches (chatFindHighlight.ts), and the badges are drawn in
-// one layer of our own laid over the transcript, placed from the passage's
-// client rects. Both are worked out again when the rows change, the list
-// scrolls or the pane resizes, a frame at a time, and only for the replies the
-// list has drawn. A passage that cannot be found again (the reply drew it
-// differently) is simply not marked; its chip and popover still read the quote.
+// one layer of our own, placed from the passage's client rects. Both are
+// worked out again when the rows change, the list scrolls or the pane resizes,
+// a frame at a time, and only for the replies the list has drawn. A passage
+// that cannot be found again (the reply drew it differently) is simply not
+// marked; its chip and popover still read the quote.
+//
+// The badge layer sits inside the list's scroller, in the content's own
+// coordinates, so the browser scrolls a number with its words in the same
+// frame. Laid over the transcript instead, a badge was moved only after the
+// scroll had painted and trailed its passage by a few frames on every flick.
 
 /** A quote as the transcript marks it: whether it is in the draft or was sent already. */
 export type ShownQuote = ChatQuote & { sent: boolean }
@@ -100,8 +105,31 @@ function paintQuotes(owner: object, next: Painted): void {
 /** Where one quote's passage is on screen right now. */
 type Placed = { quote: ShownQuote; range: Range; rects: DOMRect[] }
 
-/** A badge as the layer draws it, in the transcript's own coordinates. */
+/** A badge as the layer draws it, in the coordinates of the element the layer sits in. */
 type Badge = { key: string; n: number; sent: boolean; right: number; bottom: number }
+
+/**
+ * The element the badges are drawn in for passages inside `source`: the
+ * scroller between it and `root`, when that scroller is positioned and so
+ * carries an absolute layer along as it scrolls. `root` when there is none,
+ * where the badges are placed again after every scroll as before.
+ */
+export function quoteBadgeHost(source: Element, root: HTMLElement): HTMLElement {
+  for (let element = source.parentElement; element && element !== root; element = element.parentElement) {
+    const style = getComputedStyle(element)
+    if (/auto|scroll|overlay/.test(style.overflowY)) return style.position === 'static' ? root : element
+  }
+  return root
+}
+
+/** Where `host`'s absolute children are measured from, in viewport coordinates, as it is scrolled now. */
+function hostOrigin(host: HTMLElement): { left: number; top: number } {
+  const box = host.getBoundingClientRect()
+  return {
+    left: box.left + host.clientLeft - host.scrollLeft,
+    top: box.top + host.clientTop - host.scrollTop,
+  }
+}
 
 // How far into the passage's last line the number's pill comes down, as a
 // share of the line's height: to about where its glyphs start, so the pill
@@ -179,6 +207,7 @@ export const QuoteHighlights = memo(function QuoteHighlights({
 }): JSX.Element | null {
   const owner = useRef({}).current
   const [badges, setBadges] = useState<readonly Badge[]>([])
+  const [badgeHost, setBadgeHost] = useState<HTMLElement | null>(null)
   const [card, setCard] = useState<HoverCard | null>(null)
   const quotesRef = useRef(quotes)
   quotesRef.current = quotes
@@ -214,7 +243,8 @@ export const QuoteHighlights = memo(function QuoteHighlights({
         cache.delete(turnId)
     }
     dirtyRef.current.clear()
-    const box = root.getBoundingClientRect()
+    let host: HTMLElement | null = null
+    let origin = { left: 0, top: 0 }
     const placed: Placed[] = []
     const draft: Range[] = []
     const sent: Range[] = []
@@ -251,18 +281,26 @@ export const QuoteHighlights = memo(function QuoteHighlights({
       const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0)
       placed.push({ quote, range, rects })
       const last = rects.at(-1)
-      if (!last || last.bottom < box.top || last.top > box.bottom) continue
+      if (!last) continue
+      // Every drawn passage gets its badge, on screen or not: the element the
+      // layer sits in clips it, and one that scrolls in is already in place.
+      if (!host) {
+        host = quoteBadgeHost(elements[0]!, root)
+        origin = hostOrigin(host)
+      }
       const place = placeQuoteBadge(last, quoteSourceOf(range.endContainer)?.getBoundingClientRect() ?? null)
       nextBadges.push({
         key,
         n: quote.n,
         sent: quote.sent,
-        right: place.right - box.left,
-        bottom: place.bottom - box.top,
+        right: place.right - origin.left,
+        bottom: place.bottom - origin.top,
       })
     }
     placedRef.current = placed
     paintQuotes(owner, { draft, sent, flash })
+    // Over the transcript the layer is drawn where it is mounted.
+    setBadgeHost(host === root ? null : host)
     setBadges((previous) => (sameBadges(previous, nextBadges) ? previous : nextBadges))
   }, [owner, transcriptRef])
 
@@ -424,24 +462,34 @@ export const QuoteHighlights = memo(function QuoteHighlights({
   }, [controlRef, schedule, transcriptRef])
 
   if (!badges.length && !card) return null
+  const inScroller = badgeHost !== null && badgeHost.isConnected
+  const layer = badges.length ? (
+    <div
+      aria-hidden="true"
+      data-copy-exclude=""
+      data-quote-badges=""
+      // In the scroller, a point at the content's top left that the badges
+      // hang from, clipped by the scroller itself; over the transcript, a
+      // cover clipped to it.
+      className={`pointer-events-none select-none absolute left-0 top-0 ${inScroller ? '' : 'h-full w-full overflow-hidden'}`}
+    >
+      {badges.map((badge) => (
+        <span
+          key={badge.key}
+          data-quote-badge={badge.n}
+          style={{ left: badge.right, top: badge.bottom }}
+          className={`absolute -translate-x-full -translate-y-full ${QUOTE_NUMBER_CLASS} ${
+            QUOTE_NUMBER_FILL[badge.sent ? 'sent' : 'draft']
+          }`}
+        >
+          {badge.n}
+        </span>
+      ))}
+    </div>
+  ) : null
   return (
     <>
-      {badges.length ? (
-        <div aria-hidden="true" data-copy-exclude="" className="pointer-events-none absolute inset-0 overflow-hidden">
-          {badges.map((badge) => (
-            <span
-              key={badge.key}
-              data-quote-badge={badge.n}
-              style={{ left: badge.right, top: badge.bottom }}
-              className={`absolute -translate-x-full -translate-y-full ${QUOTE_NUMBER_CLASS} ${
-                QUOTE_NUMBER_FILL[badge.sent ? 'sent' : 'draft']
-              }`}
-            >
-              {badge.n}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {layer && inScroller ? createPortal(layer, badgeHost) : layer}
       {card && cardQuote ? (
         <QuoteHoverCard
           quote={cardQuote}

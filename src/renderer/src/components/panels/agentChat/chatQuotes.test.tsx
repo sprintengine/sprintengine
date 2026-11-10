@@ -514,6 +514,70 @@ test("a passage's number sits raised over the end of its last line, inside its c
   })
 })
 
+test("a passage's number is drawn inside the list's scroller and a scroll leaves it where it is", async () => {
+  await inDom(async (dom) => {
+    const { act, createElement, createRef } = await import('react')
+    const { createRoot } = await import('react-dom/client')
+    const { QuoteHighlights, quoteBadgeHost } = await import('./quoteHighlights')
+    const document = dom.window.document
+    document.body.innerHTML =
+      '<div id="transcript"><div id="scroller" style="overflow-y: auto; position: relative">' +
+      '<div data-quote-source="t1"><p>Alpha beta gamma.</p></div></div></div><div id="host"></div>'
+    const transcript = document.getElementById('transcript')!
+    const scroller = document.getElementById('scroller')!
+    const source = document.querySelector('[data-quote-source]')!
+    // A scroller nothing is positioned in would leave an absolute layer behind
+    // as it scrolls: the badges are then drawn over the transcript.
+    scroller.style.position = 'static'
+    expect(quoteBadgeHost(source, transcript)).toBe(transcript)
+    scroller.style.position = 'relative'
+    expect(quoteBadgeHost(source, transcript)).toBe(scroller)
+    let scrollTop = 100
+    Object.defineProperty(scroller, 'scrollTop', { get: () => scrollTop })
+    scroller.getBoundingClientRect = () => new dom.window.DOMRect(0, 40, 800, 600)
+    transcript.getBoundingClientRect = () => new dom.window.DOMRect(0, 40, 800, 600)
+    source.getBoundingClientRect = () => new dom.window.DOMRect(0, 0, 800, 2000)
+    let passage = new dom.window.DOMRect(10, 60, 40, 20)
+    dom.window.Range.prototype.getClientRects = function () {
+      return Object.assign([passage], { item: () => passage }) as unknown as DOMRectList
+    }
+    dom.window.Range.prototype.getBoundingClientRect = () => passage
+    const root = createRoot(document.getElementById('host')!)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(QuoteHighlights, {
+            transcriptRef: { current: transcript },
+            quotes: [{ ...quote({ exact: 'beta' }), sent: false }],
+            controlRef: createRef<QuoteHighlightControl>(),
+            onEdit: () => undefined,
+            onRemove: () => undefined,
+            onLanding: () => undefined,
+          }),
+        ),
+      )
+      await act(async () => sleep(50))
+      const badge = scroller.querySelector<HTMLElement>('[data-quote-badge="1"]')!
+      // In the content's coordinates: 60 down the window, 40 under the
+      // scroller's top and 100 into its content, raised a fifth of the line.
+      expect(badge.parentElement!.parentElement).toBe(scroller)
+      expect([badge.style.left, badge.style.top]).toEqual(['50px', '124px'])
+      // Scrolled 80 further, the words are 80 higher on screen: the badge
+      // the browser carries with them is not moved again.
+      scrollTop = 180
+      passage = new dom.window.DOMRect(10, -20, 40, 20)
+      await act(async () => {
+        scroller.dispatchEvent(new dom.window.Event('scroll'))
+        await sleep(50)
+      })
+      expect(scroller.querySelector('[data-quote-badge="1"]')).toBe(badge)
+      expect([badge.style.left, badge.style.top]).toEqual(['50px', '124px'])
+    } finally {
+      await act(async () => root.unmount())
+    }
+  })
+})
+
 test("a chip's popover opens above what holds the chip, below only when there is no room", async () => {
   await inDom(async (dom) => {
     const { act, createElement } = await import('react')
