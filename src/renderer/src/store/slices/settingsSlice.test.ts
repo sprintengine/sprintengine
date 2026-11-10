@@ -1605,6 +1605,20 @@ test('chats with an open pull request are kept from the idle rule unless the per
   )
 })
 
+test('the collapsed sidebar shows at the edge unless the person turned it off', () => {
+  assert.equal(defaultAppSettings().sidebarHoverReveal, true)
+  const stored = (sidebarHoverReveal: unknown) =>
+    normalizeAppSettings({ sidebarHoverReveal } as unknown as Partial<AppSettings>, []).sidebarHoverReveal
+  assert.equal(stored(undefined), true, 'a profile from before the switch takes the default')
+  assert.equal(stored(false), false)
+  assert.equal(stored('no'), true, 'only an explicit false turns it off')
+  const store = useWorkspaceStore.getState()
+  store.setSidebarHoverReveal(false)
+  assert.equal(useWorkspaceStore.getState().appSettings.sidebarHoverReveal, false)
+  store.setSidebarHoverReveal(true)
+  assert.equal(useWorkspaceStore.getState().appSettings.sidebarHoverReveal, true)
+})
+
 test('a project icon is stored by folder, validated, and null returns it to detection', () => {
   const icons = () => useWorkspaceStore.getState().appSettings.projectIcons ?? {}
   const { setProjectIcon } = useWorkspaceStore.getState()

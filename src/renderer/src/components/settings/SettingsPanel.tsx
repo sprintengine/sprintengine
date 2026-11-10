@@ -743,6 +743,8 @@ export default function SettingsPanel({
   const chatListView = useWorkspaceStore((s) => s.chatListView)
   const sidebarWorkingSection = useWorkspaceStore((s) => s.appSettings.sidebarWorkingSection)
   const setSidebarWorkingSection = useWorkspaceStore((s) => s.setSidebarWorkingSection)
+  const sidebarHoverReveal = useWorkspaceStore((s) => s.appSettings.sidebarHoverReveal)
+  const setSidebarHoverReveal = useWorkspaceStore((s) => s.setSidebarHoverReveal)
   const openFilesInExternalWindow = useWorkspaceStore((s) => s.openFilesInExternalWindow)
   const setOpenFilesInExternalWindow = useWorkspaceStore((s) => s.setOpenFilesInExternalWindow)
   const setChatListView = useWorkspaceStore((s) => s.setChatListView)
@@ -1289,6 +1291,14 @@ export default function SettingsPanel({
                 description="While an agent works in a chat, fold it into a Working section at the top of the list, and put it back when the agent finishes or needs you. Starred chats and the chat you are in stay where they are. Grouped by status, working chats always fold away, into a closed section at the foot of the list."
                 enabled={sidebarWorkingSection}
                 onChange={setSidebarWorkingSection}
+              />
+              {/* Beside the list it shows: the other way of getting at the
+                  sidebar, for someone who keeps it collapsed. */}
+              <SettingToggle
+                label="Show sidebar at the edge"
+                description="With the sidebar collapsed, rest the pointer at the left edge of the window to show it over your work. It hides again when the pointer moves away, and stays collapsed."
+                enabled={sidebarHoverReveal}
+                onChange={setSidebarHoverReveal}
               />
               <ChatAppearanceRows />
               {/* Where a file opens (owner ruling 2026-09-25). The editor

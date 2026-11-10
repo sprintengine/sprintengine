@@ -3008,6 +3008,27 @@ samp,
   }
 }
 
+/* The collapsed sidebar shown at the window's left edge
+ * (workspace/sidebarHoverReveal.tsx): the drawer's elevation and motion,
+ * sliding from the left, out from behind the rail. It floats over the
+ * workspace, so it stands on the app's opaque ground: under glass or tinted
+ * the sidebar's own canvas is see-through, which over a chat would show the
+ * chat through the list. */
+.sidebar-reveal {
+  background-color: var(--bg-app);
+  box-shadow: var(--shadow-drawer);
+  transform: translate3d(-100%, 0, 0);
+  will-change: transform;
+}
+.sidebar-reveal[data-reveal="open"] {
+  transform: translate3d(0, 0, 0);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sidebar-reveal {
+    transition: transform var(--motion-deliberate) var(--motion-ease);
+  }
+}
+
 /* Skeleton shimmer. The moving highlight is a `::after` overlay driven by
  * `transform: translateX` so it is GPU-composited (no per-frame repaint) — this
  * stays smooth even when many blocks animate over a large area (e.g. the

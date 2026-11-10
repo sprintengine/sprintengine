@@ -52,6 +52,10 @@ type SidebarChromeProps<MenuItem extends string> = {
   // system menu bar.
   menuItems: readonly MenuItem[]
   onShowMenu: (event: React.MouseEvent<HTMLButtonElement>, label: MenuItem) => void
+  // Collapsed, and shown at the window's edge over the workspace
+  // (sidebarHoverReveal.tsx). The toggle then docks it rather than collapsing
+  // something already collapsed, and says so.
+  revealed?: boolean
 }
 
 // Sidebar toggle: white (text-strong) while its
@@ -60,18 +64,22 @@ type SidebarChromeProps<MenuItem extends string> = {
 // in WorkspaceBand's launcher and stays muted. That is why it is the one glyph
 // in the row brighter than its neighbours: the pair is a state contrast read
 // across the two states, not decoration.
-function CollapseButton({ onToggle }: { onToggle: () => void }) {
+function CollapseButton({ onToggle, revealed }: { onToggle: () => void; revealed: boolean }) {
+  // Shown at the edge, the sidebar is collapsed and only visiting: the same
+  // glyph docks it, at the muted ink of the band's open button, because the
+  // panel is not open in the sense the strong ink claims.
+  const label = revealed ? 'Keep sidebar open' : 'Collapse sidebar'
   return (
-    <Tooltip content="Collapse sidebar" placement="bottom">
+    <Tooltip content={label} placement="bottom">
       {/* `aria-pressed` stays an explicit attribute rather than the `pressed`
           prop: the fact is true, but the neutral selection fill `pressed`
           paints is not what this control wears — the strong ink IS its open
           state. An attribute after the props still wins. */}
       <IconButton
-        tone="strong"
+        tone={revealed ? 'subtle' : 'strong'}
         onClick={onToggle}
-        aria-label="Collapse sidebar"
-        aria-pressed={true}
+        aria-label={label}
+        aria-pressed={!revealed}
         className="app-no-drag"
       >
         <svg viewBox="0 0 16 16" fill="none" className="icon-sm" aria-hidden="true">
@@ -192,9 +200,11 @@ export function SidebarChrome<MenuItem extends string>({
   onOpenSearch,
   menuItems,
   onShowMenu,
+  revealed = false,
 }: SidebarChromeProps<MenuItem>) {
   // Only rendered while the sidebar is expanded (the whole sidebar is hidden when
-  // collapsed — the collapsed launcher lives in WorkspaceBand instead).
+  // collapsed — the collapsed launcher lives in WorkspaceBand instead), or while
+  // a collapsed one is shown at the window's edge.
   //
   // The app rail stands between this column and the window's left edge
   // (app shell, 2026-09-05), and the native macOS traffic lights start
@@ -225,7 +235,7 @@ export function SidebarChrome<MenuItem extends string>({
         <NavHistoryButton direction="back" onClick={onNavigateBack} />
         <NavHistoryButton direction="forward" onClick={onNavigateForward} />
         <SearchButton onOpen={onOpenSearch} />
-        <CollapseButton onToggle={onToggleSidebar} />
+        <CollapseButton onToggle={onToggleSidebar} revealed={revealed} />
       </div>
     </div>
   )
