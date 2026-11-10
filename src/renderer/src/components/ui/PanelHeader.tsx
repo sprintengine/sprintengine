@@ -1,4 +1,5 @@
 import React from 'react'
+import { useInOverlaySurface } from './overlaySurface'
 import { TruncatedText } from './TruncatedText'
 
 type ProgressIndicator = {
@@ -29,10 +30,22 @@ type PanelHeaderBaseProps = {
    *  Use when the panel has a canonical completion metric (accepted/total) so
    *  the indicator earns its place; do not use as decoration. */
   progress?: ProgressIndicator
-  /** Set false when a search row follows immediately. One divider per panel, and
-   *  it belongs under the search — that is the line that says "a list starts
-   *  here". A rule above the search as well boxes the search into a strip of its
-   *  own and gives the panel two lines where one carries the meaning. */
+  /**
+   * What separates the header from the body under it.
+   *
+   *  - `rule` — one `border.subtle` hairline. The default in a PANE, where the
+   *    header shares a ground with the body and with the panes beside it.
+   *  - `none` — space alone. The default inside an OVERLAY (a dialog, popover
+   *    or drawer — see `OverlaySurfaceContext`): the shell draws its own edge,
+   *    and a rule under the title cuts a small surface into strips. Also the
+   *    answer in a pane when a search row follows: one divider per panel, and
+   *    it belongs under the search.
+   *  - `scroll` — no rule; the body beneath is a `ScrollArea`, whose top fade
+   *    marks the edge only while content is scrolled under the header.
+   */
+  edge?: 'rule' | 'none' | 'scroll'
+  /** The published spelling of `edge="none"` (module SDK). `false` drops the
+   *  rule; `true` is the default. New code says `edge`. */
   divider?: boolean
 }
 
@@ -66,8 +79,11 @@ export function PanelHeader({
   primaryAction,
   overflow,
   progress,
-  divider = true,
+  edge,
+  divider,
 }: PanelHeaderProps) {
+  const inOverlay = useInOverlaySurface()
+  const resolvedEdge = edge ?? (divider === false ? 'none' : divider === true ? 'rule' : inOverlay ? 'none' : 'rule')
   const acceptedPct =
     progress && progress.total > 0 ? Math.min(Math.max(progress.value, 0), progress.total) / progress.total : 0
   const warnPct =
@@ -76,9 +92,13 @@ export function PanelHeader({
       : 0
   return (
     <header
-      className={`relative flex items-center justify-between gap-3 bg-[color:var(--bg-surface)] px-3 py-2 ${
-        divider ? 'border-b border-[color:var(--border-default)]' : ''
-      }`}
+      data-edge={resolvedEdge}
+      className={`relative flex items-center justify-between gap-3 px-3 py-2 ${
+        // No ground of its own in an overlay: the shell's is the one surface,
+        // and a header painting `bg.surface` over a raised popover is a band
+        // a shade off the card it sits in.
+        inOverlay ? '' : 'bg-[color:var(--bg-surface)]'
+      } ${resolvedEdge === 'rule' ? 'border-b border-[color:var(--border-subtle)]' : ''}`}
     >
       <div className="flex min-w-0 items-center gap-2">
         {leading ? <span className="flex shrink-0 items-center">{leading}</span> : null}

@@ -145,7 +145,7 @@
 
 .ds-menu-separator {
   height: 1px;
-  margin: var(--sem-space-2xs) 0;
+  margin: var(--sem-space-2xs) var(--sem-space-md);
   background: var(--sem-color-border-subtle);
 }
 

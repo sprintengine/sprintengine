@@ -226,7 +226,12 @@ export { Badge } from './Badge'
 export type { MarkBadge } from './Badge'
 export { NewChip } from './NewChip'
 export { EmptyState } from './EmptyState'
-export { SidePane, SidePaneHeader } from './SidePane'
+export { SidePane } from './SidePane'
+export { ScrollArea } from './ScrollArea'
+export type { ScrollAreaProps } from './ScrollArea'
+export { useScrollEdges, readScrollEdges } from './useScrollEdges'
+export type { ScrollAxis, ScrollEdges } from './useScrollEdges'
+export { OverlaySurfaceContext, useInOverlaySurface } from './overlaySurface'
 export { BoardLane } from './BoardLane'
 export { ActionResultMessage, InlineNotice } from './InlineNotice'
 export type { ActionResult } from './InlineNotice'
@@ -248,6 +253,7 @@ export {
   FOCUS_RING_WITHIN_INPUT_CLASS,
   FOCUS_RING_WITHIN_EDITOR_CLASS,
   FOCUS_RING_WITHIN_TEXTAREA_CLASS,
+  SECTION_LABEL_CLASS,
   TONE_COLOR_VAR,
   TONE_SOFT_VAR,
 } from './tokens'

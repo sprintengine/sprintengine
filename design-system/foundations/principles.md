@@ -335,7 +335,38 @@ person with everything at once.
   content, and its buttons are divided by padding. A rule under the title and
   another above the buttons cuts a small surface into three boxed strips and
   buys nothing: the shell already draws its own edge, and a shell that scrolls
-  as one piece never needed the rules as scroll affordances.
+  as one piece never needed the rules as scroll affordances. This holds for
+  every overlay, not only the dialog (amended 2026-11-10): a popover's header, a
+  drawer's header, the command palette's field and a modal-hosted surface's
+  title bar draw no rule beneath them, and a surface rail inside a modal draws
+  none down its seam — the change of ground is the seam. The kit's overlay
+  shells say so to what they hold (`OverlaySurfaceContext`), so a panel header
+  drops its rule by itself once it is inside one.
+- **A scroll edge is marked by a fade, and only while content is hidden
+  there** (2026-11-10). Where an overlay's body scrolls on its own, the seam
+  between fixed chrome and moving content is real, and a permanent hairline
+  was the old way of drawing it — a line that says "edge" whether or not
+  anything is under it. The body is a
+  [scroll-area](../components/scroll-area/component.md) instead: its top edge
+  fades while a row is scrolled beneath the header and is plain again at the
+  start; the bottom edge the same. Never on a terminal, the code editor or the
+  streaming chat timeline — a mask over a surface that repaints every frame is
+  recomposited every frame — and keyboard focus never rests inside a fade.
+- **In a pane, a header takes one `border.subtle` rule.** A pane's header sits
+  on the ground its body and its neighbours share, so one line is what says
+  where its chrome stops — and one quiet line, not `border.default`: at that
+  step a header's rule outweighed the pane's own edge, and a column of panes
+  read as a ladder of boxed strips. A band of glyphs under the header (a
+  toolbar) adds no second rule, a tab strip's rule is `border.subtle` too, and
+  a notice band's tint is its own edge. The repository counts the `border-b`
+  and `border-t` rules each area of the renderer draws, and the count may only
+  go down (`designSystemAxes.test.ts`, the `rule` axis).
+- **A sub-header inside a list is a label, not a rule.** "Today", "Yesterday",
+  a picker's groups: a quiet `font.size.meta` label in `text.muted` with space
+  above it (see [section](../components/section/component.md), *The section
+  label*). A label and a rule together say the same boundary twice — the reason
+  a menu's group label is the alternative to its divider, and a menu's divider
+  is inset to the rows' text rather than running to the frame.
 - **One chrome row per content region.** Everything that is chrome for the same
   content shares a band — status on the left, controls on the right. A tools bar
   stacked on a status bar spends a second band of vertical space to say what the
@@ -936,7 +967,10 @@ surface rather than patching it.
 - A red "Required" or an asterisk on a field nobody has filled in yet.
 - A tone-coloured bar down the left edge of a notice, card, or callout.
 - Two stacked bands of chrome above one region of content.
-- Dividers separating the sections of a dialog.
+- Dividers separating the sections of a dialog — or a rule under any overlay's
+  header, popovers and drawers included.
+- A `border.default` rule under a pane header, or a second rule stacked under
+  it by the toolbar or tab strip that follows.
 - The same count shown in two places where the values could appear to disagree.
 - Always-on row actions that should have been revealed on hover — or
   hover-revealed actions with no keyboard path.

@@ -33,10 +33,10 @@ panel's content; success is the state the screen already shows.
 | Message | `.ds-banner-message` | yes — one line, truncates |
 | Action | `.ds-banner-action` | danger: required; warn: optional — holds a ghost button (`.ds-button.ds-button--ghost`) |
 
-The strip: the tone's **soft** tint over the surface, a `border.default`
-hairline on the bottom edge only (it shares every other edge with the panel),
-`space.lg` / `space.sm` padding, message at `font.size.meta` in
-`text.primary`.
+The strip: the tone's **soft** tint over the surface and no hairline — the
+tint is already the strip's edge, and a rule along the bottom of a tinted band
+draws the same boundary twice. `space.lg` / `space.sm` padding, message at
+`font.size.meta` in `text.primary`.
 
 **No left tone-bar** — the rejected-on-sight rule applies to banners exactly
 as it does to notices. The mark is the tone's shape; the tint is its echo.

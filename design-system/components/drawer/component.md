@@ -21,8 +21,8 @@ rejected idea below.
 | Root | `.ds-drawer-root` | yes — fixed, full-viewport, `z.drawer`; carries `data-state` |
 | Scrim | `.ds-drawer-scrim` | yes — `overlay.scrim`, `aria-hidden`, fades with the panel; pointer-down closes |
 | Panel | `.ds-drawer` | yes — `role="dialog"`, `aria-modal="true"`, `aria-labelledby` the title, `tabindex="-1"`; right-docked, full-height |
-| Header | `.ds-drawer-header` | yes — title `.ds-drawer-title` plus the close button, under the drawer's one hairline |
-| Body | `.ds-drawer-body` | yes — the scroll container; the header never scrolls away |
+| Header | `.ds-drawer-header` | yes — title `.ds-drawer-title` plus the close button; no rule beneath |
+| Body | `.ds-drawer-body` | yes — the scroll container, a [scroll-area](../scroll-area/component.md); the header never scrolls away |
 
 The panel sits on `bg.surface`, separated from the page by `shadow.drawer` and
 a left hairline of `border.strong` — the elevation ramp's middle step, between
@@ -30,9 +30,12 @@ a left hairline of `border.strong` — the elevation ramp's middle step, between
 `360px` default, the panel-aside width; wider is a per-consumer decision, and
 the panel never exceeds the viewport.
 
-Unlike a dialog's interior, the header here keeps its hairline: the body
-scrolls under it, so the rule is a working edge — the seam between fixed
-chrome and moving content — not decoration.
+The header draws no rule. A drawer is an overlay, and inside an overlay space
+separates (`principles.md`, *Hairlines carry the structure*). The body does
+scroll under the header, and that seam is real — so the body is a
+[scroll-area](../scroll-area/component.md), whose top edge fades only while a
+row is scrolled beneath the header. A permanent hairline said "edge" whether or
+not anything was there; the fade says it only when it is true.
 
 ## Variants
 

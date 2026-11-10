@@ -5033,20 +5033,72 @@ body:has([data-selection-pane]:focus-within)
   --markdown-fade-end: var(--sem-space-3xl);
 }
 
-/* A list that scrolls up under chrome floating over it (the pane's menu under
- * the pane's strip, workspace/pane/panel/ChatPanel.tsx) fades its top edge once
- * something has gone up there, so the list is never cut off on a hard line.
- * At rest it is drawn plain. Like the table above, the mask takes only alpha. */
-.scroll-fade-top[data-scrolled] {
-  mask-image: linear-gradient(to bottom, transparent, black var(--sem-space-xl));
-}
-
 .markdown-table-scroll:is([data-overflow-start], [data-overflow-end]) {
   mask-image: linear-gradient(
     to right,
     transparent,
     black var(--markdown-fade-start, 0px),
     black calc(100% - var(--markdown-fade-end, 0px)),
+    transparent
+  );
+}
+
+/* The scroll-edge fade (design-system/components/scroll-area), the one fade
+ * for every scroller — the pane's menu scrolling up under the pane's floating
+ * strip (workspace/pane/panel/ChatPanel.tsx) included. A scroller
+ * marks an edge only while content is hidden past it: `useScrollEdges` writes
+ * `data-scroll-start` / `data-scroll-end`, and this turns them into a mask
+ * that fades that edge to nothing. It replaces the rule a header used to draw
+ * over a body that scrolled — a hairline that is there whether or not anything
+ * is under it says "edge" all the time, and a fade says it only when it is
+ * true. The mask takes alpha only, so its stops are opacity, not colour.
+ *
+ * `scroll-padding` keeps keyboard focus out of the fade: a row walked into
+ * view by Tab or the arrow keys stops a fade's depth short of the edge rather
+ * than coming to rest half-transparent under it.
+ *
+ * Never on a terminal, the code editor or the streaming chat timeline: a mask
+ * on a surface that repaints every frame makes the compositor redo the mask
+ * every frame too. */
+.scroll-edge-fade,
+.scroll-edge-fade-x {
+  --scroll-fade-size: var(--sem-space-3xl);
+}
+
+.scroll-edge-fade {
+  scroll-padding-block: var(--scroll-fade-size);
+}
+
+.scroll-edge-fade-x {
+  scroll-padding-inline: var(--scroll-fade-size);
+}
+
+.scroll-edge-fade[data-scroll-start],
+.scroll-edge-fade-x[data-scroll-start] {
+  --scroll-fade-start: var(--scroll-fade-size);
+}
+
+.scroll-edge-fade[data-scroll-end],
+.scroll-edge-fade-x[data-scroll-end] {
+  --scroll-fade-end: var(--scroll-fade-size);
+}
+
+.scroll-edge-fade:is([data-scroll-start], [data-scroll-end]) {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--scroll-fade-start, 0px),
+    black calc(100% - var(--scroll-fade-end, 0px)),
+    transparent
+  );
+}
+
+.scroll-edge-fade-x:is([data-scroll-start], [data-scroll-end]) {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--scroll-fade-start, 0px),
+    black calc(100% - var(--scroll-fade-end, 0px)),
     transparent
   );
 }

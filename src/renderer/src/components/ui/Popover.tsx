@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { OverlaySurfaceContext } from './overlaySurface'
 import { OVERLAY_CHROME_CLASS, OVERLAY_SURFACE_CLASS } from './tokens'
 
 export type PopoverPlacement = 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end'
@@ -461,7 +462,7 @@ export function Popover({
                 surfaceClassName ?? '',
               ].join(' ')}
             >
-              {children}
+              <OverlaySurfaceContext.Provider value={true}>{children}</OverlaySurfaceContext.Provider>
             </Surface>,
             document.body,
           )

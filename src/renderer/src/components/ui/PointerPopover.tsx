@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+
+import { OverlaySurfaceContext } from './overlaySurface'
 import { useClampedMenuPosition } from './ContextMenu'
 import { pointerLandedInPopoverWithin, popoverOpenWithin } from './Popover'
 
@@ -165,7 +167,7 @@ export function PointerPopover({
         surfaceClassName ?? '',
       ].join(' ')}
     >
-      {children}
+      <OverlaySurfaceContext.Provider value={true}>{children}</OverlaySurfaceContext.Provider>
     </div>,
     document.body,
   )

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scroll area</title>
+<link rel="stylesheet" href="../../foundations/tokens.css" />
+<link rel="stylesheet" href="component.css" />
+<style>
+  body {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+  .demo-stage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sem-space-xl);
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+  .demo-label {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+  }
+  /* A popover-sized overlay: a header separated from its body by space, and a
+     body that fades at whichever edge has rows hidden past it. */
+  .demo-overlay {
+    display: flex;
+    flex-direction: column;
+    width: 280px;
+    height: 220px;
+    border: 1px solid var(--sem-color-border-strong);
+    border-radius: var(--sem-radius-overlay);
+    background: var(--sem-color-bg-surface-raised);
+    box-shadow: var(--sem-shadow-popover);
+  }
+  .demo-header {
+    margin: 0;
+    padding: var(--sem-space-sm) var(--sem-space-lg);
+    font-size: var(--sem-font-size-body);
+    font-weight: var(--sem-font-weight-emphasis);
+    color: var(--sem-color-text-primary);
+  }
+  .demo-row {
+    margin: 0;
+    padding: var(--sem-space-xs) var(--sem-space-lg);
+    font-size: var(--sem-font-size-body);
+  }
+</style>
+</head>
+<body>
+<div class="demo-stage" data-mode="light">
+  <p class="demo-label">Light — at the start only the bottom edge fades; scroll, and the top edge fades too while rows sit under the header.</p>
+  <div class="demo-overlay">
+    <h2 class="demo-header">Notifications</h2>
+    <div class="ds-scroll-area" data-demo-scroll tabindex="0" aria-label="Notifications">
+      <p class="demo-row">Agent finished</p>
+      <p class="demo-row">Push rejected</p>
+      <p class="demo-row">Worktree locked</p>
+      <p class="demo-row">Review ready</p>
+      <p class="demo-row">Update installed</p>
+      <p class="demo-row">Agent waiting on you</p>
+      <p class="demo-row">Checks passed</p>
+      <p class="demo-row">Branch deleted</p>
+      <p class="demo-row">Stash applied</p>
+    </div>
+  </div>
+</div>
+<div class="demo-stage" data-mode="dark">
+  <p class="demo-label">Dark — the mask takes alpha only, so the same fade works over every ground.</p>
+  <div class="demo-overlay">
+    <h2 class="demo-header">Notifications</h2>
+    <div class="ds-scroll-area" data-demo-scroll tabindex="0" aria-label="Notifications">
+      <p class="demo-row">Agent finished</p>
+      <p class="demo-row">Push rejected</p>
+      <p class="demo-row">Worktree locked</p>
+      <p class="demo-row">Review ready</p>
+      <p class="demo-row">Update installed</p>
+      <p class="demo-row">Agent waiting on you</p>
+      <p class="demo-row">Checks passed</p>
+      <p class="demo-row">Branch deleted</p>
+      <p class="demo-row">Stash applied</p>
+    </div>
+  </div>
+</div>
+<script>
+  // The edges, written as the app's hook writes them: an attribute per edge
+  // with content hidden past it, one pixel of slack each way.
+  for (const el of document.querySelectorAll('[data-demo-scroll]')) {
+    const measure = () => {
+      const max = el.scrollHeight - el.clientHeight
+      el.toggleAttribute('data-scroll-start', max > 1 && el.scrollTop > 1)
+      el.toggleAttribute('data-scroll-end', max > 1 && el.scrollTop < max - 1)
+    }
+    el.addEventListener('scroll', measure, { passive: true })
+    new ResizeObserver(measure).observe(el)
+    measure()
+  }
+</script>
+</body>
+</html>

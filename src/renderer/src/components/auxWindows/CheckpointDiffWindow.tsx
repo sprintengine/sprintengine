@@ -68,7 +68,7 @@ export default function CheckpointDiffWindow({ request }: { request: string }) {
   return (
     <div className="flex h-screen flex-col bg-[color:var(--sem-color-bg-app)] text-[color:var(--sem-color-text-primary)]">
       <div style={{ paddingLeft: window.api.platform === 'darwin' ? TRAFFIC_LIGHT_INSET : undefined }}>
-        <Toolbar ariaLabel="Checkpoint diff" className="app-drag-region">
+        <Toolbar ariaLabel="Checkpoint diff" edge="rule" className="app-drag-region">
           <span className="truncate">
             {input?.path ?? 'Turn changes'} ·{' '}
             {input && 'toolUseId' in input ? 'Recorded edit and surrounding context' : 'Before / after turn'}

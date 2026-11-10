@@ -35,6 +35,7 @@ padding contract.
 | Count | `.ds-section-count` | no — `tabular-nums`, `text.muted` |
 | Action | `.ds-section-action` | no — **one** trailing control |
 | Body | `.ds-section-body` | yes — the content, inset unless `--flush` |
+| Label | `.ds-section-label` | no — the quiet sub-header for a group inside a list or an overlay; see below |
 
 The title is `font.size.meta` at `font.weight.emphasis` in `text.primary` —
 a weighted label, **never** uppercase letter-spaced chrome. Sentence case.
@@ -58,6 +59,22 @@ and its content sit on the same vertical line.
   Reach for it only when the body's rows genuinely have no inset of their own —
   a list of `inbox-row`s carries its own, and the header must stay inset to
   line up with it.
+
+## The section label
+
+A list inside a popover or a pane often needs to say where its groups start —
+"Today" and "Yesterday" in a notification list, the groups in a picker. That
+is not a section title: the title names a region of a page, and a label names
+a run of rows inside one list. So it is quieter than the title on purpose:
+`font.size.meta` at regular weight in `text.muted`, sentence case, no rule
+above or below, no count, no control. The label *is* the boundary; a rule as
+well says it twice, and that is the same reason a menu's group label is the
+alternative to its divider rather than an addition to it.
+
+Space does the rest: `space.lg` above a label that follows rows, `space.2xs`
+between the label and its first row, on the rows' own left inset. In the app
+this is `SECTION_LABEL_CLASS` (`components/ui/tokens.ts`); the command
+palette's group heading is the same treatment.
 
 ## States
 
