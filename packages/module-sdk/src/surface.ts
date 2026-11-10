@@ -27,6 +27,10 @@ function hostProvided(): never {
 
 export type GlobalSurfaceBar = {
   title: React.ReactNode
+  /** The page inside the surface, for a surface whose rail picks pages: the
+   *  bar reads as a breadcrumb, "Title › crumb", and the page does not open on
+   *  a second big title of its own. A host that predates it shows the title. */
+  crumb?: string
   actions?: React.ReactNode
 }
 
