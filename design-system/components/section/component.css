@@ -48,6 +48,16 @@
   color: var(--sem-color-text-muted);
 }
 
+/* The quiet sub-header for a run of rows inside one list (a notification
+ * list's "Today"). Quieter than the title on purpose, and never ruled: the
+ * label is the boundary. */
+.ds-section-label {
+  margin: 0;
+  font-size: var(--sem-font-size-meta);
+  font-weight: var(--sem-font-weight-regular);
+  color: var(--sem-color-text-muted);
+}
+
 /* One trailing control — a ceiling, not a suggestion. */
 .ds-section-action {
   flex: none;

@@ -21,18 +21,18 @@
   gap: var(--sem-space-3xs);
   height: var(--sem-size-control-sm);
   padding-inline: var(--sem-space-xs);
-  /* ONE hairline, at the bottom, and it is the band's whole separation: no
-   * fill, no shadow, no second rule above. A toolbar that painted its own
-   * ground would read as a second surface stacked on the pane. */
-  border-bottom: 1px solid var(--sem-color-border-subtle);
+  /* No rule, no fill, no shadow. A band of ghost glyphs is the top of the
+   * region it acts on; it usually sits under a tab strip or a panel header
+   * that already draws the pane's one rule, and a second 30px below it is a
+   * ladder, not a structure. A toolbar that painted its own ground would
+   * read as a second surface stacked on the pane. */
   background: transparent;
 }
 
-/* For a band that already sits under a hairline — directly beneath a tab strip
- * or a panel header, which draw their own. Two rules 30px apart is a ladder,
- * not a structure. */
-.ds-toolbar--borderless {
-  border-bottom: 0;
+/* One subtle hairline under the band, for a band over a surface that does not
+ * mark its own top (a diff editor's gutter runs edge to edge). */
+.ds-toolbar--rule {
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 /* Pushes everything after it to the trailing end. A band with a leading and a

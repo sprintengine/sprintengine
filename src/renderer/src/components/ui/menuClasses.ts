@@ -156,8 +156,13 @@ export const MENU_OPTION_STACKED_CLASS = `items-start ${MENU_ROW_SHAPE} ${MENU_I
  * The separator. `border-subtle`: inside an already-bordered surface a divider
  * separates siblings, and at `border-default` it competes with the surface's
  * own edge — the menu then reads as two stacked panels.
+ *
+ * Inset to the item's own horizontal padding (`px-2.5`), so it stops where the
+ * rows' text stops. A separator that ran to the surface's border met the
+ * border, and a line that touches the frame reads as the frame dividing — two
+ * panels — where a line floating inside it reads as a pause between groups.
  */
-export const MENU_DIVIDER_CLASS = 'my-1 h-px bg-[color:var(--border-subtle)]'
+export const MENU_DIVIDER_CLASS = 'mx-2.5 my-1 h-px bg-[color:var(--border-subtle)]'
 
 /**
  * A group heading — the alternative to a separator, never an addition to one.

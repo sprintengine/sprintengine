@@ -14,7 +14,7 @@ belong in this band, and a status belongs to the thing that has it.
 
 | Part | Class | Required |
 |---|---|---|
-| Header | `.ds-panel-header` | yes — a `<header>` band, `bg.surface`, one bottom hairline |
+| Header | `.ds-panel-header` | yes — a `<header>` band; in a pane `bg.surface` and one `border.subtle` hairline, in an overlay neither |
 | Identity dot | `.ds-panel-header-identity` | no — 6px, colored by the consumer's identity channel |
 | Title | `.ds-panel-header-title` | yes — an `<h2>`, `font.size.body` at `font.weight.emphasis`, `text.primary`, truncates |
 | Count | `.ds-panel-header-count` | no — the canonical count, mono-free, tabular, `text.muted` |
@@ -34,18 +34,39 @@ full name is recoverable when it is actually cut off.
 
 ## Variants
 
-- **Default** — bottom hairline at `border.default`. This is the panel's
-  chrome edge.
-- **`--flush`** — no hairline. Use only when a search row follows
-  immediately: one divider per panel, and it belongs under the search — that
-  is the line that says "the list starts here" (see `patterns/list-surface`).
-  A rule above the search as well boxes it into a strip of its own.
+The header's edge depends on where it lives, and it knows where it lives: in
+the app, every overlay shell (`Modal`, `Popover`, `PointerPopover`, `Drawer`)
+says so through `OverlaySurfaceContext`, and `PanelHeader` reads it. A caller
+says `edge` only to override that default.
+
+- **Pane (default outside an overlay)** — one bottom hairline at
+  `border.subtle`. The header shares its ground with the body and with the
+  panes beside it, so one quiet line is what says where the chrome stops. It
+  was `border.default` until 2026-11-10; at that step the header's rule
+  outweighed the pane's own edge, and a column of panes read as a stack of
+  boxed strips.
+- **`--overlay` (default inside an overlay; `edge="none"`)** — no hairline and
+  no ground of its own. Inside a dialog, popover or drawer, space separates:
+  the shell already draws its edge, and a rule under the title cuts a small
+  surface into strips (`principles.md`, *Hairlines carry the structure*).
+- **`--flush` (`edge="none"` in a pane)** — no hairline. Use when a search row
+  follows immediately: one divider per panel, and it belongs under the search
+  — that is the line that says "the list starts here" (see
+  `patterns/list-surface`). A rule above the search as well boxes it into a
+  strip of its own.
+- **Over a scroll area (`edge="scroll"`)** — no hairline; the body beneath is
+  a [scroll-area](../scroll-area/component.md), whose top edge fades only
+  while content is scrolled under the header. Renders like `--flush`; the
+  difference is the promise about the body.
+
+The module SDK's `divider={false}` is the published spelling of `edge="none"`
+and keeps working.
 
 ## States
 
 | State | Treatment |
 |---|---|
-| Rest | `bg.surface`, title at `text.primary` |
+| Rest | Title at `text.primary`; `bg.surface` in a pane, the shell's ground in an overlay |
 | With progress | The 2px hairline sits on the bottom border, accent fill for done, `status.warn` segment after it for blocked |
 | Progress change | Width animates at `motion.duration.normal`, `motion.ease.standard` |
 

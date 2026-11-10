@@ -55,16 +55,19 @@ two chrome strips.
 | Spacer | `.ds-toolbar-spacer` | no — pushes what follows to the trailing end |
 
 Geometry: `size.control.sm` (30px) tall, `space.3xs` between items,
-`space.xs` of inline padding, and one `border.subtle` hairline along the bottom.
+`space.xs` of inline padding, and no rule of its own by default.
 
 ## Variants
 
-- **Default** — the bottom hairline. The band's whole separation: no fill, no
-  shadow, no second rule above it. A toolbar that painted its own ground would
-  read as a second surface stacked on the pane.
-- **`--borderless`** — for a band that already sits under a hairline (directly
-  beneath a tab strip or a `panel-header`, which draw their own). Two rules 30px
-  apart is a ladder, not a structure.
+- **Default** — no hairline, no fill, no shadow. A band of ghost glyphs reads
+  as the top of the region it acts on, and the content under it begins where
+  the glyphs stop; a band usually sits under a tab strip or a `panel-header`
+  that already draws the pane's one rule, and a second 30px below it was a
+  ladder, not a structure. A toolbar that painted its own ground would read as
+  a second surface stacked on the pane.
+- **`--rule`** — one `border.subtle` hairline along the bottom, for a band over
+  a surface that does not mark its own top (a diff editor whose gutter runs
+  edge to edge). In the app this is `edge="rule"`.
 
 ## The vertical divider
 

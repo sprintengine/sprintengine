@@ -65,9 +65,9 @@
   border-right: 0;
 }
 
-/* One chrome band: title left, count and close right, one working edge over
- * the scrolling body — the same header rhythm as the drawer, so a board and
- * its aside read as one family. */
+/* One chrome band: title left, count and close right, one subtle rule over
+ * the scrolling body — the panel header's pane edge, so a board and its aside
+ * read as one family. */
 .ds-side-pane-header {
   display: flex;
   flex-shrink: 0;
@@ -75,7 +75,7 @@
   justify-content: space-between;
   gap: var(--sem-space-sm);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 .ds-side-pane-title {

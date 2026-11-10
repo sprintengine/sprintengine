@@ -1588,10 +1588,18 @@ test('designSystemConformance', async () => {
         /text-body font-semibold/,
         'and its title is `text-body font-semibold`, not a per-panel type step',
       )
+      // The rule moved to `border.subtle` on 2026-11-10 (principles.md,
+      // "Hairlines carry the structure"): at the default step a header's rule
+      // outweighed the pane's own edge. Inside an overlay it draws none.
       assert.match(
         header,
-        /border-b border-\[color:var\(--border-default\)\]/,
-        'and the rule it draws is the default border, not the subtle one',
+        /border-b border-\[color:var\(--border-subtle\)\]/,
+        'and the rule it draws in a pane is the subtle border, not the default one',
+      )
+      assert.doesNotMatch(
+        header,
+        /--border-default/,
+        'and nothing in the header reaches for the default border any more',
       )
     })
 

@@ -753,6 +753,8 @@ code {
 #ds-view-component-row-button:checked ~ .ds-catalog #component-row-button { display: block; }
 #ds-view-component-scope-pill:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-scope-pill:checked ~ .ds-catalog #component-scope-pill { display: block; }
+#ds-view-component-scroll-area:checked ~ .ds-catalog #components { display: block; }
+#ds-view-component-scroll-area:checked ~ .ds-catalog #component-scroll-area { display: block; }
 #ds-view-component-section:checked ~ .ds-catalog #components { display: block; }
 #ds-view-component-section:checked ~ .ds-catalog #component-section { display: block; }
 #ds-view-component-segmented-control:checked ~ .ds-catalog #components { display: block; }
@@ -889,6 +891,8 @@ code {
 #ds-view-component-row-button:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-row-button"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-scope-pill:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-scope-pill"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-scope-pill:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-scope-pill"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
+#ds-view-component-scroll-area:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-scroll-area"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
+#ds-view-component-scroll-area:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-scroll-area"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-section:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-section"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
 #ds-view-component-section:focus-visible ~ .ds-catalog .catalog-nav label[for="ds-view-component-section"] { outline: 2px solid var(--sem-color-accent-hover, #275842); outline-offset: 2px; }
 #ds-view-component-segmented-control:checked ~ .ds-catalog .catalog-nav label[for="ds-view-component-segmented-control"] { color: var(--sem-color-accent-primary, #2f6a4a); font-weight: var(--sem-font-weight-emphasis, 600); box-shadow: inset 2px 0 0 currentColor; }
@@ -1665,7 +1669,6 @@ code {
   justify-content: space-between;
   gap: var(--sem-space-lg);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
   color: var(--sem-color-text-primary);
   font-family: var(--sem-font-family-ui);
   font-size: var(--sem-font-size-meta);
@@ -3359,13 +3362,13 @@ code {
 }
 
 /* ONE band of chrome above the list, two lines inside it: the scope strip and
- * the field. The band draws the single hairline, under the field; the strip
- * is the tabs component's borderless variant, so the active tab's own accent
- * underline is the only mark between the two lines. Two hairlines here — one
- * under the strip, one under the field — would be the "two stacked bands of
- * chrome" the principles reject on sight. */
+ * the field. No hairline: the palette is an overlay, so space separates the
+ * band from the list, and the list's own top fade (components/scroll-area)
+ * marks the edge once results scroll beneath the field. The strip is the tabs
+ * component's borderless variant, so the active tab's own accent underline is
+ * the only mark between the two lines. */
 .ds-command-palette-band {
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 0;
 }
 
 /* The scope strip: `.ds-tabs.ds-tabs--borderless` (components/tabs), inset so
@@ -3974,7 +3977,6 @@ code {
   justify-content: space-between;
   gap: var(--sem-space-lg);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
 }
 
 .ds-drawer-title {
@@ -6117,7 +6119,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 
 .ds-menu-separator {
   height: 1px;
-  margin: var(--sem-space-2xs) 0;
+  margin: var(--sem-space-2xs) var(--sem-space-md);
   background: var(--sem-color-border-subtle);
 }
 
@@ -6637,16 +6639,27 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   box-sizing: border-box;
   min-height: var(--sem-size-control-md);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
   background: var(--sem-color-bg-surface);
   font-family: var(--sem-font-family-ui);
 }
 
 /* One divider per panel, and when a search row follows it belongs under the
  * search — the line that says "the list starts here". This modifier hands
- * the hairline to that row instead of drawing two. */
+ * the hairline to that row instead of drawing two. A header over a
+ * `scroll-area` body takes it too: the body's top fade is the edge, and only
+ * while content is scrolled beneath. */
 .ds-panel-header--flush {
   border-bottom: 0;
+}
+
+/* Inside an overlay — a dialog, a popover, a drawer — space separates. No
+ * rule, and no ground of its own: the shell's is the one surface, and a band
+ * painted `bg.surface` over a raised popover is a strip a shade off the card
+ * it sits in. */
+.ds-panel-header--overlay {
+  border-bottom: 0;
+  background: transparent;
 }
 
 /* Title cluster: dot, title, count, scope on one baseline. min-width lets
@@ -7688,6 +7701,65 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   color: var(--sem-color-text-subtle);
 }
 
+/* components/scroll-area/component.css */
+/* Scroll area — a region that scrolls, and marks an edge with a fade only
+ * while content is hidden past it. Extracted from the shipped ScrollArea
+ * primitive (src/renderer/src/components/ui/ScrollArea.tsx) and the
+ * `.scroll-edge-fade` classes it draws with.
+ *
+ * The edges are written as attributes by script — `data-scroll-start` while
+ * content is hidden before the viewport, `data-scroll-end` while it is hidden
+ * after — and this turns them into a mask. A mask takes alpha only, so its
+ * stops are opacity, never ink: the fade has no hue, and it works over any
+ * ground, glass included. */
+
+.ds-scroll-area {
+  --ds-scroll-fade-size: var(--sem-space-3xl);
+  min-height: 0;
+  overflow-y: auto;
+  /* Keyboard focus never comes to rest inside a fade: a row walked into view
+   * stops a fade's depth short of the edge. */
+  scroll-padding-block: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area--x {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-padding-block: 0;
+  scroll-padding-inline: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area[data-scroll-start] {
+  --ds-scroll-fade-start: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area[data-scroll-end] {
+  --ds-scroll-fade-end: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area:is([data-scroll-start], [data-scroll-end]) {
+  /* ds-lint-allow: mask alpha stops (transparent / opaque), not ink — no colour token expresses "opaque" */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--ds-scroll-fade-start, 0px),
+    black calc(100% - var(--ds-scroll-fade-end, 0px)),
+    transparent
+  );
+}
+
+.ds-scroll-area--x:is([data-scroll-start], [data-scroll-end]) {
+  /* ds-lint-allow: mask alpha stops (transparent / opaque), not ink — no colour token expresses "opaque" */
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--ds-scroll-fade-start, 0px),
+    black calc(100% - var(--ds-scroll-fade-end, 0px)),
+    transparent
+  );
+}
+
 /* components/section/component.css */
 /* Section — a titled region of a panel: heading row (title, canonical count,
  * at most one trailing control) over its content
@@ -7736,6 +7808,16 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 .ds-section-count {
   font-size: var(--sem-font-size-meta);
   font-variant-numeric: tabular-nums;
+  color: var(--sem-color-text-muted);
+}
+
+/* The quiet sub-header for a run of rows inside one list (a notification
+ * list's "Today"). Quieter than the title on purpose, and never ruled: the
+ * label is the boundary. */
+.ds-section-label {
+  margin: 0;
+  font-size: var(--sem-font-size-meta);
+  font-weight: var(--sem-font-weight-regular);
   color: var(--sem-color-text-muted);
 }
 
@@ -8255,9 +8337,9 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   border-right: 0;
 }
 
-/* One chrome band: title left, count and close right, one working edge over
- * the scrolling body — the same header rhythm as the drawer, so a board and
- * its aside read as one family. */
+/* One chrome band: title left, count and close right, one subtle rule over
+ * the scrolling body — the panel header's pane edge, so a board and its aside
+ * read as one family. */
 .ds-side-pane-header {
   display: flex;
   flex-shrink: 0;
@@ -8265,7 +8347,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   justify-content: space-between;
   gap: var(--sem-space-sm);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 .ds-side-pane-title {
@@ -9065,7 +9147,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   align-items: center;
   gap: var(--sem-space-2xs);
   padding-block: var(--sem-space-2xs);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 /* A parent container owns the row border — needed when the tab row shares
@@ -9600,18 +9682,18 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   gap: var(--sem-space-3xs);
   height: var(--sem-size-control-sm);
   padding-inline: var(--sem-space-xs);
-  /* ONE hairline, at the bottom, and it is the band's whole separation: no
-   * fill, no shadow, no second rule above. A toolbar that painted its own
-   * ground would read as a second surface stacked on the pane. */
-  border-bottom: 1px solid var(--sem-color-border-subtle);
+  /* No rule, no fill, no shadow. A band of ghost glyphs is the top of the
+   * region it acts on; it usually sits under a tab strip or a panel header
+   * that already draws the pane's one rule, and a second 30px below it is a
+   * ladder, not a structure. A toolbar that painted its own ground would
+   * read as a second surface stacked on the pane. */
   background: transparent;
 }
 
-/* For a band that already sits under a hairline — directly beneath a tab strip
- * or a panel header, which draw their own. Two rules 30px apart is a ladder,
- * not a structure. */
-.ds-toolbar--borderless {
-  border-bottom: 0;
+/* One subtle hairline under the band, for a band over a surface that does not
+ * mark its own top (a diff editor's gutter runs edge to edge). */
+.ds-toolbar--rule {
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 /* Pushes everything after it to the trailing end. A band with a leading and a
@@ -12068,6 +12150,46 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
     margin-top: var(--sem-space-lg);
     color: var(--sem-color-text-muted);
   }
+.ds-embed-component-scroll-area {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+.ds-embed-component-scroll-area .demo-stage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sem-space-xl);
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+.ds-embed-component-scroll-area .demo-label {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+  }
+.ds-embed-component-scroll-area .demo-overlay {
+    display: flex;
+    flex-direction: column;
+    width: 280px;
+    height: 220px;
+    border: 1px solid var(--sem-color-border-strong);
+    border-radius: var(--sem-radius-overlay);
+    background: var(--sem-color-bg-surface-raised);
+    box-shadow: var(--sem-shadow-popover);
+  }
+.ds-embed-component-scroll-area .demo-header {
+    margin: 0;
+    padding: var(--sem-space-sm) var(--sem-space-lg);
+    font-size: var(--sem-font-size-body);
+    font-weight: var(--sem-font-weight-emphasis);
+    color: var(--sem-color-text-primary);
+  }
+.ds-embed-component-scroll-area .demo-row {
+    margin: 0;
+    padding: var(--sem-space-xs) var(--sem-space-lg);
+    font-size: var(--sem-font-size-body);
+  }
 .ds-embed-component-section {
     margin: 0;
     font-family: var(--sem-font-family-ui);
@@ -13697,6 +13819,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-quote-chip" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-row-button" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-scope-pill" />
+<input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-scroll-area" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-section" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-segmented-control" />
 <input type="radio" name="ds-view" class="ds-view-switch" id="ds-view-component-select" />
@@ -13785,6 +13908,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <label class="catalog-nav-item" for="ds-view-component-quote-chip">Quote chip</label>
 <label class="catalog-nav-item" for="ds-view-component-row-button">Row button</label>
 <label class="catalog-nav-item" for="ds-view-component-scope-pill">Scope pill</label>
+<label class="catalog-nav-item" for="ds-view-component-scroll-area">Scroll area</label>
 <label class="catalog-nav-item" for="ds-view-component-section">Section</label>
 <label class="catalog-nav-item" for="ds-view-component-segmented-control">Segmented control</label>
 <label class="catalog-nav-item" for="ds-view-component-select">Select</label>
@@ -14369,7 +14493,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <ul><li>Borders do the structural work. Cards, fills, and shadows do not. Group with space and a heading before reaching for a container; a card inside a card needs a real containment reason.</li><li><strong>A settings group is a card, and that is the stated reason</strong> (ruled 2026-09-14). The rule above still holds everywhere else: space and a heading first, a container only for a reason. A settings page is the reason. It is a long scroll of rows that have nothing to do with each other except which page they landed on, and the groups run eight and ten rows deep — at that length the gap between two groups and the gap between two rows are the same gap, and the heading is left labelling a region with no edge. So a run of setting rows takes a bordered surface: <code>border.subtle</code>, <code>radius.shell</code>, <code>bg.surface-raised</code>, hairlines between rows and never around them. The section label stays <strong>outside</strong> the card and keeps its own typography — the card is the group's edge, so a heading inside it would draw a second one. See [setting-row](../components/setting-row/component.md). This does not license cards elsewhere: it licenses them where a group's own length has eaten the space that was separating it.</li><li>Hairlines are 1px at canonical zoom. No doubled borders where surfaces meet, no 2px divider as decoration.</li><li><strong>Elevation is a three-step ramp, and every step is an overlay:</strong> <code>shadow.popover</code> for trigger-anchored surfaces, <code>shadow.drawer</code> for drawers and side panels, <code>shadow.modal</code> for centred dialogs. Nothing in the document flow — no card, row, or hover state — takes a shadow.</li><li><strong>Controls come in three tiers, and only the first catches the light</strong> (owner ruling 2026-10-04): 1. <strong>The primary action</strong> — the filled accent, and the destructive fill that stands in for it — carries one faint lit top edge, <code>shadow.control-raised</code>, and nothing else: no drop, no sheen. 2. <strong>A standalone secondary</strong> — an outline button, a split button, a launcher tile, a field trigger in a form — is flat on a hairline: <code>border.strong</code> on a transparent ground for the buttons, and the field and tile grounds they already had. No highlight, no sheen, no drop. 3. <strong>A control inside a surface</strong> — a toolbar, a panel header, a composer's control row — is ghost: no edge and no ground until the pointer arrives, then <code>bg.hover</code>. Ghost and icon buttons always were; the toolbar chip and a trigger in a toolbar now are too.</li></ul>
 <p>Every control presses the same way, by <code>scale(0.97)</code> on the shared hover and press motion, and not at all under <code>prefers-reduced-motion: reduce</code>. A segmented control's selected thumb is the one in-flow lift besides tier 1: <code>bg.selected</code> over <code>shadow.control-thumb</code>, a small drop with no lip, so the chosen segment reads as a piece set on its track. See [button → Control tiers](../components/button/component.md).</p>
 <p>This recuts the control elevation of 2026-09-02, widened on 2026-10-01, which stood every bordered control off the page on a lit lip, a shallow drop and a sheen, and sank it on an inset shadow while held. Spread across every outline, chip, tile and thumb, that depth stopped saying *this one is pressable* and became texture; the five tokens that carried it (<code>shadow.control-edge</code>, <code>shadow.control-pressed</code>, <code>shadow.control-track</code>, <code>gradient.control-sheen</code>, <code>gradient.control-raised-sheen</code>) are retired. A bevel, an inset press or a sheen coming back on any control is a regression, not a refinement.</p>
-<ul><li>In light mode, <code>bg.surface-raised</code> is deliberately the same white as <code>bg.surface</code>: raised surfaces separate by shadow and <code>border.strong</code>, not by tone. In dark mode the tone step does the work.</li><li><strong>Inside an overlay, space separates — rules do not.</strong> A dialog's title, its content, and its buttons are divided by padding. A rule under the title and another above the buttons cuts a small surface into three boxed strips and buys nothing: the shell already draws its own edge, and a shell that scrolls as one piece never needed the rules as scroll affordances.</li><li><strong>One chrome row per content region.</strong> Everything that is chrome for the same content shares a band — status on the left, controls on the right. A tools bar stacked on a status bar spends a second band of vertical space to say what the first could hold. When you reach for a second row, the question is which row the new control belongs in, not where to put the new row.</li><li><strong>A notice carries its tone with a glyph, not a coloured edge.</strong> A 2px stripe down one side of an error or warning card is decoration wearing a hairline's clothes: it doubles the card's own border, breaks the 1px rule, and leaves the tone carried by colour alone. Use a 1px neutral hairline, the soft tone tint, and the tone glyph at the leading edge — which is what makes it survive greyscale.</li></ul>
+<ul><li>In light mode, <code>bg.surface-raised</code> is deliberately the same white as <code>bg.surface</code>: raised surfaces separate by shadow and <code>border.strong</code>, not by tone. In dark mode the tone step does the work.</li><li><strong>Inside an overlay, space separates — rules do not.</strong> A dialog's title, its content, and its buttons are divided by padding. A rule under the title and another above the buttons cuts a small surface into three boxed strips and buys nothing: the shell already draws its own edge, and a shell that scrolls as one piece never needed the rules as scroll affordances. This holds for every overlay, not only the dialog (amended 2026-11-10): a popover's header, a drawer's header, the command palette's field and a modal-hosted surface's title bar draw no rule beneath them, and a surface rail inside a modal draws none down its seam — the change of ground is the seam. The kit's overlay shells say so to what they hold (<code>OverlaySurfaceContext</code>), so a panel header drops its rule by itself once it is inside one.</li><li><strong>A scroll edge is marked by a fade, and only while content is hidden there</strong> (2026-11-10). Where an overlay's body scrolls on its own, the seam between fixed chrome and moving content is real, and a permanent hairline was the old way of drawing it — a line that says &quot;edge&quot; whether or not anything is under it. The body is a [scroll-area](../components/scroll-area/component.md) instead: its top edge fades while a row is scrolled beneath the header and is plain again at the start; the bottom edge the same. Never on a terminal, the code editor or the streaming chat timeline — a mask over a surface that repaints every frame is recomposited every frame — and keyboard focus never rests inside a fade.</li><li><strong>In a pane, a header takes one <code>border.subtle</code> rule.</strong> A pane's header sits on the ground its body and its neighbours share, so one line is what says where its chrome stops — and one quiet line, not <code>border.default</code>: at that step a header's rule outweighed the pane's own edge, and a column of panes read as a ladder of boxed strips. A band of glyphs under the header (a toolbar) adds no second rule, a tab strip's rule is <code>border.subtle</code> too, and a notice band's tint is its own edge. The repository counts the <code>border-b</code> and <code>border-t</code> rules each area of the renderer draws, and the count may only go down (<code>designSystemAxes.test.ts</code>, the <code>rule</code> axis).</li><li><strong>A sub-header inside a list is a label, not a rule.</strong> &quot;Today&quot;, &quot;Yesterday&quot;, a picker's groups: a quiet <code>font.size.meta</code> label in <code>text.muted</code> with space above it (see [section](../components/section/component.md), *The section label*). A label and a rule together say the same boundary twice — the reason a menu's group label is the alternative to its divider, and a menu's divider is inset to the rows' text rather than running to the frame.</li><li><strong>One chrome row per content region.</strong> Everything that is chrome for the same content shares a band — status on the left, controls on the right. A tools bar stacked on a status bar spends a second band of vertical space to say what the first could hold. When you reach for a second row, the question is which row the new control belongs in, not where to put the new row.</li><li><strong>A notice carries its tone with a glyph, not a coloured edge.</strong> A 2px stripe down one side of an error or warning card is decoration wearing a hairline's clothes: it doubles the card's own border, breaks the 1px rule, and leaves the tone carried by colour alone. Use a 1px neutral hairline, the soft tone tint, and the tone glyph at the leading edge — which is what makes it survive greyscale.</li></ul>
 <h4>Space and size</h4>
 <ul><li>Every padding, gap, and margin comes from <code>sem.space.*</code> — a 2px grid at the dense end opening to 4px steps at panel scale. A raw pixel value in a component means the scale is missing a step; add it here rather than locally.</li><li>Controls come from <code>sem.size.control.*</code>: <code>xs</code> (26px) for icon buttons and in-row triggers, <code>sm</code> (30px) as the default for anything with a label, <code>md</code> (34px) for overlay primary actions. An input and a select side by side must share a height.</li><li>Nothing interactive is drawn below <code>sem.size.hit-target-min</code>. A small glyph pads out to it with a transparent hit area rather than shrinking its target.</li><li>An indent that aligns text to a reserved glyph slot (the 28px a leading 16px glyph plus its gap occupies) is structure, not rhythm: it keeps its computed value, off the space scale if need be, with a one-line comment saying what it lines up with. Moving it to the nearest step misaligns the column it exists to align.</li><li>At most 2 radii per view, on the 4/6/8/12/16 ramp. <code>radius.control</code> (6px) is the default; larger radii belong to overlay and modal shells. Marketing radii (<code>rounded-2xl</code> and up) never appear on operational chrome.</li><li><strong>The composer is the one named exception to that ceiling</strong> (owner ruling 2026-10-04). Its box takes <code>radius.composer</code> (16px, softened from 22px on 2026-11-04 so it sits on the ramp's top step), and the context strip tucked under it takes <code>radius.composer-strip</code> (16px) on its two bottom corners only, so the two read as one piece. The cards set against it — the tiles under the New chat composer, and the top corners of the tray docked on an open conversation's composer — take <code>radius.composer-companion</code> (16px, owner ruling 2026-10-05), so a ramp corner beside the box does not read as a second family. The composer is the surface a person types into all day, and the soft corner is what sets it apart from the chrome around it. All three tokens are marked <code>offRamp</code>: they are not rungs of the shape scale, the conformance guard leaves them out of its ramp exactly as it does <code>pill</code>, and nothing else may borrow them — a card, popover or control inside the composer keeps the ramp.</li><li>A capped column is centred or it is a bug. When a <code>max-width</code> element IS the page's content — a wizard step, a settings body, a door canvas — it centres (<code>max-w-*</code> + <code>mx-auto</code>), and its footer actions cap to the same measure so they align with the content edges. A reading-measure cap *inside* a left-anchored composition (prose under an uncapped heading, beside a figure) stays anchored with its siblings; centring it alone would misalign the page.</li></ul>
 <h4>Type</h4>
@@ -14429,7 +14553,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <ul><li>Never hard-code a color, space, size, radius, duration, or z-index the system defines. Pick by the token's documented <code>role</code> and <code>use</code>, not by its looks.</li><li>The <code>--ref-*</code> tier is internal plumbing for the token file. Components and patterns consume <code>--sem-*</code> only.</li><li>Layering comes from <code>sem.z.*</code>. A surface that needs to sit between two defined layers is the wrong kind of surface. In-flow depth has its own three steps below <code>drawer</code> — <code>sticky</code> (10), <code>pane</code> (20, docked panes and in-canvas floating chrome) and <code>float</code> (30, panel-internal popovers and HUDs) — so a bare <code>z-20</code> / <code>z-30</code> is a hard-coded z-index like any other.</li></ul>
 <h4>Reject on sight</h4>
 <p>Each of these is a restart signal, not a fix-it-later note. Rebuild the surface rather than patching it.</p>
-<ul><li>Two or more accent hues competing for primary, or an accent used as a selection fill.</li><li>More than two radii or more than three font weights in one view.</li><li>A third font family, or a serif anywhere in the product's interface (the typeset-content faces listed under Type are the only exception).</li><li>A badge or tinted pill where a status mark carries the same meaning.</li><li>A status dot — a tone-filled disc standing for a state — on any surface.</li><li>A card inside a card with no containment reason.</li><li>A hero composition — oversized headline, decorative blob, three-up stat row — inside an operational panel.</li><li>A primary button with a gradient fill of any kind, a drop shadow, a coloured glow, or a blurred halo. The one faint lit top edge of <code>shadow.control-raised</code> is the system's own and is not this; anything past it is.</li><li>Depth on a control below tier 1: a lit lip, a drop or a sheen on an outline button, a chip, a tile or a trigger, or an inset shadow on press.</li><li>Decorative emoji as iconography, or celebration copy (&quot;✅&quot;, &quot;🎉&quot;, &quot;Awesome!&quot;).</li><li>Placeholder content: &quot;Lorem ipsum&quot;, &quot;Card title&quot;, &quot;Item 1 / 2 / 3&quot;.</li><li>Empty-state copy that explains an obvious interaction (&quot;Click here to start&quot;), or marketing copy in operational chrome.</li><li>A subtitle restating the title, a field label restating the dialog title, or helper text restating the placeholder.</li><li>The application naming itself in ordinary UI copy.</li><li>A success message that dumps the operation's metadata instead of its result.</li><li>A red &quot;Required&quot; or an asterisk on a field nobody has filled in yet.</li><li>A tone-coloured bar down the left edge of a notice, card, or callout.</li><li>Two stacked bands of chrome above one region of content.</li><li>Dividers separating the sections of a dialog.</li><li>The same count shown in two places where the values could appear to disagree.</li><li>Always-on row actions that should have been revealed on hover — or hover-revealed actions with no keyboard path.</li></ul>
+<ul><li>Two or more accent hues competing for primary, or an accent used as a selection fill.</li><li>More than two radii or more than three font weights in one view.</li><li>A third font family, or a serif anywhere in the product's interface (the typeset-content faces listed under Type are the only exception).</li><li>A badge or tinted pill where a status mark carries the same meaning.</li><li>A status dot — a tone-filled disc standing for a state — on any surface.</li><li>A card inside a card with no containment reason.</li><li>A hero composition — oversized headline, decorative blob, three-up stat row — inside an operational panel.</li><li>A primary button with a gradient fill of any kind, a drop shadow, a coloured glow, or a blurred halo. The one faint lit top edge of <code>shadow.control-raised</code> is the system's own and is not this; anything past it is.</li><li>Depth on a control below tier 1: a lit lip, a drop or a sheen on an outline button, a chip, a tile or a trigger, or an inset shadow on press.</li><li>Decorative emoji as iconography, or celebration copy (&quot;✅&quot;, &quot;🎉&quot;, &quot;Awesome!&quot;).</li><li>Placeholder content: &quot;Lorem ipsum&quot;, &quot;Card title&quot;, &quot;Item 1 / 2 / 3&quot;.</li><li>Empty-state copy that explains an obvious interaction (&quot;Click here to start&quot;), or marketing copy in operational chrome.</li><li>A subtitle restating the title, a field label restating the dialog title, or helper text restating the placeholder.</li><li>The application naming itself in ordinary UI copy.</li><li>A success message that dumps the operation's metadata instead of its result.</li><li>A red &quot;Required&quot; or an asterisk on a field nobody has filled in yet.</li><li>A tone-coloured bar down the left edge of a notice, card, or callout.</li><li>Two stacked bands of chrome above one region of content.</li><li>Dividers separating the sections of a dialog — or a rule under any overlay's header, popovers and drawers included.</li><li>A <code>border.default</code> rule under a pane header, or a second rule stacked under it by the toolbar or tab strip that follows.</li><li>The same count shown in two places where the values could appear to disagree.</li><li>Always-on row actions that should have been revealed on hover — or hover-revealed actions with no keyboard path.</li></ul>
 </div>
 </section>
 <section id="components" class="catalog-group">
@@ -16094,7 +16218,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <p>There is no info banner and no success banner. Information that matters is the panel's content; success is the state the screen already shows.</p>
 <h4>Anatomy</h4>
 <p>| Part | Class | Required | |---|---|---| | Strip | <code>.ds-banner</code> | yes — full width of the panel's content region | | Body | <code>.ds-banner-body</code> | yes — mark + message cluster; shrinks first | | Mark | <code>.ds-status-dot</code> + the tone modifier | yes — the <code>status-dot</code> component's glyph in the tone's ink, <code>aria-hidden</code> | | Message | <code>.ds-banner-message</code> | yes — one line, truncates | | Action | <code>.ds-banner-action</code> | danger: required; warn: optional — holds a ghost button (<code>.ds-button.ds-button--ghost</code>) |</p>
-<p>The strip: the tone's <strong>soft</strong> tint over the surface, a <code>border.default</code> hairline on the bottom edge only (it shares every other edge with the panel), <code>space.lg</code> / <code>space.sm</code> padding, message at <code>font.size.meta</code> in <code>text.primary</code>.</p>
+<p>The strip: the tone's <strong>soft</strong> tint over the surface and no hairline — the tint is already the strip's edge, and a rule along the bottom of a tinted band draws the same boundary twice. <code>space.lg</code> / <code>space.sm</code> padding, message at <code>font.size.meta</code> in <code>text.primary</code>.</p>
 <p><strong>No left tone-bar</strong> — the rejected-on-sight rule applies to banners exactly as it does to notices. The mark is the tone's shape; the tint is its echo.</p>
 <h4>Variants</h4>
 <ul><li><code>ds-banner--danger</code> — failure. The danger glyph (a ring with &quot;×&quot;, in <code>status.danger</code>) on <code>status.danger-soft</code>.</li><li><code>ds-banner--warn</code> — degraded. The warn glyph (a ring with &quot;!&quot;, in <code>status.warn</code>) on <code>status.warn-soft</code>.</li></ul>
@@ -16129,7 +16253,6 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   justify-content: space-between;
   gap: var(--sem-space-lg);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
   color: var(--sem-color-text-primary);
   font-family: var(--sem-font-family-ui);
   font-size: var(--sem-font-size-meta);
@@ -21682,9 +21805,9 @@ line 22&lt;/code&gt;&lt;/pre&gt;
 <p>A scope strip and one field over a grouped result list: the keyboard route to everything the product can do or open. It is the launcher, not a search screen — a person opens it, types, presses Enter and it is gone. Extracted from the shipped <code>CommandPalette</code> primitive (<code>src/renderer/src/components/ui/CommandPalette.tsx</code>).</p>
 <p>It is a [modal](../modal/component.md) shell in every respect the modal spec governs — chrome, width step, focus trap, scrim, restore — and it earns the scrim by the three tests in the principles: the workspace underneath stays the subject, nothing that names a place leads to it, and it is a task with an end. What it adds, and what this entry specifies, is the part above the shell: the <strong>scope strip</strong> that says which question is being asked, the <strong>combobox-over-listbox</strong> contract, the grouped result anatomy, the row marks, and the rule that keeps a launcher from turning into a browser. Its ground is the one thing it takes from nowhere else: <strong>glass</strong> — see Material.</p>
 <h4>Anatomy</h4>
-<p>| Part | Class | Required | |---|---|---| | Scrim | <code>.ds-command-palette-scrim</code> | yes — full-viewport <code>overlay.scrim</code> at <code>z.modal</code>, dismissing on a press that both starts and ends on it; a plain tone, blurred as well only over a conversation with no terminal in view (see Material) | | Shell | <code>.ds-command-palette</code> | yes — the modal shell's chrome at the <code>palette</code> width step (600px, capped <code>95vw</code>) on the glass ground, clipping its own corners | | Band | <code>.ds-command-palette-band</code> | yes — the one band of chrome: the strip and the field, one <code>border.default</code> hairline beneath | | Scope strip | <code>.ds-command-palette-tabs</code> | yes — a borderless [tabs](../tabs/component.md) strip, <code>role=&quot;tablist&quot;</code> labelled &quot;Search in&quot;: All, then the five narrowings | | Query row | <code>.ds-command-palette-query</code> | yes — <code>space.lg</code>/<code>space.xl</code> insets, no hairline of its own | | Leading hint | <code>.ds-command-palette-hint</code> | yes — the kit's search glyph in <code>text.disabled</code>; it is decoration and says so | | Input | <code>.ds-command-palette-input</code> | yes — <code>role=&quot;combobox&quot;</code>, transparent, <code>font.size.heading</code> | | Working note | <code>.ds-command-palette-status</code> | no — <code>role=&quot;status&quot;</code>, a line in the list: the word and the liveness working mark, for a search in flight or an install round trip | | Results | <code>.ds-command-palette-results</code> | yes — <code>role=&quot;listbox&quot;</code> with a required label, height-capped and scrolling | | Group | <code>.ds-command-palette-group</code> | no — <code>role=&quot;group&quot;</code> with the group's name as its label | | Group heading | <code>.ds-command-palette-group-heading</code> | with a group — the name alone, <code>font.size.meta</code> in <code>text.muted</code>; no rule, no count; <code>aria-hidden</code> | | Option | <code>.ds-command-palette-option</code> | yes — <code>role=&quot;option&quot;</code>, a stable <code>id</code>, <code>aria-selected</code> | | Option mark | <code>.ds-command-palette-option-mark</code> | no — a file's kind glyph in its kind's hue, a skill's or plugin's own artwork, an action's glyph, or (<code>--chip</code>) a chat's provider chip; <code>aria-hidden</code> | | Option label | <code>.ds-command-palette-option-label</code> | yes — truncating; <code>font.size.heading</code> | | File heading | <code>.ds-command-palette-file-heading</code> | in the Text group — <code>role=&quot;presentation&quot;</code>: the file's kind glyph, its name, its folder, and how many lines matched; not an option | | Line option | <code>.ds-command-palette-option--line</code> | in the Text group — a matched line under its file heading: the line number in the gutter (<code>.ds-command-palette-line-number</code>), then the line, mono at <code>font.size.meta</code> | | Option detail | <code>.ds-command-palette-option-detail</code> | no — the locator under the label, <code>font.size.micro</code> in <code>text.disabled</code> | | Shortcut | <code>.ds-command-palette-shortcut</code> | no — the command's chord, trailing, a [kbd-chord](../kbd-chord/component.md) capsule | | Empty | <code>.ds-command-palette-empty</code> | no — the one-sentence state when nothing matched |</p>
-<p><strong>The shell is the modal's, not its own — except its ground.</strong> Radius, border, elevation and width all come from the overlay scale; the palette's local additions are the glass ground (Material, below) and <code>overflow: hidden</code>, so the band's hairline is clipped by the shell's corners. It keeps its own scrim only because it sits at <strong>15vh from the top</strong> rather than centred, which no dialog does — a launcher belongs under the person's hands, not in the middle of the screen.</p>
-<p><strong>One band of chrome, two lines in it.</strong> The strip and the field share a band that draws a single hairline, under the field; the strip is the tabs component's borderless variant, so the active tab's own accent underline is the only mark between the two lines. A hairline under the strip *and* one under the field would be the two stacked bands of chrome the principles reject on sight. Everything else the palette knows is in the list.</p>
+<p>| Part | Class | Required | |---|---|---| | Scrim | <code>.ds-command-palette-scrim</code> | yes — full-viewport <code>overlay.scrim</code> at <code>z.modal</code>, dismissing on a press that both starts and ends on it; a plain tone, blurred as well only over a conversation with no terminal in view (see Material) | | Shell | <code>.ds-command-palette</code> | yes — the modal shell's chrome at the <code>palette</code> width step (600px, capped <code>95vw</code>) on the glass ground, clipping its own corners | | Band | <code>.ds-command-palette-band</code> | yes — the one band of chrome: the strip and the field; no rule beneath | | Scope strip | <code>.ds-command-palette-tabs</code> | yes — a borderless [tabs](../tabs/component.md) strip, <code>role=&quot;tablist&quot;</code> labelled &quot;Search in&quot;: All, then the five narrowings | | Query row | <code>.ds-command-palette-query</code> | yes — <code>space.lg</code>/<code>space.xl</code> insets, no hairline of its own | | Leading hint | <code>.ds-command-palette-hint</code> | yes — the kit's search glyph in <code>text.disabled</code>; it is decoration and says so | | Input | <code>.ds-command-palette-input</code> | yes — <code>role=&quot;combobox&quot;</code>, transparent, <code>font.size.heading</code> | | Working note | <code>.ds-command-palette-status</code> | no — <code>role=&quot;status&quot;</code>, a line in the list: the word and the liveness working mark, for a search in flight or an install round trip | | Results | <code>.ds-command-palette-results</code> | yes — <code>role=&quot;listbox&quot;</code> with a required label, height-capped and scrolling | | Group | <code>.ds-command-palette-group</code> | no — <code>role=&quot;group&quot;</code> with the group's name as its label | | Group heading | <code>.ds-command-palette-group-heading</code> | with a group — the name alone, <code>font.size.meta</code> in <code>text.muted</code>; no rule, no count; <code>aria-hidden</code> | | Option | <code>.ds-command-palette-option</code> | yes — <code>role=&quot;option&quot;</code>, a stable <code>id</code>, <code>aria-selected</code> | | Option mark | <code>.ds-command-palette-option-mark</code> | no — a file's kind glyph in its kind's hue, a skill's or plugin's own artwork, an action's glyph, or (<code>--chip</code>) a chat's provider chip; <code>aria-hidden</code> | | Option label | <code>.ds-command-palette-option-label</code> | yes — truncating; <code>font.size.heading</code> | | File heading | <code>.ds-command-palette-file-heading</code> | in the Text group — <code>role=&quot;presentation&quot;</code>: the file's kind glyph, its name, its folder, and how many lines matched; not an option | | Line option | <code>.ds-command-palette-option--line</code> | in the Text group — a matched line under its file heading: the line number in the gutter (<code>.ds-command-palette-line-number</code>), then the line, mono at <code>font.size.meta</code> | | Option detail | <code>.ds-command-palette-option-detail</code> | no — the locator under the label, <code>font.size.micro</code> in <code>text.disabled</code> | | Shortcut | <code>.ds-command-palette-shortcut</code> | no — the command's chord, trailing, a [kbd-chord](../kbd-chord/component.md) capsule | | Empty | <code>.ds-command-palette-empty</code> | no — the one-sentence state when nothing matched |</p>
+<p><strong>The shell is the modal's, not its own — except its ground.</strong> Radius, border, elevation and width all come from the overlay scale; the palette's local additions are the glass ground (Material, below) and <code>overflow: hidden</code>, so the list's fade and the rows' fills are clipped by the shell's corners. It keeps its own scrim only because it sits at <strong>15vh from the top</strong> rather than centred, which no dialog does — a launcher belongs under the person's hands, not in the middle of the screen.</p>
+<p><strong>One band of chrome, two lines in it, and no rule under it.</strong> The strip and the field share a band; the strip is the tabs component's borderless variant, so the active tab's own accent underline is the only mark between the two lines. The palette is an overlay, so space separates the band from the list, and the list is a [scroll-area](../scroll-area/component.md): its top edge fades only once results have scrolled beneath the field. The hairline the band used to draw said &quot;the list starts here&quot; over a list that plainly did. Everything else the palette knows is in the list.</p>
 <h4>Material</h4>
 <p>The shell is <strong>glass</strong> (owner ruling 2026-09-10): <code>bg.surface-raised</code> at <code>glass.opacity</code> over a <code>backdrop-filter</code> of <code>glass.blur</code> and <code>glass.saturation</code> — the toast card's recipe — under the modal's own radius, <code>border.subtle</code> hairline and <code>shadow.modal</code>. Where <code>backdrop-filter</code> is unsupported the shell is solid <code>bg.surface-raised</code>.</p>
 <p>The blur ban (principles, &quot;Motion&quot;; the modal and drawer specs) exists because a blur over a streaming terminal is re-sampled on every PTY chunk, and a full-viewport scrim doing that was measured at ~10fps. The palette is allowed what the modal is not for a reason the earlier glass surfaces did not have: the shipped primitive <strong>holds the terminal repaint pause</strong> for its lifetime — the same hold <code>Modal</code> takes, which stops every pane writing while a dialog covers the app. Over paused panes the blur is computed once and sits still, and the area is the shell's, not the viewport's. The <strong>scrim stays a plain tone</strong> over anything with a terminal in view; the conformance lint pins the glass utility to the four kit shells that carry it.</p>
@@ -21786,13 +21909,13 @@ line 22&lt;/code&gt;&lt;/pre&gt;
 }
 
 /* ONE band of chrome above the list, two lines inside it: the scope strip and
- * the field. The band draws the single hairline, under the field; the strip
- * is the tabs component's borderless variant, so the active tab's own accent
- * underline is the only mark between the two lines. Two hairlines here — one
- * under the strip, one under the field — would be the &quot;two stacked bands of
- * chrome&quot; the principles reject on sight. */
+ * the field. No hairline: the palette is an overlay, so space separates the
+ * band from the list, and the list's own top fade (components/scroll-area)
+ * marks the edge once results scroll beneath the field. The strip is the tabs
+ * component's borderless variant, so the active tab's own accent underline is
+ * the only mark between the two lines. */
 .ds-command-palette-band {
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 0;
 }
 
 /* The scope strip: `.ds-tabs.ds-tabs--borderless` (components/tabs), inset so
@@ -23492,9 +23615,9 @@ line 22&lt;/code&gt;&lt;/pre&gt;
 <p>The overlay for work that needs the page still visible. A drawer slides in from the right edge, sits over the content on a scrim, and holds a task too large for a popover but not important enough to stop the page for: a runner's detail, an active review, an inspector summoned rather than docked. Extracted from the source product's <code>Drawer</code> primitive (<code>src/renderer/src/components/ui/</code>).</p>
 <p>Use a modal when the page must actually stop — a drawer that asks a blocking question is a modal wearing the wrong entrance. Use a <strong>side pane</strong> (<code>components/side-pane/</code>) when the surface should share the page instead of covering it: a side pane lives in the document flow, separates with a hairline, and never scrims. The two are different components, not variants — see the rejected idea below.</p>
 <h4>Anatomy</h4>
-<p>| Part | Class | Required | |---|---|---| | Root | <code>.ds-drawer-root</code> | yes — fixed, full-viewport, <code>z.drawer</code>; carries <code>data-state</code> | | Scrim | <code>.ds-drawer-scrim</code> | yes — <code>overlay.scrim</code>, <code>aria-hidden</code>, fades with the panel; pointer-down closes | | Panel | <code>.ds-drawer</code> | yes — <code>role=&quot;dialog&quot;</code>, <code>aria-modal=&quot;true&quot;</code>, <code>aria-labelledby</code> the title, <code>tabindex=&quot;-1&quot;</code>; right-docked, full-height | | Header | <code>.ds-drawer-header</code> | yes — title <code>.ds-drawer-title</code> plus the close button, under the drawer's one hairline | | Body | <code>.ds-drawer-body</code> | yes — the scroll container; the header never scrolls away |</p>
+<p>| Part | Class | Required | |---|---|---| | Root | <code>.ds-drawer-root</code> | yes — fixed, full-viewport, <code>z.drawer</code>; carries <code>data-state</code> | | Scrim | <code>.ds-drawer-scrim</code> | yes — <code>overlay.scrim</code>, <code>aria-hidden</code>, fades with the panel; pointer-down closes | | Panel | <code>.ds-drawer</code> | yes — <code>role=&quot;dialog&quot;</code>, <code>aria-modal=&quot;true&quot;</code>, <code>aria-labelledby</code> the title, <code>tabindex=&quot;-1&quot;</code>; right-docked, full-height | | Header | <code>.ds-drawer-header</code> | yes — title <code>.ds-drawer-title</code> plus the close button; no rule beneath | | Body | <code>.ds-drawer-body</code> | yes — the scroll container, a [scroll-area](../scroll-area/component.md); the header never scrolls away |</p>
 <p>The panel sits on <code>bg.surface</code>, separated from the page by <code>shadow.drawer</code> and a left hairline of <code>border.strong</code> — the elevation ramp's middle step, between <code>shadow.popover</code> and <code>shadow.modal</code>. Width is a content measure, not a token: <code>360px</code> default, the panel-aside width; wider is a per-consumer decision, and the panel never exceeds the viewport.</p>
-<p>Unlike a dialog's interior, the header here keeps its hairline: the body scrolls under it, so the rule is a working edge — the seam between fixed chrome and moving content — not decoration.</p>
+<p>The header draws no rule. A drawer is an overlay, and inside an overlay space separates (<code>principles.md</code>, *Hairlines carry the structure*). The body does scroll under the header, and that seam is real — so the body is a [scroll-area](../scroll-area/component.md), whose top edge fades only while a row is scrolled beneath the header. A permanent hairline said &quot;edge&quot; whether or not anything was there; the fade says it only when it is true.</p>
 <h4>Variants</h4>
 <p>None. Side and entrance are fixed: drawers come from the right, because that is where inspectors live and where the reading eye ends. A bottom sheet or a left drawer would be a new component argued in the principles first.</p>
 <p><strong>Rejected: side pane as a drawer variant.</strong> The shipped <code>SidePane</code> shares nothing that matters with this component — no portal, no scrim, no shadow, no focus capture, no <code>z</code> layer; it is flex chrome inside the page with a hairline. Folding it in here would put &quot;overlay&quot; and &quot;in flow&quot; — opposite answers to the one question that defines this family — behind a single class. It has its own entry.</p>
@@ -23600,7 +23723,6 @@ line 22&lt;/code&gt;&lt;/pre&gt;
   justify-content: space-between;
   gap: var(--sem-space-lg);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
 }
 
 .ds-drawer-title {
@@ -34392,7 +34514,7 @@ document.querySelectorAll('[data-demo-search]').forEach((input) =&gt; {
 <p>So the item forwards, unchanged:</p>
 <ul><li><strong><code>tabIndex</code>.</strong> Roving focus is the menu's, so a row is not a tab stop by default; a group whose *current value* must be the stop states its own.</li><li>**<code>data-*</code>.** A host drives roving focus by querying for its own hook, and its tests select on the same one.</li><li><strong>The click event.</strong> The handler receives it: the Windows/Linux application menu positions its native popup from the clicked row's rect, and a handler that could not see the event had no way to ask.</li><li><strong><code>aria-expanded</code>,</strong> for a row that opens a sub-surface rather than committing an action. Without it a drill-in row announces as a choice that never takes effect.</li></ul>
 <h4>Divider</h4>
-<p><code>border.subtle</code>, 1px, with <code>space.2xs</code> (4px) of air above and below. A group label is the *alternative* to a divider, not an addition to it: one or the other says &quot;a new group starts here&quot;, and both together says it twice.</p>
+<p><code>border.subtle</code>, 1px, with <code>space.2xs</code> (4px) of air above and below, <strong>inset</strong> to the item's own horizontal padding (<code>space.md</code>) so it stops where the rows' text stops. A divider that ran to the surface's border met the border, and a line touching the frame reads as the frame dividing — two panels — where a line floating inside it reads as a pause between groups. A group label is the *alternative* to a divider, not an addition to it: one or the other says &quot;a new group starts here&quot;, and both together says it twice.</p>
 <p>A group label is <code>font.size.micro</code> at <code>text.subtle</code>, on the item's own horizontal inset so the heading and its rows share a left edge — quieter than the rows, and never bolder. A heading that out-weighs the actions under it is competing with them.</p>
 <h4>Destructive item</h4>
 <p>Ink, never a fill: <code>status.danger</code> on the label (the product aliases it <code>--tone-error</code>), and the same <code>bg.hover</code> on hover that every other row gets. A red row among black ones is read before it is aimed at; a red *block* is read as something that has already happened.</p>
@@ -34581,7 +34703,7 @@ document.querySelectorAll('[data-demo-search]').forEach((input) =&gt; {
 
 .ds-menu-separator {
   height: 1px;
-  margin: var(--sem-space-2xs) 0;
+  margin: var(--sem-space-2xs) var(--sem-space-md);
   background: var(--sem-color-border-subtle);
 }
 
@@ -35534,6 +35656,8 @@ document.querySelectorAll('[data-demo-search]').forEach((input) =&gt; {
 <h4>Anatomy</h4>
 <p>| Part | Class | Required | |---|---|---| | Scrim | <code>.ds-modal-scrim</code> | yes — <code>overlay.scrim</code> at <code>z.modal</code>, centring the shell; a pointer-down on it closes | | Shell | <code>.ds-modal</code> | yes — <code>role=&quot;dialog&quot;</code>, <code>aria-modal=&quot;true&quot;</code>, <code>aria-labelledby</code> the title, <code>tabindex=&quot;-1&quot;</code> | | Header | <code>.ds-modal-header</code> | yes — title <code>.ds-modal-title</code>, optional subtitle <code>.ds-modal-subtitle</code>, optional close button; optionally a leading mark <code>.ds-modal-leading</code> before the title, for a dialog that opens <strong>on</strong> an item (a skill, a plugin) so it is recognised by the same monogram or icon its row carried — a question has no leading mark | | Body | <code>.ds-modal-body</code> | no — a confirm with a self-explaining title needs none | | Footer | <code>.ds-modal-footer</code> | yes — the actions, right-aligned, built from <code>ds-button</code> |</p>
 <p><strong>Header, content, actions — separated by space.</strong> No rule under the title and none above the buttons: the shell already draws its own edge, and it scrolls as one piece (<code>max-height</code> on the shell, not on the body), so neither rule would even be a scroll affordance. A divided dialog is on the reject-on-sight list.</p>
+<p><strong>A modal that hosts a surface keeps the same rule</strong> (2026-11-10). Settings, and any surface the shell floats in a modal, has a title bar, often a rail of pages and a body that scrolls on its own. None of the three seams draws a hairline:</p>
+<ul><li><strong>Under the bar, nothing.</strong> The body is a [scroll-area](../scroll-area/component.md), so its top edge fades only while content is scrolled beneath the bar, and goes when the page is back at its start.</li><li><strong>Down the rail, nothing.</strong> The rail stands on <code>bg.app</code> and the body on <code>bg.surface</code>; the change of ground is the seam, and a rule as well said it twice inside a shell that already draws its own edge.</li><li><strong>One title, not two.</strong> When the rail picks pages, the bar reads as a breadcrumb — &quot;Settings › General&quot;, the surface in <code>text.muted</code> and the page in <code>text.primary</code> — and the page does not open on a second big title of its own. Its heading stays in the document for a screen reader's outline; its meta and actions ride the bar beside the close.</li></ul>
 <p>The shell sits on <code>bg.surface</code> — not <code>bg.surface-raised</code> — because the scrim and <code>shadow.modal</code> already do the separating; a tone step on top would be a third signal for the same fact.</p>
 <p>That ruling holds only if <code>shadow.modal</code> actually separates in both modes, and in dark it did not: a black drop shadow over a scrimmed near-black ground draws nothing, and the <code>border.subtle</code> hairline is 6% white — so a dark-mode shell read as painted on the scrim rather than above it (remote-sessions-ux, 2026-09-03). The fix lives in the TOKEN, not on any surface: <code>shadow.modal</code>'s dark value now leads with an inset top highlight — the lit edge, the same trick <code>shadow.control-raised</code> already encodes — so every consumer separates again and the two-signal reasoning above stays true. No shell may compensate locally with a raised ground or a stronger border; that would be the third signal this section rules out.</p>
 <h4>Geometry</h4>
@@ -36489,13 +36613,15 @@ document.addEventListener('keydown', (event) =&gt; {
 <p>The one header contract for every panel: a single 34px band carrying the panel's name, its canonical count, an optional scope word, and at most two controls. Extracted from the shipped <code>PanelHeader</code> primitive (<code>src/renderer/src/components/ui/PanelHeader.tsx</code>); the panel-header rollout rolls this anatomy out to every panel that still draws its own header.</p>
 <p>A panel gets exactly one of these. A header stacked on a toolbar is the two-bands-of-chrome defect the principles reject on sight — the controls belong in this band, and a status belongs to the thing that has it.</p>
 <h4>Anatomy</h4>
-<p>| Part | Class | Required | |---|---|---| | Header | <code>.ds-panel-header</code> | yes — a <code>&lt;header&gt;</code> band, <code>bg.surface</code>, one bottom hairline | | Identity dot | <code>.ds-panel-header-identity</code> | no — 6px, colored by the consumer's identity channel | | Title | <code>.ds-panel-header-title</code> | yes — an <code>&lt;h2&gt;</code>, <code>font.size.body</code> at <code>font.weight.emphasis</code>, <code>text.primary</code>, truncates | | Count | <code>.ds-panel-header-count</code> | no — the canonical count, mono-free, tabular, <code>text.muted</code> | | Scope | <code>.ds-panel-header-scope</code> | no — one word of context after a <code>·</code> separator | | Actions | <code>.ds-panel-header-actions</code> | no — the primary action and an overflow trigger, nothing else | | Progress | <code>.ds-panel-header-progress</code> | no — a 2px completion hairline overlaying the bottom border |</p>
+<p>| Part | Class | Required | |---|---|---| | Header | <code>.ds-panel-header</code> | yes — a <code>&lt;header&gt;</code> band; in a pane <code>bg.surface</code> and one <code>border.subtle</code> hairline, in an overlay neither | | Identity dot | <code>.ds-panel-header-identity</code> | no — 6px, colored by the consumer's identity channel | | Title | <code>.ds-panel-header-title</code> | yes — an <code>&lt;h2&gt;</code>, <code>font.size.body</code> at <code>font.weight.emphasis</code>, <code>text.primary</code>, truncates | | Count | <code>.ds-panel-header-count</code> | no — the canonical count, mono-free, tabular, <code>text.muted</code> | | Scope | <code>.ds-panel-header-scope</code> | no — one word of context after a <code>·</code> separator | | Actions | <code>.ds-panel-header-actions</code> | no — the primary action and an overflow trigger, nothing else | | Progress | <code>.ds-panel-header-progress</code> | no — a 2px completion hairline overlaying the bottom border |</p>
 <p><strong>The band is 34px</strong> (<code>size.control.md</code>): <code>space.sm</code> block insets around a body-size title line. Inline insets are <code>space.lg</code>. Everything in the band centers on one baseline; nothing wraps.</p>
 <p><strong>The title truncates, the scope evaporates.</strong> The scope word gives up its space first and disappears entirely before the title loses a character — a panel that clips its own name to &quot;Bac…&quot; while a scope word sits whole beside it has the priority backwards. Pair the title with <code>truncated-text</code> so the full name is recoverable when it is actually cut off.</p>
 <h4>Variants</h4>
-<ul><li><strong>Default</strong> — bottom hairline at <code>border.default</code>. This is the panel's chrome edge.</li><li><strong><code>--flush</code></strong> — no hairline. Use only when a search row follows immediately: one divider per panel, and it belongs under the search — that is the line that says &quot;the list starts here&quot; (see <code>patterns/list-surface</code>). A rule above the search as well boxes it into a strip of its own.</li></ul>
+<p>The header's edge depends on where it lives, and it knows where it lives: in the app, every overlay shell (<code>Modal</code>, <code>Popover</code>, <code>PointerPopover</code>, <code>Drawer</code>) says so through <code>OverlaySurfaceContext</code>, and <code>PanelHeader</code> reads it. A caller says <code>edge</code> only to override that default.</p>
+<ul><li><strong>Pane (default outside an overlay)</strong> — one bottom hairline at <code>border.subtle</code>. The header shares its ground with the body and with the panes beside it, so one quiet line is what says where the chrome stops. It was <code>border.default</code> until 2026-11-10; at that step the header's rule outweighed the pane's own edge, and a column of panes read as a stack of boxed strips.</li><li><strong><code>--overlay</code> (default inside an overlay; <code>edge=&quot;none&quot;</code>)</strong> — no hairline and no ground of its own. Inside a dialog, popover or drawer, space separates: the shell already draws its edge, and a rule under the title cuts a small surface into strips (<code>principles.md</code>, *Hairlines carry the structure*).</li><li><strong><code>--flush</code> (<code>edge=&quot;none&quot;</code> in a pane)</strong> — no hairline. Use when a search row follows immediately: one divider per panel, and it belongs under the search — that is the line that says &quot;the list starts here&quot; (see <code>patterns/list-surface</code>). A rule above the search as well boxes it into a strip of its own.</li><li><strong>Over a scroll area (<code>edge=&quot;scroll&quot;</code>)</strong> — no hairline; the body beneath is a [scroll-area](../scroll-area/component.md), whose top edge fades only while content is scrolled under the header. Renders like <code>--flush</code>; the difference is the promise about the body.</li></ul>
+<p>The module SDK's <code>divider={false}</code> is the published spelling of <code>edge=&quot;none&quot;</code> and keeps working.</p>
 <h4>States</h4>
-<p>| State | Treatment | |---|---| | Rest | <code>bg.surface</code>, title at <code>text.primary</code> | | With progress | The 2px hairline sits on the bottom border, accent fill for done, <code>status.warn</code> segment after it for blocked | | Progress change | Width animates at <code>motion.duration.normal</code>, <code>motion.ease.standard</code> |</p>
+<p>| State | Treatment | |---|---| | Rest | Title at <code>text.primary</code>; <code>bg.surface</code> in a pane, the shell's ground in an overlay | | With progress | The 2px hairline sits on the bottom border, accent fill for done, <code>status.warn</code> segment after it for blocked | | Progress change | Width animates at <code>motion.duration.normal</code>, <code>motion.ease.standard</code> |</p>
 <p>The header itself has no hover, selected, or disabled state — it is chrome, not a control. Its actions carry their own states.</p>
 <h4>Usage</h4>
 <p><strong>One primary action, then overflow.</strong> The actions slot holds at most one labeled action and one overflow trigger. A second visible control means the first two are competing; move it into the overflow menu.</p>
@@ -36529,16 +36655,27 @@ document.addEventListener('keydown', (event) =&gt; {
   box-sizing: border-box;
   min-height: var(--sem-size-control-md);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
   background: var(--sem-color-bg-surface);
   font-family: var(--sem-font-family-ui);
 }
 
 /* One divider per panel, and when a search row follows it belongs under the
  * search — the line that says &quot;the list starts here&quot;. This modifier hands
- * the hairline to that row instead of drawing two. */
+ * the hairline to that row instead of drawing two. A header over a
+ * `scroll-area` body takes it too: the body's top fade is the edge, and only
+ * while content is scrolled beneath. */
 .ds-panel-header--flush {
   border-bottom: 0;
+}
+
+/* Inside an overlay — a dialog, a popover, a drawer — space separates. No
+ * rule, and no ground of its own: the shell's is the one surface, and a band
+ * painted `bg.surface` over a raised popover is a strip a shade off the card
+ * it sits in. */
+.ds-panel-header--overlay {
+  border-bottom: 0;
+  background: transparent;
 }
 
 /* Title cluster: dot, title, count, scope on one baseline. min-width lets
@@ -39892,6 +40029,230 @@ window.addEventListener('resize', repositionAll)
 &lt;/html&gt;
 </code></pre></details>
 </div>
+<div id="component-scroll-area" class="catalog-view catalog-component">
+<h3>Scroll area</h3>
+<div class="catalog-component-grid">
+<div class="catalog-stage ds-embed-component-scroll-area">
+<div class="demo-stage" data-mode="light">
+  <p class="demo-label">Light — at the start only the bottom edge fades; scroll, and the top edge fades too while rows sit under the header.</p>
+  <div class="demo-overlay">
+    <h2 class="demo-header">Notifications</h2>
+    <div class="ds-scroll-area" data-demo-scroll tabindex="0" aria-label="Notifications">
+      <p class="demo-row">Agent finished</p>
+      <p class="demo-row">Push rejected</p>
+      <p class="demo-row">Worktree locked</p>
+      <p class="demo-row">Review ready</p>
+      <p class="demo-row">Update installed</p>
+      <p class="demo-row">Agent waiting on you</p>
+      <p class="demo-row">Checks passed</p>
+      <p class="demo-row">Branch deleted</p>
+      <p class="demo-row">Stash applied</p>
+    </div>
+  </div>
+</div>
+<div class="demo-stage" data-mode="dark">
+  <p class="demo-label">Dark — the mask takes alpha only, so the same fade works over every ground.</p>
+  <div class="demo-overlay">
+    <h2 class="demo-header">Notifications</h2>
+    <div class="ds-scroll-area" data-demo-scroll tabindex="0" aria-label="Notifications">
+      <p class="demo-row">Agent finished</p>
+      <p class="demo-row">Push rejected</p>
+      <p class="demo-row">Worktree locked</p>
+      <p class="demo-row">Review ready</p>
+      <p class="demo-row">Update installed</p>
+      <p class="demo-row">Agent waiting on you</p>
+      <p class="demo-row">Checks passed</p>
+      <p class="demo-row">Branch deleted</p>
+      <p class="demo-row">Stash applied</p>
+    </div>
+  </div>
+</div>
+</div>
+<div class="catalog-doc">
+<p>A region that scrolls, and marks an edge with a fade <strong>only while content is hidden past it</strong>. Extracted from the shipped <code>ScrollArea</code> primitive (<code>src/renderer/src/components/ui/ScrollArea.tsx</code>), the <code>useScrollEdges</code> hook beside it, and the <code>.scroll-edge-fade</code> classes in the app's stylesheet.</p>
+<p>It is what lets a header stop drawing a rule. A hairline under a title is there whether or not anything is under it, so it says &quot;edge&quot; all the time. The fade at the top of a scroll area appears the moment a row has scrolled beneath the header and is gone once the list is back at its start: it says &quot;edge&quot; only when it is true. The bottom edge works the same way, and so do the two ends of a horizontal strip.</p>
+<h4>Anatomy</h4>
+<p>| Part | Class | Required | |---|---|---| | Region | <code>.ds-scroll-area</code> | yes — the scroll container; <code>overflow-y: auto</code>, <code>min-height: 0</code> so it can shrink inside a flex column | | Start edge | <code>[data-scroll-start]</code> | set by script while content is hidden before the viewport | | End edge | <code>[data-scroll-end]</code> | set by script while content is hidden after it |</p>
+<p>The fade is a <strong>mask</strong>, not a gradient painted over the content: a block laid on top would have to know the ground's colour, and scroll areas sit on panes, raised popovers and glass. A mask takes alpha only, so its stops are &quot;transparent&quot; and &quot;opaque&quot; and the fade has no hue of its own. Its depth is <code>space.3xl</code> (24px), the same at every edge.</p>
+<h4>Variants</h4>
+<ul><li><strong>Vertical (default)</strong> — a body under a header, a list in a popover, a settings page.</li><li><strong><code>--x</code></strong> — a strip that scrolls sideways with no scrollbar: the pane's tab row, a row of cards. In the app, <code>useFadingScroll</code> is this variant plus a wheel that scrolls the strip. One mechanism for both axes, not one per scroller.</li></ul>
+<h4>States</h4>
+<p>| State | Treatment | |---|---| | Fits | No attribute, no mask — nothing is drawn over content that has no edge | | At the start, more below | <code>data-scroll-end</code>: the bottom edge fades | | In the middle | Both attributes: both edges fade | | At the end | <code>data-scroll-start</code>: the top edge fades |</p>
+<p>The attributes change as the scroll position crosses an edge, with one pixel of slack each way so a sub-pixel of &quot;overflow&quot; on a box that fits paints nothing. Nothing animates: the fade is there or it is not.</p>
+<h4>Usage</h4>
+<p><strong>Overlays separate header and body by space; the scroll area marks the edge.</strong> A dialog, a popover, a drawer and the command palette draw no rule under their title (<code>principles.md</code>, *Hairlines carry the structure*). When their body scrolls, it is a scroll area, and the fade is the only edge it gets.</p>
+<p><strong>Panes keep their one rule.</strong> A pane's header sits on the same ground as the body and the panes beside it, and one <code>border.subtle</code> hairline says where the chrome stops. A pane's body may still be a scroll area for its far edge; the header's rule stays.</p>
+<p><strong>Never on a terminal, the code editor or the streaming chat timeline.</strong> Those surfaces repaint every frame, and a mask over them is recomposited every frame with them. They mark their own edges (the timeline's jump-to-latest, the editor's own scroll shadow) or none.</p>
+<p><strong>Keep long lists cheap.</strong> The edges are written as attributes, not through component state, so scrolling a long list never re-renders it; only the mask changes. A caller that needs the answer in render (a card row that disables its arrows at the ends) asks for it through the hook's <code>onChange</code>.</p>
+<p><strong>Rebuilding it in a framework:</strong> what must survive is the attribute contract (set while content is hidden at that edge, cleared at the edge), the alpha-only mask at <code>space.3xl</code>, and the scroll padding below.</p>
+<h4>Accessibility</h4>
+<ul><li><code>scroll-padding</code> at the fade's depth on the scrolling axis, so a row walked into view by Tab or the arrow keys comes to rest clear of the fade rather than half-transparent beneath it. Keyboard focus never sits hidden inside a fade.</li><li>The fade is decoration: it carries no role and no name. A region that holds focusable rows needs no <code>tabindex</code>; one that holds only text is given <code>tabindex=&quot;0&quot;</code> and an accessible name, so a keyboard can scroll it.</li><li>Under <code>prefers-reduced-motion</code> nothing changes — the fade does not move.</li></ul>
+</div>
+</div>
+<details class="catalog-source"><summary>components/scroll-area/component.css</summary><pre><code>/* Scroll area — a region that scrolls, and marks an edge with a fade only
+ * while content is hidden past it. Extracted from the shipped ScrollArea
+ * primitive (src/renderer/src/components/ui/ScrollArea.tsx) and the
+ * `.scroll-edge-fade` classes it draws with.
+ *
+ * The edges are written as attributes by script — `data-scroll-start` while
+ * content is hidden before the viewport, `data-scroll-end` while it is hidden
+ * after — and this turns them into a mask. A mask takes alpha only, so its
+ * stops are opacity, never ink: the fade has no hue, and it works over any
+ * ground, glass included. */
+
+.ds-scroll-area {
+  --ds-scroll-fade-size: var(--sem-space-3xl);
+  min-height: 0;
+  overflow-y: auto;
+  /* Keyboard focus never comes to rest inside a fade: a row walked into view
+   * stops a fade's depth short of the edge. */
+  scroll-padding-block: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area--x {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-padding-block: 0;
+  scroll-padding-inline: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area[data-scroll-start] {
+  --ds-scroll-fade-start: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area[data-scroll-end] {
+  --ds-scroll-fade-end: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area:is([data-scroll-start], [data-scroll-end]) {
+  /* ds-lint-allow: mask alpha stops (transparent / opaque), not ink — no colour token expresses &quot;opaque&quot; */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--ds-scroll-fade-start, 0px),
+    black calc(100% - var(--ds-scroll-fade-end, 0px)),
+    transparent
+  );
+}
+
+.ds-scroll-area--x:is([data-scroll-start], [data-scroll-end]) {
+  /* ds-lint-allow: mask alpha stops (transparent / opaque), not ink — no colour token expresses &quot;opaque&quot; */
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--ds-scroll-fade-start, 0px),
+    black calc(100% - var(--ds-scroll-fade-end, 0px)),
+    transparent
+  );
+}
+</code></pre></details>
+<details class="catalog-source"><summary>components/scroll-area/component.html (demo)</summary><pre><code>&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot; /&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot; /&gt;
+&lt;title&gt;Scroll area&lt;/title&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;../../foundations/tokens.css&quot; /&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;component.css&quot; /&gt;
+&lt;style&gt;
+  body {
+    margin: 0;
+    font-family: var(--sem-font-family-ui);
+  }
+  .demo-stage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sem-space-xl);
+    padding: var(--sem-space-3xl);
+    background: var(--sem-color-bg-app);
+    color: var(--sem-color-text-default);
+  }
+  .demo-label {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--sem-font-size-meta);
+    color: var(--sem-color-text-subtle);
+  }
+  /* A popover-sized overlay: a header separated from its body by space, and a
+     body that fades at whichever edge has rows hidden past it. */
+  .demo-overlay {
+    display: flex;
+    flex-direction: column;
+    width: 280px;
+    height: 220px;
+    border: 1px solid var(--sem-color-border-strong);
+    border-radius: var(--sem-radius-overlay);
+    background: var(--sem-color-bg-surface-raised);
+    box-shadow: var(--sem-shadow-popover);
+  }
+  .demo-header {
+    margin: 0;
+    padding: var(--sem-space-sm) var(--sem-space-lg);
+    font-size: var(--sem-font-size-body);
+    font-weight: var(--sem-font-weight-emphasis);
+    color: var(--sem-color-text-primary);
+  }
+  .demo-row {
+    margin: 0;
+    padding: var(--sem-space-xs) var(--sem-space-lg);
+    font-size: var(--sem-font-size-body);
+  }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;light&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Light — at the start only the bottom edge fades; scroll, and the top edge fades too while rows sit under the header.&lt;/p&gt;
+  &lt;div class=&quot;demo-overlay&quot;&gt;
+    &lt;h2 class=&quot;demo-header&quot;&gt;Notifications&lt;/h2&gt;
+    &lt;div class=&quot;ds-scroll-area&quot; data-demo-scroll tabindex=&quot;0&quot; aria-label=&quot;Notifications&quot;&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Agent finished&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Push rejected&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Worktree locked&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Review ready&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Update installed&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Agent waiting on you&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Checks passed&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Branch deleted&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Stash applied&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;div class=&quot;demo-stage&quot; data-mode=&quot;dark&quot;&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Dark — the mask takes alpha only, so the same fade works over every ground.&lt;/p&gt;
+  &lt;div class=&quot;demo-overlay&quot;&gt;
+    &lt;h2 class=&quot;demo-header&quot;&gt;Notifications&lt;/h2&gt;
+    &lt;div class=&quot;ds-scroll-area&quot; data-demo-scroll tabindex=&quot;0&quot; aria-label=&quot;Notifications&quot;&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Agent finished&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Push rejected&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Worktree locked&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Review ready&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Update installed&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Agent waiting on you&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Checks passed&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Branch deleted&lt;/p&gt;
+      &lt;p class=&quot;demo-row&quot;&gt;Stash applied&lt;/p&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+&lt;script&gt;
+  // The edges, written as the app's hook writes them: an attribute per edge
+  // with content hidden past it, one pixel of slack each way.
+  for (const el of document.querySelectorAll('[data-demo-scroll]')) {
+    const measure = () =&gt; {
+      const max = el.scrollHeight - el.clientHeight
+      el.toggleAttribute('data-scroll-start', max &gt; 1 &amp;&amp; el.scrollTop &gt; 1)
+      el.toggleAttribute('data-scroll-end', max &gt; 1 &amp;&amp; el.scrollTop &lt; max - 1)
+    }
+    el.addEventListener('scroll', measure, { passive: true })
+    new ResizeObserver(measure).observe(el)
+    measure()
+  }
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre></details>
+</div>
 <div id="component-section" class="catalog-view catalog-component">
 <h3>Section</h3>
 <div class="catalog-component-grid">
@@ -39970,11 +40331,14 @@ window.addEventListener('resize', repositionAll)
 <p>One such reason is on the record: a run of [setting-row](../setting-row/component.md)s takes a bordered card, because a settings page's groups are long enough that the gap between two groups and the gap between two rows become the same gap. The card belongs to that component, not to this one — the section still contributes only its title, which sits *outside* the card and keeps the typography specified here. <code>principles.md</code>, *Hairlines carry the structure*, ruling 2026-09-14.</p>
 <p><strong>A heading must separate something from something else.</strong> One section alone on a surface is not a group; render its content bare and let the surface's own name (the panel title, the list's accessible name) carry the label. The title is optional for exactly this case — a section with no title is just the padding contract.</p>
 <h4>Anatomy</h4>
-<p>| Part | Class | Required | |---|---|---| | Region | <code>.ds-section</code> | yes — a real <code>&lt;section&gt;</code> | | Header row | <code>.ds-section-header</code> | when titled — baseline-aligned, <code>space.sm</code> gap | | Heading cluster | <code>.ds-section-heading</code> | with the header — title + count, <code>space.xs</code> gap, shrinks first | | Title | <code>.ds-section-title</code> | with the header — an <code>&lt;h2&gt;</code>–<code>&lt;h4&gt;</code>, truncates | | Count | <code>.ds-section-count</code> | no — <code>tabular-nums</code>, <code>text.muted</code> | | Action | <code>.ds-section-action</code> | no — <strong>one</strong> trailing control | | Body | <code>.ds-section-body</code> | yes — the content, inset unless <code>--flush</code> |</p>
+<p>| Part | Class | Required | |---|---|---| | Region | <code>.ds-section</code> | yes — a real <code>&lt;section&gt;</code> | | Header row | <code>.ds-section-header</code> | when titled — baseline-aligned, <code>space.sm</code> gap | | Heading cluster | <code>.ds-section-heading</code> | with the header — title + count, <code>space.xs</code> gap, shrinks first | | Title | <code>.ds-section-title</code> | with the header — an <code>&lt;h2&gt;</code>–<code>&lt;h4&gt;</code>, truncates | | Count | <code>.ds-section-count</code> | no — <code>tabular-nums</code>, <code>text.muted</code> | | Action | <code>.ds-section-action</code> | no — <strong>one</strong> trailing control | | Body | <code>.ds-section-body</code> | yes — the content, inset unless <code>--flush</code> | | Label | <code>.ds-section-label</code> | no — the quiet sub-header for a group inside a list or an overlay; see below |</p>
 <p>The title is <code>font.size.meta</code> at <code>font.weight.emphasis</code> in <code>text.primary</code> — a weighted label, <strong>never</strong> uppercase letter-spaced chrome. Sentence case. The heading element's level (<code>h2</code>–<code>h4</code>) follows the document outline, not the type size: every section title renders identically whatever its level.</p>
 <p>The header's padding (<code>space.lg</code> sides and top, <code>space.xs</code> below) and the body's inset (<code>space.lg</code> sides and bottom) share one left edge, so the title and its content sit on the same vertical line.</p>
 <h4>Variants</h4>
 <ul><li>Default — body inset to the section's padding.</li><li><code>ds-section--flush</code> — no body inset, for content that brings its own edge contract: a list whose rows own full-width hover fills, a table, a divider stack. The header keeps its padding either way.</li><li><code>ds-section--flush-header</code> — the body inset drops <strong>and so does the header's</strong>, so the title, the count and a trailing control share the rows' left edge. Added 2026-09-02: <code>--flush</code> alone leaves the heading 12px inboard of rows that render flush to x=0, which reads as a misalignment rather than a hierarchy. Reach for it only when the body's rows genuinely have no inset of their own — a list of <code>inbox-row</code>s carries its own, and the header must stay inset to line up with it.</li></ul>
+<h4>The section label</h4>
+<p>A list inside a popover or a pane often needs to say where its groups start — &quot;Today&quot; and &quot;Yesterday&quot; in a notification list, the groups in a picker. That is not a section title: the title names a region of a page, and a label names a run of rows inside one list. So it is quieter than the title on purpose: <code>font.size.meta</code> at regular weight in <code>text.muted</code>, sentence case, no rule above or below, no count, no control. The label *is* the boundary; a rule as well says it twice, and that is the same reason a menu's group label is the alternative to its divider rather than an addition to it.</p>
+<p>Space does the rest: <code>space.lg</code> above a label that follows rows, <code>space.2xs</code> between the label and its first row, on the rows' own left inset. In the app this is <code>SECTION_LABEL_CLASS</code> (<code>components/ui/tokens.ts</code>); the command palette's group heading is the same treatment.</p>
 <h4>States</h4>
 <p>None. A section is structure, not a control — it has no hover, no selection, no disabled. Interactive states belong to the things inside it.</p>
 <h4>Usage</h4>
@@ -40032,6 +40396,16 @@ window.addEventListener('resize', repositionAll)
 .ds-section-count {
   font-size: var(--sem-font-size-meta);
   font-variant-numeric: tabular-nums;
+  color: var(--sem-color-text-muted);
+}
+
+/* The quiet sub-header for a run of rows inside one list (a notification
+ * list's &quot;Today&quot;). Quieter than the title on purpose, and never ruled: the
+ * label is the boundary. */
+.ds-section-label {
+  margin: 0;
+  font-size: var(--sem-font-size-meta);
+  font-weight: var(--sem-font-weight-regular);
   color: var(--sem-color-text-muted);
 }
 
@@ -41977,7 +42351,7 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 </div>
 </div>
 <div class="catalog-doc">
-<p>The column that shares the page. A side pane sits in the document flow beside a board or list, separated by one hairline — no portal, no scrim, no shadow, no layer. It is where a detail, a runner list, or an active review lives when the person needs it *and* the content it describes at the same time. Extracted from the source product's <code>SidePane</code> and <code>SidePaneHeader</code> primitives (<code>src/renderer/src/components/ui/</code>).</p>
+<p>The column that shares the page. A side pane sits in the document flow beside a board or list, separated by one hairline — no portal, no scrim, no shadow, no layer. It is where a detail, a runner list, or an active review lives when the person needs it *and* the content it describes at the same time. Extracted from the shipped <code>SidePane</code> primitive (<code>src/renderer/src/components/ui/SidePane.tsx</code>). Its header, in the app, is the [panel header](../panel-header/component.md): the separate closable-aside header it once had was retired on 2026-11-10 with no caller left.</p>
 <p>It is deliberately <strong>not</strong> a drawer variant. The overlay family's defining question is &quot;does this surface cover the page?&quot; — a drawer answers yes (scrim, shadow, focus trap, <code>z.drawer</code>) and a side pane answers no. It is not a raised surface either: it shares the panel's own background, so the hairline does all the separating, exactly as the principles order — borders carry the structure, shadows belong to overlays.</p>
 <p>Use a drawer when the surface is summoned and dismissed; use a side pane when it is part of the page's standing anatomy. A multi-pane surface built from side panes has exactly one focused selection — every other pane's selection rests (<code>patterns/selection</code>).</p>
 <h4>Anatomy</h4>
@@ -41989,7 +42363,7 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 <p>A preset pane's width is the preset's alone: it has no handle, so nothing overrides the percent and its pixel rails. A <code>--resizable</code> pane's width is the person's, within the host's rails.</p>
 <h4>Usage</h4>
 <p><strong>One hairline, on the inner edge.</strong> The pane never draws its own box. If a pane seems to need a full border, it is trying to be a card inside a panel — reconsider the surface.</p>
-<p><strong>The header is one chrome band.</strong> Title left, count and close right, <code>space.sm</code>/<code>space.lg</code> inset, one <code>border.default</code> rule beneath — a working edge over the scrolling body, matching the drawer's header. A toolbar stacked under it is the second band the composition rules exist to prevent.</p>
+<p><strong>The header is one chrome band.</strong> Title left, count and close right, <code>space.sm</code>/<code>space.lg</code> inset, one <code>border.subtle</code> rule beneath — the pane header's edge, so a board and its aside read as one family. A toolbar stacked under it is the second band the composition rules exist to prevent.</p>
 <p><strong>Element choice is a semantic claim.</strong> <code>&lt;aside&gt;</code> for the pane that supports the main flow; <code>&lt;section&gt;</code> (with an accessible name) when the column *is* the main flow — an inbox column is not an aside to its own detail.</p>
 <p><strong>The resize drag is captured.</strong> Panes routinely host iframes (and in the app, <code>&lt;webview&gt;</code> guests) that would otherwise swallow pointermove mid-drag, so the handle takes pointer capture on press and a transparent shield covers the window for the length of the drag. The live width is written straight to the element on each animation frame and committed once, on release — never a store write per frame. In the app this is <code>startColumnResizeDrag</code> (<code>components/workspace/columnResizeDrag.ts</code>), shared by every resizable column.</p>
 <p><strong>Rebuilding it in a framework:</strong> what must survive is the flow-not-overlay nature (no portal, no trap — Tab passes through), the inner-edge hairline, and the clamped width contract — for <code>--resizable</code>, also the captured drag and the keyboard steps below.</p>
@@ -42064,9 +42438,9 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
   border-right: 0;
 }
 
-/* One chrome band: title left, count and close right, one working edge over
- * the scrolling body — the same header rhythm as the drawer, so a board and
- * its aside read as one family. */
+/* One chrome band: title left, count and close right, one subtle rule over
+ * the scrolling body — the panel header's pane edge, so a board and its aside
+ * read as one family. */
 .ds-side-pane-header {
   display: flex;
   flex-shrink: 0;
@@ -42074,7 +42448,7 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
   justify-content: space-between;
   gap: var(--sem-space-sm);
   padding: var(--sem-space-sm) var(--sem-space-lg);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 .ds-side-pane-title {
@@ -45224,7 +45598,7 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 <p>| Part        | Class                 | Required                                                                                                                     | | ----------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | | Scroller    | <code>.ds-tabs-scroller</code>   | no — the overflow wrapper: scrolls sideways, never draws a scrollbar, fades each overflowing edge                            | | Tab list    | <code>.ds-tabs</code>            | yes — <code>role=&quot;tablist&quot;</code> with an <code>aria-label</code>, one bottom hairline under the pills                                                             | | Tab         | <code>.ds-tab</code>             | yes — <code>role=&quot;tab&quot;</code> buttons, <code>font.size.meta</code>                                                                                 | | Icon        | <code>.ds-tab-icon</code>        | no — a leading glyph, <code>aria-hidden</code>                                                                                          | | Count       | <code>.ds-tab-count</code>       | no — canonical count, tabular, <code>font.size.micro</code>                                                                             | | Badge       | <code>.ds-tab-badge</code>       | no — the <code>badge</code> corner count: what is WAITING in this tab. Needs <code>.ds-tab--badged</code> on the tab for its room                  | | Drop marker | <code>.ds-tab-drop-marker</code> | no — on a <code>--reorderable</code> strip mid-drag: a 2px accent bar, upright, at the slot the dragged tab will land in, <code>aria-hidden</code> | | Panel       | <code>.ds-tab-panel</code>       | yes — <code>role=&quot;tabpanel&quot;</code>, a focusable scroll region                                                                           |</p>
 <p>Tabs are <code>size.control.xs</code> (26px) pills at <code>space.lg</code> inline padding with a <code>radius.pill</code>, spaced by <code>space.2xs</code>. An unselected tab keeps the pill's transparent 1px edge, so being chosen never reflows the row. The row keeps <code>space.2xs</code> of block padding so a raised pill stands off its hairline.</p>
 <h4>Variants</h4>
-<ul><li><strong>Default</strong> — the row draws its own <code>border.subtle</code>-weight structure with a <code>border.default</code> hairline.</li><li><strong><code>--borderless</code></strong> — no hairline; a parent container owns the row's border. Needed when the tab row shares its band with trailing inline controls — one chrome band, one line. It keeps no block padding of its own: the band centres the pills.</li><li><strong><code>--badged</code></strong> — the tab reserves <code>space.3xl</code> of trailing room and docks a <code>badge</code> count in its top-right: how many things inside want the person. See &quot;A count on a tab is not a badge on a tab&quot; below. Never on <code>--icon-only</code>, and never on a closable tab — that tab's trailing padding is already spoken for by its close glyph, and two things docked in one corner is neither of them.</li><li><strong><code>--reorderable</code></strong> — the person's order, not the product's (the workspace pane's strip). A tab dragged sideways lands in the slot it is dropped in, and the focused tab moves one place with Alt+Shift+Left/Right. The strip is <code>--dragging</code> while a drag is in flight. See &quot;A reorderable strip&quot; below.</li><li><strong><code>--icon-only</code></strong> — each tab renders its glyph alone in a short pill (<code>size.control.sm</code> wide, <code>size.control.xs</code> tall), the glyph steps up to <code>icon.size.sm</code>, and the label becomes the tab's accessible name _and_ its tooltip. For a strip on a band that cannot spend width on words — a panel's own chrome row, shared with that panel's actions. Every item must carry an icon.</li></ul>
+<ul><li><strong>Default</strong> — the row draws one <code>border.subtle</code> hairline. Subtle, not <code>border.default</code>: the strip is chrome over a pane, and at the stronger step its rule outweighed the pane's own edge.</li><li><strong><code>--borderless</code></strong> — no hairline; a parent container owns the row's border. Needed when the tab row shares its band with trailing inline controls — one chrome band, one line. It keeps no block padding of its own: the band centres the pills.</li><li><strong><code>--badged</code></strong> — the tab reserves <code>space.3xl</code> of trailing room and docks a <code>badge</code> count in its top-right: how many things inside want the person. See &quot;A count on a tab is not a badge on a tab&quot; below. Never on <code>--icon-only</code>, and never on a closable tab — that tab's trailing padding is already spoken for by its close glyph, and two things docked in one corner is neither of them.</li><li><strong><code>--reorderable</code></strong> — the person's order, not the product's (the workspace pane's strip). A tab dragged sideways lands in the slot it is dropped in, and the focused tab moves one place with Alt+Shift+Left/Right. The strip is <code>--dragging</code> while a drag is in flight. See &quot;A reorderable strip&quot; below.</li><li><strong><code>--icon-only</code></strong> — each tab renders its glyph alone in a short pill (<code>size.control.sm</code> wide, <code>size.control.xs</code> tall), the glyph steps up to <code>icon.size.sm</code>, and the label becomes the tab's accessible name _and_ its tooltip. For a strip on a band that cannot spend width on words — a panel's own chrome row, shared with that panel's actions. Every item must carry an icon.</li></ul>
 <h4>States</h4>
 <p>| State                  | Treatment                                                                                                                                                                                                                                                                                                                                                                                                                                                    | | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | | Rest                   | <code>text.muted</code>, transparent edge and ground. The pill's shape, drawn only once the pointer finds it | | Hover                  | <code>bg.hover</code> fill and ink lifts to <code>text.primary</code> | | Active                 | <code>border.subtle</code> edge on <code>bg.surface</code>, <code>shadow.popover</code>, <code>text.primary</code> at <code>font.weight.medium</code>. Never an accent fill | | Focus-visible          | <code>focus.ring</code>                                                                                                                                                                                                                                                                                                                                                                                                                                                 | | Disabled               | <code>opacity: 0.5</code>, <code>cursor: not-allowed</code>                                                                                                                                                                                                                                                                                                                                                                                                                        | | Agent                  | An agent is using what the tab shows (driving its page, drawing on its board, editing its file): a 1px inset <code>agent-trail.ink</code> outline on <code>agent-trail.soft</code>, and an &quot;Agent&quot; pill after the label (<code>agent-trail.ink</code> on <code>agent-trail.soft-strong</code>, the Files tree's verb pill). The surface the tab shows wears a 2px inset <code>agent-trail.ink</code> edge (<code>AgentEdge</code>). The tab's accessible name says it (&quot;…: an agent is using this&quot;); the pill is <code>aria-hidden</code> | | Dragging (reorderable) | The strip's cursor is <code>grabbing</code>; the carried tab fades to <code>opacity: 0.5</code> (<code>.ds-tab--dragged</code>); the drop marker stands at the target slot. No marker over the tab's own place, where a drop moves nothing                                                                                                                                                                                                                                                    |</p>
 <h4>Usage</h4>
@@ -45265,7 +45639,7 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
   align-items: center;
   gap: var(--sem-space-2xs);
   padding-block: var(--sem-space-2xs);
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 /* A parent container owns the row border — needed when the tab row shares
@@ -46661,9 +47035,9 @@ for (const button of document.querySelectorAll('.demo-parked .ds-toast-dismiss')
     <p class="demo-row">component.css</p>
   </div>
 
-  <p class="demo-label demo-label--second">--borderless, with a trailing cluster: a band already sitting under a header's own hairline.</p>
+  <p class="demo-label demo-label--second">--rule, with a trailing cluster: a band over a diff whose gutter does not mark its own top.</p>
   <div class="demo-pane">
-    <div class="ds-toolbar ds-toolbar--borderless" role="toolbar" aria-label="Diff">
+    <div class="ds-toolbar ds-toolbar--rule" role="toolbar" aria-label="Diff">
       <button type="button" class="ds-button ds-button--icon ds-toolbar-item" aria-label="Previous difference">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M8 3v10M4.4 6.2 8 2.8l3.6 3.4M4.4 9.8 8 13.2l3.6-3.4" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
@@ -46720,9 +47094,9 @@ for (const button of document.querySelectorAll('.demo-parked .ds-toast-dismiss')
     <p class="demo-row">component.css</p>
   </div>
 
-  <p class="demo-label demo-label--second">--borderless, with a trailing cluster: a band already sitting under a header's own hairline.</p>
+  <p class="demo-label demo-label--second">--rule, with a trailing cluster: a band over a diff whose gutter does not mark its own top.</p>
   <div class="demo-pane">
-    <div class="ds-toolbar ds-toolbar--borderless" role="toolbar" aria-label="Diff">
+    <div class="ds-toolbar ds-toolbar--rule" role="toolbar" aria-label="Diff">
       <button type="button" class="ds-button ds-button--icon ds-toolbar-item" aria-label="Previous difference">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M8 3v10M4.4 6.2 8 2.8l3.6 3.4M4.4 9.8 8 13.2l3.6-3.4" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
@@ -46753,9 +47127,9 @@ for (const button of document.querySelectorAll('.demo-parked .ds-toast-dismiss')
 <p>Unchanged: two stacked bands of chrome above one region is still a reject on sight. The ruling is that this band is not chrome — not that a pane may have two chrome strips.</p>
 <h4>Anatomy</h4>
 <p>| Part | Class | Required | |---|---|---| | Band | <code>.ds-toolbar</code> | yes — <code>role=&quot;toolbar&quot;</code> with an <code>aria-label</code> naming what it acts on | | Item | <code>.ds-button.ds-button--icon.ds-toolbar-item</code> | yes — the button component's icon variant, unchanged; <code>.ds-toolbar-item</code> is the hook the modifier below hangs off and adds nothing on its own | | Menu item | <code>.ds-toolbar-item--menu</code> | no — an item that opens a menu rather than acting | | Divider | <code>.ds-toolbar-divider</code> | no — the system's first vertical divider, <code>aria-hidden</code> | | Spacer | <code>.ds-toolbar-spacer</code> | no — pushes what follows to the trailing end |</p>
-<p>Geometry: <code>size.control.sm</code> (30px) tall, <code>space.3xs</code> between items, <code>space.xs</code> of inline padding, and one <code>border.subtle</code> hairline along the bottom.</p>
+<p>Geometry: <code>size.control.sm</code> (30px) tall, <code>space.3xs</code> between items, <code>space.xs</code> of inline padding, and no rule of its own by default.</p>
 <h4>Variants</h4>
-<ul><li><strong>Default</strong> — the bottom hairline. The band's whole separation: no fill, no shadow, no second rule above it. A toolbar that painted its own ground would read as a second surface stacked on the pane.</li><li><strong><code>--borderless</code></strong> — for a band that already sits under a hairline (directly beneath a tab strip or a <code>panel-header</code>, which draw their own). Two rules 30px apart is a ladder, not a structure.</li></ul>
+<ul><li><strong>Default</strong> — no hairline, no fill, no shadow. A band of ghost glyphs reads as the top of the region it acts on, and the content under it begins where the glyphs stop; a band usually sits under a tab strip or a <code>panel-header</code> that already draws the pane's one rule, and a second 30px below it was a ladder, not a structure. A toolbar that painted its own ground would read as a second surface stacked on the pane.</li><li><strong><code>--rule</code></strong> — one <code>border.subtle</code> hairline along the bottom, for a band over a surface that does not mark its own top (a diff editor whose gutter runs edge to edge). In the app this is <code>edge=&quot;rule&quot;</code>.</li></ul>
 <h4>The vertical divider</h4>
 <p>The system's <strong>first</strong> vertical divider, and it earns being one: a band of identical 26px squares has no other way to say &quot;these six are about the files, these three are about the view&quot;. A gap cannot — the items are already separated by one, and doubling it reads as a rendering accident rather than a boundary.</p>
 <p>Three decisions in it:</p>
@@ -46799,18 +47173,18 @@ for (const button of document.querySelectorAll('.demo-parked .ds-toast-dismiss')
   gap: var(--sem-space-3xs);
   height: var(--sem-size-control-sm);
   padding-inline: var(--sem-space-xs);
-  /* ONE hairline, at the bottom, and it is the band's whole separation: no
-   * fill, no shadow, no second rule above. A toolbar that painted its own
-   * ground would read as a second surface stacked on the pane. */
-  border-bottom: 1px solid var(--sem-color-border-subtle);
+  /* No rule, no fill, no shadow. A band of ghost glyphs is the top of the
+   * region it acts on; it usually sits under a tab strip or a panel header
+   * that already draws the pane's one rule, and a second 30px below it is a
+   * ladder, not a structure. A toolbar that painted its own ground would
+   * read as a second surface stacked on the pane. */
   background: transparent;
 }
 
-/* For a band that already sits under a hairline — directly beneath a tab strip
- * or a panel header, which draw their own. Two rules 30px apart is a ladder,
- * not a structure. */
-.ds-toolbar--borderless {
-  border-bottom: 0;
+/* One subtle hairline under the band, for a band over a surface that does not
+ * mark its own top (a diff editor's gutter runs edge to edge). */
+.ds-toolbar--rule {
+  border-bottom: 1px solid var(--sem-color-border-subtle);
 }
 
 /* Pushes everything after it to the trailing end. A band with a leading and a
@@ -46952,9 +47326,9 @@ for (const button of document.querySelectorAll('.demo-parked .ds-toast-dismiss')
     &lt;p class=&quot;demo-row&quot;&gt;component.css&lt;/p&gt;
   &lt;/div&gt;
 
-  &lt;p class=&quot;demo-label demo-label--second&quot;&gt;--borderless, with a trailing cluster: a band already sitting under a header's own hairline.&lt;/p&gt;
+  &lt;p class=&quot;demo-label demo-label--second&quot;&gt;--rule, with a trailing cluster: a band over a diff whose gutter does not mark its own top.&lt;/p&gt;
   &lt;div class=&quot;demo-pane&quot;&gt;
-    &lt;div class=&quot;ds-toolbar ds-toolbar--borderless&quot; role=&quot;toolbar&quot; aria-label=&quot;Diff&quot;&gt;
+    &lt;div class=&quot;ds-toolbar ds-toolbar--rule&quot; role=&quot;toolbar&quot; aria-label=&quot;Diff&quot;&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-button ds-button--icon ds-toolbar-item&quot; aria-label=&quot;Previous difference&quot;&gt;
         &lt;svg viewBox=&quot;0 0 16 16&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; aria-hidden=&quot;true&quot;&gt;&lt;path d=&quot;M8 3v10M4.4 6.2 8 2.8l3.6 3.4M4.4 9.8 8 13.2l3.6-3.4&quot; stroke-width=&quot;1.3&quot; stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot; /&gt;&lt;/svg&gt;
       &lt;/button&gt;
@@ -47011,9 +47385,9 @@ for (const button of document.querySelectorAll('.demo-parked .ds-toast-dismiss')
     &lt;p class=&quot;demo-row&quot;&gt;component.css&lt;/p&gt;
   &lt;/div&gt;
 
-  &lt;p class=&quot;demo-label demo-label--second&quot;&gt;--borderless, with a trailing cluster: a band already sitting under a header's own hairline.&lt;/p&gt;
+  &lt;p class=&quot;demo-label demo-label--second&quot;&gt;--rule, with a trailing cluster: a band over a diff whose gutter does not mark its own top.&lt;/p&gt;
   &lt;div class=&quot;demo-pane&quot;&gt;
-    &lt;div class=&quot;ds-toolbar ds-toolbar--borderless&quot; role=&quot;toolbar&quot; aria-label=&quot;Diff&quot;&gt;
+    &lt;div class=&quot;ds-toolbar ds-toolbar--rule&quot; role=&quot;toolbar&quot; aria-label=&quot;Diff&quot;&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-button ds-button--icon ds-toolbar-item&quot; aria-label=&quot;Previous difference&quot;&gt;
         &lt;svg viewBox=&quot;0 0 16 16&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; aria-hidden=&quot;true&quot;&gt;&lt;path d=&quot;M8 3v10M4.4 6.2 8 2.8l3.6 3.4M4.4 9.8 8 13.2l3.6-3.4&quot; stroke-width=&quot;1.3&quot; stroke-linecap=&quot;round&quot; stroke-linejoin=&quot;round&quot; /&gt;&lt;/svg&gt;
       &lt;/button&gt;

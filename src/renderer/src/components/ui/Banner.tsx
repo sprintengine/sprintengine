@@ -29,12 +29,15 @@ export type BannerProps = {
  * Panel-spanning error/warn strip. Sits at the top of a panel's content area,
  * leads with a status dot, and offers an optional Retry. For inline-scoped
  * advisories inside a section, use InlineNotice instead.
+ *
+ * No rule under it: the soft tone fill is already the strip's edge, and a
+ * hairline along the bottom of a tinted band draws the same boundary twice.
  */
 export function Banner({ tone, message, onRetry, retryLabel = 'Retry', action }: BannerProps) {
   const softVar = tone === 'error' ? 'var(--tone-error-soft)' : 'var(--tone-warn-soft)'
   return (
     <div
-      className="flex items-center justify-between gap-3 border-b border-[color:var(--border-default)] px-3 py-2 text-meta text-[color:var(--text-strong)]"
+      className="flex items-center justify-between gap-3 px-3 py-2 text-meta text-[color:var(--text-strong)]"
       style={{ backgroundColor: softVar }}
       role={tone === 'error' ? 'alert' : 'status'}
     >

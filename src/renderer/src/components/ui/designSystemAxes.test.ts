@@ -113,6 +113,18 @@ test('designSystemAxes', async () => {
     type: /(?:^|["'\s`])text-(?:xs|sm|base|lg|xl|2xl|3xl)(?=["'\s`])/g,
     /** Square boxes that should be on the `icon-*` / `size-icon-*` ramp. */
     icon: /(?:^|["'\s`])(?:size-(?:3|3\.5|4|5|6)|h-(?:3|3\.5|4|5|6) w-(?:3|3\.5|4|5|6))(?=["'\s`])/g,
+    /**
+     * A horizontal rule: a bare `border-b` or `border-t`, variants included
+     * (`last:border-b`). Not an off-ramp in the token sense — a rule is a
+     * legitimate thing to draw — but the count is how the "quiet headers"
+     * ruling of 2026-11-10 stays won (principles.md, "Hairlines carry the
+     * structure"): overlays separate header and body by space, panes take one
+     * `border.subtle` rule, and a scroll edge is a fade. Before it, a rule
+     * under every band was the default reach, and headers, toolbars and tab
+     * strips stacked them into ladders. A new rule has to replace one, not
+     * join them; the exit condition is not zero, but the number may only fall.
+     */
+    rule: /(?:^|["'\s`:])border-[bt](?=["'\s`])/g,
   } as const
 
   type Axis = keyof typeof AXES
@@ -304,6 +316,24 @@ test('designSystemAxes', async () => {
       'components/htmlArtifact': 3, // 2026-09-08: the second swap
       'components/backlog': 2, // 2026-09-08: the second swap
       'components/settings': 1,
+    },
+    // Measured 2026-11-10, after the shared primitives stopped drawing them:
+    // the modal surface bar, the drawer header, the banner, the command
+    // palette's field band, the filter menu's group rule and the retired side
+    // pane header. ONLY EVER EDIT DOWNWARD.
+    rule: {
+      'components/auxWindows': 8,
+      'components/backlog': 1,
+      'components/diagnostics': 9,
+      'components/htmlArtifact': 2,
+      'components/memory': 1,
+      'components/panels': 30,
+      'components/settings': 9,
+      'components/ui': 13,
+      'components/usage': 2,
+      'components/workspace': 28,
+      'components/worktree': 1,
+      utils: 5,
     },
   }
 

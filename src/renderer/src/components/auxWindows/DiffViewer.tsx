@@ -1796,7 +1796,7 @@ export function DiffViewer({
           enumerated: the hunk arrows, the file's editor, the file stepper and
           the collapse toggle are four things about WHAT you are reading; the
           counter, the layout toggle and the gear are about HOW. */}
-      <Toolbar ariaLabel="Diff">
+      <Toolbar ariaLabel="Diff" edge="rule">
         {/* An agent's new tour, waiting: at the front of the band, where a narrow
             pane cannot clip it off. */}
         {tour.offerChip}

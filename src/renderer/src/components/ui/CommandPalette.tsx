@@ -1,6 +1,7 @@
 import { isSubagentRecord } from '../../../../shared/agent-state'
 import React, { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { ScrollArea } from './ScrollArea'
 import type { Workspace, WorkspaceId, WorkspaceWindowId } from '../../types/workspace'
 import type { BuiltinSkill, WorkspaceSkill } from '../../../../shared/electron-api'
 import { togglePanelRailComponent } from '../../utils/modelRegistry'
@@ -1581,11 +1582,12 @@ export default function CommandPalette({
           // shell's corners.
           className={`${OVERLAY_SHELL_CHROME_CLASS} surface-glass overflow-hidden outline-none`}
         >
-          {/* One band of chrome, two lines: the scope strip and the field. The
-              strip is borderless so the band draws ONE hairline, under the
-              field — the active tab's own underline is the only mark between
-              the two lines. */}
-          <div className="border-b border-[color:var(--border-default)]">
+          {/* One band of chrome, two lines: the scope strip and the field. No
+              rule under the field: the palette is an overlay, so space
+              separates the band from the list, and the list's own top fade
+              marks the edge once results scroll beneath it. The active tab's
+              underline is the only mark between the two lines. */}
+          <div>
             <Tabs
               ariaLabel="Search in"
               idPrefix="command-palette"
@@ -1648,12 +1650,10 @@ export default function CommandPalette({
               }}
             />
           ) : (
-            <div
-              id={resultsId}
-              role="listbox"
-              aria-label="Search results"
-              className="max-h-[360px] overflow-y-auto py-1"
-            >
+            // A ScrollArea, so the list's top edge fades only while results are
+            // scrolled beneath the field — the field's band no longer draws a
+            // rule to say where the list starts.
+            <ScrollArea id={resultsId} role="listbox" aria-label="Search results" className="max-h-[360px] py-1">
               {/* An action that failed says so where the person is looking, and
                 the list stays up: a skill whose install was refused must not
                 also make the palette vanish. */}
@@ -1860,7 +1860,7 @@ export default function CommandPalette({
                   </div>
                 ))
               )}
-            </div>
+            </ScrollArea>
           )}
         </div>
       </FocusTrap>

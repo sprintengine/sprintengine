@@ -67,13 +67,13 @@
 }
 
 /* ONE band of chrome above the list, two lines inside it: the scope strip and
- * the field. The band draws the single hairline, under the field; the strip
- * is the tabs component's borderless variant, so the active tab's own accent
- * underline is the only mark between the two lines. Two hairlines here — one
- * under the strip, one under the field — would be the "two stacked bands of
- * chrome" the principles reject on sight. */
+ * the field. No hairline: the palette is an overlay, so space separates the
+ * band from the list, and the list's own top fade (components/scroll-area)
+ * marks the edge once results scroll beneath the field. The strip is the tabs
+ * component's borderless variant, so the active tab's own accent underline is
+ * the only mark between the two lines. */
 .ds-command-palette-band {
-  border-bottom: 1px solid var(--sem-color-border-default);
+  border-bottom: 0;
 }
 
 /* The scope strip: `.ds-tabs.ds-tabs--borderless` (components/tabs), inset so

@@ -27,6 +27,24 @@ none above the buttons: the shell already draws its own edge, and it scrolls as
 one piece (`max-height` on the shell, not on the body), so neither rule would
 even be a scroll affordance. A divided dialog is on the reject-on-sight list.
 
+**A modal that hosts a surface keeps the same rule** (2026-11-10). Settings,
+and any surface the shell floats in a modal, has a title bar, often a rail of
+pages and a body that scrolls on its own. None of the three seams draws a
+hairline:
+
+- **Under the bar, nothing.** The body is a
+  [scroll-area](../scroll-area/component.md), so its top edge fades only
+  while content is scrolled beneath the bar, and goes when the page is back at
+  its start.
+- **Down the rail, nothing.** The rail stands on `bg.app` and the body on
+  `bg.surface`; the change of ground is the seam, and a rule as well said it
+  twice inside a shell that already draws its own edge.
+- **One title, not two.** When the rail picks pages, the bar reads as a
+  breadcrumb — "Settings › General", the surface in `text.muted` and the page
+  in `text.primary` — and the page does not open on a second big title of its
+  own. Its heading stays in the document for a screen reader's outline; its
+  meta and actions ride the bar beside the close.
+
 The shell sits on `bg.surface` — not `bg.surface-raised` — because the scrim
 and `shadow.modal` already do the separating; a tone step on top would be a
 third signal for the same fact.
