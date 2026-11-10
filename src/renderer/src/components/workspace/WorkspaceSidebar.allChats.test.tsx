@@ -221,7 +221,7 @@ test('WorkspaceSidebar.allChats', async () => {
 
     // The setting the Appearance panel writes. The rail reads it and draws the
     // shape; it has no control of its own to click (owner, 2026-09-07).
-    const chooseView = (view: 'projects' | 'all') => {
+    const chooseView = (view: 'projects' | 'date' | 'all') => {
       act(() => {
         useWorkspaceStore.getState().setChatListView(view)
       })
@@ -443,6 +443,61 @@ test('WorkspaceSidebar.allChats', async () => {
       assert.equal(words?.getAttribute('data-pull-request-watch'), 'checks-failed')
       const seat = rowFor('Alpha').querySelector('[role="img"][aria-label^="Watching pull request"]')
       assert.match(seat?.getAttribute('aria-label') ?? '', /144$/, 'the working mark, named for the watch')
+
+      // By date: the same stream, in the same order, cut into a fold per day
+      // the person last wrote in. Which day "3 hours ago" falls in depends on
+      // the hour the suite runs, so the sections expected are read off the
+      // rule (`dateSections.test.ts` holds it on a fixed clock).
+      const { chatDateSectionOf, CHAT_DATE_SECTION_LABEL } = await import('./sidebar/dateSections')
+      chooseView('all')
+      await settle()
+      const streamOrder = streamOrFolderNames()
+      chooseView('date')
+      await settle()
+      assert.deepEqual(streamOrFolderNames(), streamOrder, 'grouping by date moves no row')
+      const lastWrote: Record<string, number> = {
+        Alpha: now - 3 * HOUR,
+        Bravo: now - 26 * HOUR,
+        Charlie: now - 20 * MINUTE,
+      }
+      const expected = new Map<string, string[]>()
+      for (const name of streamOrder) {
+        const section = chatDateSectionOf(lastWrote[name]!, Date.now())
+        expected.set(section, [...(expected.get(section) ?? []), name])
+      }
+      for (const [section, names] of expected) {
+        const body = container.querySelector(`#ws-chats-${section}`)
+        assert.ok(body, `a ${section} section is drawn`)
+        const fold = container.querySelector(`[aria-controls="ws-chats-${section}"]`)
+        assert.match(
+          fold?.textContent ?? '',
+          new RegExp(`${CHAT_DATE_SECTION_LABEL[section as 'today']}\\s*${names.length}`),
+        )
+        assert.deepEqual(
+          [...body.querySelectorAll('[role="treeitem"]')].map((row) =>
+            NAMES.find((name) => row.textContent?.includes(name)),
+          ),
+          names,
+          `the ${section} section holds the chats last written to then`,
+        )
+      }
+      assert.equal(
+        container.querySelectorAll('[id^="ws-chats-"]').length,
+        expected.size,
+        'and no empty section is drawn',
+      )
+      assert.deepEqual(starredNames(), ['Echo'], 'a starred chat stays in Starred')
+      // A section folds like any shelf, and the rest stay open.
+      const [firstSection] = expected.keys()
+      act(() => {
+        container.querySelector<HTMLElement>(`[aria-controls="ws-chats-${firstSection}"]`)!.click()
+      })
+      await settle()
+      assert.equal(container.querySelector(`#ws-chats-${firstSection}`)?.hasAttribute('hidden'), true)
+      assert.equal(
+        container.querySelector(`#ws-chats-${firstSection}`)?.querySelectorAll('[role="treeitem"]').length,
+        0,
+      )
     } finally {
       act(() => {
         root.unmount()
