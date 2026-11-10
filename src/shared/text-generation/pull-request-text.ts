@@ -14,6 +14,7 @@
  * Pure: no I/O. The main process gathers the inputs; tests drive the rest.
  */
 
+import { sliceWhole } from '../slice-whole'
 import { limitSection, namesSomething } from './chat-title'
 import {
   DEFAULT_WRITING_STYLE,
@@ -128,9 +129,9 @@ export function sanitizePullRequestText(title: string | null, body: string): Pul
     .replace(/^['"`“”‘’]+|['"`“”‘’]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-  if (line.length > MAX_PULL_REQUEST_TITLE_LENGTH) line = line.slice(0, MAX_PULL_REQUEST_TITLE_LENGTH).trimEnd()
+  if (line.length > MAX_PULL_REQUEST_TITLE_LENGTH) line = sliceWhole(line, MAX_PULL_REQUEST_TITLE_LENGTH).trimEnd()
   line = line.replace(/[.\s]+$/, '')
   // Any script's letters: a title written in Japanese or Greek is a title.
   if (!namesSomething(line)) return null
-  return { title: line, body: body.trim().slice(0, MAX_PULL_REQUEST_BODY_LENGTH) }
+  return { title: line, body: sliceWhole(body.trim(), MAX_PULL_REQUEST_BODY_LENGTH) }
 }

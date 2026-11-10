@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import type { UsagePricingSource } from '../../shared/usage-report'
@@ -286,8 +286,14 @@ export function createPricingStore(deps: PricingStoreDeps) {
       const path = deps.cacheFile()
       await mkdir(dirname(path), { recursive: true })
       const temporary = `${path}.${process.pid}.tmp`
-      await writeFile(temporary, JSON.stringify({ fetchedAt, document } satisfies PricesFile), 'utf8')
-      await rename(temporary, path)
+      try {
+        await writeFile(temporary, JSON.stringify({ fetchedAt, document } satisfies PricesFile), 'utf8')
+        await rename(temporary, path)
+      } catch (error) {
+        // A failed write or rename leaves the temporary behind.
+        await rm(temporary, { force: true }).catch(() => undefined)
+        throw error
+      }
       return true
     } catch {
       return false

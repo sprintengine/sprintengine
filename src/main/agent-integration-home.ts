@@ -371,8 +371,14 @@ async function writeMarker(root: string, version: string, hookRunner: string): P
   const path = join(root, MARKER_FILE)
   const temp = `${path}.${process.pid}.tmp`
   const body = `${JSON.stringify({ plugin: STUDIO_PLUGIN_ID, version, layout: AGENT_INTEGRATION_LAYOUT, hookRunner, installedAt: new Date().toISOString() }, null, 2)}\n`
-  await writeFile(temp, body, 'utf8')
-  await rename(temp, path)
+  try {
+    await writeFile(temp, body, 'utf8')
+    await rename(temp, path)
+  } catch (error) {
+    // A failed write or rename leaves the temporary behind.
+    await rm(temp, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 function describe(error: unknown): string {

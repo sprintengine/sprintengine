@@ -166,6 +166,7 @@ test('skillsSurfaceModel', async () => {
     assert.equal(formatSkillFileSize(900), '900 B')
     assert.equal(formatSkillFileSize(2048), '2.0 KB')
     assert.equal(formatSkillFileSize(5 * 1024 * 1024), '5.0 MB')
+    assert.equal(formatSkillFileSize(1024 * 1024 - 1), '1.0 MB')
   })
 
   // ── The reader ───────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, stat, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'fs/promises'
 import { homedir } from 'os'
 import { dirname, join } from 'path'
 
@@ -107,8 +107,14 @@ export async function readDesignSystemRegistry(registryPath: string): Promise<De
 async function writeDesignSystemRegistry(registryPath: string, registry: DesignSystemRegistryFile): Promise<void> {
   await mkdir(dirname(registryPath), { recursive: true })
   const temporary = `${registryPath}.tmp`
-  await writeFile(temporary, `${JSON.stringify(registry, null, 2)}\n`, 'utf8')
-  await rename(temporary, registryPath)
+  try {
+    await writeFile(temporary, `${JSON.stringify(registry, null, 2)}\n`, 'utf8')
+    await rename(temporary, registryPath)
+  } catch (error) {
+    // A failed write or rename leaves the temporary behind.
+    await rm(temporary, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 async function statKind(path: string): Promise<'dir' | 'file' | 'missing' | 'unreadable'> {

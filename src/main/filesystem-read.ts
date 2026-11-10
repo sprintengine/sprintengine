@@ -135,6 +135,7 @@ export function looksLikeBinary(content: Buffer): boolean {
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   const kib = bytes / 1024
-  if (kib < 1024) return `${kib.toFixed(1)} KiB`
+  // Rounded first, so just under a MiB reads 1.0 MiB, not 1024.0 KiB.
+  if (Number(kib.toFixed(1)) < 1024) return `${kib.toFixed(1)} KiB`
   return `${(kib / 1024).toFixed(1)} MiB`
 }
