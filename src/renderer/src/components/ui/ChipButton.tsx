@@ -90,7 +90,10 @@ const EDGE: Record<ChipVariant, string> = {
     'border border-[color:var(--border-default)] hover:border-[color:var(--border-strong)] ' +
     'disabled:hover:border-[color:var(--border-default)]',
   raised: '',
-  pill: '',
+  // A hairline at rest as well as thrown, so choosing a pill does not resize
+  // the row. Only its colour changes: transparent at rest (RESTING_GROUND),
+  // the tab pill's edge once thrown.
+  pill: 'border',
 }
 
 // The ground it rests on while NOT thrown. Each branch declares `bg-` and
@@ -109,8 +112,10 @@ const RESTING_GROUND: Record<ChipVariant, string> = {
     'bg-transparent hover:bg-[color:var(--bg-hover)] enabled:active:bg-[color:var(--bg-active)] ' +
     'disabled:hover:bg-transparent',
   // A filter pill rests on the well, so a line of them reads as a set of
-  // choices before any is chosen; the chosen one takes the selection fill.
-  pill: 'bg-[color:var(--bg-well)] hover:bg-[color:var(--bg-hover)] disabled:hover:bg-[color:var(--bg-well)]',
+  // choices before any is chosen; the chosen one is the tab pill, raised.
+  pill:
+    'border-transparent bg-[color:var(--bg-well)] hover:bg-[color:var(--bg-hover)] ' +
+    'disabled:hover:bg-[color:var(--bg-well)]',
 }
 
 // The toolbar chip's default ink is the ghost button's, not the inline chip's:
@@ -171,6 +176,13 @@ const THROWN: Record<ChipTone, string> = {
     'hover:bg-[color:var(--tone-error-soft)] disabled:hover:bg-[color:var(--tone-error-soft)]',
 }
 
+// A filter pill thrown is a tab chosen — the catalogue's sources and the diff's
+// branch steps are `role="tab"` — so it wears the pill every tab strip wears
+// (`tab-pill--selected`, index.css). The warning tones keep their own fill.
+function thrownClasses(variant: ChipVariant, tone: ChipTone): string {
+  return variant === 'pill' && (tone === 'subtle' || tone === 'neutral') ? 'tab-pill--selected' : THROWN[tone]
+}
+
 export type ChipButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ChipVariant
   tone?: ChipTone
@@ -224,7 +236,7 @@ export const ChipButton = React.forwardRef<HTMLButtonElement, ChipButtonProps>(f
         'interactive inline-flex min-w-0 items-center font-medium transition-colors',
         SHAPE[variant],
         EDGE[variant],
-        thrown ? THROWN[tone] : `${RESTING_GROUND[variant]} ${tint ? '' : restingInk(variant, tone)}`,
+        thrown ? thrownClasses(variant, tone) : `${RESTING_GROUND[variant]} ${tint ? '' : restingInk(variant, tone)}`,
         'disabled:cursor-not-allowed disabled:opacity-45',
         FOCUS_RING_CLASS,
         className ?? '',

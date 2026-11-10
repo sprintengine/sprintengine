@@ -89,11 +89,13 @@ ones off its edge were sources nobody found.
 
 It takes `size.control.sm`, a full radius, the `space.lg` inset and a
 `font.size.meta` label, and rests on `bg.well` so the line reads as a set of
-choices before any is chosen. The chosen pill takes the neutral selection fill,
-as every thrown chip does. A line of them holds as many as fit and folds the
-rest into a **More** pill that opens a menu; it never scrolls.
+choices before any is chosen. The chosen pill is the [tab](../tabs/component.md)
+pill, raised on its own surface, because a filter pill that switches a panel is a
+tab; the warning tones keep their tint. A line of them holds as many as fit and
+folds the rest into a **More** pill that opens a menu; it never scrolls.
 
-A line of pills that switches a panel is a **tablist**: each pill is a
+The diff's branch steps wear it too, one pill to a commit. A line of pills that
+switches a panel is a **tablist**: each pill is a
 `role="tab"` with `aria-selected` and `aria-controls`, the arrow keys walk the
 pills the line shows, and `aria-current` is not used.
 

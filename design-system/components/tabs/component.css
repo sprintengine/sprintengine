@@ -1,57 +1,50 @@
 /* Tabs — the view switcher inside a panel. Extracted from the shipped Tabs
  * primitive (src/renderer/src/components/ui/Tabs.tsx).
  *
- * Family contract: the active tab is an ink lift plus a 1px accent hairline
- * underline — never an accent fill, a tinted pill, or a raised card. The
- * conformance tests lock this: hairlines are the only elements allowed to
- * carry accent fill. Hover is an ink change only; the underline idiom marks
- * tabs, not a background. */
+ * Family contract (owner ruling 2026-11-09): every tab is a pill. The active
+ * tab is raised on its own small surface: a subtle hairline, the surface
+ * ground, the popover shadow, strong ink at medium weight. The others are the
+ * same shape with no edge and no ground until the pointer finds them. Never an
+ * accent fill: the conformance tests hold the accent to hairlines. */
 
 .ds-tabs {
   display: flex;
   align-items: center;
-  gap: var(--sem-space-3xs);
+  gap: var(--sem-space-2xs);
+  padding-block: var(--sem-space-2xs);
   border-bottom: 1px solid var(--sem-color-border-default);
 }
 
 /* A parent container owns the row border — needed when the tab row shares
- * its band with trailing inline controls. One chrome band, one line. */
+ * its band with trailing inline controls. One chrome band, one line. The band
+ * centres the strip, so the row keeps none of its own block padding. */
 .ds-tabs--borderless {
+  padding-block: 0;
   border-bottom: 0;
 }
 
-/* …and then the tab must NOT pull itself a pixel past its own box: the line it
- * would be reaching for belongs to a band it is only a passenger in, and that
- * band's overflow container clips the overhang — which is exactly the pixel the
- * active underline lives in. A borderless strip's underline sits on the tab's
- * own bottom edge. */
-.ds-tabs--borderless .ds-tab {
-  margin-bottom: 0;
-}
-
-/* Each tab overlaps the row hairline by 1px so its underline draws ON the
- * border rather than stacking a second line above it. */
 .ds-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--sem-space-xs);
   box-sizing: border-box;
-  height: var(--sem-size-control-sm);
-  /* ds-lint-allow: -1px is the row hairline's own width, not a spacing step —
-   * the tab overlaps the border so its underline draws on it, not above it */
-  margin-bottom: -1px;
+  height: var(--sem-size-control-xs);
   padding: 0 var(--sem-space-lg);
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sem-radius-pill);
   background: transparent;
   color: var(--sem-color-text-muted);
   font-family: var(--sem-font-family-ui);
   font-size: var(--sem-font-size-meta);
   cursor: pointer;
-  transition: color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard);
+  transition:
+    color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard),
+    background-color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard);
 }
 
-.ds-tab:hover {
+.ds-tab:hover:not(:disabled):not([aria-selected='true']) {
+  background: var(--sem-color-bg-hover);
   color: var(--sem-color-text-primary);
 }
 
@@ -66,15 +59,19 @@
 }
 
 .ds-tab[aria-selected='true'] {
+  border-color: var(--sem-color-border-subtle);
+  background: var(--sem-color-bg-surface);
+  box-shadow: var(--sem-shadow-popover);
   color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-medium);
 }
 
 /* The corner count: what is waiting INSIDE this tab, as the badge component's
  * count species. Docked here rather than by the badge's own `--corner` mode,
  * which hangs the counter outside its trigger — and outside a tab is the
- * strip's overflow container, the same clip that ate the active underline.
- * The tab reserves trailing room for it (`.ds-tab--badged`) and it sits in
- * that room, still the top-right corner, drawn where it survives.
+ * strip's overflow container, which clips it. The tab reserves trailing room
+ * for it (`.ds-tab--badged`) and it sits in that room, still the top-right
+ * corner, drawn where it survives.
  *
  * No keyline either: `--corner`'s ring exists to lift the badge off the glyph
  * it covers, and this one covers nothing but the band. */
@@ -111,29 +108,12 @@
   color: var(--sem-color-text-muted);
 }
 
-/* The active marker: a 1px accent hairline inset from each end so it marks
- * the label, not the hit area. Transparent at rest so activation never
- * reflows the row. */
-.ds-tab-underline {
-  position: absolute;
-  bottom: 0;
-  left: var(--sem-space-sm);
-  right: var(--sem-space-sm);
-  height: 1px;
-  background: transparent;
-}
-
-.ds-tab[aria-selected='true'] .ds-tab-underline {
-  background: var(--sem-color-accent-primary);
-}
-
 /* ── Reorderable ─────────────────────────────────────────────────────────
  * A strip whose order is the person's (the workspace pane): a tab dragged
- * sideways is dropped into a slot between two tabs. The slot is marked in the
- * active underline's own accent stood on end, the one accent the strip is
- * allowed, so a drop target never reads as a second selection. It is 2px where
- * the underline is 1px: on end it is a tab's height at most, and a hairline
- * that short was lost against the gap between two tabs. The marker is
+ * sideways is dropped into a slot between two tabs. The slot is marked by a 2px
+ * accent bar stood on end, the one accent the strip is allowed, so a drop
+ * target never reads as a second selection. Two pixels, because a tab's height
+ * of hairline was lost against the gap between two tabs. The marker is
  * positioned by the host against the list, centred on the edge of the tab it
  * lands before. The tab being carried is faded to the disabled opacity so the
  * strip says which one is moving. */
@@ -147,8 +127,8 @@
 
 .ds-tab-drop-marker {
   position: absolute;
-  top: var(--sem-space-2xs);
-  bottom: var(--sem-space-2xs);
+  top: var(--sem-space-3xs);
+  bottom: var(--sem-space-3xs);
   width: var(--sem-space-3xs);
   transform: translateX(-50%);
   background: var(--sem-color-accent-primary);
@@ -175,8 +155,10 @@
   padding: 0;
 }
 
-/* Icon-only tabs step the glyph up to the toolbar size: here the glyph IS the
- * control, not a mark beside the word that is. */
+/* Wider than the pill is tall (`size.control.sm` by `size.control.xs`), so an
+ * icon-only tab stays a pill rather than becoming a disc. Icon-only tabs step
+ * the glyph up to the toolbar size: here the glyph IS the control, not a mark
+ * beside the word that is. */
 .ds-tabs--icon-only .ds-tab-icon svg {
   width: var(--sem-icon-size-sm);
   height: var(--sem-icon-size-sm);
@@ -208,6 +190,7 @@
 .ds-tabs-scroller {
   overflow-x: auto;
   overflow-y: hidden;
+  padding-inline: var(--sem-space-2xs);
   scrollbar-width: none;
   -ms-overflow-style: none;
 }

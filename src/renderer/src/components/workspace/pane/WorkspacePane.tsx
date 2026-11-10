@@ -243,21 +243,25 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
       aria-label={workspaceName ? `${workspaceName} pane` : 'Workspace pane'}
       data-control-tab-scope
       {...{ [WORKSPACE_PANE_DATA_ATTRIBUTE]: workspaceId }}
-      className="flex h-full min-h-0 flex-col"
+      className="relative flex h-full min-h-0 flex-col"
     >
+      {/* The card's ground runs to the top of the window behind the strip, so
+          the column is one piece from the window's top edge to its foot. It is
+          the ground and not the card that goes up: the strip keeps its row, and
+          a terminal or a browser under it keeps its size. */}
+      <div
+        aria-hidden="true"
+        className="absolute bottom-[var(--shell-card-gap)] left-[var(--shell-card-gap)] right-[var(--shell-card-gap)] top-0 rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)]"
+      />
       {/* The strip: the pane's one band of chrome, on the header's 36px
-          baseline. Its empty run drags the window; the tabs and the controls
-          opt out. `chrome-bar` joins it to the window's top band, and the band
-          draws no bottom hairline any more (owner, 2026-09-09: no divider under
-          the bar) — the rounded card below is the edge. The active tab's
-          underline still sits on the strip's bottom edge; it now draws on the
-          gap between the strip and the card rather than on a rule. */}
+          baseline, standing on the card. Its empty run drags the window; the
+          tabs and the controls opt out. */}
       {/* The strip is clipped to nothing by a collapsed column, but a collapsed
           column stays INTERACTIVE while a tab is floating (the player paints
           outside it), so the strip has to take itself out of the tab order —
           otherwise focus lands in chrome nobody can see. */}
       <div
-        className={`chrome-bar app-drag h-[36px] shrink-0 items-end pl-1.5 pr-1 ${narrow && showsMenu ? 'hidden' : 'flex'}`}
+        className={`app-drag relative h-[36px] shrink-0 items-end pl-1.5 pr-1 ${narrow && showsMenu ? 'hidden' : 'flex'}`}
         inert={collapsedWithFloatingPlayer}
       >
         {/* A tool's strip: Back to the menu, then a glyph per open tab, which is
@@ -281,7 +285,7 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
                 tabs need, so the "+" after it sits right of the last tab, and
                 the empty run after that is the spacer's, which drags the
                 window. */}
-            <TabsScroller className="flex min-w-0 flex-initial items-end self-stretch">
+            <TabsScroller className="flex min-w-0 flex-initial items-center self-stretch">
               <Tabs
                 ariaLabel="Pane tabs"
                 className="app-no-drag"
@@ -371,18 +375,13 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
           }
         />
       </div>
-      {/* The pane's body is its own card: the 36px strip above it belongs to
-          the window's frosted band, not to this column, so the body starts at
-          the same y as the workspace card beside it and rounds the same way.
-          `overflow-hidden` is what clips a terminal or a browser to the
+      {/* The pane's body continues the card under the strip, so only its foot
+          rounds. `overflow-hidden` is what clips a terminal or a browser to the
           corners. The gap toward the workspace card is this card's own margin
           and reads --shell-card-gap, the same token the sidebar card uses on
           its other side, so the two gaps in the shell cannot drift apart. It
-          takes the same gap on its RIGHT, against the window edge, so the frost
-          frames the card on all four sides rather than three. The 36px strip
-          above is deliberately not inset: it belongs to the band, and the band
-          runs to the window edge. */}
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)] ml-[var(--shell-card-gap)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)]">
+          takes the same gap on its RIGHT, against the window edge. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-b-[var(--shell-card-radius)] ml-[var(--shell-card-gap)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)]">
         {tabs.length > 0 ? (
           <WorkspacePaneBody
             workspaceId={workspaceId}
@@ -423,7 +422,6 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
                   onOpenChange={setAddMenuOpen}
                 />
               }
-              onClose={closePane}
             />
           </div>
         ) : null}

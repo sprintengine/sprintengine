@@ -94,8 +94,16 @@ export function TruncatedText({
 
   if (!overflowing) return element
 
+  // `max-w-full` holds the wrapper to the width the bare element had. In a column
+  // that centres its children the wrapper would otherwise grow to the text's own
+  // width, so the text would fit, the tooltip would come off, the text would clip
+  // again, and the two layouts would swap every frame.
   return (
-    <Tooltip content={text} placement={placement} wrapperClassName={multiline ? 'block min-w-0' : 'flex min-w-0'}>
+    <Tooltip
+      content={text}
+      placement={placement}
+      wrapperClassName={multiline ? 'block min-w-0 max-w-full' : 'flex min-w-0 max-w-full'}
+    >
       {element}
     </Tooltip>
   )

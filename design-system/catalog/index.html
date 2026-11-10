@@ -3082,6 +3082,8 @@ code {
   height: var(--sem-size-control-sm);
   padding: 0 var(--sem-space-lg);
   gap: var(--sem-space-xs);
+  /* Transparent at rest and held there, so being chosen does not resize the row. */
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--sem-color-bg-well);
   color: var(--sem-color-text-muted);
@@ -3090,6 +3092,16 @@ code {
 }
 
 .ds-chip-button--pill:hover:not(:disabled):not([aria-pressed='true']):not([aria-current='true']) {
+  color: var(--sem-color-text-primary);
+}
+
+/* Chosen, a filter pill is a chosen tab: the same raised pill the tab strips
+ * wear (tabs/component.css), not the neutral selection fill. */
+.ds-chip-button--pill[aria-pressed='true'],
+.ds-chip-button--pill[aria-current='true'] {
+  border-color: var(--sem-color-border-subtle);
+  background: var(--sem-color-bg-surface);
+  box-shadow: var(--sem-shadow-popover);
   color: var(--sem-color-text-primary);
 }
 
@@ -9042,57 +9054,50 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 /* Tabs — the view switcher inside a panel. Extracted from the shipped Tabs
  * primitive (src/renderer/src/components/ui/Tabs.tsx).
  *
- * Family contract: the active tab is an ink lift plus a 1px accent hairline
- * underline — never an accent fill, a tinted pill, or a raised card. The
- * conformance tests lock this: hairlines are the only elements allowed to
- * carry accent fill. Hover is an ink change only; the underline idiom marks
- * tabs, not a background. */
+ * Family contract (owner ruling 2026-11-09): every tab is a pill. The active
+ * tab is raised on its own small surface: a subtle hairline, the surface
+ * ground, the popover shadow, strong ink at medium weight. The others are the
+ * same shape with no edge and no ground until the pointer finds them. Never an
+ * accent fill: the conformance tests hold the accent to hairlines. */
 
 .ds-tabs {
   display: flex;
   align-items: center;
-  gap: var(--sem-space-3xs);
+  gap: var(--sem-space-2xs);
+  padding-block: var(--sem-space-2xs);
   border-bottom: 1px solid var(--sem-color-border-default);
 }
 
 /* A parent container owns the row border — needed when the tab row shares
- * its band with trailing inline controls. One chrome band, one line. */
+ * its band with trailing inline controls. One chrome band, one line. The band
+ * centres the strip, so the row keeps none of its own block padding. */
 .ds-tabs--borderless {
+  padding-block: 0;
   border-bottom: 0;
 }
 
-/* …and then the tab must NOT pull itself a pixel past its own box: the line it
- * would be reaching for belongs to a band it is only a passenger in, and that
- * band's overflow container clips the overhang — which is exactly the pixel the
- * active underline lives in. A borderless strip's underline sits on the tab's
- * own bottom edge. */
-.ds-tabs--borderless .ds-tab {
-  margin-bottom: 0;
-}
-
-/* Each tab overlaps the row hairline by 1px so its underline draws ON the
- * border rather than stacking a second line above it. */
 .ds-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--sem-space-xs);
   box-sizing: border-box;
-  height: var(--sem-size-control-sm);
-  /* ds-lint-allow: -1px is the row hairline's own width, not a spacing step —
-   * the tab overlaps the border so its underline draws on it, not above it */
-  margin-bottom: -1px;
+  height: var(--sem-size-control-xs);
   padding: 0 var(--sem-space-lg);
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sem-radius-pill);
   background: transparent;
   color: var(--sem-color-text-muted);
   font-family: var(--sem-font-family-ui);
   font-size: var(--sem-font-size-meta);
   cursor: pointer;
-  transition: color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard);
+  transition:
+    color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard),
+    background-color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard);
 }
 
-.ds-tab:hover {
+.ds-tab:hover:not(:disabled):not([aria-selected='true']) {
+  background: var(--sem-color-bg-hover);
   color: var(--sem-color-text-primary);
 }
 
@@ -9107,15 +9112,19 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 }
 
 .ds-tab[aria-selected='true'] {
+  border-color: var(--sem-color-border-subtle);
+  background: var(--sem-color-bg-surface);
+  box-shadow: var(--sem-shadow-popover);
   color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-medium);
 }
 
 /* The corner count: what is waiting INSIDE this tab, as the badge component's
  * count species. Docked here rather than by the badge's own `--corner` mode,
  * which hangs the counter outside its trigger — and outside a tab is the
- * strip's overflow container, the same clip that ate the active underline.
- * The tab reserves trailing room for it (`.ds-tab--badged`) and it sits in
- * that room, still the top-right corner, drawn where it survives.
+ * strip's overflow container, which clips it. The tab reserves trailing room
+ * for it (`.ds-tab--badged`) and it sits in that room, still the top-right
+ * corner, drawn where it survives.
  *
  * No keyline either: `--corner`'s ring exists to lift the badge off the glyph
  * it covers, and this one covers nothing but the band. */
@@ -9152,29 +9161,12 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   color: var(--sem-color-text-muted);
 }
 
-/* The active marker: a 1px accent hairline inset from each end so it marks
- * the label, not the hit area. Transparent at rest so activation never
- * reflows the row. */
-.ds-tab-underline {
-  position: absolute;
-  bottom: 0;
-  left: var(--sem-space-sm);
-  right: var(--sem-space-sm);
-  height: 1px;
-  background: transparent;
-}
-
-.ds-tab[aria-selected='true'] .ds-tab-underline {
-  background: var(--sem-color-accent-primary);
-}
-
 /* ── Reorderable ─────────────────────────────────────────────────────────
  * A strip whose order is the person's (the workspace pane): a tab dragged
- * sideways is dropped into a slot between two tabs. The slot is marked in the
- * active underline's own accent stood on end, the one accent the strip is
- * allowed, so a drop target never reads as a second selection. It is 2px where
- * the underline is 1px: on end it is a tab's height at most, and a hairline
- * that short was lost against the gap between two tabs. The marker is
+ * sideways is dropped into a slot between two tabs. The slot is marked by a 2px
+ * accent bar stood on end, the one accent the strip is allowed, so a drop
+ * target never reads as a second selection. Two pixels, because a tab's height
+ * of hairline was lost against the gap between two tabs. The marker is
  * positioned by the host against the list, centred on the edge of the tab it
  * lands before. The tab being carried is faded to the disabled opacity so the
  * strip says which one is moving. */
@@ -9188,8 +9180,8 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 
 .ds-tab-drop-marker {
   position: absolute;
-  top: var(--sem-space-2xs);
-  bottom: var(--sem-space-2xs);
+  top: var(--sem-space-3xs);
+  bottom: var(--sem-space-3xs);
   width: var(--sem-space-3xs);
   transform: translateX(-50%);
   background: var(--sem-color-accent-primary);
@@ -9216,8 +9208,10 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   padding: 0;
 }
 
-/* Icon-only tabs step the glyph up to the toolbar size: here the glyph IS the
- * control, not a mark beside the word that is. */
+/* Wider than the pill is tall (`size.control.sm` by `size.control.xs`), so an
+ * icon-only tab stays a pill rather than becoming a disc. Icon-only tabs step
+ * the glyph up to the toolbar size: here the glyph IS the control, not a mark
+ * beside the word that is. */
 .ds-tabs--icon-only .ds-tab-icon svg {
   width: var(--sem-icon-size-sm);
   height: var(--sem-icon-size-sm);
@@ -9249,6 +9243,7 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 .ds-tabs-scroller {
   overflow-x: auto;
   overflow-y: hidden;
+  padding-inline: var(--sem-space-2xs);
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -20610,8 +20605,8 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 <p>A composite that has to wear the same box without being one button — the worktree switch is a glyph button and a name field in one box — takes the shell from the shipped primitive's <code>RAISED_CHIP_SHELL</code> export rather than spelling it, so it cannot drift a pixel from the chips beside it.</p>
 <h5>The filter pill, <code>--pill</code> (owner ruling 2026-11-03)</h5>
 <p><strong><code>--pill</code></strong> is a chip that picks <strong>which part of a gallery is shown</strong>: the Extensions catalogue's line of Installed and its sources. The strip of tabs it replaced scrolled sideways once a person had more than a few sources, and the ones off its edge were sources nobody found.</p>
-<p>It takes <code>size.control.sm</code>, a full radius, the <code>space.lg</code> inset and a <code>font.size.meta</code> label, and rests on <code>bg.well</code> so the line reads as a set of choices before any is chosen. The chosen pill takes the neutral selection fill, as every thrown chip does. A line of them holds as many as fit and folds the rest into a <strong>More</strong> pill that opens a menu; it never scrolls.</p>
-<p>A line of pills that switches a panel is a <strong>tablist</strong>: each pill is a <code>role=&quot;tab&quot;</code> with <code>aria-selected</code> and <code>aria-controls</code>, the arrow keys walk the pills the line shows, and <code>aria-current</code> is not used.</p>
+<p>It takes <code>size.control.sm</code>, a full radius, the <code>space.lg</code> inset and a <code>font.size.meta</code> label, and rests on <code>bg.well</code> so the line reads as a set of choices before any is chosen. The chosen pill is the [tab](../tabs/component.md) pill, raised on its own surface, because a filter pill that switches a panel is a tab; the warning tones keep their tint. A line of them holds as many as fit and folds the rest into a <strong>More</strong> pill that opens a menu; it never scrolls.</p>
+<p>The diff's branch steps wear it too, one pill to a commit. A line of pills that switches a panel is a <strong>tablist</strong>: each pill is a <code>role=&quot;tab&quot;</code> with <code>aria-selected</code> and <code>aria-controls</code>, the arrow keys walk the pills the line shows, and <code>aria-current</code> is not used.</p>
 <h5>A row too narrow for its chips</h5>
 <p>A row of raised chips never answers a narrow panel by crushing every chip to a sliver. From 2026-10-01 to 2026-10-04 the conversation composer folded its secondary chips behind a chevron; it no longer needs to. Its row is now the New chat composer's — the &quot;+&quot;, the attached tags, the engine chip and send — short enough to wrap only in a pane narrower than any it is drawn in, and its facts moved to the right-hand panel beside the chat (<code>src/renderer/src/components/workspace/pane/panel/ChatPanel.tsx</code>). The rules the fold kept still hold for whatever answers a narrow row next:</p>
 <ul><li><strong>Measured against the row, not the window.</strong> The same panel width is a different budget depending on what sits beside the panel.</li><li><strong>Nothing is dropped.</strong> A control that leaves the row is reachable from the menu it moved to, doing what it did on the row.</li><li><strong>Mounted once.</strong> A control moves; it is not drawn twice, so there are never two focus targets or two accessible names for one control.</li><li><strong>A standing warning survives.</strong> A chip carrying the warn tone (permissions bypassed) keeps it wherever the control goes — the engine chip wears it now that the permissions are inside its picker.</li></ul>
@@ -20761,6 +20756,8 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
   height: var(--sem-size-control-sm);
   padding: 0 var(--sem-space-lg);
   gap: var(--sem-space-xs);
+  /* Transparent at rest and held there, so being chosen does not resize the row. */
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--sem-color-bg-well);
   color: var(--sem-color-text-muted);
@@ -20769,6 +20766,16 @@ button.ds-inbox-row:not(.ds-inbox-row--selected):hover {
 }
 
 .ds-chip-button--pill:hover:not(:disabled):not([aria-pressed='true']):not([aria-current='true']) {
+  color: var(--sem-color-text-primary);
+}
+
+/* Chosen, a filter pill is a chosen tab: the same raised pill the tab strips
+ * wear (tabs/component.css), not the neutral selection fill. */
+.ds-chip-button--pill[aria-pressed='true'],
+.ds-chip-button--pill[aria-current='true'] {
+  border-color: var(--sem-color-border-subtle);
+  background: var(--sem-color-bg-surface);
+  box-shadow: var(--sem-shadow-popover);
   color: var(--sem-color-text-primary);
 }
 
@@ -45111,7 +45118,6 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
         </span>
         <span>Queue</span>
         <span class="ds-tab-count">12</span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
       <!-- Both numbers at once, saying two different things: 86 items in the
            view (in the reading line), 3 of them waiting on you (above the
@@ -45122,11 +45128,9 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
         <span class="ds-tab-badge" role="status" aria-label="Done: 3 updates available">
           <span class="ds-badge-count ds-badge-count--accent">3</span>
         </span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
       <button type="button" class="ds-tab" role="tab" id="lt-tab-archived" aria-selected="false" aria-controls="lt-panel-archived" tabindex="-1" disabled>
         <span>Archived</span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
     </div>
     <div class="ds-tab-panel" role="tabpanel" id="lt-panel-queue" aria-labelledby="lt-tab-queue" tabindex="0">
@@ -45148,12 +45152,10 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
       <div class="ds-tabs ds-tabs--borderless" role="tablist" aria-label="Run views" data-demo-tabs>
         <button type="button" class="ds-tab" role="tab" id="lb-tab-all" aria-selected="true" aria-controls="lb-panel-all" tabindex="0">
           <span>All</span>
-          <span class="ds-tab-underline" aria-hidden="true"></span>
         </button>
         <button type="button" class="ds-tab" role="tab" id="lb-tab-failed" aria-selected="false" aria-controls="lb-panel-failed" tabindex="-1">
           <span>Failed</span>
           <span class="ds-tab-count">2</span>
-          <span class="ds-tab-underline" aria-hidden="true"></span>
         </button>
       </div>
       <button type="button" class="demo-ghost">Rerun</button>
@@ -45171,15 +45173,12 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
     <div class="ds-tabs ds-tabs--reorderable ds-tabs--dragging" role="tablist" aria-label="Pane tabs">
       <button type="button" class="ds-tab ds-tab--dragged" role="tab" aria-selected="true" tabindex="0">
         <span>Files</span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
       <button type="button" class="ds-tab" role="tab" aria-selected="false" tabindex="-1">
         <span>Terminal</span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
       <button type="button" class="ds-tab" role="tab" aria-selected="false" tabindex="-1">
         <span>Page</span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
       <span class="ds-tab-drop-marker" aria-hidden="true" style="left: 100%"></span>
     </div>
@@ -45187,14 +45186,13 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 </div>
 
 <div class="demo-stage" data-mode="dark">
-  <p class="demo-label">Dark — the same strip; the underline and ink lift come from the same tokens.</p>
+  <p class="demo-label">Dark — the same strip; the raised pill and its ink come from the same tokens.</p>
 
   <div class="demo-panel">
     <div class="ds-tabs" role="tablist" aria-label="Inbox views" data-demo-tabs>
       <button type="button" class="ds-tab" role="tab" id="dk-tab-queue" aria-selected="true" aria-controls="dk-panel-queue" tabindex="0">
         <span>Queue</span>
         <span class="ds-tab-count">12</span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
       <button type="button" class="ds-tab ds-tab--badged" role="tab" id="dk-tab-done" aria-selected="false" aria-controls="dk-panel-done" tabindex="-1">
         <span>Done</span>
@@ -45202,11 +45200,9 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
         <span class="ds-tab-badge" role="status" aria-label="Done: 3 updates available">
           <span class="ds-badge-count ds-badge-count--accent">3</span>
         </span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
       <button type="button" class="ds-tab" role="tab" id="dk-tab-archived" aria-selected="false" aria-controls="dk-panel-archived" tabindex="-1" disabled>
         <span>Archived</span>
-        <span class="ds-tab-underline" aria-hidden="true"></span>
       </button>
     </div>
     <div class="ds-tab-panel" role="tabpanel" id="dk-panel-queue" aria-labelledby="dk-tab-queue" tabindex="0">
@@ -45222,17 +45218,17 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 </div>
 </div>
 <div class="catalog-doc">
-<p>The view switcher inside a panel: a row of peers, exactly one active, the active one marked by an accent hairline underline and an ink lift — never an accent fill. Extracted from the shipped <code>Tabs</code> primitive (<code>src/renderer/src/components/ui/Tabs.tsx</code>), whose underline treatment the conformance tests lock: the only elements allowed to carry accent fill are 1px hairlines.</p>
+<p>The view switcher inside a panel: a row of peers, exactly one active, the active one a pill raised on its own small surface (owner ruling 2026-11-09). Every tab in the product is this pill: the kit's strips, FlexLayout's strips under a split, the pop-out windows, the editor window. Never an accent fill, which the conformance tests lock: the only elements allowed to carry accent fill are hairlines. Extracted from the shipped <code>Tabs</code> primitive (<code>src/renderer/src/components/ui/Tabs.tsx</code>), which wears the app's <code>.tab-pill</code> classes.</p>
 <p>Use tabs when the choices are views of the same content region. Use a segmented control when they are values of a setting, and the context rail when they are destinations.</p>
 <h4>Anatomy</h4>
-<p>| Part        | Class                 | Required                                                                                                                     | | ----------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | | Scroller    | <code>.ds-tabs-scroller</code>   | no — the overflow wrapper: scrolls sideways, never draws a scrollbar, fades each overflowing edge                            | | Tab list    | <code>.ds-tabs</code>            | yes — <code>role=&quot;tablist&quot;</code> with an <code>aria-label</code>, one bottom hairline                                                             | | Tab         | <code>.ds-tab</code>             | yes — <code>role=&quot;tab&quot;</code> buttons, <code>font.size.meta</code>                                                                                 | | Icon        | <code>.ds-tab-icon</code>        | no — a leading glyph, <code>aria-hidden</code>                                                                                          | | Count       | <code>.ds-tab-count</code>       | no — canonical count, tabular, <code>font.size.micro</code>                                                                             | | Badge       | <code>.ds-tab-badge</code>       | no — the <code>badge</code> corner count: what is WAITING in this tab. Needs <code>.ds-tab--badged</code> on the tab for its room                  | | Underline   | <code>.ds-tab-underline</code>   | yes — the 1px active marker, <code>aria-hidden</code>                                                                                   | | Drop marker | <code>.ds-tab-drop-marker</code> | no — on a <code>--reorderable</code> strip mid-drag: a 2px accent bar, upright, at the slot the dragged tab will land in, <code>aria-hidden</code> | | Panel       | <code>.ds-tab-panel</code>       | yes — <code>role=&quot;tabpanel&quot;</code>, a focusable scroll region                                                                           |</p>
-<p>Tabs sit <code>size.control.sm</code> (30px) tall at <code>space.lg</code> inline padding, spaced by <code>space.3xs</code>. Each tab overlaps the row's hairline by 1px so the active underline draws <strong>on</strong> the border, not above it — one line, two meanings. The underline is inset <code>space.sm</code> from each end of its tab: it marks the label, not the hit area.</p>
+<p>| Part        | Class                 | Required                                                                                                                     | | ----------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | | Scroller    | <code>.ds-tabs-scroller</code>   | no — the overflow wrapper: scrolls sideways, never draws a scrollbar, fades each overflowing edge                            | | Tab list    | <code>.ds-tabs</code>            | yes — <code>role=&quot;tablist&quot;</code> with an <code>aria-label</code>, one bottom hairline under the pills                                                             | | Tab         | <code>.ds-tab</code>             | yes — <code>role=&quot;tab&quot;</code> buttons, <code>font.size.meta</code>                                                                                 | | Icon        | <code>.ds-tab-icon</code>        | no — a leading glyph, <code>aria-hidden</code>                                                                                          | | Count       | <code>.ds-tab-count</code>       | no — canonical count, tabular, <code>font.size.micro</code>                                                                             | | Badge       | <code>.ds-tab-badge</code>       | no — the <code>badge</code> corner count: what is WAITING in this tab. Needs <code>.ds-tab--badged</code> on the tab for its room                  | | Drop marker | <code>.ds-tab-drop-marker</code> | no — on a <code>--reorderable</code> strip mid-drag: a 2px accent bar, upright, at the slot the dragged tab will land in, <code>aria-hidden</code> | | Panel       | <code>.ds-tab-panel</code>       | yes — <code>role=&quot;tabpanel&quot;</code>, a focusable scroll region                                                                           |</p>
+<p>Tabs are <code>size.control.xs</code> (26px) pills at <code>space.lg</code> inline padding with a <code>radius.pill</code>, spaced by <code>space.2xs</code>. An unselected tab keeps the pill's transparent 1px edge, so being chosen never reflows the row. The row keeps <code>space.2xs</code> of block padding so a raised pill stands off its hairline.</p>
 <h4>Variants</h4>
-<ul><li><strong>Default</strong> — the row draws its own <code>border.subtle</code>-weight structure with a <code>border.default</code> hairline.</li><li><strong><code>--borderless</code></strong> — no hairline; a parent container owns the row's border. Needed when the tab row shares its band with trailing inline controls — one chrome band, one line. Its tabs also drop the 1px overlap: the line they would reach for is a band they are passengers in, and the band's overflow container clips the overhang — which is the pixel the active underline lives in, so the overlap costs a borderless strip its selection marker entirely.</li><li><strong><code>--badged</code></strong> — the tab reserves <code>space.3xl</code> of trailing room and docks a <code>badge</code> count in its top-right: how many things inside want the person. See &quot;A count on a tab is not a badge on a tab&quot; below. Never on <code>--icon-only</code>, and never on a closable tab — that tab's trailing padding is already spoken for by its close glyph, and two things docked in one corner is neither of them.</li><li><strong><code>--reorderable</code></strong> — the person's order, not the product's (the workspace pane's strip). A tab dragged sideways lands in the slot it is dropped in, and the focused tab moves one place with Alt+Shift+Left/Right. The strip is <code>--dragging</code> while a drag is in flight. See &quot;A reorderable strip&quot; below.</li><li><strong><code>--icon-only</code></strong> — each tab renders its glyph alone on a <code>size.control.sm</code> square, the glyph steps up to <code>icon.size.sm</code>, and the label becomes the tab's accessible name _and_ its tooltip. For a strip on a band that cannot spend width on words — a panel's own chrome row, shared with that panel's actions. Every item must carry an icon.</li></ul>
+<ul><li><strong>Default</strong> — the row draws its own <code>border.subtle</code>-weight structure with a <code>border.default</code> hairline.</li><li><strong><code>--borderless</code></strong> — no hairline; a parent container owns the row's border. Needed when the tab row shares its band with trailing inline controls — one chrome band, one line. It keeps no block padding of its own: the band centres the pills.</li><li><strong><code>--badged</code></strong> — the tab reserves <code>space.3xl</code> of trailing room and docks a <code>badge</code> count in its top-right: how many things inside want the person. See &quot;A count on a tab is not a badge on a tab&quot; below. Never on <code>--icon-only</code>, and never on a closable tab — that tab's trailing padding is already spoken for by its close glyph, and two things docked in one corner is neither of them.</li><li><strong><code>--reorderable</code></strong> — the person's order, not the product's (the workspace pane's strip). A tab dragged sideways lands in the slot it is dropped in, and the focused tab moves one place with Alt+Shift+Left/Right. The strip is <code>--dragging</code> while a drag is in flight. See &quot;A reorderable strip&quot; below.</li><li><strong><code>--icon-only</code></strong> — each tab renders its glyph alone in a short pill (<code>size.control.sm</code> wide, <code>size.control.xs</code> tall), the glyph steps up to <code>icon.size.sm</code>, and the label becomes the tab's accessible name _and_ its tooltip. For a strip on a band that cannot spend width on words — a panel's own chrome row, shared with that panel's actions. Every item must carry an icon.</li></ul>
 <h4>States</h4>
-<p>| State                  | Treatment                                                                                                                                                                                                                                                                                                                                                                                                                                                    | | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | | Rest                   | <code>text.muted</code>, transparent underline                                                                                                                                                                                                                                                                                                                                                                                                                          | | Hover                  | Ink lifts to <code>text.primary</code>. No background — the underline idiom marks tabs, not a fill                                                                                                                                                                                                                                                                                                                                                                      | | Active                 | <code>text.primary</code> + the accent hairline underline. Never an accent fill or a pill                                                                                                                                                                                                                                                                                                                                                                               | | Focus-visible          | <code>focus.ring</code>                                                                                                                                                                                                                                                                                                                                                                                                                                                 | | Disabled               | <code>opacity: 0.5</code>, <code>cursor: not-allowed</code>                                                                                                                                                                                                                                                                                                                                                                                                                        | | Agent                  | An agent is using what the tab shows (driving its page, drawing on its board, editing its file): a 1px inset <code>agent-trail.ink</code> outline on <code>agent-trail.soft</code>, and an &quot;Agent&quot; pill after the label (<code>agent-trail.ink</code> on <code>agent-trail.soft-strong</code>, the Files tree's verb pill). The surface the tab shows wears a 2px inset <code>agent-trail.ink</code> edge (<code>AgentEdge</code>). The tab's accessible name says it (&quot;…: an agent is using this&quot;); the pill is <code>aria-hidden</code> | | Dragging (reorderable) | The strip's cursor is <code>grabbing</code>; the carried tab fades to <code>opacity: 0.5</code> (<code>.ds-tab--dragged</code>); the drop marker stands at the target slot. No marker over the tab's own place, where a drop moves nothing                                                                                                                                                                                                                                                    |</p>
+<p>| State                  | Treatment                                                                                                                                                                                                                                                                                                                                                                                                                                                    | | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | | Rest                   | <code>text.muted</code>, transparent edge and ground. The pill's shape, drawn only once the pointer finds it | | Hover                  | <code>bg.hover</code> fill and ink lifts to <code>text.primary</code> | | Active                 | <code>border.subtle</code> edge on <code>bg.surface</code>, <code>shadow.popover</code>, <code>text.primary</code> at <code>font.weight.medium</code>. Never an accent fill | | Focus-visible          | <code>focus.ring</code>                                                                                                                                                                                                                                                                                                                                                                                                                                                 | | Disabled               | <code>opacity: 0.5</code>, <code>cursor: not-allowed</code>                                                                                                                                                                                                                                                                                                                                                                                                                        | | Agent                  | An agent is using what the tab shows (driving its page, drawing on its board, editing its file): a 1px inset <code>agent-trail.ink</code> outline on <code>agent-trail.soft</code>, and an &quot;Agent&quot; pill after the label (<code>agent-trail.ink</code> on <code>agent-trail.soft-strong</code>, the Files tree's verb pill). The surface the tab shows wears a 2px inset <code>agent-trail.ink</code> edge (<code>AgentEdge</code>). The tab's accessible name says it (&quot;…: an agent is using this&quot;); the pill is <code>aria-hidden</code> | | Dragging (reorderable) | The strip's cursor is <code>grabbing</code>; the carried tab fades to <code>opacity: 0.5</code> (<code>.ds-tab--dragged</code>); the drop marker stands at the target slot. No marker over the tab's own place, where a drop moves nothing                                                                                                                                                                                                                                                    |</p>
 <h4>Usage</h4>
-<p><strong>The underline is the whole treatment.</strong> An active tab is an ink lift plus a 1px accent line. A filled tab, a tinted pill, or a raised card is a second accent idiom and a reject-on-sight.</p>
+<p><strong>The pill is the whole treatment</strong> (owner ruling 2026-11-09). An active tab is a raised pill; an unselected tab is the same shape at rest with no edge and no ground. Every strip wears this one definition, so a tab reads as a tab whichever surface it stands on. An accent fill, a tinted pill or a second underline on top is a reject-on-sight. A strip that has nowhere to spend the width folds its other tabs behind the pill and fans them out on hover or by keyboard, as the workspace's top-row strip does; every tab stays reachable.</p>
 <p><strong>Selection follows focus.</strong> Arrow keys move focus _and_ activate: Left/Right step through enabled tabs with wraparound, Home/End jump to the ends. This is the correct model when switching panels is cheap; if a panel is expensive to mount, keep roving focus but activate on Enter/Space instead — pick one model per product and hold to it.</p>
 <p><strong>Roving tabindex.</strong> Exactly one tab is in the tab order at any time — the active one. Tab from the active tab lands in the panel, not on the next tab.</p>
 <p><strong>Counts are canonical.</strong> A count on a tab is the count of that view. Do not repeat it inside the panel where the two could disagree.</p>
@@ -45240,11 +45236,11 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 <ul><li>the <strong>count</strong> is _how many things are in here_. It rides beside the label, in the reading line, because it is part of what the tab says.</li><li>the <strong>badge</strong> is _how many of them want you_ — updates waiting, work blocked on an answer. It sits above the words, top-right, because it is not part of them. It is the same pip the app rail's squares wear, so &quot;there is news here&quot; is one drawing wherever the product says it.</li></ul>
 <p>A tab can carry both, and a tab reading &quot;SprintEngine Studio 10 ③&quot; is saying two true things. What it must not do is draw the badge at zero: a counter reading &quot;0&quot; is a counter spent saying there is no news. Nor may a tab spend the badge on a fact it cannot count — where a source is known to have moved on but no per-item answer exists yet, that is a mark (a glyph), not a number, and the two never show together on one tab.</p>
 <p><strong>A badged tab names itself.</strong> The counter is a named live region — it has to be, the number moves while the reader is elsewhere — and a named child inside a button joins that button's name-from-contents, so the tab announces as &quot;Studio: 3 updates available Studio 10&quot;. Give a badged tab an explicit accessible name: an explicit name wins over name-from-contents, the tab says its piece once, and the counter goes on announcing its own changes.</p>
-<p><strong>A badge on a tab is docked, not overhung.</strong> The <code>badge</code> component's <code>--corner</code> mode hangs the counter outside its trigger; outside a tab is the scroller's clip, which is the same pixel-eating that costs a borderless strip its underline. <code>--badged</code> reserves room and the badge sits inside it — same corner, drawn where it survives, and with no keyline, since it covers the band rather than a glyph.</p>
-<p><strong>An icon-only tab keeps its name, it just stops drawing it.</strong> The label becomes <code>aria-label</code> and the tooltip, so the word is one hover or one focus away and unchanged for assistive tech. Dropping the label without either is a blank button, and it is the only thing this variant can get wrong. It draws no count at all, and no badge either: a number pinned to a 30px glyph covers the mark it is badging as soon as it reaches two digits, and five badged glyphs is a row of alarms. Put the count in the tooltip beside the name (&quot;Log · 3,057 commits&quot;).</p>
-<p><strong>A strip that can outgrow its band scrolls, it does not squeeze.</strong> Wrap it in <code>.ds-tabs-scroller</code>: tabs stay <code>shrink-0</code>, the row scrolls sideways, and the overflowing edges fade. Never a scrollbar — under a 36px band it is a second horizontal line and a third of the row's height. The host routes a plain vertical wheel to <code>scrollLeft</code>, because a horizontal row has no vertical axis to spend that gesture on.</p>
+<p><strong>A badge on a tab is docked, not overhung.</strong> The <code>badge</code> component's <code>--corner</code> mode hangs the counter outside its trigger; outside a tab is the scroller's clip, which cuts it off. <code>--badged</code> reserves room and the badge sits inside it — same corner, drawn where it survives, and with no keyline, since it covers the band rather than a glyph.</p>
+<p><strong>An icon-only tab keeps its name, it just stops drawing it.</strong> The label becomes <code>aria-label</code> and the tooltip, so the word is one hover or one focus away and unchanged for assistive tech. Dropping the label without either is a blank button, and it is the only thing this variant can get wrong. It draws no count at all, and no badge either: a number pinned to a 30px pill covers the mark it is badging as soon as it reaches two digits, and five badged glyphs is a row of alarms. Put the count in the tooltip beside the name (&quot;Log · 3,057 commits&quot;).</p>
+<p><strong>A strip that can outgrow its band scrolls, it does not squeeze.</strong> Wrap it in <code>.ds-tabs-scroller</code>, which keeps <code>space.2xs</code> of inline padding so a pill's shadow and focus ring are not cut at the clip: tabs stay <code>shrink-0</code>, the row scrolls sideways, and the overflowing edges fade. Never a scrollbar — under a 36px band it is a second horizontal line and a third of the row's height. The host routes a plain vertical wheel to <code>scrollLeft</code>, because a horizontal row has no vertical axis to spend that gesture on.</p>
 <p><strong>A &quot;new tab&quot; control follows the last tab.</strong> It sits directly after the scroller, not at the far end of the band: the scroller takes only its tabs' width (it shrinks, it never grows), and the band's free width goes to a spacer after the control. Once the tabs overflow, the scroller is squeezed to what is left and the control stays in view at its end, never scrolled away with the tabs. The band's other actions (maximise, close) stay at the far end.</p>
-<p><strong>A reorderable strip still clicks</strong> (2026-10-10). A press becomes a drag only once it has travelled 4px sideways; short of that it is the click it always was. The release that ends a drag does not also select the tab it started on — it ended a move, it did not choose a view. A drop counts a tab as &quot;after&quot; once the pointer is past its middle, so a drag never has to reach the far edge of a wide tab. Escape mid-drag puts the tab back. The marker is the active underline's hairline stood on end, never a filled slot or a ghost tab: one accent idiom. Reordering is a separate gesture from dragging a tab out of its strip (to another workspace or window), which uses the platform's drag and drop and is untouched by this one. Opening a tab adds it at the end and leaves the order the person made alone.</p>
+<p><strong>A reorderable strip still clicks</strong> (2026-10-10). A press becomes a drag only once it has travelled 4px sideways; short of that it is the click it always was. The release that ends a drag does not also select the tab it started on — it ended a move, it did not choose a view. A drop counts a tab as &quot;after&quot; once the pointer is past its middle, so a drag never has to reach the far edge of a wide tab. Escape mid-drag puts the tab back. The marker is a 2px accent bar stood on end, never a filled slot or a ghost tab: the one accent the strip spends. Reordering is a separate gesture from dragging a tab out of its strip (to another workspace or window), which uses the platform's drag and drop and is untouched by this one. Opening a tab adds it at the end and leaves the order the person made alone.</p>
 <p><strong>The panel is a tab stop.</strong> It is usually a scroll container, so it takes <code>tabindex=&quot;0&quot;</code> — otherwise keyboard users cannot scroll it. Only the active panel is rendered; inactive panels are unmounted, not hidden.</p>
 <h4>Accessibility</h4>
 <ul><li>The tablist carries a required <code>aria-label</code> naming what the tabs switch (&quot;Inbox views&quot;). Tabs are <code>&lt;button role=&quot;tab&quot;&gt;</code> with <code>aria-selected</code> and <code>aria-controls</code> pointing at their panel's <code>id</code>.</li><li>The panel carries <code>role=&quot;tabpanel&quot;</code> and <code>aria-labelledby</code> pointing back at its tab, so its accessible name is the tab's label.</li><li>The panel's focus indicator is the ring drawn <strong>inward</strong> (a negative <code>focus.ring-offset</code>): it sits at the edge of a scrolling region, where an outward ring is clipped. Without it a focusable panel falls back to the UA outline — the one treatment the system cannot theme.</li><li>Icons on tabs are <code>aria-hidden</code>; the label carries the name. On the <code>--icon-only</code> variant the glyph stays <code>aria-hidden</code> and the label moves to the tab's <code>aria-label</code>, so the accessible name is identical in both variants — the tooltip is the sighted user's version of the same string, and it opens on focus as well as hover.</li><li>An icon-only tab's count lives in its tooltip and its <code>aria-label</code>, not in a badge, so the number is announced once and read once.</li><li>On a reorderable strip, Alt+Shift+Left/Right moves the focused tab one place, without wrapping (a tab moved past the end jumping to the front reads as lost), and focus stays on it so the chord can be pressed again. It does not change which tab is selected.</li><li>Disabled tabs keep their label readable (<code>opacity</code>, not an ink swap to <code>text.disabled</code> alone) and are skipped by arrow navigation.</li></ul>
@@ -45258,57 +45254,50 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 <details class="catalog-source"><summary>components/tabs/component.css</summary><pre><code>/* Tabs — the view switcher inside a panel. Extracted from the shipped Tabs
  * primitive (src/renderer/src/components/ui/Tabs.tsx).
  *
- * Family contract: the active tab is an ink lift plus a 1px accent hairline
- * underline — never an accent fill, a tinted pill, or a raised card. The
- * conformance tests lock this: hairlines are the only elements allowed to
- * carry accent fill. Hover is an ink change only; the underline idiom marks
- * tabs, not a background. */
+ * Family contract (owner ruling 2026-11-09): every tab is a pill. The active
+ * tab is raised on its own small surface: a subtle hairline, the surface
+ * ground, the popover shadow, strong ink at medium weight. The others are the
+ * same shape with no edge and no ground until the pointer finds them. Never an
+ * accent fill: the conformance tests hold the accent to hairlines. */
 
 .ds-tabs {
   display: flex;
   align-items: center;
-  gap: var(--sem-space-3xs);
+  gap: var(--sem-space-2xs);
+  padding-block: var(--sem-space-2xs);
   border-bottom: 1px solid var(--sem-color-border-default);
 }
 
 /* A parent container owns the row border — needed when the tab row shares
- * its band with trailing inline controls. One chrome band, one line. */
+ * its band with trailing inline controls. One chrome band, one line. The band
+ * centres the strip, so the row keeps none of its own block padding. */
 .ds-tabs--borderless {
+  padding-block: 0;
   border-bottom: 0;
 }
 
-/* …and then the tab must NOT pull itself a pixel past its own box: the line it
- * would be reaching for belongs to a band it is only a passenger in, and that
- * band's overflow container clips the overhang — which is exactly the pixel the
- * active underline lives in. A borderless strip's underline sits on the tab's
- * own bottom edge. */
-.ds-tabs--borderless .ds-tab {
-  margin-bottom: 0;
-}
-
-/* Each tab overlaps the row hairline by 1px so its underline draws ON the
- * border rather than stacking a second line above it. */
 .ds-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--sem-space-xs);
   box-sizing: border-box;
-  height: var(--sem-size-control-sm);
-  /* ds-lint-allow: -1px is the row hairline's own width, not a spacing step —
-   * the tab overlaps the border so its underline draws on it, not above it */
-  margin-bottom: -1px;
+  height: var(--sem-size-control-xs);
   padding: 0 var(--sem-space-lg);
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: var(--sem-radius-pill);
   background: transparent;
   color: var(--sem-color-text-muted);
   font-family: var(--sem-font-family-ui);
   font-size: var(--sem-font-size-meta);
   cursor: pointer;
-  transition: color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard);
+  transition:
+    color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard),
+    background-color var(--sem-motion-duration-fast) var(--sem-motion-ease-standard);
 }
 
-.ds-tab:hover {
+.ds-tab:hover:not(:disabled):not([aria-selected='true']) {
+  background: var(--sem-color-bg-hover);
   color: var(--sem-color-text-primary);
 }
 
@@ -45323,15 +45312,19 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 }
 
 .ds-tab[aria-selected='true'] {
+  border-color: var(--sem-color-border-subtle);
+  background: var(--sem-color-bg-surface);
+  box-shadow: var(--sem-shadow-popover);
   color: var(--sem-color-text-primary);
+  font-weight: var(--sem-font-weight-medium);
 }
 
 /* The corner count: what is waiting INSIDE this tab, as the badge component's
  * count species. Docked here rather than by the badge's own `--corner` mode,
  * which hangs the counter outside its trigger — and outside a tab is the
- * strip's overflow container, the same clip that ate the active underline.
- * The tab reserves trailing room for it (`.ds-tab--badged`) and it sits in
- * that room, still the top-right corner, drawn where it survives.
+ * strip's overflow container, which clips it. The tab reserves trailing room
+ * for it (`.ds-tab--badged`) and it sits in that room, still the top-right
+ * corner, drawn where it survives.
  *
  * No keyline either: `--corner`'s ring exists to lift the badge off the glyph
  * it covers, and this one covers nothing but the band. */
@@ -45368,29 +45361,12 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
   color: var(--sem-color-text-muted);
 }
 
-/* The active marker: a 1px accent hairline inset from each end so it marks
- * the label, not the hit area. Transparent at rest so activation never
- * reflows the row. */
-.ds-tab-underline {
-  position: absolute;
-  bottom: 0;
-  left: var(--sem-space-sm);
-  right: var(--sem-space-sm);
-  height: 1px;
-  background: transparent;
-}
-
-.ds-tab[aria-selected='true'] .ds-tab-underline {
-  background: var(--sem-color-accent-primary);
-}
-
 /* ── Reorderable ─────────────────────────────────────────────────────────
  * A strip whose order is the person's (the workspace pane): a tab dragged
- * sideways is dropped into a slot between two tabs. The slot is marked in the
- * active underline's own accent stood on end, the one accent the strip is
- * allowed, so a drop target never reads as a second selection. It is 2px where
- * the underline is 1px: on end it is a tab's height at most, and a hairline
- * that short was lost against the gap between two tabs. The marker is
+ * sideways is dropped into a slot between two tabs. The slot is marked by a 2px
+ * accent bar stood on end, the one accent the strip is allowed, so a drop
+ * target never reads as a second selection. Two pixels, because a tab's height
+ * of hairline was lost against the gap between two tabs. The marker is
  * positioned by the host against the list, centred on the edge of the tab it
  * lands before. The tab being carried is faded to the disabled opacity so the
  * strip says which one is moving. */
@@ -45404,8 +45380,8 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 
 .ds-tab-drop-marker {
   position: absolute;
-  top: var(--sem-space-2xs);
-  bottom: var(--sem-space-2xs);
+  top: var(--sem-space-3xs);
+  bottom: var(--sem-space-3xs);
   width: var(--sem-space-3xs);
   transform: translateX(-50%);
   background: var(--sem-color-accent-primary);
@@ -45432,8 +45408,10 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
   padding: 0;
 }
 
-/* Icon-only tabs step the glyph up to the toolbar size: here the glyph IS the
- * control, not a mark beside the word that is. */
+/* Wider than the pill is tall (`size.control.sm` by `size.control.xs`), so an
+ * icon-only tab stays a pill rather than becoming a disc. Icon-only tabs step
+ * the glyph up to the toolbar size: here the glyph IS the control, not a mark
+ * beside the word that is. */
 .ds-tabs--icon-only .ds-tab-icon svg {
   width: var(--sem-icon-size-sm);
   height: var(--sem-icon-size-sm);
@@ -45465,6 +45443,7 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 .ds-tabs-scroller {
   overflow-x: auto;
   overflow-y: hidden;
+  padding-inline: var(--sem-space-2xs);
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -45603,7 +45582,6 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
         &lt;/span&gt;
         &lt;span&gt;Queue&lt;/span&gt;
         &lt;span class=&quot;ds-tab-count&quot;&gt;12&lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
       &lt;!-- Both numbers at once, saying two different things: 86 items in the
            view (in the reading line), 3 of them waiting on you (above the
@@ -45614,11 +45592,9 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
         &lt;span class=&quot;ds-tab-badge&quot; role=&quot;status&quot; aria-label=&quot;Done: 3 updates available&quot;&gt;
           &lt;span class=&quot;ds-badge-count ds-badge-count--accent&quot;&gt;3&lt;/span&gt;
         &lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-tab&quot; role=&quot;tab&quot; id=&quot;lt-tab-archived&quot; aria-selected=&quot;false&quot; aria-controls=&quot;lt-panel-archived&quot; tabindex=&quot;-1&quot; disabled&gt;
         &lt;span&gt;Archived&lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
     &lt;/div&gt;
     &lt;div class=&quot;ds-tab-panel&quot; role=&quot;tabpanel&quot; id=&quot;lt-panel-queue&quot; aria-labelledby=&quot;lt-tab-queue&quot; tabindex=&quot;0&quot;&gt;
@@ -45640,12 +45616,10 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
       &lt;div class=&quot;ds-tabs ds-tabs--borderless&quot; role=&quot;tablist&quot; aria-label=&quot;Run views&quot; data-demo-tabs&gt;
         &lt;button type=&quot;button&quot; class=&quot;ds-tab&quot; role=&quot;tab&quot; id=&quot;lb-tab-all&quot; aria-selected=&quot;true&quot; aria-controls=&quot;lb-panel-all&quot; tabindex=&quot;0&quot;&gt;
           &lt;span&gt;All&lt;/span&gt;
-          &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
         &lt;/button&gt;
         &lt;button type=&quot;button&quot; class=&quot;ds-tab&quot; role=&quot;tab&quot; id=&quot;lb-tab-failed&quot; aria-selected=&quot;false&quot; aria-controls=&quot;lb-panel-failed&quot; tabindex=&quot;-1&quot;&gt;
           &lt;span&gt;Failed&lt;/span&gt;
           &lt;span class=&quot;ds-tab-count&quot;&gt;2&lt;/span&gt;
-          &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
         &lt;/button&gt;
       &lt;/div&gt;
       &lt;button type=&quot;button&quot; class=&quot;demo-ghost&quot;&gt;Rerun&lt;/button&gt;
@@ -45663,15 +45637,12 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
     &lt;div class=&quot;ds-tabs ds-tabs--reorderable ds-tabs--dragging&quot; role=&quot;tablist&quot; aria-label=&quot;Pane tabs&quot;&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-tab ds-tab--dragged&quot; role=&quot;tab&quot; aria-selected=&quot;true&quot; tabindex=&quot;0&quot;&gt;
         &lt;span&gt;Files&lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-tab&quot; role=&quot;tab&quot; aria-selected=&quot;false&quot; tabindex=&quot;-1&quot;&gt;
         &lt;span&gt;Terminal&lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-tab&quot; role=&quot;tab&quot; aria-selected=&quot;false&quot; tabindex=&quot;-1&quot;&gt;
         &lt;span&gt;Page&lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
       &lt;span class=&quot;ds-tab-drop-marker&quot; aria-hidden=&quot;true&quot; style=&quot;left: 100%&quot;&gt;&lt;/span&gt;
     &lt;/div&gt;
@@ -45679,14 +45650,13 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
 &lt;/div&gt;
 
 &lt;div class=&quot;demo-stage&quot; data-mode=&quot;dark&quot;&gt;
-  &lt;p class=&quot;demo-label&quot;&gt;Dark — the same strip; the underline and ink lift come from the same tokens.&lt;/p&gt;
+  &lt;p class=&quot;demo-label&quot;&gt;Dark — the same strip; the raised pill and its ink come from the same tokens.&lt;/p&gt;
 
   &lt;div class=&quot;demo-panel&quot;&gt;
     &lt;div class=&quot;ds-tabs&quot; role=&quot;tablist&quot; aria-label=&quot;Inbox views&quot; data-demo-tabs&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-tab&quot; role=&quot;tab&quot; id=&quot;dk-tab-queue&quot; aria-selected=&quot;true&quot; aria-controls=&quot;dk-panel-queue&quot; tabindex=&quot;0&quot;&gt;
         &lt;span&gt;Queue&lt;/span&gt;
         &lt;span class=&quot;ds-tab-count&quot;&gt;12&lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-tab ds-tab--badged&quot; role=&quot;tab&quot; id=&quot;dk-tab-done&quot; aria-selected=&quot;false&quot; aria-controls=&quot;dk-panel-done&quot; tabindex=&quot;-1&quot;&gt;
         &lt;span&gt;Done&lt;/span&gt;
@@ -45694,11 +45664,9 @@ document.querySelectorAll('.ds-segmented-control').forEach((group) =&gt; {
         &lt;span class=&quot;ds-tab-badge&quot; role=&quot;status&quot; aria-label=&quot;Done: 3 updates available&quot;&gt;
           &lt;span class=&quot;ds-badge-count ds-badge-count--accent&quot;&gt;3&lt;/span&gt;
         &lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
       &lt;button type=&quot;button&quot; class=&quot;ds-tab&quot; role=&quot;tab&quot; id=&quot;dk-tab-archived&quot; aria-selected=&quot;false&quot; aria-controls=&quot;dk-panel-archived&quot; tabindex=&quot;-1&quot; disabled&gt;
         &lt;span&gt;Archived&lt;/span&gt;
-        &lt;span class=&quot;ds-tab-underline&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
       &lt;/button&gt;
     &lt;/div&gt;
     &lt;div class=&quot;ds-tab-panel&quot; role=&quot;tabpanel&quot; id=&quot;dk-panel-queue&quot; aria-labelledby=&quot;dk-tab-queue&quot; tabindex=&quot;0&quot;&gt;

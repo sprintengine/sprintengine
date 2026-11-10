@@ -11,10 +11,10 @@ test('notificationStore', async () => {
 
   const STORAGE_KEY = 'sprintengine-notifications'
 
-  function notification(id: string, source: string): AppNotification {
+  function notification(id: string, source: string, level = 'warning'): AppNotification {
     return {
       id,
-      level: 'info',
+      level,
       source,
       title: id,
       message: id,
@@ -46,6 +46,9 @@ test('notificationStore', async () => {
           notification('drop-sprint', 'sprintengine'),
           notification('drop-automations', 'automations'),
           notification('keep-marketplace', 'marketplace'),
+          // Saved before the bell narrowed to errors and warnings.
+          notification('drop-update-ready', 'update', 'info'),
+          notification('drop-new-model', 'models', 'info'),
         ],
         sectionSeenAt: { extensions: '2026-09-02T00:00:00.000Z' },
       },
@@ -66,7 +69,7 @@ test('notificationStore', async () => {
     assert.deepEqual(
       state.notifications.map((n) => n.id),
       ['keep-terminal', 'keep-marketplace'],
-      'a persisted sprintengine or automations notification is dropped on load',
+      'a persisted notification from a retired source, or a routine one, is dropped on load',
     )
     assert.deepEqual(state.sectionSeenAt, { extensions: '2026-09-02T00:00:00.000Z' }, 'other persisted state survives')
     assert.equal(typeof state.addNotification, 'function', 'actions survive the merge')
@@ -153,4 +156,42 @@ test('notificationStore', async () => {
   )
 
   await suiteRun
+})
+
+const entry = (id: string, level: 'info' | 'warning' | 'error') => ({
+  id,
+  level,
+  source: 'workspace' as const,
+  title: id,
+  message: id,
+  timestamp: '2026-11-09T10:00:00.000Z',
+})
+
+test('only errors and warnings reach the bell', async () => {
+  const { useNotificationStore, reachesBell } = await import('./notificationStore')
+  useNotificationStore.setState({ notifications: [], filedModuleNotificationIds: [] })
+  const store = useNotificationStore.getState()
+
+  assert.equal(store.addNotification(entry('routine', 'info')), null, 'a routine report is refused')
+  assert.equal(store.addNotification(entry('warned', 'warning'))?.id, 'warned')
+  assert.equal(store.addNotification(entry('failed', 'error'))?.id, 'failed')
+  assert.deepEqual(
+    useNotificationStore.getState().notifications.map((row) => row.id),
+    ['failed', 'warned'],
+  )
+  assert.equal(reachesBell('info'), false)
+})
+
+test('a module row marked info files nothing, while its warning files once', async () => {
+  const { useNotificationStore } = await import('./notificationStore')
+  useNotificationStore.setState({ notifications: [], filedModuleNotificationIds: [] })
+  const store = useNotificationStore.getState()
+
+  assert.equal(store.fileModuleNotification('d1', entry('module:d1', 'info')), false)
+  assert.equal(store.fileModuleNotification('d2', entry('module:d2', 'warning')), true)
+  assert.equal(store.fileModuleNotification('d2', entry('module:d2', 'warning')), false, 'filed once')
+  assert.deepEqual(
+    useNotificationStore.getState().notifications.map((row) => row.id),
+    ['module:d2'],
+  )
 })

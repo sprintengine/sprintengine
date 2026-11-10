@@ -191,6 +191,7 @@ import {
   attentionRowClass,
   doneRowClass,
   inactiveHighlightClass,
+  ROW_SEAT_CLASS,
   type Activity,
 } from './sidebar/rowStyle'
 import {
@@ -3266,7 +3267,7 @@ function WorkspaceSidebar({
     const idleSince = lines[0]!.idleSince
     const idleText = !working && idleSince !== null ? formatRelativeMs(idleSince, now) : ''
     const flatSeat = (
-      <span className="relative ml-auto flex h-5 min-w-[44px] shrink-0 items-center justify-end pl-2">
+      <span className={ROW_SEAT_CLASS}>
         <span className="inline-flex items-center gap-1 group-hover:opacity-0 group-focus-within:opacity-0">
           {asleepUntil !== null ? (
             <RowTooltip
@@ -3939,7 +3940,8 @@ function WorkspaceSidebar({
                 })
               }}
               tone="quiet"
-              className="ml-1 opacity-0 transition-opacity group-hover/folder:opacity-100 focus-visible:opacity-100"
+              // No width until it shows, so the project's name has the header.
+              className="max-w-0 overflow-hidden opacity-0 transition-opacity group-hover/folder:ml-1 group-hover/folder:max-w-none group-hover/folder:opacity-100 focus-visible:ml-1 focus-visible:max-w-none focus-visible:opacity-100"
               aria-label={`Folder actions: ${group.displayName}`}
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="icon-xs" aria-hidden="true">
@@ -4069,7 +4071,7 @@ function WorkspaceSidebar({
           card's own margin and reads --shell-card-gap, the same token the pane
           card uses on its other side, so the shell's two gaps measure the
           same. */}
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)]">
+      <div className="sidebar-card relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)]">
         {/* Drill-in REPLACES the rail (item 1993,
          * `design-system/patterns/context-rail.html`): while a surface is open its
          * rail renders here, in this column, at this width — never as a second
@@ -5215,10 +5217,8 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
     <>
       {/* Hover-and-focus-revealed row actions: keyboard focus surfaces them
           (group-focus-within) so they are reachable and never a focus trap
-          on an invisible control. The seat's min-w is the width they reserve
-          (list-row's `data-actions` rule), so revealing never reflows — and
-          reserving it here rather than on line 1 is the whole point of the
-          move. */}
+          on an invisible control. The seat makes room for them only while
+          they show (`ROW_SEAT_CLASS`). */}
       <span className="pointer-events-none absolute inset-y-0 right-0 inline-flex items-center gap-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-data-[settle-flourish]:pointer-events-auto group-data-[settle-flourish]:opacity-100">
         <Tooltip content="More actions">
           <IconButton
@@ -5347,7 +5347,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
     </>
   )
   const statusSeat = (
-    <span className="relative ml-auto flex h-5 min-w-[44px] shrink-0 items-center justify-end pl-2">
+    <span className={ROW_SEAT_CLASS}>
       {/* The status and the row actions swap in one frame: a cross-fade drew
           the clock and the actions over each other for its whole length. */}
       <span className="inline-flex items-center gap-1 group-hover:opacity-0 group-focus-within:opacity-0 group-data-[settle-flourish]:opacity-0">

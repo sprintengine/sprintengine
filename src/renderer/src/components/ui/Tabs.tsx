@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { AGENT_TAB_CLASS, AgentPill } from './AgentPresence'
+import { AGENT_TAB_CLASS, AGENT_TAB_RING_CLASS, AgentPill } from './AgentPresence'
 import { Badge } from './Badge'
 import { Tooltip } from './Tooltip'
 import { TAB_DROP_MARKER_INSET_PX, TAB_REORDER_THRESHOLD_PX, tabReorderSlot, tabReorderTargetIndex } from './tabReorder'
@@ -66,7 +66,8 @@ type TabsProps<T extends string = string> = {
   idPrefix?: string
   className?: string
   /** Omit the built-in bottom hairline so a parent container can own the row
-   *  border (needed when the tab row hosts trailing inline controls). */
+   *  border (needed when the tab row hosts trailing inline controls). A
+   *  borderless strip sits where its band centres it. */
   borderless?: boolean
   /** Closable strips (the workspace pane): a close glyph revealed on hover and
    *  focus sits in each closable tab's trailing padding. It is a sibling of the
@@ -347,11 +348,15 @@ export function Tabs<T extends string = string>({
       aria-label={ariaLabel}
       onKeyDown={onKey}
       className={[
-        'flex items-center gap-0.5',
+        // The fanned-out pills' own gap, so a strip that is always out reads as
+        // the strip that folds does when it comes forward.
+        'flex items-center gap-1',
         // The drop indicator is placed against the list itself.
         onReorder ? 'relative' : '',
         dropMarkerX !== null ? 'cursor-grabbing' : '',
-        borderless ? '' : 'border-b border-[color:var(--border-default)]',
+        // Off the row's hairline: a raised pill stood on a line reads as sitting
+        // in it, and the line is the row's, not the tab's.
+        borderless ? '' : 'border-b border-[color:var(--border-default)] py-1',
         className ?? '',
       ]
         .filter(Boolean)
@@ -367,7 +372,7 @@ export function Tabs<T extends string = string>({
         const iconClass = iconOnly ? 'size-icon-sm shrink-0' : 'size-icon-xs shrink-0'
         const iconNode = typeof item.icon === 'function' ? item.icon({ className: iconClass }) : item.icon
         const closable = Boolean(onCloseItem && item.closeLabel)
-        // An icon-only strip draws no badge: its tab is a 30px square with no
+        // An icon-only strip draws no badge: its pill is 30px wide with no
         // room to dock one clear of the glyph, and the tooltip is where that
         // strip already puts what the glyph cannot show. A closable tab draws
         // none either — its trailing padding is already spoken for by the close
@@ -428,16 +433,16 @@ export function Tabs<T extends string = string>({
               // `shrink-0 whitespace-nowrap`: a tab row in a narrow panel scrolls
               // inside its own overflow container rather than compressing its
               // labels — a flex child otherwise shrinks to fit its parent.
-              'relative inline-flex h-control-sm shrink-0 items-center gap-1.5 whitespace-nowrap text-meta',
-              // The 1px overlap that draws the active underline ON the row's
-              // hairline — but ONLY when this row draws that hairline. A
-              // borderless strip's line belongs to a parent BAND, and the tab
-              // hanging a pixel past its own box is a pixel the band's overflow
-              // container clips: it clipped exactly the underline, which is why
-              // a scrolling borderless strip had no visible selection at all.
-              borderless ? '' : '-mb-px',
-              // Icon-only tabs sit on a square-ish footprint: the label's
-              // inline padding around a 16px glyph reads as a gap, not a tab.
+              //
+              // `tab-pill` is the tab's whole look, one rule in index.css beside
+              // the workspace strips' (owner ruling 2026-11-09): every tab in the
+              // app is this pill. A sibling of the height, not a part of it:
+              // the row around a tab decides how much of the pill's height it
+              // can give, and the kit's strips all give `control.xs`.
+              'tab-pill relative inline-flex h-control-xs shrink-0 items-center gap-1.5 whitespace-nowrap text-meta',
+              // Icon-only tabs are a short pill around the glyph: wider than
+              // tall, so it stays a pill and not a disc, and the label's inline
+              // padding around a 16px glyph would read as a gap, not a tab.
               //
               // The inline padding is emitted per SIDE whenever a trailing
               // reservation follows. `px-3` next to `pr-8` is two utilities
@@ -457,15 +462,16 @@ export function Tabs<T extends string = string>({
               // document tab (a page title, a file), so it also caps its
               // width and truncates rather than letting one title own the row.
               closable ? 'max-w-[220px] pr-8' : '',
-              item.agent ? `rounded-sm ${AGENT_TAB_CLASS}` : '',
+              // The pill's own fill is what selection is, so the selected tab
+              // takes the violet outline alone: two fills on one element are
+              // decided by stylesheet order, not by intent.
+              item.agent ? (selected ? AGENT_TAB_RING_CLASS : AGENT_TAB_CLASS) : '',
               // The corner count sits in reserved trailing padding rather than
               // overhanging the tab's box: this strip scrolls inside an
               // `overflow-x` container, which clips anything hanging past the
-              // edge — the same clip that once ate the active underline.
+              // edge.
               badged ? 'pr-6' : '',
-              selected
-                ? 'text-[color:var(--text-strong)]'
-                : 'text-[color:var(--text-muted)] hover:text-[color:var(--text-strong)]',
+              selected ? 'tab-pill--selected' : '',
               FOCUS_RING_CLASS,
             ].join(' ')}
           >
@@ -500,13 +506,6 @@ export function Tabs<T extends string = string>({
                 {item.agent ? <AgentPill /> : null}
               </>
             )}
-            <span
-              aria-hidden="true"
-              className={[
-                'absolute bottom-0 left-2 right-2 h-px',
-                selected ? 'bg-[color:var(--accent-primary)]' : 'bg-transparent',
-              ].join(' ')}
-            />
           </button>
         )
         if (iconOnly) {
@@ -529,7 +528,7 @@ export function Tabs<T extends string = string>({
                 onCloseItem?.(item.id)
               }}
               className={[
-                'absolute right-2 top-1/2 inline-flex size-icon-sm -translate-y-1/2 items-center justify-center rounded-sm',
+                'absolute right-2 top-1/2 inline-flex size-icon-sm -translate-y-1/2 items-center justify-center rounded-full',
                 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-hover)] hover:text-[color:var(--text-strong)]',
                 selected ? 'opacity-100' : 'opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100',
                 FOCUS_RING_CLASS,
@@ -543,16 +542,15 @@ export function Tabs<T extends string = string>({
         )
       })}
       {dropMarkerX !== null ? (
-        // The slot the tab will land in, in the accent the active underline is
-        // drawn with — the one accent the strip is allowed — stood on end and
-        // centred on the edge of the tab it lands before. Two pixels, not the
-        // underline's one: lying flat a hairline runs the tab's whole width,
-        // but on end it is a tab's height at most and a 1px line that short
-        // was lost against the gap between two tabs.
+        // The slot the tab will land in, in the one accent the strip is
+        // allowed — a tab's selection is the raised pill, never the accent —
+        // stood on end and centred on the edge of the tab it lands before. Two
+        // pixels: a hairline that short was lost against the gap between two
+        // tabs.
         <span
           aria-hidden="true"
           data-tab-drop-marker=""
-          className="pointer-events-none absolute bottom-1 top-1 w-0.5 -translate-x-1/2 bg-[color:var(--accent-primary)]"
+          className="pointer-events-none absolute bottom-0.5 top-0.5 w-0.5 -translate-x-1/2 bg-[color:var(--accent-primary)]"
           style={{ left: dropMarkerX }}
         />
       ) : null}
@@ -589,7 +587,14 @@ export function TabsScroller({ children, className }: TabsScrollerProps) {
     <div
       ref={ref}
       onScroll={onScroll}
-      className={['strip-scroll overflow-x-auto overflow-y-hidden', className ?? ''].filter(Boolean).join(' ')}
+      className={[
+        // The inline padding is the room a pill's shadow and focus ring need
+        // past its edge inside a clip that would otherwise cut them off.
+        'strip-scroll overflow-x-auto overflow-y-hidden px-1',
+        className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={style}
     >
       {children}

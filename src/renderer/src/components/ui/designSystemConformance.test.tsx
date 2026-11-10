@@ -27,8 +27,8 @@ test('designSystemConformance', async () => {
   //        ring does not count. T18 made that indicator an offset outline behind
   //        one `focus-ring` utility, so the class a tab must carry is the utility
   //        reference, not a width and a colour spelled out per control.
-  //   T11  the active tab is marked by an accent hairline underline plus an ink
-  //        lift — never by an accent fill on the control itself.
+  //   T11  the active tab is the raised pill — never an accent fill on the
+  //        control itself.
   //   T10  row padding resolves to steps on the `sem.space` 2px grid.
   //
   // Assertions read the mounted elements, not the source files: a contract that
@@ -352,34 +352,16 @@ test('designSystemConformance', async () => {
       )
     })
 
-    // --- T11: active is an underline plus an ink lift, never a fill ---------
+    // --- T11: active is the raised pill, never a fill -------------------------
 
-    await run('T11 the active tab is marked by an accent hairline underline', () => {
-      const underline = activeTab?.querySelector('[aria-hidden="true"].absolute')
-      assert.ok(underline, 'the active tab carries a decorative underline element')
-      const classes = classesOf(underline)
-      assert.ok(classes.includes('h-px'), 'the underline is a hairline, not a bar')
+    await run('T11 the active tab is the raised pill, and only the active tab', () => {
+      assert.ok(classesOf(activeTab).includes('tab-pill--selected'), 'the active tab wears the raised pill')
+      assert.ok(classesOf(idleTab).includes('tab-pill'), 'the idle tab is the same pill shape')
       assert.ok(
-        classes.includes('bg-[color:var(--accent-primary)]'),
-        'the accent is spent on the hairline — the one shape the accent budget allows',
+        !classesOf(idleTab).includes('tab-pill--selected'),
+        'an idle tab is not raised, otherwise the pill would not mark anything',
       )
-      const idleUnderline = idleTab?.querySelector('[aria-hidden="true"].absolute')
-      assert.ok(idleUnderline, 'the idle tab reserves the same space so the strip does not shift')
-      assert.ok(
-        !hasClassMatching(idleUnderline, /--accent-primary/),
-        'but draws nothing — otherwise the underline would not mark anything',
-      )
-    })
-
-    await run('T11 active also lifts the ink, and idle does not', () => {
-      assert.ok(
-        hasClassMatching(activeTab, /^text-\[color:var\(--text-strong\)\]$/),
-        'the active tab label is lifted to --text-strong',
-      )
-      assert.ok(
-        hasClassMatching(idleTab, /^text-\[color:var\(--text-muted\)\]$/),
-        'the idle tab label stays at --text-muted, so the lift reads as state',
-      )
+      assert.equal(activeTab?.querySelector('[aria-hidden="true"].absolute'), null, 'no underline element is drawn')
     })
 
     await run('T11 no accent fill marks the active tab', () => {
@@ -390,7 +372,7 @@ test('designSystemConformance', async () => {
             `the accent is never a fill on the control itself, found \`${token}\``,
           )
         }
-        // The hairline is the only element permitted to spend the accent, and only
+        // A hairline is the only element permitted to spend the accent, and only
         // because it is a hairline. Anything taller filling with the accent is the
         // violation this contract exists to catch.
         for (const element of subtree(tab)) {

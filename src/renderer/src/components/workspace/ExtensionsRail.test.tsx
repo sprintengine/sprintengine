@@ -323,7 +323,7 @@ test('ExtensionsRail', async () => {
   const notice = (id: string, over: Record<string, unknown>) => ({
     id,
     timestamp: '2026-09-08T21:41:34.767Z',
-    level: 'info' as const,
+    level: 'warning' as const,
     title: 't',
     message: 'm',
     source: 'marketplace' as const,

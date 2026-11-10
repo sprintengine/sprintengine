@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { HostedCard } from '../../../shared/hosted-card-feed'
 import type { AppNotification } from '../types/workspace'
 import {
+  bellBadge,
   CORE_NOTIFICATION_SOURCE_ROWS,
   EXTENSIONS_NOTIFICATION_SOURCES,
   extensionsRailBadge,
@@ -294,3 +295,20 @@ function note(over: Partial<AppNotification>): AppNotification {
     ...over,
   }
 }
+
+const report = (id: string, level: AppNotification['level'], read = false): AppNotification => ({
+  id,
+  timestamp: '2026-11-09T10:00:00.000Z',
+  level,
+  source: 'workspace',
+  title: id,
+  message: id,
+  read,
+})
+
+test('the bell badge counts every unread report, red once one is an error', () => {
+  assert.equal(bellBadge([]), null)
+  assert.equal(bellBadge([report('a', 'error', true)]), null, 'read rows are not counted')
+  assert.deepEqual(bellBadge([report('a', 'warning'), report('b', 'warning', true)]), { count: 1, tone: 'warn' })
+  assert.deepEqual(bellBadge([report('a', 'warning'), report('b', 'error')]), { count: 2, tone: 'error' })
+})

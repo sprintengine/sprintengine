@@ -1,6 +1,7 @@
 import React from 'react'
 
 import { Badge, ChangePulse, IconButton, Popover, Tooltip, type PopoverPlacement } from '../ui'
+import { clientSupports } from '../../clientCapabilities'
 import type { AppNotification } from '../../types/workspace'
 import type { NotificationRowAction } from './topbar/NotificationsPopover'
 
@@ -33,8 +34,8 @@ function NotificationBellIcon({ className }: { className?: string }) {
 
 export type NotificationBellProps = {
   notifications: AppNotification[]
-  /** Unread *error*-level notifications only: the bell's badge is an error counter. */
-  unreadErrorCount: number
+  /** The unread reports the bell wears, and how loud they are; null when there are none. */
+  badge: { count: number; tone: 'error' | 'warn' } | null
   open: boolean
   onOpenChange: (open: boolean) => void
   markNotificationRead: (id: string) => void
@@ -49,7 +50,7 @@ export type NotificationBellProps = {
 
 export function NotificationBell({
   notifications,
-  unreadErrorCount,
+  badge,
   open,
   onOpenChange,
   markNotificationRead,
@@ -81,15 +82,20 @@ export function NotificationBell({
               aria-label="Notifications"
               {...triggerProps}
             >
-              <ChangePulse value={unreadErrorCount} mode="increase" tint="var(--tone-error)" className="inline-flex">
+              <ChangePulse
+                value={badge?.count ?? 0}
+                mode="increase"
+                tint={badge?.tone === 'warn' ? 'var(--tone-warn)' : 'var(--tone-error)'}
+                className="inline-flex"
+              >
                 <NotificationBellIcon className={onRail ? 'size-icon-lg' : 'size-icon-md'} />
               </ChangePulse>
-              {unreadErrorCount > 0 ? (
+              {badge ? (
                 <Badge
                   corner
                   decorative
-                  tone="error"
-                  count={unreadErrorCount}
+                  tone={badge.tone}
+                  count={badge.count}
                   max={99}
                   className={onRail ? 'border-[color:var(--bg-canvas)]' : undefined}
                 />
@@ -104,7 +110,11 @@ export function NotificationBell({
             onMarkRead={markNotificationRead}
             onMarkAllRead={markAllNotificationsRead}
             onClear={clearNotifications}
-            onOpenLogs={() => void window.api.openDiagnosticsLogsFolder()}
+            // The log folder is on the machine the desktop app runs on; a browser
+            // tab has none to open, and a button that refuses is worse than none.
+            onOpenLogs={
+              clientSupports('reveal-in-folder') ? () => void window.api.openDiagnosticsLogsFolder() : undefined
+            }
             resolveActions={resolveNotificationActions}
           />
         </React.Suspense>

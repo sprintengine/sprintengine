@@ -1,6 +1,5 @@
 import React from 'react'
 
-import { LOCAL_HOST_ID, normalizeExecutionHostId } from '../../../shared/execution-host'
 import type { RendererModule } from './renderer-host'
 import {
   agentBacklogOpenPorts,
@@ -54,42 +53,27 @@ export const agentRuntimeRendererModule: RendererModule = {
     core: true,
   },
   registerRenderer(host) {
-    // Open on the bell rows the background checks write (new models, a CLI update,
-    // an app update ready): each carries `{ kind: 'settings', ref: <tab> }`
-    // and lands on that Settings tab. Registered through the always-on core so
-    // the rows always have their Open.
-    for (const source of ['models', 'cli', 'update'] as const) {
-      host.registerNotificationActionProvider({
-        source,
-        resolveActions: ({ notification }) => {
-          const target = notification.navigationTarget
-          if (target?.kind !== 'settings') return []
-          return [
-            {
-              id: `${source}.open-settings`,
-              label: 'Open',
-              run: async () => {
-                const { useWorkspaceStore } = await import('../store/workspaceStore')
-                // `agents@<host>` names the machine a CLI update is for (a host id
-                // is `local` or `wsl:<distro>`, and no distribution name holds
-                // an `@`, so the first one splits it). Without
-                // one the news is this machine's (model discovery runs here),
-                // so it lands on This PC rather than on whichever machine the
-                // Agents tab last showed.
-                const [tab = 'agents', machine] = (target.ref || 'agents').split('@')
-                useWorkspaceStore
-                  .getState()
-                  .openSettingsOverlay(
-                    tab === 'agents'
-                      ? { initialTab: tab, agentsMachine: normalizeExecutionHostId(machine) ?? LOCAL_HOST_ID }
-                      : { initialTab: tab },
-                  )
-              },
+    // Open on the bell row for an update that did not install: it carries
+    // `{ kind: 'settings', ref: <tab> }` and lands on that Settings tab, where
+    // the update can be tried again. Registered through the always-on core so
+    // the row always has its Open.
+    host.registerNotificationActionProvider({
+      source: 'update',
+      resolveActions: ({ notification }) => {
+        const target = notification.navigationTarget
+        if (target?.kind !== 'settings') return []
+        return [
+          {
+            id: 'update.open-settings',
+            label: 'Open',
+            run: async () => {
+              const { useWorkspaceStore } = await import('../store/workspaceStore')
+              useWorkspaceStore.getState().openSettingsOverlay({ initialTab: target.ref || 'general' })
             },
-          ]
-        },
-      })
-    }
+          },
+        ]
+      },
+    })
     // Copy message on the row for a first message that never reached its CLI
     // (utils/undeliveredPrompt.ts): the row keeps the message, and this gives
     // it back exactly as written. Open stays beside it, since claiming the

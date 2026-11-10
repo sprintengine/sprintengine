@@ -91,6 +91,7 @@ import type { ConversationSessionSummary } from '../../../../shared/conversation
 import type { CardLaunchChoice } from './globalSurface/extensions/home/CardGoPicker'
 import { pickRandomAgentName } from '../../utils/agentNames'
 import { publishDiagnosticSync } from '../../utils/diagnostics'
+import { bellBadge } from '../../utils/railBadges'
 import { ensureChatWorktree } from '../../utils/chatWorktreeRestore'
 import { undeliveredPromptEntry, undeliveredPromptNotice } from '../../utils/undeliveredPrompt'
 import { logPerfEvent } from '../../utils/perfDiagnostics'
@@ -956,13 +957,7 @@ export default function WorkspaceManager() {
     setSessionsOpen(false)
     setNotificationsOpen(false)
   }, [])
-  // The bell badge is an error counter: only unread errors increment it (and
-  // drive the red just-changed pulse), so a flood of info/warning notifications
-  // never inflates the count. Warnings/info still appear in the popover list and
-  // are reachable through its severity filters.
-  const unreadErrorCount = notifications.filter(
-    (notification) => !notification.read && notification.level === 'error',
-  ).length
+  const notificationBadge = useMemo(() => bellBadge(notifications), [notifications])
   const settingsOpen = settingsOverlayOpen
   const ownsGlobalSupervisors = isPrimaryWorkspaceWindow
   // Reclaims agent worktrees that are clean and merged; one window runs it.
@@ -1661,15 +1656,6 @@ export default function WorkspaceManager() {
       const notice = sourceUpdatesNotice(check)
       if (!notice) return
       showToast({ tone: 'accent', title: notice.title, description: notice.description })
-      // On the Plugins row of the Extensions drawer, where the notice sends
-      // the person; Sync there takes the changes for Skills too.
-      publishDiagnosticSync({
-        level: 'info',
-        source: 'marketplace',
-        title: notice.title,
-        message: notice.description,
-        extensionsRow: 'plugins',
-      })
     })
   }, [])
 
@@ -1743,13 +1729,6 @@ export default function WorkspaceManager() {
       })
       if (!added) return
       showToast({ tone: 'accent', title: added.title, description: added.description })
-      publishDiagnosticSync({
-        level: 'info',
-        source: 'models',
-        title: added.title,
-        message: added.description,
-        navigationTarget: { kind: 'settings', ref: 'agents' },
-      })
     })
   }, [])
 
@@ -5143,7 +5122,7 @@ export default function WorkspaceManager() {
   const notificationBell = (onRail: boolean) => (
     <NotificationBell
       notifications={notifications}
-      unreadErrorCount={unreadErrorCount}
+      badge={notificationBadge}
       open={notificationsOpen}
       onOpenChange={(next) => {
         setNotificationsOpen(next)
@@ -5287,7 +5266,9 @@ export default function WorkspaceManager() {
           the pane can (a) stand beside the band at full height and
           (b) float over the content column when maximised without reflowing
           the terminals underneath. */}
-        <div className={`relative min-w-0 flex-1 flex-row ${narrowViewport && narrowSidebarShown ? 'hidden' : 'flex'}`}>
+        <div
+          className={`window-content-ground relative min-w-0 flex-1 flex-row ${narrowViewport && narrowSidebarShown ? 'hidden' : 'flex'}`}
+        >
           {/* Content column: the workspace's card reaches its top, with the band
               over it and the band's ground under it (WorkspaceBand), so the
               layout's top row of tab strips floats on the card as a pill. */}

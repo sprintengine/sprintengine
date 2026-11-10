@@ -27,23 +27,22 @@ function provider(source: string): NotificationActionProvider {
   return found
 }
 
-// A CLI update's bell row opens Agents on the machine the update is for; one
-// that names none is this machine's news.
-test('Open on a CLI update row lands on the machine it names', async () => {
+// The bell row for an update that did not install opens Settings on the tab it
+// names, where the update can be tried again.
+test('Open on a failed update row lands on the Settings tab it names', async () => {
   settingsOpens.length = 0
-  for (const ref of ['agents@wsl:Ubuntu', 'agents', 'general']) {
-    const context = {
-      notification: row({ source: 'cli', navigationTarget: { kind: 'settings', ref } }),
-      revealWorkspace: () => undefined,
-    }
-    const [open] = provider('cli').resolveActions(context)
-    await open?.run(context)
+  const context = {
+    notification: row({ source: 'update', navigationTarget: { kind: 'settings', ref: 'general' } }),
+    revealWorkspace: () => undefined,
   }
-  assert.deepEqual(settingsOpens, [
-    { initialTab: 'agents', agentsMachine: 'wsl:Ubuntu' },
-    { initialTab: 'agents', agentsMachine: 'local' },
-    { initialTab: 'general' },
-  ])
+  const [open] = provider('update').resolveActions(context)
+  await open?.run(context)
+  assert.deepEqual(settingsOpens, [{ initialTab: 'general' }])
+})
+
+test('a row with no settings target is offered no Open', () => {
+  const context = { notification: row({ source: 'update' }), revealWorkspace: () => undefined }
+  assert.deepEqual(provider('update').resolveActions(context), [])
 })
 
 function terminalProvider(): NotificationActionProvider {

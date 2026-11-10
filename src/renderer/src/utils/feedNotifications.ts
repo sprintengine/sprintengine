@@ -1,5 +1,5 @@
 // The words for the app's background notices: models a CLI refresh added, CLI
-// and app updates, plugin-source drift. Pure: the store hands in what it knows,
+// updates, plugin-source drift. Pure: the store hands in what it knows,
 // this hands back titles and lines, and the tests hold the table.
 import type { CliVersionAdvisory, SkillSourceUpdateCheck } from '../../../shared/electron-api'
 import type { DiscoveredCliModel, DiscoveredCliModelCatalog } from '../../../shared/cli-model-catalog'
@@ -77,17 +77,6 @@ export function cliUpdateNotice(
 ): Pick<Notice, 'title'> {
   const title = `Update available: ${displayName(advisory.cli)} ${advisory.latestVersion ?? ''}`.trim()
   return { title: machineLabel ? `${title} (${machineLabel})` : title }
-}
-
-export function updateReadyNotice(appName: string, version: string | null, requiresAdmin = false): Notice {
-  return {
-    title: version ? `${appName} ${version} is ready` : `${appName} update is ready`,
-    // An update that needs an administrator does not install at quit: the
-    // permission prompt would come up after the app had gone.
-    description: requiresAdmin
-      ? 'Restart to update. Windows will ask for administrator permission.'
-      : 'Restart now to update, or it installs the next time you quit.',
-  }
 }
 
 // Plugin sources (backlog/2026-09-05-plugin-sources.md, "Update notifications"):

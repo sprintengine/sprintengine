@@ -1,11 +1,13 @@
 # Tabs
 
 The view switcher inside a panel: a row of peers, exactly one active, the
-active one marked by an accent hairline underline and an ink lift — never an
-accent fill. Extracted from the shipped `Tabs` primitive
-(`src/renderer/src/components/ui/Tabs.tsx`), whose underline treatment the
-conformance tests lock: the only elements allowed to carry accent fill are
-1px hairlines.
+active one a pill raised on its own small surface (owner ruling 2026-11-09).
+Every tab in the product is this pill: the kit's strips, FlexLayout's strips
+under a split, the pop-out windows, the editor window. Never an accent fill,
+which the conformance tests lock: the only elements allowed to carry accent
+fill are hairlines. Extracted from the shipped `Tabs` primitive
+(`src/renderer/src/components/ui/Tabs.tsx`), which wears the app's `.tab-pill`
+classes.
 
 Use tabs when the choices are views of the same content region. Use a
 segmented control when they are values of a setting, and the context rail
@@ -16,20 +18,18 @@ when they are destinations.
 | Part        | Class                 | Required                                                                                                                     |
 | ----------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | Scroller    | `.ds-tabs-scroller`   | no — the overflow wrapper: scrolls sideways, never draws a scrollbar, fades each overflowing edge                            |
-| Tab list    | `.ds-tabs`            | yes — `role="tablist"` with an `aria-label`, one bottom hairline                                                             |
+| Tab list    | `.ds-tabs`            | yes — `role="tablist"` with an `aria-label`, one bottom hairline under the pills                                                             |
 | Tab         | `.ds-tab`             | yes — `role="tab"` buttons, `font.size.meta`                                                                                 |
 | Icon        | `.ds-tab-icon`        | no — a leading glyph, `aria-hidden`                                                                                          |
 | Count       | `.ds-tab-count`       | no — canonical count, tabular, `font.size.micro`                                                                             |
 | Badge       | `.ds-tab-badge`       | no — the `badge` corner count: what is WAITING in this tab. Needs `.ds-tab--badged` on the tab for its room                  |
-| Underline   | `.ds-tab-underline`   | yes — the 1px active marker, `aria-hidden`                                                                                   |
 | Drop marker | `.ds-tab-drop-marker` | no — on a `--reorderable` strip mid-drag: a 2px accent bar, upright, at the slot the dragged tab will land in, `aria-hidden` |
 | Panel       | `.ds-tab-panel`       | yes — `role="tabpanel"`, a focusable scroll region                                                                           |
 
-Tabs sit `size.control.sm` (30px) tall at `space.lg` inline padding, spaced
-by `space.3xs`. Each tab overlaps the row's hairline by 1px so the active
-underline draws **on** the border, not above it — one line, two meanings.
-The underline is inset `space.sm` from each end of its tab: it marks the
-label, not the hit area.
+Tabs are `size.control.xs` (26px) pills at `space.lg` inline padding with a
+`radius.pill`, spaced by `space.2xs`. An unselected tab keeps the pill's
+transparent 1px edge, so being chosen never reflows the row. The row keeps
+`space.2xs` of block padding so a raised pill stands off its hairline.
 
 ## Variants
 
@@ -37,10 +37,8 @@ label, not the hit area.
   `border.default` hairline.
 - **`--borderless`** — no hairline; a parent container owns the row's border.
   Needed when the tab row shares its band with trailing inline controls —
-  one chrome band, one line. Its tabs also drop the 1px overlap: the line they
-  would reach for is a band they are passengers in, and the band's overflow
-  container clips the overhang — which is the pixel the active underline lives
-  in, so the overlap costs a borderless strip its selection marker entirely.
+  one chrome band, one line. It keeps no block padding of its own: the band
+  centres the pills.
 - **`--badged`** — the tab reserves `space.3xl` of trailing room and docks a
   `badge` count in its top-right: how many things inside want the person. See
   "A count on a tab is not a badge on a tab" below. Never on `--icon-only`, and
@@ -50,8 +48,9 @@ label, not the hit area.
   pane's strip). A tab dragged sideways lands in the slot it is dropped in,
   and the focused tab moves one place with Alt+Shift+Left/Right. The strip is
   `--dragging` while a drag is in flight. See "A reorderable strip" below.
-- **`--icon-only`** — each tab renders its glyph alone on a
-  `size.control.sm` square, the glyph steps up to `icon.size.sm`, and the
+- **`--icon-only`** — each tab renders its glyph alone in a short pill
+  (`size.control.sm` wide, `size.control.xs` tall), the glyph steps up to
+  `icon.size.sm`, and the
   label becomes the tab's accessible name _and_ its tooltip. For a strip on a
   band that cannot spend width on words — a panel's own chrome row, shared
   with that panel's actions. Every item must carry an icon.
@@ -60,9 +59,9 @@ label, not the hit area.
 
 | State                  | Treatment                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Rest                   | `text.muted`, transparent underline                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Hover                  | Ink lifts to `text.primary`. No background — the underline idiom marks tabs, not a fill                                                                                                                                                                                                                                                                                                                                                                      |
-| Active                 | `text.primary` + the accent hairline underline. Never an accent fill or a pill                                                                                                                                                                                                                                                                                                                                                                               |
+| Rest                   | `text.muted`, transparent edge and ground. The pill's shape, drawn only once the pointer finds it |
+| Hover                  | `bg.hover` fill and ink lifts to `text.primary` |
+| Active                 | `border.subtle` edge on `bg.surface`, `shadow.popover`, `text.primary` at `font.weight.medium`. Never an accent fill |
 | Focus-visible          | `focus.ring`                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Disabled               | `opacity: 0.5`, `cursor: not-allowed`                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Agent                  | An agent is using what the tab shows (driving its page, drawing on its board, editing its file): a 1px inset `agent-trail.ink` outline on `agent-trail.soft`, and an "Agent" pill after the label (`agent-trail.ink` on `agent-trail.soft-strong`, the Files tree's verb pill). The surface the tab shows wears a 2px inset `agent-trail.ink` edge (`AgentEdge`). The tab's accessible name says it ("…: an agent is using this"); the pill is `aria-hidden` |
@@ -70,9 +69,13 @@ label, not the hit area.
 
 ## Usage
 
-**The underline is the whole treatment.** An active tab is an ink lift plus a
-1px accent line. A filled tab, a tinted pill, or a raised card is a second
-accent idiom and a reject-on-sight.
+**The pill is the whole treatment** (owner ruling 2026-11-09). An active tab is
+a raised pill; an unselected tab is the same shape at rest with no edge and no
+ground. Every strip wears this one definition, so a tab reads as a tab whichever
+surface it stands on. An accent fill, a tinted pill or a second underline on top
+is a reject-on-sight. A strip that has nowhere to spend the width folds its
+other tabs behind the pill and fans them out on hover or by keyboard, as the
+workspace's top-row strip does; every tab stays reachable.
 
 **Selection follows focus.** Arrow keys move focus _and_ activate: Left/Right
 step through enabled tabs with wraparound, Home/End jump to the ends. This is
@@ -112,22 +115,22 @@ the counter goes on announcing its own changes.
 
 **A badge on a tab is docked, not overhung.** The `badge` component's `--corner`
 mode hangs the counter outside its trigger; outside a tab is the scroller's
-clip, which is the same pixel-eating that costs a borderless strip its
-underline. `--badged` reserves room and the badge sits inside it — same corner,
-drawn where it survives, and with no keyline, since it covers the band rather
-than a glyph.
+clip, which cuts it off. `--badged` reserves room and the badge sits inside it —
+same corner, drawn where it survives, and with no keyline, since it covers the
+band rather than a glyph.
 
 **An icon-only tab keeps its name, it just stops drawing it.** The label
 becomes `aria-label` and the tooltip, so the word is one hover or one focus
 away and unchanged for assistive tech. Dropping the label without either is a
 blank button, and it is the only thing this variant can get wrong. It draws no
-count at all, and no badge either: a number pinned to a 30px glyph covers the
+count at all, and no badge either: a number pinned to a 30px pill covers the
 mark it is badging as soon as it reaches two digits, and five badged glyphs is a
 row of alarms. Put the count in the tooltip beside the name ("Log · 3,057
 commits").
 
 **A strip that can outgrow its band scrolls, it does not squeeze.** Wrap it in
-`.ds-tabs-scroller`: tabs stay `shrink-0`, the row scrolls sideways, and the
+`.ds-tabs-scroller`, which keeps `space.2xs` of inline padding so a pill's
+shadow and focus ring are not cut at the clip: tabs stay `shrink-0`, the row scrolls sideways, and the
 overflowing edges fade. Never a scrollbar — under a 36px band it is a second
 horizontal line and a third of the row's height. The host routes a plain
 vertical wheel to `scrollLeft`, because a horizontal row has no vertical axis
@@ -146,8 +149,8 @@ always was. The release that ends a drag does not also select the tab it
 started on — it ended a move, it did not choose a view. A drop counts a tab
 as "after" once the pointer is past its middle, so a drag never has to reach
 the far edge of a wide tab. Escape mid-drag puts the tab back. The marker is
-the active underline's hairline stood on end, never a filled slot or a ghost
-tab: one accent idiom. Reordering is a separate gesture from dragging a tab
+a 2px accent bar stood on end, never a filled slot or a ghost tab: the one
+accent the strip spends. Reordering is a separate gesture from dragging a tab
 out of its strip (to another workspace or window), which uses the platform's
 drag and drop and is untouched by this one. Opening a tab adds it at the end
 and leaves the order the person made alone.

@@ -30,6 +30,7 @@ import {
   InlineNotice,
   RowButton,
   Spinner,
+  TabsScroller,
   Tooltip,
   useConfirmDialog,
 } from '../ui'
@@ -578,23 +579,19 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
             </svg>
           </IconButton>
         </Tooltip>
-        <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto">
+        <TabsScroller className="flex min-w-0 flex-1 items-center gap-1">
           {tabs.map((tab) => {
             const selected = tab.path === activePath
             const agent = agentHere(tab.path)
             return (
               <div
                 key={tab.path}
-                className={`app-no-drag group/tab flex h-[28px] min-w-0 shrink-0 items-center gap-1.5 self-center rounded-md px-2 text-meta transition-colors ${
+                // The same pill every tab strip wears (`tab-pill` in index.css),
+                // hand-placed only because the close and the unsaved mark are
+                // siblings of the tab's own button.
+                className={`app-no-drag group/tab tab-pill flex h-control-xs min-w-0 shrink-0 items-center gap-1.5 self-center pl-3 pr-1 text-meta transition-colors ${
                   agent ? `${selected ? AGENT_TAB_RING_CLASS : AGENT_TAB_CLASS} ` : ''
-                }${
-                  selected
-                    ? // The neutral selected fill, as every other selection: the
-                      // raised surface it used was the strip's own ground in the
-                      // light themes, so the active tab could not be told apart.
-                      'bg-[color:var(--bg-selected)] text-[color:var(--text-strong)]'
-                    : 'text-[color:var(--text-muted)] hover:bg-[color:var(--bg-hover)] hover:text-[color:var(--text-default)]'
-                }`}
+                }${selected ? 'tab-pill--selected' : ''}`}
               >
                 <Tooltip content={tab.path} placement="bottom" wrapperClassName="flex min-w-0">
                   {/* `flush`: the tab chip around it owns the fill and the radius,
@@ -612,7 +609,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
                 </Tooltip>
                 {agent ? <AgentPill /> : null}
                 <span
-                  className={`inline-flex size-control-xs shrink-0 items-center justify-center ${
+                  className={`inline-flex size-icon-lg shrink-0 items-center justify-center ${
                     isDirty(buffers[tab.path])
                       ? ''
                       : // Revealed on hover AND on keyboard focus inside the tab
@@ -625,13 +622,13 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
                       •
                     </span>
                   ) : (
-                    <CloseIconButton onClick={() => closeTab(tab.path)} aria-label={`Close ${tab.name}`} />
+                    <CloseIconButton size="2xs" onClick={() => closeTab(tab.path)} aria-label={`Close ${tab.name}`} />
                   )}
                 </span>
               </div>
             )
           })}
-        </div>
+        </TabsScroller>
         <GhostButton
           size="xs"
           onClick={() => void dockActive()}

@@ -126,6 +126,8 @@
   height: var(--sem-size-control-sm);
   padding: 0 var(--sem-space-lg);
   gap: var(--sem-space-xs);
+  /* Transparent at rest and held there, so being chosen does not resize the row. */
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--sem-color-bg-well);
   color: var(--sem-color-text-muted);
@@ -134,6 +136,16 @@
 }
 
 .ds-chip-button--pill:hover:not(:disabled):not([aria-pressed='true']):not([aria-current='true']) {
+  color: var(--sem-color-text-primary);
+}
+
+/* Chosen, a filter pill is a chosen tab: the same raised pill the tab strips
+ * wear (tabs/component.css), not the neutral selection fill. */
+.ds-chip-button--pill[aria-pressed='true'],
+.ds-chip-button--pill[aria-current='true'] {
+  border-color: var(--sem-color-border-subtle);
+  background: var(--sem-color-bg-surface);
+  box-shadow: var(--sem-shadow-popover);
   color: var(--sem-color-text-primary);
 }
 

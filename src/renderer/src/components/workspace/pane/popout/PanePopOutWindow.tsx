@@ -280,7 +280,7 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
       <div
         className={`app-drag flex ${TITLE_BAR_HEIGHT} shrink-0 items-end ${lightsShowing ? TRAFFIC_LIGHT_INSET : 'pl-1.5'} ${isMac ? 'pr-1' : ''}`}
       >
-        <TabsScroller className="flex min-w-0 flex-initial items-end self-stretch">
+        <TabsScroller className="flex min-w-0 flex-initial items-center self-stretch">
           {ready ? (
             <Tabs
               ariaLabel="Pane tabs"

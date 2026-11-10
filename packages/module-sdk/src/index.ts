@@ -654,7 +654,9 @@ export type MainHost = {
   registerSidecar(spec: SidecarSpec): SidecarHandle
   /**
    * Put a row in the notification bell of every open window, under your
-   * module's display name (stamped by the host — never taken from you). Give
+   * module's display name (stamped by the host — never taken from you). The
+   * bell is for what went wrong: only `warning` and `error` reach it, and an
+   * `info` notify files nothing (say routine news with a renderer `toast`). Give
    * it a `target` and its Open lands on your door; add more actions with a
    * renderer `registerNotificationActionProvider({ source: <your module id> })`.
    * Invalid input throws. Flood-bounded per module: an identical repeat within
