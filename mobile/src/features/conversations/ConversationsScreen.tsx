@@ -43,6 +43,8 @@ import {
   chatActivity,
   chatWorksInBackground,
   chatModelName,
+  chatDateSections,
+  chatRecencyAt,
   chatRestingAt,
   chatRowTitle,
   formatChatSettledAt,
@@ -73,8 +75,8 @@ const LIST_POLL_MS = 15_000;
  * (design 2026-09-29-desktop-chat-parity, part five). The wordmark leads the
  * top bar, with search, the bell and Settings beside it; New floats over the
  * list. Search grows out of its button across the bar (`ExpandingSearch`),
- * so the list starts right under the bar. Grouping by project is a setting,
- * not a control here.
+ * so the list starts right under the bar. Grouping by project or by date is a
+ * setting, not a control here.
  *
  * One flat list rather than a section per desktop: the machine is a pill on
  * the row. Live and recent chats come first and everything that settled more
@@ -131,7 +133,7 @@ export function ConversationsScreen({
     markUnreadChat,
     streamingDesktops,
     canStart,
-    groupByProject,
+    chatGrouping: view,
   } = useChats();
   const styles = useThemedStyles(createStyles);
   const content = useListContentStyle(space["2xs"]);
@@ -202,7 +204,6 @@ export function ConversationsScreen({
     }, [anyWorking, revalidate]),
   );
   const showDesktop = streamingDesktops > 1;
-  const view = groupByProject ? "project" : "recent";
   const sections = useMemo<Section[]>(() => {
     const matching = rows.filter((row) => matchesChatSearch(row, deferredQuery));
     // Sleeping chats leave the list for a Snoozed shelf at its foot, soonest
@@ -222,6 +223,16 @@ export function ConversationsScreen({
           projectless: group.projectless,
           data: group.rows,
         })),
+        ...shelf,
+      ];
+    }
+    if (view === "date") {
+      // Newest message first, then cut into Today, Yesterday and the weeks
+      // before; the cut keeps that order. Stable, so chats on one instant keep
+      // the order the desktops listed them in.
+      const newest = [...awake].sort((a, b) => chatRecencyAt(b) - chatRecencyAt(a));
+      return [
+        ...chatDateSections(newest, now).map((group) => ({ key: `date-${group.section}`, title: group.title, data: group.rows })),
         ...shelf,
       ];
     }
@@ -384,7 +395,7 @@ export function ConversationsScreen({
               row={item}
               settled={section.key === "earlier"}
               showDesktop={showDesktop}
-              showProject={view === "recent" || asleep}
+              showProject={view !== "project" || asleep}
               state={chatRowState(item.thread, {
                 now,
                 openedAt: openedAt[chatOpenedKey(item.deviceId, item.thread.agentId)] ?? null,

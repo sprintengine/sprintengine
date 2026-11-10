@@ -1,8 +1,11 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
+  CHAT_DATE_SECTION_LABEL,
   CHAT_EARLIER_AFTER_MS,
   chatCliMark,
+  chatDateSectionOf,
+  chatDateSections,
   canReadWorkspaces,
   canStartChats,
   chatLaunchAvailability,
@@ -172,6 +175,82 @@ test("sections: newest first, a waiting chat stays put, and a chat at rest over 
     ["working", "done", "waiting", "edge", "stale-waiting"],
   );
   assert.deepEqual(earlier.map((item) => item.thread.agentId), ["failed-old", "old"]);
+});
+
+// The Date grouping reads local calendar days, so its clocks are local too:
+// ten past midnight on Tuesday 29 September 2026.
+const AFTER_MIDNIGHT = new Date(2026, 8, 29, 0, 10).getTime();
+const localAt = (month, day, hour = 0, minute = 0, ms = 0) => new Date(2026, month, day, hour, minute, 0, ms).getTime();
+
+test("by date: a chat sits in the local calendar day it was last written in, not the last 24 hours", () => {
+  // 23:50 last night is Yesterday at 00:10, twenty minutes later.
+  assert.equal(chatDateSectionOf(localAt(8, 28, 23, 50), AFTER_MIDNIGHT), "yesterday");
+  assert.equal(chatDateSectionOf(localAt(8, 28, 23, 59, 59_999), AFTER_MIDNIGHT), "yesterday");
+  assert.equal(chatDateSectionOf(localAt(8, 29), AFTER_MIDNIGHT), "today", "midnight itself starts today");
+  assert.equal(chatDateSectionOf(localAt(8, 28), AFTER_MIDNIGHT), "yesterday", "yesterday's own midnight");
+  assert.equal(chatDateSectionOf(localAt(8, 27, 23, 59, 59_999), AFTER_MIDNIGHT), "week");
+  // The week is the seven days before today, from that day's start.
+  assert.equal(chatDateSectionOf(localAt(8, 22), AFTER_MIDNIGHT), "week");
+  assert.equal(chatDateSectionOf(localAt(8, 22) - 1, AFTER_MIDNIGHT), "month");
+  // The month is the thirty days before today: 30 August, from its start.
+  assert.equal(chatDateSectionOf(localAt(7, 30), AFTER_MIDNIGHT), "month");
+  assert.equal(chatDateSectionOf(localAt(7, 30) - 1, AFTER_MIDNIGHT), "older");
+  // The same chat at noon: still a calendar day, whatever the hour.
+  assert.equal(chatDateSectionOf(localAt(8, 28, 0, 5), NOW), "yesterday");
+  assert.equal(chatDateSectionOf(localAt(8, 29, 0, 5), NOW), "today");
+});
+
+test("by date: a stamp ahead of the phone's clock is today, and a missing one is Older", () => {
+  assert.equal(chatDateSectionOf(AFTER_MIDNIGHT + 3 * DAY, AFTER_MIDNIGHT), "today");
+  assert.equal(chatDateSectionOf(0, AFTER_MIDNIGHT), "older");
+  assert.equal(chatDateSectionOf(Number.NaN, AFTER_MIDNIGHT), "older");
+  assert.equal(chatDateSectionOf(-5, AFTER_MIDNIGHT), "older");
+  // A chat with no clock at all, from an older desktop.
+  const unstamped = row({ agentId: "unstamped", updatedAt: 0 });
+  assert.deepEqual(
+    chatDateSections([unstamped], AFTER_MIDNIGHT).map((group) => group.section),
+    ["older"],
+  );
+});
+
+test("by date: sections run newest first under their headings, and an empty one is left out", () => {
+  const lifecycle = { lifecycle: true };
+  const rows = [
+    row({ agentId: "today", lastUserMessageAt: localAt(8, 29, 0, 2) }, lifecycle),
+    row({ agentId: "late-last-night", lastUserMessageAt: localAt(8, 28, 23, 50) }, lifecycle),
+    row({ agentId: "last-month", lastUserMessageAt: localAt(8, 1, 9) }, lifecycle),
+    // Waiting for days is still sectioned by its last message: no lifting.
+    row({ agentId: "waiting", phase: "waiting_for_input", lastUserMessageAt: localAt(5, 1) }, lifecycle),
+  ];
+  const groups = chatDateSections(rows, AFTER_MIDNIGHT);
+  assert.deepEqual(
+    groups.map((group) => [group.title, group.rows.map((item) => item.thread.agentId)]),
+    [
+      ["Today", ["today"]],
+      ["Yesterday", ["late-last-night"]],
+      ["Previous 30 days", ["last-month"]],
+      ["Older", ["waiting"]],
+    ],
+  );
+  assert.deepEqual(Object.values(CHAT_DATE_SECTION_LABEL), ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"]);
+  assert.deepEqual(chatDateSections([], AFTER_MIDNIGHT), []);
+});
+
+test("by date: rows keep the order they were given within a section, even out of time order", () => {
+  const lifecycle = { lifecycle: true };
+  const rows = [
+    row({ agentId: "week-early", lastUserMessageAt: localAt(8, 23, 8) }, lifecycle),
+    row({ agentId: "today-early", lastUserMessageAt: localAt(8, 29, 0, 1) }, lifecycle),
+    row({ agentId: "week-late", lastUserMessageAt: localAt(8, 26, 20) }, lifecycle),
+    row({ agentId: "today-late", lastUserMessageAt: localAt(8, 29, 0, 9) }, lifecycle),
+  ];
+  assert.deepEqual(
+    chatDateSections(rows, AFTER_MIDNIGHT).map((group) => [group.section, group.rows.map((item) => item.thread.agentId)]),
+    [
+      ["today", ["today-early", "today-late"]],
+      ["week", ["week-early", "week-late"]],
+    ],
+  );
 });
 
 test("a lifecycle desktop's chat is ordered and split by when the person last wrote in it", () => {

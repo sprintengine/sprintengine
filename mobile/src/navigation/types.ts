@@ -7,6 +7,7 @@ export type GateStackParamList = {
   Settings: undefined;
   Desktop: { deviceId: string };
   Appearance: undefined;
+  ChatGrouping: undefined;
   Pairing: undefined;
 };
 
@@ -98,6 +99,7 @@ export type HomeStackParamList = {
     asker?: string | null;
   };
   Appearance: undefined;
+  ChatGrouping: undefined;
   Pairing: undefined;
 };
 

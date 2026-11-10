@@ -612,6 +612,74 @@ export function chatSections(
   return { recent, earlier };
 }
 
+// The Date grouping, as the desktop sidebar's By date list cuts its stream:
+// by when the person last sent each chat a message, so today's work stands
+// apart from yesterday's and from what has gone quiet. Days are the person's
+// own calendar days, in local time: a chat written to at 23:50 is
+// yesterday's at 00:10. The week and month sections are the seven and thirty
+// days before today, not calendar weeks and months, so a chat from last Sunday
+// reads the same on a Monday as on a Saturday.
+
+export type ChatDateSection = "today" | "yesterday" | "week" | "month" | "older";
+
+/** The headings, newest section first. */
+export const CHAT_DATE_SECTION_LABEL: Record<ChatDateSection, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  week: "Previous 7 days",
+  month: "Previous 30 days",
+  older: "Older",
+};
+
+/** The start of the local day `daysBack` days before the one `now` falls in. */
+function localDayStart(now: number, daysBack: number): number {
+  const day = new Date(now);
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() - daysBack).getTime();
+}
+
+/**
+ * Which section a chat last written to at `at` sits in. A stamp after `now`
+ * (a desktop's clock a little ahead of the phone's) is today's; a chat with no
+ * stamp is the oldest there is.
+ */
+export function chatDateSectionOf(at: number, now: number): ChatDateSection {
+  if (!(at > 0)) return "older";
+  if (at >= localDayStart(now, 0)) return "today";
+  if (at >= localDayStart(now, 1)) return "yesterday";
+  if (at >= localDayStart(now, 7)) return "week";
+  if (at >= localDayStart(now, 30)) return "month";
+  return "older";
+}
+
+/** One date section's heading and its chats. */
+export interface ChatDateGroup {
+  section: ChatDateSection;
+  title: string;
+  rows: ChatListRow[];
+}
+
+/**
+ * `rows` in the order given, cut into their date sections by `chatRecencyAt`,
+ * newest section first. Nothing is reordered: the caller hands over the list
+ * newest message first, and a section is a run of it under a heading. A
+ * section with no chat in it is left out. Unlike "Earlier", a working or
+ * waiting chat sits where its last message puts it: a state tints a row and
+ * never moves it.
+ */
+export function chatDateSections(rows: readonly ChatListRow[], now: number): ChatDateGroup[] {
+  const bySection = new Map<ChatDateSection, ChatListRow[]>();
+  for (const row of rows) {
+    const section = chatDateSectionOf(chatRecencyAt(row), now);
+    const listed = bySection.get(section);
+    if (listed) listed.push(row);
+    else bySection.set(section, [row]);
+  }
+  return (Object.keys(CHAT_DATE_SECTION_LABEL) as ChatDateSection[]).flatMap((section) => {
+    const listed = bySection.get(section);
+    return listed ? [{ section, title: CHAT_DATE_SECTION_LABEL[section], rows: listed }] : [];
+  });
+}
+
 /** Search covers what the row shows: the title summary, the agent, the project, the machine and the CLI. */
 export function matchesChatSearch(row: ChatListRow, query: string): boolean {
   const needle = query.trim().toLowerCase();

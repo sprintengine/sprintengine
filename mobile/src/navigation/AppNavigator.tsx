@@ -57,7 +57,7 @@ import { CanvasBoardRoute } from "../features/canvas/CanvasBoardRoute";
 import { canvasTargetParams, chatCanvasBoard } from "../features/canvas/canvasLogic";
 import { readWebTargets } from "../features/web/webTargetsLogic";
 import { stackScreenOptions } from "./navigationTheme";
-import { PairingRoute, SettingsRoute } from "./routes";
+import { ChatGroupingRoute, PairingRoute, SettingsRoute } from "./routes";
 import { SnapshotWatch, useSessionData, useSnapshot } from "./SessionDataProvider";
 import type { BacklogStackParamList, HomeStackParamList } from "./types";
 
@@ -371,6 +371,7 @@ export function AppNavigator() {
           <SettingsRoute
             onBack={() => navigation.goBack()}
             onOpenAppearance={() => navigation.navigate("Appearance")}
+            onOpenChatGrouping={() => navigation.navigate("ChatGrouping")}
             onOpenDesktops={() => navigation.navigate("Desktop", { deviceId: "" })}
             onOpenWeb={() => navigation.navigate("Web")}
             onOpenScheduled={() => navigation.navigate("Scheduled")}
@@ -464,6 +465,9 @@ export function AppNavigator() {
       </HomeStack.Screen>
       <HomeStack.Screen name="Appearance">
         {({ navigation }) => <AppearanceScreen onBack={() => navigation.goBack()} />}
+      </HomeStack.Screen>
+      <HomeStack.Screen name="ChatGrouping">
+        {({ navigation }) => <ChatGroupingRoute onBack={() => navigation.goBack()} />}
       </HomeStack.Screen>
       <HomeStack.Screen name="Pairing" component={PairingRoute} />
     </HomeStack.Navigator>

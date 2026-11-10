@@ -155,6 +155,7 @@ import { useScheduledAgents, useScheduledAgentsPause } from '../../store/schedul
 import { showToast } from '../../store/toastStore'
 import { regenerateStoreWorkspaceTitle } from '../../store/generatedWorkspaceTitle'
 import { inWorkingSection } from './sidebar/workingSection'
+import { CHAT_DATE_SECTION_LABEL, sectionChatsByDate, type ChatDateSection } from './sidebar/dateSections'
 import { BULK_SELECTED_ROW_CLASS, useSidebarBulkSelection } from './sidebar/sidebarBulkSelection'
 import { BulkChatContextMenu, type BulkChatAction, type BulkChatReach } from './sidebar/BulkChatContextMenu'
 import { ScheduledAgentRow } from './sidebar/ScheduledAgentRow'
@@ -388,6 +389,9 @@ type WorkspaceSidebarProps = {
 // key no folder can produce.
 const ALL_CHATS_SNOOZE_SHELF_KEY = '__all_chats_snoozed__'
 const ALL_CHATS_SNOOZE_SHELF_ID = 'ws-snoozed-all-chats'
+// The By date list's sections, one fold each, keyed in the same map.
+const dateSectionShelfKey = (section: ChatDateSection) => `__date_${section}__`
+const dateSectionShelfId = (section: ChatDateSection) => `ws-chats-${section}`
 // The Scheduled section's fold, keyed beside the Snoozed shelves' in the same state.
 const SCHEDULED_SHELF_KEY = '__scheduled__'
 const SCHEDULED_SHELF_ID = 'ws-scheduled-agents'
@@ -3701,11 +3705,14 @@ function WorkspaceSidebar({
     })
   }
 
-  // The flat stream, newest message first, for All chats and By status. By
-  // status lifts the working chats out of it into the shelf above the Snoozed
-  // one, and leads with what waits on the person, then what finished while
-  // nobody was looking.
-  const renderChatStream = (byStatus: boolean) => {
+  // The flat stream, newest message first, for All chats, By status and By
+  // date. By status lifts the working chats out of it into the shelf above the
+  // Snoozed one, and leads with what waits on the person, then what finished
+  // while nobody was looking. By date cuts it, in the same order, into a fold
+  // per day the person last wrote in (`sidebar/dateSections.ts`), each open
+  // until they close it.
+  const renderChatStream = (view: 'status' | 'date' | 'all') => {
+    const byStatus = view === 'status'
     const snoozedRows = sortByWake(localRailWorkspaces.filter((w) => !isShelved(w) && isAsleep(w)))
     const streamRows = sortWorkspacesByUserMessage(
       localRailWorkspaces.filter(
@@ -3715,21 +3722,50 @@ function WorkspaceSidebar({
     const remoteStream = streamRemote.filter((conversation) => !workingRemoteKeys.has(conversation.key))
     const sleeping = sleepingByWake(snoozedRows, sleepingRemote)
     const snoozeExpanded = expandedShelves[ALL_CHATS_SNOOZE_SHELF_KEY] === true
+    const stream = interleaveChats(streamRows, remoteStream, chatRecency)
+    const renderStreamRow = (entry: ChatListEntry) =>
+      entry.kind === 'local'
+        ? renderWorkspaceRow(entry.workspace, keyOf(entry.workspace), {
+            keyPrefix: 'all-',
+            flatProject: flatProjectOf(entry.workspace),
+          })
+        : renderRemoteConversationRow(entry.conversation, {
+            flatProject: flatProjectOfRemote(entry.conversation),
+          })
     return (
-      <section role="group" className="relative pt-1" aria-label={byStatus ? 'Chats by status' : 'All chats'}>
-        {(byStatus
-          ? orderByStatus(interleaveChats(streamRows, remoteStream, chatRecency), statusRankOf)
-          : interleaveChats(streamRows, remoteStream, chatRecency)
-        ).map((entry) =>
-          entry.kind === 'local'
-            ? renderWorkspaceRow(entry.workspace, keyOf(entry.workspace), {
-                keyPrefix: 'all-',
-                flatProject: flatProjectOf(entry.workspace),
-              })
-            : renderRemoteConversationRow(entry.conversation, {
-                flatProject: flatProjectOfRemote(entry.conversation),
-              }),
-        )}
+      <section
+        role="group"
+        className="relative pt-1"
+        aria-label={byStatus ? 'Chats by status' : view === 'date' ? 'Chats by date' : 'All chats'}
+      >
+        {view === 'date'
+          ? sectionChatsByDate(stream, now).map(({ section, entries }) => {
+              const expanded = expandedShelves[dateSectionShelfKey(section)] !== false
+              const label = CHAT_DATE_SECTION_LABEL[section]
+              return (
+                <React.Fragment key={section}>
+                  <ShelfFoldRow
+                    label={label}
+                    count={entries.length}
+                    expanded={expanded}
+                    flush
+                    controlsId={dateSectionShelfId(section)}
+                    onToggle={() =>
+                      setExpandedShelves((prev) => ({ ...prev, [dateSectionShelfKey(section)]: !expanded }))
+                    }
+                  />
+                  <div
+                    id={dateSectionShelfId(section)}
+                    role="group"
+                    aria-label={`Chats from ${label.toLowerCase()}`}
+                    hidden={!expanded}
+                  >
+                    {expanded ? entries.map(renderStreamRow) : null}
+                  </div>
+                </React.Fragment>
+              )
+            })
+          : (byStatus ? orderByStatus(stream, statusRankOf) : stream).map(renderStreamRow)}
         {byStatus ? renderStatusWorkingShelf() : null}
         {sleeping.length > 0 ? (
           <>
@@ -4280,7 +4316,7 @@ function WorkspaceSidebar({
           {renderWorkingSection()}
           {chatListView === 'projects'
             ? activeGroups.map((group) => renderFolderSection(group))
-            : renderChatStream(chatListView === 'status')}
+            : renderChatStream(chatListView)}
           {renderDraftsSection()}
           {renderScheduledSection()}
         </nav>

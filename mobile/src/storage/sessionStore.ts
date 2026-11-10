@@ -1,4 +1,5 @@
 import { MobileSession } from "../api/types";
+import { readChatGrouping, type ChatGrouping } from "../features/conversations/chatGrouping";
 import { readFollowUpBehavior, type FollowUpBehavior } from "../features/conversations/followUp";
 import type { ThemePreference } from "../theme/ThemeProvider";
 
@@ -61,7 +62,11 @@ const noticesReadKey = "multicode.mobile.noticesRead.v1";
 // on once push registration left with the relay. Only ever deleted now
 // (`forgetRetiredNotes`).
 const retiredNeedsMePushKey = "multicode.mobile.needsMePush.v1";
-const groupChatsByProjectKey = "multicode.mobile.groupChatsByProject.v1";
+// How Home groups its chats: "recent", "project" or "date". It replaced the
+// "Group chats by project" switch's key, which is still read where this one
+// was never written (a stored `true` is Project) and deleted once it is.
+const chatGroupingKey = "multicode.mobile.chatGrouping.v1";
+const legacyGroupChatsByProjectKey = "multicode.mobile.groupChatsByProject.v1";
 const followUpBehaviorKey = "multicode.mobile.followUpBehavior.v1";
 
 export interface StoredSessionList {
@@ -233,9 +238,9 @@ export interface DeviceNotesStore {
   saveReadNoticeIds(ids: string[]): Promise<void>;
   /** Deletes notes no build reads any more. Idempotent, and a failure leaves only an unread value behind. */
   forgetRetiredNotes(): Promise<void>;
-  /** Whether Home groups chats under their projects rather than listing them newest first. */
-  getGroupChatsByProject(): Promise<boolean>;
-  saveGroupChatsByProject(enabled: boolean): Promise<void>;
+  /** How Home groups its chats; never chosen reads as Recent, and the old by-project switch on as Project. */
+  getChatGrouping(): Promise<ChatGrouping>;
+  saveChatGrouping(grouping: ChatGrouping): Promise<void>;
   /** What a message sent while an agent works does by default; never chosen reads as Queue. */
   getFollowUpBehavior(): Promise<FollowUpBehavior>;
   saveFollowUpBehavior(behavior: FollowUpBehavior): Promise<void>;
@@ -243,8 +248,8 @@ export interface DeviceNotesStore {
 
 /**
  * The phone's own notes about what it has seen: when each chat was last
- * opened, which can-wait notices are read, whether Home groups chats by
- * project, and what a message sent mid-turn does.
+ * opened, which can-wait notices are read, how Home groups its chats, and
+ * what a message sent mid-turn does.
  *
  * Deliberately a *device* store rather than anything sent to a desktop. "I have
  * seen this" is a fact about this phone, not about the run — a second phone
@@ -262,7 +267,7 @@ export const createDeviceNotesStore = (adapter: SessionStorageAdapter | null): D
   // had opened, so every chat seen before it drew green again.
   let chatsOpenedLoad: Promise<void> | null = null;
   let cachedReadIds: string[] = [];
-  let cachedGroupByProject = false;
+  let cachedGrouping: ChatGrouping = "recent";
   let cachedFollowUp: FollowUpBehavior = "queue";
   // One write of the opened-at map at a time. Marks made while one is going
   // out are written together by the one after it: a fresh pairing marks every
@@ -344,16 +349,28 @@ export const createDeviceNotesStore = (adapter: SessionStorageAdapter | null): D
       const activeAdapter = await getAvailableAdapter(adapter);
       if (activeAdapter) await activeAdapter.deleteItem(retiredNeedsMePushKey);
     },
-    async getGroupChatsByProject() {
+    async getChatGrouping() {
       const activeAdapter = await getAvailableAdapter(adapter);
-      if (!activeAdapter) return cachedGroupByProject;
-      cachedGroupByProject = (await activeAdapter.getItem(groupChatsByProjectKey)) === "true";
-      return cachedGroupByProject;
+      if (!activeAdapter) return cachedGrouping;
+      cachedGrouping = readChatGrouping(
+        await activeAdapter.getItem(chatGroupingKey),
+        await activeAdapter.getItem(legacyGroupChatsByProjectKey),
+      );
+      return cachedGrouping;
     },
-    async saveGroupChatsByProject(enabled) {
-      cachedGroupByProject = enabled;
+    async saveChatGrouping(grouping) {
+      cachedGrouping = grouping;
       const activeAdapter = await getAvailableAdapter(adapter);
-      if (activeAdapter) await activeAdapter.setItem(groupChatsByProjectKey, enabled ? "true" : "false");
+      if (!activeAdapter) return;
+      await activeAdapter.setItem(chatGroupingKey, grouping);
+      // After the write, so a failed one leaves the old switch to read. A
+      // failed delete leaves a value nothing reads once the new key is set,
+      // so it does not fail the save.
+      try {
+        await activeAdapter.deleteItem(legacyGroupChatsByProjectKey);
+      } catch {
+        // Left behind, and never read again.
+      }
     },
     async getFollowUpBehavior() {
       const activeAdapter = await getAvailableAdapter(adapter);

@@ -1270,13 +1270,14 @@ export default function SettingsPanel({
             <SettingCard>
               <SettingsRow
                 label="Chat list"
-                help="How each window groups its chats: under their project, by status with working chats folded away at the foot of the list, or all together, most recently messaged first. The filter beside New chat changes it for one window."
+                help="How each window groups its chats: under their project, by status with working chats folded away at the foot of the list, by date under Today, Yesterday and earlier, or all together, most recently messaged first. The filter beside New chat changes it for one window."
               >
                 <SegmentedControl<ChatListView>
                   ariaLabel="Chat list"
                   items={[
                     { value: 'projects', label: 'By project' },
                     { value: 'status', label: 'By status' },
+                    { value: 'date', label: 'By date' },
                     { value: 'all', label: 'All chats' },
                   ]}
                   value={chatListView}

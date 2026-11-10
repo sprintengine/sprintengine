@@ -7,12 +7,14 @@ import { selectChatListView, type ChatListView } from '../../../store/slices/set
 const CHAT_LIST_VIEW_ITEMS: ReadonlyArray<{ value: ChatListView; label: string }> = [
   { value: 'projects', label: 'By project' },
   { value: 'status', label: 'By status' },
+  { value: 'date', label: 'By date' },
   { value: 'all', label: 'All chats' },
 ]
 
 /**
- * How this window groups its chats: by project, by status, or all together
- * (owner request 2026-11-02). It sits on New chat's row beside the scheduled
+ * How this window groups its chats: by project, by status, by the day the
+ * person last wrote to each, or all together (owner requests 2026-11-02 and
+ * 2026-11-10). It sits on New chat's row beside the scheduled
  * clock. The pick is this window's and lasts until it closes; Settings ▸
  * Appearance sets the shape every window opens in. The glyph tints while the
  * window is off that default, so a list grouped another way never passes for

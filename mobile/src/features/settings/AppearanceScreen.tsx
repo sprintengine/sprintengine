@@ -1,8 +1,8 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { AgentGlyph, CheckIcon, iconSize } from "../../components/glyphs";
+import { AgentGlyph, iconSize } from "../../components/glyphs";
 import { ScreenFrame, useListContentStyle } from "../../components/Screen";
-import { SettingsGroupLabel, SettingsNote, SettingsRow } from "../../components/SettingsRow";
+import { SettingsChoice, SettingsGroupLabel, SettingsNote, SettingsRow } from "../../components/SettingsRow";
 import { Toggle } from "../../components/Toggle";
 import {
   themePreferenceLabel,
@@ -10,7 +10,7 @@ import {
   useThemePreference,
   useThemedStyles,
 } from "../../theme/ThemeProvider";
-import { radius, space, typography, type Theme } from "../../theme/tokens";
+import { space, typography, type Theme } from "../../theme/tokens";
 
 /**
  * Three rows with a check.
@@ -32,26 +32,15 @@ export function AppearanceScreen({ onBack }: { onBack: () => void }) {
   return (
     <ScreenFrame backLabel="Back to settings" onBack={onBack} title="Appearance">
       <ScrollView contentContainerStyle={contentStyle}>
-        {themePreferences.map((option) => {
-          const selected = option === preference;
-          return (
-            <Pressable
-              accessibilityLabel={`Use ${themePreferenceLabel[option]} appearance`}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              key={option}
-              onPress={() => setPreference(option)}
-              style={({ pressed }) => [
-                styles.option,
-                selected ? styles.optionOn : null,
-                pressed && !selected ? styles.optionPressed : null,
-              ]}
-            >
-              <Text style={[styles.label, selected ? styles.labelOn : null]}>{themePreferenceLabel[option]}</Text>
-              {selected ? <CheckIcon size={iconSize.sm} tone="buttonInk" /> : null}
-            </Pressable>
-          );
-        })}
+        {themePreferences.map((option) => (
+          <SettingsChoice
+            accessibilityLabel={`Use ${themePreferenceLabel[option]} appearance`}
+            key={option}
+            label={themePreferenceLabel[option]}
+            onPress={() => setPreference(option)}
+            selected={option === preference}
+          />
+        ))}
         <SettingsNote>
           {preference === "system"
             ? `Following the phone: ${themePreferenceLabel[resolvedTheme.name]}.`
@@ -81,29 +70,6 @@ export function AppearanceScreen({ onBack }: { onBack: () => void }) {
 
 const createStyles = ({ colors }: Theme) =>
   StyleSheet.create({
-    option: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      minHeight: 56,
-      borderRadius: radius.overlay,
-      paddingHorizontal: space.lg,
-      paddingVertical: space.lg,
-    },
-    optionOn: {
-      backgroundColor: colors.buttonBg,
-    },
-    optionPressed: {
-      backgroundColor: colors.bgHover,
-    },
-    label: {
-      ...typography.body,
-      fontSize: 17,
-      color: colors.textPrimary,
-    },
-    labelOn: {
-      color: colors.buttonInk,
-    },
     unsaved: {
       ...typography.meta,
       color: colors.toneWarn,

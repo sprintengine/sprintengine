@@ -924,7 +924,9 @@ export interface SettingsSliceState {
   // chats; `all` is one stream of every chat, newest activity first, with each
   // row naming the project it belongs to; `status` is that stream with every
   // chat whose agent is at work folded into a closed Working shelf at its
-  // foot, so the list leads with what is waiting on the person. The stream is
+  // foot, so the list leads with what is waiting on the person; `date` is that
+  // stream cut into Today, Yesterday, the previous seven and thirty days and
+  // Older by the person's last message (`sidebar/dateSections.ts`). The stream is
   // what a fresh profile opens on. Persisted in the settings envelope and set
   // in Settings ▸ Appearance: it is how this person reads their work, so every
   // window opens in it.
@@ -973,10 +975,10 @@ export interface SettingsSliceState {
 export type SidebarSection = 'home' | 'extensions'
 
 // The shapes the chat rail can take. See `chatListView` above.
-export type ChatListView = 'projects' | 'status' | 'all'
+export type ChatListView = 'projects' | 'status' | 'date' | 'all'
 
 export function isChatListView(value: unknown): value is ChatListView {
-  return value === 'projects' || value === 'status' || value === 'all'
+  return value === 'projects' || value === 'status' || value === 'date' || value === 'all'
 }
 
 /** The shape this window's rail lists chats in: its own pick, else the default. */

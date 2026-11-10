@@ -117,16 +117,53 @@ test("the retired push switch's stored value is deleted, and only it", async () 
   await createDeviceNotesStore(UNAVAILABLE).forgetRetiredNotes();
 });
 
-test("grouping chats by project is off until turned on, and survives a relaunch", async () => {
+test("chats list newest first until a grouping is chosen, and the choice survives a relaunch", async () => {
   const adapter = memoryAdapter();
   const store = createDeviceNotesStore(adapter);
-  assert.equal(await store.getGroupChatsByProject(), false);
+  assert.equal(await store.getChatGrouping(), "recent");
 
-  await store.saveGroupChatsByProject(true);
-  assert.equal(await createDeviceNotesStore(adapter).getGroupChatsByProject(), true);
+  await store.saveChatGrouping("date");
+  assert.equal(await createDeviceNotesStore(adapter).getChatGrouping(), "date");
+  assert.equal(adapter.values["multicode.mobile.chatGrouping.v1"], "date");
 
-  await store.saveGroupChatsByProject(false);
-  assert.equal(await createDeviceNotesStore(adapter).getGroupChatsByProject(), false);
+  await store.saveChatGrouping("project");
+  assert.equal(await createDeviceNotesStore(adapter).getChatGrouping(), "project");
+
+  await store.saveChatGrouping("recent");
+  assert.equal(await createDeviceNotesStore(adapter).getChatGrouping(), "recent");
+});
+
+test("the old Group chats by project switch, left on, still reads as grouping by project", async () => {
+  const on = memoryAdapter({ "multicode.mobile.groupChatsByProject.v1": "true" });
+  assert.equal(await createDeviceNotesStore(on).getChatGrouping(), "project");
+  const off = memoryAdapter({ "multicode.mobile.groupChatsByProject.v1": "false" });
+  assert.equal(await createDeviceNotesStore(off).getChatGrouping(), "recent");
+
+  // A choice made since wins over the old switch, and saving one retires it.
+  const store = createDeviceNotesStore(on);
+  await store.saveChatGrouping("date");
+  assert.equal("multicode.mobile.groupChatsByProject.v1" in on.values, false);
+  assert.equal(await createDeviceNotesStore(on).getChatGrouping(), "date");
+  const both = memoryAdapter({
+    "multicode.mobile.groupChatsByProject.v1": "true",
+    "multicode.mobile.chatGrouping.v1": "recent",
+  });
+  assert.equal(await createDeviceNotesStore(both).getChatGrouping(), "recent");
+});
+
+test("an unreadable grouping reads as the old switch said, and no storage keeps the choice for the run", async () => {
+  const garbled = memoryAdapter({ "multicode.mobile.chatGrouping.v1": "by-colour" });
+  assert.equal(await createDeviceNotesStore(garbled).getChatGrouping(), "recent");
+  const garbledOn = memoryAdapter({
+    "multicode.mobile.chatGrouping.v1": "",
+    "multicode.mobile.groupChatsByProject.v1": "true",
+  });
+  assert.equal(await createDeviceNotesStore(garbledOn).getChatGrouping(), "project");
+
+  const store = createDeviceNotesStore(UNAVAILABLE);
+  assert.equal(await store.getChatGrouping(), "recent");
+  await store.saveChatGrouping("date");
+  assert.equal(await store.getChatGrouping(), "date");
 });
 
 test("a message sent mid-turn queues until Steer is chosen, and the choice survives a relaunch", async () => {

@@ -6,7 +6,7 @@ import { AppearanceScreen } from "../features/settings/AppearanceScreen";
 import { DesktopDetailScreen } from "../features/settings/DesktopDetailScreen";
 import { DesktopsScreen } from "../features/settings/DesktopsScreen";
 import { stackScreenOptions } from "./navigationTheme";
-import { PairingRoute, SettingsRoute, WelcomeRoute } from "./routes";
+import { ChatGroupingRoute, PairingRoute, SettingsRoute, WelcomeRoute } from "./routes";
 import { resolveGateRoute } from "./sessionFlow";
 import { useSessionData } from "./SessionDataProvider";
 import type { GateStackParamList } from "./types";
@@ -63,6 +63,7 @@ export function GateNavigator() {
           <SettingsRoute
             onBack={() => navigation.goBack()}
             onOpenAppearance={() => navigation.navigate("Appearance")}
+            onOpenChatGrouping={() => navigation.navigate("ChatGrouping")}
             onOpenDesktops={() => navigation.navigate("Desktop", { deviceId: "" })}
           />
         )}
@@ -98,6 +99,9 @@ export function GateNavigator() {
       </Stack.Screen>
       <Stack.Screen name="Appearance">
         {({ navigation }) => <AppearanceScreen onBack={() => navigation.goBack()} />}
+      </Stack.Screen>
+      <Stack.Screen name="ChatGrouping">
+        {({ navigation }) => <ChatGroupingRoute onBack={() => navigation.goBack()} />}
       </Stack.Screen>
       <Stack.Screen name="Pairing" component={PairingRoute} />
     </Stack.Navigator>
