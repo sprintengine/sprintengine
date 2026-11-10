@@ -829,8 +829,10 @@ regressions do not establish physical-device notification delivery.
 
 While a reply runs, a message can wait for the turn to end (Queue) or go into
 the turn now (Steer). Settings ▸ "Steer while an agent works" picks the
-default, off (Queue) unless turned on, and a long press on the send does the
-other one for that message. The send is drawn as which it will do: the queue
+default, on (Steer) unless turned off, and a long press on the send does the
+other one for that message. Steer leads because a message written while an
+agent works is nearly always meant for the work in hand; with Queue first, the
+only way to reach the agent at once was to stop it and send again. The send is drawn as which it will do: the queue
 mark or the steer arrow, named "Queue" or "Steer" for a reader, with the long
 press in its hint. Stop sits beside it, ghost, whenever words are in the box,
 so the reply can be stopped without emptying the box to find the button.

@@ -10,8 +10,8 @@ const {
 const offered = { declared: true, chatSteers: true, turnBusy: true, uploads: 0 };
 
 test("only a stored steer reads as Steer; anything else is Queue, what the phone always did", () => {
-  assert.equal(readFollowUpBehavior("steer"), "steer");
-  for (const value of ["queue", null, undefined, "", "STEER", "true"]) assert.equal(readFollowUpBehavior(value), "queue");
+  assert.equal(readFollowUpBehavior("queue"), "queue", "picked in Settings");
+  for (const value of ["steer", null, undefined, "", "QUEUE", "true"]) assert.equal(readFollowUpBehavior(value), "steer");
 });
 
 test("Steer is offered only to a desktop and chat that take one, mid-turn, with no pictures", () => {

@@ -330,8 +330,8 @@ const verifyNotesStore: DeviceNotesStore = {
   // EXPO_PUBLIC_VERIFY_CHAT_GROUPING=date (or project) photographs Home grouped that way.
   getChatGrouping: async () => readChatGrouping(process.env.EXPO_PUBLIC_VERIFY_CHAT_GROUPING, null),
   saveChatGrouping: asyncNoop,
-  // EXPO_PUBLIC_VERIFY_FOLLOW_UP=steer photographs the chat with Steer chosen.
-  getFollowUpBehavior: async () => (process.env.EXPO_PUBLIC_VERIFY_FOLLOW_UP === "steer" ? "steer" : "queue"),
+  // EXPO_PUBLIC_VERIFY_FOLLOW_UP=queue photographs the chat with Queue chosen.
+  getFollowUpBehavior: async () => (process.env.EXPO_PUBLIC_VERIFY_FOLLOW_UP === "queue" ? "queue" : "steer"),
   saveFollowUpBehavior: asyncNoop,
 };
 

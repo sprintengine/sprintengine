@@ -63,8 +63,8 @@ test("each entry says where it waits, and a refused one says why", () => {
   assert.equal(queuedLine(refused, true), "Not sent: The chat is stopped.");
   assert.equal(queuedLine(handing, true), "Queuing on the desktop…");
   assert.equal(queuedLine(handing, false), "Queued · goes to the desktop when connected");
-  assert.equal(queuedLine(phone, true), "Queued · sends when this turn ends");
-  assert.equal(queuedLine(phone, false), "Queued · sends when connected");
+  assert.equal(queuedLine(phone, true), "Queued on this phone · sends when this turn ends");
+  assert.equal(queuedLine(phone, false), "Queued on this phone · sends when connected");
 });
 
 test("a refused take-back says the desktop's words, or that the message is already on its way", () => {
