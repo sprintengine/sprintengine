@@ -97,7 +97,7 @@ export function NotificationBell({
                   tone={badge.tone}
                   count={badge.count}
                   max={99}
-                  className={onRail ? 'border-[color:var(--bg-canvas)]' : undefined}
+                  className={onRail ? 'border-[color:var(--bg-side-canvas)]' : undefined}
                 />
               ) : null}
             </IconButton>

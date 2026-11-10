@@ -160,6 +160,36 @@ test('a new Canvas tab opened from the panel opens docked', async () => {
   assert.equal(state.workspacePaneMaximised, false, 'a new Canvas tab leaves the pane docked')
 })
 
+// Over the menu the strip holds only the close control, and a band that drew
+// nothing cut the list off at its foot when the list scrolled. The strip floats
+// over the menu instead, the list opens the strip's height down and scrolls up
+// under it; a tool's strip, with tabs in it, stays a band in the flow.
+test('over the menu the strip floats over the list, which starts at the pane’s top', async () => {
+  const container = await renderPane({ open: true, activeTabId: null, tabs: [] }, false)
+  const strip = container.querySelector<HTMLElement>('[data-pane-strip]')
+  assert.equal(strip?.getAttribute('data-pane-strip'), 'floating')
+  assert.ok(strip?.classList.contains('absolute'), 'out of the flow, so the list is not pushed below it')
+  assert.ok(button(container, 'Close panel'), 'the close control still stands in it, over the list')
+  const list = container.querySelector<HTMLElement>('[data-chat-panel]')
+  assert.ok(list?.classList.contains('scroll-fade-top'), 'the list fades its top edge once scrolled')
+  assert.ok(list?.classList.contains('pt-[36px]'), 'at rest the list sits where it did below the strip')
+  assert.equal(list?.hasAttribute('data-scrolled'), false, 'at its top the list is drawn plain')
+  if (list) {
+    list.scrollTop = 48
+    act(() => {
+      list.dispatchEvent(new dom.window.Event('scroll'))
+    })
+  }
+  assert.equal(list?.hasAttribute('data-scrolled'), true, 'scrolled away from its top, the list says so')
+})
+
+test('a tool’s strip stays a band above the tab', async () => {
+  const container = await renderPane({ open: true, activeTabId: 't1', tabs: [{ id: 't1', kind: 'files' }] }, false)
+  const strip = container.querySelector<HTMLElement>('[data-pane-strip]')
+  assert.equal(strip?.getAttribute('data-pane-strip'), 'band')
+  assert.equal(strip?.classList.contains('absolute'), false)
+})
+
 test('a docked strip keeps its close-pane control and reserves the caption corner', async () => {
   const container = await renderPane({ open: true, activeTabId: 't1', tabs: [{ id: 't1', kind: 'files' }] }, false)
   assert.ok(button(container, 'Close panel'), 'docked, the strip closes the pane itself')

@@ -12,6 +12,7 @@ import { useChatPanelFacts, type ChatPanelFacts } from '../../../panels/agentCha
 import { useShowSubagentFamily, useSubagentFamily } from '../../../panels/agentChat/subagentFamilyStore'
 import { subagentViewOwner, useSubagentViews } from '../../../panels/agentChat/subagentViewStack'
 import { DiffStatPill, FrontTruncatedText, MachineGlyph, Section, TruncatedText, WorktreeGlyph } from '../../../ui'
+import { useScrolledFromTop } from '../../../ui/useScrolledFromTop'
 import { remoteProjectName } from '../../sidebar/folderGroups'
 import { dispatchFileReveal } from '../../../../utils/fileReveal'
 import { DiffGlyph, FilesGlyph, LibraryGlyph, CanvasGlyph, TerminalGlyph } from '../paneKinds'
@@ -98,10 +99,18 @@ function activityTone(row: ChatActivityRow | undefined): string {
   return ''
 }
 
-export type ChatPanelProps = OpenNowProps
+export type ChatPanelProps = OpenNowProps & {
+  /**
+   * The pane's strip floats over the list rather than standing above it
+   * (WorkspacePane): the list starts at the pane's top, opens the strip's
+   * height down, and scrolls up under it, fading its top edge once it has.
+   */
+  underStrip?: boolean
+}
 
-export function ChatPanel(openNow: ChatPanelProps) {
+export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
   const { workspaceId, tabs } = openNow
+  const scroll = useScrolledFromTop<HTMLDivElement>()
   const tabAgentId = useChatPanelTarget(workspaceId)
   const top = useSubagentViews(workspaceId, tabAgentId ?? '').at(-1)
   useShowSubagentFamily(workspaceId, tabAgentId)
@@ -172,7 +181,18 @@ export function ChatPanel(openNow: ChatPanelProps) {
   const filesRow = activityRow('files')
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1 overflow-y-auto px-3 pb-4" data-chat-panel="">
+    <div
+      ref={scroll.ref}
+      onScroll={underStrip ? scroll.onScroll : undefined}
+      // Under the floating strip the strip's height is the list's own top
+      // padding, so at rest the list sits where it did below a strip in the
+      // flow, and scrolled it runs up to the pane's top edge instead of being
+      // cut at the foot of a band that draws nothing. `scroll-fade-top`
+      // (assets/index.css) fades that edge only while something is up there.
+      className={`flex h-full min-h-0 flex-col gap-1 overflow-y-auto px-3 pb-4 ${underStrip ? 'scroll-fade-top pt-[36px]' : ''}`}
+      data-chat-panel=""
+      {...(underStrip && scroll.scrolled ? { 'data-scrolled': '' } : {})}
+    >
       <PanelHead name={name} cli={cli} words={words} machine={facts?.machine ?? null} project={project} />
       {family.parent ? <ChatPanelParentLink parent={family.parent} /> : null}
       <ChatPanelSubagents family={family} />

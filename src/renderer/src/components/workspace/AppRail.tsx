@@ -55,10 +55,47 @@ import { TITLE_BAR_HEIGHT } from './AppTitleBar'
 // native traffic lights, which the hiddenInset frame pins at x:12
 // (window-factory.ts), start in that reserve and run past the rail's edge — the
 // sidebar's chrome row insets for the remainder (SidebarChrome,
-// TRAFFIC_LIGHT_RESERVE − APP_RAIL_WIDTH).
+// TRAFFIC_LIGHT_RESERVE − APP_RAIL_WIDTH). With the sidebar collapsed there is
+// no chrome row beside the rail to do that, and the rail widens to the whole
+// reserve instead (appRailWidth).
 export const APP_RAIL_WIDTH = 56
 // Where the three lights end, as AppTitleBar's own reserve measures it.
 export const TRAFFIC_LIGHT_RESERVE = 78
+
+/**
+ * How wide the rail stands. Its own measure, except where the traffic lights
+ * would otherwise straddle its edge: with the sidebar collapsed on a windowed
+ * Mac nothing beside the rail is chrome any more — the workspace card is — so
+ * the card's corner and the rail's edge ran straight through the zoom button.
+ * There the rail takes the lights' whole reserve, and the window's controls
+ * stand on one surface from top to bottom whatever the material paints it
+ * with. Expanded, the sidebar's chrome row covers the remainder instead
+ * (SidebarChrome), and in fullscreen the lights are hidden.
+ */
+export function appRailWidth({
+  isMac,
+  isFullScreen,
+  sidebarCollapsed,
+}: {
+  isMac: boolean
+  isFullScreen: boolean
+  sidebarCollapsed: boolean
+}): number {
+  return isMac && !isFullScreen && sidebarCollapsed ? TRAFFIC_LIGHT_RESERVE : APP_RAIL_WIDTH
+}
+
+/** What the traffic lights still run past a rail this wide: the inset the strip beside it leaves. */
+export function trafficLightOverhang({
+  isMac,
+  isFullScreen,
+  railWidth,
+}: {
+  isMac: boolean
+  isFullScreen: boolean
+  railWidth: number
+}): number {
+  return isMac && !isFullScreen ? Math.max(0, TRAFFIC_LIGHT_RESERVE - railWidth) : 0
+}
 
 // The registered surfaces that stand on the rail, in rail order. Ids, not
 // modules. None today: Automations stood here until scheduled agents replaced
@@ -125,6 +162,13 @@ type AppRailProps = {
   // with only the brand mark below it. Owned by the host; the rail only places
   // it.
   accountSlot?: React.ReactNode
+  // How wide it stands (appRailWidth); its own measure unless the traffic
+  // lights need more.
+  width?: number
+  // Nothing of the left side stands beside it (the sidebar is collapsed), so
+  // the rail keeps the card gap toward the workspace card itself, as the
+  // sidebar's card does when it is there.
+  cardGap?: boolean
 }
 
 // One rail glyph on a control-lg square, named by its tooltip and accessible
@@ -185,7 +229,7 @@ function RailGlyph({
             count={badge.count}
             max={99}
             ariaLabel={badge.label}
-            className="border-[color:var(--bg-canvas)]"
+            className="border-[color:var(--bg-side-canvas)]"
           />
         ) : null}
       </IconButton>
@@ -201,18 +245,27 @@ export function AppRail({
   activeGlobalSurface,
   onOpenSurface,
   accountSlot,
+  width = APP_RAIL_WIDTH,
+  cardGap = false,
 }: AppRailProps) {
   return (
     <nav
       aria-label="App rail"
-      style={{ width: APP_RAIL_WIDTH }}
+      // With the card gap, the gap is added outside the rail's own width.
+      style={{ width: cardGap ? `calc(${width}px + var(--shell-card-gap))` : width }}
       // The whole column is a drag region — it is window chrome — and each
       // control opts back out, exactly as the title strip does.
       // `window-chrome` travels with the canvas fill: under the glass window
       // material this column IS the OS frost, so the squares' hover and their
       // neutral selection fill tint it instead of covering it (assets/index.css,
       // the glass block). Nothing on an opaque window.
-      className="window-chrome app-drag relative flex shrink-0 flex-col items-stretch bg-[color:var(--bg-canvas)]"
+      // Its ground is the left side's (--bg-side-canvas): the pane's surface on
+      // a solid window, the material under glass and tinted. The card gap is
+      // right padding the ground is not painted under, so the canvas shows
+      // there as it does between cards.
+      className={`window-chrome app-drag relative flex shrink-0 flex-col items-stretch bg-[color:var(--bg-side-canvas)] ${
+        cardGap ? 'bg-clip-content pr-[var(--shell-card-gap)]' : ''
+      }`}
     >
       {/* The title strip's height, reserved: the first glyph sits below the
           chrome row beside it, and on macOS the native traffic lights start here.

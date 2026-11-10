@@ -63,7 +63,7 @@ test('an update waiting in Settings is a named count on the gear', async () => {
   expect(badge?.getAttribute('aria-label')).toBe('2 updates available')
   // Docked on the gear's corner, ringed in the rail's canvas like every rail square's count.
   expect(badge?.className).toMatch(/absolute/)
-  expect(badge?.className).toMatch(/--bg-canvas/)
+  expect(badge?.className).toMatch(/--bg-side-canvas/)
   expect(gear().className).toMatch(/relative/)
 })
 
