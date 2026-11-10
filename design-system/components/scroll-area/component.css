@@ -1,0 +1,57 @@
+/* Scroll area — a region that scrolls, and marks an edge with a fade only
+ * while content is hidden past it. Extracted from the shipped ScrollArea
+ * primitive (src/renderer/src/components/ui/ScrollArea.tsx) and the
+ * `.scroll-edge-fade` classes it draws with.
+ *
+ * The edges are written as attributes by script — `data-scroll-start` while
+ * content is hidden before the viewport, `data-scroll-end` while it is hidden
+ * after — and this turns them into a mask. A mask takes alpha only, so its
+ * stops are opacity, never ink: the fade has no hue, and it works over any
+ * ground, glass included. */
+
+.ds-scroll-area {
+  --ds-scroll-fade-size: var(--sem-space-3xl);
+  min-height: 0;
+  overflow-y: auto;
+  /* Keyboard focus never comes to rest inside a fade: a row walked into view
+   * stops a fade's depth short of the edge. */
+  scroll-padding-block: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area--x {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-padding-block: 0;
+  scroll-padding-inline: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area[data-scroll-start] {
+  --ds-scroll-fade-start: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area[data-scroll-end] {
+  --ds-scroll-fade-end: var(--ds-scroll-fade-size);
+}
+
+.ds-scroll-area:is([data-scroll-start], [data-scroll-end]) {
+  /* ds-lint-allow: mask alpha stops (transparent / opaque), not ink — no colour token expresses "opaque" */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--ds-scroll-fade-start, 0px),
+    black calc(100% - var(--ds-scroll-fade-end, 0px)),
+    transparent
+  );
+}
+
+.ds-scroll-area--x:is([data-scroll-start], [data-scroll-end]) {
+  /* ds-lint-allow: mask alpha stops (transparent / opaque), not ink — no colour token expresses "opaque" */
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--ds-scroll-fade-start, 0px),
+    black calc(100% - var(--ds-scroll-fade-end, 0px)),
+    transparent
+  );
+}

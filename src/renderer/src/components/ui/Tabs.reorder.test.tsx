@@ -213,8 +213,9 @@ test('in a narrow scroller, a drag toward a cut-off slot scrolls it clear of the
   strip.host.scrollBy = ((options: ScrollToOptions) => scrolls.push(options.left ?? 0)) as typeof strip.host.scrollBy
   await strip.down('files', 50)
   await strip.move(280)
-  // The end of the strip (300) is brought in past the 28px fade (250 - 28).
-  expect(scrolls).toEqual([78])
+  // The end of the strip (300) is brought in past the 24px fade (250 - 24) —
+  // `space.3xl`, the one scroll-edge fade depth (components/scroll-area).
+  expect(scrolls).toEqual([74])
   expect((strip.marker() as HTMLElement | null)?.style.left).toBe('299px')
   await strip.up(280)
   await strip.unmount()

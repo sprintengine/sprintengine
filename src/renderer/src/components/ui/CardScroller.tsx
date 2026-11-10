@@ -22,7 +22,7 @@ export function CardScroller({
   children: React.ReactNode
   className?: string
 }) {
-  const { ref, edges, onScroll, style } = useFadingScroll<HTMLDivElement>([children])
+  const { ref, edges, className: fadeClass } = useFadingScroll<HTMLDivElement>([children])
   const page = (direction: 1 | -1) => {
     const el = ref.current
     if (!el) return
@@ -48,9 +48,7 @@ export function CardScroller({
       </div>
       <div
         ref={ref}
-        onScroll={onScroll}
-        style={style}
-        className="strip-scroll mt-1 grid snap-x auto-cols-[85%] grid-flow-col gap-2 overflow-x-auto overflow-y-hidden p-px @[520px]:auto-cols-[calc((100%-1rem-var(--sem-space-3xl))/3)]"
+        className={`strip-scroll ${fadeClass} mt-1 grid snap-x auto-cols-[85%] grid-flow-col gap-2 overflow-x-auto overflow-y-hidden p-px @[520px]:auto-cols-[calc((100%-1rem-var(--sem-space-3xl))/3)]`}
       >
         {React.Children.map(children, (card) => (
           <div className="flex min-w-0 snap-start">{card}</div>
