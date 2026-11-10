@@ -17,6 +17,7 @@
  */
 
 import { quotesToInlineText } from './chat-quotes'
+import { sliceWhole } from './slice-whole'
 
 /**
  * Name stems the APP mints for a fresh chat, never a person. The sidebar's New
@@ -261,7 +262,7 @@ export function deriveWorkspaceTitle(prompt: string): string | null {
   if (title.length > MAX_WORKSPACE_TITLE_LENGTH) {
     // Break on a word boundary rather than mid-word; fall back to a hard cut
     // when the very first word is longer than the cap.
-    const cut = title.slice(0, MAX_WORKSPACE_TITLE_LENGTH)
+    const cut = sliceWhole(title, MAX_WORKSPACE_TITLE_LENGTH)
     const lastSpace = cut.lastIndexOf(' ')
     title = lastSpace > MIN_TITLE_LENGTH ? cut.slice(0, lastSpace) : cut
   }

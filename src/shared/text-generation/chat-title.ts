@@ -14,6 +14,7 @@
  * and by tests.
  */
 
+import { sliceWhole } from '../slice-whole'
 import { MAX_WORKSPACE_TITLE_LENGTH } from '../workspace-title'
 import { quotesToPlainText } from '../chat-quotes'
 
@@ -40,7 +41,7 @@ export const CHAT_TITLE_OUTPUT_SCHEMA = {
 /** Truncate a prompt section, marking the cut so the model knows it saw a prefix. */
 export function limitSection(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value
-  return `${value.slice(0, maxChars)}\n\n[truncated]`
+  return `${sliceWhole(value, maxChars)}\n\n[truncated]`
 }
 
 const CHAT_TITLE_INSTRUCTIONS = `Generate a title that will help the user recognize this chat weeks later.
@@ -135,7 +136,7 @@ export function sanitizeGeneratedChatTitle(raw: string | null | undefined): stri
     .replace(/\s+/g, ' ')
     .trim()
   if (title.length > MAX_WORKSPACE_TITLE_LENGTH) {
-    const cut = title.slice(0, MAX_WORKSPACE_TITLE_LENGTH)
+    const cut = sliceWhole(title, MAX_WORKSPACE_TITLE_LENGTH)
     const lastSpace = cut.lastIndexOf(' ')
     title = lastSpace > MIN_CHAT_TITLE_LENGTH ? cut.slice(0, lastSpace) : cut
   }

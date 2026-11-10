@@ -13,6 +13,7 @@
  * Pure: no I/O. The main process gathers the inputs; tests drive the rest.
  */
 
+import { sliceWhole } from '../slice-whole'
 import { limitSection, namesSomething } from './chat-title'
 import {
   isConventionalCommitSubject,
@@ -217,16 +218,6 @@ function spellConventionalType(line: string): string {
   const lower = type.toLowerCase()
   if (!isConventionalCommitSubject(`${lower}: x`)) return line
   return `${lower}${scope}${bang}: ${description}`
-}
-
-/**
- * The first `max` UTF-16 units of `text`, one fewer when the cut would split a
- * surrogate pair: half an emoji is not a character, and git stores it as U+FFFD.
- */
-function sliceWhole(text: string, max: number): string {
-  const cut = text.slice(0, max)
-  const last = cut.charCodeAt(cut.length - 1)
-  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut
 }
 
 /** Cut to `max` at the last word boundary that keeps most of the line, else at `max`. */

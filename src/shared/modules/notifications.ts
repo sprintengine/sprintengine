@@ -20,6 +20,8 @@
 // reads that backlog once as it boots. The id is what keeps the backlog from
 // filing a row twice.
 
+import { sliceWhole } from '../slice-whole'
+
 /** The host-owned push channel every module's bell rows ride. */
 export const MODULE_NOTIFICATIONS_CHANNEL = 'modules:notifications'
 
@@ -133,8 +135,8 @@ export function validateModuleNotifyInput(input: unknown): ModuleNotifyValidatio
   return {
     ok: true,
     severity: severity as ModuleNotificationSeverity,
-    title: title.trim().slice(0, MAX_TITLE_LENGTH),
-    body: trimmedBody ? trimmedBody.slice(0, MAX_BODY_LENGTH) : undefined,
+    title: sliceWhole(title.trim(), MAX_TITLE_LENGTH),
+    body: trimmedBody ? sliceWhole(trimmedBody, MAX_BODY_LENGTH) : undefined,
     ...(validatedTarget ? { target: validatedTarget } : {}),
   }
 }
