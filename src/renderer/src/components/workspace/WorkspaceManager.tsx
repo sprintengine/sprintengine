@@ -124,7 +124,7 @@ import {
 } from './agentComposer/useAgentComposer'
 import WorkspaceLayout from './WorkspaceLayout'
 import WorkspaceSidebar from './WorkspaceSidebar'
-import { AppRail, railSurfacesOf, type RailSurface } from './AppRail'
+import { AppRail, appRailWidth, railSurfacesOf, type RailSurface } from './AppRail'
 import { useRailBadges } from './useRailBadges'
 import {
   EXTENSIONS_CATALOGUE_SURFACE_ID,
@@ -5093,11 +5093,20 @@ export default function WorkspaceManager() {
   const sidebarRevealFolder = useStableCallback(handleRevealFolder)
   const sidebarOpenRemoteSession = useStableCallback(openRemoteSession)
   const isFullScreen = windowState.isFullScreen
+  // Wider than its own measure only where the traffic lights would straddle its
+  // edge: collapsed, on a windowed Mac, at a desktop width (appRailWidth). A
+  // phone-width window shows the sidebar beside it, expanded.
+  const railWidth = appRailWidth({
+    isMac: nativeMacChrome,
+    isFullScreen,
+    sidebarCollapsed: sidebarCollapsed && !narrowViewport,
+  })
   const sidebarChromeSlot = useMemo(
     () => (
       <SidebarChrome
         isMac={nativeMacChrome}
         isFullScreen={isFullScreen}
+        railWidth={railWidth}
         onToggleSidebar={sidebarToggle}
         onNavigateBack={sidebarNavigateBack}
         onNavigateForward={sidebarNavigateForward}
@@ -5109,6 +5118,7 @@ export default function WorkspaceManager() {
     ),
     [
       isFullScreen,
+      railWidth,
       sidebarToggle,
       sidebarNavigateBack,
       sidebarNavigateForward,
@@ -5208,6 +5218,11 @@ export default function WorkspaceManager() {
             surfaces={railSurfaces}
             activeGlobalSurface={activeGlobalSurface}
             onOpenSurface={openRailSurface}
+            width={railWidth}
+            // Collapsed, nothing of the left side stands between the rail and
+            // the workspace card, so the rail keeps the gap the sidebar's card
+            // would.
+            cardGap={sidebarCollapsed && !narrowViewport}
             accountSlot={
               <SidebarAccountBar
                 collapsed
@@ -5238,8 +5253,8 @@ export default function WorkspaceManager() {
               />
             }
           />
-          <SidebarRevealZones reveal={sidebarReveal} />
-          <SidebarRevealFrame reveal={sidebarReveal}>
+          <SidebarRevealZones reveal={sidebarReveal} railWidth={railWidth} />
+          <SidebarRevealFrame reveal={sidebarReveal} railWidth={railWidth}>
             <WorkspaceSidebar
               workspaces={visibleWorkspaces}
               activeWorkspaceId={windowActiveWorkspaceId}
