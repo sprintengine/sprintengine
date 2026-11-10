@@ -14,6 +14,7 @@ import {
   OutlineButton,
   RefreshIcon,
   Spinner,
+  Tooltip,
 } from '../ui'
 import { addTypedModel, removeListedModel, restoreListedModel, type CliModelEdit } from './cliModelListEdit'
 import { modelDiscoveryLine, modelRefreshProblem, type CliModelRefreshOutcome } from './modelDiscoveryLine'
@@ -135,12 +136,13 @@ export function CliModelList({
                 {option.isNew ? <NewChip /> : null}
                 {option.id === selectedModel ? <MicroChip>New chats</MicroChip> : null}
                 {option.origin === 'user' ? <MicroChip>Added by you</MicroChip> : null}
-                <CloseIconButton
-                  size="sm"
-                  aria-label={`Remove ${option.id} from ${name} models`}
-                  title="Remove from the list"
-                  onClick={() => remove(option.id)}
-                />
+                <Tooltip content="Remove from the list">
+                  <CloseIconButton
+                    size="sm"
+                    aria-label={`Remove ${option.id} from ${name} models`}
+                    onClick={() => remove(option.id)}
+                  />
+                </Tooltip>
               </li>
             )
           })}
