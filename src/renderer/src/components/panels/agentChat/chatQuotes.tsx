@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { createContext, useCallback, useContext, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { parseQuoteHref, quoteAsReadableMarkdown, quoteLabel, type ChatQuote } from '../../../../../shared/chat-quotes'
 import { renderMarkdown } from '../../../utils/markdown'
 import { CheckIcon } from '../../AppIcons'
@@ -215,6 +215,14 @@ export function QuoteCommentEditor({
     doneRef.current = true
     action()
   }
+  // Reopened on a comment already written, the caret goes after it, where more
+  // is typed, not before its first word; a long one scrolls to show it. Stable,
+  // so it runs once when the field mounts and never moves a caret mid-edit.
+  const placeCaretAtEnd = useCallback((node: HTMLTextAreaElement | null) => {
+    if (!node) return
+    node.setSelectionRange(node.value.length, node.value.length)
+    node.scrollTop = node.scrollHeight
+  }, [])
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing) return
     if (event.key === 'Escape') {
@@ -237,6 +245,7 @@ export function QuoteCommentEditor({
     >
       <div data-quote-editor={n} className="flex w-[20rem] max-w-[calc(100vw-2rem)] flex-col gap-1 p-2">
         <Textarea
+          ref={placeCaretAtEnd}
           variant="composer"
           resize="none"
           rows={1}
