@@ -28,12 +28,9 @@ import { CircleButton } from "../../components/CircleButton";
 import { CopyButton } from "../../components/CopyButton";
 import {
   ChevronIcon,
-  MachineGlyph,
   ScheduleIcon,
-  WorktreeGlyph,
   iconSize,
 } from "../../components/glyphs";
-import { ContextRing } from "../../components/ContextRing";
 import { SheetOption } from "../../components/SheetOption";
 import { MarkdownDocument, type QuoteMark } from "../../components/document/MarkdownDocument";
 import { SourceBlock } from "../../components/document/SourceBlock";
@@ -63,10 +60,9 @@ import { backgroundWorkLabel, formatElapsed, workingLabel } from "./agentLogic";
 import { useChats } from "./ChatsContext";
 import { followUpAction, followUpSendLabel, steerOffered } from "./followUp";
 import { chatHostMark, stripPullRequest } from "./chatMarks";
-import { openPullRequest, PullRequestStripButton } from "./ChatMarkViews";
+import { openPullRequest } from "./ChatMarkViews";
 import { ChatComposer } from "./ChatComposer";
-import { ComposerStrip, STRIP_ITEM_HEIGHT, type ComposerStripEntry } from "./ComposerStrip";
-import { conversationChanges, diffPill, STRIP_DROP_ORDER } from "./composerStripLogic";
+import { conversationChanges } from "./composerStripLogic";
 import { contextRingLabel, contextRingValue } from "./contextUsage";
 import {
   chatImageMaxBytes,
@@ -179,9 +175,6 @@ import { chatProvider, MODEL_SET_ONCE_NOTE, readOnlyProvider } from "./modelPick
 
 /** No turn to open: one list, so what is worked out from it is not worked out again. */
 const NO_TURNS: (ChangedTurn & { turnSeq: number })[] = [];
-
-/** The ring's touch area on the strip's line; its long press pads out to the floor. */
-const RING_HIT_WIDTH = 28;
 
 // What the header says about the link while it is not live. Live says nothing:
 // the chat's own content is the evidence.
@@ -494,8 +487,8 @@ export function ConversationScreen({
   // The chat's page, which its title opens.
   const [pageOpen, setPageOpen] = useState(false);
   // The branch the chat's checkout is on, and its worktree's name when the
-  // folder is one, for the strip under the composer. A nicety like the
-  // project: the chat never waits on it.
+  // folder is one, for the chat's page. A nicety like the project: the chat
+  // never waits on it.
   const [checkout, setCheckout] = useState<WorkspaceCheckout | null>(null);
   const workspacesApi = apiFor(deviceId);
   useEffect(() => {
@@ -584,8 +577,6 @@ export function ConversationScreen({
     setSheet(null);
     if (accessReturn) sheetHandoff.after(() => setSheet(accessReturn));
   };
-  // A long-pressed glyph's words, on the strip's line for a moment.
-  const [readout, setReadout] = useState<string | null>(null);
   const [changing, setChanging] = useState<"model" | "permission" | null>(null);
   // What the last switch said: the desktop's caveat (a switch mid-turn applies
   // from the next turn) or why it refused. A row in the composer's tray,
@@ -952,7 +943,8 @@ export function ConversationScreen({
         }
       : null;
   const machineMark = chatHostMark(listedThread.host);
-  // The pull request rides the strip's pinned end, as the desktop's does.
+  // The pull request the chat's page names, picked as the desktop's strip
+  // picks it.
   const pr = stripPullRequest(listedThread.pullRequests);
   const linkWords = CONNECTION_WORDS[chat.state];
   // The header says how the link is and nothing else. What went wrong with
@@ -1035,8 +1027,10 @@ export function ConversationScreen({
     ? "Claude"
     : "The agent";
   const chatCli = activeThread.models?.cli ?? cliForChatProvider(activeThread.providerId);
-  // The model picker, New's: the model, and the access in its sheet (the
-  // desktop's engine picker keeps it there). Tappable where either can change.
+  // The model sheet, New's picker: the model, and the access in its sheet (the
+  // desktop's engine picker keeps it there). An open chat reaches it from the
+  // Model row of its page, not from a pill in the composer: the page already
+  // says what the chat runs, and the box keeps to what the next message needs.
   const accessOffered = !!preset && presetChoices.length > 0;
   // The desktop's picker, held to the chat's own CLI as its chat holds it.
   // Where the desktop lists no models for the chat, the sheet (opened for its
@@ -1050,29 +1044,16 @@ export function ConversationScreen({
           modelName: shortModelLabel(activeThread),
         });
   const pickerLabel = changing === "model" ? "Switching…" : (model?.label ?? shortModelLabel(activeThread));
-  const picker =
-    model || preset
-      ? {
-          cli: chatCli,
-          label: pickerLabel,
-          // The send time's tag shares the row: the mark alone.
-          compact: sendAt !== null,
-          accessibilityLabel: [
-            `Model, ${pickerLabel}${model && !model.editable ? ", set when the chat started" : ""}`,
-            preset ? `access ${permissionLabel(preset)}` : null,
-          ]
-            .filter(Boolean)
-            .join(", "),
-          onPress: model?.editable || accessOffered ? () => setSheet("model") : undefined,
-          disabled: !canAct || !!changing,
-        }
-      : null;
+  // Offered where the model or the access is the desktop's to say; it opens
+  // where either can change.
+  const modelSheetOffered = !!(model || preset);
+  const openModelSheet =
+    modelSheetOffered && (model?.editable || accessOffered) && canAct && !changing
+      ? () => sheetHandoff.after(() => setSheet("model"))
+      : undefined;
 
-  // The strip under the composer: the machine when the chat runs somewhere
-  // other than the paired desktop, the branch (with the worktree's mark when
-  // the agent runs in one), what the chat changed, and the context ring.
+  // What the chat changed, for its page's Changes row and the branch.
   const changes = useMemo(() => conversationChanges(chat.changedTurns), [chat.changedTurns]);
-  const pill = diffPill(changes);
   const openable = (onOpenChanges && changes?.openable) || NO_TURNS;
   // The changed-files sheet's rows, worked out when the turns change rather
   // than on every keystroke: a locale time builds its formatter each call.
@@ -1088,153 +1069,15 @@ export function ConversationScreen({
   const openChanges = openable.length
     ? () => (openable.length === 1 ? onOpenChanges?.(openable[0].turnSeq) : setSheet("changes"))
     : undefined;
-  const ring = contextRingValue(chat.context);
   const branch = checkout?.branch ?? null;
   const worktree = checkout?.worktree ?? null;
-  const stripEntries: ComposerStripEntry[] = [];
-  if (machineMark)
-    stripEntries.push({
-      id: "machine",
-      drop: STRIP_DROP_ORDER.machine,
-      overflowLabel: `Runs on ${machineMark.label}`,
-      overflowIcon: <MachineGlyph colour={machineMark.colour} kind={machineMark.kind} size={iconSize.sm} />,
-      onOverflowPress: () => setPageOpen(true),
-      // The glyph alone: its name is a long press away, and the screen
-      // reader's to say.
-      render: () => (
-        <Pressable
-          accessibilityHint="Shows the machine's name."
-          accessibilityLabel={`Runs on ${machineMark.label}`}
-          accessibilityRole="button"
-          hitSlop={touchSlop(STRIP_ITEM_HEIGHT, STRIP_ITEM_HEIGHT - space.sm)}
-          onLongPress={() => setReadout(`Runs on ${machineMark.label}`)}
-          onPress={() => setReadout(`Runs on ${machineMark.label}`)}
-          style={({ pressed }) => [styles.stripGlyph, pressed ? styles.chipPressed : null]}
-        >
-          <MachineGlyph colour={machineMark.colour} kind={machineMark.kind} size={iconSize.xs} />
-        </Pressable>
-      ),
-    });
-  if (branch)
-    stripEntries.push({
-      id: "branch",
-      drop: STRIP_DROP_ORDER.branch,
-      branch,
-      overflowLabel: worktree ? `Branch ${branch} · worktree ${worktree}` : `Branch ${branch}`,
-      onOverflowPress: openChanges,
-      render: (label) => {
-        const body = (
-          <>
-            {/* The worktree's mark before the name, as the desktop's strip
-                draws it. */}
-            {worktree ? <WorktreeGlyph size={iconSize.xs} tone="textSubtle" /> : null}
-            {/* Already cut to fit by the strip's layout; "head" only if a
-                measurement was a point out, so the end still shows. */}
-            <Text ellipsizeMode="head" numberOfLines={1} style={[styles.stripText, styles.mono]}>
-              {label}
-            </Text>
-          </>
-        );
-        const spoken = worktree ? `Branch ${branch}, in worktree ${worktree}` : `Branch ${branch}`;
-        // The branch opens what the chat changed, where there is something
-        // to open; the phone has no other view of its files.
-        return openChanges ? (
-          <Pressable
-            accessibilityHint="Opens the files this chat changed."
-            accessibilityLabel={spoken}
-            accessibilityRole="button"
-            hitSlop={touchSlop(STRIP_ITEM_HEIGHT)}
-            onPress={openChanges}
-            style={({ pressed }) => [styles.stripItem, pressed ? styles.chipPressed : null]}
-          >
-            {body}
-          </Pressable>
-        ) : (
-          <View accessible accessibilityLabel={spoken} style={styles.stripItem}>
-            {body}
-          </View>
-        );
-      },
-    });
-  if (pill)
-    stripEntries.push({
-      id: "diff",
-      drop: STRIP_DROP_ORDER.diff,
-      overflowLabel: pill.label,
-      onOverflowPress: openChanges,
-      render: () => {
-        const drawn = (
-          <View style={styles.diffPill}>
-            {pill.kind === "files" ? (
-              <Text style={[styles.diffHalf, styles.diffFiles]}>
-                {pill.files} {pill.files === 1 ? "file" : "files"}
-              </Text>
-            ) : (
-              <>
-                {pill.added !== null ? <Text style={[styles.diffHalf, styles.diffAdded]}>+{pill.added}</Text> : null}
-                {pill.removed !== null ? <Text style={[styles.diffHalf, styles.diffRemoved]}>{"\u2212"}{pill.removed}</Text> : null}
-              </>
-            )}
-          </View>
-        );
-        return openChanges ? (
-          <Pressable
-            accessibilityHint="Opens the files this chat changed."
-            accessibilityLabel={pill.label}
-            accessibilityRole="button"
-            hitSlop={touchSlop(STRIP_ITEM_HEIGHT)}
-            onPress={openChanges}
-            style={({ pressed }) => [styles.stripItem, pressed ? styles.chipPressed : null]}
-          >
-            {drawn}
-          </Pressable>
-        ) : (
-          <View accessible accessibilityLabel={pill.label} style={styles.stripItem}>
-            {drawn}
-          </View>
-        );
-      },
-    });
+  const ring = contextRingValue(chat.context);
   const ringLabel = ring ? contextRingLabel(ring) : null;
-  // The line's pinned end, which never leaves for the "⋮": the pull request,
-  // the one thing on the line to act on, and the context ring in the corner.
-  const pinned =
-    pr || (ring && ringLabel) ? (
-      <>
-        {pr ? (
-          <PullRequestStripButton
-            height={STRIP_ITEM_HEIGHT}
-            onOpen={onOpenPullRequest ? () => onOpenPullRequest(pr.mark.url) : undefined}
-            pr={pr}
-          />
-        ) : null}
-        {ring && ringLabel ? (
-          <Pressable
-            accessibilityLabel={`Context, ${ringLabel}`}
-            accessibilityRole="button"
-            hitSlop={touchSlop(STRIP_ITEM_HEIGHT, RING_HIT_WIDTH)}
-            onLongPress={() => setReadout(ringLabel)}
-            onPress={() => setReadout(ringLabel)}
-            style={styles.ring}
-          >
-            <ContextRing high={ring.high} percentage={ring.percentage} />
-          </Pressable>
-        ) : null}
-      </>
-    ) : null;
-  // Nothing to say, no strip: a drawer with nothing in it is a ledge.
-  const strip = !stripEntries.length && !pinned ? null : (
-    <ComposerStrip
-      entries={stripEntries}
-      onReadoutDone={() => setReadout(null)}
-      pinned={pinned}
-      pinnedWidth={RING_HIT_WIDTH}
-      readout={readout}
-    />
-  );
   // The chat page's facts that are controls, as the desktop's panel lists
   // them: the branch, the pull request, the servers its agents linked, the
-  // permissions, the context and the usage. What the strip shows stays there.
+  // model, the permissions, the context and the usage. The chat screen keeps
+  // none of them under its composer; the page is where they are read and
+  // changed.
   const usageNow = usageWindow(chat.usageLimits, chatThreadCli(activeThread));
   const servers = serverWords(activeThread.localServers ?? listedThread.localServers);
   // A reset later today reads as its time; one further off names its day too.
@@ -1272,6 +1115,17 @@ export function ConversationScreen({
       : []),
     ...(servers
       ? [{ key: "server", label: (activeThread.localServers ?? listedThread.localServers ?? []).length > 1 ? "Servers" : "Server", meta: servers.meta, sub: `${servers.sub} · on ${session?.desktopName ?? "the desktop"}` }]
+      : []),
+    ...(modelSheetOffered
+      ? [
+          {
+            key: "model",
+            label: "Model",
+            meta: pickerLabel,
+            ...(model && !model.editable ? { sub: "Set when the chat started" } : {}),
+            ...(openModelSheet ? { onPress: openModelSheet } : {}),
+          },
+        ]
       : []),
     ...(preset
       ? [
@@ -1928,8 +1782,6 @@ export function ConversationScreen({
                     <SendTimeTag at={sendAt} onPress={() => setSheet("sendAt")} onRemove={() => setSendAt(null)} />
                   ) : null
                 }
-                picker={picker}
-                strip={strip}
               />
             </View>
           </>
@@ -1949,7 +1801,7 @@ export function ConversationScreen({
           </Text>
         )}
       </View>
-      {picker ? (
+      {modelSheetOffered ? (
         <ModelPickerSheet
           // Access lives with the model, as New and the desktop's engine
           // picker keep it: a preset is the CLI's, and each spells bypass
@@ -3043,44 +2895,6 @@ const createStyles = ({ colors, cardShadowOpacity }: Theme) =>
     },
     noticeText: { ...typography.meta, color: colors.textDefault },
     chipPressed: { backgroundColor: colors.bgHover },
-    // The strip under the composer (ComposerStrip): ghost items, one line.
-    stripItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: space.xs,
-      height: STRIP_ITEM_HEIGHT,
-      paddingHorizontal: space.xs,
-      borderRadius: radius.control,
-    },
-    stripGlyph: {
-      height: STRIP_ITEM_HEIGHT,
-      width: STRIP_ITEM_HEIGHT - space.sm,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: radius.control,
-    },
-    stripText: { ...typography.meta, color: colors.textMuted, flexShrink: 1 },
-    mono: { fontFamily: monoFontFamily },
-    // The split pill, Claude Code's: a green half and a red half, one pill
-    // with no gap between them.
-    diffPill: { flexDirection: "row", borderRadius: radius.chip, overflow: "hidden" },
-    diffHalf: {
-      ...typography.meta,
-      fontSize: 12,
-      lineHeight: 18,
-      fontVariant: ["tabular-nums"],
-      fontWeight: fontWeight.medium,
-      paddingHorizontal: space.xs,
-    },
-    diffAdded: { color: colors.toneGood, backgroundColor: colors.toneGoodSoft },
-    diffRemoved: { color: colors.toneError, backgroundColor: colors.toneErrorSoft },
-    diffFiles: { color: colors.textMuted, backgroundColor: colors.toneNeutralSoft },
-    ring: {
-      width: RING_HIT_WIDTH,
-      height: STRIP_ITEM_HEIGHT,
-      alignItems: "center",
-      justifyContent: "center",
-    },
     actions: {
       flexDirection: "row",
       flexWrap: "wrap",

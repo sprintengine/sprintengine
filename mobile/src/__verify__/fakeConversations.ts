@@ -482,7 +482,7 @@ function settledTurn(): ConversationEvent[] {
     done("picture", "", 57 * minutes, turn),
     // An hour's cache, written 57 minutes ago: three minutes left.
     event("usage_updated", { ...turn, promptCache: { ttl: "1h", cached: true, recacheTokens: 412_000 } }, 57 * minutes),
-    // The context window as the desktop reports it, for the strip's ring.
+    // The context window as the desktop reports it, for the page's Context row.
     event("usage_updated", { ...turn, contextWindow: 200_000, contextUsed: 76_000 }, 57 * minutes),
     event("turn_completed", { ...turn, durationMs: 134_000, checkpointAvailable: true }, 57 * minutes),
   ];

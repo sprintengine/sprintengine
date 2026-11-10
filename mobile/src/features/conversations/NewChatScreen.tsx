@@ -582,8 +582,8 @@ export function NewChatScreen({
   // (opening "Run on" where more than one desktop is paired), the project in
   // its hue, Worktree where the desktop can cut one, and the branch: the one
   // the worktree is cut from while Worktree is on, else the folder's, with
-  // the worktree's mark where the folder is one. One line, as the chat's
-  // strip is: the branch shrinks from the front, then items leave for the "⋮".
+  // the worktree's mark where the folder is one. One line: the branch shrinks
+  // from the front, then items leave for the "⋮".
   const stripEntries: ComposerStripEntry[] = [
     {
       id: "machine",
