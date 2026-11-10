@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Worker } from 'node:worker_threads'
@@ -153,12 +153,14 @@ export function createUsageService(deps: UsageServiceDeps): UsageService {
   async function save(): Promise<void> {
     const path = cachePath()
     const file: CacheFile = { version: CACHE_VERSION, scannedAt, entries: [...entries.values()] }
+    const temporary = `${path}.${process.pid}.tmp`
     try {
       await mkdir(dirname(path), { recursive: true })
-      const temporary = `${path}.${process.pid}.tmp`
       await writeFile(temporary, JSON.stringify(file), 'utf8')
       await rename(temporary, path)
     } catch (error) {
+      // A failed write or rename leaves the temporary behind.
+      await rm(temporary, { force: true }).catch(() => undefined)
       // The cache is a speed-up; failing to keep it costs the next run a full read.
       console.warn('[usage] could not write the scan cache:', error)
     }

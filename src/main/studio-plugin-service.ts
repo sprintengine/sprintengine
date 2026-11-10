@@ -28,7 +28,7 @@
 // built-in row can say when it was given.
 
 import { existsSync } from 'node:fs'
-import { readFile, mkdir, rename, writeFile } from 'node:fs/promises'
+import { readFile, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
 import type { PluginAgentStateSpec } from '../shared/plugin-manifest'
@@ -206,9 +206,9 @@ export function createStudioPluginService(options: StudioPluginServiceOptions): 
       }
     }
     const at = new Date().toISOString()
+    const temp = `${path}.${process.pid}.tmp`
     try {
       await mkdir(dirname(path), { recursive: true })
-      const temp = `${path}.${process.pid}.tmp`
       await writeFile(
         temp,
         `${JSON.stringify({ plugin: STUDIO_PLUGIN_ID, hooksAcknowledgedAt: at }, null, 2)}\n`,
@@ -216,6 +216,8 @@ export function createStudioPluginService(options: StudioPluginServiceOptions): 
       )
       await rename(temp, path)
     } catch (error) {
+      // A failed write or rename leaves the temporary behind.
+      await rm(temp, { force: true }).catch(() => undefined)
       // The decision still stands for this run; only the record failed. Say so
       // rather than silently re-answering on every open.
       warn(

@@ -178,8 +178,9 @@ export function createModuleSecretsRegistry(deps: ModuleSecretsDeps): ModuleSecr
     if (!deps.cipher) throw new Error('No cipher.')
     await mkdir(secretsDir(deps.userDataDir), { recursive: true })
     const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
-    await writeFile(temporary, await sealSecret(deps.cipher, JSON.stringify(record)), { mode: 0o600 })
+    const sealed = await sealSecret(deps.cipher, JSON.stringify(record))
     try {
+      await writeFile(temporary, sealed, { mode: 0o600 })
       await rename(temporary, path)
     } catch (error) {
       await unlink(temporary).catch(() => {})

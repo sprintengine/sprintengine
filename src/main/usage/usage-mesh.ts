@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import type { UsageSource } from '../../shared/modules/activity-service'
@@ -475,12 +475,14 @@ export function createUsageFleet(deps: UsageFleetDeps): UsageFleet {
       }
     }
     const path = cachePath()
+    const temporary = `${path}.${process.pid}.tmp`
     try {
       await mkdir(dirname(path), { recursive: true })
-      const temporary = `${path}.${process.pid}.tmp`
       await writeFile(temporary, JSON.stringify(file), 'utf8')
       await rename(temporary, path)
     } catch (error) {
+      // A failed write or rename leaves the temporary behind.
+      await rm(temporary, { force: true }).catch(() => undefined)
       // Kept to show a machine that is away; without it, one is shown with no figures.
       console.warn('[usage] could not keep the paired machines’ usage:', error)
     }
