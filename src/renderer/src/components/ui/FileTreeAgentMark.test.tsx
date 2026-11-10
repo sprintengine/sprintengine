@@ -41,7 +41,7 @@ test('a file the agent is editing takes the stronger wash, the verb and the agen
   expect(trail.querySelector('[data-testid="agent"]')).not.toBeNull()
   expect(row.textContent).toContain('an agent is editing this')
   // The git letter still trails the row, after the trail.
-  expect(row.lastElementChild?.textContent).toBe('M')
+  expect(row.firstElementChild?.lastElementChild?.textContent).toBe('M')
 })
 
 test('a read takes the lighter wash, and a file the agent has moved on from carries no agent', () => {

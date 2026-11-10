@@ -59,8 +59,13 @@ test('FileExplorerRowHeight', async () => {
   // principles.md asks an indent that aligns to a glyph slot to say what it lines
   // up with. The arithmetic is allowed to stay off the space scale; the silence
   // is not.
-  const indent = SOURCE.indexOf('${8 + (depth + indentSteps) * 14}px')
-  assert.ok(indent > 0, 'the tree still indents by 8 + (depth + indentSteps) * 14')
+  // The sum lives in fileTreeExtent.ts, where the sideways scroll reads it too.
+  const EXTENT = readFileSync(join(process.cwd(), 'src/renderer/src/components/ui/fileTreeExtent.ts'), 'utf8')
+  assert.match(EXTENT, /const ROW_INSET = 8\b/, 'depth 0 starts from the 8px row inset')
+  assert.match(EXTENT, /const INDENT_STEP = 14\b/, 'each level adds 14px')
+  assert.match(EXTENT, /ROW_INSET \+ \(depth \+ indentSteps\) \* INDENT_STEP/, 'the indent is inset + levels × step')
+  const indent = SOURCE.indexOf('paddingLeft: `${indent}px`')
+  assert.ok(indent > 0, 'the row draws the indent fileTreeRowIndent works out')
   const preamble = SOURCE.slice(Math.max(0, indent - 900), indent).replace(/\s*\/\/\s*|\s+/g, ' ')
   assert.match(preamble, /12px flow advance/, 'the indent says what its step lines up with')
 

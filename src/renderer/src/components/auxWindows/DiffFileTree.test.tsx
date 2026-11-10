@@ -118,7 +118,7 @@ test("the tree lists the viewer's files, a click moves the viewer, and the viewe
   await act(async () => root.render(<Tree currentIndex={0} />))
   await settle()
 
-  const names = rows().map((item) => item.querySelector('span.truncate')?.textContent)
+  const names = rows().map((item) => item.querySelector('[data-file-tree-name]')?.textContent)
   assert.deepEqual(names, ['docs', 'old.md', 'src', 'a.ts', 'b.ts'], 'the files, under their folders, once each')
   assert.equal(row('a.ts')?.getAttribute('aria-selected'), 'true', 'the cursor is on the file on screen')
   assert.ok(row('a.ts')?.textContent?.includes('M'), 'with its status')
@@ -187,11 +187,12 @@ test('a diff that turns a file into a folder lists both, and the cursor on one n
     { path: `${REPO}/docs`, relativePath: 'docs', status: 'deleted', kind: 'unstaged' },
     { path: `${REPO}/docs/index.md`, relativePath: 'docs/index.md', status: 'new', kind: 'unstaged' },
   ]
-  const named = (name: string) => rows().filter((item) => item.querySelector('span.truncate')?.textContent === name)
+  const named = (name: string) =>
+    rows().filter((item) => item.querySelector('[data-file-tree-name]')?.textContent === name)
 
   await act(async () => root.render(<Tree currentIndex={0} items={items} />))
   await settle()
-  const names = rows().map((item) => item.querySelector('span.truncate')?.textContent)
+  const names = rows().map((item) => item.querySelector('[data-file-tree-name]')?.textContent)
   assert.deepEqual(names, ['docs', 'index.md', 'docs'], 'the folder with its file, and the file')
   const ids = rows().map((item) => item.id)
   assert.equal(new Set(ids).size, ids.length, 'each row is its own element')
@@ -210,7 +211,7 @@ test('a diff that turns a file into a folder lists both, and the cursor on one n
   // Closing the folder hides its file and leaves the file of the same name.
   await act(async () => named('docs')[0].click())
   assert.deepEqual(
-    rows().map((item) => item.querySelector('span.truncate')?.textContent),
+    rows().map((item) => item.querySelector('[data-file-tree-name]')?.textContent),
     ['docs', 'docs'],
   )
   await act(async () => named('docs')[1].click())

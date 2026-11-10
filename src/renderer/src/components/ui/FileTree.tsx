@@ -1,8 +1,29 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type JSX } from 'react'
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from 'react'
 
 import { IconButton } from './Buttons'
 import { FileTypeGlyph, FolderGlyph } from './FileTypeGlyph'
 import { Spinner } from './Spinner'
+import { Tooltip } from './Tooltip'
+import {
+  FILE_TREE_NAME_OFFSET,
+  FILE_TREE_ROW_END_PADDING,
+  createNameMeasurer,
+  fileTreeContentWidth,
+  fileTreeRowIndent,
+  fileTreeScrollLeftFor,
+  isClippedInView,
+  type FileTreeRowShape,
+} from './fileTreeExtent'
 import { folderRoleInk, type FolderRole } from '../../utils/folderRoles'
 
 // File tree — the rows of a folder tree, at the 24px hit-target floor.
@@ -172,6 +193,13 @@ export type FileTreeRowProps = {
   agentMark?: FileTreeAgentMark | null
   /** Replaces the name, for an in-place rename field. */
   nameSlot?: React.ReactNode
+  /**
+   * The row sits in a tree that scrolls sideways (`FileTreeRows` with
+   * `sideways`): the name is never truncated, and hovering it shows it whole
+   * while part of it is out of view. Without it the name truncates to the
+   * row, for a row standing in a column that does not scroll.
+   */
+  fullName?: boolean
   rowRef?: React.Ref<HTMLDivElement>
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'children'>
 
@@ -193,6 +221,7 @@ export function FileTreeRow({
   folderRole = null,
   agentMark = null,
   nameSlot,
+  fullName = false,
   rowRef,
   className = '',
   style,
@@ -212,6 +241,7 @@ export function FileTreeRow({
       ? 'bg-[color:var(--agent-trail-soft-strong)]'
       : 'bg-[color:var(--agent-trail-soft)]'
     : washClassName
+  const indent = fileTreeRowIndent(depth, indentSteps)
   const tone = dropTarget
     ? 'bg-[color:var(--bg-selected)] text-[color:var(--text-strong)] ring-1 ring-[color:var(--accent-primary)]'
     : selection === 'cursor'
@@ -243,74 +273,110 @@ export function FileTreeRow({
       // plus 2px, so a child's disclosure column clears its parent's instead of
       // sitting directly under it. A file row's `w-3` spacer is that same 12px,
       // which is what keeps files and folders on one glyph column at every depth.
-      style={{ ...style, paddingLeft: `${8 + (depth + indentSteps) * 14}px` }}
+      // The sum is `fileTreeRowIndent` (fileTreeExtent.ts), so the sideways
+      // scroll's arithmetic reads the same indent the row draws.
+      style={{ ...style, paddingLeft: `${indent}px` }}
       {...rest}
     >
-      {isDir ? (
-        <>
-          {loading ? (
-            // The chevron's 12px advance, so the folder mark and the name hold
-            // still while the spinner stands in and when the chevron returns.
-            <span className="inline-flex w-3 shrink-0 items-center justify-center">
-              <Spinner size={12} label="Loading folder" />
+      {/* The row's content. In a tree that scrolls sideways it is at least as
+          wide as the view (less the indent), so the trailing marks stand at
+          the view's right edge as they do in a column, and wider when the name
+          runs past it, so they follow the name. The row itself spans the whole
+          scrolled width, so its fill still reads as a row when scrolled right. */}
+      <span
+        className={`flex items-center gap-2 ${fullName ? 'flex-none' : 'min-w-0 flex-1'}`}
+        style={
+          fullName
+            ? { minWidth: `calc(var(--file-tree-span, 0px) - ${indent + FILE_TREE_ROW_END_PADDING}px)` }
+            : undefined
+        }
+      >
+        {isDir ? (
+          <>
+            {loading ? (
+              // The chevron's 12px advance, so the folder mark and the name hold
+              // still while the spinner stands in and when the chevron returns.
+              <span className="inline-flex w-3 shrink-0 items-center justify-center">
+                <Spinner size={12} label="Loading folder" />
+              </span>
+            ) : (
+              <FileTreeChevron
+                expanded={expanded}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onToggleExpanded?.()
+                }}
+              />
+            )}
+            <FileTreeFolderIcon role={folderRole} />
+            {nameSlot ?? <FileTreeName name={name} full={fullName} className={`font-medium ${nameClassName}`} />}
+          </>
+        ) : (
+          <>
+            <span className="w-3 shrink-0" />
+            <FileTreeFileIcon name={name} dimmed={ignored} />
+            {nameSlot ?? <FileTreeName name={name} full={fullName} className={nameClassName} />}
+          </>
+        )}
+        {agent ? (
+          <span
+            data-agent-trail={agent.verb}
+            className="ml-auto flex shrink-0 items-center gap-1.5 text-micro leading-4 text-[color:var(--agent-trail-ink)]"
+          >
+            <span className="sr-only">
+              {isDir
+                ? `, an agent is ${agent.verb} ${agent.count} ${agent.count === 1 ? 'file' : 'files'} in here`
+                : `, an agent is ${agent.verb} this`}
             </span>
-          ) : (
-            <FileTreeChevron
-              expanded={expanded}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onToggleExpanded?.()
-              }}
-            />
-          )}
-          <FileTreeFolderIcon role={folderRole} />
-          {nameSlot ?? <span className={`truncate font-medium ${nameClassName}`}>{name}</span>}
-        </>
-      ) : (
-        <>
-          <span className="w-3 shrink-0" />
-          <FileTreeFileIcon name={name} dimmed={ignored} />
-          {nameSlot ?? <span className={`truncate ${nameClassName}`}>{name}</span>}
-        </>
-      )}
-      {agent ? (
-        <span
-          data-agent-trail={agent.verb}
-          className="ml-auto flex shrink-0 items-center gap-1.5 text-micro leading-4 text-[color:var(--agent-trail-ink)]"
-        >
-          <span className="sr-only">
-            {isDir
-              ? `, an agent is ${agent.verb} ${agent.count} ${agent.count === 1 ? 'file' : 'files'} in here`
-              : `, an agent is ${agent.verb} this`}
-          </span>
-          {isDir ? (
-            <span aria-hidden="true">{agent.count}</span>
-          ) : (
-            <span aria-hidden="true" className="rounded-full bg-[color:var(--agent-trail-soft-strong)] px-1.5">
-              {agent.verb}
-            </span>
-          )}
-          {/* The agent's own mark, inked as the trail: the character and the
+            {isDir ? (
+              <span aria-hidden="true">{agent.count}</span>
+            ) : (
+              <span aria-hidden="true" className="rounded-full bg-[color:var(--agent-trail-soft-strong)] px-1.5">
+                {agent.verb}
+              </span>
+            )}
+            {/* The agent's own mark, inked as the trail: the character and the
               working mark both draw in the accent, rebound here. */}
-          {agent.glyph ? (
-            <span aria-hidden="true" className="flex shrink-0 [--accent-primary:var(--agent-trail-ink)]">
-              {agent.glyph}
-            </span>
-          ) : null}
-        </span>
-      ) : null}
-      {meta ? (
-        <span className={`${agent ? '' : 'ml-auto '}flex shrink-0 items-center text-micro leading-4`}>{meta}</span>
-      ) : null}
-      {badge ? (
-        <span
-          className={`${agent || meta ? '' : 'ml-auto '}shrink-0 font-mono text-micro font-semibold text-current opacity-80`}
-        >
-          {badge}
-        </span>
-      ) : null}
+            {agent.glyph ? (
+              <span aria-hidden="true" className="flex shrink-0 [--accent-primary:var(--agent-trail-ink)]">
+                {agent.glyph}
+              </span>
+            ) : null}
+          </span>
+        ) : null}
+        {meta ? (
+          <span className={`${agent ? '' : 'ml-auto '}flex shrink-0 items-center text-micro leading-4`}>{meta}</span>
+        ) : null}
+        {badge ? (
+          <span
+            className={`${agent || meta ? '' : 'ml-auto '}shrink-0 font-mono text-micro font-semibold text-current opacity-80`}
+          >
+            {badge}
+          </span>
+        ) : null}
+      </span>
     </div>
+  )
+}
+
+/**
+ * A row's name. In a tree that scrolls sideways it is whole, and hovering it
+ * while part of it is out of view shows it whole in the kit's tooltip — on
+ * the kit's delay, and only then: a name the person can already read in full
+ * gets no tooltip repeating it (tooltip spec, "Restate a value only when it is
+ * actually cut off"). Whether it is cut off depends on where the tree is
+ * scrolled, so it is asked as the tooltip would open rather than measured on
+ * every scroll of every row.
+ */
+function FileTreeName({ name, full, className }: { name: string; full: boolean; className: string }): JSX.Element {
+  if (!full) return <span className={`truncate ${className}`}>{name}</span>
+  return (
+    <Tooltip content={name} shouldOpen={isClippedInView} wrapperClassName="flex shrink-0">
+      <span data-file-tree-name="" className={`whitespace-nowrap ${className}`}>
+        {name}
+      </span>
+    </Tooltip>
   )
 }
 
@@ -354,7 +420,10 @@ export function FileTreeRootRow({
       />
       <FileTreeFolderIcon />
       <span className="shrink-0 font-medium text-[color:var(--text-strong)]">{name}</span>
-      <span className="min-w-0 truncate text-micro text-[color:var(--text-muted)]">{path}</span>
+      {/* The path is chrome, not a name: it takes the room the row has and
+          truncates there, and never makes a tree that scrolls sideways wider
+          (a zero basis adds nothing to the tree's own width). */}
+      <span className="w-0 min-w-0 flex-1 truncate text-micro text-[color:var(--text-muted)]">{path}</span>
       {trailing}
     </div>
   )
@@ -417,8 +486,19 @@ export function FileTreePinnedRow({
 }
 
 export type FileTreeRowsHandle = {
-  /** Scroll the row at `index` into view, nearest edge — whether or not it is mounted. */
+  /**
+   * Scroll the row at `index` into view, nearest edge — whether or not it is
+   * mounted. In a tree that scrolls sideways, its name's start too.
+   */
   scrollToIndex: (index: number) => void
+}
+
+/** What a tree that scrolls sideways tells its list about each row. */
+export type FileTreeSideways<T> = {
+  /** The row's depth and name, which are what its width depends on. */
+  rowShape: (row: T) => FileTreeRowShape
+  /** The rows' `indentSteps`. */
+  indentSteps: 0 | 1
 }
 
 type FileTreeRowsProps<T> = {
@@ -427,6 +507,12 @@ type FileTreeRowsProps<T> = {
   renderRow: (row: T, index: number) => React.ReactNode
   /** The element that scrolls. The list measures its window against it. */
   scrollParent: React.RefObject<HTMLElement | null>
+  /**
+   * The tree scrolls sideways and its rows are `fullName`: the list tells its
+   * rows how wide the view is, keeps a windowed list as wide as its widest
+   * row, and brings a row's name into view sideways when it scrolls to one.
+   */
+  sideways?: FileTreeSideways<T>
   /** Override the windowing threshold (tests). */
   virtualizeAt?: number
 }
@@ -448,18 +534,50 @@ function listOffsetWithin(list: HTMLElement, parent: HTMLElement): number {
   return list.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop
 }
 
+/** The list's left edge in the parent's scrolled content: the tree's own gutter. */
+function listLeftWithin(list: HTMLElement, parent: HTMLElement): number {
+  return list.getBoundingClientRect().left - parent.getBoundingClientRect().left - parent.clientLeft + parent.scrollLeft
+}
+
+/**
+ * The type a name is set in, read off a mounted name: a folder's weight for
+ * every row, so a file's name is measured a hair wide rather than a folder's
+ * a hair short — the floor may leave a few pixels spare, never cut a name.
+ */
+function nameFontOf(list: HTMLElement): { font: string; letterSpacing: string } | null {
+  const name = list.querySelector('[data-file-tree-name]')
+  const view = list.ownerDocument.defaultView
+  if (!name || !view) return null
+  const style = view.getComputedStyle(name)
+  if (!style.fontSize || !style.fontFamily) return null
+  // 500 is `font-medium`, the folder name's weight.
+  const weight = Math.max(500, Number(style.fontWeight) || 400)
+  return {
+    font: `${style.fontStyle || 'normal'} ${weight} ${style.fontSize} ${style.fontFamily}`,
+    letterSpacing: style.letterSpacing === 'normal' ? '0px' : style.letterSpacing,
+  }
+}
+
 /**
  * The rows, all of them or — past `FILE_TREE_VIRTUALIZE_AT` — only the window
  * in view, with spacers standing in for the rest. Rows are a fixed 24px, so
  * the window is arithmetic, not measurement.
+ *
+ * In a tree that scrolls sideways the list's width is its widest row's. With
+ * every row mounted that is layout's own answer. A windowed list would take
+ * its width from whichever rows are mounted and change it as they recycle, so
+ * it is held to the widest row there is, worked out from every row's depth and
+ * name in the rows' type (`fileTreeContentWidth`), and never narrows while the
+ * rows and the view stay the same.
  */
 function FileTreeRowsInner<T>(
-  { rows, rowKey, renderRow, scrollParent, virtualizeAt = FILE_TREE_VIRTUALIZE_AT }: FileTreeRowsProps<T>,
+  { rows, rowKey, renderRow, scrollParent, sideways, virtualizeAt = FILE_TREE_VIRTUALIZE_AT }: FileTreeRowsProps<T>,
   ref: React.ForwardedRef<FileTreeRowsHandle>,
 ): JSX.Element {
   const listRef = useRef<HTMLDivElement>(null)
   const virtual = rows.length > virtualizeAt
   const [range, setRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const widensSideways = Boolean(sideways)
 
   const measure = useCallback(() => {
     const parent = scrollParent.current
@@ -468,6 +586,73 @@ function FileTreeRowsInner<T>(
     const next = rowWindow(rows.length, parent.scrollTop, parent.clientHeight, listOffsetWithin(list, parent))
     setRange((current) => (current.start === next.start && current.end === next.end ? current : next))
   }, [rows.length, scrollParent])
+
+  // The widest the windowed list has been since its rows or its view last
+  // changed: a row with trailing marks the arithmetic does not count widens
+  // it once, and it does not narrow again when that row scrolls away.
+  const widestSeenRef = useRef(0)
+  const [viewWidth, setViewWidth] = useState(0)
+
+  // The view's width, said to the rows as `--file-tree-span`: what a row
+  // spans at rest, the view less the tree's gutter on either side. A row's
+  // content is at least that wide, so its trailing marks stand at the view's
+  // edge until its name runs past it. Before paint, so no row lays out once
+  // without it.
+  useLayoutEffect(() => {
+    if (!widensSideways) return
+    const parent = scrollParent.current
+    const list = listRef.current
+    if (!parent || !list) return
+    const update = () => {
+      const gutter = Math.max(0, listLeftWithin(list, parent))
+      const span = Math.max(0, Math.floor(parent.clientWidth - 2 * gutter))
+      list.style.setProperty('--file-tree-span', `${span}px`)
+      widestSeenRef.current = 0
+      setViewWidth(parent.clientWidth)
+    }
+    update()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : null
+    observer?.observe(parent)
+    return () => observer?.disconnect()
+  }, [scrollParent, widensSideways])
+
+  // The type names are set in, read once rows are mounted to read it from.
+  const [nameFont, setNameFont] = useState<{ font: string; letterSpacing: string } | null>(null)
+  useLayoutEffect(() => {
+    if (!widensSideways || !virtual || nameFont) return
+    const list = listRef.current
+    const font = list ? nameFontOf(list) : null
+    if (font) setNameFont(font)
+  })
+
+  // One measurer per type, so a name is measured once however often the rows change.
+  const nameWidth = useMemo(
+    () => (nameFont ? createNameMeasurer(nameFont.font, nameFont.letterSpacing) : null),
+    [nameFont],
+  )
+  const contentWidth = useMemo(() => {
+    if (!sideways || !virtual || !nameWidth) return 0
+    return fileTreeContentWidth(rows.map(sideways.rowShape), sideways.indentSteps, nameWidth)
+  }, [nameWidth, rows, sideways, virtual])
+
+  useLayoutEffect(() => {
+    widestSeenRef.current = 0
+  }, [rows])
+
+  const [widestSeen, setWidestSeen] = useState(0)
+  useLayoutEffect(() => {
+    if (!widensSideways || !virtual) return
+    const list = listRef.current
+    if (!list) return
+    // The width the mounted rows ask for, without the floor this sets, or
+    // the floor would hold itself up after the view narrows.
+    const floor = list.style.minWidth
+    list.style.minWidth = ''
+    const width = list.offsetWidth
+    list.style.minWidth = floor
+    if (width > widestSeenRef.current) widestSeenRef.current = width
+    setWidestSeen((current) => (current === widestSeenRef.current ? current : widestSeenRef.current))
+  }, [range, rows, viewWidth, contentWidth, virtual, widensSideways])
 
   useEffect(() => {
     if (!virtual) return
@@ -504,10 +689,24 @@ function FileTreeRowsInner<T>(
           const rowsAbove = Math.ceil((minimum - offset) / FILE_TREE_ROW_HEIGHT)
           parent.scrollTop = Math.min(top, Math.max(minimum, offset + rowsAbove * FILE_TREE_ROW_HEIGHT))
         }
+        // Sideways, the name's start: a row revealed deep in the tree, or
+        // reached by the keyboard, shows where its name begins.
+        const row = sideways && index < rows.length ? rows[index] : undefined
+        if (sideways && row !== undefined) {
+          const { depth } = sideways.rowShape(row)
+          const rowStart = listLeftWithin(list, parent) + fileTreeRowIndent(depth, sideways.indentSteps)
+          const left = fileTreeScrollLeftFor({
+            scrollLeft: parent.scrollLeft,
+            clientWidth: parent.clientWidth,
+            rowStart,
+            nameStart: rowStart + FILE_TREE_NAME_OFFSET,
+          })
+          if (left !== null) parent.scrollLeft = left
+        }
         if (virtual) measure()
       },
     }),
-    [measure, scrollParent, virtual],
+    [measure, rows, scrollParent, sideways, virtual],
   )
 
   if (!virtual) {
@@ -522,8 +721,9 @@ function FileTreeRowsInner<T>(
 
   const start = Math.min(range.start, rows.length)
   const end = Math.max(start, Math.min(range.end || start + 64, rows.length))
+  const minWidth = Math.max(contentWidth, widestSeen)
   return (
-    <div ref={listRef} role="none" className="flex flex-col">
+    <div ref={listRef} role="none" className="flex flex-col" style={minWidth ? { minWidth } : undefined}>
       <div aria-hidden="true" style={{ height: start * FILE_TREE_ROW_HEIGHT }} className="shrink-0" />
       {rows.slice(start, end).map((row, offset) => (
         <React.Fragment key={rowKey(row, start + offset)}>{renderRow(row, start + offset)}</React.Fragment>

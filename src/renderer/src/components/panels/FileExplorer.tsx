@@ -43,7 +43,13 @@ import { consumePendingFileReveal, subscribeFileReveal } from '../../utils/fileR
 import { ContextMenu, MenuDivider, MenuFlyoutItem, MenuItem } from '../ui/ContextMenu'
 import { IconButton, OutlineButton, PrimaryButton } from '../ui/Buttons'
 import { isTestPath } from '../ui/FileTypeGlyph'
-import { FileTreeRootRow, FileTreeRow, FileTreeRows, type FileTreeRowsHandle } from '../ui/FileTree'
+import {
+  FileTreeRootRow,
+  FileTreeRow,
+  FileTreeRows,
+  type FileTreeRowsHandle,
+  type FileTreeSideways,
+} from '../ui/FileTree'
 import {
   buildPathTreeRows,
   flattenTree,
@@ -488,6 +494,13 @@ export interface FileExplorerTreeProps {
   /** The element the tree scrolls in: reveal and the windowed row list measure against it. */
   scrollParentRef: React.RefObject<HTMLDivElement | null>
 }
+
+// What the tree tells its list about a row, for scrolling sideways: its depth
+// and name. One per variant, since depth 0 indents a step further under a
+// root row.
+const rowShape = ({ entry, depth }: TreeRow) => ({ name: entry.name, depth })
+const SIDEWAYS_ROOTED: FileTreeSideways<TreeRow> = { rowShape, indentSteps: 1 }
+const SIDEWAYS_BANDED: FileTreeSideways<TreeRow> = { rowShape, indentSteps: 0 }
 
 export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerTreeProps>(function FileExplorerTree(
   {
@@ -2169,7 +2182,12 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
         onDrop={handleRootDrop}
         // A banded tree sits in a scrolling column that would clip an outset
         // ring at its edges, so its ring is drawn inside.
-        className={`flex min-h-full flex-col rounded-md px-1 py-1.5 outline-none ${
+        //
+        // As wide as its widest row and never narrower than the view: names
+        // are never cut short, the column scrolls sideways to the end of the
+        // longest one, and every row spans the whole of that width, so a
+        // hovered or selected row is still a row when scrolled right.
+        className={`flex min-h-full w-max min-w-full flex-col rounded-md px-1 py-1.5 outline-none ${
           banded ? 'focus-visible:focus-ring-inset' : 'focus-visible:focus-ring'
         } ${rootDropActive ? 'ring-1 ring-inset ring-[color:var(--accent-primary)]' : ''}`}
       >
@@ -2198,6 +2216,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
           ref={rowsHandleRef}
           rows={activeRows}
           scrollParent={scrollParentRef}
+          sideways={banded ? SIDEWAYS_BANDED : SIDEWAYS_ROOTED}
           rowKey={(row) => rowKeyOf(row.entry)}
           renderRow={({ entry, depth }) => {
             const key = rowKeyOf(entry)
@@ -2271,6 +2290,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
                 // which still clears the 20px content box the row leaves, so a
                 // row being renamed does not push its siblings.
                 nameSlot={isRenaming ? renderRenameInput(entry.isDir ? 'font-medium' : '') : undefined}
+                fullName
                 data-file-explorer-row="true"
                 // Read by the file-tree cue checks. The cues are colour and a
                 // screenshot cannot assert on colour, so the row states what it
@@ -2636,7 +2656,8 @@ export default function FileExplorer({ workspaceId }: Props) {
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      {/* Both ways: the tree scrolls sideways to the end of its longest name. */}
+      <div ref={scrollRef} className="flex-1 overflow-auto">
         {folderReadyPath ? (
           <FileExplorerTree
             scrollParentRef={scrollRef}

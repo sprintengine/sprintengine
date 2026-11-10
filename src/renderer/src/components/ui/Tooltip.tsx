@@ -70,6 +70,15 @@ type TooltipProps = {
    * opens where the row's tooltip would stand.
    */
   suppressed?: boolean
+  /**
+   * Asked at the moment the tooltip would open — when the hover delay runs
+   * out, or on keyboard focus — with the trigger element. False keeps it shut
+   * for this visit. For a tooltip that restates a value only while the value
+   * is cut off, where being cut off depends on where its container is
+   * scrolled rather than on the trigger's own box, so it cannot be measured
+   * once at render.
+   */
+  shouldOpen?: (trigger: HTMLElement) => boolean
 }
 
 // Gap between the trigger and the tooltip, and the minimum margin the tooltip
@@ -178,6 +187,7 @@ export function Tooltip({
   wrapperRole,
   layer = 'popover',
   suppressed = false,
+  shouldOpen,
 }: TooltipProps) {
   const id = useId()
   const [open, setOpen] = useState(false)
@@ -261,6 +271,15 @@ export function Tooltip({
 
   useEffect(() => clearTimer, [clearTimer])
 
+  // The trigger's own element (the wrapper's only child), for `shouldOpen`.
+  const allowed = useCallback((): boolean => {
+    if (!shouldOpen) return true
+    const wrap = triggerWrapRef.current
+    if (!wrap) return false
+    const trigger = wrap.firstElementChild
+    return shouldOpen(trigger instanceof HTMLElement ? trigger : wrap)
+  }, [shouldOpen])
+
   useEffect(() => {
     if (suppressed) close()
   }, [suppressed, close])
@@ -276,9 +295,12 @@ export function Tooltip({
       // Only the trigger's own DOM is the trigger.
       if (suppressed || !triggerWrapRef.current?.contains(event.target as Node)) return
       clearTimer()
-      timer.current = window.setTimeout(() => setOpen(true), openDelayMs)
+      timer.current = window.setTimeout(() => {
+        timer.current = null
+        if (allowed()) setOpen(true)
+      }, openDelayMs)
     },
-    [childProps, clearTimer, openDelayMs, suppressed],
+    [allowed, childProps, clearTimer, openDelayMs, suppressed],
   )
 
   const handleMouseLeave = useCallback(
@@ -294,9 +316,9 @@ export function Tooltip({
       childProps.onFocus?.(event)
       if (suppressed || !isFocusVisible(event.target) || pointerSteeredFocus(event.target)) return
       clearTimer()
-      setOpen(true)
+      if (allowed()) setOpen(true)
     },
-    [childProps, clearTimer, suppressed],
+    [allowed, childProps, clearTimer, suppressed],
   )
 
   // Pressing the trigger answers the question the tooltip was for, and a
