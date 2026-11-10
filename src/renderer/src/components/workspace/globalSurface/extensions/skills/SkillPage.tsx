@@ -95,7 +95,10 @@ export function SkillPage({
           />
         }
       />
-      <div className="mt-4 min-h-0 flex-1 border-t border-[color:var(--border-subtle)]">
+      {/* Header, reader and footer separated by space, as every dialog is:
+          the reader's columns fade at their scroll edges instead of a rule
+          above and below them. */}
+      <div className="mt-2 min-h-0 flex-1">
         <SkillReader
           key={`${source.id}::${skill.id}`}
           source={source}
@@ -103,7 +106,7 @@ export function SkillPage({
           rail={<SkillFacts skill={skill} availability={availability} />}
         />
       </div>
-      <div className="border-t border-[color:var(--border-subtle)]">
+      <div>
         <ModalFooter>
           <p className="mr-auto min-w-0 text-meta leading-5 text-[color:var(--text-subtle)]">
             Installing copies this skill&apos;s files into your home folder, where every agent CLI on this machine reads

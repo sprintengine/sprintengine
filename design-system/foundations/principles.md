@@ -361,6 +361,13 @@ person with everything at once.
   a notice band's tint is its own edge. The repository counts the `border-b`
   and `border-t` rules each area of the renderer draws, and the count may only
   go down (`designSystemAxes.test.ts`, the `rule` axis).
+- **A pane's band of glyphs and the notices under it take no rule of their
+  own** (2026-11-10). The Git pane draws one rule, under its chrome row; its
+  branch row, notices, glyph band and commit box are told apart by space, and
+  its list fades at both edges. The diff draws one, directly over the code,
+  because an editor's gutter runs edge to edge and needs a line to stop at.
+  A dialog's body between its header and its footer is a scroll area, never a
+  ruled strip.
 - **A sub-header inside a list is a label, not a rule.** "Today", "Yesterday",
   a picker's groups: a quiet `font.size.meta` label in `text.muted` with space
   above it (see [section](../components/section/component.md), *The section

@@ -7,20 +7,21 @@
 import React, { useMemo, useState } from 'react'
 import type { AppNotification, DiagnosticLevel } from '../../../types/workspace'
 import {
-  ChipButton,
+  CopyGlyphButton,
   EmptyState,
+  FilterMenu,
   GhostButton,
   LifecycleGlyph,
-  OutlineButton,
+  OverflowMenu,
   PanelHeader,
+  ScrollArea,
+  SECTION_LABEL_CLASS,
   TruncatedText,
   type LifecycleState,
+  type OverflowMenuItem,
 } from '../../ui'
 import { formatTimeOfDay } from '../../../utils/clockFormat'
-
-type RuntimeClipboardApi = {
-  clipboardWriteText?: (text: string) => Promise<void>
-}
+import { copyToClipboardWithToast } from '../../../utils/copyToClipboardWithToast'
 
 // Severity reads by shape, not a colored dot (StatusDot is deprecated). Error
 // maps to the `failed` glyph (ring + "×", error tone) and warning to the
@@ -31,11 +32,15 @@ const LEVEL_GLYPH: Partial<Record<DiagnosticLevel, LifecycleState>> = {
   warning: 'needs_input',
 }
 
-// Severity filters offered in the popover header: the bell holds errors and
-// warnings, and nothing else (`reachesBell`).
-const LEVEL_FILTERS: ReadonlyArray<{ level: DiagnosticLevel; label: string }> = [
-  { level: 'error', label: 'Errors' },
-  { level: 'warning', label: 'Warnings' },
+// The severity filter, one choice in the header's filter menu: the bell holds
+// errors and warnings and nothing else (`reachesBell`), so "both" is simply
+// "all". It was two toggle chips beside the title, which spent the header's
+// width on a control most visits never touch.
+type LevelFilter = 'all' | 'error' | 'warning'
+const LEVEL_FILTER_ITEMS: ReadonlyArray<{ value: LevelFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'error', label: 'Errors' },
+  { value: 'warning', label: 'Warnings' },
 ]
 
 const LEVEL_NOUN: Record<DiagnosticLevel, string> = {
@@ -78,12 +83,6 @@ function formatNotificationTime(value: string): string {
   return formatTimeOfDay(date, { hour: '2-digit', minute: '2-digit' })
 }
 
-async function writeClipboardText(text: string): Promise<void> {
-  const api = window.api as typeof window.api & RuntimeClipboardApi
-  if (typeof api.clipboardWriteText !== 'function') throw new Error('Clipboard API is unavailable.')
-  await api.clipboardWriteText(text)
-}
-
 // A fixed-width leading slot keeps every title on one optical baseline whether
 // or not the row carries a severity glyph. Reserving the slot is alignment, not
 // decoration.
@@ -122,19 +121,11 @@ export function NotificationsPopover({
   /** Resolve a notification's Open action(s); empty when none is possible. */
   resolveActions?: (notification: AppNotification) => NotificationRowAction[]
 }) {
-  const [copyErrorId, setCopyErrorId] = useState<string | null>(null)
-  // View-only severity filter. Empty = show everything; otherwise show only the
-  // engaged levels (OR), so "Errors" and "Warnings" can be on together. Resets
-  // implicitly when the popover unmounts on close.
-  const [activeLevels, setActiveLevels] = useState<DiagnosticLevel[]>([])
-
-  const toggleLevel = (level: DiagnosticLevel) =>
-    setActiveLevels((prev) => (prev.includes(level) ? prev.filter((value) => value !== level) : [...prev, level]))
+  // View-only severity filter. Resets when the popover unmounts on close.
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all')
 
   const visibleNotifications =
-    activeLevels.length === 0
-      ? notifications
-      : notifications.filter((notification) => activeLevels.includes(notification.level))
+    levelFilter === 'all' ? notifications : notifications.filter((notification) => notification.level === levelFilter)
 
   // Bucket by recency after filtering, preserving the incoming (newest-first)
   // order within each group.
@@ -150,204 +141,219 @@ export function NotificationsPopover({
   }, [visibleNotifications])
 
   const emptyMessage =
-    notifications.length === 0
-      ? 'No notifications'
-      : `No ${activeLevels.map((level) => LEVEL_NOUN[level]).join(' or ')} notifications`
+    notifications.length === 0 ? 'No notifications' : `No ${LEVEL_NOUN[levelFilter as DiagnosticLevel]} notifications`
+  const hasUnread = notifications.some((notification) => !notification.read)
 
-  const copyNotification = async (notification: AppNotification) => {
-    const details = [
-      `[${notification.level.toUpperCase()}] ${notification.title}`,
-      notification.message,
-      notification.details,
-      notification.workspaceName ? `Workspace: ${notification.workspaceName}` : null,
-      notification.agentId ? `Agent: ${notification.agentId}` : null,
-      notification.sessionId ? `Session: ${notification.sessionId}` : null,
-      notification.logPath ? `Log: ${notification.logPath}` : null,
-    ]
-      .filter(Boolean)
-      .join('\n')
-
-    try {
-      await writeClipboardText(details)
-      setCopyErrorId(null)
-    } catch {
-      setCopyErrorId(notification.id)
-      return
-    }
-    onMarkRead(notification.id)
-  }
-
-  const openLogsForNotification = (notification: AppNotification) => {
-    onMarkRead(notification.id)
-    onOpenLogs?.()
-  }
+  // The header's secondary verbs, behind one kebab: opening the log folder and
+  // clearing the list are visits of their own, not the reason the popover was
+  // opened, so they do not each take a word in the header.
+  const overflowItems: OverflowMenuItem[] = [
+    ...(onOpenLogs ? [{ id: 'logs', label: 'Open logs folder', onSelect: onOpenLogs }] : []),
+    ...(notifications.length > 0 ? [{ id: 'clear', label: 'Clear all', onSelect: onClear, destructive: true }] : []),
+  ]
 
   return (
-    <div className="w-[480px] overflow-hidden">
-      {/* The panel identity row (2112). It was an `h-10` band with its own type
-          step, where the popovers beside it already named themselves through the
-          primitive. Every control here is secondary to the name, so the whole
-          cluster rides `overflow`; `primaryAction` is one action. */}
+    <div className="flex max-h-[520px] w-[480px] flex-col overflow-hidden">
+      {/* The identity row (2112), inside an overlay, so it draws no rule: space
+          separates it from the list, and the list's top edge fades once rows
+          scroll beneath it. One action — Mark all read, while anything is
+          unread — then the filter glyph and the kebab. */}
       <PanelHeader
         title="Notifications"
         count={visibleNotifications.length > 0 ? visibleNotifications.length : undefined}
+        primaryAction={
+          hasUnread ? (
+            <GhostButton size="xs" onClick={onMarkAllRead}>
+              Mark all read
+            </GhostButton>
+          ) : undefined
+        }
         overflow={
-          <>
-            {notifications.length > 0 ? (
-              <>
-                {LEVEL_FILTERS.map(({ level, label }) => {
-                  const active = activeLevels.includes(level)
-                  const glyph = LEVEL_GLYPH[level]
-                  return (
-                    // The kit's chip toggle: content height on the filter
-                    // strip's own line, and `pressed` paints the neutral
-                    // selection fill this spelled by hand while supplying the
-                    // `aria-pressed` it also stated.
-                    <ChipButton
-                      key={level}
-                      tone="neutral"
-                      pressed={active}
-                      aria-label={
-                        active
-                          ? `Showing only ${LEVEL_NOUN[level]} notifications`
-                          : `Show only ${LEVEL_NOUN[level]} notifications`
-                      }
-                      onClick={() => toggleLevel(level)}
-                    >
-                      {glyph ? <LifecycleGlyph state={glyph} live={false} /> : null}
-                      {label}
-                    </ChipButton>
-                  )
-                })}
-                <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-[color:var(--border-default)]" />
-              </>
-            ) : null}
-            {onOpenLogs ? (
-              <GhostButton size="xs" onClick={onOpenLogs}>
-                Logs
-              </GhostButton>
-            ) : null}
-            {notifications.length > 0 ? (
-              <>
-                <GhostButton size="xs" onClick={onMarkAllRead}>
-                  Mark read
-                </GhostButton>
-                <GhostButton size="xs" onClick={onClear}>
-                  Clear
-                </GhostButton>
-              </>
-            ) : null}
-          </>
+          notifications.length > 0 || overflowItems.length > 0 ? (
+            <>
+              {notifications.length > 0 ? (
+                <FilterMenu
+                  ariaLabel="Filter notifications"
+                  groups={[
+                    {
+                      label: 'Show',
+                      items: LEVEL_FILTER_ITEMS,
+                      value: levelFilter,
+                      defaultValue: 'all',
+                      onChange: (value) => setLevelFilter(value as LevelFilter),
+                    },
+                  ]}
+                />
+              ) : null}
+              {overflowItems.length > 0 ? (
+                <OverflowMenu ariaLabel="More notification actions" triggerTooltip="More" items={overflowItems} />
+              ) : null}
+            </>
+          ) : undefined
         }
       />
 
       {visibleNotifications.length === 0 ? (
         <EmptyState density="list" title={emptyMessage} />
       ) : (
-        <div className="max-h-[440px] overflow-y-auto p-1">
-          {groups.map((group) => (
+        <ScrollArea className="px-1 pb-1" content={[visibleNotifications]}>
+          {groups.map((group, index) => (
             // A recency bucket, named for assistive tech. The surface is a
             // `dialog` popover, not a menu: a notification carries its own
-            // Copy / Open logs buttons, so it was never activatable as one row
-            // and `role="menuitem"` on it announced a control that does not
-            // exist (ripple review, 2026-08-05).
+            // actions, so it was never activatable as one row and
+            // `role="menuitem"` on it announced a control that does not exist
+            // (ripple review, 2026-08-05).
             <div key={group.bucket} role="group" aria-label={DAY_BUCKET_LABEL[group.bucket]}>
-              <div
-                aria-hidden="true"
-                className="px-2.5 pb-1 pt-2 text-micro font-medium text-[color:var(--text-muted)]"
-              >
-                {DAY_BUCKET_LABEL[group.bucket]}
-              </div>
-              {group.items.map((notification) => {
-                const rowActions = resolveActions?.(notification) ?? []
-                return (
-                  <div
-                    key={notification.id}
-                    className={`rounded px-2.5 py-2.5 ${
-                      notification.read
-                        ? 'text-[color:var(--text-muted)]'
-                        : 'bg-[color:var(--bg-surface-raised)] text-[color:var(--text-default)]'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <NotificationSeverityGlyph level={notification.level} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex min-w-0 items-center justify-between gap-3">
-                          <TruncatedText
-                            as="div"
-                            text={notification.title}
-                            className="text-body font-semibold text-[color:var(--text-strong)]"
-                          />
-                          <div className="shrink-0 tabular-nums text-micro text-[color:var(--text-disabled)]">
-                            {formatNotificationTime(notification.timestamp)}
-                          </div>
-                        </div>
-                        <div className="mt-1 text-meta leading-5 text-[color:var(--text-muted)]">
-                          {notification.message}
-                        </div>
-                        {/* Who it is from: a module's row names the extension
-                          that sent it (stamped by the host, never by the
-                          module), ahead of any workspace it concerns. */}
-                        {notification.sourceModule?.name ||
-                        notification.workspaceName ||
-                        notification.agentId ||
-                        notification.sessionId ? (
-                          <TruncatedText
-                            as="div"
-                            text={[
-                              notification.sourceModule?.name,
-                              notification.workspaceName,
-                              notification.agentId,
-                              notification.sessionId,
-                            ]
-                              .filter(Boolean)
-                              .join(' / ')}
-                            className="mt-1 font-mono text-micro text-[color:var(--text-disabled)]"
-                          />
-                        ) : null}
-                        <div className="mt-2 flex items-center gap-1.5">
-                          {/* The row's actions are the kit's outline button at the
-                            dense step: same radius, hover, disabled and focus
-                            treatment as every other secondary action. */}
-                          {rowActions.map((action) => (
-                            <OutlineButton
-                              key={action.id}
-                              size="xs"
-                              onClick={() => {
-                                onMarkRead(notification.id)
-                                void action.run()
-                              }}
-                            >
-                              {action.label}
-                            </OutlineButton>
-                          ))}
-                          <OutlineButton size="xs" onClick={() => void copyNotification(notification)}>
-                            Copy
-                          </OutlineButton>
-                          {copyErrorId === notification.id ? (
-                            <span
-                              role="status"
-                              aria-live="polite"
-                              className="text-micro font-semibold text-[color:var(--tone-error)]"
-                            >
-                              Could not copy
-                            </span>
-                          ) : null}
-                          {notification.logPath && onOpenLogs ? (
-                            <OutlineButton size="xs" onClick={() => openLogsForNotification(notification)}>
-                              Open logs
-                            </OutlineButton>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+              {/* The section label: a quiet word with space above it, never a
+                  rule (design-system/components/section, "The section
+                  label"). Only when there is more than one group to tell
+                  apart — "Today" over every row groups nothing. */}
+              {groups.length > 1 ? (
+                <div
+                  aria-hidden="true"
+                  className={`${SECTION_LABEL_CLASS} px-2.5 pb-0.5 ${index === 0 ? 'pt-1' : 'pt-3'}`}
+                >
+                  {DAY_BUCKET_LABEL[group.bucket]}
+                </div>
+              ) : null}
+              {group.items.map((notification) => (
+                <NotificationRow
+                  key={notification.id}
+                  notification={notification}
+                  actions={resolveActions?.(notification) ?? []}
+                  onMarkRead={onMarkRead}
+                  onOpenLogs={onOpenLogs}
+                />
+              ))}
             </div>
           ))}
-        </div>
+        </ScrollArea>
       )}
+    </div>
+  )
+}
+
+function notificationCopyText(notification: AppNotification): string {
+  return [
+    `[${notification.level.toUpperCase()}] ${notification.title}`,
+    notification.message,
+    notification.details,
+    notification.workspaceName ? `Workspace: ${notification.workspaceName}` : null,
+    notification.agentId ? `Agent: ${notification.agentId}` : null,
+    notification.sessionId ? `Session: ${notification.sessionId}` : null,
+    notification.logPath ? `Log: ${notification.logPath}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+// One notification. Its actions are revealed on hover AND on keyboard focus,
+// over the timestamp they replace, so revealing them never reflows the row
+// (principles.md, "Progressive disclosure"). At most two: the most useful
+// action first — Open, where the shell can resolve one, else Copy — and a
+// kebab holding the rest. The kebab is also the non-hover path to every one
+// of them.
+function NotificationRow({
+  notification,
+  actions,
+  onMarkRead,
+  onOpenLogs,
+}: {
+  notification: AppNotification
+  actions: NotificationRowAction[]
+  onMarkRead: (id: string) => void
+  onOpenLogs?: () => void
+}) {
+  const [primary, ...more] = actions
+  const run = (action: NotificationRowAction) => {
+    onMarkRead(notification.id)
+    void action.run()
+  }
+  const copyItem: OverflowMenuItem = {
+    id: 'copy',
+    label: 'Copy details',
+    onSelect: () => {
+      void copyToClipboardWithToast(() => notificationCopyText(notification)).then((copied) => {
+        if (copied) onMarkRead(notification.id)
+      })
+    },
+  }
+  const menuItems: OverflowMenuItem[] = [
+    ...(primary ? [copyItem] : []),
+    ...more.map((action) => ({ id: action.id, label: action.label, onSelect: () => run(action) })),
+    ...(notification.logPath && onOpenLogs
+      ? [
+          {
+            id: 'open-logs',
+            label: 'Open logs',
+            onSelect: () => {
+              onMarkRead(notification.id)
+              onOpenLogs()
+            },
+          },
+        ]
+      : []),
+  ]
+  const source = [
+    notification.sourceModule?.name,
+    notification.workspaceName,
+    notification.agentId,
+    notification.sessionId,
+  ].filter(Boolean)
+  return (
+    <div
+      data-unread={notification.read ? undefined : 'true'}
+      className={`group relative rounded-sm px-2.5 py-2.5 hover:bg-[color:var(--bg-hover)] focus-within:bg-[color:var(--bg-hover)] ${
+        notification.read
+          ? 'text-[color:var(--text-muted)]'
+          : 'bg-[color:var(--bg-unread)] text-[color:var(--text-default)]'
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <NotificationSeverityGlyph level={notification.level} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <TruncatedText
+              as="div"
+              text={notification.title}
+              className={`text-body font-semibold ${
+                notification.read ? 'text-[color:var(--text-default)]' : 'text-[color:var(--text-strong)]'
+              }`}
+            />
+            <div className="shrink-0 tabular-nums text-micro text-[color:var(--text-disabled)] group-hover:invisible group-focus-within:invisible">
+              {formatNotificationTime(notification.timestamp)}
+            </div>
+          </div>
+          <div className="mt-1 text-meta leading-5 text-[color:var(--text-muted)]">{notification.message}</div>
+          {/* Who it is from: a module's row names the extension that sent it
+              (stamped by the host, never by the module), ahead of any
+              workspace it concerns. */}
+          {source.length > 0 ? (
+            <TruncatedText
+              as="div"
+              text={source.join(' / ')}
+              className="mt-1 font-mono text-micro text-[color:var(--text-disabled)]"
+            />
+          ) : null}
+        </div>
+      </div>
+      <div className="absolute right-1.5 top-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+        {primary ? (
+          <GhostButton size="xs" onClick={() => run(primary)}>
+            {primary.label}
+          </GhostButton>
+        ) : (
+          <CopyGlyphButton
+            size="xs"
+            label="Copy details"
+            text={() => notificationCopyText(notification)}
+            onCopied={() => onMarkRead(notification.id)}
+          />
+        )}
+        {menuItems.length > 0 ? (
+          <OverflowMenu ariaLabel={`More actions for ${notification.title}`} triggerTooltip="More" items={menuItems} />
+        ) : null}
+      </div>
     </div>
   )
 }

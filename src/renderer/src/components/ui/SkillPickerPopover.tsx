@@ -24,6 +24,7 @@ import { Spinner } from './Spinner'
 import { StarGlyph } from './StarGlyph'
 import { TruncatedText } from './TruncatedText'
 import { isImeKey } from '../../utils/imeKey'
+import { ScrollArea } from './ScrollArea'
 
 // One inventory, every door: the searchable skill list behind the composer
 // Skills chip, the `/` and `$` type-aheads, the terminal panel-header action
@@ -404,11 +405,13 @@ function SkillList({
   return (
     // Vertical inset only: rows reach both side edges so the highlight is
     // full-bleed, per the menu spec — a horizontal inset here is what forced
-    // the nested-card fill the spec rules out.
-    <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
+    // the nested-card fill the spec rules out. A ScrollArea: the search row
+    // above and the footer below draw no rules, and the list's edges fade
+    // while skills are scrolled past them.
+    <ScrollArea ref={listRef} className="flex-1 py-1">
       {renderGroup('Installed', groups.installed, 0)}
       {renderGroup('Available to install', groups.available, groups.installed.length)}
-    </div>
+    </ScrollArea>
   )
 }
 
@@ -555,7 +558,7 @@ export function SkillPickerPopover({
       }
     >
       <div className="flex max-h-[400px] w-[340px] flex-col overflow-hidden">
-        <div className="flex items-center gap-1 border-b border-[color:var(--border-subtle)] p-1 pl-2.5">
+        <div className="flex items-center gap-1 p-1 pl-2.5">
           <svg
             className="icon-xs shrink-0 text-[color:var(--text-disabled)]"
             viewBox="0 0 16 16"
@@ -589,7 +592,7 @@ export function SkillPickerPopover({
           onActiveIndexChange={setActiveIndex}
         />
         {onManageSkills ? (
-          <div className="flex items-center justify-end border-t border-[color:var(--border-subtle)] px-2.5 py-1.5">
+          <div className="flex items-center justify-end px-2.5 py-1.5">
             <button
               type="button"
               onClick={() => {

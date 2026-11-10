@@ -3,7 +3,7 @@ import { keydownMatchesKeybindings } from '../../../commands/commandDispatcher'
 import { renderKeybinding, type KeybindingPlatform } from '../../../commands/keybindings'
 import { showToast, useToastStore } from '../../../store/toastStore'
 import { formatRelativeMsAgo } from '../../../utils/relativeTime'
-import { MenuOption } from '../../ui'
+import { MenuOption, ScrollArea } from '../../ui'
 import type { ComposerKeyEvent } from './ComposerField'
 import {
   promptStash,
@@ -265,13 +265,7 @@ function PromptStashList({
   }, [active])
   return (
     <div data-prompt-stash="">
-      <div
-        ref={listRef}
-        id={listId}
-        role="listbox"
-        aria-label="Stashed prompts"
-        className="max-h-64 overflow-y-auto py-1"
-      >
+      <ScrollArea ref={listRef} id={listId} role="listbox" aria-label="Stashed prompts" className="max-h-64 py-1">
         {entries.length === 0 ? (
           <p role="status" className="px-3 py-2 text-meta text-[color:var(--text-muted)]">
             Nothing stashed. {stashLabel} with something typed sets it aside here.
@@ -300,8 +294,8 @@ function PromptStashList({
             </MenuOption>
           )
         })}
-      </div>
-      <div className="border-t border-[color:var(--border-subtle)] px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
+      </ScrollArea>
+      <div className="px-3 py-1.5 text-micro text-[color:var(--text-subtle)]">
         ↑↓ choose · enter restore · {renderKeybinding('Primary+Backspace', platform)} delete · esc close
       </div>
     </div>

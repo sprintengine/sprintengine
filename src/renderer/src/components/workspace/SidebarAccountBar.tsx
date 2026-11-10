@@ -2,6 +2,7 @@ import React from 'react'
 import {
   Badge,
   IconButton,
+  MenuDivider,
   MenuItem,
   OutlineButton,
   Popover,
@@ -216,18 +217,19 @@ function AccountPopover({
         </div>
       </div>
 
+      {/* The groups are told apart by space and by the menu's own inset
+          divider, never by a full-bleed rule: a rule that meets the popover's
+          border reads as the card splitting into panels (design-system/
+          components/menu, Divider). The identity header needs neither — it is
+          the menu's title, and space separates a title in an overlay. */}
       {message ? (
-        <>
-          <div className="border-t border-[color:var(--border-subtle)] px-2.5 py-2 text-body leading-5 text-[color:var(--tone-warn)]">
-            {message}
-          </div>
-          <div className="border-t border-[color:var(--border-subtle)] py-1">
-            <AccountMenuItem onSelect={onRetry}>Try again</AccountMenuItem>
-          </div>
-        </>
+        <div className="pb-1">
+          <div className="px-2.5 pb-1 text-body leading-5 text-[color:var(--tone-warn)]">{message}</div>
+          <AccountMenuItem onSelect={onRetry}>Try again</AccountMenuItem>
+        </div>
       ) : null}
       {remote || sessions ? (
-        <div className="border-t border-[color:var(--border-subtle)] py-1">
+        <div className="pb-1">
           {remote ? (
             <AccountRow
               glyph={<RemoteMachineGlyph className={`icon-sm ${remote.toneClass ?? ''}`} />}
@@ -246,7 +248,8 @@ function AccountPopover({
           ) : null}
         </div>
       ) : null}
-      <div className="border-t border-[color:var(--border-subtle)] py-1">
+      {message || remote || sessions ? <MenuDivider /> : null}
+      <div className="pb-1">
         {signedIn ? (
           <AccountMenuItem onSelect={onLogout}>Sign out</AccountMenuItem>
         ) : (

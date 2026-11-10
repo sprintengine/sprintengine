@@ -256,7 +256,11 @@ export function SideQuestionDrawer({
         ))}
         <div ref={endRef} />
       </Drawer.Body>
-      <div className="flex shrink-0 flex-col gap-2 border-t border-[color:var(--border-default)] px-3 py-3">
+      {/* No rule above the field: the drawer is an overlay, and its body is a
+          ScrollArea whose bottom edge fades while earlier answers sit below
+          the fold. Answers arrive whole, never streamed, so the fade is not
+          recomposited per token. */}
+      <div className="flex shrink-0 flex-col gap-2 px-3 py-3">
         <Textarea
           ref={fieldRef}
           rows={3}

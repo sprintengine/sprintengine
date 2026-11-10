@@ -25,6 +25,7 @@ import {
   OutlineButton,
   PrimaryButton,
   RefreshIcon,
+  ScrollArea,
   Select,
   Skeleton,
   StashGlyph,
@@ -2280,7 +2281,11 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
        * exceptional (Missing / Prunable / Locked), and a warning belongs in a
        * notice, not in a subtitle nobody reads twice.
        */}
-      <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-default)] pl-1.5 pr-1.5">
+      {/* The pane's one rule (principles.md, "Hairlines carry the structure"):
+          subtle, under the chrome band, and nowhere else in the panel. The
+          branch row, the notices, the band of glyphs and the commit box below
+          are told apart by space; the list marks its own edges with a fade. */}
+      <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-subtle)] pl-1.5 pr-1.5">
         <TabsScroller className="flex min-w-0 flex-1 items-center self-stretch">
           <Tabs<GitPanelView>
             ariaLabel="Git panel views"
@@ -2360,7 +2365,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
        * so it lands where the panel already puts warnings.
        */}
       {scopeHealth ? (
-        <div className="shrink-0 border-b border-[color:var(--border-subtle)] px-3 py-2">
+        <div className="shrink-0 px-3 pt-2">
           <InlineNotice tone="warn">
             <span className="font-medium">{scopeHealth.label}</span>
             {' \u2014 '}
@@ -2368,7 +2373,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           </InlineNotice>
         </div>
       ) : null}
-      <div className="space-y-1 border-b border-[color:var(--border-subtle)] px-3 pb-2 pt-2">
+      <div className="space-y-1 px-3 pb-1 pt-2">
         <div className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-2">
           <span className="text-micro text-[color:var(--text-subtle)]">Branch</span>
           <Select<string>
@@ -2428,7 +2433,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       </div>
 
       {operationInProgress ? (
-        <div className="shrink-0 border-b border-[color:var(--border-subtle)] px-3 py-2">
+        <div className="shrink-0 px-3 pb-1 pt-2">
           <InlineNotice
             tone="warn"
             action={
@@ -2460,9 +2465,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
           active={activeView === 'changes'}
           className="flex min-h-0 flex-1 flex-col"
         >
-          {/* This band belongs to the list beneath it rather
-                than to the pane — which is why it is borderless under the view
-                strip's own hairline. */}
+          {/* This band belongs to the list beneath it rather than to the
+                pane, and draws no rule: the glyphs are the top of the list. */}
           <GitChangesToolbar
             busy={Boolean(busy)}
             hasTarget={Boolean(toolbarTargetRow)}
@@ -2490,8 +2494,12 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
             onCollapseAll={() => setCollapsedGroupIds(new Set(checklistGroups.map((group) => group.id)))}
           />
           {/* Full-bleed: the rows carry their own 8px inset and their fill
-                runs to the pane's edges, the way a file list's does. */}
-          <div className="min-h-0 flex-1 overflow-y-auto py-1" onMouseDown={beginChangeMarquee}>
+                runs to the pane's edges, the way a file list's does. A
+                ScrollArea, so the list's edges fade while rows are scrolled
+                past them — under the glyph band, and above the commit box —
+                where each used to be a rule drawn whether or not anything was
+                hidden. */}
+          <ScrollArea className="flex-1 py-1" onMouseDown={beginChangeMarquee}>
             {allEntries.length === 0 ? (
               <div className="px-3 py-2 text-meta text-[color:var(--text-subtle)]">Working tree clean</div>
             ) : (
@@ -2581,7 +2589,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
                 />
               </>
             )}
-          </div>
+          </ScrollArea>
 
           <CommitComposer
             busy={busy}
@@ -2715,7 +2723,7 @@ function GitPanelSkeleton(): JSX.Element {
       </span>
       <div
         aria-hidden="true"
-        className="border-b border-[color:var(--border-default)] bg-[color:var(--bg-surface-raised)]"
+        className="border-b border-[color:var(--border-subtle)] bg-[color:var(--bg-surface-raised)]"
       >
         <div className="flex h-8 items-center justify-between gap-2 px-3">
           <Skeleton className="h-3 w-24 rounded bg-[color:var(--skeleton-shimmer-high)]" />
@@ -2749,7 +2757,7 @@ function GitTerminalView({
   terminalId: string
 }) {
   return (
-    <div className="min-h-0 flex-1 border-t border-[color:var(--bg-hover)] bg-[color:var(--bg-app)]">
+    <div className="min-h-0 flex-1 bg-[color:var(--bg-app)]">
       <PlainTerminalPanel workspaceId={workspaceId} terminalId={terminalId} cwdOverride={repoRoot} killOnUnmount />
     </div>
   )
@@ -2979,7 +2987,7 @@ function CommitComposer({
   return (
     // No band ground of its own: the box below brings the composer's material,
     // and a raised band behind a raised box flattens the step between them.
-    <section className="shrink-0 border-t border-[color:var(--border-subtle)] px-3 py-3">
+    <section className="shrink-0 px-3 pb-3 pt-2">
       <div className="mb-2 min-w-0 text-micro text-[color:var(--text-subtle)]">
         <span className="font-medium text-[color:var(--text-muted)]">Commit scope</span>
         <span className="mx-1.5 text-[color:var(--text-disabled)]" aria-hidden="true">
