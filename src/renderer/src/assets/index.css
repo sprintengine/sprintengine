@@ -5033,6 +5033,14 @@ body:has([data-selection-pane]:focus-within)
   --markdown-fade-end: var(--sem-space-3xl);
 }
 
+/* A list that scrolls up under chrome floating over it (the pane's menu under
+ * the pane's strip, workspace/pane/panel/ChatPanel.tsx) fades its top edge once
+ * something has gone up there, so the list is never cut off on a hard line.
+ * At rest it is drawn plain. Like the table above, the mask takes only alpha. */
+.scroll-fade-top[data-scrolled] {
+  mask-image: linear-gradient(to bottom, transparent, black var(--sem-space-xl));
+}
+
 .markdown-table-scroll:is([data-overflow-start], [data-overflow-end]) {
   mask-image: linear-gradient(
     to right,
