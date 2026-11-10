@@ -70,6 +70,9 @@ export const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
   // window itself stays where it is rather than going into the OS's full
   // screen. Esc brings the pane back.
   'fullscreen',
+  // The Pointer Lock API, so a game or 3D viewer under development can capture
+  // the mouse. Chromium shows its own "press Esc to exit" notice over the page.
+  'pointerLock',
 ])
 
 // A favicon past this is not a favicon. Mirrors the renderer's cap.

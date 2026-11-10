@@ -226,6 +226,10 @@ test("a page cannot post system notifications under the app's name", () => {
   assert.equal(ALLOWED_PERMISSIONS.has('notifications'), false)
 })
 
+test('a page may lock the pointer, as a game or 3D viewer does', () => {
+  assert.equal(ALLOWED_PERMISSIONS.has('pointerLock'), true)
+})
+
 test("a page may go fullscreen, and the guest's fullscreen never resizes the app window", () => {
   assert.equal(ALLOWED_PERMISSIONS.has('fullscreen'), true)
   const prefs: Record<string, unknown> = { disableHtmlFullscreenWindowResize: false }
