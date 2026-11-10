@@ -350,7 +350,8 @@ export function AccountControl({
       tone={shownBadge.tone}
       count={shownBadge.count}
       max={99}
-      className="border-[color:var(--bg-canvas)]"
+      // The rail's ground there, the band's here.
+      className={onRail ? 'border-[color:var(--bg-side-canvas)]' : 'border-[color:var(--bg-canvas)]'}
     />
   ) : null
   return (
@@ -474,7 +475,7 @@ export default function SidebarAccountBar({
             count={shownSettingsBadge.count}
             max={99}
             ariaLabel={shownSettingsBadge.label}
-            className="border-[color:var(--bg-canvas)]"
+            className="border-[color:var(--bg-side-canvas)]"
           />
         ) : null}
       </IconButton>

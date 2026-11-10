@@ -57,3 +57,36 @@ test('the rail stands as wide as it is told', async () => {
   await act(async () => root.unmount())
   host.remove()
 })
+
+test('the rail stands on the left side’s ground, and with the sidebar collapsed keeps the card gap unpainted', async () => {
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  ;(window as unknown as { api: unknown }).api = {}
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const render = (cardGap: boolean) =>
+    act(async () =>
+      root.render(
+        <AppRail
+          section="home"
+          onSelectSection={() => undefined}
+          surfaces={[]}
+          activeGlobalSurface={null}
+          onOpenSurface={() => undefined}
+          width={TRAFFIC_LIGHT_RESERVE}
+          cardGap={cardGap}
+        />,
+      ),
+    )
+  const rail = () => host.querySelector<HTMLElement>('nav[aria-label="App rail"]')!
+  await render(false)
+  expect(rail().className).toContain('bg-[color:var(--bg-side-canvas)]')
+  expect(rail().className).not.toContain('pr-[var(--shell-card-gap)]')
+  await render(true)
+  // The gap is outside the rail's own width, and the ground stops short of it.
+  expect(rail().getAttribute('style')).toContain(`calc(${TRAFFIC_LIGHT_RESERVE}px + var(--shell-card-gap))`)
+  expect(rail().className).toContain('pr-[var(--shell-card-gap)]')
+  expect(rail().className).toContain('bg-clip-content')
+  await act(async () => root.unmount())
+  host.remove()
+})

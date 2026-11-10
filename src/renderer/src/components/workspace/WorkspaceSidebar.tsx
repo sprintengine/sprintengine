@@ -4053,7 +4053,10 @@ function WorkspaceSidebar({
               maxWidth: revealed ? '45vw' : '45%',
             }
       }
-      className={`relative flex flex-col bg-[color:var(--bg-canvas)] ${fillWidth ? 'min-w-0 flex-1' : 'shrink-0'} ${
+      // The left side's ground (--bg-side-canvas), painted inside the content
+      // box only: the right padding is the card gap toward the workspace card,
+      // and the canvas shows through it as it does between every pair of cards.
+      className={`relative flex flex-col bg-[color:var(--bg-side-canvas)] bg-clip-content pr-[var(--shell-card-gap)] ${fillWidth ? 'min-w-0 flex-1' : 'shrink-0'} ${
         isResizingSidebar ? '' : 'transition-[width] duration-150 ease-out motion-reduce:transition-none'
       } ${sidebarCollapsed ? 'hidden' : ''}`}
     >
@@ -4113,11 +4116,12 @@ function WorkspaceSidebar({
           `overflow-hidden` clips the tree's rows to the corners (every menu,
           modal and tooltip in this file is a portal or a later sibling, so
           nothing that must escape is inside). `min-h-0 flex-1` keeps the tree
-          the scrolling child it was. The gap toward the workspace card is this
-          card's own margin and reads --shell-card-gap, the same token the pane
-          card uses on its other side, so the shell's two gaps measure the
-          same. */}
-      <div className="sidebar-card relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)]">
+          the scrolling child it was. The gap toward the workspace card is the
+          column's right padding (above) and reads --shell-card-gap, the same
+          token the pane card uses on its other side, so the shell's two gaps
+          measure the same. It is padding rather than this card's margin so the
+          column can paint the left side's ground up to it and no further. */}
+      <div className="sidebar-card relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--shell-card-radius)] bg-[color:var(--bg-surface)] mb-[var(--shell-card-gap)]">
         {/* Drill-in REPLACES the rail (item 1993,
          * `design-system/patterns/context-rail.html`): while a surface is open its
          * rail renders here, in this column, at this width — never as a second

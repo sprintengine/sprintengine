@@ -378,7 +378,7 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
       {/* The pane's body continues the card under the strip, so only its foot
           rounds. `overflow-hidden` is what clips a terminal or a browser to the
           corners. The gap toward the workspace card is this card's own margin
-          and reads --shell-card-gap, the same token the sidebar card uses on
+          and reads --shell-card-gap, the same token the sidebar column uses on
           its other side, so the two gaps in the shell cannot drift apart. It
           takes the same gap on its RIGHT, against the window edge. */}
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-b-[var(--shell-card-radius)] ml-[var(--shell-card-gap)] mr-[var(--shell-card-gap)] mb-[var(--shell-card-gap)]">

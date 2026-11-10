@@ -165,6 +165,10 @@ type AppRailProps = {
   // How wide it stands (appRailWidth); its own measure unless the traffic
   // lights need more.
   width?: number
+  // Nothing of the left side stands beside it (the sidebar is collapsed), so
+  // the rail keeps the card gap toward the workspace card itself, as the
+  // sidebar's card does when it is there.
+  cardGap?: boolean
 }
 
 // One rail glyph on a control-lg square, named by its tooltip and accessible
@@ -225,7 +229,7 @@ function RailGlyph({
             count={badge.count}
             max={99}
             ariaLabel={badge.label}
-            className="border-[color:var(--bg-canvas)]"
+            className="border-[color:var(--bg-side-canvas)]"
           />
         ) : null}
       </IconButton>
@@ -242,18 +246,26 @@ export function AppRail({
   onOpenSurface,
   accountSlot,
   width = APP_RAIL_WIDTH,
+  cardGap = false,
 }: AppRailProps) {
   return (
     <nav
       aria-label="App rail"
-      style={{ width }}
+      // With the card gap, the gap is added outside the rail's own width.
+      style={{ width: cardGap ? `calc(${width}px + var(--shell-card-gap))` : width }}
       // The whole column is a drag region — it is window chrome — and each
       // control opts back out, exactly as the title strip does.
       // `window-chrome` travels with the canvas fill: under the glass window
       // material this column IS the OS frost, so the squares' hover and their
       // neutral selection fill tint it instead of covering it (assets/index.css,
       // the glass block). Nothing on an opaque window.
-      className="window-chrome app-drag relative flex shrink-0 flex-col items-stretch bg-[color:var(--bg-canvas)]"
+      // Its ground is the left side's (--bg-side-canvas): the pane's surface on
+      // a solid window, the material under glass and tinted. The card gap is
+      // right padding the ground is not painted under, so the canvas shows
+      // there as it does between cards.
+      className={`window-chrome app-drag relative flex shrink-0 flex-col items-stretch bg-[color:var(--bg-side-canvas)] ${
+        cardGap ? 'bg-clip-content pr-[var(--shell-card-gap)]' : ''
+      }`}
     >
       {/* The title strip's height, reserved: the first glyph sits below the
           chrome row beside it, and on macOS the native traffic lights start here.

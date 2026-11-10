@@ -5219,6 +5219,10 @@ export default function WorkspaceManager() {
             activeGlobalSurface={activeGlobalSurface}
             onOpenSurface={openRailSurface}
             width={railWidth}
+            // Collapsed, nothing of the left side stands between the rail and
+            // the workspace card, so the rail keeps the gap the sidebar's card
+            // would.
+            cardGap={sidebarCollapsed && !narrowViewport}
             accountSlot={
               <SidebarAccountBar
                 collapsed
