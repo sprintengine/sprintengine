@@ -127,6 +127,24 @@ test('ScrollArea is the fade class on a scroller, and forwards its ref and props
   expect(el.hasAttribute('data-scroll-end')).toBe(true)
 })
 
+test('ScrollArea re-measures when its content list changes', () => {
+  function List({ items }: { items: string[] }) {
+    return (
+      <ScrollArea data-testid="list" content={[items]}>
+        {items.map((item) => (
+          <div key={item}>{item}</div>
+        ))}
+      </ScrollArea>
+    )
+  }
+  const view = mount(<List items={['a']} />)
+  const el = view.querySelector<HTMLElement>('[data-testid="list"]')!
+  expect(el.hasAttribute('data-scroll-end')).toBe(false)
+  geometry(el, { scroll: 600, client: 200, position: 0 })
+  act(() => root!.render(<List items={['a', 'b', 'c']} />))
+  expect(el.hasAttribute('data-scroll-end')).toBe(true)
+})
+
 test('a horizontal ScrollArea takes the horizontal fade', () => {
   const view = mount(
     <ScrollArea axis="x" data-testid="strip">

@@ -17,7 +17,9 @@ import React, { useImperativeHandle, useRef } from 'react'
 
 import { useScrollEdges, type ScrollAxis } from './useScrollEdges'
 
-export type ScrollAreaProps = React.HTMLAttributes<HTMLDivElement> & {
+// `content` is the HTML attribute of a `<meta>`, meaningless on a div; the
+// prop of that name here is the scroll extent's dependency list.
+export type ScrollAreaProps = Omit<React.HTMLAttributes<HTMLDivElement>, 'content'> & {
   /** The axis that scrolls. `y` (default) for a body; `x` for a strip. */
   axis?: ScrollAxis
   /** What can change the scroll extent in one render without resizing a child
