@@ -279,6 +279,13 @@ type WorkspaceSidebarProps = {
    * content (useNarrowViewport): no resize edge, no width of its own.
    */
   fillWidth?: boolean
+  /**
+   * Collapsed, but shown at the window's left edge over the workspace
+   * (sidebarHoverReveal.tsx): drawn at its expanded width with no resize
+   * edge, since the width it is shown at is the docked one and dragging a
+   * borrowed sidebar wider would be resizing something that is not there.
+   */
+  revealed?: boolean
   // The sidebar's own top strip (SidebarChrome) — window controls that run to the
   // top of the full-height sidebar. Rendered as the first child inside the aside
   // so it shares the column's exact width and resize behavior.
@@ -448,6 +455,7 @@ function WorkspaceSidebar({
   isDetachedWindow,
   sidebarCollapsed,
   fillWidth = false,
+  revealed = false,
   chromeSlot,
   contextRail,
   contextRailActive = false,
@@ -4004,7 +4012,9 @@ function WorkspaceSidebar({
               // binds under a ~1156px window (45% of that is SIDEBAR_MAX_WIDTH);
               // on a narrower one a drag past the cap still records the width the
               // pointer asked for, so widening the window restores it.
-              maxWidth: '45%',
+              // Shown at the edge, it floats in a frame its own width, which a
+              // share of would shrink it to nothing; the window is the shell.
+              maxWidth: revealed ? '45vw' : '45%',
             }
       }
       className={`relative flex flex-col bg-[color:var(--bg-canvas)] ${fillWidth ? 'min-w-0 flex-1' : 'shrink-0'} ${
@@ -4014,7 +4024,7 @@ function WorkspaceSidebar({
       {/* Drag the right edge to resize; drag it close to the left to collapse.
           A focusable separator is a window splitter, so it says its position:
           the sidebar's width within its bounds. */}
-      {fillWidth ? null : (
+      {fillWidth || revealed ? null : (
         <div
           role="separator"
           aria-orientation="vertical"
