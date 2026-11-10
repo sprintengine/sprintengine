@@ -5033,14 +5033,6 @@ body:has([data-selection-pane]:focus-within)
   --markdown-fade-end: var(--sem-space-3xl);
 }
 
-/* A list that scrolls up under chrome floating over it (the pane's menu under
- * the pane's strip, workspace/pane/panel/ChatPanel.tsx) fades its top edge once
- * something has gone up there, so the list is never cut off on a hard line.
- * At rest it is drawn plain. Like the table above, the mask takes only alpha. */
-.scroll-fade-top[data-scrolled] {
-  mask-image: linear-gradient(to bottom, transparent, black var(--sem-space-xl));
-}
-
 .markdown-table-scroll:is([data-overflow-start], [data-overflow-end]) {
   mask-image: linear-gradient(
     to right,
@@ -5051,7 +5043,9 @@ body:has([data-selection-pane]:focus-within)
   );
 }
 
-/* The scroll-edge fade (design-system/components/scroll-area). A scroller
+/* The scroll-edge fade (design-system/components/scroll-area), the one fade
+ * for every scroller — the pane's menu scrolling up under the pane's floating
+ * strip (workspace/pane/panel/ChatPanel.tsx) included. A scroller
  * marks an edge only while content is hidden past it: `useScrollEdges` writes
  * `data-scroll-start` / `data-scroll-end`, and this turns them into a mask
  * that fades that edge to nothing. It replaces the rule a header used to draw
