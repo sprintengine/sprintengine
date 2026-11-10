@@ -1,6 +1,11 @@
 // What a message sent while a reply runs does: wait for the turn to end
 // (Queue), or go into the turn now (Steer). The person picks the default in
 // Settings; a long press on the send does the other one.
+//
+// Steer is the default (owner request 2026-11-10). A message written while
+// an agent works is nearly always meant for the work in hand, and with Queue
+// first the only way to reach the agent at once was to stop it and send
+// again.
 
 /** The default for a message sent while an agent is working. */
 export type FollowUpBehavior = "queue" | "steer";
@@ -8,9 +13,12 @@ export type FollowUpBehavior = "queue" | "steer";
 /** What the send does now: a plain send, or one of the two mid-turn kinds. */
 export type FollowUpAction = "send" | "queue" | "steer";
 
-/** Anything stored but `steer` reads as Queue, which is what the phone always did. */
+/**
+ * Only a stored `queue` reads as Queue: it was picked in Settings, since
+ * nothing else writes it. Nothing stored, or anything else, is Steer.
+ */
 export function readFollowUpBehavior(value: string | null | undefined): FollowUpBehavior {
-  return value === "steer" ? "steer" : "queue";
+  return value === "queue" ? "queue" : "steer";
 }
 
 /**

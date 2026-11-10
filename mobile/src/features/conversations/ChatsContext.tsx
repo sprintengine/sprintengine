@@ -454,7 +454,7 @@ export function ChatsProvider({
     [notesStore],
   );
 
-  const [followUpBehavior, setFollowUpBehaviorState] = useState<FollowUpBehavior>("queue");
+  const [followUpBehavior, setFollowUpBehaviorState] = useState<FollowUpBehavior>("steer");
   useEffect(() => {
     if (!notesStore) return;
     let live = true;

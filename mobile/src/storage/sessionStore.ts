@@ -268,7 +268,7 @@ export const createDeviceNotesStore = (adapter: SessionStorageAdapter | null): D
   let chatsOpenedLoad: Promise<void> | null = null;
   let cachedReadIds: string[] = [];
   let cachedGrouping: ChatGrouping = "recent";
-  let cachedFollowUp: FollowUpBehavior = "queue";
+  let cachedFollowUp: FollowUpBehavior = "steer";
   // One write of the opened-at map at a time. Marks made while one is going
   // out are written together by the one after it: a fresh pairing marks every
   // chat it lists as first seen, and wrote the keychain once per chat.
