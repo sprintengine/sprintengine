@@ -17,7 +17,7 @@ import { closePaneTabAndItsTerminal, paneTerminalSessionId } from '../paneTermin
 import { WorkspacePaneBody } from '../WorkspacePaneBody'
 import { composePaneKinds, type PaneLaunchKind } from '../paneKinds'
 import { WorkspacePaneAddMenu } from '../WorkspacePaneAddMenu'
-import { popOutAddKinds } from './panePopOutHost'
+import { diffShowsInWindow, popOutAddKinds } from './panePopOutHost'
 import { redirectPaneWrites } from './panePopOutRedirect'
 
 // A workspace pane, or one of its tabs, in a window of its own (`?aux=pane`).
@@ -363,10 +363,15 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
           >
             Close to the right
           </MenuItem>
-          <MenuDivider />
           {/* The tab goes home and shows in the pane; the window keeps the
-              rest, and closes itself when that was its last. */}
-          <MenuItem onClick={() => act({ type: 'dock', tabIds: [tabMenu.tabId] })}>Move to main window</MenuItem>
+              rest, and closes itself when that was its last. A Diff tab is
+              shown in a window and nowhere else (diffShowsInWindow). */}
+          {tabs[menuTabIndex]?.kind === 'diff' && diffShowsInWindow() ? null : (
+            <>
+              <MenuDivider />
+              <MenuItem onClick={() => act({ type: 'dock', tabIds: [tabMenu.tabId] })}>Move to main window</MenuItem>
+            </>
+          )}
         </ContextMenu>
       ) : null}
       <ToastRegion />

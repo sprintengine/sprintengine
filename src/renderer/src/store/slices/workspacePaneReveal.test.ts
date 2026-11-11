@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { OpenAuxWindowInput } from '../../../../shared/electron-api'
 import type { WorkspaceId } from '../../types/workspace'
 import { openGitDiff } from '../../utils/openGitDiff'
 import { useWorkspaceStore } from '../workspaceStore'
@@ -60,28 +59,15 @@ test('the step the viewer has open rides the tab for the session, and a restart 
   assert.equal(persisted?.tabs[0].diff?.reveal, undefined)
 })
 
-test('an agent diff never takes focus, and a branch or commit view goes to the pane', () => {
-  const auxCalls: OpenAuxWindowInput[] = []
+test('an agent diff, working tree or commit step, goes to the Diff tab and never takes focus', () => {
   const paneCalls: Array<{ workspaceId: string; input: Record<string, unknown> }> = []
-  Object.defineProperty(globalThis, 'window', {
-    value: {
-      localStorage: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined },
-      api: {
-        openAuxWindow: async (input: OpenAuxWindowInput) => {
-          auxCalls.push(input)
-          return { ok: true as const, retargeted: false }
-        },
-      },
-    },
-    configurable: true,
-  })
+  Object.defineProperty(globalThis, 'window', { value: { api: {} }, configurable: true })
   useWorkspaceStore.setState({
     openPaneTab: (workspaceId: WorkspaceId, input: Record<string, unknown>) => {
       paneCalls.push({ workspaceId, input })
       return 'tab-diff'
     },
   } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>)
-  useWorkspaceStore.getState().setDiffOpensInWindow(true)
   const base = {
     workspaceId: 'ws-1',
     repoRoot: '/Users/dev/repo',
@@ -89,25 +75,22 @@ test('an agent diff never takes focus, and a branch or commit view goes to the p
     scope: 'unstaged' as const,
   }
 
-  // Working tree, window preferred: the window, retargeted without focus.
+  // The working tree and a commit step alike: the Diff tab, which shows in a
+  // window of its own, carrying the reveal.
   openGitDiff({
     ...base,
     reveal: { key: 'req-2', paths: ['src/a.ts'], step: { kind: 'uncommitted' } },
     takeFocus: false,
   })
-  assert.equal(auxCalls.length, 1)
-  assert.equal(auxCalls[0].focus, false)
-  assert.equal(auxCalls[0].params.revealKey, 'req-2')
-  assert.equal(auxCalls[0].params.revealPaths, JSON.stringify(['src/a.ts']))
-
-  // A commit step only the pane can show: the pane, whatever the preference.
-  openGitDiff({ ...base, reveal, takeFocus: false })
-  assert.equal(auxCalls.length, 1)
   assert.equal(paneCalls.length, 1)
-  assert.deepEqual((paneCalls[0].input.diff as { reveal: unknown }).reveal, reveal)
-  assert.equal(paneCalls[0].input.activate, undefined, 'in front when the person is not typing')
-
-  // Typing: behind the tab they are on.
-  openGitDiff({ ...base, reveal, takeFocus: false, background: true })
+  assert.deepEqual((paneCalls[0].input.diff as { reveal: unknown }).reveal, {
+    key: 'req-2',
+    paths: ['src/a.ts'],
+    step: { kind: 'uncommitted' },
+  })
+  openGitDiff({ ...base, reveal, takeFocus: false })
+  assert.equal(paneCalls.length, 2)
+  assert.deepEqual((paneCalls[1].input.diff as { reveal: unknown }).reveal, reveal)
+  // Never activated in the pane: the window shows it (panePopOut.test.tsx).
   assert.equal(paneCalls[1].input.activate, false)
 })

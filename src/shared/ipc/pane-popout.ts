@@ -21,6 +21,8 @@ export type PanePopOutOpenInput = {
   popOutId: string
   workspaceId: string
   bounds?: WindowBounds | null
+  /** False opens the window behind the one in front, without the keyboard: an agent's reveal. */
+  focus?: boolean
 }
 
 export type PanePopOutOpenResult = { ok: true } | { ok: false; message: string }

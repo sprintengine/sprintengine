@@ -42,7 +42,6 @@ import {
   MicroChip,
   NextDifferenceGlyph,
   OpenInEditorGlyph,
-  OpenInWindowGlyph,
   OutlineButton,
   Pager,
   Popover,
@@ -62,7 +61,6 @@ import { MENU_LIST_CLASS } from '../ui/menuClasses'
 import { FOCUS_RING_INSET_CLASS } from '../ui/tokens'
 import { TITLE_BAR_HEIGHT, TRAFFIC_LIGHT_INSET } from '../workspace/AppTitleBar'
 import { WindowCloseButton } from '../workspace/WindowControls'
-import { openDiffWindow } from './openDiffWindow'
 import { DiffChatToolbar } from './DiffChatToolbar'
 import { diffSelectionQuote, type DiffChatSelection } from './diffToChat'
 import { deliverQuoteToWorkspaceChat } from '../panels/agentChat/composerHandoff'
@@ -409,23 +407,9 @@ async function probeDiffItem(repoRoot: string, item: DiffFileItem): Promise<stri
   }
 }
 
-// The two buttons that write the sticky `diffOpensInWindow` preference
-// (git-commit-window T3). They moved into the toolbar band in T4 and kept
-// everything else: the same handlers, the same tooltips, the same rule that
-// each one is the whole gesture for "diffs belong here now". Losing either
-// would leave the preference with no writer at all.
-function OpenInWindowButton({ onClick }: { onClick: () => void }) {
-  return (
-    <Tooltip content="Open in separate window" placement="bottom">
-      <ToolbarButton ariaLabel="Open in separate window" onClick={onClick}>
-        <OpenInWindowGlyph />
-      </ToolbarButton>
-    </Tooltip>
-  )
-}
-
-// The window's way home: the same diff in the pane's Diff tab, and the sticky
-// preference flipped so the next one opens there too. Its neighbour is Escape,
+// The window's way home: the same diff in the workspace's own Diff tab, which
+// shows in a window of its own (diffShowsInWindow) with the branch steps, tours
+// and changelist default this one lacks. Its neighbour is Escape,
 // which only closes the window and decides nothing — the tooltip says so,
 // because "close" and "put it back" are different intentions.
 function ShowInAppButton({ onClick }: { onClick: () => void }) {
@@ -1291,31 +1275,6 @@ export function DiffViewer({
     if (after >= 0) goToFileIndex(after)
   }
 
-  const openInWindow = useCallback(() => {
-    const target = currentItem ?? items[0]
-    // The aux window shows the WORKING TREE; a branch step has no counterpart
-    // there, so it opens on the unstaged view of the same file rather than
-    // carrying a scope the window cannot honour.
-    const scope = target?.kind === 'branch' ? 'unstaged' : target?.kind
-    // Asking for the window IS the preference: from here on a Git row opens
-    // one, until the window's "Show in the app" says otherwise.
-    useWorkspaceStore.getState().setDiffOpensInWindow(true)
-    void openDiffWindow({
-      ...(workspaceId ? { workspaceId } : {}),
-      repoRoot,
-      focusPath: target?.path ?? focusPath ?? '',
-      scope: scope ?? focusKind ?? 'unstaged',
-      // The list the pane is filtered to goes with it; the window opens on the
-      // same seven files, not on the whole repository.
-      ...(filterId ? { changelistId: filterId } : {}),
-    })
-  }, [currentItem, filterId, focusKind, focusPath, items, repoRoot, workspaceId])
-
-  // The window's half of the flip. The preference is NOT written here: this
-  // window's store was hydrated when it opened, and writing the settings
-  // envelope from it would push a snapshot of that moment over whatever the
-  // workspace window has changed since. The workspace window flips it as it
-  // opens the tab (WorkspaceManager), exactly as docking a file back does.
   // ── The failure band ────────────────────────────────────────────────────
   // ONE message, and it is the newest one. There were three states here —
   // the hand-off's, the file box's and the hunk read's — collapsed at the
@@ -1928,7 +1887,6 @@ export function DiffViewer({
 
         {/* The sticky preference's two writers, absorbed from T3's band. */}
         {/* The window reads this computer's checkout; a far one stays in the pane. */}
-        {variant === 'pane' && !source ? <OpenInWindowButton onClick={openInWindow} /> : null}
         {variant === 'window' && workspaceId ? <ShowInAppButton onClick={showInApp} /> : null}
       </Toolbar>
 

@@ -67,7 +67,11 @@ function bumpReveal(popOutId: string, tabId: string): void {
  * their bodies here; a window that then failed to open would have taken a
  * terminal or a page off screen for nothing.
  */
-export async function popOutPaneTabs(workspaceId: WorkspaceId, tabIds: readonly string[]): Promise<boolean> {
+export async function popOutPaneTabs(
+  workspaceId: WorkspaceId,
+  tabIds: readonly string[],
+  options: { focus?: boolean } = {},
+): Promise<boolean> {
   const before = useWorkspaceStore.getState().workspaces.find((w) => w.id === workspaceId)?.paneState
   const tabs = (before?.tabs ?? []).filter((tab) => tabIds.includes(tab.id) && !tab.poppedOut)
   if (tabs.length === 0) return false
@@ -78,7 +82,12 @@ export async function popOutPaneTabs(workspaceId: WorkspaceId, tabIds: readonly 
   popOuts.set(popOutId, { workspaceId, activeTabId: front.id, reveal: { tabId: front.id, key: 1 } })
   let failure: string | null = null
   try {
-    const result = await window.api.panePopOutOpen({ popOutId, workspaceId, bounds: readAuxWindowBounds('pane') })
+    const result = await window.api.panePopOutOpen({
+      popOutId,
+      workspaceId,
+      bounds: readAuxWindowBounds('pane'),
+      ...(options.focus === false ? { focus: false } : {}),
+    })
     if (!result?.ok) failure = result?.message ?? 'The window did not open.'
   } catch (error) {
     failure = error instanceof Error ? error.message : 'The window did not open.'
@@ -102,6 +111,58 @@ export async function popOutPaneTabs(workspaceId: WorkspaceId, tabIds: readonly 
     return false
   }
   return true
+}
+
+/**
+ * Whether a Diff tab is shown in a window of its own rather than in the pane.
+ * A diff wants the width of a window, and squeezed into the pane beside a chat
+ * it was a file tree and two editors fighting over a third of the screen. The
+ * tab is still the pane's — its strip entry is the pointer to the window, and
+ * its tour, branch step and paired-machine source live on it as before — but
+ * its body only ever mounts in the pop-out. A shell with no second OS window
+ * to give it (the browser tab) keeps it in the pane.
+ */
+export function diffShowsInWindow(): boolean {
+  return canPopOutPane()
+}
+
+/**
+ * Open the Diff tab, or retarget the one there is, in its own window. The
+ * single way anything in this window shows a diff: a Git row, an agent's
+ * changes, a chat's Changes row, the pane's "+ Diff".
+ *
+ * `focus: false` (an agent's reveal) opens the window, or brings the diff
+ * forward in it, without raising it or taking the keyboard.
+ *
+ * `activate: false` (an agent docking a tour, a reveal behind the person's
+ * tab) only writes the tab: no window opens and none comes forward, because an
+ * agent must not move the person's view. The tab waits in the strip, and
+ * selecting it opens its window (`WorkspacePane`).
+ *
+ * Returns the tab's id, or null when the pane could not hold it.
+ */
+export function openDiffTab(
+  workspaceId: WorkspaceId,
+  input: { diff?: WorkspacePaneTab['diff']; activate?: boolean; focus?: boolean } = {},
+): string | null {
+  const store = useWorkspaceStore.getState()
+  const request = { kind: 'diff' as const, ...(input.diff ? { diff: input.diff } : {}) }
+  if (!diffShowsInWindow()) {
+    return store.openPaneTab(workspaceId, { ...request, ...(input.activate === false ? { activate: false } : {}) })
+  }
+  // Never activated in the pane: that would open it, and closing it again
+  // when the window takes the tab is a pane sliding in and out for nothing.
+  const opened = store.openPaneTab(workspaceId, { ...request, activate: false })
+  if (opened === null || input.activate === false) return opened
+  const tab = paneTabs(workspaceId).find((candidate) => candidate.id === opened)
+  if (tab?.poppedOut && popOuts.has(tab.poppedOut)) {
+    bumpReveal(tab.poppedOut, opened)
+    requestSync?.()
+    if (input.focus !== false) showPanePopOut(tab.poppedOut)
+  } else if (tab && !tab.poppedOut) {
+    void popOutPaneTabs(workspaceId, [opened], input.focus === false ? { focus: false } : {})
+  }
+  return opened
 }
 
 /** "Bring back": the tab leaves its window and shows in the pane again, on screen. */
@@ -231,13 +292,19 @@ export function applyPanePopOutAction(popOutId: string, action: PanePopOutAction
     case 'activate':
       if (holds(action.tabId)) record.activeTabId = action.tabId
       return
-    case 'dock':
+    case 'dock': {
       if (!Array.isArray(action.tabIds)) return
+      // A Diff tab stays in its window (`diffShowsInWindow`): docked, it
+      // would only be popped straight back out.
+      const tabIds = action.tabIds.filter(
+        (tabId) => !(diffShowsInWindow() && tabs.some((tab) => tab.id === tabId && tab.kind === 'diff')),
+      )
       store.dockPaneTabs(workspaceId, popOutId, {
-        tabIds: action.tabIds,
-        activeTabId: action.tabIds.find((tabId) => holds(tabId)) ?? null,
+        tabIds,
+        activeTabId: tabIds.find((tabId) => holds(tabId)) ?? null,
       })
       return
+    }
     case 'open': {
       // A tab opened from inside the window (a Git row's diff, the Backlog's
       // own reveal) opens where the person is working: a NEW tab joins the
@@ -468,8 +535,18 @@ export function usePanePopOutHost(windowWorkspaceIds: ReadonlySet<WorkspaceId> |
       if (!record) return
       // Closing the window is how its tabs come home: the pane opens on the
       // tab the window had in front, the way docking a floating player opens
-      // the pane on it.
-      useWorkspaceStore.getState().dockPaneTabs(record.workspaceId, popOutId, { activeTabId: record.activeTabId })
+      // the pane on it. A Diff tab has no home in the pane to come to, so
+      // closing its window closes it.
+      const store = useWorkspaceStore.getState()
+      if (diffShowsInWindow()) {
+        for (const tab of paneTabs(record.workspaceId)) {
+          if (tab.poppedOut === popOutId && tab.kind === 'diff') store.closePaneTab(record.workspaceId, tab.id)
+        }
+      }
+      const landing = paneTabs(record.workspaceId).some((tab) => tab.id === record.activeTabId)
+        ? record.activeTabId
+        : null
+      store.dockPaneTabs(record.workspaceId, popOutId, { activeTabId: landing })
     })
     sync()
     return () => {

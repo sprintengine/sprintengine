@@ -63,7 +63,12 @@ function paneTerminalSessionId(terminalId: string): string {
 
 export type PanePopOutBrokerDeps = {
   /** Open the window. Called once per pop-out id; the broker remembers the handle. */
-  openWindow(input: { popOutId: string; workspaceId: string; bounds: WindowBounds | null }): PanePopOutWindowHandle
+  openWindow(input: {
+    popOutId: string
+    workspaceId: string
+    bounds: WindowBounds | null
+    focus?: boolean
+  }): PanePopOutWindowHandle
 }
 
 // The same shape the pane slice keeps on a tab (`POP_OUT_ID` there): what the
@@ -148,10 +153,12 @@ export function createPanePopOutBroker(deps: PanePopOutBrokerDeps) {
         existing.window.focus()
         return { ok: true }
       }
+      const focus = (input as { focus?: unknown }).focus !== false
       const window = deps.openWindow({
         popOutId,
         workspaceId,
         bounds: readBounds((input as { bounds?: unknown }).bounds),
+        ...(focus ? {} : { focus: false }),
       })
       entries.set(popOutId, { popOutId, workspaceId, owner, window, state: null, closing: false })
       return { ok: true }

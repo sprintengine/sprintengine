@@ -8,6 +8,7 @@ import CliIcon from '../../../CliIcon'
 import { shortMachineName } from '../../../remote/machineRowModel'
 import { useChatActivity, type ChatActivityRow } from '../../../panels/agentChat/chatActivityStore'
 import { openPairedChanges, usePairedChanges } from '../../../panels/agentChat/pairedChanges'
+import { openDiffTab } from '../popout/panePopOutHost'
 import { useChatPanelFacts, type ChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
 import { useShowSubagentFamily, useSubagentFamily } from '../../../panels/agentChat/subagentFamilyStore'
 import { subagentViewOwner, useSubagentViews } from '../../../panels/agentChat/subagentViewStack'
@@ -156,8 +157,9 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
   const activityRow = (kind: ChatActivityRow['kind']) => activity?.rows.find((row) => row.kind === kind)
   const openChanges = () => {
     if (activityRow('changes')) activity?.open('changes')
-    else if (!(gitEnabled && agentId && openPairedChanges(workspaceId, agentId)))
-      openPaneTab(workspaceId, { kind: gitEnabled ? 'diff' : 'files' })
+    else if (gitEnabled && agentId && openPairedChanges(workspaceId, agentId)) return
+    else if (gitEnabled) openDiffTab(workspaceId)
+    else openPaneTab(workspaceId, { kind: 'files' })
   }
   const openFiles = () => {
     if (activityRow('files')) activity?.open('files')

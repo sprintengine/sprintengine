@@ -95,11 +95,12 @@ test('GitChangesToolbar', async () => {
       assert.equal(button.querySelector('svg')?.getAttribute('aria-hidden'), 'true', 'the glyph never speaks')
     }
 
-    // The three that open menus say so.
+    // The two that open menus say so. "Show diff" is a plain button: a diff
+    // has one place to show.
     const menus = Array.from(band.querySelectorAll('button[aria-haspopup="menu"]')).map((button) =>
       button.getAttribute('aria-label'),
     )
-    assert.deepEqual(menus, ['Move to another changelist', 'Show diff', 'Group by changelist'])
+    assert.deepEqual(menus, ['Move to another changelist', 'Group by changelist'])
   }
 
   // ── the unavailable item is still in the walk ────────────────────────────────

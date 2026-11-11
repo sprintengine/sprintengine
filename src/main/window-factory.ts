@@ -575,12 +575,14 @@ export function openPanePopOutWindow(input: {
   popOutId: string
   workspaceId: string
   bounds: { x: number; y: number; width: number; height: number } | null
+  focus?: boolean
 }): BrowserWindow {
   openAuxWindow({
     kind: 'pane',
     singletonKey: input.popOutId,
     params: { popOutId: input.popOutId, workspaceId: input.workspaceId },
     bounds: input.bounds,
+    ...(input.focus === false ? { focus: false } : {}),
   })
   const win = auxWindows.get(`pane:${input.popOutId}`)
   if (!win) throw new Error('pane_window_not_opened')

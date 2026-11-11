@@ -6,6 +6,7 @@ import { dispatchFileReveal } from '../../../utils/fileReveal'
 import { openSubagentList } from './subagentViewStack'
 import { openPairedChanges } from './pairedChanges'
 import type { TranscriptEntry } from './conversationProjection'
+import { openDiffTab } from '../../workspace/pane/popout/panePopOutHost'
 import { deriveChatActivity, sharedEditFolder, type ChatActivity, type ChatActivityKind } from './chatActivity'
 import {
   markRowSeen,
@@ -151,7 +152,7 @@ export function useChatActivityCard({
           // paired machine, that machine's; with Git off there is no tab to
           // open, and Files shows the same files.
           if (gitEnabled && openPairedChanges(workspaceId, agentId)) return
-          if (gitEnabled) openPaneTab(workspaceId, { kind: 'diff' })
+          if (gitEnabled) openDiffTab(workspaceId)
           else openPaneTab(workspaceId, { kind: 'files' })
           return
         case 'files': {

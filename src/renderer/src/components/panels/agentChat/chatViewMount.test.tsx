@@ -2631,7 +2631,8 @@ test('the panel’s diff counts open the Diff tab, and a clean checkout draws no
     const openPaneTab = vi.fn(() => null)
     await chat.act(async () => useWorkspaceStore.setState({ openPaneTab } as never))
     await chat.act(async () => pill!.closest<HTMLButtonElement>('[data-panel-row="action"]')!.click())
-    expect(openPaneTab).toHaveBeenCalledWith('workspace', { kind: 'diff' })
+    // The Diff tab, written without opening the pane: it shows in its own window.
+    expect(openPaneTab).toHaveBeenCalledWith('workspace', { kind: 'diff', activate: false })
   } finally {
     await chat.unmount()
   }

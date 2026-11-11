@@ -136,7 +136,12 @@ test('a small change set shows its tree at once, and its files open in the app d
     Node: dom.window.Node,
     IS_REACT_ACT_ENVIRONMENT: true,
   })
-  const opened: Array<{ kind: string; params: Record<string, string> }> = []
+  type DiffRequest = {
+    focusPath: string
+    repoRoot: string
+    reveal: { key: string; paths: string[] }
+  }
+  const opened: DiffRequest[] = []
   const turnDiffs: unknown[] = []
   Object.assign(dom.window, {
     api: {
@@ -158,9 +163,6 @@ test('a small change set shows its tree at once, and its files open in the app d
           },
         }
       ),
-      openAuxWindow: async (input: { kind: string; params: Record<string, string> }) => {
-        opened.push(input)
-      },
     },
   })
   installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
@@ -170,8 +172,15 @@ test('a small change set shows its tree at once, and its files open in the app d
   const { ConversationLinkProvider } = await import('./conversationLinks')
   const { ConfirmDialogProvider } = await import('../../ui/ConfirmDialog')
   const { useWorkspaceStore } = await import('../../../store/workspaceStore')
-  const diffOpensInWindow = useWorkspaceStore.getState().diffOpensInWindow
-  useWorkspaceStore.setState({ diffOpensInWindow: true })
+  // The diff opens as the workspace's Diff tab, which shows in a window of its
+  // own; the request it makes of that tab is what is asserted.
+  const openPaneTab = useWorkspaceStore.getState().openPaneTab
+  useWorkspaceStore.setState({
+    openPaneTab: (_workspaceId: string, input: { kind: string; diff?: unknown }) => {
+      if (input.kind === 'diff') opened.push(input.diff as DiffRequest)
+      return null
+    },
+  } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>)
   const host = dom.window.document.createElement('div')
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)
@@ -227,8 +236,7 @@ test('a small change set shows its tree at once, and its files open in the app d
     await act(async () => button('Open README.md in diff viewer')!.click())
     // The turn's diff opens on the first file in the order the tree shows.
     await act(async () => button('Open diff')!.click())
-    expect(opened.every((input) => input.kind === 'diff')).toBe(true)
-    expect(opened.map((input) => input.params.focusPath)).toEqual([
+    expect(opened.map((input) => input.focusPath)).toEqual([
       '/workspace/src/main/b.ts',
       '/workspace/src/main/b.ts',
       '/workspace/README.md',
@@ -236,12 +244,11 @@ test('a small change set shows its tree at once, and its files open in the app d
     ])
     // Each opens on the repository, narrowed to exactly the turn's files, and
     // each is a new narrowing so "Show all" on one does not stick to the next.
-    expect(opened[0].params.repoRoot).toBe('/workspace')
-    expect(JSON.parse(opened[0].params.revealPaths)).toEqual(['src/main/a.ts', 'src/main/b.ts', 'README.md'])
-    expect(new Set(opened.map((input) => input.params.revealKey)).size).toBe(4)
-    expect(opened.some((input) => 'checkpoint' in input.params)).toBe(false)
+    expect(opened[0].repoRoot).toBe('/workspace')
+    expect(opened[0].reveal.paths).toEqual(['src/main/a.ts', 'src/main/b.ts', 'README.md'])
+    expect(new Set(opened.map((input) => input.reveal.key)).size).toBe(4)
   } finally {
-    useWorkspaceStore.setState({ diffOpensInWindow })
+    useWorkspaceStore.setState({ openPaneTab })
     await act(async () => root.unmount())
     dom.window.close()
     for (const key of ['window', 'document', 'navigator', 'HTMLElement', 'Node', 'IS_REACT_ACT_ENVIRONMENT']) {
