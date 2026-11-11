@@ -17,6 +17,13 @@ import {
 const TICK_SPACING_PX = 8
 const TICK_SPACING_EXPANDED_PX = 20
 
+// How long the open strip waits, once the pointer has left it and its step
+// buttons, before it folds back to its resting size. Folding moves every tick,
+// so a pointer that overshoots the last notch or drifts a little off the strip
+// would otherwise come back to find the turn it was on somewhere else. The
+// same pause the sidebar's hover reveal gives before it closes.
+export const MINIMAP_COLLAPSE_DELAY_MS = 300
+
 export function minimapTickTop(index: number, count: number): number {
   return count <= 1 ? 0 : (Math.max(0, Math.min(index, count - 1)) / (count - 1)) * 100
 }
@@ -46,11 +53,13 @@ function TurnStepGlyph({ direction }: { direction: 'up' | 'down' }): JSX.Element
 // with the strip open, 12px, 16px beside the hovered one and the full 24px
 // under the pointer), so the hover grows it with a transform the compositor
 // animates rather than a width that lays the strip out each frame.
-function tickClass(index: number, current: number, hovered: number | null): string {
+function tickClass(index: number, current: number, hovered: number | null, open: boolean): string {
   const distance = hovered === null ? null : Math.abs(index - hovered)
   const scale =
     distance === null
-      ? 'scale-x-25'
+      ? open
+        ? 'scale-x-50'
+        : 'scale-x-25'
       : distance === 0
         ? 'scale-x-100'
         : distance === 1
@@ -116,6 +125,36 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
   const { marks, jump, step, reply, wheel } = navigation
   const { current, hasPrevious, hasNext } = useTurnPosition(navigation)
   const [hovered, setHovered] = useState<number | null>(null)
+  // Open is wider than hovered: the strip stays open while the pointer is
+  // anywhere on the strip, its padding past either end, or the step buttons,
+  // and for a moment after it leaves all of them. Only the preview follows
+  // the pointer exactly.
+  const [open, setOpen] = useState(false)
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cancelCollapse = () => {
+    if (collapseTimerRef.current === null) return
+    clearTimeout(collapseTimerRef.current)
+    collapseTimerRef.current = null
+  }
+  const collapseNow = () => {
+    cancelCollapse()
+    setOpen(false)
+    setHovered(null)
+  }
+  const scheduleCollapse = () => {
+    cancelCollapse()
+    collapseTimerRef.current = setTimeout(() => {
+      collapseTimerRef.current = null
+      setOpen(false)
+      setHovered(null)
+    }, MINIMAP_COLLAPSE_DELAY_MS)
+  }
+  useEffect(
+    () => () => {
+      if (collapseTimerRef.current !== null) clearTimeout(collapseTimerRef.current)
+    },
+    [],
+  )
   // A wheel over the strip or its buttons scrolls the transcript beneath. The
   // listener is the DOM's own, not React's: React's wheel listener is passive,
   // and the forwarded wheel has to stop the browser scrolling anything else.
@@ -130,6 +169,7 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
   // The strip opens out from under a still pointer, so the turn it rests on
   // is read again once the strip has finished growing.
   const pointerYRef = useRef<number | null>(null)
+  const trackRef = useRef<HTMLDivElement | null>(null)
   // A text selection dragged right past the end of a line reaches the strip
   // with the button still held. Taking the pointer there would open the strip
   // and its preview and pull the selection over the rest of the conversation,
@@ -161,29 +201,45 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
           key={mark.id}
           aria-hidden="true"
           data-current={index === current || undefined}
-          className={tickClass(index, current, hovered)}
+          className={tickClass(index, current, hovered, open)}
           style={{ top: `${minimapTickTop(index, marks.length)}%` }}
         />
       )),
-    [marks, current, hovered],
+    [marks, current, hovered, open],
   )
   if (!shown) return null
   const count = marks.length
   const hoveredMark = hovered !== null ? (marks[hovered] ?? null) : null
-  const expanded = hovered !== null
-  const indexAt = (strip: HTMLDivElement, pointerY: number) => {
-    const rect = strip.getBoundingClientRect()
+  // The turn is read off the track, the span from the first tick to the last;
+  // the strip's padding past either end clamps to the end turn.
+  const indexAt = (pointerY: number) => {
+    const track = trackRef.current
+    if (!track) return 0
+    const rect = track.getBoundingClientRect()
     return minimapIndexAtPointer(count, rect.top, rect.height, pointerY)
   }
-  const spacing = expanded ? TICK_SPACING_EXPANDED_PX : TICK_SPACING_PX
+  const spacing = open ? TICK_SPACING_EXPANDED_PX : TICK_SPACING_PX
   const pointerEvents = passThrough ? 'pointer-events-none' : 'pointer-events-auto'
-  const stepClass = `${pointerEvents} opacity-0 transition-opacity duration-150 group-hover/minimap:opacity-100 group-focus-within/minimap:opacity-100`
+  const stepClass = `${pointerEvents} opacity-0 transition-opacity duration-150 group-hover/minimap:opacity-100 group-focus-within/minimap:opacity-100 group-data-[open]/minimap:opacity-100`
+  // The step buttons are part of the strip's hover zone: on one of them the
+  // strip stays open, but the preview goes, since the button names the turn.
+  const onStepEnter = () => {
+    if (passThrough) return
+    cancelCollapse()
+    pointerYRef.current = null
+    setHovered(null)
+  }
   return (
+    // The strip and its buttons touch, with no gap between them, so the
+    // pointer passing from one to the other never leaves the zone; the
+    // strip's own padding is the space the gap used to make.
     <nav
       ref={navRef}
       aria-label="Conversation turns"
       data-testid="timeline-minimap"
-      className="group/minimap pointer-events-none absolute inset-y-0 right-3 z-[var(--z-float)] flex flex-col items-end justify-center gap-2"
+      data-open={open || undefined}
+      className="group/minimap pointer-events-none absolute inset-y-0 right-3 z-[var(--z-float)] flex flex-col items-end justify-center"
+      onMouseLeave={scheduleCollapse}
     >
       <IconButton
         aria-label="Previous turn"
@@ -191,6 +247,7 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
         tone="ink"
         className={stepClass}
         disabled={!hasPrevious}
+        onMouseEnter={onStepEnter}
         onClick={() => step(-1)}
       >
         <TurnStepGlyph direction="up" />
@@ -198,22 +255,28 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
       <div
         role="presentation"
         data-minimap-strip=""
-        data-expanded={expanded || undefined}
+        data-expanded={open || undefined}
         data-pass-through={passThrough || undefined}
-        className={`${pointerEvents} relative cursor-pointer transition-[height,width] duration-150 ease-out ${expanded ? 'w-8' : 'w-4'}`}
-        style={{ height: `min(${(count - 1) * spacing}px, calc(100% - 6rem))` }}
+        // The padding is the hit area past the first and last tick, so the
+        // pointer can land on an end turn without having to stop on a line two
+        // pixels tall; open, the strip is also wider than at rest, so a
+        // pointer drifting sideways while it scrubs stays on it.
+        className={`${pointerEvents} relative box-border cursor-pointer py-3 transition-[height,width] duration-150 ease-out ${open ? 'w-10' : 'w-4'}`}
+        style={{ height: `calc(min(${(count - 1) * spacing}px, calc(100% - 6rem)) + 1.5rem)` }}
         onMouseDown={() => {
           pressedOnStripRef.current = true
         }}
         onMouseMove={(event) => {
           if (event.buttons !== 0 && !pressedOnStripRef.current) {
             pointerYRef.current = null
-            setHovered(null)
+            collapseNow()
             setPassThrough(true)
             return
           }
+          cancelCollapse()
           pointerYRef.current = event.clientY
-          setHovered(indexAt(event.currentTarget, event.clientY))
+          setOpen(true)
+          setHovered(indexAt(event.clientY))
         }}
         onMouseLeave={() => {
           pointerYRef.current = null
@@ -222,14 +285,16 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
         onTransitionEnd={(event: TransitionEvent<HTMLDivElement>) => {
           if (event.target !== event.currentTarget || event.propertyName !== 'height') return
           const pointerY = pointerYRef.current
-          if (pointerY !== null) setHovered(indexAt(event.currentTarget, pointerY))
+          if (pointerY !== null) setHovered(indexAt(pointerY))
         }}
-        onClick={(event) => jump(indexAt(event.currentTarget, event.clientY))}
+        onClick={(event) => jump(indexAt(event.clientY))}
       >
-        {ticks}
-        {hoveredMark && hovered !== null ? (
-          <MinimapPreview mark={hoveredMark} reply={reply(hovered)} index={hovered} count={count} />
-        ) : null}
+        <div ref={trackRef} data-minimap-track="" className="pointer-events-none relative h-full">
+          {ticks}
+          {hoveredMark && hovered !== null ? (
+            <MinimapPreview mark={hoveredMark} reply={reply(hovered)} index={hovered} count={count} />
+          ) : null}
+        </div>
       </div>
       <IconButton
         aria-label="Next turn"
@@ -237,6 +302,7 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
         tone="ink"
         className={stepClass}
         disabled={!hasNext}
+        onMouseEnter={onStepEnter}
         onClick={() => step(1)}
       >
         <TurnStepGlyph direction="down" />
