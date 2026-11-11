@@ -231,6 +231,7 @@ export type ConversationTimelineRow =
   | { kind: 'approval'; id: string; decisions: ConversationDecisionRow[] }
   | { kind: 'compaction'; id: string; entry: Extract<TranscriptEntry, { kind: 'compaction' }> }
   | { kind: 'handoff'; id: string; entry: Extract<TranscriptEntry, { kind: 'handoff' }> }
+  | { kind: 'sideQuestion'; id: string; entry: Extract<TranscriptEntry, { kind: 'sideQuestion' }> }
   | { kind: 'commandOutput'; id: string; entry: Extract<TranscriptEntry, { kind: 'commandOutput' }> }
   | {
       kind: 'working'
@@ -448,6 +449,10 @@ export function deriveConversationTimelineRows(
       rows.push({ kind: 'handoff', id: `handoff:${entry.id}`, entry })
       continue
     }
+    if (entry.kind === 'sideQuestion') {
+      rows.push({ kind: 'sideQuestion', id: `sideQuestion:${entry.id}`, entry })
+      continue
+    }
     if (entry.kind === 'commandOutput') {
       rows.push({ kind: 'commandOutput', id: `commandOutput:${entry.id}`, entry })
       continue
@@ -584,6 +589,7 @@ export function deriveConversationTimelineRows(
     }
     if (row.kind === 'compaction' && previous.kind === 'compaction' && row.entry === previous.entry) return previous
     if (row.kind === 'handoff' && previous.kind === 'handoff' && row.entry === previous.entry) return previous
+    if (row.kind === 'sideQuestion' && previous.kind === 'sideQuestion' && row.entry === previous.entry) return previous
     if (row.kind === 'commandOutput' && previous.kind === 'commandOutput' && row.entry === previous.entry)
       return previous
     if (row.kind === 'approval' && previous.kind === 'approval' && sameDecisions(row.decisions, previous.decisions))

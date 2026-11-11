@@ -53,7 +53,13 @@ function TurnStepGlyph({ direction }: { direction: 'up' | 'down' }): JSX.Element
 // with the strip open, 12px, 16px beside the hovered one and the full 24px
 // under the pointer), so the hover grows it with a transform the compositor
 // animates rather than a width that lays the strip out each frame.
-function tickClass(index: number, current: number, hovered: number | null, open: boolean): string {
+function tickClass(
+  index: number,
+  current: number,
+  hovered: number | null,
+  open: boolean,
+  sideQuestion = false,
+): string {
   const distance = hovered === null ? null : Math.abs(index - hovered)
   const scale =
     distance === null
@@ -69,8 +75,11 @@ function tickClass(index: number, current: number, hovered: number | null, open:
   // is a map of the reply, and at muted and border-strong its ticks read as
   // a second column of content beside it. The tick under the pointer keeps
   // full ink, which is the one a person is about to jump to.
-  const ink =
-    distance === 0
+  // A side question the chat kept wears the warn tone at every state, the
+  // colour of its marker's glyph: it is not a turn, and reads as other.
+  const ink = sideQuestion
+    ? 'bg-[color:var(--tone-warn)]'
+    : distance === 0
       ? 'bg-[color:var(--text-default)]'
       : index === current
         ? 'bg-[color:var(--text-subtle)]'
@@ -106,6 +115,9 @@ function MinimapPreview({
         transform: `translateY(${index === 0 ? '0%' : index === count - 1 ? '-100%' : '-50%'})`,
       }}
     >
+      {mark.sideQuestion ? (
+        <span className="block text-micro leading-4 text-[color:var(--text-muted)]">Side question</span>
+      ) : null}
       <span className="block truncate text-meta font-medium leading-5 text-[color:var(--text-strong)]">{prompt}</span>
       {reply ? (
         <span className="mt-0.5 line-clamp-3 text-meta leading-5 text-[color:var(--text-muted)]">{reply}</span>
@@ -201,7 +213,8 @@ export function TimelineMinimap({ navigation }: { navigation: TurnNavigation }):
           key={mark.id}
           aria-hidden="true"
           data-current={index === current || undefined}
-          className={tickClass(index, current, hovered, open)}
+          data-side-question={mark.sideQuestion || undefined}
+          className={tickClass(index, current, hovered, open, mark.sideQuestion)}
           style={{ top: `${minimapTickTop(index, marks.length)}%` }}
         />
       )),

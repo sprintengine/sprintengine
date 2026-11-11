@@ -214,6 +214,13 @@ function Row({
       return <p className="se-row se-note">Earlier messages were summarised to make room.</p>
     case 'handoff':
       return <p className="se-row se-note">Handed off to a new session.</p>
+    case 'sideQuestion':
+      return (
+        <details className="se-row se-note">
+          <summary>Side question: {row.entry.question}</summary>
+          <Markdown text={row.entry.answer} onLink={onLink} />
+        </details>
+      )
     case 'commandOutput':
       return (
         <div className="se-row">

@@ -170,11 +170,27 @@ waits for that first message.
 drawer to ask something about the chat without adding it to the chat. Typing
 `/btw` and a question in the composer asks it the same way. The agent answers
 from the conversation so far, in one reply and with no tools, so it can change
-nothing. The question and the answer stay out of the transcript, the chat's
-history, the sidebar and the phone. A turn the chat is running goes on
-undisturbed, and so does its queue. Follow-ups in the same drawer see the side
-questions before them. Closing the drawer lets the whole aside go, and calls
-off a question still being answered. **Continue in a new chat** forks the chat
+nothing. The question and the answer stay out of the agent's conversation: no
+turn carries them, and the agent's context never takes them in. A turn the
+chat is running goes on undisturbed, and so does its queue. Follow-ups in the
+same drawer see the side questions before them. Closing the drawer ends the
+aside, and calls off a question still being answered.
+
+Once answered, a side question is kept in the chat's transcript (a
+`side_question` event), so it survives a reload and a restart. The transcript
+draws a quiet **Side question** line where it was asked, after the turn it was
+asked during or after, never inside a reply; clicking it opens the question and
+its answer in the drawer again, where a follow-up leans on it. The scroll rail
+on the right gives it a notch of its own in the warn tone, yellow, and its
+preview says "Side question" above the question and the answer. The rail's
+previous and next buttons and the turn shortcuts step from prompt to prompt,
+past the side questions; a click on the notch reaches one. A question called
+off or refused is not kept, nor does keeping one move the chat in the sidebar.
+An answer longer than 64,000 characters is kept cut short, and says so. Where
+the chat cannot be asked one now (a pairing that may only follow), the drawer
+still opens a kept one, without a field to ask in. The phone draws the same
+line, opened in place to the answer, and so does the read-only embed.
+**Continue in a new chat** forks the chat
 at its newest reply, as Fork from here does, with the last question waiting in
 the fork's composer. It is offered once no turn runs.
 
@@ -1015,7 +1031,10 @@ in the app's own process.
   question (`conversation-side-questions`, `capabilities.sideQuestion`) is
   asked of the chat's agent over there, resuming a chat at rest as a send
   would, and needs a pairing that may drive; closing the drawer, or the
-  connection dropping, calls it off there. Continue in a new chat forks over
+  connection dropping, calls it off there. That machine keeps it in the chat
+  where it advertises `conversation-side-question-records`, and its marker
+  reaches every device following the chat; a machine whose Studio predates it
+  keeps nothing, and the drawer says so. Continue in a new chat forks over
   there as Fork from here does. The context ring
   (`conversation-context-breakdown`, `capabilities.contextBreakdown`) opens
   what fills the window, read from the agent over there; a chat with no live

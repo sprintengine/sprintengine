@@ -66,6 +66,8 @@ function entryKey(entry: TranscriptEntry): string {
       return `compaction:${entry.id}`
     case 'handoff':
       return `handoff:${entry.id}`
+    case 'sideQuestion':
+      return `sideQuestion:${entry.id}`
     case 'commandOutput':
       return `commandOutput:${entry.id}`
   }

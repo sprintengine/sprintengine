@@ -4,11 +4,20 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { ConversationSideQuestionResult } from '../../../../../shared/conversation-runtime'
-import { SideQuestionDrawer, useSideQuestion, type SideQuestionApi, type SideQuestionState } from './sideQuestion'
+import {
+  SideQuestionDrawer,
+  SideQuestionMarker,
+  useSideQuestion,
+  type KeptSideQuestion,
+  type SideQuestionApi,
+  type SideQuestionState,
+} from './sideQuestion'
 
 // The side question drawer's lifecycle: a question is asked with the aside's
 // earlier answers, its answer is shown, closing calls off one still out and
 // lets the whole aside go, and "Continue in a new chat" hands the question on.
+// A side question the chat kept opens again from its marker in the transcript,
+// where a follow-up leans on it, and is shown where the chat cannot be asked.
 
 type Pending = {
   requestId: string
@@ -46,14 +55,32 @@ function fakeApi() {
 
 function Harness({
   api,
+  kept = true,
   continueInChat,
 }: {
-  api: SideQuestionApi
+  api: SideQuestionApi | null
+  kept?: boolean
   continueInChat?: React.ComponentProps<typeof SideQuestionDrawer>['continueInChat']
 }) {
   const state = useSideQuestion(api)
   current = state
-  return <SideQuestionDrawer state={state} chatName="Atlas" continueInChat={continueInChat} />
+  return (
+    <SideQuestionDrawer
+      state={state}
+      chatName="Atlas"
+      canAsk={api !== null}
+      kept={kept}
+      continueInChat={continueInChat}
+    />
+  )
+}
+
+const keptQuestion: KeptSideQuestion = {
+  kind: 'sideQuestion',
+  id: 'evt-9',
+  question: 'Which file is the parser in?',
+  answer: 'In `src/parse.ts`.',
+  createdAt: 1_700_000_000_000,
 }
 
 async function mount(element: React.ReactElement) {
@@ -114,7 +141,64 @@ test('closing the drawer calls off the question still out and lets the aside go'
   await frames()
   expect(current!.entries).toEqual([])
   expect(drawerText()).not.toContain('Because.')
-  expect(drawerText()).toContain('stay out of the chat')
+  expect(drawerText()).toContain('stay out of the agent’s conversation')
+  expect(drawerText()).toContain('the chat keeps them')
+})
+
+test('a machine that keeps no side questions is said to, in the empty drawer', async () => {
+  const f = fakeApi()
+  await mount(<Harness api={f.api} kept={false} />)
+  await act(async () => current!.show())
+  await frames()
+  expect(drawerText()).toContain('does not keep side questions yet')
+  expect(drawerText()).not.toContain('the chat keeps them')
+})
+
+test('a kept side question opens again as it was answered, and a follow-up leans on it', async () => {
+  const f = fakeApi()
+  await mount(<Harness api={f.api} />)
+  // An aside still out when a kept question is opened is called off and let go.
+  await act(async () => current!.show('Still out?'))
+  await act(async () => current!.reopen(keptQuestion))
+  await frames()
+  expect(f.cancelled).toEqual([f.pending[0]!.requestId])
+  await act(async () => f.pending[0]!.settle({ ok: true, answer: 'Too late.' }))
+  expect(drawerText()).not.toContain('Too late.')
+  expect(drawerText()).toContain('Which file is the parser in?')
+  expect(document.querySelector('[data-side-question-answer="true"]')?.textContent).toContain('src/parse.ts')
+
+  await type('And the tests?')
+  expect(f.pending[1]).toMatchObject({
+    question: 'And the tests?',
+    history: [{ question: 'Which file is the parser in?', answer: 'In `src/parse.ts`.' }],
+  })
+})
+
+test('a kept side question is shown where the chat cannot be asked one, without a field to ask in', async () => {
+  await mount(<Harness api={null} />)
+  await act(async () => current!.reopen({ ...keptQuestion, truncated: true }))
+  await frames()
+  expect(drawerText()).toContain('src/parse.ts')
+  expect(drawerText()).toContain('longer than the chat keeps')
+  expect(document.querySelector('[data-side-question-input="true"]')).toBeNull()
+  expect(document.querySelector('[data-side-question-read-only="true"]')).not.toBeNull()
+})
+
+test('the marker opens the kept question, and opens it in place where there is no drawer', async () => {
+  const onOpen = vi.fn()
+  await mount(<SideQuestionMarker entry={keptQuestion} onOpen={onOpen} />)
+  const button = () => document.querySelector<HTMLButtonElement>('[data-side-question-marker="evt-9"] button')!
+  expect(button().textContent).toContain('Side question')
+  expect(button().textContent).toContain('Which file is the parser in?')
+  await act(async () => button().click())
+  expect(onOpen).toHaveBeenCalledWith(keptQuestion)
+  expect(document.querySelector('[data-side-question-answer="true"]')).toBeNull()
+
+  await act(async () => root!.render(<SideQuestionMarker entry={keptQuestion} />))
+  expect(button().getAttribute('aria-expanded')).toBe('false')
+  await act(async () => button().click())
+  expect(button().getAttribute('aria-expanded')).toBe('true')
+  expect(document.querySelector('[data-side-question-answer="true"]')?.textContent).toContain('src/parse.ts')
 })
 
 test('one question at a time: a second is not asked while the first is answered', async () => {

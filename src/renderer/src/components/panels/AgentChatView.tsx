@@ -2238,6 +2238,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     }
   }, [sideQuestionEnabled, ensureSession, transport, forgetLostSession])
   const sideQuestion = useSideQuestion(sideQuestionApi)
+  // The drawer mounts where the chat can be asked one, and otherwise once a
+  // kept side question first opens it: a chat that can ask none redraws no
+  // drawer per keystroke until then, and keeps it for the slide shut after.
+  const [sideQuestionDrawerShown, setSideQuestionDrawerShown] = useState(false)
+  if (sideQuestion.open && !sideQuestionDrawerShown) setSideQuestionDrawerShown(true)
   // Whether it opened: a chat with no reply yet has nothing to ask about.
   const openSideQuestionRef = useRef<(question?: string) => boolean>(() => false)
 
@@ -3637,6 +3642,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     oldChrome.checkpointSeqs === stableCheckpointSeqs &&
     oldChrome.rewindEnabled === rewindEnabled &&
     oldChrome.onFork === onFork &&
+    oldChrome.onOpenSideQuestion === sideQuestion.reopen &&
     oldChrome.cli === chatCli
       ? oldChrome
       : {
@@ -3654,6 +3660,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           rewindEnabled,
           onRestoreDraft: restoreDraft,
           onFork,
+          onOpenSideQuestion: sideQuestion.reopen,
           cli: chatCli,
         }
   chromeRef.current = chrome
@@ -4294,12 +4301,16 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
               inputRef={chatFind.inputRef}
             />
           ) : null}
-          {sideQuestionApi ? (
+          {/* A side question the chat kept opens here from its marker even
+              where the chat cannot be asked one now. */}
+          {sideQuestionApi || sideQuestionDrawerShown ? (
             <SideQuestionDrawer
               state={sideQuestion}
               chatName={agent?.name || 'this chat'}
+              canAsk={sideQuestionApi !== null}
+              kept={transport.capabilities.keepsSideQuestions}
               shortcut={sideQuestionShortcutLabel}
-              continueInChat={continueSideQuestion}
+              continueInChat={sideQuestionApi ? continueSideQuestion : undefined}
             />
           ) : null}
           <div

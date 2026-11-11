@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import type { ConversationTimelineRow } from './conversationTimeline'
 import {
+  adjacentPrompt,
   adjacentTurn,
   deriveTurnMarks,
   turnAtRow,
@@ -46,6 +47,47 @@ test('a mark per prompt, previewed with the last reply before the next prompt', 
   expect(turnReply(rows, marks, 2)).toBeNull()
   expect(turnReply(rows, marks, 3)).toBeNull()
   expect(deriveTurnMarks([reply('orphan', 'No prompt above me')])).toEqual([])
+})
+
+const aside = (id: string, question: string, answer: string): ConversationTimelineRow => ({
+  kind: 'sideQuestion',
+  id,
+  entry: { kind: 'sideQuestion', id, question, answer, createdAt: 0 },
+})
+
+// rows: 0 u1 · 1 a1 · 2 s1 · 3 u2 · 4 a2 · 5 s2
+const withAsides: ConversationTimelineRow[] = [
+  user('u1', 'Rename the config loader'),
+  reply('a1', 'Renamed it.'),
+  aside('s1', 'Why that name?', 'It matches the module.'),
+  user('u2', 'Now the tests'),
+  reply('a2', 'Done.'),
+  aside('s2', 'Which ones?', 'The loader tests.'),
+]
+
+test('a kept side question is a mark of its own, previewed with its answer', () => {
+  const marks = deriveTurnMarks(withAsides)
+  expect(marks).toEqual([
+    { id: 'u1', rowIndex: 0, prompt: 'Rename the config loader' },
+    { id: 's1', rowIndex: 2, prompt: 'Why that name?', sideQuestion: true },
+    { id: 'u2', rowIndex: 3, prompt: 'Now the tests' },
+    { id: 's2', rowIndex: 5, prompt: 'Which ones?', sideQuestion: true },
+  ])
+  expect(turnReply(withAsides, marks, 0)).toBe('Renamed it.')
+  expect(turnReply(withAsides, marks, 1)).toBe('It matches the module.')
+  expect(turnReply(withAsides, marks, 3)).toBe('The loader tests.')
+  expect(turnMarksKey(withAsides)).not.toBe(turnMarksKey(withAsides.slice(0, 5)))
+})
+
+test('the step buttons go from prompt to prompt, past the side questions between them', () => {
+  const marks = deriveTurnMarks(withAsides)
+  expect(adjacentPrompt(marks, 0, 1)).toBe(2)
+  expect(adjacentPrompt(marks, 3, 1)).toBe(-1)
+  expect(adjacentPrompt(marks, 3, -1)).toBe(0)
+  // From a side question the minimap jumped to, the next prompt either way.
+  expect(adjacentPrompt(marks, 2, 1, 1)).toBe(2)
+  expect(adjacentPrompt(marks, 2, -1, 1)).toBe(0)
+  expect(adjacentPrompt(marks, 5, -1, 3)).toBe(2)
 })
 
 test('a streamed token leaves the marks key alone; a new prompt changes it', () => {
