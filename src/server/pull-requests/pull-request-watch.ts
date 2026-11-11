@@ -415,6 +415,11 @@ export type PullRequestWake = {
   autoMerge: boolean
   /** All the checks that gate it have passed on the head, whether or not that is this wake's news. */
   checksGreen: boolean
+  /**
+   * GitHub's own verdict on its reviews, where the read had one. One approving
+   * review is not this verdict: a branch can need two, or a code owner's.
+   */
+  reviewDecision?: 'approved' | 'changes-requested' | 'review-required' | null
   news: PullRequestWatchNews[]
   stop: PullRequestWatchStop | null
 }
@@ -474,8 +479,12 @@ function wakeLines(wake: PullRequestWake): WakeLine[] {
       item.kind === 'remark' && item.verdict === 'approved',
   )
   const passed = wake.news.some((item) => item.kind === 'checks-passed')
-  // Approval and green together are the one piece of news that says "ready".
-  const ready = approvals.length > 0 && (passed || wake.checksGreen)
+  // Approval and green together are the one piece of news that says "ready",
+  // unless GitHub says the reviews are not yet enough (more approvals or a
+  // code owner still needed). With no verdict at all, as on a branch that
+  // requires no review, an approval is taken at its word.
+  const reviewStillOwed = wake.reviewDecision === 'review-required' || wake.reviewDecision === 'changes-requested'
+  const ready = approvals.length > 0 && (passed || wake.checksGreen) && !reviewStillOwed
   for (const item of wake.news) {
     switch (item.kind) {
       case 'checks-failed': {
@@ -517,7 +526,14 @@ function wakeLines(wake: PullRequestWake): WakeLine[] {
         const quote = snippet(item.body)
         const said = quote ? `: "${quote}"` : ''
         const link = item.url ? ` ${item.url}` : ''
-        if (item.verdict === 'approved') lines.push({ verb: `was approved by ${item.author}${said}.${link}` })
+        if (item.verdict === 'approved')
+          lines.push({
+            verb: `was approved by ${item.author}${said}.${link}${
+              wake.reviewDecision === 'review-required'
+                ? ' GitHub still requires more review before it can merge, so do not merge it yet; end your turn.'
+                : ''
+            }`,
+          })
         else if (item.verdict === 'changes-requested')
           lines.push({
             clause: `${item.author} requested changes${said}.${link} Make them, push, reply, and end your turn.`,
