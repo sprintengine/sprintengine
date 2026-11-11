@@ -1,0 +1,50 @@
+import type { Feed } from './feed'
+
+// One client of the gate: the code a surface of Studio really runs, behind one
+// shape, with the transport it uses today named. A cut-over changes how one
+// adapter reaches the server (its `transport`, and the code it constructs);
+// the scenarios do not change.
+//
+// A member a client leaves out is something its code cannot do today. The
+// scenario still runs for it and fails, which the gate reads against its list
+// of known gaps (gaps.ts): never skipped without a word.
+
+export type ClientId = 'desktop' | 'peer' | 'phone' | 'embed' | 'ssh'
+
+export type ChatRef = { workspaceId: string; agentId: string; workspaceRoot: string }
+
+export type Attachment = { name: string; mediaType: string; bytes: Buffer; path: string }
+
+export interface GateClient {
+  readonly id: ClientId
+  /** What it is, in words, and the wire it reaches the server by. */
+  readonly label: string
+  readonly transport: string
+  /** What of this client the gate stands in for, said in the output. */
+  readonly simulated: readonly string[]
+  /** Follow one chat: everything it hears lands in the feed. */
+  follow(chat: ChatRef): Promise<Feed>
+  /** Start a chat on the fake provider, the way this client starts one. */
+  createChat?(workspace: Omit<ChatRef, 'agentId'>, name: string): Promise<ChatRef>
+  send?(chat: ChatRef, text: string): Promise<void>
+  sendWithAttachment?(chat: ChatRef, text: string, attachment: Attachment): Promise<void>
+  answerApproval?(chat: ChatRef, requestId: string, approve: boolean): Promise<void>
+  messageSubagent?(chat: ChatRef, toolUseId: string, text: string): Promise<void>
+  scheduleSend?(chat: ChatRef, text: string, sendAt: number): Promise<void>
+  sendScheduledNow?(chat: ChatRef, scheduledId: string): Promise<void>
+  /** Drop every connection this client holds, and refuse new ones until `heal`. */
+  cut(): void
+  heal(): void
+  /** After `heal`: what the client does on its own to come back, for one that needs a nudge (the phone's foreground). */
+  resume?(): void
+  close(): Promise<void>
+}
+
+export class ClientCannot extends Error {
+  constructor(client: string, what: string) {
+    super(`${client} has no call to ${what}`)
+    this.name = 'ClientCannot'
+  }
+}
+
+export const MOCK_PROVIDER = { providerId: 'mock-provider', modelId: 'mock-model' } as const
