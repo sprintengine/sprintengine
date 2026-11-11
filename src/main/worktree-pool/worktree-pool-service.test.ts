@@ -89,7 +89,7 @@ function makeService(
     userData?: string
     branchPrefix?: string
     recorded?: Array<[string, string]>
-    /** The chats on record, as worktree-services.ts reads them off the registry; left out, unknown. */
+    /** The chats on record, as server/core/studio-worktree-pool.ts reads them off the registry; left out, unknown. */
     chats?: PoolChat[]
     /** The holds on worktree paths; a fresh set unless given, so no case meets another's. */
     leases?: WorktreeLeases
@@ -2721,7 +2721,7 @@ test('a finished scheduled run whose agent moved to a branch of its own gives it
   ])
   assert.ok(await git(repo, 'rev-parse', '--verify', 'agent/daily-low'), 'its branch is kept')
 
-  // Its chat, moved to that branch (worktree-services.ts), brings it back there.
+  // Its chat, moved to that branch (server/core/studio-worktree-pool.ts), brings it back there.
   assert.equal(harness.service.awaitsChat(run.path, 'agent/daily-low'), true)
   const restored = await restoreGitWorktree({ repoRoot: repo, path: run.path, branchName: 'agent/daily-low' })
   assert.equal(restored.ok, true, restored.ok ? '' : restored.message)

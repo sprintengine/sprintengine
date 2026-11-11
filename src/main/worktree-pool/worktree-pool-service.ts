@@ -187,9 +187,9 @@ export type WorktreePoolServiceDeps = {
   /**
    * The chats on record that are not settled, or are open in a window, with
    * the folders they name, whether one is on screen, and when each was last
-   * active (worktree-services.ts, from the workspace registry). Null or left
-   * out: unknown, and no slot a chat may be using is given back while it
-   * exists (pool-idle.ts).
+   * active (server/core/studio-worktree-pool.ts, from the workspace
+   * registry). Null or left out: unknown, and no slot a chat may be using is
+   * given back while it exists (pool-idle.ts).
    */
   chats?: () => readonly PoolChat[] | null
   /**

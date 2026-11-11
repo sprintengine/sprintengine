@@ -1680,8 +1680,8 @@ export function createAppServices(
   // process the server's, which the windows reach over their tunnel.
   const worktrees = 'worktrees' in core ? core.worktrees : null
   // Settings ▸ Artifacts and the `artifacts.*` tools. Main serves them in
-  // process and out, as it does `worktree.*`: the pages are this machine's
-  // files, and publishing signs in with this machine's credentials.
+  // process and out: the pages are this machine's files, and publishing signs
+  // in with this machine's credentials.
   const { artifactsSettingsStore, artifactsTools, setUpArtifacts, artifactsSetupConsent } = createArtifactsServices({
     githubTokenStore,
     findWorkspace: (workspaceId) =>

@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { connect } from 'node:net'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { createControlRpc } from '../bootstrap/control-rpc'
@@ -228,6 +230,54 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   const onMachine = await window.invoke('git:worktree:create', { repoRoot: 'ssh://build-box/home/dev/app' })
   assert.match(String(onMachine.error?.message ?? onMachine.error), /Not available for SSH machines yet/)
 
+  // An agent this server's shell launched calls `worktree.lease` and
+  // `worktree.release` over the gateway socket, as this very orchestration's
+  // agents do: the gateway's own tools now, not a toolset the shell offers.
+  const created = await window.invoke('workspace-sync:dispatch', {
+    type: 'workspace.created',
+    payload: {
+      workspace: projectWorkspace('lease-ws', repo),
+      windowId: 'primary',
+      insert: { kind: 'folder_head', folderPath: repo },
+      activate: false,
+    },
+  })
+  assert.equal(created.value?.ok, true, JSON.stringify(created))
+  applyGatewayLaunchTokenChange({
+    digest: createHash('sha256').update('lease-agent-token').digest('hex'),
+    identity: { workspaceId: 'lease-ws', agentId: 'agent-lease' },
+  })
+  const mcp = await mcpSession(ready.gateway.socketPath)
+  await mcp.call('initialize', { protocolVersion: '2025-06-18', capabilities: {} })
+  const connected = await mcp.call('sprintengine.studio/connect', {
+    workspaceId: 'lease-ws',
+    agentId: 'agent-lease',
+    launchToken: 'lease-agent-token',
+  })
+  assert.equal(connected.error, undefined, JSON.stringify(connected))
+  const tools = ((await mcp.call('tools/list')).result?.tools as Array<{ name: string }>).map((tool) => tool.name)
+  assert.ok(tools.includes('worktree.lease') && tools.includes('worktree.release'), tools.join(', '))
+  const leasedOverMcp = await mcp.call('tools/call', { name: 'worktree.lease', arguments: { name: 'over-mcp' } })
+  assert.equal(leasedOverMcp.result?.isError ?? false, false, JSON.stringify(leasedOverMcp))
+  const leasedPath = (leasedOverMcp.result?.structuredContent as { path: string; branch: string }).path
+  assert.equal((leasedOverMcp.result?.structuredContent as { branch: string }).branch, 'agent/over-mcp')
+  const afterLease = await window.invoke('worktree-pool:snapshot', repo)
+  assert.equal(
+    afterLease.value.slots.find((slot: { path: string }) => slot.path === leasedPath)?.lease?.agentId,
+    'agent-lease',
+  )
+  const releasedOverMcp = await mcp.call('tools/call', { name: 'worktree.release', arguments: { path: leasedPath } })
+  assert.equal(
+    (releasedOverMcp.result?.structuredContent as { released: boolean }).released,
+    true,
+    JSON.stringify(releasedOverMcp),
+  )
+  mcp.close()
+  applyGatewayLaunchTokenChange({
+    digest: createHash('sha256').update('lease-agent-token').digest('hex'),
+    identity: null,
+  })
+
   // The drain runs every leg and lets the directory go.
   hub.dispatch({ t: 'shutdown', drain: true, budgetMs: 8_000 }, [])
   assert.equal(await exit, 0)
@@ -245,6 +295,43 @@ test('the desktop server composes, serves a window over the tunnel and the shell
     JSON.stringify(fromServer.filter((frame) => frame.t === 'shutdown-progress')),
   )
 })
+
+/** One newline-delimited JSON-RPC exchange per call, on one gateway connection. */
+async function mcpSession(socketPath: string) {
+  const socket = connect(socketPath)
+  await new Promise<void>((resolve, reject) => socket.once('connect', resolve).once('error', reject))
+  const replies = createInterface({ input: socket })[Symbol.asyncIterator]()
+  let id = 0
+  return {
+    async call(method: string, params: Record<string, unknown> = {}): Promise<Record<string, any>> {
+      socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params })}\n`)
+      for (;;) {
+        const next = await replies.next()
+        assert.equal(next.done, false, 'the gateway closed the connection')
+        const message = JSON.parse(next.value) as Record<string, any>
+        if (message.id === id) return message
+      }
+    },
+    close: () => socket.end(),
+  }
+}
+
+/** A project's workspace record, as a window creates one. */
+function projectWorkspace(id: string, folderPath: string) {
+  return {
+    id,
+    name: 'app',
+    mode: 'standard',
+    folderPath,
+    templateId: 'solo',
+    layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
+    agents: {},
+    worktreeState: { containerPath: null, entries: {}, updatedAt: null },
+    memory: { relativeRoot: null },
+    editorState: { openFiles: [], activeFilePath: null },
+    createdAt: 1,
+  }
+}
 
 /** A project cloned from an origin of its own, as a person's checkout is. */
 async function gitProject(dir: string): Promise<string> {

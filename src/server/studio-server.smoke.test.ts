@@ -139,6 +139,8 @@ test('the bundle carries nothing of Electron and serves the gateway under plain 
   const listed = await mcp.call('tools/list')
   const names = (listed.result?.tools as Array<{ name: string }>).map((tool) => tool.name)
   assert.ok(names.includes('conversation.create'), names.join(', '))
+  // The worktree pool is every core's, a standalone server's included.
+  assert.ok(names.includes('worktree.lease') && names.includes('worktree.release'), names.join(', '))
   const created = await mcp.call('tools/call', { name: 'conversation.create', arguments: { workspaceId: 'missing' } })
   assert.equal(created.result?.isError, true)
   assert.match(JSON.stringify(created.result), /workspace/i)
@@ -420,7 +422,10 @@ test('a server killed mid-turn leaves a directory the next one takes over: the l
   let firstErr = ''
   first.stderr.on('data', (chunk: Buffer) => (firstErr += chunk.toString('utf8')))
   const waiting = createInterface({ input: first.stdout })[Symbol.asyncIterator]()
-  const said = await waiting.next()
+  // The core's own log lines share stdout (the checkout catch-up's, the
+  // pool's); the fixture's report is the JSON one.
+  let said = await waiting.next()
+  while (!said.done && !said.value.startsWith('{')) said = await waiting.next()
   assert.equal(said.done, false, firstErr)
   assert.equal(JSON.parse(said.value).waiting, true)
   const firstPid = first.pid
