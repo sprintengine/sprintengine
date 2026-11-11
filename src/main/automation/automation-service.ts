@@ -70,6 +70,13 @@ type AutomationServiceOptions = {
    * (`canvas-live-boards`). Only the process that runs the service has one.
    */
   canvas?: TailnetCanvasHost
+  /**
+   * Bind the tailnet listener here instead of this machine's Tailscale
+   * interface. Only a library caller sets it, to drive the real listener on
+   * loopback (the cross-client gate); the app and the server's entry never
+   * do, so a shipped Studio still binds only Tailscale.
+   */
+  tailnetBindAddress?: string
   /** Absolute path of the shipped stdio bridge script, when the app knows it. */
   resolveBridgeScriptPath?: () => string | null
   /**
@@ -194,6 +201,9 @@ export function createAutomationService(options: AutomationServiceOptions) {
       conversations: options.resolveConversationHost?.(),
       ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
       ...(options.canvas ? { canvas: options.canvas } : {}),
+      ...(options.tailnetBindAddress === undefined
+        ? {}
+        : { resolveBindAddress: () => options.tailnetBindAddress ?? null }),
       onToolCall: ({ context, tool, args, durationMs, result, error, servedBy }) => {
         // A token refused at the door is kept too, though nothing ran.
         if (
