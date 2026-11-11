@@ -25,6 +25,11 @@ export type RemoteChatEntry = {
    * reads them (`conversation-changes`): Changes opens them in the Diff tab here.
    */
   hostChanges: boolean
+  /**
+   * The machine shows the folder the chat works in for this window's Files tab
+   * (`conversation-checkout-files`): Files opens it there.
+   */
+  hostFiles?: boolean
   transport: ConversationTransport
   binding: ChatBinding
   /** The chat's sub-agents, as its machine last said. Empty for a machine that does not say. */

@@ -65,6 +65,7 @@ import {
   unseenDiskContent,
 } from '../../utils/editorDiskSync'
 import { watchFileOnDisk } from '../../utils/fileDiskWatch'
+import { checkoutFs } from '../../utils/checkoutFs'
 import {
   EditorDiskNotice,
   overwriteOnDiskConfirmation,
@@ -214,7 +215,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
   // changed. `saved` is the baseline: what the tab last read or wrote.
   const syncTabWithDisk = useCallback(
     async (path: string) => {
-      const read = await readFileOnDisk(window.api, path)
+      const read = await readFileOnDisk(checkoutFs, path)
       const buffer = buffersRef.current[path]
       if (!tabsRef.current.some((tab) => tab.path === path)) return
       if (!buffer || buffer.kind !== 'text' || buffer.loading || buffer.error) return
@@ -284,7 +285,11 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
 
   const loadBuffer = useCallback((tab: FileTab) => {
     setBuffers((prev) => ({ ...prev, [tab.path]: createExternalFileLoadingBuffer(tab.kind) }))
-    void loadExternalFileBuffer(tab.path, tab.kind, window.api).then((buffer) => {
+    void loadExternalFileBuffer(tab.path, tab.kind, {
+      // A paired machine's file is read over there (checkoutFs.ts).
+      readfile: (filePath) => checkoutFs.readfile(filePath),
+      readImageDataUrl: (filePath) => window.api.readImageDataUrl(filePath),
+    }).then((buffer) => {
       setBuffers((prev) => ({ ...prev, [tab.path]: buffer }))
     })
   }, [])
@@ -450,7 +455,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
       // A file that changed on disk since this tab last read or wrote it, which
       // the watch has not reported yet or cannot (an SSH machine's folder), is
       // not written over without asking.
-      const unseen = unseenDiskContent(await readFileOnDisk(window.api, path), before.saved, before.value)
+      const unseen = unseenDiskContent(await readFileOnDisk(checkoutFs, path), before.saved, before.value)
       if (unseen !== null) {
         const tab = tabsRef.current.find((candidate) => candidate.path === path)
         const overwrite = await confirmDialog(overwriteOnDiskConfirmation(tab?.name ?? path))
@@ -474,7 +479,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
         // The workspace's folder, when the opener named one, so the save does
         // not follow a link out of it.
         const root = tabsRef.current.find((candidate) => candidate.path === path)?.rootPath
-        await window.api.writefile(path, value, { roots: root ? [root] : [] })
+        await checkoutFs.writefile(path, value, { roots: root ? [root] : [] })
         setDiskNotice(path, null)
         return true
       } catch (error) {
@@ -722,7 +727,7 @@ export default function ExternalEditorWindow({ incoming, nonce }: Props) {
               notice={diskNotices[activePath]}
               onReload={() => {
                 const path = activePath
-                void readFileOnDisk(window.api, path).then((read) => {
+                void readFileOnDisk(checkoutFs, path).then((read) => {
                   if (read.kind === 'content') takeDiskContent(path, read.content)
                   else if (read.kind === 'missing') setDiskNotice(path, { kind: 'deleted' })
                 })

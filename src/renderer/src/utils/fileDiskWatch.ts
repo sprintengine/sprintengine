@@ -1,6 +1,7 @@
 import type { FileWatchEvent } from '../../../shared/ipc/filesystem'
 import { watchEventPaths } from '../../../shared/file-watch-event'
 import { basename, parentPath } from './paths'
+import { checkoutFs } from './checkoutFs'
 
 /**
  * Hears when one open file changes on disk, for the editors that show it.
@@ -130,9 +131,13 @@ export function createFileDiskWatcher(
   }
 }
 
-const sharedWatcher = createFileDiskWatcher(() =>
-  typeof window === 'undefined' ? undefined : (window.api as FileDiskWatchApi | undefined),
-)
+// A file in a paired machine's chat folder is watched on that machine
+// (checkoutFs.ts); every other file on this disk, as before.
+const sharedWatcher = createFileDiskWatcher(() => {
+  const api = typeof window === 'undefined' ? undefined : (window.api as FileDiskWatchApi | undefined)
+  if (typeof api?.watchPath !== 'function') return api
+  return { watchPath: (path, cb) => checkoutFs.watchPath(path, cb) }
+})
 
 /** The window's one watcher: every editor tab in it shares the folder watches. */
 export function watchFileOnDisk(filePath: string, onChange: () => void): () => void {

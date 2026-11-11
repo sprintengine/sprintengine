@@ -17,5 +17,7 @@ export * from './agentReads.js'
 export * from './composerReads.js'
 // A chat's changes, read as the desktop's own Diff tab reads them.
 export * from './checkoutChanges.js'
+// A chat's files, read and changed as the desktop's own Files tab does.
+export * from './checkoutFiles.js'
 // How a tool step is worded and toned, which every view of a conversation shares.
 export * from './presentation.js'

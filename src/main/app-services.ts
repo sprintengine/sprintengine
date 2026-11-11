@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage, shell } from 'electron'
 import { createAppSettledChatDeletion } from './settled-chat-deletion-app'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
@@ -806,6 +806,8 @@ export function createAppServices(
     ? createRemoteCore(server)
     : createStudioCore(platform, {
         role: 'desktop',
+        // A paired machine's Files tab deletes a chat's file to this Trash.
+        trashItem: (path) => shell.trashItem(path),
         // A worktree chat whose pool slot was given back while it sat idle
         // gets its branch checked out again, at the same path, before any
         // agent runs in it, whoever sent the turn (worktree-pool/pool-idle.ts).

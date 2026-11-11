@@ -1120,8 +1120,24 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   file tree's menu, the separate diff window) and this machine's tours and
   changelists are not offered; the tab pops out of the pane like any other.
   Only a file a step lists is readable, on `conversation:read`, and nothing is
-  written. A machine without the capability keeps the row as its count. Files
-  and Terminal stay on the machine.
+  written. A machine without the capability keeps the row as its count.
+  Terminal stays on the machine.
+- **Its files are the other machine's** (2026-11-11). Where the machine
+  advertises `conversation-checkout-files`, the Files tab of a chat from there
+  shows the folder the chat works in there (its worktree when it has one), and
+  the panel's Files row opens it: listed folder by folder, dimmed where git
+  ignores a path, searched by name, and read again whenever the machine says
+  something in it moved. A file opens in the editor here, read from there, and
+  saving writes it back there. New file, New folder, Rename, a move by drag
+  within the tree, and Delete (to that machine's Trash) are made there, on
+  `conversation:operate`; a pairing that may only follow reads and is told in
+  words that it may not change them. What only this disk can do is not offered:
+  Copy and Paste, Reveal in file manager, Open in browser, a module's file
+  action and a drop from this desktop. Pictures and other files that are not
+  text say so rather than open. Every path is relative to the chat's folder and
+  kept inside it, a link that leads out included. A machine without the
+  capability is said, in the tab, to need updating; the tab no longer offers
+  to open a folder of this disk for a chat that runs there.
 
 ### Terminals stay on the machine
 

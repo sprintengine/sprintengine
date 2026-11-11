@@ -76,6 +76,11 @@ export const CONVERSATION_LANE_ACCESS: { readonly [T in ConversationClientMessag
   watchChanges: FOLLOW,
   getChangesDiff: FOLLOW,
   getChangedFile: FOLLOW,
+  // A chat's files, as its Files tab reads them; a change writes to that disk.
+  listCheckoutFolder: FOLLOW,
+  readCheckoutFile: FOLLOW,
+  watchCheckoutFiles: FOLLOW,
+  changeCheckoutFile: DRIVE,
   // A device cancels only a question it asked itself.
   cancelSideQuestion: FOLLOW,
   askSideQuestion: DRIVE,

@@ -64,6 +64,14 @@ import {
   type FileTreeRowModel,
 } from '../../utils/fileTreeEntries'
 import { useFileTreeModel } from '../../utils/fileTreeModel'
+import { checkoutFs } from '../../utils/checkoutFs'
+import {
+  describePairedCheckout,
+  isPairedCheckoutPath,
+  pairedCheckoutOf,
+  pairedMachineName,
+  usePairedCheckoutRootInfo,
+} from '../../utils/pairedCheckout'
 import { EmptyState } from '../ui/EmptyState'
 import { InlineNotice } from '../ui/InlineNotice'
 import { Spinner } from '../ui/Spinner'
@@ -353,7 +361,7 @@ async function searchFiles(
   const lowerQuery = query.toLowerCase().trim()
   if (!lowerQuery) return { entries: [], diagnostics: null }
 
-  const result = await window.api.searchFiles(rootPath, query, { limit })
+  const result = await checkoutFs.searchFiles(rootPath, query, { limit })
   if (!result.ok) throw new Error(result.message)
 
   const matches: Entry[] = result.results.map((entry) => ({ ...entry }))
@@ -640,7 +648,18 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   // the whole tree. It is chrome the tree draws for itself, not an Entry —
   // nothing selects, renames, moves or deletes it — and a search ignores the
   // fold, since a search that returns nothing on purpose is a lie.
-  const rootName = rootPath.split(/[/\\]/).filter(Boolean).pop() ?? rootPath
+  // A paired machine's chat folder (pairedCheckout.ts): read and changed over
+  // there, so what only this disk can do — a copy, Finder, a module's action, a
+  // drop from this desktop — is not offered, and the root row says the
+  // machine's own name for the folder.
+  const paired = isPairedCheckoutPath(rootPath)
+  const pairedRoot = usePairedCheckoutRootInfo(paired ? rootPath : null)
+  const rootName = paired ? (pairedRoot?.name ?? 'Files') : (rootPath.split(/[/\\]/).filter(Boolean).pop() ?? rootPath)
+  const rootLabelPath = paired
+    ? pairedRoot
+      ? `${pairedRoot.path}${pairedRoot.machineName ? ` on ${pairedRoot.machineName}` : ''}`
+      : ''
+    : rootPath
   const [rootCollapsed, setRootCollapsed] = useState(false)
 
   // A `paths` source's folders are synthesised and start open, so what this
@@ -975,7 +994,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
 
     try {
       const newPath =
-        kind === 'file' ? await window.api.createFile(targetDir, name) : await window.api.createDir(targetDir, name)
+        kind === 'file' ? await checkoutFs.createFile(targetDir, name) : await checkoutFs.createDir(targetDir, name)
 
       if (targetDir !== rootPath) {
         setExpandedPaths((current) => ({ ...current, [targetDir]: true }))
@@ -1052,7 +1071,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
 
     try {
       committingRenameRef.current = true
-      const nextPath = await window.api.renamePath(entry.path, nextName)
+      const nextPath = await checkoutFs.renamePath(entry.path, nextName)
       carryOpenFiles(entry.path, nextPath)
 
       if (entry.isDir) {
@@ -1116,14 +1135,16 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
         : `${topLevelEntries.length} selected items`
     const confirmed = await dialog.confirm({
       title: 'Move to Trash?',
-      body: `This moves ${targetLabel} to the system Trash. You can restore it from Trash until it is emptied.`,
+      body: paired
+        ? `This moves ${targetLabel} to the Trash on ${pairedMachineName(rootPath)}. It can be restored from the Trash there until it is emptied.`
+        : `This moves ${targetLabel} to the system Trash. You can restore it from Trash until it is emptied.`,
       confirmLabel: 'Move to Trash',
       tone: 'danger',
     })
     if (!confirmed) return
 
     try {
-      await Promise.all(topLevelEntries.map((entry) => window.api.deletePath(entry.path)))
+      await Promise.all(topLevelEntries.map((entry) => checkoutFs.deletePath(entry.path)))
       topLevelEntries.forEach((entry) => dropOpenFiles(entry.path))
 
       topLevelEntries.forEach((entry) => model?.forget(entry.path))
@@ -1242,7 +1263,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
 
     try {
       for (const entry of entriesToMove) {
-        const nextPath = await window.api.movePath(entry.path, targetDir)
+        const nextPath = await checkoutFs.movePath(entry.path, targetDir)
         if (nextPath === entry.path) continue
         movedEntries.push({ entry, nextPath })
         carryOpenFiles(entry.path, nextPath)
@@ -1342,7 +1363,8 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       return
     }
 
-    if (hasNativeFileDrop(event.dataTransfer)) {
+    // A file from this desktop is copied on this disk, which a paired folder is not.
+    if (hasNativeFileDrop(event.dataTransfer) && !paired) {
       event.preventDefault()
       event.stopPropagation()
       event.dataTransfer.dropEffect = 'copy'
@@ -1366,6 +1388,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       !hasExplorerMovePayload(event.dataTransfer) &&
       !activeMoveDragRef.current
     ) {
+      if (paired) return
       event.preventDefault()
       event.stopPropagation()
       setDropTargetPath(null)
@@ -1391,7 +1414,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   // Drops on empty space or a non-folder row fall through to here and copy into
   // the workspace root. Folder rows stop propagation, so this never double-fires.
   const handleRootDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    if (isPathsSource) return
+    if (isPathsSource || paired) return
     if (hasExplorerMovePayload(event.dataTransfer) || activeMoveDragRef.current) return
     if (!hasNativeFileDrop(event.dataTransfer)) return
 
@@ -1408,7 +1431,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
 
   const handleRootDrop = (event: React.DragEvent<HTMLDivElement>) => {
     if (readOnly) return
-    if (isPathsSource) return
+    if (isPathsSource || paired) return
     if (hasExplorerMovePayload(event.dataTransfer) || activeMoveDragRef.current) return
     if (!hasNativeFileDrop(event.dataTransfer)) return
 
@@ -1450,19 +1473,21 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
     )
     const canDeletePath = canUsePathCommands && typeof window.api.deletePath === 'function'
     // A module's action is asked about a workspace, so a tree that knows none
-    // offers none rather than handing a module an empty id.
-    const fileActions = workspaceId
-      ? visibleFileExplorerModuleActions({
-          actions: getRendererHost().getFileActions(),
-          moduleEnabled: (moduleId) => selectModuleEnabled(moduleOverrides, moduleId),
-          moduleLabel: fileActionModuleLabel,
-          context: {
-            workspaceId,
-            workspaceRoot: rootPath,
-            entries: contextSelection,
-          },
-        })
-      : []
+    // offers none rather than handing a module an empty id. A module's action
+    // runs on this disk, so a paired folder offers none.
+    const fileActions =
+      workspaceId && !paired
+        ? visibleFileExplorerModuleActions({
+            actions: getRendererHost().getFileActions(),
+            moduleEnabled: (moduleId) => selectModuleEnabled(moduleOverrides, moduleId),
+            moduleLabel: fileActionModuleLabel,
+            context: {
+              workspaceId,
+              workspaceRoot: rootPath,
+              entries: contextSelection,
+            },
+          })
+        : []
     const deleteLabel =
       contextSelection.length > 1
         ? canDeletePath
@@ -1479,7 +1504,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       contextSelection,
       targetDir,
       canOpenPath: Boolean(isSingleSelection && entry && !entry.isDir && canUsePathCommands),
-      canOpenInBrowser: Boolean(isSingleSelection && entry && isHtmlFile(entry) && canUsePathCommands),
+      canOpenInBrowser: Boolean(!paired && isSingleSelection && entry && isHtmlFile(entry) && canUsePathCommands),
       canViewGitDiff,
       fileActions,
       directoryToggle:
@@ -1495,7 +1520,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
           ? { path: entry.path, role: (folderRoles ?? {})[entry.path] ?? null }
           : null,
       canUseSinglePathCommands: Boolean(isSingleSelection && entry && canUsePathCommands),
-      canPaste: Boolean(clipboard) && !isSearching,
+      canPaste: Boolean(clipboard) && !isSearching && !paired,
       canDeletePath,
       deleteLabel,
     })
@@ -2135,7 +2160,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
   if (!isPathsSource && tree.rootError && !tree.rootEntries) {
     return (
       <div className="px-2 py-2">
-        <InlineNotice tone="error">This folder could not be read.</InlineNotice>
+        <InlineNotice tone="error">{paired ? tree.rootError : 'This folder could not be read.'}</InlineNotice>
       </div>
     )
   }
@@ -2198,7 +2223,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
         {banded ? null : (
           <FileTreeRootRow
             name={rootName}
-            path={rootPath}
+            path={rootLabelPath}
             expanded={isSearching || !rootCollapsed}
             onToggle={() => {
               if (!isSearching) setRootCollapsed((current) => !current)
@@ -2359,7 +2384,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
               Open in browser
             </MenuItem>
           ) : null}
-          {contextMenu.canOpenPath ? (
+          {contextMenu.canOpenPath && !paired ? (
             <MenuItem onClick={() => void runContextMenuCommand('reveal-in-file-manager', contextMenu)}>
               Reveal in file manager
             </MenuItem>
@@ -2441,12 +2466,15 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
           <MenuItem onClick={() => void runContextMenuCommand('new-file', contextMenu)}>New file</MenuItem>
           <MenuItem onClick={() => void runContextMenuCommand('new-folder', contextMenu)}>New folder</MenuItem>
           <MenuDivider />
-          {contextMenu.canUseSinglePathCommands ? (
+          {/* A copy is made on this disk, so a paired folder has none to paste. */}
+          {contextMenu.canUseSinglePathCommands && !paired ? (
             <MenuItem onClick={() => void runContextMenuCommand('copy', contextMenu)}>Copy</MenuItem>
           ) : null}
-          <MenuItem disabled={!contextMenu.canPaste} onClick={() => void runContextMenuCommand('paste', contextMenu)}>
-            Paste
-          </MenuItem>
+          {paired ? null : (
+            <MenuItem disabled={!contextMenu.canPaste} onClick={() => void runContextMenuCommand('paste', contextMenu)}>
+              Paste
+            </MenuItem>
+          )}
           {contextMenu.canUseSinglePathCommands ? (
             <MenuItem onClick={() => void runContextMenuCommand('rename', contextMenu)}>Rename</MenuItem>
           ) : null}
@@ -2511,6 +2539,113 @@ interface Props {
 }
 
 export default function FileExplorer({ workspaceId }: Props) {
+  // A chat on a paired machine works in a folder over there, and its Files tab
+  // shows that folder, read from there (`conversation-checkout-files`).
+  // Nothing on this disk is offered in its place.
+  const origin = useWorkspaceStore(
+    (s) => s.workspaces.find((candidate) => candidate.id === workspaceId)?.remoteOrigin ?? null,
+  )
+  const paired = useMemo(() => pairedCheckoutOf({ remoteOrigin: origin }), [origin])
+  if (origin) return <PairedFileExplorer workspaceId={workspaceId} paired={paired} />
+  return <LocalFileExplorer workspaceId={workspaceId} />
+}
+
+/**
+ * The Files tab of a chat on a paired machine: the folder the chat works in
+ * there, listed, watched, searched and changed over there. A row from before
+ * the chat's id was kept names no chat, and says so.
+ */
+function PairedFileExplorer({
+  workspaceId,
+  paired,
+}: {
+  workspaceId: string
+  paired: ReturnType<typeof pairedCheckoutOf>
+}) {
+  const [query, setQuery] = useState('')
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [refreshToken, setRefreshToken] = useState(0)
+  const [createRequest, setCreateRequest] = useState<CreateEntryRequest | null>(null)
+  const root = paired?.root ?? null
+  useEffect(() => {
+    if (paired) describePairedCheckout(paired.root, paired.machineName)
+  }, [paired])
+  const noStatus = useCallback(async () => {}, [])
+
+  const handleOpenFile = async (path: string, name: string) => {
+    let content: string
+    try {
+      content = await checkoutFs.readfile(path)
+    } catch (error) {
+      showToast({
+        tone: 'error',
+        title: `Could not open ${name}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+    openFileSurface({ workspaceId, path, name, content, ...(root ? { rootPath: root } : {}) })
+  }
+
+  if (!paired || !root) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden bg-[color:var(--bg-surface)]">
+        <EmptyState
+          title="Files are on the other machine"
+          body="This chat was opened before Studio kept which chat it is, so its folder cannot be read from here. Open the chat again from Remote in the sidebar."
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden bg-[color:var(--bg-surface)] text-[color:var(--text-default)]">
+      <div className="flex h-[36px] shrink-0 items-center gap-1 border-b border-[color:var(--border-subtle)] pl-2 pr-1.5">
+        <div className="flex min-w-0 flex-1">
+          <InboxSearchInput value={query} onChange={setQuery} ariaLabel="Search files" placeholder="Search files…" />
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Tooltip content={`New file on ${paired.machineName}`} placement="bottom">
+            <IconButton aria-label="New file" onClick={() => setCreateRequest({ kind: 'file', token: Date.now() })}>
+              <NewFileIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content={`New folder on ${paired.machineName}`} placement="bottom">
+            <IconButton aria-label="New folder" onClick={() => setCreateRequest({ kind: 'dir', token: Date.now() })}>
+              <NewFolderIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="Refresh files" placement="bottom">
+            <IconButton aria-label="Refresh files" onClick={() => setRefreshToken((current) => current + 1)}>
+              <RefreshFilesIcon />
+            </IconButton>
+          </Tooltip>
+        </div>
+      </div>
+      <div ref={scrollRef} className="flex-1 overflow-auto">
+        <FileExplorerTree
+          // One chat's folder to a mount: another chat's is another folder.
+          key={root}
+          scrollParentRef={scrollRef}
+          workspaceId={workspaceId}
+          persistence="workspace"
+          rootPath={root}
+          query={query}
+          refreshToken={refreshToken}
+          createRequest={createRequest}
+          gitStatus={null}
+          directoryStatus={NO_DIRECTORY_STATUS}
+          refreshGitStatus={noStatus}
+          onOpenFile={(path, name) => void handleOpenFile(path, name)}
+        />
+      </div>
+    </div>
+  )
+}
+
+const NO_DIRECTORY_STATUS: Record<string, GitFileStatus> = {}
+
+function LocalFileExplorer({ workspaceId }: Props) {
   const { folderPath, folderReadyPath, folderMissing, checkingFolder, recheckFolder } =
     useWorkspaceFolderStatus(workspaceId)
   const setFolderPath = useWorkspaceStore((s) => s.setFolderPath)

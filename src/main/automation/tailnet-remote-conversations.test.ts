@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,6 +27,7 @@ import {
 } from './tailnet/tailnet-conversation-host'
 import { subagentChangesOf } from '../subagent-lifecycle'
 import { createConversationCheckoutChanges } from '../conversation-checkout-changes'
+import { createConversationCheckoutFiles } from '../conversation-checkout-files'
 import { TAILNET_CAPABILITIES } from './tailnet/tailnet-routes'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet/tailnet-devices'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
@@ -176,6 +177,8 @@ async function startHarness(
     subagentRecords?: () => ConversationListWorkspace['agents']
     /** The far end reads its chats' changes, in its workspace folder, and reads them again this often. */
     checkoutChanges?: { pollMs: number }
+    /** The far end shows its chats' files, in its workspace folder; deletes go to this Trash where given. */
+    checkoutFiles?: { trashItem?: (path: string) => Promise<void> }
   } = {},
 ): Promise<Harness> {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'remote-conversation-host-'))
@@ -250,6 +253,15 @@ async function startHarness(
             checkoutChanges: createConversationCheckoutChanges({
               checkoutOf: () => workspaceRoot,
               pollMs: options.checkoutChanges.pollMs,
+            }),
+          }
+        : {}),
+      ...(options.checkoutFiles
+        ? {
+            checkoutFiles: createConversationCheckoutFiles({
+              checkoutOf: () => workspaceRoot,
+              trashItem: options.checkoutFiles.trashItem,
+              batchMs: 20,
             }),
           }
         : {}),
@@ -2286,6 +2298,173 @@ describe('a chat’s changes on a paired desktop', () => {
         await vi.advanceTimersByTimeAsync(0)
         older.fence(1)
         older.client.watchChanges(older.key, true)
+        older.fence(2)
+        assert.equal(watches(older.sent).length, 0)
+        older.client.shutdown()
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('a chat’s files on a paired desktop', () => {
+  test('are listed, read and watched on the machine they are on, and changed only on a grant that may drive', async () => {
+    const trashed: string[] = []
+    const h = await startHarness({
+      checkoutFiles: {
+        trashItem: async (path) => {
+          trashed.push(path)
+          rmSync(path, { recursive: true, force: true })
+        },
+      },
+    })
+    try {
+      mkdirSync(join(h.workspaceRoot, 'src'))
+      writeFileSync(join(h.workspaceRoot, 'src', 'calendar.ts'), 'export const days = 7\n')
+      const reader = await h.pair(['conversation:read'])
+      const listed = await h.mesh.listConversations(reader)
+      assert.ok(listed.ok, listed.ok ? '' : listed.message)
+      assert.equal(listed.checkoutFiles, true, 'the list says the machine shows them')
+      const key = { connectionId: reader, workspaceId, agentId }
+      const pane = follower(h.mesh, key)
+      await waitFor(pane.live, 'the follow goes live')
+
+      const root = await h.mesh.conversationCheckoutFolder({ key, path: '' })
+      assert.ok(root.ok, root.ok ? '' : root.message)
+      assert.deepEqual(root.entries, [{ name: 'src', kind: 'folder' }])
+      const folder = await h.mesh.conversationCheckoutFolder({ key, path: 'src' })
+      assert.ok(folder.ok)
+      assert.deepEqual(folder.entries, [{ name: 'calendar.ts', kind: 'file' }])
+      assert.deepEqual(await h.mesh.conversationCheckoutFile({ key, path: 'src/calendar.ts' }), {
+        ok: true,
+        file: { kind: 'text', content: 'export const days = 7\n' },
+      })
+      const outside = await h.mesh.conversationCheckoutFile({ key, path: '../devices/devices.json' })
+      assert.equal(!outside.ok && outside.code, 'invalid_arguments')
+
+      // Watched while a window shows them, and told what moved.
+      assert.deepEqual(await h.mesh.conversationWatchCheckoutFiles({ key, watching: true }), { ok: true })
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      writeFileSync(join(h.workspaceRoot, 'src', 'weeks.ts'), 'export const weeks = 52\n')
+      await waitFor(
+        () => pane.of('checkoutFiles').some((frame) => frame.paths === null || frame.paths.includes('src/weeks.ts')),
+        'told the new file is there',
+      )
+
+      // A grant that may only read changes nothing there.
+      const refused = await h.mesh.conversationChangeCheckoutFile({
+        key,
+        change: { kind: 'write', path: 'src/calendar.ts', content: 'overwritten\n' },
+      })
+      assert.equal(refused.ok, false)
+      assert.match(!refused.ok ? refused.message : '', /may read that machine’s files but not change them/u)
+      assert.equal(readFileSync(join(h.workspaceRoot, 'src', 'calendar.ts'), 'utf8'), 'export const days = 7\n')
+      await h.mesh.conversationWatchCheckoutFiles({ key, watching: false })
+
+      // One that may drive saves, makes, renames and deletes, all in the chat's folder.
+      const driver = await h.pair(['conversation:read', 'conversation:operate'])
+      const driven = { connectionId: driver, workspaceId, agentId }
+      const second = follower(h.mesh, driven, 'pane-2')
+      await waitFor(second.live, 'the second follow goes live')
+      assert.deepEqual(
+        await h.mesh.conversationChangeCheckoutFile({
+          key: driven,
+          change: { kind: 'write', path: 'src/calendar.ts', content: 'export const days = 8\n' },
+        }),
+        { ok: true, path: 'src/calendar.ts' },
+      )
+      assert.equal(readFileSync(join(h.workspaceRoot, 'src', 'calendar.ts'), 'utf8'), 'export const days = 8\n')
+      assert.deepEqual(
+        await h.mesh.conversationChangeCheckoutFile({ key: driven, change: { kind: 'createFolder', path: 'lib' } }),
+        { ok: true, path: 'lib' },
+      )
+      assert.deepEqual(
+        await h.mesh.conversationChangeCheckoutFile({
+          key: driven,
+          change: { kind: 'rename', path: 'src/weeks.ts', to: 'lib/weeks.ts' },
+        }),
+        { ok: true, path: 'lib/weeks.ts' },
+      )
+      assert.deepEqual(
+        await h.mesh.conversationChangeCheckoutFile({ key: driven, change: { kind: 'delete', path: 'lib' } }),
+        { ok: true, path: '' },
+      )
+      assert.equal(trashed.length, 1)
+      const escape = await h.mesh.conversationChangeCheckoutFile({
+        key: driven,
+        change: { kind: 'createFile', path: '../planted.ts' },
+      })
+      assert.equal(!escape.ok && escape.code, 'invalid_arguments')
+    } finally {
+      await h.close()
+    }
+  })
+
+  test('a machine that does not advertise them is never asked, and says so in words', async () => {
+    const index = (TAILNET_CAPABILITIES as readonly string[]).indexOf('conversation-checkout-files')
+    ;(TAILNET_CAPABILITIES as unknown as string[]).splice(index, 1)
+    let h: Harness | null = null
+    try {
+      h = await startHarness({ checkoutFiles: {} })
+      const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
+      const listed = await h.mesh.listConversations(connectionId)
+      assert.ok(listed.ok)
+      assert.equal(listed.checkoutFiles, false)
+      const key = { connectionId, workspaceId, agentId }
+      const pane = follower(h.mesh, key)
+      await waitFor(pane.live, 'the follow goes live')
+      for (const answer of [
+        await h.mesh.conversationWatchCheckoutFiles({ key, watching: true }),
+        await h.mesh.conversationCheckoutFolder({ key, path: '' }),
+        await h.mesh.conversationChangeCheckoutFile({ key, change: { kind: 'createFile', path: 'a.ts' } }),
+      ]) {
+        assert.equal(answer.ok, false)
+        assert.match(!answer.ok ? answer.message : '', /cannot show a chat’s files here yet/u)
+      }
+      assert.equal(pane.link()?.state, 'live')
+    } finally {
+      ;(TAILNET_CAPABILITIES as unknown as string[]).splice(index, 0, 'conversation-checkout-files')
+      await h?.close()
+    }
+  })
+
+  test('are watched after each fence while a window shows them, and stopped when none does', async () => {
+    vi.useFakeTimers()
+    try {
+      const watches = (sent: Array<Record<string, unknown>>) =>
+        sent.filter((frame) => frame.type === 'watchCheckoutFiles')
+      const d = drivenClient({ capabilities: ['conversation-checkout-files'] })
+      await d.follow()
+      await vi.advanceTimersByTimeAsync(0)
+      d.fence(1)
+      assert.equal(watches(d.sent).length, 0, 'not asked while nobody shows them')
+      assert.deepEqual(d.client.watchCheckoutFiles(d.key, true), { ok: true })
+      d.client.watchCheckoutFiles(d.key, true)
+      assert.equal(watches(d.sent).length, 1, 'a second window asks nothing more')
+      d.fence(2)
+      assert.equal(watches(d.sent).length, 2, 'each fence begins the watch afresh')
+      assert.deepEqual(
+        d.frames.filter((frame) => frame.type === 'checkoutFiles').at(-1),
+        { type: 'checkoutFiles', paths: null },
+        'and whatever moved while the link was down is read again',
+      )
+      d.handlers.at(-1)!.onFrame({ type: 'checkoutFiles', key: { workspaceId, agentId }, paths: ['a.ts'] })
+      assert.deepEqual(d.frames.filter((frame) => frame.type === 'checkoutFiles').at(-1), {
+        type: 'checkoutFiles',
+        paths: ['a.ts'],
+      })
+      d.client.watchCheckoutFiles(d.key, false)
+      d.client.watchCheckoutFiles(d.key, false)
+      assert.deepEqual(watches(d.sent).at(-1)?.stop, true, 'the last window gone, the machine is told to stop')
+      d.client.shutdown()
+
+      for (const capabilities of [null, []]) {
+        const older = drivenClient({ capabilities })
+        await older.follow()
+        await vi.advanceTimersByTimeAsync(0)
+        older.fence(1)
+        older.client.watchCheckoutFiles(older.key, true)
         older.fence(2)
         assert.equal(watches(older.sent).length, 0)
         older.client.shutdown()

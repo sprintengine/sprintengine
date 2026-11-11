@@ -75,6 +75,10 @@ import {
   MESH_CONVERSATION_WATCH_CHANGES_CHANNEL,
   MESH_CONVERSATION_CHANGES_DIFF_CHANNEL,
   MESH_CONVERSATION_CHANGED_FILE_CHANNEL,
+  MESH_CONVERSATION_WATCH_CHECKOUT_FILES_CHANNEL,
+  MESH_CONVERSATION_CHECKOUT_FOLDER_CHANNEL,
+  MESH_CONVERSATION_CHECKOUT_FILE_CHANNEL,
+  MESH_CONVERSATION_CHANGE_CHECKOUT_FILE_CHANNEL,
   MESH_CONVERSATION_UNFOLLOW_CHANNEL,
   MESH_CONVERSATION_FILE_SEARCH_CHANNEL,
   MESH_CONVERSATION_COMMANDS_CHANNEL,
@@ -96,6 +100,12 @@ import {
 } from '../../shared/tailnet-mesh'
 import type { PullRequestCheckoutPin } from '../../shared/git/pull-request-create'
 import type { ConversationChangesSelection } from '../../../packages/conversation-protocol/src/checkoutChanges'
+import type {
+  ConversationCheckoutChangeResult,
+  ConversationCheckoutFileChange,
+  ConversationCheckoutFileResult,
+  ConversationCheckoutFolderResult,
+} from '../../../packages/conversation-protocol/src/checkoutFiles'
 import type { ConversationMentionRef } from '../../shared/conversation/mentions'
 import type { ConversationAttachedFile } from '../../shared/conversation/attachedFiles'
 import type {
@@ -417,6 +427,31 @@ export const meshApi = {
     path: string
   }): Promise<MeshChangedFileResult> =>
     ipcRenderer.invoke(MESH_CONVERSATION_CHANGED_FILE_CHANNEL, input) as Promise<MeshChangedFileResult>,
+  meshConversationWatchCheckoutFiles: (input: {
+    key: MeshConversationKey
+    watching: boolean
+  }): Promise<{ ok: true } | { ok: false; code: string; message: string }> =>
+    ipcRenderer.invoke(MESH_CONVERSATION_WATCH_CHECKOUT_FILES_CHANNEL, input) as Promise<
+      { ok: true } | { ok: false; code: string; message: string }
+    >,
+  meshConversationCheckoutFolder: (input: {
+    key: MeshConversationKey
+    path: string
+  }): Promise<ConversationCheckoutFolderResult> =>
+    ipcRenderer.invoke(MESH_CONVERSATION_CHECKOUT_FOLDER_CHANNEL, input) as Promise<ConversationCheckoutFolderResult>,
+  meshConversationCheckoutFile: (input: {
+    key: MeshConversationKey
+    path: string
+  }): Promise<ConversationCheckoutFileResult> =>
+    ipcRenderer.invoke(MESH_CONVERSATION_CHECKOUT_FILE_CHANNEL, input) as Promise<ConversationCheckoutFileResult>,
+  meshConversationChangeCheckoutFile: (input: {
+    key: MeshConversationKey
+    change: ConversationCheckoutFileChange
+  }): Promise<ConversationCheckoutChangeResult> =>
+    ipcRenderer.invoke(
+      MESH_CONVERSATION_CHANGE_CHECKOUT_FILE_CHANNEL,
+      input,
+    ) as Promise<ConversationCheckoutChangeResult>,
   meshConversationToolImage: (input: {
     key: MeshConversationKey
     toolUseId: string
@@ -525,6 +560,10 @@ export const meshApi = {
   | 'meshConversationWatchChanges'
   | 'meshConversationChangesDiff'
   | 'meshConversationChangedFile'
+  | 'meshConversationWatchCheckoutFiles'
+  | 'meshConversationCheckoutFolder'
+  | 'meshConversationCheckoutFile'
+  | 'meshConversationChangeCheckoutFile'
   | 'meshConversationToolImage'
   | 'meshConversationAttachment'
   | 'meshConversationSearchFiles'

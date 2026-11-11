@@ -32,6 +32,7 @@ import {
   type ConversationUsageLimitsFrame,
 } from './commands.js'
 import { parseConversationChangesFrame, type ConversationChangesFrame } from './checkoutChanges.js'
+import { parseConversationCheckoutFilesFrame, type ConversationCheckoutFilesFrame } from './checkoutFiles.js'
 
 // The client half of the frame contract: what a desktop or phone following a
 // conversation accepts from the desktop it follows. `parseConversationClientFrame`
@@ -517,6 +518,7 @@ export type ConversationParsedServerFrame =
   | ConversationUsageLimitsFrame
   | ConversationSubagentsFrame
   | ConversationChangesFrame
+  | ConversationCheckoutFilesFrame
 
 /**
  * A command's result under the full contract: a command that answers more
@@ -543,6 +545,7 @@ const SERVER_FRAME_TYPES = new Set([
   'usageLimits',
   'subagents',
   'changes',
+  'checkoutFiles',
 ])
 const PHASES = new Set<ConversationWirePhase>([
   'idle',
@@ -1219,6 +1222,8 @@ export function parseConversationServerFrame(value: unknown): ConversationParsed
     }
     case 'changes':
       return parseConversationChangesFrame(frame)
+    case 'checkoutFiles':
+      return parseConversationCheckoutFilesFrame(frame)
     default:
       return null
   }

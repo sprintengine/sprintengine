@@ -8,6 +8,7 @@ import CliIcon from '../../../CliIcon'
 import { shortMachineName } from '../../../remote/machineRowModel'
 import { useChatActivity, type ChatActivityRow } from '../../../panels/agentChat/chatActivityStore'
 import { openPairedChanges, usePairedChanges } from '../../../panels/agentChat/pairedChanges'
+import { useRemoteChat } from '../../../panels/agentChat/remoteChatRegistry'
 import { useChatPanelFacts, type ChatPanelFacts } from '../../../panels/agentChat/chatPanelStore'
 import { useShowSubagentFamily, useSubagentFamily } from '../../../panels/agentChat/subagentFamilyStore'
 import { subagentViewOwner, useSubagentViews } from '../../../panels/agentChat/subagentViewStack'
@@ -137,14 +138,16 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
     `${tabs.filter((tab) => tab.kind === 'canvas').length}:${activity?.rows.find((row) => row.kind === 'canvas')?.meta ?? ''}`,
   )
 
-  // A chat on a paired machine works over there: its files and terminals
-  // cannot be opened from here. Its changes can, read from that machine, where
-  // it reads them for this window (`conversation-changes`); an older one keeps
-  // the row as its count.
+  // A chat on a paired machine works over there: its terminals cannot be
+  // opened from here. Its changes can, read from that machine, where it reads
+  // them for this window (`conversation-changes`); an older one keeps the row
+  // as its count.
   const farMachine = facts?.remote ? shortMachineName(facts.machine?.name ?? 'the other machine') : null
   const onFarMachine = farMachine ? `On ${farMachine}` : null
   const pairedChanges = usePairedChanges(workspaceId, facts?.remote ? agentId : null)
   const changesOpen = !farMachine || (pairedChanges !== null && gitEnabled)
+  // Its files can be too, where the machine shows them (`conversation-checkout-files`).
+  const pairedFiles = useRemoteChat(workspaceId, facts?.remote ? agentId : null)?.hostFiles === true
 
   const record = agentId ? workspace?.agents?.[agentId] : undefined
   const name = facts?.name ?? top?.label ?? record?.name ?? workspace?.name ?? ''
@@ -221,7 +224,7 @@ export function ChatPanel({ underStrip = false, ...openNow }: ChatPanelProps) {
               glyph={<FilesGlyph className={`icon-sm ${activityTone(filesRow)}`} />}
               label="Files"
               meta={onFarMachine ?? filesRow?.meta ?? null}
-              onClick={farMachine ? null : openFiles}
+              onClick={!farMachine ? openFiles : pairedFiles ? () => openPaneTab(workspaceId, { kind: 'files' }) : null}
             />
           ) : null}
           <PanelRow

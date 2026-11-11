@@ -4,6 +4,7 @@ import type {
   ConversationChangesSaid,
   ConversationCheckoutChangesHost,
 } from '../../conversation-checkout-changes'
+import type { ConversationCheckoutFilesAnswer, ConversationCheckoutFilesHost } from '../../conversation-checkout-files'
 import {
   CONVERSATION_DEFAULT_MODEL_ID,
   CONVERSATION_MAX_FILE_SEARCH_RESULTS,
@@ -14,6 +15,9 @@ import {
   type ConversationChangedFileSides,
   type ConversationChangesDiff,
   type ConversationChangesSelection,
+  type ConversationCheckoutFile,
+  type ConversationCheckoutFileChange,
+  type ConversationCheckoutFolder,
   type ConversationCommand,
   type ConversationForkCommand,
   type ConversationCommandsAnswer,
@@ -342,6 +346,31 @@ export type ConversationGatewayHost = {
     selection: ConversationChangesSelection,
     path: string,
   ): Promise<ConversationChangesAnswer<ConversationChangedFileSides>>
+  /**
+   * A chat's files, as this desktop's own Files tab reads them
+   * (`conversation-checkout-files`): one folder listed, one file read, told
+   * whenever anything in the chat's folder moves, and one change made. Absent
+   * on a host built without `checkoutFiles`.
+   */
+  checkoutFolder?(
+    key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
+    path: string,
+  ): Promise<ConversationCheckoutFilesAnswer<ConversationCheckoutFolder>>
+  /** One file of a chat's folder. Present where `checkoutFolder` is. */
+  checkoutFile?(
+    key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
+    path: string,
+  ): Promise<ConversationCheckoutFilesAnswer<ConversationCheckoutFile>>
+  /** Follow what moves in a chat's folder. Present where `checkoutFolder` is; returns what stops it. */
+  watchCheckoutFiles?(
+    key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
+    listener: (paths: string[] | null) => void,
+  ): () => void
+  /** One change to a chat's folder. Present where `checkoutFolder` is. */
+  changeCheckoutFile?(
+    key: Pick<ConversationKey, 'workspaceId' | 'agentId'>,
+    change: ConversationCheckoutFileChange,
+  ): Promise<ConversationCheckoutFilesAnswer<{ path: string }>>
   /**
    * Carry out one command under its client's id. `fingerprint`, where the
    * client's door computes one, is kept with the command's receipt: the same
@@ -702,6 +731,12 @@ export type ConversationRegistryLink = {
    * requests are refused in words.
    */
   checkoutChanges?: ConversationCheckoutChangesHost
+  /**
+   * Reads and changes a chat's files in its folder on this computer, as the
+   * Files tab here does (`conversation-checkout-files`). Absent, nothing is
+   * read and the requests are refused in words.
+   */
+  checkoutFiles?: ConversationCheckoutFilesHost
   /**
    * Studio's own folders of pictures (what chats sent, the pictures their steps
    * returned, pasted images). A step's picture is served from the chat's
@@ -1870,6 +1905,18 @@ export function createConversationGatewayHost(
             registry.checkoutChanges!.diff({ workspaceId: key.workspaceId, agentId: key.agentId }, selection),
           changedFile: (key, selection, path) =>
             registry.checkoutChanges!.file({ workspaceId: key.workspaceId, agentId: key.agentId }, selection, path),
+        }
+      : {}),
+    ...(registry.checkoutFiles
+      ? {
+          checkoutFolder: (key, path) =>
+            registry.checkoutFiles!.list({ workspaceId: key.workspaceId, agentId: key.agentId }, path),
+          checkoutFile: (key, path) =>
+            registry.checkoutFiles!.read({ workspaceId: key.workspaceId, agentId: key.agentId }, path),
+          watchCheckoutFiles: (key, listener) =>
+            registry.checkoutFiles!.watch({ workspaceId: key.workspaceId, agentId: key.agentId }, listener),
+          changeCheckoutFile: (key, change) =>
+            registry.checkoutFiles!.change({ workspaceId: key.workspaceId, agentId: key.agentId }, change),
         }
       : {}),
     command(key, deviceId, commandId, command, fingerprint, carried) {

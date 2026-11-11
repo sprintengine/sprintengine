@@ -6,6 +6,7 @@ import type {
 } from '../../../../../packages/conversation-protocol/src/checkoutChanges'
 import type { BranchStepDiff, BranchStepSelection, BranchStepsSnapshot } from '../../../../shared/electron-api'
 import type { MeshConversationKey } from '../../../../shared/tailnet-mesh'
+import { pairedCheckoutRoot } from '../../utils/pairedCheckout'
 
 // Where a diff viewer reads a checkout that is not on this computer: a chat on
 // a paired machine, whose machine reads its checkout as its own Diff tab does
@@ -40,7 +41,9 @@ export type { ConversationChangedFileSide }
 
 /** What the files of a paired machine's chat are kept under here: the chat, as no folder of this disk names it. */
 export function pairedChangesRoot(key: MeshConversationKey): string {
-  return `paired:${key.connectionId}/${key.workspaceId}/${key.agentId}`
+  // The same root its Files tab keeps the chat's folder under, so a file of
+  // the changes and the same file in the tree are one path.
+  return pairedCheckoutRoot(key)
 }
 
 /** How long to wait before asking again for a watch the machine's link was not ready for. */

@@ -13,6 +13,22 @@
 
 ### Added
 
+- **A chat's files, where it is followed.** `CONVERSATION_CHECKOUT_FILES_CAPABILITY`
+  (`conversation-checkout-files`) names a desktop that answers
+  `ConversationListCheckoutFolderRequest` (`listCheckoutFolder`) with a
+  `ConversationCheckoutFolder`, `ConversationReadCheckoutFileRequest`
+  (`readCheckoutFile`) with a `ConversationCheckoutFile`,
+  `ConversationWatchCheckoutFilesRequest` (`watchCheckoutFiles`, and `stop:
+true`) with `ConversationCheckoutFilesFrame`s (`checkoutFiles`), and
+  `ConversationChangeCheckoutFileRequest` (`changeCheckoutFile`, one
+  `ConversationCheckoutFileChange`, on `conversation:operate`) with where the
+  thing changed now is, as the desktop's Files tab reads and changes the folder
+  the chat works in. The results a client hands on are
+  `ConversationCheckoutFolderResult`, `ConversationCheckoutFileResult` and
+  `ConversationCheckoutChangeResult`, and the frame without its key
+  `ConversationCheckoutFilesNotice`. A path is checked by
+  `isConversationCheckoutPath`. An older desktop refuses each request under its
+  id. The pinned files are unchanged.
 - **A chat's changes, where it is followed.** `CONVERSATION_CHANGES_CAPABILITY`
   (`conversation-changes`) names a desktop that answers
   `ConversationWatchChangesRequest` (`watchChanges`, and `stop: true` to end it)

@@ -298,6 +298,21 @@ under their `requestId`, as it answers `watchQueued`.
   the file's two sides. A client never names a revision or a folder. All of it
   needs `conversation:read`. A desktop without it refuses each as
   `invalid_frame`, and sends the frame only to a client that asked.
+- `conversation-checkout-files`: a chat's files, as the desktop's own Files tab
+  and editor read and change the folder the chat works in (`checkoutFiles.ts`).
+  `listCheckoutFolder` names a folder by its path relative to the chat's
+  folder (`''` for the folder itself) and is answered with its entries (each a
+  `file` or `folder`, `ignored` where git ignores it) and the folder's own name
+  and path for words; `readCheckoutFile` is answered with the file's text, or
+  `too-large` or `binary`. `{ type: 'watchCheckoutFiles', requestId }` has the
+  desktop send `checkoutFiles` frames (the chat's `key`, and the `paths` that
+  moved, or null for "read again") until `stop: true`. `changeCheckoutFile`
+  carries one `write`, `createFile`, `createFolder`, `rename` or `delete` and is
+  answered with where the thing changed now is; it needs `conversation:operate`,
+  and is refused `conversation_operate_required` under its id without it. The
+  rest needs `conversation:read`. A path is checked by
+  `isConversationCheckoutPath`. A desktop without it refuses each as
+  `invalid_frame`, and sends the frame only to a client that asked.
 
 `conversation-message-images` (`CONVERSATION_MESSAGE_IMAGES_CAPABILITY`)
 names no frame. A `user_message`'s `attachments` record each picture the

@@ -7,6 +7,12 @@ import type { ChatLink } from './deep-link'
 import type { AgentNotificationMode } from './agent-notifications'
 import type { ConversationChangesSelection } from '../../packages/conversation-protocol/src/checkoutChanges'
 import type {
+  ConversationCheckoutChangeResult,
+  ConversationCheckoutFileChange,
+  ConversationCheckoutFileResult,
+  ConversationCheckoutFolderResult,
+} from '../../packages/conversation-protocol/src/checkoutFiles'
+import type {
   ArtifactsSettingsView,
   ArtifactsSetupInput,
   ArtifactsSetupQuestionView,
@@ -1377,6 +1383,26 @@ export type ElectronApi = {
     selection: ConversationChangesSelection
     path: string
   }) => Promise<MeshChangedFileResult>
+  // A paired machine's chat's files, as that machine's Files tab reads and
+  // changes them: one more or one fewer window showing them (`checkoutFiles`
+  // frames arrive on the chat's own session), one folder, one file, and one
+  // change. Needs `conversation-checkout-files` there.
+  meshConversationWatchCheckoutFiles: (input: {
+    key: MeshConversationKey
+    watching: boolean
+  }) => Promise<{ ok: true } | { ok: false; code: string; message: string }>
+  meshConversationCheckoutFolder: (input: {
+    key: MeshConversationKey
+    path: string
+  }) => Promise<ConversationCheckoutFolderResult>
+  meshConversationCheckoutFile: (input: {
+    key: MeshConversationKey
+    path: string
+  }) => Promise<ConversationCheckoutFileResult>
+  meshConversationChangeCheckoutFile: (input: {
+    key: MeshConversationKey
+    change: ConversationCheckoutFileChange
+  }) => Promise<ConversationCheckoutChangeResult>
   // The picture a step of a paired machine's chat made or looked at, as a data
   // URL. Needs `conversation-images` there; the list says whether it has it.
   meshConversationToolImage: (input: {

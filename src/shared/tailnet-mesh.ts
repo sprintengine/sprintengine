@@ -12,6 +12,7 @@ import type {
   ConversationChangedFileSides,
   ConversationChangesDiff,
   ConversationCheckoutChanges,
+  ConversationCheckoutFilesNotice,
   ConversationSubagent,
   ConversationThread,
   ConversationUsageLimitNotice,
@@ -744,6 +745,7 @@ export type MeshConversationFrame =
   | MeshConversationUsageLimits
   | MeshConversationSubagents
   | MeshConversationChanges
+  | ConversationCheckoutFilesNotice
 
 /**
  * `modelSwitch`: the machine advertises `conversation-models` — its list names
@@ -887,6 +889,10 @@ export type MeshConversationFrame =
  * (`meshConversationWatchChanges`, `meshConversationChangesDiff`,
  * `meshConversationChangedFile`). False for a machine that does not, where the
  * Changes row is that machine's counts and opens nothing.
+ *
+ * `checkoutFiles`: the machine advertises `conversation-checkout-files` — a
+ * chat's Files tab here lists, reads and changes the folder the chat works in
+ * there. False for a machine that does not, whose Files tab says so in words.
  */
 export type MeshConversationListResult =
   | {
@@ -920,6 +926,7 @@ export type MeshConversationListResult =
       permanentApprovals?: boolean
       quotes?: boolean
       changes?: boolean
+      checkoutFiles?: boolean
       createPullRequest?: boolean
       rowMenu?: boolean
       markUnread?: boolean
@@ -1102,6 +1109,11 @@ export const MESH_CONVERSATION_TURN_DIFF_CHANNEL = 'mesh:conversation-turn-diff'
 export const MESH_CONVERSATION_WATCH_CHANGES_CHANNEL = 'mesh:conversation-watch-changes'
 export const MESH_CONVERSATION_CHANGES_DIFF_CHANNEL = 'mesh:conversation-changes-diff'
 export const MESH_CONVERSATION_CHANGED_FILE_CHANNEL = 'mesh:conversation-changed-file'
+/** A paired machine's chat's files, as its Files tab reads them (`conversation-checkout-files`). */
+export const MESH_CONVERSATION_WATCH_CHECKOUT_FILES_CHANNEL = 'mesh:conversation-watch-checkout-files'
+export const MESH_CONVERSATION_CHECKOUT_FOLDER_CHANNEL = 'mesh:conversation-checkout-folder'
+export const MESH_CONVERSATION_CHECKOUT_FILE_CHANNEL = 'mesh:conversation-checkout-file'
+export const MESH_CONVERSATION_CHANGE_CHECKOUT_FILE_CHANNEL = 'mesh:conversation-change-checkout-file'
 export const MESH_CONVERSATION_SIDE_QUESTION_CHANNEL = 'mesh:conversation-side-question'
 export const MESH_CONVERSATION_CANCEL_SIDE_QUESTION_CHANNEL = 'mesh:conversation-cancel-side-question'
 export const MESH_CONVERSATION_CONTEXT_BREAKDOWN_CHANNEL = 'mesh:conversation-context-breakdown'

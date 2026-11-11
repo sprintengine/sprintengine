@@ -1815,3 +1815,111 @@ test('a desktop that does not read a chat’s changes refuses under the id, and 
   assert.equal(stream.isClosed(), false)
   stream.close(1000, '')
 })
+
+test('a client that asks is told what moves in a chat’s folder, reads it on a read grant, and changes it only with operate', async () => {
+  const run = async (scopes: Array<'conversation:read' | 'conversation:operate'>) => {
+    const socket = new Socket()
+    const gateway = host()
+    const watching = new Set<string>()
+    const asked: string[] = []
+    let tell: ((paths: string[] | null) => void) | null = null
+    gateway.watchCheckoutFiles = (chat, listener) => {
+      watching.add(chat.agentId)
+      tell = listener
+      return () => watching.delete(chat.agentId)
+    }
+    gateway.checkoutFolder = async (_chat, path) => {
+      asked.push(`list:${path}`)
+      return {
+        ok: true,
+        root: { name: 'app', path: '/Users/dev/app' },
+        entries: [{ name: 'a.ts', kind: 'file' }],
+        truncated: false,
+      }
+    }
+    gateway.checkoutFile = async (_chat, path) => {
+      asked.push(`read:${path}`)
+      return { ok: true, kind: 'text', content: 'a\n' }
+    }
+    gateway.changeCheckoutFile = async (_chat, change) => {
+      asked.push(`change:${change.kind}:${change.path}`)
+      return { ok: true, path: change.path }
+    }
+    const stream = createTailnetConversationStream({
+      socket,
+      deviceId: 'device',
+      deviceName: 'laptop',
+      scopes,
+      host: gateway,
+      onClosed: () => {},
+      audit: () => {},
+    })
+    const output = () => socket.output() as Array<Frame & { data?: Record<string, unknown>; ok?: boolean }>
+    const answer = (requestId: string) =>
+      output().find((frame) => frame.type === 'result' && frame.requestId === requestId)
+    socket.receive({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' } })
+    await tick()
+    assert.equal(watching.size, 0, 'nothing is watched for a client that did not ask')
+    socket.receive({ type: 'watchCheckoutFiles', requestId: 'files-1' })
+    await waitFor(() => watching.size === 1, 'watched once asked')
+    tell!(['src/a.ts'])
+    await waitFor(() => output().some((frame) => frame.type === 'checkoutFiles'), 'told what moved')
+    assert.deepEqual(
+      output().find((frame) => frame.type === 'checkoutFiles'),
+      { type: 'checkoutFiles', key: { workspaceId: 'w', agentId: 'a' }, paths: ['src/a.ts'] },
+    )
+    socket.receive({ type: 'listCheckoutFolder', requestId: 'list-1', path: '' })
+    socket.receive({ type: 'readCheckoutFile', requestId: 'read-1', path: 'a.ts' })
+    // Refused as a frame before the desktop is asked: a path out of the folder.
+    socket.receive({ type: 'readCheckoutFile', requestId: 'read-2', path: '../a.ts' })
+    socket.receive({
+      type: 'changeCheckoutFile',
+      requestId: 'change-1',
+      change: { kind: 'write', path: 'a.ts', content: 'b\n' },
+    })
+    await waitFor(() => Boolean(answer('change-1')), 'every request answered under its id')
+    assert.equal(answer('list-1')?.ok, true)
+    assert.deepEqual((answer('read-1')?.data as { content?: string })?.content, 'a\n')
+    socket.receive({ type: 'watchCheckoutFiles', requestId: 'files-2', stop: true })
+    await waitFor(() => watching.size === 0, 'stop ends the watch')
+    socket.receive({ type: 'watchCheckoutFiles', requestId: 'files-3' })
+    await waitFor(() => watching.size === 1, 'asked again, it watches again')
+    socket.receive({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'b' } })
+    await waitFor(() => watching.size === 0, 'the watch ends with the chat it was for')
+    stream.close(1000, '')
+    return { asked, change: answer('change-1') }
+  }
+  const reader = await run(['conversation:read'])
+  assert.deepEqual(reader.asked, ['list:', 'read:a.ts'], 'a read grant changes nothing')
+  assert.equal(reader.change?.ok, false)
+  assert.equal(reader.change?.code, 'conversation_operate_required')
+  const driver = await run(['conversation:read', 'conversation:operate'])
+  assert.deepEqual(driver.asked, ['list:', 'read:a.ts', 'change:write:a.ts'])
+  assert.equal(driver.change?.ok, true)
+})
+
+test('a desktop that does not show a chat’s files refuses under the id, and the socket stays open', async () => {
+  const socket = new Socket()
+  const stream = createTailnetConversationStream({
+    socket,
+    deviceId: 'device',
+    deviceName: 'laptop',
+    scopes: ['conversation:read'],
+    host: host(),
+    onClosed: () => {},
+    audit: () => {},
+  })
+  socket.receive({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' } })
+  await tick()
+  socket.receive({ type: 'watchCheckoutFiles', requestId: 'files-1' })
+  socket.receive({ type: 'listCheckoutFolder', requestId: 'list-1', path: '' })
+  await waitFor(
+    () =>
+      (socket.output() as Array<Frame & { ok?: boolean }>).filter(
+        (frame) => frame.type === 'result' && frame.ok === false,
+      ).length === 2,
+    'both refused under their ids',
+  )
+  assert.equal(stream.isClosed(), false)
+  stream.close(1000, '')
+})

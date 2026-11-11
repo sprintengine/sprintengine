@@ -22,6 +22,7 @@ import {
   type ConversationScheduledFrame,
   type ConversationSubagentsFrame,
   type ConversationChangesFrame,
+  type ConversationCheckoutFilesFrame,
   type ConversationUsageLimitsFrame,
   type ConversationServerFrame,
   type ConversationWireErrorCode,
@@ -177,6 +178,7 @@ type OutgoingFrame =
   | ConversationUsageLimitsFrame
   | ConversationSubagentsFrame
   | ConversationChangesFrame
+  | ConversationCheckoutFilesFrame
 
 type LiveEntry = {
   kind: 'live'
@@ -233,6 +235,8 @@ export function createTailnetConversationStream(options: TailnetConversationStre
   let subagentsWatch: { chat: string; stop(): void } | null = null
   // And how that chat's checkout stands (`watchChanges`), until the client says stop.
   let changesWatch: { chat: string; stop(): void } | null = null
+  // And what moves in that chat's folder (`watchCheckoutFiles`), until the client says stop.
+  let checkoutFilesWatch: { chat: string; stop(): void } | null = null
   const stopQueuedWatch = (): void => {
     queuedWatch?.stop()
     queuedWatch = null
@@ -257,12 +261,17 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     changesWatch?.stop()
     changesWatch = null
   }
+  const stopCheckoutFilesWatch = (): void => {
+    checkoutFilesWatch?.stop()
+    checkoutFilesWatch = null
+  }
   const stopWatches = (): void => {
     stopQueuedWatch()
     stopScheduledWatch()
     stopUsageWatch()
     stopSubagentsWatch()
     stopChangesWatch()
+    stopCheckoutFilesWatch()
   }
   let frameSequence = 0
   let subscriptionGeneration = 0
@@ -646,6 +655,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     if (usageWatch && usageWatch.chat !== chatId(key)) stopUsageWatch()
     if (subagentsWatch && subagentsWatch.chat !== chatId(key)) stopSubagentsWatch()
     if (changesWatch && changesWatch.chat !== chatId(key)) stopChangesWatch()
+    if (checkoutFilesWatch && checkoutFilesWatch.chat !== chatId(key)) stopCheckoutFilesWatch()
     currentKey = key
     // Every snapshot and fence names the conversation it belongs to, so a
     // client can refuse one for a conversation it no longer follows.
@@ -693,7 +703,12 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     const decision = authorizeStudioAccess(principal, CONVERSATION_LANE_ACCESS[frame.type])
     // A command and a side question answer a refusal in their own words,
     // below; any other frame that needs more than following is refused here.
-    if (!decision.ok && frame.type !== 'command' && frame.type !== 'askSideQuestion') {
+    if (
+      !decision.ok &&
+      frame.type !== 'command' &&
+      frame.type !== 'askSideQuestion' &&
+      frame.type !== 'changeCheckoutFile'
+    ) {
       error('conversation_scope_required', 'This device may not do that on this machine’s conversations.')
       return
     }
@@ -885,6 +900,50 @@ export function createTailnetConversationStream(options: TailnetConversationStre
         frame.type === 'getChangesDiff'
           ? await host.changesDiff(wireKey, frame.selection)
           : await host.changedFile(wireKey, frame.selection, frame.path),
+      )
+      return
+    }
+    // A chat's files, read and changed in its folder here as the Files tab
+    // here does. Every path is relative to that folder and kept inside it.
+    if (frame.type === 'watchCheckoutFiles') {
+      const key = requireKey(frame.requestId)
+      if (!key) return
+      if (!host.watchCheckoutFiles) {
+        await result(frame.requestId, { ok: false, message: 'This desktop does not show a chat’s files.' })
+        return
+      }
+      await result(frame.requestId, { ok: true })
+      stopCheckoutFilesWatch()
+      if (frame.stop || closed || !currentKey || chatId(currentKey) !== chatId(key)) return
+      const wireKey = { workspaceId: key.workspaceId, agentId: key.agentId }
+      const stop = host.watchCheckoutFiles(wireKey, (paths) => sendLive({ type: 'checkoutFiles', key: wireKey, paths }))
+      checkoutFilesWatch = { chat: chatId(key), stop }
+      return
+    }
+    if (
+      frame.type === 'listCheckoutFolder' ||
+      frame.type === 'readCheckoutFile' ||
+      frame.type === 'changeCheckoutFile'
+    ) {
+      const key = requireKey(frame.requestId)
+      if (!key) return
+      // A change writes to the machine's disk, as a send drives its agent.
+      if (!decision.ok) {
+        sendLive({ type: 'result', requestId: frame.requestId, ok: false, code: 'conversation_operate_required' })
+        return
+      }
+      if (!host.checkoutFolder || !host.checkoutFile || !host.changeCheckoutFile) {
+        await result(frame.requestId, { ok: false, message: 'This desktop does not show a chat’s files.' })
+        return
+      }
+      const wireKey = { workspaceId: key.workspaceId, agentId: key.agentId }
+      await result(
+        frame.requestId,
+        frame.type === 'listCheckoutFolder'
+          ? await host.checkoutFolder(wireKey, frame.path)
+          : frame.type === 'readCheckoutFile'
+            ? await host.checkoutFile(wireKey, frame.path)
+            : await host.changeCheckoutFile(wireKey, frame.change),
       )
       return
     }

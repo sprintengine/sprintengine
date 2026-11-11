@@ -6,6 +6,9 @@
 
 - The socket does not advertise `conversation-changes`: its conversation topic
   carries no `changes` frames.
+- Nor `conversation-checkout-files`: its conversation topic carries no
+  `checkoutFiles` frames, and a client on it reads a project's files through
+  `files.*`.
 - **The person's words for one agent** (`conversation-agent-message`, in
   `welcome.conversation`, owners): `conversation.messageSubagent` passes them to
   one agent a chat spawned, through that chat's model.

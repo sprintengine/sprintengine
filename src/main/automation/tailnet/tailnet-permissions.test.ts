@@ -198,7 +198,8 @@ test('the canvas lane lets a device look at boards on read, and change them only
 })
 
 test('every conversation lane frame is declared, and every set of scopes is answered as before', () => {
-  const drives = new Set(['askSideQuestion', 'command'])
+  // A change to a chat's folder writes to that machine's disk, as a send drives its agent.
+  const drives = new Set(['askSideQuestion', 'command', 'changeCheckoutFile'])
   for (const scopes of scopeSubsets()) {
     const principal = tailnetDevicePrincipal(scopes)
     const mayRead = legacy(scopes, 'conversation:read')

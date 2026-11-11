@@ -46,6 +46,10 @@ import {
   MESH_CONVERSATION_WATCH_CHANGES_CHANNEL,
   MESH_CONVERSATION_CHANGES_DIFF_CHANNEL,
   MESH_CONVERSATION_CHANGED_FILE_CHANNEL,
+  MESH_CONVERSATION_WATCH_CHECKOUT_FILES_CHANNEL,
+  MESH_CONVERSATION_CHECKOUT_FOLDER_CHANNEL,
+  MESH_CONVERSATION_CHECKOUT_FILE_CHANNEL,
+  MESH_CONVERSATION_CHANGE_CHECKOUT_FILE_CHANNEL,
   MESH_CONVERSATION_UNFOLLOW_CHANNEL,
   MESH_CONVERSATION_FILE_SEARCH_CHANNEL,
   MESH_CONVERSATION_COMMANDS_CHANNEL,
@@ -329,6 +333,23 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
   ipcMain.handle(MESH_CONVERSATION_CHANGED_FILE_CHANNEL, (_event, input: unknown) => {
     const record = asRecord(input) ?? {}
     return service.mesh().conversationChangedFile({ key: record.key, selection: record.selection, path: record.path })
+  })
+  // A chat's files on its machine, as that machine's Files tab reads and changes them.
+  ipcMain.handle(MESH_CONVERSATION_WATCH_CHECKOUT_FILES_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationWatchCheckoutFiles({ key: record.key, watching: record.watching })
+  })
+  ipcMain.handle(MESH_CONVERSATION_CHECKOUT_FOLDER_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationCheckoutFolder({ key: record.key, path: record.path })
+  })
+  ipcMain.handle(MESH_CONVERSATION_CHECKOUT_FILE_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationCheckoutFile({ key: record.key, path: record.path })
+  })
+  ipcMain.handle(MESH_CONVERSATION_CHANGE_CHECKOUT_FILE_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationChangeCheckoutFile({ key: record.key, change: record.change })
   })
   // A side question to a chat over there is answered by its agent there, and
   // may take a while: the invoke waits for it, as a local side question's does.

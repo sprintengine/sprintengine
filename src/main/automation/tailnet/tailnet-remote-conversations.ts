@@ -17,6 +17,15 @@ import {
   type ConversationChangesSelection,
 } from '../../../../packages/conversation-protocol/src/checkoutChanges'
 import {
+  parseConversationCheckoutChangeAnswer,
+  parseConversationCheckoutFile,
+  parseConversationCheckoutFolder,
+  type ConversationCheckoutChangeResult,
+  type ConversationCheckoutFileChange,
+  type ConversationCheckoutFileResult,
+  type ConversationCheckoutFolderResult,
+} from '../../../../packages/conversation-protocol/src/checkoutFiles'
+import {
   explainRejectedConversationMessage,
   parseConversationClientMessage,
   type ConversationClientMessage,
@@ -27,6 +36,7 @@ import {
   CONVERSATION_SCHEDULED_SENDS_CAPABILITY,
   CONVERSATION_SUBAGENTS_CAPABILITY,
   CONVERSATION_CHANGES_CAPABILITY,
+  CONVERSATION_CHECKOUT_FILES_CAPABILITY,
   CONVERSATION_USAGE_LIMITS_CAPABILITY,
   conversationPeerSupports,
 } from '../../../../packages/conversation-protocol/src/handshake'
@@ -217,6 +227,24 @@ export type RemoteConversations = {
     selection: ConversationChangesSelection,
     path: string,
   ): Promise<MeshChangedFileResult>
+  /**
+   * Have the machine say when anything in the chat's folder moves while a
+   * window here shows its files (`conversation-checkout-files`): counted per
+   * reader as `watchChanges` is, and asked again after every fence.
+   */
+  watchCheckoutFiles(
+    key: MeshConversationKey,
+    watching: boolean,
+  ): { ok: true } | { ok: false; code: string; message: string }
+  /** One folder of the chat's folder over there, `''` the folder itself. */
+  checkoutFolder(key: MeshConversationKey, path: string): Promise<ConversationCheckoutFolderResult>
+  /** One file of the chat's folder over there. */
+  checkoutFile(key: MeshConversationKey, path: string): Promise<ConversationCheckoutFileResult>
+  /** One change to the chat's folder over there. */
+  changeCheckoutFile(
+    key: MeshConversationKey,
+    change: ConversationCheckoutFileChange,
+  ): Promise<ConversationCheckoutChangeResult>
   /** Re-dial every follow waiting out a backoff or parked offline: a lid opening should reconnect at once. */
   onWake(): void
   /** Re-dial the parked follows on one machine: it just answered something else. */
@@ -296,6 +324,8 @@ type Follow = {
   changesReaders: number
   /** How the machine last said the chat's checkout stands, for a window that reads it later. */
   changes: MeshConversationChanges | null
+  /** How many windows here show the chat's files: the machine is asked to say what moves while any do. */
+  checkoutFilesReaders: number
 }
 type SnapshotFrame = Extract<ConversationParsedServerFrame, { type: 'snapshot' }>
 
@@ -658,7 +688,8 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
       frame.type === 'scheduled' ||
       frame.type === 'usageLimits' ||
       frame.type === 'subagents' ||
-      frame.type === 'changes'
+      frame.type === 'changes' ||
+      frame.type === 'checkoutFiles'
         ? frame.key
         : frame.type === 'event'
           ? { workspaceId: frame.event.workspaceId, agentId: frame.event.agentId }
@@ -758,6 +789,11 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
         watchUsageLimits(follow)
         watchSubagents(follow)
         if (follow.changesReaders > 0) watchChanges(follow)
+        // Whatever moved while the link was down is unknown: read again what is held.
+        if (follow.checkoutFilesReaders > 0) {
+          watchCheckoutFiles(follow)
+          emit(follow, { type: 'checkoutFiles', paths: null })
+        }
         return
       }
       case 'queued': {
@@ -792,6 +828,12 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
         const said: MeshConversationChanges = { type: 'changes', changes: frame.changes, revision: frame.revision }
         follow.changes = said
         emit(follow, said)
+        return
+      }
+      case 'checkoutFiles': {
+        // Said after a window here stopped showing them: nobody is waiting on it.
+        if (follow.checkoutFilesReaders === 0) return
+        emit(follow, { type: 'checkoutFiles', paths: frame.paths })
         return
       }
       case 'subscribeFailed': {
@@ -1018,6 +1060,22 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
     })
   }
 
+  /**
+   * Ask the machine to say what moves in the chat's folder, or to stop, as the
+   * windows showing its files come and go. Never of a machine that said it
+   * does not show them.
+   */
+  function watchCheckoutFiles(follow: Follow, stop = false): void {
+    const capabilities = options.capabilitiesOf?.(follow.key.connectionId)
+    if (!conversationPeerSupports(capabilities ?? [], CONVERSATION_CHECKOUT_FILES_CAPABILITY)) return
+    if (!follow.synchronized) return
+    send(follow, {
+      type: 'watchCheckoutFiles',
+      requestId: `files-${++follow.requestSequence}`,
+      ...(stop ? { stop: true as const } : {}),
+    })
+  }
+
   function dispatch(follow: Follow, command: PendingCommand): void {
     if (!follow.synchronized) return
     command.sent = send(follow, command.frame)
@@ -1140,6 +1198,7 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
           subagents: null,
           changesReaders: 0,
           changes: null,
+          checkoutFilesReaders: 0,
         }
         created.loaded = options.cache.load(key).then(
           (record) => {
@@ -1391,6 +1450,52 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
       return read
         ? { ok: true, ...read }
         : { ok: false, code: 'unavailable', message: 'That machine answered with a file this build cannot read.' }
+    },
+
+    watchCheckoutFiles(key, watching) {
+      const follow = follows.get(followIdOf(key))
+      if (!follow || follow.released)
+        return { ok: false, code: 'not_following', message: 'Open this conversation before showing its files.' }
+      const before = follow.checkoutFilesReaders
+      follow.checkoutFilesReaders = Math.max(0, before + (watching ? 1 : -1))
+      if (before === 0 && follow.checkoutFilesReaders > 0) watchCheckoutFiles(follow)
+      else if (before > 0 && follow.checkoutFilesReaders === 0) watchCheckoutFiles(follow, true)
+      return { ok: true }
+    },
+
+    async checkoutFolder(key, path) {
+      const answer = await request(key, (requestId) => ({ type: 'listCheckoutFolder', requestId, path }))
+      if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
+      const read = parseConversationCheckoutFolder(answer.data)
+      return read
+        ? { ok: true, ...read }
+        : { ok: false, code: 'unavailable', message: 'That machine answered with a folder this build cannot read.' }
+    },
+
+    async checkoutFile(key, path) {
+      const answer = await request(key, (requestId) => ({ type: 'readCheckoutFile', requestId, path }))
+      if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
+      const read = parseConversationCheckoutFile(answer.data)
+      return read
+        ? { ok: true, file: read }
+        : { ok: false, code: 'unavailable', message: 'That machine answered with a file this build cannot read.' }
+    },
+
+    async changeCheckoutFile(key, change) {
+      const answer = await request(key, (requestId) => ({ type: 'changeCheckoutFile', requestId, change }))
+      if (!answer.ok)
+        return {
+          ok: false,
+          code: answer.code,
+          message:
+            answer.code === 'conversation_operate_required'
+              ? 'This pairing may read that machine’s files but not change them.'
+              : answer.message,
+        }
+      const read = parseConversationCheckoutChangeAnswer(answer.data)
+      return read
+        ? { ok: true, path: read.path }
+        : { ok: false, code: 'unavailable', message: 'That machine answered in a way this build cannot read.' }
     },
 
     onWake() {

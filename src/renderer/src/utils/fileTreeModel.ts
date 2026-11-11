@@ -3,6 +3,7 @@ import { normalizePathKey } from '../hooks/useGitStatus'
 import { isWatchEventIgnored, watchEventPaths } from '../../../shared/file-watch-event'
 import type { FileWatchEvent } from '../../../shared/ipc/filesystem'
 import { isPathOrChild } from './paths'
+import { checkoutFs } from './checkoutFs'
 import {
   isIgnoredTreeWatchPath,
   joinTreePath,
@@ -43,7 +44,8 @@ export type FileTreeSnapshot = {
 }
 
 export type FileTreeModelApi = {
-  readdir: (path: string) => Promise<{ name: string; isDir: boolean }[]>
+  /** `ignored` where the listing already knows git ignores an entry (a paired machine's folder says so itself). */
+  readdir: (path: string) => Promise<{ name: string; isDir: boolean; ignored?: boolean }[]>
   watchPath: (path: string, cb: (event: FileWatchEvent) => void) => Promise<() => Promise<void>>
   checkIgnored?: (repoRoot: string, relativePaths: string[]) => Promise<string[]>
 }
@@ -152,6 +154,8 @@ function createFileTreeModel(rootPath: string, api: FileTreeModelApi): Holder {
   let disposed = false
 
   let repoRoot: string | null = null
+  // What listings said git ignores, kept through a re-check, which asks git only of the rest.
+  const listedIgnored = new Set<string>()
   let ignoreGeneration = 0
   const checkedDirectories = new Set<string>()
 
@@ -250,6 +254,17 @@ function createFileTreeModel(rootPath: string, api: FileTreeModelApi): Holder {
       const entries = toTreeEntries(raw, dirPath)
       if (!disposed && startedGeneration === generationOf(dirPath)) {
         store(dirPath, entries)
+        // A listing that says what git ignores is taken at its word.
+        const said = raw.filter((entry) => entry.ignored)
+        if (said.length > 0) {
+          const next = new Set(snapshot.ignoredKeys)
+          for (const entry of said) {
+            const key = normalizePathKey(joinTreePath(dirPath, entry.name))
+            listedIgnored.add(key)
+            next.add(key)
+          }
+          setSnapshot({ ignoredKeys: next })
+        }
         checkIgnoredDirectory(dirPath, entries)
       }
       return entries
@@ -379,7 +394,7 @@ function createFileTreeModel(rootPath: string, api: FileTreeModelApi): Holder {
   const recheckIgnored = () => {
     ignoreGeneration += 1
     checkedDirectories.clear()
-    if (snapshot.ignoredKeys.size > 0) setSnapshot({ ignoredKeys: new Set() })
+    if (snapshot.ignoredKeys.size > listedIgnored.size) setSnapshot({ ignoredKeys: new Set(listedIgnored) })
     if (snapshot.rootEntries) checkIgnoredDirectory(rootPath, snapshot.rootEntries)
     for (const [dirPath, entries] of Object.entries(snapshot.childrenByPath)) checkIgnoredDirectory(dirPath, entries)
   }
@@ -438,7 +453,8 @@ function createFileTreeModel(rootPath: string, api: FileTreeModelApi): Holder {
  */
 export function acquireFileTreeModel(
   rootPath: string,
-  api: FileTreeModelApi = window.api,
+  // Wherever the root is: this disk, or a paired machine's chat folder.
+  api: FileTreeModelApi = checkoutFs,
 ): { model: FileTreeModel; release: () => void } {
   const key = modelKey(rootPath)
   let holder = registry.get(key)

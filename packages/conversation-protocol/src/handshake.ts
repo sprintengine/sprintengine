@@ -101,6 +101,16 @@ export const CONVERSATION_SUBAGENTS_CAPABILITY = 'conversation-subagents' as con
  */
 export const CONVERSATION_CHANGES_CAPABILITY = 'conversation-changes' as const
 /**
+ * A chat's files may be read and changed where it is followed, as the
+ * desktop's own Files tab and editor do for the folder the chat works in
+ * (checkoutFiles.ts): `listCheckoutFolder` lists a folder, `readCheckoutFile`
+ * reads a file, `watchCheckoutFiles` has the desktop say in `checkoutFiles`
+ * frames when anything there moved, and `changeCheckoutFile` saves, makes,
+ * renames or deletes one, on `conversation:operate`. Every path is relative to
+ * that folder and kept inside it.
+ */
+export const CONVERSATION_CHECKOUT_FILES_CAPABILITY = 'conversation-checkout-files' as const
+/**
  * A chat may be handed off to a fresh session instead of compacted, as its
  * Handoff does on the desktop: `handoff` writes the chat's messages to a file
  * there and lets the provider session go, and the next message starts a new
@@ -315,6 +325,7 @@ export const CONVERSATION_CAPABILITIES = [
   CONVERSATION_QUOTE_TOKENS_CAPABILITY,
   CONVERSATION_SUBAGENTS_CAPABILITY,
   CONVERSATION_CHANGES_CAPABILITY,
+  CONVERSATION_CHECKOUT_FILES_CAPABILITY,
 ] as const
 
 export type ConversationCapability = (typeof CONVERSATION_CAPABILITIES)[number]

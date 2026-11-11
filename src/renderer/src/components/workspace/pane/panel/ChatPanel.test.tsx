@@ -122,12 +122,13 @@ test('on a paired machine what this computer cannot open says so, and nothing of
 
 // A chat on a paired machine as its pane publishes it here, with whether that
 // machine reads the chat's changes for this window (`conversation-changes`).
-function publishPaired(hostChanges: boolean) {
+function publishPaired(hostChanges: boolean, hostFiles = false) {
   return publishRemoteChat(WS, {
     agentId: AGENT,
     key: { connectionId: 'connection-1', workspaceId: 'far-workspace', agentId: AGENT },
     machineName: 'mac-mini',
     hostChanges,
+    hostFiles,
     transport: {} as ConversationTransport,
     binding: {} as ChatBinding,
     subagents: [],
@@ -155,6 +156,25 @@ test('on a paired machine that reads them, Changes opens the chat’s changes fr
     expect(tabs.map((tab) => [tab.kind, tab.diff?.paired])).toEqual([
       ['diff', { connectionId: 'connection-1', workspaceId: 'far-workspace', agentId: AGENT, machineName: 'mac-mini' }],
     ])
+  } finally {
+    act(() => take())
+  }
+})
+
+test('on a paired machine that shows them, Files opens the chat’s folder from there', () => {
+  seed()
+  const take = publishPaired(false, true)
+  try {
+    render()
+    act(() =>
+      publishChatPanelFacts(WS, AGENT, panelFacts({ remote: true, machine: { name: 'mac-mini', identity: MACHINE } })),
+    )
+    expect(row('Files')?.getAttribute('data-panel-row')).toBe('action')
+    expect(row('Files')?.textContent).toContain('On mac-mini')
+    expect(row('Terminal')?.getAttribute('data-panel-row'), 'Terminal stays on the machine').toBe('fact')
+    act(() => row('Files')!.click())
+    const tabs = useWorkspaceStore.getState().workspaces[0]!.paneState?.tabs ?? []
+    expect(tabs.map((tab) => tab.kind)).toEqual(['files'])
   } finally {
     act(() => take())
   }

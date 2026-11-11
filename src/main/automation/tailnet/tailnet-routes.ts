@@ -349,6 +349,16 @@ export const TAILNET_CAPABILITIES = [
   // A client keeps the read-only count for a machine without it.
   // CONVERSATION_CHANGES_CAPABILITY.
   'conversation-changes',
+  // A chat's files read and changed from a paired machine (2026-11-11), as
+  // this machine's own Files tab and editor do for the folder the chat works
+  // in: `listCheckoutFolder`, `readCheckoutFile`, `watchCheckoutFiles` (told
+  // in `checkoutFiles` frames when anything there moves) and
+  // `changeCheckoutFile` (a save, a new file or folder, a rename or move, a
+  // delete to the Trash), the last on `conversation:operate`. Every path is
+  // relative to the chat's folder and kept inside it, links included. A
+  // client says a machine without it cannot show its files yet.
+  // CONVERSATION_CHECKOUT_FILES_CAPABILITY.
+  'conversation-checkout-files',
   // A phone's New chat as this machine's own (2026-10-05). They name gateway
   // tools' arguments and answers, not the conversation lane, so they carry no
   // `conversation-` prefix and are not the protocol package's to list:

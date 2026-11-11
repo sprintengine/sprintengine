@@ -690,8 +690,9 @@ export function createRemoteConversationTransport(input: {
         else if (frame.type === 'scheduled') input.onScheduled?.(frame.messages)
         else if (frame.type === 'usageLimits') input.onUsageLimits?.(frame)
         else if (frame.type === 'subagents') input.onSubagents?.(frame.subagents)
-        // A chat's changes are read by the Diff tab, which follows for itself.
-        else if (frame.type === 'changes') return
+        // A chat's changes are read by the Diff tab, and its files by the
+        // Files tab, each of which follows for itself.
+        else if (frame.type === 'changes' || frame.type === 'checkoutFiles') return
         else cb(frame)
       }),
     loadEarlier: (page) =>

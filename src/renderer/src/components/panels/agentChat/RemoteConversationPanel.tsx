@@ -280,6 +280,8 @@ export default function RemoteConversationPanel({
   const [quotes, setQuotes] = useState(false)
   // The machine reads the chat's changes for this window's Diff tab.
   const [hostChanges, setHostChanges] = useState(false)
+  // And shows the chat's folder in this window's Files tab.
+  const [hostFiles, setHostFiles] = useState(false)
   const [sendSkills, setSendSkills] = useState(false)
   // The machine opens a pull request for one of its chats (Create PR).
   const [hostPullRequests, setHostPullRequests] = useState(false)
@@ -513,6 +515,7 @@ export default function RemoteConversationPanel({
         setPermanentApprovals(result.permanentApprovals === true)
         setQuotes(result.quotes === true)
         setHostChanges(result.changes === true)
+        setHostFiles(result.checkoutFiles === true)
         setSendSkills(result.sendSkills === true)
         setHostPullRequests(result.createPullRequest === true)
         setSteerSends(result.steerSends === true)
@@ -693,6 +696,7 @@ export default function RemoteConversationPanel({
         key,
         machineName,
         hostChanges,
+        hostFiles,
         transport,
         binding,
         subagents: hostSubagents,
@@ -705,6 +709,7 @@ export default function RemoteConversationPanel({
       key,
       machineName,
       hostChanges,
+      hostFiles,
       transport,
       binding,
       hostSubagents,

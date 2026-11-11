@@ -45,6 +45,7 @@ import { attachmentImagesRoot } from '../../main/attachment-image-file'
 import { createConversationLaunchService } from '../../main/conversation-launch-service'
 import { createSubagentLifecycle, subagentChangesOf } from '../../main/subagent-lifecycle'
 import { createConversationCheckoutChanges } from '../../main/conversation-checkout-changes'
+import { createConversationCheckoutFiles } from '../../main/conversation-checkout-files'
 import { createConversationImportService } from '../../main/conversation-import/conversation-import-service'
 import { createConversationModelCatalog } from '../../main/conversation-model-catalog'
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
@@ -188,6 +189,12 @@ export type StudioCoreOptions = {
    * their prompts. Given, a workspace recorded on one runs its chats there.
    * In process only: out of process, main's sessions are not this core's.
    */
+  /**
+   * Moves a file or folder to this computer's Trash, where the process has a
+   * desktop that owns one. A paired machine's Files tab deletes through it;
+   * absent (a server on its own), such a delete is refused in words.
+   */
+  trashItem?: (path: string) => Promise<void>
   sshServers?: {
     servers: SshRoutedServers
     onConnected(listener: (connection: SshRoutedConnection) => void): void
@@ -985,6 +992,16 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
             if (!record || record.environment) return null
             return conversationWorkingRoot(record.agents[agentId], record.folderPath)
           },
+        }),
+        // A paired machine's Files tab for a chat here: the chat's own folder,
+        // and only a folder on this computer, as its changes are.
+        checkoutFiles: createConversationCheckoutFiles({
+          checkoutOf: ({ workspaceId, agentId }) => {
+            const record = workspaceRegistry.getRecord(workspaceId)
+            if (!record || record.environment) return null
+            return conversationWorkingRoot(record.agents[agentId], record.folderPath)
+          },
+          trashItem: options.trashItem,
         }),
       },
     )

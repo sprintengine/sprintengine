@@ -819,6 +819,34 @@ stays the read-only count it was. A desktop sends `changes` frames only to a
 client that asked, so a phone, which does not, sees exactly what it saw. The
 Studio RPC does not advertise it: its conversation topic carries no `changes`
 frames.
+A chat's files are the `conversation-checkout-files` capability (2026-11-11):
+what the desktop's own Files tab and editor show of the folder the chat works
+in there (its worktree when it has one). `listCheckoutFolder` names a folder by
+its path relative to that folder (`''` for the folder itself) and is answered
+with its entries, each a `file` or a `folder` and `ignored` where git ignores
+it, at most `CONVERSATION_MAX_CHECKOUT_ENTRIES`, and the folder's own name and
+path there, for words. `readCheckoutFile` is answered with the file's text, or
+`too-large` past `CONVERSATION_MAX_CHECKOUT_FILE_BYTES`, or `binary`.
+`{ type: 'watchCheckoutFiles', requestId }` has the desktop send
+`checkoutFiles` frames, the `paths` that moved or null for "read again what
+you hold", until `stop: true`, another `subscribe`, or the socket closing; a
+client reads again what it holds after each fence too, since what moved while
+the link was down is unknown. `changeCheckoutFile` makes one change, a `write`
+of a file's whole text (the frame's own cap binds first, and a client says a
+file too large to save from there in words), a `createFile` or
+`createFolder`, a `rename` (a move within the folder) or a `delete`, which goes
+to the desktop's Trash and is refused in words by a Studio that runs without a
+desktop. A change needs `conversation:operate` and is refused under its id as
+`conversation_operate_required` without it; the rest is `conversation:read`.
+Every path is relative, with no `.` or `..` segment, and the desktop keeps every
+read and write inside the chat's folder, a link that leads out of it included:
+such a link is listed as a file that cannot be opened. It is additive: a
+desktop without it refuses each request `invalid_frame` under its id, and a
+client asks only where it is advertised, saying in the Files tab that the
+machine needs updating. A desktop sends `checkoutFiles` frames only to a client
+that asked, so a phone, which does not, sees exactly what it saw. The Studio
+RPC does not advertise it: its conversation topic carries no `checkoutFiles`
+frames, and a client there reads a project's files through `files.*`.
 A `send` may say when it was written, `composedAt` (epoch ms, the client's
 clock), and that the person confirmed one written long ago, `confirmedStale`
 (2026-10-20). A desktop that reads them records `composedAt` on the

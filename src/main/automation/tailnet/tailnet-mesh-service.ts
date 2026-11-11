@@ -79,6 +79,11 @@ import { parseImageAttachments } from '../../conversation-ipc-inputs'
 import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   isConversationChangedPath,
+  isConversationCheckoutPath,
+  type ConversationCheckoutChangeResult,
+  type ConversationCheckoutFileResult,
+  type ConversationCheckoutFolderResult,
+  parseConversationClientMessage,
   isConversationHighlightColor,
   parseConversationChangesSelection,
 } from '../../../../packages/conversation-protocol/src/public'
@@ -552,6 +557,19 @@ export type TailnetMeshService = {
   conversationChangesDiff(input: { key: unknown; selection: unknown }): Promise<MeshChangesDiffResult>
   conversationChangedFile(input: { key: unknown; selection: unknown; path: unknown }): Promise<MeshChangedFileResult>
   /**
+   * A followed chat's files, read and changed on its machine as that
+   * machine's Files tab does (`conversation-checkout-files`): one more or one
+   * fewer window showing them, one folder, one file, and one change. Refused
+   * in words, without asking, for a machine that does not advertise it.
+   */
+  conversationWatchCheckoutFiles(input: {
+    key: unknown
+    watching: unknown
+  }): Promise<{ ok: true } | { ok: false; code: string; message: string }>
+  conversationCheckoutFolder(input: { key: unknown; path: unknown }): Promise<ConversationCheckoutFolderResult>
+  conversationCheckoutFile(input: { key: unknown; path: unknown }): Promise<ConversationCheckoutFileResult>
+  conversationChangeCheckoutFile(input: { key: unknown; change: unknown }): Promise<ConversationCheckoutChangeResult>
+  /**
    * A side question asked of a followed conversation's agent over there, and
    * calling one off. Refused in words, without asking, for a machine that does
    * not advertise `conversation-side-questions`.
@@ -751,6 +769,24 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       ok: false,
       code: 'unsupported',
       message: `${connection.machineName} cannot show a chat’s changes here yet. Update SprintEngine Studio there.`,
+    }
+  }
+
+  /**
+   * A machine that does not show a chat's files is told so in words, without
+   * a trip to the chat (`conversation-checkout-files`), as a Files tab
+   * restored before its chat is listed would otherwise wait on it.
+   */
+  async function checkoutFilesRefusal(
+    connectionId: string,
+  ): Promise<{ ok: false; code: string; message: string } | null> {
+    const connection = connectionFor(connectionId)
+    if (!connection) return null
+    if (tailnetPeerSupports(await knownCapabilities(connection), 'conversation-checkout-files')) return null
+    return {
+      ok: false,
+      code: 'unsupported',
+      message: `${connection.machineName} cannot show a chat’s files here yet. Update SprintEngine Studio there.`,
     }
   }
 
@@ -2722,6 +2758,8 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
           quotes: tailnetPeerSupports(identity.value.capabilities, 'conversation-quote-tokens'),
           // A chat's Changes opens its changes here, read from its checkout there.
           changes: tailnetPeerSupports(identity.value.capabilities, 'conversation-changes'),
+          // A chat's Files tab lists, reads and changes its folder there.
+          checkoutFiles: tailnetPeerSupports(identity.value.capabilities, 'conversation-checkout-files'),
           createPullRequest: tailnetPeerSupports(identity.value.capabilities, 'chat-create-pull-request'),
           rowMenu: tailnetPeerSupports(identity.value.capabilities, 'chat-row-menu'),
           markUnread: tailnetPeerSupports(identity.value.capabilities, 'chat-mark-unread'),
@@ -3574,6 +3612,42 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       if (!key || !selection || !isConversationChangedPath(input.path))
         return { ok: false, code: 'invalid_arguments', message: 'Name the conversation, the step and the file.' }
       return (await changesRefusal(key.connectionId)) ?? remoteConversations.changedFile(key, selection, input.path)
+    },
+
+    async conversationWatchCheckoutFiles(input) {
+      const key = meshConversationKeyOf(input.key)
+      if (!key || typeof input.watching !== 'boolean')
+        return { ok: false, code: 'invalid_arguments', message: 'Name the conversation.' }
+      // Stopping is never refused: it only lets go of what was asked.
+      const refused = input.watching ? await checkoutFilesRefusal(key.connectionId) : null
+      return refused ?? remoteConversations.watchCheckoutFiles(key, input.watching)
+    },
+
+    async conversationCheckoutFolder(input): Promise<ConversationCheckoutFolderResult> {
+      const key = meshConversationKeyOf(input.key)
+      if (!key || !isConversationCheckoutPath(input.path))
+        return { ok: false, code: 'invalid_arguments', message: 'Name the conversation and a folder in it.' }
+      return (await checkoutFilesRefusal(key.connectionId)) ?? remoteConversations.checkoutFolder(key, input.path)
+    },
+
+    async conversationCheckoutFile(input): Promise<ConversationCheckoutFileResult> {
+      const key = meshConversationKeyOf(input.key)
+      if (!key || !isConversationCheckoutPath(input.path) || input.path === '')
+        return { ok: false, code: 'invalid_arguments', message: 'Name the conversation and a file in it.' }
+      return (await checkoutFilesRefusal(key.connectionId)) ?? remoteConversations.checkoutFile(key, input.path)
+    },
+
+    async conversationChangeCheckoutFile(input): Promise<ConversationCheckoutChangeResult> {
+      const key = meshConversationKeyOf(input.key)
+      // The change is read by the lane's own validator, so nothing it would refuse is sent.
+      const frame = parseConversationClientMessage({
+        type: 'changeCheckoutFile',
+        requestId: 'check',
+        change: input.change,
+      })
+      if (!key || frame?.type !== 'changeCheckoutFile')
+        return { ok: false, code: 'invalid_arguments', message: 'Name the conversation and the change.' }
+      return (await checkoutFilesRefusal(key.connectionId)) ?? remoteConversations.changeCheckoutFile(key, frame.change)
     },
 
     async conversationContextBreakdown(input): Promise<ConversationContextBreakdownResult> {

@@ -35,6 +35,14 @@ import {
   type ConversationChangesDiffRequest,
   type ConversationWatchChangesRequest,
 } from './checkoutChanges.js'
+import {
+  isConversationCheckoutFilesRequestType,
+  parseConversationCheckoutFilesRequest,
+  type ConversationChangeCheckoutFileRequest,
+  type ConversationListCheckoutFolderRequest,
+  type ConversationReadCheckoutFileRequest,
+  type ConversationWatchCheckoutFilesRequest,
+} from './checkoutFiles.js'
 
 // The server half of the full contract: what a desktop accepts from a client.
 // `parseConversationClientFrame` (index.ts) is the lane as it first shipped
@@ -57,6 +65,10 @@ export type ConversationClientMessage =
   | ConversationWatchChangesRequest
   | ConversationChangesDiffRequest
   | ConversationChangedFileRequest
+  | ConversationListCheckoutFolderRequest
+  | ConversationReadCheckoutFileRequest
+  | ConversationWatchCheckoutFilesRequest
+  | ConversationChangeCheckoutFileRequest
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -132,6 +144,8 @@ export function parseConversationClientMessage(value: unknown): ConversationClie
   // A chat's changes, read as the desktop's Diff tab reads them (checkoutChanges.ts).
   if (value.type === 'watchChanges' || value.type === 'getChangesDiff' || value.type === 'getChangedFile')
     return parseConversationChangesRequest(value)
+  // A chat's files, read and changed as the desktop's Files tab does (checkoutFiles.ts).
+  if (isConversationCheckoutFilesRequestType(value.type)) return parseConversationCheckoutFilesRequest(value)
   if (value.type === 'command' && record(value.command)) {
     const command = value.command
     // When the message was written, and whether the person confirmed one
