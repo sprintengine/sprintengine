@@ -188,3 +188,22 @@ test('ArrowDown with nothing on screen still highlights the first row to arrive'
   expect(options()).toHaveLength(2)
   expect(highlighted()[0]?.textContent).toContain('first.ts')
 })
+
+test('arrowing back to the first row of a group brings its name into view too', async () => {
+  await render()
+  searchFiles.mockResolvedValueOnce(files(Array.from({ length: 6 }, (_, index) => `row-${index}.ts`)))
+  await type('r')
+  await settle()
+  await key('ArrowDown', 3)
+  const scrolled = vi.mocked(HTMLElement.prototype.scrollIntoView)
+  scrolled.mockClear()
+  await key('ArrowUp', 3)
+  const first = options()[0]!
+  const heading = first.closest('[role="group"]')!.firstElementChild
+  expect(highlighted()).toEqual([first])
+  expect(scrolled.mock.contexts).toContain(heading)
+  // A row further down the group scrolls only itself into view.
+  scrolled.mockClear()
+  await key('ArrowDown')
+  expect(scrolled.mock.contexts).toEqual([options()[1]])
+})

@@ -187,9 +187,12 @@ function stripTrailing(value: string): string {
   return value.slice(0, end)
 }
 
-function parsePosition(value: string): { value: string; line?: number; col?: number } {
-  const hash = /#L(\d+)(?:C(\d+)|-L\d+)?$/u.exec(value)
-  const colon = hash ? null : /:(\d+)(?::(\d+))?$/u.exec(value)
+// Agents cite a span of lines as often as one line: `routes.ts:42-64`, or
+// `#L42-L64` the way a code host links it. A span opens at its first line;
+// the editor has no selection to carry the rest in.
+function parsePosition(value: string): { value: string; line?: number; col?: number; range?: boolean } {
+  const hash = /#L(\d+)(?:C(\d+))?(-L\d+(?:C\d+)?)?$/u.exec(value)
+  const colon = hash ? null : /:(\d+)(?::(\d+))?(-\d+(?::\d+)?)?$/u.exec(value)
   const match = hash ?? colon
   if (!match) return { value }
   const line = Number(match[1])
@@ -197,7 +200,7 @@ function parsePosition(value: string): { value: string; line?: number; col?: num
   if (!Number.isSafeInteger(line) || line < 1 || (col !== undefined && (!Number.isSafeInteger(col) || col < 1))) {
     return { value }
   }
-  return { value: value.slice(0, match.index), line, col }
+  return { value: value.slice(0, match.index), line, col, ...(match[3] ? { range: true } : {}) }
 }
 
 function knownFileName(value: string): boolean {
@@ -237,7 +240,11 @@ export function classifyLinkToken(token: string, ctx: LinkTokenContext): LinkTok
     if (
       scheme &&
       !(/^[a-z]$/iu.test(scheme) && /^[a-z]:[\\/]/iu.test(cleaned)) &&
-      !(/^\d+(?::\d+)?$/u.test(cleaned.slice(scheme.length + 1)) && scheme !== 'http' && scheme !== 'https')
+      !(
+        /^\d+(?::\d+)?(?:-\d+(?::\d+)?)?$/u.test(cleaned.slice(scheme.length + 1)) &&
+        scheme !== 'http' &&
+        scheme !== 'https'
+      )
     ) {
       if (scheme === 'http' || scheme === 'https' || scheme === 'mailto') return { type: 'url', href: cleaned }
       if (scheme !== 'file') return null
@@ -275,6 +282,9 @@ export function classifyLinkToken(token: string, ctx: LinkTokenContext): LinkTok
     // `localhost:3000` and `127.0.0.1:8080` are a host and a port, not a file
     // and a line, even though they share the shape.
     if (position.line !== undefined && !knownFileName(value) && hostWithPort(value)) return null
+    // A bare `name:3000-3010` is far likelier a port range than a span of a
+    // file, so a span needs a name that reads as a file.
+    if (position.range && !knownFileName(value)) return null
     return (knownFileName(value) && (value.includes('.') || position.line !== undefined)) || position.line !== undefined
       ? file()
       : null

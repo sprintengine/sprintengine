@@ -892,6 +892,7 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
       headSha: read.headSha,
       autoMerge: read.autoMerge,
       checksGreen: outcome.checksGreen,
+      reviewDecision: read.reviewDecision,
       news: outcome.news,
       stop: outcome.stop,
     })

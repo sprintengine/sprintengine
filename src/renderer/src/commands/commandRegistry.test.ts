@@ -191,6 +191,14 @@ test('the settle chord ships free of conflicts and reaches the chat from its com
   assert.deepEqual(findKeybindingConflicts(settle!, COMMAND_REGISTRY), [])
 })
 
+test('regenerating a chat title is bindable but ships with no chord', () => {
+  const regenerate = getCommandDefinition('chat.regenerateTitle')
+  assert.deepEqual(regenerate?.defaultKeybindings, [])
+  assert.deepEqual(regenerate?.availability, ['activeWorkspace'])
+  assert.deepEqual(regenerate?.scopes, ['workspace'])
+  assert.equal(regenerate?.allowInEditableTarget, true)
+})
+
 test('Find in chat shares ⌘F with Find in terminal without a blocking conflict', () => {
   const chat = getCommandDefinition('chat.find')
   const terminal = getCommandDefinition('terminal.find')

@@ -1427,9 +1427,17 @@ export default function CommandPalette({
   const highlighted = clampPaletteSelection(selected, visible.length)
   if (highlighted !== selected) setSelected(highlighted)
 
-  // Keep the highlighted row in view as the selection moves by keyboard.
+  // Keep the highlighted row in view as the selection moves by keyboard. The
+  // first row of a group brings its group's name with it: arrowing back up to
+  // it otherwise stops just short, with the name left under the list's top
+  // fade, and at the first result the list is scrolled all the way back.
   useEffect(() => {
-    selectedRowRef.current?.scrollIntoView({ block: 'nearest' })
+    const row = selectedRowRef.current
+    if (!row) return
+    row.scrollIntoView({ block: 'nearest' })
+    const group = row.closest('[role="group"]')
+    if (group?.querySelector('[role="option"]') === row)
+      (group.firstElementChild as HTMLElement | null)?.scrollIntoView({ block: 'nearest' })
   }, [highlighted])
 
   const handleKey = (event: React.KeyboardEvent) => {

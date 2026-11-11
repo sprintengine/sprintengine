@@ -499,6 +499,36 @@ test('approval with green checks is said as ready, with the merge step the repos
   assert.match(byHand, /was approved by acme-owner and all checks passed\. Merge it the way the project's rules ask/)
 })
 
+test('one approval is not ready while GitHub still requires review', () => {
+  const approved = {
+    kind: 'remark' as const,
+    author: 'acme-owner',
+    verdict: 'approved' as const,
+    body: '',
+    url: null,
+    edited: false,
+  }
+  const owed = composePullRequestWake([
+    wake({
+      reviewDecision: 'review-required',
+      news: [{ kind: 'checks-passed', count: 5, required: true }, approved],
+    }),
+  ])
+  assert.doesNotMatch(owed, /Merge it|Auto-merge is on/)
+  assert.match(
+    owed,
+    /was approved by acme-owner\. GitHub still requires more review before it can merge, so do not merge it yet/,
+  )
+  assert.match(owed, /All 5 required checks passed/)
+  // GitHub's own approval, or no verdict at all on a branch that requires no
+  // review, is ready as before.
+  for (const reviewDecision of ['approved', null] as const)
+    assert.match(
+      composePullRequestWake([wake({ reviewDecision, checksGreen: true, news: [approved] })]),
+      /was approved by acme-owner and all checks passed\. Merge it/,
+    )
+})
+
 test('several pieces of news are a list, comments quoted as data and stripped of what could close the quote', () => {
   const text = composePullRequestWake([
     wake({
