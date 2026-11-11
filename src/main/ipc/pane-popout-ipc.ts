@@ -8,7 +8,12 @@ import type { WindowBounds } from '../../shared/ipc/window'
 // what an IPC event names as its sender, and what the broker compares.
 
 type RegisterPanePopOutIpcOptions = {
-  openWindow(input: { popOutId: string; workspaceId: string; bounds: WindowBounds | null }): BrowserWindow
+  openWindow(input: {
+    popOutId: string
+    workspaceId: string
+    bounds: WindowBounds | null
+    focus?: boolean
+  }): BrowserWindow
   /** Only a workspace window has a pane to pop out of. */
   isWorkspaceWindow(contents: WebContents): boolean
   /** The window a WebContents belongs to, for bringing the owner forward. */

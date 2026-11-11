@@ -438,3 +438,72 @@ test('a popped-out tab asked for from elsewhere comes forward in its window, and
   act(() => showPaneTab(WS, 'files'))
   assert.equal((await pane())?.open, true)
 })
+
+// A Diff tab is shown in a window of its own and nowhere else (diffShowsInWindow).
+test('a diff opens in a window of its own, and the pane is left as it was', async () => {
+  await seed(structuredClone(TABS))
+  await mountHost(new Set([WS, OTHER]))
+  const { openDiffTab } = await import('./panePopOutHost')
+  let tabId: string | null = null
+  await act(async () => {
+    tabId = openDiffTab(WS, { diff: { repoRoot: '/repo', focusPath: '/repo/a.ts', focusKind: 'unstaged' } })
+    await Promise.resolve()
+  })
+  assert.equal(opened.length, 1, 'one window opened')
+  const after = await pane()
+  const diff = after?.tabs.find((tab) => tab.id === tabId)
+  assert.equal(diff?.poppedOut, opened[0].popOutId, 'the tab is out in that window')
+  assert.equal(after?.activeTabId, 'files', 'the pane keeps the tab it had in front')
+  assert.equal(after?.open, true)
+
+  // A second diff retargets the same tab, in the same window, and raises it.
+  await act(async () => {
+    openDiffTab(WS, { diff: { repoRoot: '/repo', focusPath: '/repo/b.ts', focusKind: 'staged' } })
+    await Promise.resolve()
+  })
+  assert.equal(opened.length, 1, 'no second window')
+  assert.deepEqual(focused, [opened[0].popOutId])
+  const last = pushes.filter((push) => push.popOutId === opened[0].popOutId).at(-1)
+  assert.equal(last?.state.tabs[0]?.diff?.focusPath, '/repo/b.ts')
+})
+
+test("an agent's reveal opens the diff window without the keyboard; a background one opens none", async () => {
+  await seed(structuredClone(TABS))
+  await mountHost(new Set([WS, OTHER]))
+  const { openDiffTab } = await import('./panePopOutHost')
+  await act(async () => {
+    openDiffTab(WS, { activate: false })
+    await Promise.resolve()
+  })
+  assert.equal(opened.length, 0, 'a background reveal only writes the tab')
+  assert.equal((await pane())?.activeTabId, 'files')
+  await act(async () => {
+    openDiffTab(WS, { focus: false })
+    await Promise.resolve()
+  })
+  assert.equal(opened.length, 1)
+  assert.equal((opened[0] as { focus?: boolean }).focus, false)
+})
+
+test('closing the diff window closes the Diff tab; the window cannot send it to the pane', async () => {
+  await seed(structuredClone(TABS))
+  await mountHost(new Set([WS, OTHER]))
+  const { openDiffTab } = await import('./panePopOutHost')
+  let tabId: string | null = null
+  await act(async () => {
+    tabId = openDiffTab(WS)
+    await Promise.resolve()
+  })
+  const popOutId = opened[0].popOutId
+  send(popOutId, { type: 'dock', tabIds: [tabId!] })
+  assert.equal((await pane())?.tabs.find((tab) => tab.id === tabId)?.poppedOut, popOutId, 'it stays in its window')
+
+  act(() => closedListener?.({ popOutId }))
+  const after = await pane()
+  assert.equal(
+    after?.tabs.some((tab) => tab.kind === 'diff'),
+    false,
+    'closed with its window, not docked',
+  )
+  assert.equal(after?.activeTabId, 'files')
+})

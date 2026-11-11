@@ -1,4 +1,4 @@
-import { useWorkspaceStore } from '../../../store/workspaceStore'
+import { openDiffTab } from '../../workspace/pane/popout/panePopOutHost'
 import { readRemoteChat, useRemoteChat, type RemoteChatEntry } from './remoteChatRegistry'
 
 // Changes, for a chat on a paired machine: its changes are that machine's
@@ -23,8 +23,7 @@ export function usePairedChanges(workspaceId: string, agentId: string | null): R
 export function openPairedChanges(workspaceId: string, agentId: string): boolean {
   const entry = pairedEntry(readRemoteChat(workspaceId, agentId), agentId)
   if (!entry) return false
-  useWorkspaceStore.getState().openPaneTab(workspaceId, {
-    kind: 'diff',
+  openDiffTab(workspaceId, {
     diff: {
       focusPath: null,
       focusKind: null,

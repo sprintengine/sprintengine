@@ -140,6 +140,7 @@ import { isHiddenFromRail } from '../../utils/workspaceVisibility'
 import { isSettledWorkspace } from '../../utils/workspaceSettle'
 import { followRestAnswer, restRefusalToast, stillWorkingToast } from './sidebar/restGesture'
 import { PANEL_COMMAND_EVENT } from '../../utils/panelCommands'
+import { openDiffTab } from './pane/popout/panePopOutHost'
 import { chatSettleStep } from './chatSettleCommand'
 import { waitingChatCount, waitingLabel } from './sidebar/projectWaiting'
 import { chatStatusRank, orderByStatus } from './sidebar/statusOrder'
@@ -5011,7 +5012,6 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
     settleWorkspaceById,
     settleOpenedRemote,
     setWorkspaceSettled,
-    openPaneTab,
     setRovingKey,
     handleTreeRowKeyDown,
     handleRowDragStart,
@@ -5860,8 +5860,7 @@ const WorkspaceRow = React.memo(function WorkspaceRow({
             onOpenDiff={
               lineAgentId
                 ? () =>
-                    openPaneTab(workspace.id, {
-                      kind: 'diff',
+                    openDiffTab(workspace.id, {
                       diff: {
                         focusPath: null,
                         focusKind: null,

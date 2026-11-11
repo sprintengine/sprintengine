@@ -6,7 +6,6 @@ import { focusOrAddGitConflictTab, focusOrAddTerminalTab } from '../../utils/mod
 import { isImageFile } from '../../utils/files'
 import { openFileSurface } from '../../utils/openFileSurface'
 import { openGitDiff } from '../../utils/openGitDiff'
-import { openDiffWindow } from '../auxWindows/openDiffWindow'
 import { basename, samePath, trimPath } from '../../utils/paths'
 import { fileExplorerSelectionFromVerticalRange, fileExplorerSelectionRange } from '../../utils/fileExplorerSelection'
 import { findHealthyWorktreeScope, resolveWorkspaceWorktree, workspaceProjectRoot } from '../../utils/workspaceWorktree'
@@ -50,7 +49,7 @@ import {
 import { applyChangelistHunks, changelistHunkTargets } from './git/changelistHunks'
 import { ChangelistDialog, type ChangelistDialogValue } from './git/ChangelistDialog'
 import { GitChangesList } from './git/GitChangesList'
-import { GitChangesToolbar, type ShowDiffPlacement } from './git/GitChangesToolbar'
+import { GitChangesToolbar } from './git/GitChangesToolbar'
 import { useCommitMessageDraft } from './git/commitMessageDraft'
 import { splitMainWorktree } from './git/mainWorktree'
 import {
@@ -2104,38 +2103,22 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
   }
 
   // Activating a changed row shows that file's diff: old content left, new
-  // content right, arrow-key hunk navigation that flows across files. WHERE it
-  // shows is `openGitDiff`'s to decide — the standalone window by default, the
-  // pane's Diff tab once the person has flipped the preference (T3). The scope
-  // picks which diff to show first: a staged row shows HEAD↔index, an unstaged
-  // row index↔worktree. Tab-opening stays available via the row's "Open file in
-  // editor" entry.
+  // content right, arrow-key hunk navigation that flows across files, in the
+  // diff's own window (`openGitDiff`). The scope picks which diff to show
+  // first: a staged row shows HEAD↔index, an unstaged row index↔worktree.
+  // Tab-opening stays available via the row's "Open file in editor" entry.
   //
   // `repoRoot` is THIS panel's repository — the active scope's, resolved by the
   // panel's own status hook — and it travels with the request. The pane used to
   // re-derive one from the workspace, which is a different repository whenever
   // the panel is showing a worktree scope.
-  const openChangeDiff = (row: GitChangeRow, placement: ShowDiffPlacement = 'default') => {
+  const openChangeDiff = (row: GitChangeRow) => {
     if (!repoRoot) return
     // A guest row IS a changelist's view of the file, so the diff it opens is
     // filtered to that list — the same answer the band's "Show diff for <list>"
     // gives, reached from the row instead of from the header.
     const filter = row.partial && row.changelistId ? { changelistId: row.changelistId } : {}
-    const request = { workspaceId, repoRoot, focusPath: row.path, scope: row.diffScope, ...filter }
-    if (placement === 'app') {
-      // The two explicit placements bypass the preference rather than flipping
-      // it: "show it there this once" is not "show it there from now on".
-      useWorkspaceStore.getState().openPaneTab(workspaceId, {
-        kind: 'diff',
-        diff: { repoRoot, focusPath: row.path, focusKind: row.diffScope, ...filter },
-      })
-      return
-    }
-    if (placement === 'window') {
-      void openDiffWindow(request)
-      return
-    }
-    openGitDiff(request)
+    openGitDiff({ workspaceId, repoRoot, focusPath: row.path, scope: row.diffScope, ...filter })
   }
 
   /**
@@ -2146,37 +2129,20 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
    * clicked. An empty list has no diff to show and says so rather than opening
    * a window onto nothing.
    */
-  const openChangelistDiff = (group: GitChangeGroup, placement: ShowDiffPlacement = 'default') => {
+  const openChangelistDiff = (group: GitChangeGroup) => {
     if (!repoRoot || !group.changelistId) return
     const row = group.allRows[0]
     if (!row) {
       setMessage({ tone: 'neutral', text: `${group.title} has no changed files to show.` })
       return
     }
-    const request = {
+    openGitDiff({
       workspaceId,
       repoRoot,
       focusPath: row.path,
       scope: row.diffScope,
       changelistId: group.changelistId,
-    }
-    if (placement === 'app') {
-      useWorkspaceStore.getState().openPaneTab(workspaceId, {
-        kind: 'diff',
-        diff: {
-          repoRoot,
-          focusPath: row.path,
-          focusKind: row.diffScope,
-          changelistId: group.changelistId,
-        },
-      })
-      return
-    }
-    if (placement === 'window') {
-      void openDiffWindow(request)
-      return
-    }
-    openGitDiff(request)
+    })
   }
 
   const handleOpenFileInEditor = async (entry: { path: string; relativePath: string }) => {
@@ -2480,8 +2446,8 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
             onRefresh={() => void refreshAll()}
             onDiscard={() => void handleChangeRowsRevert(changeActionRows(toolbarTargetRow ?? undefined))}
             onStash={() => void handleStashPush()}
-            onShowDiff={(placement) => {
-              if (toolbarTargetRow) openChangeDiff(toolbarTargetRow, placement)
+            onShowDiff={() => {
+              if (toolbarTargetRow) openChangeDiff(toolbarTargetRow)
             }}
             onMoveToChangelist={(changelistId) =>
               void handleMoveToChangelist(changelistId, changeActionRows(toolbarTargetRow ?? undefined))

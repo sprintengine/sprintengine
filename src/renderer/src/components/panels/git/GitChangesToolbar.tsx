@@ -58,11 +58,6 @@ const GROUPING_LABELS: Record<GitChangesGrouping, string> = {
   none: 'None',
 }
 
-/** Where a "show diff" request should land. `default` honours the sticky
- *  preference T3 introduced; the other two are the explicit overrides the menu
- *  corner exists for. */
-export type ShowDiffPlacement = 'default' | 'app' | 'window'
-
 export type GitChangesToolbarProps = {
   busy: boolean
   /** No file is picked: discard, show-diff and move-to-changelist have nothing
@@ -84,7 +79,8 @@ export type GitChangesToolbarProps = {
   onRefresh: () => void
   onDiscard: () => void
   onStash: () => void
-  onShowDiff: (placement: ShowDiffPlacement) => void
+  /** Opens the picked file's diff in the diff window. */
+  onShowDiff: () => void
   onMoveToChangelist: (changelistId: string) => void
   onMoveToNewChangelist: () => void
   onGroupingChange: (grouping: GitChangesGrouping) => void
@@ -112,7 +108,6 @@ export function GitChangesToolbar({
   onExpandAll,
   onCollapseAll,
 }: GitChangesToolbarProps): JSX.Element {
-  const [diffMenu, setDiffMenu] = React.useState<{ x: number; y: number } | null>(null)
   const [moveMenu, setMoveMenu] = React.useState<{ x: number; y: number } | null>(null)
   const [groupMenu, setGroupMenu] = React.useState<{ x: number; y: number } | null>(null)
   const lists = orderedChangelists(changelists)
@@ -201,19 +196,9 @@ export function GitChangesToolbar({
         </Tooltip>
       )}
       <Tooltip content="Show diff" placement="bottom">
-        <ToolbarButton
-          ariaLabel="Show diff"
-          menu
-          expanded={Boolean(diffMenu)}
-          disabled={!hasTarget}
-          onClick={(event) => {
-            // The corner mark says this opens a menu, so it opens a menu — the
-            // plain "Show diff" is its first item rather than a click that does
-            // one thing and a corner that does three.
-            const rect = event.currentTarget.getBoundingClientRect()
-            setDiffMenu({ x: rect.left, y: rect.bottom })
-          }}
-        >
+        {/* A diff has one place to show, its own window, so this is a button
+            and not a menu of destinations. */}
+        <ToolbarButton ariaLabel="Show diff" disabled={!hasTarget} onClick={onShowDiff}>
           <ShowDiffGlyph />
         </ToolbarButton>
       </Tooltip>
@@ -300,40 +285,6 @@ export function GitChangesToolbar({
               {GROUPING_LABELS[option]}
             </MenuItem>
           ))}
-        </ContextMenu>
-      ) : null}
-      {diffMenu ? (
-        <ContextMenu
-          x={diffMenu.x}
-          y={diffMenu.y}
-          ariaLabel="Show diff"
-          onClose={() => setDiffMenu(null)}
-          surfaceClassName="min-w-[200px]"
-        >
-          <MenuItem
-            onClick={() => {
-              setDiffMenu(null)
-              onShowDiff('default')
-            }}
-          >
-            Show diff
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setDiffMenu(null)
-              onShowDiff('app')
-            }}
-          >
-            Show diff in the app
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setDiffMenu(null)
-              onShowDiff('window')
-            }}
-          >
-            Show diff in a window
-          </MenuItem>
         </ContextMenu>
       ) : null}
     </Toolbar>

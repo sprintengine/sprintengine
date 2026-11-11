@@ -219,6 +219,7 @@ import {
 } from './globalSurface/extensions/extensionsSurfaceHost'
 import { isWorkspacePaneFocused, keepFocusOutOfClosedPane } from './pane/paneFocus'
 import { closePaneTabAndItsTerminal } from './pane/paneTerminals'
+import { openDiffTab } from './pane/popout/panePopOutHost'
 import { reopenLastClosedTab } from './manager/reopenClosedTab'
 import { terminateWorkspaceTerminals } from './workspaceTerminalTermination'
 import { clientSupports } from '../../clientCapabilities'
@@ -484,12 +485,9 @@ export default function WorkspaceManager() {
   }, [])
   // The same hand-off for a diff (git-commit-window T3): the diff window's
   // "Show in the app" closes itself and broadcasts this. The window that holds
-  // the workspace opens the pane's Diff tab on the repository the window was
-  // reading — never a root re-derived from the workspace — brings that
-  // workspace forward so the tab is actually on screen, and flips the sticky
-  // preference home. The preference is written HERE rather than in the diff
-  // window because this window's store is the one that owns the settings
-  // envelope; the aux window's copy is as old as the window.
+  // the workspace opens its Diff tab — in that tab's own window — on the
+  // repository the window was reading, never a root re-derived from the
+  // workspace, and brings that workspace forward.
   useEffect(() => {
     if (typeof window.api.onDockDiffToWorkspace !== 'function') return
     return window.api.onDockDiffToWorkspace(
@@ -501,14 +499,12 @@ export default function WorkspaceManager() {
         // holds everything.
         const held = state.workspaceWindows.find((entry) => entry.id === workspaceWindowId)?.workspaceIds
         if (held && !held.includes(workspaceId)) return
-        const opened = state.openPaneTab(workspaceId, {
-          kind: 'diff',
+        const opened = openDiffTab(workspaceId, {
           // The window's changelist filter comes home with it (agent changelists).
           diff: { repoRoot, focusPath, focusKind, ...(changelistId ? { changelistId } : {}) },
         })
         if (!opened) return
         state.setActiveWorkspaceForWindow(workspaceWindowId, workspaceId)
-        state.setDiffOpensInWindow(false)
         // The ack is the last thing, and only on the path that actually opened
         // the tab: it is what lets the diff window close itself, so every early
         // return above has to leave it unsaid.

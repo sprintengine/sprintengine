@@ -106,7 +106,13 @@ function PanePoppedOutPlaceholder({ workspaceId, tab }: { workspaceId: string; t
       <EmptyState
         glyph={<OpenInWindowGlyph className="icon-lg" />}
         title="Shown in a separate window"
-        body={`${paneTabLabel(tab)} is open in a window of its own. Bring it back to show it here again.`}
+        body={
+          // A diff is only ever shown in its window (diffShowsInWindow), so
+          // there is nothing to bring back.
+          tab.kind === 'diff'
+            ? `${paneTabLabel(tab)} is open in a window of its own.`
+            : `${paneTabLabel(tab)} is open in a window of its own. Bring it back to show it here again.`
+        }
         action={
           <>
             {popOutId ? (
@@ -114,9 +120,11 @@ function PanePoppedOutPlaceholder({ workspaceId, tab }: { workspaceId: string; t
                 Show window
               </OutlineButton>
             ) : null}
-            <PrimaryButton size="sm" onClick={() => bringBackPaneTab(workspaceId, tab)}>
-              Bring back
-            </PrimaryButton>
+            {tab.kind === 'diff' ? null : (
+              <PrimaryButton size="sm" onClick={() => bringBackPaneTab(workspaceId, tab)}>
+                Bring back
+              </PrimaryButton>
+            )}
           </>
         }
       />

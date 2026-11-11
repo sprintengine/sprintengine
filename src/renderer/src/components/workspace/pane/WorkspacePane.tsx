@@ -21,7 +21,15 @@ import { WORKSPACE_PANE_DATA_ATTRIBUTE } from './paneFocus'
 import { paneTabItem } from './paneTabItem'
 import { useAgentPresentTabIds } from './agentPresence'
 import { closePaneTabAndItsTerminal } from './paneTerminals'
-import { bringBackPaneTab, canPopOutPane, popOutPaneTabs, showPaneTab, showPanePopOut } from './popout/panePopOutHost'
+import {
+  bringBackPaneTab,
+  canPopOutPane,
+  diffShowsInWindow,
+  openDiffTab,
+  popOutPaneTabs,
+  showPaneTab,
+  showPanePopOut,
+} from './popout/panePopOutHost'
 import { WorkspacePaneAddMenu } from './WorkspacePaneAddMenu'
 import { PANEL_COMMAND_EVENT } from '../../../utils/panelCommands'
 import { WorkspacePaneBody } from './WorkspacePaneBody'
@@ -136,6 +144,20 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
   useEffect(() => {
     if (active && paneOpen && showsMenu && maximised) setMaximised(false)
   }, [active, paneOpen, showsMenu, maximised, setMaximised])
+  // A Diff tab is shown in a window of its own (diffShowsInWindow). Most ways
+  // in open it there directly; this catches the rest — a tab an agent docked
+  // in the background, selected in the strip — by sending the tab on screen
+  // to its window. One that failed to go (the toast said why) is left showing
+  // here rather than tried again on every render.
+  const shownTab = active && paneOpen ? tabs.find((tab) => tab.id === activeTabId) : undefined
+  const dockedDiffTabId =
+    shownTab && shownTab.kind === 'diff' && !shownTab.poppedOut && diffShowsInWindow() ? shownTab.id : null
+  const [diffPopOutTried, setDiffPopOutTried] = useState<string | null>(null)
+  useEffect(() => {
+    if (!dockedDiffTabId || dockedDiffTabId === diffPopOutTried) return
+    setDiffPopOutTried(dockedDiffTabId)
+    void popOutPaneTabs(workspaceId, [dockedDiffTabId])
+  }, [dockedDiffTabId, diffPopOutTried, workspaceId])
   const [tabMenu, setTabMenu] = useState<TabMenuState | null>(null)
   // The "+" menu, held here so `pane.add` (⌘T) can open it: the window
   // routes the command to the pane on screen, opening the column first.
@@ -222,7 +244,8 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
       // tab that took the whole window on arrival read as the pane opening full
       // screen by default. The editor falls back to its compact layout in a
       // narrow pane, and Maximise beside "+" is the person's call to make.
-      openPaneTab(workspaceId, { kind: kind as WorkspacePaneTabKind })
+      if (kind === 'diff') openDiffTab(workspaceId)
+      else openPaneTab(workspaceId, { kind: kind as WorkspacePaneTabKind })
     },
     [kinds, openModalSurface, openPaneTab, workspaceId],
   )
@@ -469,7 +492,9 @@ export default function WorkspacePane({ workspaceId, active }: WorkspacePaneProp
               {menuTab.poppedOut ? (
                 <>
                   <MenuItem onClick={() => showPanePopOut(menuTab.poppedOut!)}>Show window</MenuItem>
-                  <MenuItem onClick={() => bringBackPaneTab(workspaceId, menuTab)}>Bring back</MenuItem>
+                  {menuTab.kind === 'diff' ? null : (
+                    <MenuItem onClick={() => bringBackPaneTab(workspaceId, menuTab)}>Bring back</MenuItem>
+                  )}
                 </>
               ) : (
                 // Just this tab, in a window of its own; the rest of the pane
