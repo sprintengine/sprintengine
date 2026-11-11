@@ -9,25 +9,55 @@ the diff against the code it lands in and the intent the pull request states.
 The checks catch what they can. The bugs that reach the owner are the ones they
 cannot see.
 
+## Where this list comes from
+
+It was built from the 87 past agent sessions on this repository and its git and
+pull request history since August: about 47 times the owner had to report a bug
+or reopen something an agent had called done. Close to half were one mistake: a
+change made to a local chat and never carried to the paired machine, the phone
+or the web client. In the sessions where that happened, the reviewing agents
+never asked whether the remote path carried the change. Every review here asks
+it now.
+
 ## What failure looks like here
 
 These are the ways changes to this repository have actually broken, most common
 first. Check each one the diff touches.
 
-1. **It works locally and not on a paired machine or the phone.** This is the
-   most common bug the owner reports, and the same one keeps coming back. When
-   the diff adds or changes anything a chat shows or does, follow the data out:
-   does it cross `packages/conversation-protocol`, the tailnet host
-   (`src/main/automation/tailnet/`), the remote transport
-   (`agentChat/conversationTransport.ts`, `workspace/remoteBand/`) and, for the
-   phone, `src/main/mobile/control/`? A `transport.kind` or `machine` branch
-   that turns a feature off, or a read from local records only, is a finding.
-   So is a field a local row has and a paired row lacks.
+1. **It works locally and not on a paired machine, the phone or the web
+   client.** This is the most common bug the owner reports, and the same one
+   keeps coming back, because each fix covered the screen in the report and
+   not the other surfaces with the same gap. When the diff adds or changes
+   anything a chat shows or does, walk "Hit every surface" in `CLAUDE.md` and
+   follow the data out:
+   - A new or changed IPC channel for a local chat with no matching command or
+     field in `packages/conversation-protocol` and the tailnet host
+     (`src/main/automation/tailnet/tailnet-conversation-host.ts`), behind a
+     capability in `tailnet-routes.ts`, is a finding.
+   - So is a driving side that never asks for it
+     (`agentChat/conversationTransport.ts`, `RemoteConversationPanel.tsx`,
+     `tailnet-mesh-service.ts`, `workspace/remoteBand/`), or a paired row that
+     lacks a field a local row has.
+   - So is a phone that does not get it: `mobile/src/api/conversationWire.ts`
+     and the screen under `mobile/src/features/` for the conversation wire,
+     `src/main/mobile/control/` for mobile control. The exception is something
+     a phone cannot do, and the pull request has to say so.
+   - So is a channel missing from, or misfiled as desktop-only in,
+     `src/shared/web-tunnel-access.ts`.
+   - So is a `transport.kind` or `machine` branch that turns a feature off, or
+     a read from local records only.
+   - When the change is to how a session runs or reports, check that
+     `src/server` carries it for chats on WSL and SSH machines.
+   - When the diff fixes a parity bug, search for the same gap on the other
+     surfaces and in the neighbouring commands. Fixing the one in the report
+     is how this bug keeps coming back.
 2. **A wire changed on one side.** The phone keeps its own copy of the mobile
    wire types (`mobile/src/shared/mobile-control/protocol.ts`), and
    `presentation.ts` is mirrored on the phone byte for byte. Nothing compares
    them automatically. A wire change lands on both sides, additive and behind a
-   capability, and an older peer still works (`docs/compatibility.md`).
+   capability, and an older peer still works (`docs/compatibility.md`). The
+   phone ships through the stores, so an older phone talking to a newer desktop
+   is the normal case, not an edge case.
 3. **Reconnects, replays and stale state.** For a stream, cursor, subscription,
    queue or settle path, ask what happens on reconnect, a duplicate or
    out-of-order event, a failed subscribe, or a message queued hours ago. Stale
@@ -36,7 +66,11 @@ first. Check each one the diff touches.
 4. **A neighbour broke.** Read the callers of what changed, not only the
    changed lines. Sending while sub-agents run cancelled them, and flattening
    sessions duplicated sidebar rows. Shared paths here are send/steer, the
-   sidebar's grouping, new chat and the worktree pool.
+   sidebar's grouping, new chat and the worktree pool. Read the other ways in
+   to the same behaviour as well: the command palette, a shortcut, a menu, the
+   sidebar's row menu, Settings and the agents' MCP tools. A change to one
+   that leaves the rest behind is a finding, and so is a new way in with no
+   way back out (snooze without unsnooze).
 5. **It only works on macOS.** Paths, quoting, spawning a shell or CLI, the
    environment of an app opened from the Dock, quit and close shortcuts, long
    Windows paths, WSL. If the diff touches any of these, check it for Windows
@@ -101,7 +135,12 @@ first. Check each one the diff touches.
 
 Start with a count: "2 Important, 1 Nit, 0 Pre-existing." When there is nothing
 to fix, say so plainly: "Nothing to fix." Then say what you checked that is not
-in the findings: whether you followed the change to a paired chat and the phone,
-which platforms you considered, and whether the pull request's evidence (output,
-screenshots) covers what it claims. Missing evidence for a user-visible change is
-worth a sentence even when the code looks right.
+in the findings:
+
+- **Every surface, by name:** paired machine, phone, web client, WSL and SSH
+  machines. For each, say that the change reaches it, that it does not apply,
+  or that you could not tell. A review that does not answer this is not done.
+- Which platforms you considered.
+- Whether the pull request's evidence (output, screenshots) covers what it
+  claims. Missing evidence for a user-visible change is worth a sentence
+  even when the code looks right.
