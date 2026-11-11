@@ -46,6 +46,10 @@ export function guestContextMenuTemplate(
   if (/^https?:\/\//iu.test(params.linkURL)) {
     linkSection.push({ label: 'Copy Link', click: () => copyText(params.linkURL) })
   }
+  // A mail link hands on the address alone: pasted into a mail field,
+  // `mailto:dev@example.com?subject=Hi` is not an address.
+  const address = mailtoAddress(params.linkURL)
+  if (address) linkSection.push({ label: 'Copy Email Address', click: () => copyText(address) })
   if (linkSection.length > 0) sections.push(linkSection)
 
   const flags = params.editFlags
@@ -57,4 +61,19 @@ export function guestContextMenuTemplate(
   ])
 
   return sections.flatMap((section, index) => (index === 0 ? section : [{ type: 'separator' as const }, ...section]))
+}
+
+function mailtoAddress(rawUrl: string): string | null {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'mailto:' || url.pathname === '') return null
+  try {
+    return decodeURIComponent(url.pathname)
+  } catch {
+    return url.pathname
+  }
 }
