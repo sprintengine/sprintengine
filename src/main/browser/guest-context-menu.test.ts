@@ -82,3 +82,19 @@ test('a link that is not a web address is not offered for copying', () => {
   const items = guestContextMenuTemplate({ ...PLAIN, linkURL: 'javascript:alert(1)' }, target, () => {})
   assert.equal(shape(items), 'cut | copy | paste | selectAll')
 })
+
+test('a mail link offers its address alone for copying', () => {
+  const { target } = fakeTarget()
+  const copied: string[] = []
+  const items = guestContextMenuTemplate(
+    { ...PLAIN, linkURL: 'mailto:dev%2Bstudio@example.com?subject=Hi' },
+    target,
+    (text) => copied.push(text),
+  )
+  assert.equal(shape(items), 'Copy Email Address | separator | cut | copy | paste | selectAll')
+  items[0]!.click!({} as never, undefined, {} as never)
+  assert.deepEqual(copied, ['dev+studio@example.com'])
+
+  const empty = guestContextMenuTemplate({ ...PLAIN, linkURL: 'mailto:' }, target, () => {})
+  assert.equal(shape(empty), 'cut | copy | paste | selectAll')
+})

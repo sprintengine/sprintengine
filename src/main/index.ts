@@ -5,6 +5,7 @@ import { claimAppInstance, configureDevUserData } from './app-instance'
 import { createElectronPlatform } from './platform/electron-platform'
 import { attachStartupTimeline } from './startup-timeline'
 import { avoidHyprlandColorManagerCrash } from './hyprland-color-manager'
+import { clearStaleGpuCaches } from './gpu-cache'
 import { ensureGuiLocale } from './gui-locale'
 import { REMOVE_INTEGRATIONS_FLAG } from '../shared/integration-removal'
 import { buildStamp } from 'virtual:sprintengine-build-stamp'
@@ -74,6 +75,8 @@ if (!claimAppInstance(app)) {
 } else {
   // Chromium features are fixed once the app is ready.
   avoidHyprlandColorManagerCrash(app)
+  // Chromium opens its GPU caches on the first event-loop turn, before `ready`.
+  clearStaleGpuCaches(app.getPath('userData'), process.versions.electron)
   // Before the app is imported, so every terminal and agent it spawns inherits it.
   ensureGuiLocale()
   // Must be registered before the app is ready.
