@@ -49,6 +49,13 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
       scheduledMessages: anything(),
       textGenerationSettings: anything(),
       conversationCommands: () => anything(),
+      worktrees: {
+        pool: anything(),
+        installer: anything(),
+        liveWorkPaths: async () => [],
+        knownWorkspaceIds: () => null,
+        settledChatDeletion: () => anything(),
+      },
     } as never,
     gateway: anything(),
     studioRpc: { provideChat: () => undefined } as never,

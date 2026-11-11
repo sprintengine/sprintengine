@@ -63,6 +63,7 @@ import {
   type ServerMirrorState,
 } from './server-methods'
 import { createServerModules } from './server-modules'
+import { serveAgentWorktrees } from './agent-worktree-rpc'
 import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
 import { relayShellToolsets, SSH_RELAYED_TOOLSETS } from '../wsl/wsl-tool-relay'
 import { createShellSshServers } from './shell-ssh-servers'
@@ -532,6 +533,11 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ['modules (begin)', () => modules.shutdownBegin()],
         ['local app socket', () => studioRpc.stop()],
         ['automations', () => gateway?.shutdown()],
+        // With the new work: an install the quit cuts short is not recorded,
+        // so its worktree installs again at its next lease, and an agent
+        // waiting on it is not started on the way out. Each runs as a process
+        // group of its own, which nothing else would end.
+        ['dependency installs', () => core.worktrees.installer.shutdown()],
         ['workspace registry', () => workspaceSyncService.flush()],
         // What a person would miss most: every chat's buffered transcript.
         ['chat transcripts', () => core.conversationOwner.flushTranscripts()],
@@ -554,6 +560,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
             await core.localServers.dispose()
           },
         ],
+        // A lease or return in flight finishes its write, and each pool's
+        // container lock is given up so another Studio can take it over.
+        ['worktree pool', () => core.worktrees.pool.shutdown()],
         ['command lists', () => domains.conversationCommands.dispose()],
         ['workspace registry (final)', () => workspaceSyncService.flush()],
         ['modules', () => modules.shutdown()],
@@ -561,6 +570,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ]
       // A lost parent: nothing can be shown, so only what cannot be lost runs.
       const urgent = new Set([
+        'dependency installs',
         'chat transcripts',
         'pull requests',
         'local servers',
@@ -668,7 +678,16 @@ function serveShellRequests(deps: {
     discoverAndBroadcastCliModels((params ?? {}) as Parameters<typeof discoverAndBroadcastCliModels>[0]),
   )
   rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
-  rpc.handle(SERVER_METHODS.conversationWorkspaceRoots, () => core.conversations.liveConversationWorkspaceRoots())
+  // The shell's `agent.launch` cuts its worktree here, from this process's pool.
+  serveAgentWorktrees(rpc, core.worktrees.installer)
+  rpc.handle(SERVER_METHODS.worktreeLeases, async () =>
+    (await core.worktrees.pool.snapshots())
+      .flatMap((snapshot) => snapshot.slots)
+      .map((slot) => ({
+        path: slot.path,
+        lease: slot.lease ? { workspaceId: slot.lease.workspaceId, agentId: slot.lease.agentId } : null,
+      })),
+  )
   rpc.handle(SERVER_METHODS.conversationsWorking, () => {
     const listed = core.conversations.listSessions()
     return listed.ok ? listed.sessions.filter(conversationTurnInProgress).length : 0

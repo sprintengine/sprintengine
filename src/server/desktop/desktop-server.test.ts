@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -200,6 +201,33 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   // What a quit would stop: no chat has a turn running here.
   assert.equal(await shellRpc.call(SERVER_METHODS.conversationsWorking), 0)
 
+  // The worktree pool is this server's: a window's Settings ▸ Worktrees and
+  // the installs are answered over the tunnel, and the shell's `agent.launch`
+  // has its worktree cut here, from the pool, and listed among its leases.
+  shellRpc.emit(SERVER_EVENTS.terminalSessions, [])
+  const poolSettings = await window.invoke('worktree-pool:settings-get')
+  assert.equal(poolSettings.ok, true, JSON.stringify(poolSettings))
+  assert.equal(typeof poolSettings.value.enabled, 'boolean')
+  assert.deepEqual((await window.invoke('worktree-install:list')).value, [])
+  const repo = await gitProject(join(scratch, 'repos'))
+  const cut = await shellRpc.call<{ worktreePath?: string; branch?: string; error?: string }>(
+    SERVER_METHODS.createAgentWorktree,
+    { workspaceRoot: repo, name: 'launched' },
+  )
+  assert.equal(cut.error, undefined, cut.error ?? '')
+  assert.equal(cut.branch, 'agent/launched')
+  const leases = await shellRpc.call<Array<{ path: string; lease: unknown }>>(SERVER_METHODS.worktreeLeases)
+  assert.deepEqual(
+    leases.map((slot) => slot.path),
+    [cut.worktreePath],
+  )
+  // The agent worktree steps a window takes reach the same pool; a path on
+  // an SSH machine is refused in words, never read on this disk.
+  const pooled = await window.invoke('worktree-pool:snapshot', repo)
+  assert.equal(pooled.value.slots[0].path, cut.worktreePath)
+  const onMachine = await window.invoke('git:worktree:create', { repoRoot: 'ssh://build-box/home/dev/app' })
+  assert.match(String(onMachine.error?.message ?? onMachine.error), /Not available for SSH machines yet/)
+
   // The drain runs every leg and lets the directory go.
   hub.dispatch({ t: 'shutdown', drain: true, budgetMs: 8_000 }, [])
   assert.equal(await exit, 0)
@@ -207,12 +235,39 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.deepEqual(legs.slice(0, 2), ['modules (begin)', 'local app socket'])
   assert.equal(legs.at(-1), 'data directory')
   assert.ok(legs.indexOf('chat transcripts') < legs.indexOf('data directory'))
+  // The pool's installs stop with the new work, and the pool lets its lock go before the directory.
+  assert.ok(legs.indexOf('dependency installs') > 0 && legs.indexOf('dependency installs') < legs.indexOf('chats'))
+  assert.ok(legs.indexOf('worktree pool') > legs.indexOf('chats'))
+  assert.ok(legs.indexOf('worktree pool') < legs.indexOf('data directory'))
   assert.equal(
     fromServer.filter((frame) => frame.t === 'shutdown-progress').every((frame) => !frame.failed),
     true,
     JSON.stringify(fromServer.filter((frame) => frame.t === 'shutdown-progress')),
   )
 })
+
+/** A project cloned from an origin of its own, as a person's checkout is. */
+async function gitProject(dir: string): Promise<string> {
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'test',
+    GIT_AUTHOR_EMAIL: 'dev@example.com',
+    GIT_COMMITTER_NAME: 'test',
+    GIT_COMMITTER_EMAIL: 'dev@example.com',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+  }
+  const run = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { env, stdio: 'ignore' })
+  const seed = join(dir, 'seed')
+  mkdirSync(seed, { recursive: true })
+  run(seed, 'init', '-q', '-b', 'main')
+  writeFileSync(join(seed, 'README.md'), '# app\n')
+  run(seed, 'add', '.')
+  run(seed, 'commit', '-q', '-m', 'init')
+  run(dir, 'clone', '-q', '--bare', seed, join(dir, 'origin.git'))
+  run(dir, 'clone', '-q', join(dir, 'origin.git'), join(dir, 'app'))
+  return realpathSync(join(dir, 'app'))
+}
 
 async function waitFor<T>(probe: () => T | undefined): Promise<T> {
   for (let tries = 0; tries < 3_000; tries++) {

@@ -647,7 +647,7 @@ export function createDependencyInstaller(deps: DependencyInstallerDeps) {
 
 let active: DependencyInstaller | null = null
 
-/** The installer leased worktrees go through (the desktop's main); none elsewhere. */
+/** The installer leased worktrees go through, installed by the Studio core beside its pool. */
 export function installDependencyInstaller(installer: DependencyInstaller | null): void {
   active = installer
 }
@@ -657,7 +657,7 @@ export function activeDependencyInstaller(): DependencyInstaller | null {
 }
 
 /**
- * An install a caller in main started without waiting for it
+ * An install a caller started without waiting for it
  * (`createGitWorktree` with `dependencyInstall: 'start'`), as that caller
  * follows it: where it is now, and how it ends.
  */

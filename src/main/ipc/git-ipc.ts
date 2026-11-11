@@ -1,8 +1,7 @@
 import type { IpcMain } from 'electron'
 
 export { gitRepoRootFor } from '../git-repo-root'
-import { withGitHost } from '../git-run'
-import { gitRepoRootFor, scopedHost } from '../git-repo-root'
+import { gitRepoRootFor } from '../git-repo-root'
 import { writeFile } from 'fs/promises'
 import { isAbsolute, join } from 'path'
 import { diffBranchSelection, listBranchSteps, readFileAtRev } from '../branch-steps'
@@ -10,10 +9,7 @@ import { getWorkspaceChangeSummary } from '../workspace-change-summary'
 import { readRepositoryIdentityRead } from '../repository-identity'
 import { readFolderGitInfo } from '../workspace-git-info'
 import type { GitFileStage, GitRepoOperation, GitResetMode } from '../git'
-import type { AgentWorktreeCleanupInput, BranchStepSelection } from '../../shared/electron-api'
-import { cleanupAgentWorktreesOnce } from '../agent-worktree-cleanup'
-import { activeWorktreePool } from '../worktree-pool/active-pool'
-import { worktreeLeases } from '../worktree-leases'
+import type { BranchStepSelection } from '../../shared/electron-api'
 import { setAgentWorktreeLockProfile } from '../agent-worktree-lock'
 import { checkIgnoredPaths } from '../git-ignore'
 import { readFileHunks, stageGitHunk, unstageGitHunk } from '../git-hunks'
@@ -46,8 +42,6 @@ import {
   resetGitBranchToCommit,
   revertGitCommit,
   createGitTagFromCommit,
-  createGitWorktree,
-  restoreGitWorktree,
   fetchGitRemotes,
   getGitBranches,
   getGitCommitGraph,
@@ -59,7 +53,6 @@ import {
   mergeGitRef,
   pullGitBranchWithStash,
   pruneGitWorktrees,
-  removeGitWorktree,
   unlockAgentGitWorktree,
   resolveGitConflict,
   pushGitBranch,
@@ -93,10 +86,6 @@ export type GitIpcPaths = {
    *  feed uses (`git:changelists-changed`), so the renderer has one subscription
    *  for both kinds of writer. */
   onChangelistsChanged?: (repoRoot: string) => void
-  /** Working directories of the live terminal sessions and chat sessions; the worktree cleanup never removes one of them. */
-  livePaths?: () => string[] | Promise<string[]>
-  /** Every chat id on record, or null when unknown; a worktree holding one's history is kept. */
-  knownWorkspaceIds?: () => Iterable<string> | null
 }
 
 export function registerGitIpc(ipcMain: IpcMain, diagnostics: IpcDiagnostics, paths: GitIpcPaths): void {
@@ -394,35 +383,11 @@ export function registerGitIpc(ipcMain: IpcMain, diagnostics: IpcDiagnostics, pa
     )
   })
 
+  // Creating, bringing back, removing and returning agent worktrees go
+  // through the worktree pool and its path holds, which are the Studio core's
+  // (worktree-pool-ipc.ts); listing, pruning and unlocking stay here.
   ipcMain.handle('git:worktree:list', async (_, repoRoot: string) => {
     return diagnostics.withIpcDiagnostics('GitIPC', 'worktree-list', { repoRoot }, () => listGitWorktrees(repoRoot))
-  })
-
-  // A window's launch always waits for the worktree's dependency install: the
-  // agent it starts next would otherwise run in a half-installed checkout.
-  ipcMain.handle('git:worktree:create', async (_, input) => {
-    return withGitHost(scopedHost(input?.hostId), () => createGitWorktree({ ...input, dependencyInstall: 'wait' }))
-  })
-
-  // A window bringing a chat's worktree back is a start like a turn's: held
-  // shared, so a return or removal of the path waits its turn rather than
-  // running under it (worktree-leases.ts). A turn's own restore runs under the
-  // turn's hold (chat-folder-guard.ts), not through here.
-  ipcMain.handle('git:worktree:restore', async (_, input) => {
-    const hold =
-      typeof input?.path === 'string'
-        ? await worktreeLeases.acquireShared(input.path, { reason: 'its chat is bringing it back' })
-        : null
-    if (hold && 'busy' in hold) return { ok: false, message: hold.busy }
-    try {
-      return await withGitHost(scopedHost(input?.hostId), () => restoreGitWorktree(input))
-    } finally {
-      hold?.release()
-    }
-  })
-
-  ipcMain.handle('git:worktree:remove', async (_, input) => {
-    return removeGitWorktree(input)
   })
 
   ipcMain.handle('git:worktree:prune', async (_, repoRoot: string) => {
@@ -434,48 +399,6 @@ export function registerGitIpc(ipcMain: IpcMain, diagnostics: IpcDiagnostics, pa
       return { ok: false, message: 'A repository and a worktree path are required.' }
     }
     return unlockAgentGitWorktree(repoRoot, worktreePath)
-  })
-
-  // Agent worktree cleanup (agent-worktree-cleanup.ts): the renderer names the
-  // paths and agents its records still use; main adds every live terminal's
-  // directory.
-  ipcMain.handle('git:worktree:cleanup-agents', async (_, input: AgentWorktreeCleanupInput) => {
-    if (!input || typeof input.repoRoot !== 'string' || !isRepoRoot(input.repoRoot)) {
-      return { repoRoot: String(input?.repoRoot ?? ''), defaultRef: null, entries: [], dryRun: true }
-    }
-    const protectedPaths = Array.isArray(input.protectedPaths)
-      ? input.protectedPaths.filter((path): path is string => typeof path === 'string' && path.length > 0)
-      : []
-    return diagnostics.withIpcDiagnostics(
-      'GitIPC',
-      'worktree-cleanup-agents',
-      { repoRoot: input.repoRoot, dryRun: input.dryRun === true },
-      () =>
-        cleanupAgentWorktreesOnce(
-          {
-            repoRoot: input.repoRoot,
-            protectedPaths,
-            dryRun: input.dryRun === true,
-            ownedOnly: input.ownedOnly === true,
-            ...(Array.isArray(input.agentIds)
-              ? { agentIds: input.agentIds.filter((id): id is string => typeof id === 'string' && id.length > 0) }
-              : {}),
-            ...(Array.isArray(input.agentKeys)
-              ? { agentKeys: input.agentKeys.filter((key): key is string => typeof key === 'string' && key.length > 0) }
-              : {}),
-            ...(Array.isArray(input.keepBranches)
-              ? {
-                  keepBranches: input.keepBranches.filter(
-                    (branch): branch is string => typeof branch === 'string' && branch.length > 0,
-                  ),
-                }
-              : {}),
-          },
-          // The pool takes back its own slots (worktree-pool/); this process's,
-          // when it keeps one.
-          { livePaths: paths.livePaths, pool: activeWorktreePool(), knownWorkspaceIds: paths.knownWorkspaceIds },
-        ),
-    )
   })
 
   // --- Changelists and patches (git-commit-window T6) ------------------------

@@ -74,6 +74,53 @@ export type GatewayBackendDeps = Pick<
   userCliModels?: (cli: string) => readonly string[] | undefined
   /** The ids the person took off a CLI's list in Settings. */
   removedCliModels?: (cli: string) => readonly string[] | undefined
+  /** Where an agent-at-launch worktree is cut; this process's own pool when left out. */
+  createAgentWorktree?: AutomationBackends['createAgentWorktree']
+}
+
+/**
+ * An agent-at-launch worktree (agent.launch isolation + every connector
+ * launch), cut in this process: derive the `<prefix>/<slug>` branch (the
+ * person's branch prefix) and container the Worktree manager uses, then create
+ * through the shared git helper, from the worktree pool this process's core
+ * keeps. Mirrors WorkspaceManager's own worktree-agent spawn
+ * (copyIncludedFiles carries the repo's worktree-include set into the
+ * isolated tree).
+ */
+export const createAgentWorktreeHere: AutomationBackends['createAgentWorktree'] = async ({
+  workspaceRoot,
+  name,
+  baseRef,
+}) => {
+  const paths = agentWorktreePaths(workspaceRoot, name, worktreeBranchPrefix())
+  if (!paths) return { error: `"${name}" does not reduce to a usable worktree name.` }
+  const named = baseRef?.trim()
+  const created = await createGitWorktree({
+    repoRoot: workspaceRoot,
+    containerPath: paths.containerPath,
+    destinationPath: paths.destinationPath,
+    branchName: paths.branchName,
+    // A remote launch names the branch to fork from (its picker lists
+    // this checkout's branches); a launch that names none forks the
+    // default branch, from the worktree pool.
+    baseRef: named || 'HEAD',
+    fromPool: !named,
+    copyIncludedFiles: true,
+    // The agent's id is minted after this, by the launch; the branch
+    // names the owner until then.
+    agentLockOwner: paths.branchName,
+    // A gateway call answers while the project's dependency install
+    // runs, and the launch waits on it instead (`agent.launch`): the
+    // call's client would give up long before an install ends.
+    dependencyInstall: 'start',
+  })
+  if (!created.ok) return { error: created.message ?? 'Git worktree creation failed.' }
+  const installing = startedDependencyInstall(created.data.dependencyInstall)
+  return {
+    worktreePath: created.data.path,
+    branch: created.data.branch ?? paths.branchName,
+    ...(installing ? { dependencyInstall: installing } : {}),
+  }
 }
 
 /**
@@ -94,7 +141,7 @@ export function launchSettingsGatewayDeps(settings: {
 }
 
 export function createServerGatewayBackends(deps: GatewayBackendDeps): AutomationBackends {
-  const { userCliModels, removedCliModels, ...backends } = deps
+  const { userCliModels, removedCliModels, createAgentWorktree, ...backends } = deps
   return {
     ...backends,
     // The model picker's sources, read where the picker's are: the discovery
@@ -127,42 +174,9 @@ export function createServerGatewayBackends(deps: GatewayBackendDeps): Automatio
     // phone, it only answers what a paired device asks.
     mobileControl: createMobileControl(() => deps.getWorkspaceSyncSnapshot()),
     // Agent-at-launch worktrees (agent.launch isolation + every connector
-    // launch): derive the `<prefix>/<slug>` branch (the person's branch prefix)
-    // and container the Worktree manager uses, then create through the shared
-    // git helper. Mirrors WorkspaceManager's own worktree-agent spawn
-    // (copyIncludedFiles carries the repo's worktree-include set into the
-    // isolated tree).
-    createAgentWorktree: async ({ workspaceRoot, name, baseRef }) => {
-      const paths = agentWorktreePaths(workspaceRoot, name, worktreeBranchPrefix())
-      if (!paths) return { error: `"${name}" does not reduce to a usable worktree name.` }
-      const named = baseRef?.trim()
-      const created = await createGitWorktree({
-        repoRoot: workspaceRoot,
-        containerPath: paths.containerPath,
-        destinationPath: paths.destinationPath,
-        branchName: paths.branchName,
-        // A remote launch names the branch to fork from (its picker lists
-        // this checkout's branches); a launch that names none forks the
-        // default branch, from the worktree pool when this process keeps one.
-        baseRef: named || 'HEAD',
-        fromPool: !named,
-        copyIncludedFiles: true,
-        // The agent's id is minted after this, by the launch; the branch
-        // names the owner until then.
-        agentLockOwner: paths.branchName,
-        // A gateway call answers while the project's dependency install
-        // runs, and the launch waits on it instead (`agent.launch`): the
-        // call's client would give up long before an install ends.
-        dependencyInstall: 'start',
-      })
-      if (!created.ok) return { error: created.message ?? 'Git worktree creation failed.' }
-      const installing = startedDependencyInstall(created.data.dependencyInstall)
-      return {
-        worktreePath: created.data.path,
-        branch: created.data.branch ?? paths.branchName,
-        ...(installing ? { dependencyInstall: installing } : {}),
-      }
-    },
+    // launch), cut where the worktree pool is: here, unless the caller is the
+    // shell out of process, which asks the server (agent-worktree-rpc.ts).
+    createAgentWorktree: createAgentWorktree ?? createAgentWorktreeHere,
     readRepositoryIdentity: (folderPath) => readRepositoryIdentity(folderPath),
     // The facts behind `workspace.checkout` (checkout-and-branch-on-remote-
     // create): the same readers the sidebar rows and the Worktree manager

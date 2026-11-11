@@ -102,8 +102,6 @@ export type StudioGatewayOptions = Pick<
   linkLaunchedAgent?: ConversationToolsDeps['linkLaunchedAgent']
   /** Drop the notice a sub-agent's end would send, its parent having heard from a `wait`. */
   dismissLaunchNotice?: (childSessionId: string) => void
-  /** Deleting a settled chat for a paired desktop; absent where this process has no worktree pool. */
-  settledChatDeletion?: ConversationToolsDeps['settledChatDeletion']
 }
 
 export type StudioGateway = ReturnType<typeof createStudioGateway>
@@ -122,6 +120,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   // there be read (`pull_request.link`).
   const gitHubHostToken = createGhHostTokenResolver(sharedGhRunner())
   const chats = studioChatControl(core)
+  let settledChatDeletion: ReturnType<StudioCore['worktrees']['settledChatDeletion']> | null = null
   const coreTools = [
     ...createConversationTools({
       launch: (request) => core.conversationLaunchService.launch(request),
@@ -130,9 +129,20 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),
-      // A paired desktop's Delete on a settled chat here: this process's own
-      // deletion where it has one (the desktop in process), none elsewhere.
-      ...(options.settledChatDeletion ? { settledChatDeletion: options.settledChatDeletion } : {}),
+      // A paired desktop's Delete on a settled chat here, made as a window's
+      // Delete makes it (settled-chat-deletion-app.ts), its worktree given
+      // back to this core's pool and its record removed as the paired
+      // device's. Built on first ask.
+      settledChatDeletion: () => {
+        settledChatDeletion ??= core.worktrees.settledChatDeletion('mobile')
+        const made = settledChatDeletion
+        return {
+          plan: (ids) => made.plan(ids),
+          delete: (ids) => made.delete(ids),
+          has: (workspaceId) =>
+            workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
+        }
+      },
       // A paired desktop's palette, finding what was said in the chats here:
       // the ones this sidebar lists, most recently spoken in first.
       searchChats: (query) =>
@@ -246,6 +256,9 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
           getWorkspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
         }),
     }),
+    // `worktree.lease` and `worktree.release`: a worktree of the agent's own
+    // from this core's pool, beside the chats that work in it.
+    ...core.worktrees.tools,
   ]
 
   // The gateway's own tools: what no client may offer under the same family.

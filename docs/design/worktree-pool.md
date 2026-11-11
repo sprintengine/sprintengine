@@ -169,11 +169,21 @@ were settled:
   unless New chat is open on a project. A slot kept past 15 minutes is given
   back on Enter rather than hand out a stale base
   (`renderer/src/utils/newChatWorktree.ts`).
-- **One way in.** `createGitWorktree({ fromPool: true })` leases a slot when
-  the process keeps a pool (the desktop's main), and otherwise creates a fresh
-  worktree from the same base (the out-of-process server, a WSL machine, the
-  pool turned off). New chat, the tab strip's worktree spawn, `agent.launch`
-  and scheduled runs all go through it. That settles question 8.
+- **One way in.** `createGitWorktree({ fromPool: true })` leases a slot from
+  the pool the Studio core keeps, and otherwise creates a fresh worktree from
+  the same base (the pool declined, is full or turned off). New chat, the tab
+  strip's worktree spawn, `agent.launch` and scheduled runs all go through it.
+  That settles question 8.
+- **The server's.** The pool, its installs, `worktree.*` and the chat-folder
+  guard are composed by the Studio core (`server/core/studio-worktree-pool.ts`)
+  in every mode: the desktop's main in process, the desktop's server out of
+  process, a WSL or SSH machine's server, each with a pool of its own. The
+  windows reach it over the server's IPC domains (`worktree-pool:*`,
+  `worktree-install:*`, `settled-chats:*` and the git panel's
+  `git:worktree:create|restore|remove|cleanup-agents`), the shell's
+  `agent.launch` asks the server for its worktree, and nothing else keeps one,
+  so the turn that checks a chat's folder and the pool that gives it back
+  share one set of path holds.
 - **Agents that want a worktree** call `worktree.lease` (and optionally
   `worktree.release`) instead of `git worktree add` (question 1: the tool, not
   a shim). The lease is the calling agent's and is kept while that agent
@@ -225,7 +235,7 @@ every pool on record: the pool's slots with who holds each (the chat, matched
 by path, or the agent that called `worktree.lease`), and the worktrees the pool
 does not own (made by hand, by an agent before the pool, kept out of it), each
 with whether its work is on the default branch, its uncommitted changes and
-its size. Main reads it (`worktree-pool/worktree-inventory.ts`); the page never
+its size. The Studio core reads it (`worktree-pool/worktree-inventory.ts`); the page never
 runs git.
 
 - **Sizes** are measured with `du` (a walk on Windows) only when the page opens

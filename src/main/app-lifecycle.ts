@@ -113,15 +113,17 @@ type RegisterAppLifecycleOptions = {
   canvasService?: {
     dispose(): Promise<void>
   }
-  // The worktree pool: a lease or return in flight finishes its write, and
-  // each pool's container lock is given up so another Studio can take the pool
-  // over.
+  // The worktree pool, the Studio core's (in process; out of process the
+  // server quits its own): a lease or return in flight finishes its write,
+  // and each pool's container lock is given up so another Studio can take the
+  // pool over.
   worktreePool?: {
     shutdown(options?: { waitMs?: number }): Promise<void>
   }
   // The dependency installs agent worktrees are running (worktree-pool/
-  // dependency-install.ts). Each runs detached, as a process group of its own,
-  // so nothing would end it with the app: the quit stops every one.
+  // dependency-install.ts), the core's beside its pool. Each runs detached, as
+  // a process group of its own, so nothing would end it with the app: the
+  // quit stops every one.
   dependencyInstaller?: {
     shutdown(options?: { waitMs?: number }): Promise<void>
   }
@@ -829,11 +831,10 @@ export function registerAppLifecycle({
         },
       ],
       ['launch notices', () => launchNotices?.freeze()],
-      ['dependency installs', () => dependencyInstaller?.shutdown()],
       ['browser recordings', () => browserRecorder?.stopAll('app_quit')],
       // The canvas's last board write lands before the server stops serving.
+      // The worktree pool and its installs are the server's, which ends them.
       ['canvas', () => canvasService?.dispose()],
-      ['worktree pool', () => worktreePool?.shutdown(poolShutdownOptions())],
       ['desktop tools', () => desktopShell?.stop()],
       [
         'studio server (drain)',

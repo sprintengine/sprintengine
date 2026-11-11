@@ -223,6 +223,12 @@ export type WorktreePoolActionResult = { ok: true; message: string | null } | { 
 // `worktree-install:changed` as one starts, now and then while it runs, and
 // as it ends; nothing else about it is kept.
 
+/** A pool's snapshot moved (`WorktreePoolSnapshot`); one channel for every pool. */
+export const WORKTREE_POOL_CHANGED_CHANNEL = 'worktree-pool:changed'
+
+/** A leased worktree's dependency install started, moved on, or ended (`WorktreeDependencyInstallView`). */
+export const WORKTREE_INSTALL_CHANGED_CHANNEL = 'worktree-install:changed'
+
 /**
  * Why it runs: the worktree never installed (`first`), its lockfile or the
  * command changed since it last did (`changed`), or its installed

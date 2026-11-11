@@ -12,8 +12,8 @@ import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
  * `terminal`, under the names agents already call. `backlog.work` stays the
  * server's: its family is, and no offer may shadow a family the server serves.
  * It starts its terminal through `ShellBridge.terminals`. The worktree pool's
- * `worktree` family is the shell's too: main keeps the pool, and a pool driven
- * from two processes would race over its slots. So is `artifacts`: a publish
+ * `worktree` family is the server's, as the pool is (studio-worktree-pool.ts).
+ * `artifacts` is the shell's: a publish
  * reads the page from this machine's disk and signs in with its credentials,
  * and its clone of the site is one main keeps. And `extension`: making an
  * extension project uses the templates and the guide shipped beside the app,
@@ -29,7 +29,6 @@ export const SHELL_TOOLSETS = [
   'visual',
   'terminal',
   'agent',
-  'worktree',
   'artifacts',
   'extension',
   'plugin',

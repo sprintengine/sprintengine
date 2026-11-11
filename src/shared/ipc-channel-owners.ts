@@ -100,6 +100,12 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'credential:secrets:clear': {},
   'credential:secrets:set': {},
   'credential:secrets:status': { retry: 'once' },
+  // The worktree pool's agent worktree steps (main/ipc/worktree-pool-ipc.ts);
+  // the rest of the git panel stays with the shell.
+  'git:worktree:cleanup-agents': {},
+  'git:worktree:create': {},
+  'git:worktree:remove': {},
+  'git:worktree:restore': {},
   'github:clear-token': {},
   'github:clone': {},
   'github:clone-cancel': {},
@@ -178,6 +184,8 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'scheduled-messages:get': { retry: 'once' },
   'scheduled-messages:hold': {},
   'scheduled-messages:update': {},
+  'settled-chats:delete': {},
+  'settled-chats:plan-delete': { retry: 'once' },
   'studio-local-apps:cancel-offer': {},
   'studio-local-apps:offer': {},
   'studio-local-apps:revoke': {},
@@ -215,6 +223,14 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'workspace-sync:mark-unread': {},
   'workspace-sync:set-module-run-states': {},
   'workspace-sync:set-settled-chats-settings': {},
+  'worktree-install:cancel': {},
+  'worktree-install:list': { retry: 'once' },
+  'worktree-pool:action': {},
+  'worktree-pool:inventory': { retry: 'once' },
+  'worktree-pool:remove-other': {},
+  'worktree-pool:settings-get': { retry: 'once' },
+  'worktree-pool:settings-set': {},
+  'worktree-pool:snapshot': { retry: 'once' },
 } as const satisfies Readonly<Record<string, ServerIpcChannel>>
 
 /** Every channel the server owns, by name: what a table keyed by channel must cover (`WEB_TUNNEL_ACCESS`). */

@@ -1,4 +1,6 @@
 import type { IpcMain } from 'electron'
+import { isAbsolute } from 'path'
+import type { AgentWorktreeCleanupInput } from '../../shared/electron-api'
 import type {
   WorktreeDependencyInstallView,
   WorktreeInventory,
@@ -9,20 +11,31 @@ import type {
   WorktreePoolSnapshot,
 } from '../../shared/ipc/worktree-pool'
 import { dependencyInstallSettingFor } from '../../shared/ipc/worktree-pool'
-import { removeGitWorktree } from '../git'
-import { createWorktreeInventory, type WorktreeInventoryDeps } from '../worktree-pool/worktree-inventory'
+import { cleanupAgentWorktreesOnce } from '../agent-worktree-cleanup'
+import { machineAwareIpc } from '../environments/ssh/machine-ipc'
+import { createGitWorktree, removeGitWorktree, restoreGitWorktree } from '../git'
+import { scopedHost } from '../git-repo-root'
+import { withGitHost } from '../git-run'
+import { worktreeLeases } from '../worktree-leases'
+import { createWorktreeInventory } from '../worktree-pool/worktree-inventory'
 import type { DependencyInstaller } from '../worktree-pool/dependency-install'
 import { catchUpResult, type WorktreePoolService } from '../worktree-pool/worktree-pool-service'
-import { broadcastToAllWindows } from '../window-broadcast'
 
 /**
- * The windows' side of the worktree pool: a snapshot of a repository's pool,
- * a person's action on a held or idle slot, the pool's settings, the
- * inventory of every worktree Settings ▸ Worktrees draws, and the dependency
- * installs leased worktrees run (listed, and cancelled). A window
- * is sent `worktree-pool:changed` with a pool's snapshot whenever one moves.
- * Leases are not asked for here; an agent worktree created with `fromPool`
- * comes from the pool (git.ts). Every git step runs in main.
+ * The windows' side of the worktree pool, served by the Studio core that owns
+ * it (server/core/studio-worktree-pool.ts): registered by
+ * `registerServerDomainIpc`, on main's `ipcMain` in process and on the
+ * server's tunnel out of process, so a window reaches the one pool the agents'
+ * turns, schedules and tools use.
+ *
+ * A snapshot of a repository's pool, a person's action on a held or idle
+ * slot, the pool's settings, the inventory of every worktree Settings ▸
+ * Worktrees draws, the dependency installs leased worktrees run (listed, and
+ * cancelled), and the agent worktree steps that lease, bring back, remove or
+ * return a worktree (`git:worktree:create|restore|remove|cleanup-agents`):
+ * each takes the pool or a path hold (worktree-leases.ts), which have to be
+ * the same process's as the turns that start in those folders. A window is
+ * sent `worktree-pool:changed` with a pool's snapshot whenever one moves.
  */
 
 const HELD_ACTIONS = new Set(['commit', 'stash', 'discard', 'keep'])
@@ -31,22 +44,22 @@ function isString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
-/** A leased worktree's dependency install started, moved on, or ended (`WorktreeDependencyInstallView`). */
-export const WORKTREE_INSTALL_CHANGED_CHANNEL = 'worktree-install:changed'
-
-/** A pool's snapshot moved (`WorktreePoolSnapshot`); one channel for every pool. */
-const WORKTREE_POOL_CHANGED_CHANNEL = 'worktree-pool:changed'
-
-export function broadcastWorktreePoolChanged(snapshot: WorktreePoolSnapshot): void {
-  broadcastToAllWindows(WORKTREE_POOL_CHANGED_CHANNEL, snapshot)
+function isRepoRoot(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && isAbsolute(value)
 }
 
-export function registerWorktreePoolIpc(
-  ipcMain: IpcMain,
-  pool: WorktreePoolService,
-  installer: DependencyInstaller | null = null,
-  checks: Pick<WorktreeInventoryDeps, 'livePaths' | 'knownWorkspaceIds'> = {},
-): void {
+/** What the channels below are served from: the core's pool composition. */
+export type WorktreePoolIpcDeps = {
+  pool: WorktreePoolService
+  installer: DependencyInstaller | null
+  /** Working directories of the live terminal sessions and chat sessions; nothing here recycles one. */
+  liveWorkPaths: () => Promise<string[]>
+  /** Every chat id on record, or null when unknown; a worktree holding one's history is kept. */
+  knownWorkspaceIds: () => Iterable<string> | null
+}
+
+export function registerWorktreePoolIpc(ipcMain: IpcMain, deps: WorktreePoolIpcDeps): void {
+  const { pool, installer } = deps
   ipcMain.handle(
     'worktree-pool:action',
     async (_, input: WorktreePoolActionInput): Promise<WorktreePoolActionResult> => {
@@ -120,7 +133,12 @@ export function registerWorktreePoolIpc(
     isString(id) ? (installer?.cancel(id) ?? false) : false,
   )
 
-  const inventory = createWorktreeInventory({ pool, ...checks, removeWorktree: removeGitWorktree })
+  const inventory = createWorktreeInventory({
+    pool,
+    livePaths: deps.liveWorkPaths,
+    knownWorkspaceIds: deps.knownWorkspaceIds,
+    removeWorktree: removeGitWorktree,
+  })
   // Remove or Free up space on a worktree the pool does not own: checked as
   // an eviction is (live work, hidden edits, ignored files that may be work).
   ipcMain.handle(
@@ -140,4 +158,69 @@ export function registerWorktreePoolIpc(
         measure: input?.measure === true,
       }),
   )
+
+  registerAgentWorktreeIpc(ipcMain, deps)
+}
+
+/**
+ * The git panel's agent worktree steps that go through the pool or a path
+ * hold. A path spelled `ssh://` is refused in words, as main's machine-aware
+ * git channels refuse what an SSH machine does not answer.
+ */
+function registerAgentWorktreeIpc(registry: IpcMain, deps: WorktreePoolIpcDeps): void {
+  const ipc = machineAwareIpc(registry, null)
+  // A window's launch always waits for the worktree's dependency install: the
+  // agent it starts next would otherwise run in a half-installed checkout.
+  ipc.handle('git:worktree:create', async (_, input) => {
+    return withGitHost(scopedHost(input?.hostId), () => createGitWorktree({ ...input, dependencyInstall: 'wait' }))
+  })
+
+  // A window bringing a chat's worktree back is a start like a turn's: held
+  // shared, so a return or removal of the path waits its turn rather than
+  // running under it (worktree-leases.ts). A turn's own restore runs under the
+  // turn's hold (chat-folder-guard.ts), not through here.
+  ipc.handle('git:worktree:restore', async (_, input) => {
+    const hold =
+      typeof input?.path === 'string'
+        ? await worktreeLeases.acquireShared(input.path, { reason: 'its chat is bringing it back' })
+        : null
+    if (hold && 'busy' in hold) return { ok: false, message: hold.busy }
+    try {
+      return await withGitHost(scopedHost(input?.hostId), () => restoreGitWorktree(input))
+    } finally {
+      hold?.release()
+    }
+  })
+
+  ipc.handle('git:worktree:remove', async (_, input) => {
+    return removeGitWorktree(input)
+  })
+
+  // Agent worktree cleanup (agent-worktree-cleanup.ts): the renderer names the
+  // paths and agents its records still use; the live terminals' and chats'
+  // folders are added here, and the pool takes back its own slots.
+  ipc.handle('git:worktree:cleanup-agents', async (_, input: AgentWorktreeCleanupInput) => {
+    if (!input || typeof input.repoRoot !== 'string' || !isRepoRoot(input.repoRoot)) {
+      return { repoRoot: String(input?.repoRoot ?? ''), defaultRef: null, entries: [], dryRun: true }
+    }
+    const strings = (value: unknown): string[] | undefined =>
+      Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        : undefined
+    const agentIds = strings(input.agentIds)
+    const agentKeys = strings(input.agentKeys)
+    const keepBranches = strings(input.keepBranches)
+    return cleanupAgentWorktreesOnce(
+      {
+        repoRoot: input.repoRoot,
+        protectedPaths: strings(input.protectedPaths) ?? [],
+        dryRun: input.dryRun === true,
+        ownedOnly: input.ownedOnly === true,
+        ...(agentIds ? { agentIds } : {}),
+        ...(agentKeys ? { agentKeys } : {}),
+        ...(keepBranches ? { keepBranches } : {}),
+      },
+      { livePaths: deps.liveWorkPaths, pool: deps.pool, knownWorkspaceIds: deps.knownWorkspaceIds },
+    )
+  })
 }

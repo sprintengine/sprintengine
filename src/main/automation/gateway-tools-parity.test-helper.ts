@@ -54,7 +54,6 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
     tour: createTourTools(stub),
     visual: createVisualTools(stub),
     automation: createAutomationTools(stub),
-    worktree: createWorktreePoolTools(stub),
     artifacts: createArtifactsTools(stub),
     extension: createExtensionTools(stub),
     plugin: createPluginTools(stub),
@@ -67,6 +66,7 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
       ...createPullRequestTools(stub),
       ...createLocalServerTools(stub),
       ...createUsageTools(stub),
+      ...createWorktreePoolTools(stub),
     ],
   }
 }

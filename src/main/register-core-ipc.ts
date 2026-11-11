@@ -41,9 +41,6 @@ import { registerGitRepoWatchIpc } from './ipc/git-repo-watch-ipc'
 import { getTerminalSessionById } from './terminal-runtime'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
-import { registerWorktreePoolIpc } from './ipc/worktree-pool-ipc'
-import { registerSettledChatsIpc } from './ipc/settled-chats-ipc'
-import { createAppSettledChatDeletion } from './settled-chat-deletion-app'
 import { registerDesignSystemIpc } from './ipc/design-system-ipc'
 import { registerMcpIpc } from './ipc/mcp-ipc'
 import { registerMemoryActivityIpc } from './ipc/memory-activity-ipc'
@@ -91,7 +88,6 @@ import {
   openPanePopOutWindow,
 } from './window-factory'
 import type { AppServices } from './app-services'
-import { chatIdsOnRecord } from './agent-worktree-keep-checks'
 import type { CliModelDiscoveryInput } from '../shared/ipc/cli-model-discovery'
 import type { TerminalSpawnResult } from '../shared/ipc/terminal'
 import { registerServerDomainIpc } from '../server/desktop/server-ipc'
@@ -299,20 +295,9 @@ export function registerCoreIpc(
     {
       userDataDir: app.getPath('userData'),
       onChangelistsChanged: services.broadcastGitChangelistsChanged,
-      // Settled chats included: a worktree holding a chat's history is kept.
-      knownWorkspaceIds: () => chatIdsOnRecord(services.workspaceSyncService.getSnapshot().state.workspaces),
-      // Terminals and chats' live provider sessions, the list the pool uses too.
-      livePaths: services.liveWorkPaths,
     },
   )
   registerGitRepoWatchIpc(machineIpc)
-  registerWorktreePoolIpc(ipcMain, services.worktreePool, services.dependencyInstaller, {
-    livePaths: services.liveWorkPaths,
-    knownWorkspaceIds: () => chatIdsOnRecord(services.workspaceSyncService.getSnapshot().state.workspaces),
-  })
-  // Deleting a settled chat: its history, its record, and the worktree it owns
-  // (given back to the pool, or removed as Settings ▸ Worktrees removes one).
-  registerSettledChatsIpc(ipcMain, createAppSettledChatDeletion(services))
   registerVersionControlIpc(machineIpc)
   registerMenuDialogIpc(ipcMain)
   registerProjectlessChatsIpc(ipcMain)
