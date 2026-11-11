@@ -14,7 +14,7 @@ and the PR body; use ! or a BREAKING CHANGE: footer for an incompatible change.
 - [ ] `npm run verify:app` is green
 - [ ] If the change is user-visible: checked in the running app (`npm run dev`), and said how above
 - [ ] If it touches a conversation: works in a chat on a paired machine, and said how above (`AGENTS.md`)
-- [ ] If it touches a conversation: the phone and the web client have it too, or said why not (`CLAUDE.md`, "Hit every surface")
+- [ ] If it touches a conversation: the phone has it too, or said why not (`CLAUDE.md`, "Hit every surface")
 - [ ] If it crosses the tailnet or mobile wire: read `docs/compatibility.md`
 
 ### Risk

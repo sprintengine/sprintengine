@@ -14,8 +14,8 @@ cannot see.
 It was built from the 87 past agent sessions on this repository and its git and
 pull request history since August: about 47 times the owner had to report a bug
 or reopen something an agent had called done. Close to half were one mistake: a
-change made to a local chat and never carried to the paired machine, the phone
-or the web client. In the sessions where that happened, the reviewing agents
+change made to a local chat and never carried to the paired machine or the
+phone. In the sessions where that happened, the reviewing agents
 never asked whether the remote path carried the change. Every review here asks
 it now.
 
@@ -24,10 +24,10 @@ it now.
 These are the ways changes to this repository have actually broken, most common
 first. Check each one the diff touches.
 
-1. **It works locally and not on a paired machine, the phone or the web
-   client.** This is the most common bug the owner reports, and the same one
-   keeps coming back, because each fix covered the screen in the report and
-   not the other surfaces with the same gap. When the diff adds or changes
+1. **It works locally and not on a paired machine or the phone.** This is the
+   most common bug the owner reports, and the same one keeps coming back,
+   because each fix covered the screen in the report and not the other
+   surfaces with the same gap. When the diff adds or changes
    anything a chat shows or does, walk "Hit every surface" in `CLAUDE.md` and
    follow the data out:
    - A new or changed IPC channel for a local chat with no matching command or
@@ -42,8 +42,6 @@ first. Check each one the diff touches.
      and the screen under `mobile/src/features/` for the conversation wire,
      `src/main/mobile/control/` for mobile control. The exception is something
      a phone cannot do, and the pull request has to say so.
-   - So is a channel missing from, or misfiled as desktop-only in,
-     `src/shared/web-tunnel-access.ts`.
    - So is a `transport.kind` or `machine` branch that turns a feature off, or
      a read from local records only.
    - When the change is to how a session runs or reports, check that
@@ -137,9 +135,9 @@ Start with a count: "2 Important, 1 Nit, 0 Pre-existing." When there is nothing
 to fix, say so plainly: "Nothing to fix." Then say what you checked that is not
 in the findings:
 
-- **Every surface, by name:** paired machine, phone, web client, WSL and SSH
-  machines. For each, say that the change reaches it, that it does not apply,
-  or that you could not tell. A review that does not answer this is not done.
+- **Every surface, by name:** paired machine, phone, WSL and SSH machines.
+  For each, say that the change reaches it, that it does not apply, or that
+  you could not tell. A review that does not answer this is not done.
 - Which platforms you considered.
 - Whether the pull request's evidence (output, screenshots) covers what it
   claims. Missing evidence for a user-visible change is worth a sentence

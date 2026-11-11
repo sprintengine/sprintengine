@@ -4,10 +4,9 @@
 
 An Electron desktop app that runs coding-agent CLIs side by side in chats,
 workspaces and a pool of worktrees. One Studio can drive another on the tailnet
-(a *paired machine*), the phone app under `mobile/` drives a desktop the same
-way, and a browser can open a desktop's Studio as a web client. Most of the code
-here is written by agents, often from inside Studio itself; this file and
-`REVIEW.md` are what keep it from regressing.
+(a *paired machine*), and the phone app under `mobile/` drives a desktop the
+same way. Most of the code here is written by agents, often from inside Studio
+itself; this file and `REVIEW.md` are what keep it from regressing.
 
 ## What we do not compromise on
 
@@ -37,7 +36,7 @@ every machine"). A feature is not done until it works over the tailnet.
 
 ### 4. Every surface
 
-Studio has five places a change can land, and a feature reaches all of them
+Studio has four places a change can land, and a feature reaches all of them
 that make sense:
 
 - **Desktop**: the Electron app on macOS, Windows and Linux. It is also the
@@ -46,38 +45,16 @@ that make sense:
 - **Phone**: the Expo / React Native app in `mobile/`, for iOS and Android,
   shipped through the stores on its own schedule, so it is often older than the
   desktop it talks to.
-- **Web client**: the renderer served to a browser over a tunnel
-  (`src/renderer/src/web`).
 - **WSL and SSH machines**: the conversation server in `src/server`, installed
   on the far machine and run from there.
-
-## How to work here
-
-Prefer ambitious ideas, simple systems and software that feels obvious. Do not
-keep complexity because it already exists, and do not add machinery because it
-looks architecturally impressive. Understand the real constraint, then find the
-smallest model that makes the correct behaviour unsurprising.
-
-Measure twice, cut once, and do not build what is not needed yet. Fight scope
-creep: honour what was asked, minimally and realistically. The rules in this
-file are good defaults rather than laws, and the owner's word overrides any of
-them. If one fights the task in front of you, say so plainly and get the
-owner's sign-off before breaking it.
-
-You are probably running inside the Studio you are changing, and other agents
-are running in it beside you. Do not quit or restart the installed app, and do
-not kill a process you found by matching a name or a path: your own agent has
-this worktree's path in its command line. Stop only what you started, by the
-PID you captured. A dev build keeps its own profile (`CONTRIBUTING.md`); never
-point one at the installed app's data.
 
 ## Hit every surface
 
 The most common defect in this repository is a change that works on the path
 you tested and is missing everywhere else: it works in a local chat, and the
-paired chat, the phone or the web client never got it. Before you call a change
-done, walk this list and say in the pull request which entries applied and what
-you did about each:
+paired chat or the phone never got it. Before you call a change done, walk
+this list and say in the pull request which entries applied and what you did
+about each:
 
 - **Local desktop.** The renderer reaches main over IPC: the channel in
   `src/shared/electron-api.ts` and `src/shared/ipc-channel-owners.ts`, the
@@ -97,10 +74,6 @@ you did about each:
   lands on both sides, and the phone gets the screen for it in the same change
   unless a phone cannot do it, which the pull request then says. An older phone
   must keep working (`docs/compatibility.md`).
-- **Web client.** Every channel the renderer uses is classified for a browser
-  tab in `src/shared/web-tunnel-access.ts`, and its test fails until a new
-  one is. Classify it by what the far side needs, not as desktop-only to make
-  the test pass.
 - **WSL and SSH machines.** A chat whose agent runs on a far machine goes
   through `src/server`. A change to how a session runs or what it reports has
   to work there too.
@@ -152,13 +125,6 @@ green and nobody had looked. `npm run verify:app` is the floor, not the proof.
   are honest answers, but they are not a pass.
 - **A flaky test is a bug.** Fix it or name it in the pull request; do not
   re-run until it goes green.
-
-## Scope
-
-Build what was asked. A change to default behaviour or to what a screen offers
-that nobody asked for goes to the owner first: the menu on the tab strip's +,
-the pooled worktrees and the SSH name hardening were all reverted for that. A
-hardening, performance or batch pull request changes nothing a person sees.
 
 ## Review
 
