@@ -1,6 +1,13 @@
-import type { StudioErrorCode } from './envelope.js'
+import {
+  studioNoParams,
+  studioParams,
+  type StudioMethodDefinition,
+  type StudioMethodTable,
+  type StudioTopicTable,
+  studioParamsRefused,
+  type StudioParamsRefusal,
+} from './contract.js'
 import { STUDIO_LOCAL_SERVERS_CAPABILITY } from './handshake.js'
-import type { StudioScope } from './scopes.js'
 
 // The local servers a Studio's conversations started: a dev server, a preview,
 // anything an agent ran that a person may want to open. An agent says so
@@ -100,73 +107,37 @@ export type StudioLocalServersMethodMap = {
    * when it is already running or starting. The new state arrives as
    * `localServers.changed`.
    */
-  'localServers.run': { params: { conversation: StudioLocalServerOwner; id: string }; result: { started: true } }
+  'localServers.run': {
+    params: { conversation: StudioLocalServerOwner; id: string }
+    result: { started: true }
+    errors: 'conflict' | 'not_found'
+  }
   /**
    * Stop the run the Studio started. Refused as `conflict` when the Studio did
    * not start the current run (an agent's server is the agent's to stop).
    */
-  'localServers.stop': { params: { conversation: StudioLocalServerOwner; id: string }; result: { stopped: boolean } }
+  'localServers.stop': {
+    params: { conversation: StudioLocalServerOwner; id: string }
+    result: { stopped: boolean }
+    errors: 'conflict' | 'not_found'
+  }
   /** Forget the link (and stop the Studio's own run of it, if any). `removed` is false when there was none. */
   'localServers.remove': { params: { conversation: StudioLocalServerOwner; id: string }; result: { removed: boolean } }
 }
 
 export type StudioLocalServersMethod = keyof StudioLocalServersMethodMap
 
+/** What moved among the linked local servers: the client asks `localServers.list` again for what it shows. */
+export type StudioLocalServersChanged = { workspaceIds: string[]; conversations: StudioLocalServerOwner[] }
+
 export type StudioLocalServersTopicMap = {
-  /** What moved, as `{ workspaceIds: string[], conversations: StudioLocalServerOwner[] }`; ask `localServers.list` again. */
-  'localServers.changed': { params: Record<string, never> }
-}
-
-type MethodSpec = {
-  scope: StudioScope
-  mutation: false
-  capability: typeof STUDIO_LOCAL_SERVERS_CAPABILITY
-  owner: true
-}
-
-const read: MethodSpec = {
-  scope: 'workspaces:read',
-  mutation: false,
-  capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
-  owner: true,
-}
-// Running a command is driving the conversation's work, not reading it.
-const operate: MethodSpec = {
-  ...read,
-  scope: 'conversation:operate',
-}
-
-export const STUDIO_LOCAL_SERVERS_METHODS: { readonly [M in StudioLocalServersMethod]: MethodSpec } = {
-  'localServers.list': read,
-  'localServers.run': operate,
-  'localServers.stop': operate,
-  'localServers.remove': operate,
-}
-
-export const STUDIO_LOCAL_SERVERS_TOPICS: {
-  readonly [T in keyof StudioLocalServersTopicMap]: {
-    scope: StudioScope
-    capability: typeof STUDIO_LOCAL_SERVERS_CAPABILITY
-    owner: true
-    push: true
-  }
-} = {
-  'localServers.changed': {
-    scope: 'workspaces:read',
-    capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
-    owner: true,
-    push: true,
-  },
-}
-
-export function isStudioLocalServersMethod(value: unknown): value is StudioLocalServersMethod {
-  return typeof value === 'string' && Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, value)
+  'localServers.changed': { params: Record<string, never>; payload: StudioLocalServersChanged; stream: 'push' }
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
 
-type Refusal = { ok: false; code: StudioErrorCode; message: string }
-const refuse = (message: string): Refusal => ({ ok: false, code: 'invalid_params', message })
+type Refusal = StudioParamsRefusal
+const refuse = (message: string): Refusal => studioParamsRefused(message)
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -181,7 +152,7 @@ export function parseStudioLocalServerOwner(value: unknown): StudioLocalServerOw
   return { workspaceId: value.workspaceId, agentId: value.agentId }
 }
 
-function parseTarget(value: Record<string, unknown>): StudioLocalServersTarget | Refusal {
+function parseTarget(value: Record<string, unknown>): { ok: true; params: StudioLocalServersTarget } | Refusal {
   const target: StudioLocalServersTarget = {}
   if (value.workspaceIds !== undefined) {
     if (!Array.isArray(value.workspaceIds) || value.workspaceIds.length > STUDIO_LOCAL_SERVERS_MAX_IDS)
@@ -200,26 +171,43 @@ function parseTarget(value: Record<string, unknown>): StudioLocalServersTarget |
     }
     target.conversations = conversations
   }
-  return target
+  return studioParams(target)
 }
 
-/** A `localServers.*` method's params, shape-checked, keeping only the members it defines. */
-export function parseStudioLocalServersParams<M extends StudioLocalServersMethod>(
-  method: M,
-  params: unknown,
-): { ok: true; params: StudioLocalServersMethodMap[M]['params'] } | Refusal {
-  const value = params === undefined ? {} : params
-  if (!record(value)) return refuse(`${method} takes an object of params.`)
-  const ok = (parsed: unknown) => ({ ok: true as const, params: parsed as StudioLocalServersMethodMap[M]['params'] })
-  if (method === 'localServers.list') {
-    const target = parseTarget(value)
-    return 'ok' in target ? target : ok(target)
-  }
-  if (method === 'localServers.run' || method === 'localServers.stop' || method === 'localServers.remove') {
+const read = {
+  scope: 'workspaces:read',
+  mutation: false,
+  capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
+  owner: true,
+} as const
+
+type OneServer = StudioLocalServersMethodMap['localServers.run' | 'localServers.stop' | 'localServers.remove']
+
+// Running a command is driving the conversation's work, not reading it.
+const operate: StudioMethodDefinition<OneServer> = {
+  ...read,
+  scope: 'conversation:operate',
+  params: (value) => {
     const conversation = parseStudioLocalServerOwner(value.conversation)
     if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
     if (!id(value.id)) return refuse('"id" is the server\'s id, from localServers.list.')
-    return ok({ conversation, id: value.id })
-  }
-  return refuse(`${method} is not a localServers method.`)
+    return studioParams({ conversation, id: value.id })
+  },
+}
+
+export const STUDIO_LOCAL_SERVERS_METHODS: StudioMethodTable<StudioLocalServersMethodMap> = {
+  'localServers.list': { ...read, params: parseTarget },
+  'localServers.run': operate,
+  'localServers.stop': operate,
+  'localServers.remove': operate,
+}
+
+export const STUDIO_LOCAL_SERVERS_TOPICS: StudioTopicTable<StudioLocalServersTopicMap> = {
+  'localServers.changed': {
+    scope: 'workspaces:read',
+    capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
+    owner: true,
+    push: true,
+    params: studioNoParams,
+  },
 }

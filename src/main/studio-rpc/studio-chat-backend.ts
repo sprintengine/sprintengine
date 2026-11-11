@@ -2,6 +2,7 @@ import type { ConversationCommandCatalog } from '../../shared/conversation/comma
 import type { ConversationCommandsRequest } from '../../shared/ipc/conversation-commands'
 import type { FileSearchResult, FileSystemStat } from '../../shared/ipc/filesystem'
 import type { StudioChatBackend } from '../../server/rpc/studio-rpc-types'
+import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
 import { onConversationCommandsChanged } from '../conversation-commands/registry'
 import { readConversationCommandsRequest } from '../conversation-commands/request'
 import {
@@ -83,14 +84,10 @@ const failed = (error: unknown): { ok: false; message: string } => ({
  * namespaced to its client and comes with its command's fingerprint, so both
  * are set aside for the check and put back after.
  */
-function checked<T extends { commandId?: string; commandFingerprint?: string }>(
-  input: T,
-  parse: (
-    raw: unknown,
-  ) =>
-    | { ok: true; input: Omit<T, 'commandId' | 'commandFingerprint'> & { commandId?: string } }
-    | { ok: false; message: string },
-): { ok: true; input: T } | { ok: false; message: string } {
+function checked<I>(
+  input: { commandId?: string; commandFingerprint?: string },
+  parse: (raw: unknown) => { ok: true; input: I } | { ok: false; message: string },
+): { ok: true; input: I & { commandId?: string; commandFingerprint?: string } } | { ok: false; message: string } {
   const { commandId, commandFingerprint, ...rest } = input
   const parsed = parse(rest)
   if (!parsed.ok) return parsed
@@ -100,7 +97,7 @@ function checked<T extends { commandId?: string; commandFingerprint?: string }>(
       ...parsed.input,
       ...(commandId === undefined ? {} : { commandId }),
       ...(commandFingerprint === undefined ? {} : { commandFingerprint }),
-    } as T,
+    },
   }
 }
 
@@ -232,7 +229,10 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
     onCommandsChanged: (listener) => onCommandsChanged(listener),
     async providers(input) {
       try {
-        return await handlers.listProviders(input)
+        // A CLI override is read where a session start reads it, as the IPC reads it.
+        return await handlers.listProviders(
+          input.cliRuntimes ? { cliRuntimes: input.cliRuntimes as ConversationCliRuntimeOverrides } : {},
+        )
       } catch (error) {
         return failed(error)
       }

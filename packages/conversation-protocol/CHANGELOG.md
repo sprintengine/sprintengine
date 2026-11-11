@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added (session shapes)
+
+- **A live session's shapes.** `ConversationSessionSummary`,
+  `ConversationCapabilities`, `ConversationFileActivity`, `ConversationPhase`,
+  `PromptCacheReading`, `ConversationSessionActionResult`,
+  `ConversationStartSessionResult`, `ConversationToolDetail(Result)`,
+  `ConversationCheckpointDiff`, `ConversationTurnDiffResult`,
+  `ConversationRevertResult` and the rewind, fork, handoff, attachment and
+  plan results (`sessions.ts`), with `CONVERSATION_SESSION_NOT_FOUND`: what
+  Studio's session methods answer, defined once.
+- `ConversationSlashCommand` and `ConversationCommandCatalog`
+  (`composerReads.ts`): a `/` command list as Studio keeps it.
+- `ConversationMentionRef`, `parseConversationMentions`,
+  `ConversationAttachedFile`, `parseConversationAttachedFiles` and
+  `attachedFileName` (`messageParts.ts`), moved from
+  `@sprintengine/conversation-timeline`, which re-exports them.
+
 ### Changed
 
 - **A command led by shell grammar is not named after it.** `labelCommand`

@@ -21,23 +21,13 @@
 // so a session whose process has since gone quiet — suspended, or parked
 // across a restart — still goes cold on time.
 
-export type PromptCacheTtl = '5m' | '1h'
+import type { PromptCacheReading, PromptCacheTtl } from './protocol.js'
+
+export type { PromptCacheReading, PromptCacheTtl }
 
 const PROMPT_CACHE_TTL_MS: Readonly<Record<PromptCacheTtl, number>> = {
   '5m': 5 * 60_000,
   '1h': 60 * 60_000,
-}
-
-export type PromptCacheReading = {
-  // The lifetime of the cached prefix. Null when the source has not said.
-  ttl: PromptCacheTtl | null
-  // When the cached prefix goes cold, in epoch ms. Null when the last request
-  // reported no cache tokens at all: nothing is cached, so it is already cold.
-  expiresAt: number | null
-  // How many tokens the next request writes to the cache again if the cache
-  // has gone cold by then — the size of the conversation. Null when unknown,
-  // which the CLI reports right after a compaction until the next request.
-  recacheTokens: number | null
 }
 
 // Far past any real context window, so every number off an untrusted source

@@ -1,6 +1,12 @@
-import type { StudioErrorCode } from './envelope.js'
+import {
+  studioParams,
+  studioParamsRefused as refuse,
+  type StudioMethodDefinition,
+  type StudioMethodTable,
+  type StudioParsed,
+  type StudioTopicTable,
+} from './contract.js'
 import { STUDIO_BOARD_FILES_CAPABILITY } from './handshake.js'
-import type { StudioScope } from './scopes.js'
 
 // Files under a workspace's roots: read, list, write, remove and watch, by a
 // root and a path relative to it, never by an absolute path. The first
@@ -41,12 +47,21 @@ export const STUDIO_WRITABLE_FILE_EXTENSIONS = ['.excalidraw'] as const
 
 export type StudioFilesMethodMap = {
   /** Which roots a workspace has here. `store` is absent from a Studio that does not serve it. */
-  'files.roots': { params: { workspaceId: string }; result: { workspace: boolean; boards: boolean; store?: boolean } }
+  'files.roots': {
+    params: { workspaceId: string }
+    result: { workspace: boolean; boards: boolean; store?: boolean }
+    errors: 'not_found'
+  }
   /** One level of a directory. A symbolic link is listed as neither kind, and is not followed. */
-  'files.list': { params: { root: StudioFileRoot; path: string }; result: { entries: StudioFileEntry[] } }
+  'files.list': {
+    params: { root: StudioFileRoot; path: string }
+    result: { entries: StudioFileEntry[] }
+    errors: 'not_found'
+  }
   'files.read': {
     params: { root: StudioFileRoot; path: string }
     result: { text: string; hash: string; size: number; mtimeMs: number }
+    errors: 'not_found'
   }
   /** Atomic, conditional; parents are created. `uploadId` names bytes staged with `uploads.begin { purpose: 'file' }`. */
   'files.write': {
@@ -59,72 +74,23 @@ export type StudioFilesMethodMap = {
       commandId: string
     }
     result: StudioFileWritten | StudioFileConflict
+    errors: 'not_found'
   }
   'files.remove': {
     params: { root: StudioFileRoot; path: string; ifMatch: string | null; commandId: string }
     result: { ok: true; removed: boolean } | StudioFileConflict
+    errors: 'not_found'
   }
 }
 
 export type StudioFilesMethod = keyof StudioFilesMethodMap
 
 export type StudioFilesTopicMap = {
-  /** The names in one directory that changed, debounced: `{ names: string[] }` per push. */
-  'files.watch': { params: { root: StudioFileRoot; path: string } }
-}
-
-type MethodSpec = {
-  scope: StudioScope
-  mutation: boolean
-  capability: typeof STUDIO_BOARD_FILES_CAPABILITY
-  owner: true
-}
-
-const reading: MethodSpec = {
-  scope: 'files:read',
-  mutation: false,
-  capability: STUDIO_BOARD_FILES_CAPABILITY,
-  owner: true,
-}
-const writing: MethodSpec = {
-  scope: 'files:write',
-  mutation: true,
-  capability: STUDIO_BOARD_FILES_CAPABILITY,
-  owner: true,
-}
-
-export const STUDIO_FILES_METHODS: { readonly [M in StudioFilesMethod]: MethodSpec } = {
-  'files.roots': reading,
-  'files.list': reading,
-  'files.read': reading,
-  'files.write': writing,
-  'files.remove': writing,
-}
-
-export const STUDIO_FILES_TOPICS: {
-  readonly [T in keyof StudioFilesTopicMap]: {
-    scope: StudioScope
-    capability: typeof STUDIO_BOARD_FILES_CAPABILITY
-    owner: true
-    push: true
-  }
-} = {
-  'files.watch': {
-    scope: 'files:read',
-    capability: STUDIO_BOARD_FILES_CAPABILITY,
-    owner: true,
-    push: true,
-  },
-}
-
-export function isStudioFilesMethod(value: unknown): value is StudioFilesMethod {
-  return typeof value === 'string' && Object.hasOwn(STUDIO_FILES_METHODS, value)
+  /** The names in one directory that changed, debounced. */
+  'files.watch': { params: { root: StudioFileRoot; path: string }; payload: { names: string[] }; stream: 'push' }
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
-
-type Refusal = { ok: false; code: StudioErrorCode; message: string }
-const refuse = (message: string, code: StudioErrorCode = 'invalid_params'): Refusal => ({ ok: false, code, message })
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -169,54 +135,80 @@ const ROOT = '"root" is { kind: "boards" | "workspace" | "store", workspaceId }.
 const PATH = '"path" is relative to its root, with "/" between parts and no "..".'
 const HASH = /^[0-9a-f]{64}$/
 
-/** A `files.*` method's params, shape-checked, keeping only the members it defines. */
-export function parseStudioFilesParams<M extends StudioFilesMethod>(
-  method: M,
-  params: unknown,
-): { ok: true; params: StudioFilesMethodMap[M]['params'] } | Refusal {
-  const value = params === undefined ? {} : params
-  if (!record(value)) return refuse(`${method} takes an object of params.`)
-  const ok = (parsed: unknown) => ({ ok: true as const, params: parsed as StudioFilesMethodMap[M]['params'] })
-  if (method === 'files.roots')
-    return id(value.workspaceId) ? ok({ workspaceId: value.workspaceId }) : refuse('"workspaceId" names the workspace.')
+type Located = { root: StudioFileRoot; path: string }
+
+/** A root and a path under it, or why not. */
+function located(value: Record<string, unknown>): StudioParsed<Located> {
   const root = parseStudioFileRoot(value.root)
   if (!root) return refuse(ROOT)
   if (!isStudioRelativePath(value.path)) return refuse(PATH)
-  const path = value.path
-  switch (method as StudioFilesMethod) {
-    case 'files.list':
-    case 'files.read':
-      return ok({ root, path })
-    case 'files.write':
-    case 'files.remove': {
-      if (!id(value.commandId)) return refuse('"commandId" must be a string of 1 to 200 characters.')
-      if (!isStudioWritableFile(path)) return refuse('Only a board (*.excalidraw) may be written or removed.')
-      if (value.ifMatch !== null && !(typeof value.ifMatch === 'string' && HASH.test(value.ifMatch)))
-        return refuse('"ifMatch" is the SHA-256 of the file as last read, or null to create it.')
-      if (method === 'files.remove') return ok({ root, path, ifMatch: value.ifMatch, commandId: value.commandId })
+  return studioParams({ root, path: value.path })
+}
+
+/** A write's or a removal's common members: a board it may change, its condition and its command id. */
+function conditional(
+  value: Record<string, unknown>,
+): StudioParsed<Located & { ifMatch: string | null; commandId: string }> {
+  const at = located(value)
+  if (!at.ok) return at
+  if (!id(value.commandId)) return refuse('"commandId" must be a string of 1 to 200 characters.')
+  if (!isStudioWritableFile(at.params.path)) return refuse('Only a board (*.excalidraw) may be written or removed.')
+  if (value.ifMatch !== null && !(typeof value.ifMatch === 'string' && HASH.test(value.ifMatch)))
+    return refuse('"ifMatch" is the SHA-256 of the file as last read, or null to create it.')
+  return studioParams({ ...at.params, ifMatch: value.ifMatch, commandId: value.commandId })
+}
+
+const reading = {
+  scope: 'files:read',
+  mutation: false,
+  capability: STUDIO_BOARD_FILES_CAPABILITY,
+  owner: true,
+} as const
+const writing = {
+  scope: 'files:write',
+  mutation: true,
+  capability: STUDIO_BOARD_FILES_CAPABILITY,
+  owner: true,
+} as const
+
+const readingAt: StudioMethodDefinition<StudioFilesMethodMap['files.list' | 'files.read']> = {
+  ...reading,
+  params: located,
+}
+
+export const STUDIO_FILES_METHODS: StudioMethodTable<StudioFilesMethodMap> = {
+  'files.roots': {
+    ...reading,
+    params: (value) =>
+      id(value.workspaceId)
+        ? studioParams({ workspaceId: value.workspaceId })
+        : refuse('"workspaceId" names the workspace.'),
+  },
+  'files.list': readingAt,
+  'files.read': readingAt,
+  'files.write': {
+    ...writing,
+    params: (value) => {
+      const common = conditional(value)
+      if (!common.ok) return common
       const hasText = typeof value.text === 'string'
       const hasUpload = id(value.uploadId)
       if (hasText === hasUpload) return refuse('A write carries "text", or the "uploadId" of bytes staged for it.')
-      return ok({
-        root,
-        path,
-        ...(hasText ? { text: value.text } : { uploadId: value.uploadId }),
-        ifMatch: value.ifMatch,
-        commandId: value.commandId,
+      return studioParams({
+        ...common.params,
+        ...(hasText ? { text: value.text as string } : { uploadId: value.uploadId as string }),
       })
-    }
-    default:
-      return refuse(`${method} is not a files method.`)
-  }
+    },
+  },
+  'files.remove': { ...writing, params: conditional },
 }
 
-/** `files.watch`'s params, or why they are not. */
-export function parseStudioFilesWatchParams(
-  params: unknown,
-): { ok: true; params: StudioFilesTopicMap['files.watch']['params'] } | Refusal {
-  if (!record(params)) return refuse('files.watch takes { root, path }.')
-  const root = parseStudioFileRoot(params.root)
-  if (!root) return refuse(ROOT)
-  if (!isStudioRelativePath(params.path)) return refuse(PATH)
-  return { ok: true, params: { root, path: params.path } }
+export const STUDIO_FILES_TOPICS: StudioTopicTable<StudioFilesTopicMap> = {
+  'files.watch': {
+    scope: 'files:read',
+    capability: STUDIO_BOARD_FILES_CAPABILITY,
+    owner: true,
+    push: true,
+    params: located,
+  },
 }

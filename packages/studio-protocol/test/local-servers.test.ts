@@ -7,8 +7,6 @@ import {
   STUDIO_LOCAL_SERVERS_MAX_IDS,
   STUDIO_LOCAL_SERVERS_METHODS,
   STUDIO_LOCAL_SERVERS_TOPICS,
-  isStudioLocalServersMethod,
-  parseStudioLocalServersParams,
 } from '../src/local-servers'
 import { STUDIO_METHODS, STUDIO_TOPICS, parseStudioMethodParams, parseStudioTopicParams } from '../src/methods'
 
@@ -20,39 +18,39 @@ test('every localServers method and its topic are owner-only, behind the local-s
     assert.equal(spec.owner, true, method)
     assert.equal(spec.capability, STUDIO_LOCAL_SERVERS_CAPABILITY, method)
     assert.equal(STUDIO_METHODS[method as keyof typeof STUDIO_METHODS], spec, method)
-    assert.equal(isStudioLocalServersMethod(method), true)
+    assert.equal(Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, method), true)
   }
   assert.equal(STUDIO_LOCAL_SERVERS_METHODS['localServers.list'].scope, 'workspaces:read')
   // Running a command drives the conversation's work.
   assert.equal(STUDIO_LOCAL_SERVERS_METHODS['localServers.run'].scope, 'conversation:operate')
   assert.equal(STUDIO_TOPICS['localServers.changed'], STUDIO_LOCAL_SERVERS_TOPICS['localServers.changed'])
-  assert.equal(isStudioLocalServersMethod('localServers.link'), false)
-  assert.equal(isStudioLocalServersMethod('toString'), false)
+  assert.equal(Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, 'localServers.link'), false)
+  assert.equal(Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, 'toString'), false)
 })
 
 test('a list keeps its two target lists, de-duplicates workspace ids, and drops what it does not define', () => {
-  const parsed = parseStudioLocalServersParams('localServers.list', {
+  const parsed = parseStudioMethodParams('localServers.list', {
     workspaceIds: ['ws-1', 'ws-1', 'ws-2'],
     conversations: [{ ...conversation, extra: true }],
     extra: 1,
   })
   assert.deepEqual(parsed, { ok: true, params: { workspaceIds: ['ws-1', 'ws-2'], conversations: [conversation] } })
-  assert.deepEqual(parseStudioLocalServersParams('localServers.list', undefined), { ok: true, params: {} })
-  assert.equal(refusal(parseStudioLocalServersParams('localServers.list', { workspaceIds: 'ws-1' })), 'invalid_params')
-  assert.equal(refusal(parseStudioLocalServersParams('localServers.list', { workspaceIds: [''] })), 'invalid_params')
+  assert.deepEqual(parseStudioMethodParams('localServers.list', undefined), { ok: true, params: {} })
+  assert.equal(refusal(parseStudioMethodParams('localServers.list', { workspaceIds: 'ws-1' })), 'invalid_params')
+  assert.equal(refusal(parseStudioMethodParams('localServers.list', { workspaceIds: [''] })), 'invalid_params')
   assert.equal(
     refusal(
-      parseStudioLocalServersParams('localServers.list', {
+      parseStudioMethodParams('localServers.list', {
         workspaceIds: Array.from({ length: STUDIO_LOCAL_SERVERS_MAX_IDS + 1 }, (_, index) => `ws-${index}`),
       }),
     ),
     'invalid_params',
   )
   assert.equal(
-    refusal(parseStudioLocalServersParams('localServers.list', { conversations: [{ workspaceId: 'ws-1' }] })),
+    refusal(parseStudioMethodParams('localServers.list', { conversations: [{ workspaceId: 'ws-1' }] })),
     'invalid_params',
   )
-  assert.equal(refusal(parseStudioLocalServersParams('localServers.list', [])), 'invalid_params')
+  assert.equal(refusal(parseStudioMethodParams('localServers.list', [])), 'invalid_params')
 })
 
 test('run, stop and remove take a conversation and a server id, and nothing else', () => {
@@ -61,10 +59,10 @@ test('run, stop and remove take a conversation and a server id, and nothing else
       ok: true,
       params: { conversation, id: 'srv-1' },
     })
-    assert.equal(refusal(parseStudioLocalServersParams(method, { id: 'srv-1' })), 'invalid_params', method)
-    assert.equal(refusal(parseStudioLocalServersParams(method, { conversation })), 'invalid_params', method)
+    assert.equal(refusal(parseStudioMethodParams(method, { id: 'srv-1' })), 'invalid_params', method)
+    assert.equal(refusal(parseStudioMethodParams(method, { conversation })), 'invalid_params', method)
     assert.equal(
-      refusal(parseStudioLocalServersParams(method, { conversation, id: 'x'.repeat(201) })),
+      refusal(parseStudioMethodParams(method, { conversation, id: 'x'.repeat(201) })),
       'invalid_params',
       method,
     )

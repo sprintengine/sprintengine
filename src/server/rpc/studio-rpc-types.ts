@@ -7,30 +7,27 @@ import type {
   StudioClientInfo,
   StudioCreatedConversation,
   StudioGrant,
+  StudioChatMethod,
+  StudioMethodParams,
+  StudioWorkspace,
 } from '../../../packages/studio-protocol/src/public'
 import type {
   ConversationAttachmentResult,
   ConversationForkInput,
   ConversationForkResult,
-  ConversationInterruptInput,
   ConversationKey,
   ConversationPageResult,
   ConversationPlanDocumentInput,
   ConversationPlanDocumentResult,
-  ConversationProvidersListInput,
-  ConversationRespondToRequestInput,
   ConversationRevertInput,
   ConversationRevertResult,
   ConversationRewindInput,
   ConversationRewindResult,
   ConversationHandoffInput,
   ConversationHandoffResult,
-  ConversationSendTurnInput,
+  ConversationImageAttachment,
   ConversationSessionActionResult,
   ConversationSessionFrame,
-  ConversationSetModelInput,
-  ConversationSetPermissionInput,
-  ConversationStartSessionInput,
   ConversationStartSessionResult,
   ConversationToolDetailResult,
   ConversationTurnDiffResult,
@@ -115,6 +112,12 @@ export type StudioConversationBackend = {
   redact<T>(value: T): T
 }
 
+/** A chat method's params as the router hands them on: its command id is the router's to namespace. */
+type ChatInput<M extends StudioChatMethod> = Omit<StudioMethodParams<M>, 'commandId'>
+
+/** A session command's input: the client's command id, namespaced, and what the command was. */
+type SessionCommand<T> = T & { commandId: string; commandFingerprint?: string }
+
 /**
  * What a chat view needs beside the conversation lane (`chat.ts` in the
  * protocol), as main serves its own windows: the same handlers, so a chat over
@@ -123,41 +126,34 @@ export type StudioConversationBackend = {
  * command carries a command id already namespaced to its client.
  */
 export type StudioChatBackend = {
-  startSession(input: ConversationStartSessionInput): Promise<ConversationStartSessionResult>
-  sendTurn(input: ConversationSendTurnInput): Promise<ConversationSessionActionResult>
-  /** Whether a session command's id has a receipt (or is being carried out): a repeat is answered from it. */
+  startSession(input: ChatInput<'session.start'>): Promise<ConversationStartSessionResult>
+  sendTurn(
+    input: SessionCommand<Omit<ChatInput<'session.send'>, 'attachments'>> & {
+      attachments?: ConversationImageAttachment[]
+    },
+  ): Promise<ConversationSessionActionResult>
   hasReceipt(input: { sessionId: string; commandId: string }): Promise<boolean>
-  interrupt(input: ConversationInterruptInput): Promise<ConversationSessionActionResult>
-  respond(input: ConversationRespondToRequestInput): Promise<ConversationSessionActionResult>
-  setPermission(input: ConversationSetPermissionInput): Promise<ConversationSessionActionResult>
-  setModel(input: ConversationSetModelInput): Promise<ConversationSessionActionResult>
+  interrupt(input: SessionCommand<ChatInput<'session.interrupt'>>): Promise<ConversationSessionActionResult>
+  respond(input: SessionCommand<ChatInput<'session.respond'>>): Promise<ConversationSessionActionResult>
+  setPermission(input: SessionCommand<ChatInput<'session.setPermission'>>): Promise<ConversationSessionActionResult>
+  setModel(input: SessionCommand<ChatInput<'session.setModel'>>): Promise<ConversationSessionActionResult>
   revert(input: ConversationRevertInput): Promise<ConversationRevertResult>
   rewind(input: ConversationRewindInput): Promise<ConversationRewindResult>
   handoff(input: ConversationHandoffInput): Promise<ConversationHandoffResult>
   fork(input: ConversationForkInput): Promise<ConversationForkResult>
   attachment(ref: string): Promise<ConversationAttachmentResult>
   planDocument(input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult>
-  commands(input: { cli: string; cwd: string; refresh?: boolean; probe?: false }): Promise<ConversationCommandCatalog>
+  commands(input: ChatInput<'conversation.commands'>): Promise<ConversationCommandCatalog>
   /** Every `/` command list published from now on, for whichever (CLI, folder). */
   onCommandsChanged(listener: (catalog: ConversationCommandCatalog) => void): () => void
-  providers(input: ConversationProvidersListInput): Promise<ConversationProviderListResult>
-  providerModels(input: { providerId: string }): Promise<ConversationProviderModelsResult>
-  secretStatus(input: { providerId: string }): Promise<ConversationSecretStatusResult>
+  providers(input: ChatInput<'providers.list'>): Promise<ConversationProviderListResult>
+  providerModels(input: ChatInput<'providers.models'>): Promise<ConversationProviderModelsResult>
+  secretStatus(input: ChatInput<'providers.secretStatus'>): Promise<ConversationSecretStatusResult>
   /**
    * File search, in the slot of the connection asking: a newer search on the
    * same channel ends the older one, and a closed connection's are ended.
    */
-  searchFiles(
-    slot: number,
-    input: {
-      rootPath: string
-      query: string
-      limit?: number
-      purpose?: 'mention'
-      channel?: string
-      recentAt?: Record<string, number>
-    },
-  ): Promise<FileSearchResult>
+  searchFiles(slot: number, input: ChatInput<'files.search'>): Promise<FileSearchResult>
   cancelFileSearch(slot: number, channel?: string): void
   releaseFileSearches(slot: number): void
   stat(path: string): Promise<FileSystemStat>
@@ -165,7 +161,7 @@ export type StudioChatBackend = {
   repoRoot(folderPath: string, hostId?: string): Promise<string | null>
   /** Whether a folder is inside one a chat can be about: a workspace's, or Studio's own stores. */
   isKnownFolder?(path: string): Promise<boolean>
-  workspaces(): Array<{ id: string; name: string; folderPath: string | null; hostId?: string }>
+  workspaces(): StudioWorkspace[]
 }
 
 /** Who a request came from, beyond its grant. */

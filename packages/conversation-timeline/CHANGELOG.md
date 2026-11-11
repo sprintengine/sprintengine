@@ -2,6 +2,11 @@
 
 ## 0.1.0 (unreleased)
 
+### Changed (contract)
+
+- `PromptCacheReading`, the mention and attached-file readers are
+  `@sprintengine/conversation-protocol`'s, re-exported here unchanged.
+
 ### Changed
 
 - `formatStepDuration` moves up to hours from an hour on ("6h 59m 50s"),

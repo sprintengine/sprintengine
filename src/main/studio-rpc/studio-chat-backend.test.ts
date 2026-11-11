@@ -81,12 +81,18 @@ test('a send is checked as the IPC checks it, and reaches its handler with the c
   })
   // The IPC's own refusals, in its own words.
   const svg = await chat.sendTurn({
+    commandId: 'owner:svg',
     sessionId: 's1',
     message: 'x',
     attachments: [{ id: 'img', mediaType: 'image/svg+xml', dataBase64: 'PHN2Zz4=', byteLength: 5 }],
   })
   assert.deepEqual(svg, { ok: false, message: 'Attachments must be PNG, JPEG, WebP, or GIF images.' })
-  const mentions = await chat.sendTurn({ sessionId: 's1', message: 'x', mentions: [{ nope: true }] as never })
+  const mentions = await chat.sendTurn({
+    commandId: 'owner:mentions',
+    sessionId: 's1',
+    message: 'x',
+    mentions: [{ nope: true }] as never,
+  })
   assert.deepEqual(mentions, { ok: false, message: 'Mention references are invalid.' })
   assert.equal(sends.length, 1)
 })
@@ -94,7 +100,7 @@ test('a send is checked as the IPC checks it, and reaches its handler with the c
 test('a throw below answers as the IPC answers it, and a handler that is not there says so', async () => {
   const chat = createStudioChatBackend(deps().value)
   assert.deepEqual(await chat.providers({}), { ok: false, message: 'provider registry offline' })
-  assert.deepEqual(await chat.setModel({ sessionId: 's1', modelId: 'm' }), {
+  assert.deepEqual(await chat.setModel({ commandId: 'owner:model', sessionId: 's1', modelId: 'm' }), {
     ok: false,
     message: 'Changing models mid-conversation is unavailable.',
   })

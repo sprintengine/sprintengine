@@ -1,25 +1,17 @@
 // Part of the IPC contract: conversation providers and the secrets they and other credentials use.
 // ../electron-api.ts re-exports everything here.
+import type { StudioSecretStatusResult as ConversationSecretStatusResult } from '../../../packages/studio-protocol/src/public'
 
-import type { ConversationProviderListEntry, ConversationProviderModel } from '../plugin-manifest'
-
-export type ConversationProviderListResult =
-  { ok: true; providers: ConversationProviderListEntry[] } | { ok: false; message: string }
+// What `providers.*` answers is the Studio protocol's; these are its names here.
+export type {
+  StudioProviderListResult as ConversationProviderListResult,
+  StudioProviderModelsResult as ConversationProviderModelsResult,
+  StudioSecretStatus as ConversationSecretStatus,
+  StudioSecretStatusResult as ConversationSecretStatusResult,
+} from '../../../packages/studio-protocol/src/public'
 
 export type ConversationProviderModelsInput = {
   providerId: string
-}
-
-export type ConversationProviderModelsResult =
-  { ok: true; models: ConversationProviderModel[] } | { ok: false; message: string }
-
-export type ConversationSecretStatus = {
-  providerId: string
-  configured: boolean
-  source: 'settings' | 'session' | 'environment' | 'none'
-  persistence: 'encrypted' | 'session' | 'environment'
-  encryptionAvailable: boolean
-  label: string
 }
 
 export type ConversationSecretStatusInput = {
@@ -31,9 +23,6 @@ export type ConversationSecretSetInput = ConversationSecretStatusInput & {
 }
 
 export type ConversationSecretClearInput = ConversationSecretStatusInput
-
-export type ConversationSecretStatusResult =
-  { ok: true; status: ConversationSecretStatus } | { ok: false; message: string }
 
 export type ConversationSecretSetResult = ConversationSecretStatusResult
 

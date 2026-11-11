@@ -11,6 +11,7 @@
 // renderer/preload hosts plus the user-facing module chooser.
 
 import type { HostCapability } from '../../../packages/module-sdk/src/host-api'
+import type { StudioModuleTrustStatus } from '../../../packages/studio-protocol/src/public'
 
 // Ids of the bundled (first-party) modules — the reserved set a third-party
 // module may not claim (it must not shadow/impersonate a built-in feature).
@@ -158,7 +159,8 @@ export type CapabilityManifest = {
 // Trust classification of a third-party module (see module-signature.ts):
 // 'trusted' (loadable), 'signed' (valid sig, awaiting user approval), 'unsigned'
 // (awaiting approval), 'invalid' (tampered signature; blocked).
-export type ModuleTrustStatus = 'trusted' | 'signed' | 'unsigned' | 'invalid'
+/** Whether a module's code is one Studio may run; the Studio protocol's, as a provider list reports it. */
+export type ModuleTrustStatus = StudioModuleTrustStatus
 
 type ThirdPartyModuleLaunchStatus =
   | 'trusted_executable'

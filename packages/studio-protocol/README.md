@@ -94,13 +94,26 @@ The `welcome`'s `grant` is what the connection may do:
 
 ## Methods
 
+Every method and topic is defined once, in one table that builds both ends
+(`contract.ts`). A family's type map (`StudioChatMethodMap`, …) says what each
+method takes, what it answers and the refusals of its own it may answer with
+beyond the common ones (`StudioCommonErrorCode`); a topic's says what each
+message carries (`StudioTopicPayload`). `STUDIO_METHODS` and `STUDIO_TOPICS`
+hold each one's scope and the validator its params are read by
+(`parseStudioMethodParams`, `parseStudioTopicParams`), typed over the map's
+keys: a method without a scope or a validator does not compile. A server
+answers through a `StudioHandlers` map, a handler per method typed by its
+contract, so a missing handler, a wrong result or an undeclared refusal does
+not compile either. A client calls through `StudioRequest`, or the call per
+method `createStudioRpcClient` builds from the same table.
+
 | Method                             | Scope          | Takes                                           | Answers                                          |
 | ---------------------------------- | -------------- | ----------------------------------------------- | ------------------------------------------------ |
 | `server.info`                      | any            | —                                               | the welcome, without its pairing                 |
 | `server.ping`                      | any            | —                                               | `{ at }`, at once: the line is alive             |
 | `conversation.list`                | read           | —                                               | `{ conversations: ConversationThread[] }`        |
 | `conversation.create`              | create         | `ConversationCreateRequest` + `commandId`       | `{ conversation }`                               |
-| `conversation.send`                | operate        | `key`, `commandId`, `message`                   | `{ notice? }`, when the turn ends                |
+| `conversation.send`                | operate        | `key`, `commandId`, the lane's `send` members   | `{ notice? }`, when the turn ends                |
 | `conversation.interrupt`           | operate        | `key`, `commandId`                              | `{}`                                             |
 | `conversation.resolveApproval`     | operate        | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
 | `conversation.answerQuestion`      | operate        | `key`, `commandId`, `requestId`, `answers`      | `{}`                                             |
@@ -109,7 +122,7 @@ The `welcome`'s `grant` is what the connection may do:
 | `conversation.setModel`            | operate        | `key`, `commandId`, `modelId`                   | `{ modelId, notice? }`                           |
 | `conversation.cancelQueued`        | operate, owner | `key`, `commandId`, `queuedId`                  | `{}`                                             |
 | `conversation.stopSubagent`        | operate, owner | `key`, `commandId`, `toolUseId`                 | `{}`                                             |
-| `conversation.messageSubagent` | operate, owner | `key`, `commandId`, `toolUseId`, `message` | `{}` | Passes the person's words to one agent, through the chat's model. |
+| `conversation.messageSubagent`     | operate, owner | `key`, `commandId`, `toolUseId`, `message`      | `{}`                                             | Passes the person's words to one agent, through the chat's model. |
 | `conversation.setReasoningEffort`  | operate, owner | `key`, `commandId`, `effort?`                   | `{ notice? }`                                    |
 | `conversation.mcpServerAction`     | operate, owner | `key`, `commandId`, `serverId`, `action`        | `{}`                                             |
 | `conversation.restartSession`      | operate, owner | `key`, `commandId`                              | `{ notice? }`                                    |

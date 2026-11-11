@@ -53,6 +53,34 @@ export type ConversationCommandsAnswer = {
   error?: string
 }
 
+/**
+ * One slash command as Studio's own `/` menu holds it: the wire's, and
+ * Studio's own (`source: 'app'`, e.g. `model`), which it handles before
+ * anything is sent. The menu inserts `/name ` as plain text and the CLI does
+ * the rest; `insertText` is what goes in instead when that is not it (Codex
+ * takes its skills as `$name ` mentions). `cli` is built into the agent CLI,
+ * `custom` a command the person or a plugin gave it, `skill` a skill the CLI
+ * exposes as a command.
+ */
+export type ConversationSlashCommand = Omit<ConversationWireSlashCommand, 'source'> & {
+  source: ConversationWireCommandSource | 'app'
+}
+
+/**
+ * The command list for one CLI in one folder, as Studio keeps it and the
+ * Studio protocol's `conversation.commands` answers it: `fetchedAt` is the
+ * epoch ms of the answer it came from, 0 before anything has answered;
+ * `error` says why the last attempt failed, `commands` then holding the last
+ * good list.
+ */
+export type ConversationCommandCatalog = {
+  cli: string
+  cwd: string
+  commands: ConversationSlashCommand[]
+  fetchedAt: number
+  error?: string
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }

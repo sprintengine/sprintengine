@@ -67,9 +67,9 @@ function bytesOf(upload: Upload): Buffer {
 /** Who is asking: the client an upload belongs to, and the connection whose budget it is counted in. */
 export type StudioUploadHolder = { client: string; connection: string }
 
-export type StudioUploadRefusal = {
+export type StudioUploadRefusal<Code extends string = 'invalid_params' | 'not_found' | 'busy' | 'too_large'> = {
   ok: false
-  code: 'invalid_params' | 'not_found' | 'busy' | 'too_large'
+  code: Code
   message: string
 }
 
@@ -80,7 +80,7 @@ export type StudioUploads = {
   begin(
     holder: StudioUploadHolder,
     input: { mediaType: string; byteLength: number; name?: string; purpose?: StudioUploadPurpose },
-  ): { ok: true; uploadId: string; chunkBytes: number } | StudioUploadRefusal
+  ): { ok: true; uploadId: string; chunkBytes: number } | StudioUploadRefusal<'busy' | 'too_large'>
   append(
     holder: StudioUploadHolder,
     input: { uploadId: string; offset: number; dataBase64: string },

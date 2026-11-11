@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed (contract)
+
+- `request` is `StudioRequest`, typed by the protocol's method table, and
+  `subscribe` is typed by topic: a push listener hears its topic's payload
+  type (`StudioTopicPayload`) rather than `unknown`.
+
 ### Added
 
 - **Tools for agents.** `client.tools.offer(toolset)` gives Studio's agents

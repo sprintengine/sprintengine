@@ -7,7 +7,6 @@ import {
   STUDIO_MAX_FILES_PER_SEND,
   STUDIO_MAX_UPLOAD_BYTES,
   STUDIO_UPLOAD_CHUNK_BYTES,
-  parseStudioChatParams,
   type StudioChatMethod,
 } from '../src/chat'
 import { parseStudioServerFrame } from '../src/envelope'
@@ -35,7 +34,7 @@ test('the chat surface is an owner’s, method by method, and each names a scope
 test('every chat mutation needs a command id, and a read never takes one', () => {
   for (const [method, spec] of Object.entries(STUDIO_CHAT_METHODS)) {
     if (!spec.mutation) continue
-    const parsed = parseStudioChatParams(method as StudioChatMethod, {
+    const parsed = parseStudioMethodParams(method as StudioChatMethod, {
       sessionId: 's1',
       key,
       turnSeq: 2,
@@ -108,7 +107,7 @@ test('a send keeps what the composer sends and drops the rest', () => {
     },
   )
   const refused = (params: Record<string, unknown>) => {
-    const parsed = parseStudioChatParams('session.send', { commandId: 'c', sessionId: 's', message: 'x', ...params })
+    const parsed = parseStudioMethodParams('session.send', { commandId: 'c', sessionId: 's', message: 'x', ...params })
     return parsed.ok ? null : parsed.code
   }
   assert.equal(refused({ mode: 'yolo' }), 'invalid_params')
@@ -131,34 +130,40 @@ test('a send keeps what the composer sends and drops the rest', () => {
 })
 
 test('a picture is staged in pieces no larger than a frame holds, of a size and type a send may carry', () => {
-  assert.deepEqual(parseStudioChatParams('uploads.begin', { mediaType: 'image/png', byteLength: 10, name: 'a.png' }), {
-    ok: true,
-    params: { mediaType: 'image/png', byteLength: 10, name: 'a.png' },
-  })
+  assert.deepEqual(
+    parseStudioMethodParams('uploads.begin', { mediaType: 'image/png', byteLength: 10, name: 'a.png' }),
+    {
+      ok: true,
+      params: { mediaType: 'image/png', byteLength: 10, name: 'a.png' },
+    },
+  )
   const begin = (params: Record<string, unknown>) => {
-    const parsed = parseStudioChatParams('uploads.begin', params)
+    const parsed = parseStudioMethodParams('uploads.begin', params)
     return parsed.ok ? null : parsed.code
   }
   assert.equal(begin({ mediaType: 'image/svg+xml', byteLength: 10 }), 'invalid_params')
   assert.equal(begin({ mediaType: 'image/png', byteLength: 0 }), 'invalid_params')
   assert.equal(begin({ mediaType: 'image/png', byteLength: STUDIO_MAX_UPLOAD_BYTES + 1 }), 'too_large')
   const fits = 'A'.repeat(Math.ceil(STUDIO_UPLOAD_CHUNK_BYTES / 3) * 4)
-  assert.equal(parseStudioChatParams('uploads.append', { uploadId: 'u', offset: 0, dataBase64: fits }).ok, true)
-  const over = parseStudioChatParams('uploads.append', { uploadId: 'u', offset: 0, dataBase64: `${fits}AAAA` })
+  assert.equal(parseStudioMethodParams('uploads.append', { uploadId: 'u', offset: 0, dataBase64: fits }).ok, true)
+  const over = parseStudioMethodParams('uploads.append', { uploadId: 'u', offset: 0, dataBase64: `${fits}AAAA` })
   assert.equal(over.ok ? null : over.code, 'too_large')
-  const notBase64 = parseStudioChatParams('uploads.append', { uploadId: 'u', offset: 0, dataBase64: 'not base64!' })
+  const notBase64 = parseStudioMethodParams('uploads.append', { uploadId: 'u', offset: 0, dataBase64: 'not base64!' })
   assert.equal(notBase64.ok, false)
-  assert.deepEqual(parseStudioChatParams('uploads.discard', { uploadIds: ['u1', 'u2'] }), {
+  assert.deepEqual(parseStudioMethodParams('uploads.discard', { uploadIds: ['u1', 'u2'] }), {
     ok: true,
     params: { uploadIds: ['u1', 'u2'] },
   })
-  assert.equal(parseStudioChatParams('uploads.discard', { uploadIds: 'u1' }).ok, false)
-  assert.equal(parseStudioChatParams('uploads.discard', { uploadIds: Array.from({ length: 33 }, () => 'u') }).ok, false)
+  assert.equal(parseStudioMethodParams('uploads.discard', { uploadIds: 'u1' }).ok, false)
+  assert.equal(
+    parseStudioMethodParams('uploads.discard', { uploadIds: Array.from({ length: 33 }, () => 'u') }).ok,
+    false,
+  )
 })
 
 test('revert, rewind and fork take a conversation and a turn; a fork is from a reply or before a message', () => {
   assert.deepEqual(
-    parseStudioChatParams('conversation.revert', {
+    parseStudioMethodParams('conversation.revert', {
       commandId: 'c',
       key: folderKey,
       turnSeq: 4,
@@ -167,9 +172,9 @@ test('revert, rewind and fork take a conversation and a turn; a fork is from a r
     }),
     { ok: true, params: { commandId: 'c', key: folderKey, turnSeq: 4, confirmed: true, files: ['src/a.ts'] } },
   )
-  assert.equal(parseStudioChatParams('conversation.rewind', { commandId: 'c', key, turnSeq: 0 }).ok, false)
+  assert.equal(parseStudioMethodParams('conversation.rewind', { commandId: 'c', key, turnSeq: 0 }).ok, false)
   assert.deepEqual(
-    parseStudioChatParams('conversation.fork', {
+    parseStudioMethodParams('conversation.fork', {
       commandId: 'c',
       key,
       newAgentId: 'a2',
@@ -179,14 +184,14 @@ test('revert, rewind and fork take a conversation and a turn; a fork is from a r
     { ok: true, params: { commandId: 'c', key, newAgentId: 'a2', side: 'assistant', turnId: 't' } },
   )
   assert.equal(
-    parseStudioChatParams('conversation.fork', { commandId: 'c', key, newAgentId: 'a2', side: 'user' }).ok,
+    parseStudioMethodParams('conversation.fork', { commandId: 'c', key, newAgentId: 'a2', side: 'user' }).ok,
     false,
   )
 })
 
 test('the reads around a chat take their own shapes', () => {
   assert.deepEqual(
-    parseStudioChatParams('files.search', {
+    parseStudioMethodParams('files.search', {
       rootPath: '/Users/dev/project',
       query: 'app',
       limit: 50,
@@ -206,18 +211,18 @@ test('the reads around a chat take their own shapes', () => {
       },
     },
   )
-  assert.equal(parseStudioChatParams('files.search', { rootPath: '/a', query: 'q', limit: 501 }).ok, false)
-  assert.equal(parseStudioChatParams('files.stat', { path: '' }).ok, false)
+  assert.equal(parseStudioMethodParams('files.search', { rootPath: '/a', query: 'q', limit: 501 }).ok, false)
+  assert.equal(parseStudioMethodParams('files.stat', { path: '' }).ok, false)
   assert.deepEqual(
-    parseStudioChatParams('providers.list', { cliRuntimes: { codex: { command: '/usr/local/bin/codex' } } }),
+    parseStudioMethodParams('providers.list', { cliRuntimes: { codex: { command: '/usr/local/bin/codex' } } }),
     {
       ok: true,
       params: { cliRuntimes: { codex: { command: '/usr/local/bin/codex' } } },
     },
   )
-  assert.equal(parseStudioChatParams('providers.list', { cliRuntimes: { codex: 'codex' } }).ok, false)
-  assert.equal(parseStudioChatParams('conversation.commands', { cli: 'codex', cwd: '/a', probe: true }).ok, false)
-  assert.deepEqual(parseStudioChatParams('workspaces.list', undefined), { ok: true, params: {} })
+  assert.equal(parseStudioMethodParams('providers.list', { cliRuntimes: { codex: 'codex' } }).ok, false)
+  assert.equal(parseStudioMethodParams('conversation.commands', { cli: 'codex', cwd: '/a', probe: true }).ok, false)
+  assert.deepEqual(parseStudioMethodParams('workspaces.list', undefined), { ok: true, params: {} })
 })
 
 test('a push frame carries its stream’s payload, and one without a payload is broken', () => {
