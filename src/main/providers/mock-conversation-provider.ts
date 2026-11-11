@@ -14,6 +14,7 @@ export const MOCK_CONVERSATION_CAPABILITIES: ConversationCapabilities = {
   interrupt: true,
   resume: false,
   subagents: true,
+  messageSubagent: true,
   cost: false,
   contextMeter: false,
   liveModelSwitch: false,
@@ -30,7 +31,47 @@ export function createMockConversationProvider(
     startSession(input) {
       return [event(input, 'session_started'), event(input, 'session_ready')]
     },
+    // The person's words for a sub-agent come back as an ordinary turn (the
+    // runtime asks the chat's model to pass them on), so there is nothing to
+    // arm here.
+    expectSubagentMessage() {},
     sendTurn(input) {
+      // A background sub-agent, started and left running: the lane a message
+      // to one agent is addressed by (its task id, under the tool call that
+      // started it). The turn ends while the agent works on.
+      if (input.message === '/subagent') {
+        const toolUseId = `${input.turnId}_agent`
+        return [
+          event(input, 'turn_started', { turnId: input.turnId }),
+          event(input, 'tool_started', {
+            turnId: input.turnId,
+            toolUseId,
+            toolCallId: toolUseId,
+            name: 'Agent',
+            tool: 'Agent',
+            kind: inferConversationToolKind('Agent'),
+            input: { description: 'Mock sub-agent', prompt: 'Look around', run_in_background: true },
+            summary: 'Mock sub-agent',
+          }),
+          event(input, 'tool_output', {
+            turnId: input.turnId,
+            toolUseId,
+            toolCallId: toolUseId,
+            output: 'Started in the background.',
+            isError: false,
+            status: 'ok',
+          }),
+          event(input, 'subagent_status', {
+            toolUseId,
+            taskId: `${input.turnId}_task`,
+            status: 'running',
+            background: true,
+            subagentType: 'general-purpose',
+            description: 'Mock sub-agent',
+          }),
+          event(input, 'turn_completed', { turnId: input.turnId }),
+        ]
+      }
       if (input.message === '/tools') {
         return [
           event(input, 'turn_started', { turnId: input.turnId }),

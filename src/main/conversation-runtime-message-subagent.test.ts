@@ -16,7 +16,7 @@ async function fixture(options: { capability?: boolean; ceiling?: 'manual' | 'au
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'message-subagent-'))
   const expected: string[] = []
   const capability = options.capability ?? true
-  const mock = createMockConversationProvider(capability ? { messageSubagent: true } : {})
+  const mock = createMockConversationProvider({ messageSubagent: capability })
   const runtime = new ConversationRuntime({
     adapters: [
       {
@@ -120,5 +120,38 @@ test('a sub-agent cannot be switched past its ceiling, by any path, and may go s
     assert.equal(stricter.ok, true)
   } finally {
     await f.cleanup()
+  }
+})
+
+test('the mock provider’s `/subagent` leaves an agent running whose lane a message reaches', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'message-subagent-mock-'))
+  const runtime = new ConversationRuntime({
+    adapters: [createMockConversationProvider()],
+    getProviderById: () => undefined,
+  })
+  try {
+    const started = await runtime.startSession({
+      workspaceRoot,
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      providerId: 'mock-provider',
+      modelId: 'mock-model',
+    })
+    assert.ok(started.ok)
+    const sessionId = started.session.sessionId
+    const events: { type: string; payload?: Record<string, unknown> }[] = []
+    const stop = runtime.onEvent((event) => events.push(event))
+    assert.equal((await runtime.sendTurn({ sessionId, message: '/subagent' })).ok, true)
+    const status = events.find((event) => event.type === 'subagent_status')
+    assert.equal(status?.payload?.status, 'running')
+    const toolUseId = String(status?.payload?.toolUseId)
+    const result = await runtime.messageSubagent({ sessionId, toolUseId, message: 'Check the e2e too' })
+    stop()
+    assert.equal(result.ok, true)
+    const message = events.find((event) => event.type === 'user_message' && event.payload?.subagentMessage)
+    assert.deepEqual(message?.payload?.subagentMessage, { toolUseId, text: 'Check the e2e too' })
+  } finally {
+    await runtime.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
   }
 })
