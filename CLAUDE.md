@@ -35,8 +35,11 @@ the others. Say in the pull request what you did for each:
   types (`mobile/src/shared/mobile-control/protocol.ts`). Change both sides and
   build the screen, or say why a phone cannot. An older phone keeps working
   (`docs/compatibility.md`).
-- **WSL and SSH.** A change to how a session runs or reports works through
-  `src/server` too.
+- **WSL and SSH.** By default a WSL chat is a local chat whose CLI Windows
+  starts through `wsl.exe`, so check Windows and Linux paths and quoting. With
+  the WSL server on, and on SSH machines, a chat goes through `src/server`'s
+  backend wire: add a new backend member to `REMOTE_BACKEND_MEMBERS` and bump
+  `BACKEND_WIRE_VERSION` (`src/server/wsl/backend-wire.ts`).
 - **Other ways in.** The command palette, shortcuts, menus, the sidebar's row
   menu, Settings and the agents' MCP tools (`src/main/automation/`). Keep the
   behaviour in a service so all of them reach it.
