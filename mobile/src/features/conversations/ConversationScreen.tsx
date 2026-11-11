@@ -115,6 +115,7 @@ import {
   SubagentStartRow,
   ThinkingRow,
   ToolGroup,
+  SideQuestionRow,
   TurnFold,
   type StepDetailSource,
 } from "./conversationParts";
@@ -2167,6 +2168,10 @@ const ConversationItem = memo(function ConversationItem({
       </View>
     );
   }
+  if (row.kind === "sideQuestion")
+    return (
+      <SideQuestionRow question={row.question} answer={row.answer} truncated={row.truncated} onNotice={source.onNotice} />
+    );
   if (row.kind === "command")
     return row.note ? (
       <Text style={styles.meta}>{row.output}</Text>
