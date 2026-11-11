@@ -44,6 +44,8 @@ test('tailnet-mesh', async () => {
     close(): Promise<void>
   }
 
+  const REMOTE_ENVIRONMENT_ID = '3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a'
+
   async function startHarness(): Promise<Harness> {
     const remoteDir = mkdtempSync(join(tmpdir(), 'sprintengine-mesh-remote-'))
     const localDir = mkdtempSync(join(tmpdir(), 'sprintengine-mesh-local-'))
@@ -54,6 +56,7 @@ test('tailnet-mesh', async () => {
       port: 0,
       serverName: 'sprintengine-studio',
       serverVersion: '9.9.9',
+      environmentId: REMOTE_ENVIRONMENT_ID,
       resolveTools: () => remoteTools(),
       isMutation: () => false,
       devices,
@@ -245,6 +248,12 @@ test('tailnet-mesh', async () => {
         'github.com/acme/atlas',
       )
       assert.equal(browse.workspaces.find((entry) => entry.id === 'ws-2')?.repository, null)
+
+      // Which Studio the pairing reaches, as its handshake said, kept on the pairing.
+      assert.equal(
+        harness.mesh.listConnections().find((connection) => connection.id === connectionId)?.environmentId,
+        REMOTE_ENVIRONMENT_ID,
+      )
     } finally {
       await harness.close()
     }

@@ -68,6 +68,13 @@ export type MeshConnection = {
    * written before this was kept.
    */
   pairedVia: 'link' | 'request' | 'reverse' | 'unknown'
+  /**
+   * The environment id that machine's Studio says it is (its `identity`
+   * answer), kept from the first time it said one. The same whatever the
+   * machine is called or whichever address reaches it; absent until a build
+   * that says it has answered.
+   */
+  environmentId?: string
 }
 
 /** A workspace on the remote machine, as `workspace.list` reports it. */
@@ -569,6 +576,19 @@ export type MeshLiveState = {
   requests: MeshPairRequestView[]
   /** The last reachability answer per paired machine; absent before the first check. */
   reachability: MeshMachineReachability[]
+}
+
+/**
+ * Whether an event can change the list of paired desktops as
+ * `listConnections` gives it: one paired or forgotten, or one that answered
+ * (an answer may carry its environment id for the first time).
+ */
+export function meshListChanged(event: MeshEvent): boolean {
+  return (
+    event.kind === 'machine-paired' ||
+    event.kind === 'machine-forgotten' ||
+    (event.kind === 'machine-reachability' && !event.checking && event.reachable)
+  )
 }
 
 export const MESH_EVENT_CHANNEL = 'mesh:event'

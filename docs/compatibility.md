@@ -383,6 +383,11 @@ its pull requests (`pullRequests`) and the desktop's own kind and colour
 (`machine` on `identity`) are optional members with no capability: an older
 phone ignores them, and a phone reads their absence as a desktop that does not
 send them (`docs/conversations.md`, "Machines and pull requests in the list").
+`environmentId` on `identity` (2026-11-11) is another: the answering Studio's
+environment id, the `welcome.environment.id` its Studio protocol gives, which a
+paired desktop keeps on the pairing (`MeshConnection.environmentId`). A build
+from before it leaves it out, and the pairing keeps whatever id it last heard,
+or none; a value that cannot be an id (`isEnvironmentId`) is read as none.
 A listed chat's `localServers` (2026-10-25: `{ id, url, title, port, state }`,
 the servers its agents linked, as the desktop last checked them, never the
 command or folder that starts one) is another, listed only for a chat that has

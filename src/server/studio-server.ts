@@ -18,7 +18,7 @@ import { createNodeStudioPlatform, type NodeStudioPlatform } from './platform/pl
 import { createUnavailableSecretCipher } from './platform/secret-cipher'
 import { SERVER_EXIT } from './bootstrap/envelope'
 import { runShutdownLegs, type ShutdownLegProgress } from './bootstrap/serve'
-import { readStudioEnvironmentId } from '../main/studio-rpc/studio-rpc-service'
+import { readStudioEnvironmentId } from './environment/environment-id'
 import type { WebFrontDoor, WebFrontDoorOptions } from './web/web-front-door'
 
 // A Studio server under plain Node: the core and its gateway, with nothing of

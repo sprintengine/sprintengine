@@ -1,6 +1,3 @@
-import { randomUUID } from 'node:crypto'
-import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Duplex } from 'node:stream'
 
 import { toolError, toolSuccess } from '../../shared/modules/mcp-tools'
@@ -13,6 +10,7 @@ import {
 import type { AppIdentity } from '../../server/platform/app-identity'
 import type { ClientBus } from '../../server/platform/client-bus'
 import { studioPlatform } from '../../server/platform/platform'
+import { readStudioEnvironmentId } from '../../server/environment/environment-id'
 import type { StudioPaths } from '../../server/platform/studio-paths'
 import {
   createTicketAuthenticator,
@@ -53,7 +51,6 @@ import { createStudioLocalAppStore, type StudioLocalAppStore } from './studio-lo
 // connects whether or not the listener started, and keeps its connection
 // while the socket is down.
 
-export const STUDIO_ENVIRONMENT_FILENAME = 'studio-environment.json'
 const REFUSAL_WINDOW_MS = 60_000
 const REFUSALS_PER_WINDOW = 5
 
@@ -150,25 +147,6 @@ export type StudioRpcServiceOptions = {
   /** A socket path or pipe name of the caller's choosing (tests). */
   socketPath?: string
   now?: () => number
-}
-
-/**
- * The id this data directory is known by to every client, minted the first
- * time it is asked for and kept for good, so a client that reaches this
- * Studio by two routes recognises it as one.
- */
-export function readStudioEnvironmentId(userDataDir: string): string {
-  const path = join(userDataDir, STUDIO_ENVIRONMENT_FILENAME)
-  try {
-    const stored = JSON.parse(readFileSync(path, 'utf8')) as { id?: unknown }
-    if (typeof stored.id === 'string' && /^[0-9a-f-]{36}$/.test(stored.id)) return stored.id
-  } catch {
-    // Absent or unreadable: minted below.
-  }
-  const id = randomUUID()
-  writeFileSync(path, `${JSON.stringify({ id }, null, 2)}\n`, { mode: 0o600 })
-  if (process.platform !== 'win32') chmodSync(path, 0o600)
-  return id
 }
 
 /** The grant the desktop's own shell holds: the owner's, under the app's name. */

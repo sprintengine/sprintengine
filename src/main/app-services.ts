@@ -21,6 +21,7 @@ import { primeDefaultWslDistro } from './hosts/wsl-distro'
 import { configureWslHelpers } from './hosts/wsl-helper-runtime'
 import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
+import { createDesktopEnvironments } from './environments/desktop-environments'
 import { isMachinePath } from '../shared/machine-paths'
 import { workspaceProjectRootOf } from '../shared/worktree-paths'
 import type { WorkspaceEnvironmentRef } from '../renderer/src/types/workspace'
@@ -38,7 +39,7 @@ import {
   setLaunchStatusLineScriptResolver,
 } from './terminal-launch'
 import { TAILNET_EVENT_CHANNEL } from '../shared/tailnet'
-import { MESH_EVENT_CHANNEL } from '../shared/tailnet-mesh'
+import { MESH_EVENT_CHANNEL, meshListChanged } from '../shared/tailnet-mesh'
 import { CANVAS_MODULE_DEFAULT_ENABLED } from '../shared/modules/manifest'
 import { createTailnetNotifier } from './tailnet-notifications'
 import { createInProcessShellBridge } from './shell-bridge'
@@ -1899,6 +1900,8 @@ export function createAppServices(
   // workspace-sync snapshot and terminal runtime, and mutations go straight to
   // the main services that own them — one lane, no window required.
   // The gateway starts with the app.
+  // Who hears that the paired desktops changed, while the mesh is this process's.
+  const meshListeners = new Set<() => void>()
   // Out of process the gateway, the tailnet and the mesh are the server's.
   const automationService = server
     ? null
@@ -1919,6 +1922,7 @@ export function createAppServices(
         onMeshEvent: (event) => {
           broadcastToAllWindows(MESH_EVENT_CHANNEL, event)
           tailnetNotifier?.onMeshEvent(event)
+          if (meshListChanged(event)) for (const listener of [...meshListeners]) listener()
         },
         // A window someone could be looking at: the mesh's reachability timer and
         // its re-checks of an absent machine only feed rows on screen.
@@ -2016,6 +2020,33 @@ export function createAppServices(
         }),
       })
   tailnetToolsFrontDoor = automationService
+  // Every Studio this desktop knows, with the routes it reaches each by: this
+  // machine, its WSL distributions, its SSH machines and its paired desktops
+  // (environments/environment-registry.ts). Nothing routes through it yet.
+  const environments = createDesktopEnvironments({
+    userDataDir: app.getPath('userData'),
+    platform: process.platform,
+    hosts: {
+      get: () => agentLaunchSettings.get().hosts,
+      onChanged: (listener) => agentLaunchSettings.subscribe(() => listener()),
+    },
+    ssh: ssh
+      ? { list: () => ssh.environments.list(), onChanged: (listener) => ssh.environments.onChanged(listener) }
+      : null,
+    // The mesh is the gateway's: this process's in process, the server's out of it.
+    mesh: automationService
+      ? {
+          list: () => automationService.mesh().listConnections(),
+          onChanged: (listener) => {
+            meshListeners.add(listener)
+            return () => meshListeners.delete(listener)
+          },
+        }
+      : (server?.mirror.meshConnections ?? null),
+    log: (message) => {
+      void writeDiagnosticLog({ level: 'info', title: 'Environments', message, source: 'workspace' })
+    },
+  })
   // A chat agent in WSL reaches its own server's gateway: the desktop's
   // toolsets, and this side's own tools of the families the WSL server cannot
   // serve, are offered there too, and run here (phase 7).
@@ -2463,6 +2494,8 @@ export function createAppServices(
   return {
     /** SSH machines (phase 8), when their preview is on this session. */
     ssh,
+    /** Every Studio this desktop knows, by environment id, with its routes. */
+    environments,
     shellBridge,
     /** The shell's client of its server: stopped first at quit, so the server's goodbye is not answered. */
     desktopShell,

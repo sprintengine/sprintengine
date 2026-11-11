@@ -41,6 +41,7 @@ import {
   WEBSOCKET_CLOSE_NORMAL,
 } from './websocket-frames'
 import { asRecord } from '../../../shared/records'
+import { isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
 
 // The outbound client for tailnet remote control: the half that DIALS
 // another machine's listener. Everything else under `tailnet/` answers calls;
@@ -363,6 +364,12 @@ export type RemoteIdentity = {
   deviceId: string
   deviceName: string
   scopes: TailnetScope[]
+  /**
+   * That Studio's environment id, the same on every route to it and across a
+   * rename. Null from a build before it said one, or one that said something
+   * that cannot be an id.
+   */
+  environmentId: string | null
   /** The wire that machine speaks; always inside this build's window, or the call refused. */
   transportVersion: number
   /**
@@ -423,6 +430,7 @@ export async function readRemoteIdentity(input: {
       deviceId: typeof record.deviceId === 'string' ? record.deviceId : '',
       deviceName: typeof record.deviceName === 'string' ? record.deviceName : '',
       scopes: readScopes(record.scopes),
+      environmentId: isEnvironmentId(record.environmentId) ? record.environmentId : null,
       transportVersion: record.transportVersion as number,
       capabilities: readCapabilities(record.capabilities),
     },

@@ -448,9 +448,11 @@ grants on every frame.
 - Features are asked about by capability, never by version. A purely additive
   namespace or method ships as a capability with no bump.
 - `environment.id` is a stable random id minted when a data directory is
-  created. A client keys its caches and its saved connections on it, so a
-  server reached by two routes (an SSH tunnel and the tailnet) is recognised as
-  one.
+  created (`src/server/environment/environment-id.ts`: created whole or not at
+  all, never written over when it cannot be read). A client keys its caches
+  and its saved connections on it, so a server reached by two routes (an SSH
+  tunnel and the tailnet) is recognised as one. A paired desktop says the same
+  id on the tailnet's `identity`.
 - An unauthenticated `GET /.well-known/sprintengine-studio` answers the
   product, `server.version`, the protocol window and the auth methods it
   accepts, and nothing else (no label, no paths), so a client can tell "wrong
@@ -1195,10 +1197,21 @@ in `docs/design/studio-server/phase-8-ssh-remotes.md`.
   still read what the newer version left.
 
 **Environments in the app**: a saved connection has a label, a route (`local`,
-`wsl:<distro>`, `ssh:<host alias>`, `tailnet:<device>`) and the
+`wsl:<distro>`, `ssh:<saved machine id>`, `tailnet:<pairing id>`) and the
 `environment.id` it last reported. The sidebar groups workspaces by
 environment; the existing Remote band and the machine dropdown in New chat list
 environments instead of paired desktops only.
+
+_As built so far (2026-11-11)_: the types are in
+`@sprintengine/studio-protocol` (`environment.ts`: `EnvironmentDescriptor`,
+`EnvironmentRoute` with its order, `ChatAddress` `{ environmentId, chatId }`);
+today's machine keys (`hostId`, the router's keys, `ssh://` paths, a
+workspace's SSH record, pairing ids) map onto them in
+`src/shared/environment-keys.ts`; and the desktop keeps the list in
+`src/main/environments/environment-registry.ts`, fed by the WSL settings, the
+saved SSH machines and the paired desktops, with what each route answered kept
+in `environments.json`. No call is routed through it yet: each cut-over to
+direct environments moves its callers onto it.
 
 ### 10.4 The server bundle
 

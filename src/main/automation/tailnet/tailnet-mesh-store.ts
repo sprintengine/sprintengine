@@ -7,6 +7,7 @@ import type { SecretCipher } from '../../../server/platform/secret-cipher'
 import { normalizeTailnetScopes, type TailnetScope } from '../../../shared/tailnet'
 import type { MeshConnection } from '../../../shared/tailnet-mesh'
 import { isRecord } from '../../../shared/records'
+import { isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
 
 // The tokens THIS machine holds for OTHER machines.
 //
@@ -68,6 +69,13 @@ export type TailnetMeshStore = {
   /** Record what the remote says our grants are now; they can narrow without us being told. */
   updateScopes(connectionId: string, scopes: TailnetScope[]): void
   markConnected(connectionId: string): void
+  /**
+   * Record the environment id that machine's Studio says it is, from an
+   * identity answer. True when that is news (first heard, or the machine now
+   * answers as another Studio, reinstalled or replaced); null is ignored, so
+   * an older build's silence never erases what a newer one said.
+   */
+  noteEnvironment(connectionId: string, environmentId: string | null): boolean
   forget(connectionId: string): boolean
 }
 
@@ -264,6 +272,15 @@ export function createTailnetMeshStore(options: {
       safePersist('last-connected')
     },
 
+    noteEnvironment(connectionId, environmentId): boolean {
+      if (!isEnvironmentId(environmentId)) return false
+      const entry = connections.find((candidate) => candidate.id === connectionId)
+      if (!entry || entry.environmentId === environmentId) return false
+      entry.environmentId = environmentId
+      safePersist('environment')
+      return true
+    },
+
     forget(connectionId): boolean {
       const next = connections.filter((entry) => entry.id !== connectionId)
       if (next.length === connections.length) return false
@@ -285,6 +302,7 @@ function publicConnection(entry: MeshConnection): MeshConnection {
     pairedAt: entry.pairedAt,
     lastConnectedAt: entry.lastConnectedAt,
     pairedVia: entry.pairedVia,
+    ...(entry.environmentId ? { environmentId: entry.environmentId } : {}),
   }
 }
 
@@ -395,6 +413,7 @@ function normalize(value: Record<string, unknown>, deviceToken: string, sealedTo
     lastConnectedAt: typeof value.lastConnectedAt === 'string' ? value.lastConnectedAt : null,
     // A record from before this was kept says so rather than guessing a path.
     pairedVia: readPairedVia(value.pairedVia),
+    ...(isEnvironmentId(value.environmentId) ? { environmentId: value.environmentId } : {}),
     deviceToken,
     sealedToken,
   }

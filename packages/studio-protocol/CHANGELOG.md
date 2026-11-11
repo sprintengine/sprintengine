@@ -48,6 +48,14 @@
 
 ### Added
 
+- **Environments** (`environment.ts`): one way to name a Studio and a chat in
+  it. `EnvironmentDescriptor` (a `welcome` under the client's name for the
+  machine, `environmentDescriptorOf`); `EnvironmentRoute` (`local`,
+  `wsl:<distro>`, `ssh:<machine>`, `tailnet:<connection>`) with
+  `formatEnvironmentRoute`, `parseEnvironmentRoute` and
+  `orderEnvironmentRoutes` (this machine, WSL, tailnet, then SSH); and
+  `ChatAddress` `{ environmentId, chatId }` with `formatChatAddress` and
+  `parseChatAddress`. Types and helpers only: nothing on the wire changes.
 - The socket does not advertise `conversation-changes`: its conversation topic
   carries no `changes` frames.
 - **The person's words for one agent** (`conversation-agent-message`, in
