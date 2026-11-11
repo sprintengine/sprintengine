@@ -434,8 +434,15 @@ function isChatDensity(density: MarkdownDensity | undefined): boolean {
 // gutter fits "9.", and a list that runs to 10 or starts at 120 would hang its
 // markers out past the pane's edge. Only a list that needs more asks for it.
 function orderedGutter(node: MarkdownNode, start: number | undefined): React.CSSProperties | undefined {
-  const items = node?.children.filter((child) => child.type === 'element' && child.tagName === 'li').length ?? 0
-  const last = Math.max(Math.abs(start ?? 1), Math.abs((start ?? 1) + items - 1))
+  const items = node?.children.filter((child) => child.type === 'element' && child.tagName === 'li') ?? []
+  // A typed message keeps the numbers it was written with, so the widest
+  // marker can be any item's own value rather than the last in the run.
+  const typed = items.map((item) => ('properties' in item ? Number(item.properties?.value) : NaN))
+  const last = Math.max(
+    Math.abs(start ?? 1),
+    Math.abs((start ?? 1) + items.length - 1),
+    ...typed.filter(Number.isFinite).map(Math.abs),
+  )
   const digits = String(last).length
   return digits > 1 ? { paddingInlineStart: `calc(${digits + 1}ch + 0.4em)` } : undefined
 }

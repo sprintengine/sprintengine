@@ -29,3 +29,26 @@ test('a pasted fence, a list and inline code are still markdown', () => {
   expect(html.match(/<li/g)).toHaveLength(2)
   expect(html).toContain('<code')
 })
+
+test('a typed ordered list keeps the number written on each item', () => {
+  const html = typed('Only these are open:\n\n3. the database\n5. the retry')
+  expect(html).toMatch(/<ol[^>]*start="3"/)
+  expect(html).toMatch(/<li value="3"[^>]*>[\s\S]*the database/)
+  expect(html).toMatch(/<li value="5"[^>]*>[\s\S]*the retry/)
+})
+
+test('a typed list written as 1. 1. 1. reads back the way it was typed', () => {
+  const html = typed('1. one\n1. two\n1. three')
+  expect(html.match(/<li value="1"/g)).toHaveLength(3)
+})
+
+test('a document still numbers its list from the first marker', () => {
+  const html = renderToStaticMarkup(<>{renderMarkdown('1. one\n1. two\n1. three')}</>)
+  expect(html).not.toContain('value=')
+})
+
+test('a list nested in a quote keeps its typed numbers too', () => {
+  const html = typed('> 2. second\n> 4. fourth')
+  expect(html).toMatch(/<li value="2"/)
+  expect(html).toMatch(/<li value="4"/)
+})
