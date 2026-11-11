@@ -255,6 +255,12 @@ export const TAILNET_CAPABILITIES = [
   // says whether its provider can (`capabilities.sideQuestion`).
   // CONVERSATION_SIDE_QUESTIONS_CAPABILITY.
   'conversation-side-questions',
+  // An answered side question is kept in the chat's transcript here, as a
+  // `side_question` event between its turns, whichever device asked it
+  // (2026-11-11): a paired desktop draws it as a marker that opens it again,
+  // and says a question asked of a machine without it is not kept.
+  // CONVERSATION_SIDE_QUESTION_RECORDS_CAPABILITY.
+  'conversation-side-question-records',
   // What fills a chat's context window, as the ring opens it here
   // (2026-10-25): `getContextBreakdown` asks the chat's live agent, and a
   // listed chat says whether its provider can (`capabilities.contextBreakdown`).

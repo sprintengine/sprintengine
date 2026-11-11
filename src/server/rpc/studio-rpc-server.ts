@@ -60,7 +60,10 @@ import type {
  * (`conversation-fork`, `conversation-side-questions`,
  * `conversation-context-breakdown`): this socket forks by its own
  * `conversation.fork`, which leaves the new chat's record to the window that
- * asked, and has no method for the other two.
+ * asked, and has no method for the other two. Nor so the keeping of side
+ * questions (`conversation-side-question-records`), which says what becomes
+ * of one asked by the lane's `askSideQuestion`: its topic carries a kept
+ * question's `side_question` event all the same.
  * Nor the composer's two reads of a chat's folder
  * (`conversation-file-search`, `conversation-commands`), routes beside the
  * tailnet's socket that this one has no method for; a window on it reads its
@@ -85,6 +88,7 @@ export const STUDIO_RPC_CONVERSATION_CAPABILITIES: string[] = CONVERSATION_CAPAB
     capability !== 'conversation-queued-sends' &&
     capability !== 'conversation-fork' &&
     capability !== 'conversation-side-questions' &&
+    capability !== 'conversation-side-question-records' &&
     capability !== 'conversation-context-breakdown' &&
     capability !== 'conversation-file-search' &&
     capability !== 'conversation-commands' &&

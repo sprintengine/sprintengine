@@ -189,6 +189,11 @@ questionId, question, history? }` asks the chat's agent about the chat and
   `conversation:operate`. `{ type: 'cancelSideQuestion', requestId,
 questionId }` calls one off. A listed thread says which chats can
   (`capabilities.sideQuestion`).
+- `conversation-side-question-records`: the desktop keeps an answered side
+  question in the chat's transcript as a `side_question` event
+  (`ConversationSideQuestionPayload`, read by `readConversationSideQuestion`),
+  between turns. No frame changed; a client reads it to say whether a question
+  it asks will be kept.
 - `conversation-context-breakdown`: `{ type: 'getContextBreakdown',
 requestId }` reads what fills the chat's context window from its live agent;
   the `result`'s `data` is `{ breakdown, stale? }`

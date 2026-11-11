@@ -612,6 +612,19 @@ following another machine's chat refuses each there in words first. The
 Studio RPC advertises none of them: it forks by its own `conversation.fork`,
 whose new chat's record is the asking window's to write, and has no method for
 the other two.
+An answered side question is kept in the chat's transcript as a
+`side_question` event (2026-11-11; `ConversationSideQuestionPayload`:
+`question`, `answer`, `requestId`, and `truncated` where the answer was cut at
+`CONVERSATION_SIDE_QUESTION_MAX_ANSWER` characters), between turns and with no
+`turnId`. A new event type needs no capability to cross the wire: a client
+that does not know one skips it, as it skips `turn_retrying` and
+`context_handed_off`, and draws the chat without the marker. What
+`conversation-side-question-records` adds is the desktop's word that it keeps
+them, which a paired desktop reads to say, in its side question drawer, that a
+machine without it keeps nothing. No frame changed, and `askSideQuestion`
+answers as before. The Studio RPC does not advertise it, having no side
+questions to ask, though its conversation topic carries the event. The
+module SDK's `ModuleConversationEventType` and the phone read the event too.
 A paired desktop's composer reaches a chat's folder through three
 capabilities (2026-10-25). `conversation-send-mentions`: a `send` may name
 `mentions`, files and folders of the chat's folder by their paths relative to

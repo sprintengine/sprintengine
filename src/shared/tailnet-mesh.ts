@@ -815,6 +815,12 @@ export type MeshConversationFrame =
  * `.contextBreakdown`). False for a machine that does not, where none is
  * offered and the ring shows how full the window is alone.
  *
+ * `sideQuestionRecords`: the machine advertises
+ * `conversation-side-question-records` — it keeps an answered side question
+ * in the chat's transcript, where this window draws a marker that opens it
+ * again. False for a machine that does not, where the drawer says the
+ * question is not kept.
+ *
  * `mentions`: the machine advertises `conversation-file-search` and
  * `conversation-send-mentions` — the composer's @ searches one of its chats'
  * folder there (`meshConversationSearchFiles`), and a message names what it
@@ -907,6 +913,7 @@ export type MeshConversationListResult =
       checkpointRevert?: boolean
       fork?: boolean
       sideQuestions?: boolean
+      sideQuestionRecords?: boolean
       contextBreakdown?: boolean
       mentions?: boolean
       commands?: boolean
