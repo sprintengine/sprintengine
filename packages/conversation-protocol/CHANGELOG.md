@@ -13,6 +13,16 @@
 
 ### Added
 
+- **A side question is kept in the chat.** `side_question` joins
+  `CONVERSATION_EVENT_TYPES`, with its payload as
+  `ConversationSideQuestionPayload` (`question`, `answer`, `requestId`,
+  `truncated`), read by `readConversationSideQuestion`; an answer is kept up
+  to `CONVERSATION_SIDE_QUESTION_MAX_ANSWER` characters. It sits between
+  turns and is never part of the agent's conversation. A client that does not
+  know it skips it, as it skips any event type it does not know.
+  `CONVERSATION_SIDE_QUESTION_RECORDS_CAPABILITY`
+  (`conversation-side-question-records`) names a desktop that keeps them. The
+  pinned files are unchanged.
 - **A chat's changes, where it is followed.** `CONVERSATION_CHANGES_CAPABILITY`
   (`conversation-changes`) names a desktop that answers
   `ConversationWatchChangesRequest` (`watchChanges`, and `stop: true` to end it)

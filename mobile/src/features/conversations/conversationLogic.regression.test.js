@@ -803,6 +803,35 @@ test("a closed thought previews its first line as plain words", () => {
   assert.ok(long.length <= 160 && long.endsWith("…"), "a long first line is cut to what fits");
 });
 
+test("a kept side question is a row of its own after its turn, the reply left whole", () => {
+  const value = projectConversation([
+    event(1, "user_message", { text: "fix it", turnId: "t1" }),
+    event(2, "turn_started", { turnId: "t1" }),
+    event(3, "content_delta", { turnId: "t1", text: "Looking. " }),
+    // Asked while the turn ran: it waits for the turn's end, not inside its reply.
+    event(4, "side_question", { question: "Which test?", answer: "The parser one.", requestId: "side-1" }),
+    event(5, "content_delta", { turnId: "t1", text: "Fixed." }),
+    event(6, "turn_completed", { turnId: "t1" }),
+    event(7, "side_question", { question: "Why?", answer: "A stale fixture.", truncated: true }),
+    event(8, "side_question", { question: "  ", answer: "nothing asked" }),
+  ]);
+  const kinds = unfold(value.rows).map((row) => row.kind);
+  assert.deepEqual(kinds.slice(kinds.indexOf("sideQuestion")), ["sideQuestion", "sideQuestion"]);
+  const replies = unfold(value.rows).filter((row) => row.kind === "message" && row.role === "assistant");
+  assert.deepEqual(replies.map((row) => row.text), ["Looking. Fixed."]);
+  const asides = value.rows.filter((row) => row.kind === "sideQuestion");
+  assert.deepEqual(asides[0], { kind: "sideQuestion", id: "event-4", question: "Which test?", answer: "The parser one." });
+  assert.equal(asides[1].truncated, true);
+  // Asked while a turn still runs: under all it has said so far.
+  const running = projectConversation([
+    event(1, "user_message", { text: "fix it", turnId: "t1" }),
+    event(2, "turn_started", { turnId: "t1" }),
+    event(3, "content_delta", { turnId: "t1", text: "Looking." }),
+    event(4, "side_question", { question: "Which test?", answer: "The parser one." }),
+  ]);
+  assert.equal(running.rows.at(-1).kind, "sideQuestion");
+});
+
 test("a handoff is the desktop's divider, and Studio's own compaction says it came before the cache expired", () => {
   const value = projectConversation([
     event(1, "user_message", { text: "fix it", turnId: "t1" }),

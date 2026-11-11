@@ -16,7 +16,11 @@ import type {
   ConversationMessageOrigin,
   ConversationSubagentMessage,
 } from './protocol.js'
-import { readConversationMessageOrigin, readConversationSubagentMessage } from './protocol.js'
+import {
+  readConversationMessageOrigin,
+  readConversationSideQuestion,
+  readConversationSubagentMessage,
+} from './protocol.js'
 import { parseConversationMentions, type ConversationMentionRef } from './mentions.js'
 import { parseConversationAttachedFiles, type ConversationAttachedFile } from './attachedFiles.js'
 import { normalizeApiKeySource } from './apiKeySource.js'
@@ -218,6 +222,7 @@ export type TranscriptEntry =
     }
   | CompactionEntry
   | HandoffEntry
+  | SideQuestionEntry
   | CommandOutputEntry
 
 // What a command the CLI ran by itself printed (`/context`, `/usage`), in the
@@ -261,6 +266,19 @@ export type HandoffEntry = {
   path: string
   // The context the old session held, left behind.
   preTokens?: number
+  createdAt: number
+}
+
+// A side question the person asked about the chat, with the answer it got.
+// Never part of the agent's conversation: it sits between turns, after the
+// turn it was asked during or after, where it can be opened again.
+export type SideQuestionEntry = {
+  kind: 'sideQuestion'
+  id: string
+  question: string
+  answer: string
+  // The answer was longer than the transcript keeps; this is its beginning.
+  truncated?: true
   createdAt: number
 }
 
@@ -686,7 +704,8 @@ export function projectConversation(
   // turn they followed ('' before the first).
   // A handoff is between turns too, and goes in the same place.
   const compactionsInTurn = new Map<string, CompactionEntry[]>()
-  const compactionsAfterTurn = new Map<string, Array<CompactionEntry | HandoffEntry>>()
+  // So is a side question, after the turn it was asked during or after.
+  const compactionsAfterTurn = new Map<string, Array<CompactionEntry | HandoffEntry | SideQuestionEntry>>()
   // Command output by the turn that printed it; one with no turn follows the
   // last turn, as a compaction between turns does.
   const commandOutputsInTurn = new Map<string, CommandOutputEntry[]>()
@@ -1129,6 +1148,21 @@ export function projectConversation(
         }
         const after = turnOrder.at(-1) ?? ''
         compactionsAfterTurn.set(after, [...(compactionsAfterTurn.get(after) ?? []), handoff])
+        break
+      }
+      case 'side_question': {
+        const asked = readConversationSideQuestion(event.payload)
+        if (!asked) break
+        const entry: SideQuestionEntry = {
+          kind: 'sideQuestion',
+          id: event.id,
+          question: asked.question,
+          answer: asked.answer,
+          ...(asked.truncated ? { truncated: true as const } : {}),
+          createdAt: event.createdAt,
+        }
+        const after = turnOrder.at(-1) ?? ''
+        compactionsAfterTurn.set(after, [...(compactionsAfterTurn.get(after) ?? []), entry])
         break
       }
       case 'command_output': {

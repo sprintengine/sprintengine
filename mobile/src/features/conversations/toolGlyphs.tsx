@@ -49,6 +49,15 @@ export function ThoughtGlyph(props: MarkProps) {
 export function CompactGlyph(props: MarkProps) {
   return <Stroke d="M2.5 8h11M8 2.5V6M6 4l2 2 2-2M8 13.5V10M6 12l2-2 2 2" {...props} />;
 }
+/** A speech bubble: a side question about the chat. The desktop's `ConversationGlyph`, its Side question glyph. */
+export function SideQuestionGlyph(props: MarkProps) {
+  return (
+    <Stroke
+      d="M2.6 4.1c0-.8.7-1.5 1.5-1.5h7.8c.8 0 1.5.7 1.5 1.5v5.4c0 .8-.7 1.5-1.5 1.5H7.2l-3 2.4V11h-.1c-.8 0-1.5-.7-1.5-1.5Z"
+      {...props}
+    />
+  );
+}
 /** The send button's arrow. */
 export function SendGlyph(props: MarkProps) {
   // The desktop's composer send arrow, `glyphs/send` in ComposerGlyphs.

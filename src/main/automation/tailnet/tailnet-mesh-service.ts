@@ -2698,6 +2698,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
           checkpointRevert: tailnetPeerSupports(identity.value.capabilities, 'conversation-checkpoint-revert'),
           fork: tailnetPeerSupports(identity.value.capabilities, 'conversation-fork'),
           sideQuestions: tailnetPeerSupports(identity.value.capabilities, 'conversation-side-questions'),
+          sideQuestionRecords: tailnetPeerSupports(identity.value.capabilities, 'conversation-side-question-records'),
           contextBreakdown: tailnetPeerSupports(identity.value.capabilities, 'conversation-context-breakdown'),
           // The composer's reach into a chat's folder over there: an @ is a
           // search there and a name the send carries back, so both or neither.

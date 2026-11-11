@@ -12,6 +12,10 @@
 
 ### Added
 
+- `SideQuestionEntry` (`kind: 'sideQuestion'`) and the timeline row of the same
+  kind: a side question the chat was asked, read from its `side_question`
+  event, with the answer it got. It sits after the turn it was asked during or
+  after, never inside a turn.
 - A lane carries `sent`, what the person wrote to its agent, and its agent state
   `canContinue`. A user entry carries `subagentMessage`. `laneTranscript` reads a
   lane as a conversation of its own for the timeline to draw, and

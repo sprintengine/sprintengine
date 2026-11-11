@@ -216,6 +216,12 @@ export type ConversationRow =
    * messages on the desktop, instead of being compacted.
    */
   | { kind: "handoff"; id: string; preTokens?: number }
+  /**
+   * A side question the person asked about the chat, kept by the desktop with
+   * the answer it got (`side_question`). Never part of the agent's
+   * conversation; drawn closed under its question, and opened to its answer.
+   */
+  | { kind: "sideQuestion"; id: string; question: string; answer: string; truncated?: true }
   /** What a command the CLI ran by itself printed (`/context`, `/usage`); a `note` is the desktop's own remark. */
   | { kind: "command"; id: string; command?: string; output: string; note?: boolean }
   /**
@@ -351,6 +357,8 @@ export function projectConversation(events: ConversationEvent[]) {
   // Every turn that changed files, oldest first: the strip adds them up and
   // opens them (see conversationChanges).
   const changedTurns: ChangedTurn[] = [];
+  // Side questions asked while a turn ran, drawn once it ends.
+  const heldAsides: ConversationRow[] = [];
   const beginWork = (at: number) => {
     if (!turnBusy) turnSince = at;
     turnBusy = true;
@@ -603,6 +611,22 @@ export function projectConversation(events: ConversationEvent[]) {
         kind: "handoff", id: event.id,
         ...(numberValue(p.preTokens) !== undefined ? { preTokens: numberValue(p.preTokens) } : {}),
       });
+    } else if (event.type === "side_question") {
+      const question = stringValue(p.question)?.trim();
+      const answer = stringValue(p.answer);
+      if (question && answer.trim()) {
+        const aside: ConversationRow = {
+          kind: "sideQuestion", id: event.id, question, answer,
+          ...(p.truncated === true ? { truncated: true as const } : {}),
+        };
+        // One asked while a turn runs waits for the turn's end, as on the
+        // desktop: drawn in its place, it would split the reply around it.
+        if (turnBusy) heldAsides.push(aside);
+        else {
+          toolGroup = undefined;
+          rows.push(aside);
+        }
+      }
     } else if (event.type === "command_output") {
       const output = stringValue(p.output);
       if (output) {
@@ -697,6 +721,7 @@ export function projectConversation(events: ConversationEvent[]) {
           });
         }
       }
+      rows.push(...heldAsides.splice(0));
     }
   }
   // A lane's own call reads as the lane does wherever it is drawn as a step
@@ -717,6 +742,8 @@ export function projectConversation(events: ConversationEvent[]) {
   // turn has said: words or a step after it mean the model moved on.
   const lastRow = rows.at(-1);
   if (lastRow?.kind === "reasoning" && turnBusy && (lastRow.turn ?? "") === currentTurn) lastRow.live = true;
+  // Asked while the turn now running runs: under all it has said so far.
+  rows.push(...heldAsides.splice(0));
   const kept = rows.filter((row) => row.kind !== "tools" || row.tools.length > 0);
   return {
     rows: foldTurns(kept, (turn) => {

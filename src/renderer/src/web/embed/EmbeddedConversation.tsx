@@ -32,6 +32,8 @@ const NO_FOLDER = 'embed'
 
 const READ_ONLY = {
   operate: false,
+  // The Studio serving the embed keeps them; the view only reads them.
+  keepsSideQuestions: true,
   startSession: false,
   permanentApprovals: false,
   quotes: false,

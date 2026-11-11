@@ -78,6 +78,11 @@ export const CONVERSATION_EVENT_TYPES = [
   // (payload: `ConversationTurnRetryingPayload`). Says why the turn has
   // produced nothing yet; the next event of the same turn supersedes it.
   'turn_retrying',
+  // A side question the person asked about the chat, with the answer it got
+  // (payload: `ConversationSideQuestionPayload`). Recorded once it is
+  // answered, so the person can find it again; it is never part of the
+  // agent's conversation, and it sits between turns, not inside one.
+  'side_question',
 ] as const
 
 export type ConversationEventType = (typeof CONVERSATION_EVENT_TYPES)[number]
@@ -183,6 +188,39 @@ export type ConversationHandoffPayload = {
   preTokens?: number
   seedOwed: true
   providerSessionId: null
+}
+
+/**
+ * Payload carried on `side_question`: the question as the person asked it and
+ * the answer it got, whole unless `truncated` says the answer was longer than
+ * a transcript event keeps (`CONVERSATION_SIDE_QUESTION_MAX_ANSWER`).
+ * `requestId` is the asker's, the id the question was asked under. A reader
+ * that does not know the type skips it, as it skips any event type it does
+ * not know, and draws the conversation without it.
+ */
+export type ConversationSideQuestionPayload = {
+  question: string
+  answer: string
+  requestId?: string
+  truncated?: true
+}
+
+/** The longest side-question answer a `side_question` event keeps, in characters. */
+export const CONVERSATION_SIDE_QUESTION_MAX_ANSWER = 64_000
+
+/** A `side_question` payload, or null when it names no question or no answer. */
+export function readConversationSideQuestion(value: unknown): ConversationSideQuestionPayload | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const payload = value as Record<string, unknown>
+  const question = typeof payload.question === 'string' ? payload.question.trim() : ''
+  const answer = typeof payload.answer === 'string' ? payload.answer : ''
+  if (!question || !answer.trim()) return null
+  return {
+    question,
+    answer,
+    ...(typeof payload.requestId === 'string' && payload.requestId ? { requestId: payload.requestId } : {}),
+    ...(payload.truncated === true ? { truncated: true as const } : {}),
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 // Turn-by-turn navigation over the virtualized transcript: the marks the
-// gutter minimap draws (one per prompt the person sent), which of them the
-// reader is in, and where "previous turn" / "next turn" land.
+// gutter minimap draws (one per prompt the person sent, and one per side
+// question the chat kept), which of them the reader is in, and where
+// "previous turn" / "next turn" land.
 
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type RefObject } from 'react'
 import type { LegendListRef } from '@legendapp/list/react'
@@ -13,17 +14,22 @@ export const TURN_MINIMAP_MIN_TURNS = 3
 export type TurnMark = {
   id: string
   rowIndex: number
+  /** What the person wrote: the prompt, or a side question's question. */
   prompt: string
+  /** A side question the chat kept, which the minimap draws in its own colour. Absent for a prompt. */
+  sideQuestion?: true
 }
 
 export type TurnDirection = -1 | 1
 
-/** One mark per user row. */
+/** One mark per user row and per kept side question. */
 export function deriveTurnMarks(rows: readonly ConversationTimelineRow[]): TurnMark[] {
   const marks: TurnMark[] = []
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index]!
     if (row.kind === 'user') marks.push({ id: row.id, rowIndex: index, prompt: quotesToInlineText(row.entry.text) })
+    else if (row.kind === 'sideQuestion')
+      marks.push({ id: row.id, rowIndex: index, prompt: row.entry.question, sideQuestion: true })
   }
   return marks
 }
@@ -37,7 +43,7 @@ export function turnMarksKey(rows: readonly ConversationTimelineRow[]): string {
   let key = ''
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index]!
-    if (row.kind === 'user') key += `${index}:${row.id}\n`
+    if (row.kind === 'user' || row.kind === 'sideQuestion') key += `${index}:${row.id}\n`
   }
   return key
 }
@@ -54,6 +60,9 @@ export function turnReply(
 ): string | null {
   const mark = marks[index]
   if (!mark) return null
+  // A side question's reply is its own answer.
+  const row = rows[mark.rowIndex]
+  if (mark.sideQuestion) return row?.kind === 'sideQuestion' ? row.entry.answer : null
   const end = marks[index + 1]?.rowIndex ?? rows.length
   for (let row = end - 1; row > mark.rowIndex; row--) {
     const candidate = rows[row]
@@ -102,6 +111,22 @@ export function adjacentTurn(
   return marks[current]!.rowIndex === firstVisibleRow ? current - 1 : current
 }
 
+/**
+ * Where a step lands among the prompts alone: the step buttons and the
+ * previous/next-turn shortcuts go from turn to turn, past the side questions
+ * between them, which the minimap still marks and a click still reaches.
+ */
+export function adjacentPrompt(
+  marks: readonly TurnMark[],
+  firstVisibleRow: number,
+  direction: TurnDirection,
+  anchor: number | null = null,
+): number {
+  let target = adjacentTurn(marks, firstVisibleRow, direction, anchor)
+  while (target >= 0 && marks[target]!.sideQuestion) target = adjacentTurn(marks, firstVisibleRow, direction, target)
+  return target
+}
+
 /** Where the reader is among the turns: what the minimap marks and the step buttons offer. */
 export type TurnPosition = { current: number; hasPrevious: boolean; hasNext: boolean }
 
@@ -135,8 +160,8 @@ function createPositionStore(): PositionStore {
       if (cached && cached.marks === marks && cached.first === first && cached.anchor === anchor) return cached.position
       const position = {
         current: anchor ?? turnAtRow(marks, first),
-        hasPrevious: adjacentTurn(marks, first, -1, anchor) >= 0,
-        hasNext: adjacentTurn(marks, first, 1, anchor) >= 0,
+        hasPrevious: adjacentPrompt(marks, first, -1, anchor) >= 0,
+        hasNext: adjacentPrompt(marks, first, 1, anchor) >= 0,
       }
       const same =
         cached &&
@@ -252,7 +277,7 @@ export function useTurnNavigation(input: {
   )
   const step = useCallback(
     (direction: TurnDirection) => {
-      const target = adjacentTurn(store.marks, store.firstVisibleRow, direction, store.anchor)
+      const target = adjacentPrompt(store.marks, store.firstVisibleRow, direction, store.anchor)
       if (target >= 0) jump(target)
     },
     [jump, store],

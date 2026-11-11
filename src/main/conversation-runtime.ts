@@ -67,7 +67,11 @@ import {
   readConversationMessageOrigin,
   runsTurnMode,
 } from '../shared/conversation-runtime'
-import { isStaleConversationSend } from '../../packages/conversation-protocol/src/public'
+import {
+  CONVERSATION_SIDE_QUESTION_MAX_ANSWER,
+  isStaleConversationSend,
+  type ConversationSideQuestionPayload,
+} from '../../packages/conversation-protocol/src/public'
 import { cliRuntimesOnPlatform, distroOfHostId, isWslHostId, type ExecutionHostId } from '../shared/execution-host'
 import { isWindowsPath, toWslPath, wslInputInRootSpelling } from '../shared/host-paths'
 import { inferConversationToolKind } from '../shared/conversation/toolKind'
@@ -2138,11 +2142,14 @@ export class ConversationRuntime {
 
   /**
    * A side question about the chat, answered from what its agent knows and
-   * added to nothing: no event is written or published for it, so it reaches
-   * neither the transcript, the history, the sidebar nor the phone, and a
-   * turn the chat is running goes on as it was. Asked again under the same
-   * `requestId` while one is out, it is refused; `cancelSideQuestion` calls
-   * it off, and it then answers `cancelled`.
+   * kept out of the agent's conversation: a turn the chat is running goes on
+   * as it was, and nothing of it reaches the agent's context. Once answered it
+   * is kept in the transcript as a `side_question` event between turns, so
+   * the person can open it again from the chat, here or on a paired device;
+   * it moves neither the chat's clock nor its sidebar excerpts. A question
+   * called off or failed is not kept. Asked again under the same `requestId`
+   * while one is out, it is refused; `cancelSideQuestion` calls it off, and
+   * it then answers `cancelled`.
    */
   async askSideQuestion(input: ConversationSideQuestionInput): Promise<ConversationSideQuestionResult> {
     const session = this.sessions.get(input.sessionId)
@@ -2163,7 +2170,9 @@ export class ConversationRuntime {
         history: input.history ?? [],
         signal: abort.signal,
       })
-      return abort.signal.aborted ? cancelled : result
+      if (abort.signal.aborted) return cancelled
+      if (result.ok) await this.recordSideQuestion(session, input, result.answer)
+      return result
     } catch (error) {
       if (abort.signal.aborted) return cancelled
       return { ok: false, message: error instanceof Error ? error.message : 'The side question was not answered.' }
@@ -2172,6 +2181,27 @@ export class ConversationRuntime {
       session.sideQuestionsOpen = Math.max(0, (session.sideQuestionsOpen ?? 1) - 1)
       session.sideQuestionAt = this.now()
     }
+  }
+
+  /**
+   * Keep an answered side question in the chat's transcript. A failure to
+   * write it costs the person the marker, never the answer they are reading.
+   */
+  private async recordSideQuestion(
+    session: RuntimeSession,
+    input: ConversationSideQuestionInput,
+    answer: string,
+  ): Promise<void> {
+    const question = input.question.trim()
+    if (!question || !answer.trim() || session.status === 'stopped') return
+    const truncated = answer.length > CONVERSATION_SIDE_QUESTION_MAX_ANSWER
+    const payload: ConversationSideQuestionPayload = {
+      question,
+      answer: truncated ? answer.slice(0, CONVERSATION_SIDE_QUESTION_MAX_ANSWER) : answer,
+      requestId: input.requestId,
+      ...(truncated ? { truncated: true as const } : {}),
+    }
+    await this.emit(session, this.eventForSession(session, 'side_question', payload)).catch(() => null)
   }
 
   /** Call off a side question being answered; one already answered, or never asked, is nothing to call off. */

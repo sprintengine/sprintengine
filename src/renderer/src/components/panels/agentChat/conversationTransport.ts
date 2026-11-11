@@ -80,6 +80,12 @@ import type {
 export type ConversationTransportCapabilities = {
   /** Send, stop, answer approvals and questions, change the preset. */
   operate: boolean
+  /**
+   * An answered side question is kept in the chat's transcript, where a
+   * marker opens it again. Here, always; on a paired machine, where it
+   * advertises keeping them (`conversation-side-question-records`).
+   */
+  keepsSideQuestions: boolean
   /** Start a provider session here before the first send. A remote send resumes one over there. */
   startSession: boolean
   /**
@@ -425,6 +431,7 @@ export type ConversationToolImageResult =
 
 const LOCAL_CAPABILITIES: ConversationTransportCapabilities = {
   operate: true,
+  keepsSideQuestions: true,
   startSession: true,
   permanentApprovals: true,
   quotes: true,
@@ -633,6 +640,9 @@ export function createRemoteConversationTransport(input: {
     machineName: input.machineName,
     capabilities: {
       operate: input.access === 'operate',
+      // Turned on from the machine's list, when it keeps an answered side
+      // question in the chat (`conversation-side-question-records`).
+      keepsSideQuestions: false,
       startSession: false,
       // Turned on from the machine's list, when it saves an "always allow"
       // rule a device chose (`conversation-permanent-approvals`).

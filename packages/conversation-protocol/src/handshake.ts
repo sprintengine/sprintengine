@@ -207,6 +207,16 @@ export const CONVERSATION_FORK_CAPABILITY = 'conversation-fork' as const
  */
 export const CONVERSATION_SIDE_QUESTIONS_CAPABILITY = 'conversation-side-questions' as const
 /**
+ * The desktop keeps each side question a chat is asked, from here or on its
+ * own screen, in the chat's transcript once it is answered: a `side_question`
+ * event (`ConversationSideQuestionPayload`) between its turns, which a client
+ * draws as a marker the person can open again. Nothing goes into the agent's
+ * conversation. No frame changed; a client reads the capability to say
+ * whether a side question it asks will be kept. A desktop without it answers
+ * as before and keeps nothing.
+ */
+export const CONVERSATION_SIDE_QUESTION_RECORDS_CAPABILITY = 'conversation-side-question-records' as const
+/**
  * What fills a chat's context window may be read item by item, as the
  * desktop's context ring opens it: `getContextBreakdown` asks the chat's
  * agent, which measures it. A listed chat says whether its provider can
@@ -315,6 +325,7 @@ export const CONVERSATION_CAPABILITIES = [
   CONVERSATION_QUOTE_TOKENS_CAPABILITY,
   CONVERSATION_SUBAGENTS_CAPABILITY,
   CONVERSATION_CHANGES_CAPABILITY,
+  CONVERSATION_SIDE_QUESTION_RECORDS_CAPABILITY,
 ] as const
 
 export type ConversationCapability = (typeof CONVERSATION_CAPABILITIES)[number]

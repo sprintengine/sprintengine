@@ -64,7 +64,7 @@ export type ComposerOptionsProps = {
    */
   schedule?: { on: boolean; disabled: string | null; onToggle: () => void }
   /**
-   * Ask the open chat a side question that stays out of it; absent where it
+   * Ask the open chat a side question that stays out of its agent's conversation; absent where it
    * answers none. `shortcut` is the chord that does the same, said on the row.
    */
   sideQuestion?: { onAsk: () => void; shortcut?: string | null }

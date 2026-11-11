@@ -393,6 +393,11 @@ beside it.
 - **`turn_retrying`** joins `ModuleConversationEventType`: a model call in
   the turn failed and the provider will try it again. The payload carries the
   attempt, the attempt limit, the wait before it and the failure's category.
+- **`side_question`** joins `ModuleConversationEventType`: a side question the
+  person asked about the chat, kept with its answer once it was answered. Its
+  payload carries the `question`, the `answer` (cut short where `truncated`
+  says so) and the `requestId` it was asked under. It is never part of the
+  agent's conversation, and a module that does not know it skips it.
 - **Scheduled agents.** `getScheduledAgentsService(host)` creates, updates,
   removes, lists and runs the module's own scheduled agents — a prompt and a
   cron schedule, each run a new chat in the project — and tells the module

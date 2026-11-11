@@ -58,6 +58,7 @@ import { showCodexFollowupLabels } from '../../../utils/markdownCodexFollowups'
 import { markdownClipboardHtml } from '../../../utils/markdownClipboardHtml'
 import { useMessageCopyMenu } from './messageCopyMenu'
 import { ReasoningBlock } from './reasoningBlock'
+import { SideQuestionMarker, type KeptSideQuestion } from './sideQuestion'
 import { CompactionDivider, HandoffDivider, TurnMeta } from './turnMeta'
 import { CommandOutputRow } from './commandOutputRow'
 import { ChevronRightGlyph, ThoughtGlyph, ToolKindGlyph } from './toolRows/ToolKindGlyph'
@@ -163,6 +164,9 @@ export type TimelineChrome = {
   // turn macOS kept out of its folder. Absent where that is not this Mac's
   // setting to change: another machine's chat, a browser tab, not macOS.
   onOpenPrivacySettings?: () => void
+  // Opens a side question the chat kept in the side question drawer, as it
+  // was answered. Absent where the view has no drawer to open it in.
+  onOpenSideQuestion?: (entry: KeptSideQuestion) => void
   // `window.api.platform`: on Windows the chat's login is the native CLI's,
   // which is not the one inside WSL.
   platform?: string
@@ -220,6 +224,7 @@ export const TimelineRow = React.memo(function TimelineRow({
       ) : null}
       {row.kind === 'compaction' ? <CompactionDivider entry={row.entry} /> : null}
       {row.kind === 'handoff' ? <HandoffTimelineRow entry={row.entry} /> : null}
+      {row.kind === 'sideQuestion' ? <SideQuestionMarker entry={row.entry} onOpen={chrome.onOpenSideQuestion} /> : null}
       {row.kind === 'commandOutput' ? <CommandOutputRow entry={row.entry} /> : null}
       {row.kind === 'approval' ? <ResolvedDecisions rows={row.decisions} className="pb-6" /> : null}
       {row.kind === 'working' ? <WorkingTimelineRow row={row} /> : null}

@@ -3099,6 +3099,34 @@ test('/btw mid-turn asks the chat a side question and leaves the turn and its qu
   }
 })
 
+test('a side question the chat kept is a marker in its transcript that opens it in the drawer again', async () => {
+  const kept = [
+    event('user_message', { turnId: 'kept-t1', text: 'Refactor the parser' }),
+    event('turn_started', { turnId: 'kept-t1' }),
+    event('content_delta', { turnId: 'kept-t1', text: 'Done.' }),
+    event('turn_completed', { turnId: 'kept-t1' }),
+    event('side_question', { question: 'Which file is the parser in?', answer: 'It is in `src/parse.ts`.' }),
+  ]
+  // A chat whose agent answers none: the kept one still opens, to be read.
+  const chat = await mountChat({ events: kept })
+  try {
+    const doc = chat.dom.window.document
+    const marker = () => chat.host.querySelector<HTMLButtonElement>('[data-side-question-marker] button')
+    await chat.act(async () => undefined)
+    expect(marker()?.textContent).toContain('Which file is the parser in?')
+    // The answer is the drawer's to show, not the transcript's.
+    expect(chat.host.querySelector('[role="log"]')?.textContent).not.toContain('src/parse.ts')
+    await chat.act(async () => marker()!.click())
+    await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 50)))
+    const drawer = doc.querySelector('[role="dialog"][aria-label^="Side question"]')
+    expect(drawer?.textContent).toContain('src/parse.ts')
+    expect(doc.querySelector('[data-side-question-input="true"]'), 'nothing to ask here').toBeNull()
+    expect(doc.querySelector('[data-side-question-read-only="true"]')).not.toBeNull()
+  } finally {
+    await chat.unmount()
+  }
+})
+
 test('the composer’s “+” offers a side question once the chat has a reply, and only where it can be answered', async () => {
   const reply = [
     event('user_message', { turnId: 'side-t2', text: 'Hello' }),

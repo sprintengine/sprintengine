@@ -138,7 +138,13 @@ export function studioAppCommands(input: {
       ? [{ name: 'terminal', description: 'Continue this conversation in a terminal', source: 'app' as const }]
       : []),
     ...(input.sideQuestion
-      ? [{ name: 'btw', description: 'Ask a side question that stays out of the chat', source: 'app' as const }]
+      ? [
+          {
+            name: 'btw',
+            description: 'Ask a side question that stays out of the agent’s conversation',
+            source: 'app' as const,
+          },
+        ]
       : []),
   ]
 }

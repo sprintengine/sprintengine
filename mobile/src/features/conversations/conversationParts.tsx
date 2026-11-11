@@ -26,7 +26,7 @@ import { createToolDetailCache, readToolDetail, type ToolDetail } from "./toolOu
 import { ToolOutputPanel, type ToolDetailState } from "./ToolOutputPanel";
 import { ConversationPicture, type ChatImages, type SentImages } from "./ConversationImage";
 import { toolPicture } from "./conversationImageLogic";
-import { DisclosureGlyph, ThoughtGlyph, ToolKindGlyph } from "./toolGlyphs";
+import { DisclosureGlyph, SideQuestionGlyph, ThoughtGlyph, ToolKindGlyph } from "./toolGlyphs";
 import type { ConversationSubagent } from "../../api/conversationWire";
 import { chatSubagentName, chatSubagentStatus, subagentEnded, subagentStartFacts } from "./subagentLogic";
 import { cliForChatProvider } from "./launchLogic";
@@ -256,6 +256,63 @@ export const ThinkingRow = memo(function ThinkingRow({
     </View>
   );
 });
+
+/**
+ * A side question the person asked about the chat, kept by the desktop with
+ * its answer: "Side question · Which file?" in the desktop marker's words and
+ * glyph, the glyph in the warn tone as there, closed until tapped. Open, it is
+ * the question whole and the answer the agent gave. It is never part of the
+ * agent's conversation, so it reads as the chat's own furniture.
+ */
+export function SideQuestionRow({
+  question,
+  answer,
+  truncated = false,
+  onNotice,
+}: {
+  question: string;
+  answer: string;
+  truncated?: boolean;
+  onNotice: (message: string) => void;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const onLinkBlocked = useCallback(() => onNotice("This link cannot be opened from a conversation."), [onNotice]);
+  return (
+    <View style={styles.steps}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Side question: ${question}`}
+        accessibilityState={{ expanded: open }}
+        hitSlop={space.xs}
+        onPress={() => setOpen(!open)}
+        style={({ pressed }) => [styles.step, pressed ? styles.pressed : null]}
+      >
+        <SideQuestionGlyph color={colors.toneWarn} />
+        <Text numberOfLines={1} style={styles.groupHead}>
+          <Text style={styles.sideQuestionLabel}>Side question</Text> · {question}
+        </Text>
+        <View style={styles.end}>
+          <DisclosureGlyph open={open} color={colors.textDisabled} />
+        </View>
+      </Pressable>
+      {open ? (
+        <View style={styles.rail}>
+          <Text selectable style={styles.sideQuestion}>
+            {question}
+          </Text>
+          <View style={styles.prose}>
+            <MarkdownDocument body={answer} variant="chat" reply onLinkBlocked={onLinkBlocked} />
+          </View>
+          {truncated ? (
+            <Text style={styles.thoughtPreview}>The answer was longer than the chat keeps; this is its beginning.</Text>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 /**
  * A turn's work behind one line: "Worked for 2m 14s · 12 steps", with how
@@ -612,6 +669,8 @@ const createStyles = ({ colors }: Theme) =>
     stepEnd: { ...typography.meta, marginLeft: "auto", paddingLeft: space.sm, color: colors.textDisabled },
     groupHead: { ...typography.body, fontSize: 14, color: colors.textMuted, flexShrink: 1 },
     groupRest: { color: colors.textSubtle },
+    sideQuestionLabel: { color: colors.textDefault, fontWeight: fontWeight.medium },
+    sideQuestion: { ...typography.body, fontSize: 14, color: colors.textPrimary, paddingTop: space.xs },
     end: { marginLeft: "auto", paddingLeft: space.sm },
     rail: {
       marginLeft: space.xs,

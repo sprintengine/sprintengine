@@ -38,6 +38,10 @@ export type ModuleConversationEventType =
   | 'subagent_status'
   | 'subagent_message'
   | 'turn_retrying'
+  // A side question the person asked about the chat, kept with its answer
+  // once it was answered (payload: `question`, `answer`, `requestId`,
+  // `truncated`). Never part of the agent's conversation; it sits between turns.
+  | 'side_question'
 
 /** One event of a conversation, as it streams and as its transcript replays it. */
 export type ModuleConversationEvent = {
