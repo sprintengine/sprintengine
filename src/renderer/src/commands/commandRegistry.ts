@@ -207,6 +207,23 @@ export const COMMAND_REGISTRY = [
       action: 'chatSettleStep(activeWorkspace) -> settleWorkspaceById | setWorkspaceSettled(id, false) | toast',
     },
   }),
+  // Name the chat on screen again from its conversation: the row menu's
+  // Regenerate title, for someone who renames chats often enough to want a
+  // key for it. No chord by default; one can be set in Keyboard shortcuts.
+  command({
+    id: 'chat.regenerateTitle',
+    title: 'Regenerate chat title',
+    category: 'workspace',
+    scopes: ['workspace'],
+    defaultKeybindings: [],
+    allowInEditableTarget: true,
+    availability: ['activeWorkspace'],
+    handlerPath: {
+      kind: 'context-bound',
+      owner: 'WorkspaceSidebar',
+      action: 'canRegenerateTitleOf(activeWorkspace) -> regenerateStoreWorkspaceTitle(id) | toast',
+    },
+  }),
   command({
     id: 'chat.newConversation',
     title: 'New conversation',

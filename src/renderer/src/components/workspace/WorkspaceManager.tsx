@@ -4198,9 +4198,9 @@ export default function WorkspaceManager() {
         else setSidebarCollapsed(!sidebarCollapsed)
         return true
       }
-      if (commandId === 'chat.settle') {
-        // The chat on screen, which the sidebar settles the way its row would:
-        // it owns the hand-off to the next chat and the remote ask.
+      if (commandId === 'chat.settle' || commandId === 'chat.regenerateTitle') {
+        // The chat on screen, which the sidebar settles or renames the way its
+        // row would: it owns the hand-off to the next chat and the remote ask.
         if (!windowActiveWorkspaceId || newChatPanelOpen || activeGlobalSurface) return false
         dispatchPanelCommand(commandId, windowActiveWorkspaceId)
         return true

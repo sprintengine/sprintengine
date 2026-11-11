@@ -2544,14 +2544,36 @@ function WorkspaceSidebar({
         description: 'It can be settled once its agents finish.',
       })
   })
+  // `chat.regenerateTitle`, the row menu's Regenerate title for the chat on
+  // screen. A chat the menu would not offer it for says why instead.
+  const regenerateTitleFromCommand = useStableCallback((id: WorkspaceId) => {
+    const workspace = workspaceById.get(id)
+    if (!workspace || id !== activeWorkspaceId) return
+    if (!canRegenerateTitleOf(workspace)) {
+      showToast({
+        tone: 'neutral',
+        title: `${workspace.name} was not renamed`,
+        description: workspace.remoteOrigin
+          ? 'A chat from a paired machine is named on that machine.'
+          : 'There is no conversation in it to name it from yet.',
+      })
+      return
+    }
+    const before = workspace.name
+    void regenerateStoreWorkspaceTitle(id).then((result) => {
+      if (!result.ok) showToast({ tone: 'error', title: `${before} was not renamed`, description: result.message })
+    })
+  })
   useEffect(() => {
     const onPanelCommand = (event: Event) => {
       const detail = (event as CustomEvent<{ id?: string; workspaceId?: string }>).detail
-      if (detail?.id === 'chat.settle' && detail.workspaceId) settleFromCommand(detail.workspaceId)
+      if (!detail?.workspaceId) return
+      if (detail.id === 'chat.settle') settleFromCommand(detail.workspaceId)
+      else if (detail.id === 'chat.regenerateTitle') regenerateTitleFromCommand(detail.workspaceId)
     }
     window.addEventListener(PANEL_COMMAND_EVENT, onPanelCommand)
     return () => window.removeEventListener(PANEL_COMMAND_EVENT, onPanelCommand)
-  }, [settleFromCommand])
+  }, [settleFromCommand, regenerateTitleFromCommand])
 
   // Seed / repair the single tab stop. When no row owns it (first paint) or the
   // owning row has left the DOM (folder collapsed, workspace closed), hand it to
