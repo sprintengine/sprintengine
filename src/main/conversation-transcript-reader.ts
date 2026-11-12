@@ -119,12 +119,11 @@ export class ConversationTranscriptReader {
   sync(
     root: string,
     path: string,
-    input: { afterSeq?: number; generation?: string; turnLimit?: number; forceSnapshot?: boolean },
+    input: { afterSeq?: number; generation?: string; turnLimit?: number },
   ): Promise<TranscriptSyncResult> {
     return this.read(root, path, async (records, generation) => {
       const { afterSeq } = input
       if (
-        !input.forceSnapshot &&
         afterSeq !== undefined &&
         Number.isSafeInteger(afterSeq) &&
         afterSeq >= 0 &&

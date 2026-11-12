@@ -373,8 +373,9 @@ server → client
 
 Rules carried over from the conversation lane, unchanged in meaning:
 
-- Every mutation carries a client `commandId`, recorded as a durable receipt
-  before work starts; a retry is answered with the first attempt's result.
+- Every mutation carries a client `commandId`, whose receipt the chat's log
+  keeps (`docs/conversations.md`, "Commands and the chat's log"); a retry is
+  answered from it and never runs twice.
 - Every refusal is correlated to the id of what it refuses.
 - Streams resume from a cursor (`afterSeq` and `generation`); a cursor the
   server cannot vouch for gets a reset snapshot. Sequence numbers increase with
@@ -1636,11 +1637,10 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
     invoke-shaped round trip 4.1 µs mean, `files.stat` over the protocol
     9.7 µs (p99 28 µs), `session.send` 10.2 µs, one streamed event backend to
     client 5.3 µs. The protocol adds about 6 µs a call, against 25–36 µs for
-    a call over Electron's own IPC or ports (measured while planning phase 6). A session command
-    over the protocol carries a command id, so the runtime keeps a receipt
-    for it, which the IPC never did: two writes of the conversation's
-    receipts file per command, the first (the intent) awaited before the
-    command runs, the second (its result) after.
+    a call over Electron's own IPC or ports (measured while planning phase 6). The runtime
+    keeps a receipt for every session command in the chat's log, whichever
+    way it came: a send's in the same write as its message, a command's
+    answer appended after it.
   - _Still on IPC, and why._ The shell's own members (clipboard, `platform`,
     open externally, reveal, open in an editor, the picture viewer), the
     terminals behind a code block's Run, CLI sign-in and Resume in terminal
@@ -1651,12 +1651,7 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
   - _Why the IPC stays the default._ The suites prove the renderer's side and
     the RPC's; nothing yet runs the real Electron ports end to end in a
     packaged app. Before the default flips: a packaged smoke run drives a
-    chat over them, and the receipt writes are measured where they cost
-    most, a conversation kept on a WSL path from Windows, where each write
-    crosses into the distribution and the first delays every send, stop and
-    answer to an approval. If that wait is felt, the intent write needs to
-    move off the command's path (written alongside, or batched) first. Keep
-    the IPC behind the setting for one release after.
+    chat over them. Keep the IPC behind the setting for one release after.
 - **Follow-ups.**
   - _Assets beside the socket (phase 9)._ Phase 4 serves nothing over HTTP:
     pictures go over the connection in pieces and come back as data. When the
