@@ -107,6 +107,7 @@ import { listOpenAiCompatibleModels } from '../providers/openai-compatible-provi
 import { getSharedCredentialStore } from '../secret-store'
 import { isRecord } from '../../shared/records'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
+import { boundConversationPage, conversationWireFrame } from '../../server/conversation-stream-shaping'
 
 export type ConversationIpcHandlers = {
   listThreads?(input: ConversationWorkspaceKey): Promise<ConversationThreadsResult>
@@ -190,28 +191,6 @@ const BROADCAST_EVENT_TYPES: ReadonlySet<ConversationEventType> = new Set<Conver
   'subagent_status',
   'subagent_message',
 ])
-
-/**
- * An event as this app's own window reads it. A stored tool result carries
- * its text twice, as `preview` and as `output`, for readers that know only
- * one of the names; the window reads `preview` first, so the copy is left
- * out of what crosses to it, which is a fifth to a third of a snapshot of a
- * chat that ran many tools. Other wires carry the event as stored.
- */
-export function eventForWindow(event: ConversationEvent): ConversationEvent {
-  const payload = event.payload
-  if (event.type !== 'tool_output' || typeof payload?.preview !== 'string' || payload.output !== payload.preview)
-    return event
-  const { output: _copy, ...rest } = payload
-  return { ...event, payload: rest }
-}
-
-export function frameForWindow(frame: ConversationSessionFrame): ConversationSessionFrame {
-  if (frame.type === 'event') return { ...frame, event: eventForWindow(frame.event) }
-  if (frame.type === 'snapshot')
-    return { ...frame, page: { ...frame.page, events: frame.page.events.map(eventForWindow) } }
-  return frame
-}
 
 /**
  * What the all-chats broadcast carries of an event: whose it is, what kind,
@@ -673,7 +652,7 @@ export function registerConversationIpc(
       },
       (frame) => {
         if (!event.sender.isDestroyed())
-          event.sender.send('conversation:session-event', { subscriptionId, frame: frameForWindow(frame) })
+          event.sender.send('conversation:session-event', { subscriptionId, frame: conversationWireFrame(frame) })
       },
     )
     const dispose = () => {
@@ -704,7 +683,7 @@ export function registerConversationIpc(
       turnLimit: input.turnLimit as number | undefined,
     })
     if (!result) return { ok: false, message: 'Conversation history is unavailable.' }
-    return result.ok ? { ...result, page: { ...result.page, events: result.page.events.map(eventForWindow) } } : result
+    return result.ok ? { ...result, page: boundConversationPage(result.page).page } : result
   })
 
   ipcMain.handle('conversation:providers:list', async (_, input: unknown): Promise<ConversationProviderListResult> => {

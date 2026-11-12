@@ -35,6 +35,7 @@ import type { ConversationEvent, ConversationKey, ConversationSessionFrame } fro
 import {
   conversationDeltaKey,
   conversationSnapshotParts,
+  projectConversationEvent,
   type ConversationSnapshotFrame,
 } from '../conversation-stream-shaping'
 import { studioErrorId, type StudioRpcAnswer, type StudioRpcRouter } from './studio-rpc-router'
@@ -159,7 +160,15 @@ type LiveEntry = {
   delta?: { key: string; event: ConversationEvent }
   partialToolUseId?: string
 }
-type BulkEntry = { kind: 'bulk'; lines: Iterator<string>; bytes: number; started: boolean; sub?: string }
+// `end`: a replay's, called once when its fence goes out or it is done or dropped.
+type BulkEntry = {
+  kind: 'bulk'
+  lines: Iterator<string>
+  bytes: number
+  started: boolean
+  sub?: string
+  end?: () => void
+}
 
 type Subscription = {
   id: string
@@ -200,7 +209,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   let commandsInFlight = 0
   const subscriptions = new Map<string, Subscription>()
   // Subscriptions whose replay is still queued or being written.
-  const replaying = new Set<string>()
+  // Replays in flight per subscription: a reset snapshot after the join can
+  // queue a second behind the first, and the first ending must not end both.
+  const replaying = new Map<string, number>()
   const releases: Array<() => void> = []
   let helloTimer: ReturnType<typeof setTimeout> | undefined
   // Whether this connection is one end of the client tools registry.
@@ -317,7 +328,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         if (next.done) {
           pending.shift()
           bulkBytes -= entry.bytes
-          if (entry.sub !== undefined) replaying.delete(entry.sub)
+          entry.end?.()
           releaseBulkWaiters()
           continue
         }
@@ -355,7 +366,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const event = frame.t === 'frame' && frame.frame.type === 'event' ? (frame.frame.event as ConversationEvent) : null
     const key = event ? conversationDeltaKey(event) : null
     const tail = pending.at(-1)
-    const behindReplay = sub !== undefined && replaying.has(sub)
+    const behindReplay = sub !== undefined && (replaying.get(sub) ?? 0) > 0
     const byteBound = behindReplay ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES
     if (key && event && tail?.kind === 'live' && tail.delta?.key === key && tail.sub === sub) {
       // Only an unsent frame is ever in the queue, so this merges only while
@@ -396,9 +407,16 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     void drain()
   }
 
-  function enqueueBulk(lines: Iterator<string>, bytes: number, sub?: string): void {
+  function enqueueBulk(lines: Iterator<string>, bytes: number, sub?: string, end?: () => void): void {
     if (state === 'closed') return
-    pending.push({ kind: 'bulk', lines, bytes, started: false, ...(sub === undefined ? {} : { sub }) })
+    pending.push({
+      kind: 'bulk',
+      lines,
+      bytes,
+      started: false,
+      ...(sub === undefined ? {} : { sub }),
+      ...(end ? { end } : {}),
+    })
     bulkBytes += bytes
     void drain()
   }
@@ -477,13 +495,25 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         producers.push(() => parts.frames(wire, current))
       } else {
         const json = JSON.stringify(
-          source.type === 'event' ? { ...source, event: redact(source.event as ConversationEvent) } : source,
+          source.type === 'event'
+            ? { ...source, event: redact(projectConversationEvent(source.event as ConversationEvent)) }
+            : source,
         )
         bytes += Buffer.byteLength(json)
         producers.push(() => wire(json))
       }
     }
-    replaying.add(sub)
+    replaying.set(sub, (replaying.get(sub) ?? 0) + 1)
+    let ended = false
+    const end = () => {
+      if (ended) return
+      ended = true
+      // A dropped subscription's count went with it; its id may be another's now.
+      if (subscriptions.get(sub) !== subscription) return
+      const left = (replaying.get(sub) ?? 1) - 1
+      if (left > 0) replaying.set(sub, left)
+      else replaying.delete(sub)
+    }
     enqueueBulk(
       (function* () {
         for (const [index, produce] of producers.entries()) {
@@ -491,12 +521,13 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
           // The fence is the replay's last frame. Once it is on its way the
           // client holds a newer cursor, so live frames behind it count against
           // the usual bound again.
-          if (index === producers.length - 1) replaying.delete(sub)
+          if (index === producers.length - 1) end()
           yield* produce()
         }
       })(),
       bytes,
       sub,
+      end,
     )
   }
 
@@ -555,6 +586,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const key = { workspaceId: subscription.key.workspaceId, agentId: subscription.key.agentId }
     const frame: ConversationServerFrame =
       source.type === 'snapshot' || source.type === 'synchronized' ? { ...source, key } : source
+    // A reset snapshot after the join (the runtime catching up once the
+    // chat's server is back) is a join again: collected with its fence and
+    // sent as a paced replay, in parts, as the first one was.
+    if (!subscription.replay && frame.type === 'snapshot') subscription.replay = []
     if (subscription.replay) {
       subscription.replay.push(frame)
       if (frame.type === 'synchronized') {
@@ -565,10 +600,12 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       return
     }
     if (frame.type === 'event') {
-      const event = redact(frame.event as ConversationEvent)
-      // A copy the queue may extend in place without touching the runtime's own.
+      const projected = projectConversationEvent(frame.event as ConversationEvent)
+      const event = redact(projected)
+      // A copy the queue may extend in place without touching the runtime's
+      // own, or the projection every subscriber shares.
       const owned =
-        event === frame.event ? { ...event, ...(event.payload ? { payload: { ...event.payload } } : {}) } : event
+        event === projected ? { ...event, ...(event.payload ? { payload: { ...event.payload } } : {}) } : event
       enqueueLive({ t: 'frame', sub: subscription.id, frame: { type: 'event', event: owned } }, subscription.id)
       return
     }

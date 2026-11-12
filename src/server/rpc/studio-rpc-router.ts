@@ -24,6 +24,7 @@ import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
 import type { ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
+import { boundConversationPage } from '../conversation-stream-shaping'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
@@ -599,9 +600,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
       const read = await backend.loadEarlier(key, beforeCursor, turnLimit)
-      return read.ok
-        ? { ok: true, result: { page: { ...read.page, events: read.page.events.map((event) => voice.redact(event)) } } }
-        : voice.failed('unavailable', read.message, 'conversation.loadEarlier')
+      if (!read.ok) return voice.failed('unavailable', read.message, 'conversation.loadEarlier')
+      const { page } = boundConversationPage(read.page)
+      return { ok: true, result: { page: { ...page, events: page.events.map((event) => voice.redact(event)) } } }
     },
     'conversation.toolDetail': async ({ key: wire, toolUseId }, { grant, voice }) => {
       const key = resolve(wire, grant)

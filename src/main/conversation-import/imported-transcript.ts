@@ -96,7 +96,7 @@ export class ImportedTranscriptBuilder {
     // Only the answer to a call this history showed: one whose call fell
     // before the first message has no row to land in.
     if (!this.turnId || !payload.toolUseId || !this.openTools.delete(payload.toolUseId)) return
-    const output = cappedOutput(payload.output)
+    const output = payload.output === undefined ? undefined : cappedOutput(payload.output)
     this.push('tool_output', this.stamp(at), {
       ...payload,
       ...(output !== payload.output ? { output, truncated: true } : {}),

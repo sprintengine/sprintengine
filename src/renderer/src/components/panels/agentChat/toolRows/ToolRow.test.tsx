@@ -313,6 +313,92 @@ test('truncated output is fetched only on request and failures can be retried', 
   }
 })
 
+test('a change that crossed without its bodies is read whole when its row opens, and never drawn cut', async () => {
+  const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost', pretendToBeVisual: true })
+  const previous = Object.getOwnPropertyDescriptors(globalThis)
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    MutationObserver: dom.window.MutationObserver,
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+    IS_REACT_ACT_ENVIRONMENT: true,
+  })
+  let calls = 0
+  let answer!: (value: unknown) => void
+  Object.assign(dom.window, {
+    api: {
+      platform: 'darwin',
+      conversationToolDetail: () => {
+        calls++
+        return new Promise((resolve) => (answer = resolve))
+      },
+    },
+  })
+  const { act } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { ConversationLinkProvider } = await import('../conversationLinks')
+  const host = dom.window.document.createElement('div')
+  dom.window.document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () =>
+      root.render(
+        <ConversationLinkProvider
+          workspaceId="cut-input-test"
+          workspaceRoot="/workspace/app"
+          cwd="/workspace/app"
+          agentId="agent"
+        >
+          <ToolRow
+            tool={tool({
+              id: 'cut-write',
+              name: 'Write',
+              toolKind: 'file_write',
+              input: { file_path: '/workspace/app/notes.md', content: 'first line only' },
+              inputTruncated: true,
+            })}
+          />
+        </ConversationLinkProvider>,
+      ),
+    )
+    expect(calls).toBe(0)
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+    expect(calls).toBe(1)
+    expect(host.textContent).not.toContain('first line only')
+    await act(async () =>
+      answer({
+        ok: true,
+        detail: {
+          input: { file_path: '/workspace/app/notes.md', content: 'first line only\nand the whole of the rest\n' },
+          output: '',
+          status: 'ok',
+        },
+      }),
+    )
+    expect(host.textContent).toContain('and the whole of the rest')
+    expect(calls).toBe(1)
+  } finally {
+    await act(async () => root.unmount())
+    dom.window.close()
+    for (const key of [
+      'window',
+      'document',
+      'navigator',
+      'HTMLElement',
+      'Node',
+      'MutationObserver',
+      'getComputedStyle',
+      'IS_REACT_ACT_ENVIRONMENT',
+    ]) {
+      if (previous[key]) Object.defineProperty(globalThis, key, previous[key])
+      else Reflect.deleteProperty(globalThis, key)
+    }
+  }
+})
+
 test('a running tool shows how long it has been running, a finished one how long it took', () => {
   const startedAt = Date.now() - 5_000
   const running = renderToStaticMarkup(

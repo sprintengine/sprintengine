@@ -18,6 +18,7 @@ import {
   type ConversationCommandAudit,
 } from './tailnet-conversation-stream'
 import { createWebSocketFrameDecoder, encodeMaskedTextFrame } from './websocket-frames'
+import { CONVERSATION_WIRE_PAGE_BYTES } from '../../../server/conversation-stream-shaping'
 import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   conversationCloseRetryAfterMs,
@@ -373,6 +374,53 @@ test('a snapshot beyond the frame budget keeps its newest events and pages the r
     assert.equal(part.page!.hasMore, true)
     assert.equal(part.page!.beforeCursor, kept[0], 'the rest is one loadEarlier away')
   }
+  stream.close(1000, '')
+})
+
+test('the lane sends a chat as every wire does: a result once, a change without its bodies, a page bounded', async () => {
+  const page = {
+    events: Array.from({ length: 1200 }, (_, index) =>
+      wireEvent(index + 1, 'tool_output', {
+        toolUseId: `t${index}`,
+        preview: 'p'.repeat(4000),
+        output: 'p'.repeat(4000),
+      }),
+    ),
+    hasMore: false,
+    beforeCursor: 1,
+  }
+  const { socket, stream, emit } = await joinedSocket((gateway) => {
+    gateway.loadEarlier = async () => ({ ok: true, page })
+  })
+  emit({ type: 'snapshot', page: { events: [], hasMore: false, beforeCursor: null }, generation: 'g' })
+  emit({ type: 'synchronized', seq: 0, generation: 'g' })
+  emit({ type: 'event', event: page.events[0] })
+  emit({
+    type: 'event',
+    event: wireEvent(1201, 'tool_started', {
+      toolUseId: 'w',
+      name: 'Write',
+      input: { file_path: 'a.ts', content: 'c'.repeat(50_000) },
+    }),
+  })
+  socket.receive({ type: 'loadEarlier', requestId: 'earlier', beforeCursor: 1201 })
+  await until(() => assemble(socket.output()).some((frame) => frame.type === 'result'), 'the page arrives')
+  const frames = assemble(socket.output())
+  const [result, write] = [
+    frames.find((frame) => frame.event?.type === 'tool_output')!.event!,
+    frames.find((frame) => frame.event?.type === 'tool_started')!.event!,
+  ]
+  assert.equal(result.payload?.output, undefined)
+  assert.equal(String(result.payload?.preview).length, 4000)
+  assert.equal(write.payload?.inputTruncated, true)
+  assert.ok(String((write.payload?.input as { content: string }).content).length < 50_000)
+  const earlier = frames.find((frame) => frame.type === 'result') as unknown as {
+    data: { page: { events: ConversationEvent[]; hasMore: boolean; beforeCursor: number } }
+  }
+  assert.ok(Buffer.byteLength(JSON.stringify(earlier.data.page.events)) <= CONVERSATION_WIRE_PAGE_BYTES)
+  assert.equal(earlier.data.page.events.at(-1)?.seq, 1200)
+  assert.equal(earlier.data.page.hasMore, true)
+  assert.equal(earlier.data.page.beforeCursor, earlier.data.page.events[0].seq)
   stream.close(1000, '')
 })
 

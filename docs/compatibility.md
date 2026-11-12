@@ -429,7 +429,17 @@ most eight, a browser screenshot most often) are the same kind of member: the
 bytes were never on the wire and still are not, an older phone shows the
 step's words as before, and a reader that knows the member can say the step
 returned pictures but cannot fetch them, since `conversation-image` serves a
-step's picture by the step's input and not by this list. An MCP step's own
+step's picture by the step's input and not by this list. What every wire
+sends of an event is a projection of it (2026-11-11,
+`src/server/conversation-stream-shaping.ts`), and no member a reader needs
+went: a `tool_output` carries its text once, as `preview` (every reader,
+every phone build among them, reads `preview` before `output`), and a
+`tool_started` input carries its file-change bodies cut to their heads,
+marked `inputTruncated`, which every reader already knew from inputs too
+large to store. Both read the whole step with `getToolDetail` when it is
+opened and draw a cut change only from that; a phone or desktop from before
+reads it the same way (the phone on opening, the desktop behind "Show full
+output") but draws the cut change until then. An MCP step's own
 title and its server's name (`displayTitle` and `serverName` on a
 `tool_started`, 2026-10-13: plain text, at most 120 characters each) are the
 same kind of member: a reader that does not know them titles the step from
