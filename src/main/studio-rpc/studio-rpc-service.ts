@@ -175,11 +175,11 @@ export type StudioRpcServiceOptions = {
   readiness?: () => Promise<StudioEnvironmentReadiness>
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
   terminals?: StudioTerminals
-  /** The CLIs on this machine (`agent-runtimes`): given only where this process holds their detection. */
+  /** The CLIs on this machine (`agent-runtimes`): the core's, which every Studio gives (studio-rpc.ts). */
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' texts (`agent-settings`). */
   agentSettings?: StudioAgentSettings
-  /** What the agents are set up with beyond their CLIs (`agent-setup`): given only where this process holds those services. */
+  /** What the agents are set up with beyond their CLIs (`agent-setup`): the core's, which every Studio gives. */
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats (`chat-stores`). */
   chatStores?: StudioChatStores

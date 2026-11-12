@@ -7,7 +7,6 @@ import { buildAgentStateReporterCommand, buildLauncherHookCommand } from './agen
 import { LAUNCH_FILES_DIR, prepareLaunchIntegration, pruneLaunchFiles } from './integrations/launch-integration'
 import { knowledgeActivityLaunchCommand } from './memory-activity'
 import { gitTracksPath } from './skills/studio-plugin'
-import { createAgentConfigImportService } from './agent-config-import'
 import {
   ensureAgentIntegrationHome,
   LAUNCH_REPORTER_REL,
@@ -29,7 +28,7 @@ import { sessionSshPreview } from './environments/ssh/ssh-preview'
 import { relayShellToolsets, SSH_RELAYED_TOOLSETS } from '../server/wsl/wsl-tool-relay'
 import { cliTakesLaunchPlugins } from './agent-launch-render'
 import { resolveSocketPath as resolveAutomationSocketPath } from './automation/automation-service'
-import { invalidateCliAvailabilityOnHost, subscribeKnownCliAvailability } from './cli-availability'
+import { invalidateCliAvailabilityOnHost } from './cli-availability'
 import { wslHostId } from '../shared/execution-host'
 import {
   appLaunchPluginsActive,
@@ -61,7 +60,6 @@ import { readModuleTrustContextSync } from './modules/trust-context'
 import { defaultUserModuleRoot, discoverUserModules } from './modules/user-module-registry'
 import type { ScheduledAgentsService } from './scheduled-agents/service'
 import {
-  createBuiltinSkillManager,
   ensureSkillInstalled,
   setDefaultSkillManager,
   setLaunchDeliversBundledSkillResolver,
@@ -76,7 +74,6 @@ import { createMainDiagnostics } from './main-diagnostics'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from './workspace-roots'
 import { createAgentSkillInstaller } from './agent-skill-installer'
 import { createCapabilityWatcher } from './capability-watcher'
-import { createMcpConfigService } from './mcp-config-service'
 import { createSkillsService } from './skills'
 import { createWorkspaceExtensionsReader } from './workspace-extensions'
 import { sweepGitRepoCache } from './skills/git-repo-reader'
@@ -98,14 +95,7 @@ import {
 } from './workspace-skills-service'
 import type { HostAgentIntegration } from './hosts/execution-host'
 import { hostRegistry } from './hosts/host-registry'
-import { setCliModelDiscoveryRuntimesResolver } from './model-discovery/discovery-pass'
-import { createCliRuntimes } from './cli-runtimes'
-import { createStudioAgentSetup } from '../server/agent-setup/agent-setup-domain'
-import {
-  configureCliVersionService,
-  launchSettingsCliMachines,
-  scheduleCliVersionRead,
-} from './cli-version-advisory-service'
+import { createStudioAgentServices } from '../server/core/studio-agent-services'
 import { createBackgroundModeStore } from './background-mode-store'
 import { createQuitConfirmationStore } from './quit-confirmation-store'
 import { createAgentNotificationsStore } from './agent-notifications-store'
@@ -119,7 +109,6 @@ import { countWorkingTerminalAgents, createQuitConfirmation, type QuitStopping }
 import { backgroundWorkOf, quitStopsOf } from '../server/core/background-work'
 import { askToQuitWhileWorking } from './quit-confirmation-electron'
 import { conversationSummaryPhase, conversationTurnInProgress } from '../shared/conversation/phase'
-import { createStudioAreaSkillStore } from './studio-area-skill-store'
 import { createAnalyticsService } from './telemetry/analytics-service'
 import { createTelemetryConsentStore } from './telemetry/consent-store'
 import { readInstallId } from './telemetry/install-id'
@@ -289,7 +278,11 @@ export function createAppServices(
   // launch built later can name it with `-d` (Windows only; a no-op elsewhere).
   primeDefaultWslDistro()
   const sprintengineAuth = new SprintEngineAuthBridge()
-  const mcpConfigService = createMcpConfigService()
+  // What the agents are set up with (MCP sync, the built-in and area skills,
+  // the config import): built once here and handed to the core in process, so
+  // the shell's own uses and the server's methods share one of each.
+  const agentServices = createStudioAgentServices(platform)
+  const mcpConfigService = agentServices.mcpConfig
   // Every file, entry and piece of machine state the app writes outside
   // userData is recorded here as it is written (integrations/ledger.ts), so it
   // can all be taken back out. Installed before anything that writes.
@@ -338,9 +331,7 @@ export function createAppServices(
 
   // The skill installer a launch's skill-at-spawn uses (terminalLaunchPreparation).
   // Reads loaded CLI plugins to compute native targets.
-  const builtinSkillManager = createBuiltinSkillManager({
-    listPlugins: () => getPluginRegistry().loaded(),
-  })
+  const builtinSkillManager = agentServices.builtinSkills
   // The process-wide `ensureSkillInstalled` — the one the launch boundary,
   // the Backlog action and `MainHost.ensureSkillInstalled` all call — must use
   // THIS manager, the only one that knows the installed CLI plugins and can
@@ -476,12 +467,9 @@ export function createAppServices(
   // every workspace (shared/studio-area-skills.ts). Read by every plugin copy
   // (this machine's launch home, each WSL distribution's) and the workspace
   // installer; a change re-runs them.
-  const studioAreaSkillStore = createStudioAreaSkillStore({
-    resolveUserDataDir: () => app.getPath('userData'),
-    logDiagnostic: (diagnostic) => {
-      void writeDiagnosticLog({ ...diagnostic, source: 'workspace' })
-    },
-  })
+  const studioAreaSkillStore = agentServices.areaSkills
+  // Out of process the server takes the choices; this copy adopts each one.
+  server?.rpc.on(SERVER_EVENTS.mirrorAreaSkills, (choices) => studioAreaSkillStore.adopt(choices))
 
   // WSL machines: each distribution's helper relays its agents' hook frames,
   // their MCP connections and PATH changes back here (hosts/wsl-helper-*.ts).
@@ -509,7 +497,11 @@ export function createAppServices(
       if (server) server.rpc.emit(SERVER_EVENTS.agentStateLine, line)
       else coreTerminals?.agentState.ingestLine(line)
     },
-    onPathsChanged: (distro) => invalidateCliAvailabilityOnHost(wslHostId(distro)),
+    // What a launch knows of that machine's CLIs is the core's to forget.
+    onPathsChanged: (distro) => {
+      if (server) server.rpc.emit(SERVER_EVENTS.cliPathsChanged, { hostId: wslHostId(distro) })
+      else invalidateCliAvailabilityOnHost(wslHostId(distro))
+    },
     // Chromium's network stack, so the one-time Node.js download honours the
     // system proxy the way the rest of the app's requests do.
     fetch: (url, init) => net.fetch(url, init),
@@ -935,8 +927,7 @@ export function createAppServices(
               ...(request.permissionPreset ? { permissionPreset: request.permissionPreset } : {}),
             }),
         },
-        // A distribution turned on or off adds or drops its CLI updates.
-        onHostSettingsChanged: () => scheduleCliVersionRead(),
+        agentServices,
         ...(ssh
           ? {
               sshServers: {
@@ -1127,17 +1118,6 @@ export function createAppServices(
     })
   }
 
-  // A model-discovery pass main starts itself (boot, after an install) probes
-  // with the same per-CLI command overrides a launch would use.
-  setCliModelDiscoveryRuntimesResolver(() => agentLaunchSettings.get().cliRuntimes)
-  // The version check asks about the same machines, with the same commands,
-  // that Settings ▸ Agents lists: this one and each WSL distribution turned on.
-  configureCliVersionService({ machines: launchSettingsCliMachines(() => agentLaunchSettings.get()) })
-  // It compares again whenever detection learns something new about a machine
-  // — startup, Re-check, a WSL list opened for the first time — and when the
-  // machines change (below), so a badge follows without the hourly wait.
-  subscribeKnownCliAvailability(() => scheduleCliVersionRead())
-
   // One warning per distinct message per run: the same MCP config is synced
   // on every WSL launch, and the same sentence each time is noise.
   const mcpWslWarningsSeen = new Set<string>()
@@ -1218,10 +1198,7 @@ export function createAppServices(
       update: (progress) => sendSplashProgress(progress),
     },
   })
-  const agentConfigImportService = createAgentConfigImportService({
-    mcpConfigService,
-    builtinSkillManager,
-  })
+  const agentConfigImportService = agentServices.agentConfigImport
   // The token is the server's out of process; the shell's skills, cards and
   // marketplace ask it for one.
   const githubTokenStore = server
@@ -1799,22 +1776,6 @@ export function createAppServices(
     ? createStudioRpc(core, automationService, {
         updates: desktopUpdates,
         modules: moduleHub,
-        // The CLIs on this machine, served where their detection and version
-        // check run: in this process. Out of process the server holds neither,
-        // so it does not advertise `agent-runtimes`.
-        ...(server ? {} : { runtimes: createCliRuntimes() }),
-        // What the agents are set up with beyond their CLIs, from the services
-        // composed above; in process only, as the CLIs are.
-        ...(server
-          ? {}
-          : {
-              agentSetup: createStudioAgentSetup({
-                mcp: mcpConfigService,
-                agentConfig: agentConfigImportService,
-                builtinSkills: builtinSkillManager,
-                areaSkills: studioAreaSkillStore,
-              }),
-            }),
       })
     : null
   // Where the person's attention is, for routing a call to the window in

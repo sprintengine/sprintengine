@@ -207,6 +207,11 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   // What a quit would stop: no chat has a turn running here, and no schedule or watch.
   assert.deepEqual(await shellRpc.call(SERVER_METHODS.quitStops), { agents: 0, schedules: [], watches: [] })
 
+  // The CLIs' version check is this server's: the shell's hourly comparison
+  // runs here (and with checks not switched on yet, asks the registry nothing).
+  const versions = await shellRpc.call<{ ok: boolean; advisories?: unknown }>(SERVER_METHODS.cliVersionsRefresh)
+  assert.deepEqual([versions.ok, versions.advisories], [true, {}])
+
   // The worktree pool is this server's: a window's Settings ▸ Worktrees and
   // the installs are answered over the tunnel, and the shell's `agent.launch`
   // has its worktree cut here, from the pool, and listed among its leases.

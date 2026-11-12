@@ -79,6 +79,14 @@ export const SERVER_METHODS = {
   terminalPullRequestsRefresh: 'terminals.pull-requests-refresh',
   /** `{ connectionId }` → nothing, once the check is done: ask a paired desktop now whether it answers (the mesh is this process's). */
   meshCheckReachability: 'mesh.check-reachability',
+  /**
+   * `{ which: 'local' | 'wsl' }` → how many machines were asked: the boot's
+   * detection of the agent CLIs, which the shell times and the server runs
+   * (the CLIs and their version check are the core's).
+   */
+  cliDetect: 'cli.detect',
+  /** → the advisories: the hourly comparison of the installed CLI versions against the registry. */
+  cliVersionsRefresh: 'cli-versions.refresh',
 } as const
 
 /** Server → shell requests: the shell's own caches the gateway's tools read. */
@@ -144,6 +152,17 @@ export const SERVER_EVENTS = {
    * holds it to the socket's validation.
    */
   agentStateLine: 'terminals.agent-state-line',
+  /**
+   * Shell → server: `{ hostId }`, a WSL distribution's PATH changed, as its
+   * helper (the shell's) saw it; what the server knows of its CLIs is stale.
+   */
+  cliPathsChanged: 'cli.paths-changed',
+  /**
+   * Server → shell: the area skills the person opted into
+   * (`StudioAreaSkillChoices`), on every change: the shell's plugin copies
+   * and workspace installs read them.
+   */
+  mirrorAreaSkills: 'mirror.area-skills',
   /**
    * Shell → server: the gateway launch tokens the shell issued, by digest
    * (decision R87). `{ reset, changes }`: `reset` says

@@ -64,8 +64,7 @@ export type AgentSetupApi = {
   onStudioAreaSkillsChanged(cb: (choices: StudioAreaSkillChoices) => void): () => void
 }
 
-const UNSERVED =
-  'This Studio does not serve its agents’ setup while it runs in its own process (a preview setting). Turn that off in Settings to use it.'
+const UNSERVED = 'This Studio is older than this app and does not serve its agents’ setup. Update it to use it here.'
 
 function randomId(): string {
   const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto

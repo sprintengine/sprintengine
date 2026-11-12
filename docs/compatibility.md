@@ -1144,9 +1144,11 @@ optional hints a Studio that does not know them ignores.
 launch settings. `agent-runtimes` is `cliRuntimes.detect`, `.installMethods`,
 `.install`, `.update` and `.updateAll` with the streams `cliRuntimes.output`
 (one CLI on one machine) and `cliRuntimes.updateAllProgress`, and
-`cliVersions.advisories` and `.setEnabled` with `cliVersions.changed`; a
-Studio advertises it only where it holds the CLIs' detection (a desktop in
-process; not yet a server in a process of its own). `agent-settings` is
+`cliVersions.advisories` and `.setEnabled` with `cliVersions.changed`. Every
+Studio advertises it: the desktop in process or in a process of its own, and a
+server on a WSL or SSH machine, about the CLIs on that machine. The first builds
+with it advertised it only in process, and a window that meets one says the
+Studio is older. `agent-settings` is
 `cliModels.discover` with `cliModels.changed`, `launchSettings.get`,
 `.update` and `.migrate` with `launchSettings.changed`, which are an owner's,
 `textGeneration.setSettings` and `.chatTitle`, and `commitMessage.draft` and
@@ -1165,8 +1167,9 @@ the activity agents leave in it, with the `memoryActivity.events`,
 (`workspaceFolder`), held to the folders the Studio knows for any client that
 is not an owner, and one on an SSH machine is refused in words for now.
 `mcp.sync`, `agentConfig.adopt` and the activity hook's install and uninstall
-are an owner's: they write what the agent CLIs run. A Studio advertises
-`agent-setup` only where it holds those services (a desktop in process).
+are an owner's: they write what the agent CLIs run. Every Studio advertises
+`agent-setup` too, about its own machine; the first builds with it did so only
+in process.
 `environment-readiness` (2026-11-12) adds `environment.readiness`, under
 `providers:read`: what the Studio's machine has and lacks for the work it
 runs on its own (its CLIs, installed and signed in where it can tell, `gh`, MCP
