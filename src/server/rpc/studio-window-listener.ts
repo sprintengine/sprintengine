@@ -19,7 +19,7 @@ import type { StudioAuthenticator } from './studio-rpc-types'
 //   seconds, and only from the origin of the document it was minted for.
 //   The ticket rides the upgrade's query, so a socket without one is refused
 //   before it opens, and the hello presents it again as its credential.
-// - The `Host` must be this listener's own address (no DNS rebinding), and the
+// - The `Host` must name 127.0.0.1 itself (no DNS rebinding), and the
 //   `Origin` the window's (no page on another site, which a browser would
 //   label with its own origin).
 // - A window's connections end when main says the window has gone: closed,
@@ -68,6 +68,16 @@ function hashTicket(ticket: string): string {
   return createHash('sha256').update(ticket).digest('base64url')
 }
 
+/** The host name a `Host` header names, without its port. */
+function hostName(host: string | undefined): string | null {
+  if (!host) return null
+  try {
+    return new URL(`http://${host}`).hostname
+  } catch {
+    return null
+  }
+}
+
 /** A page loaded from a file says `file://`; some Chromium builds say `null` for the same page. */
 function originMatches(presented: string | undefined, expected: string): boolean {
   if (presented === undefined) return false
@@ -112,7 +122,9 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
   function handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     const url = new URL(request.url ?? '/', 'ws://127.0.0.1')
     if (url.pathname !== WINDOW_SOCKET_PATH) return refuse(socket, 404, 'not_found')
-    if (port === null || request.headers.host !== `127.0.0.1:${port}`) return refuse(socket, 403, 'wrong_host')
+    // Named by its address, never by a name: a page whose own host name a DNS
+    // server rebinds to 127.0.0.1 still says that name here.
+    if (hostName(request.headers.host) !== '127.0.0.1') return refuse(socket, 403, 'wrong_host')
     const key = webSocketKeyOf(request)
     if (!key.ok) return refuse(socket, 400, key.code)
     const ticket = url.searchParams.get('ticket')

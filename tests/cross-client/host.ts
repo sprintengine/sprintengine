@@ -5,8 +5,8 @@ import { createInterface } from 'node:readline'
 import { writeTailnetSettings } from '../../src/main/automation/tailnet/tailnet-settings'
 import { defaultAgent, type AgentState } from '../../src/shared/agent-state'
 import { readStudioEnvironmentId } from '../../src/server/environment/environment-id'
-import type { StudioFramePort } from '../../src/server/rpc/studio-frame-port'
 import type { StudioServer, StudioServerOptions } from '../../src/server/studio-server'
+import { GATE_WINDOW_ORIGIN } from './client'
 
 // The server host: its own process, which requires the built Studio server
 // (`out/server/server.cjs`, `npm run build:server`) and starts it on the gate's
@@ -14,9 +14,10 @@ import type { StudioServer, StudioServerOptions } from '../../src/server/studio-
 // fixture do. It is what the gate kills and starts again for "server restart".
 //
 // Beside the server it stands in for one thing only: the Electron shell's
-// broker of a window's connection (src/main/ipc/studio-connection-ipc.ts),
-// which hands a port to `rpc.connectWindow` and the window the connection's
-// id and ticket. Here the port is a socket per connection, one frame per line.
+// window tickets (src/main/ipc/studio-window-ticket-ipc.ts), which main asks
+// the server for on a window's behalf (`rpc.windowTicket`). Here a ticket is
+// asked for on a socket, one per request; the window then opens its WebSocket
+// to the server's real window listener, as a desktop window does.
 //
 // It talks to the gate on stdin and stdout, one JSON object per line.
 
@@ -39,6 +40,8 @@ export type HostReady = {
   workspaceId: string
   environmentId: string
   web: string
+  /** The window listener's address (`ws://127.0.0.1:<port>`); a restart moves it. */
+  window: string
   tailnet: { running: boolean; detail: string }
 }
 
@@ -54,41 +57,15 @@ function say(line: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(line)}\n`)
 }
 
-/** The shell's broker: each socket is one window connection, its first line the id and ticket. */
+/** The shell's window tickets: each socket is one request, answered with one ticket line. */
 function startShellBroker(server: StudioServer) {
   rmSync(config.shellSocket, { force: true })
   const broker = createServer((socket: Socket) => {
-    const frameListeners: Array<(frame: string) => void> = []
-    const closeListeners: Array<() => void> = []
-    let closed = false
-    const end = () => {
-      if (closed) return
-      closed = true
-      for (const listener of closeListeners.splice(0)) listener()
-    }
-    socket.on('close', end).on('error', end)
-    const port: StudioFramePort = {
-      post: (frame) => {
-        if (!closed) socket.write(`${frame}\n`)
-      },
-      onFrame: (listener) => void frameListeners.push(listener),
-      onClose: (listener) => (closed ? listener() : void closeListeners.push(listener)),
-      close: () => {
-        socket.destroy()
-        end()
-      },
-    }
-    let connection: { connectionId: string; ticket: string }
-    try {
-      connection = server.rpc.connectWindow(port)
-    } catch {
-      socket.destroy()
-      return
-    }
-    socket.write(`${JSON.stringify(connection)}\n`)
-    createInterface({ input: socket }).on('line', (line) => {
-      for (const listener of frameListeners) listener(line)
-    })
+    socket.on('error', () => undefined)
+    server.rpc
+      .windowTicket({ windowKey: 'gate-window', origin: GATE_WINDOW_ORIGIN })
+      .then((ticket) => socket.end(`${JSON.stringify(ticket)}\n`))
+      .catch(() => socket.destroy())
   })
   broker.listen(config.shellSocket)
   return broker
@@ -123,12 +100,16 @@ async function main(): Promise<void> {
     workspaceId = created.result.workspace.id
   }
   const broker = startShellBroker(server)
+  // The window listener starts on the first ticket; the gate's cutter needs its address now.
+  const boot = await server.rpc.windowTicket({ windowKey: 'gate-boot', origin: GATE_WINDOW_ORIGIN })
+  server.rpc.revokeWindow('gate-boot')
   const tailnet = server.gateway.getTailnetStatus()
   const ready: HostReady = {
     pid: process.pid,
     workspaceId,
     environmentId: readStudioEnvironmentId(config.dataDir),
     web: server.ready.web ?? '',
+    window: new URL(boot.url).origin,
     tailnet: { running: tailnet.running, detail: tailnet.lastError ?? tailnet.endpoint ?? '' },
   }
   say({ ready })
