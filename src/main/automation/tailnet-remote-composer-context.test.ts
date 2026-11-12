@@ -243,9 +243,30 @@ test('a send is the request: its skills go by id, and when it was written goes w
   try {
     await h.mesh.listConversations(h.key.connectionId)
     await h.follow()
+    const composedAt = Date.now()
+    // A skill of the chat's folder over there runs with the message, resolved
+    // there by its id. (One that is neither there nor built in is refused by
+    // that machine's skill lookup, which reads the installed platform: every
+    // entry installs one, this harness does not.)
+    const skillDir = join(h.workspaceRoot, '.claude', 'skills', 'review')
+    mkdirSync(skillDir, { recursive: true })
+    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: review\ndescription: Review it\n---\nReview carefully.\n')
+    const turns = vi.spyOn(h.runtime, 'sendTurn')
+    const ran = await h.mesh.conversationSend({
+      key: h.key,
+      message: 'Review it',
+      skills: [{ id: 'review', sourcePath: join(h.localDir, 'review', 'SKILL.md') }],
+      composedAt,
+    })
+    assert.deepEqual(ran, { ok: true })
+    assert.deepEqual(turns.mock.calls.at(-1)![0].skills, [{ id: 'review' }])
+    assert.equal(turns.mock.calls.at(-1)![0].composedAt, composedAt)
+    const answer = await turns.mock.results.at(-1)!.value
+    assert.equal(answer.ok, true, answer.ok ? '' : answer.message)
+    turns.mockRestore()
+
     // What crosses the lane, answered there without running a turn.
     const commands = vi.spyOn(h.host, 'command').mockResolvedValue({ ok: true })
-    const composedAt = Date.now()
     const sent = await h.mesh.conversationSend({
       key: h.key,
       message: 'Review it',
