@@ -12,7 +12,14 @@ import type { StudioChatBackend } from '../../../src/server/rpc/studio-rpc-types
 import type { ConversationSessionFrame } from '../../../src/shared/conversation-runtime'
 import { createMemoryChannel, type MemoryChannelEnd } from '../../../tests/memory-channel'
 import { memoryWebSocketClass } from '../../../tests/memory-websocket'
-import { connect, webSocketTransport, type StudioClient, type StudioTransportFactory } from '../src/public'
+import {
+  connect,
+  webSocketTransport,
+  type ConnectOptions,
+  type StudioClient,
+  type StudioClientState,
+  type StudioTransportFactory,
+} from '../src/public'
 
 // The client over a connection that brings its own credential, as a Studio
 // window's does: `webSocketTransport` with a fresh ticket per socket, good for
@@ -34,6 +41,16 @@ type Window = {
   drop(): void
   /** From now on, connections reach a different Studio. */
   replace(environmentId: string): void
+  /** The same Studio started again on another port: the old one refuses sockets, and only a new ticket names the new one. */
+  restart(): Promise<void>
+  /** The port the latest ticket named. */
+  readonly port: number
+  /** Studio refuses each hello's ticket, as a stale or wrong one is. */
+  refuseTickets: boolean
+  /** No ticket can be had (main cannot reach its server). */
+  ticketsFail: boolean
+  /** Nothing Studio sends on the open connection reaches the client, and its socket stays open: a line a sleep left half-open. */
+  silence(): void
   commandListeners: Set<(catalog: unknown) => void>
   transport: StudioTransportFactory
 }
@@ -67,22 +84,28 @@ function window(
     return made
   }
   let server = make('env-test')
+  let port = 1
   const sent: Array<Record<string, unknown>> = []
   const tickets: string[] = []
   let open: MemoryChannelEnd | null = null
+  const flags = { refuseTickets: false, ticketsFail: false }
+  let silenced: MemoryChannelEnd | null = null
   // The window's own transport: a fresh ticket asked for before each socket,
   // admitted as the window listener admits one, by the ticket its URL names.
   const transport = webSocketTransport({
     ticket: async () => {
+      if (flags.ticketsFail) throw new Error('Studio is not running.')
       const ticket = mintStudioTicket()
       tickets.push(ticket)
-      return { url: `ws://127.0.0.1:1/ws?ticket=${encodeURIComponent(ticket)}`, token: ticket }
+      return { url: `ws://127.0.0.1:${port}/ws?ticket=${encodeURIComponent(ticket)}`, token: ticket }
     },
     WebSocket: memoryWebSocketClass((url) => {
-      const ticket = new URL(url).searchParams.get('ticket')
-      if (!ticket) return null
+      const address = new URL(url)
+      const ticket = address.searchParams.get('ticket')
+      if (!ticket || Number(address.port) !== port) return null
       const [serverEnd, clientEnd] = createMemoryChannel()
-      server.attach(framePortStream(serverEnd), { authenticator: createTicketAuthenticator(ticket), ownWindow: true })
+      const admits = flags.refuseTickets ? mintStudioTicket() : ticket
+      server.attach(framePortStream(serverEnd), { authenticator: createTicketAuthenticator(admits), ownWindow: true })
       open = clientEnd
       return {
         post: (frame: string) => {
@@ -91,9 +114,13 @@ function window(
         },
         onFrame: (listener: (frame: string) => void) =>
           clientEnd.onFrame((frame) =>
-            listener(
-              options.rewrite ? JSON.stringify(options.rewrite(JSON.parse(frame) as Record<string, unknown>)) : frame,
-            ),
+            silenced === clientEnd
+              ? undefined
+              : listener(
+                  options.rewrite
+                    ? JSON.stringify(options.rewrite(JSON.parse(frame) as Record<string, unknown>))
+                    : frame,
+                ),
           ),
         onClose: (listener: () => void) => clientEnd.onClose(listener),
         close: () => clientEnd.close(),
@@ -114,16 +141,42 @@ function window(
     replace: (environmentId) => {
       server = make(environmentId)
     },
+    async restart() {
+      const stopping = server
+      port += 1
+      server = make('env-test')
+      open?.close()
+      await stopping.stop(1)
+    },
+    get port() {
+      return port
+    },
+    get refuseTickets() {
+      return flags.refuseTickets
+    },
+    set refuseTickets(value) {
+      flags.refuseTickets = value
+    },
+    get ticketsFail() {
+      return flags.ticketsFail
+    },
+    set ticketsFail(value) {
+      flags.ticketsFail = value
+    },
+    silence: () => {
+      silenced = open
+    },
     commandListeners,
     transport,
   }
 }
 
-async function connected(target: Window): Promise<StudioClient> {
+async function connected(target: Window, options: Partial<ConnectOptions> = {}): Promise<StudioClient> {
   const client = await connect({
     transport: target.transport,
     client: { name: 'Studio window' },
     reconnect: { initialDelayMs: 5, maxDelayMs: 20 },
+    ...options,
   })
   cleanups.push(() => client.close())
   return client
@@ -361,4 +414,127 @@ test('a socket that never opens is given up after its open timeout, and closed',
   })
   await assert.rejects(transport(), /did not answer in time/)
   assert.equal(closed, 1)
+})
+
+// ── Reconnecting, as the window meets it ────────────────────────────────────
+// One case each: a dropped socket, a refused ticket, a sleep and a wake, and a
+// server that came back on another port. The client's connection is kept by
+// the runtime's connection supervisor, so these are its rules as a window
+// sees them.
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+test('a dropped socket is made again with a fresh ticket: its stream resumes and a request in flight is sent once', async () => {
+  const target = window()
+  const states: StudioClientState[] = []
+  const client = await connected(target, { onStateChange: (state) => states.push(state) })
+  const ref = { workspaceId: 'ws-1', agentId: 'agent-1' }
+  const texts: string[] = []
+  let fences = 0
+  client.conversations.follow(ref, undefined, (frame) => {
+    if (frame.type === 'synchronized') fences++
+    if (frame.type === 'event') texts.push(String(frame.event.payload?.text))
+  })
+  await until(() => fences === 1)
+  target.backend.emit('agent-1', 'user_message', { text: 'before' })
+  await until(() => texts.length === 1)
+  target.drop()
+  const answered = client.request('server.info', {})
+  target.backend.emit('agent-1', 'user_message', { text: 'while away' })
+  await until(() => client.state === 'open' && fences === 2)
+  await answered
+  target.backend.emit('agent-1', 'user_message', { text: 'after' })
+  await until(() => texts.length === 3)
+  assert.deepEqual(texts, ['before', 'while away', 'after'], 'no gap and no repeat')
+  assert.deepEqual(states, ['open', 'reconnecting', 'open'])
+  assert.equal(target.tickets.length, 2)
+  const secondHello = target.sent.findIndex((frame, index) => frame.t === 'hello' && index > 0)
+  const infos = target.sent.slice(secondHello).filter((frame) => frame.t === 'req' && frame.method === 'server.info')
+  assert.equal(infos.length, 1, 'asked once on the new connection')
+})
+
+test('a refused ticket parks the window: what waited hears why, nothing is asked again, and a wake asks a new ticket', async () => {
+  const target = window()
+  const states: StudioClientState[] = []
+  const client = await connected(target, { onStateChange: (state) => states.push(state) })
+  const stream = client.conversation({ workspaceId: 'ws-1', agentId: 'agent-1' }).events()
+  for (let next = await stream.next(); next.value?.type !== 'synchronized'; next = await stream.next());
+  target.refuseTickets = true
+  target.drop()
+  await until(() => client.state === 'parked')
+  await assert.rejects(stream.next(), (error: { code?: string }) => error.code === 'unauthorized')
+  await assert.rejects(client.request('server.info', {}), (error: { code?: string }) => error.code === 'unauthorized')
+  const asked = target.tickets.length
+  await sleep(100)
+  assert.equal(target.tickets.length, asked, 'a refused credential is not tried again on a timer')
+  assert.deepEqual(states, ['open', 'reconnecting', 'parked'])
+  target.refuseTickets = false
+  client.wake()
+  await until(() => client.state === 'open')
+  assert.equal(target.tickets.length, asked + 1)
+  assert.deepEqual(states, ['open', 'reconnecting', 'parked', 'reconnecting', 'open'])
+})
+
+test('after a sleep, a wake pings the connection and keeps it if it answers, and makes it again if not', async () => {
+  const target = window()
+  const states: StudioClientState[] = []
+  const client = await connected(target, {
+    onStateChange: (state) => states.push(state),
+    heartbeat: { intervalMs: 60_000, timeoutMs: 50 },
+  })
+  const pings = () => target.sent.filter((frame) => frame.t === 'req' && frame.method === 'server.ping').length
+  // Awake and answering: one ping, and the same connection.
+  client.wake()
+  await until(() => pings() === 1)
+  await sleep(100)
+  assert.equal(client.state, 'open')
+  assert.equal(target.tickets.length, 1, 'a connection that answers is not made again')
+  assert.deepEqual(states, ['open'])
+  // Half-open after the sleep: the ping goes unanswered, and the connection is replaced at once.
+  target.silence()
+  client.wake()
+  await until(() => pings() === 2)
+  await until(() => target.tickets.length === 2 && client.state === 'open')
+  assert.deepEqual(states, ['open', 'reconnecting', 'open'])
+
+  // Asleep through a long backoff: a wake tries at once instead of waiting it out.
+  const sleeper = window()
+  const parked = await connected(sleeper, { reconnect: { initialDelayMs: 60_000, maxDelayMs: 60_000 } })
+  sleeper.ticketsFail = true
+  sleeper.drop()
+  await until(() => parked.state === 'reconnecting')
+  await sleep(20)
+  sleeper.ticketsFail = false
+  parked.wake()
+  await until(() => parked.state === 'open')
+  assert.equal(sleeper.tickets.length, 2)
+})
+
+test('a server restarted on another port is found again by the next ticket, and its streams resume', async () => {
+  const target = window()
+  const client = await connected(target)
+  const ref = { workspaceId: 'ws-1', agentId: 'agent-1' }
+  const texts: string[] = []
+  let fences = 0
+  client.conversations.follow(ref, undefined, (frame) => {
+    if (frame.type === 'synchronized') fences++
+    if (frame.type === 'event') texts.push(String(frame.event.payload?.text))
+  })
+  await until(() => fences === 1)
+  target.backend.emit('agent-1', 'user_message', { text: 'one' })
+  await until(() => texts.length === 1)
+  // Down for a moment: no ticket can be had, and the client keeps trying.
+  target.ticketsFail = true
+  await target.restart()
+  await until(() => client.state === 'reconnecting')
+  await sleep(30)
+  assert.equal(client.state, 'reconnecting')
+  target.backend.emit('agent-1', 'user_message', { text: 'two' })
+  target.ticketsFail = false
+  await until(() => client.state === 'open' && fences === 2)
+  assert.equal(target.port, 2)
+  target.backend.emit('agent-1', 'user_message', { text: 'three' })
+  await until(() => texts.length === 3)
+  assert.deepEqual(texts, ['one', 'two', 'three'])
+  assert.equal(client.welcome.environment.id, 'env-test')
 })

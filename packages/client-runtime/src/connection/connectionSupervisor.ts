@@ -8,6 +8,7 @@
 //   idle ─start─► connecting ─► up ─lost─► backoff ─timer─► connecting
 //                    │                       │ parked after N attempts that could not connect
 //                    │                       └► waiting-for-wake ─wake─► connecting
+//                    ├─ only a wake can help (offline) ─► waiting-for-wake
 //                    ├─ a credential refused ─► needs-sign-in   (retryNow)
 //                    └─ retrying cannot help ─► failed          (retryNow)
 //   any ─stop─► stopped (start)
@@ -72,6 +73,8 @@ export type ConnectionState = {
 export type ConnectionFailureVerdict =
   /** Worth another try, no sooner than `retryAfterMs` if the far end asked for one. */
   | { readonly kind: 'transient'; readonly retryAfterMs?: number }
+  /** Worth another try, but not before a wake: the device is offline, say, so a timer would only fail again. */
+  | { readonly kind: 'wait-for-wake' }
   /** A credential was refused: wait for the person. */
   | { readonly kind: 'needs-sign-in' }
   /** Retrying cannot help (an unsupported server, a changed host key): wait for the person. */
@@ -524,7 +527,10 @@ export class ConnectionSupervisor<C, Hint = undefined> {
     }
     const failures = this.snapshot.failures + 1
     const common = { failures, lastError: error, reconnecting, retryingForMs: this.snapshot.retryingForMs + creditMs }
-    if (this.unreachable >= (this.options.parkAfterFailures ?? Number.POSITIVE_INFINITY)) {
+    if (
+      verdict.kind === 'wait-for-wake' ||
+      this.unreachable >= (this.options.parkAfterFailures ?? Number.POSITIVE_INFINITY)
+    ) {
       this.update({ ...common, phase: 'waiting-for-wake', retryAt: null, heldByPeer: false })
       return
     }
