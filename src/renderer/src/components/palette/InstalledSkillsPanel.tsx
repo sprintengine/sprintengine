@@ -10,6 +10,7 @@ import { GhostButton, OutlineButton } from '../ui/Buttons'
 import { RowButton } from '../ui/RowButton'
 import { WorkingMark } from '../ui/WorkingMark'
 import { hostPlatform } from '../../clientCapabilities'
+import { listTerminals, writeTerminal } from '../../studio/terminals'
 
 /** The listbox the palette's field controls while the Skills tab is showing. */
 export const INSTALLED_SKILLS_RESULTS_ID = 'installed-skills-results'
@@ -290,7 +291,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
       if (!inventory.ok) throw new Error(inventory.message)
       if (!inventory.skills.some((entry) => entry.id === skill.id))
         throw new Error('This installation changed. Refresh and choose it again.')
-      const live = (await window.api.terminalList()).filter(
+      const live = (await listTerminals()).filter(
         (candidate) =>
           candidate.kind === 'agent' &&
           candidate.processAlive &&
@@ -304,7 +305,7 @@ export const InstalledSkillsPanel = forwardRef<InstalledSkillsPanelHandle, Props
       if (!mountedRef.current || currentContextRef.current !== contextKey) return
       // The path identifies the selected copy even when names collide across
       // scopes. Plain prompt input works for both native and prompt-shim CLIs.
-      await window.api.terminalWrite(
+      await writeTerminal(
         target.sessionId,
         bracketedPaste(`Use the skill at ${JSON.stringify(`${skill.path}/SKILL.md`)}. `),
       )

@@ -26,7 +26,7 @@
  * live sessions into `AgentState` records and reveals their tabs
  * (`projectLaunchedAgentSessions`), so the FlexLayout tab is a VIEW of main's
  * session list. A `TerminalView` mounting on a projected agent calls
- * `terminalSpawn` with the session id main already used, which the runtime
+ * `terminal.open` with the session id main already used, which the runtime
  * answers by reattaching and replaying the retained scrollback — which is why a
  * window opened long after a headless launch shows the terminal with its
  * history, and why no launch is ever performed twice.
@@ -72,7 +72,7 @@ import {
 import { normalizeExecutionHostId } from '../shared/execution-host'
 import { isMachinePath } from '../shared/machine-paths'
 import type { CliPermissionPreset } from '../shared/cli-permission-preset'
-import type { TerminalSpawnPayload } from './ipc/terminal-ipc'
+import type { TerminalSpawnPayload } from './terminal-spawn-payload'
 
 /**
  * Terminal geometry for a session no view has bound to yet. The first

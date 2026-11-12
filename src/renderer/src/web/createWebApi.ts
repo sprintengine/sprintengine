@@ -111,11 +111,6 @@ const SIGNED_OUT: SprintEngineAuthState = {
  * the app reads cannot drift from what it gets.
  */
 const browserEmptyStates = {
-  terminalList: async () => [],
-  terminalTakeUndeliveredPrompts: async () => [],
-  setTerminalIdleSuspendMs: async () => undefined,
-  setTerminalKeepRecentAliveCount: async () => undefined,
-  setTerminalReapExempt: async () => undefined,
   getWindowState: async () => null,
   getWindowPlacement: async () => null,
   updateAppMenuAccelerators: async () => ({ ok: true as const }),

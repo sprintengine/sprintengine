@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { afterAll, beforeAll, test } from 'vitest'
+import { afterAll, beforeAll, test, vi } from 'vitest'
 
 import { meshConversationSessionId } from '../../../../shared/tailnet-mesh'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 // The Working section with a paired machine in the list: a chat at work over
 // there folds in with this computer's whether or not it is open here, under
@@ -85,13 +88,13 @@ async function createHarness() {
   let meshListener: ((event: unknown) => void) | null = null
   let revision = 10
 
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
     getGitRepositoryIdentity: async () => null,
     getWorkspaceChangeSummary: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     onTailnetEvent: () => () => {},
     onMeshEvent: (listener: (event: unknown) => void) => {
       meshListener = listener

@@ -19,7 +19,10 @@ import {
 } from './extensionsActions'
 import type { ExtensionPluginRow, ExtensionSkillRow } from './extensionsProvider'
 import { AGENT_NO_LONGER_RUNNING_MESSAGE, type LiveAgentSession } from '../../utils/useSkillInAgent'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('extensionsActions', async () => {
   let failures = 0
@@ -97,12 +100,13 @@ test('extensionsActions', async () => {
         skills: [REVIEW, { ...REVIEW, id: 'send', name: 'send' }],
       }),
       agentSkillAttach: record('agentSkillAttach', { ok: true, skillId: 'review', targets: [WRITTEN] }),
-      terminalList: record('terminalList', [LIVE_SESSION]),
-      terminalWrite: record('terminalWrite', undefined),
       builtinSkillStatus: record('builtinSkillStatus', { ok: false }),
       ...overrides,
     }
     ;(globalThis as unknown as { window: unknown }).window = { api }
+    // The paste goes over the window's terminals, which the double stands for.
+    terminalsDouble.listTerminals = record('listTerminals', [LIVE_SESSION])
+    terminalsDouble.writeTerminal = record('writeTerminal', true)
     return { api: api as unknown as ExtensionsActionApi, calls }
   }
 
@@ -152,12 +156,12 @@ test('extensionsActions', async () => {
     assert.equal(used.ok, true, used.ok ? '' : used.message)
     const names = calls.map((call) => call.name)
     assert.deepEqual(
-      names.filter((name) => name === 'skillsInstall' || name === 'agentSkillAttach' || name === 'terminalWrite'),
-      ['skillsInstall', 'agentSkillAttach', 'terminalWrite'],
+      names.filter((name) => name === 'skillsInstall' || name === 'agentSkillAttach' || name === 'writeTerminal'),
+      ['skillsInstall', 'agentSkillAttach', 'writeTerminal'],
       'install, then attach where the CLI reads skills, then paste — in that order',
     )
     assert.deepEqual(calls[0].input, { sourceId: 'acme', skillId: 'skills/review', workspaceRoot: '/repo' })
-    const write = calls.find((call) => call.name === 'terminalWrite')
+    const write = calls.find((call) => call.name === 'writeTerminal')
     assert.equal(write?.input, 'session-1', 'the paste goes to the session the caller named, with no menu')
   })
 
@@ -175,7 +179,7 @@ test('extensionsActions', async () => {
       false,
     )
     assert.equal(
-      calls.some((call) => call.name === 'terminalWrite'),
+      calls.some((call) => call.name === 'writeTerminal'),
       true,
     )
   })
@@ -210,7 +214,7 @@ test('extensionsActions', async () => {
     assert.equal(used.ok, false)
     assert.equal(used.ok === false ? used.message : '', 'That repository could not be read.')
     assert.equal(
-      calls.some((call) => call.name === 'terminalWrite'),
+      calls.some((call) => call.name === 'writeTerminal'),
       false,
     )
   })

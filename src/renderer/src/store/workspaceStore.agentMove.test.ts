@@ -8,6 +8,9 @@ import type { WorkspaceSyncCommand, WorkspaceSyncEvent } from '../../../shared/w
 import type { LayoutTemplate, Workspace } from '../types/workspace'
 import { defaultWorkspaceMemoryConfig } from './slices/memorySlice'
 import { defaultWorkspaceWorktreeState } from './slices/worktreesSlice'
+import { terminalsDouble } from '../studio/terminals.double'
+
+vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
 
 // Main owns the registry. A move that only changed the window's store left
 // main, every other window and the next start with the agent in the chat it
@@ -57,12 +60,12 @@ async function harness() {
     },
   }
   vi.stubGlobal('localStorage', localStorage)
+  terminalsDouble.listTerminals = async () => []
   vi.stubGlobal('window', {
     location: { href: 'http://localhost/?windowId=primary' },
     localStorage,
     addEventListener: () => {},
     api: {
-      terminalList: async () => [],
       workspaceSyncGetSnapshot: async () => bus.getSnapshot(),
       workspaceSyncGetEventsAfter: async (sequence: number) => bus.getEventsAfter(sequence),
       workspaceSyncDispatch: async (command: WorkspaceSyncCommand) => {

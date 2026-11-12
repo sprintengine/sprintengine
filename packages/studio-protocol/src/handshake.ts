@@ -107,6 +107,13 @@ export const STUDIO_SESSION_CONTROLS_CAPABILITY = 'session-controls' as const
 /** `session.terminalHandoff`: a chat carried on by a terminal agent on the Studio's machine. */
 export const STUDIO_TERMINAL_HANDOFF_CAPABILITY = 'session-terminal-handoff' as const
 
+/**
+ * The terminals on the Studio's machine (`terminals.ts`): `terminal.*` and the
+ * `terminal.output`, `terminal.sessions` and `terminal.promptUndelivered`
+ * streams. Advertised only where the server holds a terminal runtime.
+ */
+export const STUDIO_TERMINALS_CAPABILITY = 'terminals' as const
+
 /** `conversation.threads` and `conversation.search`: a workspace's history and a search of it. */
 export const STUDIO_HISTORY_CAPABILITY = 'conversation-history' as const
 
@@ -163,6 +170,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_PROVIDER_SETTINGS_CAPABILITY,
   STUDIO_UPDATE_SESSION_CAPABILITY,
   STUDIO_MODULES_CAPABILITY,
+  STUDIO_TERMINALS_CAPABILITY,
 ] as const
 
 /**

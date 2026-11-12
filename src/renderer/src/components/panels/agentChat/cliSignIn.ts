@@ -2,6 +2,7 @@ import type { ConversationCliRuntimeOverrides } from '../../../../../shared/conv
 import { LOCAL_HOST_ID, normalizeExecutionHostId } from '../../../../../shared/execution-host'
 import { windowChatServices } from './windowChat'
 import { focusOrAddTerminalTab } from '../../../utils/modelRegistry'
+import { openTerminal, writeTerminal } from '../../../studio/terminals'
 
 /**
  * Opens a terminal tab in the chat's workspace that runs the chat CLI's own
@@ -29,25 +30,14 @@ export async function openCliSignInTerminal(input: {
   if (!resolved.ok) return resolved
   const terminalId = `sign-in-${(input.now ?? Date.now)()}`
   const sessionId = `terminal-${terminalId}`
-  const spawned = await window.api.terminalSpawn(
-    sessionId,
-    100,
-    30,
-    resolved.cwd,
-    false,
-    undefined,
-    undefined,
-    undefined,
-    true,
-    {
-      kind: 'terminal',
-      workspaceId: input.workspaceId,
-      terminalId,
-      hostId: normalizeExecutionHostId(resolved.hostId) ?? LOCAL_HOST_ID,
-    },
-  )
+  const spawned = await openTerminal(sessionId, 100, 30, resolved.cwd, false, undefined, undefined, undefined, true, {
+    kind: 'terminal',
+    workspaceId: input.workspaceId,
+    terminalId,
+    hostId: normalizeExecutionHostId(resolved.hostId) ?? LOCAL_HOST_ID,
+  })
   if (!spawned.ok) return { ok: false, message: spawned.message }
-  await window.api.terminalWrite(sessionId, `${resolved.commandLine}\r`)
+  await writeTerminal(sessionId, `${resolved.commandLine}\r`)
   focusOrAddTerminalTab(input.workspaceId, terminalId, 'Sign in')
   return { ok: true }
 }

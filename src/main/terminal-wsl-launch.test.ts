@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test } from 'vitest'
 
-import type { WebContents } from 'electron'
+import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings } from '../shared/electron-api'
 import { standIn } from '../../tests/stand-in'
 import { STUB_HELPER_INFO, stubWslHelper, type StubHelper } from '../../tests/wsl-helper-stub'
@@ -84,7 +84,7 @@ async function harness(handlers: Record<string, (params: never) => unknown> = {}
     ...handlers,
   })
   current = { spawned, helper }
-  const sender = { isDestroyed: () => false, send: () => undefined }
+  const sender: TerminalViewer = { isGone: () => false, deliver: () => undefined }
   restore = standIn({
     electron: {
       app: {
@@ -111,17 +111,14 @@ async function harness(handlers: Record<string, (params: never) => unknown> = {}
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { value: 'win32' })
     try {
-      return await runtime.ipcHandlers.spawnTerminal(
-        sender as unknown as WebContents,
-        {
-          cols: 120,
-          rows: 30,
-          cwd: workspaceRoot,
-          visible: false,
-          hostId: 'wsl:Ubuntu',
-          ...payload,
-        } as never,
-      )
+      return await runtime.sessions.spawnTerminal(sender, {
+        cols: 120,
+        rows: 30,
+        cwd: workspaceRoot,
+        visible: false,
+        hostId: 'wsl:Ubuntu',
+        ...payload,
+      } as never)
     } finally {
       if (platform) Object.defineProperty(process, 'platform', platform)
     }
@@ -169,7 +166,7 @@ test('an agent on a WSL machine runs its startup script from inside the distribu
   assert.equal(h.helper.tokens.size, 1)
   const [token] = [...h.helper.tokens]
   assert.ok(text.includes(`export SPRINTENGINE_MCP_CHANNEL_TOKEN='${token}'`), text)
-  h.runtime.ipcHandlers.killTerminal('wsl-a')
+  h.runtime.sessions.killTerminal('wsl-a')
   await new Promise((resolve) => setTimeout(resolve, 20))
   assert.equal(h.helper.tokens.size, 0, 'revoked with the session')
   assert.ok(

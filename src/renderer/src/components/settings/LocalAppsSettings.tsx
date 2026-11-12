@@ -57,6 +57,17 @@ const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string
       'Offer tools that Studio’s agents can call, which run in the app. Every call still asks as the chat’s own permissions say.',
   },
   {
+    scope: 'terminal:read',
+    title: 'See terminals',
+    description: 'List this machine’s terminals and terminal agents, and whether each is running.',
+  },
+  {
+    scope: 'terminal:operate',
+    title: 'Use terminals',
+    description:
+      'Open terminals and type into them. A terminal is a shell on this machine: an app given this can run any command you could.',
+  },
+  {
     scope: 'environment:maintain',
     title: 'Update Studio',
     description: 'Download a new version of Studio and restart into it. Running turns get time to finish first.',

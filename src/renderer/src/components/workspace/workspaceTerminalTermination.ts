@@ -3,6 +3,7 @@ import type { Workspace } from '../../types/workspace'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { workspaceIsWorking } from './sidebar/conversationLines'
 import { windowChatServices } from '../panels/agentChat/windowChat'
+import { closeTerminal, listTerminals, suspendTerminal } from '../../studio/terminals'
 
 type LayoutSessionNode = {
   component?: string
@@ -85,7 +86,7 @@ export function workspaceTerminalSessionIds(passed: Workspace): string[] {
  */
 export async function terminateWorkspaceTerminals(workspace: Workspace): Promise<void> {
   await Promise.all([
-    ...workspaceTerminalSessionIds(workspace).map((sessionId) => window.api.terminalKill(sessionId).catch(() => {})),
+    ...workspaceTerminalSessionIds(workspace).map((sessionId) => closeTerminal(sessionId).catch(() => {})),
     suspendWorkspaceConversations(workspace),
   ])
 }
@@ -126,10 +127,7 @@ export async function terminateSettledWorkspaceTerminals(
 async function workspaceWorkingNow(workspace: Workspace): Promise<boolean> {
   try {
     const sessionIds = new Set(workspaceTerminalSessionIds(workspace))
-    const [terminals, conversations] = await Promise.all([
-      window.api.terminalList(),
-      windowChatServices().sessions.list(),
-    ])
+    const [terminals, conversations] = await Promise.all([listTerminals(), windowChatServices().sessions.list()])
     return workspaceIsWorking(
       'idle',
       conversations.ok ? conversations.sessions.filter((session) => session.workspaceId === workspace.id) : [],
@@ -144,7 +142,7 @@ async function workspaceWorkingNow(workspace: Workspace): Promise<boolean> {
 
 /**
  * End the child process of every chat agent the workspace holds. A chat agent
- * has no pty, so neither `terminalKill` nor `terminalSuspend` reaches it: main
+ * has no pty, so neither `terminal.close` nor `terminal.suspend` reaches it: the Studio
  * owns the process, and its sessions are asked for rather than collected from
  * the record. A session belongs here when it was started under the workspace's
  * id, and only then. An agent id is unique within a workspace, not across them
@@ -189,7 +187,7 @@ async function suspendWorkspaceConversations(workspace: Workspace): Promise<void
  * ours holds a live local process, so hiding the row is not putting it away.
  *
  * Suspend rather than kill because a snoozed chat is coming back on a clock.
- * `terminalSuspend` ends the agent PROCESS but keeps the painted, resumable
+ * `terminal.suspend` ends the agent PROCESS but keeps the painted, resumable
  * session, and the first keystroke relaunches it under the same session id with
  * `--resume` (TerminalView's `resumeFromSuspend`). Nothing here and nothing on
  * the wake path resumes anything: waking returns the row to the sidebar with
@@ -202,7 +200,7 @@ async function suspendWorkspaceConversations(workspace: Workspace): Promise<void
  */
 export async function suspendWorkspaceTerminals(workspace: Workspace): Promise<void> {
   await Promise.all([
-    ...workspaceTerminalSessionIds(workspace).map((sessionId) => window.api.terminalSuspend(sessionId).catch(() => {})),
+    ...workspaceTerminalSessionIds(workspace).map((sessionId) => suspendTerminal(sessionId).catch(() => {})),
     suspendWorkspaceConversations(workspace),
   ])
 }

@@ -504,17 +504,7 @@ import type {
   StudioPluginStatus,
 } from './ipc/studio-plugin'
 import type { StudioAreaSkillChoices, StudioAreaSkillId } from './studio-area-skills'
-import type {
-  IpcStatsSnapshot,
-  ProcessMetricsSnapshot,
-  TerminalPromptUndelivered,
-  TerminalSessionSnapshot,
-  TerminalSessionsDelta,
-  TerminalSpawnMetadata,
-  TerminalSpawnResult,
-  TerminalVisibilityOptions,
-  WorkspaceRegistryHydrateResult,
-} from './ipc/terminal'
+import type { IpcStatsSnapshot, ProcessMetricsSnapshot, WorkspaceRegistryHydrateResult } from './ipc/terminal'
 import type {
   AppUpdateChannelSetting,
   AppUpdateCheckResult,
@@ -2111,67 +2101,6 @@ export type ElectronApi = {
   moduleBridgeInvoke: (channel: string, payload?: unknown) => Promise<ModuleBridgeInvokeResult>
   /** A module renderer's call into a host service its main half reaches through the SDK (Backlog writes, usage). Answers are result-shaped. */
   moduleHostServiceInvoke: (request: ModuleHostServiceRequest) => Promise<unknown>
-  terminalSpawn: (
-    sessionId: string,
-    cols: number,
-    rows: number,
-    cwd?: string,
-    resume?: boolean,
-    cli?: AgentCli,
-    initialPrompt?: string,
-    cliRuntimes?: Partial<Record<AgentCli, Partial<CliRuntimeSettings>>>,
-    shellOnly?: boolean,
-    metadata?: TerminalSpawnMetadata,
-  ) => Promise<TerminalSpawnResult>
-  terminalWrite: (sessionId: string, data: string) => Promise<void>
-  terminalWriteFast: (sessionId: string, data: string) => void
-  terminalResize: (sessionId: string, cols: number, rows: number) => Promise<void>
-  terminalStatus: (sessionId: string) => Promise<{ processAlive: boolean; suspended: boolean }>
-  terminalList: () => Promise<TerminalSessionSnapshot[]>
-  terminalSetVisible: (sessionId: string, visible: boolean, options?: TerminalVisibilityOptions) => Promise<void>
-  // Freeze-the-view: suspend kills the agent process but keeps the painted,
-  // resumable session; resume relaunches it (mirrors terminalSpawn's payload,
-  // forced --resume) on the first keystroke.
-  terminalSuspend: (sessionId: string) => Promise<void>
-  terminalResume: (
-    sessionId: string,
-    cols: number,
-    rows: number,
-    cwd?: string,
-    resume?: boolean,
-    cli?: AgentCli,
-    initialPrompt?: string,
-    cliRuntimes?: Partial<Record<AgentCli, Partial<CliRuntimeSettings>>>,
-    shellOnly?: boolean,
-    metadata?: TerminalSpawnMetadata,
-  ) => Promise<TerminalSpawnResult>
-  terminalKill: (sessionId: string) => Promise<void>
-  // Push the user's "Pause idle terminals after" setting (ms) to the main reap
-  // policy. Clamped/validated in main; the next idle sweep uses the latest value.
-  setTerminalIdleSuspendMs: (ms: number) => Promise<void>
-  // Push the user's "Always keep running" count — the recency floor below which
-  // the idle reaper never pauses live agent terminals. Clamped/validated in main.
-  setTerminalKeepRecentAliveCount: (count: number) => Promise<void>
-  // Toggle the per-terminal user lock: while set, the reaper never suspends or
-  // disposes this session. Broadcasts a sessions delta so the lock
-  // state stays in sync across views.
-  setTerminalReapExempt: (sessionId: string, exempt: boolean) => Promise<void>
-  onTerminalReplay: (sessionId: string, cb: (data: string) => void) => () => void
-  onTerminalData: (sessionId: string, cb: (data: string) => void) => () => void
-  onTerminalExit: (sessionId: string, cb: (code: number) => void) => () => void
-  onTerminalError: (sessionId: string, cb: (message: string) => void) => () => void
-  // What changed among the sessions — the changed ones and the ids of the gone
-  // ones, never the whole list (`terminalList` is that).
-  onTerminalSessionsDelta: (cb: (delta: TerminalSessionsDelta) => void) => () => void
-  // First messages main could not type into their agent CLIs wait in main until
-  // a workspace window takes them (once: the first to ask gets them). The event
-  // says there is something to take; a window also asks when it mounts, so one
-  // that opens later still hands them back.
-  onTerminalPromptUndelivered: (cb: () => void) => () => void
-  terminalTakeUndeliveredPrompts: () => Promise<TerminalPromptUndelivered[]>
-  // Flow control: tell main the pane has parsed `units` UTF-16 units of the
-  // session's live output, so it can pause the pty while a pane falls behind.
-  terminalAck: (sessionId: string, units: number) => void
   // The conversation peek: what has been said in a chat the person is hovering
   // rather than looking at — the first message and everything since, from the
   // prompts this app captured. `source` says whether there is an answer, a
@@ -2186,7 +2115,7 @@ export type ElectronApi = {
   // The hover hook for a terminal agent's pull request marks: the shell asks
   // the Studio server to look the session's branch up (once per key per hold)
   // and re-read any state older than ~60s. The pull requests themselves arrive as a fresh
-  // `terminal:sessions-delta` carrying the session's `pullRequests`, never as
+  // `terminal.sessions` carrying the session's `pullRequests`, never as
   // a return value, so one path owns the fact. The boolean says only whether
   // there was anything to ask about — false for a session main cannot name, or
   // one whose checkout has not resolved yet — so a caller that asks once per

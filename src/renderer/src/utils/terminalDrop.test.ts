@@ -15,7 +15,10 @@ import {
   setSkillDropData,
   type FileDropPayload,
 } from './terminalDrop'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../studio/terminals.double'
+
+vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
 
 test('terminalDrop', async () => {
   function payload(path: string, rootPath = 'C:\\repo'): FileDropPayload {
@@ -388,14 +391,14 @@ test('terminalDrop', async () => {
     plugins?: PluginRegistryListEntry[]
   }): TerminalWriteCall[] {
     const writes: TerminalWriteCall[] = []
+    terminalsDouble.listTerminals = async () => input.sessions
+    terminalsDouble.writeTerminal = async (sessionId: string, data: string) => {
+      writes.push({ sessionId, data })
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
         api: {
-          terminalList: async () => input.sessions,
-          terminalWrite: async (sessionId: string, data: string) => {
-            writes.push({ sessionId, data })
-          },
           builtinSkillStatus: async () => ({
             ok: true,
             status: 'installed',
@@ -719,14 +722,14 @@ test('terminalDrop', async () => {
     capabilitiesResult?: { ok: false; message: string }
   }): TerminalWriteCall[] {
     const writes: TerminalWriteCall[] = []
+    terminalsDouble.listTerminals = async () => input.sessions
+    terminalsDouble.writeTerminal = async (sessionId: string, data: string) => {
+      writes.push({ sessionId, data })
+    }
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
       value: {
         api: {
-          terminalList: async () => input.sessions,
-          terminalWrite: async (sessionId: string, data: string) => {
-            writes.push({ sessionId, data })
-          },
           pluginsList: async () => ({ ok: true as const, plugins: skillPluginEntries }),
           agentCapabilities: async ({ pluginId }: { pluginId: string }) =>
             input.capabilitiesResult ?? stubbedCapabilities(pluginId, input.harnesses ?? []),

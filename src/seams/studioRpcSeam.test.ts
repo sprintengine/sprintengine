@@ -365,6 +365,19 @@ test('every method the server serves has its call in the SDK, under the same sco
     'localServers.run': 'request',
     'localServers.stop': 'request',
     'localServers.remove': 'request',
+    'terminal.list': 'request',
+    'terminal.status': 'request',
+    'terminal.open': 'request',
+    'terminal.resume': 'request',
+    'terminal.write': 'request',
+    'terminal.ack': 'request',
+    'terminal.resize': 'request',
+    'terminal.setVisible': 'request',
+    'terminal.suspend': 'request',
+    'terminal.close': 'request',
+    'terminal.setReapExempt': 'request',
+    'terminal.takeUndeliveredPrompts': 'request',
+    'terminal.configure': 'request',
     // Updates are asked like any method on a normal connection, and through
     // `openStudioUpdateSession` on one kept for them.
     'update.status': 'request',
@@ -393,6 +406,22 @@ test('every method the server serves has its call in the SDK, under the same sco
       'conversation.create': () => service.create({ workspaceId: 'ws-a' }),
       'update.start': () =>
         client.request('update.start', { commandId: 'update-1' }).then(
+          () => ({ ok: true }),
+          (error: StudioError) => ({ ok: false, code: error.code }),
+        ),
+      // A terminal's start and end need `terminal:operate`, a scope no app holds unless given.
+      ...Object.fromEntries(
+        (['terminal.open', 'terminal.resume'] as const).map((method) => [
+          method,
+          () =>
+            client.request(method, { sessionId: 't', cols: 80, rows: 24, commandId: `${method}-1` }).then(
+              () => ({ ok: true }),
+              (error: StudioError) => ({ ok: false, code: error.code }),
+            ),
+        ]),
+      ),
+      'terminal.close': () =>
+        client.request('terminal.close', { sessionId: 't', commandId: 'close-1' }).then(
           () => ({ ok: true }),
           (error: StudioError) => ({ ok: false, code: error.code }),
         ),

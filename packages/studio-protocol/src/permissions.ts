@@ -45,8 +45,7 @@ export const STUDIO_PERMISSIONS = [
   // See and change who may reach this machine: paired browsers, embeds, endpoints.
   'access:read',
   'access:write',
-  // Remote terminals: named so the methods that need them declare them when
-  // they ship. No method requires them yet and no grant carries them.
+  // The terminals on this machine: list and ask after them; open and type into them.
   'terminal:read',
   'terminal:operate',
   // Keep this machine's Studio itself: update it, which drains and restarts it.
@@ -125,7 +124,8 @@ export function studioPrincipal(input: { owner: boolean; permissions: Iterable<S
 /**
  * What each Studio scope a grant holds carries. `conversation:operate` carries
  * `conversation:read`, as it always has: a client that drives a chat can see
- * what it is driving. Every other scope carries the one permission it names.
+ * what it is driving; `terminal:operate` carries `terminal:read` the same way.
+ * Every other scope carries the one permission it names.
  */
 export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly StudioPermission[] } = {
   'conversation:read': ['conversation:read'],
@@ -139,6 +139,8 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'environment:maintain': ['environment:maintain'],
   'settings:write': ['settings:write'],
   'modules:read': ['module:read'],
+  'terminal:read': ['terminal:read'],
+  'terminal:operate': ['terminal:read', 'terminal:operate'],
 }
 
 /** The permission each Studio scope is the grant name for. */
@@ -154,6 +156,8 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'environment:maintain': 'environment:maintain',
   'settings:write': 'settings:write',
   'modules:read': 'module:read',
+  'terminal:read': 'terminal:read',
+  'terminal:operate': 'terminal:operate',
 }
 
 /**

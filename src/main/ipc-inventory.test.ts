@@ -172,7 +172,7 @@ import { attachStartupTimeline } from './startup-timeline'
  */
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   conversations: 44,
-  terminals: 24,
+  terminals: 3,
   modules: 3,
   extensions: 33,
   'paired-machines': 52,
@@ -414,6 +414,20 @@ test('what main and the server register, and what the preload uses, is the inven
     assert.equal(row.dir, seen.dir, `"${seen.channel}" is registered as ${seen.dir}, listed as ${row.dir}`)
   }
   const registered = new Set([...shellSeen, ...serverSeen].map((seen) => seen.channel))
+  // Terminals are the Studio protocol's (`terminal.*`, packages/studio-protocol/src/terminals.ts):
+  // no window reaches one over IPC, and no preload member offers one.
+  assert.deepEqual(
+    [...registered, ...preloadSeen.map((seen) => seen.channel), ...Object.keys(IPC_INVENTORY)].filter((channel) =>
+      channel.startsWith('terminal:'),
+    ),
+    [],
+    'no terminal: channel is registered, used or listed',
+  )
+  assert.deepEqual(
+    Object.keys(apiModules).filter((name) => /^terminal|^(on|set)Terminal/u.test(name)),
+    [],
+    'no preload member starts with terminal',
+  )
   for (const [channel, row] of Object.entries(IPC_INVENTORY)) {
     if (row.dir === 'push') continue
     // The web front door's own tunnel channels, held to its table below.

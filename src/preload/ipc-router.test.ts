@@ -106,7 +106,7 @@ test('out of process, a server channel goes over the port and a shell channel st
   router.attachPort(port as unknown as RouterPort)
   assert.equal(port.started, true)
   const fromServer = router.invoke('launch-settings:update', { lastSelectedCli: 'codex' })
-  const fromMain = router.invoke('terminal:list')
+  const fromMain = router.invoke('window:close')
   const request = port.posted[0]
   assert.deepEqual(request, {
     t: 'ipc.invoke',
@@ -116,7 +116,7 @@ test('out of process, a server channel goes over the port and a shell channel st
   })
   port.deliver({ t: 'ipc.result', id: request.id, ok: true, value: { ok: true } })
   assert.deepEqual(await fromServer, { ok: true })
-  assert.equal(await fromMain, 'main:terminal:list')
+  assert.equal(await fromMain, 'main:window:close')
   router.send('modules:registry-snapshot', 'snapshot')
   assert.deepEqual(port.posted.at(-1), { t: 'ipc.send', channel: 'modules:registry-snapshot', args: ['snapshot'] })
 })

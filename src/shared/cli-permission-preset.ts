@@ -17,7 +17,9 @@
  * - `none` passes no permission setting at all, so the CLI runs on whatever its
  *   own configuration says. That can mean asking, or not.
  */
-export type CliPermissionPreset = 'none' | 'manual' | 'auto' | 'bypass'
+import type { CliPermissionPreset } from '../../packages/studio-protocol/src/public'
+
+export type { CliPermissionPreset }
 
 /**
  * Four modes again (owner request 2026-09-30). For three days there were only

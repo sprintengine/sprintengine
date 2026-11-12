@@ -34,6 +34,7 @@ import {
   type SelectItem,
 } from '../ui'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
+import { openTerminal } from '../../studio/terminals'
 
 type WorktreeMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -452,7 +453,7 @@ export default function WorktreeManager({
   const handleOpenTerminal = async (row: WorktreeRow) => {
     await runWorktreeAction('Opening terminal', async () => {
       const terminalId = `worktree-${row.id}`
-      const result = await window.api.terminalSpawn(
+      const result = await openTerminal(
         `terminal-${terminalId}`,
         terminalCols,
         terminalRows,

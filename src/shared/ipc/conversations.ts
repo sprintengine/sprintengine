@@ -50,4 +50,4 @@ export type CredentialSecretClearResult = ConversationSecretClearResult
 
 // Runtime CLI identity is a plugin id. Bundled choices include `codex` and
 // `claude-code`.
-export type AgentCli = string
+export type { AgentCli } from '../../../packages/studio-protocol/src/public'

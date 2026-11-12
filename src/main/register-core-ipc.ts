@@ -1,5 +1,5 @@
 import { machineAwareIpc } from './environments/ssh/machine-ipc'
-import { app, BrowserWindow, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, nativeImage, shell, webContents } from 'electron'
 import type { IpcMain } from 'electron'
 import { registerAgentConfigImportIpc } from './ipc/agent-config-import-ipc'
 import { registerAppearanceIpc } from './ipc/appearance-ipc'
@@ -34,7 +34,6 @@ import { createAttachedFileRegistry, createAttachedFiles, createAttachedFileThum
 import { registerFilesystemReadIpc } from './ipc/filesystem-read-ipc'
 import { registerFilesystemWatchSearchIpc } from './ipc/filesystem-watch-search-ipc'
 import { registerGitRepoWatchIpc } from './ipc/git-repo-watch-ipc'
-import { getTerminalSessionById } from './terminal-runtime'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
 import { registerDesignSystemIpc } from './ipc/design-system-ipc'
@@ -55,7 +54,7 @@ import { registerModuleRegistryIpc } from './ipc/module-registry-ipc'
 import { registerPluginIpc } from './ipc/plugins-ipc'
 import { registerPullRequestIpc } from './ipc/pull-request-ipc'
 import { registerSkillsIpc } from './ipc/skills-ipc'
-import { registerTerminalIpc } from './ipc/terminal-ipc'
+import { webContentsIdOfWindowKey } from './ipc/studio-window-ticket-ipc'
 import { registerWorkspaceSkillsIpc } from './ipc/workspace-skills-ipc'
 import { registerThirdPartyModuleIpc } from './ipc/third-party-module-ipc'
 import type { ThirdPartyLaunchSession } from './modules/third-party-main-loader'
@@ -85,7 +84,6 @@ import {
 } from './window-factory'
 import type { AppServices } from './app-services'
 import type { CliModelDiscoveryInput } from '../shared/ipc/cli-model-discovery'
-import type { TerminalSpawnResult } from '../shared/ipc/terminal'
 import { registerServerDomainIpc } from '../server/desktop/server-ipc'
 import { createFilesystemMutationHandlers } from './filesystem-mutation-handlers'
 import { createFilesystemReadHandlers } from './filesystem-read'
@@ -353,33 +351,14 @@ export function registerCoreIpc(
     ...(options.readThirdPartyLaunchSession ? { readLaunchSession: options.readThirdPartyLaunchSession } : {}),
   })
 
-  // The terminal runtime (agent-runtime) is always on, so its IPC registers
-  // with the core surfaces.
-  const terminalHandlers = services.terminalRuntime.ipcHandlers
-  registerTerminalIpc(machineIpc, {
-    ...terminalHandlers,
-    // A pane terminal moves between windows by re-attaching, and the last
-    // attach takes the pty's output. A pop-out's attach that crossed the
-    // owner's taking the tab back must not be the last word.
-    spawnTerminal: (sender, payload) => {
-      const sessionId = payload?.sessionId
-      const existing = typeof sessionId === 'string' ? getTerminalSessionById(sessionId) : null
-      if (existing && !existing.isDisposed && !panePopOuts.mayAttachTerminal(sender, sessionId)) {
-        return Promise.resolve({
-          ok: false,
-          sessionId,
-          message: 'This terminal is shown in another window.',
-          exitCode: 1,
-        } satisfies TerminalSpawnResult)
-      }
-      return terminalHandlers.spawnTerminal(sender, payload)
-    },
-    // One idle-suspend setting governs both agent runtimes: PTY terminals and
-    // headless conversation child processes share the threshold.
-    setIdleSuspendThresholdMs: (value: unknown): void => {
-      services.terminalRuntime.ipcHandlers.setIdleSuspendThresholdMs(value)
-      services.conversationOwner.setIdleThresholdMs(value)
-    },
+  // Terminals are served over the Studio protocol (src/server/terminals/),
+  // and a pane terminal moves between windows by re-attaching: the last
+  // attach takes the pty's output. A pop-out's attach that crossed the
+  // owner's taking the tab back must not be the last word.
+  services.setTerminalAttachGuard((windowKey, sessionId) => {
+    const id = webContentsIdOfWindowKey(windowKey)
+    const contents = id === null ? undefined : webContents.fromId(id)
+    return contents ? panePopOuts.mayAttachTerminal(contents, sessionId) : true
   })
 
   // The conversation peek reads a terminal session, so it registers alongside
@@ -391,7 +370,7 @@ export function registerCoreIpc(
   // owns typing at one.
   registerAgentCompactIpc(ipcMain, {
     findTerminal: (sessionId) =>
-      services.terminalRuntime.ipcHandlers.listTerminals().find((session) => session.sessionId === sessionId) ?? null,
+      services.terminalRuntime.sessions.listTerminals().find((session) => session.sessionId === sessionId) ?? null,
     sendPrompt: async (sessionId, text, precondition) => {
       const result = await services.agentControlPlane.send({ sessionId }, text, { submit: true, precondition })
       return result.ok ? { ok: true } : { ok: false, message: result.message }

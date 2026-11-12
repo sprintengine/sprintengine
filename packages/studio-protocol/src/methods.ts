@@ -62,6 +62,12 @@ import {
 } from './local-servers.js'
 import { STUDIO_MODULES_TOPICS, type StudioModulesTopicMap } from './modules.js'
 import {
+  STUDIO_TERMINALS_METHODS,
+  STUDIO_TERMINALS_TOPICS,
+  type StudioTerminalsMethodMap,
+  type StudioTerminalsTopicMap,
+} from './terminals.js'
+import {
   STUDIO_TOOLS_METHODS,
   STUDIO_TOOLS_TOPICS,
   type StudioToolsMethodMap,
@@ -165,6 +171,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioFilesMethodMap &
   StudioPullRequestsMethodMap &
   StudioLocalServersMethodMap &
+  StudioTerminalsMethodMap &
   StudioUpdateMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
@@ -517,6 +524,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_FILES_METHODS,
   ...STUDIO_PULL_REQUESTS_METHODS,
   ...STUDIO_LOCAL_SERVERS_METHODS,
+  ...STUDIO_TERMINALS_METHODS,
   ...STUDIO_UPDATE_METHODS,
 }
 
@@ -554,7 +562,8 @@ export type StudioTopicMap = {
   StudioFilesTopicMap &
   StudioPullRequestsTopicMap &
   StudioLocalServersTopicMap &
-  StudioModulesTopicMap
+  StudioModulesTopicMap &
+  StudioTerminalsTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
 export type StudioTopicParams<T extends StudioTopic> = StudioTopicMap[T]['params']
@@ -588,6 +597,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_PULL_REQUESTS_TOPICS,
   ...STUDIO_LOCAL_SERVERS_TOPICS,
   ...STUDIO_MODULES_TOPICS,
+  ...STUDIO_TERMINALS_TOPICS,
 }
 
 /** Whether a string names a topic this version of the protocol defines. */

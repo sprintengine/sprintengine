@@ -3,6 +3,7 @@ import {
   parseStudioMethodParams,
   authorizeStudioMethod,
   studioGrantAllows,
+  projectTerminalSession,
   studioRefusedGrantName,
   type ConversationCommand,
   type StudioChatMethod,
@@ -32,6 +33,7 @@ import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -125,6 +127,8 @@ export type StudioRpcRouterOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
   localServers?: StudioLocalServers
+  /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
+  terminals?: StudioTerminals
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -533,6 +537,19 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     })
   }
   const unserved = (method: StudioMethod) => refuse('unavailable', `This Studio does not serve ${method}.`)
+  const caller = (context: StudioRequestContext): StudioTerminalCaller => ({
+    connectionId: context.connectionId,
+    ...(context.windowKey === undefined ? {} : { windowKey: context.windowKey }),
+  })
+  // A terminal call: answered `unavailable` where this Studio holds no terminal runtime.
+  function terminal<M extends StudioMethod, R>(
+    method: M,
+    work: (terminals: StudioTerminals) => R | Promise<R>,
+  ): Promise<{ ok: true; result: R } | Refused<'unavailable'>> | Refused<'unavailable'> {
+    const terminals = options.terminals
+    if (!terminals) return unserved(method)
+    return Promise.resolve(work(terminals)).then((result) => ({ ok: true as const, result }))
+  }
   const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
 
   /** The chat surface, or why this Studio does not serve one now. */
@@ -1179,6 +1196,67 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.localServers
         ? { ok: true, result: await options.localServers.remove(server) }
         : unserved('localServers.remove'),
+
+    // ── Terminals ──────────────────────────────────────────────────────────
+    // A client other than the app's own window is sent sessions projected:
+    // never a prompt a person typed or a launch's MCP secrets, and to a grant
+    // that may only read, not the folders they work in either.
+
+    'terminal.list': (_params, { grant, context }) =>
+      terminal('terminal.list', (terminals) => ({
+        sessions: context.ownWindow
+          ? terminals.list()
+          : terminals
+              .list()
+              .map((session) =>
+                projectTerminalSession(session, { operate: authorizeStudioMethod(grant, 'terminal.write').ok }),
+              ),
+      })),
+    'terminal.status': ({ sessionId }, { context }) =>
+      terminal('terminal.status', (terminals) => terminals.status(sessionId, caller(context))),
+    'terminal.open': ({ commandId: _id, ...params }, { context }) =>
+      terminal('terminal.open', (terminals) => terminals.open(params, caller(context))),
+    'terminal.resume': ({ commandId: _id, ...params }, { context }) =>
+      terminal('terminal.resume', (terminals) => terminals.resume(params, caller(context))),
+    'terminal.write': (params, { grant }) =>
+      terminal('terminal.write', (terminals) => ({ written: terminals.write(params, grant.clientId) })),
+    'terminal.ack': ({ sessionId, units }, { context }) =>
+      terminal('terminal.ack', (terminals) => {
+        terminals.ack(sessionId, units, caller(context))
+        return {}
+      }),
+    'terminal.resize': ({ sessionId, cols, rows }) =>
+      terminal('terminal.resize', (terminals) => {
+        terminals.resize(sessionId, cols, rows)
+        return {}
+      }),
+    'terminal.setVisible': ({ sessionId, visible, freshPane }, { context }) =>
+      terminal('terminal.setVisible', (terminals) => {
+        terminals.setVisible(sessionId, visible, freshPane === true, caller(context))
+        return {}
+      }),
+    'terminal.suspend': ({ sessionId }) =>
+      terminal('terminal.suspend', (terminals) => {
+        terminals.suspend(sessionId)
+        return {}
+      }),
+    'terminal.close': ({ sessionId }) =>
+      terminal('terminal.close', (terminals) => {
+        terminals.close(sessionId)
+        return {}
+      }),
+    'terminal.setReapExempt': ({ sessionId, exempt }) =>
+      terminal('terminal.setReapExempt', (terminals) => {
+        terminals.setReapExempt(sessionId, exempt)
+        return {}
+      }),
+    'terminal.takeUndeliveredPrompts': () =>
+      terminal('terminal.takeUndeliveredPrompts', (terminals) => ({ prompts: terminals.takeUndeliveredPrompts() })),
+    'terminal.configure': (policy) =>
+      terminal('terminal.configure', (terminals) => {
+        terminals.configure(policy)
+        return {}
+      }),
 
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an

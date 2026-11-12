@@ -39,8 +39,11 @@ const MAX_CONNECTIONS_PER_WINDOW = 4
 const WINDOW_SOCKET_PATH = '/ws'
 
 export type StudioWindowListenerOptions = {
-  /** Serve a connection the listener admitted; its hello must present the given authenticator's ticket. */
-  attach(stream: Duplex, authenticator: StudioAuthenticator): StudioRpcConnection
+  /**
+   * Serve a connection the listener admitted, for the window its ticket was
+   * minted for; its hello must present the given authenticator's ticket.
+   */
+  attach(stream: Duplex, authenticator: StudioAuthenticator, windowKey: string): StudioRpcConnection
   now?: () => number
   log?: (line: string) => void
 }
@@ -142,7 +145,11 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
       return refuse(socket, 403, 'origin_refused')
     }
     const peer = acceptWebSocket(socket, key.key, head)
-    const connection = options.attach(webSocketStream(peer), createTicketAuthenticator(ticket, { now }))
+    const connection = options.attach(
+      webSocketStream(peer),
+      createTicketAuthenticator(ticket, { now }),
+      entry.windowKey,
+    )
     if (!connection.isClosed()) admit(entry.windowKey, connection)
   }
 

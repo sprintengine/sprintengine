@@ -3,7 +3,10 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../../studio/terminals.double'
+
+vi.mock('../../../studio/terminals', () => import('../../../studio/terminals.double'))
 
 test('installedInventoryUpdates', async () => {
   // Update staleness, as the surface shows it — the Extensions manage canvas surfaces staleness as ONE
@@ -78,6 +81,7 @@ test('installedInventoryUpdates', async () => {
     defaultEnabled: true,
   }
 
+  terminalsDouble.listTerminals = async () => []
   const api: Record<string, unknown> = {
     platform: 'darwin',
     listThirdPartyModules: async () => ({
@@ -161,7 +165,6 @@ test('installedInventoryUpdates', async () => {
         updated: true,
       }
     },
-    terminalList: async () => [],
   }
   domWindow.api = new Proxy(api, {
     get: (target, prop: string) =>

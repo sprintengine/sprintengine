@@ -149,6 +149,7 @@ import type {
   BacklogLinkProvider,
   WorkspacePanelProps,
 } from '../../modules/renderer-host'
+import { listTerminals } from '../../studio/terminals'
 
 // Backlog panel: capture / browse / triage / start surface for the lightweight
 // items (rough ideas, notes, feature sketches, imported markdown, mockups)
@@ -1593,7 +1594,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
   )
 
   // Agents of this workspace that own a CLI terminal session — the send-to-agent
-  // targets. Liveness comes from terminalList(), fetched when the flyout opens.
+  // targets. Liveness comes from listTerminals(), fetched when the flyout opens.
   const agentTargets = useMemo(() => {
     if (!workspaceAgents) return []
     return Object.values(workspaceAgents).filter(
@@ -1604,8 +1605,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
 
   const refreshAgentSessions = useCallback(() => {
     setAgentSessions(null)
-    void window.api
-      .terminalList()
+    void listTerminals()
       .then(setAgentSessions)
       // Leave null on failure: unknown liveness must not render live agents as
       // dead; the send core re-verifies before writing anyway.

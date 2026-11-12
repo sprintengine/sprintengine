@@ -20,7 +20,9 @@ import type { TerminalPathStyle } from './ipc/terminal'
 
 export const LOCAL_HOST_ID = 'local'
 
-export type ExecutionHostId = typeof LOCAL_HOST_ID | `wsl:${string}`
+import type { ExecutionHostId } from '../../packages/studio-protocol/src/public'
+
+export type { ExecutionHostId }
 
 export type ExecutionHostKind = 'posix' | 'windows' | 'wsl'
 

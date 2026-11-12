@@ -19,6 +19,7 @@ import { composePaneKinds, type PaneLaunchKind } from '../paneKinds'
 import { WorkspacePaneAddMenu } from '../WorkspacePaneAddMenu'
 import { diffShowsInWindow, popOutAddKinds } from './panePopOutHost'
 import { redirectPaneWrites } from './panePopOutRedirect'
+import { setTerminalVisible } from '../../../../studio/terminals'
 
 // A workspace pane, or one of its tabs, in a window of its own (`?aux=pane`).
 //
@@ -219,7 +220,7 @@ export default function PanePopOutWindow({ popOutId, workspaceId }: Props) {
     reportedVisibleRef.current = pageVisible
     for (const tab of viewRef.current?.tabs ?? []) {
       if (tab.kind !== 'terminal' || !tab.terminalId) continue
-      void window.api.terminalSetVisible(paneTerminalSessionId(tab.terminalId), pageVisible).catch(() => undefined)
+      void setTerminalVisible(paneTerminalSessionId(tab.terminalId), pageVisible).catch(() => undefined)
     }
   }, [pageVisible])
 

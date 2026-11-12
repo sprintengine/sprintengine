@@ -11,12 +11,10 @@ import {
 import { WEB_HTTP_ACCESS, WEB_TUNNEL_ACCESS } from './web-tunnel-access'
 
 // The permission set across every way into a Studio: each permission is one
-// some method needs, or one named for what ships next. A name nothing needs
+// some method needs. A name nothing needs
 // is a grant nobody can reason about.
 
-const RESERVED = ['terminal:read', 'terminal:operate']
-
-test('every permission is needed by some remote method, or is named for remote terminals', () => {
+test('every permission is needed by some remote method', () => {
   const declarations: StudioAccess[] = [
     ...[...Object.values(STUDIO_METHODS), ...Object.values(STUDIO_TOPICS)].map((spec) => ({
       permissions: studioSpecPermissions(spec),
@@ -33,6 +31,5 @@ test('every permission is needed by some remote method, or is named for remote t
   ]
   const needed = new Set(declarations.flatMap((access) => ('permissions' in access ? access.permissions : [])))
   for (const permission of STUDIO_PERMISSIONS)
-    assert.equal(needed.has(permission) || RESERVED.includes(permission), true, `${permission} is needed by nothing`)
-  for (const permission of RESERVED) assert.equal(needed.has(permission as never), false, `${permission} is in use`)
+    assert.equal(needed.has(permission), true, `${permission} is needed by nothing`)
 })

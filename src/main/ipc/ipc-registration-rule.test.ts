@@ -8,7 +8,7 @@ test('main may register a listed invoke or send channel, or a module channel the
   assert.equal(mayRegisterInMain('chat-link:ready'), true)
   // A push is main's to send, never a renderer's to reach.
   assert.equal(mayRegisterInMain('window:state-changed'), false)
-  assert.equal(mayRegisterInMain('terminal:data:session-1'), false)
+  assert.equal(mayRegisterInMain('cli-runtime:install-output:codex'), false)
   assert.equal(mayRegisterInMain('weather-deck:forecast'), false)
   noteModuleIpcChannel('weather-deck:forecast')
   assert.equal(mayRegisterInMain('weather-deck:forecast'), true)

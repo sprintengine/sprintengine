@@ -212,7 +212,7 @@ export function createMainWindow({
       // Terminal liveness is now kept a different way. When the window is hidden
       // (the page says so, or main does: `sendWindowHidden`) it reports its
       // terminals hidden to main (WorkspaceManager, via the same
-      // `terminalSetVisible` a layer switch uses), and main stops forwarding their
+      // `terminal.setVisible` a layer switch uses), and main stops forwarding their
       // output and keeps it in each session's retained stream. Main is not
       // throttled and a hidden pane is never waited on for acknowledgements, so
       // the agent keeps its full speed and nothing is lost; when the window is

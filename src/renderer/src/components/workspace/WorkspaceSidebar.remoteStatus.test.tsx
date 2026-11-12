@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import { meshConversationSessionId } from '../../../../shared/tailnet-mesh'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('a chat opened here from a paired machine wears the marks its machine lists', async () => {
   // Its turns run over there, so this desktop's own sessions know nothing of
@@ -82,13 +85,13 @@ test('a chat opened here from a paired machine wears the marks its machine lists
     name: 'demo-app',
   }
 
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
     getGitRepositoryIdentity: async () => null,
     getWorkspaceChangeSummary: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     onTailnetEvent: () => () => {},
     onMeshEvent: () => () => {},
     tailnetGetStatus: async () => ({

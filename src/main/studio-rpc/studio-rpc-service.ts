@@ -36,6 +36,7 @@ import type { ClientToolRegistry } from '../../server/tools/client-tool-registry
 import type { StudioFiles } from '../../server/rpc/studio-files'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../../server/local-servers/local-server-domain'
+import type { StudioTerminals } from '../../server/terminals/studio-terminals'
 import type { StudioUpdates } from '../../server/update/studio-updates'
 import type { StudioModules } from '../../server/rpc/studio-modules'
 import type {
@@ -151,6 +152,8 @@ export type StudioRpcServiceOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners (`local-servers`). */
   localServers?: StudioLocalServers
+  /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
+  terminals?: StudioTerminals
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** What the modules beside this Studio say to clients: `module.events` and `module.notifications`. */
@@ -184,9 +187,10 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
 
   function windowListener(): StudioWindowListener {
     windows ??= createStudioWindowListener({
-      attach: (stream, windowAuthenticator) =>
+      attach: (stream, windowAuthenticator, windowKey) =>
         hub().attach(stream, {
           authenticator: windowAuthenticator,
+          windowKey,
           // The window is the app's own chat view: shown conversations as its
           // IPC shows them, and its actions are not a client's to audit.
           ownWindow: true,
@@ -344,6 +348,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.files ? { files: options.files } : {}),
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
+      ...(options.terminals ? { terminals: options.terminals } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
       ...(options.modules ? { modules: options.modules } : {}),
       resyncRetryAfterMs: createResyncBackoff(),

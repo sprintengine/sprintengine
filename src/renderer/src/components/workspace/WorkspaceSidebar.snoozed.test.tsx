@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.snoozed', async () => {
   // Snoozed chats (2026-09-10). A sleeping row leaves the active list for its
@@ -62,30 +65,30 @@ test('WorkspaceSidebar.snoozed', async () => {
   // too, keeping the session so the next message resumes it.
   const chatsSuspended: string[] = []
   // Alpha holds a live agent pty, so there is something for the snooze to pause.
+  terminalsDouble.listTerminals = async () => [
+    {
+      sessionId: 'alpha-pty',
+      workspaceId: 'w1',
+      processAlive: true,
+      kind: 'agent',
+      cli: 'claude-code',
+      activity: { kind: 'idle', since: 1 },
+    },
+  ]
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
+  terminalsDouble.closeTerminal = async (sessionId: string) => {
+    killed.push(sessionId)
+  }
+  terminalsDouble.suspendTerminal = async (sessionId: string) => {
+    suspended.push(sessionId)
+  }
+  terminalsDouble.resumeTerminal = async (sessionId: string) => {
+    resumed.push(sessionId)
+  }
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [
-      {
-        sessionId: 'alpha-pty',
-        workspaceId: 'w1',
-        processAlive: true,
-        kind: 'agent',
-        cli: 'claude-code',
-        activity: { kind: 'idle', since: 1 },
-      },
-    ],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
-    terminalKill: async (sessionId: string) => {
-      killed.push(sessionId)
-    },
-    terminalSuspend: async (sessionId: string) => {
-      suspended.push(sessionId)
-    },
-    terminalResume: async (sessionId: string) => {
-      resumed.push(sessionId)
-    },
     conversationSessionsList: async () => ({
       ok: true,
       sessions: [{ sessionId: 'alpha-chat', workspaceId: 'w1', agentId: 'agent-chat', status: 'ready' }],

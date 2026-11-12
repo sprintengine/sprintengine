@@ -141,8 +141,10 @@ import {
   listLiveTerminalSessions,
   listTerminalRoots,
   notePullRequestRecordChanged,
-  resolveSpawnEventSink,
 } from './terminal-runtime'
+import { headlessTerminalViewer } from '../server/terminals/terminal-viewer'
+import { refuseTerminalSpawnOutOfProcess } from './terminal-spawn-payload'
+import { createStudioTerminals, type StudioTerminals } from '../server/terminals/studio-terminals'
 import { isTerminalProcessAlive, setSessionPullRequestReader } from './terminal-session'
 import { cliResumeCapabilities } from './cli-resume-capabilities'
 import { createAgentChangelistFeed } from './agent-changelist-feed'
@@ -791,11 +793,11 @@ export function createAppServices(
    * so one that began since is news the sweep will hear and wake the chat for.
    */
   const endWorkspaceTerminals = (workspaceId: string): void => {
-    for (const session of terminalRuntime.ipcHandlers.listTerminals()) {
+    for (const session of terminalRuntime.sessions.listTerminals()) {
       if (session.workspaceId !== workspaceId) continue
       if (session.kind === 'agent' && terminalAgentWorking(session)) continue
       if (session.kind === 'agent' && session.processAlive && session.agentState?.phase === 'awaiting_input') continue
-      terminalRuntime.ipcHandlers.killTerminal(session.sessionId)
+      terminalRuntime.sessions.killTerminal(session.sessionId)
     }
   }
   const core = server
@@ -973,7 +975,7 @@ export function createAppServices(
     // a chat run here by its session. A chat on an out-of-process server is
     // not known here, and is held only by its own events (and the stale cap).
     liveWorking: () => {
-      const terminals = terminalRuntime.ipcHandlers.listTerminals().filter((session) => session.kind === 'agent')
+      const terminals = terminalRuntime.sessions.listTerminals().filter((session) => session.kind === 'agent')
       const listed = server ? null : conversations.listSessions()
       const chats = listed?.ok ? listed.sessions : []
       return (workspaceId, agentId) => {
@@ -1279,8 +1281,8 @@ export function createAppServices(
   // one place. It holds no window reference, so it works headless.
   const agentControlPlane = createAgentControlPlane({
     terminal: {
-      list: () => terminalRuntime.ipcHandlers.listTerminals(),
-      write: (sessionId, data) => terminalRuntime.ipcHandlers.writeTerminal(sessionId, data),
+      list: () => terminalRuntime.sessions.listTerminals(),
+      write: (sessionId, data) => terminalRuntime.sessions.writeTerminal(sessionId, data),
       read: (sessionId) => terminalRuntime.readTerminalOutput(sessionId),
       readSince: (sessionId, cursor) => terminalRuntime.readTerminalOutputSince(sessionId, cursor),
     },
@@ -1459,11 +1461,18 @@ export function createAppServices(
     // interactively-spawned agent does.
     resolveKnowledgeRoot: (input) => resolveMemoryRoot(input.workspaceRoot, input.relativeRoot),
     terminal: {
-      list: () => terminalRuntime.ipcHandlers.listTerminals(),
-      // A headless launch has no window to be the event sink; the runtime
-      // resolves one (or its no-op headless sender) itself.
-      spawn: (payload) => terminalRuntime.ipcHandlers.spawnTerminal(resolveSpawnEventSink(), payload),
-      kill: (sessionId) => terminalRuntime.ipcHandlers.killTerminal(sessionId),
+      list: () => terminalRuntime.sessions.listTerminals(),
+      // A launch starts headless: its pty runs and buffers, and the first
+      // pane that opens it over the Studio protocol takes it over. Out of
+      // process the Studio serves no terminals yet, so no window could show
+      // or close what this started: every terminal launch (`agent.launch`,
+      // `backlog.work`, a schedule, Resume in terminal, a tour) is refused in
+      // words until the terminal runtime moves into the server.
+      spawn: (payload) =>
+        server
+          ? Promise.resolve(refuseTerminalSpawnOutOfProcess(payload))
+          : terminalRuntime.sessions.spawnTerminal(headlessTerminalViewer(), payload),
+      kill: (sessionId) => terminalRuntime.sessions.killTerminal(sessionId),
     },
   })
 
@@ -1775,8 +1784,8 @@ export function createAppServices(
     resolveWorkspaceRoot: (workspaceId) =>
       workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId)
         ?.folderPath ?? null,
-    listTerminals: () => terminalRuntime.ipcHandlers.listTerminals(),
-    writeTerminal: (sessionId, data) => terminalRuntime.ipcHandlers.writeTerminal(sessionId, data),
+    listTerminals: () => terminalRuntime.sessions.listTerminals(),
+    writeTerminal: (sessionId, data) => terminalRuntime.sessions.writeTerminal(sessionId, data),
     launchAgent: async (request) => {
       const launched = await agentLaunchService.launch(request)
       return launched.ok ? { ok: true, agentId: launched.agentId } : { ok: false, message: launched.message }
@@ -1852,7 +1861,7 @@ export function createAppServices(
     createEditorToolBackends({
       findWorkspace: (workspaceId) =>
         workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
-      listTerminalSessions: () => terminalRuntime.ipcHandlers.listTerminals(),
+      listTerminalSessions: () => terminalRuntime.sessions.listTerminals(),
       agentWrittenFiles,
       broker: editorRevealBroker,
       userDataDir: () => app.getPath('userData'),
@@ -1946,7 +1955,7 @@ export function createAppServices(
           automation: createAutomationTools(
             createServerGatewayBackends({
               getWorkspaceSyncSnapshot: () => workspaceSyncService.getSnapshot(),
-              listTerminalSessions: () => terminalRuntime.ipcHandlers.listTerminals(),
+              listTerminalSessions: () => terminalRuntime.sessions.listTerminals(),
               readTerminalOutputTail: (sessionId, options) =>
                 terminalRuntime.readTerminalOutputTail(sessionId, options),
               launchAgent: (request) => agentLaunchService.launch(request),
@@ -2089,8 +2098,34 @@ export function createAppServices(
   // What this process's modules say to clients (`module.events`,
   // `module.notifications`): app-main's kernel delivers into it.
   const moduleHub = createStudioModuleHub()
+  // Which window may take over a running terminal's output: set once the pane
+  // pop-out relay is registered (register-core-ipc.ts).
+  const terminalAttachGuard: { current: ((windowKey: string, sessionId: string) => boolean) | null } = {
+    current: null,
+  }
+  // The terminals this process runs, served over the Studio protocol to every
+  // client: the app's own windows, and a paired app granted them. Only in
+  // process: out of process the server holds no terminal runtime yet, so it
+  // does not advertise `terminals`.
+  const studioTerminals: StudioTerminals | null = server
+    ? null
+    : createStudioTerminals({
+        runtime: {
+          ...terminalRuntime.sessions,
+          onSessionsDelta: terminalRuntime.onSessionsDelta,
+          onPromptUndelivered: terminalRuntime.onPromptUndelivered,
+        },
+        mayAttach: (windowKey, sessionId) => terminalAttachGuard.current?.(windowKey, sessionId) ?? true,
+        // One idle-suspend setting governs both agent runtimes: PTY terminals
+        // and headless conversation child processes share the threshold.
+        onIdleSuspendMs: (value) => conversationOwner.setIdleThresholdMs(value),
+      })
   const studioRpc = automationService
-    ? createStudioRpc(core, automationService, { updates: desktopUpdates, modules: moduleHub })
+    ? createStudioRpc(core, automationService, {
+        updates: desktopUpdates,
+        modules: moduleHub,
+        ...(studioTerminals ? { terminals: studioTerminals } : {}),
+      })
     : null
   // Where the person's attention is, for routing a call to the window in
   // front of them when more than one desktop offers a toolset.
@@ -2153,7 +2188,7 @@ export function createAppServices(
             ...shellTerminalToolsets(
               createServerGatewayBackends({
                 getWorkspaceSyncSnapshot: () => workspaceSyncService.getSnapshot(),
-                listTerminalSessions: () => terminalRuntime.ipcHandlers.listTerminals(),
+                listTerminalSessions: () => terminalRuntime.sessions.listTerminals(),
                 readTerminalOutputTail: (sessionId, options) =>
                   terminalRuntime.readTerminalOutputTail(sessionId, options),
                 launchAgent: (request) => agentLaunchService.launch(request),
@@ -2225,7 +2260,7 @@ export function createAppServices(
     // they were issued (R87), by digest. Each change as it happens, and all of
     // them again to a server that has just started.
     const sendTerminalSessions = () =>
-      server.rpc.emit(SERVER_EVENTS.terminalSessions, terminalRuntime.ipcHandlers.listTerminals())
+      server.rpc.emit(SERVER_EVENTS.terminalSessions, terminalRuntime.sessions.listTerminals())
     terminalRuntime.subscribeSessionsChanged(sendTerminalSessions)
     // A Claude terminal's status line is the only reading of the plan's usage
     // a person who never opens a chat gives; the limits the windows draw and
@@ -2405,7 +2440,7 @@ export function createAppServices(
   }
 
   function readBackgroundStatus(): BackgroundStatus {
-    const sessions = terminalRuntime.ipcHandlers
+    const sessions = terminalRuntime.sessions
       .listTerminals()
       .filter((session) => session.kind === 'agent' && session.processAlive && !session.suspended)
     return {
@@ -2419,7 +2454,7 @@ export function createAppServices(
   // are the server's, asked with a short budget: a server that does not
   // answer must not hold up the quit, so it counts none.
   async function countWorkingAgents(): Promise<number> {
-    const terminals = countWorkingTerminalAgents(terminalRuntime.ipcHandlers.listTerminals())
+    const terminals = countWorkingTerminalAgents(terminalRuntime.sessions.listTerminals())
     if (!server) {
       const listed = conversations.listSessions()
       return terminals + (listed.ok ? listed.sessions.filter(conversationTurnInProgress).length : 0)
@@ -2533,6 +2568,10 @@ export function createAppServices(
     automationService,
     studioRpcService,
     moduleHub,
+    /** Ask the pane pop-out relay which window may take over a running terminal. */
+    setTerminalAttachGuard: (guard: (windowKey: string, sessionId: string) => boolean) => {
+      terminalAttachGuard.current = guard
+    },
     backgroundModeStore,
     quitConfirmationStore,
     quitConfirmation,

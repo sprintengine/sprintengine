@@ -80,6 +80,7 @@ import {
 import { DEFAULT_CHANGELIST_ID, normalizeChangelistPath } from '../../../../shared/git/changelists'
 import { GitGraphView, type GitCommitActions, type GitGraphState, type GitMergeTarget } from './GitGraphView'
 import type { GitPanelView } from '../../types/workspace'
+import { openTerminal, writeTerminal } from '../../studio/terminals'
 
 type GitPanelMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -2066,7 +2067,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       '',
     ].join('\n')
 
-    const result = await window.api.terminalSpawn(
+    const result = await openTerminal(
       `terminal-${terminalId}`,
       100,
       30,
@@ -2088,7 +2089,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
       return
     }
 
-    await window.api.terminalWrite(`terminal-${terminalId}`, command)
+    await writeTerminal(`terminal-${terminalId}`, command)
     focusOrAddTerminalTab(workspaceId, terminalId, `Diff ${branchOrHeadLabel(activeScope.branch, activeScope.head)}`)
     setMessage({ tone: 'neutral', text: `Opened review diff: ${range} (${reviewDiffTarget.reason}).` })
   }

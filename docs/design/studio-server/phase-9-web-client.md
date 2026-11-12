@@ -162,7 +162,7 @@ the compiler lists every member the shim has not decided about:
 - **Shell members** come from `createWebShellApi()`, the fallbacks in
   section 4.
 - **A member with no web meaning** is implemented as an explicit refusal
-  (`unsupportedOnWeb('terminalSpawn')`). It returns a rejected promise with a
+  (`unsupportedOnWeb('panePopOutOpen')`). It returns a rejected promise with a
   typed `UnsupportedOnThisClient` error, or for a subscription, a no-op
   unsubscribe. It never returns `undefined` and never throws synchronously.
   Each refusal is logged once per member, which yields the
@@ -477,7 +477,7 @@ Paths are under `src/renderer/src/` unless they start with `src/`.
 | 32 | Design system and theme | `assets/index.css` imports `design-system/foundations/tokens.css`; `data-theme`, `data-mode` | n/a | Unchanged |
 | 33 | Fonts: `@fontsource` Inter and JetBrains Mono; canvas scene fonts | `index.css:6`, `canvasAssetPath.ts:32` | n/a | Unchanged; the server must serve `fonts/` beside `index.html`, else the editor falls back to a public CDN |
 | 34 | Monaco and workers (`?worker`, `loader.config({ monaco })`) | `utils/monacoRuntime.ts` | n/a | Works unchanged over HTTP. Recommendation: lazy on the web, see 7.6. |
-| 35 | xterm, terminals (`terminalSpawn`, `terminalList`, …; called at boot) | `utils/createStudioTerminal.ts`, boot calls `terminalList`, `onTerminalSessionsDelta` | none | Refused (`terminals` false); boot calls get an empty answer (ruling a) |
+| 35 | xterm, terminals (called at boot) | `utils/createStudioTerminal.ts`; terminals are the Studio protocol's `terminal.*` (`studio/terminals.ts`) | none | Not served: a browser session's grant holds no terminal scope, so the window's terminals answer nothing (ruling a) |
 | 36 | Voice dictation `getUserMedia` | Removed 2026-10-09 | n/a | Nothing to port: the app no longer asks for the microphone, and the page's Permissions-Policy denies it |
 | 37 | Secure-context APIs: `crypto.randomUUID` (4 sites), `navigator.clipboard`, Notifications, service workers | `utils/undeliveredPrompt.ts:50`, `utils/diagnostics.ts:35`, … | n/a | Loopback (`http://127.0.0.1`, `localhost`) is a secure context. Plain HTTP to a tailnet IP is not. One `randomId()` helper over `crypto.getRandomValues` replaces `randomUUID`, and 6.6 requires HTTPS off loopback. |
 | 38 | Account sign-in: `authGetState`, `authLogin` (opens a browser and returns through a deep link) | `SidebarAccountBar` (first crash in E3) | none | The login redirect returns to the server's `/auth/callback` instead of the deep link, or account features are hidden on the web in v1 (owner decision 9) |

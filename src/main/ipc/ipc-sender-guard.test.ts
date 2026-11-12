@@ -54,10 +54,10 @@ test('a message from anything but the app never reaches its listener', () => {
   const { ipc, emitter } = fakeIpcMain()
   guardIpcSenders(ipc, isTrusted)
   const heard: unknown[] = []
-  ipc.on('terminal:write', (_event, data) => heard.push(data))
-  emitter.emit('terminal:write', guest, 'rm -rf ~\r')
-  emitter.emit('terminal:write', app, 'ls\r')
-  assert.deepEqual(heard, ['ls\r'])
+  ipc.on('git:push', (_event, data) => heard.push(data))
+  emitter.emit('git:push', guest, '--force')
+  emitter.emit('git:push', app, 'origin')
+  assert.deepEqual(heard, ['origin'])
 })
 
 test('a once listener is spent only by the app, not by a foreign message sent first', () => {

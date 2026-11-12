@@ -147,28 +147,24 @@ test('server-from-scanned', async () => {
     assert.deepEqual(result.skipped, ['context7'])
   })
 
-  // ── The twin declarations ────────────────────────────────────────────────────
-  // `McpServerConfig` is declared twice — in the IPC contract and in the core
-  // agent-state module, which the renderer re-exports. They are structurally
-  // identical on purpose, and a provenance field added to one and not the other
-  // is a config that loses its source somewhere between the two. This guard is
-  // cheap; the drift it catches is not.
+  // ── One declaration ──────────────────────────────────────────────────────────
+  // `McpServerConfig` and its provenance were declared twice (the IPC contract
+  // and the agent-state module) and drifted once. They are declared once now,
+  // in the Studio protocol, where a terminal's launch record carries them; both
+  // modules only re-export it, so a provenance field cannot reach one and not
+  // the other.
 
-  run('the MCP provenance types are identical in both declarations', () => {
+  run('the MCP types are declared once, in the protocol, and only re-exported here', () => {
     const read = (path: string): string => readFileSync(join(process.cwd(), path), 'utf8')
-    // The IPC contract's MCP types (re-exported by electron-api.ts).
-    const contract = read('src/shared/ipc/mcp.ts')
-    const twin = read('src/shared/agent-state.ts')
-    for (const source of [contract, twin]) {
-      assert.match(source, /export type McpServerSource = 'bundled' \| 'custom' \| 'source'/)
-      assert.match(source, /sourceRef\?: McpServerSourceRef/)
+    for (const path of ['src/shared/ipc/mcp.ts', 'src/shared/agent-state.ts']) {
+      const source = read(path)
+      assert.doesNotMatch(source, /export type (McpServerSourceRef|McpServerConfig|McpSettings) = /, path)
+      assert.match(source, /McpServerSourceRef,[\s\S]*from '[./]+packages\/studio-protocol\/src\/public'/, path)
     }
-    const fields = (source: string): string[] => {
-      const block = source.match(/export type McpServerSourceRef = \{([\s\S]*?)\n\}/)
-      assert.ok(block, 'both files declare McpServerSourceRef')
-      return [...block[1].matchAll(/^\s{2}(\w+)\??:/gm)].map((match) => match[1])
-    }
-    assert.deepEqual(fields(twin), fields(contract), 'the two McpServerSourceRef declarations have drifted')
+    assert.match(
+      read('packages/studio-protocol/src/agents.ts'),
+      /export type McpServerSourceRef = \{[\s\S]*?pluginRoot\?: string/,
+    )
   })
 
   console.log('mcp server-from-scanned tests passed')

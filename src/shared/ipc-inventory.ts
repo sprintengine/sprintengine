@@ -18,7 +18,7 @@
 // `invoke` is a renderer's `invoke` that main `handle`s, `send` a renderer's
 // fire-and-forget message that main listens `on`, `push` a message main
 // sends a window. A name ending in `:*` stands for every channel it begins:
-// the ones made per terminal, watch, follow or install.
+// the ones made per watch, follow or install.
 
 export type IpcDirection = 'invoke' | 'send' | 'push'
 
@@ -331,27 +331,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),
-  'terminal:ack': terminals('send'),
-  'terminal:data:*': terminals('push'),
-  'terminal:error:*': terminals('push'),
-  'terminal:exit:*': terminals('push'),
-  'terminal:kill': terminals('invoke'),
-  'terminal:list': terminals('invoke'),
-  'terminal:prompt-undelivered': terminals('push'),
-  'terminal:replay:*': terminals('push'),
-  'terminal:resize': terminals('invoke'),
-  'terminal:resume': terminals('invoke'),
-  'terminal:sessions-delta': terminals('push'),
-  'terminal:set-idle-suspend-ms': terminals('invoke'),
-  'terminal:set-keep-recent-alive-count': terminals('invoke'),
-  'terminal:set-reap-exempt': terminals('invoke'),
-  'terminal:set-visible': terminals('invoke'),
-  'terminal:spawn': terminals('invoke'),
-  'terminal:status': terminals('invoke'),
-  'terminal:suspend': terminals('invoke'),
-  'terminal:take-undelivered-prompts': terminals('invoke'),
-  'terminal:write': terminals('invoke'),
-  'terminal:write-fast': terminals('send'),
   'modules:bridge:invoke': modules('invoke'),
   'modules:host-service:invoke': modules('invoke'),
   'modules:set-enablement': modules('invoke'),
