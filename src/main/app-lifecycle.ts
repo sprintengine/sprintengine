@@ -531,7 +531,7 @@ export function registerAppLifecycle({
       // The one detection of this machine's CLIs a launch makes (Re-check in
       // Settings is the only other), with the commands the person set, so the
       // renderer's first read is answered from it. What it finds schedules the
-      // version check's comparison (app-services), which waits for a window to
+      // version check's comparison (the core's), which waits for a window to
       // say whether checks are on. WSL machines are detected after the reveal.
       // Out of process the CLIs and their version check are the server's.
       detectClis: () => (server ? server.detectClis('local') : detectCliMachines({ which: 'local' })),
