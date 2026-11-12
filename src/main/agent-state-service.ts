@@ -1,44 +1,35 @@
 import { createHash } from 'crypto'
-import { chmodSync, existsSync, unlinkSync } from 'fs'
-import { createServer, type Server, type Socket } from 'net'
 import { join } from 'path'
-import { privateSocketDirectory, withOwnerOnlyUmask } from './private-socket-dir'
+import { privateSocketDirectory } from './private-socket-dir'
 import type { PluginAgentStateSpec } from '../shared/plugin-manifest'
 import type { TerminalPathStyle } from '../shared/electron-api'
-import type { AgentStateFrame } from './agent-state'
 import {
   installAgentStateReporter,
-  parseAgentStateFrame,
   removeAgentStateRegistrationAt,
   removeWorkspaceAgentStateRegistration,
 } from './agent-state'
 import type { HostAgentIntegration } from './hosts/execution-host'
 
 // =============================================================================
-// Agent-state service — the Electron-bound half of authoritative agent state.
+// Agent-state service — the shell's half of authoritative agent state.
 //
-// Owns a dedicated local socket the per-workspace reporter hook writes
-// newline-delimited JSON frames to, validates each frame, and hands the valid
-// ones to `onFrame` (the terminal runtime, which resolves the session and
-// updates its phase). A WSL distribution's frames arrive through its helper
-// instead (`ingestLine`) and are held to exactly the same validation. Also owns installing the reporter at launch — serialized
+// The reporter's frames are heard by the Studio server, where the terminal
+// runtime runs (src/server/terminals/agent-state-listener.ts), on the socket
+// `resolveAgentStateSocketPath` derives from the data directory. What is here
+// is the shell's part of a launch: installing the reporter — serialized
 // per TARGET FILE (several CLIs can share one settings file) and run once per
 // CLI per scope root and execution style per app run, so concurrent agent
 // launches never race a config's read-modify-write and switching between native
 // Windows and WSL rewrites the command for the shell that will execute it.
 //
 // All Electron specifics (userData dir, bundled reporter path) are injected, so
-// this module stays free of `electron` and is unit-testable over a real socket.
+// this module stays free of `electron` and is unit-testable.
 // =============================================================================
 
 // POSIX sun_path is ~104 bytes; long dev userData paths fall back to the
 // per-user temp dir with a hash tying the socket to this profile. Mirrors the
 // automation server's resolver so both behave identically across platforms.
 const MAX_POSIX_SOCKET_PATH = 90
-
-// A reporter frame is tiny; a client that streams an unbounded line without a
-// newline is dropped rather than buffered without limit.
-const MAX_LINE_BYTES = 64 * 1024
 
 const USER_SCOPED_REMOVAL_TIMEOUT_MS = 3_000
 
@@ -81,15 +72,10 @@ export type AgentStateServiceOptions = {
   // (Codex's config.toml, Cursor's hooks.json) still runs it. Absent ⇒ no other
   // registration is known, and the script is removed with the entry.
   listAgentStateSpecs?: () => readonly PluginAgentStateSpec[]
-  onFrame: (frame: AgentStateFrame) => void
   logDiagnostic?: (diagnostic: { level: 'warning' | 'info'; title: string; message: string; details?: string }) => void
-  now?: () => number
 }
 
 export function createAgentStateService(options: AgentStateServiceOptions) {
-  const now = options.now ?? (() => Date.now())
-  let server: Server | null = null
-  const sockets = new Set<Socket>()
   let socketPath: string | null = null
 
   // Install state: a per-target-file serialization chain so concurrent launches
@@ -120,106 +106,8 @@ export function createAgentStateService(options: AgentStateServiceOptions) {
     options.logDiagnostic?.({ level: 'warning', title, message: title, details })
   }
 
-  async function initialize(): Promise<void> {
-    if (server) return
-    const path = getSocketPath()
-    // A stale socket file from a crashed previous run would block listen();
-    // remove it. A live second instance is prevented upstream by Electron's
-    // single-instance lock.
-    if (process.platform !== 'win32' && existsSync(path)) {
-      try {
-        unlinkSync(path)
-      } catch {
-        // listen() will surface a real conflict below.
-      }
-    }
-    const next = createServer((socket) => handleConnection(socket))
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const onError = (error: Error) => {
-          next.removeListener('listening', onListening)
-          reject(error)
-        }
-        const onListening = () => {
-          next.removeListener('error', onError)
-          resolve()
-        }
-        next.once('error', onError)
-        next.once('listening', onListening)
-        // Created owner-only, not narrowed after the fact.
-        if (process.platform === 'win32') next.listen(path)
-        else withOwnerOnlyUmask(() => next.listen(path))
-      })
-    } catch (error) {
-      warn('Agent-state socket failed to start', message(error))
-      return
-    }
-    if (process.platform !== 'win32') {
-      try {
-        chmodSync(path, 0o600)
-      } catch {
-        // Owner-only is best-effort hardening; a failure does not break the feed.
-      }
-    }
-    next.on('error', (error) => warn('Agent-state socket error', error.message))
-    server = next
-  }
-
-  function handleConnection(socket: Socket): void {
-    sockets.add(socket)
-    socket.setEncoding('utf8')
-    let buffer = ''
-    socket.on('data', (chunk: string) => {
-      buffer += chunk
-      if (buffer.length > MAX_LINE_BYTES) {
-        socket.destroy()
-        return
-      }
-      let newline = buffer.indexOf('\n')
-      while (newline !== -1) {
-        const line = buffer.slice(0, newline).trim()
-        buffer = buffer.slice(newline + 1)
-        if (line) handleLine(line)
-        newline = buffer.indexOf('\n')
-      }
-    })
-    socket.on('close', () => sockets.delete(socket))
-    socket.on('error', () => sockets.delete(socket))
-  }
-
-  // One frame line, from this machine's socket or relayed by a WSL helper.
-  function handleLine(line: string): void {
-    let raw: unknown
-    try {
-      raw = JSON.parse(line)
-    } catch {
-      // Untrusted input: a malformed frame is dropped, never thrown on.
-      return
-    }
-    const frame = parseAgentStateFrame(raw, now())
-    if (!frame) return
-    try {
-      options.onFrame(frame)
-    } catch (error) {
-      warn('Agent-state frame handler threw', message(error))
-    }
-  }
-
+  // What the quit undoes: the user-scoped registrations this run wrote.
   async function shutdown(): Promise<void> {
-    const current = server
-    server = null
-    for (const socket of sockets) socket.destroy()
-    sockets.clear()
-    if (current) {
-      await new Promise<void>((resolve) => current.close(() => resolve()))
-    }
-    if (process.platform !== 'win32' && socketPath && existsSync(socketPath)) {
-      try {
-        unlinkSync(socketPath)
-      } catch {
-        // Best-effort cleanup; a stale socket is unlinked on next start.
-      }
-    }
     await removeUserScopedRegistrations()
   }
 
@@ -407,12 +295,9 @@ export function createAgentStateService(options: AgentStateServiceOptions) {
   }
 
   return {
-    initialize,
     shutdown,
     getSocketPath,
-    ingestLine: handleLine,
     installForWorkspace,
-    isRunning: () => server !== null,
   }
 }
 

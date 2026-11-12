@@ -6,7 +6,7 @@ import { SERVER_EVENTS, SERVER_METHODS, type ServerMirrorState } from '../../ser
 import { emptyAgentLaunchSettings } from '../../shared/launch-settings'
 import { installGitHostResolver } from '../git-run'
 import { installHostRegistry } from '../hosts/host-registry'
-import { createRemoteCore, createRemoteCredentialStore, createRemoteGitHubTokenStore } from './remote-core'
+import { createRemoteCore, createRemoteGitHubTokenStore } from './remote-core'
 import { createServerStateMirror } from './server-mirror'
 
 // What the shell reads of the server out of process: the mirror, fed by the
@@ -228,22 +228,11 @@ test("Diagnostics reads the folders the server's chats run in, one poll behind",
   installGitHostResolver(null)
 })
 
-test('a credential and the GitHub token are asked of the server', async () => {
+test('the GitHub token is asked of the server', async () => {
   const { shell, server } = pair()
-  server.handle(SERVER_METHODS.resolveSecretForLaunch, (params) => ({
-    ok: true,
-    providerId: (params as { cli: string }).cli,
-    value: 'sk-test',
-    source: 'settings',
-  }))
   server.handle(SERVER_METHODS.githubToken, (params) => ((params as { op: string }).op === 'resolve' ? 'ghp_x' : null))
-  assert.equal(
-    ((await createRemoteCredentialStore(shell).resolveSecret('codex')) as { value: string }).value,
-    'sk-test',
-  )
   assert.equal(await createRemoteGitHubTokenStore(shell).resolveToken(), 'ghp_x')
   // No server: a resolve is not an error, it is no token.
   shell.close('gone')
   assert.equal(await createRemoteGitHubTokenStore(shell).resolveToken('explicit'), 'explicit')
-  assert.equal((await createRemoteCredentialStore(shell).resolveSecret('codex')).ok, false)
 })

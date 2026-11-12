@@ -104,7 +104,9 @@ async function mcpSession(socketPath: string) {
 
 test('the bundle carries nothing of Electron and serves the gateway under plain Node', async () => {
   const source = readFileSync(bundle, 'utf8')
-  assert.doesNotMatch(source, /require\(["'](electron|electron-updater|node-pty)["']\)/)
+  assert.doesNotMatch(source, /require\(["'](electron|electron-updater)["']\)/)
+  // The pty module is loaded on a terminal's first start, never as the bundle loads.
+  assert.doesNotMatch(source, /^(?:var|const|let) [\w$]+ = (?:__toESM\()?require\(["']node-pty["']\)/mu)
 
   const env = isolatedEnv('serve')
   const dataDir = join(scratch, 'serve', 'data')

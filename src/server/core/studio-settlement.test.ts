@@ -17,7 +17,7 @@ const BORN = 1_000_000_000_000
 
 function harness(
   records: Array<Partial<WorkspaceRegistryRecord>>,
-  options: { known?: boolean; listed?: boolean } = {},
+  options: { known?: boolean } = {},
 ) {
   let clock = BORN + 4 * DAY
   const pending: Array<() => void> = []
@@ -42,7 +42,6 @@ function harness(
   let chats: ConversationSessionSummary[] = []
   let terminals: SettlementTerminal[] = []
   let known = options.known ?? true
-  let listed = options.listed ?? true
   const suspended: string[] = []
   const ended: string[] = []
   const turnEnds: Array<[string, number]> = []
@@ -99,7 +98,6 @@ function harness(
     },
     terminals: {
       list: () => terminals,
-      listed: () => listed,
       onChanged: (listener) => {
         terminalListeners.add(listener)
         return () => terminalListeners.delete(listener)
@@ -149,10 +147,6 @@ function harness(
       known = true
       for (const listener of [...settingsListeners]) listener()
     },
-    list: () => {
-      listed = true
-      for (const listener of [...terminalListeners]) listener()
-    },
     emit: (event: Partial<ConversationEvent>) => {
       for (const listener of [...eventListeners]) listener(event as ConversationEvent)
     },
@@ -170,16 +164,6 @@ test('nothing settles on settings no window has pushed; the first push sweeps at
   h.push()
   await h.flush()
   assert.equal(typeof h.row('quiet').settledAt, 'number', 'the push is what it waited for')
-})
-
-test('nothing settles before the shell has listed its terminals; the first list sweeps at once', async () => {
-  const h = harness([{ id: 'quiet' }], { listed: false })
-  h.settlement.start()
-  await h.flush()
-  assert.equal(h.row('quiet').settledAt ?? null, null)
-  h.list()
-  await h.flush()
-  assert.equal(typeof h.row('quiet').settledAt, 'number')
 })
 
 test('a settle the sweep makes suspends the chat’s idle sessions and ends its terminals', async () => {

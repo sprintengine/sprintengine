@@ -440,7 +440,7 @@ if (serverHost) {
 registerAppLifecycle({
   diagnosticsEnabled: DIAGNOSTICS_ENABLED,
   allowMultipleInstances: allowsMultipleInstances(app),
-  terminalRuntime: services.terminalRuntime,
+  terminalRuntime: services.terminalLifecycle,
   conversations: services.conversations,
   conversationOwner: services.conversationOwner,
   automationService: services.automationService ?? undefined,
@@ -462,7 +462,7 @@ registerAppLifecycle({
   ...(services.localServers ? { localServers: services.localServers } : {}),
   ...(services.usageLimitResumes ? { usageLimitResumes: services.usageLimitResumes } : {}),
   ...(services.scheduledMessages ? { scheduledMessages: services.scheduledMessages } : {}),
-  launchNotices: services.launchNotices,
+  launchNotices: services.launchNotices ?? undefined,
   analytics: services.analytics,
   // Out of process the server runs every module's startup and shutdown hooks.
   ...(serverHost ? {} : { moduleKernel: moduleLoad.kernel }),

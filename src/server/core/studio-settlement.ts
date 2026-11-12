@@ -14,7 +14,7 @@ import {
 } from '../../main/automation/workspace-settlement-sweep'
 
 // Main's rest sweep, wired to what the core holds (studio-core.ts composes it):
-// the registry, the chats, the shell's terminals, the pull request record, the
+// the registry, the chats, the core's terminals, the pull request record, the
 // Settled chats settings the windows push, and the module run states they
 // push. The sweep decides; this says what it reads, when it looks, and what a
 // settle it makes puts away.
@@ -66,11 +66,10 @@ export type StudioSettlementDeps = {
   }
   settings: { get(): SettledChatsSettings; known(): boolean; subscribe(listener: () => void): () => void }
   terminals: {
+    /** This Studio's terminals, read where they run (studio-agent-terminals.ts). */
     list(): readonly SettlementTerminal[]
-    /** Whether the list has been read once (out of process the shell pushes it after the server starts). */
-    listed(): boolean
     onChanged?(listener: () => void): () => void
-    /** End the terminals main attributes to the workspace, where it holds them. */
+    /** End the workspace's terminals. */
     end?(workspaceId: string): void
   }
   lifecycle: { applySweepDecision(decision: SweepDecision): SweepDecisionResult }
@@ -148,7 +147,7 @@ export function createStudioSettlement(deps: StudioSettlementDeps) {
         : moduleRunStates.has(record.id)
           ? (moduleRunStates.get(record.id) ?? null)
           : 'in_progress',
-    ready: () => deps.terminals.listed() && deps.settings.known(),
+    ready: () => deps.settings.known(),
     commit: (decision) => deps.lifecycle.applySweepDecision(decision),
     // A resting chat holds no processes (owner ruling 2026-09-07). The window
     // that routes the row ends them too, as for a Settle from a phone; they
@@ -185,10 +184,10 @@ export function createStudioSettlement(deps: StudioSettlementDeps) {
 
   const stops: Array<() => void> = []
   let wasReady = false
-  // The first moment both are known asks for every chat, rather than leaving
+  // The first moment the settings are known asks for every chat, rather than leaving
   // it to the next minute.
   const noteReady = () => {
-    const ready = deps.terminals.listed() && deps.settings.known()
+    const ready = deps.settings.known()
     if (ready && !wasReady) sweep.request()
     wasReady = ready
   }
@@ -261,7 +260,7 @@ export function createStudioSettlement(deps: StudioSettlementDeps) {
       )
       keepTurnEnds()
       sweep.start()
-      wasReady = deps.terminals.listed() && deps.settings.known()
+      wasReady = deps.settings.known()
     },
 
     dispose(): void {

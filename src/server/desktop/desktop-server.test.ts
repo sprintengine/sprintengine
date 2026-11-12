@@ -46,17 +46,27 @@ afterAll(() => {
 
 const keychainSeal = (plain: string) => Buffer.concat([Buffer.from('v10'), Buffer.from(plain, 'utf8').reverse()])
 
-function shellBridge(): ShellBridge & { notices: unknown[] } {
+function shellBridge(): ShellBridge & { notices: unknown[]; prepared: string[] } {
   const notices: unknown[] = []
+  const prepared: string[] = []
   return {
     notices,
+    prepared,
     cipher: {
       available: async () => true,
       seal: async (plain) => new Uint8Array(keychainSeal(Buffer.from(plain).toString('utf8'))),
       open: async (sealed) => new Uint8Array(Buffer.from(Buffer.from(sealed).subarray(3)).reverse()),
     },
-    terminals: {
-      launchAgent: async () => ({ ok: false, code: 'shell_unavailable', message: 'No terminals in this test.' }),
+    // The shell's part of a launch; the pty itself is the server's.
+    launches: {
+      prepareLaunchIntegration: async (input) => {
+        prepared.push(`integration:${input.cli}`)
+        return { ok: true, integration: null }
+      },
+      syncMcpConfig: async () => ({ ok: true }),
+      ensureBuiltinSkillInstalled: async () => undefined,
+      excludeWorktreeMcpConfig: async () => undefined,
+      prepareAgentStateHook: async () => undefined,
     },
     reveal: { tab: async () => false },
     notify: (notice) => notices.push(notice),
@@ -119,6 +129,9 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   const terminalAgent = { workspaceId: 'acme', agentId: 'agent-1' }
   const tokenDigest = createHash('sha256').update('terminal-agent-token').digest('hex')
   shellRpc.handle(SHELL_METHODS.liveLaunchTokens, () => [{ digest: tokenDigest, identity: terminalAgent }])
+  // The server's terminals, as the shell's own readers see them.
+  const terminalLists: unknown[] = []
+  shellRpc.on(SERVER_EVENTS.terminalSessions, (payload) => terminalLists.push(payload))
 
   const exit = serveOnChannel(channel, {
     starters: { 'desktop-local': startDesktopServer },
@@ -163,19 +176,18 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   const scheduled = await window.invoke('scheduled-agents:list')
   assert.equal(scheduled.ok, true, JSON.stringify(scheduled))
 
-  // A Claude terminal's status line, read in the shell, reaches the usage
-  // limits the server's windows draw.
-  shellRpc.emit(SERVER_EVENTS.usageStatusLine, {
-    rateLimits: { five_hour: { usedPercentage: 37, resetsAt: Date.now() + 3_600_000 } },
-    at: Date.now(),
+  // The terminals are this server's: their list reaches the shell once it is
+  // serving, and a launch the shell asks for goes through the server's own
+  // launch service (no refusal, no bridge back to the shell).
+  await waitFor(() => (terminalLists.length > 0 ? true : undefined))
+  assert.deepEqual(terminalLists[0], [])
+  const launched = await shellRpc.call<{ ok: boolean; code?: string; message?: string }>(SERVER_METHODS.agentLaunch, {
+    workspaceId: 'no-such-workspace',
+    cli: 'claude-code',
   })
-  let claudeLimits: { windows: Array<{ id: string; usedPercent: number }> } | undefined
-  for (let tries = 0; tries < 200 && !claudeLimits; tries++) {
-    const answer = await window.invoke('usage-limits:get')
-    claudeLimits = answer.value?.snapshots?.find((snapshot: { provider: string }) => snapshot.provider === 'claude')
-    if (!claudeLimits) await new Promise((resolve) => setTimeout(resolve, 5))
-  }
-  assert.equal(claudeLimits?.windows.find((entry) => entry.id === 'five_hour')?.usedPercent, 37)
+  assert.equal(launched.ok, false)
+  assert.equal(launched.code, 'unknown_workspace', JSON.stringify(launched))
+  assert.equal(await shellRpc.call(SERVER_METHODS.terminalPeekState, { sessionId: 'none' }), null)
 
   // The shell's mirror reads from the server.
   const mirror = await shellRpc.call<ServerMirrorState>(SERVER_METHODS.mirrorSnapshot)
@@ -198,7 +210,6 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   // The worktree pool is this server's: a window's Settings ▸ Worktrees and
   // the installs are answered over the tunnel, and the shell's `agent.launch`
   // has its worktree cut here, from the pool, and listed among its leases.
-  shellRpc.emit(SERVER_EVENTS.terminalSessions, [])
   const poolSettings = await window.invoke('worktree-pool:settings-get')
   assert.equal(poolSettings.ok, true, JSON.stringify(poolSettings))
   assert.equal(typeof poolSettings.value.enabled, 'boolean')
@@ -249,6 +260,10 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.equal(connected.error, undefined, JSON.stringify(connected))
   const tools = ((await mcp.call('tools/list')).result?.tools as Array<{ name: string }>).map((tool) => tool.name)
   assert.ok(tools.includes('worktree.lease') && tools.includes('worktree.release'), tools.join(', '))
+  // The terminal and agent tools are the gateway's own too, not a toolset the shell offers.
+  assert.ok(tools.includes('terminal.list') && tools.includes('agent.launch'), tools.join(', '))
+  const listed = await mcp.call('tools/call', { name: 'terminal.list', arguments: {} })
+  assert.equal(listed.result?.isError ?? false, false, JSON.stringify(listed))
   const leasedOverMcp = await mcp.call('tools/call', { name: 'worktree.lease', arguments: { name: 'over-mcp' } })
   assert.equal(leasedOverMcp.result?.isError ?? false, false, JSON.stringify(leasedOverMcp))
   const leasedPath = (leasedOverMcp.result?.structuredContent as { path: string; branch: string }).path
@@ -274,7 +289,10 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   hub.dispatch({ t: 'shutdown', drain: true, budgetMs: 8_000 }, [])
   assert.equal(await exit, 0)
   const legs = fromServer.filter((frame) => frame.t === 'shutdown-progress').map((frame) => frame.leg)
-  assert.deepEqual(legs.slice(0, 2), ['modules (begin)', 'local app socket'])
+  assert.equal(legs[0], 'modules (begin)')
+  // The ptys end after the chats' transcripts are flushed and before the directory goes.
+  assert.ok(legs.indexOf('terminals') > legs.indexOf('chat transcripts'), legs.join(', '))
+  assert.ok(legs.indexOf('terminals') < legs.indexOf('data directory'))
   assert.equal(legs.at(-1), 'data directory')
   assert.ok(legs.indexOf('chat transcripts') < legs.indexOf('data directory'))
   // The pool's installs stop with the new work, and the pool lets its lock go before the directory.

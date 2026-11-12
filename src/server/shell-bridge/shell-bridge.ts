@@ -1,10 +1,11 @@
-import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
+import type { TerminalLaunchPreparation } from '../terminals/terminal-launch-preparation'
 
 // What the server asks of the desktop shell that is not an agent tool (phase 6
 // spec, section 6.3). An agent's screen and terminal tools are toolsets the
 // shell offers on the client-tools mechanism; what is here serves the server
-// itself: sealing secrets with the OS keychain, a terminal launch for the two
-// internal service tokens that name one, bringing a tab forward when a notice
+// itself: sealing secrets with the OS keychain, the shell's part of a terminal
+// agent's launch (its plugin copy, MCP sync, skills and hook install; the pty
+// itself is the server's), bringing a tab forward when a notice
 // is clicked, OS notifications, the analytics sink (consent and the install id
 // stay with the shell), the gate that says the launcher and plugin home are
 // written, and shrinking an uploaded picture with the shell's image codec.
@@ -48,8 +49,8 @@ export type ShellBridge = {
     seal(plain: Uint8Array): Promise<Uint8Array>
     open(sealed: Uint8Array): Promise<Uint8Array>
   }
-  /** For the two internal service tokens that name a terminal launch; never offered to an agent. */
-  terminals: { launchAgent(request: AgentLaunchRequest): Promise<AgentLaunchResult> }
+  /** What the shell adds to a terminal agent's launch (terminal-launch-preparation.ts). */
+  launches: TerminalLaunchPreparation
   /** The reveal-tab capability. False when no window could show it. */
   reveal: { tab(target: ShellRevealTarget): Promise<boolean> }
   notify(notice: ShellNotice): void
@@ -73,7 +74,11 @@ export const SHELL_BRIDGE_METHODS = {
   cipherAvailable: 'shell.cipher.available',
   cipherSeal: 'shell.cipher.seal',
   cipherOpen: 'shell.cipher.open',
-  launchAgent: 'shell.terminals.launchAgent',
+  launchIntegration: 'shell.launches.integration',
+  launchMcpSync: 'shell.launches.mcpSync',
+  launchSkill: 'shell.launches.skill',
+  launchExcludeMcpConfig: 'shell.launches.excludeMcpConfig',
+  launchAgentStateHook: 'shell.launches.agentStateHook',
   revealTab: 'shell.reveal.tab',
   integrationsReady: 'shell.integrationsReady',
   imageDownscale: 'shell.images.downscale',

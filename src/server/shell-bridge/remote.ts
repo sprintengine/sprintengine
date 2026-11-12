@@ -1,4 +1,3 @@
-import type { AgentLaunchResult } from '../../shared/agent-launch'
 import { ControlRpcError, type ControlRpc } from '../bootstrap/control-rpc'
 import { SHELL_BRIDGE_EVENTS, SHELL_BRIDGE_METHODS, type ShellBridge } from './shell-bridge'
 
@@ -7,18 +6,16 @@ import { SHELL_BRIDGE_EVENTS, SHELL_BRIDGE_METHODS, type ShellBridge } from './s
 // in-process bridge (src/main/server-supervisor/serve-shell-bridge.ts).
 //
 // A shell that is not there (the channel closed, or it never answered) is a
-// failure of that call and nothing more: a seal rejects, a launch answers
-// `shell_unavailable`, a reveal answers false, a notice is dropped, a picture
+// failure of that call and nothing more: a seal rejects, a launch says it
+// could not be prepared, a reveal answers false, a notice is dropped, a picture
 // stays the size it was sent. Nothing here retries; the caller already has a
 // rule for each of those.
 
 /** How long a seal or an open may take: a keychain prompt on a locked Mac is answered by a person. */
 const CIPHER_TIMEOUT_MS = 120_000
 /**
- * A terminal launch may cut a worktree before it spawns, with no budget of its
- * own in the shell: the same deadline as the shell's `agent.launch` tool, so a
- * slow checkout is not reported as a shell that stopped answering while the
- * agent it started comes up anyway.
+ * The shell's part of a launch waits for its launcher and plugin home first,
+ * and then writes into the folder: as long as the integrations gate may take.
  */
 const LAUNCH_TIMEOUT_MS = 120_000
 /** The launcher and plugin home are written at boot; past this, launches stop waiting for them. */
@@ -45,20 +42,45 @@ export function createRemoteShellBridge(rpc: ControlRpc): ShellBridge {
       seal: (plain) => bytes(SHELL_BRIDGE_METHODS.cipherSeal, plain),
       open: (sealed) => bytes(SHELL_BRIDGE_METHODS.cipherOpen, sealed),
     },
-    terminals: {
-      launchAgent: (request) =>
+    launches: {
+      prepareLaunchIntegration: (input) =>
         rpc
-          .call<AgentLaunchResult>(SHELL_BRIDGE_METHODS.launchAgent, request, { timeoutMs: LAUNCH_TIMEOUT_MS })
-          .catch((error: unknown): AgentLaunchResult => ({
-            ok: false,
-            code: 'shell_unavailable',
-            message:
-              error instanceof ControlRpcError && error.code !== 'failed'
-                ? 'Studio’s window process is not answering, so no terminal agent can start right now.'
-                : error instanceof Error
-                  ? error.message
-                  : String(error),
-          })),
+          .call<Awaited<ReturnType<ShellBridge['launches']['prepareLaunchIntegration']>>>(
+            SHELL_BRIDGE_METHODS.launchIntegration,
+            input,
+            { timeoutMs: LAUNCH_TIMEOUT_MS },
+          )
+          .catch((error: unknown) => ({ ok: false as const, message: shellFailure(error) })),
+      syncMcpConfig: (input) =>
+        rpc
+          .call<Awaited<ReturnType<ShellBridge['launches']['syncMcpConfig']>>>(SHELL_BRIDGE_METHODS.launchMcpSync, input, {
+            timeoutMs: LAUNCH_TIMEOUT_MS,
+          })
+          .catch((error: unknown) => ({ ok: false as const, message: shellFailure(error) })),
+      // Best effort, as in process: the launch's prompt still says what to do.
+      ensureBuiltinSkillInstalled: async (workspaceRoot, skillId, cli, launch) => {
+        await rpc
+          .call(
+            SHELL_BRIDGE_METHODS.launchSkill,
+            { workspaceRoot, skillId, ...(cli ? { cli } : {}), ...(launch ? { launch } : {}) },
+            { timeoutMs: LAUNCH_TIMEOUT_MS },
+          )
+          .catch(() => undefined)
+      },
+      excludeWorktreeMcpConfig: async (worktreePath) => {
+        await rpc
+          .call(SHELL_BRIDGE_METHODS.launchExcludeMcpConfig, { worktreePath }, { timeoutMs: LAUNCH_TIMEOUT_MS })
+          .catch(() => undefined)
+      },
+      prepareAgentStateHook: async (workspaceRoot, cli, execution) => {
+        await rpc
+          .call(
+            SHELL_BRIDGE_METHODS.launchAgentStateHook,
+            { workspaceRoot, cli, ...(execution ? { execution } : {}) },
+            { timeoutMs: LAUNCH_TIMEOUT_MS },
+          )
+          .catch(() => undefined)
+      },
     },
     reveal: {
       tab: (target) => rpc.call<boolean>(SHELL_BRIDGE_METHODS.revealTab, target).catch(() => false),
@@ -98,4 +120,11 @@ export function createRemoteShellBridge(rpc: ControlRpc): ShellBridge {
       return integrations
     },
   }
+}
+
+/** Why the shell could not do its part, in words a launch can report. */
+function shellFailure(error: unknown): string {
+  if (error instanceof ControlRpcError && error.code !== 'failed')
+    return 'Studio’s window process is not answering, so the agent’s launch could not be prepared.'
+  return error instanceof Error ? error.message : String(error)
 }

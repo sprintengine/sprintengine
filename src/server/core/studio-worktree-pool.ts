@@ -35,7 +35,7 @@ import type { StudioPlatform } from '../platform/platform'
 // It does nothing on its own: reading its records is all that happens here,
 // and a pool recovers from an interrupted run the first time it is used.
 
-/** What a terminal this core is told about says about where it works. */
+/** What one of this core's terminals says about where it works. */
 export type WorktreeTerminalPaths = {
   /**
    * False once its process has exited, or while it is suspended. A tab still
@@ -56,13 +56,12 @@ export type StudioWorktreePoolDeps = {
   liveConversationPaths: () => Promise<string[]>
   /** The chats' backend, for deleting a settled chat's history. Read lazily, as above. */
   conversations: () => SettledChatDeletionDeps['conversations']
-  /** The terminals this process's shell runs, where it has any. */
+  /**
+   * The terminals this core runs (studio-agent-terminals.ts), read directly.
+   * One still starting is not listed yet: it holds its folder shared
+   * (worktree-leases.ts) until it is, which every step here meets.
+   */
   listTerminalSessions?: () => ReadonlyArray<WorktreeTerminalPaths>
-  /** Whether the list above has been told once (out of process the shell pushes it). Absent: always. */
-  terminalSessionsListed?: () => boolean
-  onTerminalSessionsChanged?: (listener: () => void) => () => void
-  /** How long a step waits for the shell's first terminal list before giving up. */
-  terminalListWaitMs?: number
 }
 
 /**
@@ -72,9 +71,6 @@ export type StudioWorktreePoolDeps = {
  * short is recovered at the next start, as after a crash.
  */
 export const WORKTREE_QUIT_WAIT_MS = 2_000
-
-/** How long the pool waits, after a server starts, for its shell to say which terminals run. */
-const TERMINAL_LIST_WAIT_MS = 10_000
 
 export type StudioWorktreePool = ReturnType<typeof createStudioWorktreePool>
 
@@ -86,38 +82,12 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
   // that cuts agent worktrees for this data directory names the same one.
   setAgentWorktreeLockProfile(dataDir)
 
-  // Out of process the shell pushes its terminals after the server starts;
-  // until it has, a terminal working in a slot would read as nothing at all.
-  // A step that asks waits for that first list (one wait, shared by every
-  // step asking meanwhile), and fails rather than guess.
-  let firstList: Promise<void> | null = null
-  const terminalsListed = (): Promise<void> => {
-    const listed = deps.terminalSessionsListed
-    if (!listed || listed() || !deps.onTerminalSessionsChanged) return Promise.resolve()
-    firstList ??= new Promise<void>((resolve, reject) => {
-      const stop = deps.onTerminalSessionsChanged!(() => {
-        if (!listed()) return
-        clearTimeout(timer)
-        stop()
-        resolve()
-      })
-      const timer = setTimeout(() => {
-        stop()
-        reject(new Error('The desktop has not said yet which terminals are running; try again in a moment.'))
-      }, deps.terminalListWaitMs ?? TERMINAL_LIST_WAIT_MS)
-      timer.unref?.()
-    }).finally(() => {
-      firstList = null
-    })
-    return firstList
-  }
   const liveConversationPaths = (): Promise<string[]> => deps.liveConversationPaths().catch(() => [])
   // Where live work sits, for the pool and the agent worktree cleanup alike:
   // every live terminal, the checkout it observes, and the folder of every
   // chat whose provider session is working now. One list, so neither
   // recycles a folder the other would have kept.
   const liveWorkPaths = async (): Promise<string[]> => {
-    await terminalsListed()
     return [
       ...(deps.listTerminalSessions?.() ?? []).flatMap((session) =>
         (session.processAlive === false && session.suspended !== true

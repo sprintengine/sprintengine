@@ -14,6 +14,8 @@ import { agentWorktreePaths } from '../../shared/worktree-paths'
 import { createGitWorktree } from '../../main/git'
 import { activeWorktreePool, installWorktreePool } from '../../main/worktree-pool/active-pool'
 import { poolIdFor, type PoolRecord } from '../../main/worktree-pool/pool-store'
+import { holdIfIdle, WORKTREE_POOL_OWNER, worktreeLeases } from '../../main/worktree-leases'
+import { headlessTerminalViewer } from '../terminals/terminal-viewer'
 import { bindGatewayConversation } from '../tools/client-tool-gateway'
 import { createNodeStudioPlatform, resetStudioPlatform } from '../platform/platform'
 import { createStudioCore } from './studio-core'
@@ -313,37 +315,99 @@ test('worktree.lease and worktree.release are the core gateway’s, install wher
   }
 })
 
-test('a slot is live while a terminal runs or sits suspended in it, not once its shell exited; out of process the first terminal list is waited for', async () => {
-  const listeners = new Set<() => void>()
-  let listed = false
-  let sessions: Array<{ processAlive: boolean; suspended?: boolean; cwd?: string; kind?: string }> = []
+test('the pool reads the core’s own terminals: one starting in a slot holds it, one starting waits for a return under way, and a live one keeps it', async () => {
+  const slot = join(scratch, 'terminals', 'slot')
+  await mkdir(slot, { recursive: true })
+  // The shell's part of a launch, held open so the launch stays "starting".
+  let releasePrepare: (answer: { ok: false; message: string }) => void = () => undefined
+  let preparing: () => void = () => undefined
+  const prepareStarted = new Promise<void>((resolve) => {
+    preparing = resolve
+  })
   const core = createStudioCore(
-    createNodeStudioPlatform({ dataDir: join(scratch, 'live', 'data'), packaged: false, version: '0.0.0-test' }),
+    createNodeStudioPlatform({ dataDir: join(scratch, 'terminals', 'data'), packaged: false, version: '0.0.0-test' }),
     {
       role: 'server',
-      listTerminalSessions: () => sessions,
-      terminalSessionsListed: () => listed,
-      onTerminalSessionsChanged: (listener) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
+      terminalHost: {
+        launchPreparation: {
+          prepareLaunchIntegration: () => {
+            preparing()
+            return new Promise((resolve) => {
+              releasePrepare = resolve
+            })
+          },
+          syncMcpConfig: async () => ({ ok: true }),
+          ensureBuiltinSkillInstalled: async () => undefined,
+          excludeWorktreeMcpConfig: async () => undefined,
+          prepareAgentStateHook: async () => undefined,
+        },
       },
     },
   )
+  const terminals = core.agentTerminals
+  assert.ok(terminals, 'this process loads the pty module, so the core runs terminals')
+  const returnSlot = () =>
+    holdIfIdle(worktreeLeases, slot, 'the pool is returning it', () => core.worktrees.liveWorkPaths(), {
+      owner: WORKTREE_POOL_OWNER,
+    })
   try {
-    // Two steps asking before the shell has said anything wait for its first list.
-    const first = core.worktrees.liveWorkPaths()
-    const second = core.worktrees.liveWorkPaths()
-    sessions = [
-      { processAlive: true, cwd: '/Users/dev/.sprintengine-worktrees/app/app-01' },
-      { processAlive: false, suspended: true, cwd: '/Users/dev/.sprintengine-worktrees/app/app-02' },
-      { processAlive: false, cwd: '/Users/dev/.sprintengine-worktrees/app/app-03' },
-    ]
-    listed = true
-    for (const listener of [...listeners]) listener()
-    const expected = ['/Users/dev/.sprintengine-worktrees/app/app-01', '/Users/dev/.sprintengine-worktrees/app/app-02']
-    assert.deepEqual(await first, expected)
-    assert.deepEqual(await second, expected)
-    assert.deepEqual(await core.worktrees.liveWorkPaths(), expected, 'and later steps do not wait')
+    // 1. An agent starting in the slot, still in its launch's preparation: not
+    //    on any list yet, but the pool meets its hold and does not return it.
+    const starting = terminals.runtime.sessions.spawnTerminal(headlessTerminalViewer(), {
+      sessionId: 'starting-agent',
+      cols: 80,
+      rows: 24,
+      cwd: slot,
+      cli: 'claude-code',
+      kind: 'agent',
+      workspaceId: 'ws-terminals',
+      agentId: 'agent-1',
+      // Any program that exists: the launch never gets as far as running it.
+      cliRuntimes: { 'claude-code': { command: process.execPath } },
+    })
+    await prepareStarted
+    assert.equal(terminals.list().length, 0, 'not attached yet')
+    const blocked = await returnSlot()
+    assert.ok('blockedBy' in blocked, JSON.stringify(blocked))
+    assert.match(JSON.stringify(blocked.blockedBy), /a terminal is starting in it/)
+    releasePrepare({ ok: false, message: 'The test stops this launch here.' })
+    const stopped = await starting
+    assert.equal(stopped.ok, false)
+    const free = await returnSlot()
+    assert.ok('release' in free, 'the slot is free once the launch let go')
+    free.release()
+
+    // 2. A return under way: a terminal starting in the slot waits for it, and
+    //    starts once it is done.
+    const returning = await returnSlot()
+    assert.ok('release' in returning)
+    let started = false
+    const opening = terminals.runtime.sessions
+      .spawnTerminal(headlessTerminalViewer(), {
+        sessionId: 'plain-shell',
+        cols: 80,
+        rows: 24,
+        cwd: slot,
+        shellOnly: true,
+        workspaceId: 'ws-terminals',
+      })
+      .then((result) => {
+        started = true
+        return result
+      })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(started, false, 'the start waits for the return')
+    assert.ok((await worktreeLeases.holders(slot)).some((holder) => holder.kind === 'shared'))
+    returning.release()
+    const opened = await opening
+    assert.equal(opened.ok, true, JSON.stringify(opened))
+
+    // 3. Live: the pool reads it straight from the runtime, and keeps the slot.
+    assert.ok((await core.worktrees.liveWorkPaths()).includes(slot))
+    assert.deepEqual(await returnSlot(), { live: true })
+    // Ended, it keeps nothing.
+    terminals.runtime.sessions.killTerminal('plain-shell')
+    assert.deepEqual(await core.worktrees.liveWorkPaths(), [])
   } finally {
     await core.shutdown()
   }
