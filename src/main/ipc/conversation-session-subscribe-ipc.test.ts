@@ -213,7 +213,7 @@ test('the window reads an event that crossed cut to fit whole, by its sequence a
         asked.push(input)
         return { ok: true as const, event: whole }
       },
-    } as ConversationIpcHandlers,
+    } as ConversationService,
   )
   const read = handlers.get('conversation:event:read')!
   const key = { workspaceRoot: '/Users/dev/app', workspaceId: 'w', agentId: 'a' }
