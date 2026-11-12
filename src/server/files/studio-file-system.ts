@@ -17,14 +17,7 @@ import { writeAttachmentImageFile } from '../../main/attachment-image-file'
 import { resolveEditorSaveTarget } from '../../main/editor-save-target'
 import { getUniqueCopyPath } from '../../main/filesystem-copy'
 import { createFilesystemReadHandlers } from '../../main/filesystem-read'
-import {
-  cancelActiveContentSearch,
-  cancelActiveFileSearch,
-  cancelAllFileSearches,
-  searchContent,
-  searchFiles,
-  type FileSearchRequest,
-} from '../../main/filesystem-search'
+import type { FileSearchRequest } from '../../main/filesystem-search'
 import { isMissingPathError, pathExists } from '../../main/filesystem-workspace'
 import { gitRepoRootFor } from '../../main/git-repo-root'
 import type { ProjectLogoIo } from '../../main/project-logo'
@@ -149,6 +142,11 @@ function defaultParent(): string | null {
   return existsSync(documents) ? documents : home
 }
 
+// The searches load on first use: they bring packages (an ignore-file parser)
+// that a server bundle loads from beside it, and a server checks what it
+// needs before it loads anything else.
+const searches = () => import('../../main/filesystem-search')
+
 export function createStudioFileSystem(options: StudioFileSystemOptions): StudioFileSystem {
   const reads = createFilesystemReadHandlers({ projectLogoIo: options.projectLogoIo ?? plainProjectLogoIo() })
   const hub = options.watchHub ?? getWatchHub()
@@ -165,14 +163,15 @@ export function createStudioFileSystem(options: StudioFileSystemOptions): Studio
     projectLogo: (folderPath) => reads.detectProjectLogo(folderPath),
     projectIcon: (path) => reads.readProjectIconFile(path),
     repoRoot: (folderPath, hostId) => gitRepoRootFor(folderPath, hostId),
-    searchFiles: (slot, input) => searchFiles(slot, input),
-    cancelFileSearch: (slot, channel) => cancelActiveFileSearch(slot, channel),
-    searchContent: (slot, input) => searchContent(slot, input),
-    cancelContentSearch: (slot) => cancelActiveContentSearch(slot),
-    releaseSlot: (slot) => {
-      cancelAllFileSearches(slot)
-      cancelActiveContentSearch(slot)
-    },
+    searchFiles: async (slot, input) => (await searches()).searchFiles(slot, input),
+    cancelFileSearch: (slot, channel) => void searches().then((search) => search.cancelActiveFileSearch(slot, channel)),
+    searchContent: async (slot, input) => (await searches()).searchContent(slot, input),
+    cancelContentSearch: (slot) => void searches().then((search) => search.cancelActiveContentSearch(slot)),
+    releaseSlot: (slot) =>
+      void searches().then((search) => {
+        search.cancelAllFileSearches(slot)
+        search.cancelActiveContentSearch(slot)
+      }),
     defaultWorkspaceParent: () => (options.defaultWorkspaceParent ?? defaultParent)(),
 
     async writeText(path, text, roots) {
