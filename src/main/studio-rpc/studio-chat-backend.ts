@@ -101,6 +101,11 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
     if (!checked.ok) throw new Error(checked.message)
     return checked.path
   }
+  // Studio's own window reads a path anywhere on this disk, as it did over
+  // IPC (a picture an agent wrote to a temp folder); every other client only
+  // inside those folders.
+  const readable = async (path: string, reading?: { anyPath?: boolean }): Promise<string> =>
+    reading?.anyPath ? expandHomePath(path) : confined(expandHomePath(path))
   const onCommandsChanged = deps.onCommandsChanged ?? onConversationCommandsChanged
   // A connection's history searches, by its slot and request id.
   const historySearches = new Map<string, AbortController>()
@@ -254,8 +259,8 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
     cancelFileSearch: (slot, channel) => deps.files.cancelActiveFileSearch(slot, channel),
     releaseFileSearches: (slot) => deps.files.cancelAllFileSearches(slot),
     // Expanded before the roots are checked, so a `~/` path is held to them as the file it names.
-    stat: async (path) => deps.files.statPath(await confined(expandHomePath(path))),
-    readImage: async (path) => deps.files.readImageDataUrl(await confined(expandHomePath(path))),
+    stat: async (path, reading) => deps.files.statPath(await readable(path, reading)),
+    readImage: async (path, reading) => deps.files.readImageDataUrl(await readable(path, reading)),
     repoRoot: (folderPath, hostId) => deps.repoRoot(folderPath, hostId),
     isKnownFolder: async (path) => (await confineToRoots(path, await deps.readableRoots())).ok,
     workspaces: () => deps.workspaces(),
