@@ -13,8 +13,6 @@ import { scheduledAgentsApi } from './api/scheduled-agents'
 import { backlogApi } from './api/backlog'
 import { buildStampApi } from './api/build-stamp'
 import { builtinSkillsApi } from './api/builtinSkills'
-import { cliRuntimeApi } from './api/cli-runtime'
-import { cliModelDiscoveryApi } from './api/cli-model-discovery'
 import { textGenerationApi } from './api/text-generation'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
@@ -34,13 +32,11 @@ import { artifactsApi } from './api/artifacts'
 import { marketplaceApi } from './api/marketplace'
 import { hostedSourcesFeedApi } from './api/hosted-sources-feed'
 import { hostedCardFeedApi } from './api/hosted-card-feed'
-import { cliVersionApi } from './api/cli-version'
 import { memoryActivityApi } from './api/memoryActivity'
 import { mcpApi } from './api/mcp'
 import { modulesApi } from './api/modules'
 import { pluginsApi } from './api/plugins'
 import { skillsApi } from './api/skills'
-import { launchSettingsApi } from './api/launch-settings'
 import { hostsApi } from './api/hosts'
 import { sshEnvironmentsApi } from './api/ssh-environments'
 import { environmentsApi } from './api/environments'
@@ -100,14 +96,10 @@ export const apiModules = {
   ...builtinSkillsApi,
   ...clipboardApi,
   ...chatExportApi,
-  ...cliRuntimeApi,
-  ...cliModelDiscoveryApi,
   ...textGenerationApi,
   ...hostedSourcesFeedApi,
   ...hostedCardFeedApi,
-  ...cliVersionApi,
   ...filesystemApi,
-  ...launchSettingsApi,
   ...hostsApi,
   ...sshEnvironmentsApi,
   ...environmentsApi,

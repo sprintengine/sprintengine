@@ -28,7 +28,6 @@ test('a web tab reaches the domains it draws, and not the ones that act beyond t
   for (const channel of [
     'workspace-sync:dispatch',
     'workspace-sync:lifecycle',
-    'launch-settings:update',
     'conversation:sessions:send-turn',
     'credential:secrets:status',
   ])

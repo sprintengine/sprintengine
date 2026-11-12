@@ -8,7 +8,7 @@ import { createChatLinkRouter } from './chat-link-router'
 import { registerChatLinkIpc, routeSecondLaunch } from './chat-link-ipc'
 import { registerLinuxUrlHandler, systemLinuxUrlHandlerDeps } from './linux-url-handler'
 import { BOOT_WORKSPACE_SYNC_BUDGET_MS, runBootDiscovery, settleWithin } from './boot-discovery'
-import { discoverAndBroadcastCliModels } from './ipc/cli-model-discovery-ipc'
+import { discoverAndBroadcastCliModels } from './model-discovery/discovery-pass'
 import { closeSplashWindow, createSplashWindow, sendSplashProgress } from './splash-window'
 import {
   createMainWindow,

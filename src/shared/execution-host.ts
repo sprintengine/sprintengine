@@ -20,7 +20,15 @@ import type { TerminalPathStyle } from './ipc/terminal'
 
 export const LOCAL_HOST_ID = 'local'
 
-import type { ExecutionHostId } from '../../packages/studio-protocol/src/public'
+import type { ExecutionHostId, ExecutionHostSettings } from '../../packages/studio-protocol/src/public'
+
+/**
+ * The per-machine settings, as the Studio protocol carries them. The local
+ * machine's CLI commands stay on the CLI runtime itself
+ * (`cliRuntimes[cli].command`); every other machine keeps its own here,
+ * because a binary on PATH in one distribution says nothing about another.
+ */
+export type { ExecutionHostSettings }
 
 export type { ExecutionHostId }
 
@@ -57,32 +65,6 @@ export type WslChatServerSummary = {
   transport?: 'loopback' | 'stdio'
   /** Why it is unavailable or shut down, or why the bridge, in words. */
   reason?: string
-}
-
-/**
- * The per-machine settings. The local machine's CLI commands stay on the CLI
- * runtime itself (`cliRuntimes[cli].command`, which the Agents tab edits);
- * every other machine keeps its own here, because a binary on PATH in one
- * distribution says nothing about another.
- */
-export type ExecutionHostSettings = {
-  /** WSL: offered as a machine for new chats. A workspace already in it runs either way. */
-  enabled: boolean
-  /** Per-CLI command override on this machine. Blank or absent uses the CLI's own binary name. */
-  cliCommands: Record<string, string>
-  /** Extra environment exported into every launch on this machine. */
-  env: Record<string, string>
-  /** The plain-terminal shell. Absent uses the machine's default (`bash -li` in WSL). */
-  shell?: string
-  /**
-   * WSL: where this distribution's chats run. `on`: a Studio server inside
-   * the distribution (phase 7); `off`: one process per chat, started from
-   * Windows, as before. Absent is the release default
-   * (`DEFAULT_WSL_CHAT_SERVER`), in process and out of process alike.
-   */
-  chatServer?: 'on' | 'off'
-  /** WSL: how Windows reaches that server. `auto` tries loopback first; `stdio` always uses the bridge. */
-  serverTransport?: 'auto' | 'stdio'
 }
 
 /** Where a WSL distribution's chats run when the person has not chosen: off until the flip criteria are met. */

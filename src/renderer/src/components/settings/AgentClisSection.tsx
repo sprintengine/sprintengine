@@ -39,6 +39,7 @@ import type { CliModelRefreshOutcome } from './modelDiscoveryLine'
 import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import type { SettingsUpdateBadge } from '../../utils/settingsUpdateBadges'
 import { isImeKey } from '../../utils/imeKey'
+import { agentSettingsApi } from '../../studio/agentSettings'
 
 // The bare shell runtime is the machine's own `sh`, not a CLI this app
 // installs or updates. Asked `--version`, bash answers with its whole banner
@@ -161,8 +162,7 @@ export function useAgentCliRuns(): AgentCliRuns {
   const [modelRefresh, setModelRefresh] = useState<ModelRefreshState>({ running: {}, outcomes: {} })
   const refreshCliModels = useCallback(
     async (cli: string) => {
-      const api = typeof window === 'undefined' ? null : window.api
-      if (typeof api?.cliModelsDiscover !== 'function') return
+      const api = agentSettingsApi
       setModelRefresh((current) => ({ ...current, running: { ...current.running, [cli]: true } }))
       let outcome: CliModelRefreshOutcome | null = null
       try {
@@ -205,25 +205,21 @@ export function useAgentCliRuns(): AgentCliRuns {
   const [cliUpdateRuns, setCliUpdateRuns] = useState<Record<string, CliUpdateRun>>({})
   const runCliUpdate = useCallback(
     async ({ cli, hostId, before, onSettled }: CliUpdateRequest) => {
-      const api = window.api
-      if (typeof api.cliUpdate !== 'function') return
+      const api = agentSettingsApi
       const runtime = cliRuntimeOnMachine(cli, hostId, { cliRuntimes, hosts })
       const key = cliUpdateRunKey(hostId, cli)
       setCliUpdateRuns((prev) => ({ ...prev, [key]: { running: true, notice: null, log: '' } }))
-      // Updates stream on the channel installs use, one per CLI per machine,
+      // Updates stream on the output installs use, one per CLI per machine,
       // so the same CLI updating on two machines at once keeps two logs.
-      const unsubscribe =
-        typeof api.onCliInstallOutput === 'function'
-          ? api.onCliInstallOutput(
-              cli,
-              (chunk) =>
-                setCliUpdateRuns((prev) => {
-                  const run = prev[key]
-                  return run?.running ? { ...prev, [key]: { ...run, log: run.log + chunk } } : prev
-                }),
-              hostId,
-            )
-          : () => undefined
+      const unsubscribe = api.onCliInstallOutput(
+        cli,
+        (chunk) =>
+          setCliUpdateRuns((prev) => {
+            const run = prev[key]
+            return run?.running ? { ...prev, [key]: { ...run, log: run.log + chunk } } : prev
+          }),
+        hostId,
+      )
       let notice: { tone: 'warn' | 'error'; text: string } | null = null
       try {
         const result = await api.cliUpdate(cli, runtime)

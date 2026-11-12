@@ -22,6 +22,8 @@ import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioModules } from './studio-modules'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -357,6 +359,8 @@ export async function startTestServer(
     pullRequests?: StudioPullRequests
     localServers?: StudioLocalServers
     terminals?: StudioTerminals
+    runtimes?: CliRuntimes
+    agentSettings?: StudioAgentSettings
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
     modules?: StudioModules
@@ -391,6 +395,8 @@ export async function startTestServer(
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
     ...(input.terminals ? { terminals: input.terminals } : {}),
+    ...(input.runtimes ? { runtimes: input.runtimes } : {}),
+    ...(input.agentSettings ? { agentSettings: input.agentSettings } : {}),
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),

@@ -1,10 +1,10 @@
 /**
- * The renderer half of the model-written titles mirror. Main titles a chat
+ * The renderer half of the model-written titles mirror. The Studio titles a chat
  * with no window to ask, so the push has to reach it while a window is up: on
  * mount, and on every change to the switch or the engine.
  */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import type { TextGenerationSettings } from '../../../shared/text-generation/contract'
 import { useWorkspaceStore } from '../store/workspaceStore'
@@ -12,14 +12,13 @@ import { initTextGenerationSettingsSync } from './textGenerationSettingsSync'
 
 const MATCH_REPOSITORY = { mode: 'repository', instructions: '' }
 const pushes: TextGenerationSettings[] = []
-;(globalThis as { window?: unknown }).window = {
-  api: {
-    setTextGenerationSettings: (settings: TextGenerationSettings): Promise<void> => {
-      pushes.push(settings)
-      return Promise.resolve()
-    },
-  },
+vi.mock('../studio/agentSettings', () => import('../studio/agentSettings.double'))
+const { agentSettingsDouble } = await import('../studio/agentSettings.double')
+agentSettingsDouble.setTextGenerationSettings = (settings: TextGenerationSettings): Promise<void> => {
+  pushes.push(settings)
+  return Promise.resolve()
 }
+;(globalThis as { window?: unknown }).window = { api: {} }
 
 test('the mount push goes even at the default, and every change after it reaches main', () => {
   const dispose = initTextGenerationSettingsSync()

@@ -1102,7 +1102,24 @@ own window is never sent a session's `lastPrompt` or its launch record's MCP
 settings, and one holding only `terminal:read` not its folders either. The
 desktop's own window reaches its terminals only this way: the window IPC for
 them is gone. A hello's `client.kind` and `client.instanceId` are
-optional hints a Studio that does not know them ignores. Every method names its scope in `STUDIO_METHODS`,
+optional hints a Studio that does not know them ignores.
+`agent-runtimes` and `agent-settings` (2026-11-12) add the agent CLIs and the
+launch settings. `agent-runtimes` is `cliRuntimes.detect`, `.installMethods`,
+`.install`, `.update` and `.updateAll` with the streams `cliRuntimes.output`
+(one CLI on one machine) and `cliRuntimes.updateAllProgress`, and
+`cliVersions.advisories` and `.setEnabled` with `cliVersions.changed`; a
+Studio advertises it only where it holds the CLIs' detection (a desktop in
+process; not yet a server in a process of its own). `agent-settings` is
+`cliModels.discover` with `cliModels.changed`, `launchSettings.get`,
+`.update` and `.migrate` with `launchSettings.changed`, which are an owner's,
+`textGeneration.setSettings` and `.chatTitle`, and `commitMessage.draft` and
+`.cancel`. Installing or updating a CLI is `environment:maintain`; reading what
+can run is `providers:read`; a title or a commit message is
+`conversation:operate`. A client that is not an owner never names a CLI's
+`command` (in `cliRuntimes` or `runtime`), and names a commit message's
+checkout only inside the folders the Studio knows. The desktop's own windows,
+Settings included, reach all of them only this way: their window IPC is gone.
+Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 
 #### Reaching a Studio outside the window

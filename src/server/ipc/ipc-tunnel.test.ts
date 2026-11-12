@@ -63,11 +63,11 @@ const client = (clientId: string, overrides: Partial<TunnelClient> = {}): Tunnel
 
 test('an invoke is answered with what the handler returns, sync or async', async () => {
   const tunnel = createIpcTunnel()
-  tunnel.registry.handle('launch-settings:get', () => ({ lastSelectedCli: 'claude' }))
+  tunnel.registry.handle('workspace-sync:get-snapshot', () => ({ lastSelectedCli: 'claude' }))
   tunnel.registry.handle('hosts:list', async (_event, filter: string) => [`${filter}-local`])
   const window = portPair()
   tunnel.attach(client('w1'), window.server)
-  window.send({ t: 'ipc.invoke', id: 1, channel: 'launch-settings:get', args: [] })
+  window.send({ t: 'ipc.invoke', id: 1, channel: 'workspace-sync:get-snapshot', args: [] })
   window.send({ t: 'ipc.invoke', id: 2, channel: 'hosts:list', args: ['all'] })
   assert.deepEqual(await window.result(1), { t: 'ipc.result', id: 1, ok: true, value: { lastSelectedCli: 'claude' } })
   assert.deepEqual((await window.result(2)).value, ['all-local'])

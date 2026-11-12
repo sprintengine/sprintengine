@@ -101,7 +101,8 @@ import {
 } from './workspace-skills-service'
 import type { HostAgentIntegration } from './hosts/execution-host'
 import { hostRegistry } from './hosts/host-registry'
-import { setCliModelDiscoveryRuntimesResolver } from './ipc/cli-model-discovery-ipc'
+import { setCliModelDiscoveryRuntimesResolver } from './model-discovery/discovery-pass'
+import { createCliRuntimes } from './cli-runtimes'
 import {
   configureCliVersionService,
   launchSettingsCliMachines,
@@ -2126,6 +2127,10 @@ export function createAppServices(
         updates: desktopUpdates,
         modules: moduleHub,
         ...(studioTerminals ? { terminals: studioTerminals } : {}),
+        // The CLIs on this machine, served where their detection and version
+        // check run: in this process. Out of process the server holds neither,
+        // so it does not advertise `agent-runtimes`.
+        ...(server ? {} : { runtimes: createCliRuntimes() }),
       })
     : null
   // Where the person's attention is, for routing a call to the window in

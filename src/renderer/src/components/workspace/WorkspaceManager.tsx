@@ -318,6 +318,7 @@ import {
   type AgentSpawnPlacement,
 } from './manager/layoutTabActions'
 import { windowChatServices } from '../panels/agentChat/windowChat'
+import { agentSettingsApi, windowHasStudio } from '../../studio/agentSettings'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -1799,9 +1800,7 @@ export default function WorkspaceManager() {
   // up, and every later push lands in the store.
   const checkCliVersions = useWorkspaceStore((s) => s.checkCliVersions)
   useEffect(() => {
-    const api = typeof window === 'undefined' ? null : window.api
-    if (api && typeof api.cliVersionChecksSetEnabled === 'function')
-      void api.cliVersionChecksSetEnabled(checkCliVersions)
+    if (windowHasStudio()) void agentSettingsApi.cliVersionChecksSetEnabled(checkCliVersions).catch(() => undefined)
     // The read compares what startup detection found; it probes nothing.
     if (checkCliVersions) void useWorkspaceStore.getState().refreshCliVersionAdvisories()
   }, [checkCliVersions])

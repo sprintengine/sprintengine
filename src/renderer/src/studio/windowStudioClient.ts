@@ -33,6 +33,11 @@ export type WindowStudioSetup = {
 
 const setups = new WeakMap<object, WindowStudioSetup>()
 
+/** Whether this page's Studio is on another machine: a web tab's, rather than a desktop window's own. */
+export function windowStudioIsAnotherMachine(api: object = window.api): boolean {
+  return setups.get(api)?.anotherMachine === true
+}
+
 /** Say how this page's connections are made, over what was said before; read when a client is made. */
 export function configureWindowStudio(api: object, setup: WindowStudioSetup): void {
   setups.set(api, { ...setups.get(api), ...setup })

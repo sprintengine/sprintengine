@@ -35,6 +35,9 @@ import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import { createStudioAgentSettingsHandlers } from './studio-agent-settings'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -131,6 +134,10 @@ export type StudioRpcRouterOptions = {
   localServers?: StudioLocalServers
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
   terminals?: StudioTerminals
+  /** The CLIs on this machine; without them, `cliRuntimes.*` and `cliVersions.*` are answered `unavailable`. */
+  runtimes?: CliRuntimes
+  /** The launch settings and the CLIs' texts; without them, `launchSettings.*`, `cliModels.*`, `textGeneration.*` and `commitMessage.*` are. */
+  agentSettings?: StudioAgentSettings
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -1420,6 +1427,18 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         return {}
       }),
 
+    // ── Agent CLIs and launch settings ─────────────────────────────────────
+
+    ...createStudioAgentSettingsHandlers({
+      ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+      ...(options.agentSettings ? { settings: options.agentSettings } : {}),
+      mayName: async (path, asking) => {
+        if (namesAnyPath(asking)) return true
+        const chat = options.chat?.()
+        return chat ? folderAllowed(chat, asking, path) : false
+      },
+    }),
+
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an
     // incompatible client's), so their shapes never change.
@@ -1540,8 +1559,13 @@ async function pathAllowed(chat: StudioChatBackend, asking: PathAsker, path: str
   return namesAnyPath(asking) || !path.split(/[\\/]/u).includes('..')
 }
 
-/** Whether parsed params name a CLI's own program (`cliRuntimes[cli].command`), which only an owner may. */
+/**
+ * Whether parsed params name a CLI's own program (`cliRuntimes[cli].command`,
+ * or a detection's or an install's `runtime.command`), which only an owner may.
+ */
 function namesCliCommand(params: unknown): boolean {
+  const runtime = (params as { runtime?: unknown } | null)?.runtime
+  if (runtime !== null && typeof runtime === 'object' && 'command' in runtime) return true
   const runtimes = (params as { cliRuntimes?: unknown } | null)?.cliRuntimes
   if (runtimes === null || typeof runtimes !== 'object') return false
   return Object.values(runtimes as Record<string, unknown>).some(

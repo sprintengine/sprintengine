@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { beforeEach, test, vi } from 'vitest'
 
-import type { CliInstallResult } from '../../shared/electron-api'
-import type { CliUpdateAllItem, CliUpdateAllResult } from '../../shared/ipc/cli-update-all'
-import type { CliUpdateTarget } from '../cli-version-advisory-service'
+import type { CliInstallResult } from '../shared/electron-api'
+import type { CliUpdateAllItem } from '../shared/ipc/cli-update-all'
+import type { CliUpdateTarget } from './cli-version-advisory-service'
 
 // Update everything: every outdated CLI on every machine, each through the
 // lock and updater a row's Update takes; one machine's CLIs one after another,
-// machines beside each other; every window that asked told as each item moves.
+// machines beside each other; everyone following told as each item moves.
 
 const calls = vi.hoisted(() => ({
   updates: [] as Array<{ cli: string; hostId: string; at: number }>,
@@ -16,7 +16,7 @@ const calls = vi.hoisted(() => ({
   gates: new Map<string, Promise<void>>(),
 }))
 
-vi.mock('../cli-runtime-install', () => ({
+vi.mock('./cli-runtime-install', () => ({
   cliInstallMethods: async () => [],
   detectCli: async () => ({}),
   installCli: async () => ({}),
@@ -38,37 +38,29 @@ vi.mock('../cli-runtime-install', () => ({
     }
   },
 }))
-vi.mock('../cli-version-advisory-service', () => ({
+vi.mock('./cli-version-advisory-service', () => ({
   noteCliDetected: async () => undefined,
   outdatedCliTargets: async () => ({ ok: true, targets: [] }),
+  onCliVersionAdvisoriesChanged: () => () => undefined,
+  readCliVersionAdvisories: async () => ({ ok: false, message: 'not in this test' }),
+  setCliVersionChecksEnabled: (enabled: boolean) => enabled,
 }))
-vi.mock('../cli-availability', () => ({ recordCliDetection: () => undefined }))
-vi.mock('./cli-model-discovery-ipc', () => ({ discoverAndBroadcastCliModels: async () => undefined }))
+vi.mock('./cli-availability', () => ({ recordCliDetection: () => undefined }))
+vi.mock('./model-discovery/discovery-pass', () => ({ discoverAndBroadcastCliModels: async () => undefined }))
 
-const { registerCliRuntimeIpc } = await import('./cli-runtime-ipc')
-const { CLI_UPDATE_ALL_CHANNEL, CLI_UPDATE_ALL_PROGRESS_CHANNEL } = await import('../../shared/ipc/cli-update-all')
+const { createCliRuntimes } = await import('./cli-runtimes')
 
-type Handler = (event: unknown, input?: unknown) => Promise<unknown>
 let targets: CliUpdateTarget[] = []
-const handlers = new Map<string, Handler>()
-registerCliRuntimeIpc({ handle: (channel: string, handler: Handler) => handlers.set(channel, handler) } as never, {
+const runtimes = createCliRuntimes({
   discoverModels: async () => undefined,
   outdatedTargets: async () => ({ ok: true, targets }),
 })
 
-function window() {
+/** What a follower of the progress hears. */
+function follower() {
   const progress: CliUpdateAllItem[][] = []
-  return {
-    progress,
-    event: {
-      sender: {
-        isDestroyed: () => false,
-        send: (channel: string, payload: unknown) => {
-          if (channel === CLI_UPDATE_ALL_PROGRESS_CHANNEL) progress.push(payload as CliUpdateAllItem[])
-        },
-      },
-    },
-  }
+  const stop = runtimes.onUpdateAllProgress((items) => void progress.push(items))
+  return { progress, stop }
 }
 
 const target = (hostId: string, cli: string, from = '1.0.0'): CliUpdateTarget =>
@@ -92,8 +84,8 @@ test('each outdated CLI is updated, a machine at a time per machine, and says ho
   calls.results.set('local/claude-code', { ok: false, error: 'npm ERR! EACCES' })
   let releaseLocal!: () => void
   calls.gates.set('local/codex', new Promise((resolve) => (releaseLocal = resolve)))
-  const { event, progress } = window()
-  const running = handlers.get(CLI_UPDATE_ALL_CHANNEL)!(event) as Promise<CliUpdateAllResult>
+  const { progress, stop } = follower()
+  const running = runtimes.updateAll()
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(
     calls.updates.map((update) => `${update.hostId}/${update.cli}`),
@@ -119,11 +111,12 @@ test('each outdated CLI is updated, a machine at a time per machine, and says ho
     'the window sees the list before anything runs',
   )
   assert.ok(progress.some((items) => items[0]!.state === 'updating'))
+  stop()
 })
 
 test('a version that did not move is said as such, not as updated', async () => {
   targets = [target('local', 'codex', '2.0.0')]
-  const result = (await handlers.get(CLI_UPDATE_ALL_CHANNEL)!(window().event)) as CliUpdateAllResult
+  const result = await runtimes.updateAll()
   assert.ok(result.ok)
   assert.equal(result.items[0]!.state, 'unchanged')
 })
@@ -132,22 +125,22 @@ test('a second press while one runs joins it, and a row already updating a CLI i
   targets = [target('local', 'codex')]
   let release!: () => void
   calls.gates.set('local/codex', new Promise((resolve) => (release = resolve)))
-  const row = handlers.get('cli-runtime:update')!(window().event, { cli: 'codex' })
-  const first = window()
-  const second = window()
-  const a = handlers.get(CLI_UPDATE_ALL_CHANNEL)!(first.event)
-  const b = handlers.get(CLI_UPDATE_ALL_CHANNEL)!(second.event)
+  const row = runtimes.update('codex')
+  const heard = follower()
+  const a = runtimes.updateAll()
+  const b = runtimes.updateAll()
   await new Promise((resolve) => setTimeout(resolve, 0))
   release()
   const [ra, rb] = await Promise.all([a, b, row])
-  assert.equal(ra, rb, 'the same answer for both windows')
+  assert.equal(ra, rb, 'the same answer for both presses')
   assert.equal(calls.updates.length, 1, 'codex was updated once')
-  assert.ok(second.progress.length > 0, 'the window that joined is told too')
+  assert.ok(heard.progress.length > 0, 'a follower is told')
+  heard.stop()
 })
 
 test('nothing outdated answers with no items', async () => {
   targets = []
-  const result = (await handlers.get(CLI_UPDATE_ALL_CHANNEL)!(window().event)) as CliUpdateAllResult
+  const result = await runtimes.updateAll()
   assert.deepEqual(result, { ok: true, items: [] })
   assert.equal(calls.updates.length, 0)
 })

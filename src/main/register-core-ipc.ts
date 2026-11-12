@@ -17,10 +17,7 @@ import { registerAppMenuIpc } from './app-menu'
 import { registerBuiltinSkillsIpc } from './ipc/builtin-skills-ipc'
 import { registerStudioPluginIpc } from './ipc/studio-plugin-ipc'
 import { registerStudioAreaSkillsIpc } from './ipc/studio-area-skills-ipc'
-import { registerCliRuntimeIpc } from './ipc/cli-runtime-ipc'
-import { registerTextGenerationIpc } from './ipc/text-generation-ipc'
 import { registerPullRequestCreateIpc } from './ipc/pull-request-create-ipc'
-import { registerCommitMessageIpc } from './ipc/commit-message-ipc'
 import { registerClipboardIpc } from './ipc/clipboard-ipc'
 import { registerChatExportIpc } from './ipc/chat-export-ipc'
 import { getPluginRegistry } from './plugin-registry-instance'
@@ -47,7 +44,6 @@ import { registerMarketplaceRegistryIpc } from './ipc/marketplace-registry-ipc'
 import { registerHostedSourcesFeedIpc } from './ipc/hosted-feed-ipc'
 import { registerHostedCardFeedIpc } from './ipc/card-feed-ipc'
 import { registerCardsIpc } from './ipc/cards-ipc'
-import { registerCliVersionIpc } from './ipc/cli-version-ipc'
 import { registerModuleEnablementIpc, type ModuleEnablementLiveApplier } from './ipc/module-enablement-ipc'
 import { registerModuleAppStateIpc } from './ipc/module-app-state-ipc'
 import { registerModuleRegistryIpc } from './ipc/module-registry-ipc'
@@ -83,7 +79,6 @@ import {
   openPanePopOutWindow,
 } from './window-factory'
 import type { AppServices } from './app-services'
-import type { CliModelDiscoveryInput } from '../shared/ipc/cli-model-discovery'
 import { registerServerDomainIpc } from '../server/desktop/server-ipc'
 import { createFilesystemMutationHandlers } from './filesystem-mutation-handlers'
 import { createFilesystemReadHandlers } from './filesystem-read'
@@ -102,8 +97,6 @@ export type CoreIpcOptions = {
    */
   server?: {
     windowTickets: StudioWindowTicketIssuer
-    /** A model discovery pass, run by the server, which keeps the catalog cache. */
-    discoverModels(input: CliModelDiscoveryInput): Promise<unknown>
     /** A chat's transcript and pictures for Export chat, read by the server, which holds the chats. */
     readChatExportSource(key: ConversationTranscriptInput): Promise<unknown>
   }
@@ -205,15 +198,8 @@ export function registerCoreIpc(
       })
     },
   })
-  registerCliRuntimeIpc(
-    ipcMain,
-    options.server ? { discoverModels: (input) => options.server!.discoverModels(input) } : {},
-  )
-  registerTextGenerationIpc(ipcMain)
   // The chat's "Create PR": git, gh and the drafting CLI all run on this computer.
   registerPullRequestCreateIpc(ipcMain)
-  // The Git panel's "Write commit message": the same drafting CLI, on the staged changes.
-  registerCommitMessageIpc(ipcMain)
   registerAuthIpc(ipcMain, services.sprintengineAuth)
   registerBuiltinSkillsIpc(ipcMain, services.builtinSkillManager)
   registerStudioPluginIpc(ipcMain, services.studioPluginService)
@@ -324,7 +310,6 @@ export function registerCoreIpc(
     mcpConfigService: services.mcpConfigService,
     githubTokenStore: services.githubTokenStore,
   })
-  registerCliVersionIpc(ipcMain)
   registerMarketplacePluginIpc(ipcMain, services)
   registerPluginIpc(ipcMain)
   // The domains the Studio server owns: registered here while it runs in

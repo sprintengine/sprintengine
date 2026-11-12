@@ -4,12 +4,9 @@ import { test } from 'vitest'
 import { IPC_INVENTORY, ipcInventoryRow, mayRegisterIpcChannel } from './ipc-inventory'
 
 test('a channel made per id falls under its `:*` row; an unlisted one under none', () => {
-  assert.deepEqual(
-    ipcInventoryRow('cli-runtime:install-output:codex@wsl:Ubuntu'),
-    IPC_INVENTORY['cli-runtime:install-output:*'],
-  )
+  assert.deepEqual(ipcInventoryRow('fs:watch-event:watch-1@wsl:Ubuntu'), IPC_INVENTORY['fs:watch-event:*'])
   assert.deepEqual(ipcInventoryRow('window:close'), IPC_INVENTORY['window:close'])
-  assert.equal(ipcInventoryRow('cli-runtime:install-output'), undefined)
+  assert.equal(ipcInventoryRow('fs:watch-event'), undefined)
   assert.equal(ipcInventoryRow('nobody:listed'), undefined)
 })
 

@@ -39,9 +39,6 @@ import type { PluginManifest } from '../shared/plugin-manifest'
 import { detectAgentCliAvailability, knownCliAvailability, recordCliDetection } from './cli-availability'
 import { fetchNpmLatestVersion, outdatedClis, resolveCliVersionAdvisories } from './cli-version-advisory'
 import { getPluginManifest, listPluginRegistryEntries } from './plugin-registry-instance'
-import { broadcastToAllWindows } from './window-broadcast'
-
-const CLI_VERSION_ADVISORIES_CHANGED_CHANNEL = 'cli-version:advisories-changed'
 
 /** One machine whose CLIs are checked, with each CLI's command on it. */
 export type CliMachine = {
@@ -92,8 +89,19 @@ export type CliVersionServiceDeps = {
 // with a toast, on disk so a restart does not repeat them.
 const CLI_UPDATE_NOTICES_FILENAME = 'cli-update-notices.json'
 
-const defaultBroadcast: CliVersionAdvisoryBroadcast = (result) =>
-  broadcastToAllWindows(CLI_VERSION_ADVISORIES_CHANGED_CHANNEL, result)
+// Whoever follows the advisories: the Studio protocol's `cliVersions.changed`,
+// so a Settings re-check, an update and the poller reach every client alike.
+const advisoryListeners = new Set<CliVersionAdvisoryBroadcast>()
+
+/** Hear the advisories each time they move. Returns the unsubscriber. */
+export function onCliVersionAdvisoriesChanged(listener: CliVersionAdvisoryBroadcast): () => void {
+  advisoryListeners.add(listener)
+  return () => void advisoryListeners.delete(listener)
+}
+
+const defaultBroadcast: CliVersionAdvisoryBroadcast = (result) => {
+  for (const listener of [...advisoryListeners]) listener(result)
+}
 
 function defaultDeps(): CliVersionServiceDeps {
   return {

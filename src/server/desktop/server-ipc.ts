@@ -16,7 +16,6 @@ import type { GitHubTokenStore } from '../../main/github-token-store'
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { registerBacklogIpc } from '../../main/ipc/backlog-ipc'
-import { registerCliModelDiscoveryIpc } from '../../main/ipc/cli-model-discovery-ipc'
 import { registerConversationImportIpc } from '../../main/ipc/conversation-import-ipc'
 import { registerConversationIpc } from '../../main/ipc/conversation-ipc'
 import { createConversationService } from '../../main/conversation-service'
@@ -24,7 +23,6 @@ import { registerCredentialIpc } from '../../main/ipc/credential-ipc'
 import { registerGitHubReposIpc } from '../../main/ipc/github-repos-ipc'
 import { registerGitHubTokenIpc } from '../../main/ipc/github-token-ipc'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
-import { registerLaunchSettingsIpc } from '../../main/ipc/launch-settings-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
 import { registerStudioLocalAppsIpc } from '../../main/ipc/studio-local-apps-ipc'
 import { registerUsageLimitResumeIpc } from '../../main/ipc/usage-limit-resume-ipc'
@@ -32,7 +30,6 @@ import { registerScheduledMessagesIpc } from '../../main/ipc/scheduled-messages-
 import { registerScheduledAgentsIpc } from '../../main/scheduled-agents/scheduled-agents-ipc'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { registerSettledChatsIpc } from '../../main/ipc/settled-chats-ipc'
-import { registerTextGenerationSettingsIpc } from '../../main/ipc/text-generation-settings-ipc'
 import { registerUsageLimitsIpc } from '../../main/ipc/usage-limits-ipc'
 import { registerUsageIpc } from '../../main/ipc/usage-ipc'
 import { registerWorkspaceBackupIpc } from '../../main/ipc/workspace-backup-ipc'
@@ -118,7 +115,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerStudioLocalAppsIpc(ipc, deps.studioRpc, deps.assertAppSender)
   registerMeshIpc(ipc, deps.gateway)
   registerWorkspaceBackupIpc(ipc, deps.workspaceBackup)
-  registerCliModelDiscoveryIpc(ipc)
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.
   const conversationCommands = core.conversationCommands()
   // The subscription usage limits the chats' agents report.
@@ -138,9 +134,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerScheduledMessagesIpc(ipc, core.scheduledMessages)
   // The Schedules window's: always registered, refused while the module is off.
   registerScheduledAgentsIpc(ipc, { service: deps.scheduledAgents })
-  registerLaunchSettingsIpc(ipc, { launchSettings: core.agentLaunchSettings })
-  // The titles setting each window pushes; the chats are titled where they run.
-  registerTextGenerationSettingsIpc(ipc, core.textGenerationSettings)
   registerHostsIpc(ipc, { hosts: core.hosts })
   registerBacklogIpc(ipc)
   registerGitHubTokenIpc(ipc, deps.githubTokenStore)

@@ -119,8 +119,6 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   const terminalAgent = { workspaceId: 'acme', agentId: 'agent-1' }
   const tokenDigest = createHash('sha256').update('terminal-agent-token').digest('hex')
   shellRpc.handle(SHELL_METHODS.liveLaunchTokens, () => [{ digest: tokenDigest, identity: terminalAgent }])
-  const mirrored: string[] = []
-  shellRpc.on(SERVER_EVENTS.mirrorLaunchSettings, () => mirrored.push('launch-settings'))
 
   const exit = serveOnChannel(channel, {
     starters: { 'desktop-local': startDesktopServer },
@@ -158,19 +156,12 @@ test('the desktop server composes, serves a window over the tunnel and the shell
     { t: 'attach-client', clientId: 'window-1-1', windowId: 'primary', kind: 'desktop-window', workspaceWindow: true },
     [window.port],
   )
-  const settings = await window.invoke('launch-settings:get')
-  assert.equal(settings.ok, true, JSON.stringify(settings))
+  const hosts = await window.invoke('hosts:list')
+  assert.equal(hosts.ok, true, JSON.stringify(hosts))
   const snapshot = await window.invoke('workspace-sync:get-snapshot')
   assert.ok(Array.isArray(snapshot.value.state.workspaces))
   const scheduled = await window.invoke('scheduled-agents:list')
   assert.equal(scheduled.ok, true, JSON.stringify(scheduled))
-  const update = await window.invoke('launch-settings:update', { lastSelectedCli: 'codex' })
-  assert.equal(update.value.ok, true)
-  // The update is pushed to the window and mirrored to the shell.
-  await waitFor(() =>
-    window.received.find((frame) => frame.t === 'ipc.push' && frame.channel === 'launch-settings:changed'),
-  )
-  await waitFor(() => mirrored.length > 0 || undefined)
 
   // A Claude terminal's status line, read in the shell, reaches the usage
   // limits the server's windows draw.
@@ -188,7 +179,8 @@ test('the desktop server composes, serves a window over the tunnel and the shell
 
   // The shell's mirror reads from the server.
   const mirror = await shellRpc.call<ServerMirrorState>(SERVER_METHODS.mirrorSnapshot)
-  assert.equal(mirror.launchSettings.settings.lastSelectedCli, 'codex')
+  // A window writes the launch settings over the Studio protocol now, not this tunnel.
+  assert.equal(typeof mirror.launchSettings.settings.cliRuntimes, 'object')
   assert.ok(Array.isArray(mirror.state.workspaces))
 
   // A GitHub token is sealed by the shell's keychain, byte for byte.

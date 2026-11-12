@@ -38,13 +38,7 @@ import type {
   TourSummary,
 } from './tours/tour-types'
 import type { ConversationPeek } from './conversation-peek'
-import type {
-  ChatTitleRequest,
-  CommitMessageResult,
-  PullRequestTextResult,
-  TextGenerationResult,
-  TextGenerationSettings,
-} from './text-generation/contract'
+import type { ChatTitleRequest, PullRequestTextResult } from './text-generation/contract'
 import type { TextGenerationWritingStyle } from './text-generation/writing-style'
 import type {
   CreatePullRequestOutcome,
@@ -52,13 +46,6 @@ import type {
   PullRequestCheckoutPin,
   PushForPullRequestOutcome,
 } from './git/pull-request-create'
-import type {
-  AgentLaunchSettings,
-  AgentLaunchSettingsPatch,
-  AgentLaunchSettingsRecord,
-  AgentLaunchSettingsSnapshot,
-  AgentLaunchSettingsWriteAck,
-} from './launch-settings'
 
 export type { ConversationPeek, ConversationPeekMessage, ConversationPeekSource } from './conversation-peek'
 export type { HostedSource, HostedSourceKind, HostedSourcesFeed } from './hosted-sources-feed'
@@ -145,7 +132,6 @@ export type {
 } from './skills'
 import type { AutomationServerStatus } from './automation'
 import type { McpHttpCreateResult, McpHttpStatus } from './mcp-http'
-import type { CliUpdateAllItem, CliUpdateAllResult } from './ipc/cli-update-all'
 import type {
   StudioLocalAppOfferInput,
   StudioLocalAppOfferView,
@@ -296,7 +282,6 @@ export type {
   VersionControlProviderProbe,
 } from './version-control'
 import type { SprintEngineAuthState } from './ipc/account'
-import type { CliModelDiscoveryInput, CliModelDiscoveryResult } from './ipc/cli-model-discovery'
 import type { UsageLimitsState } from './usage-limits'
 import type { UsageReportRequest, UsageReportResult } from './usage-report'
 import type { UsageLimitResumeState, UsageLimitResumeUpdate } from './usage-limit-resume'
@@ -323,14 +308,7 @@ import type {
   ConversationImportResult,
   ConversationImportScanResult,
 } from './ipc/conversation-import'
-import type {
-  CliDetectResult,
-  CliInstallInput,
-  CliInstallMethodInfo,
-  CliInstallResult,
-  CliPermissionPreset,
-  CliRuntimeSettings,
-} from './ipc/agent-runtime'
+import type { CliPermissionPreset } from './ipc/agent-runtime'
 import type {
   AppMenuAcceleratorUpdate,
   AppMenuAcceleratorUpdateResult,
@@ -364,9 +342,7 @@ import type {
   BacklogTriageInput,
 } from './ipc/backlog'
 import type { CardRunInput, CardRunResult } from './ipc/cards'
-import type { CliVersionAdvisoriesInput, CliVersionAdvisoriesResult } from './ipc/cli-version'
 import type {
-  AgentCli,
   CredentialSecretClearInput,
   CredentialSecretClearResult,
   CredentialSecretSetInput,
@@ -1500,12 +1476,6 @@ export type ElectronApi = {
   // ordered actions in the workspace the person is in and hands back what to
   // open; the renderer never runs an installer of its own (item 2469).
   cardsRun: (input: CardRunInput) => Promise<CardRunResult>
-  // CLI version advisories: installed version against the package registry's
-  // newest. `set-enabled` mirrors the Settings switch into main so the
-  // background check can be turned off; `changed` fires from the poller.
-  cliVersionAdvisories: (input?: CliVersionAdvisoriesInput) => Promise<CliVersionAdvisoriesResult>
-  cliVersionChecksSetEnabled: (enabled: boolean) => Promise<{ enabled: boolean }>
-  onCliVersionAdvisoriesChanged: (cb: (result: CliVersionAdvisoriesResult) => void) => () => void
   // Verify resolves the entry by id in main and answers with what an install
   // would put on the machine, plus the one-time trust token that installs
   // exactly that (see src/main/marketplace/trust-tokens.ts).
@@ -1612,17 +1582,6 @@ export type ElectronApi = {
   /** The last update's result has been shown; stop reporting it. */
   updateDismissInstallOutcome: () => Promise<AppUpdateState>
   onUpdateStateChanged: (cb: (state: AppUpdateState) => void) => () => void
-  /** Read main's agent-launch settings: the record (null before any write) and the settings in force. */
-  launchSettingsGet: () => Promise<AgentLaunchSettingsSnapshot>
-  /** Apply a partial write to main's launch settings; the answer carries the record main now holds. */
-  launchSettingsUpdate: (patch: AgentLaunchSettingsPatch) => Promise<AgentLaunchSettingsWriteAck>
-  /**
-   * Offer this window's pre-ownership localStorage values once. Main accepts
-   * only while it holds no record; `changed: false` is a refusal.
-   */
-  launchSettingsMigrate: (settings: AgentLaunchSettings) => Promise<AgentLaunchSettingsWriteAck>
-  /** Every change to main's launch settings, as the new record. Returns the unsubscribe. */
-  onLaunchSettingsChanged: (cb: (record: AgentLaunchSettingsRecord) => void) => () => void
   /**
    * The machines this computer offers: this one, then (on Windows) its WSL
    * distributions — every one with `all`, the enabled ones otherwise.
@@ -1969,22 +1928,6 @@ export type ElectronApi = {
    */
   skillsCheckSourceUpdates: () => Promise<SkillSourceUpdateCheck>
   onSkillSourcesUpdated: (cb: (check: SkillSourceUpdateCheck) => void) => () => void
-  cliDetect: (cli: AgentCli, runtime?: Partial<CliRuntimeSettings>) => Promise<CliDetectResult>
-  cliInstallMethods: (cli: AgentCli, runtime?: Partial<CliRuntimeSettings>) => Promise<CliInstallMethodInfo[]>
-  cliInstall: (input: CliInstallInput, runtime?: Partial<CliRuntimeSettings>) => Promise<CliInstallResult>
-  cliUpdate: (cli: AgentCli, runtime?: Partial<CliRuntimeSettings>) => Promise<CliInstallResult>
-  /** Update every CLI with a newer version published, on this machine and each WSL distribution turned on. */
-  cliUpdateAll: () => Promise<CliUpdateAllResult>
-  /** Every item of a running Update everything, each time one moves. */
-  onCliUpdateAllProgress: (cb: (items: CliUpdateAllItem[]) => void) => () => void
-  /** An install's or update's output, for the CLI on the machine `hostId` names (absent: this one). */
-  onCliInstallOutput: (cli: AgentCli, cb: (chunk: string) => void, hostId?: string) => () => void
-  // Model discovery (src/shared/ipc/cli-model-discovery.ts): ask the installed
-  // CLIs which models they accept. `discover` answers per CLI, skipping any that
-  // are fresh, absent or unprobeable; `changed` pushes every catalog a probe
-  // produced, whoever asked, and returns the unsubscribe.
-  cliModelsDiscover: (input?: CliModelDiscoveryInput) => Promise<CliModelDiscoveryResult>
-  onCliModelsChanged: (cb: (result: CliModelDiscoveryResult) => void) => () => void
   // The subscription usage limits (five-hour and weekly windows) the agents
   // reported, per provider, and every change main hears afterwards
   // (src/main/usage-limits).
@@ -2005,14 +1948,6 @@ export type ElectronApi = {
   /** Hold a message this window's chat queued, in main, to go when the chat's turn ends. */
   holdQueuedMessage: (request: ScheduledMessageHoldRequest) => Promise<ScheduledMessageHoldAnswer>
   onScheduledMessagesChanged: (listener: (state: ScheduledMessagesState) => void) => () => void
-  // One-shot text generation on the person's own agent CLI (their login, no
-  // API key): today the chat title from a first prompt. Never rejects — a
-  // failure is a typed `{ ok: false }` the caller answers by keeping what it
-  // had. See src/shared/text-generation/contract.ts.
-  generateChatTitle: (request: ChatTitleRequest) => Promise<TextGenerationResult>
-  // Renderer → main mirror of `appSettings.textGeneration`. The process that
-  // runs the chats titles them by this copy, with or without a window open.
-  setTextGenerationSettings: (settings: TextGenerationSettings) => Promise<void>
   // The chat's "Create PR" (src/main/pull-request-create.ts): whether it may
   // show for a checkout, a drafted title and description, the push, and the
   // creation. This computer's checkouts only. Never rejects.
@@ -2028,19 +1963,6 @@ export type ElectronApi = {
   }) => Promise<PullRequestTextResult>
   /** The dialog closed while its draft was being written: the drafting CLI is stopped. */
   cancelPullRequestDraft: (draftId: string) => Promise<void>
-  // The Git panel's "Write commit message" (src/main/commit-message-draft.ts):
-  // a message for what is staged in `repoRoot`, drafted for the person to edit.
-  // This computer's checkouts only. Never rejects.
-  draftCommitMessage: (request: {
-    repoRoot: string
-    engine: ChatTitleRequest['engine']
-    cliRuntimes?: ChatTitleRequest['cliRuntimes']
-    /** Names the draft, so `cancelCommitMessageDraft` can stop its CLI. */
-    draftId?: string
-    writingStyle?: TextGenerationWritingStyle
-  }) => Promise<CommitMessageResult>
-  /** The person stopped the draft: the drafting CLI is stopped. */
-  cancelCommitMessageDraft: (draftId: string) => Promise<void>
   /** `pin`: the branch and commit the person confirmed; refused when the checkout has moved off it. */
   pushForPullRequest: (cwd: string, pin?: PullRequestCheckoutPin) => Promise<PushForPullRequestOutcome>
   createPullRequest: (input: {

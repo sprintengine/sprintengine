@@ -19,6 +19,8 @@ import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioCore } from './studio-core'
 import type { StudioGateway } from './studio-gateway'
 import type { StudioModules } from '../rpc/studio-modules'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import { createStudioAgentSettings } from '../agent-settings/agent-settings-domain'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
 // applications follow, drive and start chats through. It serves the same
@@ -38,6 +40,8 @@ export function createStudioRpc(
     modules?: StudioModules
     /** The terminals on this machine, where this process holds the terminal runtime. */
     terminals?: StudioTerminals
+    /** The CLIs on this machine, where this process holds their detection and version check. */
+    runtimes?: CliRuntimes
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -103,6 +107,13 @@ export function createStudioRpc(
     // by every client.
     localServers: core.localServers,
     ...(options.terminals ? { terminals: options.terminals } : {}),
+    ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+    // What every launch here reads, and what the CLIs write for it, served
+    // where the launch settings and the model catalog cache are.
+    agentSettings: createStudioAgentSettings({
+      launchSettings: core.agentLaunchSettings,
+      textGenerationSettings: core.textGenerationSettings,
+    }),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },
