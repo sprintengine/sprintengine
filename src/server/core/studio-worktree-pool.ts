@@ -65,6 +65,14 @@ export type StudioWorktreePoolDeps = {
   terminalListWaitMs?: number
 }
 
+/**
+ * How long the pool and its installs may wait for steps in flight when a
+ * server stops: well inside every stop budget (eight seconds, less when the
+ * desktop leaves for an update), so the legs after them still run. A step cut
+ * short is recovered at the next start, as after a crash.
+ */
+export const WORKTREE_QUIT_WAIT_MS = 2_000
+
 /** How long the pool waits, after a server starts, for its shell to say which terminals run. */
 const TERMINAL_LIST_WAIT_MS = 10_000
 

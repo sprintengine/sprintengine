@@ -43,6 +43,7 @@ import {
   studioBridgeScriptPath,
 } from '../core/studio-core'
 import { createStudioGateway, type StudioGateway } from '../core/studio-gateway'
+import { WORKTREE_QUIT_WAIT_MS } from '../core/studio-worktree-pool'
 import { createStudioRpc } from '../core/studio-rpc'
 import { createIpcTunnel, type TunnelPort } from '../ipc/ipc-tunnel'
 import { createStaticAppIdentity } from '../platform/app-identity'
@@ -87,9 +88,6 @@ import { noteStatusLineRateLimits } from '../../main/usage-limits/store'
 // what acts on a screen or a terminal is the shell's, offered as its toolsets
 // (spec 6.3), and the launches the server starts itself (`backlog.work`, a
 // scheduled run, resume in terminal) go through the shell bridge.
-
-/** How long the pool and its installs may wait for steps in flight at quit, inside the drain budget. */
-const QUIT_STEP_WAIT_MS = 2_000
 
 export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requestExit }) => {
   // Its own diagnostics file, so two processes never append to one.
@@ -541,7 +539,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         // so its worktree installs again at its next lease, and an agent
         // waiting on it is not started on the way out. Each runs as a process
         // group of its own, which nothing else would end.
-        ['dependency installs', () => core.worktrees.installer.shutdown({ waitMs: QUIT_STEP_WAIT_MS })],
+        ['dependency installs', () => core.worktrees.installer.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS })],
         ['workspace registry', () => workspaceSyncService.flush()],
         // What a person would miss most: every chat's buffered transcript.
         ['chat transcripts', () => core.conversationOwner.flushTranscripts()],
@@ -566,10 +564,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ],
         // A lease or return in flight finishes its write, and each pool's
         // container lock is given up so another Studio can take it over.
-        // Within the shell's drain budget (eight seconds, less when updating),
-        // so the legs after it still run; a step cut short is recovered at
-        // the next start, as after a crash.
-        ['worktree pool', () => core.worktrees.pool.shutdown({ waitMs: QUIT_STEP_WAIT_MS })],
+        // Within the shell's drain budget, so the legs after it still run.
+        ['worktree pool', () => core.worktrees.pool.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS })],
         ['command lists', () => domains.conversationCommands.dispose()],
         ['workspace registry (final)', () => workspaceSyncService.flush()],
         ['modules', () => modules.shutdown()],

@@ -101,7 +101,7 @@ import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends
 import { createStudioAutoCompact } from './studio-auto-compact'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
 import { createStudioSettlement } from './studio-settlement'
-import { createStudioWorktreePool } from './studio-worktree-pool'
+import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
 
 // The Studio core: the services the server owns (studio-server design, section
 // 4.1), composed once. The desktop builds it inside Electron main, from
@@ -1144,14 +1144,14 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       stopAutoCompact,
       // An install the quit cuts short is not recorded, so its worktree
       // installs again at its next lease.
-      () => worktrees.installer.shutdown(),
+      () => worktrees.installer.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => chatTitler.dispose(),
       // What the command lists learned is written before the process goes.
       () => commandLists?.dispose(),
       () => conversationOwner.shutdown(),
       // A lease or return in flight finishes its write, and each pool's
       // container lock is given up so another Studio can take it over.
-      () => worktrees.pool.shutdown(),
+      () => worktrees.pool.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => {
         for (const stop of stopFollowingWatchedChats.splice(0)) stop()
         pullRequests.dispose()
