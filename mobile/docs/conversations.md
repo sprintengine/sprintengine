@@ -7,6 +7,15 @@ the desktop's projects, `workspace:read`) appears only where some desktop
 grants it. A desktop too old to stream chats lists nothing; update Studio and
 pair again if conversation access is missing.
 
+New's reads (the desktop's projects, its CLIs, a project's checkout) and
+starting the chat (`conversation.create`) go over the desktop's Studio
+protocol: one socket per desktop at `/tailnet/v1/studio`, through the shared
+client runtime (`src/api/desktopStudio.ts`), opened with a ticket the device
+token buys and saying no `Origin`. What the phone may ask is its pairing's
+grant, read by the desktop at every request. A desktop whose Studio predates
+the endpoint is told to update. Following and driving a chat still use the
+conversation lane.
+
 ## The list
 
 Chats are in the order you last wrote in each, newest first, in Recent and in
@@ -64,7 +73,7 @@ sidebar files it: its row names the project ("multicode") with the worktree's
 mark, it groups under that project, and New's project list holds the project
 once. The desktop's New chat starts every chat in a pooled worktree by
 default, so without this each chat founded a project named after its slug
-("pool-02", "chat-ab12"). The desktop's `workspace.list` sends each
+("pool-02", "chat-ab12"). The desktop's `workspaces.list` sends each
 workspace's folder but not the project a worktree was cut from, so the phone
 reads the desktop's own path convention for that
 (`<parent>/.sprintengine-worktrees/<repo>/<slug>` is `<parent>/<repo>`'s,
@@ -198,7 +207,7 @@ Access row. New keeps one choice the desktop's picker has no row for:
 Desktop default, which sends no CLI and leaves it to the desktop's last-used
 one.
 
-A desktop that advertises `cli-runtime-catalog` answers `cli.runtime.list`
+A desktop that advertises `cli-runtime-catalog` answers `cliRuntimes.list`
 with its picker's own rows for each CLI (`catalog`): New offers every CLI it
 says can run as a chat, and hides the ones it says cannot. An older desktop's
 CLIs are offered as before, those that list models, grouped into families by

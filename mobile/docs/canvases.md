@@ -9,8 +9,8 @@ it), from its Canvas row.
 ## Where the boards come from
 
 The phone calls the gateway's `canvas.list` and `canvas.screenshot`
-(`src/api/canvasBoards.ts`) over the same stateless JSON-RPC POST that
-`workspace.list` rides. Both only look, so both need `workspace:read`, the
+(`src/api/canvasBoards.ts`) over a stateless JSON-RPC POST to its MCP
+endpoint. Both only look, so both need `workspace:read`, the
 grant New already needs to list projects; a pairing without it lists nothing
 and says so. A paired device is bound to no workspace, so it may read every
 board on the machine and picture one by its id without naming a project.

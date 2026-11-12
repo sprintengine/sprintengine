@@ -263,8 +263,9 @@ test('a paired device reads and starts chats over the Studio protocol, with its 
   const created = await client.rpc['conversation.create']({ workspaceId: 'ws-1', prompt: 'hi', commandId: 'c-1' })
   assert.equal(created.conversation.workspaceId, 'ws-1')
   assert.equal(r.studio.backend.creates.length, 1)
-  // Owner-only and unscoped surfaces stay shut: a terminal, the filesystem.
-  assert.equal(await refusal(client.request('terminal.list', {})), 'scope_required')
+  // Owner-only and unscoped surfaces stay shut: no other device reaches a
+  // terminal here, and its scopes carry no filesystem.
+  assert.equal(await refusal(client.request('terminal.list', {})), 'owner_required')
   assert.equal(await refusal(client.request('files.stat', { path: '/' })), 'scope_required')
 })
 

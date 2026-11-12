@@ -28,7 +28,7 @@ export type TailnetStudioHost = {
 }
 
 /** A device's client id on the Studio protocol: its own, kept apart from apps and browsers. */
-export function tailnetStudioClientId(deviceId: string): string {
+function tailnetStudioClientId(deviceId: string): string {
   return `tailnet:${deviceId}`
 }
 

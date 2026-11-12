@@ -35,7 +35,7 @@ function refusalCode(code: string): 'not_found' | 'unavailable' {
 }
 
 /** A tool's answer as a discovery read's: its structured content, or its refusal. */
-export function readDiscoveryToolResult(result: McpToolResult): StudioDiscoveryAnswer<Record<string, unknown>> {
+function readDiscoveryToolResult(result: McpToolResult): StudioDiscoveryAnswer<Record<string, unknown>> {
   const structured = result.structuredContent
   const error = record(structured?.error) ? structured.error : null
   if (result.isError || error || !structured) {
