@@ -1,7 +1,6 @@
 import { machineAwareIpc } from './environments/ssh/machine-ipc'
 import { app, BrowserWindow, nativeImage, shell, webContents } from 'electron'
 import type { IpcMain } from 'electron'
-import { registerAgentConfigImportIpc } from './ipc/agent-config-import-ipc'
 import { registerAppearanceIpc } from './ipc/appearance-ipc'
 import { registerBackgroundModeIpc } from './ipc/background-mode-ipc'
 import { registerTelemetryIpc } from './ipc/telemetry-ipc'
@@ -14,9 +13,7 @@ import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerStudioWindowTicketIpc, type StudioWindowTicketIssuer } from './ipc/studio-window-ticket-ipc'
 import { assertAppSender } from './ipc/ipc-sender'
 import { registerAppMenuIpc } from './app-menu'
-import { registerBuiltinSkillsIpc } from './ipc/builtin-skills-ipc'
 import { registerStudioPluginIpc } from './ipc/studio-plugin-ipc'
-import { registerStudioAreaSkillsIpc } from './ipc/studio-area-skills-ipc'
 import { registerPullRequestCreateIpc } from './ipc/pull-request-create-ipc'
 import { registerClipboardIpc } from './ipc/clipboard-ipc'
 import { registerChatExportIpc } from './ipc/chat-export-ipc'
@@ -34,9 +31,6 @@ import { registerGitRepoWatchIpc } from './ipc/git-repo-watch-ipc'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
 import { registerDesignSystemIpc } from './ipc/design-system-ipc'
-import { registerMcpIpc } from './ipc/mcp-ipc'
-import { registerMemoryActivityIpc } from './ipc/memory-activity-ipc'
-import { registerMemoryIpc } from './ipc/memory-ipc'
 import { registerMenuDialogIpc } from './ipc/menu-dialog-ipc'
 import { registerProjectlessChatsIpc } from './ipc/projectless-chats-ipc'
 import { registerMarketplacePluginIpc } from './ipc/marketplace-plugin-ipc'
@@ -201,11 +195,7 @@ export function registerCoreIpc(
   // The chat's "Create PR": git, gh and the drafting CLI all run on this computer.
   registerPullRequestCreateIpc(ipcMain)
   registerAuthIpc(ipcMain, services.sprintengineAuth)
-  registerBuiltinSkillsIpc(ipcMain, services.builtinSkillManager)
   registerStudioPluginIpc(ipcMain, services.studioPluginService)
-  registerStudioAreaSkillsIpc(ipcMain, services.studioAreaSkillStore)
-  registerMcpIpc(machineIpc, services.mcpConfigService)
-  registerAgentConfigImportIpc(ipcMain, services.agentConfigImportService)
   registerSkillsIpc(ipcMain, services.skillsService)
   registerWorkspaceSkillsIpc(machineIpc, {
     workspaceSkills: services.workspaceSkillsService,
@@ -233,8 +223,6 @@ export function registerCoreIpc(
   // (TerminalView) and the Knowledge Graph settings tab
   // depend on it, so it is always registered. The memory-graph capability
   // module gates only the visualization panel (renderer side).
-  registerMemoryIpc(machineIpc)
-  registerMemoryActivityIpc(ipcMain)
   registerDiagnosticsIpc(ipcMain, {
     writeDiagnosticLog,
     openDiagnosticsLogsFolder,

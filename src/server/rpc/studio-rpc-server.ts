@@ -19,6 +19,7 @@ import {
   STUDIO_TERMINALS_CAPABILITY,
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
   STUDIO_AGENT_SETTINGS_CAPABILITY,
+  STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
@@ -37,6 +38,7 @@ import type { StudioModules } from './studio-modules'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -147,6 +149,8 @@ export type StudioRpcServerOptions = {
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' texts. Advertised as `agent-settings` only when given. */
   agentSettings?: StudioAgentSettings
+  /** What the agents are set up with beyond their CLIs. Advertised as `agent-setup` only when given. */
+  agentSetup?: StudioAgentSetup
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** The protocol window this Studio speaks: this build's unless given (a test standing in for an older or newer one). */
@@ -210,6 +214,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_TERMINALS_CAPABILITY || options.terminals !== undefined) &&
         (capability !== STUDIO_AGENT_RUNTIMES_CAPABILITY || options.runtimes !== undefined) &&
         (capability !== STUDIO_AGENT_SETTINGS_CAPABILITY || options.agentSettings !== undefined) &&
+        (capability !== STUDIO_AGENT_SETUP_CAPABILITY || options.agentSetup !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined),
@@ -232,6 +237,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.terminals ? { terminals: options.terminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),
     ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
+    ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     log: options.log,
   })
@@ -267,6 +273,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.terminals ? { terminals: options.terminals } : {}),
         ...(options.runtimes ? { runtimes: options.runtimes } : {}),
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
+        ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,
@@ -309,6 +316,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.terminals ? { terminals: options.terminals } : {}),
         ...(options.runtimes ? { runtimes: options.runtimes } : {}),
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
+        ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,

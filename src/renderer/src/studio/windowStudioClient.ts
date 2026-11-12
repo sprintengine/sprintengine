@@ -33,6 +33,11 @@ export type WindowStudioSetup = {
 
 const setups = new WeakMap<object, WindowStudioSetup>()
 
+/** Whether this page reaches a Studio at all: a desktop window or a web tab does. */
+export function windowHasStudio(): boolean {
+  return typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
+}
+
 /** Whether this page's Studio is on another machine: a web tab's, rather than a desktop window's own. */
 export function windowStudioIsAnotherMachine(api: object = window.api): boolean {
   return setups.get(api)?.anotherMachine === true

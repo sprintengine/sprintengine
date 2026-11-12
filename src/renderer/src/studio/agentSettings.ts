@@ -122,10 +122,7 @@ function words(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** Whether this page reaches a Studio at all: a desktop window or a web tab does. */
-export function windowHasStudio(): boolean {
-  return typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
-}
+export { windowHasStudio } from './windowStudioClient'
 
 export const agentSettingsApi: AgentSettingsApi = {
   cliDetect: (cli, runtime) => runtimes('cliRuntimes.detect', { cli, ...target(runtime) }),

@@ -118,6 +118,7 @@ import type { SettingsUpdateBadge } from '../../utils/settingsUpdateBadges'
 import { sourceUpdateCadenceLine, type SkillRepoTransport } from '../../../../shared/skills'
 import { clientSupports, hostPlatform } from '../../clientCapabilities'
 import { isImeKey } from '../../utils/imeKey'
+import { agentSetupApi } from '../../studio/agentSetup'
 
 interface Props {
   onClose: () => void
@@ -898,7 +899,7 @@ export default function SettingsPanel({
       setActivityInstalled(false)
       return
     }
-    void window.api.memoryActivityIsInstalled({ workspaceRoot: activeProjectRoot }).then((installed) => {
+    void agentSetupApi.memoryActivityIsInstalled({ workspaceRoot: activeProjectRoot }).then((installed) => {
       if (!cancelled) setActivityInstalled(installed)
     })
     return () => {
@@ -940,7 +941,7 @@ export default function SettingsPanel({
       setActivityMessage(null)
       try {
         if (next) {
-          const result = await window.api.memoryActivityInstall({
+          const result = await agentSetupApi.memoryActivityInstall({
             workspaceRoot: activeProjectRoot,
             memoryRelativeRoot: memoryRoot,
           })
@@ -950,7 +951,7 @@ export default function SettingsPanel({
             setActivityMessage(result.message)
           }
         } else {
-          const result = await window.api.memoryActivityUninstall({
+          const result = await agentSetupApi.memoryActivityUninstall({
             workspaceRoot: activeProjectRoot,
           })
           if (result.ok) {

@@ -38,6 +38,8 @@ import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import { createStudioAgentSettingsHandlers } from './studio-agent-settings'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import { createStudioAgentSetupHandlers } from './studio-agent-setup'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -138,6 +140,8 @@ export type StudioRpcRouterOptions = {
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' texts; without them, `launchSettings.*`, `cliModels.*`, `textGeneration.*` and `commitMessage.*` are. */
   agentSettings?: StudioAgentSettings
+  /** What the agents are set up with beyond their CLIs; without it, `memory.*`, `mcp.sync` and the rest are answered `unavailable`. */
+  agentSetup?: StudioAgentSetup
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -547,6 +551,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     })
   }
   const unserved = (method: StudioMethod) => refuse('unavailable', `This Studio does not serve ${method}.`)
+  /** Whether a request may name a folder: any, for an owner's own connection; otherwise one Studio knows. */
+  const mayName = async (path: string, asking: PathAsker): Promise<boolean> => {
+    if (namesAnyPath(asking)) return true
+    const chat = options.chat?.()
+    return chat ? folderAllowed(chat, asking, path) : false
+  }
   const caller = (context: StudioRequestContext): StudioTerminalCaller => ({
     connectionId: context.connectionId,
     ...(context.windowKey === undefined ? {} : { windowKey: context.windowKey }),
@@ -1432,12 +1442,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     ...createStudioAgentSettingsHandlers({
       ...(options.runtimes ? { runtimes: options.runtimes } : {}),
       ...(options.agentSettings ? { settings: options.agentSettings } : {}),
-      mayName: async (path, asking) => {
-        if (namesAnyPath(asking)) return true
-        const chat = options.chat?.()
-        return chat ? folderAllowed(chat, asking, path) : false
-      },
+      mayName,
     }),
+    ...createStudioAgentSetupHandlers({ ...(options.agentSetup ? { setup: options.agentSetup } : {}), mayName }),
 
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an

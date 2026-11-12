@@ -2,29 +2,14 @@
 // ../electron-api.ts re-exports everything here.
 
 import type { PluginRegistryListEntry } from '../plugin-manifest'
-import type { SkillHarness } from '../skills'
+import type { BuiltinSkill, BuiltinSkillTargetState } from '../../../packages/studio-protocol/src/public'
 
-export type BuiltinSkill = {
-  id: string
-  name: string
-  version: string
-  description: string
-  harnesses?: SkillHarness[]
-  targetPolicy?: 'agents' | 'all-native'
-}
-
-export type BuiltinSkillTargetState = {
-  harness: string
-  destinationPath?: string
-  status: 'missing' | 'installed' | 'update-available' | 'modified' | 'local' | 'prompt-shim' | 'unsupported'
-  installedVersion?: string
-  pluginId?: string
-  displayName?: string
-  support?: 'native' | 'prompt-shim' | 'unsupported'
-  installScope?: 'workspace' | 'user'
-  format?: string
-  restartRequired?: boolean
-}
+// A built-in skill and what it would install, as the Studio protocol carries them (`builtinSkills.*`).
+export type {
+  BuiltinSkill,
+  BuiltinSkillStatus,
+  BuiltinSkillTargetState,
+} from '../../../packages/studio-protocol/src/public'
 
 /**
  * What the catalogue's built-in row for the app's own plugin reads.
@@ -40,42 +25,6 @@ export type StudioPluginStatus = {
   /** ISO timestamp the hooks acknowledgement was answered, '' when it has not been. */
   hooksAcknowledgedAt: string
 }
-
-export type BuiltinSkillStatus =
-  | { ok: true; status: 'missing'; skill: BuiltinSkill; destinationPath: string; targets: BuiltinSkillTargetState[] }
-  | {
-      ok: true
-      status: 'installed'
-      skill: BuiltinSkill
-      destinationPath: string
-      installedVersion: string
-      targets: BuiltinSkillTargetState[]
-    }
-  | {
-      ok: true
-      status: 'update-available'
-      skill: BuiltinSkill
-      destinationPath: string
-      installedVersion: string
-      targets: BuiltinSkillTargetState[]
-    }
-  | {
-      ok: true
-      status: 'modified'
-      skill: BuiltinSkill
-      destinationPath: string
-      installedVersion: string
-      targets: BuiltinSkillTargetState[]
-    }
-  | {
-      ok: true
-      status: 'local'
-      skill: BuiltinSkill
-      destinationPath: string
-      message: string
-      targets: BuiltinSkillTargetState[]
-    }
-  | { ok: false; status: 'unknown-skill' | 'missing-workspace' | 'missing-source'; skillId: string; message: string }
 
 export type BuiltinSkillInstallResult =
   | {

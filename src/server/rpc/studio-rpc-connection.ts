@@ -55,6 +55,7 @@ import type { StudioModules } from './studio-modules'
 import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -165,6 +166,8 @@ export type StudioRpcConnectionOptions = {
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
   agentSettings?: StudioAgentSettings
+  /** What the agents are set up with: the `memoryActivity.*` and `areaSkills.changed` streams. */
+  agentSetup?: StudioAgentSetup
   /** The window this connection is one of Studio's own for, as main names it. */
   windowKey?: string
   /** The welcome's server-wide members: who this Studio is and what it serves. */
@@ -1301,6 +1304,14 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'cliModels.changed': (id) => subscribeFeed(id, 'cliModels.changed', options.agentSettings?.onModelsChanged ?? null),
     'launchSettings.changed': (id) =>
       subscribeFeed(id, 'launchSettings.changed', options.agentSettings?.onLaunchSettingsChanged ?? null),
+    'memoryActivity.events': (id) =>
+      subscribeFeed(id, 'memoryActivity.events', options.agentSetup?.onMemoryActivityEvent ?? null),
+    'memoryActivity.statusChanged': (id) =>
+      subscribeFeed(id, 'memoryActivity.statusChanged', options.agentSetup?.onMemoryActivityStatus ?? null),
+    'memoryActivity.synapsesChanged': (id) =>
+      subscribeFeed(id, 'memoryActivity.synapsesChanged', options.agentSetup?.onMemoryActivitySynapses ?? null),
+    'areaSkills.changed': (id) =>
+      subscribeFeed(id, 'areaSkills.changed', options.agentSetup?.onAreaSkillsChanged ?? null),
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

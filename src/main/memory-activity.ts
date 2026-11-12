@@ -5,6 +5,7 @@ import { join, resolve, sep } from 'path'
 import { open as fsOpen, type FileHandle } from 'fs/promises'
 import { homedir } from 'os'
 import type { ExecutionHostId } from '../shared/execution-host'
+import type { MemoryActivityEvent, MemoryActivitySynapsesPayload } from '../shared/ipc/memory'
 import { withConfigFileLock, writeFileAtomically } from './config-file-write'
 import { hostRegistry } from './hosts/host-registry'
 import {
@@ -16,7 +17,6 @@ import {
 import { hostIdForPath, recordIntegrationWrite } from './integrations/ledger'
 import { removeHooksDirIfOnlyOurs } from './agent-state'
 import { ensureWorkspaceStoreDir, workspaceStorePath } from './workspace-store'
-import { broadcastToAllWindows } from './window-broadcast'
 
 // =============================================================================
 // Types
@@ -583,7 +583,7 @@ async function tailSessionFile(
   session.fileOffset = nextOffset
   for (const line of lines) {
     const event = processEventLine(state, sessionId, line)
-    if (event && options.broadcastEvents) broadcastToAllWindows('memory-activity:event', event)
+    if (event && options.broadcastEvents) tell(listeners.event, event)
   }
 }
 
@@ -696,13 +696,37 @@ export function getMemoryActivitySynapses(workspaceRoot: string): ActivitySynaps
   return [...state.synapses.values()]
 }
 
+// Whoever follows the activity: the Studio protocol's `memoryActivity.events`,
+// `.statusChanged` and `.synapsesChanged`, which every client subscribes to.
+type MemoryActivityListeners = {
+  event: Set<(event: MemoryActivityEvent) => void>
+  status: Set<(status: ActivityStatus) => void>
+  synapses: Set<(payload: MemoryActivitySynapsesPayload) => void>
+}
+const listeners: MemoryActivityListeners = { event: new Set(), status: new Set(), synapses: new Set() }
+
+function tell<T>(set: Set<(value: T) => void>, value: T): void {
+  for (const listener of [...set]) listener(value)
+}
+
+function listen<T>(set: Set<(value: T) => void>, listener: (value: T) => void): () => void {
+  set.add(listener)
+  return () => void set.delete(listener)
+}
+
+/** Each note an agent moved to, in every workspace followed. Returns the unsubscriber. */
+export const onMemoryActivityEvent = (listener: (event: MemoryActivityEvent) => void) =>
+  listen(listeners.event, listener)
+/** A workspace's activity status, when it moved. */
+export const onMemoryActivityStatus = (listener: (status: ActivityStatus) => void) => listen(listeners.status, listener)
+/** A workspace's synapses, when they moved. */
+export const onMemoryActivitySynapses = (listener: (payload: MemoryActivitySynapsesPayload) => void) =>
+  listen(listeners.synapses, listener)
+
 function broadcastStatus(state: WorkspaceState): void {
-  broadcastToAllWindows('memory-activity:status', getMemoryActivityStatus(state.workspaceRoot))
+  tell(listeners.status, getMemoryActivityStatus(state.workspaceRoot))
 }
 
 function broadcastSynapses(state: WorkspaceState): void {
-  broadcastToAllWindows('memory-activity:synapses', {
-    workspaceRoot: state.workspaceRoot,
-    synapses: [...state.synapses.values()],
-  })
+  tell(listeners.synapses, { workspaceRoot: state.workspaceRoot, synapses: [...state.synapses.values()] })
 }

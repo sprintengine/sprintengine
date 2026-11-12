@@ -186,7 +186,7 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   'worktree-pool': 16,
   files: 26,
   git: 68,
-  'agent-setup': 54,
+  'agent-setup': 33,
   'web-tab': 6,
 }
 

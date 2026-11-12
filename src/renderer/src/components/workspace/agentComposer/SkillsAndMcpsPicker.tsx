@@ -35,6 +35,7 @@ import {
 } from '../../ui'
 import type { AgentComposerConnector } from './useAgentComposer'
 import { isImeKey } from '../../../utils/imeKey'
+import { agentSetupApi } from '../../../studio/agentSetup'
 
 // The composer's one picker for what a new agent starts with (browser-pane
 // epic, child 7): the skills this workspace has, the skills it could have,
@@ -474,7 +475,11 @@ export function SkillsAndMcpsPicker({
       if (!settings.syncEnabled) throw new Error('MCP sync is turned off in Settings; turn it on to add servers.')
       // The sync is scoped to the CLI that will launch; the default client
       // list (codex + claude-code) would silently skip any other CLI.
-      const result = await window.api.mcpSync({ workspaceRoot, settings, ...(pluginId ? { clients: [pluginId] } : {}) })
+      const result = await agentSetupApi.mcpSync({
+        workspaceRoot,
+        settings,
+        ...(pluginId ? { clients: [pluginId] } : {}),
+      })
       if (!result.ok) throw new Error(result.message)
       // A sync that wrote no file for this CLI, or wrote one without this
       // server in it, did not make the pick real.

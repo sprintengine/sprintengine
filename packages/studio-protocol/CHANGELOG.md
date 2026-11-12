@@ -41,6 +41,21 @@
   `conversation:read`; a side question, a settle and a visit
   `conversation:operate`, and so does a command list's `refresh`.
 
+- **What a Studio's agents are set up with** (`src/agent-setup.ts`), under
+  `agent-setup`: `memory.resolveRoot`, `.index`, `.readPreview`;
+  `memoryActivity.install`, `.uninstall`, `.startWatching`, `.status`,
+  `.synapses`, `.isInstalled` with the `memoryActivity.events`,
+  `.statusChanged` and `.synapsesChanged` streams; `mcp.sync`;
+  `agentConfig.detect`, `.adopt`; `builtinSkills.list`, `.status`;
+  `areaSkills.get`, `.setEnabled`, `.dismiss` and `areaSkills.changed`.
+  Reading a project's knowledge and what a skill would install is
+  `files:read`, about a `workspaceFolder` held to the folders the Studio knows
+  for any client that is not an owner; what can run is `providers:read`;
+  switching an area skill is `settings:write`. What writes the programs and
+  hooks the agent CLIs run (`mcp.sync`, `agentConfig.adopt`, the activity
+  hook's install and uninstall) is an owner's. The memory, MCP sync, adopted
+  configuration and built-in skill shapes move here from the desktop app.
+
 - **Agent CLIs and launch settings on the protocol** (`src/agent-settings.ts`).
   `agent-runtimes`: `cliRuntimes.detect`, `.installMethods`, `.install`,
   `.update`, `.updateAll` with the `cliRuntimes.output` (per CLI and machine)

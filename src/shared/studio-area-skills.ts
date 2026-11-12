@@ -21,14 +21,11 @@
 // so every chat gets the steps by default. Off is still a switch in Settings,
 // and turning it off is remembered like any other answer.
 
-export type StudioAreaSkillId =
-  | 'studio-backlog'
-  | 'studio-design-system'
-  | 'studio-canvas'
-  | 'studio-scheduled-agents'
-  | 'studio-diff-tours'
-  | 'studio-workspaces'
-  | 'studio-ship'
+import type { StudioAreaSkillChoices, StudioAreaSkillId } from '../../packages/studio-protocol/src/public'
+
+// Each skill's id, and what the person has decided per skill (absent from both
+// lists: never asked), as the Studio protocol carries them (`areaSkills.*`).
+export type { StudioAreaSkillChoices, StudioAreaSkillId }
 
 /**
  * Where the skill is offered. `settings` is the one with no surface of its own:
@@ -104,13 +101,6 @@ export function isStudioAreaSkillId(value: unknown): value is StudioAreaSkillId 
 export function studioAreaSkill(id: StudioAreaSkillId): StudioAreaSkill {
   // The list is closed over the union, so this always finds one.
   return STUDIO_AREA_SKILLS.find((skill) => skill.id === id) as StudioAreaSkill
-}
-
-/** What the person has decided, per skill. Absent from both lists: never asked. */
-export type StudioAreaSkillChoices = {
-  enabled: StudioAreaSkillId[]
-  /** Suggestions the person turned down; a dismissed skill is still a switch in Settings. */
-  dismissed: StudioAreaSkillId[]
 }
 
 /**

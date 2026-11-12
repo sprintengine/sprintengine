@@ -25,6 +25,7 @@ import { StarGlyph } from './StarGlyph'
 import { TruncatedText } from './TruncatedText'
 import { isImeKey } from '../../utils/imeKey'
 import { ScrollArea } from './ScrollArea'
+import { agentSetupApi } from '../../studio/agentSetup'
 
 // One inventory, every door: the searchable skill list behind the composer
 // Skills chip, the `/` and `$` type-aheads, the terminal panel-header action
@@ -106,7 +107,7 @@ async function loadInventory(workspaceRoot: string | null, pluginId: string | nu
 
   const reachable = capabilities.skills.map((skill) => reachableRow(skill, capabilities.harnessId))
   const reachableIds = new Set(reachable.map((skill) => skill.id))
-  const bundled = await window.api.builtinSkillsList()
+  const bundled = await agentSetupApi.builtinSkillsList()
   const available = bundled
     .filter((skill) => !reachableIds.has(skill.id) && builtinInstallsIntoHarness(skill, capabilities.harnessId))
     .map((skill): WorkspaceSkill => ({

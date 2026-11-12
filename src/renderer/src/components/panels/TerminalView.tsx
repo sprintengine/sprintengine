@@ -81,6 +81,7 @@ import {
   terminalStatus,
   writeTerminal,
 } from '../../studio/terminals'
+import { agentSetupApi } from '../../studio/agentSetup'
 
 interface Props {
   workspaceId: string
@@ -152,7 +153,7 @@ async function resolveMemoryLaunchContext(
   const configuredRoot = relativeRoot?.trim()
   if (!configuredRoot) return { promptSuffix: null, rootPath: undefined, relativeRoot: undefined }
 
-  const status = await window.api
+  const status = await agentSetupApi
     .memoryResolveRoot({
       workspaceRoot,
       relativeRoot: configuredRoot,

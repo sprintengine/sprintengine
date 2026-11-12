@@ -11,7 +11,11 @@ import {
   composerText,
   typeIntoComposer,
 } from '../../../../../../tests/composer-field'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+
+import { agentSetupDouble } from '../../../studio/agentSetup.double'
+
+vi.mock('../../../studio/agentSetup', () => import('../../../studio/agentSetup.double'))
 
 test('NewAgentPanel', async () => {
   // The launch surface behind the tab strip's "+". Rendered for real,
@@ -185,6 +189,7 @@ test('NewAgentPanel', async () => {
       }
     },
   }
+  Object.assign(agentSetupDouble, (dom.window as unknown as { api: object }).api)
   // The MCP server these checks pick. It is INSTALLED — since the third-party
   // retirement (2026-09-08) there is no catalogue to offer one from, so
   // the picker's rows are the workspace's own servers and nothing else. Its

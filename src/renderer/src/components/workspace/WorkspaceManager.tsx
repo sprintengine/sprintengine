@@ -319,6 +319,7 @@ import {
 } from './manager/layoutTabActions'
 import { windowChatServices } from '../panels/agentChat/windowChat'
 import { agentSettingsApi, windowHasStudio } from '../../studio/agentSettings'
+import { agentSetupApi } from '../../studio/agentSetup'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -1380,7 +1381,7 @@ export default function WorkspaceManager() {
         try {
           let detected: { mcpServerKeys: string[]; skillKeys: string[] } | null = null
           try {
-            const detection = await window.api.detectExistingAgentConfig()
+            const detection = await agentSetupApi.detectExistingAgentConfig()
             if (!detection.ok) {
               // Detection itself failed. Report it and leave the profile
               // un-adopted so the next workspace creation tries again — claiming
@@ -1418,7 +1419,7 @@ export default function WorkspaceManager() {
 
           setAgentConfigAdoptionResult({ status: 'adopting' })
           try {
-            const result = await window.api.adoptAgentConfig({
+            const result = await agentSetupApi.adoptAgentConfig({
               workspaceRoot: plan.workspaceRoot,
               mcpServerKeys: plan.mcpServerKeys,
               skillKeys: plan.skillKeys,

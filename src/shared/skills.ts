@@ -34,7 +34,8 @@ export const ADD_LOCAL_SKILL_SOURCE_LABEL = 'Add from folder…'
 /** The skill-page accent that copies a catalogue skill into this workspace. */
 export const INSTALL_SKILL_LABEL = 'Install skill'
 
-export type SkillHarness = 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode' | 'grok' | 'agents'
+/** Which agent harness a skill targets, as the Studio protocol names it. */
+export type { SkillHarness } from '../../packages/studio-protocol/src/public'
 
 /**
  * How this machine reads repositories: over git's own protocol, or over
