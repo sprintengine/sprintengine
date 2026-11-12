@@ -42,6 +42,11 @@
 // going when the pause comes carries on, because pausing is about the times
 // still to come.
 //
+// A schedule this machine cannot run now waits (`waitingFor`: a CLI not signed
+// in here, an extension that owns it absent). Its time is skipped as `waiting`,
+// which is not a failed run: nothing was tried. A one-time schedule waits
+// instead, looked at again every little while, and runs once it can.
+//
 // A pause of everything until a time ends at that time. The timer is armed for
 // it as for a run, and the time is read from the store, so one that ends while
 // the app is closed has ended by the next start.
@@ -70,10 +75,12 @@ const ONCE_WAIT_MS = 30 * 1000
  * run. `stopped`: the scheduler stopped (the app is quitting) while the run
  * was on its way, and it was called off before its chat started.
  */
-export type ScheduledAgentRunRefusal = 'unknown' | 'starting' | 'still_working' | 'stopped'
+export type ScheduledAgentRunRefusal = 'unknown' | 'starting' | 'still_working' | 'stopped' | 'waiting'
 
 export type ScheduledAgentFireResult =
-  { ok: true; run: ScheduledAgentLastRun } | { ok: false; refused: ScheduledAgentRunRefusal }
+  | { ok: true; run: ScheduledAgentLastRun }
+  /** `waiting` names what the machine lacks, in words. */
+  | { ok: false; refused: ScheduledAgentRunRefusal; waiting?: string }
 
 export type ScheduledAgentsSchedulerDeps = {
   list: () => ScheduledAgent[]
@@ -97,8 +104,17 @@ export type ScheduledAgentsSchedulerDeps = {
    * waiting on a person. Absent, a run that has started is taken as done.
    */
   isRunWorking?: (workspaceId: string) => boolean
-  /** A time came round and its run was skipped, and why. */
-  onSkipped?: (agent: ScheduledAgent, reason: Exclude<ScheduledAgentRunRefusal, 'unknown' | 'stopped'>) => void
+  /**
+   * Why this machine cannot run the schedule now, in words ("Codex is not
+   * signed in on build-box"); null when it can. Absent, every schedule can.
+   */
+  waitingFor?: (agent: ScheduledAgent) => string | null
+  /** A time came round and its run was skipped, and why (`detail`: what it waits for). */
+  onSkipped?: (
+    agent: ScheduledAgent,
+    reason: Exclude<ScheduledAgentRunRefusal, 'unknown' | 'stopped'>,
+    detail?: string,
+  ) => void
   /** Something went wrong around a run that has no caller to tell: recording it, or saying it ran. */
   log?: (message: string) => void
   /** Every scheduled agent paused at once, and until when; absent or null, none is. */
@@ -201,6 +217,8 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
   }
 
   const fire = async (agent: ScheduledAgent): Promise<ScheduledAgentFireResult> => {
+    const waiting = deps.waitingFor?.(agent) ?? null
+    if (waiting) return { ok: false, refused: 'waiting', waiting }
     const previous = agent.lastRun
     if (previous?.ok && deps.isRunWorking?.(previous.workspaceId)) return { ok: false, refused: 'still_working' }
     // Written down before anything is made, with what its first message says,
@@ -246,7 +264,7 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
 
   /**
    * A one-time schedule refused because a run of it is still starting or
-   * working is due again shortly, not never: the entry is its own until the
+   * working, or because this machine cannot run it yet, is due again shortly, not never: the entry is its own until the
    * schedule is changed, paused or closed, and reconcile replaces it then.
    */
   const waitOnEarlierRun = (id: string, entry: NonNullable<ReturnType<typeof dueAt.get>>): void => {
@@ -274,7 +292,7 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
         .then((fired) => {
           if (fired.ok || fired.refused === 'unknown' || fired.refused === 'stopped') return
           if (once) waitOnEarlierRun(agent.id, entry)
-          else deps.onSkipped?.(agent, fired.refused)
+          else deps.onSkipped?.(agent, fired.refused, fired.waiting)
         })
         .catch((error: unknown) => deps.log?.(`A scheduled agent's run went wrong: ${describe(error)}`))
     }

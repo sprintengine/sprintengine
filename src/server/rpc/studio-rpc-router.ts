@@ -23,6 +23,7 @@ import {
   type StudioServerInfo,
   type StudioUpdateStatus,
 } from '../../../packages/studio-protocol/src/public'
+import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
@@ -140,6 +141,8 @@ export type StudioRpcRouterOptions = {
   localServers?: StudioLocalServers
   /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
   discovery?: StudioDiscovery
+  /** What this machine has and lacks for its background work; without it, `environment.readiness` is answered `unavailable`. */
+  readiness?: () => Promise<StudioEnvironmentReadiness>
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
   terminals?: StudioTerminals
   /** The CLIs on this machine; without them, `cliRuntimes.*` and `cliVersions.*` are answered `unavailable`. */
@@ -1502,6 +1505,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       mayName,
     }),
     ...createStudioAgentSetupHandlers({ ...(options.agentSetup ? { setup: options.agentSetup } : {}), mayName }),
+    // ── Readiness ──────────────────────────────────────────────────────────
+
+    'environment.readiness': async () =>
+      options.readiness ? { ok: true, result: await options.readiness() } : unserved('environment.readiness'),
 
     // ── Modules ────────────────────────────────────────────────────────────
     // A module's declared methods. A read is answered each time; an operate

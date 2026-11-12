@@ -141,7 +141,6 @@ import { apiModules } from '../preload/api-surface'
 import { SERVER_IPC_CHANNELS } from '../shared/ipc-channel-owners'
 import { IPC_INVENTORY, ipcInventoryRow, type IpcServerArea } from '../shared/ipc-inventory'
 import { WEB_TUNNEL_CHANNELS } from '../shared/web-client'
-import { createNodeStudioPlatform } from '../server/platform/platform'
 import { registerServerDomainIpc, type ServerDomainIpcDeps } from '../server/desktop/server-ipc'
 import { onRendererBootComplete } from './boot-reveal'
 import { createHostRecordingEncoder } from './browser/recording-encoder'
@@ -160,7 +159,7 @@ import {
   ConversationRuntimeToken,
   WorkspaceRegistryToken,
 } from './module-host/service-tokens'
-import { createBundledMainModules } from './modules'
+import { scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
 import { computeModuleFileDigestsSync, manifestFingerprint } from './modules/module-signature'
 import { planThirdPartyMainModules } from './modules/third-party-main-loader'
@@ -360,7 +359,6 @@ test('what main and the server register, and what the preload uses, is the inven
   const server = recordingIpcMain(serverSeen)
   const domains = registerServerDomainIpc(server, serverDomainStubs(scratch))
   const installed = installExtension('weather-deck')
-  const platform = createNodeStudioPlatform({ dataDir: scratch, packaged: false, version: '0.0.0-test' })
   const modules = loadMainModules({
     ipcMain: server,
     modules: [
@@ -373,7 +371,11 @@ test('what main and the server register, and what the preload uses, is the inven
           host.provideService(WorkspaceRegistryToken, () => anything())
         },
       },
-      ...createBundledMainModules(platform, () => undefined),
+      // The core's schedules, held by the kernel under the person's switch.
+      scheduledAgentsSwitchModule(
+        { service: anything(), moduleRegistry: () => anything(), start: async () => {}, stop: async () => {} } as never,
+        () => undefined,
+      ),
       ...installed.modules,
     ],
     ineligible: installed.ineligible,

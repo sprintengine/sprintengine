@@ -94,7 +94,7 @@ const SERVER_BOUND: readonly string[] = [
   'src/main/module-host/module-secrets.ts',
   'src/main/module-host/enablement-store.ts',
   'src/main/modules/agent-runtime-module.ts',
-  'src/main/modules/scheduled-agents-module.ts',
+  'src/main/modules/scheduled-agents-switch.ts',
   'src/main/modules/third-party-main-loader.ts',
   // Settings and credentials.
   'src/main/launch-settings-store.ts',

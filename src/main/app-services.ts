@@ -871,6 +871,9 @@ export function createAppServices(
     ? createRemoteCore(server)
     : createStudioCore(platform, {
         role: 'desktop',
+        // The person's Scheduled agents switch turns the scheduler on and off,
+        // through the module kernel (modules/scheduled-agents-switch.ts).
+        scheduledAgentsSwitch: 'modules',
         // A chat's agent is handed the gateway itself, on the machine its CLI
         // runs on: a Claude chat's child loads no project settings, so the
         // gateway pinned into a workspace's `.mcp.json` never reached it, and a

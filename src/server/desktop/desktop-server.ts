@@ -210,6 +210,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
         : {}),
       role: 'desktop',
+      // The person's Scheduled agents switch turns the scheduler on and off,
+      // through the module kernel (modules/scheduled-agents-switch.ts).
+      scheduledAgentsSwitch: 'modules',
       // The terminals run here; the shell prepares each agent's launch (its
       // plugin copy, MCP sync, skills, hook) over the bridge, and hears of
       // each launch for its analytics.

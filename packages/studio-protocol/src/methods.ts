@@ -98,6 +98,7 @@ import {
   type StudioAgentSetupMethodMap,
   type StudioAgentSetupTopicMap,
 } from './agent-setup.js'
+import { STUDIO_READINESS_METHODS, type StudioReadinessMethodMap } from './readiness.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -206,7 +207,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioUpdateMethodMap &
   StudioAgentSettingsMethodMap &
   StudioAgentSetupMethodMap &
-  StudioWorkspacesMethodMap
+  StudioWorkspacesMethodMap &
+  StudioReadinessMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -637,6 +639,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_AGENT_SETTINGS_METHODS,
   ...STUDIO_AGENT_SETUP_METHODS,
   ...STUDIO_WORKSPACES_METHODS,
+  ...STUDIO_READINESS_METHODS,
 }
 
 /** Whether a string names a method this version of the protocol defines. */

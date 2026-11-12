@@ -229,7 +229,16 @@ export type PullRequestRecordOptions = {
   focus?: WatchPollerFocus
   random?: () => number
   logWarning?: (message: string, error: unknown) => void
+  /**
+   * What this machine lacks for a watch's read that failed, in words (`gh`
+   * not installed, or not signed in, here); null when it lacks neither. A
+   * watch held for it waits and says so, and the read is not counted toward
+   * the failed-read stop. Absent, every failure counts.
+   */
+  ghLacking?: (reason: PullRequestReadFailureReason) => Promise<string | null>
 }
+
+type PullRequestReadFailureReason = Parameters<typeof notePullRequestWatchReadFailed>[1]
 
 /** What the wakes ask of the news the record keeps for chats that have not been told it. */
 export type PullRequestUntoldSource = {
@@ -776,7 +785,10 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
         if (outcome.reason === 'gh-missing') ghMissingUntil = now() + GH_MISSING_HOLD_MS
         if (outcome.reason === 'rate-limited') noteRateLimited(url)
         refreshHolds.set(url, { at: now(), settled: false })
-        if (watched) noteWatchReadFailed(url, outcome.reason)
+        if (watched) {
+          const lacking = options.ghLacking ? await options.ghLacking(outcome.reason).catch(() => null) : null
+          if (!disposed) noteWatchReadFailed(url, outcome.reason, lacking)
+        }
         return
       }
       refreshHolds.delete(url)
@@ -938,16 +950,18 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
     })
   }
 
-  function noteWatchReadFailed(url: string, reason: Parameters<typeof notePullRequestWatchReadFailed>[1]): void {
+  function noteWatchReadFailed(url: string, reason: PullRequestReadFailureReason, lacking: string | null = null): void {
     const previous = watches.get(url)
     const entry = entries.get(url)
     const owner = entry ? ownerOf(entry) : null
     if (!previous || !entry || !owner) return
-    const failed = notePullRequestWatchReadFailed(previous, reason)
+    const failed = notePullRequestWatchReadFailed(previous, reason, lacking)
     if (failed.state === previous && !failed.stop) return
     if (failed.stop) endWatch(url, failed.state)
     else watches.set(url, failed.state)
     persist()
+    // A watch that began or stopped waiting says so on every surface.
+    if (failed.state.view.waiting !== previous.view.waiting) emitFor(entry)
     if (!failed.stop) return
     emitFor(entry)
     if (!isWatchable(entry)) watch.disarm(url)

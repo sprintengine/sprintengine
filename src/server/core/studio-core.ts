@@ -8,7 +8,7 @@ import { isMachinePath } from '../../shared/machine-paths'
 import { isWorkspaceTombstoned } from '../../shared/workspace-registry'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { gitHostIdForPath, type ExecutionHostId, type ExecutionHostSettings } from '../../shared/execution-host'
-import { ensureSkillInstalled } from '../../main/builtin-skills'
+import { ensureSkillInstalled, resolveSkillById } from '../../main/builtin-skills'
 import { cliResumeCapabilities } from '../../main/cli-resume-capabilities'
 import {
   createAgentPermissionResolver,
@@ -98,6 +98,9 @@ import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
+import { createStudioScheduledAgents } from './studio-scheduled-agents'
+import { createEnvironmentReadiness } from '../environment/environment-readiness'
+import { sharedGhRunner } from '../../main/github/gh'
 import { createPullRequestChatFolders } from '../pull-requests/pull-request-chat-folders'
 import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends } from './studio-scheduled-messages'
 import { createStudioAutoCompact } from './studio-auto-compact'
@@ -156,6 +159,13 @@ export type StudioCoreOptions = {
   terminalHost?: StudioTerminalHost
   /** A machine's settings changed (a distribution turned on or off). */
   onHostSettingsChanged?: () => void
+  /**
+   * Who turns the scheduler on. A process with a module kernel (the desktop,
+   * in process and out) turns it on and off with the person's Scheduled
+   * agents switch (`modules/scheduled-agents-switch.ts`); a server with none
+   * runs its schedules from the start. `core` unless said.
+   */
+  scheduledAgentsSwitch?: 'core' | 'modules'
   /**
    * Windows: the WSL distributions whose chats can run on a Studio server
    * inside them (phase 7). Given, every caller's chats go through a router
@@ -603,7 +613,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     }),
     // An open pull request is probed every couple of minutes while a window
     // is in front, and far less often while none is.
-    recordOptions: { focus: powerActivity },
+    // A watch whose read fails for want of `gh` here holds, and says so.
+    recordOptions: { focus: powerActivity, ghLacking: (reason) => readiness.ghLacking(reason) },
     workspaceFolder: (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.folderPath ?? null,
     log: (message, error) => {
       void writeDiagnosticLog({
@@ -1104,6 +1115,62 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     workspaceRegistry.subscribe(() => scheduledMessages.prune()),
   ]
 
+  // The modules beside this core, once a kernel has loaded them: what an
+  // extension's schedule is held to, and whether its extension is here.
+  // Null on a server with no kernel (standalone, WSL, SSH).
+  let moduleKernel: {
+    permissions(moduleId: string): readonly string[] | undefined
+    loaded(): readonly string[]
+  } | null = null
+
+  // What this machine has and lacks for its background work
+  // (environment-readiness.ts): what holds a schedule or a watch, and what
+  // `environment.readiness` answers.
+  const readiness = createEnvironmentReadiness({
+    machine: readHostName,
+    clis: () => {
+      const known = knownCliAvailability({ cliRuntimes: agentLaunchSettings.get().cliRuntimes })
+      return listPluginRegistryEntries().map((entry) => ({
+        id: entry.id,
+        name: entry.displayName || entry.id,
+        installed: known[entry.id] ? known[entry.id]!.installed === true : null,
+      }))
+    },
+    mcpServers: () => agentLaunchSettings.get().mcp?.servers,
+    skillKnown: (skillId) => resolveSkillById(skillId) !== null,
+    extensions: () => moduleKernel?.loaded() ?? null,
+    gh: readGhHere,
+    schedules: () => scheduledAgents.service.list(),
+    watches: () =>
+      pullRequests.record.watches().flatMap((watched) => {
+        const entry = pullRequests.record
+          .forConversation(watched.conversation)
+          .find((candidate) => candidate.url === watched.url)
+        return entry
+          ? [
+              {
+                url: watched.url,
+                title: entry.title || `#${entry.number}`,
+                ...(entry.watch?.waiting ? { waiting: entry.watch.waiting } : {}),
+              },
+            ]
+          : []
+      }),
+  })
+
+  // Scheduled agents (studio-scheduled-agents.ts): this server's schedules,
+  // run in its chats from its worktree pool, whatever kind of server it is.
+  const scheduledAgents = createStudioScheduledAgents({
+    platform,
+    conversations,
+    launch: (request) => conversationLaunchService.launch(request),
+    createConversationHost: () => createConversationHost(),
+    workspaceRecords: () => workspaceRegistry.getRecords(),
+    gitHost: (hostId) => (hostId ? hosts.get(hostId) : null),
+    waitingFor: (agent) => readiness.scheduleWaitingFor(agent),
+  })
+  if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start()
+
   // A chat is titled here, from its own events, rather than by a window: the
   // chats that most need a title are the ones a phone or a paired machine
   // started while no window was watching (chat-titler.ts). The heuristic
@@ -1144,6 +1211,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     for (const stop of stopFollowingScheduledMessages.splice(0)) stop()
     return scheduledMessages.dispose()
   }
+  /** The modules a kernel loaded beside this core: an extension's schedules are held to them. */
+  function attachModules(kernel: NonNullable<typeof moduleKernel>): void {
+    moduleKernel = kernel
+    scheduledAgents.setModulePermissions((moduleId) => kernel.permissions(moduleId))
+    scheduledAgents.service.notifyChanged()
+  }
   function stopAutoCompact(): void {
     for (const stop of stopFollowingAutoCompact.splice(0)) stop()
     autoCompact.dispose()
@@ -1169,6 +1242,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       stopSettlementSweep,
       stopUsageLimitResumes,
       stopScheduledMessages,
+      () => scheduledAgents.stop(),
       stopAutoCompact,
       // An install the quit cuts short is not recorded, so its worktree
       // installs again at its next lease.
@@ -1241,6 +1315,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     localServers,
     usageLimitResumes,
     scheduledMessages,
+    /** This server's scheduled agents (studio-scheduled-agents.ts). */
+    scheduledAgents,
+    /** What this machine has and lacks for its background work (`environment.readiness`). */
+    readiness,
+    attachModules,
     /** The worktree pool, its installs and tools, the chat-folder guard (studio-worktree-pool.ts). */
     worktrees,
     /** The terminals and their agents (studio-agent-terminals.ts); null where no pty can start. */
@@ -1264,6 +1343,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
 export function studioBridgeScriptPath(paths: StudioPaths): string {
   const root = paths.isPackaged() ? paths.resourcesDir() : join(paths.appRoot() ?? process.cwd(), 'resources')
   return join(root ?? '', 'automation', 'mcp-stdio-bridge.mjs')
+}
+
+/** `gh` on this machine: its command, and whether it holds a sign-in (`gh auth token`). */
+async function readGhHere(): Promise<{ installed: boolean | null; signedIn: boolean | null }> {
+  const asked = await sharedGhRunner()
+    .run(['auth', 'token'], { timeoutMs: 10_000 })
+    .catch(() => null)
+  if (!asked) return { installed: null, signedIn: null }
+  if (!asked.found) return { installed: false, signedIn: null }
+  if (asked.timedOut) return { installed: true, signedIn: null }
+  return { installed: true, signedIn: asked.code === 0 && asked.stdout.trim().length > 0 }
 }
 
 /** This machine's host name, or empty when the OS will not say. */

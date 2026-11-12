@@ -7,14 +7,13 @@ import { createAppServices } from './app-services'
 import { ensureExtensionFolders } from './extension-folders'
 import { ignoreMacosTypeOfServiceEinval, raiseConnectAttemptTimeout } from './network-defaults'
 import type { ModuleEnablementLiveApplier } from './ipc/module-enablement-ipc'
-import { activeForChannel } from '../shared/modules/dev-only'
 import { resolveModuleEnablement } from '../shared/modules/resolve'
 import { loadMainModules } from './module-host/load-modules'
 import { readModuleOverridesSync } from './module-host/enablement-store'
 import { ScheduledAgentsServiceToken } from './module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from './modules/agent-runtime-module'
 import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest } from '../shared/modules/manifest'
-import { createBundledMainModules } from './modules'
+import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { isLoadEligible, type ModuleTrustContext } from './modules/module-signature'
 import { readModuleTrustContextSync } from './modules/trust-context'
 import {
@@ -117,12 +116,6 @@ if (serverHost) {
 const services = createAppServices(DIAGNOSTICS_ENABLED, serverHost?.link ?? null)
 let applyModuleEnablementLive: ModuleEnablementLiveApplier | undefined
 
-// Dev-only capability surfaces (none today) ship only in
-// from-source dev builds. A packaged/installed build is the production channel,
-// so they are excluded from registration entirely. See
-// src/shared/modules/dev-only.ts.
-const includeDevModules = !app.isPackaged
-
 const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
   applyModuleEnablementLive: (overrides) => applyModuleEnablementLive?.(overrides),
   // Which third-party main halves this session loaded: the server's, out of
@@ -169,20 +162,23 @@ applyHostApiGate(thirdPartyMainLoad.ineligible, thirdPartyMainLoad.modules)
 // takes effect without a reload. Declared before module construction so the
 // predicate can close over it; the set is filled in once the manifest list exists.
 const enabledMainModuleIds = new Set<string>()
-const activeMainModules = activeForChannel(
-  // Read only once a module asks, by which time `getModulePermissions` exists.
-  createBundledMainModules(studioPlatform(), (moduleId): readonly string[] | undefined =>
-    getModulePermissions(moduleId),
-  ),
-  (module) => module.manifest.id,
-  includeDevModules,
-)
+// The schedules are the core's; the kernel holds them under the person's
+// Scheduled agents switch. Out of process the server's kernel does
+// (server-modules.ts), and this process knows only the manifest.
+const scheduledAgentsModule = serverHost
+  ? null
+  : scheduledAgentsSwitchModule(
+      services.studioCore.scheduledAgents,
+      // Read only once a module asks, by which time `getModulePermissions` exists.
+      (moduleId): readonly string[] | undefined => getModulePermissions(moduleId),
+    )
+const activeMainModules = scheduledAgentsModule ? [scheduledAgentsModule] : []
 // Resolves any module id to the permissions it declared in its manifest, across
 // every module the app assembled. The companion registry gates attach on it.
 const moduleManifestsById = new Map<string, CapabilityManifest>(
   [
     AGENT_RUNTIME_MANIFEST,
-    ...activeMainModules.map((module) => module.manifest),
+    SCHEDULED_AGENTS_MANIFEST,
     ...thirdPartyMainLoad.modules.map((module) => module.manifest),
   ].map((manifest) => [manifest.id, manifest]),
 )
@@ -231,7 +227,7 @@ services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMetho
 // resolution so the gate's answer matches what the user sees in Settings.
 const mainModuleManifests = [
   agentRuntimeModule.manifest,
-  ...activeMainModules.map((module) => module.manifest),
+  SCHEDULED_AGENTS_MANIFEST,
   ...thirdPartyMainLoad.modules.map((module) => module.manifest),
 ]
 const recomputeMainEnablement = (overrides: Record<string, boolean>): void => {
@@ -240,6 +236,12 @@ const recomputeMainEnablement = (overrides: Record<string, boolean>): void => {
   for (const id of order) enabledMainModuleIds.add(id)
 }
 recomputeMainEnablement(moduleOverrides)
+// An extension's schedules are held to its permissions, and wait while it is not here.
+if (!serverHost)
+  services.studioCore.attachModules({
+    permissions: getModulePermissions,
+    loaded: () => [...enabledMainModuleIds],
+  })
 applyModuleEnablementLive = async (overrides) => {
   // Out of process the server's kernel applies it; this process wrote the file.
   if (serverHost) {

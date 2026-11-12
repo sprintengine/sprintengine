@@ -378,7 +378,8 @@ function sameWatch(a: BranchPullRequest, b: BranchPullRequest): boolean {
     left.approved === right.approved &&
     left.autoMerge === right.autoMerge &&
     left.base === right.base &&
-    left.failedChecks === right.failedChecks
+    left.failedChecks === right.failedChecks &&
+    left.waiting === right.waiting
   )
 }
 
