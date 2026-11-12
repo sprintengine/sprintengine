@@ -460,11 +460,19 @@ test('what a client that is not an owner names on this disk is held to the folde
     ['files.search', { rootPath: '/Users/dev', query: 'a' }],
     ['files.repoRoot', { folderPath: '/etc' }],
     ['session.send', { commandId: 'c1', sessionId: 's1', message: 'read this', files: [{ path: '/etc/passwd' }] }],
+    [
+      'session.send',
+      { commandId: 'c8', sessionId: 's1', message: 'and this', mentions: [{ path: '/etc/hosts', kind: 'file' }] },
+    ],
+    [
+      'session.send',
+      { commandId: 'c9', sessionId: 's1', message: 'and up', mentions: [{ path: '../../etc/hosts', kind: 'file' }] },
+    ],
   ] as const) {
     assert.equal(code(await handle(paired, method, params)), 'not_found', method)
     assert.equal(code(await handle(owner, method, params)), 'ok', method)
   }
-  assert.equal(chat.calls.sends.length, 1, 'only the owner’s send reached the runtime')
+  assert.equal(chat.calls.sends.length, 3, 'only the owner’s sends reached the runtime')
   assert.equal(code(await handle(paired, 'files.stat', { path: '/Users/dev/app/README.md' })), 'ok')
   const command = { cliRuntimes: { 'claude-code': { command: '/tmp/not-claude' } } }
   assert.equal(code(await handle(paired, 'providers.list', command)), 'owner_required')

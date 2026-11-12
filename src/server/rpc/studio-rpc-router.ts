@@ -712,10 +712,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       const { grant, voice, fingerprint } = asking
       const { commandId, attachments, ...input } = params
-      // A file attached by path is read by the agent: a client that is not an
-      // owner attaches only what is inside the folders Studio knows.
-      for (const file of input.files ?? [])
-        if (!(await folderAllowed(chat, asking, file.path))) return refuse('not_found', UNKNOWN_FOLDER)
+      // A file attached or mentioned by path is read by the agent: a client
+      // that is not an owner names only what is inside the folders Studio
+      // knows (a mention relative to the chat's folder stays inside it).
+      for (const path of [
+        ...(input.files ?? []).map((file) => file.path),
+        ...(input.mentions ?? []).map((mention) => mention.path),
+      ])
+        if (!(await pathAllowed(chat, asking, path))) return refuse('not_found', UNKNOWN_FOLDER)
       const id = runtimeId(grant, commandId)
       let pictures: ConversationImageAttachment[] | undefined
       // A repeat of a send the runtime holds a receipt for is answered from
@@ -1276,6 +1280,17 @@ function readsAnyPath(asking: PathAsker): { anyPath: boolean } {
 async function folderAllowed(chat: StudioChatBackend, asking: PathAsker, path: string): Promise<boolean> {
   if (namesAnyPath(asking)) return true
   return chat.isKnownFolder ? chat.isKnownFolder(path).catch(() => false) : false
+}
+
+/** As `folderAllowed`, for a path a send names: a relative one is the chat's own, unless it climbs out. */
+async function pathAllowed(
+  chat: StudioChatBackend,
+  asking: { context: StudioRequestContext; grant: { owner: boolean } },
+  path: string,
+): Promise<boolean> {
+  const absolute = path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/u.test(path)
+  if (absolute) return folderAllowed(chat, asking, path)
+  return (asking.grant.owner && !asking.context.knownFoldersOnly) || !path.split(/[\\/]/u).includes('..')
 }
 
 /** Whether parsed params name a CLI's own program (`cliRuntimes[cli].command`), which only an owner may. */
