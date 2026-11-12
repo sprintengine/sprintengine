@@ -217,6 +217,11 @@ async function until(check: () => boolean, what: string): Promise<void> {
 
 const recordsOnDisk = (file: string): ScheduledRunRecord[] => Object.values(runsOnDisk(file))
 
+/** Whether the file still lists that schedule. */
+const agentOnDisk = (file: string, id: string): boolean =>
+  (JSON.parse(readFileSync(file, 'utf8')) as { agents?: { id: string }[] }).agents?.some((agent) => agent.id === id) ??
+  false
+
 /** The file's run records, as the next process (or a hand-over) reads them. */
 function runsOnDisk(file: string): Record<string, ScheduledRunRecord> {
   return (JSON.parse(readFileSync(file, 'utf8')) as { runs?: Record<string, ScheduledRunRecord> }).runs ?? {}
@@ -298,7 +303,13 @@ test('a crash after the chat was made and before its first message went: the nex
   const first = await boot(file, world, NOW)
   world.hangAt('before-message')
   await first.advanceTo(NOW)
-  await until(() => recordsOnDisk(file)[0]?.chat !== undefined, 'the run names its chat on disk')
+  // The crashed process has stopped writing: its run names its chat, and its
+  // one-time schedule's close, which follows that write unawaited, is on disk
+  // too. A late write of its own would otherwise land over the next process's.
+  await until(
+    () => recordsOnDisk(file)[0]?.chat !== undefined && first.store.get(id) === null && !agentOnDisk(file, id),
+    'the run names its chat on disk, and its schedule has closed',
+  )
   const [commandId] = Object.keys(runsOnDisk(file))
   assert.ok(commandId)
   assert.equal(world.chats[0]?.launchCommandId, commandId, 'the chat carries the id its run was written down with')
