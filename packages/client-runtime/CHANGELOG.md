@@ -14,5 +14,8 @@
   with it.
 - `client.rpc`: one call per protocol method, built from the method table by
   `createStudioRpcClient`.
+- `openStudioUpdateSession`: one connection to a Studio whose protocol
+  window does not meet this client's, kept for `update.status` and
+  `update.start` (`update-session`). `@sprintengine/agent-sdk` re-exports it.
 - `createFrameQueue`, the queue a conversation stream's frames wait in, for
   adapters that turn callbacks into a stream.
