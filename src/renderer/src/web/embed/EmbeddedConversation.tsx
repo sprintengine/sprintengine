@@ -78,6 +78,7 @@ function embedTransport(client: StudioClient): ConversationTransport {
     subscribe: (input, cb) => parts.subscribe(keyed(input), cb),
     loadEarlier: (input) => parts.loadEarlier(keyed(input)),
     toolDetail: (input) => parts.toolDetail({ ...input, workspaceRoot: noFolder }),
+    readEvent: (input) => parts.readEvent({ ...input, workspaceRoot: noFolder }),
     turnDiff: (input) => parts.turnDiff(keyed(input)),
     send: refused,
     interrupt: refused,

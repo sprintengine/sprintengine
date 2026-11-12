@@ -53,6 +53,8 @@ import type {
   ConversationTranscriptResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
+  ConversationEventReadInput,
+  ConversationEventReadResult,
   ConversationToolDetail,
   ConversationJsonValue,
   ConversationToolStatus,
@@ -3521,6 +3523,36 @@ export class ConversationRuntime {
     await this.toolStreams.get(path)?.settled()
     await this.toolDetailWrites.flush(path)
     return readToolDetail(input.workspaceRoot, path)
+  }
+
+  /**
+   * One event as the chat's log stores it, by the sequence and id a wire sent
+   * it under (`ConversationEventReadInput`): the whole of one that crossed
+   * cut to fit. Events still waiting in the log's buffer are written first.
+   */
+  async readConversationEvent(input: ConversationEventReadInput): Promise<ConversationEventReadResult> {
+    if (
+      !input.workspaceRoot?.trim() ||
+      !input.workspaceId?.trim() ||
+      !input.agentId?.trim() ||
+      !Number.isSafeInteger(input.seq) ||
+      input.seq < 1 ||
+      typeof input.id !== 'string' ||
+      !input.id
+    )
+      return { ok: false, code: 'invalid_input', message: 'Conversation and event identity are required.' }
+    const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
+    try {
+      await this.eventLog.flush(path)
+      const event = await this.transcripts.eventAt(input.workspaceRoot, path, input.seq, input.id)
+      return event ? { ok: true, event } : { ok: false, code: 'not_found', message: 'This chat has no such event.' }
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: error instanceof Error ? error.message : 'Conversation transcript is unavailable.',
+      }
+    }
   }
 
   /**

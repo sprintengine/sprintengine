@@ -1995,6 +1995,7 @@ test('tailnet', async () => {
       },
       loadEarlier: async () => ({ ok: false, message: 'Unavailable.' }),
       getToolDetail: async () => ({ ok: false, code: 'not_found', message: 'Unavailable.' }),
+      getEvent: async () => ({ ok: false, code: 'not_found', message: 'Unavailable.' }),
       getTurnDiff: async () => ({ ok: false, message: 'Unavailable.' }),
       command: async () => ({ ok: true }),
       registerUpload: (input) => {

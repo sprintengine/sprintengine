@@ -462,6 +462,14 @@ the frame's `srcdoc`, opens no window and stores nothing. What the page sends
 the app (a height, a link, "nothing to draw") is read as untrusted: its shape
 is checked, the height capped, and a link offered at most once a second.
 
+### A message cut to fit
+
+The desktop sends no event larger than one frame: a longer one (a long
+answer, a pasted log) comes with its longest text cut and `wireClipped: true`.
+The chat's foot says part of it came cut short and offers it in full, which
+reads each cut event whole (`getEvent`, by the `seq` and `id` it came under)
+and puts it in place of the cut copy.
+
 ### A step's output
 
 Tapping a step opens what it produced, read the way its kind reads, as the

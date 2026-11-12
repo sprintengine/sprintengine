@@ -120,7 +120,7 @@ import { PluginOfferChatProvider, type PluginOfferChat } from './agentChat/plugi
 import { StopGlyph } from './agentChat/stopGlyph'
 import { recalledConversationScroll, rememberConversationScroll } from './agentChat/conversationViewState'
 import { chatResumesInTerminal, resumeChatInTerminal } from './agentChat/resumeInTerminal'
-import { useConversationSession } from './agentChat/useConversationSession'
+import { isClippedEvent, useConversationSession } from './agentChat/useConversationSession'
 import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
 import { useConversationTransport } from './agentChat/conversationTransport'
@@ -621,7 +621,18 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     error: historyError,
     replayThroughSeq,
     announcement,
+    restoreClipped,
   } = useConversationSession(binding.sessionRoot ?? workspaceRoot, workspaceId, agentId, { active: viewActive })
+  // Events too large for one frame crossed with their longest text cut; the
+  // tray offers them whole, which is a read per event.
+  const clippedCount = useMemo(() => events.filter(isClippedEvent).length, [events])
+  const [restoringClipped, setRestoringClipped] = useState(false)
+  const showClippedWhole = () => {
+    setRestoringClipped(true)
+    void restoreClipped()
+      .catch(() => undefined)
+      .finally(() => setRestoringClipped(false))
+  }
   const animatedRowIds = useRef(new Set<string>())
   const [userTurns, setUserTurns] = useState<UserTurn[]>([])
   const {
@@ -4724,6 +4735,23 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                * failed transcript entry, and must still surface somewhere in the
                * chat.
                */}
+              {clippedCount > 0 ? (
+                <ComposerTrayRow
+                  tone="neutral"
+                  actions={
+                    <OutlineButton
+                      size="xs"
+                      busy={restoringClipped}
+                      disabled={restoringClipped}
+                      onClick={showClippedWhole}
+                    >
+                      {restoringClipped ? 'Reading…' : 'Show in full'}
+                    </OutlineButton>
+                  }
+                >
+                  Part of this chat was too long to send at once, so it is shown cut short.
+                </ComposerTrayRow>
+              ) : null}
               {composerError && composerError !== dismissedError ? (
                 <ComposerTrayRow
                   tone="error"

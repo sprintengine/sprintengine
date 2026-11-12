@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
 import type { StudioParsedServerFrame } from '../../../packages/studio-protocol/src/public'
-import { CONVERSATION_WIRE_PAGE_BYTES, CONVERSATION_WIRE_PREVIEW_CHARS } from '../conversation-stream-shaping'
+import {
+  CONVERSATION_WIRE_EVENT_BYTES,
+  CONVERSATION_WIRE_PAGE_BYTES,
+  CONVERSATION_WIRE_PREVIEW_CHARS,
+} from '../conversation-stream-shaping'
 import type { ConversationSessionFrame } from '../../shared/conversation-runtime'
 import {
   OWNER_TOKEN,
@@ -539,6 +543,38 @@ test('a reset snapshot after the join arrives bounded, in parts, before its fenc
   assert.ok(Buffer.byteLength(JSON.stringify(sent)) <= CONVERSATION_WIRE_PAGE_BYTES)
   assert.equal(sent.at(-1)?.seq, 1200)
   assert.ok(sent.every((event) => event.payload?.output === undefined))
+})
+
+test('one oversized event crosses within a frame, live, in a snapshot and in a replay, and reads back whole', async () => {
+  const { path, auth, backend } = await serve()
+  const answer = `Here is the whole of it. ${'w'.repeat(3 * 1024 * 1024)}`
+  const before = backend.emit('agent-1', 'content_delta', { turnId: 't', text: answer })
+  const c = await open(path, pairFakeClient(auth, 'oversized', ['conversation:read']))
+  const cut = (event: { payload?: Record<string, unknown> } | undefined) =>
+    Buffer.byteLength(JSON.stringify(event)) <= CONVERSATION_WIRE_EVENT_BYTES && event?.payload?.wireClipped === true
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  const snapshot = await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'snapshot')
+  assert.ok(snapshot.t === 'frame' && snapshot.frame.type === 'snapshot')
+  assert.ok(cut(snapshot.frame.page.events.find((event) => event.seq === before.seq)))
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
+  const live = backend.emit('agent-1', 'content_delta', { turnId: 't', text: answer })
+  const sent = await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'event')
+  assert.ok(sent.t === 'frame' && sent.frame.type === 'event' && cut(sent.frame.event))
+  const whole = await request(c, 'whole', 'conversation.event', { key, seq: live.seq, id: live.id })
+  assert.equal(whole.ok && (whole.result as { event: { payload: { text: string } } }).event.payload.text, answer)
+  const missing = await request(c, 'missing', 'conversation.event', { key, seq: live.seq, id: 'another' })
+  assert.equal(!missing.ok && missing.error.code, 'not_found')
+  // A reconnect whose catch-up carries it.
+  const again = await open(path, pairFakeClient(auth, 'oversized-again', ['conversation:read']))
+  again.send({
+    t: 'sub',
+    id: 'chat',
+    topic: 'conversation.session',
+    params: { key },
+    cursor: { afterSeq: before.seq, generation: 'log-1' },
+  })
+  const replayed = await again.next((frame) => frame.t === 'frame' && frame.frame.type === 'event')
+  assert.ok(replayed.t === 'frame' && replayed.frame.type === 'event' && cut(replayed.frame.event))
 })
 
 test('an answer over the frame cap arrives chunked and whole', async () => {

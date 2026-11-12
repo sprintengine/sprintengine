@@ -69,6 +69,7 @@ import {
   MESH_CONVERSATION_SEND_CHANNEL,
   MESH_CONVERSATION_SIDE_QUESTION_CHANNEL,
   MESH_CONVERSATION_TOOL_DETAIL_CHANNEL,
+  MESH_CONVERSATION_EVENT_CHANNEL,
   MESH_CONVERSATION_TOOL_IMAGE_CHANNEL,
   MESH_CONVERSATION_ATTACHMENT_CHANNEL,
   MESH_CONVERSATION_TURN_DIFF_CHANNEL,
@@ -105,6 +106,7 @@ import type {
   ConversationSideQuestionExchange,
   ConversationSideQuestionResult,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationTurnDiffResult,
 } from '../../shared/conversation-runtime'
 import type { TailnetScope } from '../../shared/tailnet'
@@ -393,6 +395,8 @@ export const meshApi = {
     toolUseId: string
   }): Promise<ConversationToolDetailResult> =>
     ipcRenderer.invoke(MESH_CONVERSATION_TOOL_DETAIL_CHANNEL, input) as Promise<ConversationToolDetailResult>,
+  meshConversationEvent: (input: { key: MeshConversationKey; seq: number; id: string }) =>
+    ipcRenderer.invoke(MESH_CONVERSATION_EVENT_CHANNEL, input) as Promise<ConversationEventReadResult>,
   meshConversationTurnDiff: (input: {
     key: MeshConversationKey
     turnSeq: number
@@ -521,6 +525,7 @@ export const meshApi = {
   | 'meshConversationMcpServerAction'
   | 'meshConversationRestartSession'
   | 'meshConversationToolDetail'
+  | 'meshConversationEvent'
   | 'meshConversationTurnDiff'
   | 'meshConversationWatchChanges'
   | 'meshConversationChangesDiff'

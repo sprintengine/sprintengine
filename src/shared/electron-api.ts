@@ -260,6 +260,8 @@ import type {
   ConversationTerminalHandoffResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
+  ConversationEventReadInput,
+  ConversationEventReadResult,
   ConversationAttachmentInput,
   ConversationAttachmentResult,
   ConversationImageAttachment,
@@ -1352,6 +1354,11 @@ export type ElectronApi = {
     key: MeshConversationKey
     toolUseId: string
   }) => Promise<ConversationToolDetailResult>
+  meshConversationEvent: (input: {
+    key: MeshConversationKey
+    seq: number
+    id: string
+  }) => Promise<ConversationEventReadResult>
   meshConversationTurnDiff: (input: {
     key: MeshConversationKey
     turnSeq: number
@@ -1622,6 +1629,8 @@ export type ElectronApi = {
   ) => Promise<ConversationTerminalHandoffResult>
   conversationSessionsList: (input?: ConversationListSessionsInput) => Promise<ConversationListSessionsResult>
   conversationToolDetail: (input: ConversationToolDetailInput) => Promise<ConversationToolDetailResult>
+  // An event that crossed cut to fit (`wireClipped`), read whole.
+  conversationEvent: (input: ConversationEventReadInput) => Promise<ConversationEventReadResult>
   // The bytes of an image a sent turn carried, by the store reference its
   // `user_message` recorded — for a bubble replayed after a restart.
   conversationAttachment: (input: ConversationAttachmentInput) => Promise<ConversationAttachmentResult>

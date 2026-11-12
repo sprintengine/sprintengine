@@ -615,6 +615,17 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         'conversation.toolDetail',
       )
     },
+    'conversation.event': async ({ key: wire, seq, id }, { grant, voice }) => {
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const read = await backend.event(key, seq, id)
+      if (read.ok) return { ok: true, result: { event: voice.redact(read.event) } }
+      return voice.failed(
+        read.code === 'not_found' ? 'not_found' : read.code === 'invalid_input' ? 'invalid_params' : 'unavailable',
+        read.message,
+        'conversation.event',
+      )
+    },
     'conversation.turnDiff': async ({ key: wire, turnSeq, path }, { grant, voice }) => {
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)

@@ -54,6 +54,8 @@ import type {
   ConversationTerminalHandoffResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
+  ConversationEventReadInput,
+  ConversationEventReadResult,
   ConversationAttachmentResult,
   ConversationPlanDocumentInput,
   ConversationPlanDocumentResult,
@@ -128,6 +130,7 @@ export type ConversationService = {
   terminalHandoff?(input: ConversationTerminalHandoffInput): Promise<ConversationTerminalHandoffResult>
   listSessions(input?: ConversationListSessionsInput): ConversationListSessionsResult
   getToolDetail?(input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
+  readEvent?(input: ConversationEventReadInput): Promise<ConversationEventReadResult>
   readAttachment?(ref: string): Promise<ConversationAttachmentResult>
   planDocument?(input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult>
   subscribe?(
@@ -336,6 +339,9 @@ export function createConversationService(
     },
     getToolDetail(input) {
       return runtime.getToolDetail(input)
+    },
+    readEvent(input) {
+      return runtime.readConversationEvent(input)
     },
     listApprovalRules() {
       return runtime.listApprovalRules()

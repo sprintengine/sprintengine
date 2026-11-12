@@ -66,6 +66,7 @@ export const CONVERSATION_LANE_ACCESS: { readonly [T in ConversationClientMessag
   subscribe: FOLLOW,
   loadEarlier: FOLLOW,
   getToolDetail: FOLLOW,
+  getEvent: FOLLOW,
   getTurnDiff: FOLLOW,
   getContextBreakdown: FOLLOW,
   watchQueued: FOLLOW,

@@ -206,6 +206,8 @@ export type ConversationGatewayHost = {
     turnLimit?: number,
   ): ReturnType<ConversationSessionApi['loadEarlier']>
   getToolDetail(key: ConversationKey, toolUseId: string): ReturnType<ConversationBackend['getToolDetail']>
+  /** One event as stored, by the sequence and id it was sent under. */
+  getEvent(key: ConversationKey, seq: number, id: string): ReturnType<ConversationBackend['readConversationEvent']>
   getTurnDiff(key: ConversationKey, turnSeq: number, path?: string): ReturnType<ConversationSessionApi['getTurnDiff']>
   /**
    * Where the picture one step made or looked at is on this disk, read from
@@ -1651,6 +1653,7 @@ export function createConversationGatewayHost(
       ),
     loadEarlier: (key, beforeCursor, turnLimit) => api.loadEarlier({ key, beforeCursor, turnLimit }),
     getToolDetail: (key, toolUseId) => api.getToolDetail({ ...key, toolUseId }),
+    getEvent: (key, seq, id) => api.readEvent({ ...key, seq, id }),
     getTurnDiff: (key, turnSeq, path) => api.getTurnDiff({ key, turnSeq, path }),
     toolImagePath(key, toolUseId) {
       const id = JSON.stringify([key.workspaceRoot, key.workspaceId, key.agentId, toolUseId])

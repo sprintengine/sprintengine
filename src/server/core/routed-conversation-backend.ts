@@ -324,10 +324,11 @@ export function createRoutedConversationBackend(deps: RoutedConversationBackendD
     try {
       return await callRemote(distro, member, args)
     } catch (error) {
-      if (!RESULT_MEMBERS.has(member) && member !== 'getToolDetail') throw error
+      const coded = member === 'getToolDetail' || member === 'readConversationEvent'
+      if (!RESULT_MEMBERS.has(member) && !coded) throw error
       const message = failureMessage(error)
       log(`${member} on ${SSH_KEY.test(distro) ? distro : `WSL: ${distro}`} failed: ${message}`)
-      return member === 'getToolDetail' ? { ok: false, code: 'unavailable', message } : { ok: false, message }
+      return coded ? { ok: false, code: 'unavailable', message } : { ok: false, message }
     }
   }
 
@@ -443,6 +444,7 @@ export function createRoutedConversationBackend(deps: RoutedConversationBackendD
     },
     noteTerminalHandoff: bySession('noteTerminalHandoff'),
     getToolDetail: byWorkspace('getToolDetail'),
+    readConversationEvent: byWorkspace('readConversationEvent'),
     findToolCall: byWorkspace('findToolCall'),
     async readAttachment(...args: unknown[]) {
       // A reference names no workspace: this process's store first, then each running server's.

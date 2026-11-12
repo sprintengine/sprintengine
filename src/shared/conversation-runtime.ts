@@ -64,6 +64,7 @@ export type {
   ConversationSessionActionResult,
   ConversationToolDetail,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationCapabilities,
   ConversationCheckpointFile,
   ConversationCheckpointDiff,
@@ -439,6 +440,8 @@ export type ConversationListSessionsResult =
   { ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message: string }
 
 export type ConversationToolDetailInput = ConversationTranscriptInput & { toolUseId: string }
+/** An event by the sequence and id a wire sent it under (`ConversationEventReadResult`). */
+export type ConversationEventReadInput = ConversationTranscriptInput & { seq: number; id: string }
 export type ConversationToolEvent =
   | (Omit<ConversationEvent, 'type' | 'payload'> & {
       type: 'tool_started'

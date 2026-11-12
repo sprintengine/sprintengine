@@ -45,6 +45,7 @@ function conversationsOver(api: Api): StudioConversationBackend {
     loadEarlier: (key, beforeCursor, turnLimit) =>
       call(api, 'conversationLoadEarlier', { key, beforeCursor, turnLimit }),
     toolDetail: (key, toolUseId) => call(api, 'conversationToolDetail', { ...key, toolUseId }),
+    event: (key, seq, id) => call(api, 'conversationEvent', { ...key, seq, id }),
     turnDiff: (key, turnSeq, path) => call(api, 'conversationTurnDiff', { key, turnSeq, path }),
     command: async () => ({ ok: false, code: 'unavailable', message: 'A window drives a chat by its session.' }),
     stop: async () => ({ ok: true }),

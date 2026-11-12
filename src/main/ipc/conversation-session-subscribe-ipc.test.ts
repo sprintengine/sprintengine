@@ -173,3 +173,56 @@ test('the window is sent a chat as every wire sends it: results once, a snapshot
   assert.deepEqual(earlier.page, snapshot.page)
   assert.equal(events[0].payload?.output, events[0].payload?.preview, 'the stored event is left as it was')
 })
+
+test('the window reads an event that crossed cut to fit whole, by its sequence and id', async () => {
+  const handlers = new Map<string, Handler>()
+  const asked: unknown[] = []
+  const whole = {
+    id: 'e7',
+    seq: 7,
+    sessionId: 's',
+    workspaceId: 'w',
+    agentId: 'a',
+    providerId: 'p',
+    modelId: 'm',
+    createdAt: 1,
+    type: 'content_delta',
+    payload: { turnId: 't', text: 'all of it' },
+  } as ConversationEvent
+  const unused = async () => ({ ok: false as const, message: 'unused' })
+  registerConversationIpc(
+    { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) } as unknown as Parameters<
+      typeof registerConversationIpc
+    >[0],
+    {
+      listProviders: unused,
+      getSecretStatus: unused,
+      setSecret: unused,
+      clearSecret: unused,
+      listProviderModels: unused,
+      startSession: unused,
+      sendTurn: unused,
+      interrupt: unused,
+      respondToRequest: unused,
+      setPermission: unused,
+      stopSession: unused,
+      listSessions: () => ({ ok: true, sessions: [] }),
+      readTranscript: unused,
+      onEvent: () => () => undefined,
+      readEvent: async (input) => {
+        asked.push(input)
+        return { ok: true as const, event: whole }
+      },
+    } as ConversationIpcHandlers,
+  )
+  const read = handlers.get('conversation:event:read')!
+  const key = { workspaceRoot: '/Users/dev/app', workspaceId: 'w', agentId: 'a' }
+  assert.deepEqual(await read({}, { ...key, seq: 7, id: 'e7' }), { ok: true, event: whole })
+  assert.deepEqual(asked, [{ ...key, seq: 7, id: 'e7' }])
+  for (const bad of [
+    { ...key, seq: 0, id: 'e7' },
+    { ...key, seq: 7 },
+    { seq: 7, id: 'e7' },
+  ])
+    assert.equal(((await read({}, bad)) as { code?: string }).code, 'invalid_input')
+})

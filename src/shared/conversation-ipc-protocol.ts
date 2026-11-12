@@ -115,6 +115,7 @@ export const CONVERSATION_IPC_PROTOCOL = {
   'conversation:sessions:list': { gaps: ['declaration', 'client'], planned: ['session.list'] },
   // Reads beside a chat.
   'conversation:tool-detail': { methods: ['conversation.toolDetail'], gaps: ['client'] },
+  'conversation:event:read': { methods: ['conversation.event'], gaps: DONE },
   'conversation:attachment': { methods: ['conversation.attachment'], gaps: ['grant'] },
   'conversation:plan-document': { methods: ['conversation.planDocument'], gaps: ['grant'] },
   // Every chat's lifecycle, for the sessions list.

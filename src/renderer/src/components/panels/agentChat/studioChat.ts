@@ -352,6 +352,20 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
         return { ok: false, code: 'unavailable', message: messageOf(error) }
       }
     },
+    async readEvent(input) {
+      try {
+        const read = await (await client()).conversations.event(refOf(input), input.seq, input.id)
+        if (read.ok) return { ok: true, event: read.event as ConversationEvent }
+        return {
+          ok: false,
+          code:
+            read.code === 'not_found' ? 'not_found' : read.code === 'invalid_params' ? 'invalid_input' : 'unavailable',
+          message: read.message,
+        }
+      } catch (error) {
+        return { ok: false, code: 'unavailable', message: messageOf(error) }
+      }
+    },
     turnDiff: (input) =>
       outcome(async () => {
         const read = await (await client()).conversations.turnDiff(refOf(input.key), input.turnSeq, input.path)

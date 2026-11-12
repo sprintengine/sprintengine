@@ -439,7 +439,12 @@ marked `inputTruncated`, which every reader already knew from inputs too
 large to store. Both read the whole step with `getToolDetail` when it is
 opened and draw a cut change only from that; a phone or desktop from before
 reads it the same way (the phone on opening, the desktop behind "Show full
-output") but draws the cut change until then. An MCP step's own
+output") but draws the cut change until then. An event larger than one
+frame crosses cut to fit and marked `wireClipped`, read whole with the
+lane's `getEvent` (or the Studio protocol's `conversation.event`); no
+capability names the frame, since only a desktop that knows it ever sends a
+cut event. A reader from before draws the cut text as it came, without
+saying it was cut. An MCP step's own
 title and its server's name (`displayTitle` and `serverName` on a
 `tool_started`, 2026-10-13: plain text, at most 120 characters each) are the
 same kind of member: a reader that does not know them titles the step from

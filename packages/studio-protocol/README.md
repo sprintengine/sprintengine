@@ -135,6 +135,7 @@ method `createStudioRpcClient` builds from the same table.
 | `conversation.stop`                | operate        | `key`, `commandId`                              | `{}`                                             |
 | `conversation.loadEarlier`         | read           | `key`, `beforeCursor`, `turnLimit?`             | `{ page }`                                       |
 | `conversation.toolDetail`          | read           | `key`, `toolUseId`                              | `{ detail }`                                     |
+| `conversation.event`               | read           | `key`, `seq`, `id`                              | `{ event }`                                      |
 | `conversation.turnDiff`            | read           | `key`, `turnSeq`, `path?`                       | `{ diff, patch?, … }`                            |
 
 A key is `{ workspaceId, agentId }`. An owner may add `workspaceRoot`, the

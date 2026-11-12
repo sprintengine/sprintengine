@@ -7,9 +7,11 @@ import { DEFAULT_TRANSCRIPT_LIMITS } from '../main/conversation-transcript-reade
 import type { ConversationEvent } from '../shared/conversation-runtime'
 import {
   CONVERSATION_WIRE_INPUT_FIELD_CHARS,
+  CONVERSATION_WIRE_EVENT_BYTES,
   CONVERSATION_WIRE_PAGE_BYTES,
   CONVERSATION_WIRE_PREVIEW_CHARS,
   boundConversationPage,
+  conversationDeltaKey,
   conversationSnapshotParts,
   conversationWireFrame,
   projectConversationEvent,
@@ -258,21 +260,71 @@ test('a snapshot keeps its newest projected events within the page budget, the r
   assert.deepEqual(boundConversationPage(small).page, { ...small, events: small.events.map(projectConversationEvent) })
 })
 
-test('one event larger than a whole page is sent, and ends its page', () => {
+test('one oversized event crosses within a frame, its text cut and marked, the stored one whole', () => {
+  const answer = `${'The start of a long answer. '.repeat(10)}${'z'.repeat(3 * 1024 * 1024)}`
+  const stored = event(9, 'content_delta', { turnId: 't', text: answer })
+  const shown = projectConversationEvent(stored)
+  assert.ok(Buffer.byteLength(JSON.stringify(shown)) <= CONVERSATION_WIRE_EVENT_BYTES)
+  assert.ok(Buffer.byteLength(JSON.stringify(shown)) > CONVERSATION_WIRE_EVENT_BYTES - 1024, 'it keeps what fits')
+  assert.deepEqual(Object.keys(shown.payload!).sort(), ['text', 'turnId', 'wireClipped'])
+  assert.ok(String(shown.payload?.text).startsWith('The start of a long answer.'))
+  assert.equal(shown.payload?.wireClipped, true)
+  assert.equal(shown.seq, 9)
+  assert.equal(shown.id, stored.id, 'read back whole by its id and sequence')
+  assert.equal(stored.payload?.text, answer)
+  assert.equal(projectConversationEvent(shown), shown)
+  // A cut delta is not a plain delta: nothing merges more text into it.
+  assert.equal(conversationDeltaKey(shown), null)
+  assert.notEqual(conversationDeltaKey(stored), null)
+})
+
+test('an oversized event of any kind is cut to fit: nested text, and a bulk that is not text', () => {
+  const approval = projectConversationEvent(
+    event(1, 'approval_requested', {
+      requestId: 'r',
+      toolName: 'Write',
+      input: { file_path: 'a.ts', content: 'c'.repeat(600_000), notes: ['n'.repeat(400_000)] },
+    }),
+  )
+  assert.ok(Buffer.byteLength(JSON.stringify(approval)) <= CONVERSATION_WIRE_EVENT_BYTES)
+  assert.equal((approval.payload?.input as { file_path: string }).file_path, 'a.ts')
+  assert.equal(approval.payload?.requestId, 'r')
+  assert.equal(approval.payload?.wireClipped, true)
+  const numbers = projectConversationEvent(
+    event(2, 'session_updated', { modelId: 'opus', samples: Array.from({ length: 100_000 }, (_, i) => i) }),
+  )
+  assert.deepEqual(numbers.payload, { modelId: 'opus', wireClipped: true })
+  const small = event(3, 'session_updated', { modelId: 'opus' })
+  assert.equal(projectConversationEvent(small), small)
+})
+
+test('a merged run that grew in place past the cap is projected again', () => {
+  const run = event(4, 'content_delta', { turnId: 't', text: 'short' })
+  assert.equal(projectConversationEvent(run), run)
+  ;(run.payload as { text: string }).text = 'y'.repeat(1024 * 1024)
+  ;(run as { seq: number }).seq = 5
+  const grown = projectConversationEvent(run)
+  assert.equal(grown.payload?.wireClipped, true)
+  assert.equal(grown.seq, 5)
+})
+
+test('a page goes on past an oversized event, which takes one frame like any other', () => {
   const huge = event(9, 'content_delta', { text: 'z'.repeat(CONVERSATION_WIRE_PAGE_BYTES + 10) })
-  const alone = boundConversationPage({ events: [event(8, 'turn_started', {}), huge], hasMore: false, beforeCursor: 8 })
-  assert.deepEqual(alone.page.events, [huge])
-  assert.equal(alone.page.beforeCursor, 9)
-  assert.equal(alone.page.hasMore, true)
-  // Not left for the page before, which would then hold it alone and leave
-  // this one with only what followed it.
   const end = event(10, 'turn_completed', { turnId: 't' })
-  const behind = boundConversationPage({
+  const bounded = boundConversationPage({
     events: [event(8, 'turn_started', {}), huge, end],
     hasMore: false,
     beforeCursor: 8,
   })
-  assert.deepEqual(behind.page.events, [huge, end])
+  assert.deepEqual(
+    bounded.page.events.map((item) => [item.seq, item.payload?.wireClipped]),
+    [
+      [8, undefined],
+      [9, true],
+      [10, undefined],
+    ],
+  )
+  assert.equal(bounded.page.hasMore, false)
 })
 
 test('a catch-up is bounded by the page budget, so a replay is never larger than a snapshot', () => {
@@ -299,4 +351,13 @@ test('a page is cut where a turn begins, mid-turn only when the newest turn alon
   assert.equal(inside.page.events.at(-1)?.seq, 601)
   assert.ok(inside.page.events[0].type === 'tool_output' && inside.page.events.length < 600)
   assert.ok(inside.bytes <= CONVERSATION_WIRE_PAGE_BYTES)
+})
+
+test('a result kept no detail for has its pictures bounded, and one too large is cut to fit', () => {
+  const paths = Array.from({ length: 12 }, (_, index) => `/Users/dev/shot-${index}.png`)
+  const shown = projectConversationEvent(event(1, 'tool_output', { output: 'ok', images: paths }))
+  assert.deepEqual(shown.payload?.images, paths.slice(0, 8))
+  const huge = projectConversationEvent(event(2, 'tool_output', { output: 'h'.repeat(1024 * 1024) }))
+  assert.equal(huge.payload?.wireClipped, true)
+  assert.ok(Buffer.byteLength(JSON.stringify(huge)) <= CONVERSATION_WIRE_EVENT_BYTES)
 })

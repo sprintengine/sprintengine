@@ -1641,6 +1641,33 @@ export function usePhoneConversation(
         );
     }
   }, [page.beforeCursor, request, persistLatest, held]);
+  // Events the desktop sent cut to fit one frame (`wireClipped`): the screen
+  // offers them whole, a read each, put in place of the cut copy as it comes.
+  const clippedCount = useMemo(
+    () => events.filter((event) => recordValue(event.payload).wireClipped === true).length,
+    [events],
+  );
+  const restoreClipped = useCallback(async () => {
+    const owner = lifecycle.current;
+    const clipped = eventsRef.current.filter((event) => recordValue(event.payload).wireClipped === true);
+    try {
+      for (const cut of clipped) {
+        if (cut.seq === undefined) continue;
+        const result = recordValue(await request({ type: "getEvent", seq: cut.seq, id: cut.id }));
+        if (owner !== lifecycle.current) return;
+        if (result.ok !== true || !isConversationEvent(result.event)) throw new Error("Could not read it in full.");
+        const whole = { ...result.event, id: cut.id, seq: cut.seq };
+        eventsRef.current = eventsRef.current.map((event) =>
+          event.seq === cut.seq && event.id === cut.id ? whole : event,
+        );
+        setEvents(eventsRef.current);
+      }
+      void persistLatest(held()).catch(() => {});
+    } catch (error) {
+      if (owner === lifecycle.current)
+        setNotice(error instanceof Error ? error.message : "Could not read it in full.");
+    }
+  }, [request, persistLatest, held]);
   // Background work the desktop lists for the chat, which the transcript
   // alone may not show (a monitor that will wake the agent): working, never a
   // turn, so a send goes straight to the desktop.
@@ -1658,6 +1685,8 @@ export function usePhoneConversation(
     retry,
     page,
     loadEarlier,
+    clippedCount,
+    restoreClipped,
     request,
     command,
     setModel,

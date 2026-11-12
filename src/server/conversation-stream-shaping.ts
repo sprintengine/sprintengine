@@ -28,6 +28,20 @@ export const CONVERSATION_WIRE_PAGE_BYTES = 2 * 1024 * 1024
 const SNAPSHOT_PART_BYTES = CONVERSATION_MAX_FRAME_BYTES - 32 * 1024
 
 /**
+ * The most one event takes on a wire: a frame, less room for its envelope,
+ * so no event is ever chunked and no single event can hold a reader, or a
+ * snapshot, to ransom. An event larger than this as stored crosses with its
+ * longest text cut to fit and `wireClipped: true`; a reader reads it whole
+ * with the conversation's event read (`conversation.event`, the lane's
+ * `getEvent`). A long answer, a pasted log, a large approval are the events
+ * this reaches; none in a year of this machine's chats was a quarter of it.
+ */
+export const CONVERSATION_WIRE_EVENT_BYTES = SNAPSHOT_PART_BYTES
+// The least a cut string keeps, and the depth a cut walks into a payload.
+const MIN_CLIPPED_CHARS = 256
+const MAX_CLIP_DEPTH = 16
+
+/**
  * Characters of a tool's result an event carries: the runtime's stored
  * preview (`TOOL_PREVIEW_CHARS`), which it cut from the end of output that
  * streamed and from the start of a one-shot result. Longer text, from an
@@ -61,16 +75,17 @@ function clipText(text: string, chars: number, fromEnd: boolean): string {
 
 function toolOutputForWire(payload: Payload): Payload {
   // A result the runtime kept no detail for (no step id) has nothing to read
-  // back whole: it crosses as it is, but once.
-  if (typeof payload.toolUseId !== 'string') return withoutCopy(payload)
-  let next = payload
+  // back whole: its text crosses as it is, but once, within one event's
+  // bound (`capEvent`), and its pictures as any step's.
+  const detailed = typeof payload.toolUseId === 'string'
+  let next = detailed ? payload : withoutCopy(payload)
   const set = (key: string, value: unknown) => {
     if (next === payload) next = { ...payload }
     next[key] = value
   }
   const fromEnd = payload.partial === true
   let cut = false
-  for (const key of ['preview', 'output'] as const) {
+  for (const key of detailed ? (['preview', 'output'] as const) : []) {
     const value = payload[key]
     if (value === undefined || value === null) continue
     const text = typeof value === 'string' ? value : JSON.stringify(value)
@@ -138,28 +153,80 @@ function toolStartedForWire(payload: Payload): Payload {
   return clipped ? { ...payload, input: clipped, inputTruncated: true } : payload
 }
 
-// Each event's projection, by the event itself: every live subscriber of a
-// chat is sent the same event objects, so a live event is projected once for
-// all of them (a page is read afresh for each reader, and projected for it).
-// A projection projects to itself, so a frame that went through once (a
-// paired machine's, relayed to a window here) costs nothing the second time.
-const projections = new WeakMap<ConversationEvent, ConversationEvent>()
+/** `value` with every string longer than `chars` cut to its head. */
+function clipStrings(value: unknown, chars: number, depth = 0): unknown {
+  if (typeof value === 'string') return value.length > chars ? value.slice(0, chars) : value
+  if (!value || typeof value !== 'object' || depth >= MAX_CLIP_DEPTH) return value
+  if (Array.isArray(value)) return value.map((item) => clipStrings(item, chars, depth + 1))
+  return Object.fromEntries(
+    Object.entries(value as Payload).map(([key, item]) => [key, clipStrings(item, chars, depth + 1)]),
+  )
+}
+
+function longestString(value: unknown, depth = 0): number {
+  if (typeof value === 'string') return value.length
+  if (!value || typeof value !== 'object' || depth >= MAX_CLIP_DEPTH) return 0
+  let longest = 0
+  for (const item of Array.isArray(value) ? value : Object.values(value as Payload))
+    longest = Math.max(longest, longestString(item, depth + 1))
+  return longest
+}
+
+/**
+ * An event within `CONVERSATION_WIRE_EVENT_BYTES`: as it is when it fits,
+ * else with its longest strings cut to the longest length that fits (found
+ * by halving), else, for a payload whose bulk is not text, with only its own
+ * plain members. Marked `wireClipped` either way.
+ */
+function capEvent(event: ConversationEvent): ConversationEvent {
+  if (!event.payload || eventBytes(event) <= CONVERSATION_WIRE_EVENT_BYTES) return event
+  const sized = (payload: unknown) =>
+    Buffer.byteLength(JSON.stringify({ ...event, payload: { ...(payload as Payload), wireClipped: true } }))
+  let fits = MIN_CLIPPED_CHARS
+  if (sized(clipStrings(event.payload, fits)) <= CONVERSATION_WIRE_EVENT_BYTES) {
+    let over = longestString(event.payload)
+    while (over - fits > 1) {
+      const middle = Math.floor((fits + over) / 2)
+      if (sized(clipStrings(event.payload, middle)) <= CONVERSATION_WIRE_EVENT_BYTES) fits = middle
+      else over = middle
+    }
+    return { ...event, payload: { ...(clipStrings(event.payload, fits) as Payload), wireClipped: true } }
+  }
+  const plain = Object.entries(event.payload).filter(([, value]) => value === null || typeof value !== 'object')
+  return {
+    ...event,
+    payload: { ...(clipStrings(Object.fromEntries(plain), MIN_CLIPPED_CHARS) as Payload), wireClipped: true },
+  }
+}
+
+// Each event's projection, by the event itself and the sequence it was
+// projected at: every live subscriber of a chat is sent the same event
+// objects, so a live event is projected once for all of them (a page is read
+// afresh for each reader, and projected for it), while a merged run of deltas
+// grows in place and moves its sequence as it does. A projection projects to
+// itself, so a frame that went through once (a paired machine's, relayed to a
+// window here) costs nothing the second time.
+const projections = new WeakMap<ConversationEvent, { seq: number | undefined; projected: ConversationEvent }>()
 
 /**
  * An event as it crosses a wire: a tool's result once, within its preview,
  * and a tool's input without its file-change bodies, both marked as cut
  * (`truncated`, `inputTruncated`) so a reader fetches the whole with
- * `toolDetail` when it opens the step. Every other event is sent as stored.
- * The stored event is never changed.
+ * `toolDetail` when it opens the step; and any event within one frame
+ * (`CONVERSATION_WIRE_EVENT_BYTES`), marked `wireClipped` when it was cut.
+ * Every other event is sent as stored, and the stored event is never changed.
  */
 export function projectConversationEvent(event: ConversationEvent): ConversationEvent {
-  if ((event.type !== 'tool_output' && event.type !== 'tool_started') || !event.payload) return event
   const known = projections.get(event)
-  if (known) return known
-  const payload = event.type === 'tool_output' ? toolOutputForWire(event.payload) : toolStartedForWire(event.payload)
-  const projected = payload === event.payload ? event : { ...event, payload }
-  projections.set(event, projected)
-  projections.set(projected, projected)
+  if (known && known.seq === event.seq) return known.projected
+  let projected = event
+  if ((event.type === 'tool_output' || event.type === 'tool_started') && event.payload) {
+    const payload = event.type === 'tool_output' ? toolOutputForWire(event.payload) : toolStartedForWire(event.payload)
+    if (payload !== event.payload) projected = { ...event, payload }
+  }
+  projected = capEvent(projected)
+  projections.set(event, { seq: event.seq, projected })
+  if (projected !== event) projections.set(projected, { seq: projected.seq, projected })
   return projected
 }
 
@@ -216,9 +283,8 @@ export function conversationDeltaKey(event: ConversationEvent): string | null {
  * begins, so the oldest turn shown has its message and every step's start:
  * mid-turn only when the newest turn alone is over the budget. Measured from
  * the newest back, and only as far as the budget reaches: what is left
- * behind is never measured at all. One event larger than a whole page is
- * kept, and ends the page: otherwise the page before it would hold only what
- * came after it, and the page that pages it in would hold it alone.
+ * behind is never measured at all. Every projected event is within one
+ * frame, so a page always holds many.
  */
 export function boundConversationPage(
   page: ConversationPage,
@@ -236,19 +302,17 @@ export function boundConversationPage(
     const event = projectConversationEvent(events[index])
     const size = eventBytes(event)
     over = kept.length > 0 && bytes + size > budget
-    if (over && size <= budget) break
+    if (over) break
     bytes += size
     kept.push(event)
     sizes.push(size)
-    if (over) break
     if (event.type === 'user_message') {
       whole = kept.length
       wholeBytes = bytes
     }
   }
-  // Cut back to the oldest whole turn, unless the page ended on an event
-  // larger than a whole page, which is kept.
-  if (over && whole > 0 && whole < kept.length && sizes[kept.length - 1] <= budget) {
+  // Cut back to the oldest whole turn.
+  if (over && whole > 0 && whole < kept.length) {
     kept.length = whole
     sizes.length = whole
     bytes = wholeBytes
