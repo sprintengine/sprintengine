@@ -158,6 +158,33 @@ test('unloading a module takes its methods, and a call to it is then module_unav
   assert.equal(!after.ok && after.code, 'module_unavailable')
 })
 
+test('a module switched off says nothing more through the host it kept, and registers nothing more', async () => {
+  const events: string[] = []
+  const k = createMainKernel({
+    resolveModuleManifest: (id) => MANIFESTS[id],
+    deliverModuleEvent: (event) => events.push(`${event.sourceModuleId}:${event.topic}`),
+  })
+  const kept = k.hostFor('deck')
+  kept.onShutdown(() => kept.emit('deck.stopping'))
+  kept.emit('deck.ready')
+  await k.unregisterModule('deck')
+  assert.deepEqual(events, ['deck:deck.ready', 'deck:deck.stopping'], 'its shutdown hooks may still say goodbye')
+
+  // A timer or a promise that outlived its shutdown: dropped, and refused.
+  kept.emit('deck.late')
+  assert.deepEqual(events, ['deck:deck.ready', 'deck:deck.stopping'])
+  const good = { access: 'read' as const, params: anything, handler: () => ({ ok: true as const, result: 1 }) }
+  assert.throws(() => kept.registerMethods({ ping: good }), /switched off/)
+  assert.deepEqual(k.declaredMethods('deck'), [])
+
+  // Switched on again, it is handed a new host that works.
+  const again = k.hostFor('deck')
+  again.registerMethods({ ping: good })
+  again.emit('deck.ready')
+  assert.deepEqual(k.declaredMethods('deck'), [{ name: 'ping', access: 'read' }])
+  assert.equal(events.at(-1), 'deck:deck.ready')
+})
+
 test('the kernel holds no IPC: it is made without one, and a module has no registerIpc', () => {
   assert.equal(createMainKernel.length, 0)
   assert.equal('registerIpc' in createMainKernel().hostFor('deck'), false)

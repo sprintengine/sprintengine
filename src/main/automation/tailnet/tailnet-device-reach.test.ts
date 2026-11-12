@@ -286,7 +286,12 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'moduleBacklog.addLink',
           'moduleBacklog.updateModuleMetadata',
           'moduleUsage.query',
+          'module.list',
         ],
+      ],
+      [
+        'what extensions run here, installed, trusted or switched: an owner’s',
+        ['module.setEnabled', 'module.install', 'module.setTrust', 'module.uninstall'],
       ],
       [
         'what Studio’s own agents report, and importing chats from disk: an owner’s',

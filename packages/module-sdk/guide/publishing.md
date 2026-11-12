@@ -146,8 +146,9 @@ then commit both.
 
 Under the hood Studio resolves with `extensions:github:resolve` (the commit,
 `plugin.json` there, and what it discloses), installs that exact commit with
-`extensions:github:install`, and removes an installed module with
-`modules:third-party:uninstall` (Settings → Modules → Uninstall).
+`extensions:github:install`, and removes it with its plugin
+(`marketplace:plugins:uninstall`, Settings → Modules → Uninstall). A module
+added from a folder is removed by the Studio server (`module.uninstall`).
 
 ### Signed or not
 

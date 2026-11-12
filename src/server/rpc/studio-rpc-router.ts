@@ -47,6 +47,7 @@ import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import { createStudioAgentSkillsHandlers } from './studio-agent-skills'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
 import type { ModuleHostServices } from '../../main/module-host/main-host'
+import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -679,6 +680,24 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       context.voice,
       method,
       moduleRefusedBefore,
+    )
+  }
+  /** A change to what runs here, carried out once under its id by the modules' lifecycle. */
+  function lifecycleCommand<
+    M extends 'module.setEnabled' | 'module.install' | 'module.setTrust' | 'module.uninstall',
+    R,
+  >(method: M, context: Asking, commandId: string, work: (lifecycle: ModuleLifecycle) => Promise<R>) {
+    const modules = options.modules
+    if (!modules) return unserved(method)
+    return once(
+      keptId(method, context.grant, commandId),
+      async (): Promise<{ ok: true; result: R } | Refused<'unavailable'>> => {
+        const lifecycle = modules.lifecycle()
+        if (!lifecycle) return refuse('unavailable', 'This Studio’s modules have not loaded yet.')
+        return { ok: true, result: await work(lifecycle) }
+      },
+      context.voice,
+      method,
     )
   }
   const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
@@ -1603,6 +1622,22 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           method,
         ),
     }),
+
+    // What runs here: listed to any client with modules:read, changed only by
+    // an owner, each change once per command id.
+    'module.list': () => {
+      const modules = options.modules
+      if (!modules) return unserved('module.list')
+      return { ok: true, result: { modules: modules.lifecycle()?.list() ?? [] } }
+    },
+    'module.setEnabled': ({ moduleId, enabled, commandId }, context) =>
+      lifecycleCommand('module.setEnabled', context, commandId, (lifecycle) => lifecycle.setEnabled(moduleId, enabled)),
+    'module.install': ({ path, commandId }, context) =>
+      lifecycleCommand('module.install', context, commandId, (lifecycle) => lifecycle.install(path)),
+    'module.setTrust': ({ moduleId, trusted, commandId }, context) =>
+      lifecycleCommand('module.setTrust', context, commandId, (lifecycle) => lifecycle.setTrust(moduleId, trusted)),
+    'module.uninstall': ({ moduleId, commandId }, context) =>
+      lifecycleCommand('module.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
 
     // The host's services a module's window half calls, under its own id;
     // the service checks the module's permission. A write is carried out

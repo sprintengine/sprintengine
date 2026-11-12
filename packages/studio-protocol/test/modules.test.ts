@@ -5,18 +5,25 @@ import { STUDIO_ERROR_CODES } from '../src/envelope'
 import { STUDIO_MODULES_CAPABILITY } from '../src/handshake'
 import { STUDIO_METHODS, parseStudioMethodParams } from '../src/methods'
 import { STUDIO_MODULE_SERVICES_METHODS } from '../src/module-services'
-import { STUDIO_MODULE_METHOD_MAX_CHARS, STUDIO_MODULES_METHODS, isStudioModuleMethodName } from '../src/modules'
+import {
+  STUDIO_MODULE_METHOD_MAX_CHARS,
+  STUDIO_MODULES_METHODS,
+  STUDIO_MODULES_OWNER,
+  isStudioModuleMethodName,
+} from '../src/modules'
 import { STUDIO_SCOPE_PERMISSIONS, studioGrantPrincipal } from '../src/permissions'
 import { studioScopesGrant } from '../src/scopes'
 
 const refusal = (parsed: { ok: boolean; code?: string }) => (parsed.ok ? null : parsed.code)
 
 test('a module method is read under modules:read and operated under modules:operate, behind the modules capability', () => {
-  for (const [method, spec] of Object.entries(STUDIO_MODULES_METHODS)) {
+  for (const method of ['module.read', 'module.operate', 'module.list'] as const) {
+    const spec = STUDIO_MODULES_METHODS[method]
     assert.equal(spec.owner, undefined, `${method} is not held to an owner`)
     assert.equal(spec.capability, STUDIO_MODULES_CAPABILITY, method)
-    assert.equal(STUDIO_METHODS[method as keyof typeof STUDIO_METHODS], spec, method)
+    assert.equal(STUDIO_METHODS[method], spec, method)
   }
+  assert.equal(STUDIO_MODULES_METHODS['module.list'].scope, 'modules:read')
   assert.equal(STUDIO_MODULES_METHODS['module.read'].scope, 'modules:read')
   assert.equal(STUDIO_MODULES_METHODS['module.read'].mutation, false)
   assert.equal(STUDIO_MODULES_METHODS['module.operate'].scope, 'modules:operate')
@@ -156,4 +163,50 @@ test('a new item, a triage, a link and a usage query are read member by member',
     refusal(parseStudioMethodParams('moduleUsage.query', { moduleId: 'acme', query: { from: 1 } })),
     'invalid_params',
   )
+})
+
+// ── What runs here ─────────────────────────────────────────────────────────
+
+test('switching, installing, trusting and uninstalling a module are an owner’s commands, with the reason said', () => {
+  for (const method of ['module.setEnabled', 'module.install', 'module.setTrust', 'module.uninstall'] as const) {
+    const spec = STUDIO_MODULES_METHODS[method]
+    assert.equal(spec.owner, STUDIO_MODULES_OWNER, method)
+    assert.equal(spec.scope, null, method)
+    assert.equal(spec.mutation, true, method)
+    assert.equal(spec.capability, STUDIO_MODULES_CAPABILITY, method)
+    assert.equal(STUDIO_METHODS[method], spec, method)
+  }
+  assert.match(STUDIO_MODULES_OWNER, /changes what runs on this machine/)
+})
+
+test('a lifecycle command names its module or folder and carries a commandId', () => {
+  assert.deepEqual(
+    parseStudioMethodParams('module.setEnabled', { moduleId: 'acme', enabled: false, commandId: 'c1', x: 1 }),
+    { ok: true, params: { moduleId: 'acme', enabled: false, commandId: 'c1' } },
+  )
+  assert.deepEqual(parseStudioMethodParams('module.setEnabled', { moduleId: 'acme', enabled: null, commandId: 'c1' }), {
+    ok: true,
+    params: { moduleId: 'acme', enabled: null, commandId: 'c1' },
+  })
+  assert.equal(
+    refusal(parseStudioMethodParams('module.setEnabled', { moduleId: 'acme', enabled: 'no', commandId: 'c1' })),
+    'invalid_params',
+  )
+  assert.equal(
+    refusal(parseStudioMethodParams('module.setEnabled', { moduleId: 'acme', enabled: true })),
+    'invalid_params',
+  )
+  assert.deepEqual(parseStudioMethodParams('module.install', { path: '/Users/dev/deck', commandId: 'c1' }), {
+    ok: true,
+    params: { path: '/Users/dev/deck', commandId: 'c1' },
+  })
+  assert.equal(refusal(parseStudioMethodParams('module.install', { path: ' ', commandId: 'c1' })), 'invalid_params')
+  assert.equal(
+    refusal(parseStudioMethodParams('module.setTrust', { moduleId: 'acme', trusted: 1, commandId: 'c1' })),
+    'invalid_params',
+  )
+  assert.deepEqual(parseStudioMethodParams('module.uninstall', { moduleId: 'acme', commandId: 'c1' }), {
+    ok: true,
+    params: { moduleId: 'acme', commandId: 'c1' },
+  })
 })

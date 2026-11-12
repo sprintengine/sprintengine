@@ -73,7 +73,6 @@ const conversations = server('conversations')
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
 /** Moves to the protocol: the module kernel: its host services and enablement. */
-const modules = server('modules')
 /** Moves to the protocol: installing, trusting and listing extensions; the marketplace, plugins, the extension scaffold, artifacts and the hosted feeds. */
 const extensions = server('extensions')
 /** Moves to the protocol: a chat or a canvas on a paired desktop. */
@@ -287,7 +286,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),
-  'modules:set-enablement': modules('invoke'),
   'artifacts:get-settings': extensions('invoke'),
   'artifacts:set-up': extensions('invoke'),
   'artifacts:setup-answer': extensions('send'),
@@ -312,11 +310,8 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'modules:set-app-state': extensions('invoke'),
   'modules:set-registry-snapshot': extensions('invoke'),
   'modules:third-party:changed': extensions('push'),
-  'modules:third-party:install-folder': extensions('invoke'),
   'modules:third-party:list': extensions('invoke'),
   'modules:third-party:renderer-entries': extensions('invoke'),
-  'modules:third-party:set-trust': extensions('invoke'),
-  'modules:third-party:uninstall': extensions('invoke'),
   'plugins:detect-availability': extensions('invoke'),
   'plugins:launch-preview': extensions('invoke'),
   'plugins:list': extensions('invoke'),

@@ -2,6 +2,7 @@ import {
   studioParams,
   studioParamsRefused,
   studioNoParams,
+  type StudioParsed,
   type StudioMethodTable,
   type StudioTopicTable,
 } from './contract.js'
@@ -34,9 +35,19 @@ import { STUDIO_MODULES_CAPABILITY } from './handshake.js'
 //   (`module_unavailable`) and a name it does not declare under that entry
 //   (`module_method_unknown`).
 //
-// All of them need `modules:read` (`module.operate`, `modules:operate`, which
-// carries it); neither is held to an owner's connection, and the family is
-// offered under the `modules` capability only where a module kernel runs.
+// - `module.list`: every module this Studio knows, whether it is switched on
+//   and running here, and the methods it declares.
+// - `module.setEnabled`, `module.install`, `module.setTrust`,
+//   `module.uninstall`: what runs here. Each is an owner's
+//   (`STUDIO_MODULES_OWNER`), a mutation under the client's `commandId`, and
+//   answers the server's own outcome as its result. Installing, trusting and
+//   uninstalling change what the server loads at its next start; switching a
+//   module on or off applies at once where its main half can load live.
+//
+// The streams, the calls and the list need `modules:read` (`module.operate`,
+// `modules:operate`, which carries it); none is held to an owner's
+// connection. The family is offered under the `modules` capability only where
+// a module kernel runs.
 
 /** One event a module emitted, stamped by the server with the module that sent it. */
 export type StudioModuleEvent = {
@@ -103,6 +114,44 @@ export type StudioModuleCall = {
  */
 export type StudioModuleAnswer = { ok: true; result: unknown } | { ok: false; code: string; message: string }
 
+/** Why changing what runs on a Studio is an owner's. */
+export const STUDIO_MODULES_OWNER =
+  'It changes what runs on this machine: an extension’s code is installed, trusted, started or stopped.'
+
+/** A method a module declares, by name and access. */
+export type StudioModuleDeclaredMethod = { name: string; access: 'read' | 'operate' }
+
+/** One module as its Studio holds it. */
+export type StudioModuleSummary = {
+  id: string
+  name: string
+  version: number
+  /** The app's own module, or an extension the person installed. */
+  source: 'bundled' | 'third-party'
+  /** Switched on: the person's choice, or its default. */
+  enabled: boolean
+  /** Running here now: its main half loaded, or (a window-only extension) its manifest. */
+  running: boolean
+  /** Why a switched-on module does not run: not trusted, a bad signature, another host API, a failed load. */
+  blocked?: string
+  /** What it declares (`module.read` / `module.operate`), empty while it is not running. */
+  methods: StudioModuleDeclaredMethod[]
+}
+
+/** A lifecycle change's outcome: done, or the server's refusal in its words. */
+export type StudioModuleLifecycleAnswer<T extends object = object> = ({ ok: true } & T) | { ok: false; message: string }
+
+/** A module's trust as its signature and the person's grant classify it. */
+export type StudioModuleTrust = 'trusted' | 'signed' | 'unsigned' | 'invalid'
+
+/** Why an uninstall was refused when another owner holds the module: the plugin install that put it there. */
+export type StudioModuleUninstallRefusal = {
+  ok: false
+  message: string
+  /** Set when a marketplace or GitHub plugin install owns it: uninstall that plugin instead. */
+  pluginId?: string
+}
+
 export type StudioModulesMethodMap = {
   /** Call a method the module declared `read`. */
   'module.read': {
@@ -115,6 +164,34 @@ export type StudioModulesMethodMap = {
     params: StudioModuleCall & { commandId: string }
     result: StudioModuleAnswer
     errors: 'module_unavailable' | 'module_method_unknown'
+  }
+  /** Every module this Studio knows. */
+  'module.list': { params: Record<string, never>; result: { modules: StudioModuleSummary[] } }
+  /**
+   * Switch a module on or off here (`null`: back to its default). Kept for the
+   * next start, and applied at once where its main half loads live. Answers
+   * the module as it now is, or null for one this Studio does not hold.
+   */
+  'module.setEnabled': {
+    params: { moduleId: string; enabled: boolean | null; commandId: string }
+    result: StudioModuleLifecycleAnswer<{ module: StudioModuleSummary | null }>
+  }
+  /** Install the extension in a folder on this machine. It runs once trusted, from the next start. */
+  'module.install': {
+    params: { path: string; commandId: string }
+    result:
+      | { ok: true; moduleId: string; trust: StudioModuleTrust }
+      | { ok: false; message: string; issues?: Array<{ path: string; message: string }> }
+  }
+  /** Trust an installed extension's manifest and code as they are now, or withdraw trust. */
+  'module.setTrust': {
+    params: { moduleId: string; trusted: boolean; commandId: string }
+    result: StudioModuleLifecycleAnswer
+  }
+  /** Remove an extension added from a folder, and what was kept for it. */
+  'module.uninstall': {
+    params: { moduleId: string; commandId: string }
+    result: { ok: true; removedModuleIds: string[] } | StudioModuleUninstallRefusal
   }
 }
 
@@ -145,6 +222,31 @@ function parseCall(value: Record<string, unknown>) {
 }
 
 const MAX_COMMAND_ID_CHARS = 200
+/** The longest folder path an install may name. */
+const MAX_PATH_CHARS = 4096
+
+function commandIdOf(value: Record<string, unknown>): StudioParsed<string> {
+  return typeof value.commandId === 'string' &&
+    value.commandId.length > 0 &&
+    value.commandId.length <= MAX_COMMAND_ID_CHARS
+    ? studioParams(value.commandId)
+    : studioParamsRefused('"commandId" is the client\'s id for this command.')
+}
+
+/** Changing what runs here: an owner's, under its command id. */
+const lifecycle = {
+  scope: null,
+  owner: STUDIO_MODULES_OWNER,
+  mutation: true,
+  capability: STUDIO_MODULES_CAPABILITY,
+} as const
+
+function namedModule(value: Record<string, unknown>): StudioParsed<{ moduleId: string; commandId: string }> {
+  if (!moduleId(value.moduleId)) return studioParamsRefused('"moduleId" is the module\'s manifest id.')
+  const command = commandIdOf(value)
+  if (!command.ok) return command
+  return studioParams({ moduleId: value.moduleId, commandId: command.params })
+}
 
 export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> = {
   'module.read': {
@@ -169,6 +271,42 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
       return studioParams({ ...call.params, commandId: value.commandId })
     },
   },
+  'module.list': {
+    scope: 'modules:read',
+    mutation: false,
+    capability: STUDIO_MODULES_CAPABILITY,
+    params: studioNoParams,
+  },
+  'module.setEnabled': {
+    ...lifecycle,
+    params: (value) => {
+      const named = namedModule(value)
+      if (!named.ok) return named
+      if (value.enabled !== null && typeof value.enabled !== 'boolean')
+        return studioParamsRefused('"enabled" is true, false, or null for the module\'s default.')
+      return studioParams({ ...named.params, enabled: value.enabled })
+    },
+  },
+  'module.install': {
+    ...lifecycle,
+    params: (value) => {
+      if (typeof value.path !== 'string' || value.path.trim().length === 0 || value.path.length > MAX_PATH_CHARS)
+        return studioParamsRefused('"path" is the folder on this machine the extension is in.')
+      const command = commandIdOf(value)
+      if (!command.ok) return command
+      return studioParams({ path: value.path, commandId: command.params })
+    },
+  },
+  'module.setTrust': {
+    ...lifecycle,
+    params: (value) => {
+      const named = namedModule(value)
+      if (!named.ok) return named
+      if (typeof value.trusted !== 'boolean') return studioParamsRefused('"trusted" is true or false.')
+      return studioParams({ ...named.params, trusted: value.trusted })
+    },
+  },
+  'module.uninstall': { ...lifecycle, params: namedModule },
 }
 
 export const STUDIO_MODULES_TOPICS: StudioTopicTable<StudioModulesTopicMap> = {

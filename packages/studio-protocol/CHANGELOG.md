@@ -4,6 +4,14 @@
 
 ### Added (modules)
 
+- **What runs on a Studio is changed through it.** `module.list` (scope
+  `modules:read`): every module the Studio holds, whether it is switched on
+  and running there, why not, and the methods it declares. `module.setEnabled`,
+  `module.install`, `module.setTrust` and `module.uninstall` are an owner's
+  (`STUDIO_MODULES_OWNER`: they change what runs on the machine), each a
+  mutation under its `commandId`, answering the server's own outcome as the
+  result. An uninstall of a module a plugin put in place is refused with the
+  plugin's id.
 - **A module's host services are protocol methods** (`module-services.ts`,
   under the `modules` capability): `moduleBacklog.location` and
   `moduleUsage.query` (scope `modules:read`), and the Backlog writes

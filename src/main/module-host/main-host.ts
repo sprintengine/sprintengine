@@ -893,7 +893,41 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     return real
   }
 
+  // A module's load, counted: switching a module off (`unregisterModule`)
+  // retires every host handed to its earlier loads. A main half that kept its
+  // host past its shutdown hooks (a timer, a watcher, a promise still
+  // settling) then says nothing more to clients and registers nothing more,
+  // so a module switched off is off; switched on again, it gets a new host.
+  const loadGenerations = new Map<string, number>()
+
   function hostFor(moduleId: string): MainHost {
+    const generation = loadGenerations.get(moduleId) ?? 0
+    const retired = (): boolean => (loadGenerations.get(moduleId) ?? 0) !== generation
+    const live = scopedHostFor(moduleId)
+    const refuseRetired = (): void => {
+      if (retired())
+        throw new Error(`Module "${moduleId}" was switched off; the host it was given no longer takes registrations.`)
+    }
+    return {
+      ...live,
+      registerMethods: (batch) => (refuseRetired(), live.registerMethods(batch)),
+      registerMcpTools: (tools) => (refuseRetired(), live.registerMcpTools(tools)),
+      registerSkills: (skills) => (refuseRetired(), live.registerSkills(skills)),
+      watchModuleAppState: (cb) => (refuseRetired(), live.watchModuleAppState(cb)),
+      onStartup: (hook) => (refuseRetired(), live.onStartup(hook)),
+      onShutdownBegin: (hook) => (refuseRetired(), live.onShutdownBegin(hook)),
+      onShutdown: (hook) => (refuseRetired(), live.onShutdown(hook)),
+      registerSidecar: (spec, lifecycle) => (refuseRetired(), live.registerSidecar(spec, lifecycle)),
+      notify: (input) => {
+        if (!retired()) live.notify(input)
+      },
+      emit: (topic, payload) => {
+        if (!retired()) live.emit(topic, payload)
+      },
+    }
+  }
+
+  function scopedHostFor(moduleId: string): MainHost {
     return {
       moduleId,
       hostApiVersion: HOST_API_VERSION,
@@ -1126,6 +1160,8 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     if (skillIdsByModule.delete(moduleId)) skillRegistry.unregister(moduleId)
     for (const stop of appStateWatches.get(moduleId) ?? []) stop()
     appStateWatches.delete(moduleId)
+    // After its hooks, which may still say goodbye through it.
+    loadGenerations.set(moduleId, (loadGenerations.get(moduleId) ?? 0) + 1)
   }
 
   return {

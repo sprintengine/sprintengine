@@ -142,6 +142,7 @@ import type {
   WorkspaceRegistryEmptyState,
   WorkspaceWorktree,
 } from '../types/workspace'
+import { windowModuleLifecycle } from '../studio/moduleLifecycle'
 import { configureTerminals, listTerminals } from '../studio/terminals'
 import { watchWindowStudio, windowStudioState } from '../studio/windowStudioClient'
 import { agentSettingsApi } from '../studio/agentSettings'
@@ -1516,27 +1517,26 @@ function scheduleInitialPluginCatalogRefresh(): void {
 
 scheduleInitialPluginCatalogRefresh()
 
-// Mirror module enablement to the main process so it can gate module IPC and
-// sidecar spawning at the next launch. The renderer is the source of truth; the
-// main cache is updated whenever the override changes (deduped). Guarded for
-// non-browser bundles (node test harnesses) where window/api are absent.
-function syncModuleEnablementToMain(): void {
+// The person's module switches, sent to the window's Studio, which keeps them
+// and starts or stops what runs there (`module.setEnabled`). Settings is
+// where they are switched; only a switch that changed is sent, so a client
+// whose own copy is older never overrides the Studio's. Guarded for bundles
+// with no Studio connection (node test harnesses).
+function syncModuleEnablementToStudio(): void {
   if (typeof window === 'undefined') return
-  const api = window.api as { setModuleEnablement?: (o: Record<string, boolean>) => Promise<unknown> } | undefined
-  if (!api?.setModuleEnablement) return
+  const lifecycle = windowModuleLifecycle()
+  if (!lifecycle) return
 
-  let lastSerialized = ''
-  const push = (overrides: Record<string, boolean>): void => {
-    const serialized = JSON.stringify(overrides)
-    if (serialized === lastSerialized) return
-    lastSerialized = serialized
-    void api.setModuleEnablement!(overrides)
+  let sent: Record<string, boolean> = { ...useWorkspaceStore.getState().appSettings.modules }
+  const push = (next: Record<string, boolean>): void => {
+    for (const id of new Set([...Object.keys(sent), ...Object.keys(next)])) {
+      if (sent[id] !== next[id]) void lifecycle.setEnabled(id, next[id] ?? null)
+    }
+    sent = { ...next }
   }
-
-  push(useWorkspaceStore.getState().appSettings.modules ?? {})
   useWorkspaceStore.subscribe((state) => push(state.appSettings.modules ?? {}))
 }
-syncModuleEnablementToMain()
+syncModuleEnablementToStudio()
 
 // Mirror the "Pause idle terminals after" setting (minutes → ms) and the
 // "Always keep running" recency floor to the Studio's reaper (`terminal.configure`),

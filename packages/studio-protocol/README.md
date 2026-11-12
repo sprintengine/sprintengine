@@ -126,6 +126,11 @@ The `welcome`'s `grant` is what the connection may do:
   `.updateModuleMetadata`); carries `modules:read`. The module's own manifest
   permissions (`backlog.write`, `usage:read`) are checked on every call. A
   browser session never holds it.
+- No scope changes what runs: `module.setEnabled`, `module.install`,
+  `module.setTrust` and `module.uninstall` are an owner's
+  (`STUDIO_MODULES_OWNER`), because each installs, trusts, starts or stops an
+  extension's code on that machine. `module.list`, what runs there, needs
+  `modules:read`.
 - No scope reaches the terminals (`terminal.*`, under the `terminals`
   capability). A terminal is a shell on this machine, so every terminal
   method and stream is an owner's: the app's own windows and the owner's

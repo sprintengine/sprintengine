@@ -212,7 +212,6 @@ import type {
   ConversationTurnDiffResult,
 } from './conversation-runtime'
 import type {
-  ThirdPartyModuleInstallResult,
   ThirdPartyModuleListResult,
   ThirdPartyModuleTrustResult,
   ThirdPartyRendererEntriesResult,
@@ -247,8 +246,6 @@ import type {
   AppMenuAcceleratorUpdate,
   AppMenuAcceleratorUpdateResult,
   ColorScheme,
-  ModuleEnablementOverrides,
-  ModuleEnablementWriteResult,
   WindowMaterial,
   WorkspaceBackupWriteResult,
 } from './ipc/app'
@@ -343,8 +340,6 @@ import type {
   MarketplacePluginUninstallResult,
   MarketplacePluginVerifyInput,
   MarketplacePluginVerifyResult,
-  ThirdPartyModuleUninstallInput,
-  ThirdPartyModuleUninstallResult,
 } from './ipc/marketplace'
 import type {
   MarketplaceRegistryReadInput,
@@ -1676,12 +1671,6 @@ export type ElectronApi = {
   }) => Promise<CreatePullRequestOutcome>
   /** List installed third-party capability modules with trust, permissions, and launch readiness. */
   listThirdPartyModules: () => Promise<ThirdPartyModuleListResult>
-  /** Install a third-party capability module from a folder (validated, not executed). */
-  installThirdPartyModuleFolder: (srcDir: string) => Promise<ThirdPartyModuleInstallResult>
-  /** Trust or untrust an installed third-party module. */
-  setThirdPartyModuleTrust: (id: string, trusted: boolean) => Promise<ThirdPartyModuleTrustResult>
-  /** Remove a third-party module however it was installed (folder, marketplace, GitHub), with its trust, enablement and secrets. */
-  uninstallThirdPartyModule: (input: ThirdPartyModuleUninstallInput) => Promise<ThirdPartyModuleUninstallResult>
   /** Open an installed third-party module's folder. Absent where there is no file manager to open it in. */
   revealThirdPartyModule?: (id: string) => Promise<ThirdPartyModuleTrustResult>
   /** Serve trusted third-party modules' entry.renderer bundles for the renderer loader. */
@@ -1717,7 +1706,6 @@ export type ElectronApi = {
   updateAppMenuAccelerators: (updates: AppMenuAcceleratorUpdate[]) => Promise<AppMenuAcceleratorUpdateResult>
   workspaceBackupWrite: (payload: WorkspaceBackupPayload) => Promise<WorkspaceBackupWriteResult>
   workspaceBackupRead: () => Promise<WorkspaceBackupReadResult>
-  setModuleEnablement: (overrides: ModuleEnablementOverrides) => Promise<ModuleEnablementWriteResult>
   // Renderer → main mirror of every module's app-level state (`module:<id>`
   // namespaces), so a module's entry.main reads its settings with no window.
   setModuleAppState: (bag: Record<string, Record<string, unknown>>) => Promise<void>

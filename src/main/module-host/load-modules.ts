@@ -59,6 +59,8 @@ export type LoadMainModulesResult = {
    * `report.errors`, so read the report after this. Never rejects.
    */
   ready: Promise<void>
+  /** Whether a module runs here now: its main half loaded, or its manifest alone. */
+  isRunning(moduleId: string): boolean
   applyEnablement(
     overrides: ModuleEnablementOverrides,
     options: MainModuleLiveUpdateOptions,
@@ -240,6 +242,7 @@ export function loadMainModules(options: {
     },
     kernel,
     ready: Promise.all(pendingRegistrations).then(() => undefined),
+    isRunning: (moduleId) => activeMainModules.has(moduleId) || activeManifestOnlyModules.has(moduleId),
     async applyEnablement(
       nextOverrides: ModuleEnablementOverrides,
       liveOptions: MainModuleLiveUpdateOptions,

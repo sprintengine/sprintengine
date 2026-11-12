@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react'
 
+import { windowModuleLifecycle } from '../../studio/moduleLifecycle'
 import { addThirdPartyModuleFromFolder } from '../settings/addThirdPartyModuleFromFolder'
 import { FolderPlusIcon } from '../AppIcons'
 import { InstallFromGitHubDialog } from '../extensions/InstallFromGitHubDialog'
@@ -75,7 +76,7 @@ export function ExtensionsRail({ collapsed }: ExtensionsRailProps) {
     setInstalling(true)
     setInstallMessage(null)
     try {
-      const result = await addThirdPartyModuleFromFolder(window.api)
+      const result = await addThirdPartyModuleFromFolder(window.api, windowModuleLifecycle())
       if (result.status === 'failed') {
         setInstallMessage({ tone: 'error', text: result.message })
       } else if (result.status === 'installed') {

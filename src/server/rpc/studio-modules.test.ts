@@ -503,3 +503,37 @@ test('a paired client reads the host services with modules:read and writes them 
     'a write from a paired client is audited',
   )
 })
+
+// ── What runs here ───────────────────────────────────────────────────────────
+
+test('before the kernel is wired the list is empty and a change is refused unavailable, never lost silently', async () => {
+  const { request } = await caller(createStudioModuleHub())
+  assert.deepEqual(answerOf(await request('module.list', {})), { modules: [] })
+  assert.equal(
+    codeOf(await request('module.setEnabled', { moduleId: 'acme', enabled: false, commandId: 'c1' })),
+    'unavailable',
+  )
+})
+
+test('a change to what runs is an owner’s: a paired client holding modules:operate is refused it', async () => {
+  const hub = createStudioModuleHub()
+  const changes: string[] = []
+  hub.serveLifecycleFrom({
+    list: () => [],
+    setEnabled: async (moduleId) => (changes.push(moduleId), { ok: true, module: null }),
+    install: async () => ({ ok: false, message: 'no' }),
+    setTrust: async () => ({ ok: true }),
+    uninstall: async () => ({ ok: true, removedModuleIds: [] }),
+  })
+  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['modules:operate']))
+  assert.deepEqual(answerOf(await paired.request('module.list', {})), { modules: [] })
+  assert.equal(
+    codeOf(await paired.request('module.setEnabled', { moduleId: 'acme', enabled: false, commandId: 'c1' })),
+    'owner_required',
+  )
+  const owner = await caller(hub)
+  const params = { moduleId: 'acme', enabled: false, commandId: 'c1' }
+  assert.deepEqual(answerOf(await owner.request('module.setEnabled', params)), { ok: true, module: null })
+  await owner.request('module.setEnabled', params)
+  assert.deepEqual(changes, ['acme'], 'a retried change is carried out once')
+})

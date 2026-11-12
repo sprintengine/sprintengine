@@ -60,6 +60,11 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'mcp.sync',
   'memoryActivity.install',
   'memoryActivity.uninstall',
+  // What extensions run here: installed, trusted, switched on or off.
+  'module.install',
+  'module.setEnabled',
+  'module.setTrust',
+  'module.uninstall',
   'conversationImport.import',
   'conversationImport.scan',
   'launchSettings.changed',

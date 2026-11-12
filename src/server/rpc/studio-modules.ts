@@ -4,6 +4,7 @@ import type {
   StudioModuleNotification,
 } from '../../../packages/studio-protocol/src/public'
 import type { ModuleHostServicesOutcome } from '../../main/module-host/main-host'
+import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 
 // What a Studio's modules say to its clients, between the module kernel and
 // the Studio RPC: the kernel delivers each event and bell row here, and every
@@ -20,6 +21,10 @@ import type { ModuleHostServicesOutcome } from '../../main/module-host/main-host
 // writes, the usage query): the router asks `hostServices` for the calling
 // module's, which the kernel answers once it exists (`serveHostServicesFrom`),
 // `module_unavailable` for a module not running here.
+//
+// What runs here (`module.list`, and the owner's `module.setEnabled`,
+// `.install`, `.setTrust`, `.uninstall`) is the lifecycle's, served once the
+// kernel exists (`serveLifecycleFrom`).
 //
 // Delivery is best effort per listener: one connection whose send throws does
 // not keep the row or event from the others.
@@ -49,6 +54,9 @@ export type StudioModules = {
   hostServices(moduleId: string): ModuleHostServicesOutcome
   /** Where host services are read from: the kernel, once it exists. */
   serveHostServicesFrom(read: (moduleId: string) => ModuleHostServicesOutcome): void
+  /** What lists and changes the modules that run here; null before a kernel is wired. */
+  lifecycle(): ModuleLifecycle | null
+  serveLifecycleFrom(lifecycle: ModuleLifecycle): void
   /** One event a module emitted, to every listener, in the order delivered. */
   deliverEvent(event: StudioModuleEvent): void
   /** One bell row, to every listener. The kernel has already kept it. */
@@ -69,6 +77,7 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
   let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
   let readHostServices: ((moduleId: string) => ModuleHostServicesOutcome) | null = null
+  let lifecycle: ModuleLifecycle | null = null
 
   function each<T>(listeners: Set<(value: T) => void>, value: T, what: string): void {
     // A copy, so a listener that unsubscribes (or subscribes) while hearing does not skip another.
@@ -107,6 +116,10 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
     },
     serveHostServicesFrom(read) {
       readHostServices = read
+    },
+    lifecycle: () => lifecycle,
+    serveLifecycleFrom(next) {
+      lifecycle = next
     },
     deliverEvent: (event) => each(eventListeners, event, 'event'),
     deliverNotification: (notification) => each(notificationListeners, notification, 'notification'),

@@ -7,13 +7,12 @@ import { registerAppLifecycle } from './app-lifecycle'
 import { createAppServices } from './app-services'
 import { ensureExtensionFolders } from './extension-folders'
 import { ignoreMacosTypeOfServiceEinval, raiseConnectAttemptTimeout } from './network-defaults'
-import type { ModuleEnablementLiveApplier } from './ipc/module-enablement-ipc'
 import { resolveModuleEnablement } from '../shared/modules/resolve'
 import { loadMainModules } from './module-host/load-modules'
 import { readModuleOverridesSync } from './module-host/enablement-store'
 import { ScheduledAgentsServiceToken } from './module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from './modules/agent-runtime-module'
-import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest } from '../shared/modules/manifest'
+import type { CapabilityManifest } from '../shared/modules/manifest'
 import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { isLoadEligible, type ModuleTrustContext } from './modules/module-signature'
 import { readModuleTrustContextSync } from './modules/trust-context'
@@ -32,6 +31,8 @@ import { createModuleAssetOriginResolver } from './modules/module-asset-origins'
 import { createModuleAssetHandler, isAllowedModuleAssetRequest } from './modules/module-assets'
 import { registerThirdPartyRendererEntryIpc } from './modules/third-party-renderer-entries'
 import { defaultUserModuleRoot, discoverUserModules, discoverUserModulesSync } from './modules/user-module-registry'
+import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
+import { notifyRendererModulesChanged } from './modules/notify-renderer-modules-changed'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
 import { markStartup } from './startup-timeline'
@@ -115,10 +116,8 @@ if (serverHost) {
   console.info(`[studio-server] out of process (${serverMode.source})`)
 }
 const services = createAppServices(DIAGNOSTICS_ENABLED, serverHost?.link ?? null)
-let applyModuleEnablementLive: ModuleEnablementLiveApplier | undefined
 
 const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
-  applyModuleEnablementLive: (overrides) => applyModuleEnablementLive?.(overrides),
   // Which third-party main halves this session loaded: the server's, out of
   // process, where they run; otherwise this process's own. Read only when
   // Settings lists the modules, long after `moduleLoad` below exists.
@@ -244,26 +243,46 @@ if (!serverHost)
     permissions: getModulePermissions,
     loaded: () => [...enabledMainModuleIds],
   })
-applyModuleEnablementLive = async (overrides) => {
-  // Out of process the server's kernel applies it; this process wrote the file.
-  if (serverHost) {
-    recomputeMainEnablement(overrides)
-    return serverHost.supervisor.call(SERVER_METHODS.applyModuleEnablement, { overrides })
-  }
-  const report = await moduleLoad.applyEnablement(overrides, { liveModuleIds: LIVE_ENABLED_MODULE_IDS })
-  // A module with no live-loadable main half takes its toggle through the
-  // enablement gate rather than module load/unload — refresh the resolved set.
-  // The rest of the change was applied even when one module's half failed,
-  // so the gate follows it either way.
-  recomputeMainEnablement(overrides)
-  // Module-contributed gateway tools follow enablement live: the
-  // gateway re-reads the registry and enablement per request, so only the
-  // connected MCP clients need a nudge to refresh their tool lists.
-  services.automationService?.notifyToolsListChanged()
-  const scheduledAgentsError = report.errors.find((error) => error.id === 'scheduled-agents')
-  if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
-  return { ok: true }
-}
+// What runs here, listed and changed over the Studio RPC (`module.*`). Out of
+// process the server's kernel holds the modules and serves it
+// (server-modules.ts); this process's kernel is empty.
+if (!serverHost)
+  services.moduleHub.serveLifecycleFrom(
+    createModuleLifecycle({
+      dataDir: app.getPath('userData'),
+      moduleRoot: defaultUserModuleRoot,
+      changed: () => notifyRendererModulesChanged(),
+      applyEnablement: async (overrides) => {
+        const report = await moduleLoad.applyEnablement(overrides, {
+          liveModuleIds: liveModuleIds(Object.keys(thirdPartyMainLoad.moduleRoots), moduleLoad.report.errors),
+        })
+        // A module with no live-loadable main half takes its toggle through the
+        // enablement gate rather than module load/unload — refresh the resolved set.
+        // The rest of the change was applied even when one module's half failed,
+        // so the gate follows it either way.
+        recomputeMainEnablement(overrides)
+        // Module-contributed gateway tools follow enablement live: the
+        // gateway re-reads the registry and enablement per request, so only the
+        // connected MCP clients need a nudge to refresh their tool lists.
+        services.automationService?.notifyToolsListChanged()
+        const scheduledAgentsError = report.errors.find((error) => error.id === 'scheduled-agents')
+        if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
+        return { ok: true }
+      },
+      view: () => {
+        const overrides = readModuleEnablementOverrides()
+        return {
+          manifests: () => mainModuleManifests,
+          enabled: (id) =>
+            overrides[id] ?? mainModuleManifests.find((manifest) => manifest.id === id)?.defaultEnabled ?? false,
+          running: (id) => moduleLoad.isRunning(id),
+          ineligible: (id) => thirdPartyMainLoad.ineligible[id],
+          loadError: (id) => moduleLoad.report.errors.find((error) => error.id === id)?.message,
+          declaredMethods: (id) => moduleLoad.kernel.declaredMethods(id),
+        }
+      },
+    }),
+  )
 // Automation server ← Scheduled agents module: resolved per tool call so a live
 // module disable/enable cycle is reflected immediately (service absent ⇒ the
 // scheduled-agent tools say the module is off).
@@ -441,6 +460,8 @@ if (serverHost) {
       return { modules: modules.map((module) => toThirdPartyModuleView(module)), rejected }
     },
   })
+  // What is installed or trusted on the server changed: the windows load their extensions again.
+  serverHost.link.rpc.on(SERVER_EVENTS.modulesChanged, () => notifyRendererModulesChanged())
   // A restarted server starts without the renderer's module registry; it is sent again.
   serverHost.supervisor.onReady(() => {
     const snapshot = services.moduleRegistryMirror.read()

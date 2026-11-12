@@ -370,14 +370,16 @@ Notes:
 
 ### 5.1 As built (amended at implementation, 2026-10-02)
 
-- **Module enablement and trust are written by the shell in this phase.**
-  Settings' enablement IPC and the third-party install, trust and uninstall
-  IPC stay with the marketplace in the shell, so the shell is the one writer
-  of `module-enablement.json` and `trusted-modules.json`; the server reads
-  both when it loads the kernel, and the shell asks it to apply a change live
-  (`modules.apply-enablement`). The table above named the server as their
-  writer; one writer is kept either way, and this one needs no second path
-  for the marketplace.
+- **Module enablement and trust are written by the server.** Settings
+  switches, installs, trusts and uninstalls an extension through the Studio
+  protocol (`module.setEnabled`, `.install`, `.setTrust`, `.uninstall`,
+  `src/main/modules/module-lifecycle.ts`), so the server writes
+  `module-enablement.json` and `trusted-modules.json` and applies a switch
+  live. The marketplace's own installs and uninstalls are still the shell's
+  (design-ipc-shell-only moves them), and a module a plugin put in place is
+  uninstalled with its plugin. The server tells the shell
+  (`modules.changed`) when what is installed or trusted changed, so the
+  windows load their extensions again.
 - **The shell's view of the core** (`src/main/server-supervisor/remote-core.ts`)
   has the core's shape for the members the shell uses: the registry and the
   workspace bus and the launch settings from `ServerStateMirror`, the agent
@@ -1136,9 +1138,9 @@ member:
 | `registerSidecar` | Unchanged. Lifecycles start after `COMPOSING` and stop during `DRAINING`. |
 | `onStartup`, `onShutdownBegin`, `onShutdown` | The server's lifecycle (7.2). The shell's own module legs keep the shell-side hooks. |
 
-**Live enablement.** `applyModuleEnablementLive` runs in the server. The
-renderer's override push reaches it through the tunnel, and the server
-recomputes `enabledMainModuleIds` and nudges MCP tool lists.
+**Live enablement.** `module.setEnabled` is served by the server: it writes
+the choice, applies it to its kernel (an installed extension and the bundled
+modules that can are switched live), and nudges MCP tool lists.
 
 **The asset handler.** `studio-module://` stays in the shell (it serves
 renderer frames) and keeps reading `trusted-modules.json` and

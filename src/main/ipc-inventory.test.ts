@@ -176,8 +176,8 @@ import { attachStartupTimeline } from './startup-timeline'
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   conversations: 6,
   terminals: 3,
-  modules: 1,
-  extensions: 33,
+  modules: 0,
+  extensions: 30,
   'paired-machines': 52,
   access: 45,
   workspaces: 47,
