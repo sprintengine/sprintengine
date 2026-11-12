@@ -151,6 +151,14 @@ export const STUDIO_AGENT_RUNTIMES_CAPABILITY = 'agent-runtimes' as const
 export const STUDIO_AGENT_SETTINGS_CAPABILITY = 'agent-settings' as const
 
 /**
+ * What a Studio's agents are set up with beyond their CLIs: `memory.*`,
+ * `memoryActivity.*`, `mcp.sync`, `agentConfig.*`, `builtinSkills.*` and
+ * `areaSkills.*`, with their streams. Offered where the Studio holds those
+ * services.
+ */
+export const STUDIO_AGENT_SETUP_CAPABILITY = 'agent-setup' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -186,6 +194,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_TERMINALS_CAPABILITY,
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
   STUDIO_AGENT_SETTINGS_CAPABILITY,
+  STUDIO_AGENT_SETUP_CAPABILITY,
 ] as const
 
 /**

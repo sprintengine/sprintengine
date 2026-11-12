@@ -14,12 +14,14 @@ import {
 import { connectToStudio } from '../../packages/agent-sdk/src/node'
 import {
   STUDIO_AGENT_SETTINGS_METHODS,
+  STUDIO_AGENT_SETUP_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
   STUDIO_METHOD_ACCESS,
   studioGrantAllows,
   type StudioAgentSettingsMethod,
+  type StudioAgentSetupMethod,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -394,6 +396,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // A Studio's CLIs and launch settings are its own clients' (Settings), called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SETTINGS_METHODS).map((method) => [method, 'request'])) as Record<
       StudioAgentSettingsMethod,
+      string
+    >),
+    // So is what its agents are set up with.
+    ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SETUP_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioAgentSetupMethod,
       string
     >),
   }

@@ -50,6 +50,7 @@ import {
 } from './extensionsSurfaceTarget'
 import { publishSurfaceView } from '../../surfaceView'
 import { InstallFromGitHubDialog } from '../../../extensions/InstallFromGitHubDialog'
+import { agentSetupApi } from '../../../../studio/agentSetup'
 
 export default function ExtensionsGlobalSurface(): JSX.Element {
   const activeWorkspaceRoot = useWorkspaceStore(
@@ -192,8 +193,8 @@ export default function ExtensionsGlobalSurface(): JSX.Element {
       const servers = { ...settings.servers }
       for (const id of serverIds) delete servers[id]
       for (const id of serverIds) removeMcpServer(id)
-      if (!activeWorkspaceRoot || !settings.syncEnabled || typeof window.api.mcpSync !== 'function') return
-      void window.api
+      if (!activeWorkspaceRoot || !settings.syncEnabled) return
+      void agentSetupApi
         .mcpSync({
           workspaceRoot: activeWorkspaceRoot,
           settings: { ...settings, servers },

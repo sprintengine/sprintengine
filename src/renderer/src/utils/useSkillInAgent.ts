@@ -24,6 +24,7 @@ import {
 } from './skillInvocation'
 import { bracketedPaste } from './terminalDrop'
 import { listTerminals, writeTerminal } from '../studio/terminals'
+import { agentSetupApi } from '../studio/agentSetup'
 
 /**
  * The little a CLI entry has to tell this flow: who it is, what to call it, and
@@ -224,7 +225,7 @@ export async function useSkillInAgent(input: UseSkillInAgentInput): Promise<UseS
     )
   }
   if (!nativeInstalled && integration && skill.source === 'builtin') {
-    const status = await window.api.builtinSkillStatus({ workspaceRoot, skillId: skill.id })
+    const status = await agentSetupApi.builtinSkillStatus({ workspaceRoot, skillId: skill.id })
     if (status.ok) {
       nativeInstalled = hasInstalledNativeSkillTarget(integration.harnessId, session.cli ?? '', status.targets)
     }

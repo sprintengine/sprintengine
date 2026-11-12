@@ -24,6 +24,7 @@ import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioModules } from './studio-modules'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -361,6 +362,7 @@ export async function startTestServer(
     terminals?: StudioTerminals
     runtimes?: CliRuntimes
     agentSettings?: StudioAgentSettings
+    agentSetup?: StudioAgentSetup
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
     modules?: StudioModules
@@ -397,6 +399,7 @@ export async function startTestServer(
     ...(input.terminals ? { terminals: input.terminals } : {}),
     ...(input.runtimes ? { runtimes: input.runtimes } : {}),
     ...(input.agentSettings ? { agentSettings: input.agentSettings } : {}),
+    ...(input.agentSetup ? { agentSetup: input.agentSetup } : {}),
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),

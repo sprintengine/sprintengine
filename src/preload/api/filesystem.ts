@@ -10,9 +10,6 @@ import type {
   FolderOpenRequest,
   FolderOpenResult,
   FolderOpenTargetAvailability,
-  MemoryGraphIndexResult,
-  MemoryPreviewResult,
-  MemoryRootStatus,
   ProcessMetricsSnapshot,
   ProjectLogo,
   VersionControlProviderProbe,
@@ -76,19 +73,6 @@ export const filesystemApi = {
     ipcRenderer.invoke('fs:detect-project-logo', folderPath),
   readProjectIconFile: (filePath: string): Promise<ProjectLogo | null> =>
     ipcRenderer.invoke('fs:read-project-icon', filePath),
-  memoryResolveRoot: (input: {
-    workspaceRoot: string | null
-    relativeRoot: string | null
-  }): Promise<MemoryRootStatus> => ipcRenderer.invoke('memory:resolve-root', input),
-  memoryIndex: (input: {
-    workspaceRoot: string | null
-    relativeRoot: string | null
-  }): Promise<MemoryGraphIndexResult> => ipcRenderer.invoke('memory:index', input),
-  memoryReadPreview: (input: {
-    workspaceRoot: string | null
-    relativeRoot: string | null
-    relativePath: string
-  }): Promise<MemoryPreviewResult> => ipcRenderer.invoke('memory:read-preview', input),
   logDiagnostic: (input: DiagnosticLogInput): Promise<DiagnosticLogEntry> =>
     ipcRenderer.invoke('diagnostics:log', input),
   openDiagnosticsLogsFolder: (): Promise<{ opened: true; path: string }> =>
@@ -161,9 +145,6 @@ export const filesystemApi = {
   | 'checkWorkspaceFolder'
   | 'detectProjectLogo'
   | 'readProjectIconFile'
-  | 'memoryResolveRoot'
-  | 'memoryIndex'
-  | 'memoryReadPreview'
   | 'logDiagnostic'
   | 'openDiagnosticsLogsFolder'
   | 'diagnosticsGetProcessMetrics'

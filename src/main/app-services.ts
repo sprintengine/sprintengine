@@ -103,6 +103,7 @@ import type { HostAgentIntegration } from './hosts/execution-host'
 import { hostRegistry } from './hosts/host-registry'
 import { setCliModelDiscoveryRuntimesResolver } from './model-discovery/discovery-pass'
 import { createCliRuntimes } from './cli-runtimes'
+import { createStudioAgentSetup } from '../server/agent-setup/agent-setup-domain'
 import {
   configureCliVersionService,
   launchSettingsCliMachines,
@@ -2131,6 +2132,18 @@ export function createAppServices(
         // check run: in this process. Out of process the server holds neither,
         // so it does not advertise `agent-runtimes`.
         ...(server ? {} : { runtimes: createCliRuntimes() }),
+        // What the agents are set up with beyond their CLIs, from the services
+        // composed above; in process only, as the CLIs are.
+        ...(server
+          ? {}
+          : {
+              agentSetup: createStudioAgentSetup({
+                mcp: mcpConfigService,
+                agentConfig: agentConfigImportService,
+                builtinSkills: builtinSkillManager,
+                areaSkills: studioAreaSkillStore,
+              }),
+            }),
       })
     : null
   // Where the person's attention is, for routing a call to the window in

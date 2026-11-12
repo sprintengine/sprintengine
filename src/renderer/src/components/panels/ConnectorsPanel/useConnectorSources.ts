@@ -15,6 +15,7 @@ import type { MarketplacePluginEntry } from '../../../../../shared/marketplace/m
 import type { McpServerConfig, McpSettings } from '../../../types/workspace'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import type { SourceLoad } from './connectorsFacets'
+import { agentSetupApi } from '../../../studio/agentSetup'
 
 const EMPTY_MCP_SETTINGS: McpSettings = { syncEnabled: true, servers: {} }
 
@@ -84,8 +85,8 @@ export function useConnectorSources(activeWorkspaceRoot: string | null): Connect
   useEffect(() => {
     const settings = mcpSettingsRef.current
     if (!activeWorkspaceRoot || !settings.syncEnabled) return
-    if (typeof window.api.mcpSync !== 'function') return
-    void window.api.mcpSync({ workspaceRoot: activeWorkspaceRoot, settings }).catch(() => {})
+    if (typeof agentSetupApi.mcpSync !== 'function') return
+    void agentSetupApi.mcpSync({ workspaceRoot: activeWorkspaceRoot, settings }).catch(() => {})
   }, [activeWorkspaceRoot, serverSnapshot])
 
   const installedServerIds = useMemo(

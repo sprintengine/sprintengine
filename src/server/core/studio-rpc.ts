@@ -20,6 +20,7 @@ import type { StudioCore } from './studio-core'
 import type { StudioGateway } from './studio-gateway'
 import type { StudioModules } from '../rpc/studio-modules'
 import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import { createStudioAgentSettings } from '../agent-settings/agent-settings-domain'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
@@ -42,6 +43,8 @@ export function createStudioRpc(
     terminals?: StudioTerminals
     /** The CLIs on this machine, where this process holds their detection and version check. */
     runtimes?: CliRuntimes
+    /** What the agents are set up with beyond their CLIs, where this process holds those services. */
+    agentSetup?: StudioAgentSetup
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -108,6 +111,7 @@ export function createStudioRpc(
     localServers: core.localServers,
     ...(options.terminals ? { terminals: options.terminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+    ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
     // What every launch here reads, and what the CLIs write for it, served
     // where the launch settings and the model catalog cache are.
     agentSettings: createStudioAgentSettings({

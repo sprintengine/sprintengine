@@ -19,6 +19,8 @@ import { test, vi } from 'vitest'
 import { terminalsDouble } from '../studio/terminals.double'
 
 vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
+import { agentSetupDouble } from '../studio/agentSetup.double'
+vi.mock('../studio/agentSetup', () => import('../studio/agentSetup.double'))
 
 test('terminalDrop', async () => {
   function payload(path: string, rootPath = 'C:\\repo'): FileDropPayload {
@@ -419,6 +421,7 @@ test('terminalDrop', async () => {
         },
       },
     })
+    Object.assign(agentSetupDouble, (globalThis as unknown as { window: { api: object } }).window.api)
     return writes
   }
 

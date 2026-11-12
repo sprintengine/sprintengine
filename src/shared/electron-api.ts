@@ -298,12 +298,6 @@ import type {
   PluginDetectAvailabilityInput,
 } from './ipc/agent-cli'
 import type {
-  AgentConfigAdoptInput,
-  AgentConfigAdoptResult,
-  AgentConfigDetectInput,
-  AgentConfigDetectResult,
-} from './ipc/agent-config'
-import type {
   ConversationImportInput,
   ConversationImportResult,
   ConversationImportScanResult,
@@ -426,18 +420,6 @@ import type {
   MarketplaceRegistryReadResult,
   MarketplaceUpdateStatesResult,
 } from './ipc/marketplace-registry'
-import type { McpSyncInput, McpSyncResult } from './ipc/mcp'
-import type {
-  MemoryActivityEvent,
-  MemoryActivityInstallResult,
-  MemoryActivityStatus,
-  MemoryActivitySynapse,
-  MemoryActivitySynapsesPayload,
-  MemoryActivityUninstallResult,
-  MemoryGraphIndexResult,
-  MemoryPreviewResult,
-  MemoryRootStatus,
-} from './ipc/memory'
 import type { WorkspaceBackupPayload, WorkspaceBackupReadResult } from './ipc/workspace-backup'
 import type {
   AgentSkillWriteInput,
@@ -473,13 +455,7 @@ import type {
   WorkspaceSkillsListInput,
   WorkspaceSkillsListResult,
 } from './ipc/skills'
-import type {
-  BuiltinSkill,
-  BuiltinSkillStatus,
-  PluginRegistryListResult,
-  StudioPluginStatus,
-} from './ipc/studio-plugin'
-import type { StudioAreaSkillChoices, StudioAreaSkillId } from './studio-area-skills'
+import type { PluginRegistryListResult, StudioPluginStatus } from './ipc/studio-plugin'
 import type { IpcStatsSnapshot, ProcessMetricsSnapshot, WorkspaceRegistryHydrateResult } from './ipc/terminal'
 import type {
   AppUpdateChannelSetting,
@@ -1418,48 +1394,11 @@ export type ElectronApi = {
   detectProjectLogo: (folderPath: string) => Promise<ProjectLogo | null>
   /** A chosen icon file, through the logo guards; null when it cannot be used. */
   readProjectIconFile: (filePath: string) => Promise<ProjectLogo | null>
-  memoryResolveRoot: (input: { workspaceRoot: string | null; relativeRoot: string | null }) => Promise<MemoryRootStatus>
-  memoryIndex: (input: { workspaceRoot: string | null; relativeRoot: string | null }) => Promise<MemoryGraphIndexResult>
-  memoryReadPreview: (input: {
-    workspaceRoot: string | null
-    relativeRoot: string | null
-    relativePath: string
-  }) => Promise<MemoryPreviewResult>
-  memoryActivityInstall: (input: {
-    workspaceRoot: string | null
-    memoryRelativeRoot: string | null
-  }) => Promise<MemoryActivityInstallResult>
-  memoryActivityUninstall: (input: { workspaceRoot: string | null }) => Promise<MemoryActivityUninstallResult>
-  memoryActivityStartWatching: (input: {
-    workspaceRoot: string | null
-    memoryRelativeRoot: string | null
-  }) => Promise<{ ok: true }>
-  memoryActivityGetStatus: (input: { workspaceRoot: string | null }) => Promise<MemoryActivityStatus>
-  memoryActivityGetSynapses: (input: { workspaceRoot: string | null }) => Promise<MemoryActivitySynapse[]>
-  memoryActivityIsInstalled: (input: { workspaceRoot: string | null }) => Promise<boolean>
-  onMemoryActivityEvent: (cb: (event: MemoryActivityEvent) => void) => () => void
-  onMemoryActivityStatus: (cb: (status: MemoryActivityStatus) => void) => () => void
-  onMemoryActivitySynapses: (cb: (payload: MemoryActivitySynapsesPayload) => void) => () => void
-  builtinSkillsList: () => Promise<BuiltinSkill[]>
-  builtinSkillStatus: (input: { workspaceRoot: string | null; skillId: string }) => Promise<BuiltinSkillStatus>
   /**
    * The app's own plugin: what this build ships against what the open workspace
    * holds. Read-only — the built-in plugin has no Install and no Remove.
    */
   studioPluginStatus: (input: { workspaceRoot: string | null }) => Promise<StudioPluginStatus>
-  /**
-   * The built-in plugin's area skills, opted into one by one and machine-wide
-   * (shared/studio-area-skills.ts). A change installs into, or takes out of,
-   * every workspace, and is pushed through `onStudioAreaSkillsChanged`.
-   */
-  studioAreaSkillsGet: () => Promise<StudioAreaSkillChoices>
-  studioAreaSkillsSetEnabled: (input: {
-    skillId: StudioAreaSkillId
-    enabled: boolean
-  }) => Promise<StudioAreaSkillChoices>
-  /** Turn a surface's suggestion down; the skill stays a switch in Settings. */
-  studioAreaSkillsDismiss: (input: { skillId: StudioAreaSkillId }) => Promise<StudioAreaSkillChoices>
-  onStudioAreaSkillsChanged: (cb: (choices: StudioAreaSkillChoices) => void) => () => void
   pluginsList: () => Promise<PluginRegistryListResult>
   pluginsDetectAvailability: (input?: PluginDetectAvailabilityInput) => Promise<PluginAvailabilityResult>
   agentLaunchPreview: (input: AgentLaunchPreviewInput) => Promise<AgentLaunchPreviewResult>
@@ -1889,11 +1828,8 @@ export type ElectronApi = {
   cancelRepositoryClone: (cloneId: string) => Promise<void>
   /** Every running clone's progress, for the caller to filter on its `cloneId`. */
   onRepositoryCloneProgress: (cb: (progress: CloneProgress) => void) => () => void
-  detectExistingAgentConfig: (input?: AgentConfigDetectInput) => Promise<AgentConfigDetectResult>
-  adoptAgentConfig: (input: AgentConfigAdoptInput) => Promise<AgentConfigAdoptResult>
   scanImportableConversations: () => Promise<ConversationImportScanResult>
   importConversations: (input: ConversationImportInput) => Promise<ConversationImportResult>
-  mcpSync: (input: McpSyncInput) => Promise<McpSyncResult>
   workspaceSkillsList: (input: WorkspaceSkillsListInput) => Promise<WorkspaceSkillsListResult>
   installedSkillsList: (input: InstalledSkillsInput) => Promise<InstalledSkillsResult>
   installedSkillRemove: (input: InstalledSkillRemoveInput) => Promise<InstalledSkillRemoveResult>

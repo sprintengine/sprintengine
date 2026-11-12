@@ -1119,6 +1119,17 @@ can run is `providers:read`; a title or a commit message is
 `command` (in `cliRuntimes` or `runtime`), and names a commit message's
 checkout only inside the folders the Studio knows. The desktop's own windows,
 Settings included, reach all of them only this way: their window IPC is gone.
+`agent-setup` (2026-11-12) adds what a Studio's agents are set up with beyond
+their CLIs: `memory.*` and `memoryActivity.*` (the project knowledge graph and
+the activity agents leave in it, with the `memoryActivity.events`,
+`.statusChanged` and `.synapsesChanged` streams), `mcp.sync`,
+`agentConfig.detect` and `.adopt`, `builtinSkills.list` and `.status`, and
+`areaSkills.*` with `areaSkills.changed`. A workspace is named by its folder
+(`workspaceFolder`), held to the folders the Studio knows for any client that
+is not an owner, and one on an SSH machine is refused in words for now.
+`mcp.sync`, `agentConfig.adopt` and the activity hook's install and uninstall
+are an owner's: they write what the agent CLIs run. A Studio advertises
+`agent-setup` only where it holds those services (a desktop in process).
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

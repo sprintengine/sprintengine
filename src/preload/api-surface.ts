@@ -1,5 +1,4 @@
 import type { ElectronApi } from '../shared/electron-api'
-import { agentConfigImportApi } from './api/agent-config-import'
 import { conversationImportApi } from './api/conversation-import'
 import { appMenuApi } from './api/app-menu'
 import { appearanceApi } from './api/appearance'
@@ -32,8 +31,6 @@ import { artifactsApi } from './api/artifacts'
 import { marketplaceApi } from './api/marketplace'
 import { hostedSourcesFeedApi } from './api/hosted-sources-feed'
 import { hostedCardFeedApi } from './api/hosted-card-feed'
-import { memoryActivityApi } from './api/memoryActivity'
-import { mcpApi } from './api/mcp'
 import { modulesApi } from './api/modules'
 import { pluginsApi } from './api/plugins'
 import { skillsApi } from './api/skills'
@@ -73,7 +70,6 @@ export type ComputedApiMembers =
   | 'diagnosticsGetIpcStats'
 
 export const apiModules = {
-  ...agentConfigImportApi,
   ...conversationImportApi,
   ...windowApi,
   ...browserApi,
@@ -105,8 +101,6 @@ export const apiModules = {
   ...environmentsApi,
   ...gitApi,
   ...marketplaceApi,
-  ...memoryActivityApi,
-  ...mcpApi,
   ...modulesApi,
   ...pluginsApi,
   ...conversationApi,
