@@ -12,6 +12,8 @@ const event = (seq, text = "hello") => ({
   sessionId: "s",
   workspaceId: "w",
   agentId: "a",
+  providerId: "p",
+  modelId: "m",
   createdAt: seq,
   payload: { text },
 });

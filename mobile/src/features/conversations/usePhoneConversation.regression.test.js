@@ -27,6 +27,8 @@ const event = (seq, type, payload = {}) => ({
   sessionId: "s",
   workspaceId: "w",
   agentId: "a",
+  providerId: "p",
+  modelId: "m",
   createdAt: seq,
   payload,
 });
@@ -1151,7 +1153,8 @@ test("an older page from the desktop is held to what a frame's events are before
   await loading;
   for (let i = 0; i < 5; i++) await settle();
   const cached = await h.store.load("a");
-  assert.deepEqual(cached.events.map((item) => item.id), ["e1", "e5"]);
+  // A clock is any instant at or after the epoch; an event with no id is no event.
+  assert.deepEqual(cached.events.map((item) => item.id), ["e1", "e2", "e5"]);
   assert.equal(h.render().notice, "");
   h.unmount();
 });

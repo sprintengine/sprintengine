@@ -251,8 +251,8 @@ line, not your bubble: an agent the chat launched reporting back, or a resume
 once a usage limit that stopped the chat has reset. The desktop records it as
 any other `user_message`, since the agent is handed it as a turn, and marks it
 with an `origin` (`{ kind: 'studio', reason }`) on the payload. The phone
-reads that optional member off the payload without its pinned wire types
-changing (`studioNotice.ts`): a `studio` origin whose reason this phone does
+reads that optional member off the payload (`studioNotice.ts`), whose shape
+the desktop's contract leaves open: a `studio` origin whose reason this phone does
 not know is still Studio's, and an origin in any other shape, or none, is
 yours, as every message before the member was. The row reads "SprintEngine
 Studio · …" in the note's ink, without the bracketed name the agent's copy of

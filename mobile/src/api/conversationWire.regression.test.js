@@ -69,7 +69,7 @@ test("fragment count, oversized frames, duplicate indices and reset stay bounded
   assert.equal(push(assembler, parts[1]), null);
 });
 
-const wireEvent = (seq) => ({ id: `e${seq}`, seq, type: "content_delta", sessionId: "s", workspaceId: "w", agentId: "a", createdAt: seq });
+const wireEvent = (seq) => ({ id: `e${seq}`, seq, type: "content_delta", sessionId: "s", workspaceId: "w", agentId: "a", providerId: "p", modelId: "m", createdAt: seq });
 const snapshotPart = (index, total, seqs) => ({
   type: "snapshot", reset: true, generation: "gen-1", part: { index, total },
   page: { events: seqs.map(wireEvent), hasMore: true, beforeCursor: 4 },
@@ -87,7 +87,8 @@ test("resumable frames parse, and malformed cursors or delays are refused", () =
   assert.equal(parse({ type: "synchronized", seq: 9, generation: "g".repeat(201) }), null);
   assert.equal(parse(snapshotPart(2, 2, [4])), null, "a part index must be inside its total");
   assert.equal(parse({ type: "subscribeFailed", key: { workspaceId: "w" }, code: "busy", message: "", retryable: true }), null);
-  assert.equal(parse({ type: "commandResult", commandId: "c", ok: false, retryAfterMs: -1 }), null);
+  // A member in the wrong shape is dropped, the frame kept: a delay that is no delay is none.
+  assert.deepEqual(parse({ type: "commandResult", commandId: "c", ok: false, retryAfterMs: -1 }), { type: "commandResult", commandId: "c", ok: false });
 });
 
 test("a chunked snapshot is applied once, whole, from its consecutive parts", () => {
@@ -206,7 +207,7 @@ test("a listed chat's title and lifecycle clocks are kept in their shape, and ea
     type: "sessions",
     requestId: "list",
     sessions: [
-      listed({ chatTitle: "   ", lastUserMessageAt: "1000", lastTurnEndedAt: -5, lastVisitedAt: 1.5 }),
+      listed({ chatTitle: "   ", lastUserMessageAt: "1000", lastTurnEndedAt: -5, lastVisitedAt: Number.NaN }),
     ],
   }).sessions;
   for (const field of ["chatTitle", "lastUserMessageAt", "lastTurnEndedAt", "lastVisitedAt"])

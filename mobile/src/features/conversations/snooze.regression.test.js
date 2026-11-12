@@ -26,7 +26,18 @@ const { buildSnoozeArgs, createConversationLifecycleApi, readSnoozeAnswer } = re
   path.join(buildRoot, "src/api/conversationLifecycle.js"),
 );
 const { declaresChatRowMenu } = require(path.join(buildRoot, "src/api/tailnetTransport.js"));
-const { parseConversationLifecycle } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+const { parseConversationFrame } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+// A listed chat as the phone reads it: through a `sessions` frame, by the
+// desktop's contract.
+const ROW = { workspaceId: "w", agentId: "a", title: "t", phase: "idle", updatedAt: 1, createdAt: 1, providerId: "p", modelId: "m", turnCount: 0, lastSeq: 0 };
+const readRow = (fields) =>
+  parseConversationFrame(JSON.stringify({ type: "sessions", requestId: "r", sessions: [{ ...ROW, ...fields }] })).sessions[0];
+const LIFECYCLE = ["chatTitle", "lastUserMessageAt", "lastTurnEndedAt", "lastVisitedAt", "visitRewoundAt", "snoozedUntil"];
+const lifecycleOf = (fields) => {
+  const row = readRow(fields);
+  return Object.fromEntries(LIFECYCLE.filter((name) => name in row).map((name) => [name, row[name]]));
+};
+
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -136,10 +147,11 @@ test("Snooze is offered only where the desktop takes it, this phone operates the
 });
 
 test("a listed snoozedUntil is kept only in its shape", () => {
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: 1234 }), { snoozedUntil: 1234 });
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: "1234" }), {});
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: -5 }), {});
-  assert.deepEqual(parseConversationLifecycle({ snoozedUntil: 1.5 }), {});
+  assert.deepEqual(lifecycleOf({ snoozedUntil: 1234 }), { snoozedUntil: 1234 });
+  assert.deepEqual(lifecycleOf({ snoozedUntil: "1234" }), {});
+  assert.deepEqual(lifecycleOf({ snoozedUntil: -5 }), {});
+  // A clock is any instant at or after the epoch, as the desktop reads one.
+  assert.deepEqual(lifecycleOf({ snoozedUntil: 1.5 }), { snoozedUntil: 1.5 });
 });
 
 test("conversation.snooze goes to the desktop's gateway, and only its own answer for the chat counts", async () => {

@@ -13,10 +13,17 @@ const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   CONVERSATION_MAX_PULL_REQUESTS,
   parseConversationFrame,
-  parseConversationHost,
-  parseConversationPullRequests,
   pullRequestUrl,
 } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+// The pull requests a chat is listed with, read as the phone reads them: in a `sessions` frame.
+const listedPullRequests = (pullRequests) =>
+  parseConversationFrame(
+    JSON.stringify({
+      type: "sessions",
+      requestId: "r",
+      sessions: [{ workspaceId: "w", agentId: "a", title: "t", phase: "idle", updatedAt: 1, createdAt: 1, providerId: "p", modelId: "m", turnCount: 0, lastSeq: 0, pullRequests }],
+    }),
+  ).sessions[0].pullRequests ?? [];
 const {
   PULL_REQUEST_TONE,
   chatHostMark,
@@ -84,7 +91,6 @@ test("a malformed host is dropped, and the chat still lists", () => {
     assert.equal(chat.title, "Fix the login");
     assert.equal("host" in chat, false, JSON.stringify(host));
   }
-  assert.equal(parseConversationHost(undefined), null);
 });
 
 test("the desktop itself is the unmarked default: a local chat wears no mark", () => {
@@ -169,7 +175,7 @@ test("a paired desktop wears its own mark where the phone chooses between deskto
 // ── pull requests ─────────────────────────────────────────────────────────
 
 test("listed pull requests are validated one by one and capped at the desktop's 20", () => {
-  const prs = parseConversationPullRequests([
+  const prs = listedPullRequests([
     PR(12, "open"),
     PR(0, "open"),
     PR(13, "draft"),
@@ -185,15 +191,17 @@ test("listed pull requests are validated one by one and capped at the desktop's 
       [16, "closed", ""],
     ],
   );
-  const many = parseConversationPullRequests(Array.from({ length: 30 }, (_, index) => PR(index + 1, "merged")));
+  const many = listedPullRequests(Array.from({ length: 30 }, (_, index) => PR(index + 1, "merged")));
   assert.equal(many.length, CONVERSATION_MAX_PULL_REQUESTS);
-  assert.deepEqual(parseConversationPullRequests(undefined), []);
+  assert.deepEqual(listedPullRequests(undefined), []);
 });
 
 test("a chat with no pull requests, or a desktop that sends none, wears no mark", () => {
   const [plain, empty] = listOf(listed(), listed({ agentId: "agent-2", pullRequests: [] }));
   assert.equal("pullRequests" in plain, false);
-  assert.equal("pullRequests" in empty, false);
+  // An empty list is the desktop saying the chat has none: no mark either way.
+  assert.deepEqual(empty.pullRequests ?? [], []);
+  assert.equal(pullRequestMark(empty.pullRequests, { includeClosed: true }), null);
   assert.equal(pullRequestMark(plain.pullRequests, { includeClosed: true }), null);
 });
 
@@ -240,7 +248,7 @@ test("a pull request's address is a web page on the host it names, or the pull r
   ]) {
     assert.equal(pullRequestUrl(bad), null, String(bad).slice(0, 60));
   }
-  assert.deepEqual(parseConversationPullRequests([PR(5, "open", { url: "https://github.com@evil.example/x" })]), []);
+  assert.deepEqual(listedPullRequests([PR(5, "open", { url: "https://github.com@evil.example/x" })]), []);
 });
 
 test("a list row speaks its pull request among its facts, since the mark inside it is out of a screen reader's reach", () => {

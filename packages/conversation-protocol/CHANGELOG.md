@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added (forward-compatible decoding)
+
+- **`decodeConversationServerFrame`** reads one frame's JSON text the way a
+  client of a newer desktop must: a frame of a type this build does not know
+  decodes to `{ type: 'unknown', frameType }` (`ConversationUnknownFrame`)
+  rather than null, so a client passes over it instead of treating it as
+  broken; an event of an unknown type is an event, so its sequence still moves
+  the cursor. With `createConversationChunkAssembler` and
+  `createConversationSnapshotAssembler`, moved from the phone app, and
+  `CONVERSATION_MAX_JOINED_FRAME_BYTES`.
+- **A listed chat in a phase this build does not know is listed**, with the
+  phase `unknown` (`ConversationListedThread`, what `sessions` frames now
+  carry), where it was dropped; `readableConversationPhase` reads it as idle.
+
+### Changed (the phone's rules, adopted)
+
+- A listed chat's `chatTitle` is trimmed; a `host` with a blank label is left
+  out; a pull request's `url` must be a web page with no credentials before its
+  host, and one whose title cannot be read is kept with an empty title.
+
 ### Added (session shapes)
 
 - **A live session's shapes.** `ConversationSessionSummary`,

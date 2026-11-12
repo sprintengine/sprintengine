@@ -16,7 +16,7 @@ const T0 = Date.UTC(2026, 9, 19, 13, 25);
 const HOUR = 3_600_000;
 const pending = (id) => ({ commandId: id, command: { kind: "send", message: id, uploadIds: [] }, queuedAt: T0 });
 const event = (seq, type, payload = {}) => ({
-  type: "event", event: { id: `event-${seq}`, seq, type, sessionId: "session", ...key, createdAt: seq, payload },
+  type: "event", event: { id: `event-${seq}`, seq, type, sessionId: "session", ...key, providerId: "p", modelId: "m", createdAt: seq, payload },
 });
 
 /** Execute the compiled production API with only its native host boundary mocked. */

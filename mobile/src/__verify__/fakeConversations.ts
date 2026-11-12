@@ -1129,7 +1129,7 @@ export const fakeConversationsApi: ConversationApi = {
       // The main chat's subagents and its plan's usage, to a stream that asks.
       if (options?.subagents && key.agentId === verifyConversation.agentId)
         handlers.onFrame({ type: "subagents", key, subagents: VERIFY_SUBAGENTS });
-      if (options?.usageLimits) handlers.onFrame({ type: "usageLimits", key, limits: VERIFY_USAGE });
+      if (options?.usageLimits) handlers.onFrame({ type: "usageLimits", key, notice: null, autoResume: false, limits: VERIFY_USAGE });
     });
     const publish = (entry: ConversationEvent) => {
       history.push(entry);

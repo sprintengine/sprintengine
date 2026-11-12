@@ -26,7 +26,18 @@ const { createConversationLifecycleApi, readMarkUnreadAnswer } = require(
 );
 const { buildNotices } = require(path.join(buildRoot, "src/features/notices/noticesLogic.js"));
 const { declaresChatMarkUnread } = require(path.join(buildRoot, "src/api/tailnetTransport.js"));
-const { parseConversationLifecycle } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+const { parseConversationFrame } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+// A listed chat as the phone reads it: through a `sessions` frame, by the
+// desktop's contract.
+const ROW = { workspaceId: "w", agentId: "a", title: "t", phase: "idle", updatedAt: 1, createdAt: 1, providerId: "p", modelId: "m", turnCount: 0, lastSeq: 0 };
+const readRow = (fields) =>
+  parseConversationFrame(JSON.stringify({ type: "sessions", requestId: "r", sessions: [{ ...ROW, ...fields }] })).sessions[0];
+const LIFECYCLE = ["chatTitle", "lastUserMessageAt", "lastTurnEndedAt", "lastVisitedAt", "visitRewoundAt", "snoozedUntil"];
+const lifecycleOf = (fields) => {
+  const row = readRow(fields);
+  return Object.fromEntries(LIFECYCLE.filter((name) => name in row).map((name) => [name, row[name]]));
+};
+
 
 const NOW = 1_800_000_000_000;
 const MIN = 60_000;
@@ -116,8 +127,8 @@ test("mark_unread goes over the gateway's JSON-RPC POST, and its refusal keeps t
 });
 
 test("a listed visitRewoundAt is kept in its shape, beside the visit clock", () => {
-  assert.deepEqual(parseConversationLifecycle({ lastVisitedAt: 10, visitRewoundAt: 20 }), { lastVisitedAt: 10, visitRewoundAt: 20 });
-  assert.deepEqual(parseConversationLifecycle({ lastVisitedAt: 10, visitRewoundAt: "20" }), { lastVisitedAt: 10 });
+  assert.deepEqual(lifecycleOf({ lastVisitedAt: 10, visitRewoundAt: 20 }), { lastVisitedAt: 10, visitRewoundAt: 20 });
+  assert.deepEqual(lifecycleOf({ lastVisitedAt: 10, visitRewoundAt: "20" }), { lastVisitedAt: 10 });
 });
 
 test("a list read shows a mark unread made elsewhere: a listed stamp, or a clock gone back on a desktop that takes the tool", () => {
