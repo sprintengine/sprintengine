@@ -7,7 +7,12 @@
 // renderer agent CLI catalog, and provider-only conversation manifests. Provider
 // manifests must never be mixed into the terminal CLI catalog.
 
-import type { ModuleSignature, ModuleTrustStatus } from './modules/manifest'
+import type { ModuleSignature } from './modules/manifest'
+import type {
+  StudioProviderAdapterClassification,
+  StudioProviderModel,
+  StudioProviderType,
+} from '../../packages/studio-protocol/src/public'
 
 type PluginVariableType = 'string' | 'enum' | 'boolean' | 'number'
 
@@ -502,15 +507,14 @@ export type PluginInstallMethod = {
 
 type PluginInstallSpec = Partial<Record<PluginInstallPlatform, PluginInstallMethod[]>>
 
-export type ConversationProviderType = 'model-provider' | 'agent-harness'
-
-export type ConversationProviderModel = {
-  id: string
-  displayName?: string
-  // Max context window in tokens, when the provider reports it (e.g. OpenRouter's
-  // `context_length`). Drives the composer's context-usage meter.
-  contextLength?: number
-}
+// What a provider list answers is the Studio protocol's (`providers.*`).
+export type {
+  StudioProviderType as ConversationProviderType,
+  StudioProviderModel as ConversationProviderModel,
+  StudioProviderAdapterKind as ConversationProviderAdapterKind,
+  StudioProviderAdapterClassification as ConversationProviderAdapterClassification,
+  StudioProviderListEntry as ConversationProviderListEntry,
+} from '../../packages/studio-protocol/src/public'
 
 // A credential descriptor any manifest kind can declare — a CLI plugin that
 // proxies an authenticated endpoint (e.g. the Z.AI runtime) or a conversation
@@ -527,8 +531,6 @@ export type ManifestAuth = {
 // Back-compat alias: conversation provider manifests referenced this name.
 type ConversationProviderAuth = ManifestAuth
 
-export type ConversationProviderAdapterKind = 'declarative' | 'trusted-executable'
-
 type ConversationProviderAdapterSpec =
   { kind: 'declarative' } | { kind: 'trusted-executable'; entry: string; sha256: string }
 
@@ -542,27 +544,14 @@ type OpenAiCompatibleProviderConfig = {
   modelsPath?: string
 }
 
-type ConversationProviderAdapterExecution = 'declarative' | 'executable' | 'blocked'
-
-type ConversationProviderAdapterTrustStatus = ModuleTrustStatus | 'not_required'
-
-export type ConversationProviderAdapterClassification = {
-  kind: ConversationProviderAdapterKind
-  execution: ConversationProviderAdapterExecution
-  trust: ConversationProviderAdapterTrustStatus
-  entry?: string
-  fingerprint?: string
-  trustError?: string
-}
-
 export type ConversationProviderManifest = {
   kind: 'provider'
   id: string
   displayName: string
   publisher?: string
   version: number
-  providerType: ConversationProviderType
-  models: ConversationProviderModel[]
+  providerType: StudioProviderType
+  models: StudioProviderModel[]
   auth?: ConversationProviderAuth
   adapter?: ConversationProviderAdapterSpec
   openaiCompatible?: OpenAiCompatibleProviderConfig
@@ -647,7 +636,7 @@ export type LoadedConversationProvider = {
   source: PluginSource
   manifestPath: string
   pluginRoot: string
-  adapter: ConversationProviderAdapterClassification
+  adapter: StudioProviderAdapterClassification
 }
 
 // Renderer-facing model-selection metadata. `args` stays main-process-only;
@@ -722,27 +711,4 @@ export type PluginRegistryListEntry = {
   // `none` last unless the manifest places it. What every permission menu for
   // this CLI lists, a chat's included.
   permissionModes?: import('./cli-permission-mode').CliPermissionModeSpec[]
-}
-
-export type ConversationProviderListEntry = {
-  capabilities?: import('./conversation-runtime').ConversationCapabilities
-  id: string
-  displayName: string
-  source: PluginSource
-  version: number
-  providerType: ConversationProviderType
-  models: ConversationProviderModel[]
-  // True when the provider exposes a live models endpoint (`modelsPath`); the
-  // renderer then treats `models` as a seed and trusts the live catalog instead
-  // of blocking on static membership.
-  supportsDynamicModels: boolean
-  // Authentication/catalog ownership, independent of tool capabilities or
-  // billing. Native CLI credentials may themselves use a plan or an API key.
-  credentialSource: 'native' | 'api-key' | 'none'
-  adapter: ConversationProviderAdapterClassification
-  // Plain-language reason this provider cannot start sessions right now (e.g.
-  // its agent-harness CLI was not found). An unavailable provider is still
-  // listed — never silently hidden — but spawn defaults skip it and the model
-  // picker renders it disabled with this reason.
-  unavailable?: string
 }

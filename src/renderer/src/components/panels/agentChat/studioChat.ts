@@ -10,22 +10,13 @@ import {
 } from '../../../../../../packages/agent-sdk/src/index'
 import { mapWithLimit } from '../../../../../shared/concurrency'
 import { randomId as commandId } from '../../../../../shared/random-id'
-import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import type {
   ConversationEvent,
   ConversationImageAttachment,
   ConversationKey,
   ConversationSendTurnInput,
   ConversationSessionFrame,
-  ConversationToolDetail,
 } from '../../../../../shared/conversation-runtime'
-import type {
-  ConversationProviderListResult,
-  ConversationProviderModelsResult,
-  ConversationSecretStatusResult,
-  FileSearchResult,
-  FileSystemStat,
-} from '../../../../../shared/electron-api'
 import type { ChatServices } from './chatServices'
 import type { ConversationTransport } from './conversationTransport'
 
@@ -154,43 +145,43 @@ export function createStudioChatServices(client: ClientSource): ChatServices {
     providers: {
       list: (input) =>
         outcome(
-          async () =>
-            (await ask(
-              client,
-              'providers.list',
-              input?.cliRuntimes ? { cliRuntimes: input.cliRuntimes } : {},
-            )) as ConversationProviderListResult,
+          async () => await ask(client, 'providers.list', input?.cliRuntimes ? { cliRuntimes: input.cliRuntimes } : {}),
         ),
       models: (input) =>
         outcome(
           async () =>
-            (await ask(client, 'providers.models', {
+            await ask(client, 'providers.models', {
               providerId: input.providerId,
-            })) as unknown as ConversationProviderModelsResult,
+            }),
         ),
       secretStatus: (input) =>
         outcome(
           async () =>
-            (await ask(client, 'providers.secretStatus', {
+            await ask(client, 'providers.secretStatus', {
               providerId: input.providerId,
-            })) as unknown as ConversationSecretStatusResult,
+            }),
         ),
     },
     files: {
       canStat: true,
       search: async (rootPath, query, options) =>
-        (await ask(client, 'files.search', {
+        await ask(client, 'files.search', {
           rootPath,
           query,
           ...(options?.limit === undefined ? {} : { limit: options.limit }),
           ...(options?.purpose === undefined ? {} : { purpose: options.purpose }),
           ...(options?.channel === undefined ? {} : { channel: options.channel }),
           ...(options?.recentAt === undefined ? {} : { recentAt: options.recentAt }),
-        })) as unknown as FileSearchResult,
+        }),
       cancelSearch: async (channel) => {
         await ask(client, 'files.cancelSearch', channel === undefined ? {} : { channel })
       },
-      stat: async (path) => (await ask(client, 'files.stat', { path })).stat as unknown as FileSystemStat,
+      stat: async (path) => {
+        // Asked by an absolute path, a stat is answered in the path's shape.
+        const { stat } = await ask(client, 'files.stat', { path })
+        if (!('isFile' in stat)) throw new Error('Studio answered that stat in another shape.')
+        return stat
+      },
       readImage: async (path) => (await ask(client, 'files.readImage', { path })).dataUrl,
       repoRoot: async (folderPath, hostId) =>
         (await ask(client, 'files.repoRoot', { folderPath, ...(hostId === undefined ? {} : { hostId }) })).repoRoot,
@@ -205,8 +196,7 @@ export function createStudioChatServices(client: ClientSource): ChatServices {
         }),
       ),
     commands: {
-      list: async (input) =>
-        (await ask(client, 'conversation.commands', input)).catalog as unknown as ConversationCommandCatalog,
+      list: async (input) => (await ask(client, 'conversation.commands', input)).catalog,
       onChanged: (listener) => {
         let stop: (() => void) | null = null
         let stopped = false
@@ -236,7 +226,7 @@ export function createStudioChatServices(client: ClientSource): ChatServices {
                 'conversation.commands',
                 {},
                 {
-                  onPayload: (payload) => listener(payload as ConversationCommandCatalog),
+                  onPayload: (payload) => listener(payload),
                   onEnd: () => {
                     stop = null
                     // Read once the client has said why: a park or a close
@@ -295,7 +285,6 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
         : undefined
       return await ask(client, 'session.send', {
         ...rest,
-        ...(rest.mentions ? { mentions: rest.mentions as unknown as Record<string, unknown>[] } : {}),
         ...(staged ? { attachments: staged } : {}),
         commandId: given ?? commandId(),
       })
@@ -350,7 +339,7 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
     async toolDetail(input) {
       try {
         const read = await (await client()).conversations.toolDetail(refOf(input), input.toolUseId)
-        if (read.ok) return { ok: true, detail: read.detail as unknown as ConversationToolDetail }
+        if (read.ok) return { ok: true, detail: read.detail }
         return {
           ok: false,
           code:
@@ -366,13 +355,13 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
         const read = await (await client()).conversations.turnDiff(refOf(input.key), input.turnSeq, input.path)
         if (!read.ok) return { ok: false as const, message: read.message }
         const { ok: _ok, ...diff } = read
-        return { ok: true as const, ...(diff as unknown as Omit<Extract<typeof read, { ok: true }>, 'ok'>) } as never
+        return { ok: true as const, ...diff }
       }),
-    send: (input) => outcome(() => send(input)) as never,
+    send: (input) => outcome(() => send(input)),
     interrupt: (input) =>
       outcome(() =>
         ask(client, 'session.interrupt', { sessionId: input.sessionId, commandId: input.commandId ?? commandId() }),
-      ) as never,
+      ),
     respond: (input) =>
       outcome(() =>
         ask(client, 'session.respond', {
@@ -384,7 +373,7 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
           ...(input.requestKind === undefined ? {} : { requestKind: input.requestKind }),
           commandId: input.commandId ?? commandId(),
         }),
-      ) as never,
+      ),
     setPermissionPreset: (input) =>
       outcome(() =>
         ask(client, 'session.setPermission', {
@@ -393,7 +382,7 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
           ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
           commandId: input.commandId ?? commandId(),
         }),
-      ) as never,
+      ),
     setModel: (input) =>
       outcome(() =>
         ask(client, 'session.setModel', {
@@ -401,7 +390,7 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
           modelId: input.modelId,
           commandId: input.commandId ?? commandId(),
         }),
-      ) as never,
+      ),
     attachment: (input) => outcome(() => ask(client, 'conversation.attachment', { ref: input.ref })),
     rewind: (input) =>
       outcome(() =>
@@ -435,7 +424,7 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
           ...(input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools }),
           commandId: commandId(),
         }),
-      ) as never,
+      ),
     revert: (input) =>
       outcome(() =>
         ask(client, 'conversation.revert', {

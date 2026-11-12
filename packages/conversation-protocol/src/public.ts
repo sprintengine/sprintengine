@@ -19,3 +19,7 @@ export * from './composerReads.js'
 export * from './checkoutChanges.js'
 // How a tool step is worded and toned, which every view of a conversation shares.
 export * from './presentation.js'
+// A live session's summary and what its session methods answer.
+export * from './sessions.js'
+// What a message carries beside its words: mentions and files attached by path.
+export * from './messageParts.js'

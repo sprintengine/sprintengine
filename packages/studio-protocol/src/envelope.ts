@@ -268,6 +268,15 @@ export const STUDIO_ERROR_CODES = [
   // What it asks for clashes with how things stand: a local server already
   // running is run again, or one the Studio did not start is stopped.
   'conflict',
+  // Why the launch or the runtime refused to start or drive a chat, told in
+  // Studio's stable words: a model the chat's agent does not offer is
+  // `unsupported_model`, above.
+  'unknown_workspace',
+  'workspace_folder_missing',
+  'no_cli_selected',
+  'cli_not_conversational',
+  'unknown_skill',
+  'conversation_start_failed',
 ] as const
 
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number]

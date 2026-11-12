@@ -31,7 +31,11 @@ import {
   type StudioMethodParams,
   type StudioMethodResult,
   type StudioParsedServerFrame,
+  type StudioPushTopic,
+  type StudioRequest,
   type StudioTopic,
+  type StudioTopicParams,
+  type StudioTopicPayload,
   type StudioWelcomeFrame,
 } from './protocol.js'
 import type { StudioTransport, StudioTransportFactory } from './transport.js'
@@ -147,9 +151,9 @@ export type StudioConversationService = ConversationService & {
   ): Promise<ConversationResult<StudioMethodResult<'conversation.turnDiff'>>>
 }
 
-/** What a push stream hears: each payload as it comes, and why it ended if it did. */
-export type StudioPushListener = {
-  onPayload(payload: unknown): void
+/** What a push stream hears: each payload as its topic defines it, and why it ended if it did. */
+export type StudioPushListener<T extends StudioPushTopic = StudioPushTopic> = {
+  onPayload(payload: StudioTopicPayload<T>): void
   /** The stream ended for good: refused, or the client closed. A drop it can resume from is not an end. */
   onEnd?(error?: StudioError): void
 }
@@ -163,8 +167,8 @@ export type StudioClient = AgentConversations & {
   readonly state: StudioClientState
   /** Whether this Studio serves a capability. Ask this, never the version. */
   supports(capability: StudioCapability): boolean
-  /** One request, answered or thrown as a `StudioError`. */
-  request<M extends StudioMethod>(method: M, params: StudioMethodParams<M>): Promise<StudioMethodResult<M>>
+  /** One request, typed by the protocol's method table, answered or thrown as a `StudioError`. */
+  request: StudioRequest
   /** Give Studio's agents tools that run here (`supports('client-tools')`). */
   readonly tools: StudioClientTools
   /**
@@ -172,7 +176,11 @@ export type StudioClient = AgentConversations & {
    * sent, subscribed again on each new connection. Nothing is replayed, so
    * ask for the current state after subscribing. Returns the unsubscriber.
    */
-  subscribe(topic: StudioTopic, params: unknown, listener: StudioPushListener): () => void
+  subscribe<T extends StudioPushTopic>(
+    topic: T,
+    params: StudioTopicParams<T>,
+    listener: StudioPushListener<T>,
+  ): () => void
   /** Connect now: after being parked, or to cut a reconnect's wait short. Nothing while open or closed. */
   wake(): void
   close(): void
@@ -223,7 +231,8 @@ type Push = {
   id: string
   topic: StudioTopic
   params: unknown
-  listener: StudioPushListener
+  /** The subscriber's listener, its payload type erased: a frame's payload is the topic's, sent by the Studio. */
+  listener: { onPayload(payload: unknown): void; onEnd?(error?: StudioError): void }
   retry: ReturnType<typeof setTimeout> | null
 }
 
@@ -1023,7 +1032,9 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     tools: tools.api,
     wake,
     subscribe(topic, params, listener) {
-      const push: Push = { id: `p${++sequence}`, topic, params, listener, retry: null }
+      // Kept beside every other topic's: a payload is the topic's own, as the
+      // table defines it, and goes back only to the listener that asked for it.
+      const push: Push = { id: `p${++sequence}`, topic, params, listener: listener as Push['listener'], retry: null }
       if (state === 'closed') {
         listener.onEnd?.(new StudioError('closed', 'The client is closed.'))
         return () => undefined

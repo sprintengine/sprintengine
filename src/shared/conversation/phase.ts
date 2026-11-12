@@ -1,9 +1,9 @@
 import type { ConversationSessionSummary } from '../conversation-runtime'
 import { backgroundTasksWakeAgent } from './backgroundTasks'
 
-/** One display phase for a conversation, ordered by the action it needs. */
-export type ConversationPhase =
-  'idle' | 'starting' | 'running' | 'waiting_for_approval' | 'waiting_for_input' | 'failed' | 'completed'
+import type { ConversationPhase } from '../../../packages/conversation-protocol/src/public'
+
+export type { ConversationPhase }
 
 export type ConversationPhaseSignals = {
   approvalPending?: boolean

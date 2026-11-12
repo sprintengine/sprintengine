@@ -1,37 +1,28 @@
 import {
   STUDIO_METHODS,
-  isStudioChatMethod,
-  isStudioToolsMethod,
-  isStudioFilesMethod,
-  isStudioPullRequestsMethod,
-  isStudioLocalServersMethod,
   parseStudioMethodParams,
-  type StudioFilesMethod,
-  type StudioPullRequestsMethod,
-  type StudioLocalServersMethod,
-  type StudioToolsMethod,
   authorizeStudioMethod,
   studioRefusedGrantName,
   type ConversationCommand,
-  type StudioChatMethod,
+  type StudioCommandAnswer,
+  type StudioCommonErrorCode,
   type StudioConversationKey,
   type StudioCreatedConversation,
   type StudioErrorBody,
+  type StudioErrorCode,
   type StudioGrant,
+  type StudioHandlers,
   type StudioMethod,
+  type StudioMethodAnswer,
   type StudioMethodParams,
-  type StudioMethodResult,
+  type StudioRuntimeRefusalCode,
   type StudioServerInfo,
 } from '../../../packages/studio-protocol/src/public'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
-import type {
-  ConversationCliRuntimeOverrides,
-  ConversationImageAttachment,
-  ConversationKey,
-} from '../../shared/conversation-runtime'
+import type { ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
@@ -53,6 +44,10 @@ import type {
 // about who is asking:
 //
 // - Scope. Every method's scope comes from STUDIO_METHODS, checked first.
+//   Its params are read by the validator the same table holds, and it is
+//   answered by its handler in `handlers` below: one per method, typed by the
+//   method's contract, so a method without a handler, or a handler answering
+//   another shape or an undeclared refusal, does not compile.
 // - Ceiling. A paired app's chats run no looser than its ceiling, exactly as a
 //   module's do (permission-ceiling.ts): a preset it asks for is lowered to the
 //   ceiling, none asked for is pinned to it, and naming tools a chat may use
@@ -82,8 +77,7 @@ import type {
 // are, and a view showing a redacted usage count or a vaguer error than its
 // IPC would have is a regression, not a protection.
 
-export type StudioRpcAnswer<M extends StudioMethod = StudioMethod> =
-  { ok: true; result: StudioMethodResult<M> } | { ok: false; error: StudioErrorBody }
+export type StudioRpcAnswer<M extends StudioMethod = StudioMethod> = StudioMethodAnswer<M>
 
 export type StudioRpcRouter = {
   handle(
@@ -126,15 +120,26 @@ const OWNER_ONLY = 'This is served to Studio’s own connections only.'
 const FOLDER_OWNER_ONLY = 'Only Studio’s own connections may name a conversation by its folder.'
 const NO_CONTEXT: StudioRequestContext = { connectionId: '', slot: 0, ownWindow: false }
 
+/** The codes a failure below the router is told in: each has one stable sentence. */
+type StableCode =
+  | Extract<StudioCommonErrorCode, 'unavailable' | 'invalid_params' | 'command_id_conflict' | 'busy'>
+  | StudioRuntimeRefusalCode
+
+/** A refusal with the code it names, so a handler's refusals are checked against its method's. */
+type Refused<C extends StudioErrorCode> = { ok: false; error: StudioErrorBody & { code: C } }
+
 /** How a request is answered: what its replies show, and in whose words a failure is told. */
 type Voice = {
   redact<T>(value: T): T
-  failed(
-    code: string,
+  /** A failure whose code is known here; one with no stable sentence is told as `unavailable`. */
+  failed<C extends StableCode>(code: C, detail: string | undefined, context: string): Refused<C | 'unavailable'>
+  /** A failure in a code from below, which may be any: told as the stable code it is, else `unavailable`. */
+  failedFrom(
+    code: string | undefined,
     detail: string | undefined,
     context: string,
     retryAfterMs?: number,
-  ): { ok: false; error: StudioErrorBody }
+  ): Refused<StableCode>
 }
 
 /**
@@ -143,7 +148,7 @@ type Voice = {
  * paths, processes and other internals, so they go to the log and not to the
  * client; a code with no sentence here is answered as `unavailable`.
  */
-const STABLE_MESSAGES: Readonly<Record<string, string>> = {
+const STABLE_MESSAGES: Readonly<Record<StableCode, string>> = {
   unavailable: 'Studio could not carry that out.',
   not_found: 'Studio has no such record for this conversation.',
   invalid_params: 'Studio could not read that request.',
@@ -158,6 +163,10 @@ const STABLE_MESSAGES: Readonly<Record<string, string>> = {
   // Another send to the chat is being prepared: the client tries again after
   // `retryAfterMs` (the SDK does so by itself), rather than failing for good.
   busy: 'Studio is busy with another message for this chat. Try again shortly.',
+}
+
+function stableCode(code: string | undefined): StableCode {
+  return code !== undefined && Object.hasOwn(STABLE_MESSAGES, code) ? (code as StableCode) : 'unavailable'
 }
 
 /** The delay a `busy` refusal carries, when there is one to carry. */
@@ -207,10 +216,21 @@ export function studioRuntimeCommandId(grant: StudioGrant, commandId: string): s
 const CONVERSATION_RULE_FLOOR = 'auto' as const
 const MAX_REMEMBERED_STOPS = 1024
 
-const refuse = (code: string, message: string): { ok: false; error: StudioErrorBody } => ({
-  ok: false,
-  error: { code, message },
-})
+function refuse<C extends StudioErrorCode>(code: C, message: string): Refused<C> {
+  return { ok: false, error: { code, message } }
+}
+
+/** A refusal from below whose code the protocol already names, carried as it is. */
+function refused<C extends StudioErrorCode>(outcome: { code: C; message: string; retryAfterMs?: number }): Refused<C> {
+  return {
+    ok: false,
+    error: {
+      code: outcome.code,
+      message: outcome.message,
+      ...(outcome.retryAfterMs === undefined ? {} : { retryAfterMs: outcome.retryAfterMs }),
+    },
+  }
+}
 
 // Commands that move a chat's work forward. The rest — interrupt, a denial, a
 // rejected plan, a stricter preset, stop — only ever hold it back, so they are
@@ -236,47 +256,70 @@ function drivesChat(command: ConversationCommand): boolean {
   }
 }
 
+/** Who asked, and how they are answered: what every handler is given beside its params. */
+type Asking = {
+  grant: StudioGrant
+  context: StudioRequestContext
+  voice: Voice
+  /** What a mutation was, kept with its receipt; absent for a read. */
+  fingerprint: string | undefined
+}
+
+/** A conversation command's members, without the address the method carries them under. */
+function members<P extends { key: StudioConversationKey; commandId: string }>(params: P): Omit<P, 'key' | 'commandId'> {
+  const { key: _key, commandId: _commandId, ...rest } = params
+  return rest
+}
+
 export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRpcRouter {
   const { backend } = options
   // A refusal from below: logged in its own words under an opaque id, answered
   // in stable ones carrying that id, so a person can quote it and the log
   // still says what really happened.
-  const failed = (
-    code: string,
+  const clientFailure = <C extends StableCode>(
+    code: C,
     detail: string | undefined,
     context: string,
     retryAfterMs?: number,
-  ): { ok: false; error: StudioErrorBody } => {
-    const known = Object.hasOwn(STABLE_MESSAGES, code) ? code : 'unavailable'
+  ): Refused<C> => {
     const errorId = studioErrorId()
-    options.log?.(`Studio RPC ${context} refused (${code}) [${errorId}]: ${detail || STABLE_MESSAGES[known]}`)
+    options.log?.(`Studio RPC ${context} refused (${code}) [${errorId}]: ${detail || STABLE_MESSAGES[code]}`)
     return {
       ok: false,
-      error: { code: known, message: STABLE_MESSAGES[known], errorId, ...retryAfter(known, retryAfterMs) },
+      error: { code, message: STABLE_MESSAGES[code], errorId, ...retryAfter(code, retryAfterMs) },
     }
   }
-  const clientVoice: Voice = { redact: (value) => backend.redact(value), failed }
+  const clientVoice: Voice = {
+    redact: (value) => backend.redact(value),
+    failed: (code, detail, context) => clientFailure(code, detail, context),
+    failedFrom: (code, detail, context, retryAfterMs) => clientFailure(stableCode(code), detail, context, retryAfterMs),
+  }
   // Studio's own window hears what its IPC would have said, in the same words.
+  const windowFailure = <C extends StableCode>(
+    code: C,
+    detail: string | undefined,
+    retryAfterMs?: number,
+  ): Refused<C> => ({
+    ok: false,
+    error: { code, message: detail || STABLE_MESSAGES[code], ...retryAfter(code, retryAfterMs) },
+  })
   const windowVoice: Voice = {
     redact: (value) => value,
-    failed: (code, detail, _context, retryAfterMs) => {
-      const known = Object.hasOwn(STABLE_MESSAGES, code) ? code : 'unavailable'
-      const refused = refuse(known, detail || STABLE_MESSAGES[known])
-      return { ok: false, error: { ...refused.error, ...retryAfter(known, retryAfterMs) } }
-    },
+    failed: (code, detail) => windowFailure(code, detail),
+    failedFrom: (code, detail, _context, retryAfterMs) => windowFailure(stableCode(code), detail, retryAfterMs),
   }
   const now = options.now ?? Date.now
   const uploads = options.uploads ?? createStudioUploads({ now })
   // Answers to the chat surface's conversation-level mutations, by namespaced
   // id, shared while pending so a retry racing the first attempt waits for it.
-  const kept = new Map<string, Promise<StudioRpcAnswer>>()
+  const kept = new Map<string, Promise<{ ok: boolean; error?: StudioErrorBody }>>()
   // What each command id named, while this process runs: the receipts the
   // runtime keeps hold the same fingerprint for a session's commands across a
   // restart, and this covers the rest (a create, a revert, a fork, a stop).
   const fingerprints = new Map<string, string>()
+  const stopsDone = new Set<string>()
   // Creates still starting, by namespaced id: a retry that arrives while the
   // first attempt is launching shares it, so one id makes one chat.
-  const stopsDone = new Set<string>()
   const creating = new Map<
     string,
     Promise<{ ok: true; conversation: StudioCreatedConversation } | { ok: false; code: string; message: string }>
@@ -321,13 +364,18 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     })
   }
 
+  type CommandRefused = Refused<StableCode | 'ceiling_exceeded'>
+
+  /**
+   * Carry out one conversation command, held to the client's ceiling: what it
+   * was carried as, and the runtime's notice, or why it was refused.
+   */
   async function command(
-    grant: StudioGrant,
+    asking: Asking,
     params: { key: StudioConversationKey; commandId: string },
     command: ConversationCommand,
-    voice: Voice,
-    fingerprint: string | undefined,
-  ): Promise<StudioRpcAnswer> {
+  ): Promise<{ ok: true; carried: ConversationCommand; answer: StudioCommandAnswer } | CommandRefused> {
+    const { grant, voice, fingerprint } = asking
     const key = resolve(params.key, grant)
     if (!key) return notFound(params.key)
     let carried = command
@@ -368,31 +416,23 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       fingerprint,
     )
     if (!outcome.ok)
-      return voice.failed(
-        outcome.code ?? 'unavailable',
-        outcome.message,
-        `conversation.${carried.kind}`,
-        outcome.retryAfterMs,
-      )
-    const notice = outcome.notice ? { notice: outcome.notice } : {}
-    if (carried.kind === 'setPermissionPreset')
-      return {
-        ok: true,
-        result: {
-          permissionPreset: carried.preset,
-          ...(carried.permissionMode ? { permissionMode: carried.permissionMode } : {}),
-          ...notice,
-        },
-      }
-    if (carried.kind === 'setModel') return { ok: true, result: { modelId: carried.modelId, ...notice } }
-    return { ok: true, result: notice }
+      return voice.failedFrom(outcome.code, outcome.message, `conversation.${carried.kind}`, outcome.retryAfterMs)
+    return { ok: true, carried, answer: outcome.notice ? { notice: outcome.notice } : {} }
+  }
+
+  /** A command whose answer is the runtime's notice alone. */
+  async function plainCommand(
+    asking: Asking,
+    params: { key: StudioConversationKey; commandId: string },
+    carried: ConversationCommand,
+  ): Promise<{ ok: true; result: StudioCommandAnswer } | CommandRefused> {
+    const done = await command(asking, params, carried)
+    return done.ok ? { ok: true, result: done.answer } : done
   }
 
   async function create(
-    grant: StudioGrant,
     params: StudioMethodParams<'conversation.create'>,
-    voice: Voice,
-    context: StudioRequestContext,
+    { grant, voice, context }: Asking,
   ): Promise<StudioRpcAnswer<'conversation.create'>> {
     const { commandId, ...request } = params
     if (request.allowedTools?.length && !ceilingAllowsUnaskedTools(grant.ceiling))
@@ -432,521 +472,554 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.tools?.noteStarted(context.connectionId, created.conversation)
     return created.ok
       ? { ok: true, result: { conversation: created.conversation } }
-      : voice.failed(created.code, created.message, 'conversation.create')
+      : voice.failedFrom(created.code, created.message, 'conversation.create')
   }
 
-  async function dispatch(
-    grant: StudioGrant,
-    method: StudioMethod,
-    params: never,
-    context: StudioRequestContext,
-    voice: Voice,
-    fingerprint: string | undefined,
-  ): Promise<StudioRpcAnswer> {
-    // By root it is the files family's, served with or without a chat surface.
-    if (method === 'files.stat' && (params as StudioMethodParams<'files.stat'>).root !== undefined) {
-      const { path, root } = params as StudioMethodParams<'files.stat'>
-      if (!options.files) return refuse('unavailable', 'This Studio does not serve files by root.')
-      const found = await options.files.stat(root!, path)
-      return found.ok ? { ok: true, result: { stat: found.stat } } : refuse(found.code, found.message)
-    }
-    if (isStudioChatMethod(method)) return chatDispatch(grant, method, params, context, voice, fingerprint)
-    if (isStudioToolsMethod(method)) return toolsDispatch(grant, method, params, context)
-    if (isStudioFilesMethod(method)) return filesDispatch(grant, method, params, voice)
-    if (isStudioPullRequestsMethod(method)) return pullRequestsDispatch(method, params)
-    if (isStudioLocalServersMethod(method)) return localServersDispatch(method, params)
-    const { failed } = voice
-    switch (method) {
-      case 'server.info':
-        return { ok: true, result: { ...options.info(), grant } }
-      case 'server.ping':
-        return { ok: true, result: { at: now() } }
-      case 'conversation.list':
-        return { ok: true, result: { conversations: await backend.list() } }
-      case 'conversation.create':
-        return create(grant, params, voice, context)
-      case 'conversation.stop': {
-        const { key: wire, commandId } = params as StudioMethodParams<'conversation.stop'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        const runtimeId = studioRuntimeCommandId(grant, commandId)
-        // A stop with no session to stop leaves no receipt in the runtime, so
-        // it is remembered here: a resend of it never stops a later session.
-        if (stopsDone.has(runtimeId)) return { ok: true, result: {} }
-        const stopped = await backend.stop(key, runtimeId, fingerprint)
-        if (stopped.ok) {
-          stopsDone.add(runtimeId)
-          while (stopsDone.size > MAX_REMEMBERED_STOPS) stopsDone.delete(stopsDone.values().next().value!)
-        }
-        return stopped.ok
-          ? { ok: true, result: {} }
-          : failed(
-              stopped.code === 'command_id_conflict' ? stopped.code : 'unavailable',
-              stopped.message,
-              'conversation.stop',
-            )
-      }
-      case 'conversation.loadEarlier': {
-        const { key: wire, beforeCursor, turnLimit } = params as StudioMethodParams<'conversation.loadEarlier'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        const read = await backend.loadEarlier(key, beforeCursor, turnLimit)
-        return read.ok
-          ? {
-              ok: true,
-              result: { page: { ...read.page, events: read.page.events.map((event) => voice.redact(event)) } },
-            }
-          : failed('unavailable', read.message, 'conversation.loadEarlier')
-      }
-      case 'conversation.toolDetail': {
-        const { key: wire, toolUseId } = params as StudioMethodParams<'conversation.toolDetail'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        const read = await backend.toolDetail(key, toolUseId)
-        if (read.ok)
-          return { ok: true, result: { detail: voice.redact(read.detail) as unknown as Record<string, unknown> } }
-        return failed(
-          read.code === 'not_found' ? 'not_found' : read.code === 'invalid_input' ? 'invalid_params' : 'unavailable',
-          read.message,
-          'conversation.toolDetail',
-        )
-      }
-      case 'conversation.turnDiff': {
-        const { key: wire, turnSeq, path } = params as StudioMethodParams<'conversation.turnDiff'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        const read = await backend.turnDiff(key, turnSeq, path)
-        if (!read.ok) return failed('unavailable', read.message, 'conversation.turnDiff')
-        const { ok: _ok, ...diff } = read
-        return { ok: true, result: voice.redact(diff) }
-      }
-      default: {
-        const { key, commandId, ...members } = params as {
-          key: StudioConversationKey
-          commandId: string
-        } & Record<string, unknown>
-        const kind = method.slice('conversation.'.length) as ConversationCommand['kind']
-        return command(grant, { key, commandId }, { kind, ...members } as ConversationCommand, voice, fingerprint)
-      }
-    }
-  }
-
-  // ── Client tools ─────────────────────────────────────────────────────────
-
-  function toolsDispatch(
-    grant: StudioGrant,
-    method: StudioToolsMethod,
-    params: never,
-    context: StudioRequestContext,
-  ): StudioRpcAnswer {
-    const tools = options.tools
-    if (!tools) return refuse('unavailable', `This Studio does not serve ${method}.`)
-    switch (method) {
-      case 'tools.offer': {
-        const { toolset, reach } = params as StudioMethodParams<'tools.offer'>
-        const offered = tools.offer(context.connectionId, toolset, reach)
-        return offered.ok
-          ? { ok: true, result: { toolset: offered.toolset, wireNames: offered.wireNames, reach: offered.reach } }
-          : {
-              ok: false,
-              error: {
-                code: offered.code,
-                message: offered.message,
-                ...(offered.retryAfterMs === undefined ? {} : { retryAfterMs: offered.retryAfterMs }),
-              },
-            }
-      }
-      case 'tools.withdraw': {
-        const withdrawn = tools.withdraw(context.connectionId, (params as StudioMethodParams<'tools.withdraw'>).toolset)
-        return withdrawn.ok
-          ? { ok: true, result: { withdrawn: withdrawn.withdrawn } }
-          : {
-              ok: false,
-              error: {
-                code: withdrawn.code,
-                message: withdrawn.message,
-                ...(withdrawn.retryAfterMs === undefined ? {} : { retryAfterMs: withdrawn.retryAfterMs }),
-              },
-            }
-      }
-      case 'tools.focus':
-        tools.focus(context.connectionId, params as StudioMethodParams<'tools.focus'>)
-        return { ok: true, result: {} }
-      case 'tools.catalog':
-        return { ok: true, result: { toolsets: tools.catalog({ clientId: grant.clientId, owner: grant.owner }) } }
-      case 'tools.grants': {
-        const { key: wire } = params as StudioMethodParams<'tools.grants'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        return { ok: true, result: { grants: tools.grantsOf({ workspaceId: key.workspaceId, agentId: key.agentId }) } }
-      }
-      case 'tools.grant': {
-        const { key: wire, toolset, granted } = params as StudioMethodParams<'tools.grant'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        const answer = tools.grant({ workspaceId: key.workspaceId, agentId: key.agentId }, toolset, granted)
-        return answer.ok ? { ok: true, result: { grants: answer.grants } } : refuse(answer.code, answer.message)
-      }
-    }
-  }
-
-  // ── Pull requests ────────────────────────────────────────────────────────
-
-  async function pullRequestsDispatch(method: StudioPullRequestsMethod, params: never): Promise<StudioRpcAnswer> {
-    const pullRequests = options.pullRequests
-    if (!pullRequests) return refuse('unavailable', `This Studio does not serve ${method}.`)
-    switch (method) {
-      case 'pullRequests.list':
-        return { ok: true, result: await pullRequests.list(params as StudioMethodParams<'pullRequests.list'>) }
-      case 'pullRequests.refresh':
-        return { ok: true, result: await pullRequests.refresh(params as StudioMethodParams<'pullRequests.refresh'>) }
-      case 'pullRequests.noteWork':
-        // Answered at once: what it changes reports through
-        // `pullRequests.changed`, and a turn end must not wait on GitHub.
-        void pullRequests.noteWork(params as StudioMethodParams<'pullRequests.noteWork'>).catch((error: unknown) => {
-          options.log?.(`A pull request note failed: ${error instanceof Error ? error.message : String(error)}`)
-        })
-        return { ok: true, result: {} }
-      case 'pullRequests.link': {
-        const linked = await pullRequests.link(params as StudioMethodParams<'pullRequests.link'>)
-        if (!linked.ok)
-          return refuse(linked.code === 'not_a_pull_request' ? 'invalid_params' : 'claimed', linked.message)
-        return { ok: true, result: { recorded: linked.recorded, pullRequest: linked.pullRequest } }
-      }
-      case 'pullRequests.unwatch':
-        if (!pullRequests.unwatch) return refuse('unavailable', `This Studio does not serve ${method}.`)
-        return { ok: true, result: await pullRequests.unwatch(params as StudioMethodParams<'pullRequests.unwatch'>) }
-      case 'pullRequests.noteToolCall':
-        // Answered at once, like a note: what it records reports through
-        // `pullRequests.changed`.
-        void pullRequests
-          .noteToolCall(params as StudioMethodParams<'pullRequests.noteToolCall'>)
-          .catch((error: unknown) => {
-            options.log?.(
-              `A tool call could not be read for a pull request: ${error instanceof Error ? error.message : String(error)}`,
-            )
-          })
-        return { ok: true, result: {} }
-    }
-  }
-
-  // ── Local servers ────────────────────────────────────────────────────────
-
-  async function localServersDispatch(method: StudioLocalServersMethod, params: never): Promise<StudioRpcAnswer> {
-    const localServers = options.localServers
-    if (!localServers) return refuse('unavailable', `This Studio does not serve ${method}.`)
-    switch (method) {
-      case 'localServers.list':
-        return { ok: true, result: await localServers.list(params as StudioMethodParams<'localServers.list'>) }
-      case 'localServers.run': {
-        // Answered once the run has started; its port opening reports through
-        // `localServers.changed`.
-        const started = await localServers.run(params as StudioMethodParams<'localServers.run'>)
-        return started.ok ? { ok: true, result: { started: true } } : refuse(started.code, started.message)
-      }
-      case 'localServers.stop': {
-        const stopped = await localServers.stop(params as StudioMethodParams<'localServers.stop'>)
-        return stopped.ok ? { ok: true, result: { stopped: stopped.stopped } } : refuse(stopped.code, stopped.message)
-      }
-      case 'localServers.remove':
-        return { ok: true, result: await localServers.remove(params as StudioMethodParams<'localServers.remove'>) }
-    }
-  }
-
-  // ── Files under a workspace's roots ──────────────────────────────────────
-
-  async function filesDispatch(
-    grant: StudioGrant,
-    method: StudioFilesMethod,
-    params: never,
-    voice: Voice,
-  ): Promise<StudioRpcAnswer> {
-    const files = options.files
-    if (!files) return refuse('unavailable', `This Studio does not serve ${method}.`)
-    const failed = (outcome: { code: string; message: string }) => refuse(outcome.code, outcome.message)
-    switch (method) {
-      case 'files.roots':
-        return { ok: true, result: files.roots((params as StudioMethodParams<'files.roots'>).workspaceId) }
-      case 'files.list': {
-        const { root, path } = params as StudioMethodParams<'files.list'>
-        const listed = await files.list(root, path)
-        return listed.ok ? { ok: true, result: { entries: listed.entries } } : failed(listed)
-      }
-      case 'files.read': {
-        const { root, path } = params as StudioMethodParams<'files.read'>
-        const read = await files.read(root, path)
-        if (!read.ok) return failed(read)
-        const { ok: _ok, ...result } = read
-        return { ok: true, result }
-      }
-      case 'files.write': {
-        const { root, path, text, uploadId, ifMatch, commandId } = params as StudioMethodParams<'files.write'>
-        const runtimeId = studioRuntimeCommandId(grant, commandId)
-        // A retry of a write is answered with the first one's outcome: carried
-        // out again, its own write would read as another writer's conflict.
-        return once(
-          `files.write:${runtimeId}`,
-          async () => {
-            let bytes: Buffer
-            if (text !== undefined) bytes = Buffer.from(text, 'utf8')
-            else {
-              const spent = uploads.spend(grant.clientId, [uploadId!], runtimeId, 'file')
-              if (!spent.ok) return refuse(spent.code, spent.message)
-              bytes = spent.pictures[0].bytes
-            }
-            // A conflict is an answer, kept for every repeat of this command,
-            // so its bytes go as a write's do; a write that could not be
-            // carried out leaves them unsent, for a retry or a discard.
-            let written: Awaited<ReturnType<typeof files.write>>
-            try {
-              written = await files.write(root, path, bytes, ifMatch)
-            } catch (error) {
-              if (uploadId !== undefined) uploads.settle(grant.clientId, runtimeId, false)
-              throw error
-            }
-            if (uploadId !== undefined)
-              uploads.settle(grant.clientId, runtimeId, written.ok || written.code === 'conflict')
-            return written.ok || written.code === 'conflict' ? { ok: true, result: written as never } : failed(written)
-          },
-          voice,
-          method,
-        )
-      }
-      case 'files.remove': {
-        const { root, path, ifMatch, commandId } = params as StudioMethodParams<'files.remove'>
-        return once(
-          `files.remove:${studioRuntimeCommandId(grant, commandId)}`,
-          async () => {
-            const removed = await files.remove(root, path, ifMatch)
-            return removed.ok || removed.code === 'conflict' ? { ok: true, result: removed as never } : failed(removed)
-          },
-          voice,
-          method,
-        )
-      }
-    }
-  }
-
-  // ── The chat surface ─────────────────────────────────────────────────────
-
-  /** The first answer to a namespaced id, for every retry of it; new work otherwise. */
-  function once(
+  /**
+   * The first answer to a namespaced id, for every retry of it; new work
+   * otherwise. The id names its method (`keptId`), so what is kept under it
+   * is that method's answer.
+   */
+  function once<A extends { ok: boolean; error?: StudioErrorBody }>(
     id: string,
-    work: () => Promise<StudioRpcAnswer>,
+    work: () => Promise<A>,
     voice: Voice,
     method: string,
-  ): Promise<StudioRpcAnswer> {
-    const known = kept.get(id)
+  ): Promise<A | Refused<'unavailable'>> {
+    const known = kept.get(id) as Promise<A | Refused<'unavailable'>> | undefined
     if (known) {
       kept.delete(id)
       kept.set(id, known)
       return known
     }
-    const answer = work().catch((error: unknown): StudioRpcAnswer =>
+    const answer = work().catch((error: unknown): Refused<'unavailable'> =>
       voice.failed('unavailable', error instanceof Error ? error.message : String(error), method),
     )
     kept.set(id, answer)
     while (kept.size > MAX_KEPT_ANSWERS) kept.delete(kept.keys().next().value!)
     // Work that could not be carried out at all may be tried again under its id.
     void answer.then((settled) => {
-      if (!settled.ok && settled.error.code === 'unavailable' && kept.get(id) === answer) kept.delete(id)
+      if (!settled.ok && settled.error?.code === 'unavailable' && kept.get(id) === answer) kept.delete(id)
     })
     return answer
   }
 
-  async function chatDispatch(
-    grant: StudioGrant,
-    method: StudioChatMethod,
-    params: never,
-    context: StudioRequestContext,
-    voice: Voice,
-    fingerprint: string | undefined,
-  ): Promise<StudioRpcAnswer> {
-    const chat = options.chat?.() ?? null
-    // A session command's receipt keeps what it was, across a restart too.
-    const stamp = fingerprint ? { commandFingerprint: fingerprint } : {}
-    // An upload is the client's; its budget is this connection's. Staging
-    // needs no chat: a board too large for one frame is staged the same way.
-    const holder = { client: grant.clientId, connection: context.connectionId }
-    switch (method) {
-      case 'uploads.begin': {
-        const input = params as StudioMethodParams<'uploads.begin'>
-        // A file's bytes are only ever spent by `files.write`, which is an owner's.
-        if (input.purpose === 'file' && !grant.owner)
-          return refuse('owner_required', 'Only Studio itself may stage a file’s bytes.')
-        const begun = uploads.begin(holder, input)
-        return begun.ok
-          ? { ok: true, result: { uploadId: begun.uploadId, chunkBytes: begun.chunkBytes } }
-          : refuse(begun.code, begun.message)
-      }
-      case 'uploads.append': {
-        const appended = uploads.append(holder, params as StudioMethodParams<'uploads.append'>)
-        return appended.ok
-          ? { ok: true, result: { received: appended.received } }
-          : refuse(appended.code, appended.message)
-      }
-      case 'uploads.discard':
-        return {
-          ok: true,
-          result: uploads.discard(grant.clientId, (params as StudioMethodParams<'uploads.discard'>).uploadIds),
-        }
-    }
-    if (!chat) return refuse('unavailable', `This Studio does not serve ${method}.`)
-    // A reply is what the backend answered, as this connection may be shown it.
-    const outcome = (result: unknown): StudioRpcAnswer => ({ ok: true, result: voice.redact(result) as never })
-    const runtimeId = (id: string) => studioRuntimeCommandId(grant, id)
-    const keptId = (id: string) => `${method}:${runtimeId(id)}`
-    switch (method) {
-      case 'session.start': {
-        const { commandId, cliRuntimes, ...input } = params as StudioMethodParams<'session.start'>
-        // What a CLI override names is checked where the backend checks the
-        // rest of the start, by the rules its IPC applies.
-        const overrides = cliRuntimes as ConversationCliRuntimeOverrides | undefined
-        return once(
-          keptId(commandId),
-          async () => outcome(await chat.startSession({ ...input, ...(overrides ? { cliRuntimes: overrides } : {}) })),
-          voice,
-          method,
+  const unserved = (method: StudioMethod) => refuse('unavailable', `This Studio does not serve ${method}.`)
+  const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
+
+  /** The chat surface, or why this Studio does not serve one now. */
+  function chatOr(method: StudioMethod): StudioChatBackend | Refused<'unavailable'> {
+    return options.chat?.() ?? unserved(method)
+  }
+  const isRefusal = (value: StudioChatBackend | Refused<'unavailable'>): value is Refused<'unavailable'> =>
+    'ok' in value && value.ok === false
+
+  /** A runtime id under the client's namespace, and the kept-answer id of one method's mutation. */
+  const runtimeId = (grant: StudioGrant, id: string) => studioRuntimeCommandId(grant, id)
+  const keptId = (method: StudioMethod, grant: StudioGrant, id: string) => `${method}:${runtimeId(grant, id)}`
+  // A session command's receipt keeps what it was, across a restart too.
+  const stamp = (fingerprint: string | undefined) => (fingerprint ? { commandFingerprint: fingerprint } : {})
+  // An upload is the client's; its budget is this connection's. Staging needs
+  // no chat: a board too large for one frame is staged the same way.
+  const holder = ({ grant, context }: Asking) => ({ client: grant.clientId, connection: context.connectionId })
+
+  // ── Every method's handler ──────────────────────────────────────────────
+
+  const handlers: StudioHandlers<Asking> = {
+    'server.info': (_params, { grant }) => ({ ok: true, result: { ...options.info(), grant } }),
+    'server.ping': () => ({ ok: true, result: { at: now() } }),
+    'conversation.list': async () => ({ ok: true, result: { conversations: await backend.list() } }),
+    'conversation.create': create,
+
+    // The conversation lane's commands, each carried as its own kind.
+    'conversation.send': (p, asking) => plainCommand(asking, p, { kind: 'send', ...members(p) }),
+    'conversation.interrupt': (p, asking) => plainCommand(asking, p, { kind: 'interrupt' }),
+    'conversation.resolveApproval': (p, asking) => plainCommand(asking, p, { kind: 'resolveApproval', ...members(p) }),
+    'conversation.answerQuestion': (p, asking) => plainCommand(asking, p, { kind: 'answerQuestion', ...members(p) }),
+    'conversation.resolvePlan': (p, asking) => plainCommand(asking, p, { kind: 'resolvePlan', ...members(p) }),
+    'conversation.setPermissionPreset': async (p, asking) => {
+      const { voice } = asking
+      const done = await command(asking, p, { kind: 'setPermissionPreset', ...members(p) })
+      if (!done.ok) return done
+      const carried = done.carried
+      // Carried as the preset it was lowered to, never as another kind.
+      if (carried.kind !== 'setPermissionPreset')
+        return voice.failed(
+          'unavailable',
+          'A preset change was carried as another command.',
+          'conversation.setPermissionPreset',
         )
+      return {
+        ok: true,
+        result: {
+          permissionPreset: carried.preset,
+          ...(carried.permissionMode ? { permissionMode: carried.permissionMode } : {}),
+          ...done.answer,
+        },
       }
-      case 'session.send': {
-        const { commandId, attachments, mentions, ...input } = params as StudioMethodParams<'session.send'>
-        let pictures: ConversationImageAttachment[] | undefined
-        // A repeat of a send the runtime holds a receipt for is answered from
-        // it, so it needs none of the pictures the first attempt carried,
-        // which may be long gone: it must not be refused for them, or the
-        // client sends the message again under a new id.
-        const answered =
-          attachments?.length &&
-          (await chat.hasReceipt({ sessionId: input.sessionId, commandId: runtimeId(commandId) }))
-        if (attachments?.length && !answered) {
-          const spent = uploads.spend(
-            grant.clientId,
-            attachments.map((attachment) => attachment.uploadId),
-            runtimeId(commandId),
-          )
-          if (!spent.ok) return refuse(spent.code, spent.message)
-          pictures = attachments.map((attachment, index) => {
-            const picture = spent.pictures[index]
-            const name = attachment.name ?? picture.name
-            return {
-              id: attachment.id,
-              mediaType: picture.mediaType,
-              dataBase64: picture.bytes.toString('base64'),
-              byteLength: picture.bytes.length,
-              ...(name === undefined ? {} : { name }),
-            }
-          })
-        }
-        const sent = await chat
-          .sendTurn({
-            ...input,
-            // What each mention names is checked by the backend, by the rules its IPC applies.
-            ...(mentions ? { mentions: mentions as never } : {}),
-            ...(pictures ? { attachments: pictures } : {}),
-            commandId: runtimeId(commandId),
-            ...stamp,
-          })
-          .finally(async () => {
-            // Recorded, its receipt answers every repeat and the bytes can go;
-            // not recorded, nothing ran, and a retry may carry them again.
-            if (!pictures) return
-            const recorded = await chat
-              .hasReceipt({ sessionId: input.sessionId, commandId: runtimeId(commandId) })
-              .catch(() => false)
-            uploads.settle(grant.clientId, runtimeId(commandId), recorded)
-          })
-        return outcome(sent)
-      }
-      case 'session.interrupt': {
-        const { commandId, ...input } = params as StudioMethodParams<'session.interrupt'>
-        return outcome(await chat.interrupt({ ...input, commandId: runtimeId(commandId), ...stamp }))
-      }
-      case 'session.respond': {
-        const { commandId, requestKind, ...input } = params as StudioMethodParams<'session.respond'>
-        return outcome(
-          await chat.respond({
-            ...input,
-            ...(requestKind === undefined ? {} : { requestKind: requestKind as never }),
-            commandId: runtimeId(commandId),
-            ...stamp,
-          }),
-        )
-      }
-      case 'session.setPermission': {
-        const { commandId, ...input } = params as StudioMethodParams<'session.setPermission'>
-        return outcome(await chat.setPermission({ ...input, commandId: runtimeId(commandId), ...stamp }))
-      }
-      case 'session.setModel': {
-        const { commandId, ...input } = params as StudioMethodParams<'session.setModel'>
-        return outcome(await chat.setModel({ ...input, commandId: runtimeId(commandId), ...stamp }))
-      }
-      case 'conversation.revert': {
-        const { commandId, key: wire, ...input } = params as StudioMethodParams<'conversation.revert'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        return once(keptId(commandId), async () => outcome(await chat.revert({ ...input, key })), voice, method)
-      }
-      case 'conversation.rewind': {
-        const { commandId, key: wire, turnSeq } = params as StudioMethodParams<'conversation.rewind'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        return once(keptId(commandId), async () => outcome(await chat.rewind({ key, turnSeq })), voice, method)
-      }
-      case 'conversation.handoff': {
-        const { commandId, key: wire } = params as StudioMethodParams<'conversation.handoff'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        return once(keptId(commandId), async () => outcome(await chat.handoff({ key })), voice, method)
-      }
-      case 'conversation.fork': {
-        const { commandId, key: wire, ...input } = params as StudioMethodParams<'conversation.fork'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        return once(keptId(commandId), async () => outcome(await chat.fork({ ...input, key })), voice, method)
-      }
-      case 'conversation.attachment':
-        return outcome(await chat.attachment((params as StudioMethodParams<'conversation.attachment'>).ref))
-      case 'conversation.planDocument': {
-        const { key: wire, ...input } = params as StudioMethodParams<'conversation.planDocument'>
-        const key = resolve(wire, grant)
-        if (!key) return notFound(wire)
-        return outcome(await chat.planDocument({ ...key, ...input }))
-      }
-      case 'conversation.commands':
-        return outcome({ catalog: await chat.commands(params as StudioMethodParams<'conversation.commands'>) })
-      case 'providers.list': {
-        const { cliRuntimes } = params as StudioMethodParams<'providers.list'>
-        const overrides = cliRuntimes as ConversationCliRuntimeOverrides | undefined
-        return outcome(await chat.providers(overrides ? { cliRuntimes: overrides } : {}))
-      }
-      case 'providers.models':
-        return outcome(await chat.providerModels(params as StudioMethodParams<'providers.models'>))
-      case 'providers.secretStatus':
-        return outcome(await chat.secretStatus(params as StudioMethodParams<'providers.secretStatus'>))
-      case 'files.search': {
-        const search = params as StudioMethodParams<'files.search'>
-        if (!(await folderAllowed(chat, context, search.rootPath))) return refuse('not_found', UNKNOWN_FOLDER)
-        return outcome(await chat.searchFiles(context.slot, search))
-      }
-      case 'files.cancelSearch':
-        chat.cancelFileSearch(context.slot, (params as StudioMethodParams<'files.cancelSearch'>).channel)
+    },
+    'conversation.setModel': async (p, asking) => {
+      const done = await command(asking, p, { kind: 'setModel', ...members(p) })
+      return done.ok ? { ok: true, result: { modelId: p.modelId, ...done.answer } } : done
+    },
+    'conversation.cancelQueued': (p, asking) => plainCommand(asking, p, { kind: 'cancelQueued', ...members(p) }),
+    'conversation.stopSubagent': (p, asking) => plainCommand(asking, p, { kind: 'stopSubagent', ...members(p) }),
+    'conversation.messageSubagent': (p, asking) => plainCommand(asking, p, { kind: 'messageSubagent', ...members(p) }),
+    'conversation.setReasoningEffort': (p, asking) =>
+      plainCommand(asking, p, { kind: 'setReasoningEffort', ...members(p) }),
+    'conversation.mcpServerAction': (p, asking) => plainCommand(asking, p, { kind: 'mcpServerAction', ...members(p) }),
+    'conversation.restartSession': (p, asking) => plainCommand(asking, p, { kind: 'restartSession' }),
+    'conversation.scheduleSend': (p, asking) => plainCommand(asking, p, { kind: 'scheduleSend', ...members(p) }),
+    'conversation.sendScheduledNow': (p, asking) =>
+      plainCommand(asking, p, { kind: 'sendScheduledNow', ...members(p) }),
+    'conversation.cancelScheduled': (p, asking) => plainCommand(asking, p, { kind: 'cancelScheduled', ...members(p) }),
+    'conversation.usageLimitResume': (p, asking) =>
+      plainCommand(asking, p, { kind: 'usageLimitResume', ...members(p) }),
+
+    'conversation.stop': async ({ key: wire, commandId }, { grant, voice, fingerprint }) => {
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const id = runtimeId(grant, commandId)
+      // A stop with no session to stop leaves no receipt in the runtime, so
+      // it is remembered here: a resend of it never stops a later session.
+      if (stopsDone.has(id)) return { ok: true, result: {} }
+      const stopped = await backend.stop(key, id, fingerprint)
+      if (stopped.ok) {
+        stopsDone.add(id)
+        while (stopsDone.size > MAX_REMEMBERED_STOPS) stopsDone.delete(stopsDone.values().next().value!)
         return { ok: true, result: {} }
-      case 'files.stat':
-        return outcome({ stat: await chat.stat((params as StudioMethodParams<'files.stat'>).path) })
-      case 'files.readImage':
-        return {
-          ok: true,
-          result: { dataUrl: await chat.readImage((params as StudioMethodParams<'files.readImage'>).path) },
-        }
-      case 'files.repoRoot': {
-        const { folderPath, hostId } = params as StudioMethodParams<'files.repoRoot'>
-        if (!(await folderAllowed(chat, context, folderPath))) return refuse('not_found', UNKNOWN_FOLDER)
-        return outcome({ repoRoot: await chat.repoRoot(folderPath, hostId) })
       }
-      case 'workspaces.list':
-        return outcome({ workspaces: chat.workspaces() })
-    }
+      return voice.failed(
+        stopped.code === 'command_id_conflict' ? 'command_id_conflict' : 'unavailable',
+        stopped.message,
+        'conversation.stop',
+      )
+    },
+    'conversation.loadEarlier': async ({ key: wire, beforeCursor, turnLimit }, { grant, voice }) => {
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const read = await backend.loadEarlier(key, beforeCursor, turnLimit)
+      return read.ok
+        ? { ok: true, result: { page: { ...read.page, events: read.page.events.map((event) => voice.redact(event)) } } }
+        : voice.failed('unavailable', read.message, 'conversation.loadEarlier')
+    },
+    'conversation.toolDetail': async ({ key: wire, toolUseId }, { grant, voice }) => {
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const read = await backend.toolDetail(key, toolUseId)
+      if (read.ok) return { ok: true, result: { detail: voice.redact(read.detail) } }
+      return voice.failed(
+        read.code === 'not_found' ? 'not_found' : read.code === 'invalid_input' ? 'invalid_params' : 'unavailable',
+        read.message,
+        'conversation.toolDetail',
+      )
+    },
+    'conversation.turnDiff': async ({ key: wire, turnSeq, path }, { grant, voice }) => {
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const read = await backend.turnDiff(key, turnSeq, path)
+      if (!read.ok) return voice.failed('unavailable', read.message, 'conversation.turnDiff')
+      const { ok: _ok, ...diff } = read
+      return { ok: true, result: voice.redact(diff) }
+    },
+
+    // ── The chat surface ───────────────────────────────────────────────────
+
+    'session.start': (params, { grant, voice }) => {
+      const chat = chatOr('session.start')
+      if (isRefusal(chat)) return chat
+      const { commandId, ...input } = params
+      // What a CLI override names is checked where the backend checks the
+      // rest of the start, by the rules its IPC applies.
+      return once(
+        keptId('session.start', grant, commandId),
+        async () => ({ ok: true as const, result: voice.redact(await chat.startSession(input)) }),
+        voice,
+        'session.start',
+      )
+    },
+    'session.send': async (params, asking) => {
+      const chat = chatOr('session.send')
+      if (isRefusal(chat)) return chat
+      const { grant, voice, fingerprint } = asking
+      const { commandId, attachments, ...input } = params
+      const id = runtimeId(grant, commandId)
+      let pictures: ConversationImageAttachment[] | undefined
+      // A repeat of a send the runtime holds a receipt for is answered from
+      // it, so it needs none of the pictures the first attempt carried,
+      // which may be long gone: it must not be refused for them, or the
+      // client sends the message again under a new id.
+      const answered = attachments?.length && (await chat.hasReceipt({ sessionId: input.sessionId, commandId: id }))
+      if (attachments?.length && !answered) {
+        const spent = uploads.spend(
+          grant.clientId,
+          attachments.map((attachment) => attachment.uploadId),
+          id,
+        )
+        if (!spent.ok) return refused(spent)
+        pictures = attachments.map((attachment, index) => {
+          const picture = spent.pictures[index]
+          const name = attachment.name ?? picture.name
+          return {
+            id: attachment.id,
+            mediaType: picture.mediaType,
+            dataBase64: picture.bytes.toString('base64'),
+            byteLength: picture.bytes.length,
+            ...(name === undefined ? {} : { name }),
+          }
+        })
+      }
+      const sent = await chat
+        .sendTurn({
+          ...input,
+          // What each mention names is checked by the backend, by the rules its IPC applies.
+          ...(pictures ? { attachments: pictures } : {}),
+          commandId: id,
+          ...stamp(fingerprint),
+        })
+        .finally(async () => {
+          // Recorded, its receipt answers every repeat and the bytes can go;
+          // not recorded, nothing ran, and a retry may carry them again.
+          if (!pictures) return
+          const recorded = await chat.hasReceipt({ sessionId: input.sessionId, commandId: id }).catch(() => false)
+          uploads.settle(grant.clientId, id, recorded)
+        })
+      return { ok: true, result: voice.redact(sent) }
+    },
+    'session.interrupt': async ({ commandId, ...input }, { grant, voice, fingerprint }) => {
+      const chat = chatOr('session.interrupt')
+      if (isRefusal(chat)) return chat
+      const sent = await chat.interrupt({ ...input, commandId: runtimeId(grant, commandId), ...stamp(fingerprint) })
+      return { ok: true, result: voice.redact(sent) }
+    },
+    'session.respond': async ({ commandId, ...input }, { grant, voice, fingerprint }) => {
+      const chat = chatOr('session.respond')
+      if (isRefusal(chat)) return chat
+      const sent = await chat.respond({ ...input, commandId: runtimeId(grant, commandId), ...stamp(fingerprint) })
+      return { ok: true, result: voice.redact(sent) }
+    },
+    'session.setPermission': async ({ commandId, ...input }, { grant, voice, fingerprint }) => {
+      const chat = chatOr('session.setPermission')
+      if (isRefusal(chat)) return chat
+      const sent = await chat.setPermission({ ...input, commandId: runtimeId(grant, commandId), ...stamp(fingerprint) })
+      return { ok: true, result: voice.redact(sent) }
+    },
+    'session.setModel': async ({ commandId, ...input }, { grant, voice, fingerprint }) => {
+      const chat = chatOr('session.setModel')
+      if (isRefusal(chat)) return chat
+      const sent = await chat.setModel({ ...input, commandId: runtimeId(grant, commandId), ...stamp(fingerprint) })
+      return { ok: true, result: voice.redact(sent) }
+    },
+    'uploads.begin': (input, asking) => {
+      // A file's bytes are only ever spent by `files.write`, which is an owner's.
+      if (input.purpose === 'file' && !asking.grant.owner)
+        return refuse('owner_required', 'Only Studio itself may stage a file’s bytes.')
+      const begun = uploads.begin(holder(asking), input)
+      return begun.ok
+        ? { ok: true, result: { uploadId: begun.uploadId, chunkBytes: begun.chunkBytes } }
+        : refused(begun)
+    },
+    'uploads.append': (input, asking) => {
+      const appended = uploads.append(holder(asking), input)
+      return appended.ok ? { ok: true, result: { received: appended.received } } : refused(appended)
+    },
+    'uploads.discard': ({ uploadIds }, { grant }) => ({ ok: true, result: uploads.discard(grant.clientId, uploadIds) }),
+    'conversation.revert': ({ commandId, key: wire, ...input }, { grant, voice }) => {
+      const chat = chatOr('conversation.revert')
+      if (isRefusal(chat)) return chat
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      return once(
+        keptId('conversation.revert', grant, commandId),
+        async () => ({ ok: true as const, result: voice.redact(await chat.revert({ ...input, key })) }),
+        voice,
+        'conversation.revert',
+      )
+    },
+    'conversation.rewind': ({ commandId, key: wire, turnSeq }, { grant, voice }) => {
+      const chat = chatOr('conversation.rewind')
+      if (isRefusal(chat)) return chat
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      return once(
+        keptId('conversation.rewind', grant, commandId),
+        async () => ({ ok: true as const, result: voice.redact(await chat.rewind({ key, turnSeq })) }),
+        voice,
+        'conversation.rewind',
+      )
+    },
+    'conversation.handoff': ({ commandId, key: wire }, { grant, voice }) => {
+      const chat = chatOr('conversation.handoff')
+      if (isRefusal(chat)) return chat
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      return once(
+        keptId('conversation.handoff', grant, commandId),
+        async () => ({ ok: true as const, result: voice.redact(await chat.handoff({ key })) }),
+        voice,
+        'conversation.handoff',
+      )
+    },
+    'conversation.fork': ({ commandId, key: wire, ...input }, { grant, voice }) => {
+      const chat = chatOr('conversation.fork')
+      if (isRefusal(chat)) return chat
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      return once(
+        keptId('conversation.fork', grant, commandId),
+        async () => ({ ok: true as const, result: voice.redact(await chat.fork({ ...input, key })) }),
+        voice,
+        'conversation.fork',
+      )
+    },
+    'conversation.attachment': async ({ ref }, { voice }) => {
+      const chat = chatOr('conversation.attachment')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.attachment(ref)) }
+    },
+    'conversation.planDocument': async ({ key: wire, ...input }, { grant, voice }) => {
+      const chat = chatOr('conversation.planDocument')
+      if (isRefusal(chat)) return chat
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input })) }
+    },
+    'conversation.commands': async (input, { voice }) => {
+      const chat = chatOr('conversation.commands')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: { catalog: voice.redact(await chat.commands(input)) } }
+    },
+    'providers.list': async (input, { voice }) => {
+      const chat = chatOr('providers.list')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.providers(input)) }
+    },
+    'providers.models': async (input, { voice }) => {
+      const chat = chatOr('providers.models')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.providerModels(input)) }
+    },
+    'providers.secretStatus': async (input, { voice }) => {
+      const chat = chatOr('providers.secretStatus')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.secretStatus(input)) }
+    },
+    'files.search': async (search, { context, voice }) => {
+      const chat = chatOr('files.search')
+      if (isRefusal(chat)) return chat
+      if (!(await folderAllowed(chat, context, search.rootPath))) return refuse('not_found', UNKNOWN_FOLDER)
+      return { ok: true, result: voice.redact(await chat.searchFiles(context.slot, search)) }
+    },
+    'files.cancelSearch': ({ channel }, { context }) => {
+      const chat = chatOr('files.cancelSearch')
+      if (isRefusal(chat)) return chat
+      chat.cancelFileSearch(context.slot, channel)
+      return { ok: true, result: {} }
+    },
+    'files.stat': async ({ path, root }, { voice }) => {
+      // By root it is the files family's, served with or without a chat surface.
+      if (root !== undefined) {
+        if (!options.files) return refuse('unavailable', 'This Studio does not serve files by root.')
+        const found = await options.files.stat(root, path)
+        return found.ok ? { ok: true, result: { stat: found.stat } } : refused(found)
+      }
+      const chat = chatOr('files.stat')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: { stat: voice.redact(await chat.stat(path)) } }
+    },
+    'files.readImage': async ({ path }) => {
+      const chat = chatOr('files.readImage')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: { dataUrl: await chat.readImage(path) } }
+    },
+    'files.repoRoot': async ({ folderPath, hostId }, { context, voice }) => {
+      const chat = chatOr('files.repoRoot')
+      if (isRefusal(chat)) return chat
+      if (!(await folderAllowed(chat, context, folderPath))) return refuse('not_found', UNKNOWN_FOLDER)
+      return { ok: true, result: { repoRoot: voice.redact(await chat.repoRoot(folderPath, hostId)) } }
+    },
+    'workspaces.list': (_params, { voice }) => {
+      const chat = chatOr('workspaces.list')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: { workspaces: voice.redact(chat.workspaces()) } }
+    },
+
+    // ── Client tools ───────────────────────────────────────────────────────
+
+    'tools.offer': ({ toolset, reach }, { context }) => {
+      if (!options.tools) return unserved('tools.offer')
+      const offered = options.tools.offer(context.connectionId, toolset, reach)
+      return offered.ok
+        ? { ok: true, result: { toolset: offered.toolset, wireNames: offered.wireNames, reach: offered.reach } }
+        : refused(offered)
+    },
+    'tools.withdraw': ({ toolset }, { context }) => {
+      if (!options.tools) return unserved('tools.withdraw')
+      const withdrawn = options.tools.withdraw(context.connectionId, toolset)
+      return withdrawn.ok ? { ok: true, result: { withdrawn: withdrawn.withdrawn } } : refused(withdrawn)
+    },
+    'tools.focus': (focus, { context }) => {
+      if (!options.tools) return unserved('tools.focus')
+      options.tools.focus(context.connectionId, focus)
+      return { ok: true, result: {} }
+    },
+    'tools.catalog': (_params, { grant }) => {
+      if (!options.tools) return unserved('tools.catalog')
+      return { ok: true, result: { toolsets: options.tools.catalog({ clientId: grant.clientId, owner: grant.owner }) } }
+    },
+    'tools.grants': ({ key: wire }, { grant }) => {
+      if (!options.tools) return unserved('tools.grants')
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      return {
+        ok: true,
+        result: { grants: options.tools.grantsOf({ workspaceId: key.workspaceId, agentId: key.agentId }) },
+      }
+    },
+    'tools.grant': ({ key: wire, toolset, granted }, { grant }) => {
+      if (!options.tools) return unserved('tools.grant')
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      const answer = options.tools.grant({ workspaceId: key.workspaceId, agentId: key.agentId }, toolset, granted)
+      return answer.ok ? { ok: true, result: { grants: answer.grants } } : refused(answer)
+    },
+
+    // ── Files under a workspace's roots ────────────────────────────────────
+
+    'files.roots': ({ workspaceId }) =>
+      options.files ? { ok: true, result: options.files.roots(workspaceId) } : unserved('files.roots'),
+    'files.list': async ({ root, path }) => {
+      if (!options.files) return unserved('files.list')
+      const listed = await options.files.list(root, path)
+      return listed.ok ? { ok: true, result: { entries: listed.entries } } : refused(listed)
+    },
+    'files.read': async ({ root, path }) => {
+      if (!options.files) return unserved('files.read')
+      const read = await options.files.read(root, path)
+      if (!read.ok) return refused(read)
+      const { ok: _ok, ...result } = read
+      return { ok: true, result }
+    },
+    'files.write': ({ root, path, text, uploadId, ifMatch, commandId }, { grant, voice }) => {
+      const files = options.files
+      if (!files) return unserved('files.write')
+      const id = runtimeId(grant, commandId)
+      // A retry of a write is answered with the first one's outcome: carried
+      // out again, its own write would read as another writer's conflict.
+      return once(
+        `files.write:${id}`,
+        async (): Promise<StudioRpcAnswer<'files.write'>> => {
+          let bytes: Buffer
+          if (text !== undefined) bytes = Buffer.from(text, 'utf8')
+          else {
+            const spent = uploads.spend(grant.clientId, [uploadId!], id, 'file')
+            if (!spent.ok) return refused(spent)
+            bytes = spent.pictures[0].bytes
+          }
+          // A conflict is an answer, kept for every repeat of this command,
+          // so its bytes go as a write's do; a write that could not be
+          // carried out leaves them unsent, for a retry or a discard.
+          let written: Awaited<ReturnType<typeof files.write>>
+          try {
+            written = await files.write(root, path, bytes, ifMatch)
+          } catch (error) {
+            if (uploadId !== undefined) uploads.settle(grant.clientId, id, false)
+            throw error
+          }
+          if (uploadId !== undefined) uploads.settle(grant.clientId, id, written.ok || written.code === 'conflict')
+          return written.ok || written.code === 'conflict' ? { ok: true, result: written } : refused(written)
+        },
+        voice,
+        'files.write',
+      )
+    },
+    'files.remove': ({ root, path, ifMatch, commandId }, { grant, voice }) => {
+      const files = options.files
+      if (!files) return unserved('files.remove')
+      return once(
+        `files.remove:${runtimeId(grant, commandId)}`,
+        async (): Promise<StudioRpcAnswer<'files.remove'>> => {
+          const removed = await files.remove(root, path, ifMatch)
+          return removed.ok || removed.code === 'conflict' ? { ok: true, result: removed } : refused(removed)
+        },
+        voice,
+        'files.remove',
+      )
+    },
+
+    // ── Pull requests ──────────────────────────────────────────────────────
+
+    'pullRequests.list': async (target) =>
+      options.pullRequests
+        ? { ok: true, result: await options.pullRequests.list(target) }
+        : unserved('pullRequests.list'),
+    'pullRequests.refresh': async (target) =>
+      options.pullRequests
+        ? { ok: true, result: await options.pullRequests.refresh(target) }
+        : unserved('pullRequests.refresh'),
+    'pullRequests.noteWork': (note) => {
+      if (!options.pullRequests) return unserved('pullRequests.noteWork')
+      // Answered at once: what it changes reports through
+      // `pullRequests.changed`, and a turn end must not wait on GitHub.
+      void options.pullRequests.noteWork(note).catch((error: unknown) => {
+        options.log?.(`A pull request note failed: ${error instanceof Error ? error.message : String(error)}`)
+      })
+      return { ok: true, result: {} }
+    },
+    'pullRequests.link': async (link) => {
+      if (!options.pullRequests) return unserved('pullRequests.link')
+      const linked = await options.pullRequests.link(link)
+      if (!linked.ok) return refuse(linked.code === 'not_a_pull_request' ? 'invalid_params' : 'claimed', linked.message)
+      return { ok: true, result: { recorded: linked.recorded, pullRequest: linked.pullRequest } }
+    },
+    'pullRequests.unwatch': async (unwatch) => {
+      if (!options.pullRequests?.unwatch) return unserved('pullRequests.unwatch')
+      return { ok: true, result: await options.pullRequests.unwatch(unwatch) }
+    },
+    'pullRequests.noteToolCall': (call) => {
+      if (!options.pullRequests) return unserved('pullRequests.noteToolCall')
+      // Answered at once, like a note: what it records reports through
+      // `pullRequests.changed`.
+      void options.pullRequests.noteToolCall(call).catch((error: unknown) => {
+        options.log?.(
+          `A tool call could not be read for a pull request: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      })
+      return { ok: true, result: {} }
+    },
+
+    // ── Local servers ──────────────────────────────────────────────────────
+
+    'localServers.list': async (target) =>
+      options.localServers
+        ? { ok: true, result: await options.localServers.list(target) }
+        : unserved('localServers.list'),
+    'localServers.run': async (server) => {
+      if (!options.localServers) return unserved('localServers.run')
+      // Answered once the run has started; its port opening reports through
+      // `localServers.changed`.
+      const started = await options.localServers.run(server)
+      return started.ok ? { ok: true, result: { started: true } } : refused(started)
+    },
+    'localServers.stop': async (server) => {
+      if (!options.localServers) return unserved('localServers.stop')
+      const stopped = await options.localServers.stop(server)
+      return stopped.ok ? { ok: true, result: { stopped: stopped.stopped } } : refused(stopped)
+    },
+    'localServers.remove': async (server) =>
+      options.localServers
+        ? { ok: true, result: await options.localServers.remove(server) }
+        : unserved('localServers.remove'),
+  }
+
+  /** One method's handler, called with that method's params: the table pairs them, so no cast is needed. */
+  async function run<M extends StudioMethod>(
+    method: M,
+    params: StudioMethodParams<M>,
+    asking: Asking,
+  ): Promise<StudioRpcAnswer<M>> {
+    const handler: StudioHandlers<Asking>[M] = handlers[method]
+    return handler(params, asking)
   }
 
   return {
@@ -979,25 +1052,23 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         const fingerprint = spec.mutation
           ? studioCommandFingerprint(method, parsed.ok ? parsed.params : null)
           : undefined
-        const runtimeId =
-          spec.mutation && parsed.ok
-            ? studioRuntimeCommandId(grant, (parsed.params as { commandId: string }).commandId)
-            : undefined
-        const known = runtimeId === undefined ? undefined : fingerprints.get(runtimeId)
+        const commandId = spec.mutation && parsed.ok ? (parsed.params as { commandId?: unknown }).commandId : undefined
+        const id = typeof commandId === 'string' ? runtimeId(grant, commandId) : undefined
+        const known = id === undefined ? undefined : fingerprints.get(id)
         if (!parsed.ok) answer = refuse(parsed.code, parsed.message)
         else if (!grant.owner && namesFolder(parsed.params)) answer = refuse('owner_required', FOLDER_OWNER_ONLY)
         else if (known !== undefined && known !== fingerprint)
           answer = refuse('command_id_conflict', STABLE_MESSAGES.command_id_conflict)
         else {
           read = parsed.params
-          if (runtimeId !== undefined && fingerprint !== undefined) {
-            fingerprints.delete(runtimeId)
-            fingerprints.set(runtimeId, fingerprint)
+          if (id !== undefined && fingerprint !== undefined) {
+            fingerprints.delete(id)
+            fingerprints.set(id, fingerprint)
             while (fingerprints.size > MAX_FINGERPRINTS) fingerprints.delete(fingerprints.keys().next().value!)
           }
-          answer = await dispatch(grant, method, parsed.params as never, context, voice, fingerprint).catch(
+          answer = await run(method, parsed.params, { grant, context, voice, fingerprint }).catch(
             (error: unknown): StudioRpcAnswer =>
-              voice.failed('unavailable', error instanceof Error ? error.message : String(error), method),
+              voice.failedFrom('unavailable', error instanceof Error ? error.message : String(error), method),
           )
         }
       }
@@ -1007,7 +1078,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (spec.mutation && (context.audited ?? !context.ownWindow)) {
         const created =
           answer.ok && method === 'conversation.create'
-            ? (answer.result as StudioMethodResult<'conversation.create'>).conversation
+            ? (answer as StudioRpcAnswer<'conversation.create'> & { ok: true }).result.conversation
             : undefined
         audit(grant, method, started, auditTargets(read), answer, created)
       }
@@ -1015,8 +1086,6 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     },
   }
 }
-
-const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
 
 /** Whether a connection may name this folder: any, unless it is held to the folders Studio knows. */
 async function folderAllowed(chat: StudioChatBackend, context: StudioRequestContext, path: string): Promise<boolean> {

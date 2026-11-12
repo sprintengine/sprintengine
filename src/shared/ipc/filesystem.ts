@@ -15,42 +15,14 @@ export interface FileWatchEvent {
   overflow?: boolean
 }
 
-export type FileSystemStat = {
-  isFile: boolean
-  isDirectory: boolean
-  sizeBytes: number
-  modifiedAt: string
-  modifiedAtMs: number
-}
-
-export type FileSearchEntry = {
-  name: string
-  path: string
-  parentPath: string
-  isDir: boolean
-}
-
-/**
- * What listed the files: ripgrep, or — when the install's ripgrep cannot be
- * found or will not start — a plain directory walk that skips hidden entries
- * and the built-in excludes but reads no ignore files.
- */
-export type FileSearchEngine = 'ripgrep' | 'walker'
-
-export type FileSearchResult =
-  | {
-      ok: true
-      results: FileSearchEntry[]
-      truncated: boolean
-      engine: FileSearchEngine
-      elapsedMs: number
-      resultCount: number
-    }
-  | {
-      ok: false
-      message: string
-      engine: 'ripgrep' | null
-    }
+// What the Studio protocol's `files.stat` and `files.search` answer by an
+// absolute path; these are their names here.
+export type {
+  StudioPathStat as FileSystemStat,
+  StudioFileSearchEntry as FileSearchEntry,
+  StudioFileSearchEngine as FileSearchEngine,
+  StudioFileSearchResult as FileSearchResult,
+} from '../../../packages/studio-protocol/src/public'
 
 export type ContentSearchEntry = {
   name: string

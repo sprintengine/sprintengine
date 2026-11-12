@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### Changed (contract)
+
+- **One table builds both ends.** `contract.ts` defines a method as a contract
+  (params, result, and its own refusals beyond `StudioCommonErrorCode`) and a
+  table entry (scope and validator). `STUDIO_METHODS` and `STUDIO_TOPICS` now
+  carry each method's and topic's validator (`params`), so a method with no
+  scope or validator does not compile. A server answers through
+  `StudioHandlers`, which needs a handler per method answering that method's
+  result; a client calls through `StudioRequest` or the per-method client
+  `createStudioRpcClient` builds. Topics carry their payload types
+  (`StudioTopicPayload`, `StudioPushTopic`).
+- **Results are the protocol's own shapes.** `session.*` answer
+  `ConversationSessionActionResult` / `ConversationStartSessionResult`;
+  `conversation.toolDetail` a `ConversationToolDetail`; `conversation.turnDiff`
+  a `ConversationCheckpointDiff`; `conversation.commands` a
+  `ConversationCommandCatalog`; `providers.*` `StudioProviderListResult`,
+  `StudioProviderModelsResult` and `StudioSecretStatusResult`;
+  `files.search` a `StudioFileSearchResult`; `files.stat` a `StudioPathStat` or,
+  by root, a `StudioFileStat`. These are the shapes Studio already sent.
+- **`session.send` reads `mentions` at the edge** with
+  `parseConversationMentions`, the rule the runtime applied below: a malformed
+  mention, or more than 50, is now refused `invalid_params`, where it was
+  answered `ok: true` with `{ ok: false, message }` inside the result, and a
+  mention's unknown members are dropped before the command is fingerprinted.
+- `parseStudioCommand` takes the params as an object (`parseStudioMethodParams`
+  checks that first).
+- A command method's params are the lane's command of that kind
+  (`conversation.send` takes `skills`, `mentions`, `steer`, `composedAt`, …
+  as the lane does).
+- `STUDIO_ERROR_CODES` names the launch's refusals the server already sent
+  (`unknown_workspace`, `workspace_folder_missing`, `no_cli_selected`,
+  `cli_not_conversational`, `unknown_skill`, `conversation_start_failed`).
+
+### Removed
+
+- `parseStudioChatParams`, `parseStudioToolsParams`, `parseStudioFilesParams`,
+  `parseStudioFilesWatchParams`, `parseStudioPullRequestsParams`,
+  `parseStudioLocalServersParams` and the `isStudio…Method` guards: read params
+  with `parseStudioMethodParams` / `parseStudioTopicParams`, and test a name
+  with `isStudioMethod` / `isStudioTopic`.
+- `StudioSessionSummary`, `StudioSessionOutcome`, `StudioOutcome`,
+  `StudioRevertOutcome` and `StudioCheckpointFile`, replaced by the contract's
+  own types named above.
+
 ### Added
 
 - The socket does not advertise `conversation-changes`: its conversation topic

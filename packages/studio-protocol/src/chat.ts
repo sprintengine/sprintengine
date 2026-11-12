@@ -1,7 +1,25 @@
 import {
+  studioNoParams,
+  studioParams,
+  studioParamsRefused as refuse,
+  type StudioMethodDefinition,
+  type StudioMethodTable,
+  type StudioTopicTable,
+} from './contract.js'
+import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   isConversationWirePermissionPreset,
-  type ConversationWireEvent,
+  parseConversationMentions,
+  type ConversationAttachmentResult,
+  type ConversationCommandCatalog,
+  type ConversationForkResult,
+  type ConversationHandoffResult,
+  type ConversationMentionRef,
+  type ConversationPlanDocumentResult,
+  type ConversationRevertResult,
+  type ConversationRewindResult,
+  type ConversationSessionActionResult,
+  type ConversationStartSessionResult,
   type ConversationWirePermissionPreset,
 } from './conversation.js'
 import {
@@ -15,10 +33,16 @@ import {
   STUDIO_WORKSPACES_CAPABILITY,
   type StudioCapability,
 } from './handshake.js'
-import type { StudioErrorCode } from './envelope.js'
 import { isStudioPath, parseStudioConversationKey, type StudioConversationKey } from './key.js'
-import { STUDIO_MAX_FILE_BYTES, isStudioRelativePath, parseStudioFileRoot, type StudioFileRoot } from './files.js'
-import type { StudioPermission } from './permissions.js'
+import {
+  STUDIO_MAX_FILE_BYTES,
+  isStudioRelativePath,
+  parseStudioFileRoot,
+  type StudioFileRoot,
+  type StudioFileStat,
+} from './files.js'
+import type { StudioProviderListResult, StudioProviderModelsResult, StudioSecretStatusResult } from './providers.js'
+import type { StudioParsed } from './contract.js'
 import type { StudioScope } from './scopes.js'
 
 // What a chat view needs beside the conversation lane: the methods Studio's
@@ -60,31 +84,15 @@ export const STUDIO_UPLOAD_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp
 
 // ── Shapes ──────────────────────────────────────────────────────────────────
 
-/** A live session as the runtime summarises it. Members beyond these are the runtime's own, passed through. */
-export type StudioSessionSummary = {
-  sessionId: string
-  workspaceId: string
-  agentId: string
-  providerId: string
-  modelId: string
-  status: string
-  createdAt: number
-  updatedAt: number
-} & Record<string, unknown>
-
-/** What a session method answers: the runtime's own outcome. */
-export type StudioSessionOutcome =
-  | { ok: true; session: StudioSessionSummary; notice?: string }
-  | { ok: false; message: string; event?: ConversationWireEvent }
-
-/** An outcome with nothing more to say than whether it worked. */
-export type StudioOutcome = { ok: true } | { ok: false; message: string }
+// A session method answers with the runtime's own outcome
+// (`ConversationSessionActionResult`, `ConversationStartSessionResult`, from
+// the conversation contract), a refusal by the runtime included.
 
 /** A CLI's runtime override: the command to run it with, the machine it runs on, the models it offers. */
 export type StudioCliRuntimeOverride = { command?: string; hostId?: string; models?: string[] }
 
-/** A file an @-mention names: the path as the composer resolved it, and what it is. */
-export type StudioMention = Record<string, unknown>
+/** A file or folder an @-mention names: the path as the composer resolved it, and what it is. */
+export type StudioMention = ConversationMentionRef
 
 /**
  * A file a send attaches by path: an absolute path on the Studio's own
@@ -145,19 +153,6 @@ export type StudioSessionRespondParams = {
   requestKind?: string
 }
 
-/** A file a turn changed, as its checkpoint diff lists it. */
-export type StudioCheckpointFile = {
-  path: string
-  status: 'added' | 'modified' | 'deleted'
-  addedLines: number
-  removedLines: number
-  binary: boolean
-}
-
-export type StudioRevertOutcome =
-  | { ok: true; files: StudioCheckpointFile[]; reverted: boolean; undoRef?: string; kept?: string[] }
-  | { ok: false; message: string; changed?: true }
-
 export type StudioForkParams = {
   commandId: string
   key: StudioConversationKey
@@ -165,14 +160,59 @@ export type StudioForkParams = {
   title?: string
 } & ({ side: 'assistant'; turnId: string } | { side: 'user'; turnSeq: number })
 
+/** A path on Studio's disk, as `files.stat` answers by an absolute path. */
+export type StudioPathStat = {
+  isFile: boolean
+  isDirectory: boolean
+  sizeBytes: number
+  modifiedAt: string
+  modifiedAtMs: number
+}
+
+export type StudioFileSearchEntry = {
+  name: string
+  path: string
+  parentPath: string
+  isDir: boolean
+}
+
+/**
+ * What listed the files: ripgrep, or — when the install's ripgrep cannot be
+ * found or will not start — a plain directory walk that skips hidden entries
+ * and the built-in excludes but reads no ignore files.
+ */
+export type StudioFileSearchEngine = 'ripgrep' | 'walker'
+
+export type StudioFileSearchResult =
+  | {
+      ok: true
+      results: StudioFileSearchEntry[]
+      truncated: boolean
+      engine: StudioFileSearchEngine
+      elapsedMs: number
+      resultCount: number
+    }
+  | {
+      ok: false
+      message: string
+      engine: 'ripgrep' | null
+    }
+
 /** A workspace as the chat surface lists it. */
 export type StudioWorkspace = { id: string; name: string; folderPath: string | null; hostId?: string }
 
+/** Which upload a send's refusal names: one not staged, not this client's, too large, or too many waiting. */
+type UploadRefusal = 'not_found'
+
 export type StudioChatMethodMap = {
-  'session.start': { params: StudioSessionStartParams; result: StudioSessionOutcome }
-  'session.send': { params: StudioSessionSendParams; result: StudioSessionOutcome }
-  'session.interrupt': { params: { commandId: string; sessionId: string }; result: StudioSessionOutcome }
-  'session.respond': { params: StudioSessionRespondParams; result: StudioSessionOutcome }
+  'session.start': { params: StudioSessionStartParams; result: ConversationStartSessionResult }
+  'session.send': {
+    params: StudioSessionSendParams
+    result: ConversationSessionActionResult
+    errors: UploadRefusal
+  }
+  'session.interrupt': { params: { commandId: string; sessionId: string }; result: ConversationSessionActionResult }
+  'session.respond': { params: StudioSessionRespondParams; result: ConversationSessionActionResult }
   'session.setPermission': {
     params: {
       commandId: string
@@ -180,18 +220,22 @@ export type StudioChatMethodMap = {
       permissionPreset: ConversationWirePermissionPreset
       permissionMode?: string
     }
-    result: StudioSessionOutcome
+    result: ConversationSessionActionResult
   }
   'session.setModel': {
     params: { commandId: string; sessionId: string; modelId: string }
-    result: StudioSessionOutcome
+    result: ConversationSessionActionResult
   }
   'uploads.begin': {
     /** A picture for a send, or (`purpose: 'file'`, owners) a file's bytes for `files.write`, of any type. */
     params: { mediaType: string; byteLength: number; name?: string; purpose?: 'picture' | 'file' }
     result: { uploadId: string; chunkBytes: number }
   }
-  'uploads.append': { params: { uploadId: string; offset: number; dataBase64: string }; result: { received: number } }
+  'uploads.append': {
+    params: { uploadId: string; offset: number; dataBase64: string }
+    result: { received: number }
+    errors: UploadRefusal
+  }
   /** Give back staged pictures that will not be sent; one already sent, or not this client's, is passed over. */
   'uploads.discard': { params: { uploadIds: string[] }; result: { discarded: number } }
   'conversation.revert': {
@@ -203,36 +247,37 @@ export type StudioChatMethodMap = {
       undo?: boolean
       files?: string[]
     }
-    result: StudioRevertOutcome
+    result: ConversationRevertResult
+    errors: 'not_found'
   }
   'conversation.rewind': {
     params: { commandId: string; key: StudioConversationKey; turnSeq: number }
-    result: StudioOutcome
+    result: ConversationRewindResult
+    errors: 'not_found'
   }
-  'conversation.fork': { params: StudioForkParams; result: StudioOutcome }
+  'conversation.fork': { params: StudioForkParams; result: ConversationForkResult; errors: 'not_found' }
   /** Hand a chat off to a fresh session pointed at a file of its messages; answers that file's path. */
   'conversation.handoff': {
     params: { commandId: string; key: StudioConversationKey }
-    result: { ok: true; path: string } | { ok: false; message: string }
+    result: ConversationHandoffResult
+    errors: 'not_found'
   }
-  'conversation.attachment': {
-    params: { ref: string }
-    result: { ok: true; mediaType: string; dataBase64: string } | { ok: false; message: string }
-  }
+  'conversation.attachment': { params: { ref: string }; result: ConversationAttachmentResult }
   'conversation.planDocument': {
     params: { key: StudioConversationKey; plan: string; title?: string; planFilePath?: string }
-    result: { ok: true; path: string } | { ok: false; message: string }
+    result: ConversationPlanDocumentResult
+    errors: 'not_found'
   }
   'conversation.commands': {
     params: { cli: string; cwd: string; refresh?: boolean; probe?: false }
-    result: { catalog: Record<string, unknown> }
+    result: { catalog: ConversationCommandCatalog }
   }
   'providers.list': {
     params: { cliRuntimes?: Record<string, StudioCliRuntimeOverride | undefined> }
-    result: { ok: true; providers: Record<string, unknown>[] } | { ok: false; message: string }
+    result: StudioProviderListResult
   }
-  'providers.models': { params: { providerId: string }; result: Record<string, unknown> & { ok: boolean } }
-  'providers.secretStatus': { params: { providerId: string }; result: Record<string, unknown> & { ok: boolean } }
+  'providers.models': { params: { providerId: string }; result: StudioProviderModelsResult }
+  'providers.secretStatus': { params: { providerId: string }; result: StudioSecretStatusResult }
   'files.search': {
     params: {
       rootPath: string
@@ -243,79 +288,31 @@ export type StudioChatMethodMap = {
       channel?: string
       recentAt?: Record<string, number>
     }
-    result: Record<string, unknown> & { ok: boolean }
+    result: StudioFileSearchResult
+    /** A connection held to the folders Studio knows named another. */
+    errors: 'not_found'
   }
   'files.cancelSearch': { params: { channel?: string }; result: Record<string, never> }
-  /** By an absolute path; or, with `root` (the `files-write` capability), by a path relative to it. */
-  'files.stat': { params: { path: string; root?: StudioFileRoot }; result: { stat: Record<string, unknown> } }
+  /**
+   * By an absolute path, answered as `StudioPathStat`; or, with `root` (the
+   * `files-write` capability), by a path relative to it, answered as
+   * `StudioFileStat`.
+   */
+  'files.stat': {
+    params: { path: string; root?: StudioFileRoot }
+    result: { stat: StudioPathStat | StudioFileStat }
+    errors: 'not_found'
+  }
   'files.readImage': { params: { path: string }; result: { dataUrl: string } }
-  'files.repoRoot': { params: { folderPath: string; hostId?: string }; result: { repoRoot: string | null } }
+  'files.repoRoot': {
+    params: { folderPath: string; hostId?: string }
+    result: { repoRoot: string | null }
+    errors: 'not_found'
+  }
   'workspaces.list': { params: Record<string, never>; result: { workspaces: StudioWorkspace[] } }
 }
 
 export type StudioChatMethod = keyof StudioChatMethodMap
-
-/** How a method is held: the scope a grant needs, whether it mutates, the capability that offers it. */
-export type StudioMethodSpec = {
-  /** The scope a client asks to be granted for it; null for what any authenticated client may ask. */
-  scope: StudioScope | null
-  /**
-   * What it needs beyond the permission its scope names, which it always
-   * needs (`studioSpecPermissions`): a method can need more than its scope
-   * carries, never less.
-   */
-  extraPermissions?: readonly StudioPermission[]
-  /** A mutation carries a `commandId`, is audited, and is answered from its receipt on a retry. */
-  mutation: boolean
-  /** The capability a client checks before calling it. */
-  capability: StudioCapability | null
-  /** Only an owner's connection may call it, whatever scopes another grant holds. */
-  owner?: true
-}
-
-const owned = (scope: StudioScope, capability: StudioCapability, mutation: boolean): StudioMethodSpec => ({
-  scope,
-  mutation,
-  capability,
-  owner: true,
-})
-
-export const STUDIO_CHAT_METHODS: { readonly [M in StudioChatMethod]: StudioMethodSpec } = {
-  'session.start': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true),
-  'session.send': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true),
-  'session.interrupt': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true),
-  'session.respond': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true),
-  'session.setPermission': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true),
-  'session.setModel': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true),
-  // Staging bytes changes nothing anyone sees until a send names them, and an
-  // append is idempotent by its offset, so neither carries a command id.
-  'uploads.begin': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, false),
-  'uploads.append': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, false),
-  // Discarding unsent bytes is as safe to repeat as staging them.
-  'uploads.discard': owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, false),
-  'conversation.revert': owned('conversation:operate', STUDIO_CHECKPOINTS_CAPABILITY, true),
-  'conversation.rewind': owned('conversation:operate', STUDIO_CHECKPOINTS_CAPABILITY, true),
-  'conversation.fork': owned('conversation:create', STUDIO_CHECKPOINTS_CAPABILITY, true),
-  'conversation.handoff': owned('conversation:operate', STUDIO_HANDOFF_CAPABILITY, true),
-  'conversation.attachment': owned('conversation:read', STUDIO_CONVERSATION_FILES_CAPABILITY, false),
-  // Writes the plan into Studio's data when the agent kept no copy of its
-  // own, the same text to the same file however often it is asked.
-  'conversation.planDocument': owned('conversation:read', STUDIO_CONVERSATION_FILES_CAPABILITY, false),
-  'conversation.commands': owned('conversation:read', STUDIO_COMMANDS_CAPABILITY, false),
-  'providers.list': owned('providers:read', STUDIO_PROVIDERS_CAPABILITY, false),
-  'providers.models': owned('providers:read', STUDIO_PROVIDERS_CAPABILITY, false),
-  'providers.secretStatus': owned('providers:read', STUDIO_PROVIDERS_CAPABILITY, false),
-  'files.search': owned('files:read', STUDIO_FILES_CAPABILITY, false),
-  'files.cancelSearch': owned('files:read', STUDIO_FILES_CAPABILITY, false),
-  'files.stat': owned('files:read', STUDIO_FILES_CAPABILITY, false),
-  'files.readImage': owned('files:read', STUDIO_FILES_CAPABILITY, false),
-  'files.repoRoot': owned('files:read', STUDIO_FILES_CAPABILITY, false),
-  'workspaces.list': owned('workspaces:read', STUDIO_WORKSPACES_CAPABILITY, false),
-}
-
-export function isStudioChatMethod(value: unknown): value is StudioChatMethod {
-  return typeof value === 'string' && Object.hasOwn(STUDIO_CHAT_METHODS, value)
-}
 
 // ── Params ──────────────────────────────────────────────────────────────────
 //
@@ -323,9 +320,6 @@ export function isStudioChatMethod(value: unknown): value is StudioChatMethod {
 // value means (a mention that resolves inside its folder, a skill that
 // exists) is checked by the Studio against the same rules its own windows'
 // requests meet.
-
-type Refusal = { ok: false; code: StudioErrorCode; message: string }
-type Parsed<M extends StudioChatMethod> = { ok: true; params: StudioChatMethodMap[M]['params'] } | Refusal
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -348,7 +342,6 @@ function boolean(value: unknown): value is boolean {
 function strings(value: unknown, max: number, each: (value: unknown) => boolean): value is string[] {
   return Array.isArray(value) && value.length <= max && value.every(each)
 }
-const refuse = (message: string, code: StudioErrorCode = 'invalid_params'): Refusal => ({ ok: false, code, message })
 const COMMAND_ID = '"commandId" must be a string of 1 to 200 characters.'
 const SESSION_ID = '"sessionId" names the session.'
 const KEY = '"key" names the conversation: { workspaceId, agentId, workspaceRoot? }.'
@@ -372,10 +365,12 @@ function cliRuntimes(value: unknown): Record<string, StudioCliRuntimeOverride | 
   return out
 }
 
-function sessionCommand(value: Record<string, unknown>): Refusal | { commandId: string; sessionId: string } {
+type SessionCommand = { commandId: string; sessionId: string }
+
+function sessionCommand(value: Record<string, unknown>): StudioParsed<SessionCommand> {
   if (!id(value.commandId)) return refuse(COMMAND_ID)
   if (!id(value.sessionId)) return refuse(SESSION_ID)
-  return { commandId: value.commandId, sessionId: value.sessionId }
+  return studioParams({ commandId: value.commandId, sessionId: value.sessionId })
 }
 
 function attachments(value: unknown): StudioSendAttachment[] | null {
@@ -398,13 +393,39 @@ function attachments(value: unknown): StudioSendAttachment[] | null {
   return out
 }
 
-/** A chat method's params, shape-checked, keeping only the members it defines. */
-export function parseStudioChatParams<M extends StudioChatMethod>(method: M, params: unknown): Parsed<M> {
-  const value = params === undefined ? {} : params
-  if (!record(value)) return refuse(`${method} takes an object of params.`)
-  const ok = (parsed: unknown) => ({ ok: true as const, params: parsed as StudioChatMethodMap[M]['params'] })
-  switch (method as StudioChatMethod) {
-    case 'session.start': {
+/** A conversation by its key and a command id: what every conversation-level mutation starts with. */
+function addressed(value: Record<string, unknown>): StudioParsed<{ commandId: string; key: StudioConversationKey }> {
+  if (!id(value.commandId)) return refuse(COMMAND_ID)
+  const key = parseStudioConversationKey(value.key)
+  if (!key) return refuse(KEY)
+  return studioParams({ commandId: value.commandId, key })
+}
+
+// Every one of these is held to an owner's connection for now (the header).
+type Held = Pick<StudioMethodDefinition<never>, 'scope' | 'mutation' | 'capability' | 'owner'>
+const owned = (scope: StudioScope, capability: StudioCapability, mutation: boolean): Held => ({
+  scope,
+  mutation,
+  capability,
+  owner: true,
+})
+const sessions = owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true)
+// Staging bytes changes nothing anyone sees until a send names them, and an
+// append is idempotent by its offset, so neither carries a command id;
+// discarding unsent bytes is as safe to repeat as staging them.
+const staging = owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, false)
+const checkpoints = owned('conversation:operate', STUDIO_CHECKPOINTS_CAPABILITY, true)
+const conversationFiles = owned('conversation:read', STUDIO_CONVERSATION_FILES_CAPABILITY, false)
+const providers = owned('providers:read', STUDIO_PROVIDERS_CAPABILITY, false)
+const files = owned('files:read', STUDIO_FILES_CAPABILITY, false)
+
+const providerId = (value: Record<string, unknown>): StudioParsed<{ providerId: string }> =>
+  id(value.providerId) ? studioParams({ providerId: value.providerId }) : refuse('"providerId" names the provider.')
+
+export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
+  'session.start': {
+    ...sessions,
+    params: (value) => {
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       if (!isStudioPath(value.workspaceRoot)) return refuse('"workspaceRoot" is the folder the chat runs in.')
       if (!id(value.workspaceId) || !id(value.agentId)) return refuse('"workspaceId" and "agentId" name the chat.')
@@ -416,7 +437,7 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
       if (!optional(value.permissionMode, id)) return refuse('"permissionMode" names a mode of the CLI.')
       if (value.allowedTools !== undefined && !strings(value.allowedTools, 200, id))
         return refuse('"allowedTools" is a list of tool names.')
-      return ok({
+      return studioParams({
         commandId: value.commandId,
         workspaceRoot: value.workspaceRoot,
         workspaceId: value.workspaceId,
@@ -424,22 +445,25 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
         providerId: value.providerId,
         modelId: value.modelId,
         ...(runtimes ? { cliRuntimes: runtimes } : {}),
-        ...(value.permissionPreset === undefined ? {} : { permissionPreset: value.permissionPreset }),
-        ...(value.permissionMode === undefined ? {} : { permissionMode: value.permissionMode }),
+        ...(value.permissionPreset === undefined
+          ? {}
+          : { permissionPreset: value.permissionPreset as ConversationWirePermissionPreset }),
+        ...(value.permissionMode === undefined ? {} : { permissionMode: value.permissionMode as string }),
         ...(value.allowedTools === undefined ? {} : { allowedTools: [...(value.allowedTools as string[])] }),
       })
-    }
-    case 'session.send': {
+    },
+  },
+  'session.send': {
+    ...sessions,
+    params: (value) => {
       const session = sessionCommand(value)
-      if ('ok' in session) return session
+      if (!session.ok) return session
       if (typeof value.message !== 'string') return refuse('"message" is required.')
       if (value.message.length > CONVERSATION_MAX_MESSAGE_CHARS)
         return refuse(`A message may hold at most ${CONVERSATION_MAX_MESSAGE_CHARS} characters.`, 'too_large')
       if (!optional(value.localTurnId, id)) return refuse('"localTurnId" must be a string of 1 to 200 characters.')
-      if (value.mentions !== undefined && !(Array.isArray(value.mentions) && value.mentions.length <= 200))
-        return refuse('"mentions" is a list of at most 200 file references.')
-      if (value.mentions !== undefined && !(value.mentions as unknown[]).every(record))
-        return refuse('Each mention is an object.')
+      const mentions = value.mentions === undefined ? undefined : parseConversationMentions(value.mentions)
+      if (mentions === null) return refuse('"mentions" is a list of at most 50 { path, kind, line?, endLine? }.')
       if (
         value.files !== undefined &&
         !(
@@ -462,17 +486,17 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
         return refuse('"skills" is a list of at most 32 { id, sourcePath? }.')
       if (!optional(value.reasoningEffort, (v): v is string => typeof v === 'string' && /^[a-z0-9_-]{1,40}$/i.test(v)))
         return refuse('"reasoningEffort" names an effort level.')
-      if (value.mode !== undefined && !['default', 'plan', 'ask'].includes(value.mode as string))
+      if (value.mode !== undefined && value.mode !== 'default' && value.mode !== 'plan' && value.mode !== 'ask')
         return refuse('"mode" is default, plan or ask.')
       if (!optional(value.steer, boolean)) return refuse('"steer" is a boolean.')
       const sent = value.attachments === undefined ? undefined : attachments(value.attachments)
       if (sent === null)
         return refuse(`"attachments" is a list of at most ${STUDIO_MAX_UPLOADS_PER_SEND} { id, uploadId, name? }.`)
-      return ok({
-        ...session,
+      return studioParams({
+        ...session.params,
         message: value.message,
-        ...(value.localTurnId === undefined ? {} : { localTurnId: value.localTurnId }),
-        ...(value.mentions === undefined ? {} : { mentions: value.mentions }),
+        ...(value.localTurnId === undefined ? {} : { localTurnId: value.localTurnId as string }),
+        ...(mentions === undefined ? {} : { mentions }),
         ...(value.files === undefined
           ? {}
           : { files: (value.files as StudioAttachedFile[]).map((file) => ({ path: file.path })) }),
@@ -484,24 +508,28 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
                 ...(skill.sourcePath === undefined ? {} : { sourcePath: skill.sourcePath }),
               })),
             }),
-        ...(value.reasoningEffort === undefined ? {} : { reasoningEffort: value.reasoningEffort }),
+        ...(value.reasoningEffort === undefined ? {} : { reasoningEffort: value.reasoningEffort as string }),
         ...(value.mode === undefined ? {} : { mode: value.mode }),
         ...(value.steer === true ? { steer: true } : {}),
         ...(sent?.length ? { attachments: sent } : {}),
       })
-    }
-    case 'session.interrupt': {
+    },
+  },
+  'session.interrupt': { ...sessions, params: sessionCommand },
+  'session.respond': {
+    ...sessions,
+    params: (value) => {
       const session = sessionCommand(value)
-      return 'ok' in session ? session : ok(session)
-    }
-    case 'session.respond': {
-      const session = sessionCommand(value)
-      if ('ok' in session) return session
+      if (!session.ok) return session
       if (!id(value.requestId)) return refuse('"requestId" names the request.')
       if (!boolean(value.approved)) return refuse('"approved" is a boolean.')
+      const decision = value.decision
       if (
-        value.decision !== undefined &&
-        !['once', 'conversation', 'always', 'deny'].includes(value.decision as string)
+        decision !== undefined &&
+        decision !== 'once' &&
+        decision !== 'conversation' &&
+        decision !== 'always' &&
+        decision !== 'deny'
       )
         return refuse('"decision" is once, conversation, always or deny.')
       if (
@@ -514,35 +542,44 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
       )
         return refuse('"answers" maps question text to answer strings.')
       if (!optional(value.requestKind, id)) return refuse('"requestKind" names a kind of request.')
-      return ok({
-        ...session,
+      return studioParams({
+        ...session.params,
         requestId: value.requestId,
         approved: value.approved,
-        ...(value.decision === undefined ? {} : { decision: value.decision }),
+        ...(decision === undefined ? {} : { decision }),
         ...(value.answers === undefined ? {} : { answers: { ...(value.answers as Record<string, string>) } }),
-        ...(value.requestKind === undefined ? {} : { requestKind: value.requestKind }),
+        ...(value.requestKind === undefined ? {} : { requestKind: value.requestKind as string }),
       })
-    }
-    case 'session.setPermission': {
+    },
+  },
+  'session.setPermission': {
+    ...sessions,
+    params: (value) => {
       const session = sessionCommand(value)
-      if ('ok' in session) return session
+      if (!session.ok) return session
       if (!isConversationWirePermissionPreset(value.permissionPreset))
         return refuse('"permissionPreset" is none, manual, auto or bypass.')
       if (!optional(value.permissionMode, id)) return refuse('"permissionMode" names a mode of the CLI.')
-      return ok({
-        ...session,
+      return studioParams({
+        ...session.params,
         permissionPreset: value.permissionPreset,
-        ...(value.permissionMode === undefined ? {} : { permissionMode: value.permissionMode }),
+        ...(value.permissionMode === undefined ? {} : { permissionMode: value.permissionMode as string }),
       })
-    }
-    case 'session.setModel': {
+    },
+  },
+  'session.setModel': {
+    ...sessions,
+    params: (value) => {
       const session = sessionCommand(value)
-      if ('ok' in session) return session
+      if (!session.ok) return session
       if (!(typeof value.modelId === 'string' && value.modelId.trim() && value.modelId.length <= 200))
         return refuse('"modelId" names the model.')
-      return ok({ ...session, modelId: value.modelId.trim() })
-    }
-    case 'uploads.begin': {
+      return studioParams({ ...session.params, modelId: value.modelId.trim() })
+    },
+  },
+  'uploads.begin': {
+    ...staging,
+    params: (value) => {
       if (value.purpose === 'file') {
         if (!(typeof value.mediaType === 'string' && /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/.test(value.mediaType)))
           return refuse('"mediaType" is the file’s media type.')
@@ -550,126 +587,150 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
           return refuse('"byteLength" is the file’s size in bytes.')
         if (value.byteLength > STUDIO_MAX_FILE_BYTES)
           return refuse(`A file may be at most ${STUDIO_MAX_FILE_BYTES / (1024 * 1024)} MB.`, 'too_large')
-        return ok({ mediaType: value.mediaType, byteLength: value.byteLength, purpose: 'file' })
+        return studioParams({ mediaType: value.mediaType, byteLength: value.byteLength, purpose: 'file' as const })
       }
       if (value.purpose !== undefined && value.purpose !== 'picture') return refuse('"purpose" is picture or file.')
-      if (!(STUDIO_UPLOAD_MEDIA_TYPES as readonly unknown[]).includes(value.mediaType))
+      if (!(
+        typeof value.mediaType === 'string' &&
+        (STUDIO_UPLOAD_MEDIA_TYPES as readonly string[]).includes(value.mediaType)
+      ))
         return refuse('A picture is PNG, JPEG, WebP or GIF.')
       if (!(integer(value.byteLength) && value.byteLength > 0))
         return refuse('"byteLength" is the picture’s size in bytes.')
       if (value.byteLength > STUDIO_MAX_UPLOAD_BYTES)
         return refuse(`A picture may be at most ${STUDIO_MAX_UPLOAD_BYTES / (1024 * 1024)} MB.`, 'too_large')
       if (!optional(value.name, (v): v is string => text(v, 500))) return refuse('"name" is the picture’s file name.')
-      return ok({
+      return studioParams({
         mediaType: value.mediaType,
         byteLength: value.byteLength,
-        ...(value.name === undefined ? {} : { name: value.name }),
+        ...(value.name === undefined ? {} : { name: value.name as string }),
       })
-    }
-    case 'uploads.append': {
+    },
+  },
+  'uploads.append': {
+    ...staging,
+    params: (value) => {
       if (!id(value.uploadId)) return refuse('"uploadId" names the upload.')
       if (!integer(value.offset)) return refuse('"offset" is where these bytes start.')
       if (typeof value.dataBase64 !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value.dataBase64))
         return refuse('"dataBase64" is the bytes, base64-encoded.')
       if (value.dataBase64.length > Math.ceil(STUDIO_UPLOAD_CHUNK_BYTES / 3) * 4)
         return refuse(`One append carries at most ${STUDIO_UPLOAD_CHUNK_BYTES} bytes.`, 'too_large')
-      return ok({ uploadId: value.uploadId, offset: value.offset, dataBase64: value.dataBase64 })
-    }
-    case 'uploads.discard': {
+      return studioParams({ uploadId: value.uploadId, offset: value.offset, dataBase64: value.dataBase64 })
+    },
+  },
+  'uploads.discard': {
+    ...staging,
+    params: (value) => {
       const ids = value.uploadIds
       if (!(Array.isArray(ids) && ids.length <= STUDIO_MAX_UPLOADS_PER_SEND * 2 && ids.every(id)))
         return refuse(`"uploadIds" lists at most ${STUDIO_MAX_UPLOADS_PER_SEND * 2} uploads.`)
-      return ok({ uploadIds: [...ids] })
-    }
-    case 'conversation.revert': {
-      if (!id(value.commandId)) return refuse(COMMAND_ID)
-      const key = parseStudioConversationKey(value.key)
-      if (!key) return refuse(KEY)
+      return studioParams({ uploadIds: [...(ids as string[])] })
+    },
+  },
+  'conversation.revert': {
+    ...checkpoints,
+    params: (value) => {
+      const at = addressed(value)
+      if (!at.ok) return at
       if (!(integer(value.turnSeq) && value.turnSeq >= 1)) return refuse('"turnSeq" is the turn to revert.')
       if (!optional(value.confirmed, boolean) || !optional(value.undo, boolean))
         return refuse('"confirmed" and "undo" are booleans.')
       if (value.files !== undefined && !strings(value.files, 10_000, isStudioPath))
         return refuse('"files" lists the paths the preview showed.')
-      return ok({
-        commandId: value.commandId,
-        key,
+      return studioParams({
+        ...at.params,
         turnSeq: value.turnSeq,
         ...(value.confirmed === true ? { confirmed: true } : {}),
         ...(value.undo === true ? { undo: true } : {}),
         ...(value.files === undefined ? {} : { files: [...(value.files as string[])] }),
       })
-    }
-    case 'conversation.rewind': {
-      if (!id(value.commandId)) return refuse(COMMAND_ID)
-      const key = parseStudioConversationKey(value.key)
-      if (!key) return refuse(KEY)
+    },
+  },
+  'conversation.rewind': {
+    ...checkpoints,
+    params: (value) => {
+      const at = addressed(value)
+      if (!at.ok) return at
       if (!(integer(value.turnSeq) && value.turnSeq >= 1)) return refuse('"turnSeq" is the message to go back to.')
-      return ok({ commandId: value.commandId, key, turnSeq: value.turnSeq })
-    }
-    case 'conversation.handoff': {
-      if (!id(value.commandId)) return refuse(COMMAND_ID)
-      const key = parseStudioConversationKey(value.key)
-      if (!key) return refuse(KEY)
-      return ok({ commandId: value.commandId, key })
-    }
-    case 'conversation.fork': {
-      if (!id(value.commandId)) return refuse(COMMAND_ID)
-      const key = parseStudioConversationKey(value.key)
-      if (!key) return refuse(KEY)
+      return studioParams({ ...at.params, turnSeq: value.turnSeq })
+    },
+  },
+  'conversation.fork': {
+    ...owned('conversation:create', STUDIO_CHECKPOINTS_CAPABILITY, true),
+    params: (value) => {
+      const at = addressed(value)
+      if (!at.ok) return at
       if (!(id(value.newAgentId) && value.newAgentId.trim())) return refuse('"newAgentId" names the new chat.')
       if (!optional(value.title, (v): v is string => text(v, 500))) return refuse('"title" is the new chat’s name.')
       const common = {
-        commandId: value.commandId,
-        key,
+        ...at.params,
         newAgentId: value.newAgentId,
-        ...(value.title === undefined ? {} : { title: value.title }),
+        ...(value.title === undefined ? {} : { title: value.title as string }),
       }
       if (value.side === 'user') {
         if (!(integer(value.turnSeq) && value.turnSeq >= 1)) return refuse('"turnSeq" is the message to fork before.')
-        return ok({ ...common, side: 'user', turnSeq: value.turnSeq })
+        return studioParams({ ...common, side: 'user' as const, turnSeq: value.turnSeq })
       }
       if (value.side === 'assistant' && id(value.turnId))
-        return ok({ ...common, side: 'assistant', turnId: value.turnId })
+        return studioParams({ ...common, side: 'assistant' as const, turnId: value.turnId })
       return refuse('A fork is { side: "assistant", turnId } or { side: "user", turnSeq }.')
-    }
-    case 'conversation.attachment':
-      return typeof value.ref === 'string' && value.ref.length > 0 && value.ref.length <= 1000
-        ? ok({ ref: value.ref })
-        : refuse('"ref" is the reference the user_message recorded.')
-    case 'conversation.planDocument': {
+    },
+  },
+  'conversation.handoff': { ...owned('conversation:operate', STUDIO_HANDOFF_CAPABILITY, true), params: addressed },
+  'conversation.attachment': {
+    ...conversationFiles,
+    params: (value) =>
+      typeof value.ref === 'string' && value.ref.length > 0 && value.ref.length <= 1000
+        ? studioParams({ ref: value.ref })
+        : refuse('"ref" is the reference the user_message recorded.'),
+  },
+  // Writes the plan into Studio's data when the agent kept no copy of its
+  // own, the same text to the same file however often it is asked.
+  'conversation.planDocument': {
+    ...conversationFiles,
+    params: (value) => {
       const key = parseStudioConversationKey(value.key)
       if (!key) return refuse(KEY)
       if (!text(value.plan, CONVERSATION_MAX_MESSAGE_CHARS * 5)) return refuse('"plan" is the plan’s text.')
       if (!optional(value.title, (v): v is string => text(v, 500))) return refuse('"title" is the plan’s title.')
       if (!optional(value.planFilePath, isStudioPath)) return refuse('"planFilePath" is the agent’s own copy.')
-      return ok({
+      return studioParams({
         key,
         plan: value.plan,
-        ...(value.title === undefined ? {} : { title: value.title }),
-        ...(value.planFilePath === undefined ? {} : { planFilePath: value.planFilePath }),
+        ...(value.title === undefined ? {} : { title: value.title as string }),
+        ...(value.planFilePath === undefined ? {} : { planFilePath: value.planFilePath as string }),
       })
-    }
-    case 'conversation.commands': {
+    },
+  },
+  'conversation.commands': {
+    ...owned('conversation:read', STUDIO_COMMANDS_CAPABILITY, false),
+    params: (value) => {
       if (!id(value.cli)) return refuse('"cli" names the chat’s CLI.')
       if (!isStudioPath(value.cwd)) return refuse('"cwd" is the folder the list is for.')
       if (!optional(value.refresh, boolean)) return refuse('"refresh" is a boolean.')
       if (value.probe !== undefined && value.probe !== false) return refuse('"probe" is false or absent.')
-      return ok({
+      return studioParams({
         cli: value.cli,
         cwd: value.cwd,
         ...(value.refresh === true ? { refresh: true } : {}),
-        ...(value.probe === false ? { probe: false } : {}),
+        ...(value.probe === false ? { probe: false as const } : {}),
       })
-    }
-    case 'providers.list': {
+    },
+  },
+  'providers.list': {
+    ...providers,
+    params: (value) => {
       const runtimes = value.cliRuntimes === undefined ? undefined : cliRuntimes(value.cliRuntimes)
       if (runtimes === null) return refuse('"cliRuntimes" maps a CLI to { command?, hostId?, models? }.')
-      return ok(runtimes ? { cliRuntimes: runtimes } : {})
-    }
-    case 'providers.models':
-    case 'providers.secretStatus':
-      return id(value.providerId) ? ok({ providerId: value.providerId }) : refuse('"providerId" names the provider.')
-    case 'files.search': {
+      return studioParams(runtimes ? { cliRuntimes: runtimes } : {})
+    },
+  },
+  'providers.models': { ...providers, params: providerId },
+  'providers.secretStatus': { ...providers, params: providerId },
+  'files.search': {
+    ...files,
+    params: (value) => {
       if (!isStudioPath(value.rootPath)) return refuse('"rootPath" is the folder to search.')
       if (!text(value.query, 1000)) return refuse('"query" is at most 1000 characters.')
       if (!optional(value.limit, (v): v is number => integer(v) && v >= 1 && v <= 500))
@@ -684,36 +745,53 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
         for (const [path, at] of Object.entries(value.recentAt))
           if (isStudioPath(path) && typeof at === 'number' && Number.isFinite(at)) recentAt[path] = at
       }
-      return ok({
+      return studioParams({
         rootPath: value.rootPath,
         query: value.query,
-        ...(value.limit === undefined ? {} : { limit: value.limit }),
-        ...(value.purpose === undefined ? {} : { purpose: 'mention' }),
-        ...(value.channel === undefined ? {} : { channel: value.channel }),
+        ...(value.limit === undefined ? {} : { limit: value.limit as number }),
+        ...(value.purpose === undefined ? {} : { purpose: 'mention' as const }),
+        ...(value.channel === undefined ? {} : { channel: value.channel as string }),
         ...(recentAt ? { recentAt } : {}),
       })
-    }
-    case 'files.cancelSearch':
-      return optional(value.channel, id)
-        ? ok(value.channel === undefined ? {} : { channel: value.channel })
-        : refuse('"channel" names the search.')
-    case 'files.stat': {
+    },
+  },
+  'files.cancelSearch': {
+    ...files,
+    params: (value) =>
+      optional(value.channel, id)
+        ? studioParams(value.channel === undefined ? {} : { channel: value.channel as string })
+        : refuse('"channel" names the search.'),
+  },
+  'files.stat': {
+    ...files,
+    params: (value) => {
       if (value.root === undefined)
-        return isStudioPath(value.path) ? ok({ path: value.path }) : refuse('"path" is a path on Studio’s disk.')
+        return isStudioPath(value.path)
+          ? studioParams({ path: value.path })
+          : refuse('"path" is a path on Studio’s disk.')
       const root = parseStudioFileRoot(value.root)
       if (!root) return refuse('"root" is { kind: "boards" | "workspace" | "store", workspaceId }.')
       if (!isStudioRelativePath(value.path)) return refuse('"path" is relative to its root, with "/" between parts.')
-      return ok({ path: value.path, root })
-    }
-    case 'files.readImage':
-      return isStudioPath(value.path) ? ok({ path: value.path }) : refuse('"path" is a path on Studio’s disk.')
-    case 'files.repoRoot':
+      return studioParams({ path: value.path, root })
+    },
+  },
+  'files.readImage': {
+    ...files,
+    params: (value) =>
+      isStudioPath(value.path) ? studioParams({ path: value.path }) : refuse('"path" is a path on Studio’s disk.'),
+  },
+  'files.repoRoot': {
+    ...files,
+    params: (value) => {
       if (!isStudioPath(value.folderPath)) return refuse('"folderPath" is a folder on Studio’s disk.')
       if (!optional(value.hostId, id)) return refuse('"hostId" names the machine.')
-      return ok({ folderPath: value.folderPath, ...(value.hostId === undefined ? {} : { hostId: value.hostId }) })
-    case 'workspaces.list':
-      return ok({})
-  }
+      return studioParams({
+        folderPath: value.folderPath,
+        ...(value.hostId === undefined ? {} : { hostId: value.hostId as string }),
+      })
+    },
+  },
+  'workspaces.list': { ...owned('workspaces:read', STUDIO_WORKSPACES_CAPABILITY, false), params: studioNoParams },
 }
 
 // ── Topics ──────────────────────────────────────────────────────────────────
@@ -721,28 +799,19 @@ export function parseStudioChatParams<M extends StudioChatMethod>(method: M, par
 export type StudioChatTopicMap = {
   /**
    * Every `/` command list a CLI reports for a folder, as it reports it: a
-   * live session's, an ACP update's, a probe's. Each `push` payload is a whole
-   * catalog `{ cli, cwd, commands, … }` that replaces the last one for its
-   * (CLI, folder). Nothing is replayed on subscribing; ask
-   * `conversation.commands` for the list held now.
+   * live session's, an ACP update's, a probe's. Each push is a whole catalog
+   * that replaces the last one for its (CLI, folder). Nothing is replayed on
+   * subscribing; ask `conversation.commands` for the list held now.
    */
-  'conversation.commands': { params: Record<string, never> }
+  'conversation.commands': { params: Record<string, never>; payload: ConversationCommandCatalog; stream: 'push' }
 }
 
-export type StudioChatTopic = keyof StudioChatTopicMap
-
-export const STUDIO_CHAT_TOPICS: {
-  readonly [T in StudioChatTopic]: {
-    scope: StudioScope
-    capability: StudioCapability
-    owner: true
-    push: true
-  }
-} = {
+export const STUDIO_CHAT_TOPICS: StudioTopicTable<StudioChatTopicMap> = {
   'conversation.commands': {
     scope: 'conversation:read',
     capability: STUDIO_COMMANDS_CAPABILITY,
     owner: true,
     push: true,
+    params: studioNoParams,
   },
 }

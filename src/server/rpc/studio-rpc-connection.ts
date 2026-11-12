@@ -23,11 +23,12 @@ import {
   type StudioErrorBody,
   type StudioGrant,
   type StudioRequestFrame,
-  type StudioConversationKey,
   type StudioServerFrame,
+  type StudioPushTopic,
   type StudioSubscribeFrame,
   type StudioTopic,
   type StudioTopicParams,
+  type StudioTopicPayload,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
@@ -599,16 +600,16 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       else subscriptionFailed(frame.id, 'owner_required', 'This stream is served to Studio’s own connections only.')
       return
     }
-    const parsed = parseStudioTopicParams(frame.topic, frame.params)
+    if (frame.topic !== 'conversation.session') {
+      subscribePush(frame.id, frame.topic, frame.params)
+      return
+    }
+    const parsed = parseStudioTopicParams('conversation.session', frame.params)
     if (!parsed.ok) {
       subscriptionFailed(frame.id, parsed.code, parsed.message)
       return
     }
-    if (spec.push) {
-      subscribePush(frame.id, frame.topic, parsed.params)
-      return
-    }
-    const wireKey = (parsed.params as { key: StudioConversationKey }).key
+    const { key: wireKey, turnLimit } = parsed.params
     if (wireKey.workspaceRoot !== undefined && !grant.owner) {
       subscriptionFailed(
         frame.id,
@@ -637,9 +638,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       key,
       {
         ...(frame.cursor ? { afterSeq: frame.cursor.afterSeq, generation: frame.cursor.generation } : {}),
-        ...((parsed.params as { turnLimit?: number }).turnLimit === undefined
-          ? {}
-          : { turnLimit: (parsed.params as { turnLimit?: number }).turnLimit }),
+        ...(turnLimit === undefined ? {} : { turnLimit }),
       },
       (source) => onFollowFrame(subscription, source),
     )
@@ -650,40 +649,40 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   }
 
   /** A topic with no cursor: each payload is sent as it comes, and nothing is replayed. */
-  function subscribePush(id: string, topic: StudioTopic, params?: unknown): void {
-    if (topic === 'tools.catalog') {
-      subscribeCatalog(id)
+  function subscribePush<T extends StudioPushTopic>(id: string, topic: T, raw: unknown): void {
+    const parsed = parseStudioTopicParams(topic, raw)
+    if (!parsed.ok) {
+      subscriptionFailed(id, parsed.code, parsed.message)
       return
     }
-    if (topic === 'files.watch') {
-      subscribeWatch(id, params as StudioTopicParams<'files.watch'>)
-      return
-    }
-    if (topic === 'pullRequests.changed') {
-      subscribePullRequests(id)
-      return
-    }
-    if (topic === 'localServers.changed') {
-      subscribeLocalServers(id)
-      return
-    }
+    const subscribe: PushSubscribers[T] = pushSubscribers[topic]
+    subscribe(id, parsed.params)
+  }
+
+  /** One push, its payload checked against its topic's. */
+  function push<T extends StudioPushTopic>(_topic: T, id: string, payload: StudioTopicPayload<T>): void {
+    enqueueLive({ t: 'push', sub: id, payload }, id)
+  }
+
+  /** Every `/` command list a CLI reports, as it reports it. */
+  function subscribeCommands(id: string): void {
     const chat = options.chat?.() ?? null
-    if (!chat || topic !== 'conversation.commands') {
-      subscriptionFailed(id, 'unavailable', `This Studio does not serve ${topic}.`)
+    if (!chat) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve conversation.commands.')
       return
     }
-    const subscription: Subscription = { id, topic, key: null, replay: null, handle: null }
+    const subscription: Subscription = { id, topic: 'conversation.commands', key: null, replay: null, handle: null }
     subscriptions.set(id, subscription)
     const stop = chat.onCommandsChanged((catalog) => {
       if (state === 'closed' || subscriptions.get(id) !== subscription) return
       // The grant is read again before anything goes out, as for a conversation.
       const grant = liveGrant()
       if (!grant) return
-      if (!authorizeStudioTopic(grant, topic).ok) {
+      if (!authorizeStudioTopic(grant, 'conversation.commands').ok) {
         refreshGrant()
         return
       }
-      enqueueLive({ t: 'push', sub: id, payload: redact(catalog) }, id)
+      push('conversation.commands', id, redact(catalog))
     })
     subscription.handle = { dispose: stop }
   }
@@ -709,7 +708,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
             refreshGrant()
             return
           }
-          enqueueLive({ t: 'push', sub: id, payload: { names } }, id)
+          push('files.watch', id, { names })
         },
         () => {
           // The folder stopped reporting (removed, or the watcher failed): the
@@ -756,7 +755,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         refreshGrant()
         return
       }
-      enqueueLive({ t: 'push', sub: id, payload: change }, id)
+      push('pullRequests.changed', id, change)
     })
     subscription.handle = { dispose: stop }
   }
@@ -778,7 +777,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         refreshGrant()
         return
       }
-      enqueueLive({ t: 'push', sub: id, payload: change }, id)
+      push('localServers.changed', id, change)
     })
     subscription.handle = { dispose: stop }
   }
@@ -805,17 +804,20 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
           refreshGrant()
           return
         }
-        enqueueLive(
-          {
-            t: 'push',
-            sub: id,
-            payload: { toolsets: tools.catalog({ clientId: grant.clientId, owner: grant.owner }) },
-          },
-          id,
-        )
+        push('tools.catalog', id, { toolsets: tools.catalog({ clientId: grant.clientId, owner: grant.owner }) })
       })
     })
     subscription.handle = { dispose: stop }
+  }
+
+  // Every push topic's subscriber: one missing does not compile.
+  type PushSubscribers = { readonly [T in StudioPushTopic]: (id: string, params: StudioTopicParams<T>) => void }
+  const pushSubscribers: PushSubscribers = {
+    'conversation.commands': subscribeCommands,
+    'tools.catalog': subscribeCatalog,
+    'files.watch': subscribeWatch,
+    'pullRequests.changed': subscribePullRequests,
+    'localServers.changed': subscribeLocalServers,
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

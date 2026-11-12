@@ -1,11 +1,17 @@
-import type { StudioErrorCode } from './envelope.js'
+import {
+  studioNoParams,
+  studioParams,
+  studioParamsRefused,
+  type StudioMethodTable,
+  type StudioParamsRefusal,
+  type StudioTopicTable,
+} from './contract.js'
 import {
   STUDIO_PULL_REQUEST_LINK_CAPABILITY,
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_PULL_REQUESTS_CAPABILITY,
 } from './handshake.js'
-import type { StudioScope } from './scopes.js'
 
 // The pull requests a Studio's conversations opened. A conversation owns a
 // pull request when its agent opened it: a create command or tool whose output
@@ -179,6 +185,7 @@ export type StudioPullRequestsMethodMap = {
   'pullRequests.link': {
     params: { conversation: StudioPullRequestOwner; url: string; title?: string }
     result: { recorded: boolean; pullRequest: StudioPullRequest }
+    errors: 'claimed'
   }
   /**
    * Stop the Studio watching this pull request for the conversation: it is
@@ -194,64 +201,17 @@ export type StudioPullRequestsMethodMap = {
 
 export type StudioPullRequestsMethod = keyof StudioPullRequestsMethodMap
 
+/** What moved in the pull request record: the client asks `pullRequests.list` again for what it shows. */
+export type StudioPullRequestsChanged = { workspaceIds: string[]; conversations: StudioPullRequestOwner[] }
+
 export type StudioPullRequestsTopicMap = {
-  /** What moved, as `{ workspaceIds: string[], conversations: StudioPullRequestOwner[] }`; ask `pullRequests.list` again. */
-  'pullRequests.changed': { params: Record<string, never> }
-}
-
-type MethodSpec = {
-  scope: StudioScope
-  mutation: false
-  capability:
-    | typeof STUDIO_PULL_REQUESTS_CAPABILITY
-    | typeof STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY
-    | typeof STUDIO_PULL_REQUEST_LINK_CAPABILITY
-    | typeof STUDIO_PULL_REQUEST_WATCH_CAPABILITY
-  owner: true
-}
-
-const owned: MethodSpec = {
-  scope: 'workspaces:read',
-  mutation: false,
-  capability: STUDIO_PULL_REQUESTS_CAPABILITY,
-  owner: true,
-}
-
-export const STUDIO_PULL_REQUESTS_METHODS: { readonly [M in StudioPullRequestsMethod]: MethodSpec } = {
-  'pullRequests.list': owned,
-  'pullRequests.refresh': owned,
-  'pullRequests.noteWork': owned,
-  // Its own capability: a client that runs agents asks for it before it
-  // forwards a call, and a Studio from before it has none to offer.
-  'pullRequests.noteToolCall': { ...owned, capability: STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY },
-  'pullRequests.link': { ...owned, capability: STUDIO_PULL_REQUEST_LINK_CAPABILITY },
-  'pullRequests.unwatch': { ...owned, capability: STUDIO_PULL_REQUEST_WATCH_CAPABILITY },
-}
-
-export const STUDIO_PULL_REQUESTS_TOPICS: {
-  readonly [T in keyof StudioPullRequestsTopicMap]: {
-    scope: StudioScope
-    capability: typeof STUDIO_PULL_REQUESTS_CAPABILITY
-    owner: true
-    push: true
-  }
-} = {
-  'pullRequests.changed': {
-    scope: 'workspaces:read',
-    capability: STUDIO_PULL_REQUESTS_CAPABILITY,
-    owner: true,
-    push: true,
-  },
-}
-
-export function isStudioPullRequestsMethod(value: unknown): value is StudioPullRequestsMethod {
-  return typeof value === 'string' && Object.hasOwn(STUDIO_PULL_REQUESTS_METHODS, value)
+  'pullRequests.changed': { params: Record<string, never>; payload: StudioPullRequestsChanged; stream: 'push' }
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
 
-type Refusal = { ok: false; code: StudioErrorCode; message: string }
-const refuse = (message: string): Refusal => ({ ok: false, code: 'invalid_params', message })
+type Refusal = StudioParamsRefusal
+const refuse = (message: string): Refusal => studioParamsRefused(message)
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -266,7 +226,7 @@ export function parseStudioPullRequestOwner(value: unknown): StudioPullRequestOw
   return { workspaceId: value.workspaceId, agentId: value.agentId }
 }
 
-function parseTarget(value: Record<string, unknown>): StudioPullRequestsTarget | Refusal {
+function parseTarget(value: Record<string, unknown>): { ok: true; params: StudioPullRequestsTarget } | Refusal {
   const target: StudioPullRequestsTarget = {}
   if (value.workspaceIds !== undefined) {
     if (!Array.isArray(value.workspaceIds) || value.workspaceIds.length > STUDIO_PULL_REQUESTS_MAX_IDS)
@@ -285,103 +245,133 @@ function parseTarget(value: Record<string, unknown>): StudioPullRequestsTarget |
     }
     target.conversations = conversations
   }
-  return target
+  return studioParams(target)
 }
 
-/** A `pullRequests.*` method's params, shape-checked, keeping only the members it defines. */
-export function parseStudioPullRequestsParams<M extends StudioPullRequestsMethod>(
-  method: M,
-  params: unknown,
-): { ok: true; params: StudioPullRequestsMethodMap[M]['params'] } | Refusal {
-  const value = params === undefined ? {} : params
-  if (!record(value)) return refuse(`${method} takes an object of params.`)
-  const ok = (parsed: unknown) => ({ ok: true as const, params: parsed as StudioPullRequestsMethodMap[M]['params'] })
-  if (method === 'pullRequests.list' || method === 'pullRequests.refresh') {
-    const target = parseTarget(value)
-    return 'ok' in target ? target : ok(target)
-  }
-  if (method === 'pullRequests.noteToolCall') {
-    const conversation = parseStudioPullRequestOwner(value.conversation)
-    if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
-    const call = value.toolCall
-    if (
-      !record(call) ||
-      typeof call.name !== 'string' ||
-      call.name.length > 200 ||
-      typeof call.output !== 'string' ||
-      call.output.length > STUDIO_PULL_REQUESTS_MAX_OUTPUT ||
-      (call.command !== undefined &&
-        (typeof call.command !== 'string' || call.command.length > STUDIO_PULL_REQUESTS_MAX_COMMAND)) ||
-      (call.failed !== undefined && typeof call.failed !== 'boolean')
-    )
-      return refuse(
-        `"toolCall" is { name, output, command?, failed? }: a command of at most ${STUDIO_PULL_REQUESTS_MAX_COMMAND} characters and an output of at most ${STUDIO_PULL_REQUESTS_MAX_OUTPUT}.`,
+const owned = {
+  scope: 'workspaces:read',
+  mutation: false,
+  capability: STUDIO_PULL_REQUESTS_CAPABILITY,
+  owner: true,
+} as const
+
+export const STUDIO_PULL_REQUESTS_METHODS: StudioMethodTable<StudioPullRequestsMethodMap> = {
+  'pullRequests.list': { ...owned, params: parseTarget },
+  'pullRequests.refresh': { ...owned, params: parseTarget },
+  'pullRequests.noteWork': {
+    ...owned,
+    params: (value) => {
+      const conversation = parseStudioPullRequestOwner(value.conversation)
+      if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
+      const parsed: StudioPullRequestsMethodMap['pullRequests.noteWork']['params'] = { conversation }
+      if (value.sessionId !== undefined) {
+        if (!id(value.sessionId)) return refuse('"sessionId" is a string of 1 to 200 characters.')
+        parsed.sessionId = value.sessionId
+      }
+      if (value.checkout !== undefined) {
+        const checkout = value.checkout
+        if (
+          !record(checkout) ||
+          typeof checkout.gitRoot !== 'string' ||
+          checkout.gitRoot.length === 0 ||
+          checkout.gitRoot.length > 4096 ||
+          checkout.gitRoot.includes('\0') ||
+          typeof checkout.branch !== 'string' ||
+          checkout.branch.length === 0 ||
+          checkout.branch.length > 255 ||
+          checkout.branch.startsWith('-') ||
+          checkout.branch.includes('\0')
+        )
+          return refuse('"checkout" is { gitRoot, branch }: a folder, and a branch name that does not start with "-".')
+        parsed.checkout = { gitRoot: checkout.gitRoot, branch: checkout.branch }
+      }
+      if (value.changedPaths !== undefined) {
+        if (!Array.isArray(value.changedPaths) || value.changedPaths.length > STUDIO_PULL_REQUESTS_MAX_PATHS)
+          return refuse(`"changedPaths" is a list of at most ${STUDIO_PULL_REQUESTS_MAX_PATHS} paths.`)
+        if (
+          !value.changedPaths.every(
+            (path) => typeof path === 'string' && path.length > 0 && path.length <= 4096 && !path.includes('\0'),
+          )
+        )
+          return refuse('Every entry of "changedPaths" is an absolute path.')
+        parsed.changedPaths = value.changedPaths as string[]
+      }
+      if (value.turnEnded !== undefined) {
+        if (typeof value.turnEnded !== 'boolean') return refuse('"turnEnded" is true or false.')
+        parsed.turnEnded = value.turnEnded
+      }
+      return studioParams(parsed)
+    },
+  },
+  // Its own capability: a client that runs agents asks for it before it
+  // forwards a call, and a Studio from before it has none to offer.
+  'pullRequests.noteToolCall': {
+    ...owned,
+    capability: STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
+    params: (value) => {
+      const conversation = parseStudioPullRequestOwner(value.conversation)
+      if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
+      const call = value.toolCall
+      if (
+        !record(call) ||
+        typeof call.name !== 'string' ||
+        call.name.length > 200 ||
+        typeof call.output !== 'string' ||
+        call.output.length > STUDIO_PULL_REQUESTS_MAX_OUTPUT ||
+        (call.command !== undefined &&
+          (typeof call.command !== 'string' || call.command.length > STUDIO_PULL_REQUESTS_MAX_COMMAND)) ||
+        (call.failed !== undefined && typeof call.failed !== 'boolean')
       )
-    return ok({
-      conversation,
-      toolCall: {
-        name: call.name,
-        output: call.output,
-        ...(typeof call.command === 'string' ? { command: call.command } : {}),
-        ...(typeof call.failed === 'boolean' ? { failed: call.failed } : {}),
-      },
-    })
-  }
-  if (method === 'pullRequests.link') {
-    const conversation = parseStudioPullRequestOwner(value.conversation)
-    if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
-    if (typeof value.url !== 'string' || value.url.length === 0 || value.url.length > 2048)
-      return refuse('"url" is the pull request\'s web URL.')
-    if (value.title !== undefined && (typeof value.title !== 'string' || value.title.length > 300))
-      return refuse('"title" is a string of at most 300 characters.')
-    return ok({ conversation, url: value.url, ...(typeof value.title === 'string' ? { title: value.title } : {}) })
-  }
-  if (method === 'pullRequests.unwatch') {
-    const conversation = parseStudioPullRequestOwner(value.conversation)
-    if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
-    if (typeof value.url !== 'string' || value.url.length === 0 || value.url.length > 2048)
-      return refuse('"url" is the pull request\'s web URL.')
-    return ok({ conversation, url: value.url })
-  }
-  if (method !== 'pullRequests.noteWork') return refuse(`${method} is not a pullRequests method.`)
-  const conversation = parseStudioPullRequestOwner(value.conversation)
-  if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
-  const parsed: StudioPullRequestsMethodMap['pullRequests.noteWork']['params'] = { conversation }
-  if (value.sessionId !== undefined) {
-    if (!id(value.sessionId)) return refuse('"sessionId" is a string of 1 to 200 characters.')
-    parsed.sessionId = value.sessionId
-  }
-  if (value.checkout !== undefined) {
-    const checkout = value.checkout
-    if (
-      !record(checkout) ||
-      typeof checkout.gitRoot !== 'string' ||
-      checkout.gitRoot.length === 0 ||
-      checkout.gitRoot.length > 4096 ||
-      checkout.gitRoot.includes('\0') ||
-      typeof checkout.branch !== 'string' ||
-      checkout.branch.length === 0 ||
-      checkout.branch.length > 255 ||
-      checkout.branch.startsWith('-') ||
-      checkout.branch.includes('\0')
-    )
-      return refuse('"checkout" is { gitRoot, branch }: a folder, and a branch name that does not start with "-".')
-    parsed.checkout = { gitRoot: checkout.gitRoot, branch: checkout.branch }
-  }
-  if (value.changedPaths !== undefined) {
-    if (!Array.isArray(value.changedPaths) || value.changedPaths.length > STUDIO_PULL_REQUESTS_MAX_PATHS)
-      return refuse(`"changedPaths" is a list of at most ${STUDIO_PULL_REQUESTS_MAX_PATHS} paths.`)
-    if (
-      !value.changedPaths.every(
-        (path) => typeof path === 'string' && path.length > 0 && path.length <= 4096 && !path.includes('\0'),
-      )
-    )
-      return refuse('Every entry of "changedPaths" is an absolute path.')
-    parsed.changedPaths = value.changedPaths as string[]
-  }
-  if (value.turnEnded !== undefined) {
-    if (typeof value.turnEnded !== 'boolean') return refuse('"turnEnded" is true or false.')
-    parsed.turnEnded = value.turnEnded
-  }
-  return ok(parsed)
+        return refuse(
+          `"toolCall" is { name, output, command?, failed? }: a command of at most ${STUDIO_PULL_REQUESTS_MAX_COMMAND} characters and an output of at most ${STUDIO_PULL_REQUESTS_MAX_OUTPUT}.`,
+        )
+      return studioParams({
+        conversation,
+        toolCall: {
+          name: call.name,
+          output: call.output,
+          ...(typeof call.command === 'string' ? { command: call.command } : {}),
+          ...(typeof call.failed === 'boolean' ? { failed: call.failed } : {}),
+        },
+      })
+    },
+  },
+  'pullRequests.link': {
+    ...owned,
+    capability: STUDIO_PULL_REQUEST_LINK_CAPABILITY,
+    params: (value) => {
+      const conversation = parseStudioPullRequestOwner(value.conversation)
+      if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
+      if (typeof value.url !== 'string' || value.url.length === 0 || value.url.length > 2048)
+        return refuse('"url" is the pull request\'s web URL.')
+      if (value.title !== undefined && (typeof value.title !== 'string' || value.title.length > 300))
+        return refuse('"title" is a string of at most 300 characters.')
+      return studioParams({
+        conversation,
+        url: value.url,
+        ...(typeof value.title === 'string' ? { title: value.title } : {}),
+      })
+    },
+  },
+  'pullRequests.unwatch': {
+    ...owned,
+    capability: STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
+    params: (value) => {
+      const conversation = parseStudioPullRequestOwner(value.conversation)
+      if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
+      if (typeof value.url !== 'string' || value.url.length === 0 || value.url.length > 2048)
+        return refuse('"url" is the pull request\'s web URL.')
+      return studioParams({ conversation, url: value.url })
+    },
+  },
+}
+
+export const STUDIO_PULL_REQUESTS_TOPICS: StudioTopicTable<StudioPullRequestsTopicMap> = {
+  'pullRequests.changed': {
+    scope: 'workspaces:read',
+    capability: STUDIO_PULL_REQUESTS_CAPABILITY,
+    owner: true,
+    push: true,
+    params: studioNoParams,
+  },
 }

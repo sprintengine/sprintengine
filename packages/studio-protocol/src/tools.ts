@@ -1,7 +1,14 @@
-import type { StudioErrorCode } from './envelope.js'
+import {
+  studioNoParams,
+  studioParams,
+  studioParamsRefused,
+  type StudioMethodTable,
+  type StudioParamsRefusal,
+  type StudioParamsRefusalCode,
+  type StudioTopicTable,
+} from './contract.js'
 import { STUDIO_CLIENT_TOOLS_CAPABILITY } from './handshake.js'
 import { parseStudioConversationKey, type StudioConversationKey } from './key.js'
-import type { StudioScope } from './scopes.js'
 
 // Client tools: a client offers Studio named toolsets, Studio lists their
 // tools to its agents through the MCP gateway they already reach, and a call
@@ -256,8 +263,9 @@ export type StudioToolsMethodMap = {
   'tools.offer': {
     params: { toolset: StudioToolsetOffer; reach?: StudioToolReach }
     result: { toolset: string; wireNames: string[]; reach: StudioToolReach }
+    errors: 'reserved_name' | 'name_taken'
   }
-  'tools.withdraw': { params: { toolset: string }; result: { withdrawn: boolean } }
+  'tools.withdraw': { params: { toolset: string }; result: { withdrawn: boolean }; errors: 'not_offered' }
   /** A routing hint: whether the person is looking at this client, and which workspaces it shows. */
   'tools.focus': {
     params: { focused: boolean; workspaceIds: string[]; activeWorkspaceId?: string }
@@ -266,11 +274,12 @@ export type StudioToolsMethodMap = {
   /** Every toolset this client may see: its own and the built-ins; an owner sees all of them. */
   'tools.catalog': { params: Record<string, never>; result: { toolsets: StudioToolsetListing[] } }
   /** Owners only: the app toolsets one conversation was opened to. */
-  'tools.grants': { params: { key: StudioConversationKey }; result: { grants: string[] } }
+  'tools.grants': { params: { key: StudioConversationKey }; result: { grants: string[] }; errors: 'not_found' }
   /** Owners only: open one conversation to one app's toolset, or close it again. */
   'tools.grant': {
     params: { key: StudioConversationKey; toolset: string; granted: boolean; commandId: string }
     result: { grants: string[] }
+    errors: 'not_found' | 'not_offered'
   }
 }
 
@@ -278,72 +287,14 @@ export type StudioToolsMethod = keyof StudioToolsMethodMap
 
 export type StudioToolsTopicMap = {
   /** The catalog as `tools.catalog` answers it, whole, on every change. */
-  'tools.catalog': { params: Record<string, never> }
-}
-
-type MethodSpec = {
-  scope: StudioScope
-  mutation: boolean
-  capability: typeof STUDIO_CLIENT_TOOLS_CAPABILITY
-  owner?: true
-}
-
-const offering: MethodSpec = {
-  scope: 'tools:offer',
-  mutation: false,
-  capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-}
-
-/**
- * An offer is idempotent (a second offer of a toolset replaces the first), as
- * are a withdrawal and a focus hint, so none of them carries a command id.
- * Opening a conversation to an app is the person's decision and is audited.
- */
-export const STUDIO_TOOLS_METHODS: { readonly [M in StudioToolsMethod]: MethodSpec } = {
-  'tools.offer': offering,
-  'tools.withdraw': offering,
-  'tools.focus': offering,
-  'tools.catalog': {
-    scope: 'conversation:read',
-    mutation: false,
-    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-  },
-  'tools.grants': {
-    scope: 'conversation:read',
-    mutation: false,
-    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-    owner: true,
-  },
-  'tools.grant': {
-    scope: 'conversation:operate',
-    mutation: true,
-    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-    owner: true,
-  },
-}
-
-export const STUDIO_TOOLS_TOPICS: {
-  readonly [T in keyof StudioToolsTopicMap]: {
-    scope: StudioScope
-    capability: typeof STUDIO_CLIENT_TOOLS_CAPABILITY
-    push: true
-  }
-} = {
-  'tools.catalog': {
-    scope: 'conversation:read',
-    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-    push: true,
-  },
-}
-
-export function isStudioToolsMethod(value: unknown): value is StudioToolsMethod {
-  return typeof value === 'string' && Object.hasOwn(STUDIO_TOOLS_METHODS, value)
+  'tools.catalog': { params: Record<string, never>; payload: { toolsets: StudioToolsetListing[] }; stream: 'push' }
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
 
-type Refusal = { ok: false; code: StudioErrorCode; message: string }
-const refuse = (message: string, code: StudioErrorCode = 'invalid_params'): Refusal => ({ ok: false, code, message })
+type Refusal = StudioParamsRefusal
+const refuse = (message: string, code: StudioParamsRefusalCode = 'invalid_params'): Refusal =>
+  studioParamsRefused(message, code)
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -591,52 +542,88 @@ export function parseStudioCancelFrame(value: unknown): StudioCancelFrame | null
 
 const KEY = '"key" names the conversation: { workspaceId, agentId }.'
 
-/** A `tools.*` method's params, shape-checked, keeping only the members it defines. */
-export function parseStudioToolsParams<M extends StudioToolsMethod>(
-  method: M,
-  params: unknown,
-): { ok: true; params: StudioToolsMethodMap[M]['params'] } | Refusal {
-  const value = params === undefined ? {} : params
-  if (!record(value)) return refuse(`${method} takes an object of params.`)
-  const ok = (parsed: unknown) => ({ ok: true as const, params: parsed as StudioToolsMethodMap[M]['params'] })
-  switch (method as StudioToolsMethod) {
-    case 'tools.offer': {
+const offering = {
+  scope: 'tools:offer',
+  mutation: false,
+  capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
+} as const
+
+/**
+ * An offer is idempotent (a second offer of a toolset replaces the first), as
+ * are a withdrawal and a focus hint, so none of them carries a command id.
+ * Opening a conversation to an app is the person's decision and is audited.
+ */
+export const STUDIO_TOOLS_METHODS: StudioMethodTable<StudioToolsMethodMap> = {
+  'tools.offer': {
+    ...offering,
+    params: (value) => {
       const parsed = parseStudioToolsetOffer(value.toolset)
       if (!parsed.ok) return parsed
       if (value.reach !== undefined && value.reach !== 'own' && value.reach !== 'all')
         return refuse('"reach" is "own" or "all".')
-      return ok({ toolset: parsed.offer, ...(value.reach === undefined ? {} : { reach: value.reach }) })
-    }
-    case 'tools.withdraw':
-      return typeof value.toolset === 'string' && STUDIO_TOOLSET_NAME_PATTERN.test(value.toolset)
-        ? ok({ toolset: value.toolset })
-        : refuse('"toolset" names a toolset this connection offered.')
-    case 'tools.focus': {
+      return studioParams({ toolset: parsed.offer, ...(value.reach === undefined ? {} : { reach: value.reach }) })
+    },
+  },
+  'tools.withdraw': {
+    ...offering,
+    params: (value) =>
+      typeof value.toolset === 'string' && STUDIO_TOOLSET_NAME_PATTERN.test(value.toolset)
+        ? studioParams({ toolset: value.toolset })
+        : refuse('"toolset" names a toolset this connection offered.'),
+  },
+  'tools.focus': {
+    ...offering,
+    params: (value) => {
       if (typeof value.focused !== 'boolean') return refuse('"focused" is true or false.')
       if (!Array.isArray(value.workspaceIds) || value.workspaceIds.length > 64 || !value.workspaceIds.every(id))
         return refuse('"workspaceIds" lists at most 64 workspace ids.')
       if (value.activeWorkspaceId !== undefined && !id(value.activeWorkspaceId))
         return refuse('"activeWorkspaceId" is a workspace id.')
-      return ok({
+      return studioParams({
         focused: value.focused,
         workspaceIds: [...new Set(value.workspaceIds as string[])],
         ...(value.activeWorkspaceId === undefined ? {} : { activeWorkspaceId: value.activeWorkspaceId }),
       })
-    }
-    case 'tools.catalog':
-      return ok({})
-    case 'tools.grants': {
+    },
+  },
+  'tools.catalog': {
+    scope: 'conversation:read',
+    mutation: false,
+    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
+    params: studioNoParams,
+  },
+  'tools.grants': {
+    scope: 'conversation:read',
+    mutation: false,
+    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
+    owner: true,
+    params: (value) => {
       const key = parseStudioConversationKey(value.key)
-      return key ? ok({ key }) : refuse(KEY)
-    }
-    case 'tools.grant': {
+      return key ? studioParams({ key }) : refuse(KEY)
+    },
+  },
+  'tools.grant': {
+    scope: 'conversation:operate',
+    mutation: true,
+    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
+    owner: true,
+    params: (value) => {
       const key = parseStudioConversationKey(value.key)
       if (!key) return refuse(KEY)
       if (typeof value.toolset !== 'string' || !STUDIO_TOOLSET_NAME_PATTERN.test(value.toolset))
         return refuse('"toolset" names an app toolset.')
       if (typeof value.granted !== 'boolean') return refuse('"granted" is true or false.')
       if (!id(value.commandId)) return refuse('"commandId" must be a string of 1 to 200 characters.')
-      return ok({ key, toolset: value.toolset, granted: value.granted, commandId: value.commandId })
-    }
-  }
+      return studioParams({ key, toolset: value.toolset, granted: value.granted, commandId: value.commandId })
+    },
+  },
+}
+
+export const STUDIO_TOOLS_TOPICS: StudioTopicTable<StudioToolsTopicMap> = {
+  'tools.catalog': {
+    scope: 'conversation:read',
+    capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
+    push: true,
+    params: studioNoParams,
+  },
 }

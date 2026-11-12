@@ -91,9 +91,12 @@ export type ClientToolServedBy = { clientId: string; clientName: string; instanc
 
 export type ClientToolCallOutcome = { result: StudioToolResult; servedBy?: ClientToolServedBy }
 
+/** Why an offer was refused, in the protocol's codes. */
+export type ClientToolOfferRefusal = 'reserved_name' | 'name_taken' | 'busy' | 'too_large' | 'unavailable'
+
 export type ClientToolOfferOutcome =
   | { ok: true; toolset: string; wireNames: string[]; reach: StudioToolReach }
-  | { ok: false; code: string; message: string; retryAfterMs?: number }
+  | { ok: false; code: ClientToolOfferRefusal; message: string; retryAfterMs?: number }
 
 /** An offer or a withdrawal, as the RPC's audit records it: the toolset's name and size, never a tool's input or result. */
 export type ClientToolAuditEntry = {
@@ -561,7 +564,7 @@ export function createClientToolRegistry(options: ClientToolRegistryOptions) {
         ok,
         ...(code ? { code } : {}),
       })
-    const refuse = (code: string, message: string, retryAfterMs?: number): ClientToolOfferOutcome => {
+    const refuse = (code: ClientToolOfferRefusal, message: string, retryAfterMs?: number): ClientToolOfferOutcome => {
       audit(false, code)
       return { ok: false, code, message, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) }
     }
@@ -651,7 +654,9 @@ export function createClientToolRegistry(options: ClientToolRegistryOptions) {
   function withdraw(
     connectionId: string,
     toolset: string,
-  ): { ok: true; withdrawn: boolean } | { ok: false; code: string; message: string; retryAfterMs?: number } {
+  ):
+    | { ok: true; withdrawn: boolean }
+    | { ok: false; code: 'unavailable' | 'not_offered' | 'busy'; message: string; retryAfterMs?: number } {
     const instance = connectionOf(connectionId)
     if (!instance) return { ok: false, code: 'unavailable', message: 'This connection cannot offer tools.' }
     const held = instance.offers.get(toolset)
@@ -1128,7 +1133,7 @@ export function createClientToolRegistry(options: ClientToolRegistryOptions) {
     conversation: ConversationRef,
     toolset: string,
     granted: boolean,
-  ): { ok: true; grants: string[] } | { ok: false; code: string; message: string } {
+  ): { ok: true; grants: string[] } | { ok: false; code: 'not_offered' | 'unavailable'; message: string } {
     const binding = options.store.binding(toolset)
     if (!binding || isStudioBuiltInToolset(toolset))
       return { ok: false, code: 'not_offered', message: `No app gives agents "${toolset}" tools.` }
