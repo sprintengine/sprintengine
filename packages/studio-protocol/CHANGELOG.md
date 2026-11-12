@@ -13,6 +13,19 @@
   Studio is refused `module_unavailable`. The service's answer is the result,
   its own refusals (`permission_missing`, `not_found`, …) included.
 
+### Changed (one send shape and one approval union)
+
+- **`session.send` is the conversation contract's `ConversationSendRequest`**,
+  addressed to the session, its pictures by their uploads. It now carries
+  `composedAt` and `confirmedStale`, which it used to drop, and refuses `queue`
+  in words: Studio runs the chat, and a message queued behind its turn waits
+  in the view that wrote it. `session.respond`'s `decision` is
+  `ConversationApprovalDecision`.
+- **Removed** the hand-written copies `StudioMention`, `StudioAttachedFile`,
+  `StudioSkillRef` and `StudioSendAttachment`: use the contract's
+  `ConversationMentionRef`, `ConversationAttachedFile`, `ConversationSkillRef`
+  and `ConversationSendUpload`.
+
 ### Changed (grants)
 
 - **The terminals are an owner's only.** Every `terminal.*` method and stream

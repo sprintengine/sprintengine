@@ -114,6 +114,7 @@ async function startHarness() {
   const key: MeshConversationKey = { connectionId: paired.connection.id, workspaceId, agentId }
   return {
     runtime,
+    host,
     mesh,
     key,
     workspaceRoot,
@@ -232,6 +233,64 @@ test('a file attached here goes up with the message, and the agent is handed its
     })
     assert.equal(queued.ok, true, queued.ok ? '' : queued.message)
     assert.equal(turns.mock.calls.at(-1)?.[0].files?.length, 1)
+  } finally {
+    await h.close()
+  }
+})
+
+test('a send is the request: its skills go by id, and when it was written goes with it', async () => {
+  const h = await startHarness()
+  try {
+    await h.mesh.listConversations(h.key.connectionId)
+    await h.follow()
+    const composedAt = Date.now()
+    // A skill of the chat's folder over there runs with the message, resolved
+    // there by its id. (One that is neither there nor built in is refused by
+    // that machine's skill lookup, which reads the installed platform: every
+    // entry installs one, this harness does not.)
+    const skillDir = join(h.workspaceRoot, '.claude', 'skills', 'review')
+    mkdirSync(skillDir, { recursive: true })
+    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: review\ndescription: Review it\n---\nReview carefully.\n')
+    const turns = vi.spyOn(h.runtime, 'sendTurn')
+    const ran = await h.mesh.conversationSend({
+      key: h.key,
+      message: 'Review it',
+      skills: [{ id: 'review', sourcePath: join(h.localDir, 'review', 'SKILL.md') }],
+      composedAt,
+    })
+    assert.deepEqual(ran, { ok: true })
+    assert.deepEqual(turns.mock.calls.at(-1)![0].skills, [{ id: 'review' }])
+    assert.equal(turns.mock.calls.at(-1)![0].composedAt, composedAt)
+    const answer = await turns.mock.results.at(-1)!.value
+    assert.equal(answer.ok, true, answer.ok ? '' : answer.message)
+    turns.mockRestore()
+
+    // What crosses the lane, answered there without running a turn.
+    const commands = vi.spyOn(h.host, 'command').mockResolvedValue({ ok: true })
+    const sent = await h.mesh.conversationSend({
+      key: h.key,
+      message: 'Review it',
+      skills: [{ id: 'review', sourcePath: join(h.localDir, 'review', 'SKILL.md') }],
+      composedAt,
+      confirmedStale: true,
+    })
+    assert.deepEqual(sent, { ok: true })
+    // A skill's file is a path on this machine: only its id goes over.
+    assert.deepEqual(commands.mock.calls.at(-1)![3], {
+      kind: 'send',
+      message: 'Review it',
+      skills: ['review'],
+      composedAt,
+      confirmedStale: true,
+    })
+
+    // Refused here, in words, rather than sent without them.
+    const before = commands.mock.calls.length
+    for (const wrong of [{ skills: ['review'] }, { composedAt: -1 }, { confirmedStale: 'yes' }]) {
+      const refused = await h.mesh.conversationSend({ key: h.key, message: 'And this', ...wrong })
+      assert.equal(refused.ok ? '' : refused.code, 'invalid_arguments', JSON.stringify(wrong))
+    }
+    assert.equal(commands.mock.calls.length, before)
   } finally {
     await h.close()
   }

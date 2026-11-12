@@ -1,12 +1,10 @@
-import type {
-  ConversationWireCommand,
-  ConversationWirePermissionPreset,
-} from '../../packages/conversation-protocol/src'
 import type { ConversationFileSearchEntry } from '../../packages/conversation-protocol/src/composerReads'
 import type { ConversationCommand } from './conversation/commands'
 import type {
-  ConversationForkCommand,
+  ConversationCommand as ConversationContractCommand,
   ConversationHighlightColor,
+  ConversationLaneNotCarried,
+  ConversationSendRequest,
   ConversationQueuedMessage,
   ConversationScheduledMessage,
   ConversationChangedFileSides,
@@ -19,7 +17,7 @@ import type {
   ConversationUsageLimitSnapshot,
 } from '../../packages/conversation-protocol/src/public'
 import { readableConversationPhase } from '../../packages/conversation-protocol/src/public'
-import type { ConversationSessionFrame } from './conversation-runtime'
+import type { ConversationImageAttachment, ConversationSessionFrame } from './conversation-runtime'
 import { conversationPhaseWorking, phaseWithBackgroundWork } from './conversation/phase'
 import type { RepositoryIdentity } from './repository-identity'
 import type { CliPermissionPreset } from './cli-permission-preset'
@@ -974,25 +972,27 @@ export type MeshConversationImageResult = { ok: true; dataUrl: string } | { ok: 
  * `conversation-cli-permission-modes`; a rewind `conversation-rewind`, and a
  * revert `conversation-checkpoint-revert`.
  */
-export type MeshConversationCommand =
-  | ConversationWireCommand
-  | { kind: 'setPermissionPreset'; preset: ConversationWirePermissionPreset; permissionMode?: string }
-  | { kind: 'send'; message: string; queue: true }
-  | { kind: 'resolveApproval'; requestId: string; decision: 'always' }
-  | { kind: 'cancelQueued'; queuedId: string }
-  | { kind: 'stopSubagent'; toolUseId: string }
-  | { kind: 'messageSubagent'; toolUseId: string; message: string }
-  | { kind: 'handoff' }
-  | { kind: 'rewind'; turnSeq: number }
-  | { kind: 'revert'; turnSeq: number; undo?: true; confirmed?: true; files?: string[] }
-  | ConversationForkCommand
-  | { kind: 'setReasoningEffort'; effort?: string }
-  | { kind: 'mcpServerAction'; serverId: string; action: 'reconnect' | 'enable' | 'disable' }
-  | { kind: 'restartSession' }
-  | { kind: 'scheduleSend'; message: string; sendAt: number }
-  | { kind: 'sendScheduledNow'; scheduledId: string }
-  | { kind: 'cancelScheduled'; scheduledId: string }
-  | { kind: 'usageLimitResume'; action: MeshUsageLimitResumeAction; always?: true }
+export type MeshConversationCommand = ConversationContractCommand
+
+/**
+ * A send to a chat on a paired machine, as a window hands it to main: the
+ * contract's request, its pictures as their bytes, addressed to the chat.
+ * Main puts each picture and file in that machine's upload store first and
+ * sends the request on the lane, as the lane carries it
+ * (`ConversationLaneSend`); a part the lane says another way (the bubble's
+ * id, the reasoning effort) is not one a window sends here.
+ *
+ * `queue` needs `conversation-queued-sends` there, and with pictures, files,
+ * skills or mentions `conversation-queued-attachments` too; `steer` needs
+ * `conversation-steer-sends`, `mode` `conversation-send-mode`, `skills`
+ * `conversation-send-skills`, `mentions` `conversation-send-mentions` and
+ * `files` `conversation-message-files`. Main refuses each in words for a
+ * machine without it rather than let it be dropped there.
+ */
+export type MeshConversationSendInput = { key: MeshConversationKey } & Omit<
+  ConversationSendRequest<ConversationImageAttachment>,
+  ConversationLaneNotCarried
+>
 
 /**
  * The files and folders in a paired machine's chat folder that match a

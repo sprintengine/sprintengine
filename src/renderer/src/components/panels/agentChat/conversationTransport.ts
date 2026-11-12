@@ -21,6 +21,7 @@ import type {
   ConversationMcpServerActionInput,
   ConversationMcpServerActionResult,
   ConversationRewindResult,
+  ConversationSendRequest,
   ConversationSendTurnInput,
   ConversationSessionFrame,
   ConversationSessionSummary,
@@ -43,10 +44,11 @@ import type {
   ConversationTurnDiffInput,
   ConversationTurnDiffResult,
 } from '../../../../../shared/conversation-runtime'
-import { parseConversationRevertAnswer } from '../../../../../../packages/conversation-protocol/src/public'
+import {
+  conciseConversationSendRequest,
+  parseConversationRevertAnswer,
+} from '../../../../../../packages/conversation-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
-import type { ConversationAttachedFile } from '../../../../../shared/conversation/attachedFiles'
-import type { ConversationMentionRef } from '../../../../../shared/conversation/mentions'
 import type { ConversationFileSearchEntry } from '../../../../../../packages/conversation-protocol/src/public'
 import type {
   MeshConversationAccess,
@@ -268,13 +270,12 @@ export type ConversationTransport = {
    * `capabilities.hostQueue` is, with what it carries beside its words only
    * where `capabilities.hostQueueAttachments` is.
    */
-  queue?(input: {
-    message: string
-    attachments?: ConversationImageAttachment[]
-    skills?: string[]
-    mentions?: ConversationMentionRef[]
-    files?: ConversationAttachedFile[]
-  }): Promise<ConversationTransportResult>
+  queue?(
+    input: Pick<
+      ConversationSendRequest<ConversationImageAttachment>,
+      'message' | 'attachments' | 'skills' | 'mentions' | 'files'
+    >,
+  ): Promise<ConversationTransportResult>
   /** Take back a message that machine holds, by its id there. */
   cancelQueued?(input: { queuedId: string }): Promise<ConversationTransportResult>
   /**
@@ -659,43 +660,29 @@ export function createRemoteConversationTransport(input: {
     toolDetail: (detail) => window.api.meshConversationToolDetail({ key, toolUseId: detail.toolUseId }),
     readEvent: (read) => window.api.meshConversationEvent({ key, seq: read.seq, id: read.id }),
     turnDiff: (diff) => window.api.meshConversationTurnDiff({ key, turnSeq: diff.turnSeq, path: diff.path }),
-    // The images go as a chat here sends them; main uploads each to the
-    // machine before the send that names them.
-    send: async (turn) =>
-      commandResult(
-        await window.api.meshConversationSend({
-          key,
-          message: turn.message,
-          ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
-          // The machine resolves them against its own folder, as its own
-          // composer's chips are.
-          ...(turn.skills?.length ? { skills: turn.skills.map((skill) => skill.id) } : {}),
-          // Named by their paths in the chat's folder there, as its search
-          // named them; offered only where the machine takes them.
-          ...(turn.mentions?.length ? { mentions: turn.mentions } : {}),
-          // Files from this computer: main puts each in that machine's store
-          // first, and the send names them, as it names the images.
-          ...(turn.files?.length ? { files: turn.files } : {}),
-          ...(turn.steer ? { steer: true } : {}),
-          // The mode the chat's turn runs in, as a chat here sends it. Main
-          // refuses one other than the default for a machine that would run
-          // it in the default mode instead.
-          ...(turn.mode && turn.mode !== 'default' ? { mode: turn.mode } : {}),
-        }),
-      ),
+    // The request goes as a chat here sends it: main puts its pictures and
+    // files in that machine's upload store first, names its skills by id and
+    // refuses in words a part the machine would drop. What only this
+    // machine's runtime reads stays here, and the bubble's id and the effort
+    // the lane says its own way (`ConversationLaneNotCarried`).
+    send: async (turn) => {
+      const {
+        sessionId: _sessionId,
+        commandId: _commandId,
+        commandFingerprint: _fingerprint,
+        origin: _origin,
+        subagentMessage: _subagentMessage,
+        localTurnId: _localTurnId,
+        reasoningEffort: _reasoningEffort,
+        ...request
+      } = turn
+      return commandResult(await window.api.meshConversationSend({ key, ...conciseConversationSendRequest(request) }))
+    },
     // What it carries goes up first, as a send's does, and the machine keeps
     // it with the message; main refuses it in words for one that would not.
     queue: async (turn) =>
       commandResult(
-        await window.api.meshConversationSend({
-          key,
-          message: turn.message,
-          queue: true,
-          ...(turn.attachments?.length ? { attachments: turn.attachments } : {}),
-          ...(turn.skills?.length ? { skills: turn.skills } : {}),
-          ...(turn.mentions?.length ? { mentions: turn.mentions } : {}),
-          ...(turn.files?.length ? { files: turn.files } : {}),
-        }),
+        await window.api.meshConversationSend({ key, ...conciseConversationSendRequest(turn), queue: true }),
       ),
     cancelQueued: async (held) =>
       commandResult(await window.api.meshConversationCancelQueued({ key, queuedId: held.queuedId })),

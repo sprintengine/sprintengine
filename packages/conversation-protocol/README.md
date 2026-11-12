@@ -116,6 +116,13 @@ this client reads that a desktop must otherwise keep from it. It holds for the
 socket it was said on, so send it ahead of your `subscribe`; you need not wait
 for the answer. A desktop that does not know the member drops it.
 
+One message a person sends a chat is `ConversationSendRequest`, and an answer
+to a permission request `ConversationApprovalDecision`, whichever way either
+travels: Studio's own protocol, a desktop's runtime and the lane all derive
+from them. The lane's `send` is `ConversationLaneSend`, the request with its
+pictures and files by upload id, its skills by id and its flags `true` or
+absent; `LANE_CARRIAGE` in `send.ts` says how it carries each part.
+
 The full contract reads frames with `parseConversationClientMessage`, which
 takes every first-version frame exactly as `parseConversationClientFrame` does
 and adds, each behind its capability:

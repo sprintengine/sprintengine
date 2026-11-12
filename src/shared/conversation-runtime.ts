@@ -49,8 +49,17 @@ export type {
 // Who a `user_message` came from when it was not the person (`origin`).
 export { readConversationMessageOrigin } from '../../packages/conversation-protocol/src/public'
 import type {
+  ConversationApprovalDecision,
   ConversationMcpServerAction,
   ConversationCapabilities,
+  ConversationSendRequest,
+} from '../../packages/conversation-protocol/src/public'
+// One message a person sends a chat, and the answer to a permission request:
+// the contract's, every way they travel.
+export type {
+  ConversationApprovalDecision,
+  ConversationSendRequest,
+  ConversationSkillRef,
 } from '../../packages/conversation-protocol/src/public'
 // A live session's summary and its methods' results are the contract's too.
 export type {
@@ -188,53 +197,29 @@ export type ConversationPlanDocumentInput = ConversationKey & {
   planFilePath?: string
 }
 
-export type ConversationSendTurnInput = {
-  // What the person wrote to one of the chat's agents, for a message asking the
-  // chat to pass it on: recorded on the `user_message`, for the agent's lane.
-  subagentMessage?: ConversationSubagentMessage
+/**
+ * A send as the runtime takes it: the conversation contract's request
+ * (`ConversationSendRequest`), its pictures as their bytes, addressed to the
+ * session, with what only Studio's own senders in main set. Never `queue`:
+ * the runtime sends what it is given, and a message held for a turn's end is
+ * held by whoever holds it (the view, or the lane's host).
+ */
+export type ConversationSendTurnInput = Omit<ConversationSendRequest<ConversationImageAttachment>, 'queue'> & {
+  sessionId: string
+  commandId?: string
   // What the command was, hashed by whoever named its id: a receipt keeps it,
   // and the same id coming back for a different command is refused rather
   // than answered with the first one's result. Never sent by a window's IPC.
   commandFingerprint?: string
-  mentions?: import('./conversation/mentions').ConversationMentionRef[]
-  // Files attached by path from this computer: the agent is told where each
-  // is, after the words, and the `user_message` keeps them beside the text
-  // so the bubble draws them as cards. The text stays the person's words.
-  files?: import('./conversation/attachedFiles').ConversationAttachedFile[]
-  reasoningEffort?: string
-  mode?: 'default' | 'plan' | 'ask'
-  commandId?: string
-  skills?: ConversationSkillRef[]
-  sessionId: string
-  message: string
-  // Renderer-generated id of the optimistic user bubble for this send; echoed
-  // back on the persisted `user_message` event so the projection can replace
-  // the optimistic entry with the authoritative one deterministically.
-  localTurnId?: string
-  // Images attached to this turn. Honored only by vision-capable providers
-  // (currently the claude-agent provider); other providers ignore them, so no
-  // image block is ever sent to them. Main keeps a copy in the attachment store
-  // so the replayed bubble can show them; the model sees them on this turn only.
-  attachments?: ConversationImageAttachment[]
-  // Deliver into the turn that is running instead of waiting for it to end.
-  // Honored where the provider declares `capabilities.steer`; the running
-  // turn closes where the message lands, and the reply carries on as this
-  // one's.
-  steer?: boolean
   // Studio sent this message itself (a launched agent's notice, a resume after
   // a usage limit), not the person: recorded on the `user_message` so the chat
   // draws it as Studio's and nothing counts it as the person writing. Set only
   // by Studio's own senders in main; neither a window's IPC nor the Studio
   // protocol's `session.send` passes one through.
   origin?: ConversationMessageOrigin
-  // When the person wrote the message, on the sending device's clock (epoch
-  // ms): a paired device's `send` says so. Recorded on the `user_message`,
-  // and a send under a command id written longer ago than the lane's limit is
-  // refused `stale` unless `confirmedStale` says the person asked for it to go
-  // now (`isStaleConversationSend`). A message held on a device while it slept
-  // is not one the person still means hours later.
-  composedAt?: number
-  confirmedStale?: boolean
+  // What the person wrote to one of the chat's agents, for a message asking the
+  // chat to pass it on: recorded on the `user_message`, for the agent's lane.
+  subagentMessage?: ConversationSubagentMessage
 }
 
 export type ConversationInterruptInput = {
@@ -252,7 +237,7 @@ export type ConversationRespondToRequestInput = {
   // than answered with the first one's result. Never sent by a window's IPC.
   commandFingerprint?: string
   commandId?: string
-  decision?: import('./conversation/approvalRules').ConversationApprovalDecision
+  decision?: ConversationApprovalDecision
   sessionId: string
   requestId: string
   approved: boolean
@@ -450,7 +435,6 @@ export type ConversationImportTranscriptInput = {
   events: Array<{ type: ConversationEvent['type']; createdAt: number; payload: Record<string, unknown> }>
 }
 export type ConversationImportTranscriptResult = { ok: true } | { ok: false; message: string }
-export type ConversationSkillRef = { id: string; sourcePath?: string }
 
 export type ConversationKey = ConversationTranscriptInput
 // `afterSeq` with the `generation` from an earlier snapshot or synchronized

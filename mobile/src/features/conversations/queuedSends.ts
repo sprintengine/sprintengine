@@ -1,4 +1,5 @@
 import type { ConversationQueuedMessage } from "../../api/conversationWire";
+import type { ConversationLaneSend } from "../../../../packages/conversation-protocol/src/public";
 import { formatTimestamp } from "../../components/formatTimestamp";
 
 // Where a message queued behind a running turn waits, and what the queued
@@ -39,7 +40,7 @@ export const QUEUED_SEND_STALE_MS = 10 * 60_000;
 export type WaitingSend = {
   queuedAt?: number;
   stale?: true;
-  command: { confirmedStale?: true; composedAt?: number };
+  command: Pick<ConversationLaneSend, "confirmedStale" | "composedAt">;
 };
 
 /**
@@ -78,13 +79,44 @@ export function pendingLine(item: { waiting?: boolean; stale?: boolean; queuedAt
 
 /** A message the phone holds until the turn ends, pictures and all. */
 export type PhoneQueuedSend = { commandId: string; text: string; uploads: string[] };
-/** A message offered to the desktop to hold, not yet in its list. */
-export type HandingSend = { commandId: string; text: string };
+/** A message offered to the desktop to hold, not yet in its list, with the uploads it carries. */
+export type HandingSend = { commandId: string; text: string; uploads?: string[] };
+
+/** A send offered to the desktop to hold, as the queued bubble draws it: its words and what it carries. */
+export function handingSend(commandId: string, command: Pick<ConversationLaneSend, "message" | "uploadIds">): HandingSend {
+  return {
+    commandId,
+    text: command.message,
+    ...(command.uploadIds?.length ? { uploads: [...command.uploadIds] } : {}),
+  };
+}
+
+/** What a message the desktop holds carries beside its words (`conversation-queued-attachments`). */
+export type QueuedCarry = Pick<ConversationQueuedMessage, "images" | "files" | "skills" | "mentions">;
 
 export type QueuedBubble =
   | { where: "phone"; key: string; commandId: string; text: string; uploads: string[] }
-  | { where: "handing"; key: string; commandId: string; text: string }
-  | { where: "desktop"; key: string; queuedId: string; text: string; failure?: string };
+  | { where: "handing"; key: string; commandId: string; text: string; uploads?: string[] }
+  | { where: "desktop"; key: string; queuedId: string; text: string; failure?: string; carries?: QueuedCarry };
+
+function counted(count: number, one: string): string {
+  return `${count} ${one}${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * What a held message carries, in a line under its words: its pictures and
+ * skills counted, its files by name, its mentions counted. Null for words alone.
+ */
+export function queuedCarryLine(carry: QueuedCarry | undefined): string | null {
+  if (!carry) return null;
+  const parts = [
+    ...(carry.images?.length ? [counted(carry.images.length, "image")] : []),
+    ...(carry.files?.length ? [carry.files.length === 1 ? carry.files[0]! : counted(carry.files.length, "file")] : []),
+    ...(carry.skills?.length ? [counted(carry.skills.length, "skill")] : []),
+    ...(carry.mentions?.length ? [counted(carry.mentions.length, "mention")] : []),
+  ];
+  return parts.length ? parts.join(" · ") : null;
+}
 
 /**
  * Whether a message queued now goes to the desktop to hold rather than
@@ -163,10 +195,26 @@ export function queuedBubbles(input: {
         queuedId: message.id,
         text: message.text,
         ...(message.failure !== undefined ? { failure: message.failure } : {}),
+        ...(queuedCarryLine(message) !== null
+          ? {
+              carries: {
+                ...(message.images?.length ? { images: message.images } : {}),
+                ...(message.files?.length ? { files: message.files } : {}),
+                ...(message.skills?.length ? { skills: message.skills } : {}),
+                ...(message.mentions?.length ? { mentions: message.mentions } : {}),
+              },
+            }
+          : {}),
       }),
     ),
     ...input.handing.map(
-      (item): QueuedBubble => ({ where: "handing", key: `handing:${item.commandId}`, commandId: item.commandId, text: item.text }),
+      (item): QueuedBubble => ({
+        where: "handing",
+        key: `handing:${item.commandId}`,
+        commandId: item.commandId,
+        text: item.text,
+        ...(item.uploads?.length ? { uploads: item.uploads } : {}),
+      }),
     ),
     ...input.phone.map(
       (item): QueuedBubble => ({

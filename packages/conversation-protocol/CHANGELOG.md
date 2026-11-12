@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added (one send shape and one approval union)
+
+- **`ConversationSendRequest`** (`send.ts`): one message a person sends a
+  chat, whichever way it travels — words, the bubble's id, mentions, files,
+  skills (`ConversationSkillRef`), pictures, reasoning effort, mode, `steer`,
+  `queue`, `composedAt` and `confirmedStale`. Its pictures' form is the
+  transport's own (`Picture`: bytes in one machine, `ConversationSendUpload`
+  between two). The Studio protocol's `session.send`, the desktop runtime's
+  input and a paired desktop's mesh IPC derive from it.
+- **`ConversationLaneSend`**: the request as the lane carries it, each part as
+  a single table says (`as-is`, `uploaded` into `uploadIds`, skills `by-id`,
+  flags `true` or absent, the mode unless default, and two parts the lane says
+  its own way, `ConversationLaneNotCarried`). `ConversationCommand`'s `send`
+  is `{ kind: 'send' } & ConversationLaneSend`, and the wire's first send its
+  words and uploads; a part added to the request fails typecheck until the
+  table places it. The wire is unchanged.
+- **`ConversationApprovalDecision`**, `CONVERSATION_APPROVAL_DECISIONS` and
+  `isConversationApprovalDecision`: every answer to a permission request.
+  `ConversationRequestDecision` and `ConversationPermanentRequestDecision` are
+  its two halves, and `ConversationCommand` has one `resolveApproval` taking
+  the whole union (`always` still behind `conversation-permanent-approvals`).
+  `ConversationWireMention` is `ConversationMentionRef`.
+
 ### Added (what the rest of a chat's operations answer)
 
 - `ConversationListSessionsResult`, `ConversationMcpServerActionResult`,

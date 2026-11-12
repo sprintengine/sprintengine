@@ -168,10 +168,11 @@ import { useChatVisits } from "./useChatVisits";
 import { messageCopyText, replyCopyText } from "./copyText";
 import { jumpMark, jumpToLatest, newRepliesSince, transcriptScrollable, type JumpMark } from "./jumpToLatest";
 import { usePhoneConversation } from "./usePhoneConversation";
-import { pendingLine, queuedBubbles, queuedLine, type QueuedBubble } from "./queuedSends";
+import { pendingLine, queuedBubbles, queuedCarryLine, queuedLine, type QueuedBubble } from "./queuedSends";
 import { toolDetailChat } from "./toolOutput";
 import { chatThreadCli, type CliRuntime } from "./launchLogic";
 import { ModelPickerSheet } from "./ModelPickerSheet";
+import type { ConversationRequestDecision } from "../../../../packages/conversation-protocol/src/public";
 import { chatProvider, MODEL_SET_ONCE_NOTE, readOnlyProvider } from "./modelPickerLogic";
 
 /** No turn to open: one list, so what is worked out from it is not worked out again. */
@@ -2285,13 +2286,20 @@ function QueuedEntry({
 }) {
   const styles = useThemedStyles(createStyles);
   const failed = bubble.where === "desktop" && bubble.failure !== undefined;
-  const text = bubble.text || (bubble.where === "phone" && bubble.uploads.length ? attachmentsOnlyText(bubble.uploads) : "");
+  const uploads = bubble.where === "desktop" ? [] : (bubble.uploads ?? []);
+  const carries = bubble.where === "desktop" ? queuedCarryLine(bubble.carries) : null;
+  const text = bubble.text || (uploads.length ? attachmentsOnlyText(uploads) : (carries ?? ""));
   return (
     <View pointerEvents="box-none" style={styles.queuedItem}>
       <View style={styles.queuedBubble}>
         <Text numberOfLines={6} style={styles.queuedText}>
           {messageInline(text)}
         </Text>
+        {carries && bubble.text ? (
+          <Text numberOfLines={1} style={[styles.meta, styles.queuedMeta]}>
+            {carries}
+          </Text>
+        ) : null}
       </View>
       <View style={styles.queuedLine}>
         <Text
@@ -2476,7 +2484,7 @@ function PendingCard({
     setQuestionIndex(index);
     scroll.current?.scrollTo({ y: 0, animated: false });
   };
-  const resolve = (decision: "once" | "conversation" | "deny") =>
+  const resolve = (decision: ConversationRequestDecision) =>
     command({ kind: "resolveApproval", requestId: pending.id, decision });
   // A plan's own answer where the desktop takes one; an older desktop reads a
   // plan answered as an approval the same way (`once` carries it out).

@@ -2506,7 +2506,8 @@ test("a $ in a chat over there lists that machine's skills, and the send carries
     expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({
       key,
       message: 'Why does it flake?',
-      skills: ['systematic-debugging'],
+      // As the request names it; main sends that machine its id.
+      skills: [{ id: 'systematic-debugging' }],
     })
   } finally {
     await chat.unmount()

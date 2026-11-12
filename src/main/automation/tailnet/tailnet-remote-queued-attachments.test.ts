@@ -82,7 +82,7 @@ test('a machine that holds words only is sent no queued message carrying more, a
     const before = machine.asked()
     for (const carried of [
       { attachments: [picture] },
-      { skills: ['review'] },
+      { skills: [{ id: 'review' }] },
       { mentions: [{ path: 'docs/notes.md', kind: 'file' }] },
       { files: [{ path: '/Users/dev/Desktop/notes.txt' }] },
     ]) {

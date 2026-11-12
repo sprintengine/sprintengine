@@ -2,7 +2,6 @@ import { inferConversationToolKind } from './toolKind'
 import type { ConversationToolKind } from '../conversation-runtime'
 import { STUDIO_MCP_SERVER_ID } from '../product-identity'
 
-export type ConversationApprovalDecision = 'once' | 'conversation' | 'always' | 'deny'
 export type ApprovalRuleRequest = {
   action: string
   input?: unknown

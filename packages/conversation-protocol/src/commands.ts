@@ -1,4 +1,6 @@
 import type { ConversationWireCommand, ConversationWireKey, ConversationWirePermissionPreset } from './index.js'
+import type { ConversationMentionRef } from './messageParts.js'
+import type { ConversationLaneSend, ConversationSendRequest, ConversationTurnMode } from './send.js'
 
 // The commands a client sends a conversation, and the answers it gives one.
 //
@@ -9,19 +11,38 @@ import type { ConversationWireCommand, ConversationWireKey, ConversationWirePerm
 // unknown member, which is the fallback each extension below is shaped for.
 
 /**
- * An answer to a `tool` permission request: allow this request `once`, allow
- * requests of its kind for the rest of the `conversation`, or `deny` it. A
- * rule that outlives the conversation (`always`) is not among them: the first
- * version of the lane refuses it, and only a desktop that advertises
+ * An answer to a `tool` permission request, every way one is given: allow
+ * this request `once`, allow requests of its kind for the rest of the
+ * `conversation`, allow them `always` (a rule saved for the chat's workspace,
+ * which outlives the conversation), or `deny` it.
+ */
+export type ConversationApprovalDecision = 'once' | 'conversation' | 'always' | 'deny'
+
+/** Every approval decision, narrowest first, `deny` last. */
+export const CONVERSATION_APPROVAL_DECISIONS: readonly ConversationApprovalDecision[] = [
+  'once',
+  'conversation',
+  'always',
+  'deny',
+]
+
+export function isConversationApprovalDecision(value: unknown): value is ConversationApprovalDecision {
+  return CONVERSATION_APPROVAL_DECISIONS.includes(value as ConversationApprovalDecision)
+}
+
+/**
+ * The decisions every version of the lane takes. A rule that outlives the
+ * conversation (`always`) is not among them: the first version of the lane
+ * refuses it, and only a desktop that advertises
  * `conversation-permanent-approvals` takes it (`ConversationCommand`).
  */
-export type ConversationRequestDecision = 'once' | 'conversation' | 'deny'
+export type ConversationRequestDecision = Exclude<ConversationApprovalDecision, 'always'>
 
-/** Every decision a client may send, narrowest first. */
+/** Every decision a client may send any desktop, narrowest first. */
 export const CONVERSATION_REQUEST_DECISIONS: readonly ConversationRequestDecision[] = ['once', 'conversation', 'deny']
 
 /** The rule that outlives the conversation, for a desktop that takes one (`conversation-permanent-approvals`). */
-export type ConversationPermanentRequestDecision = 'always'
+export type ConversationPermanentRequestDecision = Exclude<ConversationApprovalDecision, ConversationRequestDecision>
 
 /** An answer to a `plan` request: carry the plan out, or send the agent back to planning. */
 export type ConversationPlanDecision = 'approve' | 'reject'
@@ -220,21 +241,10 @@ export type ConversationQuestionAnswers = Record<string, string>
  *   desktop without it refuses the kind as `unsupported_command`.
  */
 export type ConversationCommand =
-  | Exclude<ConversationWireCommand, { kind: 'setPermissionPreset' } | { kind: 'send' }>
-  | {
-      kind: 'send'
-      message: string
-      uploadIds?: string[]
-      queue?: true
-      skills?: string[]
-      mentions?: ConversationWireMention[]
-      steer?: true
-      composedAt?: number
-      confirmedStale?: true
-      mode?: ConversationSendMode
-    }
+  | Exclude<ConversationWireCommand, { kind: 'setPermissionPreset' } | { kind: 'send' } | { kind: 'resolveApproval' }>
+  | ({ kind: 'send' } & ConversationLaneSend)
   | { kind: 'setPermissionPreset'; preset: ConversationWirePermissionPreset; permissionMode?: string }
-  | { kind: 'resolveApproval'; requestId: string; decision: ConversationPermanentRequestDecision }
+  | { kind: 'resolveApproval'; requestId: string; decision: ConversationApprovalDecision }
   | { kind: 'resolvePlan'; requestId: string; decision: ConversationPlanDecision }
   | { kind: 'cancelQueued'; queuedId: string }
   | { kind: 'stopSubagent'; toolUseId: string }
@@ -299,7 +309,7 @@ export const CONVERSATION_MCP_SERVER_ACTIONS: readonly ConversationWireMcpServer
 export type ConversationSendMode = 'plan' | 'ask'
 
 /** Every mode a `send` may name, the default one included, which is the same as naming none. */
-export const CONVERSATION_SEND_MODES: readonly (ConversationSendMode | 'default')[] = ['default', 'plan', 'ask']
+export const CONVERSATION_SEND_MODES: readonly ConversationTurnMode[] = ['default', 'plan', 'ask']
 
 /**
  * How old a `send`'s `composedAt` may be before a desktop asks for it to be
@@ -317,7 +327,7 @@ export const CONVERSATION_STALE_SEND_MS = 30 * 60_000
  * never stale.
  */
 export function isStaleConversationSend(
-  command: { composedAt?: number; confirmedStale?: true | boolean },
+  command: Pick<ConversationSendRequest, 'composedAt' | 'confirmedStale'>,
   now: number,
 ): boolean {
   return (
@@ -593,15 +603,8 @@ export const CONVERSATION_MAX_CREATE_SKILLS = 32
 // segments, and for a file a line or a range of lines. Never a path of the
 // client's own: the folder is the desktop's (`conversation-send-mentions`).
 
-/** One file or folder a `send` names. */
-export type ConversationWireMention = {
-  path: string
-  kind: 'file' | 'folder'
-  /** The first line meant, from 1. */
-  line?: number
-  /** The last line meant, at or after `line`. */
-  endLine?: number
-}
+/** One file or folder a `send` names: a mention, its path relative to the chat's folder. */
+export type ConversationWireMention = ConversationMentionRef
 
 /** The most mentions a send names, as the desktop's own composer takes. */
 export const CONVERSATION_MAX_SEND_MENTIONS = 50

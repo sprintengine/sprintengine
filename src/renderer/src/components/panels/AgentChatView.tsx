@@ -25,12 +25,12 @@ import {
 } from '@legendapp/list/react'
 
 import type {
+  ConversationApprovalDecision,
   ConversationCliRuntimeOverrides,
   ConversationImageAttachment,
   ConversationSessionSummary,
   ConversationMcpServerAction,
 } from '../../../../shared/conversation-runtime'
-import type { ConversationApprovalDecision } from '../../../../shared/conversation/approvalRules'
 import type { MeshQueuedMessage } from '../../../../shared/tailnet-mesh'
 import { apiKeyBillingNotice } from '../../../../shared/conversation/apiKeySource'
 import { PromptCacheComposerNotice } from './agentChat/promptCacheNotice'
@@ -1651,7 +1651,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         result = await queue({
           message: turn.text,
           ...(turn.attachments.length ? { attachments: turn.attachments } : {}),
-          ...(turn.metadata.skillIds.length ? { skills: turn.metadata.skillIds } : {}),
+          ...(turn.metadata.skillIds.length ? { skills: turn.metadata.skillIds.map((id) => ({ id })) } : {}),
           ...(turn.metadata.mentions.length ? { mentions: turn.metadata.mentions } : {}),
           ...(files.length ? { files } : {}),
         })

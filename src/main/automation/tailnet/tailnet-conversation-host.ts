@@ -31,6 +31,7 @@ import {
   type ConversationWireLocalServer,
   type ConversationWireModels,
   type ConversationWireMcpServerAction,
+  type ConversationLaneSend,
   type ConversationWireMention,
   isStaleConversationSend,
 } from '../../../../packages/conversation-protocol/src/public'
@@ -994,7 +995,7 @@ export function createConversationGatewayHost(
   const carriedBy = async (
     chat: ChatOf,
     deviceId: string,
-    send: { uploadIds?: string[]; skills?: string[]; mentions?: ConversationWireMention[] },
+    send: Pick<ConversationLaneSend, 'uploadIds' | 'skills' | 'mentions'>,
   ): Promise<{ ok: true; carried?: ConversationHeldAttachments } | { ok: false; message: string }> => {
     const ids = send.uploadIds ?? []
     if (!ids.length && !send.skills?.length && !send.mentions?.length) return { ok: true }
