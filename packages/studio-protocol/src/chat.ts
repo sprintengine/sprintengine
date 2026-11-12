@@ -293,6 +293,8 @@ export type StudioChatMethodMap = {
   'conversation.commands': {
     params: { cli: string; cwd: string; refresh?: boolean; probe?: false }
     result: { catalog: ConversationCommandCatalog }
+    /** A client that is not an owner, or is held to the folders Studio knows, named another. */
+    errors: 'not_found'
   }
   'providers.list': {
     params: { cliRuntimes?: Record<string, StudioCliRuntimeOverride | undefined> }

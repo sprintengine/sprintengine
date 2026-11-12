@@ -855,16 +855,26 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       return { ok: true, result: voice.redact(await chat.attachment(ref)) }
     },
-    'conversation.planDocument': async ({ key: wire, ...input }, { grant, voice }) => {
+    'conversation.planDocument': async ({ key: wire, planFilePath, ...input }, { context, grant, voice }) => {
       const chat = chatOr('conversation.planDocument')
       if (isRefusal(chat)) return chat
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input })) }
+      // The agent's own plan file is read to see whether it still holds the
+      // plan: for a client that is not an owner, only inside the folders
+      // Studio knows. Elsewhere, Studio keeps a copy of its own instead.
+      const own =
+        planFilePath !== undefined && (await folderAllowed(chat, { context, grant }, planFilePath))
+          ? { planFilePath }
+          : {}
+      return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input, ...own })) }
     },
-    'conversation.commands': async (input, { voice }) => {
+    'conversation.commands': async (input, { context, grant, voice }) => {
       const chat = chatOr('conversation.commands')
       if (isRefusal(chat)) return chat
+      // Asking for a folder's list may run its CLI there (a probe): a client
+      // that is not an owner names only a folder Studio knows.
+      if (!(await folderAllowed(chat, { context, grant }, input.cwd))) return refuse('not_found', UNKNOWN_FOLDER)
       return { ok: true, result: { catalog: voice.redact(await chat.commands(input)) } }
     },
     'providers.list': async (input, { voice }) => {
@@ -1283,14 +1293,10 @@ async function folderAllowed(chat: StudioChatBackend, asking: PathAsker, path: s
 }
 
 /** As `folderAllowed`, for a path a send names: a relative one is the chat's own, unless it climbs out. */
-async function pathAllowed(
-  chat: StudioChatBackend,
-  asking: { context: StudioRequestContext; grant: { owner: boolean } },
-  path: string,
-): Promise<boolean> {
+async function pathAllowed(chat: StudioChatBackend, asking: PathAsker, path: string): Promise<boolean> {
   const absolute = path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/u.test(path)
   if (absolute) return folderAllowed(chat, asking, path)
-  return (asking.grant.owner && !asking.context.knownFoldersOnly) || !path.split(/[\\/]/u).includes('..')
+  return namesAnyPath(asking) || !path.split(/[\\/]/u).includes('..')
 }
 
 /** Whether parsed params name a CLI's own program (`cliRuntimes[cli].command`), which only an owner may. */

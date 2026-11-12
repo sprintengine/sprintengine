@@ -459,6 +459,8 @@ test('what a client that is not an owner names on this disk is held to the folde
     ['files.readImage', { path: '/Users/dev/secret.png' }],
     ['files.search', { rootPath: '/Users/dev', query: 'a' }],
     ['files.repoRoot', { folderPath: '/etc' }],
+    // Asking for a folder's `/` list may run its CLI there.
+    ['conversation.commands', { cli: 'claude-code', cwd: '/Users/dev/elsewhere' }],
     ['session.send', { commandId: 'c1', sessionId: 's1', message: 'read this', files: [{ path: '/etc/passwd' }] }],
     [
       'session.send',
@@ -474,6 +476,22 @@ test('what a client that is not an owner names on this disk is held to the folde
   }
   assert.equal(chat.calls.sends.length, 3, 'only the owner’s sends reached the runtime')
   assert.equal(code(await handle(paired, 'files.stat', { path: '/Users/dev/app/README.md' })), 'ok')
+  assert.equal(code(await handle(paired, 'conversation.commands', { cli: 'claude-code', cwd: '/Users/dev/app' })), 'ok')
+  // The agent's plan file is read only inside known folders; elsewhere Studio keeps its own copy.
+  const plans: Array<string | undefined> = []
+  chat.planDocument = async (input) => {
+    plans.push(input.planFilePath)
+    return { ok: true, path: '/Users/dev/plan.md' }
+  }
+  const plan = (planFilePath: string) => ({
+    key: { workspaceId: 'ws-1', agentId: 'agent-1' },
+    plan: '# Plan',
+    planFilePath,
+  })
+  assert.equal(code(await handle(paired, 'conversation.planDocument', plan('/Users/dev/notes.md'))), 'ok')
+  assert.equal(code(await handle(paired, 'conversation.planDocument', plan('/Users/dev/app/plan.md'))), 'ok')
+  assert.equal(code(await handle(owner, 'conversation.planDocument', plan('/Users/dev/notes.md'))), 'ok')
+  assert.deepEqual(plans, [undefined, '/Users/dev/app/plan.md', '/Users/dev/notes.md'])
   const command = { cliRuntimes: { 'claude-code': { command: '/tmp/not-claude' } } }
   assert.equal(code(await handle(paired, 'providers.list', command)), 'owner_required')
   assert.equal(code(await handle(owner, 'providers.list', command)), 'ok')
@@ -767,6 +785,7 @@ test('a path is stat’d and a picture read anywhere only by an owner not held t
   const reads: Array<{ path: string; anyPath: boolean | undefined }> = []
   const chat: StudioChatBackend = {
     ...fakeChat(),
+    isKnownFolder: async (path) => path.startsWith('/Users/dev/app/'),
     stat: async (path, reading) => {
       reads.push({ path, anyPath: reading?.anyPath })
       return { isFile: true, isDirectory: false, sizeBytes: 1, modifiedAt: '', modifiedAtMs: 1 }
@@ -789,8 +808,10 @@ test('a path is stat’d and a picture read anywhere only by an owner not held t
   const tailnet = { connectionId: 'w2', slot: 2, ownWindow: false, knownFoldersOnly: true }
   assert.ok((await router.handle(grant, 'files.stat', { path: '/tmp/shot.png' }, window)).ok)
   assert.ok((await router.handle(grant, 'files.readImage', { path: '/tmp/shot.png' }, window)).ok)
-  assert.ok((await router.handle(grant, 'files.stat', { path: '/tmp/shot.png' }, tailnet)).ok)
-  assert.ok((await router.handle(grant, 'files.readImage', { path: '/tmp/shot.png' }, tailnet)).ok)
+  // Held to known folders: refused outside them, and confined by the backend inside them.
+  assert.ok(!(await router.handle(grant, 'files.stat', { path: '/tmp/shot.png' }, tailnet)).ok)
+  assert.ok((await router.handle(grant, 'files.stat', { path: '/Users/dev/app/shot.png' }, tailnet)).ok)
+  assert.ok((await router.handle(grant, 'files.readImage', { path: '/Users/dev/app/shot.png' }, tailnet)).ok)
   assert.deepEqual(
     reads.map((read) => read.anyPath),
     [true, true, false, false],

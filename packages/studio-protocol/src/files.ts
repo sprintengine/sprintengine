@@ -15,7 +15,7 @@ import { STUDIO_BOARD_FILES_CAPABILITY } from './handshake.js'
 // run the canvas over a Studio's board files: the canvas service runs in the
 // client, the boards stay on the server's disk.
 //
-// Owners only in this version. A write is atomic (a temp file beside the
+// Reached by `files:read` and `files:write`. A write is atomic (a temp file beside the
 // target, then a rename) and conditional on what the client last read
 // (`ifMatch`, the SHA-256 of the file's bytes; null to create only), and in
 // this version only a board (`*.excalidraw`) may be written or removed.

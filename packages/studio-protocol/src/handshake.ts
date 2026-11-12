@@ -21,7 +21,7 @@ export const STUDIO_LOCAL_PAIRING_CAPABILITY = 'local-pairing' as const
 /**
  * A conversation may be addressed by its folder as well as its workspace
  * (`key.workspaceRoot`): a chat started in a run worktree is kept in that
- * worktree, not in its workspace's folder. Owners only.
+ * worktree, not in its workspace's folder. Only an owner names a folder.
  */
 export const STUDIO_CONVERSATION_FOLDERS_CAPABILITY = 'conversation-folders' as const
 /** Drive a chat's live session by its id, as Studio's own chat view does: `session.*` and `uploads.*`. */
@@ -47,35 +47,37 @@ export const STUDIO_CLIENT_TOOLS_CAPABILITY = 'client-tools' as const
 /**
  * Files under a workspace's roots, by root and relative path: `files.roots`,
  * `list`, `read`, `write`, `remove`, `stat` with a root, and the `files.watch`
- * stream. Owners only. What a client runs the canvas over a Studio's boards with.
+ * stream, by `files:read` and `files:write`. What a client runs the canvas over a Studio's boards with.
  */
 export const STUDIO_BOARD_FILES_CAPABILITY = 'files-write' as const
 /**
  * The pull requests a Studio's conversations opened: `pullRequests.list`,
- * `refresh` and `noteWork`, and the `pullRequests.changed` stream. Owners only.
+ * `refresh` and `noteWork`, and the `pullRequests.changed` stream. `noteWork`
+ * is an owner's; the rest are reached by `workspaces:read`.
  */
 export const STUDIO_PULL_REQUESTS_CAPABILITY = 'pull-requests' as const
 /**
  * `pullRequests.noteToolCall`: a client forwards a tool call one of its own
- * agents made, and the Studio decides whether it opened a pull request. Owners
- * only, beside `pull-requests`.
+ * agents made, and the Studio decides whether it opened a pull request. An
+ * owner's, beside `pull-requests`.
  */
 export const STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY = 'pull-request-tool-calls' as const
 /**
  * `pullRequests.link`: an owner records a pull request it opened for one of
- * the Studio's conversations (the desktop's "Create PR" button). Owners only.
+ * the Studio's conversations (the desktop's "Create PR" button). An owner's.
  */
 export const STUDIO_PULL_REQUEST_LINK_CAPABILITY = 'pull-request-link' as const
 /**
  * `pullRequests.unwatch`: an owner stops a conversation's agent watching one
  * of its pull requests. A Studio that advertises it may also send `watch` on a
- * listed pull request, which says what a watched one waits on. Owners only.
+ * listed pull request, which says what a watched one waits on. Reached by
+ * `conversation:operate`.
  */
 export const STUDIO_PULL_REQUEST_WATCH_CAPABILITY = 'pull-request-watch' as const
 /**
  * The local servers a Studio's conversations started: `localServers.list`,
- * `run`, `stop` and `remove`, and the `localServers.changed` stream. Owners
- * only.
+ * `run`, `stop` and `remove`, and the `localServers.changed` stream, reached
+ * by scope.
  */
 export const STUDIO_LOCAL_SERVERS_CAPABILITY = 'local-servers' as const
 
@@ -88,8 +90,8 @@ export const STUDIO_SESSION_FILES_CAPABILITY = 'session-files' as const
 
 /**
  * `conversation.handoff`: hand a chat off to a fresh session of its CLI,
- * pointed at a file of the chat's messages, instead of compacting it. Owners
- * only.
+ * pointed at a file of the chat's messages, instead of compacting it.
+ * Reached by `conversation:operate`.
  */
 export const STUDIO_HANDOFF_CAPABILITY = 'conversation-handoff' as const
 

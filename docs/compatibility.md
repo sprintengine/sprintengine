@@ -535,7 +535,7 @@ frames only to a client that asked, so a phone that never asks never sees
 one. A client asks whenever the desktop has not said it lacks the
 capability, since an older desktop's refusal is harmless. The Studio RPC does
 not advertise it: its conversation topic carries no `queued` frames, and its
-`conversation.cancelQueued` method is an owner's only.
+`conversation.cancelQueued` method needs `conversation:operate`.
 A steered message is the `conversation-steer-sends` capability (2026-10-14):
 a `send` that says `steer: true` goes into the turn the chat is running, where
 its provider takes one, and each listed chat says whether it does as

@@ -99,7 +99,9 @@ The `welcome`'s `grant` is what the connection may do:
   screen), and `pullRequests.noteWork`, `.noteToolCall` and `.link` (what
   Studio's own agents report). Everything else reaches a client by its scope.
   A client that is not an owner never names a conversation's folder or a
-  CLI's `command`, and names files only inside the folders Studio knows. A
+  CLI's `command`, and names files and folders (a stat, a picture, a search,
+  a file attached to a send, a `/` list's folder, an agent's plan file) only
+  inside the folders Studio knows. A
   client asks whether its grant reaches a method with
   `studioGrantAllows(grant, method)` (`STUDIO_METHOD_ACCESS` holds the table)
   rather than reading `grant.owner`.

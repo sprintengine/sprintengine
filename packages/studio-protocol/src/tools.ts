@@ -273,9 +273,9 @@ export type StudioToolsMethodMap = {
   }
   /** Every toolset this client may see: its own and the built-ins; an owner sees all of them. */
   'tools.catalog': { params: Record<string, never>; result: { toolsets: StudioToolsetListing[] } }
-  /** Owners only: the app toolsets one conversation was opened to. */
+  /** The app toolsets one conversation was opened to (`conversation:read`). */
   'tools.grants': { params: { key: StudioConversationKey }; result: { grants: string[] }; errors: 'not_found' }
-  /** Owners only: open one conversation to one app's toolset, or close it again. */
+  /** Open one conversation to one app's toolset, or close it again (`conversation:operate`). */
   'tools.grant': {
     params: { key: StudioConversationKey; toolset: string; granted: boolean; commandId: string }
     result: { grants: string[] }
