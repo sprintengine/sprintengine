@@ -38,6 +38,7 @@ import type {
   StudioAuthenticator,
   StudioChatBackend,
   StudioConversationBackend,
+  StudioFollowedBackend,
 } from './studio-rpc-types'
 
 // The Studio RPC as one piece: the owner socket, a connection per client, and
@@ -53,61 +54,68 @@ import type {
 
 /**
  * The conversation capabilities the socket serves: every one the contract
- * defines, but the five that describe the tailnet lane's own transport — a
- * picture route beside its WebSocket, the sent pictures that route also
- * serves, the files its upload route takes, the upload route's shrinking of a
- * picture on receipt (this socket's own uploads are kept as they came), and a
- * `hello` frame on it, which here is the connection's own handshake —
- * `conversation-lifecycle`, whose
- * settle and visit are gateway tools this socket has no method for, and
- * `conversation-queued-sends`, `conversation-scheduled-sends` and
- * `conversation-usage-limits`, `conversation-subagents` and
- * `conversation-changes`, whose `queued`, `scheduled`, `usageLimits`,
- * `subagents` and `changes` frames its conversation topic does not carry.
- * Nor the lane's fork, side questions and context breakdown
- * (`conversation-fork`, `conversation-side-questions`,
- * `conversation-context-breakdown`): this socket forks by its own
- * `conversation.fork`, which leaves the new chat's record to the window that
- * asked, and has no method for the other two. Nor so the keeping of side
- * questions (`conversation-side-question-records`), which says what becomes
- * of one asked by the lane's `askSideQuestion`: its topic carries a kept
- * question's `side_question` event all the same.
- * Nor the composer's two reads of a chat's folder
- * (`conversation-file-search`, `conversation-commands`), routes beside the
- * tailnet's socket that this one has no method for; a window on it reads its
- * own files and command lists. A send's `mentions` it does take
- * (`conversation-send-mentions`): its `conversation.send` reads the lane's own
- * validator and reaches the same host.
- * Nor `conversation-queued-attachments`, which extends the queued sends this
- * socket does not take, nor `conversation-permanent-approvals`: its
- * `conversation.resolveApproval` reads its own validator, which still refuses
- * a rule that outlives the conversation.
- * Nor `conversation-quote-tokens`, which is said in the tailnet socket's
- * `hello`: this socket is the owner's, and reads a chat as it is kept.
+ * defines, but those that describe the tailnet lane's own transport or that
+ * this socket does not carry yet.
+ *
+ * - `conversation-hello`: the lane's `hello` frame, which here is the
+ *   connection's own handshake (its welcome carries these capabilities).
+ * - `conversation-image-downscale`: the lane's upload route shrinks a picture
+ *   on receipt; this socket keeps an upload as it came.
+ * - `conversation-images`, `conversation-message-images`,
+ *   `conversation-message-files` and `conversation-queued-attachments`: a
+ *   step's and a message's pictures read by a URL, and files and pictures on
+ *   a keyed send, held or not. `conversation.send` refuses `uploadIds` until
+ *   the one upload path every client uses (a streamed PUT to a URL from
+ *   `uploads.begin`) carries them.
+ * - `conversation-fork`: the lane's fork joins the new chat to the desktop's
+ *   records; this socket's `conversation.fork` leaves the record to the
+ *   window that asked.
+ * - `conversation-quote-tokens`: said by the client in the lane's `hello`;
+ *   this socket sends every client a chat as it is kept, tokens included.
+ *
+ * Every other one is served by a method or topic of the protocol over the
+ * same conversation host the lane uses (`followed.ts`): the per-chat topics,
+ * side questions and their records, context breakdown, the composer's file
+ * search and command list, settle and visit (with the list in the sidebar's
+ * order, settled chats left out), and `always` approvals.
  */
-export const STUDIO_RPC_CONVERSATION_CAPABILITIES: string[] = CONVERSATION_CAPABILITIES.filter(
-  (capability) =>
-    capability !== 'conversation-images' &&
-    capability !== 'conversation-message-images' &&
-    capability !== 'conversation-message-files' &&
-    capability !== 'conversation-image-downscale' &&
-    capability !== 'conversation-hello' &&
-    capability !== 'conversation-lifecycle' &&
-    capability !== 'conversation-queued-sends' &&
-    capability !== 'conversation-fork' &&
-    capability !== 'conversation-side-questions' &&
-    capability !== 'conversation-side-question-records' &&
-    capability !== 'conversation-context-breakdown' &&
-    capability !== 'conversation-file-search' &&
-    capability !== 'conversation-commands' &&
-    capability !== 'conversation-scheduled-sends' &&
-    capability !== 'conversation-usage-limits' &&
-    capability !== 'conversation-subagents' &&
-    capability !== 'conversation-changes' &&
-    capability !== 'conversation-queued-attachments' &&
-    capability !== 'conversation-quote-tokens' &&
-    capability !== 'conversation-permanent-approvals',
-)
+export const STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES: ReadonlySet<string> = new Set([
+  'conversation-hello',
+  'conversation-image-downscale',
+  'conversation-images',
+  'conversation-message-images',
+  'conversation-message-files',
+  'conversation-queued-attachments',
+  'conversation-fork',
+  'conversation-quote-tokens',
+])
+
+/**
+ * What each per-chat capability needs of the backend's `followed` reads: a
+ * Studio whose host cannot serve one does not advertise it.
+ */
+const FOLLOWED_NEEDS: Readonly<Record<string, ReadonlyArray<keyof StudioFollowedBackend>>> = {
+  'conversation-lifecycle': ['settle', 'visit'],
+  'conversation-queued-sends': ['watchQueued'],
+  'conversation-scheduled-sends': ['watchScheduled'],
+  'conversation-usage-limits': ['watchUsageLimits'],
+  'conversation-subagents': ['watchSubagents'],
+  'conversation-changes': ['watchChanges', 'changesDiff', 'changedFile'],
+  'conversation-side-questions': ['askSideQuestion', 'cancelSideQuestion'],
+  'conversation-side-question-records': ['askSideQuestion'],
+  'conversation-context-breakdown': ['contextBreakdown'],
+  'conversation-file-search': ['searchFiles'],
+  'conversation-commands': ['listCommands'],
+}
+
+/** The conversation capabilities a socket over this backend advertises. */
+export function studioRpcConversationCapabilities(backend: Pick<StudioConversationBackend, 'followed'>): string[] {
+  return CONVERSATION_CAPABILITIES.filter(
+    (capability) =>
+      !STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES.has(capability) &&
+      (FOLLOWED_NEEDS[capability] ?? []).every((member) => backend.followed?.[member] !== undefined),
+  )
+}
 
 export type StudioRpcServerOptions = {
   dataDir: string
@@ -174,6 +182,7 @@ export type StudioRpcServer = StudioRpcListener & {
 export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRpcServer {
   const perClient = options.maxConnectionsPerClient ?? 8
   const chat = () => options.chat?.() ?? null
+  const conversationCapabilities = studioRpcConversationCapabilities(options.backend)
   const welcome = (): Omit<StudioWelcomeFrame, 't' | 'grant' | 'pairing'> => ({
     protocolVersion: options.protocol?.protocolVersion ?? STUDIO_PROTOCOL_VERSION,
     minProtocolVersion: options.protocol?.minProtocolVersion ?? STUDIO_PROTOCOL_MIN_SUPPORTED,
@@ -198,7 +207,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     conversation: {
       protocolVersion: CONVERSATION_PROTOCOL_VERSION,
       minProtocolVersion: CONVERSATION_PROTOCOL_MIN_SUPPORTED,
-      capabilities: STUDIO_RPC_CONVERSATION_CAPABILITIES,
+      capabilities: conversationCapabilities,
     },
   })
   const router = createStudioRpcRouter({

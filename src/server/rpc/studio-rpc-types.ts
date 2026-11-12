@@ -1,4 +1,15 @@
 import type {
+  ConversationChangedFileSides,
+  ConversationChangesDiff,
+  ConversationChangesFrame,
+  ConversationChangesSelection,
+  ConversationCommandsAnswer,
+  ConversationFileSearchAnswer,
+  ConversationQueuedMessage,
+  ConversationScheduledMessage,
+  ConversationSideQuestionExchange,
+  ConversationSubagent,
+  ConversationUsageLimitsFrame,
   ConversationCommand,
   ConversationCreateRequest,
   ConversationThread,
@@ -123,6 +134,73 @@ export type StudioConversationBackend = {
    * the tailnet lane redacts them. Returns a copy.
    */
   redact<T>(value: T): T
+  /**
+   * What a follower of one chat reads and does beside its stream
+   * (`followed.ts` in the protocol): the conversation host's own, as the
+   * tailnet lane serves them, so a chat offers the same wherever it is
+   * followed from. Each is absent on a Studio that cannot serve it, and its
+   * method or topic is then answered `unavailable`.
+   */
+  followed?: StudioFollowedBackend
+}
+
+/** A chat by its workspace and agent: what the per-chat reads and watches are keyed by. */
+export type StudioChatRef = Pick<ConversationKey, 'workspaceId' | 'agentId'>
+
+/** A read for a follower's composer, or why there is none. */
+export type StudioComposerRead<T> =
+  { ok: true; answer: T } | { ok: false; code: 'unknown_conversation' | 'unavailable'; message: string }
+
+/** A changes read, or why there is none: `not_found` for a step or file the chat's changes do not hold. */
+export type StudioChangesRead<T> = ({ ok: true } & T) | { ok: false; code?: 'not_found'; message: string }
+
+/** How a lifecycle write ended: the record's new state, or why it was refused. */
+export type StudioLifecycleOutcome<T> = ({ ok: true } & T) | { ok: false; code: string; message: string }
+
+export type StudioFollowedBackend = {
+  /** Each watch is told what stands now, and again whenever it reads differently; it returns what stops it. */
+  watchQueued?(chat: StudioChatRef, listener: (messages: ConversationQueuedMessage[]) => void): () => void
+  watchScheduled?(chat: StudioChatRef, listener: (messages: ConversationScheduledMessage[]) => void): () => void
+  watchUsageLimits?(
+    chat: StudioChatRef,
+    listener: (state: Omit<ConversationUsageLimitsFrame, 'type' | 'key'>) => void,
+  ): () => void
+  watchSubagents?(chat: StudioChatRef, listener: (subagents: ConversationSubagent[]) => void): () => void
+  watchChanges?(chat: StudioChatRef, listener: (said: Omit<ConversationChangesFrame, 'type' | 'key'>) => void): () => void
+  changesDiff?(
+    chat: StudioChatRef,
+    selection: ConversationChangesSelection,
+  ): Promise<StudioChangesRead<ConversationChangesDiff>>
+  changedFile?(
+    chat: StudioChatRef,
+    selection: ConversationChangesSelection,
+    path: string,
+  ): Promise<StudioChangesRead<ConversationChangedFileSides>>
+  /** Asked under the client's own id for the question, which only that client may call off. */
+  askSideQuestion?(
+    key: ConversationKey,
+    clientId: string,
+    questionId: string,
+    question: string,
+    history: ConversationSideQuestionExchange[],
+  ): Promise<ConversationSideQuestionResult>
+  cancelSideQuestion?(clientId: string, questionId: string): Promise<{ ok: true } | { ok: false; message: string }>
+  contextBreakdown?(key: ConversationKey): Promise<ConversationContextBreakdownResult>
+  /** In the chat's own folder only; a client's next search supersedes its last. */
+  searchFiles?(
+    key: ConversationKey,
+    clientId: string,
+    query: string,
+    limit?: number,
+  ): Promise<StudioComposerRead<ConversationFileSearchAnswer>>
+  listCommands?(key: ConversationKey, refresh: boolean): Promise<StudioComposerRead<ConversationCommandsAnswer>>
+  /** The chat's rest, written to Studio's own record of it as its row menu writes it; `byOwner` says whose write it is. */
+  settle?(chat: StudioChatRef, settled: boolean, byOwner: boolean): StudioLifecycleOutcome<{ settledAt: number | null }>
+  visit?(
+    chat: StudioChatRef,
+    visitedAt: number | undefined,
+    byOwner: boolean,
+  ): StudioLifecycleOutcome<{ lastVisitedAt: number }>
 }
 
 /** A chat method's params as the router hands them on: its command id is the router's to namespace. */

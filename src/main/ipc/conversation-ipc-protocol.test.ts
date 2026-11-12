@@ -65,3 +65,8 @@ test("the window's protocol client calls every method a channel names: no channe
   for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<[string, ConversationIpcProtocol]>)
     expect(route.gaps, channel).not.toContain('client')
 })
+
+test('no channel is left with a gap: each does on the protocol, for every client, what it does over IPC', () => {
+  for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<[string, ConversationIpcProtocol]>)
+    expect(route.gaps, channel).toEqual([])
+})

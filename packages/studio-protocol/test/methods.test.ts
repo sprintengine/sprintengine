@@ -78,14 +78,12 @@ test('a command’s params are read by the conversation lane’s own validator, 
     parseStudioMethodParams('conversation.resolvePlan', { key, commandId: 'c3', requestId: 'p1', decision: 'approve' }),
     { ok: true, params: { key, commandId: 'c3', requestId: 'p1', decision: 'approve' } },
   )
-  // A permanent rule is the person's to make, on the desktop.
-  const always = parseStudioMethodParams('conversation.resolveApproval', {
-    key,
-    commandId: 'c4',
-    requestId: 'r1',
-    decision: 'always',
-  })
-  assert.deepEqual(always.ok ? null : always.code, 'unsafe_remote_decision')
+  // A rule that outlives the conversation is read as the lane reads it
+  // (`conversation-permanent-approvals`); the router holds it to the ceiling.
+  assert.deepEqual(
+    parseStudioMethodParams('conversation.resolveApproval', { key, commandId: 'c4', requestId: 'r1', decision: 'always' }),
+    { ok: true, params: { key, commandId: 'c4', requestId: 'r1', decision: 'always' } },
+  )
   const long = parseStudioMethodParams('conversation.send', {
     key,
     commandId: 'c5',

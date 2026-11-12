@@ -26,6 +26,7 @@ import {
   type StudioByeCode,
   type StudioClientInfo,
   type StudioErrorBody,
+  type StudioFollowedTopic,
   type StudioGrant,
   type StudioModuleNotification,
   type StudioRequestFrame,
@@ -56,6 +57,7 @@ import type {
   StudioAuditEntry,
   StudioAuthenticator,
   StudioChatBackend,
+  StudioChatRef,
   StudioConversationBackend,
   StudioRequestContext,
 } from './studio-rpc-types'
@@ -760,6 +762,97 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /**
+   * One chat's held, scheduled, usage, sub-agent or changes state, as the
+   * tailnet lane's watches tell it: what stands now, then each change, each
+   * push the lane's own frame of that kind, whole. The chat is named by its
+   * key and resolved as a follow resolves it; a folder only by an owner.
+   */
+  function subscribeFollowed<T extends StudioFollowedTopic>(
+    id: string,
+    topic: T,
+    params: StudioTopicParams<T>,
+    watch: ((chat: StudioChatRef, push: (payload: StudioTopicPayload<T>) => void) => () => void) | undefined,
+  ): void {
+    if (!watch) {
+      subscriptionFailed(id, 'unavailable', `This Studio does not serve ${topic}.`)
+      return
+    }
+    const grant = liveGrant()
+    if (!grant) return
+    const wireKey = params.key
+    if (wireKey.workspaceRoot !== undefined && !grant.owner) {
+      subscriptionFailed(id, 'owner_required', 'Only Studio’s own connections may name a conversation by its folder.')
+      return
+    }
+    const known =
+      wireKey.workspaceRoot === undefined
+        ? backend.resolveKey(wireKey.workspaceId, wireKey.agentId)
+        : { workspaceRoot: wireKey.workspaceRoot, workspaceId: wireKey.workspaceId, agentId: wireKey.agentId }
+    if (!known) {
+      subscriptionFailed(id, 'not_found', `No conversation "${wireKey.agentId}" in workspace "${wireKey.workspaceId}" here.`)
+      return
+    }
+    const subscription: Subscription = { id, topic, key: known, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = watch({ workspaceId: known.workspaceId, agentId: known.agentId }, (payload) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      // The grant is read again before anything goes out, as for a conversation.
+      if (!stillGranted(topic)) return
+      push(topic as StudioPushTopic, id, redact(payload) as never)
+    })
+    // Told at once, inside `watch`, and then dropped: nothing to keep.
+    if (subscriptions.get(id) !== subscription) stop()
+    else subscription.handle = { dispose: stop }
+  }
+
+  /** What each per-chat topic pushes: the lane's frame of its kind, under the chat's own key. */
+  const followed = backend.followed ?? {}
+  const chatOf = (chat: StudioChatRef) => ({ workspaceId: chat.workspaceId, agentId: chat.agentId })
+  const subscribeQueued = (id: string, params: StudioTopicParams<'conversation.queued'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.queued',
+      params,
+      followed.watchQueued &&
+        ((chat, send) => followed.watchQueued!(chat, (messages) => send({ type: 'queued', key: chatOf(chat), messages }))),
+    )
+  const subscribeScheduled = (id: string, params: StudioTopicParams<'conversation.scheduled'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.scheduled',
+      params,
+      followed.watchScheduled &&
+        ((chat, send) =>
+          followed.watchScheduled!(chat, (messages) => send({ type: 'scheduled', key: chatOf(chat), messages }))),
+    )
+  const subscribeUsageLimits = (id: string, params: StudioTopicParams<'conversation.usageLimits'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.usageLimits',
+      params,
+      followed.watchUsageLimits &&
+        ((chat, send) =>
+          followed.watchUsageLimits!(chat, (limits) => send({ type: 'usageLimits', key: chatOf(chat), ...limits }))),
+    )
+  const subscribeSubagents = (id: string, params: StudioTopicParams<'conversation.subagents'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.subagents',
+      params,
+      followed.watchSubagents &&
+        ((chat, send) =>
+          followed.watchSubagents!(chat, (subagents) => send({ type: 'subagents', key: chatOf(chat), subagents }))),
+    )
+  const subscribeChanges = (id: string, params: StudioTopicParams<'conversation.changes'>) =>
+    subscribeFollowed(
+      id,
+      'conversation.changes',
+      params,
+      followed.watchChanges &&
+        ((chat, send) => followed.watchChanges!(chat, (said) => send({ type: 'changes', key: chatOf(chat), ...said }))),
+    )
+
   /** Every chat's lifecycle, as it happens, each event without its payload. */
   function subscribeEvents(id: string): void {
     const chat = options.chat?.() ?? null
@@ -1127,6 +1220,11 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   const pushSubscribers: PushSubscribers = {
     'conversation.commands': subscribeCommands,
     'conversation.events': subscribeEvents,
+    'conversation.queued': subscribeQueued,
+    'conversation.scheduled': subscribeScheduled,
+    'conversation.usageLimits': subscribeUsageLimits,
+    'conversation.subagents': subscribeSubagents,
+    'conversation.changes': subscribeChanges,
     'tools.catalog': subscribeCatalog,
     'files.watch': subscribeWatch,
     'pullRequests.changed': subscribePullRequests,

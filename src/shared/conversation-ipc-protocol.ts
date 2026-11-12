@@ -66,21 +66,17 @@ export const CONVERSATION_IPC_PROTOCOL = {
     methods: ['session.messageSubagent', 'conversation.messageSubagent'],
     gaps: DONE,
   },
-  // A follower's keyed form is the conversation lane's, which the socket withholds.
   'conversation:sessions:side-question': {
-    methods: ['session.askSideQuestion'],
-    gaps: ['declaration', 'withheld'],
-    planned: ['conversation.askSideQuestion'],
+    methods: ['session.askSideQuestion', 'conversation.askSideQuestion'],
+    gaps: DONE,
   },
   'conversation:sessions:cancel-side-question': {
-    methods: ['session.cancelSideQuestion'],
-    gaps: ['declaration', 'withheld'],
-    planned: ['conversation.cancelSideQuestion'],
+    methods: ['session.cancelSideQuestion', 'conversation.cancelSideQuestion'],
+    gaps: DONE,
   },
   'conversation:sessions:context-breakdown': {
-    methods: ['session.contextBreakdown'],
-    gaps: ['declaration', 'withheld'],
-    planned: ['conversation.contextBreakdown'],
+    methods: ['session.contextBreakdown', 'conversation.contextBreakdown'],
+    gaps: DONE,
   },
   // Reads beside a chat.
   'conversation:tool-detail': { methods: ['conversation.toolDetail'], gaps: DONE },

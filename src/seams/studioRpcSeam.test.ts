@@ -14,6 +14,7 @@ import {
 import { connectToStudio } from '../../packages/agent-sdk/src/node'
 import {
   STUDIO_CHAT_METHODS,
+  STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
   STUDIO_METHOD_ACCESS,
   studioGrantAllows,
@@ -334,6 +335,12 @@ test('every method the server serves has its call in the SDK, under the same sco
     'conversation.toolDetail': 'conversations.toolDetail',
     'conversation.event': 'conversations.event',
     'conversation.turnDiff': 'conversations.turnDiff',
+    // What a follower of a chat reads and does beside its stream, as a chat
+    // followed from another desktop or the phone uses them, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_FOLLOWED_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof typeof STUDIO_FOLLOWED_METHODS,
+      string
+    >),
     // The chat surface is Studio's own windows' and is called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CHAT_METHODS).map((method) => [method, 'request'])) as Record<
       StudioChatMethod,

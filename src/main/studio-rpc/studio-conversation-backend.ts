@@ -15,6 +15,7 @@ import type { StudioConversationBackend } from '../../server/rpc/studio-rpc-type
 import type { ConversationGatewayHost } from '../automation/tailnet/tailnet-conversation-host'
 import { redactConversationValue } from '../conversation-tool-details'
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../conversation-launch-service'
+import type { ConversationLifecycle } from '../automation/conversation-lifecycle'
 
 // The conversations the Studio RPC serves, in main: the conversation host the
 // tailnet lane wraps (list, follow, reads and commands, with its session
@@ -29,6 +30,12 @@ export type StudioConversationBackendDeps = {
   stopSession: (input: ConversationStopSessionInput) => Promise<ConversationSessionActionResult>
   /** Every workspace with its agent records, read fresh on each call. */
   getWorkspaceAgents: () => ReadonlyArray<{ id: string; agents: Record<string, AgentState> }>
+  /**
+   * A chat's rest and visit clock, written to Studio's own record as the
+   * gateway's `conversation.settle` and `conversation.visit` write it: an
+   * owner's write as the gateway's, a paired client's as a paired device's.
+   */
+  lifecycle?: Pick<ConversationLifecycle, 'settle' | 'visit'>
 }
 
 /**
@@ -146,5 +153,46 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
     // this machine reads this machine's files; the tailnet lane rewrites them
     // for a reader elsewhere.
     redact: (value) => redactConversationValue(value),
+    // The same host's per-chat reads and watches the tailnet lane serves, and
+    // the record's lifecycle the gateway's tools write.
+    followed: {
+      ...(host.watchQueued ? { watchQueued: (chat, listener) => host.watchQueued!(chat, listener) } : {}),
+      ...(host.watchScheduled ? { watchScheduled: (chat, listener) => host.watchScheduled!(chat, listener) } : {}),
+      ...(host.watchUsageLimits
+        ? { watchUsageLimits: (chat, listener) => host.watchUsageLimits!(chat, listener) }
+        : {}),
+      ...(host.watchSubagents ? { watchSubagents: (chat, listener) => host.watchSubagents!(chat, listener) } : {}),
+      ...(host.watchChanges ? { watchChanges: (chat, listener) => host.watchChanges!(chat, listener) } : {}),
+      ...(host.changesDiff ? { changesDiff: (chat, selection) => host.changesDiff!(chat, selection) } : {}),
+      ...(host.changedFile
+        ? { changedFile: (chat, selection, path) => host.changedFile!(chat, selection, path) }
+        : {}),
+      ...(host.askSideQuestion
+        ? {
+            askSideQuestion: (key, clientId, questionId, question, history) =>
+              host.askSideQuestion!(key, clientId, questionId, question, history),
+          }
+        : {}),
+      ...(host.cancelSideQuestion
+        ? { cancelSideQuestion: (clientId, questionId) => host.cancelSideQuestion!(clientId, questionId) }
+        : {}),
+      ...(host.contextBreakdown ? { contextBreakdown: (key) => host.contextBreakdown!(key) } : {}),
+      ...(host.searchFiles
+        ? { searchFiles: (key, clientId, query, limit) => host.searchFiles!(key, clientId, query, limit) }
+        : {}),
+      ...(host.listCommands ? { listCommands: (key, refresh) => host.listCommands!(key, refresh) } : {}),
+      ...(deps.lifecycle
+        ? {
+            settle: (chat, settled, byOwner) => {
+              const done = deps.lifecycle!.settle(chat.workspaceId, settled, byOwner ? 'gateway' : 'mobile')
+              return done.ok ? { ok: true, settledAt: done.settledAt } : done
+            },
+            visit: (chat, visitedAt, byOwner) => {
+              const done = deps.lifecycle!.visit(chat.workspaceId, visitedAt, byOwner ? 'gateway' : 'mobile')
+              return done.ok ? { ok: true, lastVisitedAt: done.lastVisitedAt } : done
+            },
+          }
+        : {}),
+    },
   }
 }
