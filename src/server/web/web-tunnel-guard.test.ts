@@ -41,7 +41,6 @@ test('a web tab reaches the domains it draws, and not the ones that act beyond t
     'conversation:secrets:set',
     'github:set-token',
     'github:clone',
-    'modules:bridge:invoke',
     // What main's rest sweep reads that only a desktop window can say.
     'workspace-sync:set-settled-chats-settings',
     'workspace-sync:set-module-run-states',

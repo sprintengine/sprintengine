@@ -143,7 +143,7 @@ test('moduleConversationSeam', async () => {
     version: 1,
     defaultEnabled: true,
     source: 'third-party',
-    engines: { hostApi: 1 },
+    engines: { hostApi: 2 },
     // As the SDK's docs tell a module that uses a chat service: the agent
     // runtime provides it, so it loads first.
     dependsOn: ['agent-runtime'],

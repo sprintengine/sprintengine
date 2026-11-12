@@ -1,20 +1,19 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-28T12:00:00Z",
+  "updatedAt": "2026-11-12T12:00:00Z",
   "cards": [
     {
-      "slug": "power-your-reviews",
+      "slug": "find-plugins",
       "kind": "plugin",
       "hero": true,
-      "title": "Power your reviews",
-      "dek": "A guide agent reads the change and writes the walkthrough, then answers your questions beside the diff.",
-      "credit": "Reviews module",
-      "art": "split",
-      "publishedAt": "2026-09-10",
+      "title": "Find plugins for your agents",
+      "dek": "Browse what Studio's marketplace offers: agent CLIs to add, and the extensions built for them.",
+      "art": "braces",
+      "publishedAt": "2026-11-12",
       "go": [
         {
-          "verb": "install.module",
-          "id": "review"
+          "verb": "open.surface",
+          "view": "plugins"
         }
       ]
     }

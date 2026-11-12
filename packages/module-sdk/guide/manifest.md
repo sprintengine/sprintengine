@@ -24,7 +24,7 @@ other.
   "summary": "One sentence the install prompt shows.",
   "defaultEnabled": false,
   "source": "third-party",
-  "engines": { "hostApi": 1 },
+  "engines": { "hostApi": 2 },
   "permissions": ["storage"],
   "dependsOn": ["agent-runtime"],
   "entry": { "renderer": "dist/renderer.mjs", "main": "dist/main.cjs" }
@@ -49,7 +49,7 @@ other.
 | `category` | no | e.g. `dev-tools`, `vcs`, `orchestration`, `insight`, `connectivity`. |
 | `defaultEnabled` | yes | Keep `false`: a new module starts off until the person turns it on. |
 | `source` | yes | `"third-party"`. The validator forces it anyway. |
-| `engines` | yes | `{ "hostApi": 1 }` — the SDK's `HOST_API_VERSION`. Missing, non-integer, newer than Studio, or older than it still loads: the module is refused with a message saying which. |
+| `engines` | yes | `{ "hostApi": 2 }` — the SDK's `HOST_API_VERSION`. Missing, non-integer, newer than Studio, or older than it still loads: the module is refused with a message saying which. |
 | `permissions` | no | See the `permissions` topic. |
 | `dependsOn` | no | Module ids that must load (and be enabled) first: `agent-runtime`, `scheduled-agents`. |
 | `conflictsWith` | no | Module ids that must not be enabled alongside. |

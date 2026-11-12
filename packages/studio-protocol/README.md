@@ -104,8 +104,12 @@ The `welcome`'s `grant` is what the connection may do:
   has the person's CLI write a chat's title or a commit message
   (`textGeneration.chatTitle`, `commitMessage.draft` and `.cancel`).
 - `modules:read` — hear what this Studio's modules say: the `module.events`
-  and `module.notifications` streams, under the `modules` capability. Not an
-  owner's only; a pairing holds it when it was given it.
+  and `module.notifications` streams, and call the methods they declare
+  `read` (`module.read`), under the `modules` capability. Not an owner's only;
+  a pairing holds it when it was given it.
+- `modules:operate` — call the methods modules declare `operate`
+  (`module.operate`, once per `commandId`); carries `modules:read`. A browser
+  session never holds it.
 - No scope reaches the terminals (`terminal.*`, under the `terminals`
   capability). A terminal is a shell on this machine, so every terminal
   method and stream is an owner's: the app's own windows and the owner's

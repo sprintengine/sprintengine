@@ -42,11 +42,11 @@ the user has trusted execute code.
   `sprintengine-module add <part>` in an existing project.
 - Test without the app. `@sprintengine/module-sdk/testing` has fake main and
   renderer hosts that keep this app's rules (the permissions it checks,
-  storage's limits, chat ownership, the bridge's `module:bridge`) and a UI kit
+  storage's limits, chat ownership, the `module:bridge` that declaring methods needs) and a UI kit
   stand-in that renders in Node; a scaffolded project runs its TypeScript
   tests and a smoke test that renders every registered surface on
   `npm run check`. See the SDK README's "Testing".
-- Declare the host API the module was built for: `"engines": { "hostApi": 1 }`.
+- Declare the host API the module was built for: `"engines": { "hostApi": 2 }`.
   A module without it, or built for a host API this app does not load, is
   refused with a message saying which side to update — never shown as merely
   "not trusted".

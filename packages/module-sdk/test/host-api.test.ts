@@ -24,7 +24,7 @@ test('a third-party module that names no host API is refused, and told what to a
   assert.equal(result.ok, false)
   if (result.ok) return
   assert.equal(result.code, 'host_api_missing')
-  assert.match(result.message, /"engines": \{ "hostApi": 1 \}/)
+  assert.ok(result.message.includes(`"engines": { "hostApi": ${HOST_API_VERSION} }`), result.message)
 })
 
 test('a bundled module needs no engines field: it ships with the host it runs on', () => {
@@ -42,6 +42,20 @@ test('a host API older than the supported floor is refused as too old', () => {
   assert.equal(codeOf({ source: 'third-party', engines: { hostApi: HOST_API_MIN_SUPPORTED - 1 } }), 'host_api_too_old')
 })
 
+test('a module built for host API 1 is refused, told what replaced its IPC and what to rebuild against', () => {
+  assert.equal(HOST_API_VERSION, 2)
+  assert.equal(HOST_API_MIN_SUPPORTED, 2)
+  const result = checkHostApiCompatibility({ source: 'third-party', engines: { hostApi: 1 } })
+  assert.equal(result.ok, false)
+  if (result.ok) return
+  assert.equal(result.code, 'host_api_too_old')
+  assert.match(result.message, /built for host API 1/)
+  assert.match(result.message, /declared methods/)
+  assert.match(result.message, /@sprintengine\/module-sdk 2/)
+  assert.match(result.message, /registerIpc becomes registerMethods/)
+  assert.match(result.message, /host\.invoke becomes host\.methods\(\)\.read or \.operate/)
+})
+
 test('a hostApi that is not a whole number is no version at all', () => {
   for (const hostApi of [1.5, Number.NaN, '1' as unknown as number]) {
     assert.equal(codeOf({ source: 'third-party', engines: { hostApi } }), 'host_api_missing', String(hostApi))
@@ -57,7 +71,7 @@ test('a validated manifest keeps engines.hostApi, and the signature covers it', 
   assert.equal(result.ok, true)
   if (!result.ok) return
   assert.deepEqual(result.manifest.engines, { hostApi: HOST_API_VERSION })
-  assert.match(canonicalManifestPayload(result.manifest), /"engines":\{"hostApi":1\}/)
+  assert.ok(canonicalManifestPayload(result.manifest).includes(`"engines":{"hostApi":${HOST_API_VERSION}}`))
 })
 
 test('the validator leaves an absent engines field to the host check', () => {

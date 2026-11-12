@@ -41,6 +41,7 @@ import type { StudioAgentSettings } from '../agent-settings/agent-settings-domai
 import { createStudioAgentSettingsHandlers } from './studio-agent-settings'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
+import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -143,6 +144,8 @@ export type StudioRpcRouterOptions = {
   agentSettings?: StudioAgentSettings
   /** What the agents are set up with beyond their CLIs; without it, `memory.*`, `mcp.sync` and the rest are answered `unavailable`. */
   agentSetup?: StudioAgentSetup
+  /** The modules beside this Studio; without it, `module.read` and `module.operate` are answered `unavailable`. */
+  modules?: StudioModules
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -382,6 +385,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       commandId?: string
       workspaceId?: string
       toolset?: string
+      moduleId?: string
+      moduleMethod?: string
     },
     answer: StudioRpcAnswer,
     created?: { workspaceId: string; agentId: string },
@@ -395,6 +400,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ...(!target && params.workspaceId ? { workspaceId: params.workspaceId } : {}),
       ...(params.commandId ? { commandId: params.commandId } : {}),
       ...(params.toolset ? { toolset: params.toolset } : {}),
+      ...(params.moduleId ? { moduleId: params.moduleId } : {}),
+      ...(params.moduleMethod ? { moduleMethod: params.moduleMethod } : {}),
       ok: answer.ok,
       ...(answer.ok ? {} : { code: answer.error.code }),
       durationMs: now() - started,
@@ -523,6 +530,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     work: () => Promise<A>,
     voice: Voice,
     method: string,
+    /** Whether a settled answer may be tried again under its id: by default, work that could not be carried out at all. */
+    retryable: (settled: A | Refused<'unavailable'>) => boolean = (settled) =>
+      !settled.ok && settled.error?.code === 'unavailable',
   ): Promise<A | Refused<'unavailable'>> {
     const known = kept.get(id) as Promise<A | Refused<'unavailable'>> | undefined
     if (known) {
@@ -537,7 +547,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     while (kept.size > MAX_KEPT_ANSWERS) kept.delete(kept.keys().next().value!)
     // Work that could not be carried out at all may be tried again under its id.
     void answer.then((settled) => {
-      if (!settled.ok && settled.error?.code === 'unavailable' && kept.get(id) === answer) kept.delete(id)
+      if (retryable(settled) && kept.get(id) === answer) kept.delete(id)
     })
     return answer
   }
@@ -571,6 +581,33 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     if (!terminals) return unserved(method)
     return Promise.resolve(work(terminals)).then((result) => ({ ok: true as const, result }))
   }
+  /**
+   * A module method's call, as the hub answers it. A refusal before the module
+   * heard the call (not running here, no such method, params it refused) is
+   * the protocol's; the module's own answer is the result, its refusals included.
+   */
+  async function moduleCall(
+    method: 'module.read' | 'module.operate',
+    params: { moduleId: string; method: string; params?: unknown },
+    grant: StudioGrant,
+    commandId: string | undefined,
+  ): Promise<StudioRpcAnswer<'module.read'> | Refused<'unavailable'>> {
+    const modules = options.modules
+    if (!modules) return unserved(method)
+    const outcome: StudioModuleCallOutcome = await modules.call({
+      moduleId: params.moduleId,
+      method: params.method,
+      access: method === 'module.operate' ? 'operate' : 'read',
+      params: params.params,
+      clientId: grant.clientId,
+      ...(commandId === undefined ? {} : { commandId }),
+    })
+    return outcome.ok ? { ok: true, result: outcome.answer } : refuse(outcome.code, outcome.message)
+  }
+  // An operate that never reached the module's handler may be tried again under its id.
+  const moduleRefusedBefore = (settled: { ok: boolean; error?: StudioErrorBody }) =>
+    !settled.ok &&
+    ['unavailable', 'module_unavailable', 'module_method_unknown', 'invalid_params'].includes(settled.error?.code ?? '')
   const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
 
   /** The chat surface, or why this Studio does not serve one now. */
@@ -1443,6 +1480,22 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     }),
     ...createStudioAgentSetupHandlers({ ...(options.agentSetup ? { setup: options.agentSetup } : {}), mayName }),
 
+    // ── Modules ────────────────────────────────────────────────────────────
+    // A module's declared methods. A read is answered each time; an operate
+    // once per command id, its handler told the id under the client's
+    // namespace, so a handler that sends to a chat is answered from the
+    // chat's receipt on a retry rather than sending twice.
+
+    'module.read': (params, { grant }) => moduleCall('module.read', params, grant, undefined),
+    'module.operate': ({ commandId, ...params }, { grant, voice }) =>
+      once(
+        keptId('module.operate', grant, commandId),
+        () => moduleCall('module.operate', params, grant, runtimeId(grant, commandId)),
+        voice,
+        'module.operate',
+        moduleRefusedBefore,
+      ),
+
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an
     // incompatible client's), so their shapes never change.
@@ -1586,12 +1639,15 @@ function namesFolder(params: unknown): boolean {
 }
 
 // What a request names, for the audit: its conversation and command id when
-// they are where the protocol puts them. Never anything else it carries.
+// they are where the protocol puts them, and a module call's module and
+// method. Never anything else it carries.
 function auditTargets(value: unknown): {
   key?: { workspaceId: string; agentId: string }
   commandId?: string
   workspaceId?: string
   toolset?: string
+  moduleId?: string
+  moduleMethod?: string
 } {
   if (value === null || typeof value !== 'object') return {}
   const params = value as Record<string, unknown>
@@ -1602,10 +1658,14 @@ function auditTargets(value: unknown): {
   const commandId = text(params.commandId)
   const created = text(params.workspaceId)
   const toolset = text(params.toolset)
+  const moduleId = text(params.moduleId)
+  const moduleMethod = moduleId ? text(params.method) : undefined
   return {
     ...(workspaceId && agentId ? { key: { workspaceId, agentId } } : {}),
     ...(commandId ? { commandId } : {}),
     ...(created ? { workspaceId: created } : {}),
     ...(toolset ? { toolset } : {}),
+    ...(moduleId ? { moduleId } : {}),
+    ...(moduleMethod ? { moduleMethod } : {}),
   }
 }

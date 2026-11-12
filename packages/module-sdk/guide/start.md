@@ -75,7 +75,7 @@ why it is not running when it is not.
 `main.ts` changes need a Studio restart to try, so test them in Node first.
 `@sprintengine/module-sdk/testing` has fake hosts that keep the host's rules
 (the permissions it checks, storage's key and size limits, chat ownership, the
-bridge's `module:bridge`), and a UI kit stand-in that renders. Write tests in
+`module:bridge` that declaring methods needs), and a UI kit stand-in that renders. Write tests in
 `test/*.test.ts`; `npm test` bundles them with esbuild and runs them with
 `node --test`:
 
@@ -85,7 +85,7 @@ import manifest from '../module/manifest.json'
 
 const main = createFakeMainHost({ manifest })
 await registerMain(main.host)
-await main.ipc.invoke('<id>:start', { workspaceId: 'ws-app' })          // what the window would send
+await main.methods.operate('start', { workspaceId: 'ws-app' })         // what the window would send
 main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // what the agent would do
 assert.deepEqual(main.undeclared, [])                                   // nothing used undeclared
 

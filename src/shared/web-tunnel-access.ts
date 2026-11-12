@@ -172,7 +172,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'mesh:workspace-extensions': desktopOnly(BEYOND),
   'mesh:canvas-boards': desktopOnly(BEYOND),
   'mesh:canvas-screenshot': desktopOnly(BEYOND),
-  'modules:bridge:invoke': desktopOnly(MODULES),
   'modules:host-service:invoke': desktopOnly(MODULES),
   'scheduled-agents:create': desktopOnly(DESKTOP),
   'scheduled-agents:list': owner('workspace:read'),

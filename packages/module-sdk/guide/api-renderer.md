@@ -16,7 +16,7 @@ id.
 
 | Member | Notes |
 | --- | --- |
-| `moduleId` | Your manifest id: the prefix of your `invoke` channels, the `source` your bell rows are filed under. |
+| `moduleId` | Your manifest id: the module your `methods()` calls reach, the `source` your bell rows are filed under. |
 | `hostApiVersion` | The host API Studio provides. |
 | `supports(capability)` | `'conversations'`, `'chat.open'`, `'storage'`, `'secrets'`, `'github'`, `'module-assets'`, `'toast'`, `'notifications'`, `'open-external'`, … Unknown names answer `false`. Check before relying on a newer capability. |
 | `getAssetUrl(relativePath)` | A stable `studio-module:` URL for a file inside the installed module (no leading slash, no `..`). The way to reach HTML, images, WASM: the bundle itself runs from a blob URL, so relative URLs do not resolve. |
@@ -87,26 +87,49 @@ conversation service: the `conversations` topic.
 | `watchColorScheme(cb)` | — | `'light' \| 'dark'` for a runtime you host (Monaco, a chart); ordinary UI uses theme tokens. |
 
 Larger data, or data `entry.main` writes: `getModuleStorage(host)` in main,
-reached from the renderer through your own IPC channel.
+reached from the renderer through your own declared method.
 
 ## Talking to entry.main
 
 ```ts
+// methods.ts, imported by both halves
+export type NotesMethods = {
+  'notes.list': { access: 'read'; params: Record<string, never>; result: string[] }
+  'notes.save': { access: 'operate'; params: { text: string }; result: { count: number } }
+}
 // main
-host.registerIpc(`${host.moduleId}:save`, async (_event, payload) => ({ ok: true }))
+host.registerMethods<NotesMethods>({
+  'notes.list': {
+    access: 'read',
+    params: () => ({ ok: true, params: {} }),
+    handler: () => ({ ok: true, result: notes }),
+  },
+  'notes.save': {
+    access: 'operate',
+    params: readText,
+    handler: ({ text }) => ({ ok: true, result: { count: save(text) } }),
+  },
+})
 host.emit('changed')                       // push a signal to every window
 // renderer
-const result = await host.invoke('my-extension:save', { text })
+const methods = host.methods<NotesMethods>()
+const saved = await methods.operate('notes.save', { text })
+if (!saved.ok) host.toast({ title: saved.message, tone: 'error' })
 useEffect(() => host.subscribe('changed', () => void reload()), [])
 ```
 
-- Channels must start with `<moduleId>:`; the host refuses others. The owner
-  must declare `module:bridge`. A refused invoke rejects with an Error whose
-  `code` is `unknown_channel`, `not_bridgeable` or `permission_missing`.
+- A `read` method changes nothing; an `operate` one does, and runs once per
+  command id (a retry gets the first answer; the handler sees it as
+  `context.commandId`). `read` offers only read methods, `operate` only
+  operate ones. Declaring methods needs `module:bridge`.
+- A call never throws. Besides your own `{ ok: false, code }`, the host
+  answers `module_unavailable` (your module is not running there),
+  `module_method_unknown`, `invalid_params` (your validator refused),
+  `scope_required` or `unavailable` (a handler threw, or no connection).
 - Events are signals, not state: nothing is replayed, so read the current
-  state through a channel and let the event say "read again".
-- Invoke payloads cross IPC: structured-cloneable values only. Event payloads
-  ride the Studio protocol's `module.events` stream: JSON values only.
+  state through a `read` method and let the event say "read again".
+- Params, results and event payloads ride the Studio protocol
+  (`module.read`, `module.operate`, `module.events`): JSON values only.
 
 ## Drag and drop
 

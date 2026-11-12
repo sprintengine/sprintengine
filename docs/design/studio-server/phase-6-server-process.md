@@ -51,13 +51,13 @@ Not built yet:
 
 ## 0. Owner defaults this spec is built on (2026-10-01)
 
-| Default                                                                                         | What it means for phase 6                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The local server exits with the app                                                             | No detached or background server on the desktop. Background mode (the tray) keeps the app alive, which keeps the server alive.                                                                                                                  |
-| Secrets use the system keyring where one exists, otherwise an owner-only file                   | On the desktop, the shell's `safeStorage` is the keyring (Keychain, DPAPI, libsecret or kwallet). A headless server keeps a 0600 key file in a 0700 directory and probes no keyring (decision R12, owner ruling 2026-10-02).                    |
-| A third-party module that imports `electron` has its server half skipped, based on a capability | The server never loads such an `entry.main`. The in-process path still does.                                                                                                                                                                    |
-| No terminals in v1                                                                              | Terminals, their node-pty sessions, the agent-state socket and terminal snapshots stay in the Electron shell.                                                                                                                                   |
-| The server is small (owner ruling 2026-10-02)                                                   | No browser and no canvas in the server process. The shell offers its pane as the `browser` toolset and its canvas service and worker as the `canvas` toolset (phase 5); the server routes agents' calls to them and keeps only the board files. |
+| Default | What it means for phase 6 |
+| --- | --- |
+| The local server exits with the app | No detached or background server on the desktop. Background mode (the tray) keeps the app alive, which keeps the server alive. |
+| Secrets use the system keyring where one exists, otherwise an owner-only file | On the desktop, the shell's `safeStorage` is the keyring (Keychain, DPAPI, libsecret or kwallet). A headless server keeps a 0600 key file in a 0700 directory and probes no keyring (decision R12, owner ruling 2026-10-02). |
+| A third-party module that imports `electron` has its server half skipped, based on a capability | The server never loads such an `entry.main`. The in-process path still does. |
+| No terminals in v1 | Terminals, their node-pty sessions, the agent-state socket and terminal snapshots stay in the Electron shell. |
+| The server is small (owner ruling 2026-10-02) | No browser and no canvas in the server process. The shell offers its pane as the `browser` toolset and its canvas service and worker as the `canvas` toolset (phase 5); the server routes agents' calls to them and keeps only the board files. |
 
 ## 1. What phase 6 delivers
 
@@ -207,14 +207,14 @@ agents included, would lose its Studio tools for the rest of its session**
 
 ### 2.5 Credentials
 
-| Store                                        | File                            | Today                                                  |
-| -------------------------------------------- | ------------------------------- | ------------------------------------------------------ |
-| Provider secrets (`secret-store.ts`)         | `provider-secrets/*.bin`        | `safeStorage` ciphertext, 0600                         |
-| GitHub token (`github-token-store.ts`)       | `github-token.bin`              | `safeStorage`, static `app` import                     |
-| Module secrets (`module-secrets.ts`)         | `module-secrets/<id>.bin`       | `safeStorage`, injected from `agent-runtime-module.ts` |
-| Mesh tokens (`tailnet-mesh-store.ts`)        | `tailnet-mesh-connections.json` | base64 `safeStorage` in JSON                           |
-| Tailnet device tokens (`tailnet-devices.ts`) | `tailnet-remote-devices.json`   | SHA-256 hashes only, no cipher                         |
-| Account refresh tokens (`auth-service.ts`)   | `*-refresh-token.bin`           | `safeStorage`; **stays in the shell**                  |
+| Store | File | Today |
+| --- | --- | --- |
+| Provider secrets (`secret-store.ts`) | `provider-secrets/*.bin` | `safeStorage` ciphertext, 0600 |
+| GitHub token (`github-token-store.ts`) | `github-token.bin` | `safeStorage`, static `app` import |
+| Module secrets (`module-secrets.ts`) | `module-secrets/<id>.bin` | `safeStorage`, injected from `agent-runtime-module.ts` |
+| Mesh tokens (`tailnet-mesh-store.ts`) | `tailnet-mesh-connections.json` | base64 `safeStorage` in JSON |
+| Tailnet device tokens (`tailnet-devices.ts`) | `tailnet-remote-devices.json` | SHA-256 hashes only, no cipher |
+| Account refresh tokens (`auth-service.ts`) | `*-refresh-token.bin` | `safeStorage`; **stays in the shell** |
 
 No code chooses a Linux `safeStorage` backend. Where no keyring answers,
 Electron's default applies (`basic_text`). Section 9.3 covers that case.
@@ -241,18 +241,18 @@ workspace-backup.json  workspace-registry.json
 
 Each change is a recommendation. Section 14 lists them as decisions.
 
-| #   | Section of `studio-server.md` | Today it says                                                                                                  | Change                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --- | ----------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | 10.1 spawn                    | A child process on `process.execPath` with `ELECTRON_RUN_AS_NODE=1`, envelope on stdin                         | **`utilityProcess.fork`** for the desktop-local server. The envelope arrives by `postMessage`. The same `server.mjs` keeps a stdio bootstrap for WSL, SSH and CI.                                                                                                                                                                                                                                          |
-| D2  | 5.5 the preload               | The renderer opens a loopback WebSocket with a single-use ticket                                               | **A `MessagePort` per window, brokered by main** to the utility process. Desktop windows need no network listener, ticket or `Origin` rule. Tickets remain for remote environments.                                                                                                                                                                                                                        |
-| D3  | 5.4 the SDK                   | WebSocket and socket transports                                                                                | `@sprintengine/agent-sdk` gets a `StudioTransport` seam (`send`, `onFrame`, `close`) with WebSocket, Node socket and MessagePort implementations.                                                                                                                                                                                                                                                          |
-| D4  | 9.3 secrets                   | Desktop: data key handed over in the envelope, `*.bin` re-sealed during phase 6                                | Desktop: **the shell is the cipher** (`seal`/`open` over the control channel), and the files stay byte-identical. Data keys apply only to headless servers. Phase 6 does no re-seal migration.                                                                                                                                                                                                             |
-| D5  | 8.1 render host, source 1     | The server launches the app's Electron binary as a headless render host                                        | **Superseded (2026-10-02).** The parent's render host is gone. What D5 asked for on the desktop (the shell's canvas worker and pane) is now the only path on every server, as the shell's `browser` and `canvas` toolsets (phase 5), and no server runs a Chromium.                                                                                                                                        |
-| D6  | 10.1 lifetime                 | The server exits when its parent exits and no other client is attached                                         | The local server exits with the app, always (owner default). A server never "attaches to an existing one" on the desktop: the app's own lock already rules out a second shell per profile.                                                                                                                                                                                                                 |
-| D7  | 7.2 split                     | The full list of server-owned files                                                                            | Phase 6 moves a **subset** (section 5). Git changelists, pull requests (moved since: 5.2), tours, skills and marketplace, memory, design and the file-explorer data stay with the shell until phase 10.                                                                                                                                                                                                    |
-| D8  | 6.2 gateway                   | The audit and socket move unchanged                                                                            | They move unchanged, plus a server run lock before any unlink, plus an MCP bridge that reconnects (section 6.5).                                                                                                                                                                                                                                                                                           |
-| D9  | 4.2 interfaces                | `StudioPaths` and others                                                                                       | Add `appExecPath` and `helperExecPath` to `StudioPaths`. A guard test forbids `process.execPath` under `src/server/`. Add a `ShellBridge` interface for what is not an agent tool: cipher, the terminal runtime behind two internal service tokens, revealing a tab, power and visibility hints, analytics sink, integrations-ready gate. Agent-facing shell tools are toolsets (6.3).                     |
-| D10 | 4.3 third-party modules       | Open question: capability or API bump                                                                          | Use an `electron-main` host capability, an optional manifest field, and a load-time `require('electron')` interceptor. The host API version is not bumped (section 12.4).                                                                                                                                                                                                                                  |
+| # | Section of `studio-server.md` | Today it says | Change |
+| --- | --- | --- | --- |
+| D1 | 10.1 spawn | A child process on `process.execPath` with `ELECTRON_RUN_AS_NODE=1`, envelope on stdin | **`utilityProcess.fork`** for the desktop-local server. The envelope arrives by `postMessage`. The same `server.mjs` keeps a stdio bootstrap for WSL, SSH and CI. |
+| D2 | 5.5 the preload | The renderer opens a loopback WebSocket with a single-use ticket | **A `MessagePort` per window, brokered by main** to the utility process. Desktop windows need no network listener, ticket or `Origin` rule. Tickets remain for remote environments. |
+| D3 | 5.4 the SDK | WebSocket and socket transports | `@sprintengine/agent-sdk` gets a `StudioTransport` seam (`send`, `onFrame`, `close`) with WebSocket, Node socket and MessagePort implementations. |
+| D4 | 9.3 secrets | Desktop: data key handed over in the envelope, `*.bin` re-sealed during phase 6 | Desktop: **the shell is the cipher** (`seal`/`open` over the control channel), and the files stay byte-identical. Data keys apply only to headless servers. Phase 6 does no re-seal migration. |
+| D5 | 8.1 render host, source 1 | The server launches the app's Electron binary as a headless render host | **Superseded (2026-10-02).** The parent's render host is gone. What D5 asked for on the desktop (the shell's canvas worker and pane) is now the only path on every server, as the shell's `browser` and `canvas` toolsets (phase 5), and no server runs a Chromium. |
+| D6 | 10.1 lifetime | The server exits when its parent exits and no other client is attached | The local server exits with the app, always (owner default). A server never "attaches to an existing one" on the desktop: the app's own lock already rules out a second shell per profile. |
+| D7 | 7.2 split | The full list of server-owned files | Phase 6 moves a **subset** (section 5). Git changelists, pull requests (moved since: 5.2), tours, skills and marketplace, memory, design and the file-explorer data stay with the shell until phase 10. |
+| D8 | 6.2 gateway | The audit and socket move unchanged | They move unchanged, plus a server run lock before any unlink, plus an MCP bridge that reconnects (section 6.5). |
+| D9 | 4.2 interfaces | `StudioPaths` and others | Add `appExecPath` and `helperExecPath` to `StudioPaths`. A guard test forbids `process.execPath` under `src/server/`. Add a `ShellBridge` interface for what is not an agent tool: cipher, the terminal runtime behind two internal service tokens, revealing a tab, power and visibility hints, analytics sink, integrations-ready gate. Agent-facing shell tools are toolsets (6.3). |
+| D10 | 4.3 third-party modules | Open question: capability or API bump | Use an `electron-main` host capability, an optional manifest field, and a load-time `require('electron')` interceptor. The host API version is not bumped (section 12.4). |
 | D11 | 6.3 client tools (2026-10-02) | `editor.*`, `tour.*`, `terminal.*`, `agent.launch` and `backlog.work` reach windows through in-process brokers | They become the shell's `editor`, `tour` and `terminal` toolsets on phase 5's mechanism, offered over the control channel, rather than `ShellBridge` members (section 6.3). `ShellBridge` keeps only what is not an agent tool. As built: `agent.*` is a toolset of its own (wire names are `<toolset>.<tool>`), and `backlog.work` stays the server's and launches through `ShellBridge.terminals` (6.3). |
 
 D1 and D2 go together. A child started with `ELECTRON_RUN_AS_NODE` cannot
@@ -261,17 +261,17 @@ receive a `MessagePort`, so choosing D1 is what makes D2 possible.
 **Why `utilityProcess` and not `ELECTRON_RUN_AS_NODE`** (measured in section
 13 unless noted):
 
-|                                                         | `utilityProcess.fork`                                                                     | `spawn(execPath)` + `ELECTRON_RUN_AS_NODE`                                                                             |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Dies with main on crash or force quit                   | yes, immediately (E3)                                                                     | only if the server watches stdin EOF (E2: 6 ms)                                                                        |
-| Direct port to each renderer                            | yes (`MessageChannelMain`)                                                                | no; needs a loopback WS listener or a relay through main                                                               |
-| Renderer round trip, mean                               | 25 µs (E4)                                                                                | 49 µs over WS, 70 µs relayed through main                                                                              |
-| Can start before `ready`                                | no; about 25–45 ms later in boot (E5)                                                     | yes                                                                                                                    |
-| Binary                                                  | the signed Helper on macOS (inherit entitlements); the app's own exe on Windows and Linux | the main app binary (main entitlements)                                                                                |
-| Leaks `ELECTRON_RUN_AS_NODE` into every agent it spawns | no (`env` is clean, E6)                                                                   | yes, unless scrubbed. An agent that runs an Electron project's `npm start` would get a Node process instead of an app. |
-| Shows in `app.getAppMetrics()`                          | yes, by `serviceName`                                                                     | no; only through the `ps` walk                                                                                         |
-| Works if a later hardening turns `RunAsNode` off        | yes                                                                                       | no                                                                                                                     |
-| Same code path as WSL and SSH                           | no: a second bootstrap adapter, about 60 lines                                            | yes                                                                                                                    |
+| | `utilityProcess.fork` | `spawn(execPath)` + `ELECTRON_RUN_AS_NODE` |
+| --- | --- | --- |
+| Dies with main on crash or force quit | yes, immediately (E3) | only if the server watches stdin EOF (E2: 6 ms) |
+| Direct port to each renderer | yes (`MessageChannelMain`) | no; needs a loopback WS listener or a relay through main |
+| Renderer round trip, mean | 25 µs (E4) | 49 µs over WS, 70 µs relayed through main |
+| Can start before `ready` | no; about 25–45 ms later in boot (E5) | yes |
+| Binary | the signed Helper on macOS (inherit entitlements); the app's own exe on Windows and Linux | the main app binary (main entitlements) |
+| Leaks `ELECTRON_RUN_AS_NODE` into every agent it spawns | no (`env` is clean, E6) | yes, unless scrubbed. An agent that runs an Electron project's `npm start` would get a Node process instead of an app. |
+| Shows in `app.getAppMetrics()` | yes, by `serviceName` | no; only through the `ps` walk |
+| Works if a later hardening turns `RunAsNode` off | yes | no |
+| Same code path as WSL and SSH | no: a second bootstrap adapter, about 60 lines | yes |
 
 The last row is the only cost, and it is small: the server core is
 transport-agnostic after phase 3. Only `src/server/bootstrap/` differs.
@@ -318,7 +318,7 @@ There are three channels, all of them process-private:
    of its toolsets, and the requests for `ShellBridge`.
 2. **One window port per renderer.** Main creates a `MessageChannelMain`. It
    sends `port1` to the server with `{ attachClient: { clientId, windowId,
-kind: 'desktop-window' } }` and `port2` to that window's preload. The frames
+   kind: 'desktop-window' } }` and `port2` to that window's preload. The frames
    are the Studio protocol of `studio-server.md` section 5, as structured
    clones instead of JSON text, plus the legacy IPC tunnel (section 6.2).
 3. **The existing listeners**, now opened by the server: `automation.sock` or
@@ -336,11 +336,11 @@ it in the isolated world and exposes only `window.api` functions.
 The rule: **a store is constructed in exactly one process per session, chosen
 at boot by the flag.** The other process reaches it over the protocol.
 
-| Owner with the flag on           | Files and services                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Server**                       | `automation.sock`, `sprintengine-studio-mcp-info.json`, `automation-server-info.json`, `automation-settings.json`, `sprintengine-studio-mcp-audit.jsonl`; `tailnet-remote-settings.json`, `tailnet-remote-devices.json`, `tailnet-mesh-connections.json`; `provider-secrets/`, `github-token.bin`, `module-secrets/`; `module-storage/`, `module-enablement.json`, `trusted-modules.json`; scheduled agents; `conversation-attachments/`, conversation plans, approval rules, `conversation-commands-cache.json`; `sprintengine-launch-settings.json`, the CLI runtime and host settings; `workspace-registry.json`, `workspace-backup.json`; `model-discovery-cache.json`, `model-feed-cache.json`, `cli-update-notices.json`; canvas board files (written only through `files.write`, phase 5); checkpoints and their sweep; title generation; companion agents; mobile control; backlog service; `pull-requests/` (the pull request record, a server domain since 2026-10-03, 5.2) |
-| **Shell**                        | Chromium's own files, the pane's partitions included; the canvas service, its worker window and its pending writes (it keeps boards through the server's `files.*`); `window-material.json`, background mode, update channel and install note, color scheme; account refresh tokens; `terminal-snapshots/`, `terminal-startup/`, `agent-state.sock`, `agent-prompts/`, `agent-launch-settings.json` (terminal launches); `integration-ledger.json`, `agent-integration/`, `tool-bin/`, the `~/.sprintengine/bin` launcher and pointer, `~/.sprintengine/instances`; `git-changelists/`; skills, plugins and marketplace caches and installs; tours; memory graph; design system; hosted card and source feeds; telemetry consent and install id; `module-asset-origin-secret` and the `studio-module://` handler                                                                                                                                                                      |
-| **Read by both, written by one** | `trusted-modules.json` and `module-enablement.json` (written by the server; read per request by the shell's asset handler); the launcher pointer (written by the shell; read by the server to build MCP entries); `host-context/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Owner with the flag on | Files and services |
+| --- | --- |
+| **Server** | `automation.sock`, `sprintengine-studio-mcp-info.json`, `automation-server-info.json`, `automation-settings.json`, `sprintengine-studio-mcp-audit.jsonl`; `tailnet-remote-settings.json`, `tailnet-remote-devices.json`, `tailnet-mesh-connections.json`; `provider-secrets/`, `github-token.bin`, `module-secrets/`; `module-storage/`, `module-enablement.json`, `trusted-modules.json`; scheduled agents; `conversation-attachments/`, conversation plans, approval rules, `conversation-commands-cache.json`; `sprintengine-launch-settings.json`, the CLI runtime and host settings; `workspace-registry.json`, `workspace-backup.json`; `model-discovery-cache.json`, `model-feed-cache.json`, `cli-update-notices.json`; canvas board files (written only through `files.write`, phase 5); checkpoints and their sweep; title generation; companion agents; mobile control; backlog service; `pull-requests/` (the pull request record, a server domain since 2026-10-03, 5.2) |
+| **Shell** | Chromium's own files, the pane's partitions included; the canvas service, its worker window and its pending writes (it keeps boards through the server's `files.*`); `window-material.json`, background mode, update channel and install note, color scheme; account refresh tokens; `terminal-snapshots/`, `terminal-startup/`, `agent-state.sock`, `agent-prompts/`, `agent-launch-settings.json` (terminal launches); `integration-ledger.json`, `agent-integration/`, `tool-bin/`, the `~/.sprintengine/bin` launcher and pointer, `~/.sprintengine/instances`; `git-changelists/`; skills, plugins and marketplace caches and installs; tours; memory graph; design system; hosted card and source feeds; telemetry consent and install id; `module-asset-origin-secret` and the `studio-module://` handler |
+| **Read by both, written by one** | `trusted-modules.json` and `module-enablement.json` (written by the server; read per request by the shell's asset handler); the launcher pointer (written by the shell; read by the server to build MCP entries); `host-context/` |
 
 Notes:
 
@@ -424,41 +424,31 @@ process the shell's `pull requests` legs do it.
 interface ServerBootstrapEnvelope {
   v: 1
   role: 'desktop-local' | 'headless'
-  dataDir: string // the app's userData, unchanged (7.1 of the design)
+  dataDir: string               // the app's userData, unchanged (7.1 of the design)
   logsDir: string
-  runDir: string // <dataDir>/run, created 0700
+  runDir: string                // <dataDir>/run, created 0700
   tempDir: string
   paths: {
-    resourcesDir: string | null
-    appPath: string | null
-    isPackaged: boolean
-    appExecPath: string // the app binary: launcher pointer, MCP fallback entry
-    helperExecPath?: string // what process.execPath is inside a utilityProcess
+    resourcesDir: string | null; appPath: string | null; isPackaged: boolean
+    appExecPath: string         // the app binary: launcher pointer, MCP fallback entry
+    helperExecPath?: string     // what process.execPath is inside a utilityProcess
   }
   app: { version: string; buildStamp: string; channel: 'latest' | 'nightly' }
   owner: { tokenHash?: string } // headless only; the desktop needs no token (D2)
   listeners: { gateway: boolean; tailnet: 'from-settings' | 'off' }
-  secrets: { kind: 'shell'; available: boolean } | { kind: 'key-file' } // section 9
+  secrets: { kind: 'shell'; available: boolean } | { kind: 'key-file' }   // section 9
   flags: Record<string, boolean> // forwarded SPRINTENGINE_* switches (diagnostics, timeline)
 }
 
 type ServerToSupervisor =
-  | {
-      t: 'ready'
-      pid: number
-      environmentId: string
-      version: string
-      buildStamp: string
-      gateway: { socketPath: string | null }
-      tailnet: { bound: string | null }
-      bootMs: number
-    }
+  | { t: 'ready'; pid: number; environmentId: string; version: string; buildStamp: string;
+      gateway: { socketPath: string | null }; tailnet: { bound: string | null } ; bootMs: number }
   | { t: 'pong'; seq: number; loopLagMs: number; rssMb: number }
   | { t: 'shutdown-progress'; leg: string; done: number; total: number; durationMs: number; failed: boolean }
   | { t: 'fatal'; code: ServerExitCode; message: string }
 
 type SupervisorToServer =
-  | { t: 'envelope'; envelope: ServerBootstrapEnvelope } // parent port only; stdio sends the bare envelope
+  | { t: 'envelope'; envelope: ServerBootstrapEnvelope }      // parent port only; stdio sends the bare envelope
   | { t: 'ping'; seq: number }
   | { t: 'shutdown'; drain: boolean; budgetMs: number }
   | { t: 'attach-client'; clientId: string; windowId: string | null; kind: 'desktop-window' | 'shell' } // port transferred
@@ -496,16 +486,16 @@ held, not dropped.
 
 **Exit codes**, which tell the supervisor whether to retry:
 
-| Code   | Meaning                                                      | Retried                                    |
-| ------ | ------------------------------------------------------------ | ------------------------------------------ |
-| 0      | Clean shutdown                                               | no                                         |
-| 64     | Envelope missing or invalid                                  | no                                         |
-| 65     | Data directory unusable (missing, not writable, wrong owner) | no                                         |
-| 66     | Run lock held by a live server                               | no; attach not offered on the desktop (D6) |
-| 67     | Protocol or build-stamp mismatch with the shell              | no; dev rebuild only                       |
-| 70     | Uncaught error                                               | yes                                        |
-| 75     | Temporary failure (listener bind raced, `EMFILE`)            | yes                                        |
-| signal | Killed or crashed                                            | yes                                        |
+| Code | Meaning | Retried |
+| --- | --- | --- |
+| 0 | Clean shutdown | no |
+| 64 | Envelope missing or invalid | no |
+| 65 | Data directory unusable (missing, not writable, wrong owner) | no |
+| 66 | Run lock held by a live server | no; attach not offered on the desktop (D6) |
+| 67 | Protocol or build-stamp mismatch with the shell | no; dev rebuild only |
+| 70 | Uncaught error | yes |
+| 75 | Temporary failure (listener bind raced, `EMFILE`) | yes |
+| signal | Killed or crashed | yes |
 
 ### 6.2 The legacy IPC tunnel
 
@@ -588,7 +578,7 @@ interface CallerContext {
   app-frame-only), through an injected check, because `ipc-sender.ts` imports
   Electron.
 - **Ports.** The tunnel has a port of its own per window (`kind:
-'desktop-window'`). The chat view's Studio protocol connections are not
+  'desktop-window'`). The chat view's Studio protocol connections are not
   ports: each is a WebSocket to the server's window listener on 127.0.0.1,
   admitted by a ticket main asks the server for (`studio.window-ticket` on the
   control channel) on the window's behalf, good once within thirty seconds
@@ -670,15 +660,11 @@ launch. The bullets below are the phase-6 shape:
 
 ```ts
 interface ShellBridge {
-  cipher: {
-    available(): Promise<boolean>
-    seal(plain: Uint8Array): Promise<Uint8Array>
-    open(sealed: Uint8Array): Promise<Uint8Array>
-  }
-  terminals: { launchAgent(input: AgentLaunchInput): Promise<AgentLaunchResult> } // backlog.work, scheduled runs, resume in terminal, and the two internal service tokens (12.2)
-  reveal: { tab(target): Promise<boolean> } // the reveal-tab capability: a notice clicked, a deep link
-  notify(n: ServerNotification): void // OS notification, bell, dock badge
-  analytics(event: AnalyticsEvent): void // consent and install id stay in the shell
+  cipher: { available(): Promise<boolean>; seal(plain: Uint8Array): Promise<Uint8Array>; open(sealed: Uint8Array): Promise<Uint8Array> }
+  terminals: { launchAgent(input: AgentLaunchInput): Promise<AgentLaunchResult> }   // backlog.work, scheduled runs, resume in terminal, and the two internal service tokens (12.2)
+  reveal: { tab(target): Promise<boolean> }                                       // the reveal-tab capability: a notice clicked, a deep link
+  notify(n: ServerNotification): void                                      // OS notification, bell, dock badge
+  analytics(event: AnalyticsEvent): void                                    // consent and install id stay in the shell
   integrationsReady(): Promise<void>
 }
 ```
@@ -692,7 +678,7 @@ ruling 2026-10-02).
 As built (`src/server/shell-bridge/`, `src/main/shell-bridge.ts`):
 
 - **A notice carries its click as data.** `notify({ key, title, body,
-activate })` names a reveal target, and the shell carries the click out
+  activate })` names a reveal target, and the shell carries the click out
   itself, so no closure has to cross the channel. The targets are `remote`
   (the Remote popover) and `app`; the tailnet notifier is the one server-side
   caller today, and it already goes through the bridge in process.
@@ -720,12 +706,12 @@ The shell sends the server **hints**:
 interface ServerSupervisor {
   readonly state: SupervisorState
   onState(listener: (s: SupervisorState) => void): () => void
-  start(): void // at app ready
+  start(): void                               // at app ready
   whenReady(budgetMs: number): Promise<'ready' | 'timeout' | 'failed'>
-  attachWindow(win: BrowserWindow): void // brokers a port now and after each restart / reload
-  call<T>(method: string, params: unknown): Promise<T> // control-channel request
+  attachWindow(win: BrowserWindow): void      // brokers a port now and after each restart / reload
+  call<T>(method: string, params: unknown): Promise<T>   // control-channel request
   shutdown(opts: { drain: boolean; budgetMs: number; onLeg?: (leg) => void }): Promise<'exited' | 'killed'>
-  restart(reason: string): void // Diagnostics action
+  restart(reason: string): void               // Diagnostics action
 }
 ```
 
@@ -842,7 +828,8 @@ startedAt, token }`. A lock whose pid is dead, or is this process's own, is
 stale and replaced. A headless server refuses a live holder, and refuses a
 directory whose Electron `SingletonLock` names a running app. The desktop
 takes any lock over (its single-instance lock already makes it the profile's
-only app), and a headless server that loses its lock that way stops and exits 66. **The desktop's out-of-process server takes the lock with the desktop
+only app), and a headless server that loses its lock that way stops and exits
+66. **The desktop's out-of-process server takes the lock with the desktop
 role**, as main does in process: it is the app's own process tree, it must not
 be refused by its own parent's `SingletonLock`, and a crashed predecessor's
 lock is its to replace (the supervisor never forks while that predecessor
@@ -946,18 +933,18 @@ t1  both done (or server SIGKILLed at its budget)
 
 ### 7.5 Failure scenarios
 
-| Scenario                                                            | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Server crashes while the UI is up**                               | The ports close, and every window shows "Reconnecting to Studio server" (words). The supervisor restarts with backoff. On `ready`, new ports are brokered, and chat views resubscribe from their cursors (phase 4). In-flight IPC invokes reject; idempotent reads retry once. Agent CLIs that were children of the server lose their stdin and exit, and their turns read as interrupted. Composer drafts live in the renderer and survive. Pending permission prompts are lost with their turn. Terminal agents keep running in the shell; their MCP bridges reconnect (6.5). |
-| **Server hangs** (a synchronous loop, a deadlock on a sync fs call) | The shell stays responsive, which is an improvement on today, where the same hang freezes every window. After 15 s the watchdog kills the server, restarts it, and records a diagnostic with the last event-loop lag.                                                                                                                                                                                                                                                                                                                                                           |
-| **A renderer crashes or reloads**                                   | `render-process-gone` or `did-start-navigation` makes main send `detachClient` for that window. The server releases that client's subscriptions. On `did-finish-load` main brokers a new port. Nothing else is affected.                                                                                                                                                                                                                                                                                                                                                        |
-| **Main crashes or is force-quit**                                   | The utility process dies with it (E3). Server-side transcript buffers not yet flushed are lost, as they are today when main dies. The next launch recovers: the run lock is stale, the socket is unlinked by the new lock holder, and open turns are closed as interrupted.                                                                                                                                                                                                                                                                                                     |
-| **A quit arrives during `STARTING` or `BACKOFF`**                   | `STARTING`: `shutdown { drain: false }`, then SIGKILL after 2 s. Store writes are atomic, so a kill mid-boot cannot tear a file. `BACKOFF`: the timer is cancelled and nothing is spawned.                                                                                                                                                                                                                                                                                                                                                                                      |
-| **Sleep and resume**                                                | The control channel and ports are in-process pipes, so they survive sleep. The watchdog pauses. `power.resume` reaches the server, where the mesh `onWake()` and the scheduled-agents `refresh()` run as they do today. The tailnet listener's address poll handles a changed tailnet IP.                                                                                                                                                                                                                                                                                       |
-| **Two app instances**                                               | Same profile: refused by the app lock, unchanged. Different profiles (a dev build and the packaged app): separate userData, sockets, servers and locks. They share the launcher pointer as today (a dev build never overwrites a live packaged pointer). Both enabling tailnet on port 8471 conflicts, as it does today.                                                                                                                                                                                                                                                        |
-| **Upgrade while running**                                           | The local server is the app's own bundle, so app and server are never skewed in a packaged build. The macOS swap happens after quit, the Windows installer after the drain, and an AppImage keeps its old mount until exit. The `hello` window check and a build-stamp equality check still run. A mismatch exits 67, which only a dev rebuild can produce. In dev, `electron-vite` rebuilds `out/server/server.mjs` and the supervisor restarts the server on change, without restarting main.                                                                                 |
-| **Read-only DMG, App Translocation, AppImage mount**                | The server writes only under userData, logs and temp. `utilityProcess` can fork a script inside `app.asar`, as the design-system fork already does from resources. The pointer at a translocated or mounted path is an existing problem that phase 6 neither causes nor fixes; noted in section 11.                                                                                                                                                                                                                                                                             |
-| **Disk full or userData not writable**                              | The server exits 65 before `ready`, and the supervisor goes straight to `FAILED` with the server's own message.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Scenario | Behaviour |
+| --- | --- |
+| **Server crashes while the UI is up** | The ports close, and every window shows "Reconnecting to Studio server" (words). The supervisor restarts with backoff. On `ready`, new ports are brokered, and chat views resubscribe from their cursors (phase 4). In-flight IPC invokes reject; idempotent reads retry once. Agent CLIs that were children of the server lose their stdin and exit, and their turns read as interrupted. Composer drafts live in the renderer and survive. Pending permission prompts are lost with their turn. Terminal agents keep running in the shell; their MCP bridges reconnect (6.5). |
+| **Server hangs** (a synchronous loop, a deadlock on a sync fs call) | The shell stays responsive, which is an improvement on today, where the same hang freezes every window. After 15 s the watchdog kills the server, restarts it, and records a diagnostic with the last event-loop lag. |
+| **A renderer crashes or reloads** | `render-process-gone` or `did-start-navigation` makes main send `detachClient` for that window. The server releases that client's subscriptions. On `did-finish-load` main brokers a new port. Nothing else is affected. |
+| **Main crashes or is force-quit** | The utility process dies with it (E3). Server-side transcript buffers not yet flushed are lost, as they are today when main dies. The next launch recovers: the run lock is stale, the socket is unlinked by the new lock holder, and open turns are closed as interrupted. |
+| **A quit arrives during `STARTING` or `BACKOFF`** | `STARTING`: `shutdown { drain: false }`, then SIGKILL after 2 s. Store writes are atomic, so a kill mid-boot cannot tear a file. `BACKOFF`: the timer is cancelled and nothing is spawned. |
+| **Sleep and resume** | The control channel and ports are in-process pipes, so they survive sleep. The watchdog pauses. `power.resume` reaches the server, where the mesh `onWake()` and the scheduled-agents `refresh()` run as they do today. The tailnet listener's address poll handles a changed tailnet IP. |
+| **Two app instances** | Same profile: refused by the app lock, unchanged. Different profiles (a dev build and the packaged app): separate userData, sockets, servers and locks. They share the launcher pointer as today (a dev build never overwrites a live packaged pointer). Both enabling tailnet on port 8471 conflicts, as it does today. |
+| **Upgrade while running** | The local server is the app's own bundle, so app and server are never skewed in a packaged build. The macOS swap happens after quit, the Windows installer after the drain, and an AppImage keeps its old mount until exit. The `hello` window check and a build-stamp equality check still run. A mismatch exits 67, which only a dev rebuild can produce. In dev, `electron-vite` rebuilds `out/server/server.mjs` and the supervisor restarts the server on change, without restarting main. |
+| **Read-only DMG, App Translocation, AppImage mount** | The server writes only under userData, logs and temp. `utilityProcess` can fork a script inside `app.asar`, as the design-system fork already does from resources. The pointer at a translocated or mounted path is an existing problem that phase 6 neither causes nor fixes; noted in section 11. |
+| **Disk full or userData not writable** | The server exits 65 before `ready`, and the supervisor goes straight to `FAILED` with the server's own message. |
 
 ## 8. Performance
 
@@ -1062,9 +1049,8 @@ decision O4 and is not part of phase 6.
   - gateway socket and tailnet bind;
   - which `SecretCipher` is in use;
   - the run lock holder.
-
+  
   The section also offers Restart server, Open server log, and Copy diagnostics.
-
 - **Process metrics.** `getAppMetrics()` lists the server. The `ps` walk in
   `child-process-metrics.ts` already descends from main's pid, so agent CLIs
   under the server keep being classified.
@@ -1120,34 +1106,34 @@ decision O4 and is not part of phase 6.
 
 ### 12.1 Where modules stand
 
-| Module                             | Wiring today                                                                                                                                              | Electron use in its main half                                  | Server half                                                                                                                          | Client half                                                                                                                         | Phase                    |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| agent-runtime                      | kernel module (`agent-runtime-module.ts`)                                                                                                                 | `app.getPath`, `safeStorage`                                   | conversation, workspace, storage, secrets, GitHub and companion services                                                             | —                                                                                                                                   | 6                        |
-| scheduled-agents                   | kernel module; its `scheduled-agents:*` channels are registered with the server's domains (`registerScheduledAgentsIpc`), refused while the module is off | broadcast loop, `app.getPath`                                  | store, scheduler, runner, gateway `schedule.*` tools, the eleven channels (tunnelled)                                                | panel                                                                                                                               | 6                        |
-| third-party                        | kernel, `createRequire` in main, no sandbox                                                                                                               | anything                                                       | `entry.main` unless it needs `electron-main` (12.4)                                                                                  | `entry.renderer`, `studio-module://` assets (shell)                                                                                 | 6                        |
-| canvas                             | static (`registerCanvasIpc`, `canvas-service.ts`)                                                                                                         | hidden worker window, `WebContents` subscribers, export dialog | **none** (2026-10-02): the board files, through `files.*` (phase 5)                                                                  | everything else: the service, merge, worker window, `canvas.*` tools as the shell's `canvas` toolset, the editor, the export dialog | 5                        |
-| backlog                            | static (`registerBacklogIpc`, 17 handlers)                                                                                                                | none                                                           | backlog service, `backlog.*` tools, mobile control                                                                                   | panel                                                                                                                               | 6 (the gateway needs it) |
-| git                                | static (`registerGitIpc` 55 handlers, repo watch)                                                                                                         | save dialog in `git-ipc.ts`, focus checks in repo watch        | phase 6: git for chat only. Phase 10: read models, changelists, repo watch, panel data                                               | panel; dialogs                                                                                                                      | 10                       |
-| design system                      | static; `utilityProcess.fork` for bundle scripts                                                                                                          | `utilityProcess`, `templates-path.ts`                          | phase 10: a `ScriptRunner` with a Node implementation (`child_process.fork` on the server's Node; `helperExecPath` runs as Node, E6) | panel                                                                                                                               | 10                       |
-| memory, tours, skills, marketplace | static                                                                                                                                                    | windows (tours), dialogs                                       | phase 10, domain by domain                                                                                                           | panels                                                                                                                              | 10                       |
-| pull requests                      | the core (`src/server/pull-requests/`), since 2026-10-03                                                                                                  | none                                                           | the record, its state reads and `pullRequests.*`                                                                                     | the sidebar marks, peek and tooltips; the shell's terminal notes                                                                    | 6 (5.2)                  |
-| review                             | no main-side code in this tree                                                                                                                            | —                                                              | —                                                                                                                                    | —                                                                                                                                   | —                        |
+| Module | Wiring today | Electron use in its main half | Server half | Client half | Phase |
+| --- | --- | --- | --- | --- | --- |
+| agent-runtime | kernel module (`agent-runtime-module.ts`) | `app.getPath`, `safeStorage` | conversation, workspace, storage, secrets, GitHub and companion services | — | 6 |
+| scheduled-agents | kernel module; its `scheduled-agents:*` channels are registered with the server's domains (`registerScheduledAgentsIpc`), refused while the module is off | broadcast loop, `app.getPath` | store, scheduler, runner, gateway `schedule.*` tools, the eleven channels (tunnelled) | panel | 6 |
+| third-party | kernel, `createRequire` in main, no sandbox | anything | `entry.main` unless it needs `electron-main` (12.4) | `entry.renderer`, `studio-module://` assets (shell) | 6 |
+| canvas | static (`registerCanvasIpc`, `canvas-service.ts`) | hidden worker window, `WebContents` subscribers, export dialog | **none** (2026-10-02): the board files, through `files.*` (phase 5) | everything else: the service, merge, worker window, `canvas.*` tools as the shell's `canvas` toolset, the editor, the export dialog | 5 |
+| backlog | static (`registerBacklogIpc`, 17 handlers) | none | backlog service, `backlog.*` tools, mobile control | panel | 6 (the gateway needs it) |
+| git | static (`registerGitIpc` 55 handlers, repo watch) | save dialog in `git-ipc.ts`, focus checks in repo watch | phase 6: git for chat only. Phase 10: read models, changelists, repo watch, panel data | panel; dialogs | 10 |
+| design system | static; `utilityProcess.fork` for bundle scripts | `utilityProcess`, `templates-path.ts` | phase 10: a `ScriptRunner` with a Node implementation (`child_process.fork` on the server's Node; `helperExecPath` runs as Node, E6) | panel | 10 |
+| memory, tours, skills, marketplace | static | windows (tours), dialogs | phase 10, domain by domain | panels | 10 |
+| pull requests | the core (`src/server/pull-requests/`), since 2026-10-03 | none | the record, its state reads and `pullRequests.*` | the sidebar marks, peek and tooltips; the shell's terminal notes | 6 (5.2) |
+| review | no main-side code in this tree | — | — | — | — |
 
 ### 12.2 `MainHost` inside the server (phase 6)
 
 `loadMainModules` moves into the server with the kernel. For each `MainHost`
 member:
 
-| Member                                             | In the server                                                                                                                                                                                                                                                                                                                 |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `registerIpc(channel, handler)`                    | `ServerIpcRegistry.handle`. The first handler argument becomes a `ModuleCallContext` (`clientId`, `windowId`). The module SDK already types it `unknown`, so no SDK change. `modules:bridge:invoke` and its ownership and `ipc:invoke` checks are tunnelled unchanged.                                                        |
-| `emit(topic, payload)`                             | The Studio RPC's `module.events` stream (a JSON payload). Nothing is buffered, as today.                                                                                                                                                                                                                                      |
-| `registerMcpTools`                                 | The server's gateway, unchanged.                                                                                                                                                                                                                                                                                              |
-| `notify`                                           | Flood-bounded as today, then the Studio RPC's `module.notifications` stream, which sends the kept rows first.                                                                                                                                                                                                                 |
+| Member | In the server |
+| --- | --- |
+| `registerMethods(methods)` (host API 2; it replaced `registerIpc`) | The Studio RPC's `module.read` and `module.operate`, served by the kernel through the module hub. A handler is told the calling client and, for an operate, its namespaced command id. No module IPC is tunnelled. |
+| `emit(topic, payload)` | The Studio RPC's `module.events` stream (a JSON payload). Nothing is buffered, as today. |
+| `registerMcpTools` | The server's gateway, unchanged. |
+| `notify` | Flood-bounded as today, then the Studio RPC's `module.notifications` stream, which sends the kept rows first. |
 | `provideService` / `getService` / `requireService` | Unchanged and still synchronous: every service a module can reach is in the server process. The two shell-side internal tokens (`core.terminal-runtime`, `core.agent-launch-service`) are provided as async proxies over `ShellBridge.terminals`. Neither token is on the third-party ACL, and no module consumes them today. |
-| `registerSkills`, `ensureSkillInstalled`           | Unchanged, on the same disk.                                                                                                                                                                                                                                                                                                  |
-| `registerSidecar`                                  | Unchanged. Lifecycles start after `COMPOSING` and stop during `DRAINING`.                                                                                                                                                                                                                                                     |
-| `onStartup`, `onShutdownBegin`, `onShutdown`       | The server's lifecycle (7.2). The shell's own module legs keep the shell-side hooks.                                                                                                                                                                                                                                          |
+| `registerSkills`, `ensureSkillInstalled` | Unchanged, on the same disk. |
+| `registerSidecar` | Unchanged. Lifecycles start after `COMPOSING` and stop during `DRAINING`. |
+| `onStartup`, `onShutdownBegin`, `onShutdown` | The server's lifecycle (7.2). The shell's own module legs keep the shell-side hooks. |
 
 **Live enablement.** `applyModuleEnablementLive` runs in the server. The
 renderer's override push reaches it through the tunnel, and the server
@@ -1212,15 +1198,15 @@ scratchpad: a minimal server that reads one envelope, binds a unix socket, a
 loopback TCP NDJSON port and a hand-rolled RFC 6455 WebSocket, and answers
 `echo` and `stream`. Windows and Linux were not run (section 15, R11).
 
-| #   | Question                                                                                                               | Result                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| E1  | Spawn to ready, for a server on Electron-as-Node (`ELECTRON_RUN_AS_NODE`) and on plain Node, from a Node parent        | Median **37–50 ms** on Electron-as-Node, 57 ms on plain Node. Idle RSS **60 MB** vs 50 MB. Socket round trip, 64-byte payload, p50/p99: unix **9–15 / 31–117 µs**, TCP 21 / 58 µs, WebSocket 20 / 54 µs; 16 KB on unix: 41 / 99 µs. Streaming 100k × 200 B events: unix about 1.1–1.4 M events/s (245–320 MB/s), WebSocket about 480–560k/s.                                                                                         |
-| E2  | Does a child notice its parent being SIGKILLed?                                                                        | With stdin piped and an EOF watch: **exits in 6–7 ms**, also when spawned `detached` (its own session). Without the watch: **keeps running**, orphaned.                                                                                                                                                                                                                                                                              |
-| E3  | Does a `utilityProcess` outlive a SIGKILLed Electron main?                                                             | **No**: gone at the first check (0 ms).                                                                                                                                                                                                                                                                                                                                                                                              |
-| E4  | Renderer-side cost per call (mean over 5,000, the renderer clock is 100 µs-granular) and push throughput (100k events) | `ipcRenderer.invoke` → main **36 µs**; MessagePort → utility **25 µs**; WebSocket → child **49 µs**; ipc → main → unix socket → child **70 µs**. Push: `webContents.send` **510k/s**, MessagePort **364k/s**, WebSocket **164k/s**. Utility ready **38–44 ms** after fork, RSS 68 MB. The `Origin` a `file://` renderer sends on a WebSocket is `file://`, which identifies nothing. That is why D2 prefers ports to an origin rule. |
-| E5  | Boot timing, measured from main's start (3 runs)                                                                       | `ready` at 81–203 ms. A child spawned before `ready` was ready at 106–211 ms. `utilityProcess.fork` **before `ready` is refused** ("cannot be created before app is ready"); forked at `ready`, it was ready at 129–252 ms (+23–49 ms).                                                                                                                                                                                              |
-| E6  | What a `utilityProcess` sees of itself                                                                                 | `process.execPath` is `…/Frameworks/<App> Helper.app/Contents/MacOS/<App> Helper`. `process.type` is `utility`. `require('electron')` returns `{ net, systemPreferences }`. `ELECTRON_RUN_AS_NODE` is unset. The Helper binary **does** run as Node with `ELECTRON_RUN_AS_NODE=1` (exit 0, prints 24.21.0).                                                                                                                          |
-| E7  | Parse cost of today's 2.9 MB main chunk under Electron-as-Node (`vm.Script`, top level)                                | About **27 ms** cold. A V8 code cache of 538 KB was accepted.                                                                                                                                                                                                                                                                                                                                                                        |
+| # | Question | Result |
+| --- | --- | --- |
+| E1 | Spawn to ready, for a server on Electron-as-Node (`ELECTRON_RUN_AS_NODE`) and on plain Node, from a Node parent | Median **37–50 ms** on Electron-as-Node, 57 ms on plain Node. Idle RSS **60 MB** vs 50 MB. Socket round trip, 64-byte payload, p50/p99: unix **9–15 / 31–117 µs**, TCP 21 / 58 µs, WebSocket 20 / 54 µs; 16 KB on unix: 41 / 99 µs. Streaming 100k × 200 B events: unix about 1.1–1.4 M events/s (245–320 MB/s), WebSocket about 480–560k/s. |
+| E2 | Does a child notice its parent being SIGKILLed? | With stdin piped and an EOF watch: **exits in 6–7 ms**, also when spawned `detached` (its own session). Without the watch: **keeps running**, orphaned. |
+| E3 | Does a `utilityProcess` outlive a SIGKILLed Electron main? | **No**: gone at the first check (0 ms). |
+| E4 | Renderer-side cost per call (mean over 5,000, the renderer clock is 100 µs-granular) and push throughput (100k events) | `ipcRenderer.invoke` → main **36 µs**; MessagePort → utility **25 µs**; WebSocket → child **49 µs**; ipc → main → unix socket → child **70 µs**. Push: `webContents.send` **510k/s**, MessagePort **364k/s**, WebSocket **164k/s**. Utility ready **38–44 ms** after fork, RSS 68 MB. The `Origin` a `file://` renderer sends on a WebSocket is `file://`, which identifies nothing. That is why D2 prefers ports to an origin rule. |
+| E5 | Boot timing, measured from main's start (3 runs) | `ready` at 81–203 ms. A child spawned before `ready` was ready at 106–211 ms. `utilityProcess.fork` **before `ready` is refused** ("cannot be created before app is ready"); forked at `ready`, it was ready at 129–252 ms (+23–49 ms). |
+| E6 | What a `utilityProcess` sees of itself | `process.execPath` is `…/Frameworks/<App> Helper.app/Contents/MacOS/<App> Helper`. `process.type` is `utility`. `require('electron')` returns `{ net, systemPreferences }`. `ELECTRON_RUN_AS_NODE` is unset. The Helper binary **does** run as Node with `ELECTRON_RUN_AS_NODE=1` (exit 0, prints 24.21.0). |
+| E7 | Parse cost of today's 2.9 MB main chunk under Electron-as-Node (`vm.Script`, top level) | About **27 ms** cold. A V8 code cache of 538 KB was accepted. |
 
 How to reproduce: the server and the parent scripts are each under 150 lines.
 `scripts/experiments/server-process/` is a suitable home if the owner wants
@@ -1228,41 +1214,41 @@ them kept. They are not committed with this document.
 
 ## 14. Owner decisions, with recommendations
 
-| #   | Decision                                                        | Recommendation                                                                                                                                                                                                                                                                                                                            |
-| --- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O1  | Spawn mechanism for the desktop-local server (D1)               | **`utilityProcess.fork`**, with the stdio bootstrap kept for WSL, SSH and CI.                                                                                                                                                                                                                                                             |
-| O2  | How desktop windows reach the local server (D2, D3)             | **Superseded (2026-11-12).** A loopback WebSocket per window connection, to the server's window listener, admitted by a one-time ticket main mints through the server (R03). Was: a brokered `MessagePort` per window, no loopback listener until the web client (phase 9), and tickets only for remote environments.                     |
-| O3  | Secrets on the desktop in phase 6 (D4)                          | **The shell as cipher, formats unchanged.** No re-seal migration in phase 6.                                                                                                                                                                                                                                                              |
-| O4  | Linux desktop where `safeStorage` falls back to `basic_text`    | Keep today's behaviour in phase 6 and report it. In a later phase, move those secrets to the owner-only key file with a one-time re-seal, which satisfies the owner default.                                                                                                                                                              |
-| O5  | Local render host (D5)                                          | **Superseded (2026-10-02).** No render host anywhere. The shell's worker and pane are its `canvas` and `browser` toolsets (phase 5) on every server.                                                                                                                                                                                      |
-| O6  | The phase 6 domain cut (D7, section 5)                          | Approve the table. Git panel, file explorer, skills, marketplace, tours, memory, PRs and design stay in the shell until phase 10.                                                                                                                                                                                                         |
-| O7  | Confirm before quitting with running chat turns                 | **No**: parity with today. Revisit when the server can outlive the app.                                                                                                                                                                                                                                                                   |
-| O8  | Default and rollback                                            | Flag **off** for the phase 6 release. A Settings → Advanced toggle ("Run Studio server in its own process", restart required) plus `SPRINTENGINE_SERVER_MODE`. Default on only after a release of dogfooding with zero `FAILED` reports and R6 verified. The in-process path stays for **at least two releases after** the default flips. |
-| O9  | Automatic fallback when the server cannot start                 | **At boot only**: three failed boots means the session runs in process, with a notice in words and a Diagnostics entry. Never fall back mid-session (two writers).                                                                                                                                                                        |
-| O10 | Server heap cap                                                 | `--max-old-space-size=4096`. A crash and restart beats a machine-wide memory squeeze.                                                                                                                                                                                                                                                     |
-| O11 | MCP bridge reconnect (6.5)                                      | **Yes**, in phase 6. Without it, every server restart silently removes Studio tools from running agents.                                                                                                                                                                                                                                  |
-| O12 | Third-party `electron` modules (D10)                            | The capability, the manifest field and the require interceptor. **No host API bump.**                                                                                                                                                                                                                                                     |
-| O13 | Who writes the launcher pointer and integrations on the desktop | **The shell**, in phase 6. Headless servers write their own host's pointer (phases 7 and 8).                                                                                                                                                                                                                                              |
-| O14 | Keep the experiment scripts in the tree                         | Optional: `scripts/experiments/server-process/`.                                                                                                                                                                                                                                                                                          |
-| O15 | Editor, tour and terminal tools (D11)                           | **Toolsets the shell offers**, on phase 5's mechanism. One path for every tool a client supplies, with its routing, deadlines and cancellation, instead of bespoke `ShellBridge` members.                                                                                                                                                 |
+| # | Decision | Recommendation |
+| --- | --- | --- |
+| O1 | Spawn mechanism for the desktop-local server (D1) | **`utilityProcess.fork`**, with the stdio bootstrap kept for WSL, SSH and CI. |
+| O2 | How desktop windows reach the local server (D2, D3) | **Superseded (2026-11-12).** A loopback WebSocket per window connection, to the server's window listener, admitted by a one-time ticket main mints through the server (R03). Was: a brokered `MessagePort` per window, no loopback listener until the web client (phase 9), and tickets only for remote environments. |
+| O3 | Secrets on the desktop in phase 6 (D4) | **The shell as cipher, formats unchanged.** No re-seal migration in phase 6. |
+| O4 | Linux desktop where `safeStorage` falls back to `basic_text` | Keep today's behaviour in phase 6 and report it. In a later phase, move those secrets to the owner-only key file with a one-time re-seal, which satisfies the owner default. |
+| O5 | Local render host (D5) | **Superseded (2026-10-02).** No render host anywhere. The shell's worker and pane are its `canvas` and `browser` toolsets (phase 5) on every server. |
+| O6 | The phase 6 domain cut (D7, section 5) | Approve the table. Git panel, file explorer, skills, marketplace, tours, memory, PRs and design stay in the shell until phase 10. |
+| O7 | Confirm before quitting with running chat turns | **No**: parity with today. Revisit when the server can outlive the app. |
+| O8 | Default and rollback | Flag **off** for the phase 6 release. A Settings → Advanced toggle ("Run Studio server in its own process", restart required) plus `SPRINTENGINE_SERVER_MODE`. Default on only after a release of dogfooding with zero `FAILED` reports and R6 verified. The in-process path stays for **at least two releases after** the default flips. |
+| O9 | Automatic fallback when the server cannot start | **At boot only**: three failed boots means the session runs in process, with a notice in words and a Diagnostics entry. Never fall back mid-session (two writers). |
+| O10 | Server heap cap | `--max-old-space-size=4096`. A crash and restart beats a machine-wide memory squeeze. |
+| O11 | MCP bridge reconnect (6.5) | **Yes**, in phase 6. Without it, every server restart silently removes Studio tools from running agents. |
+| O12 | Third-party `electron` modules (D10) | The capability, the manifest field and the require interceptor. **No host API bump.** |
+| O13 | Who writes the launcher pointer and integrations on the desktop | **The shell**, in phase 6. Headless servers write their own host's pointer (phases 7 and 8). |
+| O14 | Keep the experiment scripts in the tree | Optional: `scripts/experiments/server-process/`. |
+| O15 | Editor, tour and terminal tools (D11) | **Toolsets the shell offers**, on phase 5's mechanism. One path for every tool a client supplies, with its routing, deadlines and cancellation, instead of bespoke `ShellBridge` members. |
 
 ## 15. Risks and mitigations
 
-| #   | Risk                                                                                                                    | Mitigation                                                                                                                                                                                                                                                                                                                      |
-| --- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1  | **Two writers on one userData**: during a restart, a fallback, or a store the split missed                              | Construction is decided once per session by the flag. The supervisor never forks while a previous child lives. The server run lock is also taken by in-process mode. The single-writer guard (16.1) fails if `createShellServices` reaches a server-owned store module. In dev, `claimStore(name)` throws on a second claimant. |
-| R2  | **A tunnelled handler still touches `event.sender`**                                                                    | `CallerContext.sender` throws by name. The list in 2.4 is converted per domain, and the router-completeness test covers every channel.                                                                                                                                                                                          |
-| R3  | **Server restart drops MCP tools from running agents**                                                                  | The bridge reconnects (6.5), and the restart is visible in words in every window.                                                                                                                                                                                                                                               |
-| R4  | **A crash mid-turn loses the turn and pending approvals**                                                               | The turn reads as interrupted with server-specific text. Stateful providers resume. The crash-loop limit stops a restart storm. A hang is now survivable for the UI, where today it freezes it.                                                                                                                                 |
-| R5  | **Boot regressions**: fork after `ready`, the window waiting on server state                                            | Window creation runs in parallel with the server. Reveal never waits on the server beyond today's budgets. Acceptance is the `measure-startup` threshold (8).                                                                                                                                                                   |
-| R6  | **macOS Local Network privacy, firewall prompts, TCC attribution** for listeners and file access moving into the Helper | Verify on packaged, notarized and signed builds on macOS 15+ and Windows 11 before the default flips. These are blocking items on the dogfood checklist.                                                                                                                                                                        |
-| R7  | **App Nap or background priority** throttling the utility process while all windows are hidden (background mode)        | Measure scheduled-agent timer drift and turn throughput with every window hidden, against in-process. If it drifts, the server holds a `powerSaveBlocker`-equivalent through the shell while agents run.                                                                                                                        |
-| R8  | **The tunnel becomes permanent**                                                                                        | Phase 10's definition of done is an empty `server` column in `IPC_CHANNEL_OWNERS`. Each domain's conversion is its own commit.                                                                                                                                                                                                  |
-| R9  | **Dev loop friction** (separate bundle, separate restart)                                                               | The supervisor watches `out/server/server.mjs` in dev and restarts only the server. A build-stamp mismatch logs `[build-skew]` and restarts in dev.                                                                                                                                                                             |
-| R10 | **Lazy `require('electron')` returns something non-null in a utility process**, so guards that test for truthiness pass | The import-graph guard over `src/server/` (phase 3), and the interceptor for third-party code.                                                                                                                                                                                                                                  |
-| R11 | **Windows and Linux not measured here**                                                                                 | Re-run E1–E6 on Windows 11 (named pipe, NSIS update hand-over with the server alive) and on Linux (AppImage). Both are on the phase checklist.                                                                                                                                                                                  |
-| R12 | **Memory +40–70 MB**                                                                                                    | Reported in Diagnostics. The owner accepts it with O1, or the phase waits.                                                                                                                                                                                                                                                      |
-| R13 | **Mixed versions of the bridge**: an agent started before the update holds an old bridge that does not reconnect        | Accepted. Such a session behaves as it does today.                                                                                                                                                                                                                                                                              |
+| # | Risk | Mitigation |
+| --- | --- | --- |
+| R1 | **Two writers on one userData**: during a restart, a fallback, or a store the split missed | Construction is decided once per session by the flag. The supervisor never forks while a previous child lives. The server run lock is also taken by in-process mode. The single-writer guard (16.1) fails if `createShellServices` reaches a server-owned store module. In dev, `claimStore(name)` throws on a second claimant. |
+| R2 | **A tunnelled handler still touches `event.sender`** | `CallerContext.sender` throws by name. The list in 2.4 is converted per domain, and the router-completeness test covers every channel. |
+| R3 | **Server restart drops MCP tools from running agents** | The bridge reconnects (6.5), and the restart is visible in words in every window. |
+| R4 | **A crash mid-turn loses the turn and pending approvals** | The turn reads as interrupted with server-specific text. Stateful providers resume. The crash-loop limit stops a restart storm. A hang is now survivable for the UI, where today it freezes it. |
+| R5 | **Boot regressions**: fork after `ready`, the window waiting on server state | Window creation runs in parallel with the server. Reveal never waits on the server beyond today's budgets. Acceptance is the `measure-startup` threshold (8). |
+| R6 | **macOS Local Network privacy, firewall prompts, TCC attribution** for listeners and file access moving into the Helper | Verify on packaged, notarized and signed builds on macOS 15+ and Windows 11 before the default flips. These are blocking items on the dogfood checklist. |
+| R7 | **App Nap or background priority** throttling the utility process while all windows are hidden (background mode) | Measure scheduled-agent timer drift and turn throughput with every window hidden, against in-process. If it drifts, the server holds a `powerSaveBlocker`-equivalent through the shell while agents run. |
+| R8 | **The tunnel becomes permanent** | Phase 10's definition of done is an empty `server` column in `IPC_CHANNEL_OWNERS`. Each domain's conversion is its own commit. |
+| R9 | **Dev loop friction** (separate bundle, separate restart) | The supervisor watches `out/server/server.mjs` in dev and restarts only the server. A build-stamp mismatch logs `[build-skew]` and restarts in dev. |
+| R10 | **Lazy `require('electron')` returns something non-null in a utility process**, so guards that test for truthiness pass | The import-graph guard over `src/server/` (phase 3), and the interceptor for third-party code. |
+| R11 | **Windows and Linux not measured here** | Re-run E1–E6 on Windows 11 (named pipe, NSIS update hand-over with the server alive) and on Linux (AppImage). Both are on the phase checklist. |
+| R12 | **Memory +40–70 MB** | Reported in Diagnostics. The owner accepts it with O1, or the phase waits. |
+| R13 | **Mixed versions of the bridge**: an agent started before the update holds an old bridge that does not reconnect | Accepted. Such a session behaves as it does today. |
 
 ## 16. Test strategy
 
@@ -1374,30 +1360,30 @@ them kept. They are not committed with this document.
 Each commit leaves `npm run verify:app` green and the flag-off path unchanged.
 Sizes are relative.
 
-| #   | Commit                                                                                                                                                                                                                                                                             | Size |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| 1   | `feat(protocol): bootstrap envelope, ready and control frames, server exit codes` (new files in the protocol package)                                                                                                                                                              | S    |
-| 2   | `feat(server): stdio and parent-port bootstrap adapters around startServer()`                                                                                                                                                                                                      | S    |
-| 3   | `feat(server): run lock; the gateway unlinks a stale socket only under it`                                                                                                                                                                                                         | S    |
-| 4   | `feat(server): ShellBridge interface with the in-process implementation (cipher, internal terminal launches, reveal, notify, analytics, integrations gate); the shell offers editor, tour and terminal as toolsets beside phase 5's browser and canvas` (flag off: same behaviour) | M    |
-| 5   | `feat(server): ServerIpcRegistry, CallerContext and ClientBus targets`                                                                                                                                                                                                             | S    |
-| 6   | `refactor(main): createShellServices beside createStudioCore; app-main composes by server mode` (in process both are built, as today)                                                                                                                                              | M    |
-| 7   | `feat(main): ServerSupervisor state machine with a fake-child test suite`                                                                                                                                                                                                          | M    |
-| 8   | `feat(main): utilityProcess launcher, server log piping and rotation`                                                                                                                                                                                                              | S    |
-| 9   | `feat(main): per-window MessagePort broker and attach/detach on reload and crash`                                                                                                                                                                                                  | S    |
-| 10  | `feat(preload): ChannelRouter with the generated channel-owner table and its completeness test`                                                                                                                                                                                    | M    |
-| 11  | `feat(server): tunnel the server-owned domains (workspace sync, launch settings, hosts, backlog, credentials, model discovery, automation and mesh admin); convert their event.sender uses`                                                                                        | L    |
-| 12  | `feat(server): gateway, tailnet and mesh run in the server; power, visibility and focus hints`                                                                                                                                                                                     | M    |
-| 13  | `feat(server): module kernel in the server; electron-main capability, manifest field and require interceptor`                                                                                                                                                                      | M    |
-| 14  | `feat(server): SecretCipher through the shell; secrets.resolveForLaunch for terminals`                                                                                                                                                                                             | S    |
-| 15  | `feat(main): ServerStateMirror for workspace records and launch settings`                                                                                                                                                                                                          | S    |
-| 16  | `feat(main): split shutdown legs with server drain; update hand-over waits for server exit`                                                                                                                                                                                        | M    |
-| 17  | `feat(automation): the MCP bridge reconnects across server restarts`                                                                                                                                                                                                               | S    |
-| 18  | `feat(renderer): server state in words (starting, reconnecting, stopped) and the Advanced toggle`                                                                                                                                                                                  | S    |
-| 19  | `feat(diagnostics): server section, merged diagnostics, restart action`                                                                                                                                                                                                            | S    |
-| 20  | `test: both-modes seam matrix and the child kill-and-resume test`                                                                                                                                                                                                                  | M    |
-| 21  | `chore(scripts): smoke-server-mode and measure-startup --server-mode`                                                                                                                                                                                                              | S    |
-| 22  | `docs: compatibility row, module-author note on electron-main, this file's status`                                                                                                                                                                                                 | S    |
+| # | Commit | Size |
+| --- | --- | --- |
+| 1 | `feat(protocol): bootstrap envelope, ready and control frames, server exit codes` (new files in the protocol package) | S |
+| 2 | `feat(server): stdio and parent-port bootstrap adapters around startServer()` | S |
+| 3 | `feat(server): run lock; the gateway unlinks a stale socket only under it` | S |
+| 4 | `feat(server): ShellBridge interface with the in-process implementation (cipher, internal terminal launches, reveal, notify, analytics, integrations gate); the shell offers editor, tour and terminal as toolsets beside phase 5's browser and canvas` (flag off: same behaviour) | M |
+| 5 | `feat(server): ServerIpcRegistry, CallerContext and ClientBus targets` | S |
+| 6 | `refactor(main): createShellServices beside createStudioCore; app-main composes by server mode` (in process both are built, as today) | M |
+| 7 | `feat(main): ServerSupervisor state machine with a fake-child test suite` | M |
+| 8 | `feat(main): utilityProcess launcher, server log piping and rotation` | S |
+| 9 | `feat(main): per-window MessagePort broker and attach/detach on reload and crash` | S |
+| 10 | `feat(preload): ChannelRouter with the generated channel-owner table and its completeness test` | M |
+| 11 | `feat(server): tunnel the server-owned domains (workspace sync, launch settings, hosts, backlog, credentials, model discovery, automation and mesh admin); convert their event.sender uses` | L |
+| 12 | `feat(server): gateway, tailnet and mesh run in the server; power, visibility and focus hints` | M |
+| 13 | `feat(server): module kernel in the server; electron-main capability, manifest field and require interceptor` | M |
+| 14 | `feat(server): SecretCipher through the shell; secrets.resolveForLaunch for terminals` | S |
+| 15 | `feat(main): ServerStateMirror for workspace records and launch settings` | S |
+| 16 | `feat(main): split shutdown legs with server drain; update hand-over waits for server exit` | M |
+| 17 | `feat(automation): the MCP bridge reconnects across server restarts` | S |
+| 18 | `feat(renderer): server state in words (starting, reconnecting, stopped) and the Advanced toggle` | S |
+| 19 | `feat(diagnostics): server section, merged diagnostics, restart action` | S |
+| 20 | `test: both-modes seam matrix and the child kill-and-resume test` | M |
+| 21 | `chore(scripts): smoke-server-mode and measure-startup --server-mode` | S |
+| 22 | `docs: compatibility row, module-author note on electron-main, this file's status` | S |
 
 Commits 1–6 are refactors that ship with no behaviour change. Commits 7–19
 are inert until the flag is on. The flag stays off by default in the release

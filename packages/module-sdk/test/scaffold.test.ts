@@ -53,7 +53,7 @@ import {
 const REPO = process.cwd()
 const SDK = join(REPO, 'packages/module-sdk')
 const TEMPLATES = join(SDK, 'templates')
-const SDK_VERSION = '1.0.0-beta.1'
+const SDK_VERSION = '2.0.0-beta.1'
 
 function walk(dir: string, prefix = ''): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

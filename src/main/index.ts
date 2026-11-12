@@ -11,7 +11,7 @@ import { REMOVE_INTEGRATIONS_FLAG } from '../shared/integration-removal'
 import { buildStamp } from 'virtual:sprintengine-build-stamp'
 import { COMPILE_CACHE_PRUNE_DELAY_MS, compileCacheBuildKey, enableMainCompileCache } from './compile-cache'
 import { guardIpcSenders } from './ipc/ipc-sender-guard'
-import { mayRegisterInMain } from './ipc/ipc-registration-rule'
+import { mayRegisterIpcChannel } from '../shared/ipc-inventory'
 import { isAppWindowSender } from './ipc/ipc-sender'
 
 // The entry, kept deliberately small. Everything it imports is evaluated before
@@ -47,7 +47,7 @@ guardIpcSenders(
     refusedIpc.add(key)
     console.warn('[ipc] refused a message from outside the app', { channel, from })
   },
-  mayRegisterInMain,
+  mayRegisterIpcChannel,
 )
 
 // Boot measurement, off unless SPRINTENGINE_STARTUP_TIMELINE=1 or the

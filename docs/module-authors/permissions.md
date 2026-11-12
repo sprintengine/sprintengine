@@ -27,8 +27,8 @@ known scopes.
 | `ipc:workspace-read` | See workspace, window, git, and task state through the app's APIs | See tier mapping below |
 | `ipc:workspace-write` | Create and change workspaces, files, and tasks through the app's APIs | See tier mapping below |
 | `ipc:settings` | Read and change app settings and integrations | See tier mapping below |
-| `ipc:invoke` | Call any of the app's internal APIs, including its own background code (broad scope) | The entire `window.api` surface, **and** the renderer&rarr;module-main bridge |
-| `module:bridge` | Let its window code talk to its own background code | The renderer&rarr;module-main bridge alone: `RendererHost.invoke` to the module's own `registerIpc` channels |
+| `ipc:invoke` | Call any of the app's internal APIs, including its own background code (broad scope) | The entire `window.api` surface, **and** declaring its own methods |
+| `module:bridge` | Let its window code talk to its own background code | Its own declared methods alone: `RendererHost.methods` calling what its `entry.main` declared with `MainHost.registerMethods` |
 | `backlog.read` | Read Backlog item details and source content | `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation`, and the reads of `getBacklogService` |
 | `backlog.write` | Change Backlog item status, triage, links, and metadata, and create new items | The Backlog write API (`getBacklogService`, `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata`) and the same writes in a Backlog action |
 | `backlog.link.open` | Open links and targets attached to Backlog items | Opening a link provider's target |
@@ -51,8 +51,8 @@ known scopes.
 `ipc:invoke` predates the tiers and disclosed the whole internal API surface in
 one opaque scope. It remains valid so existing manifests keep working, but the
 consent UI flags it as broad. New modules should declare the tier(s) matching
-the `window.api` areas they call, and `module:bridge` for the bridge to their
-own `entry.main`:
+the `window.api` areas they call, and `module:bridge` for the methods their
+own `entry.main` declares:
 
 - **`ipc:workspace-read`** — observing workspace and project state:
   workspace-sync snapshots and events, window state, git read models (status,
@@ -87,10 +87,10 @@ draft), with companions (`agents:companion`) and one-shot text generation
   broker most API calls at runtime.
 - These scopes are genuinely checked, and a module missing them is refused
   with `permission_missing` (or a throw, where a call has no failure shape):
-  - `module:bridge` gates the renderer&rarr;module-main bridge (`MainHost`).
-    The legacy `ipc:invoke` still opens it, so a manifest from before the
-    split keeps working; a new module declares `module:bridge`, whose consent
-    line says what the bridge is instead of "any of the app's internal APIs";
+  - `module:bridge` gates declaring methods (`MainHost.registerMethods`,
+    which throws without it). The legacy `ipc:invoke` also allows it; a new
+    module declares `module:bridge`, whose consent line says what it is
+    instead of "any of the app's internal APIs";
   - `agents:companion` is checked when a module attaches a companion agent.
     A companion's structured run denies every tool call its agent asks for
     unless the run says otherwise: `tools: 'auto'` needs `conversation:bypass`,
@@ -143,7 +143,7 @@ draft), with companions (`agents:companion`) and one-shot text generation
   "displayName": "Workspace Dashboard",
   "version": 1,
   "source": "third-party",
-  "engines": { "hostApi": 1 },
+  "engines": { "hostApi": 2 },
   "permissions": ["ipc:workspace-read", "conversation:operate", "secrets"]
 }
 ```

@@ -38,6 +38,8 @@ export const STUDIO_PERMISSIONS = [
   'tools:offer',
   // Hear this machine's modules: their events and the bell rows they raise.
   'module:read',
+  // Call what this machine's modules declare as changing something.
+  'module:operate',
   // Change this machine's settings.
   'settings:write',
   // Open a preview of a server an agent runs here.
@@ -121,7 +123,8 @@ export function studioPrincipal(input: { owner: boolean; permissions: Iterable<S
 /**
  * What each Studio scope a grant holds carries. `conversation:operate` carries
  * `conversation:read`, as it always has: a client that drives a chat can see
- * what it is driving. Every other scope carries the one permission it names.
+ * what it is driving; `modules:operate` carries `module:read` the same way.
+ * Every other scope carries the one permission it names.
  */
 export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly StudioPermission[] } = {
   'conversation:read': ['conversation:read'],
@@ -135,6 +138,7 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'environment:maintain': ['environment:maintain'],
   'settings:write': ['settings:write'],
   'modules:read': ['module:read'],
+  'modules:operate': ['module:read', 'module:operate'],
 }
 
 /** The permission each Studio scope is the grant name for. */
@@ -150,6 +154,7 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'environment:maintain': 'environment:maintain',
   'settings:write': 'settings:write',
   'modules:read': 'module:read',
+  'modules:operate': 'module:operate',
 }
 
 /**

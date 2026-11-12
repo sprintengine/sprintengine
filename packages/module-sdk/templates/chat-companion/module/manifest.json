@@ -7,16 +7,10 @@
   "defaultEnabled": false,
   "source": "third-party",
   "engines": {
-    "hostApi": 1
+    "hostApi": 2
   },
-  "permissions": [
-    "conversation:operate",
-    "module:bridge",
-    "ipc:workspace-read"
-  ],
-  "dependsOn": [
-    "agent-runtime"
-  ],
+  "permissions": ["conversation:operate", "module:bridge", "ipc:workspace-read"],
+  "dependsOn": ["agent-runtime"],
   "entry": {
     "renderer": "dist/renderer.mjs",
     "main": "dist/main.cjs"

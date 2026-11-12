@@ -356,6 +356,9 @@ export type StudioAuditEntry = {
   /** An offer or a withdrawal: the toolset's name and how many tools it holds. Never a tool's input or result. */
   toolset?: string
   tools?: number
+  /** A module method's call: the module and the method it named. Never its params or answer. */
+  moduleId?: string
+  moduleMethod?: string
   ok: boolean
   code?: string
   durationMs: number

@@ -316,21 +316,21 @@ all: under ruling (f) the canvas is a client module whose boards are files the
 server reads and writes for it, and whose agent tools are a toolset the client
 offers.
 
-| `MainHost` member today                    | On the server                                                                                                          |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `registerIpc(channel, handler)`            | a protocol method `module.invoke { moduleId, channel, payload }`, routed by the same ownership and `ipc:invoke` checks |
-| `emit(topic, payload)`                     | the `module.events` stream (`modules:read`), per module, a JSON payload, nothing replayed (built)                      |
-| `registerMcpTools`                         | the server's gateway, unchanged                                                                                        |
-| `notify`                                   | the `module.notifications` stream (`modules:read`): the kept rows first, then each new one (built)                     |
-| `provideService` / `getService`            | unchanged, in the server process                                                                                       |
-| `registerSkills` / `ensureSkillInstalled`  | unchanged, on the server host's disk                                                                                   |
-| `registerSidecar`                          | unchanged, spawned on the server host                                                                                  |
-| storage, secrets, the conversation service | unchanged, on the server                                                                                               |
+| `MainHost` member today | On the server |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registerMethods({ name: { access, params, handler } })` | `module.read` (`modules:read`) and `module.operate` (`modules:operate`, once per command id), by module id and method name; host API 2 (built) |
+| `emit(topic, payload)` | the `module.events` stream (`modules:read`), per module, a JSON payload, nothing replayed (built) |
+| `registerMcpTools` | the server's gateway, unchanged |
+| `notify` | the `module.notifications` stream (`modules:read`): the kept rows first, then each new one (built) |
+| `provideService` / `getService` | unchanged, in the server process |
+| `registerSkills` / `ensureSkillInstalled` | unchanged, on the server host's disk |
+| `registerSidecar` | unchanged, spawned on the server host |
+| storage, secrets, the conversation service | unchanged, on the server |
 
 | `RendererHost` member                                     | In a client                                                                          |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `registerPanel`, surfaces, commands, settings sections, … | unchanged                                                                            |
-| `invoke(channel)` / `subscribe(topic)`                    | carried by `module.invoke` / `module.events`                                         |
+| `methods()` / `subscribe(topic)` | carried by `module.read` and `module.operate` / `module.events` (built) |
 | workspaces, backlog, chats, app state                     | the matching protocol methods                                                        |
 | `getAssetUrl`                                             | an HTTP path the server serves (`/modules/<id>/assets/…`), signed per client session |
 
@@ -532,7 +532,7 @@ by browser fallbacks, is the web client's `window.api` (section 11).
 | Bucket                                                 | Members (approx.) | Fate                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **v1 server** — what the chat view and its panels call | ~75               | conversation (38), the command catalog, providers/models/secrets, `cliModelsDiscover`, launch settings, workspace sync, `searchFiles`/`cancelFileSearch`, `statPath`, `readImageDataUrl`, `getGitRepoRoot`, skills list/scan, `generateChatTitle`, `compactAgentSession`, `readConversationPeek`, `hostsList`           |
-| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile` (terminals moved to `terminal.*`)                                                                                              |
+| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile` (terminals moved to `terminal.*`)                                                                                                |
 | **Later server domains**                               | ~250              | git panel (62), file explorer/editor (most of filesystem's 40), backlog (17), skills management, marketplace, modules, mesh (folded into environments), automation/tailnet admin, canvas (a client module; boards via `files` from phase 5), tours, memory graph, design system, scheduled agents, pull requests, voice |
 
 The rule for each domain that moves: extract a handler object with no IPC in it

@@ -66,8 +66,9 @@ export type WebTicketSubject = { kind: 'session'; sessionId: string } | { kind: 
 type Ticket = { hash: string; expiresAtMs: number; subject: WebTicketSubject }
 
 // What a browser holds. No scope reaches the terminals: a browser never does,
-// an owner's tab included (`studio-browser-reach.ts`).
-const BROWSER_SCOPES: StudioScope[] = [...STUDIO_SCOPES]
+// an owner's tab included (`studio-browser-reach.ts`). Nor does it load an
+// extension's window code, so it does not operate extensions.
+const BROWSER_SCOPES: StudioScope[] = STUDIO_SCOPES.filter((scope) => scope !== 'modules:operate')
 /**
  * The scopes a tailnet browser holds: everything but offering tools (P5c
  * §7.1, R79), updating this machine's Studio, which drains and restarts it,

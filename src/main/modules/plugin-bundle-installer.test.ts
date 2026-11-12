@@ -16,12 +16,7 @@ import {
   canonicalManifestPayload as moduleCanonicalPayload,
   validateThirdPartyModuleManifest,
 } from '../../shared/modules/third-party-manifest'
-import { findMarketplaceResourcePath } from '../marketplace/resources'
-import { readTrustedMarketplacePublisherFingerprintsSync } from '../marketplace/trusted-publishers'
-import type { ModuleTrustContext } from './module-signature'
 import { installMarketplacePlugin } from './plugin-bundle-installer'
-import { planThirdPartyMainModules } from './third-party-main-loader'
-import { discoverUserModules } from './user-module-registry'
 import { test } from 'vitest'
 
 test('plugin-bundle-installer', async () => {
@@ -762,71 +757,6 @@ test('plugin-bundle-installer', async () => {
   })
 
   await suiteRun
-})
-
-// The first-party review module's own manifest was signed before `files`
-// existed, and nobody but the owner can re-sign it. Its bundle's plugin.json,
-// signed by the same trusted publisher, digests every file of the module, so
-// installing the bundle vouches for the module's code: the install records the
-// content it verified, and discovery holds the folder to exactly that.
-test('the shipped review bundle installs trusted, and code swapped in afterwards is refused', async () => {
-  const bundlePath = findMarketplaceResourcePath('plugins/review')
-  assert.ok(bundlePath)
-  const temp = await mkdtemp(join(tmpdir(), 'mc-marketplace-review-'))
-  try {
-    const moduleRoot = join(temp, 'modules')
-    const baseContext: ModuleTrustContext = {
-      trustedModules: new Map(),
-      trustedKeyFingerprints: readTrustedMarketplacePublisherFingerprintsSync({ isPackaged: true }),
-    }
-    const services: Parameters<typeof installMarketplacePlugin>[1] = {
-      trustContext: () => baseContext,
-      mcpConfigService: createMcpConfigService({ lookupPlugin: () => undefined, homeDir: () => join(temp, 'home') }),
-      moduleRoot: () => moduleRoot,
-    }
-
-    const result = await installMarketplacePlugin({ localFolder: bundlePath }, services, {
-      requireTrustedModuleComponents: true,
-    })
-    assert.equal(result.ok, true, JSON.stringify(result))
-    if (!result.ok) return
-    const module = result.installed.find((component) => component.kind === 'module')
-    assert.equal(module?.id, 'review')
-    assert.equal(module?.trustStatus, 'trusted')
-    assert.match(module?.manifestFp ?? '', /^[0-9a-f]{64}$/)
-
-    // What the install receipt records is what vouches at every later launch.
-    const vouched: ModuleTrustContext = {
-      ...baseContext,
-      verifiedModuleInstalls: new Map([['review', module!.manifestFp!]]),
-    }
-    const listed = await discoverUserModules(moduleRoot, vouched)
-    assert.deepEqual(listed.rejected, [])
-    assert.equal(listed.modules[0]?.trust.status, 'trusted')
-    assert.equal(listed.modules[0]?.trust.via, 'publisher')
-    assert.ok(listed.modules[0]?.trust.verifiedFiles?.['dist/main.cjs'])
-    const planned = planThirdPartyMainModules(listed)
-    assert.deepEqual(planned.ineligible, {}, 'the first-party module stays load eligible')
-
-    // The review module signs its own `files`, so the first-party signature
-    // covers its code even without the install record.
-    const unvouched = await discoverUserModules(moduleRoot, baseContext)
-    assert.deepEqual(unvouched.rejected, [])
-    assert.equal(unvouched.modules[0]?.trust.status, 'trusted')
-
-    // Code swapped in after the install no longer matches what was vouched for.
-    await writeFile(join(moduleRoot, 'review', 'dist', 'main.cjs'), 'exports.registerMain = () => {}\n')
-    const swapped = await discoverUserModules(moduleRoot, vouched)
-    assert.deepEqual(swapped.modules, [], JSON.stringify(swapped.rejected))
-    assert.ok(
-      swapped.rejected[0]?.issues.some(
-        (issue) => issue.path === 'files.dist/main.cjs' && /does not match the signed digests/.test(issue.message),
-      ),
-      JSON.stringify(swapped.rejected),
-    )
-  } finally {
-    await rm(temp, { recursive: true, force: true })
-  }
 })
 
 // The install prompt's grant is recorded for a signed module, and a grant

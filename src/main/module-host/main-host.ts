@@ -2,16 +2,24 @@ import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative } from 'node:path'
 
-import type { IpcMain, IpcMainInvokeEvent } from 'electron'
+import type { IpcMain } from 'electron'
 
-import { noteModuleIpcChannel } from '../ipc/ipc-registration-rule'
-import { MODULE_BRIDGE_INVOKE_CHANNEL, type ModuleBridgeInvokeResult } from '../../shared/modules/bridge'
 import {
   moduleEventPayloadProblem,
   validateModuleEventTopic,
   type ModuleEventEnvelope,
 } from '../../shared/modules/events'
 import type { CapabilityManifest, ModuleFileDigests } from '../../shared/modules/manifest'
+import {
+  isModuleMethodName,
+  type ModuleMethodAccess,
+  type ModuleMethodAnswer,
+  type ModuleMethodContext,
+  type ModuleMethodContract,
+  type ModuleMethodContracts,
+  type ModuleMethodRegistration,
+  type ModuleMethodRegistrations,
+} from '../../shared/modules/methods'
 import type { ModuleWorkspaceGitInfoResult } from '../../shared/modules/workspace-view'
 import { coreMcpToolConflict, mcpToolWireName, type McpToolRegistration } from '../../shared/modules/mcp-tools'
 import type { ModuleChatRuntimeOption } from '../../shared/modules/conversation-service'
@@ -42,8 +50,6 @@ import { createModuleHostServiceDispatcher } from './module-host-service-ipc'
 // register themselves into. Each module receives a scoped `MainHost` that
 // carries its own id but shares the kernel's registries, so cross-module
 // services and IPC ownership are tracked centrally.
-
-export type IpcInvokeHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown | Promise<unknown>
 
 type StartupHook = () => void | Promise<void>
 type ShutdownBeginHook = () => void | Promise<void>
@@ -161,9 +167,9 @@ export const THIRD_PARTY_SERVICE_KEYS: ReadonlySet<string> = new Set([
   'text-generation.module-service',
 ])
 
-// The declarations that open the renderer→module-main bridge for a module's
-// channels: its own scope, and the broad legacy one it was split out of.
-const BRIDGE_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
+// The declarations that let a third-party module serve methods to clients:
+// its own scope, and the broad legacy one it was split out of.
+const METHOD_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
 
 // The app-internal service behind `MainHost.listChatRuntimes` (the agent
 // runtime module provides it, as ChatRuntimesToken). A host method rather than
@@ -190,10 +196,24 @@ export type MainHost = {
    * when the agent runtime module provides no list.
    */
   listChatRuntimes(): Promise<ModuleChatRuntimeOption[]>
-  registerIpc(channel: string, handler: IpcInvokeHandler): void
+  /**
+   * Declare the methods this module serves its renderer half, and any client
+   * the person granted `modules:read` / `modules:operate`, over the Studio
+   * protocol's `module.read` and `module.operate`. Each names its access
+   * (`read` or `operate`, the only entry it is called through), a validator
+   * for its params and a handler; a handler's result must be JSON. Names are
+   * a lower-case letter, then letters, digits, dots and dashes: the module id
+   * is their namespace. The whole batch is validated before any of it lands,
+   * a name this module already declares is an error, and unloading the module
+   * takes its methods with it. A third-party module must declare
+   * `module:bridge` (or the broad `ipc:invoke`).
+   */
+  registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(
+    methods: ModuleMethodRegistrations<Cs>,
+  ): void
   /**
    * Contribute MCP tools to the always-on Studio gateway. Registrations are
-   * owned by this module's id exactly as IPC channels are: a name another
+   * owned by this module's id: a name another
    * module already holds — or a core gateway tool's (`coreMcpToolNames`) — is
    * a registration error, and the whole batch is
    * validated before any tool lands so a rejected batch registers nothing.
@@ -209,8 +229,8 @@ export type MainHost = {
   /**
    * Contribute agent skills this module ships. Each `sourceDir` is relative to
    * the module root and must stay inside it; a module with no root on disk
-   * passes an absolute path. Registrations are owned exactly as IPC channels
-   * and MCP tools are: an id a built-in skill or another module already holds
+   * passes an absolute path. Registrations are owned exactly as MCP tools
+   * are: an id a built-in skill or another module already holds
    * is a registration error, the whole batch is validated before any of it
    * lands, and unloading the module takes its skills with it.
    *
@@ -314,8 +334,14 @@ export type MainHost = {
 export type MainKernel = {
   /** A scoped host for the given module. Shares the kernel's registries. */
   hostFor(moduleId: string): MainHost
-  /** channel -> owning module id, for diagnostics and collision reports. */
-  ownedChannels(): ReadonlyMap<string, string>
+  /** The methods a module declares, in registration order. Empty for one that declares none or is not loaded. */
+  declaredMethods(moduleId: string): ReadonlyArray<{ name: string; access: ModuleMethodAccess }>
+  /**
+   * Call a module's declared method, as `module.read` / `module.operate` do:
+   * the module's answer (its result or its own refusal), or the host's
+   * refusal. Rejects when the handler throws or answers something not JSON.
+   */
+  callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
   /** skill id -> owning module id, for diagnostics and collision reports. */
   ownedSkills(): ReadonlyMap<string, string>
   /** Module-contributed Studio gateway tools, in registration order. */
@@ -334,7 +360,7 @@ export type MainKernel = {
   runShutdownBegin(): Promise<void>
   /** Run all registered shutdown hooks (reverse registration order), isolating failures. */
   runShutdown(): Promise<void>
-  /** Run a module's shutdown hooks and remove its tracked services, sidecars, and IPC. */
+  /** Run a module's shutdown hooks and remove its tracked services, sidecars, methods and tools. */
   unregisterModule(moduleId: string): Promise<void>
   /** True once the app-level startup hook pipeline has run and before shutdown. */
   isStarted(): boolean
@@ -358,6 +384,24 @@ export type MainKernel = {
   emitModuleEvent(sourceModuleId: string, topic: string, payload?: unknown): void
 }
 
+/** One call of a module's method, as the Studio protocol carries it. */
+export type ModuleMethodCallRequest = {
+  moduleId: string
+  method: string
+  /** The entry it came through: `module.read` or `module.operate`. */
+  access: ModuleMethodAccess
+  /** What the client sent, for the method's validator. */
+  params: unknown
+  clientId: string
+  /** An operate's command id, already namespaced by the client. */
+  commandId?: string
+}
+
+/** What a call came to: the module's answer, or why the host refused it before the module heard it. */
+export type ModuleMethodCallOutcome =
+  | { ok: true; answer: ModuleMethodAnswer<ModuleMethodContract> }
+  | { ok: false; code: 'module_unavailable' | 'module_method_unknown' | 'invalid_params'; message: string }
+
 export type MainKernelOptions = {
   /**
    * Whether a module's main half runs where `electron` can be required: true
@@ -376,12 +420,17 @@ export type MainKernelOptions = {
   /** Clock override for flood-bound tests. */
   now?: () => number
   /**
-   * Resolves a module id to its manifest, for the renderer→module-main bridge's
-   * source/permission checks. The kernel has no manifest knowledge of its own;
-   * load-modules passes its registry. Absent (or resolving to nothing) every
-   * bridge invoke is refused as not bridgeable.
+   * Resolves a module id to its manifest, for the permission checks a
+   * registration makes. The kernel has no manifest knowledge of its own;
+   * load-modules passes its registry.
    */
   resolveModuleManifest?: (moduleId: string) => CapabilityManifest | undefined
+  /**
+   * Whether a module's main half is loaded now, so a call to one that runs
+   * and declares nothing is told apart from a call to one that is not
+   * running. Absent, a module is running when it declares a method.
+   */
+  isModuleActive?: (moduleId: string) => boolean
   /**
    * Resolves a module id to its root directory on disk, for containment-
    * checking the skill directories it registers. Third-party modules have one
@@ -456,15 +505,11 @@ type ModuleAppStateReader = {
   subscribe(moduleId: string, listener: (values: Readonly<Record<string, unknown>>) => void): () => void
 }
 
-// One record per registered channel: ownership for collision reports and
-// teardown, plus the handler itself — ipcMain cannot be invoked in-process,
-// and the bridge dispatcher needs to call owned handlers directly.
-type ChannelEntry = { owner: string; handler: IpcInvokeHandler }
-
 export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = {}): MainKernel {
-  const channels = new Map<string, ChannelEntry>()
+  // Declared methods, per module, in registration order.
+  const methods = new Map<string, Map<string, ModuleMethodRegistration>>()
   // name -> owning module + registration; insertion order is the gateway's
-  // listing order, mirroring the channel map's ownership discipline.
+  // listing order.
   const mcpTools = new Map<string, { owner: string; registration: McpToolRegistration }>()
   const services = new Map<string, ServiceEntry>()
   let startupHooks: HookEntry<StartupHook>[] = []
@@ -493,61 +538,105 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
   const floodStateByModule = new Map<string, ModuleNotificationFloodState>()
   let started = false
 
-  // The renderer→module-main bridge dispatcher. Routes an invoke to a channel
-  // a module registered via registerIpc, applying the bridgeability rules
-  // (owner prefix + `module:bridge` or `ipc:invoke`); every refusal is structured
-  // data (see bridge.ts). This is defense in depth for a contract, not a
-  // security boundary — the renderer-side host already validates the
-  // module-id prefix before IPC.
-  // Registered through the kernel's own registerIpc so the dispatcher channel
-  // shares every other channel's ownership tracking and lifecycle.
-  async function dispatchBridgeInvoke(event: IpcMainInvokeEvent, request: unknown): Promise<ModuleBridgeInvokeResult> {
-    const channel =
-      typeof (request as { channel?: unknown } | undefined)?.channel === 'string'
-        ? (request as { channel: string }).channel
-        : ''
-    const payload = (request as { payload?: unknown } | undefined)?.payload
-    const entry = channels.get(channel)
-    if (!entry) {
-      return {
-        ok: false,
-        code: 'unknown_channel',
-        message: `No module has registered the IPC channel "${channel}".`,
-      }
-    }
-    if (!channel.startsWith(`${entry.owner}:`)) {
-      return {
-        ok: false,
-        code: 'not_bridgeable',
-        message: `Channel "${channel}" is not bridgeable: bridged channels must be prefixed with their owning module's id ("${entry.owner}:").`,
-      }
-    }
-    const manifest = options.resolveModuleManifest?.(entry.owner)
-    if (!manifest) {
-      return {
-        ok: false,
-        code: 'not_bridgeable',
-        message: `Channel "${channel}" is not bridgeable: the owning module's manifest could not be resolved.`,
-      }
-    }
-    // `module:bridge` is the bridge's own scope; `ipc:invoke`, the broad scope
-    // it was split out of, keeps opening it for manifests from before the split.
-    if (!manifest.permissions?.some((permission) => BRIDGE_PERMISSIONS.has(permission))) {
-      return {
-        ok: false,
-        code: 'permission_missing',
-        message: `Module "${entry.owner}" does not declare the "module:bridge" permission, so its channels cannot be bridged.`,
-      }
-    }
-    return { ok: true, result: await entry.handler(event, payload) }
-  }
-  hostFor('@host').registerIpc(MODULE_BRIDGE_INVOKE_CHANNEL, dispatchBridgeInvoke)
   // The renderer's door to the Backlog and usage services a module's main half
-  // reaches through the SDK (shared/modules/host-service-bridge.ts).
-  hostFor('@host').registerIpc(
+  // reaches through the SDK (shared/modules/host-service-bridge.ts). The
+  // kernel's one IPC channel, until those services are protocol methods too.
+  ipcMain.handle(
     MODULE_HOST_SERVICE_CHANNEL,
     createModuleHostServiceDispatcher((key) => services.get(key)?.value),
   )
+
+  function registerMethods(moduleId: string, batch: ModuleMethodRegistrations): void {
+    if (
+      isThirdParty(moduleId) &&
+      !options.resolveModuleManifest?.(moduleId)?.permissions?.some((permission) => METHOD_PERMISSIONS.has(permission))
+    ) {
+      throw new Error(`Module "${moduleId}" needs the "module:bridge" permission to declare methods.`)
+    }
+    if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
+      throw new Error(`Module "${moduleId}" declares its methods as an object of name to method.`)
+    }
+    const own = methods.get(moduleId)
+    const entries = Object.entries(batch)
+    for (const [name, registration] of entries) {
+      if (!isModuleMethodName(name)) {
+        throw new Error(
+          `Module "${moduleId}" method "${name}" is not a method name: a lower-case letter, then letters, digits, dots and dashes, at most 100.`,
+        )
+      }
+      if (own?.has(name)) throw new Error(`Module "${moduleId}" already declares "${name}".`)
+      const access = (registration as { access?: unknown } | null)?.access
+      if (access !== 'read' && access !== 'operate') {
+        throw new Error(`Module "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
+      }
+      if (typeof registration.params !== 'function') {
+        throw new Error(`Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`)
+      }
+      if (typeof registration.handler !== 'function') {
+        throw new Error(`Module "${moduleId}" method "${name}" has no handler.`)
+      }
+    }
+    const next = own ?? new Map<string, ModuleMethodRegistration>()
+    for (const [name, registration] of entries) next.set(name, registration)
+    methods.set(moduleId, next)
+  }
+
+  async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
+    const own = methods.get(request.moduleId)
+    const active = options.isModuleActive ? options.isModuleActive(request.moduleId) : own !== undefined
+    if (!active || request.moduleId.startsWith('@')) {
+      return {
+        ok: false,
+        code: 'module_unavailable',
+        message: `Module "${request.moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
+      }
+    }
+    const registration = own?.get(request.method)
+    if (!registration) {
+      return {
+        ok: false,
+        code: 'module_method_unknown',
+        message: `Module "${request.moduleId}" declares no method "${request.method}".`,
+      }
+    }
+    if (registration.access !== request.access) {
+      return {
+        ok: false,
+        code: 'module_method_unknown',
+        message: `Module "${request.moduleId}" declares "${request.method}" as ${registration.access === 'operate' ? 'an operate' : 'a read'} method: call it with module.${registration.access}.`,
+      }
+    }
+    const parsed = registration.params(request.params)
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        code: 'invalid_params',
+        message:
+          typeof parsed.message === 'string' && parsed.message
+            ? parsed.message
+            : `Module "${request.moduleId}" refused the params of "${request.method}".`,
+      }
+    }
+    const context: ModuleMethodContext = {
+      clientId: request.clientId,
+      ...(request.commandId === undefined ? {} : { commandId: request.commandId }),
+    }
+    const answer = await registration.handler(parsed.params, context)
+    if (answer?.ok === true) {
+      const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
+      if (problem)
+        throw new Error(
+          `Module "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`,
+        )
+      return { ok: true, answer: { ok: true, result: answer.result ?? null } }
+    }
+    if (answer?.ok === false && typeof answer.code === 'string' && typeof answer.message === 'string') {
+      return { ok: true, answer: { ok: false, code: answer.code, message: answer.message } }
+    }
+    throw new Error(
+      `Module "${request.moduleId}" method "${request.method}" answered neither { ok: true, result } nor { ok: false, code, message }.`,
+    )
+  }
 
   function emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void {
     const validated = validateModuleNotifyInput(input)
@@ -784,14 +873,8 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
           (() => Promise<ModuleChatRuntimeOption[]>) | undefined
         return list ? list() : []
       },
-      registerIpc(channel, handler) {
-        const existing = channels.get(channel)
-        if (existing) {
-          throw new Error(`IPC channel "${channel}" is already registered by module "${existing.owner}".`)
-        }
-        channels.set(channel, { owner: moduleId, handler })
-        noteModuleIpcChannel(channel)
-        ipcMain.handle(channel, handler)
+      registerMethods(batch) {
+        registerMethods(moduleId, batch as unknown as ModuleMethodRegistrations)
       },
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)
@@ -998,11 +1081,7 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     for (const [sidecarId, entry] of [...sidecarEntries]) {
       if (entry.moduleId === moduleId) sidecarEntries.delete(sidecarId)
     }
-    for (const [channel, entry] of [...channels]) {
-      if (entry.owner !== moduleId) continue
-      channels.delete(channel)
-      ipcMain.removeHandler(channel)
-    }
+    methods.delete(moduleId)
     for (const [toolName, entry] of [...mcpTools]) {
       if (entry.owner === moduleId) mcpTools.delete(toolName)
     }
@@ -1016,7 +1095,9 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
 
   return {
     hostFor,
-    ownedChannels: () => new Map([...channels].map(([channel, entry]) => [channel, entry.owner])),
+    declaredMethods: (moduleId) =>
+      [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
+    callModuleMethod,
     ownedSkills: () =>
       new Map([...skillIdsByModule].flatMap(([owner, ids]) => [...ids].map((id) => [id, owner] as const))),
     mcpToolRegistrations: () =>

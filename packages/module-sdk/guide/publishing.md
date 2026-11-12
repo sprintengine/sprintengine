@@ -99,8 +99,8 @@ trust prompt, which lists the permissions from the verified manifest.
 
 ## The SDK itself
 
-Projects depend on `@sprintengine/module-sdk` from npm (`^1.0.0-beta.0` or
-newer). To try an unreleased SDK, depend on a local tarball
+Projects depend on `@sprintengine/module-sdk` from npm (`^2.0.0-beta.1` or
+newer, for host API 2). To try an unreleased SDK, depend on a local tarball
 (`"@sprintengine/module-sdk": "file:vendor/sprintengine-module-sdk-<v>.tgz"`)
 — the scaffolder's `--sdk-tarball` option sets that up.
 

@@ -1,6 +1,6 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
-import type { IpcInvokeHandler } from './main-host'
+type IpcInvokeHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
 // Shared IpcMain fake for module-host tests. Records the cumulative order of
 // handled channels (registration assertions) and retains live handlers so

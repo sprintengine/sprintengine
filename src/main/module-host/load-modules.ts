@@ -156,6 +156,8 @@ export function loadMainModules(options: {
     ...(options.deliverModuleNotification ? { deliverModuleNotification: options.deliverModuleNotification } : {}),
     now: options.now,
     resolveModuleManifest: (moduleId) => byId.get(moduleId)?.manifest,
+    // A module that runs and declares no such method is told apart from one not running.
+    isModuleActive: (moduleId) => activeMainModules.has(moduleId),
     resolveModuleRoot: (moduleId) => options.moduleRoots?.[moduleId],
     ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
     ...(options.coreMcpToolNames ? { coreMcpToolNames: options.coreMcpToolNames } : {}),

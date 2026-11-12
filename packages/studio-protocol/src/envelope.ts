@@ -284,6 +284,11 @@ export const STUDIO_ERROR_CODES = [
   'unsupported_protocol_version',
   // `update.start` on a Studio that does not update itself; the words say how to.
   'update_unavailable',
+  // A module method called on a Studio where the module does not run (not
+  // installed, switched off, refused or failed to load), or one it does not
+  // declare under the entry it was called through.
+  'module_unavailable',
+  'module_method_unknown',
 ] as const
 
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number]

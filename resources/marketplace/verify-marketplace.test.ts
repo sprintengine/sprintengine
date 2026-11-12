@@ -30,7 +30,7 @@ buildSync({
  * The seed registry carries no signed bundle any more: the four first-party MCP
  * bundles left with the third-party retirement (2026-09-08), the automation
  * starters with automations (2026-09-30), and what remains is inline agent-CLI
- * rows and one signed capability module (Reviews).
+ * rows; the one signed capability module (Reviews) was dropped at host API 2.
  *
  * The signature gate is still the whole trust story for anything code-bearing,
  * so rather than delete the tests that cover it, they build their own signed
@@ -309,11 +309,8 @@ function testRegistryHoldsOnlyWhatAMarketplaceCannotCarry(): void {
   }
   assert.deepEqual(
     [...kinds.entries()].sort(),
-    [
-      ['cli', 18],
-      ['module', 1],
-    ],
-    'the registry is 18 agent CLI integrations and 1 capability module (Reviews)'
+    [['cli', 18]],
+    'the registry is 18 agent CLI integrations'
   )
 }
 
@@ -401,7 +398,8 @@ function testUnclaimedPayloadDirFails(): void {
   // A committed payload nothing in the index claims is verified by nothing, yet
   // the packaged-seed install path would still stage it.
   const root = copySeedRegistry('orphan-payload-registry')
-  cpSync(join(root, 'plugins', 'review'), join(root, 'plugins', 'nobody-claims-me'), { recursive: true })
+  addSignedProbeBundle(root)
+  cpSync(join(root, 'plugins', SIGNED_PROBE_ID), join(root, 'plugins', 'nobody-claims-me'), { recursive: true })
 
   const result = runVerifier(root)
   assert.equal(result.status, 1)
@@ -513,30 +511,31 @@ function testTamperedComponentFailsThroughCliVerify(): void {
   assert.match(result.stderr, /component digests/i)
 }
 
-// The seed's one entry with a bundle `source` to point somewhere else.
-const SOURCE_BEARING_ID = 'review'
-
+// A bundle entry's `source`, pointed somewhere else. The seed carries no
+// bundle entry since Reviews left, so the signed probe stands in for one.
 function testEntrySourceOnNonAllowlistedHostFails(): void {
   const root = copySeedRegistry('evil-source-registry')
+  addSignedProbeBundle(root)
   const path = join(root, 'marketplace.json')
   const marketplace = JSON.parse(readFileSync(path, 'utf8')) as { plugins: Array<{ id: string; source?: string }> }
-  const target = marketplace.plugins.find((plugin) => plugin.id === SOURCE_BEARING_ID)
-  assert.ok(target, `seed registry must carry the ${SOURCE_BEARING_ID} entry`)
-  target.source = `https://evil.example.com/plugins/${SOURCE_BEARING_ID}`
+  const target = marketplace.plugins.find((plugin) => plugin.id === SIGNED_PROBE_ID)
+  assert.ok(target, 'the probe entry is listed')
+  target.source = `https://evil.example.com/plugins/${target.id}`
   writeFileSync(path, `${JSON.stringify(marketplace, null, 2)}\n`, 'utf8')
 
   const result = runVerifier(root)
   assert.equal(result.status, 1)
-  assert.match(result.stderr, new RegExp(`plugins\\.${SOURCE_BEARING_ID}\\.source`))
+  assert.match(result.stderr, new RegExp(`plugins\\.${target.id}\\.source`))
   assert.match(result.stderr, /allowlist/)
 }
 
 function testEntrySourceOnAllowlistedNonCanonicalOwnerPasses(): void {
   const root = copySeedRegistry('non-canonical-owner-registry')
+  addSignedProbeBundle(root)
   const path = join(root, 'marketplace.json')
   const marketplace = JSON.parse(readFileSync(path, 'utf8')) as { plugins: Array<{ id: string; source?: string }> }
-  const first = marketplace.plugins.find((plugin) => plugin.id === SOURCE_BEARING_ID)
-  assert.ok(first, `seed registry must carry the ${SOURCE_BEARING_ID} entry`)
+  const first = marketplace.plugins.find((plugin) => plugin.id === SIGNED_PROBE_ID)
+  assert.ok(first, 'the probe entry is listed')
   first.source = `https://github.com/another-org/registry/tree/main/plugins/${first.id}`
   writeFileSync(path, `${JSON.stringify(marketplace, null, 2)}\n`, 'utf8')
 

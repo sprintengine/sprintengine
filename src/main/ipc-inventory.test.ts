@@ -150,7 +150,6 @@ import { createCanvasWorkerTransport } from './canvas/canvas-worker-window'
 import { registerChatLinkIpc } from './chat-link-ipc'
 import { registerSshPreviewIpc } from './environments/ssh/ssh-preview'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
-import { mayRegisterInMain } from './ipc/ipc-registration-rule'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
 import { registerSshEnvironmentsIpc } from './ipc/ssh-environments-ipc'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
@@ -178,7 +177,7 @@ import { attachStartupTimeline } from './startup-timeline'
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   conversations: 44,
   terminals: 3,
-  modules: 3,
+  modules: 2,
   extensions: 33,
   'paired-machines': 52,
   access: 45,
@@ -284,7 +283,7 @@ function installExtension(id: string): ReturnType<typeof planThirdPartyMainModul
   mkdirSync(join(moduleRoot, 'dist'), { recursive: true })
   writeFileSync(
     join(moduleRoot, 'dist', 'main.cjs'),
-    `exports.registerMain = (host) => host.registerIpc('${id}:forecast', () => 'sunny')\n`,
+    `exports.registerMain = (host) => host.registerMethods({ forecast: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: 'sunny' }) } })\n`,
   )
   writeFileSync(
     join(moduleRoot, 'manifest.json'),
@@ -293,6 +292,7 @@ function installExtension(id: string): ReturnType<typeof planThirdPartyMainModul
       displayName: id,
       version: 1,
       defaultEnabled: true,
+      permissions: ['module:bridge'],
       entry: { main: 'dist/main.cjs' },
       files: computeModuleFileDigestsSync(moduleRoot).files,
     }),
@@ -330,10 +330,10 @@ function linesMatching(files: readonly string[], pattern: RegExp): Map<string, s
 }
 
 // A registration as the source writes it: on `ipcMain` (or a registry or
-// wrapper of it named `ipc`), through the module kernel, or through the SSH
-// machines' local `handle`.
+// wrapper of it named `ipc`), or through the SSH machines' local `handle`.
+// A module registers none: it declares methods, served over the Studio protocol.
 const REGISTRATION =
-  /(?:^|[^\w.])(?:deps\.)?(?:ipcMain|ipc)\.(?:handle|handleOnce|on|once|addListener|prependListener|prependOnceListener)\(|\.registerIpc\(|^\s*handle\(SSH_ENV_CHANNELS\./u
+  /(?:^|[^\w.])(?:deps\.)?(?:ipcMain|ipc)\.(?:handle|handleOnce|on|once|addListener|prependListener|prependOnceListener)\(|^\s*handle\(SSH_ENV_CHANNELS\./u
 
 // A preload call on its router.
 const PRELOAD_CALL = /\b(?:ipcRenderer|ipc)\.(?:invoke|send|sendSync|on|once)\(/u
@@ -412,9 +412,7 @@ test('what main and the server register, and what the preload uses, is the inven
   }
 
   // ── Registrations against the inventory ──
-  const extension = 'weather-deck:forecast'
   for (const seen of [...shellSeen, ...serverSeen]) {
-    if (seen.channel === extension) continue
     const row = IPC_INVENTORY[seen.channel]
     assert.ok(row, `"${seen.channel}" is registered (${seen.at[0]}) but not in src/shared/ipc-inventory.ts`)
     assert.equal(row.dir, seen.dir, `"${seen.channel}" is registered as ${seen.dir}, listed as ${row.dir}`)
@@ -446,17 +444,19 @@ test('what main and the server register, and what the preload uses, is the inven
     assert.ok(row && 'server' in row && row.dir === 'invoke', `the web tunnel's "${channel}" is a server invoke row`)
   }
 
-  // An installed extension's channels are the module kernel's: noted as each
-  // registers, so main allows them, and owned by no row.
-  assert.ok(registered.has(extension), "the installed extension's channel registers through the kernel")
-  assert.equal(ipcInventoryRow(extension), undefined)
-  assert.equal(mayRegisterInMain(extension), true)
+  // An installed extension declares methods, served over the Studio protocol,
+  // and registers no IPC at all.
+  assert.deepEqual(modules.kernel.declaredMethods('weather-deck'), [{ name: 'forecast', access: 'read' }])
+  assert.deepEqual(
+    [...registered].filter((channel) => channel.startsWith('weather-deck')),
+    [],
+    'an installed extension registers no IPC channel',
+  )
 
   // What the server registers is what the preload routes to it out of process
-  // (SERVER_IPC_CHANNELS), an installed extension's channels apart; all of it
-  // is server rows.
+  // (SERVER_IPC_CHANNELS); all of it is server rows.
   assert.deepEqual(
-    [...new Set(serverSeen.map((seen) => seen.channel).filter((channel) => channel !== extension))].sort(),
+    [...new Set(serverSeen.map((seen) => seen.channel))].sort(),
     Object.keys(SERVER_IPC_CHANNELS).sort(),
     'what the server registers and SERVER_IPC_CHANNELS differ',
   )

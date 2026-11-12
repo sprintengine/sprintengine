@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { MODULE_BRIDGE_INVOKE_CHANNEL } from '../../shared/modules/bridge'
 import { MODULE_HOST_SERVICE_CHANNEL } from '../../shared/modules/host-service-bridge'
 import { computeModuleFileDigestsSync } from '../modules/module-signature'
 import { planThirdPartyMainModules } from '../modules/third-party-main-loader'
@@ -14,6 +13,13 @@ import { loadMainModules, type CapabilityModule } from './load-modules'
 import { createServiceToken } from './main-host'
 import { test } from 'vitest'
 
+/** A read method answering `result`, for a module that needs something to declare. */
+const answering = (result: unknown) => ({
+  access: 'read' as const,
+  params: (value: unknown) => ({ ok: true as const, params: value }),
+  handler: () => ({ ok: true as const, result }),
+})
+
 test('load-modules', async () => {
   async function main(): Promise<void> {
     testEnabledModulesRegisterInDependencyOrder()
@@ -21,7 +27,7 @@ test('load-modules', async () => {
     testProvideServicesSeedsBeforeModules()
     testCrossModuleServiceWiring()
     testThrowingModuleIsIsolated()
-    testDuplicateChannelIsReportedNotFatal()
+    testDuplicateMethodIsReportedNotFatal()
     testLifecycleAndSidecarsCollected()
     await testAsyncRegisterMainIsAwaitedByReady()
     await testAsyncRegisterMainRejectionUnregistersTheModule()
@@ -146,7 +152,7 @@ test('load-modules', async () => {
     }
     const good: CapabilityModule = {
       manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc('good:ping', () => 'pong'),
+      registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
     }
 
     const { ipcMain, handled } = createFakeIpcMain()
@@ -155,31 +161,35 @@ test('load-modules', async () => {
     assert.deepEqual(report.loaded, ['good'], 'a throwing module must not abort the others')
     assert.equal(report.errors.length, 1)
     assert.equal(report.errors[0].id, 'bad')
-    assert.deepEqual(handled, [MODULE_BRIDGE_INVOKE_CHANNEL, MODULE_HOST_SERVICE_CHANNEL, 'good:ping'])
+    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
   }
 
-  function testDuplicateChannelIsReportedNotFatal(): void {
+  function testDuplicateMethodIsReportedNotFatal(): void {
     const first: CapabilityModule = {
       manifest: { id: 'first', displayName: 'First', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc('shared:channel', () => 1),
+      registerMain: (host) => host.registerMethods({ list: answering(1) }),
     }
+    // Method names are each module's own: another module may use the same one.
     const second: CapabilityModule = {
       manifest: { id: 'second', displayName: 'Second', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc('shared:channel', () => 2),
+      registerMain: (host) => host.registerMethods({ list: answering(2) }),
+    }
+    const twice: CapabilityModule = {
+      manifest: { id: 'twice', displayName: 'Twice', version: 1, defaultEnabled: true },
+      registerMain: (host) => {
+        host.registerMethods({ list: answering(3) })
+        host.registerMethods({ list: answering(4) })
+      },
     }
 
-    const { ipcMain, handled } = createFakeIpcMain()
-    const { report, kernel } = loadMainModules({ ipcMain, modules: [first, second] })
+    const { ipcMain } = createFakeIpcMain()
+    const { report, kernel } = loadMainModules({ ipcMain, modules: [first, second, twice] })
 
-    assert.deepEqual(report.loaded, ['first'])
+    assert.deepEqual(report.loaded, ['first', 'second'])
     assert.equal(report.errors.length, 1)
-    assert.equal(report.errors[0].id, 'second')
-    assert.deepEqual(
-      handled,
-      [MODULE_BRIDGE_INVOKE_CHANNEL, MODULE_HOST_SERVICE_CHANNEL, 'shared:channel'],
-      'channel handled exactly once',
-    )
-    assert.equal(kernel.ownedChannels().get('shared:channel'), 'first')
+    assert.equal(report.errors[0].id, 'twice')
+    assert.deepEqual(kernel.declaredMethods('first'), [{ name: 'list', access: 'read' }])
+    assert.deepEqual(kernel.declaredMethods('second'), [{ name: 'list', access: 'read' }])
   }
 
   function testLifecycleAndSidecarsCollected(): void {
@@ -223,26 +233,33 @@ test('load-modules', async () => {
 
   async function testAsyncRegisterMainRejectionUnregistersTheModule(): Promise<void> {
     const mod: CapabilityModule = {
-      manifest: { id: 'flaky', displayName: 'Flaky', version: 1, defaultEnabled: true, source: 'third-party' },
+      manifest: {
+        id: 'flaky',
+        displayName: 'Flaky',
+        version: 1,
+        defaultEnabled: true,
+        source: 'third-party',
+        permissions: ['module:bridge'],
+      },
       registerMain: async (host) => {
-        host.registerIpc('flaky:ping', () => 'pong')
+        host.registerMethods({ ping: answering('pong') })
         await Promise.resolve()
         throw new Error('async boom')
       },
     }
     const other: CapabilityModule = {
       manifest: { id: 'steady', displayName: 'Steady', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc('steady:ping', () => 'pong'),
+      registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
     }
 
     const { ipcMain } = createFakeIpcMain()
     const { kernel, report, ready } = loadMainModules({ ipcMain, modules: [mod, other] })
-    assert.ok(kernel.ownedChannels().has('flaky:ping'), 'sync registrations land before the await')
+    assert.equal(kernel.declaredMethods('flaky').length, 1, 'sync registrations land before the await')
     await ready
     assert.deepEqual(report.loaded, ['steady'])
     assert.deepEqual(report.errors, [{ id: 'flaky', message: 'async boom' }])
-    assert.equal(kernel.ownedChannels().has('flaky:ping'), false, 'the failed module leaves nothing behind')
-    assert.ok(kernel.ownedChannels().has('steady:ping'))
+    assert.deepEqual(kernel.declaredMethods('flaky'), [], 'the failed module leaves nothing behind')
+    assert.equal(kernel.declaredMethods('steady').length, 1)
     assert.ok(
       kernel.recentNotifications().some((n) => n.sourceModuleId === 'flaky' && n.severity === 'error'),
       'a third-party async failure is surfaced under its identity',
@@ -278,14 +295,14 @@ test('load-modules', async () => {
       manifest: { id: 'live-good', displayName: 'Live good', version: 1, defaultEnabled: false },
       registerMain: async (host) => {
         await Promise.resolve()
-        host.registerIpc('live-good:ping', () => 'pong')
+        host.registerMethods({ ping: answering('pong') })
         settled = true
       },
     }
     const bad: CapabilityModule = {
       manifest: { id: 'live-bad', displayName: 'Live bad', version: 1, defaultEnabled: false },
       registerMain: async (host) => {
-        host.registerIpc('live-bad:ping', () => 'pong')
+        host.registerMethods({ ping: answering('pong') })
         throw new Error('live boom')
       },
     }
@@ -299,7 +316,7 @@ test('load-modules', async () => {
     assert.equal(settled, true)
     assert.deepEqual(live.loaded, ['live-good'])
     assert.deepEqual(live.errors, [{ id: 'live-bad', message: 'live boom' }])
-    assert.equal(kernel.ownedChannels().has('live-bad:ping'), false)
+    assert.deepEqual(kernel.declaredMethods('live-bad'), [])
   }
 
   async function testRunStartupAndShutdownInvokeHooks(): Promise<void> {
@@ -368,7 +385,7 @@ test('load-modules', async () => {
     const moduleRoot = await createThirdPartyModuleRoot('trusted')
     await writeFile(
       join(moduleRoot, 'main.cjs'),
-      "exports.registerMain = (host) => host.registerIpc('trusted:ping', () => 'pong')\n",
+      "exports.registerMain = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pong' }) } })\n",
     )
     const planned = planThirdPartyMainModules({
       modules: [installedThirdPartyModule({ id: 'trusted', moduleRoot, trust: 'trusted', main: 'main.cjs' })],
@@ -381,7 +398,7 @@ test('load-modules', async () => {
     assert.deepEqual(report.loaded, ['trusted'])
     assert.deepEqual(report.manifestOnly, [])
     assert.deepEqual(report.errors, [])
-    assert.deepEqual(handled, [MODULE_BRIDGE_INVOKE_CHANNEL, MODULE_HOST_SERVICE_CHANNEL, 'trusted:ping'])
+    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
   }
 
   async function testUntrustedAndInvalidThirdPartyMainNeverImports(): Promise<void> {
@@ -426,7 +443,7 @@ test('load-modules', async () => {
     await writeFile(join(importFailureRoot, 'main.cjs'), "require('./missing.cjs')\n")
     const good: CapabilityModule = {
       manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc('good:ping', () => 'pong'),
+      registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
     }
     const planned = planThirdPartyMainModules({
       modules: [
@@ -452,7 +469,7 @@ test('load-modules', async () => {
 
     assert.deepEqual(report.loaded, ['good'])
     assert.deepEqual(report.manifestOnly, ['manifest-only'])
-    assert.deepEqual(handled, [MODULE_BRIDGE_INVOKE_CHANNEL, MODULE_HOST_SERVICE_CHANNEL, 'good:ping'])
+    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
     assert.equal(report.errors.length, 3)
     assert.equal(
       report.errors.find((error) => error.id === 'escaped')?.message,
@@ -498,7 +515,7 @@ test('load-modules', async () => {
     await writeFile(join(badRoot, 'main.cjs'), "exports.registerMain = () => { throw new Error('boom') }\n")
     const good: CapabilityModule = {
       manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc('good:ping', () => 'pong'),
+      registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
     }
     const planned = planThirdPartyMainModules({
       modules: [installedThirdPartyModule({ id: 'bad', moduleRoot: badRoot, trust: 'trusted', main: 'main.cjs' })],
@@ -509,7 +526,7 @@ test('load-modules', async () => {
     const { report } = loadMainModules({ ipcMain, modules: [...planned.modules, good] })
 
     assert.deepEqual(report.loaded, ['good'])
-    assert.deepEqual(handled, [MODULE_BRIDGE_INVOKE_CHANNEL, MODULE_HOST_SERVICE_CHANNEL, 'good:ping'])
+    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
     assert.equal(report.errors.length, 1)
     assert.equal(report.errors[0].id, 'bad')
     assert.equal(report.errors[0].message, 'boom')
@@ -572,6 +589,7 @@ test('load-modules', async () => {
       version: 1,
       defaultEnabled: true,
       source: 'third-party',
+      permissions: ['module:bridge'],
     }
     if (options.main) manifest.entry = { main: options.main }
     if (options.dependsOn) manifest.dependsOn = options.dependsOn
