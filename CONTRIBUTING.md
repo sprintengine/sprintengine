@@ -248,6 +248,8 @@ update channel, and repository enforcement settings.
   not be merged, and CI runs the same commands.
 - Describe what changed and why in the same voice as the commit messages.
 - If the change is user-visible, say how you checked it in the running app.
+- Say what the change could break and how to undo it. Reviews, by people and
+  by agents, follow `REVIEW.md`.
 
 ## Licence and contribution terms
 
