@@ -1,5 +1,5 @@
 import type { ConversationCliRuntimeOverrides } from '../../../../../shared/conversation-runtime'
-import { LOCAL_HOST_ID } from '../../../../../shared/execution-host'
+import { LOCAL_HOST_ID, normalizeExecutionHostId } from '../../../../../shared/execution-host'
 import { focusOrAddTerminalTab } from '../../../utils/modelRegistry'
 
 /**
@@ -38,7 +38,12 @@ export async function openCliSignInTerminal(input: {
     undefined,
     undefined,
     true,
-    { kind: 'terminal', workspaceId: input.workspaceId, terminalId, hostId: resolved.hostId ?? LOCAL_HOST_ID },
+    {
+      kind: 'terminal',
+      workspaceId: input.workspaceId,
+      terminalId,
+      hostId: normalizeExecutionHostId(resolved.hostId) ?? LOCAL_HOST_ID,
+    },
   )
   if (!spawned.ok) return { ok: false, message: spawned.message }
   await window.api.terminalWrite(sessionId, `${resolved.commandLine}\r`)

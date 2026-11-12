@@ -7,7 +7,6 @@ import type {
   ConversationSecretStatusResult,
 } from '../../shared/electron-api'
 import type {
-  ConversationEvent,
   ConversationProvidersListInput,
   ConversationProviderSignInInput,
   ConversationProviderSignInResult,
@@ -28,7 +27,6 @@ import type {
   ConversationRewindResult,
   ConversationHandoffResult,
   ConversationForkResult,
-  ConversationEventType,
   ConversationContextBreakdownResult,
 } from '../../shared/conversation-runtime'
 import {
@@ -51,55 +49,6 @@ import { isRecord } from '../../shared/records'
 import { boundConversationPage, conversationWireFrame } from '../../server/conversation-stream-shaping'
 
 import { createConversationService, type ConversationService } from '../conversation-service'
-
-/**
- * What the all-conversations channel (`conversation:event`) forwards: a chat's
- * lifecycle and status, never its per-token stream. Every workspace window
- * subscribes, and its readers (the session list, the history rows) only ask
- * whether a chat started, moved, waited or ended. Reply and reasoning deltas,
- * and a running tool's partial output, went to every window, hidden ones
- * included, dozens of times a second per streaming chat, only to be dropped
- * there. The pane showing a chat reads its stream on the scoped channel
- * (`conversation:session-event`), which is unchanged.
- */
-const BROADCAST_EVENT_TYPES: ReadonlySet<ConversationEventType> = new Set<ConversationEventType>([
-  'session_started',
-  'session_ready',
-  'session_updated',
-  'session_closed',
-  'user_message',
-  'turn_started',
-  'tool_started',
-  'tool_output',
-  'approval_requested',
-  'approval_resolved',
-  'usage_updated',
-  'context_compacted',
-  'context_compacting',
-  'context_handed_off',
-  'command_output',
-  'turn_completed',
-  'turn_failed',
-  'subagent_status',
-  'subagent_message',
-])
-
-/**
- * What the all-chats broadcast carries of an event: whose it is, what kind,
- * and when. Its reader (the sessions list) only learns from it that a chat
- * moved and asks for the list again; the payload, a tool's input or result
- * among them, went to every window for every step of every chat unread.
- */
-function broadcastEnvelope(event: ConversationEvent): ConversationEvent {
-  const { payload: _payload, parts: _parts, ...envelope } = event as ConversationEvent & { parts?: unknown }
-  return envelope
-}
-
-export function isConversationBroadcastEvent(event: ConversationEvent): boolean {
-  if (!BROADCAST_EVENT_TYPES.has(event.type)) return false
-  // A running tool's output streams; its final output says the tool is done.
-  return !(event.type === 'tool_output' && event.payload?.partial === true)
-}
 
 export function registerConversationIpc(
   ipcMain: IpcMain,
@@ -696,13 +645,12 @@ export function registerConversationIpc(
       sender.removeListener('destroyed', cleanup)
       unsubscribe()
     }
-    const unsubscribe = handlers.onEvent((conversationEvent) => {
+    const unsubscribe = handlers.onLifecycleEvent((conversationEvent) => {
       if (sender.isDestroyed()) {
         cleanup()
         return
       }
-      if (isConversationBroadcastEvent(conversationEvent))
-        sender.send('conversation:event', broadcastEnvelope(conversationEvent))
+      sender.send('conversation:event', conversationEvent)
     })
     eventSubscriptions.set(subscriptionId, { senderId: sender.id, dispose: cleanup })
     sender.once('destroyed', cleanup)

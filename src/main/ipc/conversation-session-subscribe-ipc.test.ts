@@ -35,6 +35,7 @@ function harness(runtime: ConversationRuntime) {
       stopSession: unused,
       listSessions: () => ({ ok: true, sessions: [] }),
       onEvent: () => () => undefined,
+      onLifecycleEvent: () => () => undefined,
       subscribe: (input, listener) => sessions.subscribe(input, listener),
     } as ConversationService,
   )
@@ -140,6 +141,7 @@ test('the window is sent a chat as every wire sends it: results once, a snapshot
       stopSession: unused,
       listSessions: () => ({ ok: true, sessions: [] }),
       onEvent: () => () => undefined,
+      onLifecycleEvent: () => () => undefined,
       subscribe: (_input, listener) => {
         listener({ type: 'snapshot', page, generation: 'g' })
         listener({ type: 'event', event: events[0] })
@@ -209,6 +211,7 @@ test('the window reads an event that crossed cut to fit whole, by its sequence a
       listSessions: () => ({ ok: true, sessions: [] }),
       readTranscript: unused,
       onEvent: () => () => undefined,
+      onLifecycleEvent: () => () => undefined,
       readEvent: async (input) => {
         asked.push(input)
         return { ok: true as const, event: whole }

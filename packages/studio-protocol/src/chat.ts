@@ -10,26 +10,44 @@ import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   isConversationWirePermissionPreset,
   parseConversationMentions,
+  type ConversationApprovalRuleRevokeResult,
+  type ConversationApprovalRulesResult,
   type ConversationAttachmentResult,
   type ConversationCommandCatalog,
+  type ConversationContextBreakdownResult,
+  type ConversationEvent,
+  type ConversationListSessionsResult,
+  type ConversationMcpServerAction,
+  type ConversationMcpServerActionResult,
+  type ConversationProviderSignInResult,
+  type ConversationSearchResult,
+  type ConversationSessionActionResult,
+  type ConversationSideQuestionExchange,
+  type ConversationSideQuestionResult,
+  type ConversationTerminalHandoffResult,
+  type ConversationThreadsResult,
   type ConversationForkResult,
   type ConversationHandoffResult,
   type ConversationMentionRef,
   type ConversationPlanDocumentResult,
   type ConversationRevertResult,
   type ConversationRewindResult,
-  type ConversationSessionActionResult,
   type ConversationStartSessionResult,
   type ConversationWirePermissionPreset,
 } from './conversation.js'
 import {
+  STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_CHECKPOINTS_CAPABILITY,
   STUDIO_COMMANDS_CAPABILITY,
   STUDIO_CONVERSATION_FILES_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
+  STUDIO_HISTORY_CAPABILITY,
+  STUDIO_PROVIDER_SETTINGS_CAPABILITY,
   STUDIO_PROVIDERS_CAPABILITY,
+  STUDIO_SESSION_CONTROLS_CAPABILITY,
   STUDIO_SESSIONS_CAPABILITY,
+  STUDIO_TERMINAL_HANDOFF_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
   type StudioCapability,
 } from './handshake.js'
@@ -310,7 +328,91 @@ export type StudioChatMethodMap = {
     errors: 'not_found'
   }
   'workspaces.list': { params: Record<string, never>; result: { workspaces: StudioWorkspace[] } }
+  /** The live sessions of a workspace's chats, or of one chat, or of every chat. */
+  'session.list': { params: { workspaceId?: string; agentId?: string }; result: ConversationListSessionsResult }
+  /** End a session's process; the chat keeps its record and starts again on the next send. */
+  'session.stop': { params: SessionCommandParams; result: ConversationSessionActionResult }
+  /** End a session's process and keep its place, so the next send resumes the same provider session. */
+  'session.suspend': { params: SessionCommandParams; result: ConversationSessionActionResult }
+  /** Reconnect one of a live session's MCP servers, switch it on or off, or begin its sign-in. */
+  'session.mcpServerAction': {
+    params: SessionCommandParams & { serverId: string; action: ConversationMcpServerAction }
+    result: ConversationMcpServerActionResult
+  }
+  /** Stop one agent the session spawned, by the call that spawned it. */
+  'session.stopSubagent': {
+    params: SessionCommandParams & { toolUseId: string }
+    result: ConversationSessionActionResult
+  }
+  /** Pass the person's words to one agent the session spawned. */
+  'session.messageSubagent': {
+    params: SessionCommandParams & { toolUseId: string; message: string }
+    result: ConversationSessionActionResult
+  }
+  /**
+   * A side question about the chat, asked of its agent under the client's
+   * `requestId`; the answer is kept in the chat as a side question.
+   */
+  'session.askSideQuestion': {
+    params: SessionCommandParams & {
+      requestId: string
+      question: string
+      history?: ConversationSideQuestionExchange[]
+    }
+    result: ConversationSideQuestionResult
+  }
+  /** Call off a side question still being answered. */
+  'session.cancelSideQuestion': {
+    params: { sessionId: string; requestId: string }
+    result: { ok: true } | { ok: false; message: string }
+  }
+  /** What fills the session's context window, as its agent measures it. */
+  'session.contextBreakdown': { params: { sessionId: string }; result: ConversationContextBreakdownResult }
+  /**
+   * Hand a chat to a terminal agent on the Studio's machine running its CLI's
+   * own resume; by its live session, or by the chat for one with none.
+   */
+  'session.terminalHandoff': {
+    params: { commandId: string } & ({ sessionId: string } | { workspaceId: string; agentId: string })
+    result: ConversationTerminalHandoffResult
+  }
+  /** A workspace's history, every chat its transcripts hold; `workspaceRoot` as the workspace list gives it. */
+  'conversation.threads': {
+    params: { workspaceId: string; workspaceRoot?: string }
+    result: ConversationThreadsResult
+    errors: 'not_found'
+  }
+  /**
+   * Search a workspace's history; answered with every hit at once. A newer
+   * search under the same `requestId`, or `conversation.cancelSearch`, ends it.
+   */
+  'conversation.search': {
+    params: { workspaceId: string; workspaceRoot?: string; query: string; requestId?: string }
+    result: ConversationSearchResult
+    errors: 'not_found'
+  }
+  'conversation.cancelSearch': { params: { requestId: string }; result: { ok: boolean } }
+  /** The rules that answer an approval by themselves, everywhere in a folder. */
+  'conversation.approvalRules': { params: Record<string, never>; result: ConversationApprovalRulesResult }
+  'conversation.revokeApprovalRule': {
+    params: { commandId: string; ruleId: string }
+    result: ConversationApprovalRuleRevokeResult
+  }
+  /** The line a terminal runs to sign a provider's CLI back in, and where. */
+  'providers.signIn': {
+    params: { providerId: string; cliRuntimes?: Record<string, StudioCliRuntimeOverride | undefined> }
+    result: ConversationProviderSignInResult
+  }
+  /** Keep a provider's key in the Studio's credential store; answered with its status, never the key. */
+  'providers.setSecret': {
+    params: { commandId: string; providerId: string; value: string }
+    result: StudioSecretStatusResult
+  }
+  'providers.clearSecret': { params: { commandId: string; providerId: string }; result: StudioSecretStatusResult }
 }
+
+/** A session command: the session by its id, under the client's command id. */
+type SessionCommandParams = { commandId: string; sessionId: string }
 
 export type StudioChatMethod = keyof StudioChatMethodMap
 
@@ -418,6 +520,44 @@ const checkpoints = owned('conversation:operate', STUDIO_CHECKPOINTS_CAPABILITY,
 const conversationFiles = owned('conversation:read', STUDIO_CONVERSATION_FILES_CAPABILITY, false)
 const providers = owned('providers:read', STUDIO_PROVIDERS_CAPABILITY, false)
 const files = owned('files:read', STUDIO_FILES_CAPABILITY, false)
+
+// Reading a session changes nothing; acting on one carries a command id.
+const sessionReads = owned('conversation:read', STUDIO_SESSION_CONTROLS_CAPABILITY, false)
+const sessionControls = owned('conversation:operate', STUDIO_SESSION_CONTROLS_CAPABILITY, true)
+const history = owned('conversation:read', STUDIO_HISTORY_CAPABILITY, false)
+
+const MCP_SERVER_ACTIONS: readonly ConversationMcpServerAction[] = ['reconnect', 'enable', 'disable', 'sign-in']
+const TOOL_USE_ID = '"toolUseId" names the call that spawned the agent.'
+const REQUEST_ID = '"requestId" must be a string of 1 to 200 characters.'
+/** A side question is a message's worth of words; its aside holds a handful, each with its answer. */
+const SIDE_QUESTION_MAX_CHARS = 20_000
+const SIDE_ANSWER_MAX_CHARS = 100_000
+const SIDE_QUESTION_HISTORY_MAX = 20
+/** Longer than any provider's key. */
+const SECRET_MAX_CHARS = 16_384
+
+function sideQuestionHistory(value: unknown): ConversationSideQuestionExchange[] | null {
+  if (!Array.isArray(value) || value.length > SIDE_QUESTION_HISTORY_MAX) return null
+  const out: ConversationSideQuestionExchange[] = []
+  for (const entry of value) {
+    if (!record(entry) || !text(entry.question, SIDE_QUESTION_MAX_CHARS) || !text(entry.answer, SIDE_ANSWER_MAX_CHARS))
+      return null
+    out.push({ question: entry.question, answer: entry.answer })
+  }
+  return out
+}
+
+/** A workspace by its id, and its folder as the workspace list gives it, when the client knows it. */
+function workspaceHistory(
+  value: Record<string, unknown>,
+): StudioParsed<{ workspaceId: string; workspaceRoot?: string }> {
+  if (!id(value.workspaceId)) return refuse('"workspaceId" names the workspace.')
+  if (!optional(value.workspaceRoot, isStudioPath)) return refuse('"workspaceRoot" is the workspace’s folder.')
+  return studioParams({
+    workspaceId: value.workspaceId,
+    ...(value.workspaceRoot === undefined ? {} : { workspaceRoot: value.workspaceRoot as string }),
+  })
+}
 
 const providerId = (value: Record<string, unknown>): StudioParsed<{ providerId: string }> =>
   id(value.providerId) ? studioParams({ providerId: value.providerId }) : refuse('"providerId" names the provider.')
@@ -792,6 +932,162 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'workspaces.list': { ...owned('workspaces:read', STUDIO_WORKSPACES_CAPABILITY, false), params: studioNoParams },
+  'session.list': {
+    ...sessionReads,
+    params: (value) => {
+      if (!optional(value.workspaceId, id) || !optional(value.agentId, id))
+        return refuse('"workspaceId" and "agentId", when given, name the chats.')
+      return studioParams({
+        ...(value.workspaceId === undefined ? {} : { workspaceId: value.workspaceId as string }),
+        ...(value.agentId === undefined ? {} : { agentId: value.agentId as string }),
+      })
+    },
+  },
+  'session.stop': { ...sessionControls, params: sessionCommand },
+  'session.suspend': { ...sessionControls, params: sessionCommand },
+  'session.mcpServerAction': {
+    ...sessionControls,
+    params: (value) => {
+      const session = sessionCommand(value)
+      if (!session.ok) return session
+      if (!id(value.serverId)) return refuse('"serverId" names the MCP server.')
+      if (!MCP_SERVER_ACTIONS.includes(value.action as ConversationMcpServerAction))
+        return refuse('"action" is reconnect, enable, disable or sign-in.')
+      return studioParams({
+        ...session.params,
+        serverId: value.serverId,
+        action: value.action as ConversationMcpServerAction,
+      })
+    },
+  },
+  'session.stopSubagent': {
+    ...sessionControls,
+    params: (value) => {
+      const session = sessionCommand(value)
+      if (!session.ok) return session
+      if (!id(value.toolUseId)) return refuse(TOOL_USE_ID)
+      return studioParams({ ...session.params, toolUseId: value.toolUseId })
+    },
+  },
+  'session.messageSubagent': {
+    ...sessionControls,
+    params: (value) => {
+      const session = sessionCommand(value)
+      if (!session.ok) return session
+      if (!id(value.toolUseId)) return refuse(TOOL_USE_ID)
+      if (typeof value.message !== 'string' || !value.message.trim()) return refuse('"message" is required.')
+      if (value.message.length > CONVERSATION_MAX_MESSAGE_CHARS)
+        return refuse(`A message may hold at most ${CONVERSATION_MAX_MESSAGE_CHARS} characters.`, 'too_large')
+      return studioParams({ ...session.params, toolUseId: value.toolUseId, message: value.message })
+    },
+  },
+  'session.askSideQuestion': {
+    ...sessionControls,
+    params: (value) => {
+      const session = sessionCommand(value)
+      if (!session.ok) return session
+      if (!id(value.requestId)) return refuse(REQUEST_ID)
+      if (typeof value.question !== 'string' || !value.question.trim()) return refuse('"question" is required.')
+      if (value.question.length > SIDE_QUESTION_MAX_CHARS)
+        return refuse(`A side question may hold at most ${SIDE_QUESTION_MAX_CHARS} characters.`, 'too_large')
+      const history = value.history === undefined ? undefined : sideQuestionHistory(value.history)
+      if (history === null)
+        return refuse(`"history" is a list of at most ${SIDE_QUESTION_HISTORY_MAX} { question, answer }.`)
+      return studioParams({
+        ...session.params,
+        requestId: value.requestId,
+        question: value.question,
+        ...(history ? { history } : {}),
+      })
+    },
+  },
+  'session.cancelSideQuestion': {
+    ...sessionReads,
+    params: (value) => {
+      if (!id(value.sessionId)) return refuse(SESSION_ID)
+      if (!id(value.requestId)) return refuse(REQUEST_ID)
+      return studioParams({ sessionId: value.sessionId, requestId: value.requestId })
+    },
+  },
+  'session.contextBreakdown': {
+    ...sessionReads,
+    params: (value) => (id(value.sessionId) ? studioParams({ sessionId: value.sessionId }) : refuse(SESSION_ID)),
+  },
+  'session.terminalHandoff': {
+    ...owned('conversation:operate', STUDIO_TERMINAL_HANDOFF_CAPABILITY, true),
+    params: (value) => {
+      if (!id(value.commandId)) return refuse(COMMAND_ID)
+      if (value.sessionId !== undefined) {
+        if (!id(value.sessionId)) return refuse(SESSION_ID)
+        return studioParams({ commandId: value.commandId, sessionId: value.sessionId })
+      }
+      if (!id(value.workspaceId) || !id(value.agentId))
+        return refuse('"sessionId", or "workspaceId" and "agentId", name the chat.')
+      return studioParams({ commandId: value.commandId, workspaceId: value.workspaceId, agentId: value.agentId })
+    },
+  },
+  'conversation.threads': { ...history, params: (value) => workspaceHistory(value) },
+  'conversation.search': {
+    ...history,
+    params: (value) => {
+      const at = workspaceHistory(value)
+      if (!at.ok) return at
+      if (typeof value.query !== 'string' || !value.query.trim() || value.query.length > 1_000)
+        return refuse('"query" is the words to search for, at most 1000 characters.')
+      if (!optional(value.requestId, id)) return refuse(REQUEST_ID)
+      return studioParams({
+        ...at.params,
+        query: value.query,
+        ...(value.requestId === undefined ? {} : { requestId: value.requestId as string }),
+      })
+    },
+  },
+  'conversation.cancelSearch': {
+    ...history,
+    params: (value) => (id(value.requestId) ? studioParams({ requestId: value.requestId }) : refuse(REQUEST_ID)),
+  },
+  'conversation.approvalRules': {
+    ...owned('conversation:read', STUDIO_APPROVAL_RULES_CAPABILITY, false),
+    params: studioNoParams,
+  },
+  'conversation.revokeApprovalRule': {
+    ...owned('conversation:operate', STUDIO_APPROVAL_RULES_CAPABILITY, true),
+    params: (value) => {
+      if (!id(value.commandId)) return refuse(COMMAND_ID)
+      if (!id(value.ruleId)) return refuse('"ruleId" names the rule.')
+      return studioParams({ commandId: value.commandId, ruleId: value.ruleId })
+    },
+  },
+  'providers.signIn': {
+    ...owned('providers:read', STUDIO_PROVIDER_SETTINGS_CAPABILITY, false),
+    params: (value) => {
+      const provider = providerId(value)
+      if (!provider.ok) return provider
+      const runtimes = value.cliRuntimes === undefined ? undefined : cliRuntimes(value.cliRuntimes)
+      if (runtimes === null) return refuse('"cliRuntimes" maps a CLI to { command?, hostId?, models? }.')
+      return studioParams({ ...provider.params, ...(runtimes ? { cliRuntimes: runtimes } : {}) })
+    },
+  },
+  'providers.setSecret': {
+    ...owned('providers:read', STUDIO_PROVIDER_SETTINGS_CAPABILITY, true),
+    params: (value) => {
+      if (!id(value.commandId)) return refuse(COMMAND_ID)
+      const provider = providerId(value)
+      if (!provider.ok) return provider
+      if (typeof value.value !== 'string' || !value.value || value.value.length > SECRET_MAX_CHARS)
+        return refuse(`"value" is the key, 1 to ${SECRET_MAX_CHARS} characters.`)
+      return studioParams({ commandId: value.commandId, providerId: provider.params.providerId, value: value.value })
+    },
+  },
+  'providers.clearSecret': {
+    ...owned('providers:read', STUDIO_PROVIDER_SETTINGS_CAPABILITY, true),
+    params: (value) => {
+      if (!id(value.commandId)) return refuse(COMMAND_ID)
+      const provider = providerId(value)
+      if (!provider.ok) return provider
+      return studioParams({ commandId: value.commandId, providerId: provider.params.providerId })
+    },
+  },
 }
 
 // ── Topics ──────────────────────────────────────────────────────────────────
@@ -804,12 +1100,27 @@ export type StudioChatTopicMap = {
    * subscribing; ask `conversation.commands` for the list held now.
    */
   'conversation.commands': { params: Record<string, never>; payload: ConversationCommandCatalog; stream: 'push' }
+  /**
+   * Every chat's lifecycle, as it happens: a session started, a turn began or
+   * ended, an approval was asked, an agent changed. Each push is one event
+   * without its payload or parts (whose chat, what kind, when): a reader asks
+   * for what it shows (`session.list`, the chat's own topic). Never a chat's
+   * per-token stream, and nothing is replayed on subscribing.
+   */
+  'conversation.events': { params: Record<string, never>; payload: ConversationEvent; stream: 'push' }
 }
 
 export const STUDIO_CHAT_TOPICS: StudioTopicTable<StudioChatTopicMap> = {
   'conversation.commands': {
     scope: 'conversation:read',
     capability: STUDIO_COMMANDS_CAPABILITY,
+    owner: true,
+    push: true,
+    params: studioNoParams,
+  },
+  'conversation.events': {
+    scope: 'conversation:read',
+    capability: STUDIO_SESSION_CONTROLS_CAPABILITY,
     owner: true,
     push: true,
     params: studioNoParams,

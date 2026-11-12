@@ -246,7 +246,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     replaying.clear()
     for (const release of releases.splice(0)) release()
     try {
-      options.chat?.()?.releaseFileSearches(context.slot)
+      const chat = options.chat?.()
+      chat?.releaseFileSearches(context.slot)
+      chat?.releaseHistorySearches(context.slot)
     } catch {
       // Nothing of this connection's is left to end.
     }
@@ -735,6 +737,29 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /** Every chat's lifecycle, as it happens, each event without its payload. */
+  function subscribeEvents(id: string): void {
+    const chat = options.chat?.() ?? null
+    if (!chat) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve conversation.events.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'conversation.events', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = chat.onLifecycleEvent((event) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      // The grant is read again before anything goes out, as for a conversation.
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, 'conversation.events').ok) {
+        refreshGrant()
+        return
+      }
+      push('conversation.events', id, redact(event))
+    })
+    subscription.handle = { dispose: stop }
+  }
+
   /** One directory's changed names, as they happen, until the client unsubscribes or the folder goes. */
   function subscribeWatch(id: string, params: StudioTopicParams<'files.watch'>): void {
     const files = options.files
@@ -862,6 +887,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   type PushSubscribers = { readonly [T in StudioPushTopic]: (id: string, params: StudioTopicParams<T>) => void }
   const pushSubscribers: PushSubscribers = {
     'conversation.commands': subscribeCommands,
+    'conversation.events': subscribeEvents,
     'tools.catalog': subscribeCatalog,
     'files.watch': subscribeWatch,
     'pullRequests.changed': subscribePullRequests,

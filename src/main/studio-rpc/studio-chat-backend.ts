@@ -6,7 +6,13 @@ import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-
 import { onConversationCommandsChanged } from '../conversation-commands/registry'
 import { readConversationCommandsRequest } from '../conversation-commands/request'
 import {
+  parseCancelSideQuestionInput,
+  parseMcpServerActionInput,
+  parseMessageSubagentInput,
   parseProviderInput,
+  parseSecretSetInput,
+  parseSideQuestionInput,
+  parseStopSubagentInput,
   parseRespondToRequestInput,
   parseSendTurnInput,
   parseSessionIdInput,
@@ -30,27 +36,8 @@ import { expandHomePath } from '../home-path'
 // passed to the runtime, whose receipts answer a command repeated after a
 // dropped connection with its first result.
 
-type ChatHandlers = Pick<
-  ConversationService,
-  | 'startSession'
-  | 'sendTurn'
-  | 'interrupt'
-  | 'respondToRequest'
-  | 'setPermission'
-  | 'setModel'
-  | 'revertToTurn'
-  | 'rewindToTurn'
-  | 'handoffConversation'
-  | 'forkAtTurn'
-  | 'readAttachment'
-  | 'planDocument'
-  | 'listProviders'
-  | 'listProviderModels'
-  | 'getSecretStatus'
->
-
 export type StudioChatBackendDeps = {
-  conversation: ChatHandlers
+  conversation: ConversationService
   /** File search and reads, as the filesystem IPC serves them; a slot stands where a window's id would. */
   files: {
     searchFiles(senderId: number, input: Parameters<StudioChatBackend['searchFiles']>[1]): Promise<FileSearchResult>
@@ -72,6 +59,11 @@ export type StudioChatBackendDeps = {
   onCommandsChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
   workspaces(): ReturnType<StudioChatBackend['workspaces']>
 }
+
+const unavailable = (what: string): { ok: false; message: string } => ({
+  ok: false,
+  message: `${what} is unavailable here.`,
+})
 
 const failed = (error: unknown): { ok: false; message: string } => ({
   ok: false,
@@ -110,6 +102,9 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
     return checked.path
   }
   const onCommandsChanged = deps.onCommandsChanged ?? onConversationCommandsChanged
+  // A connection's history searches, by its slot and request id.
+  const historySearches = new Map<string, AbortController>()
+  let searchCount = 0
   return {
     async startSession(input) {
       const parsed = parseStartSessionInput(input)
@@ -264,5 +259,181 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
     repoRoot: (folderPath, hostId) => deps.repoRoot(folderPath, hostId),
     isKnownFolder: async (path) => (await confineToRoots(path, await deps.readableRoots())).ok,
     workspaces: () => deps.workspaces(),
+    async listSessions(input) {
+      try {
+        return handlers.listSessions(input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async stopSession(input) {
+      const parsed = checked(input, parseSessionIdInput)
+      if (!parsed.ok) return parsed
+      try {
+        return await handlers.stopSession(parsed.input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async suspendSession(input) {
+      const parsed = parseSessionIdInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.suspendSession?.(parsed.input)) ?? unavailable('Suspending a chat')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async mcpServerAction(input) {
+      const parsed = parseMcpServerActionInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.mcpServerAction?.(parsed.input)) ?? unavailable('Acting on a chat’s MCP servers')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async stopSubagent(input) {
+      const parsed = parseStopSubagentInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.stopSubagent?.(parsed.input)) ?? unavailable('Stopping an agent a chat spawned')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async messageSubagent(input) {
+      const parsed = parseMessageSubagentInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.messageSubagent?.(parsed.input)) ?? unavailable('Messaging an agent a chat spawned')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async askSideQuestion(input) {
+      const parsed = parseSideQuestionInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.askSideQuestion?.(parsed.input)) ?? unavailable('Side questions')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async cancelSideQuestion(input) {
+      const parsed = parseCancelSideQuestionInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (await handlers.cancelSideQuestion?.(parsed.input)) ?? unavailable('Side questions')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async contextBreakdown(input) {
+      const parsed = parseSessionIdInput(input)
+      if (!parsed.ok) return { ok: false, reason: 'failed', message: parsed.message }
+      try {
+        return (
+          (await handlers.readContextBreakdown?.({ sessionId: parsed.input.sessionId })) ?? {
+            ok: false,
+            reason: 'unsupported',
+            message: 'Reading what fills a chat’s context window is unavailable.',
+          }
+        )
+      } catch (error) {
+        return { ok: false, reason: 'failed', message: failed(error).message }
+      }
+    },
+    ...(handlers.terminalHandoff
+      ? {
+          async terminalHandoff(input: Parameters<NonNullable<StudioChatBackend['terminalHandoff']>>[0]) {
+            try {
+              return await handlers.terminalHandoff!(input)
+            } catch (error) {
+              return failed(error)
+            }
+          },
+        }
+      : {}),
+    async threads(input) {
+      try {
+        return (await handlers.listThreads?.(input)) ?? unavailable('Conversation history')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async searchHistory(slot, input) {
+      // As the IPC keys a window's searches: by who asked and the request id.
+      const key = `${slot}:${input.requestId ?? `search-${++searchCount}`}`
+      historySearches.get(key)?.abort()
+      const controller = new AbortController()
+      historySearches.set(key, controller)
+      try {
+        return (
+          (await handlers.searchThreads?.(input, { signal: controller.signal })) ?? unavailable('Conversation search')
+        )
+      } catch (error) {
+        return failed(error)
+      } finally {
+        if (historySearches.get(key) === controller) historySearches.delete(key)
+      }
+    },
+    cancelHistorySearch(slot, requestId) {
+      historySearches.get(`${slot}:${requestId}`)?.abort()
+    },
+    releaseHistorySearches(slot) {
+      for (const [key, controller] of historySearches)
+        if (key.startsWith(`${slot}:`)) {
+          controller.abort()
+          historySearches.delete(key)
+        }
+    },
+    async approvalRules() {
+      try {
+        return (await handlers.listApprovalRules?.()) ?? unavailable('Permission rules')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async revokeApprovalRule(ruleId) {
+      try {
+        return (await handlers.revokeApprovalRule?.(ruleId)) ?? unavailable('Permission rules')
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async signIn(input) {
+      const parsed = parseProviderInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return (
+          (await handlers.resolveSignIn?.({
+            providerId: parsed.input.providerId,
+            ...(input.cliRuntimes ? { cliRuntimes: input.cliRuntimes as ConversationCliRuntimeOverrides } : {}),
+          })) ?? unavailable('Signing a provider in')
+        )
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async setSecret(input) {
+      const parsed = parseSecretSetInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return await handlers.setSecret(parsed.input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    async clearSecret(input) {
+      const parsed = parseProviderInput(input)
+      if (!parsed.ok) return parsed
+      try {
+        return await handlers.clearSecret(parsed.input)
+      } catch (error) {
+        return failed(error)
+      }
+    },
+    onLifecycleEvent: (listener) => handlers.onLifecycleEvent(listener),
   }
 }

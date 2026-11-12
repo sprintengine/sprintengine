@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 
-import { createHarnessCliCheck, type ConversationService, type HarnessCliCheckDeps } from '../conversation-service'
+import {
+  conversationLifecycleEvents,
+  createHarnessCliCheck,
+  type ConversationService,
+  type HarnessCliCheckDeps,
+} from '../conversation-service'
 import { registerConversationIpc } from './conversation-ipc'
 import {
   ATTACHABLE_IMAGE_TYPES,
@@ -137,6 +142,14 @@ test('conversation-ipc', async () => {
   async function testRegistersSessionChannelsAndEventSubscription(): Promise<void> {
     const calls: string[] = []
     const runtimeListeners: Array<(event: ConversationEvent) => void> = []
+    const onRuntimeEvent = (cb: (event: ConversationEvent) => void) => {
+      runtimeListeners.push(cb)
+      return () => {
+        unsubscribed += 1
+        const index = runtimeListeners.indexOf(cb)
+        if (index >= 0) runtimeListeners.splice(index, 1)
+      }
+    }
     let unsubscribed = 0
     const startResult: ConversationStartSessionResult = {
       ok: true,
@@ -195,14 +208,8 @@ test('conversation-ipc', async () => {
         return { ok: true, workspaceId: 'workspace', agentId: 'agent-claude-code-abc123' }
       },
       listSessions: () => ({ ok: true, sessions: [startResult.session] }),
-      onEvent: (cb) => {
-        runtimeListeners.push(cb)
-        return () => {
-          unsubscribed += 1
-          const index = runtimeListeners.indexOf(cb)
-          if (index >= 0) runtimeListeners.splice(index, 1)
-        }
-      },
+      onEvent: onRuntimeEvent,
+      onLifecycleEvent: conversationLifecycleEvents(onRuntimeEvent),
     })
 
     await ipcMain.handlers.get('conversation:sessions:start')?.(null, {
@@ -571,6 +578,7 @@ test('conversation-ipc', async () => {
     | 'stopSession'
     | 'listSessions'
     | 'onEvent'
+    | 'onLifecycleEvent'
   > {
     return {
       listProviderModels: async () => ({ ok: true, models: [] }),
@@ -582,6 +590,7 @@ test('conversation-ipc', async () => {
       stopSession: async () => ({ ok: false, message: 'unused' }),
       listSessions: () => ({ ok: true, sessions: [] }),
       onEvent: () => () => undefined,
+      onLifecycleEvent: () => () => undefined,
     }
   }
 
@@ -598,6 +607,12 @@ type Handler = (event: unknown, ...args: unknown[]) => unknown
 function registerWithRuntimeListeners(extra: Partial<ConversationService> = {}) {
   const handlers = new Map<string, Handler>()
   const listeners = new Set<(event: ConversationEvent) => void>()
+  const onEvent = (listener: (event: ConversationEvent) => void) => {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  }
   const scoped = new Set<(frame: ConversationSessionFrame) => void>()
   registerConversationIpc(
     { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) } as unknown as Parameters<
@@ -616,10 +631,8 @@ function registerWithRuntimeListeners(extra: Partial<ConversationService> = {}) 
       setPermission: async () => ({ ok: false, message: 'unused' }),
       stopSession: async () => ({ ok: false, message: 'unused' }),
       listSessions: () => ({ ok: true, sessions: [] }),
-      onEvent: (listener) => {
-        listeners.add(listener)
-        return () => listeners.delete(listener)
-      },
+      onEvent,
+      onLifecycleEvent: conversationLifecycleEvents(onEvent),
       subscribe: (_input, listener) => {
         scoped.add(listener)
         return { dispose: () => scoped.delete(listener), ready: Promise.resolve() }
