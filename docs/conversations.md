@@ -578,9 +578,14 @@ that every reader passes over (`conversation-command-receipts.ts`).
   _accepted_ when its `user_message` and its receipt are committed in one
   write. The provider turn is what it then does. The send is _answered_ when
   that turn ends, as the protocol promises, and the answer is written to the
-  log too. If Studio stops before the turn ends, reopening the chat closes the
-  turn as interrupted, and a retry under the same id is answered as sent: the
-  message is in the chat, so it is never sent twice.
+  log too. The turn is the command's effect, and the chat is listed in the
+  data directory's `conversation-outbox.json` before its message commits; if
+  Studio stops before the turn ends, the next start closes every listed chat's
+  open turn as interrupted, in its log, without anyone opening the chat
+  (`recoverInterruptedTurns`; on a WSL or SSH machine, the next start of that
+  machine's server, which keeps its own list). The list is an aid: one that
+  cannot be written leaves the turn to be closed when its chat is next opened. A retry under the same id is answered as sent:
+  the message is in the chat, so it is never sent twice.
 - **A control command** (an answer to a request, a permission or model
   change, Stop, ending the session) acts on the live agent process and is
   answered with what that did, once the answer's receipt is written. If Studio

@@ -460,23 +460,30 @@ async function openAppendStream(filePath: string, storageRoot = dirname(filePath
       // Appending straight after it would glue the next record onto the
       // fragment, and both would be unreadable although this write succeeded
       // and its events were published. The fragment gets a line of its own.
-      await writeWhole(file, unterminated ? `\n${chunk}` : chunk, async (size) => {
-        // Through a handle of its own: one opened to append cannot be cut on
-        // every platform.
-        const cut = await openConfinedExistingFile(
-          await conversationConfinementRoot(storageRoot, filePath),
-          filePath,
-          'write',
-        )
-        try {
-          await cut.truncate(size)
-        } finally {
-          await cut.close()
-        }
-      })
+      await writeWhole(file, unterminated ? `\n${chunk}` : chunk, (size) =>
+        truncateConversationLog(storageRoot, filePath, size),
+      )
       unterminated = false
     },
     close: () => file.close(),
+  }
+}
+
+/**
+ * Cut a chat's log back to `size` bytes, through a handle of its own: one
+ * opened to append cannot be cut on every platform, and the log's own stays
+ * open meanwhile.
+ */
+export async function truncateConversationLog(storageRoot: string, filePath: string, size: number): Promise<void> {
+  const cut = await openConfinedExistingFile(
+    await conversationConfinementRoot(storageRoot, filePath),
+    filePath,
+    'write',
+  )
+  try {
+    await cut.truncate(size)
+  } finally {
+    await cut.close()
   }
 }
 

@@ -9,6 +9,7 @@ import {
   ConversationEventLog,
   DEFAULT_DELTA_FLUSH_MS,
   expandCoalescedDeltas,
+  truncateConversationLog,
   writeWhole,
   type AppendStream,
 } from './conversation-event-log'
@@ -350,14 +351,8 @@ test('a batch the disk takes only part of is cut back off the real file, opened 
           throw new Error('ENOSPC: no space left on device')
         },
       }
-      const cut = async (size: number) => {
-        const writable = await open(path, 'r+')
-        try {
-          await writable.truncate(size)
-        } finally {
-          await writable.close()
-        }
-      }
+      // How the log's own stream cuts it, while its append handle stays open.
+      const cut = (size: number) => truncateConversationLog(root, path, size)
       await assert.rejects(writeWhole(filling, '{"seq":2}\n{"receipt":{"id":"c"}}\n', cut), /ENOSPC/)
       assert.equal(await readFile(path, 'utf8'), '{"seq":1}\n', 'nothing of the failed batch is left')
       await appending.appendFile('{"seq":3}\n')
