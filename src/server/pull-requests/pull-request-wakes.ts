@@ -73,6 +73,8 @@ export type PullRequestWakesDeps = {
 export type PullRequestWakes = {
   /** News for a chat, already kept as untold: said now if it takes a message, else as soon as it does. */
   deliver(event: PullRequestWatchNewsEvent): void
+  /** A chat with untold news is looked at as if it had just come (its record is known now). */
+  lookAt(key: PullRequestConversationKey): void
   /** At start: the chats the last run left news for are looked at as if it had just come. */
   resume(): Promise<void>
   /** The computer woke or was unlocked: timers stood still while it slept. */
@@ -85,6 +87,8 @@ type Waiting = {
   sending: boolean
   /** News came while a message was out: looked at again once it is answered. */
   again: boolean
+  /** Its record could not be written, and that has been said once. */
+  stalled?: boolean
   timer: unknown
   /** When the armed timer is due, so a sooner look replaces a later one and not the other way round. */
   timerAt: number
@@ -177,12 +181,15 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
       // The message a send already went out under, or everything not told
       // yet under a new id, written before it goes.
       message = await deps.untold.next(entry.key)
+      entry.stalled = false
     } catch (error) {
       // Its id could not be written: nothing goes until it can be.
       entry.sending = false
-      deps.log?.(
-        `A pull request wake waits for its record to be written: ${error instanceof Error ? error.message : error}`,
-      )
+      if (!entry.stalled)
+        deps.log?.(
+          `A pull request wake waits for its record to be written: ${error instanceof Error ? error.message : error}`,
+        )
+      entry.stalled = true
       if (!disposed) lookAgainIn(entry, BUSY_RETRY_MS)
       return
     }
@@ -217,6 +224,7 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
 
   return {
     deliver: (event) => lookAt(event.conversation),
+    lookAt,
     async resume() {
       // A chat the records do not name yet (they may still be loading) keeps
       // its news for the next start, rather than being taken for deleted.
