@@ -1105,11 +1105,16 @@ methods (host API 2), under `modules:read` and the new `modules:operate`
 module's answer, its own refusals included, is the result. A Studio without a module kernel leaves the capability out, and a
 client subscribes only where it is advertised. Explicit grants
 (2026-11-12) replace "owners only" on everything above and on the chat
-surface, the conversation commands, `files.*` by root, `tools.grant*`,
-`localServers.*` and `pullRequests.list/refresh/unwatch`: each reaches a client
-by its scope. `session.terminalHandoff`, `providers.signIn` and the three
-`pullRequests` reports of Studio's own agents stay an owner's, each with its
-reason in the method table. `settings:write` is a new scope, so an older Studio
+surface, the conversation commands, `files.*` by root, `tools.grant*` and
+`pullRequests.list/refresh/unwatch`: each reaches a client by its scope.
+`session.terminalHandoff`, `providers.signIn` and the three `pullRequests`
+reports of Studio's own agents stay an owner's, each with its reason in the
+method table. A paired device's reach (2026-11-12) is pinned whole by
+`tailnet-device-reach.test.ts`: `localServers.*` and its stream (they start
+and stop programs on the Studio's machine) and `textGeneration.chatTitle` and
+`commitMessage.*` (a CLI run outside any chat) are an owner's;
+`tools.catalog` and `tools.grants` need `tools:offer`, and `tools.grant` also
+`settings:write`, none of which a device holds. `settings:write` is a new scope, so an older Studio
 drops it from a grant it does not know, and keeps its owner-only rule on the
 methods that need it. A client asks `studioGrantAllows`, never `grant.owner`.
 `terminals` (2026-11-12) adds the terminals on the Studio's machine:

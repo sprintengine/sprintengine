@@ -333,10 +333,10 @@ the shell (7.2).
 | `tools.offer` | `tools:offer` | no | no (idempotent: a second offer of the same toolset replaces the first) | `{ toolset: StudioToolsetOffer, reach?: 'own' \| 'all' }` → `{ toolset, wireNames: string[], reach }`. `reach` is honoured from owners only; an app's reach comes from its pairing (5.2). |
 | `tools.withdraw` | `tools:offer` | no | no | `{ toolset }` → `{ withdrawn: boolean }` |
 | `tools.focus` | `tools:offer` | no | no | `{ focused: boolean, workspaceIds: string[], activeWorkspaceId?: string }` → `{}`. A routing hint (6.3). |
-| `tools.catalog` | `conversation:read` | no | no | `{}` → `{ toolsets: StudioToolsetListing[] }`. An app sees its own toolsets and the built-ins. An owner sees all of them. |
-| topic `tools.catalog` (push) | `conversation:read` | no | no | the same listing, whole, on every change. The chat view labels a tool's origin with it (5.5). |
-| `tools.grants` | `conversation:read` | yes | no | `{ key }` → `{ grants: string[] }`: the app toolsets one conversation is open to. (Added as built: a chat's menu shows each toolset ticked or not before the person changes it.) |
-| `tools.grant` | `conversation:operate` | yes | yes (`commandId`) | `{ key, toolset, granted: boolean, commandId }` → `{ grants: string[] }`. Opens or closes one conversation to one app toolset (5.2). |
+| `tools.catalog` | `tools:offer` | no | no | `{}` → `{ toolsets: StudioToolsetListing[] }`. An app sees its own toolsets and the built-ins. An owner sees all of them. |
+| topic `tools.catalog` (push) | `tools:offer` | no | no | the same listing, whole, on every change. The chat view labels a tool's origin with it (5.5). |
+| `tools.grants` | `conversation:read` + `tools:offer` | no | no | `{ key }` → `{ grants: string[] }`: the app toolsets one conversation is open to. (Added as built: a chat's menu shows each toolset ticked or not before the person changes it.) |
+| `tools.grant` | `conversation:operate` + `settings:write` | no | yes (`commandId`) | `{ key, toolset, granted: boolean, commandId }` → `{ grants: string[] }`. Opens or closes one conversation to one app toolset (5.2). |
 | `files.*` subset | see 10.3 | yes | see 10.3 | board file access for the canvas toolset |
 
 `STUDIO_SCOPES` gains `tools:offer` and `files:write` (`scopes.ts:19-26`). The

@@ -96,14 +96,17 @@ The `welcome`'s `grant` is what the connection may do:
   key (`providers.setSecret`, `.clearSecret`), revoke an approval rule, turn
   the CLI version check on or off (`cliVersions.setEnabled`), set the
   model-written titles setting (`textGeneration.setSettings`), switch the
-  resume after a usage limit for every chat (`usageLimitResumes.setAuto`).
+  resume after a usage limit for every chat (`usageLimitResumes.setAuto`),
+  and, with `conversation:operate`, open a chat to an app's toolset or close
+  it (`tools.grant`).
 - `providers:read` also reads the agent CLIs: detect one, its install methods
   and version advisories (`cliRuntimes.detect`, `.installMethods`,
   `cliVersions.advisories` and its `cliVersions.changed` stream, under
   `agent-runtimes`), and the models each reports (`cliModels.discover`,
-  `cliModels.changed`, under `agent-settings`). `conversation:operate` also
-  has the person's CLI write a chat's title or a commit message
-  (`textGeneration.chatTitle`, `commitMessage.draft` and `.cancel`).
+  `cliModels.changed`, under `agent-settings`). Having the person's CLI write
+  a chat's title or a commit message (`textGeneration.chatTitle`,
+  `commitMessage.draft` and `.cancel`) is an owner's: it runs a CLI on the
+  Studio's machine outside any chat.
 - `modules:read` — hear what this Studio's modules say: the `module.events`
   and `module.notifications` streams, and call the methods they declare
   `read` (`module.read`), under the `modules` capability. Not an owner's only;

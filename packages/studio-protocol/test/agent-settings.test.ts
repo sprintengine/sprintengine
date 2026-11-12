@@ -120,14 +120,27 @@ test('an install’s output is followed per CLI and machine; the rest of the str
     assert.deepEqual(ok(parseStudioTopicParams(topic as never, undefined)), {}, topic)
 })
 
-test('installing keeps the machine, reading what can run is providers:read, and only the launch settings are an owner’s', () => {
+test('installing keeps the machine, reading what can run is providers:read, and the launch settings, titles and commit messages are an owner’s', () => {
   assert.deepEqual(STUDIO_METHOD_ACCESS['cliRuntimes.install'], { permissions: ['environment:maintain'] })
   assert.deepEqual(STUDIO_METHOD_ACCESS['cliRuntimes.detect'], { permissions: ['providers:read'] })
   assert.deepEqual(STUDIO_METHOD_ACCESS['cliVersions.setEnabled'], { permissions: ['settings:write'] })
-  assert.deepEqual(STUDIO_METHOD_ACCESS['commitMessage.draft'], { permissions: ['conversation:operate'] })
+  // A title or a commit message runs a CLI here outside any chat: the window's, never a paired client's.
+  for (const method of ['textGeneration.chatTitle', 'commitMessage.draft', 'commitMessage.cancel'] as const) {
+    const access = STUDIO_METHOD_ACCESS[method]
+    assert.ok('permissions' in access, method)
+    assert.deepEqual(access.permissions, ['conversation:operate'], method)
+    assert.ok(access.owner, method)
+  }
   const owners = Object.keys(STUDIO_AGENT_SETTINGS_METHODS).filter((method) => {
     const access = STUDIO_METHOD_ACCESS[method as keyof typeof STUDIO_METHOD_ACCESS]
     return 'permissions' in access && access.owner !== undefined
   })
-  assert.deepEqual(owners.sort(), ['launchSettings.get', 'launchSettings.migrate', 'launchSettings.update'])
+  assert.deepEqual(owners.sort(), [
+    'commitMessage.cancel',
+    'commitMessage.draft',
+    'launchSettings.get',
+    'launchSettings.migrate',
+    'launchSettings.update',
+    'textGeneration.chatTitle',
+  ])
 })

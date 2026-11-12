@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
 import type { StudioLocalServer, StudioLocalServersMethodMap } from '../../../packages/studio-protocol/src/public'
+import { STUDIO_SCOPES } from '../../../packages/studio-protocol/src/scopes'
 import type { LocalServersChanged, StudioLocalServers } from '../local-servers/local-server-domain'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
@@ -152,33 +153,33 @@ test('run, stop and remove reach the domain, and its refusals keep their codes',
   assert.deepEqual(none.t === 'res' && none.ok && none.result, { removed: false })
 })
 
-test('a paired app runs a server under conversation:operate and follows the list under workspaces:read', async () => {
+test('a paired app is refused every local server and their stream, whatever it holds; an owner still runs them', async () => {
   const { stub, asked } = stubLocalServers()
-  const { started } = await ownerOver(stub)
-  const reader = await connectLineClient(started.path)
-  cleanups.push(() => reader.close())
-  reader.send(hello({ token: pairFakeClient(started.auth, 'reader', ['conversation:read']) }))
-  await reader.next((frame) => frame.t === 'welcome')
-  reader.send({ t: 'req', id: 'r1', method: 'localServers.run', params: { conversation: CONVERSATION, id: 'srv-2' } })
-  const refused = await reader.next((frame) => frame.t === 'res' && frame.id === 'r1')
-  assert.equal(codeOf(refused), 'scope_required')
-  reader.send({ t: 'sub', id: 's0', topic: 'localServers.changed', params: {} })
-  const failed = await reader.next((frame) => frame.t === 'subFailed' && frame.sub === 's0')
-  assert.equal(failed.t === 'subFailed' && failed.code, 'scope_required')
-  assert.deepEqual(asked, [])
+  const { started, owner } = await ownerOver(stub)
   const app = await connectLineClient(started.path)
   cleanups.push(() => app.close())
-  app.send(
-    hello({
-      token: pairFakeClient(started.auth, 'app', ['workspaces:read', 'conversation:read', 'conversation:operate']),
-    }),
-  )
+  // Every scope there is: running a program here is an owner's, not a scope's.
+  app.send(hello({ token: pairFakeClient(started.auth, 'app', [...STUDIO_SCOPES]) }))
   await app.next((frame) => frame.t === 'welcome')
-  app.send({ t: 'req', id: 'a1', method: 'localServers.run', params: { conversation: CONVERSATION, id: 'srv-2' } })
-  const ran = await app.next((frame) => frame.t === 'res' && frame.id === 'a1')
+  const calls = [
+    ['localServers.list', {}],
+    ['localServers.run', { conversation: CONVERSATION, id: 'srv-2' }],
+    ['localServers.stop', { conversation: CONVERSATION, id: 'srv-2' }],
+    ['localServers.remove', { conversation: CONVERSATION, id: 'srv-2' }],
+  ] as const
+  for (const [index, [method, params]] of calls.entries()) {
+    app.send({ t: 'req', id: `a${index}`, method, params })
+    const refused = await app.next((frame) => frame.t === 'res' && frame.id === `a${index}`)
+    assert.equal(codeOf(refused), 'owner_required', method)
+  }
+  app.send({ t: 'sub', id: 's0', topic: 'localServers.changed', params: {} })
+  const failed = await app.next((frame) => frame.t === 'subFailed' && frame.sub === 's0')
+  assert.equal(failed.t === 'subFailed' && failed.code, 'owner_required')
+  assert.deepEqual(asked, [])
+  owner.send({ t: 'req', id: 'o1', method: 'localServers.run', params: { conversation: CONVERSATION, id: 'srv-2' } })
+  const ran = await owner.next((frame) => frame.t === 'res' && frame.id === 'o1')
   assert.notEqual(codeOf(ran), 'owner_required')
-  assert.notEqual(codeOf(ran), 'scope_required')
-  assert.ok(asked.length > 0, 'the run reached the local servers')
+  assert.ok(asked.length > 0, 'the owner’s run reached the local servers')
 })
 
 test('the stream names what moved, never the lists', async () => {

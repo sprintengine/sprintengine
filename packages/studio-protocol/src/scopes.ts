@@ -14,7 +14,8 @@
 // gains them, since a grant holds exactly the names it was given. A client
 // that is not an owner names files only inside the folders Studio knows.
 //
-// `tools:offer` lets a client give Studio's agents tools of its own (`tools.*`):
+// `tools:offer` lets a client give Studio's agents tools of its own (`tools.*`),
+// and read the catalog and which chats were opened to a toolset beside it:
 // Settings shows it as "Give agents tools from this app", off unless ticked.
 // `files:write` is the board files' write half beside `files:read`.
 //
@@ -23,8 +24,9 @@
 // it; a pairing only when it was given it.
 //
 // `settings:write` changes this Studio's settings from a client: a provider's
-// key, an approval rule revoked. Like `environment:maintain`, an owner holds
-// it and a pairing only when it was given it.
+// key, an approval rule revoked, a chat opened to an app's tools. Like
+// `environment:maintain`, an owner holds it and a pairing only when it was
+// given it.
 //
 // `modules:read` hears what this Studio's modules say: their events and the
 // bell rows they raise, and calls the methods they declare `read`

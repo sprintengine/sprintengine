@@ -35,12 +35,21 @@ function legacyStudioScopesGrant(scopes: readonly string[], needed: StudioScope)
   if (needed === 'modules:read') return scopes.includes('modules:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }
+/** The scope whose grant name a permission is, for a method that needs more than its own scope. */
+function scopeNaming(permission: string): StudioScope {
+  const scope = STUDIO_SCOPES.find((candidate) => studioScopeRequires(candidate).includes(permission as never))
+  assert.ok(scope, `a scope names ${permission}`)
+  return scope
+}
 function legacyAllows(
   grant: { owner: boolean; scopes: StudioScope[] },
-  spec: { scope: StudioScope | null; owner?: string },
+  spec: { scope: StudioScope | null; owner?: string; extraPermissions?: readonly string[] },
 ) {
   if (spec.owner && !grant.owner) return false
-  return spec.scope === null || legacyStudioScopesGrant(grant.scopes, spec.scope)
+  if (spec.scope !== null && !legacyStudioScopesGrant(grant.scopes, spec.scope)) return false
+  return (spec.extraPermissions ?? []).every((permission) =>
+    legacyStudioScopesGrant(grant.scopes, scopeNaming(permission)),
+  )
 }
 
 type Grant = { owner: boolean; scopes: StudioScope[] }
@@ -85,9 +94,16 @@ test('a permission a method adds beyond its scope is needed too, and its refusal
   assert.equal(studioRefusedGrantName(spec, 'conversation:operate'), 'conversation:operate')
   assert.equal(studioRefusedGrantName({ scope: 'files:read' }, 'filesystem:read'), 'files:read')
   assert.equal(studioRefusedGrantName(spec, 'filesystem:write'), 'filesystem:write')
-  // No method in the table needs more than its scope yet, so every refusal on the wire is unchanged.
-  for (const [name, method] of [...Object.entries(STUDIO_METHODS), ...Object.entries(STUDIO_TOPICS)])
-    assert.equal(method.extraPermissions, undefined, name)
+  // What needs more than its scope: a chat's app toolsets are the client
+  // tools' (`tools:offer`), and opening a chat to one is a setting.
+  const needingMore = [...Object.entries(STUDIO_METHODS), ...Object.entries(STUDIO_TOPICS)]
+    .filter(([, method]) => method.extraPermissions !== undefined)
+    .map(([name, method]) => [name, method.extraPermissions])
+  assert.deepEqual(needingMore, [
+    ['tools.grants', ['tools:offer']],
+    ['tools.grant', ['settings:write']],
+  ])
+  assert.equal(studioRefusedGrantName(STUDIO_METHODS['tools.grant'], 'settings:write'), 'settings:write')
 })
 
 test('every Studio scope a grant can hold carries only permissions from the closed set', () => {

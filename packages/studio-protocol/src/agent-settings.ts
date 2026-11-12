@@ -36,10 +36,12 @@ import { STUDIO_AGENT_RUNTIMES_CAPABILITY, STUDIO_AGENT_SETTINGS_CAPABILITY } fr
 // any other grant, by its params). The launch settings are an owner's: they
 // hold the program each CLI and MCP server runs on the machine, the arguments
 // a preset adds, and the MCP servers' environment, which carries their keys.
-// A title and a commit message spend the person's CLI, as driving a chat does
-// (`conversation:operate`); a commit message is drafted from a checkout a
-// client that is not an owner may name only inside the folders the Studio
-// knows.
+// A title and a commit message run one of this machine's agent CLIs outside
+// any chat, for the window's own boxes (a chat's name, the commit message
+// field), and a commit message reads a checkout on this disk: an owner's by
+// declaration, under `conversation:operate`, and never a paired device's. An
+// owner's connection held to known folders (a browser tab) names a checkout
+// only inside the folders the Studio knows.
 //
 // `src/shared` re-exports each type under the name the app has always used.
 
@@ -515,8 +517,8 @@ export type StudioAgentSettingsMethodMap = {
   'textGeneration.chatTitle': { params: ChatTitleRequest; result: TextGenerationResult }
   /**
    * A commit message for a checkout's staged changes. Never refused for what
-   * git or the CLI said; refused `not_found` for a folder a client that is not
-   * an owner may not name.
+   * git or the CLI said; refused `not_found` for a folder this connection may
+   * not name.
    */
   'commitMessage.draft': { params: CommitMessageDraftRequest; result: CommitMessageResult; errors: 'not_found' }
   /** Stop a draft this client started; its `draft` is answered `cancelled`. */
@@ -729,12 +731,16 @@ const runtimes = (scope: 'providers:read' | 'environment:maintain', mutation: bo
 const settings = (scope: 'providers:read' | 'settings:write' | 'workspaces:read', mutation: boolean) =>
   ({ scope, mutation, capability: STUDIO_AGENT_SETTINGS_CAPABILITY }) as const
 
-// Writing a commit message reads a checkout and spends the person's CLI: what
-// a client that drives chats can already have an agent do.
+const TEXT_GENERATION_OWNER =
+  "Only an owner's connection runs an agent CLI on this machine outside a chat, to title a chat or draft a commit message from a checkout here."
+
+// Writing a title or a commit message runs a CLI here, and a commit message
+// reads a checkout: the window's, not a paired client's.
 const drafting = {
   scope: 'conversation:operate',
   mutation: false,
   capability: STUDIO_AGENT_SETTINGS_CAPABILITY,
+  owner: TEXT_GENERATION_OWNER,
 } as const
 
 const update: StudioMethodDefinition<StudioAgentSettingsMethodMap['cliRuntimes.update']> = {
@@ -804,13 +810,7 @@ export const STUDIO_AGENT_SETTINGS_METHODS: StudioMethodTable<StudioAgentSetting
       return read ? studioParams({ settings: read }) : refuse('"settings" is { enabled, engine, writingStyle }.')
     }),
   },
-  // A title spends the person's CLI on a chat's words, as driving the chat does.
-  'textGeneration.chatTitle': {
-    scope: 'conversation:operate',
-    mutation: false,
-    capability: STUDIO_AGENT_SETTINGS_CAPABILITY,
-    params: chatTitle,
-  },
+  'textGeneration.chatTitle': { ...drafting, params: chatTitle },
   'commitMessage.draft': { ...drafting, params: commitDraft },
   'commitMessage.cancel': {
     ...drafting,

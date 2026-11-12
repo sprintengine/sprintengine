@@ -268,6 +268,18 @@ test('a paired device reads and starts chats over the Studio protocol, with its 
   // terminal here, and its scopes carry no filesystem.
   assert.equal(await refusal(client.request('terminal.list', {})), 'owner_required')
   assert.equal(await refusal(client.request('files.stat', { path: '/' })), 'scope_required')
+  // Nor does it start or stop a program here, or change which tools an agent
+  // may call (the whole table is tailnet-device-reach.test.ts).
+  const server = { conversation: ref, id: 'srv-1' }
+  assert.equal(await refusal(client.request('localServers.run', server)), 'owner_required')
+  assert.equal(await refusal(client.request('localServers.stop', server)), 'owner_required')
+  assert.equal(await refusal(client.request('localServers.list', {})), 'owner_required')
+  assert.equal(
+    await refusal(
+      client.request('tools.grant', { key: ref, toolset: 'acme', granted: true, commandId: 'g-1' }),
+    ),
+    'scope_required',
+  )
 })
 
 test('a device reads what New needs before it starts a chat: CLIs, a checkout, a project’s skills', async () => {
