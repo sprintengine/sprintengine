@@ -15,6 +15,7 @@ import type {
 } from '../shared/conversation-runtime'
 import { workspaceStorePath } from './workspace-store'
 import { ConversationApprovalRuleStore } from './conversation-approval-rules'
+import { ConversationOutbox } from './conversation-outbox'
 
 function event(
   input: MockAdapterSessionInput,
@@ -399,6 +400,75 @@ test('a crash after a send is committed, before it is answered, never sends it t
   } finally {
     await restarted.shutdown()
     await f.cleanup()
+  }
+})
+
+test('a start closes every turn the last run left open, without anyone opening the chat', async () => {
+  // The provider takes the message and never ends the turn: the process dies mid-turn.
+  const hanging: ConversationProviderAdapter = {
+    ...createMockConversationProvider(),
+    sendTurn: (input) =>
+      (async function* () {
+        yield event(input, 'turn_started', { turnId: input.turnId })
+        await new Promise((resolve) => input.signal?.addEventListener('abort', resolve))
+      })(),
+  }
+  const dataDir = await mkdtemp(join(tmpdir(), 'conversation-outbox-'))
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
+  const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+  const first = new ConversationRuntime({
+    adapters: [hanging],
+    getProviderById: () => undefined,
+    outbox: new ConversationOutbox(dataDir),
+  })
+  const restarted = new ConversationRuntime({
+    adapters: [createMockConversationProvider()],
+    getProviderById: () => undefined,
+    outbox: new ConversationOutbox(dataDir),
+  })
+  try {
+    const started = await first.startSession({ ...key, providerId: hanging.id, modelId: 'mock-model' })
+    assert.ok(started.ok)
+    const committed = new Promise<void>((resolve) =>
+      first.onEvent((value) => {
+        if (value.type === 'turn_started') resolve()
+      }),
+    )
+    void first.sendTurn({ sessionId: started.session.sessionId, commandId: 'phone-1', message: 'one effect' })
+    await committed
+    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [key], 'listed before its turn began')
+
+    // The first process is gone without shutting down; the next one starts.
+    const closed: ConversationEvent[] = []
+    restarted.onEvent((value) => closed.push(value))
+    await restarted.recoverInterruptedTurns()
+    assert.deepEqual(
+      closed.map((value) => [value.type, value.payload?.reason]),
+      [['turn_failed', 'interrupted']],
+      'the turn is closed in the log and said, with no session started on the chat',
+    )
+    assert.deepEqual(await new ConversationOutbox(dataDir).pending(), [], 'and the chat leaves the outbox')
+    const replay = await restarted.readTranscript(key, { all: true, closeOpenTurns: false })
+    assert.ok(replay.ok)
+    assert.equal(replay.events.at(-1)?.type, 'turn_failed')
+
+    // A client that retries its send is answered as sent, and nothing is sent twice.
+    const opened = await restarted.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
+    assert.ok(opened.ok)
+    const retry = await restarted.sendTurn({
+      sessionId: opened.session.sessionId,
+      commandId: 'phone-1',
+      message: 'one effect',
+    })
+    assert.equal(retry.ok, true)
+    const after = await restarted.readTranscript(key, { all: true })
+    assert.ok(after.ok)
+    assert.equal(after.events.filter((value) => value.type === 'user_message').length, 1)
+  } finally {
+    await restarted.shutdown()
+    await first.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
+    await rm(dataDir, { recursive: true, force: true })
   }
 })
 
