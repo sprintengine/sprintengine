@@ -37,8 +37,8 @@ import {
 // protocol serves it (`memory.*`, `memoryActivity.*`, `mcp.sync`,
 // `agentConfig.*`, `builtinSkills.*`, `areaSkills.*`): one domain the RPC
 // router answers from, for the app's own windows and every other client
-// alike. The services behind it are the desktop's own, composed in
-// app-services; who may ask is the router's to hold.
+// alike. The services behind it are the core's, composed in every Studio
+// (core/studio-agent-services.ts); who may ask is the router's to hold.
 
 export type StudioAgentSetup = {
   resolveMemoryRoot(workspaceRoot: string | null, relativeRoot: string | null): Promise<MemoryRootStatus>

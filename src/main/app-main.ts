@@ -490,6 +490,15 @@ registerAppLifecycle({
           log: serverHost.log,
           onAttentionPhase: (listener) =>
             void serverHost.link.rpc.on(SERVER_EVENTS.attentionPhase, (event) => listener(event as AgentPhaseEvent)),
+          // The CLIs and their version check are the server's: the boot's
+          // detection waits for it to serve, inside the same budget.
+          detectClis: (which) =>
+            serverHost.link
+              .whenServing(BOOT_SERVER_WAIT_MS)
+              .then((serving) => (serving ? serverHost.link.rpc.call(SERVER_METHODS.cliDetect, { which }) : 0)),
+          refreshCliVersions: async () => {
+            if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.cliVersionsRefresh)
+          },
         },
       }
     : {}),

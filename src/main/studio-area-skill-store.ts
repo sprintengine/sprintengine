@@ -32,6 +32,11 @@ export type StudioAreaSkillStore = {
   dismiss(id: StudioAreaSkillId): Promise<StudioAreaSkillChoices>
   /** Called after every change that altered the record. Returns an unsubscribe. */
   onChange(listener: (choices: StudioAreaSkillChoices) => void): () => void
+  /**
+   * Take the choices another store over the same file made (the server's, out
+   * of process), without writing them: its listeners hear it as a change.
+   */
+  adopt(choices: unknown): void
 }
 
 export function createStudioAreaSkillStore(deps: {
@@ -103,6 +108,13 @@ export function createStudioAreaSkillStore(deps: {
     onChange(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+    adopt(choices) {
+      if (!choices || typeof choices !== 'object' || Array.isArray(choices)) return
+      const normalised = normaliseStudioAreaSkillChoices(choices)
+      if (JSON.stringify(read()) === JSON.stringify(normalised)) return
+      cached = normalised
+      for (const listener of listeners) listener(normalised)
     },
   }
 }

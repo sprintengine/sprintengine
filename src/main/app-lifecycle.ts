@@ -235,6 +235,10 @@ type RegisterAppLifecycleOptions = {
    */
   server?: Pick<DesktopServerHost, 'start' | 'shutdown' | 'log'> & {
     onAttentionPhase(listener: (event: AgentPhaseEvent) => void): void
+    /** Detect the CLIs on the machines named, where the version check is: the server's. */
+    detectClis(which: 'local' | 'wsl'): Promise<unknown>
+    /** Compare the installed CLI versions against the registry, in the server. */
+    refreshCliVersions(): Promise<unknown>
   }
 }
 
@@ -527,9 +531,10 @@ export function registerAppLifecycle({
       // The one detection of this machine's CLIs a launch makes (Re-check in
       // Settings is the only other), with the commands the person set, so the
       // renderer's first read is answered from it. What it finds schedules the
-      // version check's comparison (app-services), which waits for a window to
+      // version check's comparison (the core's), which waits for a window to
       // say whether checks are on. WSL machines are detected after the reveal.
-      detectClis: () => detectCliMachines({ which: 'local' }),
+      // Out of process the CLIs and their version check are the server's.
+      detectClis: () => (server ? server.detectClis('local') : detectCliMachines({ which: 'local' })),
       // Not awaited, so this mark can (and usually does) land after the reveal —
       // which is the point: it shows how much of the boot the user never waits
       // for, and how much of the CLI probe the splash actually covered.
@@ -600,7 +605,7 @@ export function registerAppLifecycle({
       // against the registry. No detection: nothing is spawned on any machine,
       // no WSL distribution is started, and a CLI that is not installed is
       // never asked about.
-      refreshVersions: () => readCliVersionAdvisories(),
+      refreshVersions: () => (server ? server.refreshCliVersions() : readCliVersionAdvisories()),
       isOnline: () => net.isOnline(),
     })
     hostedFeedPoller.start()
@@ -616,7 +621,7 @@ export function registerAppLifecycle({
       // so its CLI updates badge Settings without the person visiting its list.
       // After the reveal: asking may start the distribution's helper, which is
       // not something the first paint should wait behind.
-      void detectCliMachines({ which: 'wsl' }).catch(() => undefined)
+      void (server ? server.detectClis('wsl') : detectCliMachines({ which: 'wsl' })).catch(() => undefined)
       // One-shot cleanup of the retired checkpoint machinery
       // (the-diff-an-agent-made / remove-checkpoint-machinery). Deliberately not
       // awaited and deliberately after the window exists: it walks repos with

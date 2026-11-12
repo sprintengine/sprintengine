@@ -107,6 +107,7 @@ import { createStudioAutoCompact } from './studio-auto-compact'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
 import { createStudioSettlement } from './studio-settlement'
 import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
+import { createStudioAgents, type StudioAgentServices } from './studio-agent-services'
 import {
   createStudioAgentTerminals,
   type StudioAgentTerminals,
@@ -133,7 +134,8 @@ import {
 // tools to it that act on windows and terminals.
 //
 // And the terminals and their agents (studio-agent-terminals.ts): the ptys,
-// the reporter's listener and the launches, here in every mode.
+// the reporter's listener and the launches, here in every mode; and the agent
+// CLIs and their setup (studio-agent-services.ts), in every mode too.
 //
 // What is not, yet: the module host and its bundled modules (they still take
 // the shell's account bridge), and everything the shell owns.
@@ -157,8 +159,12 @@ export type StudioCoreOptions = {
    * terminals still run here, launched without the shell's preparation.
    */
   terminalHost?: StudioTerminalHost
-  /** A machine's settings changed (a distribution turned on or off). */
-  onHostSettingsChanged?: () => void
+  /**
+   * The services the agents are set up with, when the process around the core
+   * uses them too (the desktop's shell, in process): one of each. Absent, the
+   * core builds its own (studio-agent-services.ts).
+   */
+  agentServices?: StudioAgentServices
   /**
    * Who turns the scheduler on. A process with a module kernel (the desktop,
    * in process and out) turns it on and off with the person's Scheduled
@@ -254,7 +260,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     if (next === lastHostSettings) return
     lastHostSettings = next
     hosts.notifyChanged()
-    options.onHostSettingsChanged?.()
+  })
+  // The agent CLIs on this machine and what they are set up with, served by
+  // every Studio (`agent-runtimes`, `agent-setup`).
+  const agents = createStudioAgents(platform, {
+    agentLaunchSettings,
+    ...(options.agentServices ? { services: options.agentServices } : {}),
   })
 
   // The authoritative workspace registry. Routing lives in the record, so no
@@ -1250,6 +1261,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       // installs again at its next lease.
       () => worktrees.installer.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => chatTitler.dispose(),
+      () => agents.stop(),
       // A child's notices are kept for the next run, the reporter stops
       // hearing frames, and every pty ends with its painted screen kept.
       () => agentTerminals?.launchNotices.freeze(),
@@ -1328,6 +1340,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     agentTerminals,
     /** The model-written chat titles setting, as the windows push it. */
     textGenerationSettings,
+    /** The agent CLIs (detection, installs, the version check) and their setup (studio-agent-services.ts). */
+    agents,
     /** The composer's `/` lists, which a window's IPC and a paired desktop's reads share. */
     conversationCommands,
     stopUsageLimitResumes,

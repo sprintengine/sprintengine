@@ -6,6 +6,7 @@ import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-l
 import { isRecord } from '../../shared/records'
 import { applyGatewayLaunchTokenChange, type LaunchTokenChange } from '../core/gateway-launch-tokens'
 import { compactDeps, type StudioAgentTerminals } from '../core/studio-agent-terminals'
+import type { StudioAgents } from '../core/studio-agent-services'
 import { compactTerminalAgent } from '../../main/ipc/agent-compact-ipc'
 import { createTerminalPullRequests, type TerminalPullRequests } from '../../main/terminal-pull-requests'
 import {
@@ -24,10 +25,9 @@ import { createFilesystemReadHandlers } from '../../main/filesystem-read'
 import { createFilesystemWatchSearchHandlers } from '../../main/filesystem-watch-search-handlers'
 import { GitHubTokenStore } from '../../main/github-token-store'
 import { buildLauncherMcpServer, usableLocalLauncherRef } from '../../main/integrations/launcher'
-import {
-  discoverAndBroadcastCliModels,
-  setCliModelDiscoveryRuntimesResolver,
-} from '../../main/model-discovery/discovery-pass'
+import { discoverAndBroadcastCliModels } from '../../main/model-discovery/discovery-pass'
+import { invalidateCliAvailabilityOnHost } from '../../main/cli-availability'
+import { detectCliMachines, readCliVersionAdvisories } from '../../main/cli-version-advisory-service'
 import { powerActivity } from '../../main/power-activity'
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { createTailnetNotifier } from '../../main/tailnet-notifications'
@@ -280,10 +280,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     terminals
       ? terminals.launchService.launch(request)
       : Promise.resolve({ ok: false, code: 'terminals_unavailable', message: TERMINALS_UNAVAILABLE })
-  // The model discovery a pass the server starts itself runs with the
-  // person's own per-CLI commands, as in process.
-  setCliModelDiscoveryRuntimesResolver(() => agentLaunchSettings.get().cliRuntimes)
-
   // The renderer's module registry, which the shell mirrors and passes on.
   let moduleRegistry: ModuleRegistrySnapshot | null = null
   rpc.on(SERVER_EVENTS.moduleRegistrySnapshot, (payload) => {
@@ -457,6 +453,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     if (typeof payload === 'string') terminals?.agentState.ingestLine(payload)
   })
   serveShellTerminalRequests(rpc, terminals, launchAgent)
+  serveShellAgentRequests(rpc, core.agents)
   // The terminal agents' pull request marks, read from this process's record
   // over a connection of its own, as every client reads them.
   terminalPullRequests = terminals
@@ -716,6 +713,28 @@ function serveShellTerminalRequests(
       ? terminals.runtime.readConversationPeekSessionState(sessionId)
       : null
   })
+}
+
+/**
+ * The agent CLIs are the core's: the shell times the boot's detection and the
+ * hourly version comparison, which run here; it relays a WSL distribution's
+ * PATH change its helper saw; and it hears the area skills its plugin copies
+ * carry.
+ */
+function serveShellAgentRequests(rpc: Parameters<ServerStart>[0]['rpc'], agents: StudioAgents): void {
+  rpc.handle(SERVER_METHODS.cliDetect, (params) => {
+    const which = (params as { which?: unknown } | null)?.which
+    return detectCliMachines({ which: which === 'wsl' ? 'wsl' : 'local' })
+  })
+  rpc.handle(SERVER_METHODS.cliVersionsRefresh, () => readCliVersionAdvisories())
+  rpc.on(SERVER_EVENTS.cliPathsChanged, (payload) => {
+    const hostId = (payload as { hostId?: unknown } | null)?.hostId
+    if (typeof hostId === 'string' && isWslHostId(hostId)) invalidateCliAvailabilityOnHost(hostId)
+  })
+  agents.services.areaSkills.onChange((choices) => rpc.emit(SERVER_EVENTS.mirrorAreaSkills, choices))
+  // Sent once as it serves too, so a shell whose server restarted takes any
+  // change it missed while the server was down (adopting the same is a no-op).
+  rpc.emit(SERVER_EVENTS.mirrorAreaSkills, agents.services.areaSkills.read())
 }
 
 /** How long main may take to open an SSH machine's stream: a first connect may install and start its server. */

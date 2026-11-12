@@ -153,11 +153,11 @@ export type StudioRpcServerOptions = {
   discovery?: StudioDiscovery
   /** The terminals on this machine. Advertised as `terminals` only when given: where the server holds a terminal runtime. */
   terminals?: StudioTerminals
-  /** The CLIs on this machine. Advertised as `agent-runtimes` only when given: where the server holds their detection. */
+  /** The CLIs on this machine. Advertised as `agent-runtimes` only when given; every Studio's core gives them. */
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' texts. Advertised as `agent-settings` only when given. */
   agentSettings?: StudioAgentSettings
-  /** What the agents are set up with beyond their CLIs. Advertised as `agent-setup` only when given. */
+  /** What the agents are set up with beyond their CLIs. Advertised as `agent-setup` only when given; every Studio's core gives it. */
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats. Advertised as `chat-stores` only when given. */
   chatStores?: StudioChatStores

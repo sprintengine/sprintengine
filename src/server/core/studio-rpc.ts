@@ -21,8 +21,6 @@ import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioCore } from './studio-core'
 import type { StudioGateway } from './studio-gateway'
 import type { StudioModules } from '../rpc/studio-modules'
-import type { CliRuntimes } from '../../main/cli-runtimes'
-import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import { createStudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import { createStudioChatStores } from '../chat-stores/chat-stores-domain'
 
@@ -42,10 +40,6 @@ export function createStudioRpc(
     updates?: StudioUpdates
     /** What the modules of the kernel beside it say; a Studio without one leaves `module.*` unserved. */
     modules?: StudioModules
-    /** The CLIs on this machine, where this process holds their detection and version check. */
-    runtimes?: CliRuntimes
-    /** What the agents are set up with beyond their CLIs, where this process holds those services. */
-    agentSetup?: StudioAgentSetup
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -112,8 +106,10 @@ export function createStudioRpc(
     localServers: core.localServers,
     // The terminals on this machine, where the core holds the runtime.
     ...(core.agentTerminals ? { terminals: core.agentTerminals.studioTerminals } : {}),
-    ...(options.runtimes ? { runtimes: options.runtimes } : {}),
-    ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
+    // The agent CLIs on this machine and what they are set up with: the
+    // core's, in every mode.
+    runtimes: core.agents.runtimes,
+    agentSetup: core.agents.setup,
     // What every launch here reads, and what the CLIs write for it, served
     // where the launch settings and the model catalog cache are.
     agentSettings: createStudioAgentSettings({

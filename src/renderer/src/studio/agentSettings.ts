@@ -84,7 +84,7 @@ export type AgentSettingsApi = {
 
 const UNSERVED: Record<string, string> = {
   [STUDIO_AGENT_RUNTIMES_CAPABILITY]:
-    'This Studio does not manage its CLIs while it runs in its own process (a preview setting). Turn that off in Settings to use them.',
+    'This Studio is older than this app and does not manage its CLIs. Update it to use them here.',
   [STUDIO_AGENT_SETTINGS_CAPABILITY]: 'This Studio does not serve its launch settings.',
 }
 
