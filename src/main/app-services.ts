@@ -110,6 +110,7 @@ import {
 import { createBackgroundModeStore } from './background-mode-store'
 import { createQuitConfirmationStore } from './quit-confirmation-store'
 import { createAgentNotificationsStore } from './agent-notifications-store'
+import { readStudioEnvironmentId } from '../server/environment/environment-id'
 import { agentBrowserToolGate, createAgentBrowserToolsStore } from './agent-browser-tools-store'
 import { createAgentNotifier } from './agent-notifications'
 import type { ChatLink } from '../shared/deep-link'
@@ -927,6 +928,11 @@ export function createAppServices(
     },
   })
   const agentNotifier = createAgentNotifier({
+    // A banner opens its chat by address: this desktop's environment, whose
+    // Studio holds every chat this runtime's phases are about.
+    environmentId: readStudioEnvironmentId(app.getPath('userData'), {
+      log: (message) => void writeDiagnosticLog({ level: 'info', title: 'Environments', message, source: 'workspace' }),
+    }),
     mode: () => agentNotificationsStore.mode(),
     isAnyWindowFocused: () =>
       BrowserWindow.getAllWindows().some(

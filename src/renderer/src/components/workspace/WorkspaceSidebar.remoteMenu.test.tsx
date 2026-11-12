@@ -375,7 +375,7 @@ test('WorkspaceSidebar.remoteMenu', async () => {
             marks: false,
             canMarkUnread: false,
             isDetachedWindow: true,
-            workspaceId: 'rw9',
+            chatLink: 'sprintengine://chat/env-box/rw9',
             starred: false,
             color: null,
             snoozedUntil: null,

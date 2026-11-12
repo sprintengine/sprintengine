@@ -20,6 +20,7 @@ const {
   transportStanding,
   transportStandingSentence,
   withTransportDeclaration,
+  withEnvironmentId,
 } = require(path.join(buildRoot, "src/api/tailnetTransport.js"));
 
 test("this build speaks transport 1 through 2", () => {
@@ -142,4 +143,14 @@ test("New's worktree, effort and catalog each need their own capability; silence
   }
   // Each is its own: one does not imply another.
   assert.equal(declaresNewChatEffort({ tailnetCapabilities: ["new-chat-worktree"] }), false);
+});
+
+test("a desktop's environment id is folded into its pairing when it is new, and kept when a later answer says none", () => {
+  const paired = { deviceId: "d1", desktopName: "mac-mini" };
+  const identified = withEnvironmentId(paired, "env-mini");
+  assert.equal(identified.environmentId, "env-mini");
+  assert.equal(withEnvironmentId(identified, "env-mini"), null);
+  assert.equal(withEnvironmentId(identified, null), null, "a Studio that says none has not changed which it is");
+  assert.equal(withEnvironmentId(identified, "env-other").environmentId, "env-other");
+  assert.equal(withEnvironmentId(paired, null), null);
 });

@@ -24,3 +24,5 @@ export * from './update.js'
 export * from './modules.js'
 export * from './permissions.js'
 export * from './environment.js'
+// `sprintengine://` links: the one grammar every client reads and writes.
+export * from './chat-link.js'

@@ -853,7 +853,9 @@ paired desktop draws the chat as that machine does: starred in its Starred
 section, tinted with its colour, asleep in its project's Snoozed shelf until
 it wakes. Mark unread is `conversation.mark_unread` above, offered where the
 machine advertises `chat-mark-unread`. Copy link to chat links the chat by its
-id on that machine, which opens it there and on any desktop that follows it;
+address on that machine (`sprintengine://chat/<environmentId>/<chatId>`), which
+opens it there and on any device that follows it, and is offered once that
+machine has said its environment id;
 Move to New Window opens it in a window of its own. New chat in project, on
 a chat whether a window there has it open or not and on the project's own
 header, opens that desktop's New chat on this machine and the project the

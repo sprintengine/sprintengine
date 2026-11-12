@@ -302,8 +302,13 @@ export function AppNavigator() {
       <HomeStack.Screen name="ChatLink" options={{ headerShown: false }}>
         {({ navigation, route }) => (
           <ChatLinkScreen
-            key={JSON.stringify([route.params.workspaceId, route.params.agent ?? null])}
-            link={{ workspaceId: route.params.workspaceId, agentId: route.params.agent ?? null }}
+            key={JSON.stringify([route.params.environment ?? null, route.params.workspaceId, route.params.agent ?? null])}
+            link={{
+              kind: "chat",
+              environmentId: route.params.environment ?? null,
+              chatId: route.params.workspaceId,
+              agentId: route.params.agent ?? null,
+            }}
             onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate("HomeOverview"))}
             // The chat takes the link's place, so Back from it is Back from the link.
             onOpen={(target) => navigation.dispatch(inPlaceOfTop(target))}

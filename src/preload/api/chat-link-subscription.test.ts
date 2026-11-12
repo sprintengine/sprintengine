@@ -29,7 +29,7 @@ function fakeIpc() {
   }
 }
 
-const link = (chatId: string): ChatLink => ({ kind: 'chat', chatId, agentId: null })
+const link = (chatId: string): ChatLink => ({ kind: 'chat', environmentId: 'env-here', chatId, agentId: null })
 
 test('subscribing listens first and then tells main, and unsubscribing undoes both', () => {
   const fake = fakeIpc()

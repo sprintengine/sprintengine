@@ -293,8 +293,9 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
         'earlier ones while `hasMore` is true. Inside `maxChars`, the newest messages are kept whole, one that ' +
         'does not fit is cut to its end (`cut`), and older ones are counted in `omitted`; ask for fewer turns ' +
         'to see them. `state` says whether the chat is working or waiting on a person. A chat link in a message ' +
-        '(`sprintengine://chat/<id>`, what dragging a chat into the composer writes) names a chat here: its <id> ' +
-        'is the `workspaceId`. Changes nothing.',
+        '(`sprintengine://chat/<environmentId>/<id>`, what dragging a chat into the composer writes; older ones ' +
+        'are `sprintengine://chat/<id>`) names a chat: its last <id> is the `workspaceId`, here when the chat is ' +
+        'on this machine. Changes nothing.',
       inputSchema: {
         type: 'object',
         properties: {

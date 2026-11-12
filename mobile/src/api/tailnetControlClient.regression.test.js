@@ -170,11 +170,19 @@ test("readTailnetIdentity carries the bearer token, keeps the declaration, and r
       scopes: ["conversation:read"],
       transport: { transportVersion: 2, capabilities: ["conversations"] },
       machine: null,
+      environmentId: null,
     });
     global.fetch = async () =>
       jsonResponse(200, { scopes: [], transportVersion: 2, machine: { kind: "mini", color: "orange" } });
     const marked = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
     assert.deepEqual(marked.data.machine, { kind: "mini", color: "orange" });
+    // Which Studio it is, as chat links name it; an id no link can carry is none.
+    global.fetch = async () => jsonResponse(200, { transportVersion: 2, environmentId: "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b" });
+    const identified = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
+    assert.equal(identified.data.environmentId, "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b");
+    global.fetch = async () => jsonResponse(200, { transportVersion: 2, environmentId: "env/../1" });
+    const odd = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });
+    assert.equal(odd.data.environmentId, null);
     // An answer without a grant says nothing about it, not that it is empty.
     global.fetch = async () => jsonResponse(200, { transportVersion: 2 });
     const silent = await readTailnetIdentity({ baseUrl: "http://100.64.0.9:8471", deviceToken: "mctn_secret" });

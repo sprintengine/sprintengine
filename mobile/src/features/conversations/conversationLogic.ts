@@ -1,3 +1,4 @@
+import { parseChatLink, type ChatLink } from "../../../../packages/studio-protocol/src/chat-link";
 import type { ConversationEvent, ConversationThread } from "../../api/conversationWire";
 import {
   presentToolItem,
@@ -77,68 +78,15 @@ export function parseConversationLink(value: string): ConversationLink | null {
 }
 
 /**
- * A desktop's own chat link, `sprintengine://chat/<workspaceId>[?agent=<agentId>]`,
- * which its row menu's "Copy link to chat" writes. It names no desktop: the
- * phone looks for the workspace on the desktops it is paired with.
+ * A Studio chat link, `sprintengine://chat/<environmentId>/<chatId>[?agent=<agentId>]`,
+ * which a desktop's "Copy link to chat" writes: the grammar is the protocol
+ * package's (`chat-link.ts`), read here exactly as the desktop reads it. A
+ * link from before links named an environment has none, and the phone looks
+ * for its chat on every paired desktop.
  */
-export type ChatLink = { workspaceId: string; agentId: string | null };
+export type { ChatLink };
 
-// The desktop's grammar (`src/shared/deep-link.ts` there), read the same way:
-// an allowlist read by hand rather than by `new URL`, which resolves `..` and
-// folds what it cannot read into something it can. A link is untrusted input,
-// so it only ever navigates, and its ids are matched against the chats on
-// record and go nowhere else.
-const MAX_LINK_LENGTH = 2048;
-// Every id the desktop mints fits, and nothing that could mean something else
-// to a shell or a file system does: no dot, slash, percent, quote or space.
-const LINK_ID = /^[A-Za-z0-9_-]{1,128}$/;
-// scheme :// authority path ? query # fragment, each part taken as written.
-const LINK_SHAPE = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(?:\?([^#]*))?(?:#.*)?$/;
-// Anything at or below a space, and DEL.
-const CONTROL_OR_SPACE = /[\u0000- \u007f]/;
-
-/** One query parameter's values, as `URLSearchParams.getAll` reads them; null for a value that will not decode. */
-function queryValues(query: string, name: string): (string | null)[] {
-  const decode = (part: string) => {
-    try {
-      return decodeURIComponent(part.replace(/\+/g, " "));
-    } catch {
-      return null;
-    }
-  };
-  return query
-    .split("&")
-    .filter(Boolean)
-    .flatMap((pair) => {
-      const at = pair.indexOf("=");
-      const key = decode(at < 0 ? pair : pair.slice(0, at));
-      return key === name ? [decode(at < 0 ? "" : pair.slice(at + 1))] : [];
-    });
-}
-
-/**
- * The chat a desktop's chat link names; null for anything else. Scheme and
- * host in any case, one id segment and the trailing slash some browsers add,
- * and the `agent` parameter. Any other parameter is ignored rather than
- * refused, so a link a newer desktop writes still opens its chat; an agent
- * named twice, or not in the id alphabet, is dropped and the chat still opens.
- */
-export function parseChatLink(raw: unknown): ChatLink | null {
-  if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_LINK_LENGTH) return null;
-  if (CONTROL_OR_SPACE.test(raw)) return null;
-  const shape = LINK_SHAPE.exec(raw);
-  if (!shape) return null;
-  const [, scheme = "", authority = "", path = "", query = ""] = shape;
-  // A user, password or port makes the authority something other than the bare word.
-  if (scheme.toLowerCase() !== "sprintengine" || authority.toLowerCase() !== "chat") return null;
-  const segment = /^\/([^/]+)\/?$/.exec(path)?.[1];
-  if (!segment || !LINK_ID.test(segment)) return null;
-  const agents = queryValues(query, "agent");
-  const agent = agents.length === 1 ? agents[0] : null;
-  return { workspaceId: segment, agentId: agent && LINK_ID.test(agent) ? agent : null };
-}
-
-/** What a `sprintengine://` link opens: a conversation on a named desktop, or a desktop's chat link. */
+/** What a `sprintengine://` link opens: a conversation on a named desktop, or a Studio chat link. */
 export type AppLink = { kind: "conversation"; link: ConversationLink } | { kind: "chat"; link: ChatLink };
 
 export function parseAppLink(value: string): AppLink | null {

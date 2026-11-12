@@ -495,26 +495,57 @@ test("a worktree chat's row and its project group wear the project's name, and t
   assert.deepEqual(groups.map((group) => [group.projectName, group.rows.length]), [["multicode", 2]]);
 });
 
-test("a desktop's chat link opens the one desktop that lists its workspace, offers several, and says none", () => {
+const link = (environmentId, chatId, agentId = null) => ({ kind: "chat", environmentId, chatId, agentId });
+
+test("a chat link opens the chat on the desktop that is its environment, and only there", () => {
+  const mine = row({ workspaceId: "ws-docs", agentId: "agent-a" }, { deviceId: "dev-a", environmentId: "env-a", lifecycle: true });
+  const other = row({ workspaceId: "ws-other", agentId: "agent-b" }, { deviceId: "dev-a", environmentId: "env-a", lifecycle: true });
+  const twin = row({ workspaceId: "ws-docs", agentId: "agent-c" }, { deviceId: "dev-b", environmentId: "env-b", lifecycle: true });
+  assert.deepEqual(resolveChatLink(link("env-a", "ws-docs"), [other, mine, twin]), { kind: "one", row: mine });
+  assert.deepEqual(resolveChatLink(link("env-b", "ws-docs"), [other, mine, twin]), { kind: "one", row: twin });
+  assert.deepEqual(resolveChatLink(link("env-a", "ws-gone"), [other, mine, twin]), { kind: "none" });
+  // A desktop that has said it is another environment never holds it.
+  assert.deepEqual(resolveChatLink(link("env-c", "ws-docs"), [other, mine, twin]), { kind: "none" });
+  // One desktop reached by two pairings is one environment, and one chat.
+  const again = { ...mine, deviceId: "dev-a-again" };
+  assert.deepEqual(resolveChatLink(link("env-a", "ws-docs"), [mine, again]), { kind: "one", row: mine });
+});
+
+test("while no desktop has said it is the link's environment, a desktop that has said none may be it", () => {
+  const unsaid = row({ workspaceId: "ws-docs", agentId: "agent-a" }, { deviceId: "dev-old", lifecycle: true });
+  const said = row({ workspaceId: "ws-docs", agentId: "agent-b" }, { deviceId: "dev-b", environmentId: "env-b", lifecycle: true });
+  assert.deepEqual(resolveChatLink(link("env-a", "ws-docs"), [unsaid, said]), { kind: "one", row: unsaid });
+  assert.deepEqual(resolveChatLink(link("env-b", "ws-docs"), [unsaid, said]), { kind: "one", row: said });
+});
+
+test("an old link opens the one desktop that lists its workspace, offers several, and says none", () => {
   const mine = row({ workspaceId: "ws-docs", agentId: "agent-a", lastUserMessageAt: NOW - HOUR }, { deviceId: "dev-a", lifecycle: true });
   const other = row({ workspaceId: "ws-other", agentId: "agent-b" }, { deviceId: "dev-a", lifecycle: true });
-  assert.deepEqual(resolveChatLink({ workspaceId: "ws-docs", agentId: null }, [other, mine]), { kind: "one", row: mine });
-  assert.deepEqual(resolveChatLink({ workspaceId: "ws-gone", agentId: null }, [other, mine]), { kind: "none" });
-  assert.deepEqual(resolveChatLink({ workspaceId: "ws-docs", agentId: null }, []), { kind: "none" });
+  assert.deepEqual(resolveChatLink(link(null, "ws-docs"), [other, mine]), { kind: "one", row: mine });
+  assert.deepEqual(resolveChatLink(link(null, "ws-gone"), [other, mine]), { kind: "none" });
+  assert.deepEqual(resolveChatLink(link(null, "ws-docs"), []), { kind: "none" });
 
   // The same workspace on two paired desktops: the person picks, in the list's order.
   const twin = row({ workspaceId: "ws-docs", agentId: "agent-c" }, { deviceId: "dev-b", lifecycle: true });
-  assert.deepEqual(resolveChatLink({ workspaceId: "ws-docs", agentId: null }, [mine, other, twin]), { kind: "several", rows: [mine, twin] });
+  assert.deepEqual(resolveChatLink(link(null, "ws-docs"), [mine, other, twin]), { kind: "several", rows: [mine, twin] });
 });
 
 test("a chat link's agent picks its chat in the workspace, else the chat last written in", () => {
   const older = row({ workspaceId: "ws", agentId: "agent-old", lastUserMessageAt: NOW - 3 * HOUR }, { lifecycle: true });
   const newer = row({ workspaceId: "ws", agentId: "agent-new", lastUserMessageAt: NOW - HOUR }, { lifecycle: true });
-  assert.equal(resolveChatLink({ workspaceId: "ws", agentId: null }, [older, newer]).row, newer);
-  assert.equal(resolveChatLink({ workspaceId: "ws", agentId: "agent-old" }, [older, newer]).row, older);
-  assert.equal(resolveChatLink({ workspaceId: "ws", agentId: "agent-old" }, [newer, older]).row, older);
+  assert.equal(resolveChatLink(link(null, "ws"), [older, newer]).row, newer);
+  assert.equal(resolveChatLink(link(null, "ws", "agent-old"), [older, newer]).row, older);
+  assert.equal(resolveChatLink(link(null, "ws", "agent-old"), [newer, older]).row, older);
   // An agent the workspace does not have still opens the chat, as it was left.
-  assert.equal(resolveChatLink({ workspaceId: "ws", agentId: "agent-gone" }, [older, newer]).row, newer);
+  assert.equal(resolveChatLink(link(null, "ws", "agent-gone"), [older, newer]).row, newer);
+});
+
+test("a desktop's rows carry its environment id when it has said one", () => {
+  const threads = [thread({ workspaceId: "ws-1", agentId: "a" })];
+  const said = buildChatRows({ deviceId: "mac", desktopName: "Mac", environmentId: "env-mac", threads, workspaces: null, lifecycle: true, canOperate: true });
+  assert.equal(said[0].environmentId, "env-mac");
+  const unsaid = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces: null, lifecycle: true, canOperate: true });
+  assert.equal("environmentId" in unsaid[0], false);
 });
 
 test("a chat opened in a screen's place keeps what was under it, and the list under a link that started the app", () => {

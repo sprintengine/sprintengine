@@ -1,5 +1,6 @@
 import {
   formatEnvironmentRoute,
+  isEnvironmentRoute,
   type EnvironmentDescriptor,
   type EnvironmentId,
   type EnvironmentRoute,
@@ -83,11 +84,16 @@ export function environmentKey(entry: Pick<EnvironmentEntry, 'environmentId' | '
   return entry.environmentId ? `id:${entry.environmentId}` : `route:${formatEnvironmentRoute(entry.routes[0]!)}`
 }
 
-/** The environment a route reaches, from a list of them. */
+/**
+ * The environment a route reaches, from a list of them. Null, never a throw,
+ * for a route no list holds (a pairing id from an old record that no route
+ * can carry), since a row's link is read while it draws.
+ */
 export function environmentOfRoute(
   environments: readonly EnvironmentEntry[],
   route: EnvironmentRoute,
 ): EnvironmentEntry | null {
+  if (!isEnvironmentRoute(route)) return null
   const key = formatEnvironmentRoute(route)
   return (
     environments.find((entry) => entry.routes.some((candidate) => formatEnvironmentRoute(candidate) === key)) ?? null

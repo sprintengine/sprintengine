@@ -48,11 +48,12 @@ export type HomeStackParamList = {
   };
   ConversationLink: import("../features/conversations/conversationLogic").ConversationLink;
   /**
-   * A desktop's chat link (`sprintengine://chat/<workspaceId>?agent=<agentId>`):
-   * the workspace, found on whichever paired desktops list it. `agent` keeps
+   * A chat link (`sprintengine://chat/<environmentId>/<workspaceId>?agent=<agentId>`):
+   * the chat on the paired desktop that is that environment, or, for an old
+   * link that names none, on whichever paired desktops list it. `agent` keeps
    * the link's own name for it.
    */
-  ChatLink: { workspaceId: string; agent?: string };
+  ChatLink: { workspaceId: string; environment?: string; agent?: string };
   /** The agents a chat sent off to work. Reads the open chat's live state; it holds no socket of its own. */
   ConversationAgents: { deviceId: string; workspaceId: string; agentId: string };
   /** One agent's own thread, by the id of the call that spawned it. */

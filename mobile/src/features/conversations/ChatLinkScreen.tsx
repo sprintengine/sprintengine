@@ -13,12 +13,13 @@ import { chatOpenedKey, chatRowTitle, resolveChatLink, type ChatListRow } from "
 import type { ChatLink, ConversationTarget } from "./conversationLogic";
 
 /**
- * A desktop's chat link opened on the phone (`sprintengine://chat/<id>`,
- * which "Copy link to chat" writes there). The link names a workspace and no
- * desktop, so the phone reads every paired desktop's chats afresh and looks
- * for it: on one desktop it opens at once, in place of this screen; on
- * several the person picks; on none it says so. Like the desktop, it only
- * ever navigates.
+ * A chat link opened on the phone (`sprintengine://chat/<environmentId>/<id>`,
+ * which "Copy link to chat" writes on a desktop). The phone reads every paired
+ * desktop's chats afresh and looks for it on the desktop that is that
+ * environment (`resolveChatLink`); an old link names no environment, and is
+ * looked for on every desktop. On one desktop it opens at once, in place of
+ * this screen; on several the person picks; on none it says so. Like the
+ * desktop, it only ever navigates.
  */
 export function ChatLinkScreen({
   link,

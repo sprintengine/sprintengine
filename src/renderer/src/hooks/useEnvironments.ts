@@ -68,6 +68,11 @@ export function useEnvironments(): readonly EnvironmentEntry[] {
   )
 }
 
+/** The machines as this window last read them, outside React; empty until a subscriber's first read lands. */
+export function currentEnvironments(): readonly EnvironmentEntry[] {
+  return store.environments
+}
+
 /** Ask the owner of an environment's best route to try it again now. */
 export function retryEnvironment(entry: Pick<EnvironmentEntry, 'routes'>): Promise<void> {
   const api = typeof window !== 'undefined' ? (window.api as Partial<Window['api']> | undefined) : undefined

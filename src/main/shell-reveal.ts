@@ -26,7 +26,12 @@ export function createShellReveal(deps: ShellRevealDeps): (target: ShellRevealTa
     if (target.kind === 'chat') {
       const open = deps.openChat?.()
       if (open) {
-        open({ kind: 'chat', chatId: target.chatId, agentId: target.agentId ?? null })
+        open({
+          kind: 'chat',
+          environmentId: target.environmentId,
+          chatId: target.chatId,
+          agentId: target.agentId ?? null,
+        })
         return true
       }
       // Too early for the router: the app itself comes forward, which is

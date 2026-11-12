@@ -322,9 +322,10 @@ export function registerAppLifecycle({
     backgroundPresence.onWindowOpened()
   }
 
-  // A `sprintengine://chat/…` link (shared/deep-link.ts), held until the window
-  // it is for is listening, then opened there (chat-link-router.ts). It only
-  // ever selects a chat; the auth callback keeps its own path below.
+  // A `sprintengine://chat/…` link (packages/studio-protocol/src/chat-link.ts),
+  // held until the window it is for is listening, then opened there
+  // (chat-link-router.ts). It only ever selects a chat; the auth callback
+  // keeps its own path below.
   const chatLinks = createChatLinkRouter<BrowserWindow>({
     windows: listWorkspaceWindows,
     windowIdOf: workspaceWindowIdOf,

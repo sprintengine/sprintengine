@@ -5,7 +5,6 @@ import { PromptCacheMark } from './PromptCacheMark'
 import type { ConversationSessionSummary } from '../../../../shared/conversation-runtime'
 import type { BranchPullRequest } from '../../../../shared/git/pull-request'
 import { conversationSummaryPhase } from '../../../../shared/conversation/phase'
-import { chatLinkFor } from '../../../../shared/deep-link'
 import { isProjectlessChatsRoot, projectlessScopeOf } from '../../../../shared/projectless-chats'
 import { copyToClipboardWithToast } from '../../utils/copyToClipboardWithToast'
 import {
@@ -164,6 +163,12 @@ import { ScheduledAgentRow } from './sidebar/ScheduledAgentRow'
 import { DraftsSection } from './sidebar/DraftsSection'
 import { setChatReferenceDragData } from '../../../../shared/chat-reference'
 import {
+  chatAddressOfWorkspace,
+  chatLinkOfRemoteChat,
+  chatLinkOfWorkspace,
+  environmentIdsOf,
+} from '../../../../shared/environment-keys'
+import {
   remoteScheduleActionWords,
   useRemoteScheduledAgents,
   type RemoteScheduledMachine,
@@ -237,7 +242,6 @@ import {
   WorkspaceContextMenu,
   autoCompactSwitchOf,
   canRegenerateTitleOf,
-  chatLinkIdOf,
   isChatMarkChange,
   workspaceTypeRowActions,
   type ChatMarkChange,
@@ -1458,7 +1462,7 @@ function WorkspaceSidebar({
     [remotePresence.mesh, remoteBrowses, environments, railWorkspaces, pendingRemoteMarks],
   )
   // What a link to one of their chats opens (`remoteChatLinks.ts`).
-  useEffect(() => publishRemoteChatLinkTargets(remoteGroups), [remoteGroups])
+  useEffect(() => publishRemoteChatLinkTargets(remoteGroups, environments), [remoteGroups, environments])
   // Each paired machine's scheduled agents, beside this computer's in the
   // Scheduled section: they run there, by its scheduler, and are driven from
   // here. Off with this computer's module, as the section is.
@@ -2677,10 +2681,12 @@ function WorkspaceSidebar({
     dragRef.current = { type: 'workspace', id: workspace.id, folderKey: fKey }
     // A move within the list; a copy into a composer, which types the chat's
     // reference where it lands (`chat-reference.ts`), for its agent to read.
+    const ids = environmentIdsOf(environments)
     const referenced = setChatReferenceDragData(event.dataTransfer, {
       id: workspace.id,
       name: workspace.name,
       remote: Boolean(workspace.remoteOrigin),
+      address: ids ? chatAddressOfWorkspace(workspace, ids) : null,
     })
     event.dataTransfer.effectAllowed = referenced ? 'copyMove' : 'move'
     event.dataTransfer.setData(DRAG_MIME_WORKSPACE, workspace.id)
@@ -4373,6 +4379,11 @@ function WorkspaceSidebar({
           workspace={
             railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId) ?? null
           }
+          chatLink={(() => {
+            const workspace =
+              railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId)
+            return workspace ? chatLinkOfWorkspace(workspace, environments) : null
+          })()}
           moduleOverrides={moduleOverrides}
           isDetachedWindow={isDetachedWindow}
           now={now}
@@ -4526,7 +4537,7 @@ function WorkspaceSidebar({
               return
             }
             if (action === 'copy-link') {
-              const link = chatLinkFor(chatLinkIdOf(workspace))
+              const link = chatLinkOfWorkspace(workspace, environments)
               if (link) void copyToClipboardWithToast(link)
               setContextMenu(null)
               return
@@ -4665,7 +4676,7 @@ function WorkspaceSidebar({
                 canNewChat={remoteNewChatTargetOf(conversation.connectionId, conversation.workspaceId) !== null}
                 canMarkUnread={canMarkRemoteConversationUnread(conversation, now)}
                 isDetachedWindow={isDetachedWindow}
-                workspaceId={conversation.workspaceId}
+                chatLink={chatLinkOfRemoteChat(conversation.connectionId, conversation.workspaceId, environments)}
                 starred={conversation.highlight?.starred === true}
                 color={conversation.highlight?.color ?? null}
                 snoozedUntil={conversation.snoozedUntil}
@@ -4701,7 +4712,7 @@ function WorkspaceSidebar({
                   else if (action === 'toggle-settle') settleRemoteConversation(conversation)
                   else if (action === 'mark-unread') changeRemoteChat(target, { kind: 'mark-unread' })
                   else if (action === 'copy-link') {
-                    const link = chatLinkFor(conversation.workspaceId)
+                    const link = chatLinkOfRemoteChat(conversation.connectionId, conversation.workspaceId, environments)
                     if (link) void copyToClipboardWithToast(link)
                   } else if (action === 'move-to-new-window' || action === 'move-to-main-window')
                     onOpenRemoteSession?.(

@@ -278,6 +278,18 @@ test("readStoredSessionList drops malformed entries and falls back to the first 
   assert.deepEqual(readStoredSessionList("not json").sessions, []);
 });
 
+test("a stored pairing keeps its desktop's environment id, and one no link can carry drops the record", () => {
+  const list = readStoredSessionList(
+    JSON.stringify({
+      schemaVersion: 3,
+      sessions: [makeSession({ environmentId: "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b" }), makeSession({ deviceId: "device_2", environmentId: "env/1" })],
+      activeDeviceId: "device_1",
+    }),
+  );
+  assert.equal(list.sessions.length, 1);
+  assert.equal(list.sessions[0].environmentId, "6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b");
+});
+
 test("fleet ordering puts online desktops first and revoked last", () => {
   const ordered = orderSessionsForFleet([
     makeSession({ deviceId: "d_revoked", status: "revoked", desktopName: "Revoked" }),

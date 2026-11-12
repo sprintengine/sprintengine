@@ -771,18 +771,25 @@ way; an older desktop ignores both members.
 Conversation links use
 `sprintengine://conversation/<deviceId>/<workspaceId>/<agentId>`, with each
 component URL-encoded. They resolve against an existing paired desktop, never a
-server address supplied by the link. The desktop's own chat links,
-`sprintengine://chat/<workspaceId>`, optionally with `?agent=<agentId>` (its
-row menu's "Copy link to chat"), open on the phone too. They name no desktop,
-so the phone reads every paired desktop's chats afresh and looks for the
-workspace: where one desktop lists it the chat opens, on that agent's chat when
-the link names one the workspace has, else the one last written in; where
-several do, the person picks the desktop; where none does it says "That chat
-isn't on a desktop you're paired with", and which desktops did not answer. The
-link is read with the desktop's strictness (`parseChatLink`, after its
-`deep-link.ts`): the scheme and the bare `chat` host in any case, one id of
-`[A-Za-z0-9_-]{1,128}`, the one `agent` parameter, any other parameter
-ignored. Like the desktop, it only ever navigates. Hosted push delivery is not included in
+server address supplied by the link. Studio's chat links,
+`sprintengine://chat/<environmentId>/<workspaceId>`, optionally with
+`?agent=<agentId>` (a desktop row menu's "Copy link to chat"), open on the
+phone too. The phone reads every paired desktop's chats afresh and looks for
+the workspace on the desktop that is that environment: the id each desktop's
+identity says (`environmentId`, kept on the pairing and re-read on
+foreground), so two pairings with one desktop are one desktop. Until some
+paired desktop has said it is that environment, a desktop that has said none
+may be it. A link from a desktop before links named an environment,
+`sprintengine://chat/<workspaceId>`, is looked for on every paired desktop.
+Where one desktop has the chat it opens, on that agent's chat when the link
+names one the workspace has, else the one last written in; where several do,
+the person picks the desktop; where none does it says "That chat isn't on a
+desktop you're paired with", and which desktops did not answer. The link is
+read by the desktop's own grammar, which the phone imports
+(`packages/studio-protocol/src/chat-link.ts`): the scheme and the bare `chat`
+host in any case, one or two ids of `[A-Za-z0-9_-]{1,128}`, the one `agent`
+parameter, any other parameter ignored. Like the desktop, it only ever
+navigates. Hosted push delivery is not included in
 this client change; it requires notification infrastructure and credentials.
 
 ## Verification
