@@ -9,10 +9,7 @@
   "engines": {
     "hostApi": 2
   },
-  "permissions": [
-    "mcp:tools",
-    "ipc:workspace-read"
-  ],
+  "permissions": ["mcp:tools", "ipc:workspace-read"],
   "entry": {
     "main": "dist/main.cjs"
   }

@@ -1,4 +1,8 @@
-import type { ModuleConversationErrorCode, ModuleConversationSummary, ModuleMethodParsed } from '@sprintengine/module-sdk'
+import type {
+  ModuleConversationErrorCode,
+  ModuleConversationSummary,
+  ModuleMethodParsed,
+} from '@sprintengine/module-sdk'
 
 // The contract between this module's two halves. entry.main declares the
 // methods (`host.registerMethods<CompanionMethods>`), the renderer calls them

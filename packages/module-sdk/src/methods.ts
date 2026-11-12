@@ -61,10 +61,7 @@ export type ModuleMethodRegistration<C extends ModuleMethodContract = ModuleMeth
   access: C['access']
   /** Reads what a client sent (a JSON value, or `undefined`) into the method's params, or refuses it. */
   params: (value: unknown) => ModuleMethodParsed<C['params']>
-  handler: (
-    params: C['params'],
-    context: ModuleMethodContext,
-  ) => ModuleMethodAnswer<C> | Promise<ModuleMethodAnswer<C>>
+  handler: (params: C['params'], context: ModuleMethodContext) => ModuleMethodAnswer<C> | Promise<ModuleMethodAnswer<C>>
 }
 
 /** A registration for every method of a contract. */
@@ -79,11 +76,7 @@ export type ModuleMethodRegistrations<Cs extends ModuleMethodContracts = ModuleM
  * window's grant or connection does not reach it.
  */
 export type ModuleCallRefusalCode =
-  | 'module_unavailable'
-  | 'module_method_unknown'
-  | 'invalid_params'
-  | 'scope_required'
-  | 'unavailable'
+  'module_unavailable' | 'module_method_unknown' | 'invalid_params' | 'scope_required' | 'unavailable'
 
 /** What a call answers a renderer: the method's result, its own refusal, or the host's. */
 export type ModuleCallAnswer<C extends ModuleMethodContract> =
@@ -115,4 +108,3 @@ export type ModuleMethodsClient<Cs extends ModuleMethodContracts = ModuleMethodC
     options?: { commandId?: string },
   ): Promise<ModuleCallAnswer<Cs[M]>>
 }
-

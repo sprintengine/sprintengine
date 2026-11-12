@@ -4,12 +4,12 @@ Studio runs agents as chats on the agent runtimes installed on the machine
 (Claude Code, Codex, and the rest). An extension works with agents in these
 ways, and only these:
 
-| | Where | Permission | Who sends |
-| --- | --- | --- | --- |
-| `host.openChat(input)` | renderer | `chat:draft` (a draft) or `conversation:operate` (needed for `send: true`) | The person: the prompt lands as a draft unless `send: true` |
-| `getConversationService(host)` | main | `conversation:operate` (everything) or `conversation:read` (watch/read only) | The module |
-| `getTextGenerationService(host)` | main | `agents:generate` | The module: one prompt, one answer, no chat at all |
-| `getCompanionAgentsService(host)` | main | `agents:companion` | The module: a background agent with a structured task API (the `api-main` topic) |
+|                                   | Where    | Permission                                                                   | Who sends                                                                        |
+| --------------------------------- | -------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `host.openChat(input)`            | renderer | `chat:draft` (a draft) or `conversation:operate` (needed for `send: true`)   | The person: the prompt lands as a draft unless `send: true`                      |
+| `getConversationService(host)`    | main     | `conversation:operate` (everything) or `conversation:read` (watch/read only) | The module                                                                       |
+| `getTextGenerationService(host)`  | main     | `agents:generate`                                                            | The module: one prompt, one answer, no chat at all                               |
+| `getCompanionAgentsService(host)` | main     | `agents:companion`                                                           | The module: a background agent with a structured task API (the `api-main` topic) |
 
 The first two create ordinary chats: a tab in the workspace the person can
 read, answer and stop. A module drives only chats it created — never the
@@ -48,16 +48,18 @@ a minute) and lists the missing ones with `available: false`.
 
 ```ts
 const opened = await host.openChat({
-  workspaceId,                       // required; a workspace with a folder
+  workspaceId, // required; a workspace with a folder
   prompt: 'Plan the change described in docs/plan.md.',
-  skills: ['my-skill'],              // optional: installed and invoked in the first turn
-  cli: 'codex', model: undefined,    // optional; absent = the runtime the person last chose
-  name: 'Plan: search rewrite',      // optional: the chat's title
-  dedupeKey: 'plan:search-rewrite',  // optional: asking again focuses this chat instead of opening another
-  send: false,                       // default: a draft
+  skills: ['my-skill'], // optional: installed and invoked in the first turn
+  cli: 'codex',
+  model: undefined, // optional; absent = the runtime the person last chose
+  name: 'Plan: search rewrite', // optional: the chat's title
+  dedupeKey: 'plan:search-rewrite', // optional: asking again focuses this chat instead of opening another
+  send: false, // default: a draft
 })
-if (!opened.ok) showError(opened.message)  // permission_missing | unknown_workspace | workspace_folder_missing | cli_not_conversational | unavailable | invalid_input
-else host.focusTab({ workspaceId, kind: 'chat', id: opened.agentId })  // openChat already focuses; this re-focuses later
+if (!opened.ok)
+  showError(opened.message) // permission_missing | unknown_workspace | workspace_folder_missing | cli_not_conversational | unavailable | invalid_input
+else host.focusTab({ workspaceId, kind: 'chat', id: opened.agentId }) // openChat already focuses; this re-focuses later
 ```
 
 Prefer the draft. A prompt the person reads before it runs is a prompt they
@@ -75,44 +77,51 @@ import { getConversationService, type RegisterMain } from '@sprintengine/module-
 
 export const registerMain: RegisterMain = (host) => {
   if (!host.supports('conversations')) return
-  const chats = getConversationService(host)          // manifest: "dependsOn": ["agent-runtime"]
+  const chats = getConversationService(host) // manifest: "dependsOn": ["agent-runtime"]
 
-  host.registerIpc(`${host.moduleId}:start`, async (_event, input) => {
-    const started = await chats.create({
-      workspaceId: String((input as { workspaceId?: unknown }).workspaceId),
-      name: 'Release notes',
-      prompt: 'Draft release notes from the commits since the last tag. Do not push.',
-      // cli, model, skills, attachments, permissionPreset: optional
-    })
-    if (!started.ok) return started                     // { ok: false, code, message }
-    const ref = { workspaceId: started.conversation.workspaceId, agentId: started.conversation.agentId }
-    const off = chats.subscribe(ref, async (event) => {
-      if (event.type !== 'turn_completed') return
-      off()
-      const reply = await chats.reply(ref)              // the agent's last message of the turn
-      if (!reply.ok) host.notify({ severity: 'warning', title: 'Release notes did not finish' })
-      else host.emit('release-notes-drafted', { text: reply.text.slice(0, 200) })
-    })
-    return started
+  host.registerMethods({
+    start: {
+      access: 'operate',
+      params: readWorkspaceId, // (value) => { ok: true, params } | { ok: false, message }
+      handler: async ({ workspaceId }, { commandId }) => {
+        const started = await chats.create({
+          workspaceId,
+          commandId, // a retried call finds the chat the first one made
+          name: 'Release notes',
+          prompt: 'Draft release notes from the commits since the last tag. Do not push.',
+          // cli, model, skills, attachments, permissionPreset: optional
+        })
+        if (!started.ok) return started // { ok: false, code, message }
+        const ref = { workspaceId: started.conversation.workspaceId, agentId: started.conversation.agentId }
+        const off = chats.subscribe(ref, async (event) => {
+          if (event.type !== 'turn_completed') return
+          off()
+          const reply = await chats.reply(ref) // the agent's last message of the turn
+          if (!reply.ok) host.notify({ severity: 'warning', title: 'Release notes did not finish' })
+          else host.emit('release-notes-drafted', { text: reply.text.slice(0, 200) })
+        })
+        return { ok: true, result: { agentId: started.conversation.agentId } }
+      },
+    },
   })
 }
 ```
 
-| Method | Needs | Notes |
-| --- | --- | --- |
+| Method                                                                                                                                                   | Needs   | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `create({ workspaceId, prompt?, name?, cli?, model?, skills?, attachments?, permissionPreset?, permissionMode?, allowedTools?, commandId?, worktree? })` | operate | Resolves `{ ok: true, conversation }` once the chat exists. `prompt` is sent as the first turn. `permissionPreset` (`manual`, `none`, `auto`, `bypass`) absent = the person's default; `'bypass'` skips the runtime's approval prompts — only when the person asked for it, and only with `conversation:bypass` declared (otherwise it runs on `auto`). `permissionMode` is the CLI's own mode at that preset. `allowedTools` are used without asking and need `conversation:bypass`. `worktree: { name? }` starts the chat in a fresh git worktree (branch `<prefix>/<name>-<suffix>`, the person's worktree branch prefix being `agent` unless they changed it) in a new workspace of its own — address it by the answer's `workspaceId`; a project that is not a git repository answers `worktree_unavailable`. |
-| `send(ref, { message, skills?, attachments?, steer? })` | operate | Another turn. `steer: true` lands it inside the turn that is running. |
-| `interrupt(ref)` / `stop(ref)` | operate | Stop the current turn / end the session. |
-| `respondToApproval(ref, { requestId, decision, answers?, commandId? })` | operate | Answer an `approval_requested` event: `decision` is `once`, `conversation` (that kind of request, for the rest of the chat) or `deny`; the older `approved: boolean` still works. Approve only what the person would approve. |
-| `answerQuestion(ref, { requestId, answers, commandId? })` | operate | Answer a request of kind `question`: question text to the chosen answer. Refused for any other kind. |
-| `resolvePlan(ref, { requestId, decision, commandId? })` | operate | Answer a request of kind `plan`: `approve` or `reject`. Refused for any other kind. |
-| `setPermissionPreset(ref, preset, { permissionMode?, commandId? }?)` | operate | Switch the chat's preset from its next tool call. Answers `{ ok: true, permissionPreset, permissionMode?, notice? }`: the preset in force, lowered to the module's ceiling when it asked for more (and the mode dropped with it). |
-| `setModel(ref, modelId)` | operate | Switch to another model of the chat's runtime from its next turn (an id `listChatRuntimes()` lists, or `default`). Answers `{ ok: true, modelId, notice? }`; a runtime that binds a chat to its model refuses. |
-| `subscribe(ref, cb)` | read | Live events from now on; returns the unsubscriber. A chat the host has not loaded yet (a saved chat at startup) is attached all the same and delivers once it is; a ref to anything not yours delivers nothing. Throws only without `conversation:read` or for a malformed ref. |
-| `follow(ref, { afterSeq?, generation?, turnLimit? }?, onFrame)` | read | No gap: a `snapshot` (or only the events after the cursor you hold), a `synchronized` fence, then live events. Keep the fence's `seq` and `generation` as your next cursor; a snapshot with `reset: true` replaces what you held. Returns the unsubscriber. Like `subscribe`, it waits for a chat the host has not loaded yet. |
-| `transcript(ref)` | read | Every recorded event, for catching up. |
-| `reply(ref, turnId?)` | read | `{ ok: true, turnId, text }`: the last finished turn's reply (or `turnId`'s), the agent's last message of the turn. `no_reply` while none has finished. |
-| `list(filter?)` / `watch(filter, cb)` | read | The module's own chats: `{ workspaceId, agentId, sessionId, name, cli, providerId, modelId, status, permissionPreset?, scheduledAgentId?, scheduledAgentTag? }`. `watch` fires at once, then on change. |
+| `send(ref, { message, skills?, attachments?, steer? })`                                                                                                  | operate | Another turn. `steer: true` lands it inside the turn that is running.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `interrupt(ref)` / `stop(ref)`                                                                                                                           | operate | Stop the current turn / end the session.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `respondToApproval(ref, { requestId, decision, answers?, commandId? })`                                                                                  | operate | Answer an `approval_requested` event: `decision` is `once`, `conversation` (that kind of request, for the rest of the chat) or `deny`; the older `approved: boolean` still works. Approve only what the person would approve.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `answerQuestion(ref, { requestId, answers, commandId? })`                                                                                                | operate | Answer a request of kind `question`: question text to the chosen answer. Refused for any other kind.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `resolvePlan(ref, { requestId, decision, commandId? })`                                                                                                  | operate | Answer a request of kind `plan`: `approve` or `reject`. Refused for any other kind.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `setPermissionPreset(ref, preset, { permissionMode?, commandId? }?)`                                                                                     | operate | Switch the chat's preset from its next tool call. Answers `{ ok: true, permissionPreset, permissionMode?, notice? }`: the preset in force, lowered to the module's ceiling when it asked for more (and the mode dropped with it).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `setModel(ref, modelId)`                                                                                                                                 | operate | Switch to another model of the chat's runtime from its next turn (an id `listChatRuntimes()` lists, or `default`). Answers `{ ok: true, modelId, notice? }`; a runtime that binds a chat to its model refuses.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `subscribe(ref, cb)`                                                                                                                                     | read    | Live events from now on; returns the unsubscriber. A chat the host has not loaded yet (a saved chat at startup) is attached all the same and delivers once it is; a ref to anything not yours delivers nothing. Throws only without `conversation:read` or for a malformed ref.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `follow(ref, { afterSeq?, generation?, turnLimit? }?, onFrame)`                                                                                          | read    | No gap: a `snapshot` (or only the events after the cursor you hold), a `synchronized` fence, then live events. Keep the fence's `seq` and `generation` as your next cursor; a snapshot with `reset: true` replaces what you held. Returns the unsubscriber. Like `subscribe`, it waits for a chat the host has not loaded yet.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `transcript(ref)`                                                                                                                                        | read    | Every recorded event, for catching up.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `reply(ref, turnId?)`                                                                                                                                    | read    | `{ ok: true, turnId, text }`: the last finished turn's reply (or `turnId`'s), the agent's last message of the turn. `no_reply` while none has finished.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `list(filter?)` / `watch(filter, cb)`                                                                                                                    | read    | The module's own chats: `{ workspaceId, agentId, sessionId, name, cli, providerId, modelId, status, permissionPreset?, scheduledAgentId?, scheduledAgentTag? }`. `watch` fires at once, then on change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 `ref` is `{ workspaceId, agentId }` — keep it (in `getModuleStorage`) if you
 need the chat after a restart.
@@ -185,12 +194,12 @@ work in a project — do not open a chat:
 import { getTextGenerationService } from '@sprintengine/module-sdk'
 
 const generated = await getTextGenerationService(host).generate({
-  prompt: digest,                          // up to 400,000 characters
+  prompt: digest, // up to 400,000 characters
   system: 'You write a three-line standup from a work log.',
-  cli: 'codex',                            // absent: the person's text-generation runtime, else claude-code
-  model: undefined,                        // absent: their chosen model, else the runtime's small one
-  maxOutputTokens: 800,                    // honoured by Claude Code; Codex has no output cap and ignores it
-  json: true,                              // the answer is one JSON value; `text` is it, serialised
+  cli: 'codex', // absent: the person's text-generation runtime, else claude-code
+  model: undefined, // absent: their chosen model, else the runtime's small one
+  maxOutputTokens: 800, // honoured by Claude Code; Codex has no output cap and ignores it
+  json: true, // the answer is one JSON value; `text` is it, serialised
 })
 if (generated.ok) save(JSON.parse(generated.text), generated.usage)
 else if (generated.code === 'busy') retryLater()

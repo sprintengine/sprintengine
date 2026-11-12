@@ -26,7 +26,10 @@ test('starting a summary opens a chat, and its end is announced', async () => {
   // The agent finishes its turn: nothing went wrong, so the bell is left alone.
   main.services.conversations.emitEvent(started.conversation, { type: 'turn_completed' })
   assert.deepEqual(main.notifications, [])
-  assert.ok(main.emitted.some((event) => event.topic === 'conversations-changed'), 'windows are told to read again')
+  assert.ok(
+    main.emitted.some((event) => event.topic === 'conversations-changed'),
+    'windows are told to read again',
+  )
   assert.deepEqual(main.undeclared, [])
 })
 

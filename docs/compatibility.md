@@ -240,7 +240,12 @@ and `RendererHost` members, the services behind the SDK's `get*Service`
 helpers, the manifest fields — is a wire in the sense of this file, even though
 nothing crosses a network.
 
-- **The version.** `HOST_API_VERSION = 1`, `HOST_API_MIN_SUPPORTED = 1`. Both
+- **The version.** `HOST_API_VERSION = 2`, `HOST_API_MIN_SUPPORTED = 2`. Host
+  API 2 (2026-11-12) replaced host API 1's IPC channels (`MainHost.registerIpc`,
+  `RendererHost.invoke`) with declared methods served over the Studio protocol
+  (`registerMethods`, `methods()`, `module.read` / `module.operate`), with no
+  shim, so a module built for host API 1 is refused: Settings and the bell say
+  to rebuild it against `@sprintengine/module-sdk` 2 and what changes. Both
   are declared once, in `packages/module-sdk/src/host-api.ts`, and re-exported
   for app code by `src/shared/modules/host-api.ts`, so the app, the SDK and the
   `sprintengine-module` CLI cannot disagree about them. The drift guard
@@ -1073,7 +1078,10 @@ capabilities. `modules`
 adds the `module.events` and `module.notifications` streams, what a Studio's
 modules say to clients, under the `modules:read` scope a grant holds
 explicitly (a pairing made before it never gains it); a module event's payload
-is JSON. A Studio without a module kernel leaves the capability out, and a
+is JSON. It also adds `module.read` and `module.operate`, a module's declared
+methods (host API 2), under `modules:read` and the new `modules:operate`
+(which carries it); an operate is a mutation with a `commandId`, and a
+module's answer, its own refusals included, is the result. A Studio without a module kernel leaves the capability out, and a
 client subscribes only where it is advertised. Explicit grants
 (2026-11-12) replace "owners only" on everything above and on the chat
 surface, the conversation commands, `files.*` by root, `tools.grant*`,

@@ -13,20 +13,34 @@ import { getSecretsService, type RegisterMain } from '@sprintengine/module-sdk'
 export const registerMain: RegisterMain = (host) => {
   const secrets = getSecretsService(host)
 
-  // The renderer collects the key in a password field and sends it once.
-  host.registerIpc(`${host.moduleId}:set-key`, async (_event, key) => {
-    if (typeof key !== 'string' || key.length === 0) return { ok: false, code: 'invalid_input', message: 'Paste a key.' }
-    return secrets.set('weather-api', key, { allowedOrigins: ['https://api.weather.example'] })
-  })
+  const text = (name: string) => (value: unknown) =>
+    typeof value === 'string' && value.length > 0
+      ? { ok: true as const, params: value }
+      : { ok: false as const, message: `Give a ${name}.` }
 
-  host.registerIpc(`${host.moduleId}:forecast`, async (_event, city) => {
-    const response = await secrets.fetchWithSecret(
-      'weather-api',
-      `https://api.weather.example/v1/forecast?city=${encodeURIComponent(String(city))}`,
-      { placement: { header: 'Authorization', scheme: 'Bearer' }, timeoutMs: 10_000 },
-    )
-    if (!response.ok) return response                 // not_set | origin_not_allowed | network_error | …
-    return { ok: true, forecast: JSON.parse(response.body) }
+  host.registerMethods({
+    // The renderer collects the key in a password field and sends it once.
+    'key.set': {
+      access: 'operate',
+      params: text('key'),
+      handler: async (key) => {
+        const stored = await secrets.set('weather-api', key, { allowedOrigins: ['https://api.weather.example'] })
+        return stored.ok ? { ok: true, result: null } : stored
+      },
+    },
+    forecast: {
+      access: 'read',
+      params: text('city'),
+      handler: async (city) => {
+        const response = await secrets.fetchWithSecret(
+          'weather-api',
+          `https://api.weather.example/v1/forecast?city=${encodeURIComponent(city)}`,
+          { placement: { header: 'Authorization', scheme: 'Bearer' }, timeoutMs: 10_000 },
+        )
+        if (!response.ok) return response // not_set | origin_not_allowed | network_error | …
+        return { ok: true, result: JSON.parse(response.body) }
+      },
+    },
   })
 }
 ```
@@ -59,7 +73,7 @@ const pulls = await github.request({
   route: '/repos/acme/app/pulls',
   params: { state: 'open', per_page: 20 },
 })
-if (!pulls.ok) return pulls                            // not_signed_in | invalid_route | http_error | network_error
+if (!pulls.ok) return pulls // not_signed_in | invalid_route | http_error | network_error
 const titles = (pulls.data as Array<{ title: string }>).map((pr) => pr.title)
 
 await github.request({ method: 'POST', route: '/repos/acme/app/issues/12/comments', body: { body: 'Looks good.' } })
@@ -85,7 +99,10 @@ the rate limit. `accept` takes one of GitHub's own media types
 ```ts
 let etag: string | undefined
 const pulls = await github.request({ route: '/repos/acme/app/pulls', ...(etag ? { ifNoneMatch: etag } : {}) })
-if (pulls.ok && pulls.status !== 304) { etag = pulls.headers.etag; render(pulls.data) }
+if (pulls.ok && pulls.status !== 304) {
+  etag = pulls.headers.etag
+  render(pulls.data)
+}
 const next = pulls.ok ? /<([^>]+)>; rel="next"/.exec(pulls.headers.link ?? '')?.[1] : undefined
 
 const diff = await github.request({ route: '/repos/acme/app/pulls/12', accept: 'application/vnd.github.diff' })
@@ -98,7 +115,9 @@ const result = await github.graphql(
   'query($q: String!) { search(query: $q, type: ISSUE, first: 50) { nodes { ... on PullRequest { number title } } } rateLimit { remaining } }',
   { q: 'is:pr is:open review-requested:@me' },
 )
-if (result.ok) { const { data, errors } = result.data as { data?: unknown; errors?: unknown[] } }
+if (result.ok) {
+  const { data, errors } = result.data as { data?: unknown; errors?: unknown[] }
+}
 ```
 
 It is a `POST` on the wire but a read by contract: a document with a top-level
@@ -114,7 +133,7 @@ const log = await github.download({
   route: '/repos/{owner}/{repo}/actions/jobs/{job_id}/logs',
   params: { owner: 'acme', repo: 'app', job_id: 123 },
 })
-if (log.ok) showTail(log.data)                       // text; `encoding: 'base64'` for an archive
+if (log.ok) showTail(log.data) // text; `encoding: 'base64'` for an archive
 ```
 
 GitHub answers these with a redirect to its storage. The host follows that

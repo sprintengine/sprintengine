@@ -30,7 +30,8 @@ function writeModule(
   mkdirSync(join(moduleRoot, 'dist'), { recursive: true })
   writeFileSync(
     join(moduleRoot, 'dist', 'main.cjs'),
-    options.entry ?? `exports.registerMain = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pong' }) } })\n`,
+    options.entry ??
+      `exports.registerMain = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pong' }) } })\n`,
   )
   const manifest = {
     id,

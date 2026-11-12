@@ -107,6 +107,18 @@
   `modules` capability. They replace the desktop's `modules:events`,
   `modules:notifications` and `modules:notifications:recent` IPC channels.
 
+- **A module's declared methods.** `module.read` (scope `modules:read`) and
+  `module.operate` (new scope `modules:operate`, permission `module:operate`,
+  which carries `module:read`; a mutation with a `commandId`, audited, its
+  first answer kept for a retry) call a method a module declared, by
+  `{ moduleId, method, params? }`. The result is the module's own answer,
+  `StudioModuleAnswer` (`{ ok: true, result }` or its `{ ok: false, code,
+message }`); new error codes `module_unavailable` (the module does not run
+  there) and `module_method_unknown` (no such method under that entry), and a
+  module's own params validator answers `invalid_params`. Method names follow
+  `isStudioModuleMethodName`. Both are offered under `modules`, and replace the
+  desktop's `modules:bridge:invoke` IPC channel (host API 2 of the module SDK).
+
 ### Changed (contract)
 
 - **One table builds both ends.** `contract.ts` defines a method as a contract

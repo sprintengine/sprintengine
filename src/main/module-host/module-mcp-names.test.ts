@@ -21,7 +21,7 @@ function manifest(id: string): CapabilityManifest {
     defaultEnabled: true,
     source: 'third-party',
     permissions: ['mcp:tools'],
-    engines: { hostApi: 1 },
+    engines: { hostApi: 2 },
   }
 }
 

@@ -808,8 +808,24 @@ assert.equal(SDK_FILE_DROP_MIME, APP_FILE_DROP_MIME, 'SPRINTENGINE_FILE_DROP_MIM
 assert.equal(SDK_HOST_API_VERSION, APP_HOST_API_VERSION, 'HOST_API_VERSION drifted between SDK and app')
 // A method name the SDK lets a module declare is one the protocol carries, and no other.
 assert.equal(SDK_MODULE_METHOD_MAX_CHARS, 100)
-for (const name of ['list', 'cards.add', 'v2-get', 'List', '1x', '.x', 'a:b', 'a b', '', `a${'b'.repeat(99)}`, `a${'b'.repeat(100)}`])
-  assert.equal(sdkIsModuleMethodName(name), isStudioModuleMethodName(name), `method name "${name}" drifted between SDK and protocol`)
+for (const name of [
+  'list',
+  'cards.add',
+  'v2-get',
+  'List',
+  '1x',
+  '.x',
+  'a:b',
+  'a b',
+  '',
+  `a${'b'.repeat(99)}`,
+  `a${'b'.repeat(100)}`,
+])
+  assert.equal(
+    sdkIsModuleMethodName(name),
+    isStudioModuleMethodName(name),
+    `method name "${name}" drifted between SDK and protocol`,
+  )
 assert.equal(
   SDK_HOST_API_MIN_SUPPORTED,
   APP_HOST_API_MIN_SUPPORTED,

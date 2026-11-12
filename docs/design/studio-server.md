@@ -316,16 +316,16 @@ all: under ruling (f) the canvas is a client module whose boards are files the
 server reads and writes for it, and whose agent tools are a toolset the client
 offers.
 
-| `MainHost` member today                    | On the server                                                                                                          |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `MainHost` member today                                  | On the server                                                                                                                                  |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `registerMethods({ name: { access, params, handler } })` | `module.read` (`modules:read`) and `module.operate` (`modules:operate`, once per command id), by module id and method name; host API 2 (built) |
-| `emit(topic, payload)`                     | the `module.events` stream (`modules:read`), per module, a JSON payload, nothing replayed (built)                      |
-| `registerMcpTools`                         | the server's gateway, unchanged                                                                                        |
-| `notify`                                   | the `module.notifications` stream (`modules:read`): the kept rows first, then each new one (built)                     |
-| `provideService` / `getService`            | unchanged, in the server process                                                                                       |
-| `registerSkills` / `ensureSkillInstalled`  | unchanged, on the server host's disk                                                                                   |
-| `registerSidecar`                          | unchanged, spawned on the server host                                                                                  |
-| storage, secrets, the conversation service | unchanged, on the server                                                                                               |
+| `emit(topic, payload)`                                   | the `module.events` stream (`modules:read`), per module, a JSON payload, nothing replayed (built)                                              |
+| `registerMcpTools`                                       | the server's gateway, unchanged                                                                                                                |
+| `notify`                                                 | the `module.notifications` stream (`modules:read`): the kept rows first, then each new one (built)                                             |
+| `provideService` / `getService`                          | unchanged, in the server process                                                                                                               |
+| `registerSkills` / `ensureSkillInstalled`                | unchanged, on the server host's disk                                                                                                           |
+| `registerSidecar`                                        | unchanged, spawned on the server host                                                                                                          |
+| storage, secrets, the conversation service               | unchanged, on the server                                                                                                                       |
 
 | `RendererHost` member                                     | In a client                                                                          |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |

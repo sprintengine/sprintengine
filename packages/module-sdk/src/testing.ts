@@ -506,7 +506,11 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
   ): Promise<ModuleCallAnswer<ModuleMethodContract>> {
     const registration = declared.get(method)
     if (!registration) {
-      return { ok: false, code: 'module_method_unknown', message: `Module "${moduleId}" declares no method "${method}".` }
+      return {
+        ok: false,
+        code: 'module_method_unknown',
+        message: `Module "${moduleId}" declares no method "${method}".`,
+      }
     }
     if (registration.access !== access) {
       return {
@@ -698,7 +702,9 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
           throw new Error(`Module "${moduleId}" method "${name}" must say its access: "read" or "operate".`)
         }
         if (typeof registration.params !== 'function') {
-          throw new Error(`Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`)
+          throw new Error(
+            `Module "${moduleId}" method "${name}" has no params validator; every method reads its params.`,
+          )
         }
         if (typeof registration.handler !== 'function') {
           throw new Error(`Module "${moduleId}" method "${name}" has no handler.`)

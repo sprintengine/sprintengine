@@ -120,7 +120,11 @@ describe('createFakeMainHost', () => {
     let saved = 0
     const contexts: unknown[] = []
     const methods = {
-      echo: { access: 'read' as const, params: text, handler: (params: { text: string }) => ({ ok: true as const, result: { got: params.text } }) },
+      echo: {
+        access: 'read' as const,
+        params: text,
+        handler: (params: { text: string }) => ({ ok: true as const, result: { got: params.text } }),
+      },
       save: {
         access: 'operate' as const,
         params: text,
@@ -164,7 +168,11 @@ describe('createFakeMainHost', () => {
     assert.deepEqual(contexts.at(-1), { clientId: 'owner', commandId: 'owner:c1' })
 
     fake.host.registerMethods({
-      fn: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: { run() {} } }) },
+      fn: {
+        access: 'read',
+        params: () => ({ ok: true, params: {} }),
+        handler: () => ({ ok: true, result: { run() {} } }),
+      },
     })
     await assert.rejects(fake.methods.read('fn', {}), /not JSON/, 'a result the protocol cannot carry fails')
   })
@@ -397,7 +405,11 @@ describe('createFakeRendererHost', () => {
   test('records registrations, renders a door with the kit, and calls the main fake’s methods', async () => {
     const main = createFakeMainHost({ moduleId: 'notes', permissions: ['module:bridge', 'conversation:operate'] })
     main.host.registerMethods({
-      list: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: ['First note'] }) },
+      list: {
+        access: 'read',
+        params: () => ({ ok: true, params: {} }),
+        handler: () => ({ ok: true, result: ['First note'] }),
+      },
     })
     const renderer = createFakeRendererHost({ main })
     const Door = () =>

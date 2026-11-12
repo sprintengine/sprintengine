@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type {
-  ModuleConversationSummary,
-  ModuleWorkspaceView,
-  RendererHost,
-} from '@sprintengine/module-sdk'
+import type { ModuleConversationSummary, ModuleWorkspaceView, RendererHost } from '@sprintengine/module-sdk'
 import {
   EmptyState,
   GhostButton,

@@ -9,9 +9,7 @@
   "engines": {
     "hostApi": 2
   },
-  "permissions": [
-    "ipc:workspace-read"
-  ],
+  "permissions": ["ipc:workspace-read"],
   "entry": {
     "renderer": "dist/renderer.mjs"
   }

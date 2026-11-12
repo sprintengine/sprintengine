@@ -5,10 +5,10 @@ discovered on launch. Both folders are created (and seeded with a README) the
 first time the app runs — including on a packaged install — so there is always
 a discoverable place to drop things.
 
-| Kind | Folder | Manifest | Surfaced in |
-| --- | --- | --- | --- |
-| **Capability module** | `~/.sprintengine/modules/<id>/` | `manifest.json` | Settings → Modules, the Extensions door |
-| **Conversation provider** | `~/.sprintengine/plugins/<id>/` | `plugin.json` with `"kind": "provider"` | Settings → Providers |
+| Kind                      | Folder                          | Manifest                                | Surfaced in                             |
+| ------------------------- | ------------------------------- | --------------------------------------- | --------------------------------------- |
+| **Capability module**     | `~/.sprintengine/modules/<id>/` | `manifest.json`                         | Settings → Modules, the Extensions door |
+| **Conversation provider** | `~/.sprintengine/plugins/<id>/` | `plugin.json` with `"kind": "provider"` | Settings → Providers                    |
 
 In both cases the folder name must equal the manifest `id`. Agent CLIs are not
 drop-in: they ship with the app, and nothing a user installs adds or replaces
@@ -42,11 +42,11 @@ the user has trusted execute code.
   `sprintengine-module add <part>` in an existing project.
 - Test without the app. `@sprintengine/module-sdk/testing` has fake main and
   renderer hosts that keep this app's rules (the permissions it checks,
-  storage's limits, chat ownership, the bridge's `module:bridge`) and a UI kit
+  storage's limits, chat ownership, the `module:bridge` that declaring methods needs) and a UI kit
   stand-in that renders in Node; a scaffolded project runs its TypeScript
   tests and a smoke test that renders every registered surface on
   `npm run check`. See the SDK README's "Testing".
-- Declare the host API the module was built for: `"engines": { "hostApi": 1 }`.
+- Declare the host API the module was built for: `"engines": { "hostApi": 2 }`.
   A module without it, or built for a host API this app does not load, is
   refused with a message saying which side to update — never shown as merely
   "not trusted".
@@ -184,8 +184,8 @@ skill directories and register them at startup:
 host.registerSkills([
   {
     id: 'review-guide',
-    sourceDir: 'skills/review-guide',      // relative to the module root
-    targetPolicy: 'all-native',            // or 'agents'
+    sourceDir: 'skills/review-guide', // relative to the module root
+    targetPolicy: 'all-native', // or 'agents'
     description: 'Walk a human reviewer through a code change.',
   },
 ])

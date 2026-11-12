@@ -76,7 +76,11 @@ export function createServerModules(deps: {
   hub.serveCallsFrom(async (request) =>
     load
       ? load.kernel.callModuleMethod(request)
-      : { ok: false, code: 'module_unavailable', message: `Module "${request.moduleId}" is not running on this Studio.` },
+      : {
+          ok: false,
+          code: 'module_unavailable',
+          message: `Module "${request.moduleId}" is not running on this Studio.`,
+        },
   )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null

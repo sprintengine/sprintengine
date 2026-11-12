@@ -75,7 +75,7 @@ why it is not running when it is not.
 `main.ts` changes need a Studio restart to try, so test them in Node first.
 `@sprintengine/module-sdk/testing` has fake hosts that keep the host's rules
 (the permissions it checks, storage's key and size limits, chat ownership, the
-bridge's `module:bridge`), and a UI kit stand-in that renders. Write tests in
+`module:bridge` that declaring methods needs), and a UI kit stand-in that renders. Write tests in
 `test/*.test.ts`; `npm test` bundles them with esbuild and runs them with
 `node --test`:
 
@@ -85,9 +85,9 @@ import manifest from '../module/manifest.json'
 
 const main = createFakeMainHost({ manifest })
 await registerMain(main.host)
-await main.ipc.invoke('<id>:start', { workspaceId: 'ws-app' })          // what the window would send
+await main.methods.operate('start', { workspaceId: 'ws-app' }) // what the window would send
 main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // what the agent would do
-assert.deepEqual(main.undeclared, [])                                   // nothing used undeclared
+assert.deepEqual(main.undeclared, []) // nothing used undeclared
 
 const renderer = createFakeRendererHost({ main })
 await registerRenderer(renderer.host)
@@ -116,19 +116,19 @@ section and top-bar item the module registers, so one that throws fails
 
 ## The other topics
 
-| Topic | Read it when |
-| --- | --- |
-| `surfaces` | Choosing what the extension adds to Studio, and which API does it |
-| `manifest` | Writing `module/manifest.json` and `plugin.json` |
-| `permissions` | Choosing permissions; what each one allows |
-| `rules` | Before writing UI or a build change: the mistakes that cost earlier extensions time |
-| `api-renderer` | The renderer host: contributions, state, `openChat` |
-| `api-main` | The main host: services, storage, IPC, MCP tools, skills |
-| `conversations` | Starting, prompting and reading the extension's own chats; one-shot text generation |
-| `brokers` | API keys and GitHub through the host |
-| `ui-kit` | `@sprintengine/module-sdk/ui` and `/surface`, theme tokens, styling |
-| `troubleshooting` | Studio does not list, trust or run the module |
-| `publishing` | Signing, installing from GitHub, the marketplace |
+| Topic             | Read it when                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `surfaces`        | Choosing what the extension adds to Studio, and which API does it                   |
+| `manifest`        | Writing `module/manifest.json` and `plugin.json`                                    |
+| `permissions`     | Choosing permissions; what each one allows                                          |
+| `rules`           | Before writing UI or a build change: the mistakes that cost earlier extensions time |
+| `api-renderer`    | The renderer host: contributions, state, `openChat`                                 |
+| `api-main`        | The main host: services, storage, IPC, MCP tools, skills                            |
+| `conversations`   | Starting, prompting and reading the extension's own chats; one-shot text generation |
+| `brokers`         | API keys and GitHub through the host                                                |
+| `ui-kit`          | `@sprintengine/module-sdk/ui` and `/surface`, theme tokens, styling                 |
+| `troubleshooting` | Studio does not list, trust or run the module                                       |
+| `publishing`      | Signing, installing from GitHub, the marketplace                                    |
 
 ## Done means
 

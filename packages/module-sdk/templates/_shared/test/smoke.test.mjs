@@ -86,10 +86,7 @@ if (raw.entry?.main) {
 
     // Declaring methods without "module:bridge" throws from registerMain above.
     const contributed =
-      main.methods.declared().length +
-      main.tools.list().length +
-      main.skills.registered.length +
-      main.sidecars.length
+      main.methods.declared().length + main.tools.list().length + main.skills.registered.length + main.sidecars.length
     assert.ok(contributed > 0, `registering ${entry} contributed nothing.`)
 
     // A service resolved while registering must have its provider loaded

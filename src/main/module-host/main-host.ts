@@ -208,7 +208,9 @@ export type MainHost = {
    * takes its methods with it. A third-party module must declare
    * `module:bridge` (or the broad `ipc:invoke`).
    */
-  registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(methods: ModuleMethodRegistrations<Cs>): void
+  registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(
+    methods: ModuleMethodRegistrations<Cs>,
+  ): void
   /**
    * Contribute MCP tools to the always-on Studio gateway. Registrations are
    * owned by this module's id: a name another
@@ -623,7 +625,9 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     if (answer?.ok === true) {
       const problem = answer.result === undefined ? null : moduleEventPayloadProblem(answer.result, 'result')
       if (problem)
-        throw new Error(`Module "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`)
+        throw new Error(
+          `Module "${request.moduleId}" method "${request.method}" answered a result that is not JSON: ${problem}`,
+        )
       return { ok: true, answer: { ok: true, result: answer.result ?? null } }
     }
     if (answer?.ok === false && typeof answer.code === 'string' && typeof answer.message === 'string') {

@@ -22,7 +22,7 @@ export const HOST_API_MIN_SUPPORTED = 2
 
 /** What each host API this host no longer loads lost, and how a module built for it is rebuilt. */
 const RETIRED_HOST_APIS: Readonly<Record<number, string>> = {
-  1: 'Host API 2 replaced its IPC channels with declared methods. Rebuild it against @sprintengine/module-sdk 2: MainHost.registerIpc becomes registerMethods, and the window\'s host.invoke becomes host.methods().read or .operate.',
+  1: "Host API 2 replaced its IPC channels with declared methods. Rebuild it against @sprintengine/module-sdk 2: MainHost.registerIpc becomes registerMethods, and the window's host.invoke becomes host.methods().read or .operate.",
 }
 
 /**

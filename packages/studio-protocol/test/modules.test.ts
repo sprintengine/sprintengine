@@ -4,11 +4,7 @@ import { test } from 'vitest'
 import { STUDIO_ERROR_CODES } from '../src/envelope'
 import { STUDIO_MODULES_CAPABILITY } from '../src/handshake'
 import { STUDIO_METHODS, parseStudioMethodParams } from '../src/methods'
-import {
-  STUDIO_MODULE_METHOD_MAX_CHARS,
-  STUDIO_MODULES_METHODS,
-  isStudioModuleMethodName,
-} from '../src/modules'
+import { STUDIO_MODULE_METHOD_MAX_CHARS, STUDIO_MODULES_METHODS, isStudioModuleMethodName } from '../src/modules'
 import { STUDIO_SCOPE_PERMISSIONS, studioGrantPrincipal } from '../src/permissions'
 import { studioScopesGrant } from '../src/scopes'
 
@@ -48,7 +44,10 @@ test('a read names the module and its method, keeps its params as they came, and
   assert.equal(refusal(parseStudioMethodParams('module.read', { method: 'items.list' })), 'invalid_params')
   assert.equal(refusal(parseStudioMethodParams('module.read', { moduleId: '', method: 'x' })), 'invalid_params')
   assert.equal(refusal(parseStudioMethodParams('module.read', { moduleId: 'acme', method: 'Items' })), 'invalid_params')
-  assert.equal(refusal(parseStudioMethodParams('module.read', { moduleId: 'acme', method: 'acme:list' })), 'invalid_params')
+  assert.equal(
+    refusal(parseStudioMethodParams('module.read', { moduleId: 'acme', method: 'acme:list' })),
+    'invalid_params',
+  )
 })
 
 test('an operate is a read plus the client’s commandId', () => {

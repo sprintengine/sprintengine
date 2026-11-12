@@ -79,7 +79,9 @@ test('an operate method hears the client-namespaced command id; a module refusal
     },
   })
   assert.deepEqual(
-    await k.callModuleMethod(call({ method: 'save', access: 'operate', clientId: 'app-1', commandId: 'client:app-1:c1' })),
+    await k.callModuleMethod(
+      call({ method: 'save', access: 'operate', clientId: 'app-1', commandId: 'client:app-1:c1' }),
+    ),
     { ok: true, answer: { ok: false, code: 'duplicate', message: 'Already saved.' } },
   )
 })
@@ -136,10 +138,7 @@ test('a batch is validated whole: a bad name, a missing validator or a repeat re
   const good = { access: 'read' as const, params: anything, handler: () => ({ ok: true as const, result: 1 }) }
   assert.throws(() => k.hostFor('deck').registerMethods({ ping: good, 'deck:ping': good }), /"deck:ping"/)
   assert.deepEqual(k.declaredMethods('deck'), [])
-  assert.throws(
-    () => k.hostFor('deck').registerMethods({ ping: { ...good, params: undefined as never } }),
-    /validator/,
-  )
+  assert.throws(() => k.hostFor('deck').registerMethods({ ping: { ...good, params: undefined as never } }), /validator/)
   assert.throws(
     () => k.hostFor('deck').registerMethods({ ping: { ...good, access: 'write' as never } }),
     /"read" or "operate"/,

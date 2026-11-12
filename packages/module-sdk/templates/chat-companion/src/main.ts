@@ -56,7 +56,11 @@ export const registerMain: RegisterMain = (host) => {
 
   host.registerMethods<CompanionMethods>({
     list: { access: 'read', params: readNothing, handler: () => ({ ok: true, result: conversations.list() }) },
-    start: { access: 'operate', params: readStartRequest, handler: (request, context) => start(request, context.commandId) },
+    start: {
+      access: 'operate',
+      params: readStartRequest,
+      handler: (request, context) => start(request, context.commandId),
+    },
     stop: {
       access: 'operate',
       params: readStopRequest,

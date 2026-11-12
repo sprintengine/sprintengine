@@ -19,11 +19,20 @@ function fakeClient(answer: (method: string, params: unknown) => unknown, capabi
 
 test('a read goes out as module.read, an operate as module.operate under a command id', async () => {
   const { client, requests } = fakeClient(() => ({ ok: true, result: 1 }))
-  assert.deepEqual(await callModuleMethod(client, { moduleId: 'deck', method: 'list', access: 'read', params: undefined }), {
-    ok: true,
-    result: 1,
+  assert.deepEqual(
+    await callModuleMethod(client, { moduleId: 'deck', method: 'list', access: 'read', params: undefined }),
+    {
+      ok: true,
+      result: 1,
+    },
+  )
+  await callModuleMethod(client, {
+    moduleId: 'deck',
+    method: 'save',
+    access: 'operate',
+    params: { a: 1 },
+    commandId: 'c1',
   })
-  await callModuleMethod(client, { moduleId: 'deck', method: 'save', access: 'operate', params: { a: 1 }, commandId: 'c1' })
   await callModuleMethod(client, { moduleId: 'deck', method: 'save', access: 'operate', params: { a: 1 } })
   assert.deepEqual(requests[0], { method: 'module.read', params: { moduleId: 'deck', method: 'list' } })
   assert.deepEqual(requests[1], {

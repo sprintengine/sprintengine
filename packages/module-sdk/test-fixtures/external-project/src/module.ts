@@ -136,7 +136,7 @@ export const registerMain: RegisterMain = (host) => {
     },
   ])
   host.registerMethods({
-    'forecast': {
+    forecast: {
       access: 'read',
       params: anything,
       handler: answering(async (city: unknown) => {
@@ -150,7 +150,7 @@ export const registerMain: RegisterMain = (host) => {
   // Workspace context from entry.main: id → root/name/mode for per-workspace
   // persistence paths. Unknown ids resolve to null, never a throw.
   host.registerMethods({
-    'workspaceRoot': {
+    workspaceRoot: {
       access: 'read',
       params: anything,
       handler: answering(async (workspaceId: unknown) => {
@@ -166,7 +166,7 @@ export const registerMain: RegisterMain = (host) => {
   // Scoped module storage composed with the workspace context: resolve the
   // root, persist under it (host-placed), read back. Declare `storage`.
   host.registerMethods({
-    'savePreferences': {
+    savePreferences: {
       access: 'operate',
       params: anything,
       handler: answering(async (input: unknown) => {
@@ -194,7 +194,7 @@ export const registerMain: RegisterMain = (host) => {
   // chat that refreshes the forecast notes with the module's skill. Idempotent:
   // a second call finds the one it made in list() and makes no other.
   host.registerMethods({
-    'scheduleRefresh': {
+    scheduleRefresh: {
       access: 'operate',
       params: anything,
       handler: answering(async (folderPath: unknown) => {
@@ -228,7 +228,7 @@ export const registerMain: RegisterMain = (host) => {
   // per-module workspace state, so the value crosses three published
   // surfaces end to end instead of each being exercised in isolation.
   host.registerMethods({
-    'workspaceBriefing': {
+    workspaceBriefing: {
       access: 'operate',
       params: anything,
       handler: answering(async (workspaceId: unknown) => {
@@ -251,7 +251,7 @@ export const registerMain: RegisterMain = (host) => {
   // Companion agent: a workspace-bound background helper that answers a
   // structured question. Exercises the SDK's CompanionAgentsService surface.
   host.registerMethods({
-    'askGuide': {
+    askGuide: {
       access: 'operate',
       params: anything,
       handler: answering(async (workspaceRoot: unknown) => {
@@ -290,7 +290,7 @@ export const registerMain: RegisterMain = (host) => {
   // the `readOutlook` method stays the way a late panel reads the current value —
   // the event only says "read it again".
   host.registerMethods({
-    'refreshOutlook': {
+    refreshOutlook: {
       access: 'operate',
       params: anything,
       handler: answering(async (city: unknown) => {
@@ -302,12 +302,18 @@ export const registerMain: RegisterMain = (host) => {
       }),
     },
   })
-  host.registerMethods({ 'readOutlook': { access: 'read', params: anything, handler: answering(async () => ({ city: 'Dublin', summary: 'clear', refreshedAt: 0 })) } })
+  host.registerMethods({
+    readOutlook: {
+      access: 'read',
+      params: anything,
+      handler: answering(async () => ({ city: 'Dublin', summary: 'clear', refreshedAt: 0 })),
+    },
+  })
   // A chat conversation this module starts and drives: create, follow its
   // events, send a steer, read the transcript back. Only this module's own
   // conversations are reachable; the host says whether chats exist at all.
   host.registerMethods({
-    'askForecaster': {
+    askForecaster: {
       access: 'operate',
       params: anything,
       handler: answering(async (workspaceId: unknown) => {
@@ -348,7 +354,7 @@ export const registerMain: RegisterMain = (host) => {
   // stored for, and the GitHub call rides the user's sign-in. Neither the key
   // nor the token is ever in this module's hands.
   host.registerMethods({
-    'saveApiKey': {
+    saveApiKey: {
       access: 'operate',
       params: anything,
       handler: answering(async (key: unknown) => {
@@ -358,7 +364,7 @@ export const registerMain: RegisterMain = (host) => {
     },
   })
   host.registerMethods({
-    'fetchForecast': {
+    fetchForecast: {
       access: 'read',
       params: anything,
       handler: answering(async (city: unknown) => {
@@ -374,7 +380,7 @@ export const registerMain: RegisterMain = (host) => {
     },
   })
   host.registerMethods({
-    'forecastIssues': {
+    forecastIssues: {
       access: 'read',
       params: anything,
       handler: answering(async () => {

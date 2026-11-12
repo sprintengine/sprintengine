@@ -219,7 +219,7 @@ test('extension install and uninstall IPC', async () => {
         version: 1,
         defaultEnabled: false,
         source: 'third-party',
-        engines: { hostApi: 1 },
+        engines: { hostApi: 2 },
         entry: { renderer: 'dist/renderer.mjs' },
       }),
     )

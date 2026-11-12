@@ -7,7 +7,7 @@ import { validateThirdPartyModuleManifest } from './third-party-manifest'
 // (phase 6 spec, 12.4). Additive and optional: a manifest without it is as
 // valid as before, and the host API version does not move.
 
-const VALID = { id: 'acme-panel', displayName: 'Acme panel', version: 1, engines: { hostApi: 1 } }
+const VALID = { id: 'acme-panel', displayName: 'Acme panel', version: 1, engines: { hostApi: 2 } }
 
 test('a module may say its main half needs electron-main, and the host keeps it', () => {
   const result = validateThirdPartyModuleManifest({ ...VALID, requires: { hostCapabilities: ['electron-main'] } })

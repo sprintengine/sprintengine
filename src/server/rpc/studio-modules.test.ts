@@ -173,7 +173,14 @@ function hubWithBoard() {
   const kernel = createMainKernel(createFakeIpcMain().ipcMain, {
     resolveModuleManifest: (id) =>
       id === 'acme.board'
-        ? { id, displayName: 'Board', version: 1, defaultEnabled: true, source: 'third-party', permissions: ['module:bridge'] }
+        ? {
+            id,
+            displayName: 'Board',
+            version: 1,
+            defaultEnabled: true,
+            source: 'third-party',
+            permissions: ['module:bridge'],
+          }
         : undefined,
   })
   const saved: Array<{ title: string; commandId?: string; clientId: string }> = []
@@ -195,7 +202,11 @@ function hubWithBoard() {
       params: title,
       handler: (params, context) => {
         if (params.title === 'taken') return { ok: false, code: 'duplicate', message: 'A card has that title.' }
-        saved.push({ title: params.title, clientId: context.clientId, ...(context.commandId ? { commandId: context.commandId } : {}) })
+        saved.push({
+          title: params.title,
+          clientId: context.clientId,
+          ...(context.commandId ? { commandId: context.commandId } : {}),
+        })
         return { ok: true, result: { count: saved.length } }
       },
     },
@@ -205,7 +216,10 @@ function hubWithBoard() {
   return { hub, saved }
 }
 
-async function caller(modules: StudioModules, token?: (started: Awaited<ReturnType<typeof startTestServer>>) => string) {
+async function caller(
+  modules: StudioModules,
+  token?: (started: Awaited<ReturnType<typeof startTestServer>>) => string,
+) {
   const started = await startTestServer({ modules })
   cleanups.push(() => started.dispose())
   const client = await connectLineClient(started.path)
@@ -221,7 +235,8 @@ async function caller(modules: StudioModules, token?: (started: Awaited<ReturnTy
   return { started, request }
 }
 
-const answerOf = (frame: { t: string; ok?: boolean; result?: unknown }) => (frame.t === 'res' && frame.ok ? frame.result : null)
+const answerOf = (frame: { t: string; ok?: boolean; result?: unknown }) =>
+  frame.t === 'res' && frame.ok ? frame.result : null
 const codeOf = (frame: { t: string; ok?: boolean; error?: { code: string } }) =>
   frame.t === 'res' && !frame.ok ? frame.error?.code : null
 
@@ -252,9 +267,18 @@ test('a module’s read and operate methods answer over the socket, its own refu
 test('the host’s refusals: no such module, no such method, the wrong entry, and params the module refuses', async () => {
   const { hub } = hubWithBoard()
   const { request } = await caller(hub)
-  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.gone', method: 'cards.list' })), 'module_unavailable')
-  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.burn' })), 'module_method_unknown')
-  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.add' })), 'module_method_unknown')
+  assert.equal(
+    codeOf(await request('module.read', { moduleId: 'acme.gone', method: 'cards.list' })),
+    'module_unavailable',
+  )
+  assert.equal(
+    codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.burn' })),
+    'module_method_unknown',
+  )
+  assert.equal(
+    codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.add' })),
+    'module_method_unknown',
+  )
   const refused = await request('module.operate', {
     moduleId: 'acme.board',
     method: 'cards.add',
@@ -312,10 +336,16 @@ test('a paired client reads with modules:read, operates only with modules:operat
   )
   // A read-only grant without modules:read reaches nothing.
   const none = await caller(hub, (started) => pairFakeClient(started.auth, 'none', ['conversation:read']))
-  assert.equal(codeOf(await none.request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), 'scope_required')
+  assert.equal(
+    codeOf(await none.request('module.read', { moduleId: 'acme.board', method: 'cards.list' })),
+    'scope_required',
+  )
 })
 
 test('a Studio with no kernel yet answers module_unavailable; one without modules does not serve the methods', async () => {
   const { request } = await caller(createStudioModuleHub())
-  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), 'module_unavailable')
+  assert.equal(
+    codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.list' })),
+    'module_unavailable',
+  )
 })

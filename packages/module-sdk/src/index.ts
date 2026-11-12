@@ -324,11 +324,7 @@ export type {
   ModuleOperateMethod,
   ModuleReadMethod,
 } from './methods.js'
-import type {
-  ModuleMethodContracts,
-  ModuleMethodRegistrations,
-  ModuleMethodsClient,
-} from './methods.js'
+import type { ModuleMethodContracts, ModuleMethodRegistrations, ModuleMethodsClient } from './methods.js'
 export { MODULE_METHOD_MAX_CHARS, isModuleMethodName } from './methods.js'
 
 export type StartupHook = () => void | Promise<void>
@@ -588,7 +584,9 @@ export type MainHost = {
    * takes its methods with it. Declare the `module:bridge` permission.
    * Replaces host API 1's `registerIpc`.
    */
-  registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(methods: ModuleMethodRegistrations<Cs>): void
+  registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(
+    methods: ModuleMethodRegistrations<Cs>,
+  ): void
   /**
    * Contribute MCP tools to the Studio gateway, owned by this module's id. A
    * tool name another module already registered, or one that collides with a

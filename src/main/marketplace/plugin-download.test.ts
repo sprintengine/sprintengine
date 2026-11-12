@@ -747,7 +747,7 @@ test('plugin-download', async () => {
             displayName: 'Marketplace Download Fixture',
             version: 1,
             permissions: ['network'],
-            engines: { hostApi: 1 },
+            engines: { hostApi: 2 },
           },
           null,
           2,

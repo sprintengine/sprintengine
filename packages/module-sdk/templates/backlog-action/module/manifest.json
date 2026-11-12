@@ -9,9 +9,7 @@
   "engines": {
     "hostApi": 2
   },
-  "permissions": [
-    "conversation:operate"
-  ],
+  "permissions": ["conversation:operate"],
   "entry": {
     "renderer": "dist/renderer.mjs"
   }
