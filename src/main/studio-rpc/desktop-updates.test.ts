@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'vitest'
 
 import type { AppUpdateCheckResult, AppUpdateState } from '../../shared/ipc/window'
@@ -7,6 +10,8 @@ import {
   DEV_BUILD_UPDATE_WORDS,
   desktopStudioUpdates,
   desktopUpdateSide,
+  UPDATE_COMMAND_FILENAME,
+  updateCommandFile,
   type DesktopUpdater,
 } from './desktop-updates'
 
@@ -127,9 +132,9 @@ test('start checks first, then downloads and restarts into the update, answering
   const fake = updater('1.1.0')
   const updates = desktopStudioUpdates(fake)
   // Answered although the install never returns: the answer goes out first.
-  assert.deepEqual(await updates.start({}), { ok: true, targetVersion: '1.1.0' })
-  // Asked again while it runs: the same update.
-  assert.deepEqual(await updates.start({}), { ok: true, targetVersion: '1.1.0' })
+  assert.deepEqual(await updates.start({ commandId: 'c1' }), { ok: true, targetVersion: '1.1.0' })
+  // Asked again while it runs, by another command: the same update.
+  assert.deepEqual(await updates.start({ commandId: 'c2' }), { ok: true, targetVersion: '1.1.0' })
   await settle()
   assert.deepEqual(fake.steps, ['check', 'download', 'install'])
   assert.equal(updates.status().state, 'installing')
@@ -137,40 +142,68 @@ test('start checks first, then downloads and restarts into the update, answering
 
 test('a download already under way is joined, and the restart follows it', async () => {
   const fake = updater('1.1.0', { status: 'downloading', updateVersion: '1.1.0' })
-  assert.deepEqual(await desktopStudioUpdates(fake).start({}), { ok: true, targetVersion: '1.1.0' })
+  assert.deepEqual(await desktopStudioUpdates(fake).start({ commandId: 'c3' }), { ok: true, targetVersion: '1.1.0' })
   await settle()
   assert.deepEqual(fake.steps, ['download', 'install'])
 })
 
 test('an update already downloaded goes straight to the restart', async () => {
   const fake = updater('1.1.0', { status: 'downloaded', downloaded: true, updateVersion: '1.1.0' })
-  assert.deepEqual(await desktopStudioUpdates(fake).start({}), { ok: true, targetVersion: '1.1.0' })
+  assert.deepEqual(await desktopStudioUpdates(fake).start({ commandId: 'c4' }), { ok: true, targetVersion: '1.1.0' })
   await settle()
   assert.deepEqual(fake.steps, ['install'])
 })
 
 test('start refuses, in words: up to date, a development build, an administrator needed, another version, a slow check', async () => {
   const current = updater(null)
-  assert.deepEqual(await desktopStudioUpdates(current).start({}), {
+  assert.deepEqual(await desktopStudioUpdates(current).start({ commandId: 'c5' }), {
     ok: false,
     message: 'This Studio is up to date: it runs 1.0.0.',
   })
   assert.deepEqual(current.steps, ['check'])
   const dev = updater('1.1.0', { packaged: false })
-  assert.deepEqual(await desktopStudioUpdates(dev).start({}), { ok: false, message: DEV_BUILD_UPDATE_WORDS })
+  assert.deepEqual(await desktopStudioUpdates(dev).start({ commandId: 'c6' }), { ok: false, message: DEV_BUILD_UPDATE_WORDS })
   const admin = updater('1.1.0', { installRequiresAdmin: true })
-  assert.deepEqual(await desktopStudioUpdates(admin).start({}), { ok: false, message: ADMIN_UPDATE_WORDS })
+  assert.deepEqual(await desktopStudioUpdates(admin).start({ commandId: 'c7' }), { ok: false, message: ADMIN_UPDATE_WORDS })
   for (const fake of [dev, admin]) assert.deepEqual(fake.steps, [])
   const other = updater('1.1.0')
-  assert.deepEqual(await desktopStudioUpdates(other).start({ targetVersion: '1.2.0' }), {
+  assert.deepEqual(await desktopStudioUpdates(other).start({ commandId: 'c8', targetVersion: '1.2.0' }), {
     ok: false,
     message: "This Studio's update channel offers 1.1.0, not 1.2.0.",
   })
   await settle()
   assert.deepEqual(other.steps, ['check'])
   const slow = updater('1.1.0', {}, { checkHangs: true })
-  const refused = await desktopStudioUpdates(slow, { checkWaitMs: 10 }).start({})
+  const refused = await desktopStudioUpdates(slow, { checkWaitMs: 10 }).start({ commandId: 'c9' })
   assert.equal(refused.ok, false)
   await settle()
   assert.deepEqual(slow.steps, ['check'])
+})
+
+test('the same command asked again after the restart is answered as it was, not "up to date"', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'se-update-command-'))
+  try {
+    const path = join(dir, UPDATE_COMMAND_FILENAME)
+    const before = desktopStudioUpdates(updater('1.1.0'), { commands: updateCommandFile(path) })
+    assert.deepEqual(await before.start({ commandId: 'press-1' }), { ok: true, targetVersion: '1.1.0' })
+    // The app restarted into 1.1.0, and has nothing more to install.
+    const after = updater(null, { version: '1.1.0' })
+    const restarted = desktopStudioUpdates(after, { commands: updateCommandFile(path) })
+    assert.deepEqual(await restarted.start({ commandId: 'press-1' }), { ok: true, targetVersion: '1.1.0' })
+    assert.deepEqual(after.steps, [], 'answered from the record, nothing checked or installed')
+    // A new press is a new command: this one is up to date.
+    assert.deepEqual(await restarted.start({ commandId: 'press-2' }), {
+      ok: false,
+      message: 'This Studio is up to date: it runs 1.1.0.',
+    })
+    // A refused command is not remembered: asked again, it is asked again.
+    assert.deepEqual(after.steps, ['check'])
+    await restarted.start({ commandId: 'press-2' })
+    assert.deepEqual(after.steps, ['check', 'check'])
+    // A record that does not read is no command.
+    writeFileSync(path, 'not json')
+    assert.equal(updateCommandFile(path).read(), null)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

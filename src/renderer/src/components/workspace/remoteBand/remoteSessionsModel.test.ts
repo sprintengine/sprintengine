@@ -1015,6 +1015,6 @@ function pairedEnvironment(connection: string, state: EnvironmentConnectionState
     machine: { kind: 'paired', name: connection },
     descriptor: null,
     connection: { state, detail: null, lastReachedAt: null },
-    compatibility: null,
+    compatibility: 'unknown',
   }
 }

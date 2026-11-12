@@ -45,7 +45,7 @@ function environmentsNow(): EnvironmentEntry[] {
     machine: { kind: 'local' },
     descriptor: null,
     connection: { state: 'up', detail: 'Always available', lastReachedAt: null },
-    compatibility: null,
+    compatibility: 'unknown',
   }
   const hosts = fixtures.state.appSettings.hosts as Record<string, { enabled?: boolean } | undefined>
   const wsl = listing.hosts
@@ -58,7 +58,7 @@ function environmentsNow(): EnvironmentEntry[] {
         machine: { kind: 'wsl', hostId: entry.id },
         descriptor: null,
         connection,
-        compatibility: null,
+        compatibility: 'unknown',
       })),
     )
   return [local, ...wsl, ...others]
@@ -329,7 +329,7 @@ test('every machine is one list: a paired desktop and an SSH machine sit beside 
       machine: { kind: 'paired', name: 'mac-mini' },
       descriptor: null,
       connection: { state: 'offline', detail: 'Not answering', lastReachedAt: null },
-      compatibility: null,
+      compatibility: 'unknown',
     },
     {
       environmentId: 'env-old',
@@ -338,7 +338,7 @@ test('every machine is one list: a paired desktop and an SSH machine sit beside 
       machine: { kind: 'paired', name: 'old-box' },
       descriptor: null,
       connection: { state: 'signed-out', detail: 'Revoked this device', lastReachedAt: null, remedy: 'Pair again' },
-      compatibility: null,
+      compatibility: 'unknown',
     },
   ]
   let remote = 0

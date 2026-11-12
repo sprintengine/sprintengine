@@ -175,25 +175,25 @@ test('a fresh machine: probed, installed in one session, started, reached throug
   assert.equal(attached.ready.server?.pid, serverPid)
   third.kill()
 
-  // An older managed server is upgraded; a newer one is never touched.
+  // The real record carries the server's protocol window, which decides:
+  // an older managed server is upgraded; a newer one that speaks ours is
+  // used, one past it never touched; an external one too old is offered.
+  assert.equal(typeof running.serverRecord?.protocolVersion, 'number')
+  const app = { version: VERSION, backendWire: BACKEND_WIRE_VERSION }
   const olderRecord = { ...running, serverRecord: { ...running.serverRecord, version: '0.0.1', origin: 'bootstrap' } }
-  assert.deepEqual(locateServer(olderRecord, { version: VERSION, backendWire: BACKEND_WIRE_VERSION }, 'build-box'), {
-    action: 'upgrade',
-    from: '0.0.1',
-  })
-  const newer = locateServer(
-    { ...running, serverRecord: { ...running.serverRecord, version: '99.0.0' } },
-    { version: VERSION, backendWire: BACKEND_WIRE_VERSION },
+  assert.deepEqual(locateServer(olderRecord, app, 'build-box'), { action: 'upgrade', from: '0.0.1' })
+  const newerRecord = { ...running.serverRecord, version: '99.0.0' }
+  assert.deepEqual(locateServer({ ...running, serverRecord: newerRecord }, app, 'build-box'), { action: 'attach' })
+  const past = locateServer(
+    { ...running, serverRecord: { ...newerRecord, protocolVersion: 99, minProtocolVersion: 99 } },
+    app,
     'build-box',
   )
-  assert.equal(newer.action, 'blocked')
-  assert.match(
-    newer.action === 'blocked' ? newer.reason : '',
-    /runs Studio server 99\.0\.0; this app is .*Update this app/u,
-  )
+  assert.equal(past.action, 'blocked')
+  assert.match(past.action === 'blocked' ? past.reason : '', /runs Studio server 99\.0\.0, .*Update this app/u)
   const external = locateServer(
-    { ...running, serverRecord: { ...running.serverRecord, version: '0.0.1', origin: 'cli' } },
-    { version: VERSION, backendWire: BACKEND_WIRE_VERSION },
+    { ...running, serverRecord: { ...running.serverRecord, version: '0.0.1', origin: 'cli', protocolVersion: 0 } },
+    app,
     'build-box',
   )
   assert.deepEqual(external.action === 'blocked' && external.offerUpgrade, true)

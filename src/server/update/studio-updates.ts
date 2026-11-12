@@ -23,6 +23,8 @@ export type StudioUpdateSide = Omit<StudioUpdateStatus, 'serverVersion' | 'proto
 
 export type StudioUpdateStart = { ok: true; targetVersion: string | null } | { ok: false; message: string }
 
+export type StudioUpdateStartInput = { commandId: string; targetVersion?: string }
+
 export type StudioUpdates = {
   /** Where an update stands now. */
   status(): StudioUpdateSide
@@ -30,8 +32,10 @@ export type StudioUpdates = {
    * Begin updating: check, download, then drain and restart into the new
    * version. Answers once the update is under way (or refused); the restart
    * that follows closes every connection. Only a `self` host starts one.
+   * The same `commandId` asked again, even after the restart, is answered as
+   * it was the first time.
    */
-  start(input: { targetVersion?: string }): Promise<StudioUpdateStart>
+  start(input: StudioUpdateStartInput): Promise<StudioUpdateStart>
 }
 
 /** The words a standalone server's clients are told: someone started it, and updates it. */
@@ -70,7 +74,7 @@ export function studioUpdateStatus(
  * has just started), and an update is begun by asking the shell, which owns
  * the app updater.
  */
-export function mirroredStudioUpdates(begin: (input: { targetVersion?: string }) => Promise<StudioUpdateStart>): {
+export function mirroredStudioUpdates(begin: (input: StudioUpdateStartInput) => Promise<StudioUpdateStart>): {
   updates: StudioUpdates
   /** The shell said where its updates stand. Anything not a status is ignored. */
   mirror(state: unknown): void

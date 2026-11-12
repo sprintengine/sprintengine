@@ -6,13 +6,20 @@ import { commitFailure } from '../../hosts/remote-install'
 import { remoteNodeDigests, type RemoteNodeTarget } from '../../hosts/wsl-node-runtime'
 import { connectRemoteConversationBackend, type RemoteConversationBackend } from '../../../server/wsl/backend-wire'
 import type { FrontDoorPurpose } from '../../../server/wsl/front-door-proof'
-import type { SshEnvironmentSettings, SshEnvironmentState, SshMachineGh } from '../../../shared/ssh-environments'
+import type {
+  SshEnvironmentSettings,
+  SshEnvironmentState,
+  SshEnvironmentSummary,
+  SshMachineGh,
+} from '../../../shared/ssh-environments'
+import type { StudioProtocolWindow } from '../../../../packages/studio-protocol/src/public'
 import type { RelayReady } from './relay-client'
 import { classifySshFailure, type SshFailure } from './ssh-command'
 import {
   assessProbe,
   buildConnectScript,
   locateServer,
+  recordWindow,
   otherHostHolding,
   parseProbe,
   spaceFor,
@@ -122,8 +129,10 @@ export type SshEnvironmentView = {
   state: SshEnvironmentState
   stateText: string
   working: boolean
-  action: 'connect' | 'upgrade' | null
+  action: SshEnvironmentSummary['action']
   server: { version: string; origin: string; startedBy: string | null } | null
+  /** The server's protocol window as its record last said, for the environment list's compatibility; null before one. */
+  protocol: StudioProtocolWindow | null
   notes: string[]
   /** The machine's GitHub CLI as the last probe found it, with the OS it runs; null before one. */
   gh: SshMachineGh | null
@@ -137,6 +146,8 @@ class StepError extends Error {
     message: string,
     readonly failure?: SshFailure,
     readonly offerUpgrade = false,
+    /** The update to this app's version failed before: what is offered is its Retry. */
+    readonly retryUpdate = false,
   ) {
     super(message)
   }
@@ -189,6 +200,7 @@ export class SshEnvironment {
     working: false,
     action: 'connect',
     server: null,
+    protocol: null,
     notes: [],
     gh: null,
     diagnostics: { noise: '', stderr: '', steps: [], probe: null },
@@ -396,7 +408,14 @@ export class SshEnvironment {
         this.set({
           state: step.state,
           stateText: step.message,
-          action: step.state === 'version-blocked' ? (step.offerUpgrade ? 'upgrade' : null) : 'connect',
+          action:
+            step.state === 'version-blocked'
+              ? step.offerUpgrade
+                ? step.retryUpdate
+                  ? 'retry-update'
+                  : 'upgrade'
+                : null
+              : 'connect',
         })
         return
       }
@@ -485,6 +504,7 @@ export class SshEnvironment {
           )
           continue
         }
+        this.view.protocol = recordWindow(probe.serverRecord) ?? this.view.protocol
         const located = locateServer(
           probe,
           { version: this.deps.app.version, backendWire: this.deps.app.backendWire },
@@ -497,7 +517,13 @@ export class SshEnvironment {
         if (located.action === 'blocked') {
           if (!(located.offerUpgrade && this.upgradeAsked)) {
             current.kill()
-            throw new StepError('version-blocked', located.reason, undefined, located.offerUpgrade)
+            throw new StepError(
+              'version-blocked',
+              located.reason,
+              undefined,
+              located.offerUpgrade,
+              located.failedUpdate !== undefined,
+            )
           }
           this.upgradeAsked = false
           if (shows())
@@ -640,6 +666,10 @@ export class SshEnvironment {
         code === 'base-owner'
           ? `${words.join(' ')} on ${label} belongs to another user, so Studio will not run programs from it. Choose an install directory of your own.`
           : words.join(' ')
+      // An update that did not start fell back to the previous server (or
+      // could not): the row says so and offers Retry, as the next probe would.
+      if (code === 'update-failed')
+        return new StepError('version-blocked', message || `Updating the Studio server on ${label} failed.`, undefined, true, true)
       return new StepError(
         code === 'other-host' ? 'version-blocked' : 'failed',
         message || `The Studio server on ${label} did not start.`,
@@ -720,6 +750,8 @@ export class SshEnvironment {
         origin: live.server.origin ?? 'bootstrap',
         startedBy: live.server.startedBy,
       },
+      // The server reached, not the one probed before a start or an upgrade replaced it.
+      protocol: recordWindow(live.server) ?? this.view.protocol,
     })
     if (live.server.environmentId) this.deps.onEnvironmentId?.(live.server.environmentId)
     try {

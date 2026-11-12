@@ -13,6 +13,7 @@ import {
   type EnvironmentRoute,
   type EnvironmentRouteKind,
 } from '../../../packages/studio-protocol/src/environment'
+import { studioCompatibility, type StudioProtocolWindow } from '../../../packages/studio-protocol/src/handshake'
 import { localEnvironmentSource, type EnvironmentSource } from '../../shared/environment-keys'
 import { UNKNOWN_CONNECTION, type EnvironmentConnection, type EnvironmentEntry } from '../../shared/environments'
 import { isRecord } from '../../shared/records'
@@ -36,6 +37,11 @@ import { writeFileAtomicSync } from '../../server/platform/atomic-file'
 //   - A route that now answers as another Studio (the machine reinstalled, or
 //     the alias pointed elsewhere) leaves the environment it was in.
 //
+// Beside each descriptor it keeps the protocol window the environment's
+// server last said it speaks (in a welcome, or in an SSH machine's server
+// record), and reads its compatibility from it against this build's window,
+// so a state recorded before this app was updated is never stale.
+//
 // A route never reached yet is listed on its own, with no id. The registry
 // reaches nothing itself, and no call is routed through it yet: it is the
 // list the cut-overs to direct environments read.
@@ -46,8 +52,15 @@ const FILE_VERSION = 1
 /** One environment as this desktop knows it: the shape every window reads (`src/shared/environments.ts`). */
 export type KnownEnvironment = EnvironmentEntry
 
-/** What a route's owner says about its connection now. */
-export type EnvironmentConnectionReport = { route: EnvironmentRoute; connection: EnvironmentConnection }
+/**
+ * What a route's owner says about its connection now, and the protocol window
+ * its server last said it speaks, when it has heard one.
+ */
+export type EnvironmentConnectionReport = {
+  route: EnvironmentRoute
+  connection: EnvironmentConnection
+  window?: StudioProtocolWindow | null
+}
 
 export type EnvironmentSourceKind = 'wsl' | 'ssh' | 'tailnet'
 
@@ -81,6 +94,8 @@ type Stored = {
   routes: Map<string, EnvironmentId>
   /** Environment id → the last descriptor heard. */
   descriptors: Map<EnvironmentId, EnvironmentDescriptor>
+  /** Environment id → the protocol window its server last said, from a descriptor or a route's report. */
+  windows: Map<EnvironmentId, StudioProtocolWindow>
 }
 
 export function createEnvironmentRegistry(options: {
@@ -99,6 +114,8 @@ export function createEnvironmentRegistry(options: {
   const observed = new Map<EnvironmentSourceKind, EnvironmentSource[]>()
   // Route string → its owner's last report, per kind so one owner's report replaces only its own.
   const reported = new Map<EnvironmentRouteKind, Map<string, EnvironmentConnection>>()
+  // Route string → the window its owner last reported this run: what a route with no id yet is judged by.
+  const heardByRoute = new Map<string, StudioProtocolWindow>()
   const listeners = new Set<() => void>()
   const sharingLocalId = new Set<string>()
   let current = build()
@@ -123,7 +140,13 @@ export function createEnvironmentRegistry(options: {
     const body = {
       version: FILE_VERSION,
       routes: Object.fromEntries(stored.routes),
-      environments: Object.fromEntries([...stored.descriptors].map(([id, descriptor]) => [id, { descriptor }])),
+      environments: Object.fromEntries(
+        [...new Set([...stored.descriptors.keys(), ...stored.windows.keys()])].map((id) => {
+          const descriptor = stored.descriptors.get(id)
+          const window = stored.windows.get(id)
+          return [id, { ...(descriptor ? { descriptor } : {}), ...(window ? { window } : {}) }]
+        }),
+      ),
     }
     try {
       writeFileAtomicSync(path, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600, exactMode: true })
@@ -193,8 +216,34 @@ export function createEnvironmentRegistry(options: {
       machine: best.machine,
       descriptor: id ? (stored.descriptors.get(id) ?? null) : null,
       connection: connectionOf(routes),
-      compatibility: null,
+      compatibility: compatibilityOf(id, routes),
     }
+  }
+
+  // This machine is the one asking. Any other is judged by the window a
+  // route heard this run, else the one kept for it; `unknown` before either.
+  function compatibilityOf(id: EnvironmentId | null, routes: readonly EnvironmentRoute[]) {
+    if (routes.some((route) => route.kind === 'local')) return 'compatible' as const
+    const heard =
+      routes.map((route) => heardByRoute.get(formatEnvironmentRoute(route))).find(Boolean) ??
+      (id ? stored.windows.get(id) : undefined)
+    return studioCompatibility(heard ?? null)
+  }
+
+  /** Keep the window an environment's server said; true when that is news. */
+  function hear(id: EnvironmentId, window: StudioProtocolWindow): boolean {
+    const known = stored.windows.get(id)
+    if (known?.protocolVersion === window.protocolVersion && known.minProtocolVersion === window.minProtocolVersion)
+      return false
+    stored.windows.set(id, { protocolVersion: window.protocolVersion, minProtocolVersion: window.minProtocolVersion })
+    return true
+  }
+
+  /** The id a route answers as now, if any. */
+  function idOfRoute(key: string): EnvironmentId | null {
+    const source = sources().find((candidate) => formatEnvironmentRoute(candidate.route) === key)
+    const id = source ? idOf(source) : (stored.routes.get(key) ?? null)
+    return id && !(id === options.localEnvironmentId && source?.route.kind !== 'local') ? id : null
   }
 
   // An environment answers if any way in does; otherwise it reads as its
@@ -259,6 +308,7 @@ export function createEnvironmentRegistry(options: {
         stored.descriptors.set(id, { ...descriptor, capabilities: [...descriptor.capabilities] })
         news = true
       }
+      if (descriptor && hear(id, descriptor)) news = true
       if (!news) return false
       persist()
       changed()
@@ -266,11 +316,19 @@ export function createEnvironmentRegistry(options: {
     },
     report(kind, reports) {
       const own = new Map<string, EnvironmentConnection>()
-      for (const { route, connection } of reports) {
+      let heardNews = false
+      for (const { route, connection, window } of reports) {
         if (route.kind !== kind || !isEnvironmentRoute(route)) continue
-        own.set(formatEnvironmentRoute(route), { ...connection })
+        const key = formatEnvironmentRoute(route)
+        own.set(key, { ...connection })
+        // A report with no window says nothing about it: what was heard stands.
+        if (!readWindow(window)) continue
+        heardByRoute.set(key, readWindow(window)!)
+        const id = idOfRoute(key)
+        if (id && hear(id, window!)) heardNews = true
       }
       reported.set(kind, own)
+      if (heardNews) persist()
       changed()
     },
     onChanged(listener) {
@@ -303,7 +361,7 @@ function read(
   path: string,
   log: ((message: string) => void) | undefined,
 ): { stored: Stored; writable: boolean; malformed: boolean } {
-  const stored: Stored = { routes: new Map(), descriptors: new Map() }
+  const stored: Stored = { routes: new Map(), descriptors: new Map(), windows: new Map() }
   let text: string
   try {
     text = readFileSync(path, 'utf8')
@@ -329,10 +387,24 @@ function read(
     }
   if (isRecord(parsed.environments))
     for (const [id, entry] of Object.entries(parsed.environments)) {
-      const descriptor = isRecord(entry) ? readDescriptor(entry.descriptor) : null
-      if (isEnvironmentId(id) && descriptor && descriptor.environmentId === id) stored.descriptors.set(id, descriptor)
+      if (!isEnvironmentId(id) || !isRecord(entry)) continue
+      const descriptor = readDescriptor(entry.descriptor)
+      if (descriptor && descriptor.environmentId === id) stored.descriptors.set(id, descriptor)
+      const window = readWindow(entry.window)
+      if (window) stored.windows.set(id, window)
     }
   return { stored, writable: true, malformed: false }
+}
+
+function readWindow(value: unknown): StudioProtocolWindow | null {
+  if (!isRecord(value)) return null
+  const { protocolVersion, minProtocolVersion } = value
+  return Number.isSafeInteger(protocolVersion) &&
+    Number.isSafeInteger(minProtocolVersion) &&
+    (protocolVersion as number) >= 1 &&
+    (minProtocolVersion as number) >= 1
+    ? { protocolVersion: protocolVersion as number, minProtocolVersion: minProtocolVersion as number }
+    : null
 }
 
 function readDescriptor(value: unknown): EnvironmentDescriptor | null {

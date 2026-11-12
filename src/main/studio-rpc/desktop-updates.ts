@@ -1,6 +1,9 @@
 import { STUDIO_UPDATE_MAX_TEXT } from '../../../packages/studio-protocol/src/public'
 import type { AppUpdateCheckResult, AppUpdateState } from '../../shared/ipc/window'
+import { readFileSync } from 'node:fs'
+
 import type { StudioUpdates, StudioUpdateSide, StudioUpdateStart } from '../../server/update/studio-updates'
+import { writeFileAtomicSync } from '../../server/platform/atomic-file'
 
 // A desktop's Studio updates itself: its app updater checks, downloads, then
 // runs the app's ordered shutdown (which drains the turns that are running)
@@ -32,6 +35,47 @@ export const ADMIN_UPDATE_WORDS =
  * the server runs out of process.
  */
 export const UPDATE_CHECK_WAIT_MS = 20_000
+
+/**
+ * The last `update.start` this desktop accepted, kept across the restart it
+ * leads to: a client that lost the answer to that restart asks again with
+ * the same command id, and is answered as it was, not "up to date".
+ */
+export type AcceptedUpdateCommand = { commandId: string; targetVersion: string | null; at: number }
+
+export type UpdateCommandStore = {
+  read(): AcceptedUpdateCommand | null
+  write(command: AcceptedUpdateCommand): void
+}
+
+export const UPDATE_COMMAND_FILENAME = 'update-command.json'
+
+/** The store in a file of its own (userData); one that does not read is no command. */
+export function updateCommandFile(path: string, log?: (message: string) => void): UpdateCommandStore {
+  return {
+    read() {
+      try {
+        const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<AcceptedUpdateCommand>
+        return typeof value.commandId === 'string' && value.commandId
+          ? {
+              commandId: value.commandId,
+              targetVersion: typeof value.targetVersion === 'string' ? value.targetVersion : null,
+              at: typeof value.at === 'number' ? value.at : 0,
+            }
+          : null
+      } catch {
+        return null
+      }
+    },
+    write(command) {
+      try {
+        writeFileAtomicSync(path, `${JSON.stringify(command)}\n`, { mode: 0o600 })
+      } catch (error) {
+        log?.(`The accepted update could not be recorded: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
+  }
+}
 
 /** The last update that did not happen, as `update.status` keeps it. */
 export type DesktopUpdateFailure = NonNullable<StudioUpdateSide['lastFailure']>
@@ -102,9 +146,26 @@ function within<T>(promise: Promise<T>, ms: number): Promise<T | 'late'> {
  */
 export function desktopStudioUpdates(
   updater: DesktopUpdater,
-  options: { log?: (message: string) => void; now?: () => number; checkWaitMs?: number } = {},
+  options: {
+    log?: (message: string) => void
+    now?: () => number
+    checkWaitMs?: number
+    /** Where the accepted command is kept across the restart; in memory only without one. */
+    commands?: UpdateCommandStore
+  } = {},
 ): StudioUpdates {
   const now = options.now ?? Date.now
+  let remembered: AcceptedUpdateCommand | null = null
+  const commands: UpdateCommandStore = options.commands ?? {
+    read: () => remembered,
+    write: (command) => {
+      remembered = command
+    },
+  }
+  const accept = (commandId: string, targetVersion: string | null): StudioUpdateStart => {
+    commands.write({ commandId, targetVersion, at: now() })
+    return { ok: true, targetVersion }
+  }
   // Kept when it happens, until an update succeeds (which restarts the app):
   // the next hourly check clears the updater's error, not this.
   let lastFailure: DesktopUpdateFailure | null = desktopUpdateFailureOf(updater.getState(), now())
@@ -136,10 +197,16 @@ export function desktopStudioUpdates(
   return {
     status: () => desktopUpdateSide(updater.getState(), lastFailure),
     async start(input): Promise<StudioUpdateStart> {
+      // The same command asked again (its answer lost to the restart it
+      // began, or to a dropped connection): answered as it was, whatever
+      // has happened since. The outcome is the next welcome's version, or
+      // `update.status`'s `lastFailure`.
+      const seen = commands.read()
+      if (seen?.commandId === input.commandId) return { ok: true, targetVersion: seen.targetVersion }
       const before = updater.getState()
       if (!before.packaged) return { ok: false, message: DEV_BUILD_UPDATE_WORDS }
       // Asked again while one runs: the same update, accepted again.
-      if (running || before.status === 'installing') return { ok: true, targetVersion: before.updateVersion }
+      if (running || before.status === 'installing') return accept(input.commandId, before.updateVersion)
       // Windows would ask for an administrator at that PC, with nobody there to answer.
       if (before.installRequiresAdmin) return { ok: false, message: ADMIN_UPDATE_WORDS }
       if (!before.downloaded && before.status !== 'downloading') {
@@ -158,8 +225,9 @@ export function desktopStudioUpdates(
           ok: false,
           message: `This Studio's update channel offers ${target ?? 'no update'}, not ${input.targetVersion}.`,
         }
+      const accepted = accept(input.commandId, target)
       begin()
-      return { ok: true, targetVersion: target }
+      return accepted
     },
   }
 }

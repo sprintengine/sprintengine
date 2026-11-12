@@ -35,23 +35,27 @@ export function environmentStatus(
 ): EnvironmentStatus {
   const { connection, compatibility } = entry
   // A server whose protocol window does not overlap ours answers nothing
-  // useful, whatever the socket does: say why, and where it is fixed.
-  if (compatibility === 'client-outdated')
+  // useful, whatever the socket does: say why, and where it is fixed. Work
+  // under way on it (an SSH machine's server being updated) says so instead,
+  // and a route's owner that said why it is not answering (an update that
+  // failed and fell back) is heard over the generic words.
+  if (
+    (compatibility === 'client-outdated' || compatibility === 'server-outdated') &&
+    connection.state !== 'connecting'
+  ) {
+    const own = connection.state === 'offline' ? connection.detail : null
     return {
       kind: 'incompatible',
       tone: 'danger',
-      words: `${entry.displayName} runs a newer Studio: update this app`,
+      words:
+        own ??
+        (compatibility === 'client-outdated'
+          ? `${entry.displayName} runs a newer Studio: update this app`
+          : `${entry.displayName} runs an older Studio: update it there`),
       action: 'open-settings',
       actionLabel: 'Update',
     }
-  if (compatibility === 'server-outdated')
-    return {
-      kind: 'incompatible',
-      tone: 'danger',
-      words: `${entry.displayName} runs an older Studio: update it there`,
-      action: 'open-settings',
-      actionLabel: 'Update',
-    }
+  }
   switch (connection.state) {
     case 'up':
       return { kind: 'ready', tone: 'good', words: connection.detail ?? 'Connected', action: null, actionLabel: null }

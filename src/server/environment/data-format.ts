@@ -122,7 +122,7 @@ function writeFormat(dataDir: string, format: number, version: string): void {
 }
 
 /** A step's file, kept inside the data directory. */
-function inside(dataDir: string, relative: string): string {
+function inside(relative: string): string {
   const path = normalize(relative)
   if (isAbsolute(path) || path === '..' || path.startsWith(`..${sep}`))
     throw new StudioDataMigrationError(`A format step names a file outside the data directory: ${relative}`)
@@ -136,7 +136,7 @@ function runStep(dataDir: string, from: number, step: DataFormatStep, version: s
   // The format marker is among them, so an undone step leaves it as it was.
   const named = [DATA_FORMAT_FILENAME, ...step.files.filter((file) => normalize(file) !== DATA_FORMAT_FILENAME)]
   const files = named.map((file) => {
-    const path = inside(dataDir, file)
+    const path = inside(file)
     const existed = existsSync(join(dataDir, path))
     if (existed) {
       mkdirSync(dirname(join(backup, 'files', path)), { recursive: true, mode: 0o700 })
@@ -192,7 +192,7 @@ function restoreInterrupted(dataDir: string): boolean {
 function restore(dataDir: string, marker: Marker): void {
   const backup = join(dataDir, MIGRATION_BACKUP_DIRNAME)
   for (const file of marker.files) {
-    const path = inside(dataDir, file.path)
+    const path = inside(file.path)
     if (file.existed) {
       mkdirSync(dirname(join(dataDir, path)), { recursive: true })
       copyFileSync(join(backup, 'files', path), join(dataDir, path))

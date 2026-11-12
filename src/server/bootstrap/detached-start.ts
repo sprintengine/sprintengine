@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 
 import { processIsRunning } from '../platform/process-alive'
 import { ensurePrivateDirectory } from '../rpc/studio-rpc-listener'
 import type { ServerBootstrapEnvelope } from './envelope'
-import { readHostId, readServerRecordFile } from './server-record'
+import { FAILED_UPDATE_FILENAME, readHostId, readServerRecordFile, type FailedUpdateRecord } from './server-record'
+import { writeFileAtomicSync } from '../platform/atomic-file'
 
 // `studio-server start --detach`: how an SSH session starts a managed server
 // that outlives it (phase 8 spec, 5.7; decision R32).
@@ -32,6 +33,13 @@ import { readHostId, readServerRecordFile } from './server-record'
 //      once it says `boot`, and waits for `ready`;
 //   5. prints `@@SPRINTENGINE_READY <record>` and leaves; the server writes
 //      `run/server.json` itself and removes it when it stops.
+//
+// An upgrade whose new server does not start, once the old one has left,
+// writes `run/update-failed.json` (`{ from, to, at, reason }`) and starts the
+// previous tree again (`server-<from>/`, beside this one, which an install
+// keeps while that record names it), then fails `update-failed`: the machine
+// is never left with nothing running, and a desktop does not retry the same
+// update on its own. The next start that succeeds removes the record.
 //
 // Every failure is one `@@SPRINTENGINE_FAIL <code> <words>` line.
 
@@ -61,7 +69,14 @@ export type DetachedStartOptions = {
   print(line: string): void
   isRunning?: (pid: number) => boolean
   sleep?: (ms: number) => Promise<void>
+  /** Starts one tree's server and waits for it to be ready; the real fork unless a test stands in. */
+  launch?: (tree: ServerTree) => Promise<LaunchOutcome>
 }
+
+/** One installed server tree: its entry, the tree it sits in, and its version. */
+export type ServerTree = { entry: string; appDir: string; version: string }
+
+export type LaunchOutcome = { ok: true } | { ok: false; message: string }
 
 export class DetachedStartError extends Error {
   constructor(
@@ -153,7 +168,7 @@ async function replaceServer(
     throw new DetachedStartError('replace', `The old Studio server (pid ${pid}) did not stop, so it was not replaced.`)
 }
 
-function envelopeFor(options: DetachedStartOptions, tokenHash: string): ServerBootstrapEnvelope {
+function envelopeFor(options: DetachedStartOptions, tree: ServerTree, tokenHash: string): ServerBootstrapEnvelope {
   const runDir = join(options.dataDir, 'run')
   return {
     v: 1,
@@ -163,12 +178,12 @@ function envelopeFor(options: DetachedStartOptions, tokenHash: string): ServerBo
     runDir,
     tempDir: join(options.dataDir, 'tmp'),
     paths: {
-      resourcesDir: join(options.appDir, 'resources'),
-      appPath: options.appDir,
+      resourcesDir: join(tree.appDir, 'resources'),
+      appPath: tree.appDir,
       isPackaged: true,
       appExecPath: options.execPath,
     },
-    app: { version: options.version, buildStamp: '', channel: options.channel },
+    app: { version: tree.version, buildStamp: '', channel: options.channel },
     owner: { tokenHash },
     // The front door's bridge socket only: an SSH machine's server listens on
     // no TCP port at all (phase 8 spec, 1.5).
@@ -238,6 +253,8 @@ export async function startDetached(options: DetachedStartOptions): Promise<numb
   }
   const runDir = join(options.dataDir, 'run')
   let release: (() => void) | null = null
+  /** The version of the server this start replaced, once it has left. */
+  let replaced: string | null = null
   try {
     ensurePrivateDirectory(options.dataDir)
     ensurePrivateDirectory(runDir)
@@ -260,59 +277,22 @@ export async function startDetached(options: DetachedStartOptions): Promise<numb
           options.print(`${READY_MARKER} ${JSON.stringify({ attached: true, record: readRecord(runDir) })}`)
           return 0
         }
+        // Read before it goes: the server removes its record as it stops.
+        const before = readRecord(runDir)?.version
         await replaceServer(holder.pid, isRunning, sleep)
+        replaced = typeof before === 'string' && before ? before : null
       }
     }
 
-    const token = randomBytes(32).toString('base64url')
-    const tokenPath = join(runDir, 'owner-token')
-    const stagedToken = `${tokenPath}.${process.pid}`
-    writeFileSync(stagedToken, `${token}\n`, { mode: 0o600, flag: 'w' })
-    renameSync(stagedToken, tokenPath)
-    const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex')
-
-    const logPath = join(options.logsDir, `server-${new Date().toISOString().slice(0, 10)}.log`)
-    const logFd = openSync(logPath, 'a', 0o600)
-    const child = spawn(options.execPath, [options.entry, '--bootstrap', 'stdio'], {
-      detached: true,
-      cwd: options.dataDir,
-      stdio: ['pipe', 'pipe', logFd],
-    })
-    closeSync(logFd)
-    const stdin = child.stdin!
-    const stdout = child.stdout!
-    let exited = false
-    child.once('exit', () => (exited = true))
-    stdin.on('error', () => undefined)
-
-    const boot = await nextFrame(
-      stdout,
-      (frame) => frame.t === 'boot',
-      BOOT_TIMEOUT_MS,
-      () => exited,
-    )
-    if (!boot) {
-      child.kill('SIGKILL')
-      return fail('start', `The Studio server did not start. ${logTail(logPath)}`)
+    const launch = options.launch ?? ((tree: ServerTree) => launchServer(options, tree))
+    const started = await launch({ entry: options.entry, appDir: options.appDir, version: options.version })
+    if (started.ok) {
+      rmSync(join(runDir, FAILED_UPDATE_FILENAME), { force: true })
+      options.print(`${READY_MARKER} ${JSON.stringify({ attached: false, record: readRecord(runDir) })}`)
+      return 0
     }
-    stdin.write(`${JSON.stringify(envelopeFor(options, tokenHash))}\n`)
-    const ready = await nextFrame(
-      stdout,
-      (frame) => frame.t === 'ready' || frame.t === 'fatal',
-      READY_TIMEOUT_MS,
-      () => exited,
-    )
-    if (!ready || ready.t !== 'ready') {
-      child.kill('SIGKILL')
-      const said = ready && typeof ready.message === 'string' ? ready.message : logTail(logPath)
-      return fail('start', `The Studio server did not become ready. ${said}`)
-    }
-    // Let it go: the server's own session, nothing of ours holding it.
-    stdout.destroy()
-    stdin.end()
-    child.unref()
-    options.print(`${READY_MARKER} ${JSON.stringify({ attached: false, record: readRecord(runDir) })}`)
-    return 0
+    if (!replaced || replaced === options.version) return fail('start', started.message)
+    return await fallBack(options, runDir, launch, { from: replaced, to: options.version, reason: started.message }, fail)
   } catch (error) {
     return fail(
       error instanceof DetachedStartError ? error.code : 'start',
@@ -321,4 +301,91 @@ export async function startDetached(options: DetachedStartOptions): Promise<numb
   } finally {
     release?.()
   }
+}
+
+/**
+ * The new server did not start after the old one left: say so in
+ * `run/update-failed.json` (first, so an install meanwhile keeps the previous
+ * tree), start the previous tree again, and fail `update-failed` either way.
+ */
+async function fallBack(
+  options: DetachedStartOptions,
+  runDir: string,
+  launch: (tree: ServerTree) => Promise<LaunchOutcome>,
+  update: { from: string; to: string; reason: string },
+  fail: (code: string, message: string) => number,
+): Promise<number> {
+  const record: FailedUpdateRecord = { ...update, at: Date.now(), reason: update.reason.slice(0, 2_000) }
+  writeFileAtomicSync(join(runDir, FAILED_UPDATE_FILENAME), `${JSON.stringify(record)}\n`, { mode: 0o600 })
+  const previous = previousTree(options, update.from)
+  const again = previous
+    ? await launch(previous)
+    : { ok: false as const, message: `Its tree (server-${update.from}) is no longer on this machine.` }
+  return fail(
+    'update-failed',
+    again.ok
+      ? `Studio server ${update.to} did not start, so ${update.from} runs again. ${update.reason}`
+      : `Studio server ${update.to} did not start, and ${update.from} did not start again either. ${update.reason} ${again.message}`,
+  )
+}
+
+/** The tree `version` was installed in, beside this one, when it is still there. */
+function previousTree(options: DetachedStartOptions, version: string): ServerTree | null {
+  if (!/^[A-Za-z0-9._+-]+$/u.test(version)) return null
+  const appDir = join(dirname(options.appDir), `server-${version}`)
+  const entry = join(appDir, basename(options.entry))
+  return existsSync(entry) ? { entry, appDir, version } : null
+}
+
+/** Fork one tree's server detached, hand it the envelope, and wait for it to say it is ready. */
+async function launchServer(options: DetachedStartOptions, tree: ServerTree): Promise<LaunchOutcome> {
+  const runDir = join(options.dataDir, 'run')
+  const token = randomBytes(32).toString('base64url')
+  const tokenPath = join(runDir, 'owner-token')
+  const stagedToken = `${tokenPath}.${process.pid}`
+  writeFileSync(stagedToken, `${token}\n`, { mode: 0o600, flag: 'w' })
+  renameSync(stagedToken, tokenPath)
+  const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex')
+
+  const logPath = join(options.logsDir, `server-${new Date().toISOString().slice(0, 10)}.log`)
+  const logFd = openSync(logPath, 'a', 0o600)
+  const child = spawn(options.execPath, [tree.entry, '--bootstrap', 'stdio'], {
+    detached: true,
+    cwd: options.dataDir,
+    stdio: ['pipe', 'pipe', logFd],
+  })
+  closeSync(logFd)
+  const stdin = child.stdin!
+  const stdout = child.stdout!
+  let exited = false
+  child.once('exit', () => (exited = true))
+  stdin.on('error', () => undefined)
+
+  const boot = await nextFrame(
+    stdout,
+    (frame) => frame.t === 'boot',
+    BOOT_TIMEOUT_MS,
+    () => exited,
+  )
+  if (!boot) {
+    child.kill('SIGKILL')
+    return { ok: false, message: `The Studio server did not start. ${logTail(logPath)}` }
+  }
+  stdin.write(`${JSON.stringify(envelopeFor(options, tree, tokenHash))}\n`)
+  const ready = await nextFrame(
+    stdout,
+    (frame) => frame.t === 'ready' || frame.t === 'fatal',
+    READY_TIMEOUT_MS,
+    () => exited,
+  )
+  if (!ready || ready.t !== 'ready') {
+    child.kill('SIGKILL')
+    const said = ready && typeof ready.message === 'string' ? ready.message : logTail(logPath)
+    return { ok: false, message: `The Studio server did not become ready. ${said}` }
+  }
+  // Let it go: the server's own session, nothing of ours holding it.
+  stdout.destroy()
+  stdin.end()
+  child.unref()
+  return { ok: true }
 }

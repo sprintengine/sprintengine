@@ -217,7 +217,7 @@ import { studioPlatform } from '../server/platform/platform'
 import { createStudioCore, studioBridgeScriptPath } from '../server/core/studio-core'
 import { installWorkspaceStoreMigration } from './workspace-store-migration'
 import { createStudioGateway } from '../server/core/studio-gateway'
-import { desktopStudioUpdates } from './studio-rpc/desktop-updates'
+import { desktopStudioUpdates, UPDATE_COMMAND_FILENAME, updateCommandFile } from './studio-rpc/desktop-updates'
 import { createStudioRpc } from '../server/core/studio-rpc'
 import { createStudioModuleHub } from '../server/rpc/studio-modules'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
@@ -2093,6 +2093,7 @@ export function createAppServices(
   // This desktop updates itself (`update.*`), through the app updater, in
   // process here and out of process through the shell methods below.
   const desktopUpdates = desktopStudioUpdates(updateService, {
+    commands: updateCommandFile(join(app.getPath('userData'), UPDATE_COMMAND_FILENAME)),
     log: (message) => void writeDiagnosticLog({ level: 'warning', source: 'update', title: 'Client update', message }),
   })
   // What this process's modules say to clients (`module.events`,
@@ -2277,8 +2278,10 @@ export function createAppServices(
     // A client's `update.start` runs the app updater, which is the shell's;
     // `update.status` follows its state, sent whole on every change.
     server.rpc.handle(SHELL_METHODS.updateStart, (payload) => {
-      const targetVersion = (payload as { targetVersion?: unknown } | null)?.targetVersion
-      return desktopUpdates.start(typeof targetVersion === 'string' ? { targetVersion } : {})
+      const { commandId, targetVersion } = (payload ?? {}) as { commandId?: unknown; targetVersion?: unknown }
+      if (typeof commandId !== 'string' || !commandId)
+        return { ok: false, message: 'The update was asked for without a command id.' }
+      return desktopUpdates.start({ commandId, ...(typeof targetVersion === 'string' ? { targetVersion } : {}) })
     })
     const sendUpdateState = () => server.rpc.emit(SERVER_EVENTS.updateState, desktopUpdates.status())
     updateService.onStateChange(sendUpdateState)
