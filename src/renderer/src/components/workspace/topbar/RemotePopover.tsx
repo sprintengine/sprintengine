@@ -10,20 +10,10 @@ import type { MeshConnection } from '../../../../../shared/tailnet-mesh'
 import { showToast } from '../../../store/toastStore'
 import { PairRequestCard } from '../../remote/PairRequestCard'
 import { OutboundPairRequestCard } from '../../remote/OutboundPairRequestCard'
-import {
-  meshMachinePhase,
-  machineGlyphToneClass,
-  machineIsAnswering,
-  machinePhaseText,
-  machineRowAction,
-  shortMachineName,
-  type MeshMachinePhase,
-} from '../../remote/machineRowModel'
-
-// The machine-row vocabulary lives in `remote/machineRowModel.ts` now (pair-
-// from-the-scan-and-stay-paired, phase 4), shared with the Mesh; re-exported
-// so the glyph's tests keep one import.
-export { meshMachinePhase, machinePhaseText, type MeshMachinePhase }
+import { shortMachineName } from '../../remote/machineRowModel'
+import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import { environmentStatus } from '../../../../../shared/environment-status'
+import { retryEnvironment } from '../../../hooks/useEnvironments'
 
 // The Remote glyph's surface (remote-sessions-ux / remote-glyph-topbar):
 // ONE list of the other machines — the devices holding a socket here and the
@@ -44,12 +34,15 @@ export { meshMachinePhase, machinePhaseText, type MeshMachinePhase }
 
 export function RemotePopover({
   presence,
+  environments,
   onOpenRemoteSettings,
 }: {
   presence: TailnetPresence
+  /** The machines this desktop knows (`useEnvironments`): how each paired one stands. */
+  environments: readonly EnvironmentEntry[]
   onOpenRemoteSettings: () => void
 }) {
-  const { status, live, mesh, meshRequests, meshReachability } = presence
+  const { status, live, mesh, meshRequests } = presence
   const now = useRelativeNow(1000)
   const pairRequests = status?.pairRequests ?? []
   // The count over the list is what the list holds: connected devices and
@@ -86,7 +79,7 @@ export function RemotePopover({
           <MachineRow
             key={connection.id}
             connection={connection}
-            phase={meshMachinePhase(connection.id, meshReachability)}
+            environment={environmentOfRoute(environments, { kind: 'tailnet', connection: connection.id })}
             now={now}
             listening={listening}
             onPairAgain={onOpenRemoteSettings}
@@ -192,9 +185,9 @@ export function deviceLivenessText(
 }
 
 /**
- * One paired machine: its phase from main's reachability check (phase 4), the
- * one action the phase earns (Retry for a machine that stopped answering, Pair
- * again for one that revoked us), and Disconnect, which is always available
+ * One paired machine: how it stands, as the environment list says
+ * (design-environments), the one action that earns (Retry for a machine that
+ * stopped answering, Pair again for one that revoked us), and Disconnect, which is always available
  * (owner ruling 2026-09-05: a machine you can add here is a machine you can
  * drop here).
  *
@@ -204,13 +197,14 @@ export function deviceLivenessText(
  */
 function MachineRow({
   connection,
-  phase,
+  environment,
   now,
   listening,
   onPairAgain,
 }: {
   connection: MeshConnection
-  phase: MeshMachinePhase
+  /** The environment the pairing reaches; null for a moment before the list has it. */
+  environment: EnvironmentEntry | null
   now: number
   /** This device is on the tailnet. Off it the row is remembered, not reachable: disabled ink, no Retry. */
   listening: boolean
@@ -218,15 +212,18 @@ function MachineRow({
 }) {
   const [retrying, setRetrying] = React.useState(false)
   const [forgetting, setForgetting] = React.useState(false)
-  const action = listening ? machineRowAction(phase) : null
+  const state = environment ? environmentStatus(environment, now) : null
+  const answering = state?.kind === 'ready'
+  const action = listening ? (state?.action ?? null) : null
   const name = shortMachineName(connection.machineName)
-  const phaseText = listening ? machinePhaseText(phase, now) : ''
+  // A machine that answers gets no line under its name: green is the whole message.
+  const stateText = listening && state && !answering ? state.words : ''
   const ink = listening ? 'text-[color:var(--text-default)]' : 'text-[color:var(--text-disabled)]'
   const retry = async (): Promise<void> => {
     if (retrying) return
     setRetrying(true)
     try {
-      await window.api.meshCheckReachability(connection.id)
+      await retryEnvironment({ routes: [{ kind: 'tailnet', connection: connection.id }] })
       // The push channel updates the row; nothing to do locally.
     } catch (error) {
       showToast({
@@ -263,8 +260,8 @@ function MachineRow({
   return (
     <div
       className="flex items-center gap-2 px-2.5 py-1.5 text-meta"
-      data-machine-phase={phase.phase}
-      data-machine-answering={listening && machineIsAnswering(phase) ? 'true' : 'false'}
+      data-machine-status={state?.kind ?? 'unknown'}
+      data-machine-answering={listening && answering ? 'true' : 'false'}
     >
       {/* One glyph vocabulary for anything remote (epic decision 7), and the
           glyph's ink is the row's whole status (owner ruling 2026-09-05):
@@ -275,16 +272,22 @@ function MachineRow({
         aria-label={
           !listening
             ? 'Not connected to Tailscale'
-            : machineIsAnswering(phase)
+            : answering
               ? 'Answering'
-              : phase.phase === 'revoked'
+              : state?.kind === 'signed-out'
                 ? 'Revoked there'
                 : 'Not answering'
         }
         className="flex shrink-0 items-center"
       >
         <RemoteMachineGlyph
-          className={`size-icon-sm shrink-0 ${listening ? machineGlyphToneClass(phase) : 'text-[color:var(--text-disabled)]'}`}
+          className={`size-icon-sm shrink-0 ${
+            !listening
+              ? 'text-[color:var(--text-disabled)]'
+              : answering
+                ? 'text-[color:var(--tone-good)]'
+                : 'text-[color:var(--text-subtle)]'
+          }`}
         />
       </span>
       {/* The name column is what gives way when the row is tight: the tooltip's
@@ -293,10 +296,8 @@ function MachineRow({
       <Tooltip content={connection.machineName} placement="bottom" wrapperClassName="min-w-0 flex-1">
         <span className="block min-w-0">
           <span className={`block truncate font-medium ${ink}`}>{name}</span>
-          {/* A machine that answers gets no line under its name — green is
-              the whole message. Only a machine with something to say does. */}
-          {phaseText ? (
-            <span className="block truncate text-micro tabular-nums text-[color:var(--text-subtle)]">{phaseText}</span>
+          {stateText ? (
+            <span className="block truncate text-micro tabular-nums text-[color:var(--text-subtle)]">{stateText}</span>
           ) : null}
         </span>
       </Tooltip>
@@ -319,14 +320,14 @@ function MachineRow({
             <RefreshIcon />
           </IconButton>
         </Tooltip>
-      ) : action === 'pair-again' ? (
+      ) : action === 'open-settings' ? (
         <Tooltip
           content={`${name} took back its pairing — ask it again`}
           placement="bottom"
           wrapperClassName="shrink-0"
         >
           <OutlineButton size="xs" onClick={onPairAgain}>
-            Pair again
+            {state?.actionLabel ?? 'Pair again'}
           </OutlineButton>
         </Tooltip>
       ) : null}

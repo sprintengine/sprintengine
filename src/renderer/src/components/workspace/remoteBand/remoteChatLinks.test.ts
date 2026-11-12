@@ -46,7 +46,7 @@ test('a link names a paired machine’s chat by its id there, and opens what tha
         },
       ],
     ]),
-    reachability: new Map(),
+    environments: [],
     workspaces: [],
   })
   publishRemoteChatLinkTargets(groups)

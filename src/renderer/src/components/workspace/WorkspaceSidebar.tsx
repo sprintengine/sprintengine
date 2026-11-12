@@ -93,6 +93,7 @@ import { useWorkspaceMachineRef } from '../../hooks/useMachineIdentity'
 import { distroOfHostId, isWslHostId } from '../../../../shared/execution-host'
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useRemoteSessions } from './remoteBand/useRemoteSessions'
+import { useEnvironments } from '../../hooks/useEnvironments'
 import { publishRemoteChatLinkTargets } from './remoteBand/remoteChatLinks'
 import { publishRemoteSearchMachines } from './remoteBand/remoteChatSearch'
 import {
@@ -1430,6 +1431,8 @@ function WorkspaceSidebar({
   // this device is on the tailnet decides which rows exist at all (below), and
   // the browse decides how many lines each open remote row draws.
   const remoteSessions = useRemoteSessions({ enabled: !contextRailActive })
+  // How each machine stands (design-environments), for whether its rows are a last read.
+  const environments = useEnvironments()
   const {
     presence: remotePresence,
     browses: remoteBrowses,
@@ -1447,12 +1450,12 @@ function WorkspaceSidebar({
         buildRemoteBand({
           connections: remotePresence.mesh,
           browses: remoteBrowses,
-          reachability: remotePresence.meshReachability,
+          environments,
           workspaces: railWorkspaces,
         }),
         pendingRemoteMarks,
       ),
-    [remotePresence.mesh, remoteBrowses, remotePresence.meshReachability, railWorkspaces, pendingRemoteMarks],
+    [remotePresence.mesh, remoteBrowses, environments, railWorkspaces, pendingRemoteMarks],
   )
   // What a link to one of their chats opens (`remoteChatLinks.ts`).
   useEffect(() => publishRemoteChatLinkTargets(remoteGroups), [remoteGroups])

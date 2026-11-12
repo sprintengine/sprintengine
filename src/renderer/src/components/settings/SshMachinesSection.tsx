@@ -12,23 +12,19 @@ import {
   InlineNotice,
   Input,
   OutlineButton,
-  ProviderRow,
   ProviderStateId,
   Select,
   useConfirmDialog,
-  WorkingMark,
 } from '../ui'
-import { sshMachineRef } from '../../hooks/useMachineIdentity'
 import { MachineGhRow } from './MachineGhRow'
-import { MachineMarkPicker, MachineRowMark } from './MachineMarkPicker'
-import { SettingCard, SettingsRow, SettingsSectionTitle, SettingToggle } from './SettingsAtoms'
+import { SettingCard, SettingsRow, SettingToggle } from './SettingsAtoms'
 import { isImeKey } from '../../utils/imeKey'
 
-// Settings › Machines › SSH machines (phase 8): the machines a person reaches
-// over SSH, each a Studio server of its own. One field adds one: an alias
-// from their SSH config or `user@host:port`, checked with `ssh -G` and shown
-// resolved before anything connects. Each row says its state in words; the
-// working mark shows only while a step runs. No status dots.
+// An SSH machine's parts of Settings › Machines (phase 8): its row's own
+// actions, its detail, and the field that adds one. The row itself is the
+// machine list's (`MachinesSettingsTab`), as every machine's is. One field adds
+// a machine: an alias from the SSH config or `user@host:port`, checked with
+// `ssh -G` and shown resolved before anything connects.
 
 type Api = Pick<
   Window['api'],
@@ -75,54 +71,18 @@ export function useSshMachines(api: Api | null = window.api): {
   return { machines, reload }
 }
 
-export function SshMachinesSection({ api = window.api }: { api?: Api }): React.JSX.Element {
-  const { machines } = useSshMachines(api)
-  const [expanded, setExpanded] = useState<string | null>(null)
-  return (
-    <section className="space-y-2">
-      <SettingsSectionTitle count={machines.length}>SSH machines</SettingsSectionTitle>
-      <p className={MUTED}>
-        A machine you reach over SSH runs its own Studio server, which Studio installs and starts for you. Your SSH
-        config, keys and agent are used as they are; Studio keeps no password or passphrase.
-      </p>
-      {machines.length > 0 ? (
-        <SettingCard as="ul" ariaLabel="SSH machines">
-          {machines.map((machine) => (
-            <ProviderRow
-              key={machine.id}
-              as="li"
-              surface="card"
-              icon={
-                machine.working ? (
-                  <WorkingMark label={`${machine.label}: ${machine.stateText}`} className="size-icon-lg" />
-                ) : (
-                  <MachineRowMark machine={sshMachineRef(machine)} />
-                )
-              }
-              recessed={machine.state === 'unsupported'}
-              name={machine.label}
-              version={machine.server ? machine.server.version : null}
-              stateLine={machine.stateText}
-              expanded={expanded === machine.id}
-              onExpandedChange={(next) => setExpanded(next ? machine.id : null)}
-              actions={
-                <>
-                  <MachineMarkPicker machine={sshMachineRef(machine)} name={machine.label} />
-                  <MachineAction machine={machine} api={api} />
-                </>
-              }
-            >
-              <SshMachineDetail machine={machine} api={api} />
-            </ProviderRow>
-          ))}
-        </SettingCard>
-      ) : null}
-      <AddSshMachine api={api} />
-    </section>
-  )
-}
-
-function MachineAction({ machine, api }: { machine: SshEnvironmentSummary; api: Api }): React.JSX.Element | null {
+/**
+ * What only an SSH machine offers on its row: Disconnect while connected, and
+ * Update for a server this app may replace. Connect and Retry are the
+ * machine list's own action, the same for every machine.
+ */
+export function SshMachineActions({
+  machine,
+  api,
+}: {
+  machine: SshEnvironmentSummary
+  api: Api
+}): React.JSX.Element | null {
   const { confirm: confirmDialog } = useConfirmDialog()
   if (machine.state === 'connected')
     return (
@@ -150,20 +110,10 @@ function MachineAction({ machine, api }: { machine: SshEnvironmentSummary; api: 
         Update
       </OutlineButton>
     )
-  if (machine.working || machine.action !== 'connect') return null
-  // A failure is the row's own state line; nothing more to say here.
-  return (
-    <OutlineButton
-      size="xs"
-      aria-label={`Connect, ${machine.label}`}
-      onClick={() => void api.sshEnvironmentConnect(machine.id)}
-    >
-      Connect
-    </OutlineButton>
-  )
+  return null
 }
 
-function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSummary; api: Api }): React.JSX.Element {
+export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSummary; api: Api }): React.JSX.Element {
   const { confirm: confirmDialog } = useConfirmDialog()
   const installId = useId()
   const [installDir, setInstallDir] = useState(machine.settings.installDir ?? '')
@@ -305,7 +255,7 @@ function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSummary; ap
   )
 }
 
-function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
+export function AddSshMachine({ api }: { api: Api }): React.JSX.Element {
   const fieldId = useId()
   const [text, setText] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])

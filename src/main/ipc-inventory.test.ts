@@ -151,6 +151,7 @@ import { registerChatLinkIpc } from './chat-link-ipc'
 import { registerSshPreviewIpc } from './environments/ssh/ssh-preview'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { mayRegisterInMain } from './ipc/ipc-registration-rule'
+import { registerEnvironmentsIpc } from './ipc/environments-ipc'
 import { registerSshEnvironmentsIpc } from './ipc/ssh-environments-ipc'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { loadMainModules } from './module-host/load-modules'
@@ -175,7 +176,7 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   modules: 6,
   extensions: 33,
   'paired-machines': 52,
-  access: 46,
+  access: 45,
   workspaces: 47,
   'worktree-pool': 16,
   files: 26,
@@ -344,6 +345,7 @@ test('what main and the server register, and what the preload uses, is the inven
   registerSshPreviewIpc(shell, { enabled: false, fromEnvironment: false }, scratch)
   registerStudioServerIpc(shell, anything())
   registerSshEnvironmentsIpc(shell, anything())
+  registerEnvironmentsIpc(shell, anything())
   registerChatLinkIpc({ ipcMain: shell, router: anything(), windowOf: anything(), isWorkspaceWindow: anything() })
   createHostRecordingEncoder({ ipcMain: shell, tabs: anything() })
   createCanvasWorkerTransport({ ipcMain: shell })

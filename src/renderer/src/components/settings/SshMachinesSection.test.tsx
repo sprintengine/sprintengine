@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test } from 'vitest'
 
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS, type SshEnvironmentSummary } from '../../../../shared/ssh-environments'
 import { ConfirmDialogProvider } from '../ui'
-import { SshMachinesSection } from './SshMachinesSection'
+import { AddSshMachine, SshMachineActions } from './SshMachinesSection'
 
 let root: Root
 let host: HTMLDivElement
@@ -77,54 +77,35 @@ afterEach(() => {
   host.remove()
 })
 
-const render = async () => {
-  act(() =>
-    root.render(
-      <ConfirmDialogProvider>
-        <SshMachinesSection api={api as never} />
-      </ConfirmDialogProvider>,
-    ),
-  )
+const render = async (node: React.ReactNode) => {
+  act(() => root.render(<ConfirmDialogProvider>{node}</ConfirmDialogProvider>))
   await flush()
 }
 
-test('each machine says its state in words; the working mark shows only while a step runs', async () => {
-  machines = [
-    machine({
-      id: 'e1',
-      state: 'connected',
-      stateText: 'Connected',
-      action: null,
-      server: { version: '0.4.0', origin: 'bootstrap', startedBy: 'Studio on dev-macbook-air' },
-    }),
-    machine({
-      id: 'e2',
-      label: 'mac-mini',
-      state: 'installing',
-      stateText: 'Installing Studio server 0.4.0 on mac-mini (34 MB)…',
-      working: true,
-      action: null,
-    }),
-    machine({
-      id: 'e3',
-      label: 'old-box',
-      state: 'unsupported',
-      stateText: "Can't run here: old-box uses musl (as Alpine does)…",
-    }),
-  ]
-  await render()
-  const text = document.body.textContent ?? ''
-  expect(text).toContain('Connected')
-  expect(text).toContain('Installing Studio server 0.4.0 on mac-mini (34 MB)…')
-  expect(text).toContain('uses musl')
-  expect(document.querySelectorAll('[class*="rounded-full"][class*="size-2"]').length).toBe(0)
+test('an SSH machine’s own row actions: Disconnect while connected, Update for a server it may replace, else none', async () => {
+  await render(
+    <>
+      <SshMachineActions
+        api={api as never}
+        machine={machine({ id: 'e1', state: 'connected', stateText: 'Connected', action: null })}
+      />
+      <SshMachineActions
+        api={api as never}
+        machine={machine({ id: 'e2', label: 'mac-mini', state: 'version-blocked', action: 'upgrade' })}
+      />
+      <SshMachineActions api={api as never} machine={machine({ id: 'e3', label: 'old-box' })} />
+    </>,
+  )
+  const names = [...document.querySelectorAll('button')].map((candidate) => candidate.getAttribute('aria-label'))
+  // Connect is the machine list's own action, the same for every machine.
+  expect(names).toEqual(['Disconnect, build-box', 'Update the Studio server, mac-mini'])
   act(() => button('Disconnect').click())
   expect(calls).toContainEqual(['disconnect', 'e1'])
 })
 
 test('adding: suggestions from the SSH config, the resolved route shown before it is saved', async () => {
   machines = []
-  await render()
+  await render(<AddSshMachine api={api as never} />)
   expect(document.body.textContent).toContain('From your SSH config:')
   act(() => button('build-box').click())
   await flush()

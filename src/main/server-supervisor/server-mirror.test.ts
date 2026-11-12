@@ -111,6 +111,34 @@ test("the server's paired desktops reach the shell, from the snapshot and then f
   assert.equal(heard, 3)
 })
 
+test('whether each paired desktop answers reaches the shell, from the snapshot and then from each push', async () => {
+  const { shell, server } = pair()
+  const reach = {
+    connectionId: 'tnc_1',
+    machineName: 'mac-mini',
+    checking: false,
+    reachable: true,
+    unauthorized: false,
+    checkedAt: 10,
+    lastReachedAt: 10,
+    detail: null,
+  }
+  server.handle(SERVER_METHODS.mirrorSnapshot, () => ({ ...snapshotWith([]), meshReachability: [reach] }) as never)
+  const mirror = createServerStateMirror({ rpc: shell })
+  let heard = 0
+  mirror.meshReachability.onChanged(() => (heard += 1))
+  await mirror.load()
+  assert.equal(mirror.meshReachability.list()[0]?.reachable, true)
+  server.emit(SERVER_EVENTS.mirrorMeshReachability, [{ ...reach, reachable: false, detail: 'Timed out.' }])
+  await settle()
+  assert.equal(mirror.meshReachability.list()[0]?.reachable, false)
+  // A server with no mesh sends none.
+  server.emit(SERVER_EVENTS.mirrorMeshReachability, null)
+  await settle()
+  assert.deepEqual(mirror.meshReachability.list(), [])
+  assert.equal(heard, 3)
+})
+
 test('an agent record the shell writes goes to the server, answered at once', async () => {
   const { shell, server } = pair()
   const written: unknown[] = []

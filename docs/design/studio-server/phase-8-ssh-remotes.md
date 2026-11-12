@@ -1291,8 +1291,9 @@ Built behind a preview switch, off by default (Settings › Agents › Studio
 server › "SSH machines (preview)", or `SPRINTENGINE_SSH_MACHINES=on|off`),
 read once at launch like the server's own process switch. With it off no SSH
 code runs: main builds no machines, no askpass broker, no pane partitions
-and no IPC for them, the core gets no SSH servers, and the Machines tab is
-Windows-only as before. Two guards run either way, and change nothing for a
+and no IPC for them, and the core gets no SSH servers. (The Machines tab
+was Windows-only then; it now shows on every platform, listing every machine
+this desktop knows, design-environments.) Two guards run either way, and change nothing for a
 folder on this computer: the file, git and folder channels refuse a path
 argument spelled `ssh://` in words (text such as a file's contents, a
 search or a commit message is never read as one), and this process's

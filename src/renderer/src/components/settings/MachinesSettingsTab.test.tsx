@@ -3,7 +3,13 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import type { ExecutionHostSettings, HostsListResult } from '../../../../shared/execution-host'
+import { wslConnectionReport } from '../../../../shared/environment-connections'
+import type { EnvironmentEntry } from '../../../../shared/environments'
+import {
+  executionHostStateWords,
+  type ExecutionHostSettings,
+  type HostsListResult,
+} from '../../../../shared/execution-host'
 
 const fixtures = vi.hoisted(() => ({
   state: {
@@ -18,18 +24,52 @@ vi.mock('../../store/workspaceStore', () => ({
 }))
 
 const { ConfirmDialogProvider } = await import('../ui')
-const { MachinesSettingsTab, chatServerWords, formatEnvLines, machineStateWords, parseEnvLines } =
-  await import('./MachinesSettingsTab')
+const { MachinesSettingsTab, chatServerWords, formatEnvLines, parseEnvLines } = await import('./MachinesSettingsTab')
+const { resetEnvironmentsForTests } = await import('../../hooks/useEnvironments')
 
 let root: Root
 let host: HTMLDivElement
 const writes: Array<[string, ExecutionHostSettings | null]> = []
 const listCalls: unknown[] = []
 let listing: HostsListResult = { hosts: [], wsl: null }
+// Machines beyond this computer's, as main's list would hold them.
+let others: EnvironmentEntry[] = []
+const retries: string[] = []
+
+/** The list main builds: this PC, the distributions turned on, then everything else. */
+function environmentsNow(): EnvironmentEntry[] {
+  const local: EnvironmentEntry = {
+    environmentId: 'env-local',
+    displayName: 'This PC (Windows)',
+    routes: [{ kind: 'local' }],
+    machine: { kind: 'local' },
+    descriptor: null,
+    connection: { state: 'up', detail: 'Always available', lastReachedAt: null },
+    compatibility: null,
+  }
+  const hosts = fixtures.state.appSettings.hosts as Record<string, { enabled?: boolean } | undefined>
+  const wsl = listing.hosts
+    .filter((entry) => entry.kind === 'wsl' && hosts[entry.id]?.enabled === true)
+    .flatMap((entry) =>
+      wslConnectionReport(entry).map(({ route, connection }): EnvironmentEntry => ({
+        environmentId: null,
+        displayName: entry.label,
+        routes: [route],
+        machine: { kind: 'wsl', hostId: entry.id },
+        descriptor: null,
+        connection,
+        compatibility: null,
+      })),
+    )
+  return [local, ...wsl, ...others]
+}
 
 beforeEach(() => {
   writes.length = 0
   listCalls.length = 0
+  retries.length = 0
+  others = []
+  resetEnvironmentsForTests()
   fixtures.state.appSettings.hosts = {}
   fixtures.state.setHostSettings = (id, settings) => {
     writes.push([id, settings as ExecutionHostSettings | null])
@@ -57,6 +97,9 @@ beforeEach(() => {
       return listing
     },
     onHostsChanged: () => () => {},
+    environmentsList: async () => environmentsNow(),
+    onEnvironmentsChanged: () => () => {},
+    environmentsRetry: async (route: string) => void retries.push(route),
   }
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -68,10 +111,14 @@ afterEach(async () => {
   host.remove()
 })
 
-async function render(onShowAgentClis?: (id: string) => void): Promise<void> {
-  await act(async () => root.render(<MachinesSettingsTab onShowAgentClis={onShowAgentClis} />))
+async function render(onShowAgentClis?: (id: string) => void, onOpenRemoteSettings?: () => void): Promise<void> {
+  await act(async () =>
+    root.render(<MachinesSettingsTab onShowAgentClis={onShowAgentClis} onOpenRemoteSettings={onOpenRemoteSettings} />),
+  )
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
 }
+
+const UBUNTU_ON = { 'wsl:Ubuntu': { enabled: true, cliCommands: {}, env: {} } }
 
 test('every distribution is listed with its state, and Settings asks WSL afresh on open', async () => {
   await render()
@@ -113,6 +160,7 @@ test('a distribution that is off offers no link: the Agents tab does not list it
 })
 
 test('the machine detail holds the machine, and no list of CLIs', async () => {
+  fixtures.state.appSettings.hosts = UBUNTU_ON
   fixtures.state.pluginCatalogEntries = [{ id: 'codex', displayName: 'Codex', binary: 'codex', source: 'bundled' }]
   await render()
   const disclosure = host.querySelector<HTMLElement>('[aria-label="WSL: Ubuntu details"]')
@@ -130,6 +178,7 @@ test('WSL that did not answer says so', async () => {
 })
 
 async function openUbuntuEnvironment(): Promise<HTMLTextAreaElement> {
+  fixtures.state.appSettings.hosts = UBUNTU_ON
   await render()
   const disclosure = host.querySelector<HTMLElement>('[aria-label="WSL: Ubuntu details"]')
   expect(disclosure).toBeTruthy()
@@ -154,7 +203,7 @@ test('an environment edit is written when the panel goes away without a blur', a
   // Escape closes Settings by unmounting it; the field never blurs.
   await act(async () => root.unmount())
   expect(writes).toEqual([
-    ['wsl:Ubuntu', { enabled: false, cliCommands: {}, env: { API_URL: 'http://localhost:3000' } }],
+    ['wsl:Ubuntu', { enabled: true, cliCommands: {}, env: { API_URL: 'http://localhost:3000' } }],
   ])
   root = createRoot(host)
 })
@@ -167,7 +216,7 @@ test('an environment edit is written a moment after typing stops', async () => {
     await type(field, 'A=12')
     expect(writes).toEqual([])
     await act(async () => vi.advanceTimersByTime(1_000))
-    expect(writes).toEqual([['wsl:Ubuntu', { enabled: false, cliCommands: {}, env: { A: '12' } }]])
+    expect(writes).toEqual([['wsl:Ubuntu', { enabled: true, cliCommands: {}, env: { A: '12' } }]])
   } finally {
     vi.useRealTimers()
   }
@@ -191,10 +240,12 @@ test('the environment is edited as NAME=value lines', () => {
 
 test('a machine state reads in words', () => {
   const base = { id: 'wsl:Ubuntu', kind: 'wsl', label: 'WSL: Ubuntu', pathStyle: 'wsl' } as const
-  expect(machineStateWords({ ...base, state: 'stopped' })).toBe('Stopped — starts when a workspace on it needs it')
-  expect(machineStateWords({ ...base, state: 'unavailable', reason: 'This distribution is not installed.' })).toBe(
-    'This distribution is not installed.',
+  expect(executionHostStateWords({ ...base, state: 'stopped' })).toBe(
+    'Stopped — starts when a workspace on it needs it',
   )
+  expect(
+    executionHostStateWords({ ...base, state: 'unavailable', reason: 'This distribution is not installed.' }),
+  ).toBe('This distribution is not installed.')
 })
 
 test('a distribution that can run a Studio server says where its chats run, and how the server stands', async () => {
@@ -219,9 +270,9 @@ test('the server state is said in words, whatever it is', () => {
   expect(chatServerWords({ on: true, state: 'unavailable' })).toBe('Not running.')
 })
 
-test('SSH machines show only with their preview on', async () => {
+test('adding an SSH machine shows only with their preview on', async () => {
   await render()
-  expect(host.textContent).not.toContain('SSH machines')
+  expect(host.textContent).not.toContain('Add an SSH machine')
   await act(async () => root.unmount())
   root = createRoot(host)
   const api = (window as unknown as { api: Record<string, unknown> }).api
@@ -237,7 +288,7 @@ test('SSH machines show only with their preview on', async () => {
     ),
   )
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
-  expect(host.textContent).toContain('SSH machines')
+  expect(host.textContent).toContain('Add an SSH machine')
 })
 
 test('every machine but this one wears its mark, and Change sets its kind and colour', async () => {
@@ -247,6 +298,7 @@ test('every machine but this one wears its mark, and Change sets its kind and co
     marks.push([id, mark])
     if (mark) fixtures.state.appSettings.machineMarks = { ...fixtures.state.appSettings.machineMarks, [id]: mark }
   }
+  fixtures.state.appSettings.hosts = UBUNTU_ON
   await render()
   const rows = [...host.querySelectorAll('li')]
   const thisPc = rows.find((row) => (row.textContent ?? '').includes('This PC'))
@@ -265,4 +317,44 @@ test('every machine but this one wears its mark, and Change sets its kind and co
   // This fake store does not re-render on a write, so only the colour is checked here.
   expect(marks[1]?.[0]).toBe('wsl:Ubuntu')
   expect((marks[1]?.[1] as { colour?: string }).colour).toBe('neutral')
+})
+
+test('every machine is one list: a paired desktop and an SSH machine sit beside this PC, each saying how it stands', async () => {
+  fixtures.state.appSettings.hosts = UBUNTU_ON
+  others = [
+    {
+      environmentId: 'env-mini',
+      displayName: 'mac-mini',
+      routes: [{ kind: 'tailnet', connection: 'tnc_1' }],
+      machine: { kind: 'paired', name: 'mac-mini' },
+      descriptor: null,
+      connection: { state: 'offline', detail: 'Not answering', lastReachedAt: null },
+      compatibility: null,
+    },
+    {
+      environmentId: 'env-old',
+      displayName: 'old-box',
+      routes: [{ kind: 'tailnet', connection: 'tnc_2' }],
+      machine: { kind: 'paired', name: 'old-box' },
+      descriptor: null,
+      connection: { state: 'signed-out', detail: 'Revoked this device', lastReachedAt: null, remedy: 'Pair again' },
+      compatibility: null,
+    },
+  ]
+  let remote = 0
+  await render(undefined, () => (remote += 1))
+  const list = host.querySelector('[aria-label="Machines"]')
+  const names = [...(list?.querySelectorAll('li') ?? [])].map((row) => row.textContent ?? '')
+  expect(
+    names.map((text) => ['This PC', 'WSL: Ubuntu', 'mac-mini', 'old-box'].find((name) => text.includes(name))),
+  ).toEqual(['This PC', 'WSL: Ubuntu', 'mac-mini', 'old-box'])
+  expect(names[0]).toContain('Always available')
+  expect(names[1]).toContain('Running · WSL 2')
+  expect(names[2]).toContain('Not answering')
+  expect(names[3]).toContain('Revoked this device')
+  // Retry asks the owner of that machine's best route; Pair again goes where pairings are made.
+  await act(async () => host.querySelector<HTMLElement>('[aria-label="Retry, mac-mini"]')!.click())
+  expect(retries).toEqual(['tailnet:tnc_1'])
+  await act(async () => host.querySelector<HTMLElement>('[aria-label="Pair again, old-box"]')!.click())
+  expect(remote).toBe(1)
 })

@@ -11,9 +11,10 @@ import {
   type EnvironmentDescriptor,
   type EnvironmentId,
   type EnvironmentRoute,
+  type EnvironmentRouteKind,
 } from '../../../packages/studio-protocol/src/environment'
 import { localEnvironmentSource, type EnvironmentSource } from '../../shared/environment-keys'
-import type { MachineRef } from '../../shared/machine-identity'
+import { UNKNOWN_CONNECTION, type EnvironmentConnection, type EnvironmentEntry } from '../../shared/environments'
 import { isRecord } from '../../shared/records'
 import { writeFileAtomicSync } from '../../server/platform/atomic-file'
 
@@ -42,19 +43,11 @@ import { writeFileAtomicSync } from '../../server/platform/atomic-file'
 export const ENVIRONMENTS_FILENAME = 'environments.json'
 const FILE_VERSION = 1
 
-/** One environment as this desktop knows it. */
-export type KnownEnvironment = {
-  /** Null for a machine whose Studio has not answered yet (a distribution whose server never ran). */
-  environmentId: EnvironmentId | null
-  /** What the person calls it: the name its best route's record gives. */
-  displayName: string
-  /** The ways in, best first (`orderEnvironmentRoutes`). Never empty. */
-  routes: EnvironmentRoute[]
-  /** How it is drawn, from its best route's record. */
-  machine: MachineRef
-  /** What its server said about itself the last time this desktop heard, or null. */
-  descriptor: EnvironmentDescriptor | null
-}
+/** One environment as this desktop knows it: the shape every window reads (`src/shared/environments.ts`). */
+export type KnownEnvironment = EnvironmentEntry
+
+/** What a route's owner says about its connection now. */
+export type EnvironmentConnectionReport = { route: EnvironmentRoute; connection: EnvironmentConnection }
 
 export type EnvironmentSourceKind = 'wsl' | 'ssh' | 'tailnet'
 
@@ -71,6 +64,14 @@ export type EnvironmentRegistry = {
   observe(kind: EnvironmentSourceKind, sources: readonly EnvironmentSource[]): void
   /** What a route answered: the Studio's id, or its whole descriptor. True when that was news. */
   learn(route: EnvironmentRoute, answered: EnvironmentId | EnvironmentDescriptor): boolean
+  /**
+   * How the connections over one kind of route stand, whole: the reports of
+   * that kind before are replaced. A route with no report reads `unknown`.
+   * Fed today by each route's owner (SSH machines, the mesh's reachability,
+   * the WSL distributions, this machine); by each environment's connection
+   * supervisor once the machines are direct environments.
+   */
+  report(kind: EnvironmentRouteKind, reports: readonly EnvironmentConnectionReport[]): void
   /** Called after any change to `list()`'s answer. */
   onChanged(listener: () => void): () => void
 }
@@ -96,6 +97,8 @@ export function createEnvironmentRegistry(options: {
   let writable = loaded.writable
   const local = localEnvironmentSource(options.localEnvironmentId, options.platform)
   const observed = new Map<EnvironmentSourceKind, EnvironmentSource[]>()
+  // Route string → its owner's last report, per kind so one owner's report replaces only its own.
+  const reported = new Map<EnvironmentRouteKind, Map<string, EnvironmentConnection>>()
   const listeners = new Set<() => void>()
   const sharingLocalId = new Set<string>()
   let current = build()
@@ -189,7 +192,18 @@ export function createEnvironmentRegistry(options: {
       routes,
       machine: best.machine,
       descriptor: id ? (stored.descriptors.get(id) ?? null) : null,
+      connection: connectionOf(routes),
+      compatibility: null,
     }
+  }
+
+  // An environment answers if any way in does; otherwise it reads as its
+  // best route reports.
+  function connectionOf(routes: readonly EnvironmentRoute[]): EnvironmentConnection {
+    const reports = routes.map(
+      (route) => reported.get(route.kind)?.get(formatEnvironmentRoute(route)) ?? UNKNOWN_CONNECTION,
+    )
+    return reports.find((report) => report.state === 'up') ?? reports[0] ?? UNKNOWN_CONNECTION
   }
 
   function changed(): void {
@@ -250,6 +264,15 @@ export function createEnvironmentRegistry(options: {
       changed()
       return true
     },
+    report(kind, reports) {
+      const own = new Map<string, EnvironmentConnection>()
+      for (const { route, connection } of reports) {
+        if (route.kind !== kind || !isEnvironmentRoute(route)) continue
+        own.set(formatEnvironmentRoute(route), { ...connection })
+      }
+      reported.set(kind, own)
+      changed()
+    },
     onChanged(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -267,6 +290,7 @@ function copy(entry: KnownEnvironment): KnownEnvironment {
     ...entry,
     routes: entry.routes.map((route) => ({ ...route })),
     machine: { ...entry.machine },
+    connection: { ...entry.connection },
     descriptor: entry.descriptor ? { ...entry.descriptor, capabilities: [...entry.descriptor.capabilities] } : null,
   }
 }

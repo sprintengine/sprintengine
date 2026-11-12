@@ -44,6 +44,7 @@ import { skillsApi } from './api/skills'
 import { launchSettingsApi } from './api/launch-settings'
 import { hostsApi } from './api/hosts'
 import { sshEnvironmentsApi } from './api/ssh-environments'
+import { environmentsApi } from './api/environments'
 import { splashApi } from './api/splash'
 import { startupApi } from './api/startup'
 import { terminalApi } from './api/terminal'
@@ -111,6 +112,7 @@ export const apiModules = {
   ...launchSettingsApi,
   ...hostsApi,
   ...sshEnvironmentsApi,
+  ...environmentsApi,
   ...gitApi,
   ...marketplaceApi,
   ...memoryActivityApi,

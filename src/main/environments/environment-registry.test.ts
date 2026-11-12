@@ -233,3 +233,57 @@ test.runIf(process.platform !== 'win32' && process.getuid?.() !== 0)(
     assert.equal(logs.length, 1)
   },
 )
+
+test('each environment reads as its routes’ owners report: up on any way in, else its best route', () => {
+  const environments = registry(dataDir())
+  environments.observe('tailnet', [paired('tnc_1', 'mac-mini', MINI)])
+  environments.observe('ssh', [ssh('m_mini', 'mac-mini-ssh', MINI), ssh('m_box', 'build-box', BOX)])
+  const connection = (id: string) => environments.get(id)?.connection
+  // Nothing reported yet: unknown, and no compatibility until design-server-update records it.
+  assert.deepEqual(connection(MINI), { state: 'unknown', detail: null, lastReachedAt: null })
+  assert.equal(environments.get(MINI)?.compatibility, null)
+
+  environments.report('tailnet', [
+    {
+      route: { kind: 'tailnet', connection: 'tnc_1' },
+      connection: { state: 'offline', detail: null, lastReachedAt: 5 },
+    },
+  ])
+  assert.equal(connection(MINI)?.state, 'offline')
+  // The SSH route answers: the machine answers, whichever route is best.
+  environments.report('ssh', [
+    { route: { kind: 'ssh', machine: 'm_mini' }, connection: { state: 'up', detail: null, lastReachedAt: null } },
+    {
+      route: { kind: 'ssh', machine: 'm_box' },
+      connection: { state: 'connecting', detail: 'Installing', lastReachedAt: null },
+    },
+  ])
+  assert.equal(connection(MINI)?.state, 'up')
+  assert.deepEqual(connection(BOX), { state: 'connecting', detail: 'Installing', lastReachedAt: null })
+
+  // A report is whole for its kind: one that leaves a route out forgets it.
+  environments.report('ssh', [])
+  assert.equal(connection(MINI)?.state, 'offline')
+  assert.equal(connection(BOX)?.state, 'unknown')
+  // A report of another kind's route is not taken.
+  environments.report('wsl', [
+    { route: { kind: 'ssh', machine: 'm_box' }, connection: { state: 'up', detail: null, lastReachedAt: null } },
+  ])
+  assert.equal(connection(BOX)?.state, 'unknown')
+})
+
+test('a changed report is announced, an unchanged one is not', () => {
+  const environments = registry(dataDir())
+  environments.observe('ssh', [ssh('m_box', 'build-box', BOX)])
+  let calls = 0
+  environments.onChanged(() => calls++)
+  const report = (state: 'up' | 'offline') =>
+    environments.report('ssh', [
+      { route: { kind: 'ssh', machine: 'm_box' }, connection: { state, detail: null, lastReachedAt: null } },
+    ])
+  report('up')
+  report('up')
+  assert.equal(calls, 1)
+  report('offline')
+  assert.equal(calls, 2)
+})

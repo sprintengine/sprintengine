@@ -1204,9 +1204,10 @@ in `docs/design/studio-server/phase-8-ssh-remotes.md`.
 
 **Environments in the app**: a saved connection has a label, a route (`local`,
 `wsl:<distro>`, `ssh:<saved machine id>`, `tailnet:<pairing id>`) and the
-`environment.id` it last reported. The sidebar groups workspaces by
-environment; the existing Remote band and the machine dropdown in New chat list
-environments instead of paired desktops only.
+`environment.id` it last reported. The sidebar files every chat under its
+project, wherever it runs (owner ruling 2026-09-11): the machine is a glyph on
+the row, never a group of its own. Settings ▸ Machines and the machine
+dropdown in New chat list environments, whatever kind of machine each is.
 
 _As built so far (2026-11-11)_: the types are in
 `@sprintengine/studio-protocol` (`environment.ts`: `EnvironmentDescriptor`,
@@ -1221,6 +1222,17 @@ from their own records; a WSL distribution has none until something connects
 to its server and tells the registry what it answered, which the cut-over to
 direct WSL environments does. No call is routed through the registry yet: each
 cut-over moves its callers onto it.
+
+The window reads the registry over three shell channels (`environments:list`,
+`environments:changed`, `environments:retry`; `src/shared/environments.ts`).
+Each entry carries how its connection stands, reported by the owner of each
+route today (the SSH machines' states, the paired desktops' reachability, the
+WSL distributions' states) and by its connection supervisor once the machines
+are direct environments, and a compatibility slot that `design-server-update`
+fills. `environmentStatus` (`src/shared/environment-status.ts`) turns that into
+the words, tone and one action every surface shows: Settings ▸ Machines lists
+every environment in one card, and the Remote popover, the Remote glyph's count
+and a paired machine's rows in the sidebar read the same status.
 
 ### 10.4 The server bundle
 

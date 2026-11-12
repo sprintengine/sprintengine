@@ -22,7 +22,6 @@ import {
   MESH_GET_LIVE_STATE_CHANNEL,
   MESH_LIST_CONNECTIONS_CHANNEL,
   MESH_CANCEL_PAIRING_CHANNEL,
-  MESH_CHECK_REACHABILITY_CHANNEL,
   MESH_PAIR_CHANNEL,
   MESH_REQUEST_PAIRING_CHANNEL,
   meshConversationFrameChannel,
@@ -111,11 +110,6 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
       reverseScopes: record?.reverseScopes,
     })
   })
-  // Reachability on demand (the row's Retry): main already checks on start,
-  // wake, and a timer; this is the person asking for one more, now.
-  ipcMain.handle(MESH_CHECK_REACHABILITY_CHANNEL, (_event, connectionId: unknown) =>
-    service.mesh().checkReachability(typeof connectionId === 'string' ? connectionId : undefined),
-  )
   ipcMain.handle(MESH_CANCEL_PAIRING_CHANNEL, (_event, requestId: unknown) => {
     service.mesh().cancelPairing(requestId)
   })

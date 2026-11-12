@@ -1,6 +1,6 @@
 import type { AgentLaunchSettings, AgentLaunchSettingsRecord } from '../../shared/launch-settings'
 import type { WorkspaceSyncSnapshot, WorkspaceSyncState } from '../../shared/workspace-sync'
-import type { MeshConnection } from '../../shared/tailnet-mesh'
+import type { MeshConnection, MeshMachineReachability } from '../../shared/tailnet-mesh'
 
 // What the shell and its out-of-process server say to each other on the
 // control channel beyond the bootstrap frames and the ShellBridge (phase 6
@@ -63,6 +63,8 @@ export const SERVER_METHODS = {
   discoverModels: 'models.discover',
   /** → `ServerInfo`. */
   info: 'server.info',
+  /** `{ connectionId }` → nothing, once the check is done: ask a paired desktop now whether it answers (the mesh is this process's). */
+  meshCheckReachability: 'mesh.check-reachability',
 } as const
 
 /** Server → shell requests: the shell's own caches the gateway's tools read. */
@@ -104,6 +106,12 @@ export const SERVER_EVENTS = {
    * whole, without credentials: the shell's environment registry lists them.
    */
   mirrorMeshConnections: 'mirror.mesh-connections',
+  /**
+   * Server → shell: whether each paired desktop answers changed.
+   * `MeshMachineReachability[]`, whole: the shell's environment registry
+   * reads each one's connection from it.
+   */
+  mirrorMeshReachability: 'mirror.mesh-reachability',
   /** Server → shell: a chat's phase moved; the shell's dock badge and taskbar flash follow it. */
   attentionPhase: 'attention.agent-phase',
   /** Shell → server: the renderer's module registry, mirrored. */
@@ -155,6 +163,8 @@ export type ServerMirrorState = ServerMirrorRegistry & {
   launchSettings: ServerMirrorLaunchSettings
   /** The paired desktops (`mirrorMeshConnections`); absent from a server with no mesh. */
   meshConnections?: MeshConnection[]
+  /** Whether each answers (`mirrorMeshReachability`); absent from a server with no mesh. */
+  meshReachability?: MeshMachineReachability[]
 }
 
 export type PowerHint = 'suspend' | 'resume' | 'lock' | 'unlock' | 'battery' | 'ac'

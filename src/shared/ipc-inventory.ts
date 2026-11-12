@@ -60,6 +60,9 @@ const EDITOR = shell("This window's editor and tours (the editor and tour tools 
 const ATTACHED = shell('A file the person attached or opens on this computer.')
 const SERVER_PROCESS = shell("It supervises this computer's Studio server process.")
 const CONNECTION = shell("It brokers this window's connection to its Studio server.")
+const ENVIRONMENTS = shell(
+  "The machines this desktop knows and how each stands: this client's own saved list, kept like its windows.",
+)
 const SSH_SETUP = shell('It sets up an SSH machine from this computer.')
 const ACCOUNT = shell(
   "This install's account sign-in: its tokens in this computer's keychain, through the system browser.",
@@ -244,6 +247,9 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'studio-server:status': SERVER_PROCESS('invoke'),
   'studio-server:status-changed': SERVER_PROCESS('push'),
   'studio:window-ticket': CONNECTION('invoke'),
+  'environments:changed': ENVIRONMENTS('push'),
+  'environments:list': ENVIRONMENTS('invoke'),
+  'environments:retry': ENVIRONMENTS('invoke'),
   'environments:ssh:add': SSH_SETUP('invoke'),
   'environments:ssh:changed': SSH_SETUP('push'),
   'environments:ssh:connect': SSH_SETUP('invoke'),
@@ -466,7 +472,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'automation:mcp-http-status': access('invoke'),
   'mesh:browse': access('invoke'),
   'mesh:cancel-pairing': access('invoke'),
-  'mesh:check-reachability': access('invoke'),
   'mesh:forget': access('invoke'),
   'mesh:get-live-state': access('invoke'),
   'mesh:list-connections': access('invoke'),

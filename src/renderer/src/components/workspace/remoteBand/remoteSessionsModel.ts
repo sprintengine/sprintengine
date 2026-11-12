@@ -24,7 +24,8 @@ import { workspaceLastUserMessageAt } from '../../../utils/workspaceRecency'
 import { finishedUnseen } from '../../../../../shared/workspace-lifecycle'
 import type { Tone } from '../../ui'
 import type { RowRecency } from '../stableRowSlices'
-import { meshMachinePhase, type MeshMachinePhase } from '../../remote/machineRowModel'
+import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
+import { environmentStatus, type EnvironmentStatusKind } from '../../../../../shared/environment-status'
 
 // The sidebar's Remote band (remote-sessions-in-the-sidebar): the sessions
 // that live on each paired machine, as rows a person can open here. DOM-free,
@@ -216,7 +217,8 @@ export type RemoteMachineGroup = {
   /** Null when the pairing is gone but rows born on it remain — they still need a home. */
   connectionId: string | null
   machineName: string
-  phase: MeshMachinePhase | null
+  /** How the machine stands, as the environment list says; null when the pairing is gone. */
+  status: EnvironmentStatusKind | null
   rows: RemoteSessionRow[]
   /**
    * Remote-born workspaces here whose session the machine did not list: the
@@ -536,7 +538,8 @@ export function openSpecOf(row: RemoteSessionRow): RemoteSessionOpenSpec {
   }
 }
 
-const QUIET_PHASES = new Set<MeshMachinePhase['phase']>(['unreachable', 'revoked'])
+// A machine in one of these is not answering: its rows are drawn from its last read.
+const QUIET_STATUSES = new Set<EnvironmentStatusKind>(['offline', 'signed-out', 'incompatible'])
 
 /**
  * The band: one group per paired machine, in name order, plus a group for
@@ -545,17 +548,19 @@ const QUIET_PHASES = new Set<MeshMachinePhase['phase']>(['unreachable', 'revoked
 export function buildRemoteBand(input: {
   connections: readonly MeshConnection[]
   browses: ReadonlyMap<string, RemoteBrowseEntry>
-  reachability: ReadonlyMap<string, MeshMachineReachability>
+  /** The machines this desktop knows (`useEnvironments`), for how each stands. */
+  environments: readonly EnvironmentEntry[]
   workspaces: readonly Workspace[]
 }): RemoteMachineGroup[] {
-  const { connections, browses, reachability, workspaces } = input
+  const { connections, browses, environments, workspaces } = input
   const paired = new Set(connections.map((connection) => connection.id))
   const groups: RemoteMachineGroup[] = [...connections]
     .sort((a, b) => a.machineName.localeCompare(b.machineName))
     .map((connection) => {
       const entry = browses.get(connection.id)
       const browse = entry?.browse ?? null
-      const phase = meshMachinePhase(connection.id, reachability)
+      const environment = environmentOfRoute(environments, { kind: 'tailnet', connection: connection.id })
+      const status = environment ? environmentStatus(environment).kind : null
       // A chat the machine has settled has no row, as it has none in that
       // machine's own sidebar. A machine that keeps rest leaves them out of
       // its list; one whose browse says a workspace is resting is believed
@@ -589,10 +594,10 @@ export function buildRemoteBand(input: {
         key: connection.id,
         connectionId: connection.id,
         machineName: connection.machineName,
-        phase,
+        status,
         rows,
         parked,
-        stale: rows.length > 0 && QUIET_PHASES.has(phase.phase),
+        stale: rows.length > 0 && status !== null && QUIET_STATUSES.has(status),
         loading: entry?.loading ?? false,
       }
     })
@@ -612,7 +617,7 @@ export function buildRemoteBand(input: {
       key: `gone:${connectionId}`,
       connectionId: null,
       machineName: parked[0]!.remoteOrigin!.machineName,
-      phase: null,
+      status: null,
       rows: [],
       parked,
       stale: false,

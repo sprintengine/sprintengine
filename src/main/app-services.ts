@@ -21,6 +21,7 @@ import { configureWslHelpers } from './hosts/wsl-helper-runtime'
 import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
 import { createDesktopEnvironments } from './environments/desktop-environments'
+import { registerEnvironmentsIpc } from './ipc/environments-ipc'
 import { isMachinePath } from '../shared/machine-paths'
 import { workspaceProjectRootOf } from '../shared/worktree-paths'
 import type { WorkspaceEnvironmentRef } from '../renderer/src/types/workspace'
@@ -1879,6 +1880,8 @@ export function createAppServices(
   // The gateway starts with the app.
   // Who hears that the paired desktops changed, while the mesh is this process's.
   const meshListeners = new Set<() => void>()
+  // Who hears whether a paired desktop answers, while the mesh is this process's.
+  const meshReachabilityListeners = new Set<() => void>()
   // Out of process the gateway, the tailnet and the mesh are the server's.
   const automationService = server
     ? null
@@ -1900,6 +1903,8 @@ export function createAppServices(
           broadcastToAllWindows(MESH_EVENT_CHANNEL, event)
           tailnetNotifier?.onMeshEvent(event)
           if (meshListChanged(event)) for (const listener of [...meshListeners]) listener()
+          if (meshListChanged(event) || event.kind === 'machine-reachability')
+            for (const listener of [...meshReachabilityListeners]) listener()
         },
         // A window someone could be looking at: the mesh's reachability timer and
         // its re-checks of an absent machine only feed rows on screen.
@@ -1977,9 +1982,10 @@ export function createAppServices(
         }),
       })
   tailnetToolsFrontDoor = automationService
-  // Every Studio this desktop knows, with the routes it reaches each by: this
-  // machine, its WSL distributions, its SSH machines and its paired desktops
-  // (environments/environment-registry.ts). Nothing routes through it yet.
+  // Every Studio this desktop knows, with the routes it reaches each by and how
+  // each stands: this machine, its WSL distributions, its SSH machines and its
+  // paired desktops (environments/environment-registry.ts). Every window draws
+  // its machines from it (design-environments).
   const environments = createDesktopEnvironments({
     userDataDir: app.getPath('userData'),
     platform: process.platform,
@@ -1987,8 +1993,13 @@ export function createAppServices(
       get: () => agentLaunchSettings.get().hosts,
       onChanged: (listener) => agentLaunchSettings.subscribe(() => listener()),
     },
+    hostStates: hostRegistry(),
     ssh: ssh
-      ? { list: () => ssh.environments.list(), onChanged: (listener) => ssh.environments.onChanged(listener) }
+      ? {
+          list: () => ssh.environments.list(),
+          onChanged: (listener) => ssh.environments.onChanged(listener),
+          connect: (id) => ssh.environments.connect(id),
+        }
       : null,
     // The mesh is the gateway's: this process's in process, the server's out of it.
     mesh: automationService
@@ -2000,9 +2011,29 @@ export function createAppServices(
           },
         }
       : (server?.mirror.meshConnections ?? null),
+    meshReachability: automationService
+      ? {
+          list: () => automationService.mesh().getLiveState().reachability,
+          onChanged: (listener) => {
+            meshReachabilityListeners.add(listener)
+            return () => meshReachabilityListeners.delete(listener)
+          },
+          check: (connectionId) => automationService.mesh().checkReachability(connectionId),
+        }
+      : server
+        ? {
+            list: () => server.mirror.meshReachability.list(),
+            onChanged: (listener) => server.mirror.meshReachability.onChanged(listener),
+            check: (connectionId) => server.rpc.call(SERVER_METHODS.meshCheckReachability, { connectionId }),
+          }
+        : null,
     log: (message) => {
       void writeDiagnosticLog({ level: 'info', title: 'Environments', message, source: 'workspace' })
     },
+  })
+  registerEnvironmentsIpc(ipcMain, {
+    environments,
+    broadcast: (channel) => broadcastToAllWindows(channel, null),
   })
   // A chat agent in WSL reaches its own server's gateway: the desktop's
   // toolsets, and this side's own tools of the families the WSL server cannot

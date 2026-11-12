@@ -120,7 +120,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'launch-settings:update': {},
   'mesh:browse': { retry: 'once' },
   'mesh:cancel-pairing': {},
-  'mesh:check-reachability': {},
   'mesh:conversation-cancel-side-question': {},
   'mesh:conversation-command': {},
   'mesh:conversation-context-breakdown': { retry: 'once' },
