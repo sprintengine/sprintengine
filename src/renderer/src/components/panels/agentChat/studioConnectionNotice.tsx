@@ -15,9 +15,12 @@ export const STUDIO_RECONNECT_GRACE_MS = 1_500
 
 const noWatch = () => () => undefined
 
-/** The window's connection to Studio, or null for a page with no window api (a test). */
+/** The window's connection to Studio, or null for a page that reaches no Studio (a test's bare api). */
 export function useWindowStudioConnection(): WindowStudioState | null {
-  const api = typeof window === 'undefined' ? null : ((window.api as object | undefined) ?? null)
+  const api =
+    typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
+      ? (window.api as object)
+      : null
   return useSyncExternalStore(
     api ? (listener) => watchWindowStudio(api, listener) : noWatch,
     () => (api ? windowStudioState(api) : null),

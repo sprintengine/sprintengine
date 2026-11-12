@@ -462,13 +462,8 @@ const LOCAL_CAPABILITIES: ConversationTransportCapabilities = {
   agentMessages: true,
 }
 
-type LocalParts = Omit<ConversationTransport, 'kind' | 'capabilities' | 'services'> &
-  Required<
-    Pick<ConversationTransport, 'setModel' | 'attachment' | 'rewind' | 'handoff' | 'fork' | 'startSession' | 'revert'>
-  >
-
 /** This window's Studio implementation's parts, read at call time so a replaced client is the one used. */
-const localParts = (): LocalParts => studioImplementation().parts as LocalParts
+const localParts = () => studioImplementation().parts
 
 // Each call is answered by this window's Studio implementation, read when it
 // is made; the object itself never changes, so what is keyed by it (a shared
@@ -539,12 +534,12 @@ export const localConversationTransport: ConversationTransport = {
   fork: (input) => localParts().fork(input),
   startSession: (input) => localParts().startSession(input),
   revert: (input) => localParts().revert(input),
-  mcpServerAction: (input) => studioImplementation().parts.mcpServerAction(input),
-  stopSubagent: (input) => localParts().stopSubagent!(input),
-  messageSubagent: (input) => localParts().messageSubagent!(input),
-  askSideQuestion: (input) => localParts().askSideQuestion!(input),
-  cancelSideQuestion: (input) => localParts().cancelSideQuestion!(input),
-  readContextBreakdown: (input) => localParts().readContextBreakdown!(input),
+  mcpServerAction: (input) => localParts().mcpServerAction(input),
+  stopSubagent: (input) => localParts().stopSubagent(input),
+  messageSubagent: (input) => localParts().messageSubagent(input),
+  askSideQuestion: (input) => localParts().askSideQuestion(input),
+  cancelSideQuestion: (input) => localParts().cancelSideQuestion(input),
+  readContextBreakdown: (input) => localParts().readContextBreakdown(input),
   services: windowServices,
 }
 
