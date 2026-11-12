@@ -29,7 +29,8 @@ export const SCENARIO_WORDS: Record<ScenarioId, string> = {
   subagent: 'message a running sub-agent; every client sees the words',
   schedule: 'schedule a send; the clients that list them see it, and it survives a restart',
   resume: 'drop mid-turn, miss events, come back by cursor: no gap, no duplicate, no reset',
-  restart: 'the server is killed and started again; the client comes back by itself and goes on',
+  restart:
+    'the server is killed and started again; the client comes back by itself and by its cursor (no gap, no duplicate, no reset) and goes on',
   isolation: 'held to its one chat, reading: every other ask is refused',
 }
 

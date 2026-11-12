@@ -516,7 +516,7 @@ async function main(): Promise<number> {
                 if (frame.type === 'error') reject(new Error(frame.message))
                 else resolve(frame)
               })
-              void client.closed.then(() => reject(new Error('The connection to Studio closed.')), reject)
+              void client.closed.then(() => reject(new Error('closed')), reject)
             }),
         ],
         [
@@ -535,16 +535,14 @@ async function main(): Promise<number> {
             client.request('conversation.send', { key: own, commandId: `${who}-send`, message: `from the ${who}` }),
         ],
       ]
-      // What an embed may do, asked the same way, is answered: the probe can tell.
-      if (!(await embed.probe((client) => client.request('server.ping', {}))).allowed)
-        throw new Error('the probe could not ask even what an embed may: it proves nothing')
-      // Refused by the frame gate (it ends the socket) or the read-only grant (forbidden), and nothing else.
-      const refusedAsItShould = /connection to Studio closed|forbidden|not allowed|permission|scope/iu
+      // Refused by the frame gate (it ends the connection the ask came on) or
+      // by the read-only grant (its own codes), and nothing else.
       const wrong: string[] = []
       for (const [what, ask] of asks) {
         const answer = await embed.probe((client) => ask(client, 'embed'))
         if (answer.allowed) wrong.push(`${what} (allowed)`)
-        else if (!refusedAsItShould.test(answer.why)) wrong.push(`${what} (refused, but as "${answer.why}")`)
+        else if (!answer.closed && answer.code !== 'scope_required' && answer.code !== 'owner_required')
+          wrong.push(`${what} (refused, but as "${answer.why}")`)
       }
       if (wrong.length) throw new Error(`the embed was not held to its chat: ${wrong.join('; ')}`)
       if (resolvedAfter(feedOf(desktop), requestId)) throw new Error('the embed’s answer reached the chat')
@@ -552,7 +550,7 @@ async function main(): Promise<number> {
       // The same asks from the window, an owner: each is answered.
       const owner = await desktop.studio()
       for (const [what, ask] of asks) {
-        const answer = await answerOf(ask(owner, 'owner'))
+        const answer = await answerOf(owner, ask(owner, 'owner'))
         if (!answer.allowed)
           throw new Error(`the window could not ${what} either (${answer.why}): the ask proves nothing`)
       }

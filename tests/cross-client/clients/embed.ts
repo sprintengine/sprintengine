@@ -1,4 +1,4 @@
-import { connect, type StudioClient, type StudioTransport } from '../../../packages/agent-sdk/src/index'
+import { connect, StudioError, type StudioClient, type StudioTransport } from '../../../packages/agent-sdk/src/index'
 import { connectEmbed } from '../../../src/renderer/src/web/embed/embedClient'
 import type { ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'
@@ -51,11 +51,15 @@ function ticketSocket(url: string): Promise<StudioTransport> {
   })
 }
 
-/** What became of one ask: answered, or refused with the words it was refused in. No answer at all is neither. */
-export type ProbeAnswer = { allowed: true } | { allowed: false; why: string }
+/**
+ * What became of one ask: answered, or refused, and by what: the frame gate
+ * ends the connection, the grant answers with its own code. No answer at all
+ * is neither, and throws.
+ */
+export type ProbeAnswer = { allowed: true } | { allowed: false; why: string; code: string | null; closed: boolean }
 
-/** An ask's outcome within ten seconds; one that hangs throws, since silence proves nothing. */
-export async function answerOf(asked: Promise<unknown>): Promise<ProbeAnswer> {
+/** An ask's outcome within ten seconds, on `client`. */
+export async function answerOf(client: StudioClient, asked: Promise<unknown>): Promise<ProbeAnswer> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const hung = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error('the ask had no answer in 10 s')), 10_000)
@@ -65,7 +69,14 @@ export async function answerOf(asked: Promise<unknown>): Promise<ProbeAnswer> {
     return { allowed: true }
   } catch (error) {
     if (error instanceof Error && error.message === 'the ask had no answer in 10 s') throw error
-    return { allowed: false, why: error instanceof Error ? error.message : String(error) }
+    // The close is heard a moment after the request it ended fails.
+    await Promise.race([client.closed.catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 1_000))])
+    return {
+      allowed: false,
+      why: error instanceof Error ? error.message : String(error),
+      code: error instanceof StudioError ? error.code : null,
+      closed: client.state === 'closed',
+    }
   } finally {
     clearTimeout(timer)
   }
@@ -135,7 +146,14 @@ export function embedClient(input: { cutter: Cutter; link: () => Promise<EmbedLi
         reconnect: false,
         wakeups: false,
       })
-      return answerOf(ask(client)).finally(() => client.close())
+      try {
+        // The connection answers what an embed may ask before it is asked for more.
+        const ping = await answerOf(client, client.request('server.ping', {}))
+        if (!ping.allowed) throw new Error(`embed: the probe's own connection was refused a ping (${ping.why})`)
+        return await answerOf(client, ask(client))
+      } finally {
+        client.close()
+      }
     },
     cut: () => input.cutter.cut(),
     heal: () => input.cutter.heal(),

@@ -121,7 +121,7 @@ sockets).
 Its output is a table of client by scenario, and it says what it simulates
 (the Electron shell's port broker, the phone's file module, the tailnet bound
 to loopback) and what it cannot run. A scenario a client cannot do yet is a
-known gap in `tests/cross-client/gaps.ts`, naming the step that closes it; a
+known gap in `tests/cross-client/gaps.ts`, naming the change that closes it; a
 gap that starts passing fails the gate, so the change that closes one deletes
 its line. A change that moves a client to another transport changes that
 client's adapter in `tests/cross-client/clients/`, not the scenarios.
