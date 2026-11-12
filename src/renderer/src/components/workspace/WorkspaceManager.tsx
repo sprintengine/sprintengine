@@ -4859,7 +4859,9 @@ export default function WorkspaceManager() {
     // A conversation agent has no PTY behind its sessionId: killing it through
     // the terminal runtime would report nothing and leave the agent running.
     if (item.transport === 'conversation') {
-      void windowChatServices().sessions.stop({ sessionId: item.sessionId }).catch(() => {})
+      void windowChatServices()
+        .sessions.stop({ sessionId: item.sessionId })
+        .catch(() => {})
     } else {
       void window.api.terminalKill(item.sessionId).catch(() => {})
     }

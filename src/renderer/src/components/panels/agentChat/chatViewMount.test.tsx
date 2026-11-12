@@ -7,7 +7,7 @@ import type {
   ConversationSessionFrame,
   ConversationSubscribeInput,
 } from '../../../../../shared/conversation-runtime'
-import { chatOverStudioUnderTest, installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 // The virtual list measures a real viewport, which jsdom does not have; this
 // stand-in renders every row so the rows themselves can be driven. Like the
@@ -2215,11 +2215,6 @@ test('a working agent’s card offers to stop that agent alone; an ended agent�
       })
     })
     const stops = () => chat.host.querySelectorAll<HTMLButtonElement>('button[aria-label="Stop this agent"]')
-    // The Studio protocol has no method for it yet, so a window on it offers none.
-    if (chatOverStudioUnderTest()) {
-      expect(stops()).toHaveLength(0)
-      return
-    }
     expect(stops()).toHaveLength(1)
     await chat.act(async () => stops()[0]!.click())
     expect(stopSubagent).toHaveBeenCalledWith({ sessionId: 'session', toolUseId: 'stop-working' })
@@ -2525,12 +2520,6 @@ test('the ring opens what fills the window, read from the chat’s agent', async
     const ring = () => chat.host.querySelector<HTMLButtonElement>('[data-composer-context]')!
     const note = () => chat.dom.window.document.querySelector('[data-context-breakdown-note]')?.textContent
     await chat.act(async () => ring().click())
-    // The Studio protocol has no method for it yet: the panel opens on the
-    // total, and says the window cannot ask rather than that Claude cannot say.
-    if (chatOverStudioUnderTest()) {
-      expect(note()).toMatch(/^This window cannot ask the agent/u)
-      return
-    }
     // Before a session is live there is no agent to ask, and the panel says so.
     expect(note()).toBe(
       'Claude Code is not running for this chat now. Send a message and it can say what fills the window.',
@@ -3067,11 +3056,6 @@ test('/btw mid-turn asks the chat a side question and leaves the turn and its qu
     await chat.act(async () => chat.type('/btw which file is the parser in?'))
     await chat.act(async () => chat.enter())
     const drawer = () => chat.dom.window.document.querySelector('[role="dialog"][aria-label^="Side question"]')
-    // The Studio protocol has no method for it yet, so a window on it keeps /btw the CLI's.
-    if (chatOverStudioUnderTest()) {
-      expect(askSideQuestion).not.toHaveBeenCalled()
-      return
-    }
     expect(askSideQuestion).toHaveBeenCalledOnce()
     expect(askSideQuestion.mock.calls[0]![0]).toMatchObject({
       sessionId: 'session',
@@ -3149,12 +3133,9 @@ test('the composer’s “+” offers a side question once the chat has a reply,
   try {
     doc = answering.dom.window.document
     await openPlus(answering)
-    if (chatOverStudioUnderTest()) expect(row()).toBeNull()
-    else {
-      expect(row()?.textContent).toContain('Side question')
-      await answering.act(async () => row()!.click())
-      expect(doc.querySelector('[role="dialog"][aria-label^="Side question"]')).not.toBeNull()
-    }
+    expect(row()?.textContent).toContain('Side question')
+    await answering.act(async () => row()!.click())
+    expect(doc.querySelector('[role="dialog"][aria-label^="Side question"]')).not.toBeNull()
   } finally {
     await answering.unmount()
   }

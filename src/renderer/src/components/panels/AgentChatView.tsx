@@ -2976,10 +2976,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       })
       return
     }
-    const result = await windowChatServices().sessions.suspend({ sessionId }).catch((error: unknown) => ({
-      ok: false as const,
-      message: error instanceof Error ? error.message : String(error),
-    }))
+    const result = await windowChatServices()
+      .sessions.suspend({ sessionId })
+      .catch((error: unknown) => ({
+        ok: false as const,
+        message: error instanceof Error ? error.message : String(error),
+      }))
     if (!result.ok) {
       showToast({ tone: 'error', title: 'The session was not restarted', description: result.message })
       return

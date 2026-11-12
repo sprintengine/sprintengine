@@ -62,8 +62,6 @@ test('a channel lists a grant gap exactly when a method or topic it names is hel
 })
 
 test("the window's protocol client calls every method a channel names: no channel is left to the IPC for want of it", () => {
-  for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<
-    [string, ConversationIpcProtocol]
-  >)
+  for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<[string, ConversationIpcProtocol]>)
     expect(route.gaps, channel).not.toContain('client')
 })

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
 import { test } from 'vitest'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 test('WorkspaceSidebar.settled', async () => {
   // Settled chats (2026-09-07; off the rail 2026-09-28). A folder's resting
@@ -93,6 +94,8 @@ test('WorkspaceSidebar.settled', async () => {
       return { ok: true }
     },
   }
+  // A chat's session is listed and suspended by the window's Studio, over the protocol.
+  installStudioLoopback(domWindow as never)
 
   async function main(): Promise<void> {
     const React = await import('react')

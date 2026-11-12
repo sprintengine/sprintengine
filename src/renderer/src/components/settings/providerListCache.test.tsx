@@ -11,6 +11,7 @@ import type { ConversationProviderListEntry } from '../../../../shared/plugin-ma
 import { ConfirmDialogProvider } from '../ui/ConfirmDialog'
 import { ProviderSettingsTab } from './ProviderSettingsTab'
 import { readCachedProviderList, writeCachedProviderList } from './providerSettings'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 const OPENROUTER: ConversationProviderListEntry = {
   id: 'openrouter',
@@ -66,6 +67,8 @@ beforeEach(() => {
       }),
     conversationSecretStatus: () => new Promise(() => {}),
   }
+  // Settings asks the window's Studio, over the protocol.
+  installStudioLoopback(window as never)
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)

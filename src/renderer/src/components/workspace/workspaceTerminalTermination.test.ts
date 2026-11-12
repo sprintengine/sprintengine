@@ -4,6 +4,7 @@ import { test } from 'vitest'
 
 import type { Workspace } from '../../types/workspace'
 import { suspendSnoozedWorkspaceTerminals, terminateSettledWorkspaceTerminals } from './workspaceTerminalTermination'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 // Settle's kill waits on main's answer about what is working; a chat the
 // person un-settled during that round trip keeps its agents.
@@ -21,6 +22,7 @@ test('a chat un-settled while main is asked is not killed; one still settled is'
       },
     },
   })
+  installStudioLoopback(globalThis.window as never)
   const workspace = {
     id: 'ws-1',
     agents: { a: { cliSessionId: 'pty-1' } },
@@ -64,6 +66,7 @@ test('a Snooze pauses nothing while main says an agent is working, nor once the 
       },
     },
   })
+  installStudioLoopback(globalThis.window as never)
   const workspace = {
     id: 'ws-1',
     agents: { a: { cliSessionId: 'pty-1' } },

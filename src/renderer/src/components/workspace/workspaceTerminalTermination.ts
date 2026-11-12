@@ -165,7 +165,11 @@ async function suspendWorkspaceConversations(workspace: Workspace): Promise<void
     await Promise.all(
       listed.sessions
         .filter((session) => session.status !== 'stopped' && session.workspaceId === workspace.id)
-        .map((session) => windowChatServices().sessions.suspend({ sessionId: session.sessionId }).catch(() => {})),
+        .map((session) =>
+          windowChatServices()
+            .sessions.suspend({ sessionId: session.sessionId })
+            .catch(() => {}),
+        ),
     )
   } catch {
     // Main unreachable: nothing to suspend through, and the gesture goes on.

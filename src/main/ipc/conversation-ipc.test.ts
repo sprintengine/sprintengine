@@ -12,12 +12,7 @@ import {
   MAX_ATTACHMENTS_PER_TURN,
   MAX_ATTACHMENT_BYTES,
 } from '../../shared/conversation-attachments'
-import type {
-  CliAvailability,
-  CliDetectResult,
-  ConversationProviderListResult,
-  ConversationSecretStatusResult,
-} from '../../shared/electron-api'
+import type { CliAvailability, CliDetectResult } from '../../shared/electron-api'
 import type {
   ConversationEvent,
   ConversationSendTurnInput,
@@ -41,105 +36,16 @@ test('conversation-ipc', async () => {
   }
 
   async function main(): Promise<void> {
-    await testRegistersProviderListChannel()
-    await testRegistersSecretChannels()
-    await testRegistersSessionChannelsAndEventSubscription()
+    await testRegistersSessionChannels()
     await testSendTurnValidatesImageAttachments()
     await testAttachmentLimitsAreTheSharedOnes()
     await testSendTurnCarriesASteer()
     await testSetPermissionValidatesThePreset()
-    await testFailureIsExplicit()
 
     console.log('conversation-ipc tests passed')
   }
 
-  async function testRegistersProviderListChannel(): Promise<void> {
-    const response: ConversationProviderListResult = {
-      ok: true,
-      providers: [
-        {
-          id: 'openai-compatible',
-          displayName: 'OpenAI Compatible',
-          source: 'bundled',
-          version: 1,
-          providerType: 'model-provider',
-          models: [{ id: 'gpt-5' }],
-          supportsDynamicModels: false,
-          credentialSource: 'api-key',
-          adapter: { kind: 'declarative', execution: 'declarative', trust: 'not_required' },
-        },
-      ],
-    }
-
-    const ipcMain = createIpcMain()
-    registerConversationIpc(ipcMain as unknown as Parameters<typeof registerConversationIpc>[0], {
-      listProviders: async () => response,
-      getSecretStatus: async () => ({ ok: false, message: 'unused' }),
-      setSecret: async () => ({ ok: false, message: 'unused' }),
-      clearSecret: async () => ({ ok: false, message: 'unused' }),
-      ...runtimeHandlerStubs(),
-    })
-
-    const handler = ipcMain.handlers.get('conversation:providers:list')
-    assert.ok(handler, 'conversation:providers:list should be registered')
-    assert.deepEqual(await handler?.(null), response)
-  }
-
-  async function testRegistersSecretChannels(): Promise<void> {
-    const calls: string[] = []
-    const response: ConversationSecretStatusResult = {
-      ok: true,
-      status: {
-        providerId: 'openai-compatible',
-        configured: true,
-        source: 'settings',
-        persistence: 'encrypted',
-        encryptionAvailable: true,
-        label: 'API key',
-      },
-    }
-
-    const ipcMain = createIpcMain()
-    registerConversationIpc(ipcMain as unknown as Parameters<typeof registerConversationIpc>[0], {
-      listProviders: async () => ({ ok: true, providers: [] }),
-      getSecretStatus: async (input) => {
-        calls.push(`status:${input.providerId}`)
-        return response
-      },
-      setSecret: async (input) => {
-        calls.push(`set:${input.providerId}:${input.value}`)
-        return response
-      },
-      clearSecret: async (input) => {
-        calls.push(`clear:${input.providerId}`)
-        return response
-      },
-      ...runtimeHandlerStubs(),
-    })
-
-    assert.deepEqual(
-      await ipcMain.handlers.get('conversation:secrets:status')?.(null, { providerId: 'openai-compatible' }),
-      response,
-    )
-    assert.deepEqual(
-      await ipcMain.handlers.get('conversation:secrets:set')?.(null, {
-        providerId: 'openai-compatible',
-        value: 'sk-test-secret',
-      }),
-      response,
-    )
-    assert.deepEqual(
-      await ipcMain.handlers.get('conversation:secrets:clear')?.(null, { providerId: 'openai-compatible' }),
-      response,
-    )
-    assert.deepEqual(calls, [
-      'status:openai-compatible',
-      'set:openai-compatible:sk-test-secret',
-      'clear:openai-compatible',
-    ])
-  }
-
-  async function testRegistersSessionChannelsAndEventSubscription(): Promise<void> {
+  async function testRegistersSessionChannels(): Promise<void> {
     const calls: string[] = []
     const runtimeListeners: Array<(event: ConversationEvent) => void> = []
     const onRuntimeEvent = (cb: (event: ConversationEvent) => void) => {
@@ -165,7 +71,6 @@ test('conversation-ipc', async () => {
       },
     }
     const actionResult: ConversationSessionActionResult = startResult
-    const sent: { channel: string; payload: unknown }[] = []
     const ipcMain = createIpcMain()
     registerConversationIpc(ipcMain as unknown as Parameters<typeof registerConversationIpc>[0], {
       listProviders: async () => ({ ok: true, providers: [] }),
@@ -230,88 +135,12 @@ test('conversation-ipc', async () => {
       sessionId: 'conv_1',
       permissionPreset: 'bypass',
     })
-    await ipcMain.handlers.get('conversation:sessions:stop')?.(null, { sessionId: 'conv_1' })
-    await ipcMain.handlers.get('conversation:sessions:suspend')?.(null, { sessionId: 'conv_1' })
-    assert.deepEqual(await ipcMain.handlers.get('conversation:sessions:suspend')?.(null, {}), {
-      ok: false,
-      message: 'sessionId is required.',
-    })
-    assert.deepEqual(
-      await ipcMain.handlers.get('conversation:sessions:terminal-handoff')?.(null, { sessionId: 'conv_1' }),
-      {
-        ok: true,
-        workspaceId: 'workspace',
-        agentId: 'agent-claude-code-abc123',
-      },
-    )
-    // A tab's menu names the chat, not a session.
-    assert.equal(
-      (
-        (await ipcMain.handlers.get('conversation:sessions:terminal-handoff')?.(null, {
-          workspaceId: 'workspace',
-          agentId: 'agent',
-        })) as { ok: boolean }
-      ).ok,
-      true,
-    )
-    assert.deepEqual(await ipcMain.handlers.get('conversation:sessions:terminal-handoff')?.(null, {}), {
-      ok: false,
-      message: 'sessionId is required.',
-    })
-    assert.deepEqual(await ipcMain.handlers.get('conversation:sessions:list')?.(null, {}), {
-      ok: true,
-      sessions: [startResult.session],
-    })
-
-    const sender = createConversationSender(sent)
-    const firstSubscription = await ipcMain.handlers.get('conversation:events:subscribe')?.({ sender })
-    assert.deepEqual(firstSubscription, { ok: true, subscriptionId: 'conversation-subscription-1' })
-    assert.equal(runtimeListeners.length, 1)
-    assert.equal(sender.destroyedListenerCount(), 1)
-    runtimeListeners[0]?.({
-      id: 'event_1',
-      sessionId: 'conv_1',
-      workspaceId: 'workspace',
-      agentId: 'agent',
-      providerId: 'mock-provider',
-      modelId: 'mock-model',
-      type: 'session_ready',
-      createdAt: 1,
-    })
-    assert.equal(sent[0]?.channel, 'conversation:event')
-    assert.deepEqual(
-      await ipcMain.handlers.get('conversation:events:unsubscribe')?.(null, {
-        subscriptionId: 'conversation-subscription-1',
-      }),
-      { ok: true },
-    )
-    assert.equal(runtimeListeners.length, 0)
-    assert.equal(unsubscribed, 1)
-    assert.equal(sender.destroyedListenerCount(), 0)
-
-    const secondSubscription = await ipcMain.handlers.get('conversation:events:subscribe')?.({ sender })
-    assert.deepEqual(secondSubscription, { ok: true, subscriptionId: 'conversation-subscription-2' })
-    assert.equal(runtimeListeners.length, 1)
-    assert.equal(sender.destroyedListenerCount(), 1)
-    assert.deepEqual(
-      await ipcMain.handlers.get('conversation:events:unsubscribe')?.(null, {
-        subscriptionId: 'conversation-subscription-2',
-      }),
-      { ok: true },
-    )
-    assert.equal(runtimeListeners.length, 0)
-    assert.equal(unsubscribed, 2)
-    assert.equal(sender.destroyedListenerCount(), 0)
     assert.deepEqual(calls, [
       'start:mock-provider',
       'send:conv_1:hello',
       'interrupt:conv_1',
       'respond:conv_1:approval_1:true',
       'permission:conv_1:bypass',
-      'stop:conv_1',
-      'suspend:conv_1',
-      'terminal-handoff:conv_1',
-      'terminal-handoff:workspace/agent',
     ])
   }
 
@@ -520,53 +349,6 @@ test('conversation-ipc', async () => {
     updatedAt: 1,
   }
 
-  function createConversationSender(sent: { channel: string; payload: unknown }[]): {
-    isDestroyed(): boolean
-    send(channel: string, payload: unknown): void
-    once(channel: 'destroyed', listener: () => void): void
-    on(channel: 'did-navigate', listener: () => void): void
-    removeListener(channel: 'destroyed', listener: () => void): void
-    destroyedListenerCount(): number
-  } {
-    const destroyedListeners = new Set<() => void>()
-    return {
-      isDestroyed: () => false,
-      send: (channel, payload) => sent.push({ channel, payload }),
-      once: (_channel, listener) => {
-        destroyedListeners.add(listener)
-      },
-      on: () => undefined,
-      removeListener: (_channel, listener) => {
-        destroyedListeners.delete(listener)
-      },
-      destroyedListenerCount: () => destroyedListeners.size,
-    }
-  }
-
-  async function testFailureIsExplicit(): Promise<void> {
-    const ipcMain = createIpcMain()
-    registerConversationIpc(ipcMain as unknown as Parameters<typeof registerConversationIpc>[0], {
-      listProviders: async () => {
-        throw new Error('provider registry load failed')
-      },
-      getSecretStatus: async () => ({ ok: false, message: 'unused' }),
-      setSecret: async () => ({ ok: false, message: 'unused' }),
-      clearSecret: async () => ({ ok: false, message: 'unused' }),
-      ...runtimeHandlerStubs(),
-    })
-
-    const result = (await ipcMain.handlers.get('conversation:providers:list')?.(null)) as ConversationProviderListResult
-    assert.deepEqual(result, { ok: false, message: 'provider registry load failed' })
-    assert.deepEqual(await ipcMain.handlers.get('conversation:secrets:status')?.(null, null), {
-      ok: false,
-      message: 'providerId is required.',
-    })
-    assert.deepEqual(await ipcMain.handlers.get('conversation:events:unsubscribe')?.(null, null), {
-      ok: false,
-      message: 'subscriptionId is required.',
-    })
-  }
-
   function runtimeHandlerStubs(): Pick<
     ConversationService,
     | 'listProviderModels'
@@ -679,12 +461,23 @@ function conversationEvent(type: ConversationEvent['type'], payload?: Record<str
   }
 }
 
-test('the all-conversations channel carries lifecycle events and never the token stream', async () => {
-  const ipc = registerWithRuntimeListeners()
-  await ipc.handlers.get('conversation:events:subscribe')!({ sender: ipc.sender })
+// Every chat's lifecycle, as the Studio protocol's `conversation.events` topic
+// carries it to every window: the service's stream, read here directly.
+function lifecycleStream() {
+  const listeners = new Set<(event: ConversationEvent) => void>()
+  const received: ConversationEvent[] = []
+  conversationLifecycleEvents((listener) => {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  })((event) => received.push(event))
   const publish = (event: ConversationEvent) => {
-    for (const listener of ipc.listeners) listener(event)
+    for (const listener of listeners) listener(event)
   }
+  return { publish, received }
+}
+
+test('every chat’s lifecycle stream carries lifecycle events and never the token stream', () => {
+  const { publish, received } = lifecycleStream()
   publish(conversationEvent('user_message', { turnId: 't', text: 'hi' }))
   publish(conversationEvent('turn_started', { turnId: 't' }))
   publish(conversationEvent('content_delta', { turnId: 't', text: 'Hel' }))
@@ -696,51 +489,43 @@ test('the all-conversations channel carries lifecycle events and never the token
   publish(conversationEvent('turn_completed', { turnId: 't' }))
   publish(conversationEvent('session_updated', { conversationTitle: 'Title' }))
   assert.deepEqual(
-    ipc.sent.map(({ channel, payload }) => [channel, (payload as ConversationEvent).type]),
+    received.map((event) => event.type),
     [
-      ['conversation:event', 'user_message'],
-      ['conversation:event', 'turn_started'],
-      ['conversation:event', 'tool_started'],
-      ['conversation:event', 'tool_output'],
-      ['conversation:event', 'subagent_status'],
-      ['conversation:event', 'turn_completed'],
-      ['conversation:event', 'session_updated'],
+      'user_message',
+      'turn_started',
+      'tool_started',
+      'tool_output',
+      'subagent_status',
+      'turn_completed',
+      'session_updated',
     ],
   )
   // Which chat moved and how, without the step itself: its reader asks for
   // the sessions list again, and a tool's result is no business of every window's.
-  const ended = ipc.sent[3]?.payload as ConversationEvent
-  assert.equal(ended.workspaceId, 'workspace')
-  assert.equal(ended.payload, undefined)
+  assert.equal(received[3]?.workspaceId, 'workspace')
+  assert.equal(received[3]?.payload, undefined)
 })
 
 test('a reload ends the subscriptions the page it replaced held', async () => {
   const ipc = registerWithRuntimeListeners()
   const key = { workspaceRoot: '/workspace', workspaceId: 'workspace', agentId: 'agent' }
-  await ipc.handlers.get('conversation:events:subscribe')!({ sender: ipc.sender })
   await ipc.handlers.get('conversation:session:subscribe')!({ sender: ipc.sender }, { subscriptionId: 'pane', key })
-  assert.equal(ipc.listeners.size, 1)
-  assert.equal(ipc.scoped.size, 1)
+  await ipc.handlers.get('conversation:session:subscribe')!({ sender: ipc.sender }, { subscriptionId: 'other', key })
+  assert.equal(ipc.scoped.size, 2)
   // One navigation listener per webContents, however many subscriptions it holds.
   assert.equal(ipc.navigationListeners(), 1)
 
   ipc.navigate()
-  assert.equal(ipc.listeners.size, 0)
   assert.equal(ipc.scoped.size, 0)
 
   // The reloaded page subscribes afresh and is served once.
-  await ipc.handlers.get('conversation:events:subscribe')!({ sender: ipc.sender })
   await ipc.handlers.get('conversation:session:subscribe')!({ sender: ipc.sender }, { subscriptionId: 'pane', key })
-  assert.equal(ipc.listeners.size, 1)
   assert.equal(ipc.scoped.size, 1)
   assert.equal(ipc.navigationListeners(), 1)
-  for (const listener of ipc.listeners) listener(conversationEvent('turn_completed', { turnId: 't' }))
-  assert.equal(ipc.sent.length, 1)
 })
 
-test('what the renderer reads off the all-conversations channel all arrives, with its workspace', async () => {
-  const ipc = registerWithRuntimeListeners()
-  await ipc.handlers.get('conversation:events:subscribe')!({ sender: ipc.sender })
+test('what the sessions list reads off every chat’s lifecycle stream all arrives, with its workspace', () => {
+  const { publish, received } = lifecycleStream()
   const needed: Array<[ConversationEvent['type'], Record<string, unknown>?]> = [
     ['session_started'],
     ['session_ready'],
@@ -754,9 +539,7 @@ test('what the renderer reads off the all-conversations channel all arrives, wit
     ['turn_completed', { turnId: 't' }],
     ['turn_failed', { turnId: 't', reason: 'interrupted' }],
   ]
-  for (const [type, payload] of needed)
-    for (const listener of ipc.listeners) listener({ ...conversationEvent(type, payload), createdAt: 42 })
-  const received = ipc.sent.map(({ payload }) => payload as ConversationEvent)
+  for (const [type, payload] of needed) publish({ ...conversationEvent(type, payload), createdAt: 42 })
   assert.deepEqual(
     received.map((event) => event.type),
     needed.map(([type]) => type),

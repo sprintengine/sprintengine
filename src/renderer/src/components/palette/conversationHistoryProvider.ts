@@ -44,7 +44,10 @@ export function createConversationHistoryProvider(options: {
   let generation = 0
   const cancel = (): void => {
     generation++
-    if (requestId) void windowChatServices().history.cancelSearch(requestId).catch(() => undefined)
+    if (requestId)
+      void windowChatServices()
+        .history.cancelSearch(requestId)
+        .catch(() => undefined)
     requestId = null
   }
   return {

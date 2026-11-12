@@ -9,6 +9,7 @@ vi.mock('../../../utils/modelRegistry', () => ({
 }))
 
 import { openCliSignInTerminal } from './cliSignIn'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 type Calls = { spawns: unknown[][]; writes: Array<{ sessionId: string; data: string }>; signIns: unknown[] }
 
@@ -44,6 +45,8 @@ function installApi(input: {
       },
     },
   })
+  // The sign-in is asked of the window's Studio, over the protocol.
+  installStudioLoopback(globalThis.window as never)
   return calls
 }
 

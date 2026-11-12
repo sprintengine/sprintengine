@@ -237,7 +237,11 @@ export function createStudioChatServices(
         ),
       setSecret: (input) =>
         outcome(() =>
-          ask(client, 'providers.setSecret', { providerId: input.providerId, value: input.value, commandId: commandId() }),
+          ask(client, 'providers.setSecret', {
+            providerId: input.providerId,
+            value: input.value,
+            commandId: commandId(),
+          }),
         ),
       clearSecret: (input) =>
         outcome(() => ask(client, 'providers.clearSecret', { providerId: input.providerId, commandId: commandId() })),
@@ -250,7 +254,8 @@ export function createStudioChatServices(
             ...(input?.agentId === undefined ? {} : { agentId: input.agentId }),
           }),
         ),
-      stop: (input) => outcome(() => ask(client, 'session.stop', { sessionId: input.sessionId, commandId: commandId() })),
+      stop: (input) =>
+        outcome(() => ask(client, 'session.stop', { sessionId: input.sessionId, commandId: commandId() })),
       suspend: (input) =>
         outcome(() => ask(client, 'session.suspend', { sessionId: input.sessionId, commandId: commandId() })),
       terminalHandoff: (input) =>
@@ -576,7 +581,9 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
         }),
       ),
     cancelSideQuestion: (input) =>
-      outcome(() => ask(client, 'session.cancelSideQuestion', { sessionId: input.sessionId, requestId: input.requestId })),
+      outcome(() =>
+        ask(client, 'session.cancelSideQuestion', { sessionId: input.sessionId, requestId: input.requestId }),
+      ),
     readContextBreakdown: async (input) => {
       try {
         return await ask(client, 'session.contextBreakdown', { sessionId: input.sessionId })
