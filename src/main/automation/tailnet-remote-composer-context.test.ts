@@ -237,6 +237,38 @@ test('a file attached here goes up with the message, and the agent is handed its
   }
 })
 
+test('a send is the request: its skills go by id, and when it was written goes with it', async () => {
+  const h = await startHarness()
+  try {
+    await h.mesh.listConversations(h.key.connectionId)
+    await h.follow()
+    const turns = vi.spyOn(h.runtime, 'sendTurn')
+    const composedAt = Date.now()
+    await h.mesh.conversationSend({
+      key: h.key,
+      message: 'Review it',
+      skills: [{ id: 'review', sourcePath: join(h.localDir, 'review', 'SKILL.md') }],
+      composedAt,
+      confirmedStale: true,
+    })
+    const turn = turns.mock.calls.at(-1)![0]
+    // A skill's file is a path on this machine: only its id goes over.
+    assert.deepEqual(turn.skills, [{ id: 'review' }])
+    assert.equal(turn.composedAt, composedAt)
+    assert.equal(turn.confirmedStale, true)
+
+    // Refused here, in words, rather than sent without them.
+    const before = turns.mock.calls.length
+    for (const wrong of [{ skills: ['review'] }, { composedAt: -1 }, { confirmedStale: 'yes' }]) {
+      const refused = await h.mesh.conversationSend({ key: h.key, message: 'And this', ...wrong })
+      assert.equal(refused.ok ? '' : refused.code, 'invalid_arguments', JSON.stringify(wrong))
+    }
+    assert.equal(turns.mock.calls.length, before)
+  } finally {
+    await h.close()
+  }
+})
+
 test("the `/` menu lists what the chat's CLI runs in its folder over there", async () => {
   const h = await startHarness()
   try {

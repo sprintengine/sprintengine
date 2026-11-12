@@ -3,10 +3,12 @@ const { test } = require("node:test");
 const {
   QUEUED_SEND_STALE_MS,
   cancelRefusal,
+  handingSend,
   heldByDesktop,
   holdsOnDesktop,
   pendingLine,
   queuedBubbles,
+  queuedCarryLine,
   queuedLine,
   queuedSendStale,
   stillHanding,
@@ -51,6 +53,36 @@ test("the queued bubble lists the desktop's messages, then those on their way, t
   assert.equal(bubbles[0].text, "one\ntwo", "a turn's messages read as one entry, a line apiece");
   assert.equal(bubbles[1].failure, "The chat is stopped.");
   assert.deepEqual(bubbles[3].uploads, ["img"]);
+});
+
+test("a held message keeps what it carries beside its words, and one on its way keeps its uploads", () => {
+  const [held, words, handing] = queuedBubbles({
+    desktop: [
+      {
+        id: "q1",
+        text: "look at these",
+        createdAt: 1,
+        images: ["a.png", "b.png"],
+        files: ["brief.pdf"],
+        skills: ["review"],
+        mentions: [{ path: "src/app.ts", kind: "file" }],
+      },
+      { id: "q2", text: "words alone", createdAt: 2 },
+    ],
+    handing: [handingSend("h1", { message: "", uploadIds: ["up-1"] })],
+    phone: [],
+  });
+  assert.deepEqual(held.carries, {
+    images: ["a.png", "b.png"],
+    files: ["brief.pdf"],
+    skills: ["review"],
+    mentions: [{ path: "src/app.ts", kind: "file" }],
+  });
+  assert.equal(queuedCarryLine(held.carries), "2 images · brief.pdf · 1 skill · 1 mention");
+  assert.equal(words.carries, undefined, "words alone carry nothing");
+  assert.equal(queuedCarryLine(words.carries), null);
+  assert.deepEqual(handing.uploads, ["up-1"], "a message on its way keeps its pictures and files");
+  assert.deepEqual(handingSend("h2", { message: "hi" }), { commandId: "h2", text: "hi" });
 });
 
 test("each entry says where it waits, and a refused one says why", () => {

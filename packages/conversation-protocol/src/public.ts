@@ -19,5 +19,7 @@ export * from './presentation.js'
 export * from './sessions.js'
 // What a message carries beside its words: mentions and files attached by path.
 export * from './messageParts.js'
+// One message a person sends a chat, every way it travels.
+export * from './send.js'
 // How a client decodes what a desktop sends, forward-compatibly, and joins what it splits.
 export * from './decode.js'

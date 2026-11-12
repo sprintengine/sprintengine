@@ -26,14 +26,13 @@ import { deriveEditHunks } from '../../../../../shared/conversation/editHunks'
 import { asRecord } from '../../../../../shared/records'
 import { useConversationTransport } from './conversationTransport'
 import { OpenPlanButton, usePlanOpener } from './planCard'
-import type { ConversationQuestion } from '../../../../../shared/conversation-runtime'
+import type { ConversationApprovalDecision, ConversationQuestion } from '../../../../../shared/conversation-runtime'
 import type { CliPermissionPreset } from '../../../../../shared/cli-permission-preset'
 import {
   approvalFilePath,
   approvalRememberLabels,
   approvalRuleCandidate,
   isPathWithinApprovalRoot,
-  type ConversationApprovalDecision,
 } from '../../../../../shared/conversation/approvalRules'
 import { useClientToolOrigin } from '../../../studio/clientTools'
 

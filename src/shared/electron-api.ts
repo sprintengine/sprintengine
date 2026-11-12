@@ -183,6 +183,7 @@ import type {
   MeshConversationCommandResult,
   MeshConversationFrame,
   MeshConversationKey,
+  MeshConversationSendInput,
   MeshUsageLimitResumeAction,
   MeshConversationImageResult,
   MeshConversationListResult,
@@ -200,6 +201,7 @@ import type {
 // consumed by the T11 settings UI. Re-exported through the single electron-api
 // surface like the rest of the tracker seam.
 import type {
+  ConversationApprovalDecision,
   ConversationContextBreakdownResult,
   ConversationSideQuestionExchange,
   ConversationSideQuestionResult,
@@ -1006,21 +1008,7 @@ export type ElectronApi = {
    * that turn ends. Needs `conversation-steer-sends` there; a turn that cannot
    * take it has the machine hold it for the turn's end, answered with a notice.
    */
-  meshConversationSend: (input: {
-    key: MeshConversationKey
-    message: string
-    attachments?: ConversationImageAttachment[]
-    queue?: boolean
-    /** That machine's skill ids the chat runs with this message (`conversation-send-skills`). */
-    skills?: string[]
-    steer?: boolean
-    /** Files and folders of the chat's folder there, by their paths in it (`conversation-send-mentions`). */
-    mentions?: import('./conversation/mentions').ConversationMentionRef[]
-    /** Files on this computer; main puts each in that machine's store first (`conversation-message-files`). */
-    files?: import('./conversation/attachedFiles').ConversationAttachedFile[]
-    /** The mode the turn runs in; anything but the default needs `conversation-send-mode` there. */
-    mode?: 'default' | 'plan' | 'ask'
-  }) => Promise<MeshConversationCommandResult>
+  meshConversationSend: (input: MeshConversationSendInput) => Promise<MeshConversationCommandResult>
   // Take back a message the machine holds for the turn's end, by its id there.
   meshConversationCancelQueued: (input: {
     key: MeshConversationKey
@@ -1109,7 +1097,7 @@ export type ElectronApi = {
   meshConversationResolveApproval: (input: {
     key: MeshConversationKey
     requestId: string
-    decision: 'once' | 'conversation' | 'always' | 'deny'
+    decision: ConversationApprovalDecision
   }) => Promise<MeshConversationCommandResult>
   meshConversationAnswerQuestion: (input: {
     key: MeshConversationKey

@@ -452,7 +452,10 @@ export type TailnetMeshService = {
     message: unknown
     attachments?: unknown
     queue?: unknown
-    /** Ids of that machine's skills the chat runs with this message (`conversation-send-skills`). */
+    /**
+     * Skills the chat runs with this message (`conversation-send-skills`), as
+     * the request names them: that machine resolves each by its id.
+     */
     skills?: unknown
     steer?: unknown
     /**
@@ -468,6 +471,12 @@ export type TailnetMeshService = {
     files?: unknown
     /** The mode the turn runs in, `plan` or `ask`; absent, or `default`, the default one. */
     mode?: unknown
+    /**
+     * When the person wrote it, and whether they confirmed one written long
+     * ago: that machine refuses an unconfirmed old one as `stale`.
+     */
+    composedAt?: unknown
+    confirmedStale?: unknown
   }): Promise<MeshConversationCommandResult>
   /**
    * The files and folders in a followed chat's folder on its machine that
@@ -3336,8 +3345,8 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     conversationCommand,
 
     async conversationSend(input): Promise<MeshConversationCommandResult> {
-      if (input.queue !== undefined && input.queue !== true)
-        return { ok: false, code: 'invalid_arguments', message: '"queue" is true or left out.' }
+      if (input.queue !== undefined && typeof input.queue !== 'boolean')
+        return { ok: false, code: 'invalid_arguments', message: '"queue" is a boolean.' }
       // Whether the machine holds what a queued message carries beside its
       // words; one that does not refuses the frame, so it is said here instead.
       const queuedCarry = (): MeshConversationCommandResult | null => {
@@ -3353,8 +3362,21 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
               message: `${connection.machineName} holds a queued message's words only. Update SprintEngine Studio there, or send it once the turn ends.`,
             }
       }
-      const skills = parseSkillIds(input.skills)
+      const skills = parseSkillRefIds(input.skills)
       if (!skills.ok) return { ok: false, code: 'invalid_arguments', message: skills.message }
+      if (
+        input.composedAt !== undefined &&
+        !(typeof input.composedAt === 'number' && Number.isSafeInteger(input.composedAt) && input.composedAt >= 0)
+      )
+        return { ok: false, code: 'invalid_arguments', message: '"composedAt" is when the message was written, in epoch ms.' }
+      if (input.confirmedStale !== undefined && typeof input.confirmedStale !== 'boolean')
+        return { ok: false, code: 'invalid_arguments', message: '"confirmedStale" is a boolean.' }
+      // When it was written rides as the lane carries it; a machine from
+      // before it sends the message as it always did.
+      const written = {
+        ...(typeof input.composedAt === 'number' ? { composedAt: input.composedAt } : {}),
+        ...(input.confirmedStale === true ? { confirmedStale: true as const } : {}),
+      }
       // What the composer named of the chat's folder over there, and the
       // files it attached here. Refused, never dropped, by a machine that
       // cannot take them: an older one skips the member, and the message
@@ -3394,11 +3416,11 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         const refused = queuedCarry()
         if (refused) return refused
       }
-      if (input.steer !== undefined && input.steer !== true)
-        return { ok: false, code: 'invalid_arguments', message: '"steer" is true or left out.' }
+      if (input.steer !== undefined && typeof input.steer !== 'boolean')
+        return { ok: false, code: 'invalid_arguments', message: '"steer" is a boolean.' }
       const steer = input.steer === true
       if (steer) {
-        if (input.queue !== undefined)
+        if (input.queue === true)
           return { ok: false, code: 'invalid_arguments', message: 'A message is steered or queued, not both.' }
         const key = meshConversationKeyOf(input.key)
         const connection = key ? connectionFor(key.connectionId) : null
@@ -3417,7 +3439,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         return { ok: false, code: 'invalid_arguments', message: '"mode" is default, plan or ask.' }
       const mode = input.mode === 'plan' || input.mode === 'ask' ? input.mode : null
       if (mode) {
-        if (input.queue !== undefined)
+        if (input.queue === true)
           return {
             ok: false,
             code: 'invalid_arguments',
@@ -3459,6 +3481,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
             ...(steer ? { steer: true } : {}),
             ...(mode ? { mode } : {}),
             ...(input.queue === true ? { queue: true } : {}),
+            ...written,
           },
         })
       // A queued message is held over there for the turn's end. Its pictures
@@ -3722,6 +3745,21 @@ function parseSkillIds(value: unknown): { ok: true; ids: string[] } | { ok: fals
   )
     return { ok: false, message: `Skills are a list of at most ${MAX_SKILLS} skill ids.` }
   return { ok: true, ids: [...new Set(value as string[])] }
+}
+
+/**
+ * A send's skills as the request names them (`ConversationSkillRef`), as the
+ * lane carries them: by id, which that machine resolves against its own
+ * folder. A `sourcePath` is a path on this machine, so it stays here.
+ */
+function parseSkillRefIds(value: unknown): { ok: true; ids: string[] } | { ok: false; message: string } {
+  if (value === undefined) return { ok: true, ids: [] }
+  if (
+    !Array.isArray(value) ||
+    !value.every((skill) => skill !== null && typeof skill === 'object' && !Array.isArray(skill))
+  )
+    return { ok: false, message: `Skills are a list of at most ${MAX_SKILLS} skills, each by its id.` }
+  return parseSkillIds(value.map((skill: Record<string, unknown>) => skill.id))
 }
 
 /** A machine that keeps no canvas tools running: a server with no desktop open offers none. */

@@ -9,6 +9,7 @@ import {
 import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   isConversationWirePermissionPreset,
+  isConversationApprovalDecision,
   parseConversationMentions,
   type ConversationApprovalRuleRevokeResult,
   type ConversationApprovalRulesResult,
@@ -28,7 +29,9 @@ import {
   type ConversationThreadsResult,
   type ConversationForkResult,
   type ConversationHandoffResult,
-  type ConversationMentionRef,
+  type ConversationApprovalDecision,
+  type ConversationSendRequest,
+  type ConversationSendUpload,
   type ConversationPlanDocumentResult,
   type ConversationRevertResult,
   type ConversationRewindResult,
@@ -112,26 +115,8 @@ export const STUDIO_UPLOAD_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp
 /** A CLI's runtime override: the command to run it with, the machine it runs on, the models it offers. */
 export type StudioCliRuntimeOverride = { command?: string; hostId?: string; models?: string[] }
 
-/** A file or folder an @-mention names: the path as the composer resolved it, and what it is. */
-export type StudioMention = ConversationMentionRef
-
-/**
- * A file a send attaches by path: an absolute path on the Studio's own
- * machine. The agent is told where it is after the words, and the
- * `user_message` the send becomes keeps it in its `files` beside the text.
- * Sent only to a Studio that advertises `session-files`; one that does not
- * would drop it without a word.
- */
-export type StudioAttachedFile = { path: string }
-
 /** The most files one send may attach. */
 export const STUDIO_MAX_FILES_PER_SEND = 50
-
-/** A skill a send carries: its id, and the file it was read from when it is not the CLI's own. */
-export type StudioSkillRef = { id: string; sourcePath?: string }
-
-/** A picture a send carries, by the upload that holds its bytes. */
-export type StudioSendAttachment = { id: string; uploadId: string; name?: string }
 
 export type StudioSessionStartParams = {
   commandId: string
@@ -146,29 +131,21 @@ export type StudioSessionStartParams = {
   allowedTools?: string[]
 }
 
-export type StudioSessionSendParams = {
-  commandId: string
-  sessionId: string
-  message: string
-  /** The client's id for the optimistic bubble; echoed on the `user_message` it becomes. */
-  localTurnId?: string
-  mentions?: StudioMention[]
-  /** Files attached by path, where the Studio advertises `session-files`. */
-  files?: StudioAttachedFile[]
-  skills?: StudioSkillRef[]
-  reasoningEffort?: string
-  mode?: 'default' | 'plan' | 'ask'
-  /** Hand the message to the turn that is running, where the provider takes one. */
-  steer?: boolean
-  attachments?: StudioSendAttachment[]
-}
+/**
+ * A send to a chat this Studio runs: the conversation contract's request, its
+ * pictures by the uploads that hold them, addressed to the session. Its
+ * `files` go only to a Studio that advertises `session-files`; one that does
+ * not would drop them without a word. Never `queue`: Studio runs the chat,
+ * and a message queued behind its turn waits in the view that wrote it.
+ */
+export type StudioSessionSendParams = { commandId: string; sessionId: string } & Omit<ConversationSendRequest, 'queue'>
 
 export type StudioSessionRespondParams = {
   commandId: string
   sessionId: string
   requestId: string
   approved: boolean
-  decision?: 'once' | 'conversation' | 'always' | 'deny'
+  decision?: ConversationApprovalDecision
   answers?: Record<string, string>
   /** The kind of request the client believes it answers; an answer to another kind is refused. */
   requestKind?: string
@@ -477,9 +454,9 @@ function sessionCommand(value: Record<string, unknown>): StudioParsed<SessionCom
   return studioParams({ commandId: value.commandId, sessionId: value.sessionId })
 }
 
-function attachments(value: unknown): StudioSendAttachment[] | null {
+function attachments(value: unknown): ConversationSendUpload[] | null {
   if (!Array.isArray(value) || value.length > STUDIO_MAX_UPLOADS_PER_SEND) return null
-  const out: StudioSendAttachment[] = []
+  const out: ConversationSendUpload[] = []
   for (const entry of value) {
     if (
       !record(entry) ||
@@ -630,6 +607,10 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       if (value.mode !== undefined && value.mode !== 'default' && value.mode !== 'plan' && value.mode !== 'ask')
         return refuse('"mode" is default, plan or ask.')
       if (!optional(value.steer, boolean)) return refuse('"steer" is a boolean.')
+      if (value.queue !== undefined)
+        return refuse('"queue" is not taken here: a message queued behind the turn waits in the view that wrote it.')
+      if (!optional(value.composedAt, integer)) return refuse('"composedAt" is when the message was written, in epoch ms.')
+      if (!optional(value.confirmedStale, boolean)) return refuse('"confirmedStale" is a boolean.')
       const sent = value.attachments === undefined ? undefined : attachments(value.attachments)
       if (sent === null)
         return refuse(`"attachments" is a list of at most ${STUDIO_MAX_UPLOADS_PER_SEND} { id, uploadId, name? }.`)
@@ -640,11 +621,11 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
         ...(mentions === undefined ? {} : { mentions }),
         ...(value.files === undefined
           ? {}
-          : { files: (value.files as StudioAttachedFile[]).map((file) => ({ path: file.path })) }),
+          : { files: (value.files as { path: string }[]).map((file) => ({ path: file.path })) }),
         ...(value.skills === undefined
           ? {}
           : {
-              skills: (value.skills as StudioSkillRef[]).map((skill) => ({
+              skills: (value.skills as { id: string; sourcePath?: string }[]).map((skill) => ({
                 id: skill.id,
                 ...(skill.sourcePath === undefined ? {} : { sourcePath: skill.sourcePath }),
               })),
@@ -652,6 +633,8 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
         ...(value.reasoningEffort === undefined ? {} : { reasoningEffort: value.reasoningEffort as string }),
         ...(value.mode === undefined ? {} : { mode: value.mode }),
         ...(value.steer === true ? { steer: true } : {}),
+        ...(value.composedAt === undefined ? {} : { composedAt: value.composedAt as number }),
+        ...(value.confirmedStale === true ? { confirmedStale: true } : {}),
         ...(sent?.length ? { attachments: sent } : {}),
       })
     },
@@ -665,13 +648,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       if (!id(value.requestId)) return refuse('"requestId" names the request.')
       if (!boolean(value.approved)) return refuse('"approved" is a boolean.')
       const decision = value.decision
-      if (
-        decision !== undefined &&
-        decision !== 'once' &&
-        decision !== 'conversation' &&
-        decision !== 'always' &&
-        decision !== 'deny'
-      )
+      if (decision !== undefined && !isConversationApprovalDecision(decision))
         return refuse('"decision" is once, conversation, always or deny.')
       if (
         value.answers !== undefined &&

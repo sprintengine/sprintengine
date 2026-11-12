@@ -86,6 +86,7 @@ import {
   type MeshConversationCommandResult,
   type MeshConversationFrame,
   type MeshConversationKey,
+  type MeshConversationSendInput,
   type MeshUsageLimitResumeAction,
   type MeshConversationImageResult,
   type MeshConversationListResult,
@@ -96,9 +97,8 @@ import {
 } from '../../shared/tailnet-mesh'
 import type { PullRequestCheckoutPin } from '../../shared/git/pull-request-create'
 import type { ConversationChangesSelection } from '../../../packages/conversation-protocol/src/checkoutChanges'
-import type { ConversationMentionRef } from '../../shared/conversation/mentions'
-import type { ConversationAttachedFile } from '../../shared/conversation/attachedFiles'
 import type {
+  ConversationApprovalDecision,
   ConversationContextBreakdownResult,
   ConversationImageAttachment,
   ConversationPageResult,
@@ -274,28 +274,8 @@ export const meshApi = {
     turnLimit?: number
   }): Promise<ConversationPageResult> =>
     ipcRenderer.invoke(MESH_CONVERSATION_EARLIER_CHANNEL, input) as Promise<ConversationPageResult>,
-  meshConversationSend: (input: {
-    key: MeshConversationKey
-    message: string
-    attachments?: ConversationImageAttachment[]
-    queue?: boolean
-    skills?: string[]
-    steer?: boolean
-    mentions?: ConversationMentionRef[]
-    files?: ConversationAttachedFile[]
-    mode?: 'default' | 'plan' | 'ask'
-  }): Promise<MeshConversationCommandResult> =>
-    ipcRenderer.invoke(MESH_CONVERSATION_SEND_CHANNEL, {
-      key: input.key,
-      message: input.message,
-      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
-      ...(input.queue ? { queue: true } : {}),
-      ...(input.skills?.length ? { skills: input.skills } : {}),
-      ...(input.steer ? { steer: true } : {}),
-      ...(input.mentions?.length ? { mentions: input.mentions } : {}),
-      ...(input.files?.length ? { files: input.files } : {}),
-      ...(input.mode && input.mode !== 'default' ? { mode: input.mode } : {}),
-    }) as Promise<MeshConversationCommandResult>,
+  meshConversationSend: (input: MeshConversationSendInput): Promise<MeshConversationCommandResult> =>
+    ipcRenderer.invoke(MESH_CONVERSATION_SEND_CHANNEL, input) as Promise<MeshConversationCommandResult>,
   meshConversationCancelQueued: (input: { key: MeshConversationKey; queuedId: string }) =>
     command(input.key, { kind: 'cancelQueued', queuedId: input.queuedId }),
   meshConversationInterrupt: (input: { key: MeshConversationKey }) => command(input.key, { kind: 'interrupt' }),
@@ -359,7 +339,7 @@ export const meshApi = {
   meshConversationResolveApproval: (input: {
     key: MeshConversationKey
     requestId: string
-    decision: 'once' | 'conversation' | 'always' | 'deny'
+    decision: ConversationApprovalDecision
   }) => command(input.key, { kind: 'resolveApproval', requestId: input.requestId, decision: input.decision }),
   meshConversationAnswerQuestion: (input: {
     key: MeshConversationKey

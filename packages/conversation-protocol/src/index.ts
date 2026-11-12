@@ -1,3 +1,6 @@
+import { CONVERSATION_REQUEST_DECISIONS, type ConversationRequestDecision } from './commands.js'
+import type { ConversationLaneSend } from './send.js'
+
 export * from './tool-types.js'
 export * from './presentation.js'
 export * from './toolKind.js'
@@ -162,9 +165,11 @@ export type ConversationWireErrorCode =
   // recorded; the same command confirmed (`confirmedStale`) goes.
   | 'stale'
 export type ConversationWireCommand =
-  | { kind: 'send'; message: string; uploadIds?: string[] }
+  // The first version's send: words and uploads. Every other part of a
+  // request rides on it behind its capability (`ConversationCommand`).
+  | ({ kind: 'send' } & Pick<ConversationLaneSend, 'message' | 'uploadIds'>)
   | { kind: 'interrupt' }
-  | { kind: 'resolveApproval'; requestId: string; decision: 'once' | 'conversation' | 'deny' }
+  | { kind: 'resolveApproval'; requestId: string; decision: ConversationRequestDecision }
   | { kind: 'answerQuestion'; requestId: string; answers: Record<string, string> }
   | { kind: 'setPermissionPreset'; preset: ConversationWirePermissionPreset }
   // Needs `conversation-models`. `modelId` is one of the chat's `models.options`
@@ -401,14 +406,15 @@ export function parseConversationClientFrame(value: unknown): ConversationClient
         case 'interrupt':
           return { type: 'command', commandId: value.commandId, command: { kind: 'interrupt' } }
         case 'resolveApproval':
-          return id(command.requestId) && ['once', 'conversation', 'deny'].includes(String(command.decision))
+          return id(command.requestId) &&
+            CONVERSATION_REQUEST_DECISIONS.includes(command.decision as ConversationRequestDecision)
             ? {
                 type: 'command',
                 commandId: value.commandId,
                 command: {
                   kind: 'resolveApproval',
                   requestId: command.requestId,
-                  decision: command.decision as 'once' | 'conversation' | 'deny',
+                  decision: command.decision as ConversationRequestDecision,
                 },
               }
             : null

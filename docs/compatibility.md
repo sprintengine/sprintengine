@@ -1071,7 +1071,11 @@ without it reads `session.send` with a validator that keeps only the members
 it knows, so it would drop the files without a word and send the words as if
 nothing were attached — which is why a client sends `files` only to a Studio
 that advertises it, and the desktop's own window refuses such a send in words
-otherwise. `session-controls`, `session-terminal-handoff`,
+otherwise. `session.send` also takes `composedAt` and `confirmedStale`, the
+conversation contract's request as every transport carries it, with no
+capability of their own: a Studio from before reads the send without them and
+sends it as it always did, as a desktop does that never asks about a message
+written long ago; and it refuses `queue`, which no client sends it. `session-controls`, `session-terminal-handoff`,
 `conversation-history`, `approval-rules` and `provider-settings` (2026-11-12)
 add, owners only for now, the rest of what the window's conversation IPC did
 (that IPC is gone; the window reaches its chats only this way):

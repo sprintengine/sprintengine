@@ -298,6 +298,8 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
       mentions: record.mentions,
       files: record.files,
       mode: record.mode,
+      composedAt: record.composedAt,
+      confirmedStale: record.confirmedStale,
     })
   })
   ipcMain.handle(MESH_CONVERSATION_TOOL_DETAIL_CHANNEL, (_event, input: unknown) => {

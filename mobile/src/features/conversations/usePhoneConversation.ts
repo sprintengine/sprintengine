@@ -64,6 +64,7 @@ import {
 import { createQueuedSendCourier } from "./queuedSendCourier";
 import {
   cancelRefusal,
+  handingSend,
   heldByDesktop,
   holdsOnDesktop,
   queuedSendStale,
@@ -738,7 +739,7 @@ export function usePhoneConversation(
       setHanding(
         pendingRef.current
           .filter((item) => handed(item) && !staleAtOpen.has(item.commandId))
-          .map((item) => ({ commandId: item.commandId, text: item.command.message })),
+          .map((item) => handingSend(item.commandId, item.command)),
       );
       current = api.open(
         cacheKey,
@@ -793,7 +794,7 @@ export function usePhoneConversation(
             setHanding((previous) =>
               previous.some((item) => item.commandId === commandId)
                 ? previous
-                : [...previous, { commandId, text: command.message }],
+                : [...previous, handingSend(commandId, command)],
             );
             void serialize(async () => {
               await mutatePending({
@@ -1376,7 +1377,7 @@ export function usePhoneConversation(
           },
         ]);
         if (handOver)
-          setHanding((previous) => [...previous, { commandId, text: command.message }]);
+          setHanding((previous) => [...previous, handingSend(commandId, command)]);
         else if (!steer) {
           // Counted at once, not on the next draw: a second message queued
           // straight after this one must see it and wait behind it.
@@ -1560,7 +1561,7 @@ export function usePhoneConversation(
           ),
         );
         if (command.queue === true && holdsQueued)
-          setHanding((previous) => [...previous, { commandId, text: command.message }]);
+          setHanding((previous) => [...previous, handingSend(commandId, command)]);
         else {
           phoneQueuedRef.current++;
           setQueued((previous) => [

@@ -2,6 +2,7 @@ import { mkdir, readFile, realpath, rename, writeFile } from 'fs/promises'
 import { dirname, join, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import { STUDIO_MCP_SERVER_ID } from '../shared/product-identity'
+import type { ConversationApprovalDecision } from '../shared/conversation-runtime'
 import {
   approvalFilePath,
   approvalRuleCandidate,
@@ -61,7 +62,7 @@ export class ConversationApprovalRuleStore {
     workspaceRoot: string,
     sessionId: string,
     request: ApprovalRuleRequest,
-    scope: 'conversation' | 'always',
+    scope: Extract<ConversationApprovalDecision, 'conversation' | 'always'>,
   ): Promise<ConversationApprovalRule> {
     await this.load()
     const candidate = approvalRuleCandidate(request, workspaceRoot)
