@@ -67,11 +67,12 @@ type Ticket = { hash: string; expiresAtMs: number; subject: WebTicketSubject }
 
 /**
  * The scopes a tailnet browser holds: everything but offering tools (P5c
- * §7.1, R79) and updating this machine's Studio, which drains and restarts
- * it: a browser that reaches it over the tailnet is told how, not given it.
+ * §7.1, R79), updating this machine's Studio, which drains and restarts it,
+ * and changing its settings (a provider's key): a browser that reaches it over
+ * the tailnet is told how, not given it.
  */
 const TAILNET_SCOPES: StudioScope[] = STUDIO_SCOPES.filter(
-  (scope) => scope !== 'tools:offer' && scope !== 'environment:maintain',
+  (scope) => scope !== 'tools:offer' && scope !== 'environment:maintain' && scope !== 'settings:write',
 )
 
 export type WebSessionStore = {

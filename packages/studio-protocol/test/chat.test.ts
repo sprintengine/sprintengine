@@ -17,15 +17,19 @@ import { STUDIO_METHODS, parseStudioMethodParams, parseStudioTopicParams } from 
 const key = { workspaceId: 'ws-1', agentId: 'agent-1' }
 const folderKey = { ...key, workspaceRoot: '/Users/dev/project/.worktrees/run-1' }
 
-test('the chat surface is an owner’s, method by method, and each names a scope and a chat capability', () => {
+test('the chat surface reaches a client by its scopes, two methods excepted, and each names a chat capability', () => {
+  const owners = Object.entries(STUDIO_CHAT_METHODS)
+    .filter(([, spec]) => spec.owner !== undefined)
+    .map(([method]) => method)
+  // A terminal on Studio's screen, and the line a terminal there runs.
+  assert.deepEqual(owners.sort(), ['providers.signIn', 'session.terminalHandoff'])
   for (const [method, spec] of Object.entries(STUDIO_CHAT_METHODS)) {
-    assert.equal(spec.owner, true, method)
     assert.ok(spec.scope, method)
     assert.ok((STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(spec.capability!), method)
     assert.equal(STUDIO_METHODS[method as StudioChatMethod], spec)
   }
   for (const [topic, spec] of Object.entries(STUDIO_CHAT_TOPICS)) {
-    assert.deepEqual([topic, spec.owner, spec.push], [topic, true, true])
+    assert.deepEqual([topic, spec.owner, spec.push], [topic, undefined, true])
   }
   // Every chat capability is one this package knows.
   for (const capability of STUDIO_CHAT_CAPABILITIES) assert.ok(STUDIO_CAPABILITIES.includes(capability))

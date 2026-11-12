@@ -2,6 +2,7 @@ import {
   STUDIO_METHODS,
   parseStudioMethodParams,
   authorizeStudioMethod,
+  studioGrantAllows,
   studioRefusedGrantName,
   type ConversationCommand,
   type StudioChatMethod,
@@ -72,8 +73,12 @@ import type {
 //   a module's are (`module:<id>:<commandId>`), so one client can neither
 //   collide with nor be answered from another's receipts.
 //
-// The chat surface (`chat.ts` in the protocol) is served only to owners, and
-// only where main hands the router a chat backend. Its session commands reach
+// The chat surface (`chat.ts` in the protocol) is served where main hands the
+// router a chat backend, to any client its scopes reach. What a client that
+// is not an owner names on this disk is held here, by its params: never a
+// conversation's or a workspace's folder, never a CLI's own command, and a
+// file only inside the folders Studio knows (a search's root, a stat, a
+// picture, a file attached to a send). Its session commands reach
 // the runtime's durable receipts by the same namespaced ids. Its other
 // mutations (starting a session, a revert, a rewind, a fork) address a
 // conversation rather than a session, which the runtime keeps no receipts
@@ -131,6 +136,7 @@ const MAX_KEPT_ANSWERS = 256
 
 const OWNER_ONLY = 'This is served to Studio’s own connections only.'
 const FOLDER_OWNER_ONLY = 'Only Studio’s own connections may name a conversation by its folder.'
+const COMMAND_OWNER_ONLY = 'Only Studio’s own connections may name the program a CLI runs.'
 const NO_CONTEXT: StudioRequestContext = { connectionId: '', slot: 0, ownWindow: false }
 
 /** The codes a failure below the router is told in: each has one stable sentence. */
@@ -706,6 +712,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       const { grant, voice, fingerprint } = asking
       const { commandId, attachments, ...input } = params
+      // A file attached or mentioned by path is read by the agent: a client
+      // that is not an owner names only what is inside the folders Studio
+      // knows (a mention relative to the chat's folder stays inside it).
+      for (const path of [
+        ...(input.files ?? []).map((file) => file.path),
+        ...(input.mentions ?? []).map((mention) => mention.path),
+      ])
+        if (!(await pathAllowed(chat, asking, path))) return refuse('not_found', UNKNOWN_FOLDER)
       const id = runtimeId(grant, commandId)
       let pictures: ConversationImageAttachment[] | undefined
       // A repeat of a send the runtime holds a receipt for is answered from
@@ -774,9 +788,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       return { ok: true, result: voice.redact(sent) }
     },
     'uploads.begin': (input, asking) => {
-      // A file's bytes are only ever spent by `files.write`, which is an owner's.
-      if (input.purpose === 'file' && !asking.grant.owner)
-        return refuse('owner_required', 'Only Studio itself may stage a file’s bytes.')
+      // A file's bytes are only ever spent by `files.write`: staged only by a
+      // client that may write one.
+      if (input.purpose === 'file' && !studioGrantAllows(asking.grant, 'files.write'))
+        return refuse('scope_required', 'This app’s grant does not include "files:write".')
       const begun = uploads.begin(holder(asking), input)
       return begun.ok
         ? { ok: true, result: { uploadId: begun.uploadId, chunkBytes: begun.chunkBytes } }
@@ -840,16 +855,26 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       return { ok: true, result: voice.redact(await chat.attachment(ref)) }
     },
-    'conversation.planDocument': async ({ key: wire, ...input }, { grant, voice }) => {
+    'conversation.planDocument': async ({ key: wire, planFilePath, ...input }, { context, grant, voice }) => {
       const chat = chatOr('conversation.planDocument')
       if (isRefusal(chat)) return chat
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input })) }
+      // The agent's own plan file is read to see whether it still holds the
+      // plan: for a client that is not an owner, only inside the folders
+      // Studio knows. Elsewhere, Studio keeps a copy of its own instead.
+      const own =
+        planFilePath !== undefined && (await folderAllowed(chat, { context, grant }, planFilePath))
+          ? { planFilePath }
+          : {}
+      return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input, ...own })) }
     },
-    'conversation.commands': async (input, { voice }) => {
+    'conversation.commands': async (input, { context, grant, voice }) => {
       const chat = chatOr('conversation.commands')
       if (isRefusal(chat)) return chat
+      // Asking for a folder's list may run its CLI there (a probe): a client
+      // that is not an owner names only a folder Studio knows.
+      if (!(await folderAllowed(chat, { context, grant }, input.cwd))) return refuse('not_found', UNKNOWN_FOLDER)
       return { ok: true, result: { catalog: voice.redact(await chat.commands(input)) } }
     },
     'providers.list': async (input, { voice }) => {
@@ -867,10 +892,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       return { ok: true, result: voice.redact(await chat.secretStatus(input)) }
     },
-    'files.search': async (search, { context, voice }) => {
+    'files.search': async (search, { context, grant, voice }) => {
       const chat = chatOr('files.search')
       if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, context, search.rootPath))) return refuse('not_found', UNKNOWN_FOLDER)
+      if (!(await folderAllowed(chat, { context, grant }, search.rootPath))) return refuse('not_found', UNKNOWN_FOLDER)
       return { ok: true, result: voice.redact(await chat.searchFiles(context.slot, search)) }
     },
     'files.cancelSearch': ({ channel }, { context }) => {
@@ -888,17 +913,19 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       }
       const chat = chatOr('files.stat')
       if (isRefusal(chat)) return chat
-      return { ok: true, result: { stat: voice.redact(await chat.stat(path, readsAnyPath(grant, context))) } }
+      if (!(await folderAllowed(chat, { context, grant }, path))) return refuse('not_found', UNKNOWN_FOLDER)
+      return { ok: true, result: { stat: voice.redact(await chat.stat(path, readsAnyPath({ context, grant }))) } }
     },
     'files.readImage': async ({ path }, { context, grant }) => {
       const chat = chatOr('files.readImage')
       if (isRefusal(chat)) return chat
-      return { ok: true, result: { dataUrl: await chat.readImage(path, readsAnyPath(grant, context)) } }
+      if (!(await folderAllowed(chat, { context, grant }, path))) return refuse('not_found', UNKNOWN_FOLDER)
+      return { ok: true, result: { dataUrl: await chat.readImage(path, readsAnyPath({ context, grant })) } }
     },
-    'files.repoRoot': async ({ folderPath, hostId }, { context, voice }) => {
+    'files.repoRoot': async ({ folderPath, hostId }, { context, grant, voice }) => {
       const chat = chatOr('files.repoRoot')
       if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, context, folderPath))) return refuse('not_found', UNKNOWN_FOLDER)
+      if (!(await folderAllowed(chat, { context, grant }, folderPath))) return refuse('not_found', UNKNOWN_FOLDER)
       return { ok: true, result: { repoRoot: voice.redact(await chat.repoRoot(folderPath, hostId)) } }
     },
     'workspaces.list': (_params, { voice }) => {
@@ -1216,6 +1243,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         const known = id === undefined ? undefined : fingerprints.get(id)
         if (!parsed.ok) answer = refuse(parsed.code, parsed.message)
         else if (!grant.owner && namesFolder(parsed.params)) answer = refuse('owner_required', FOLDER_OWNER_ONLY)
+        else if (!grant.owner && namesCliCommand(parsed.params)) answer = refuse('owner_required', COMMAND_OWNER_ONLY)
         else if (known !== undefined && known !== fingerprint)
           answer = refuse('command_id_conflict', STABLE_MESSAGES.command_id_conflict)
         else {
@@ -1246,15 +1274,38 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   }
 }
 
-/** Whether a connection reads a file anywhere on this disk: an owner's, unless it is held to the folders Studio knows. */
-function readsAnyPath(grant: { owner: boolean }, context: StudioRequestContext): { anyPath: boolean } {
-  return { anyPath: grant.owner && !context.knownFoldersOnly }
+type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
+
+/** Whether a connection names any path on this disk: an owner's, unless it is held to the folders Studio knows. */
+function namesAnyPath(asking: PathAsker): boolean {
+  return asking.grant.owner && !asking.context.knownFoldersOnly
 }
 
-/** Whether a connection may name this folder: any, unless it is held to the folders Studio knows. */
-async function folderAllowed(chat: StudioChatBackend, context: StudioRequestContext, path: string): Promise<boolean> {
-  if (!context.knownFoldersOnly) return true
+/** As `namesAnyPath`, for the chat backend's file reads, which confine every other connection to its roots. */
+function readsAnyPath(asking: PathAsker): { anyPath: boolean } {
+  return { anyPath: namesAnyPath(asking) }
+}
+
+/** Whether a connection may name this path: any, if `namesAnyPath`; otherwise only inside the folders Studio knows. */
+async function folderAllowed(chat: StudioChatBackend, asking: PathAsker, path: string): Promise<boolean> {
+  if (namesAnyPath(asking)) return true
   return chat.isKnownFolder ? chat.isKnownFolder(path).catch(() => false) : false
+}
+
+/** As `folderAllowed`, for a path a send names: a relative one is the chat's own, unless it climbs out. */
+async function pathAllowed(chat: StudioChatBackend, asking: PathAsker, path: string): Promise<boolean> {
+  const absolute = path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:[\\/]/u.test(path)
+  if (absolute) return folderAllowed(chat, asking, path)
+  return namesAnyPath(asking) || !path.split(/[\\/]/u).includes('..')
+}
+
+/** Whether parsed params name a CLI's own program (`cliRuntimes[cli].command`), which only an owner may. */
+function namesCliCommand(params: unknown): boolean {
+  const runtimes = (params as { cliRuntimes?: unknown } | null)?.cliRuntimes
+  if (runtimes === null || typeof runtimes !== 'object') return false
+  return Object.values(runtimes as Record<string, unknown>).some(
+    (override) => override !== null && typeof override === 'object' && 'command' in override,
+  )
 }
 
 /** Whether parsed params name a conversation or a workspace by its folder, which only an owner may. */

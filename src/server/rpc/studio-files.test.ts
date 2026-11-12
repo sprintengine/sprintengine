@@ -186,7 +186,7 @@ test('a watch gathers a burst of changes into few pushes, by name', async () => 
   assert.ok(pushes.length < written.length / 2, `${pushes.length} pushes for ${written.length} writes`)
 })
 
-test('the files methods are an owner’s, and a write is answered once per command id', async () => {
+test('the files methods reach an app by its scopes, and a write is answered once per command id', async () => {
   const { files, boards } = fixture()
   const auth = createFakeAuthenticator()
   const started = await startTestServer({ files, auth })
@@ -214,14 +214,21 @@ test('the files methods are an owner’s, and a write is answered once per comma
   owner.send({ t: 'req', id: 'r3', method: 'files.stat', params: { root: store, path: 'b.excalidraw' } })
   const stat = await owner.next((frame) => frame.t === 'res' && frame.id === 'r3')
   assert.equal(stat.t === 'res' && stat.ok && (stat.result as { stat: { hash: string } }).stat.hash, hash('{"a":1}'))
-  // A paired app is refused whatever it holds.
+  // A paired app reads a board by files:read, and is refused it without.
   const app = await connectLineClient(started.path)
   cleanups.push(() => app.close())
   app.send(hello({ token: pairFakeClient(auth, 'app', ['files:read', 'files:write']) }))
   await app.next((frame) => frame.t === 'welcome')
   app.send({ t: 'req', id: 'a1', method: 'files.read', params: { root: store, path: 'b.excalidraw' } })
-  const refused = await app.next((frame) => frame.t === 'res' && frame.id === 'a1')
-  assert.equal(refused.t === 'res' && !refused.ok && refused.error.code, 'owner_required')
+  const read = await app.next((frame) => frame.t === 'res' && frame.id === 'a1')
+  assert.equal(read.t === 'res' && read.ok, true)
+  const reader = await connectLineClient(started.path)
+  cleanups.push(() => reader.close())
+  reader.send(hello({ token: pairFakeClient(auth, 'reader', ['conversation:read']) }))
+  await reader.next((frame) => frame.t === 'welcome')
+  reader.send({ t: 'req', id: 'a2', method: 'files.read', params: { root: store, path: 'b.excalidraw' } })
+  const refused = await reader.next((frame) => frame.t === 'res' && frame.id === 'a2')
+  assert.equal(refused.t === 'res' && !refused.ok && refused.error.code, 'scope_required')
   // The watch stream over the socket.
   owner.send({ t: 'sub', id: 's1', topic: 'files.watch', params: { root: store, path: '' } })
   let heard = false

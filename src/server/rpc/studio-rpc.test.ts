@@ -335,9 +335,9 @@ test('each method and stream is held to its scope, and a refused mutation is aud
   assert.deepEqual(failed.t === 'subFailed' && [failed.code, failed.retryable], ['scope_required', false])
   const unknown = await request(creator, 'u1', 'conversation.compact', { key })
   assert.equal(!unknown.ok && unknown.error.code, 'unknown_method')
-  // The chat surface is Studio's own, whatever a pairing holds.
-  const owned = await request(creator, 'o1', 'conversation.revert', { key, commandId: 'r1', turnSeq: 1 })
-  assert.equal(!owned.ok && owned.error.code, 'owner_required')
+  // A checkpoint's revert drives the chat: conversation:operate, which a creator lacks.
+  const reverted = await request(creator, 'o1', 'conversation.revert', { key, commandId: 'r1', turnSeq: 1 })
+  assert.equal(!reverted.ok && reverted.error.code, 'scope_required')
 })
 
 test('the ceiling lowers presets, pins a missing one, guards allowed tools and looser chats', async () => {

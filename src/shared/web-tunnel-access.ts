@@ -45,7 +45,10 @@ import {
 // server refuses any other there (`web-tunnel-guard.ts`), so the rule is held
 // on both sides from this one table.
 
-const owner = (...permissions: StudioPermission[]): StudioAccess => ({ permissions, owner: true })
+// A browser tab's tunnel carries the desktop's IPC, which only an owner's tab
+// reaches: what it is in the protocol's terms is said there.
+const TUNNEL_OWNER = "A browser tab reaches this desktop's own channels only under the owner's session."
+const owner = (...permissions: StudioPermission[]): StudioAccess => ({ permissions, owner: TUNNEL_OWNER })
 const desktopOnly = (reason: string): StudioAccess => ({ localOnly: reason })
 
 const READ_CHAT = owner('conversation:read')

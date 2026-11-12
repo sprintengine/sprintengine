@@ -32,11 +32,13 @@ import {
 // it reads its own chats' calls; the second says which checkout the agent is
 // in, which decides which of its pull requests are from the branch it is on.
 //
-// Owners only in this version, behind the `pull-requests` capability,
-// `pullRequests.noteToolCall` behind `pull-request-tool-calls`,
-// `pullRequests.link` (an owner that opened a pull request for a conversation)
-// behind `pull-request-link`, and `pullRequests.unwatch` (an owner stopping an
-// agent's watch on one) behind `pull-request-watch`.
+// Behind the `pull-requests` capability, `pullRequests.noteToolCall` behind
+// `pull-request-tool-calls`, `pullRequests.link` (Studio's window opened a pull
+// request for a conversation) behind `pull-request-link`, and
+// `pullRequests.unwatch` (stopping an agent's watch on one) behind
+// `pull-request-watch`. The reads and `unwatch` reach a client by their
+// scopes; `noteWork`, `noteToolCall` and `link` report what Studio's own agents
+// did, and are an owner's by declaration.
 
 export type StudioPullRequestState = 'open' | 'merged' | 'closed'
 
@@ -248,18 +250,21 @@ function parseTarget(value: Record<string, unknown>): { ok: true; params: Studio
   return studioParams(target)
 }
 
-const owned = {
+const reading = {
   scope: 'workspaces:read',
   mutation: false,
   capability: STUDIO_PULL_REQUESTS_CAPABILITY,
-  owner: true,
 } as const
+// What only Studio's own agents and windows report: which checkout an agent
+// works in, a tool call it made, a pull request it opened for its chat.
+const AGENT_REPORT = "Only Studio's own windows report what their agents did, on the machine Studio runs on."
+const reported = { ...reading, owner: AGENT_REPORT } as const
 
 export const STUDIO_PULL_REQUESTS_METHODS: StudioMethodTable<StudioPullRequestsMethodMap> = {
-  'pullRequests.list': { ...owned, params: parseTarget },
-  'pullRequests.refresh': { ...owned, params: parseTarget },
+  'pullRequests.list': { ...reading, params: parseTarget },
+  'pullRequests.refresh': { ...reading, params: parseTarget },
   'pullRequests.noteWork': {
-    ...owned,
+    ...reported,
     params: (value) => {
       const conversation = parseStudioPullRequestOwner(value.conversation)
       if (!conversation) return refuse('"conversation" is { workspaceId, agentId }.')
@@ -306,7 +311,7 @@ export const STUDIO_PULL_REQUESTS_METHODS: StudioMethodTable<StudioPullRequestsM
   // Its own capability: a client that runs agents asks for it before it
   // forwards a call, and a Studio from before it has none to offer.
   'pullRequests.noteToolCall': {
-    ...owned,
+    ...reported,
     capability: STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
     params: (value) => {
       const conversation = parseStudioPullRequestOwner(value.conversation)
@@ -337,7 +342,7 @@ export const STUDIO_PULL_REQUESTS_METHODS: StudioMethodTable<StudioPullRequestsM
     },
   },
   'pullRequests.link': {
-    ...owned,
+    ...reported,
     capability: STUDIO_PULL_REQUEST_LINK_CAPABILITY,
     params: (value) => {
       const conversation = parseStudioPullRequestOwner(value.conversation)
@@ -354,7 +359,9 @@ export const STUDIO_PULL_REQUESTS_METHODS: StudioMethodTable<StudioPullRequestsM
     },
   },
   'pullRequests.unwatch': {
-    ...owned,
+    // Stopping a watch is acting on the chat's work, not reading it.
+    ...reading,
+    scope: 'conversation:operate',
     capability: STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
     params: (value) => {
       const conversation = parseStudioPullRequestOwner(value.conversation)
@@ -370,7 +377,6 @@ export const STUDIO_PULL_REQUESTS_TOPICS: StudioTopicTable<StudioPullRequestsTop
   'pullRequests.changed': {
     scope: 'workspaces:read',
     capability: STUDIO_PULL_REQUESTS_CAPABILITY,
-    owner: true,
     push: true,
     params: studioNoParams,
   },

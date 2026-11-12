@@ -26,7 +26,8 @@ import { STUDIO_LOCAL_SERVERS_CAPABILITY } from './handshake.js'
 // moved, never the lists themselves, so a client asks again for what it is
 // showing.
 //
-// Owners only in this version, behind the `local-servers` capability. `run`,
+// Reached by scope (the list by `workspaces:read`, the rest by
+// `conversation:operate`), behind the `local-servers` capability. `run`,
 // `stop` and `remove` name a server by its id and the conversation it is
 // linked to; `run` and `stop` are refused as `not_found` when that
 // conversation has no server with that id.
@@ -178,7 +179,6 @@ const read = {
   scope: 'workspaces:read',
   mutation: false,
   capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
-  owner: true,
 } as const
 
 type OneServer = StudioLocalServersMethodMap['localServers.run' | 'localServers.stop' | 'localServers.remove']
@@ -206,7 +206,6 @@ export const STUDIO_LOCAL_SERVERS_TOPICS: StudioTopicTable<StudioLocalServersTop
   'localServers.changed': {
     scope: 'workspaces:read',
     capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
-    owner: true,
     push: true,
     params: studioNoParams,
   },

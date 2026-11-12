@@ -11,14 +11,14 @@ a private data structure, and changing one is not a local edit.**
 
 ## What is versioned
 
-| Wire                                                                                  | Version                                  | Window                                               | Declared in                                     |
-| ------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
-| Tailnet transport — Studio driving another Studio                                     | `TAILNET_TRANSPORT_VERSION` (integer)    | `TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION` .. current | `src/main/automation/tailnet/tailnet-routes.ts` |
+| Wire                                                                                  | Version                                  | Window                                               | Declared in                                      |
+| ------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
+| Tailnet transport — Studio driving another Studio                                     | `TAILNET_TRANSPORT_VERSION` (integer)    | `TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION` .. current | `src/main/automation/tailnet/tailnet-routes.ts`  |
 | Mobile control — the phone reading and driving a desktop over the tailnet gateway     | `mobileControlProtocolVersion` (integer) | `mobileControlSupportedProtocolVersions`             | `packages/studio-protocol/src/mobile-control.ts` |
-| MCP                                                                                   | dated strings, newest first              | every entry in the list                              | `src/shared/mcp/protocol.ts`                    |
-| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)             | `HOST_API_MIN_SUPPORTED` .. current                  | `src/shared/modules/host-api.ts`                |
-| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)      | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current           | `packages/studio-protocol/src/handshake.ts`     |
-| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`)  | current only (one version of slack when 2 ships)     | `src/renderer/src/web/embed/embedProtocol.ts`   |
+| MCP                                                                                   | dated strings, newest first              | every entry in the list                              | `src/shared/mcp/protocol.ts`                     |
+| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)             | `HOST_API_MIN_SUPPORTED` .. current                  | `src/shared/modules/host-api.ts`                 |
+| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)      | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current           | `packages/studio-protocol/src/handshake.ts`      |
+| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`)  | current only (one version of slack when 2 ships)     | `src/renderer/src/web/embed/embedProtocol.ts`    |
 
 One more version number is near these and is **not** a wire window: the
 backlog item schema version is a file format, and is not negotiated with a peer.
@@ -535,7 +535,7 @@ frames only to a client that asked, so a phone that never asks never sees
 one. A client asks whenever the desktop has not said it lacks the
 capability, since an older desktop's refusal is harmless. The Studio RPC does
 not advertise it: its conversation topic carries no `queued` frames, and its
-`conversation.cancelQueued` method is an owner's only.
+`conversation.cancelQueued` method needs `conversation:operate`.
 A steered message is the `conversation-steer-sends` capability (2026-10-14):
 a `send` that says `steer: true` goes into the turn the chat is running, where
 its provider takes one, and each listed chat says whether it does as
@@ -1026,7 +1026,15 @@ terminals; `conversation.threads`, `conversation.search` (every hit at once,
 no partial batches) and `conversation.cancelSearch`;
 `conversation.approvalRules` and `conversation.revokeApprovalRule`; and
 `providers.signIn`, `providers.setSecret` and `providers.clearSecret`. A
-client calls each only on a Studio that advertises its capability. A hello's `client.kind` and `client.instanceId` are
+client calls each only on a Studio that advertises its capability. Explicit grants
+(2026-11-12) replace "owners only" on everything above and on the chat
+surface, the conversation commands, `files.*` by root, `tools.grant*`,
+`localServers.*` and `pullRequests.list/refresh/unwatch`: each reaches a client
+by its scope. `session.terminalHandoff`, `providers.signIn` and the three
+`pullRequests` reports of Studio's own agents stay an owner's, each with its
+reason in the method table. `settings:write` is a new scope, so an older Studio
+drops it from a grant it does not know, and keeps its owner-only rule on the
+methods that need it. A client asks `studioGrantAllows`, never `grant.owner`. A hello's `client.kind` and `client.instanceId` are
 optional hints a Studio that does not know them ignores. Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

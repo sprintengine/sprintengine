@@ -60,8 +60,8 @@ test('every channel the server owns and the front door adds says what it needs, 
       assert.ok(access.localOnly.length > 0, channel)
       continue
     }
-    // The tunnel is an owner's: no channel is open to another browser.
-    assert.equal(access.owner, true, channel)
+    // The tunnel is an owner's: no channel is open to another browser, and it says why.
+    assert.equal(typeof access.owner, 'string', channel)
     assert.ok(access.permissions.length > 0, channel)
     for (const permission of access.permissions) assert.equal(isStudioPermission(permission), true, channel)
   }

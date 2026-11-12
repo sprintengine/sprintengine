@@ -194,53 +194,48 @@ type StudioConversationMethodMap = {
   'conversation.setModel': Command<'setModel', StudioCommandAnswer & { modelId: string }>
   /**
    * Takes back a message the desktop holds for the chat's turn to end, by its
-   * `id` (the conversation lane's `cancelQueued`). An owner's only: this
-   * socket names no held message to anyone else.
+   * `id` (the conversation lane's `cancelQueued`).
    */
   'conversation.cancelQueued': Command<'cancelQueued'>
   /**
    * Stops one agent the chat spawned, by the call that spawned it (its lane's
    * `toolUseId`; the conversation lane's `stopSubagent`), and leaves the chat,
    * its turn and its other agents running. Refused for an agent that is not
-   * running, and for a chat whose provider cannot stop one by itself. An
-   * owner's only for now: no SDK call names it yet.
+   * running, and for a chat whose provider cannot stop one by itself.
    */
   'conversation.stopSubagent': Command<'stopSubagent'>
   /**
    * Passes the person's words to one agent the chat spawned, by the call that
    * spawned it (the conversation lane's `messageSubagent`): the chat's model is
-   * asked to deliver them. Refused for a chat whose provider cannot. An owner's
-   * only for now: no SDK call names it yet.
+   * asked to deliver them. Refused for a chat whose provider cannot.
    */
   'conversation.messageSubagent': Command<'messageSubagent'>
   /**
    * Sets the reasoning effort the chat runs at from its next turn (the
    * conversation lane's `setReasoningEffort`): one of the levels its listed
    * `capabilities.reasoningEfforts` names, or none for the provider's own
-   * default, kept on the chat. An owner's only for now: no SDK call names it yet.
+   * default, kept on the chat.
    */
   'conversation.setReasoningEffort': Command<'setReasoningEffort'>
   /**
    * Reconnects one of a live chat's MCP servers, or switches it on or off (the
    * conversation lane's `mcpServerAction`), where its listed
    * `capabilities.mcpServerActions` names the action. Never a sign-in, whose
-   * callback the chat's CLI waits for on the desktop. An owner's only for now.
+   * callback the chat's CLI waits for on the desktop.
    */
   'conversation.mcpServerAction': Command<'mcpServerAction'>
   /**
    * Restarts the chat's agent (the conversation lane's `restartSession`): its
    * process ends, the session keeps its place, and the next message starts it
    * again. Refused while the agent works; `notice` says when there was none
-   * running. An owner's only for now.
+   * running.
    */
   'conversation.restartSession': Command<'restartSession'>
   /**
    * Has the desktop keep a message and send it into the chat at `sendAt`
    * (the conversation lane's `scheduleSend`), answered once it is kept; and
    * sends one it keeps now, or deletes it, by its `id`
-   * (`sendScheduledNow`, `cancelScheduled`). Owners' only, as
-   * `conversation.cancelQueued` is: this socket's conversation topic names no
-   * scheduled message, so nothing else could address one.
+   * (`sendScheduledNow`, `cancelScheduled`).
    */
   'conversation.scheduleSend': Command<'scheduleSend'>
   'conversation.sendScheduledNow': Command<'sendScheduledNow'>
@@ -249,8 +244,7 @@ type StudioConversationMethodMap = {
    * Acts on the notice a usage limit left on the chat's turn (the
    * conversation lane's `usageLimitResume`): schedules the resume the desktop
    * sends once the limit resets (`always`: for every chat a limit stops),
-   * cancels, dismisses or retries it. An owner's only: this socket's
-   * conversation topic names no notice.
+   * cancels, dismisses or retries it.
    */
   'conversation.usageLimitResume': Command<'usageLimitResume'>
   /** Ends the chat's live session. Idempotent by nature: stopping a stopped chat answers ok. */
@@ -419,9 +413,8 @@ const operate: StudioMethodSpec = {
 function command<K extends ConversationCommand['kind'], M extends StudioCommandMethod>(
   method: M,
   kind: K,
-  owner?: true,
 ): StudioMethodDefinition<{ params: CommandParams<K>; result: unknown }> {
-  return { ...operate, ...(owner ? { owner } : {}), params: commandParams(method, kind) }
+  return { ...operate, params: commandParams(method, kind) }
 }
 
 const noParams = (): StudioParsed<Record<string, never>> => studioParams({})
@@ -449,16 +442,16 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
   'conversation.resolvePlan': command('conversation.resolvePlan', 'resolvePlan'),
   'conversation.setPermissionPreset': command('conversation.setPermissionPreset', 'setPermissionPreset'),
   'conversation.setModel': command('conversation.setModel', 'setModel'),
-  'conversation.cancelQueued': command('conversation.cancelQueued', 'cancelQueued', true),
-  'conversation.stopSubagent': command('conversation.stopSubagent', 'stopSubagent', true),
-  'conversation.messageSubagent': command('conversation.messageSubagent', 'messageSubagent', true),
-  'conversation.setReasoningEffort': command('conversation.setReasoningEffort', 'setReasoningEffort', true),
-  'conversation.mcpServerAction': command('conversation.mcpServerAction', 'mcpServerAction', true),
-  'conversation.restartSession': command('conversation.restartSession', 'restartSession', true),
-  'conversation.scheduleSend': command('conversation.scheduleSend', 'scheduleSend', true),
-  'conversation.sendScheduledNow': command('conversation.sendScheduledNow', 'sendScheduledNow', true),
-  'conversation.cancelScheduled': command('conversation.cancelScheduled', 'cancelScheduled', true),
-  'conversation.usageLimitResume': command('conversation.usageLimitResume', 'usageLimitResume', true),
+  'conversation.cancelQueued': command('conversation.cancelQueued', 'cancelQueued'),
+  'conversation.stopSubagent': command('conversation.stopSubagent', 'stopSubagent'),
+  'conversation.messageSubagent': command('conversation.messageSubagent', 'messageSubagent'),
+  'conversation.setReasoningEffort': command('conversation.setReasoningEffort', 'setReasoningEffort'),
+  'conversation.mcpServerAction': command('conversation.mcpServerAction', 'mcpServerAction'),
+  'conversation.restartSession': command('conversation.restartSession', 'restartSession'),
+  'conversation.scheduleSend': command('conversation.scheduleSend', 'scheduleSend'),
+  'conversation.sendScheduledNow': command('conversation.sendScheduledNow', 'sendScheduledNow'),
+  'conversation.cancelScheduled': command('conversation.cancelScheduled', 'cancelScheduled'),
+  'conversation.usageLimitResume': command('conversation.usageLimitResume', 'usageLimitResume'),
   'conversation.stop': {
     ...operate,
     params: (value) => {
@@ -601,7 +594,7 @@ export function isStudioTopic(value: unknown): value is StudioTopic {
 
 // ── Access ──────────────────────────────────────────────────────────────────
 
-type StudioSpec = { scope: StudioMethodSpec['scope']; extraPermissions?: readonly StudioPermission[]; owner?: true }
+type StudioSpec = { scope: StudioMethodSpec['scope']; extraPermissions?: readonly StudioPermission[]; owner?: string }
 
 /** What a method or topic needs: the permission its scope names, first, then any it adds. */
 export function studioSpecPermissions(spec: StudioSpec): readonly StudioPermission[] {
@@ -613,7 +606,7 @@ function studioSpecAccess(table: object, name: string): StudioAccess | undefined
   // Own keys only: `constructor` is not a method.
   if (!Object.hasOwn(table, name)) return undefined
   const spec = (table as Record<string, StudioSpec>)[name]
-  return { permissions: studioSpecPermissions(spec), ...(spec.owner ? { owner: true as const } : {}) }
+  return { permissions: studioSpecPermissions(spec), ...(spec.owner ? { owner: spec.owner } : {}) }
 }
 
 /** A grant as it stands, the method it asks for, and the answer: unknown methods are refused. */

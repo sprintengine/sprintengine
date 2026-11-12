@@ -36,7 +36,7 @@ function legacyStudioScopesGrant(scopes: readonly string[], needed: StudioScope)
 }
 function legacyAllows(
   grant: { owner: boolean; scopes: StudioScope[] },
-  spec: { scope: StudioScope | null; owner?: true },
+  spec: { scope: StudioScope | null; owner?: string },
 ) {
   if (spec.owner && !grant.owner) return false
   return spec.scope === null || legacyStudioScopesGrant(grant.scopes, spec.scope)
@@ -94,17 +94,15 @@ test('every Studio scope a grant can hold carries only permissions from the clos
     assert.ok(STUDIO_SCOPE_PERMISSIONS[scope].length > 0, scope)
     for (const permission of STUDIO_SCOPE_PERMISSIONS[scope]) assert.equal(isStudioPermission(permission), true, scope)
   }
-  // Nothing a grant made today holds reaches a terminal or settings; this
-  // machine's upkeep (updating it) only through the scope that names it.
+  // Nothing a grant made today holds reaches a terminal or who may reach this
+  // machine; its upkeep (updating it) and its settings only through the scope
+  // that names each.
   const carried = new Set(STUDIO_SCOPES.flatMap((scope) => STUDIO_SCOPE_PERMISSIONS[scope]))
-  for (const permission of ['terminal:read', 'terminal:operate', 'settings:write', 'access:write'])
+  for (const permission of ['terminal:read', 'terminal:operate', 'access:write'])
     assert.equal(carried.has(permission as never), false, permission)
-  for (const scope of STUDIO_SCOPES)
-    assert.equal(
-      STUDIO_SCOPE_PERMISSIONS[scope].includes('environment:maintain'),
-      scope === 'environment:maintain',
-      scope,
-    )
+  for (const named of ['environment:maintain', 'settings:write'] as const)
+    for (const scope of STUDIO_SCOPES)
+      assert.equal(STUDIO_SCOPE_PERMISSIONS[scope].includes(named), scope === named, `${named} in ${scope}`)
 })
 
 test('every grant reaches exactly the methods and topics it reached before permissions', () => {
@@ -186,7 +184,7 @@ test('the decision: local-only before owner, owner before permissions, the first
     reason: 'local_only',
     message: 'Run it on that machine.',
   })
-  const owned: StudioAccess = { permissions: ['conversation:operate'], owner: true }
+  const owned: StudioAccess = { permissions: ['conversation:operate'], owner: 'Only an owner may.' }
   assert.deepEqual(authorizeStudioAccess(nobody, owned), { ok: false, reason: 'owner_required' })
   assert.deepEqual(
     authorizeStudioAccess(studioPrincipal({ owner: false, permissions: STUDIO_PERMISSIONS }), owned),

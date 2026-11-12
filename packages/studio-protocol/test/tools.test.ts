@@ -178,7 +178,8 @@ test('the tools methods name their scopes, and their params are checked', () => 
   assert.ok(STUDIO_SCOPES.includes('tools:offer'))
   assert.ok(STUDIO_SCOPES.includes('files:write'))
   assert.equal(STUDIO_METHODS['tools.offer'].scope, 'tools:offer')
-  assert.equal(STUDIO_METHODS['tools.grant'].owner, true)
+  assert.equal(STUDIO_METHODS['tools.grant'].owner, undefined)
+  assert.equal(STUDIO_METHODS['tools.grant'].scope, 'conversation:operate')
   assert.equal(STUDIO_METHODS['tools.grant'].mutation, true)
   assert.equal(STUDIO_TOPICS['tools.catalog'].push, true)
   assert.deepEqual(parseStudioMethodParams('tools.offer', { toolset: offer(), reach: 'all' }), {

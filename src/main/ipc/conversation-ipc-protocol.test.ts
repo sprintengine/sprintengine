@@ -50,7 +50,7 @@ test('a channel names the protocol’s own methods and topics, or what it lacks'
 })
 
 test('a channel lists a grant gap exactly when a method or topic it names is held to owners', () => {
-  const ownerOnly = (access: StudioAccess) => 'permissions' in access && access.owner === true
+  const ownerOnly = (access: StudioAccess) => 'permissions' in access && access.owner !== undefined
   for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<
     [string, ConversationIpcProtocol]
   >) {
