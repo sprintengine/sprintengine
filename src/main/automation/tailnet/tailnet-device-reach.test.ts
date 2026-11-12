@@ -19,8 +19,10 @@ import { createTailnetDeviceAuthenticator, tailnetDeviceGrant } from './tailnet-
 // `/tailnet/v1/studio`, method by method and topic by topic, read from the
 // contract's own declarations through the device's real grant. The plan's
 // API-family table (design-lane-on-protocol) is what a device is given; this
-// is that table as built. A method or topic a device can reach that is not
-// written here fails, so a widening is a change to this file someone reviews.
+// is that table as built. Every method and topic the contract defines is
+// either in it or refused below with a reason, so a new one fails here until
+// someone decides whether a device reaches it, and a widening is a change to
+// this file someone reviews.
 //
 // Each row names the device scopes that reach it on their own. A device
 // holding several reaches what any of them does.
@@ -154,6 +156,141 @@ const REFUSED_TO_DEVICES: Readonly<Record<string, string>> = {
   'commitMessage.cancel': 'the same',
 }
 
+/**
+ * Everything else a device never reaches, family by family, with the reason.
+ * With the tables above this is a decision for every method and topic the
+ * contract defines: a new one that is in none of them fails, whether a device
+ * reaches it or not, so whoever adds it says whether a device may.
+ */
+const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
+  (
+    [
+      [
+        'terminals: an owner’s by declaration, never a device’s (owner ruling)',
+        [
+          'terminal.list',
+          'terminal.status',
+          'terminal.open',
+          'terminal.resume',
+          'terminal.write',
+          'terminal.ack',
+          'terminal.resize',
+          'terminal.setVisible',
+          'terminal.suspend',
+          'terminal.close',
+          'terminal.setReapExempt',
+          'terminal.takeUndeliveredPrompts',
+          'terminal.configure',
+          'terminal.output',
+          'terminal.sessions',
+          'terminal.promptUndelivered',
+          'session.terminalHandoff',
+        ],
+      ],
+      [
+        'files on this disk (files:read, files:write), which no device holds',
+        [
+          'files.search',
+          'files.cancelSearch',
+          'files.stat',
+          'files.readImage',
+          'files.repoRoot',
+          'files.roots',
+          'files.list',
+          'files.read',
+          'files.write',
+          'files.remove',
+          'files.watch',
+        ],
+      ],
+      [
+        'providers, their keys and sign-in, and the CLIs installed here (providers:read, settings:write, environment:maintain)',
+        [
+          'providers.list',
+          'providers.models',
+          'providers.secretStatus',
+          'providers.signIn',
+          'providers.setSecret',
+          'providers.clearSecret',
+          'cliRuntimes.detect',
+          'cliRuntimes.installMethods',
+          'cliRuntimes.install',
+          'cliRuntimes.update',
+          'cliRuntimes.updateAll',
+          'cliRuntimes.output',
+          'cliRuntimes.updateAllProgress',
+          'cliVersions.advisories',
+          'cliVersions.setEnabled',
+          'cliVersions.changed',
+          'cliModels.discover',
+          'cliModels.changed',
+          'environment.readiness',
+          'usageLimits.get',
+          'usageLimits.changed',
+          'usage.report',
+        ],
+      ],
+      [
+        'this Studio’s settings, launch settings and agent setup (settings:write, or an owner’s)',
+        [
+          'conversation.revokeApprovalRule',
+          'launchSettings.get',
+          'launchSettings.update',
+          'launchSettings.migrate',
+          'launchSettings.changed',
+          'textGeneration.setSettings',
+          'usageLimitResumes.setAuto',
+          'mcp.sync',
+          'agentConfig.detect',
+          'agentConfig.adopt',
+          'builtinSkills.list',
+          'builtinSkills.status',
+          'areaSkills.get',
+          'areaSkills.setEnabled',
+          'areaSkills.dismiss',
+          'areaSkills.changed',
+        ],
+      ],
+      [
+        'the knowledge folders and their activity hook (files:read, or an owner’s)',
+        [
+          'memory.resolveRoot',
+          'memory.index',
+          'memory.readPreview',
+          'memoryActivity.install',
+          'memoryActivity.uninstall',
+          'memoryActivity.startWatching',
+          'memoryActivity.status',
+          'memoryActivity.synapses',
+          'memoryActivity.isInstalled',
+          'memoryActivity.events',
+          'memoryActivity.statusChanged',
+          'memoryActivity.synapsesChanged',
+        ],
+      ],
+      [
+        'client tools, offered by an app that gives agents its tools (tools:offer)',
+        ['tools.offer', 'tools.withdraw', 'tools.focus'],
+      ],
+      [
+        'modules (modules:read, modules:operate)',
+        ['module.read', 'module.operate', 'module.events', 'module.notifications'],
+      ],
+      [
+        'what Studio’s own agents report, and importing chats from disk: an owner’s',
+        [
+          'pullRequests.noteWork',
+          'pullRequests.noteToolCall',
+          'pullRequests.link',
+          'conversationImport.scan',
+          'conversationImport.import',
+        ],
+      ],
+      ['updating this Studio (environment:maintain)', ['update.start']],
+    ] as const
+  ).flatMap(([reason, names]) => names.map((name) => [name, reason])),
+)
+
 const dirs: string[] = []
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
@@ -203,8 +340,18 @@ function expectedReach(scopes: readonly TailnetScope[]): Reach {
 test('the table names only methods and topics the contract defines', () => {
   for (const method of Object.keys(DEVICE_METHODS)) assert.ok(Object.hasOwn(STUDIO_METHODS, method), method)
   for (const topic of Object.keys(DEVICE_TOPICS)) assert.ok(Object.hasOwn(STUDIO_TOPICS, topic), topic)
-  for (const name of Object.keys(REFUSED_TO_DEVICES))
+  for (const name of [...Object.keys(REFUSED_TO_DEVICES), ...Object.keys(NOT_FOR_DEVICES)])
     assert.ok(Object.hasOwn(STUDIO_METHODS, name) || Object.hasOwn(STUDIO_TOPICS, name), name)
+})
+
+test('every method and topic has a device decision, and only one', () => {
+  const refused = (name: string) => Object.hasOwn(REFUSED_TO_DEVICES, name) || Object.hasOwn(NOT_FOR_DEVICES, name)
+  for (const name of Object.keys(REFUSED_TO_DEVICES)) assert.ok(!Object.hasOwn(NOT_FOR_DEVICES, name), name)
+  const undecided = [
+    ...Object.keys(STUDIO_METHODS).filter((method) => Object.hasOwn(DEVICE_METHODS, method) === refused(method)),
+    ...Object.keys(STUDIO_TOPICS).filter((topic) => Object.hasOwn(DEVICE_TOPICS, topic) === refused(topic)),
+  ]
+  assert.deepEqual(undecided, [], 'each is either in a device table or refused, with its reason')
 })
 
 test('each device scope on its own reaches exactly its rows of the table', () => {
