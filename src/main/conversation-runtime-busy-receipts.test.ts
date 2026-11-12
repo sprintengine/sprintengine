@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict'
-import { workspaceStoreRoot } from './workspace-store'
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { workspaceStorePath } from './workspace-store'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
+import { readConversationReceipts } from './conversation-command-receipts'
 import { ConversationRuntime } from './conversation-runtime'
 import { createMockConversationProvider } from './providers/mock-conversation-provider'
 
 // A send turned away busy runs nothing, so nothing about it is written: a
-// phone tries again every second while a turn runs, and each try used to be
-// a receipts intent written and then removed.
+// phone tries again every second while a turn runs.
 
 const runtimes = new Set<ConversationRuntime>()
 const roots = new Set<string>()
@@ -22,9 +22,10 @@ afterEach(async () => {
   roots.clear()
 })
 
-async function receiptFiles(root: string): Promise<string[]> {
-  const entries = await readdir(workspaceStoreRoot(root), { recursive: true }).catch(() => [] as string[])
-  return entries.filter((entry) => entry.endsWith('.receipts.json'))
+/** The command ids the chat's log holds receipts for. */
+async function receiptIds(root: string): Promise<string[]> {
+  const log = workspaceStorePath(root, 'conversations', 'workspace', 'agent.jsonl')
+  return [...(await readConversationReceipts(root, log)).keys()]
 }
 
 test('a send refused as busy writes no receipt, and the same id runs once the turn is over', async () => {
@@ -54,12 +55,17 @@ test('a send refused as busy writes no receipt, and the same id runs once the tu
   assert.equal(first.ok, true)
   assert.ok(requestId, 'the turn waits on an approval')
 
+  await runtime.flushTranscripts()
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const refused = await runtime.sendTurn({ sessionId, message: 'from the phone', commandId: 'phone-1' })
     assert.equal(refused.ok, false)
     assert.equal(refused.code, 'busy')
   }
-  assert.deepEqual(await receiptFiles(workspaceRoot), [], 'nothing was recorded for a send that ran nothing')
+  assert.equal(
+    (await receiptIds(workspaceRoot)).includes('phone-1'),
+    false,
+    'nothing was recorded for a send that ran nothing',
+  )
 
   // A send made as a steer is not turned away up front: the steer path answers
   // it, and its refusal ran nothing either, so it is busy and kept nowhere.
@@ -71,7 +77,7 @@ test('a send refused as busy writes no receipt, and the same id runs once the tu
   assert.ok((await runtime.respondToRequest({ sessionId, requestId, approved: true })).ok)
   const sent = await runtime.sendTurn({ sessionId, message: 'from the phone', commandId: 'phone-1' })
   assert.equal(sent.ok, true, 'the same id runs once the chat is free')
-  assert.equal((await receiptFiles(workspaceRoot)).length > 0, true)
+  assert.equal((await receiptIds(workspaceRoot)).includes('phone-1'), true)
 
   // The refused steer's id was never answered from a receipt: sent again once
   // the chat is free, it runs, as the next turn.

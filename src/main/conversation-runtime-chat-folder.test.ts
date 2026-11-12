@@ -182,7 +182,9 @@ test('a revert holds its folder for its whole length, and waits for a return und
     const returning = exclusive(await leases.tryExclusive(workspaceRoot, 'the pool is returning this worktree'))
     let done = false
     const reverting = runtime.revertToTurn({ key, turnSeq: 1 }).finally(() => (done = true))
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    // Until the revert has asked for the folder: however long a loaded machine takes to get there.
+    while (!(await leases.holders(workspaceRoot)).some((holder) => holder.waiting))
+      await new Promise((resolve) => setImmediate(resolve))
     assert.equal(done, false, 'waits while the return runs')
     assert.deepEqual(
       (await leases.holders(workspaceRoot)).map(({ reason, waiting }) => ({ reason, waiting })),

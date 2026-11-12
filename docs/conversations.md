@@ -544,6 +544,43 @@ follows. Live events that arrive while a replay is still going out wait behind
 it, bounded by size rather than count, so a busy turn during a large catch-up
 does not force a resync before the fence.
 
+### Commands and the chat's log
+
+A send, an answer to a request, a permission or model change, Stop and ending
+a session reach the same runtime method from any client (this window, the
+Studio protocol, a paired device or the phone, an agent's MCP tool, a module, a
+schedule, a pull-request wake), which runs each as a command under the
+caller's `commandId`, or one made for a caller that gave none
+(`ConversationRuntime.runCommand`). Revert, rewind, fork, handoff, stopping
+one sub-agent and side questions are not commands of this kind yet: the hosts
+that take them remember their ids in memory. The chat's transcript is its one
+log: beside the events it holds each command's receipt, a line with no `type`
+that every reader passes over (`conversation-command-receipts.ts`).
+
+- **A turn command** (a send, a steer, a message to one sub-agent) is
+  _accepted_ when its `user_message` and its receipt are committed in one
+  write. The provider turn is what it then does. The send is _answered_ when
+  that turn ends, as the protocol promises, and the answer is written to the
+  log too. If Studio stops before the turn ends, reopening the chat closes the
+  turn as interrupted, and a retry under the same id is answered as sent: the
+  message is in the chat, so it is never sent twice.
+- **A control command** (an answer to a request, a permission or model
+  change, Stop, ending the session) acts on the live agent process and is
+  answered with what that did, once the answer's receipt is written. If Studio
+  stops first, what it did went with the process; a retry acts again on the
+  chat as it is then.
+- A send refused `busy`, or one the log could not take, records nothing, so
+  the same id may be sent again. The same id for a different command (by its
+  fingerprint) is refused `command_id_conflict`.
+- **Nothing is published before it is written.** A batch of the log is one
+  write, and a write that fails is cut back off, so a client only ever holds
+  sequence numbers that are on disk. A write that does not finish is waited
+  for, not given up on (the log warns after 30 seconds): what it holds may yet
+  land. An event of a turn the log cannot take stops the chat's session, its
+  agent with it, and the turn is closed as interrupted when the chat is next
+  resumed. A send whose message the log cannot take is answered "not sent" and
+  nothing else happens.
+
 ### The protocol
 
 `@sprintengine/conversation-protocol` (`packages/conversation-protocol`) is the
@@ -558,8 +595,9 @@ declares:
   (`CONVERSATION_EVENT_TYPES`); the provider's shapes stay in the adapter.
   Everything above, this socket included, carries only that second layer.
 - **Commands and answers.** Every mutation carries the client's `commandId`,
-  which the runtime records as a durable receipt before any work starts, so a
-  retry is answered with the first attempt's result. A tool permission is
+  and the runtime keeps a receipt for it in the chat's log, so a retry is
+  answered from the first attempt and never runs twice (see "Commands and the
+  chat's log" below). A tool permission is
   answered `once`, `conversation` or `deny`, a question with its answers, a
   plan with `approve` or `reject`, and each answer can name the kind it is for.
   A tool permission may also be answered `always` where the host advertises

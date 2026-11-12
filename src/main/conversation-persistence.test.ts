@@ -70,7 +70,7 @@ test('parent replacement during exclusive open never writes content or cleans up
   }
 })
 
-test('receipt links refuse command execution and transcript links refuse replay', async () => {
+test('a linked log refuses commands, whose receipts it holds, and replay', async () => {
   const f = await fixture()
   const adapter = createMockConversationProvider()
   const runtime = new ConversationRuntime({ adapters: [adapter], getProviderById: () => undefined })
@@ -79,17 +79,16 @@ test('receipt links refuse command execution and transcript links refuse replay'
     const started = await runtime.startSession({ ...key, providerId: adapter.id, modelId: adapter.listModels()[0] })
     expect(started.ok).toBe(true)
     if (!started.ok) throw new Error('Session failed to start')
+    await runtime.flushTranscripts()
     const folder = workspaceStorePath(f.root, 'conversations', 'workspace')
-    const outside = join(f.outside, 'receipt.json')
-    await writeFile(outside, '[]')
-    await symlink(outside, join(folder, 'agent.receipts.json'))
+    const outside = join(f.outside, 'agent.jsonl')
+    await writeFile(outside, '')
+    await rm(join(folder, 'agent.jsonl'))
+    await symlink(outside, join(folder, 'agent.jsonl'))
     expect(
       await runtime.sendTurn({ sessionId: started.session.sessionId, commandId: 'linked-command', message: 'unsafe' }),
     ).toMatchObject({ ok: false, message: expect.stringContaining('Symbolic links') })
-    expect(await readFile(outside, 'utf8')).toBe('[]')
-    await runtime.shutdown()
-    await rm(join(folder, 'agent.jsonl'))
-    await symlink(outside, join(folder, 'agent.jsonl'))
+    expect(await readFile(outside, 'utf8')).toBe('')
     expect(await runtime.readTranscript(key)).toMatchObject({ ok: false })
   } finally {
     await runtime.shutdown()
