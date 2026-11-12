@@ -58,6 +58,14 @@ the user has trusted execute code.
   loads at the server's next start; switching one off unloads its main half
   at once (its methods, tools, services and sidecars go, and its calls are
   refused `module_unavailable`), and switching it back on loads it again.
+  Loading again runs `registerMain` again in the same process, with a new
+  host; the entry file itself is not evaluated again, so anything kept at the
+  file's top level survives the switch. Keep state inside `registerMain`, and
+  release timers, watchers and handles in `onShutdown`: once its shutdown
+  hooks have run, the host a switched-off extension was given drops its
+  `emit` and `notify` calls and refuses its registrations. A file changed on
+  disk since the server started is refused rather than loaded; an updated
+  extension runs from the next start.
 - Validate, sign, and pack with the bundled `sprintengine-module` CLI. `sign`
   records the sha256 of every file the module ships in the manifest's `files`
   field, so the signature covers the code, not only the manifest.
