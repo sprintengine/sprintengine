@@ -732,6 +732,9 @@ function serveShellAgentRequests(rpc: Parameters<ServerStart>[0]['rpc'], agents:
     if (typeof hostId === 'string' && isWslHostId(hostId)) invalidateCliAvailabilityOnHost(hostId)
   })
   agents.services.areaSkills.onChange((choices) => rpc.emit(SERVER_EVENTS.mirrorAreaSkills, choices))
+  // Sent once as it serves too, so a shell whose server restarted takes any
+  // change it missed while the server was down (adopting the same is a no-op).
+  rpc.emit(SERVER_EVENTS.mirrorAreaSkills, agents.services.areaSkills.read())
 }
 
 /** How long main may take to open an SSH machine's stream: a first connect may install and start its server. */
