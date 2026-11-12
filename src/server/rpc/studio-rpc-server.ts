@@ -18,6 +18,7 @@ import {
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
+  type StudioProtocolWindow,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
 import { createStudioRpcConnection, type StudioRpcConnection } from './studio-rpc-connection'
@@ -26,6 +27,7 @@ import { createStudioRpcRouter } from './studio-rpc-router'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
+import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type {
   StudioAuditEntry,
@@ -123,6 +125,10 @@ export type StudioRpcServerOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners. Advertised as `local-servers` only when given. */
   localServers?: StudioLocalServers
+  /** How this Studio is updated (`update.*`); by hand when not given. */
+  updates?: StudioUpdates
+  /** The protocol window this Studio speaks: this build's unless given (a test standing in for an older or newer one). */
+  protocol?: StudioProtocolWindow
   resyncRetryAfterMs?: (clientId: string) => number
   socketPath?: string
   helloTimeoutMs?: number
@@ -159,8 +165,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
   const perClient = options.maxConnectionsPerClient ?? 8
   const chat = () => options.chat?.() ?? null
   const welcome = (): Omit<StudioWelcomeFrame, 't' | 'grant' | 'pairing'> => ({
-    protocolVersion: STUDIO_PROTOCOL_VERSION,
-    minProtocolVersion: STUDIO_PROTOCOL_MIN_SUPPORTED,
+    protocolVersion: options.protocol?.protocolVersion ?? STUDIO_PROTOCOL_VERSION,
+    minProtocolVersion: options.protocol?.minProtocolVersion ?? STUDIO_PROTOCOL_MIN_SUPPORTED,
     server: { name: 'SprintEngine Studio', version: options.version },
     environment: { id: options.environmentId, hostKind: options.hostKind ?? 'local', os: platform(), arch: arch() },
     capabilities: STUDIO_CAPABILITIES.filter(
@@ -192,6 +198,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.files ? { files: options.files } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
+    ...(options.updates ? { updates: options.updates } : {}),
     log: options.log,
   })
   // A revoked app's offers go at once, with its names: a later app that takes

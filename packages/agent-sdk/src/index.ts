@@ -41,6 +41,7 @@ export {
   type CreateConversationInput,
   type EventStreamOptions,
 } from './runtime.js'
+export { openStudioUpdateSession, type StudioUpdateSession, type StudioUpdateSessionOptions } from './runtime.js'
 export { fromModuleConversationService, type ModuleConversationServiceLike } from './module.js'
 export {
   StudioToolError,

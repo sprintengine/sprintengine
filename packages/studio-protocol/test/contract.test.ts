@@ -112,7 +112,8 @@ test('every method of the protocol has a scope declaration and a validator; only
   for (const [method, definition] of Object.entries(STUDIO_METHODS)) {
     assert.ok(Object.hasOwn(definition, 'scope'), method)
     assert.equal(typeof definition.params, 'function', method)
-    if (definition.scope === null) assert.ok(method.startsWith('server.'), method)
+    // `update.status` too: how a client that cannot talk to this Studio recovers.
+    if (definition.scope === null) assert.ok(method.startsWith('server.') || method === 'update.status', method)
   }
   for (const [topic, definition] of Object.entries(STUDIO_TOPICS)) {
     assert.ok(definition.scope, topic)

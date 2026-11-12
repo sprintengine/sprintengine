@@ -363,6 +363,10 @@ test('every method the server serves has its call in the SDK, under the same sco
     'localServers.run': 'request',
     'localServers.stop': 'request',
     'localServers.remove': 'request',
+    // Updates are asked like any method on a normal connection, and through
+    // `openStudioUpdateSession` on one kept for them.
+    'update.status': 'request',
+    'update.start': 'request',
   }
   assert.deepEqual(Object.keys(sdkCalls).sort(), Object.keys(STUDIO_METHODS).sort())
   const client = await pairedClient(['conversation:read'], 'manual')
@@ -385,6 +389,11 @@ test('every method the server serves has its call in the SDK, under the same sco
       'conversation.setModel': () => service.setModel(ref, 'm'),
       'conversation.stop': () => service.stop(ref),
       'conversation.create': () => service.create({ workspaceId: 'ws-a' }),
+      'update.start': () =>
+        client.request('update.start', { commandId: 'update-1' }).then(
+          () => ({ ok: true }),
+          (error: StudioError) => ({ ok: false, code: error.code }),
+        ),
     }
     const mutations = Object.entries(STUDIO_METHODS).filter(([, spec]) => spec.mutation && !spec.owner)
     assert.deepEqual(mutations.map(([method]) => method).sort(), Object.keys(refusals).sort())

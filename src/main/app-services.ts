@@ -214,6 +214,7 @@ import { studioPlatform } from '../server/platform/platform'
 import { createStudioCore, studioBridgeScriptPath } from '../server/core/studio-core'
 import { installWorkspaceStoreMigration } from './workspace-store-migration'
 import { createStudioGateway } from '../server/core/studio-gateway'
+import { desktopStudioUpdates } from './studio-rpc/desktop-updates'
 import { createStudioRpc } from '../server/core/studio-rpc'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../server/desktop/gateway-backends'
@@ -2073,7 +2074,12 @@ export function createAppServices(
   // over the core and its gateway as a standalone server composes it. Its
   // paths, version and the push to Settings are the platform's. Nothing in the
   // app uses it yet; paired apps are listed and revoked in Settings.
-  const studioRpc = automationService ? createStudioRpc(core, automationService) : null
+  // This desktop updates itself (`update.*`), through the app updater, in
+  // process here and out of process through the shell methods below.
+  const desktopUpdates = desktopStudioUpdates(updateService, {
+    log: (message) => void writeDiagnosticLog({ level: 'warning', source: 'update', title: 'Client update', message }),
+  })
+  const studioRpc = automationService ? createStudioRpc(core, automationService, { updates: desktopUpdates }) : null
   // Where the person's attention is, for routing a call to the window in
   // front of them when more than one desktop offers a toolset.
   const desktopFocus = {
@@ -2221,7 +2227,16 @@ export function createAppServices(
       const workspaceId = (payload as { workspaceId?: unknown } | null)?.workspaceId
       if (typeof workspaceId === 'string' && workspaceId) endWorkspaceTerminals(workspaceId)
     })
+    // A client's `update.start` runs the app updater, which is the shell's;
+    // `update.status` follows its state, sent whole on every change.
+    server.rpc.handle(SHELL_METHODS.updateStart, (payload) => {
+      const targetVersion = (payload as { targetVersion?: unknown } | null)?.targetVersion
+      return desktopUpdates.start(typeof targetVersion === 'string' ? { targetVersion } : {})
+    })
+    const sendUpdateState = () => server.rpc.emit(SERVER_EVENTS.updateState, desktopUpdates.status())
+    updateService.onStateChange(sendUpdateState)
     server.onServing(() => {
+      sendUpdateState()
       server.rpc.emit(SERVER_EVENTS.launchTokens, { reset: true, changes: liveGatewayLaunchTokens() })
       sendTerminalSessions()
       // A server back from a restart: the shell's client connects now rather

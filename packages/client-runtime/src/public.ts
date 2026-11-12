@@ -29,6 +29,8 @@ export {
   type StudioPushListener,
   type StudioConversationService,
 } from './rpc/client.js'
+// Reaching a Studio this client cannot talk to, for its updates (`update-session`).
+export { openStudioUpdateSession, type StudioUpdateSession, type StudioUpdateSessionOptions } from './rpc/update.js'
 export {
   agentConversations,
   approvalRequestOf,

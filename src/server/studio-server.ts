@@ -20,6 +20,7 @@ import { SERVER_EXIT } from './bootstrap/envelope'
 import { runShutdownLegs, type ShutdownLegProgress } from './bootstrap/serve'
 import { readStudioEnvironmentId } from './environment/environment-id'
 import type { WebFrontDoor, WebFrontDoorOptions } from './web/web-front-door'
+import type { StudioUpdates } from './update/studio-updates'
 
 // A Studio server under plain Node: the core and its gateway, with nothing of
 // Electron. The `studio-server` entry (main.ts) runs it from a shell; a later
@@ -80,6 +81,8 @@ export type StudioServerOptions = {
    * and the bootstrap envelope never set it.
    */
   tailnetBindAddress?: string
+  /** How this server is updated, as `update.status` tells clients; by hand when not said. */
+  updates?: StudioUpdates
 }
 
 export type StudioServerReady = {
@@ -252,7 +255,10 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
     options.tailnetBindAddress === undefined ? {} : { tailnetBindAddress: options.tailnetBindAddress },
   )
   gateway = started
-  const rpc = createStudioRpc(core, started, options.hostKind ? { hostKind: options.hostKind } : {})
+  const rpc = createStudioRpc(core, started, {
+    ...(options.hostKind ? { hostKind: options.hostKind } : {}),
+    ...(options.updates ? { updates: options.updates } : {}),
+  })
   let status: Awaited<ReturnType<StudioGateway['initialize']>>
   try {
     if (options.listen === false) {

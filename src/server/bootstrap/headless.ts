@@ -5,6 +5,7 @@ import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { driveMountRootFromMounts, driveMountRootFromWslConf } from '../../shared/host-paths'
 import { chatsAreWorking } from '../core/chats-working'
+import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '../update/studio-updates'
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
 import { BACKEND_WIRE_VERSION, serveConversationBackend } from '../wsl/backend-wire'
 import type { SignIns } from '../machine/machine-sign-in'
@@ -41,8 +42,33 @@ export function headlessServerOptions(
     listen: envelope.listeners.gateway,
     // A detached server is an SSH machine's: one the desktop reaches over SSH.
     hostKind: envelope.wsl ? 'wsl' : envelope.detached ? 'ssh' : 'local',
+    updates: headlessUpdates(envelope),
     log,
   }
+}
+
+/**
+ * How a headless server is updated. One a desktop installed (inside WSL, or
+ * started over SSH) is replaced by that desktop's bootstrap when it next
+ * connects, from the server the desktop carries; one started by hand is
+ * updated by hand.
+ */
+export function headlessUpdates(envelope: Pick<ServerBootstrapEnvelope, 'wsl' | 'detached'>): StudioUpdates {
+  if (envelope.wsl)
+    return externalStudioUpdates(
+      'bootstrap',
+      'This Studio server runs inside WSL, and SprintEngine Studio on the Windows PC that started it updates it. Update the app on that PC, and it starts the new server.',
+    )
+  if (!envelope.detached) return externalStudioUpdates('manual', MANUAL_UPDATE_WORDS)
+  if (envelope.detached.origin !== 'bootstrap')
+    return externalStudioUpdates(
+      'manual',
+      `This Studio server was started by ${envelope.detached.origin}. Update SprintEngine Studio on its machine and restart that service, or stop it and let a desktop start its own.`,
+    )
+  return externalStudioUpdates(
+    'bootstrap',
+    'This Studio server was installed over SSH by SprintEngine Studio on a desktop. Update the app on that desktop, and it updates this server when it next connects.',
+  )
 }
 
 /** Where this distribution mounts the Windows drives: what is mounted, else what wsl.conf asks for. */

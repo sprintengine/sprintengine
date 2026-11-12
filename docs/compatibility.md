@@ -965,7 +965,8 @@ files are not touched by it.
 `STUDIO_PROTOCOL_VERSION` is 1, with the same one-version window as the
 integer wires above; `checkStudioProtocolVersion` refuses a peer outside it at
 the handshake, naming both numbers, and the server answers that refusal as
-`bye { code: 'unsupported_protocol_version' }`. Features are capabilities
+`bye { code: 'unsupported_protocol_version' }`, or, to a client that asked to
+be kept, with an `incompatible` frame and the update methods (below). Features are capabilities
 (`conversations`, `conversation-create`, `local-pairing`, and the chat
 surface's in `STUDIO_CHAT_CAPABILITIES`) advertised in the `welcome`, a Studio
 leaving out any it does not serve; the conversation contract's own `protocolVersion` and capabilities
@@ -1025,6 +1026,52 @@ no partial batches) and `conversation.cancelSearch`;
 client calls each only on a Studio that advertises its capability. A hello's `client.kind` and `client.instanceId` are
 optional hints a Studio that does not know them ignores. Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
+
+#### Reaching a Studio outside the window
+
+A paired desktop, a server inside WSL or on an SSH machine runs on its own
+and can outlive several releases of the client that reaches it, so a refusal
+at the handshake cannot be the end of the conversation. `update-session`
+(2026-11-12) keeps one: a client that lists it in its hello's
+`client.capabilities`, and authenticates with a token, is answered with an
+`incompatible` frame in place of the `welcome` when the two windows do not
+meet. The frame says who the Studio is (`server`, `environment`, its
+`protocolVersion` and `minProtocolVersion`), which side is behind
+(`compatibility`: `client-outdated` or `server-outdated`, from the client's
+side), why in words naming both numbers, and how the Studio is updated
+(`update`, the `update.status` answer). The connection then serves only
+`update.status` and `update.start`; anything else is refused
+`unsupported_protocol_version`, a subscription not retryable. A client that
+does not list the capability is closed with `bye` as before, and a pairing
+code is never spent on a client that could not use the token.
+`studioCompatibility` reads the same four states (`compatible`,
+`client-outdated`, `server-outdated`, `unknown`) from any window a client has
+heard: a welcome, this frame, a discovery file.
+
+`update.status` (no scope: any authenticated client may learn how to recover)
+answers `method`: `self` for a desktop, which updates itself through its app
+updater; `bootstrap` for a server a desktop installed (inside WSL, or over
+SSH), which that desktop replaces when it next connects; `manual` for one
+started by hand. `manual` carries the words for the last two. `update.start`
+(a mutation with a `commandId`, scope `environment:maintain`) asks a `self`
+Studio to check, download, drain its running turns and restart into the new
+version; it is answered before the restart, and the client reads the outcome
+from the next welcome's version or `lastFailure`. A desktop installs what its
+update channel offers, so a `targetVersion` it does not offer is refused, and
+so is an installation that needs an administrator, which Windows asks for at
+that PC. A Studio that does not update itself refuses it `update_unavailable`
+with its words. Owners hold
+`environment:maintain`; a paired app only when Settings gave it; a browser on
+the tailnet never.
+
+**The `incompatible` frame, `update.status`, `update.start`, their params,
+results and codes never change shape**, since they are what two ends that
+disagree on everything else still speak; and neither does the `hello`. Members
+are only ever added, optional; a client reads an update `method` it does not
+know as `manual`, a `state` as `idle` and an environment's `hostKind` as
+`other`, and cuts words and versions to their bounds instead of refusing the
+frame. `packages/studio-protocol/test/update.test.ts`
+pins them. The SDK's `openStudioUpdateSession` is the client side.
 
 The pack check (`npm run test:studio-packages:pack`) installs the packed
 tarball beside the conversation protocol's and checks both module systems and

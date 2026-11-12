@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- **An incompatible client keeps a way to recover.** `update-session`: a
+  client that lists it in its hello and authenticates with a token is sent an
+  `incompatible` frame in place of the welcome when the two protocol windows
+  do not meet, and the connection serves `update.status` and `update.start`
+  only. `update.status` (any grant) says how the Studio is updated (`self`,
+  `bootstrap` or `manual`) and where an update stands; `update.start` (scope
+  `environment:maintain`, new) asks a desktop to update itself. New error
+  codes `unsupported_protocol_version` and `update_unavailable`.
+  `studioCompatibility` and `StudioCompatibility` name how a client stands with
+  a Studio; `parseStudioUpdateStatus` reads a status forward-compatibly. The
+  frame, the two methods and the hello are frozen: members are only added.
+
 ### Changed (contract)
 
 - **One table builds both ends.** `contract.ts` defines a method as a contract

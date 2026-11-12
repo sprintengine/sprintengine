@@ -309,6 +309,7 @@ export class SprintEngineUpdateService {
   private installAtQuitRegistered = false
   /** Restart to update has started an installer, or tried to: the quit that follows starts no other. */
   private installAttempted = false
+  private readonly stateListeners = new Set<(state: AppUpdateState) => void>()
 
   constructor({
     writeDiagnosticLog,
@@ -979,7 +980,15 @@ export class SprintEngineUpdateService {
 
   private updateState(patch: Partial<AppUpdateState>): void {
     this.state = { ...this.state, ...patch }
-    broadcastToAllWindows('update:state-changed', this.getState())
+    const state = this.getState()
+    broadcastToAllWindows('update:state-changed', state)
+    for (const listener of [...this.stateListeners]) listener(state)
+  }
+
+  /** Called with the whole state on every change: the Studio server's `update.status` follows it. */
+  onStateChange(listener: (state: AppUpdateState) => void): () => void {
+    this.stateListeners.add(listener)
+    return () => this.stateListeners.delete(listener)
   }
 
   /** One line in the diagnostics log per updater step, so the next failure can be read back. */

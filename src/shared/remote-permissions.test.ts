@@ -14,9 +14,9 @@ import { WEB_HTTP_ACCESS, WEB_TUNNEL_ACCESS } from './web-tunnel-access'
 // some method needs, or one named for what ships next. A name nothing needs
 // is a grant nobody can reason about.
 
-const RESERVED = ['terminal:read', 'terminal:operate', 'environment:maintain']
+const RESERVED = ['terminal:read', 'terminal:operate']
 
-test('every permission is needed by some remote method, or is named for remote terminals and upkeep', () => {
+test('every permission is needed by some remote method, or is named for remote terminals', () => {
   const declarations: StudioAccess[] = [
     ...[...Object.values(STUDIO_METHODS), ...Object.values(STUDIO_TOPICS)].map((spec) => ({
       permissions: studioSpecPermissions(spec),

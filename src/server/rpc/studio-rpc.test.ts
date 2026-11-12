@@ -8,6 +8,7 @@ import {
   CONVERSATION_WIRE_PREVIEW_CHARS,
 } from '../conversation-stream-shaping'
 import type { ConversationSessionFrame } from '../../shared/conversation-runtime'
+import type { StudioUpdates } from '../update/studio-updates'
 import {
   OWNER_TOKEN,
   connectLineClient,
@@ -98,7 +99,145 @@ test('a client outside the version window is refused with both numbers named', a
   const bye = await c.next(isT('bye'))
   assert.equal(bye.t === 'bye' && bye.code, 'unsupported_protocol_version')
   assert.match(bye.t === 'bye' ? bye.message : '', /4 or newer.*speaks 1/)
+  // Nothing about this Studio before it has authenticated: not its version.
+  assert.doesNotMatch(bye.t === 'bye' ? bye.message : '', /0\.0\.0-test/)
   await c.closed
+})
+
+// ── Updates, and a client whose protocol does not meet this Studio's ───────
+
+/** A desktop that updates itself, with 9.9.9 waiting; what `start` was asked. */
+function selfUpdates(): StudioUpdates & { started: Array<{ targetVersion?: string }> } {
+  const started: Array<{ targetVersion?: string }> = []
+  return {
+    started,
+    status: () => ({ method: 'self', state: 'available', available: { version: '9.9.9' } }),
+    start: async (input) => {
+      started.push(input)
+      return { ok: true, targetVersion: '9.9.9' }
+    },
+  }
+}
+const keptHello = (token: string, window: { protocolVersion: number; minProtocolVersion: number }) =>
+  hello({ token }, { ...window, client: { name: 'test-app', capabilities: ['update-session'] } })
+
+test('a newer client that asks to be kept is told who this Studio is and how it is updated, and served only that', async () => {
+  const updates = selfUpdates()
+  const { path, auth, backend } = await serve({ updates })
+  const token = pairFakeClient(auth, 'keeper', ['conversation:read', 'environment:maintain'])
+  const c = await client(path)
+  c.send(keptHello(token, { protocolVersion: 5, minProtocolVersion: 4 }))
+  const frame = await c.next(isT('incompatible'))
+  assert.ok(frame.t === 'incompatible')
+  assert.equal(frame.compatibility, 'server-outdated')
+  assert.deepEqual([frame.protocolVersion, frame.minProtocolVersion, frame.server.version], [1, 1, '0.0.0-test'])
+  assert.equal(frame.environment.id, 'env-test')
+  assert.match(frame.message, /Update the Studio\./)
+  assert.deepEqual(frame.update, {
+    serverVersion: '0.0.0-test',
+    protocolVersion: 1,
+    minProtocolVersion: 1,
+    method: 'self',
+    state: 'available',
+    available: { version: '9.9.9' },
+  })
+  // The update methods are served; nothing else is, and no stream opens.
+  const status = await request(c, 's1', 'update.status')
+  assert.equal(status.ok && (status.result as { method: string }).method, 'self')
+  const listed = await request(c, 'l1', 'conversation.list')
+  assert.equal(!listed.ok && listed.error.code, 'unsupported_protocol_version')
+  c.send({ t: 'sub', id: 'f1', topic: 'conversation.follow', params: { key } })
+  const failed = await c.next((f) => f.t === 'subFailed' && f.sub === 'f1')
+  assert.equal(failed.t === 'subFailed' && failed.code, 'unsupported_protocol_version')
+  assert.equal(failed.t === 'subFailed' && failed.retryable, false)
+  const started = await request(c, 'u1', 'update.start', { commandId: 'update-1' })
+  assert.deepEqual(started.ok && started.result, { accepted: true, method: 'self', targetVersion: '9.9.9' })
+  assert.deepEqual(updates.started, [{}])
+  assert.deepEqual([backend.commands, backend.creates, backend.followers('agent-1')], [[], [], 0])
+})
+
+test('an older client is told to update itself, against a Studio that has moved on', async () => {
+  const { path, auth } = await serve({
+    updates: selfUpdates(),
+    protocol: { protocolVersion: 3, minProtocolVersion: 2 },
+  })
+  const token = pairFakeClient(auth, 'old', ['conversation:read'])
+  const c = await client(path)
+  c.send(keptHello(token, { protocolVersion: 1, minProtocolVersion: 1 }))
+  const frame = await c.next(isT('incompatible'))
+  assert.equal(frame.t === 'incompatible' && frame.compatibility, 'client-outdated')
+  assert.match(
+    frame.t === 'incompatible' ? frame.message : '',
+    /needs Studio protocol 2 or newer, and this app speaks 1\. Update this app\./,
+  )
+})
+
+test('updating a Studio takes environment:maintain; any grant may ask how it stands', async () => {
+  const updates = selfUpdates()
+  const { path, auth } = await serve({ updates })
+  for (const [clientId, scopes, window] of [
+    ['reader', ['conversation:read'], { protocolVersion: 5, minProtocolVersion: 4 }],
+    ['current-reader', ['conversation:read'], { protocolVersion: 1, minProtocolVersion: 1 }],
+  ] as const) {
+    const token = pairFakeClient(auth, clientId, [...scopes])
+    const c = await client(path)
+    c.send(keptHello(token, window))
+    await c.next((frame) => frame.t === 'incompatible' || frame.t === 'welcome')
+    const status = await request(c, 's', 'update.status')
+    assert.equal(status.ok, true, clientId)
+    const started = await request(c, 'u', 'update.start', { commandId: 'update-1' })
+    assert.deepEqual([clientId, !started.ok && started.error.code], [clientId, 'scope_required'])
+  }
+  assert.deepEqual(updates.started, [])
+  // An owner holds every scope, this one included.
+  const owner = await open(path, OWNER_TOKEN)
+  const started = await request(owner, 'u', 'update.start', { commandId: 'update-2' })
+  assert.equal(started.ok, true)
+})
+
+test('a Studio that does not update itself refuses update.start with the words to do it by hand', async () => {
+  const { path } = await serve()
+  const c = await open(path, OWNER_TOKEN)
+  const status = await request(c, 's', 'update.status')
+  assert.equal(status.ok && (status.result as { method: string }).method, 'manual')
+  assert.match(status.ok ? ((status.result as { manual?: string }).manual ?? '') : '', /started by hand/)
+  const started = await request(c, 'u', 'update.start', { commandId: 'update-1' })
+  assert.equal(!started.ok && started.error.code, 'update_unavailable')
+  assert.match(!started.ok ? started.error.message : '', /started by hand/)
+})
+
+test('a kept connection is still refused a bad token, never spends a pairing code, and is closed on revoke', async () => {
+  const { path, auth } = await serve({ updates: selfUpdates() })
+  const window = { protocolVersion: 5, minProtocolVersion: 4 }
+  // A wrong token learns nothing about this Studio's versions.
+  const wrong = await client(path)
+  wrong.send(keptHello('sest_not_a_real_token_000', window))
+  const refused = await wrong.next(isT('bye'))
+  assert.equal(refused.t === 'bye' && refused.code, 'unauthorized')
+  // A pairing code is not spent on a client that could not use the token.
+  const code = 'sepair_update_0123456789'
+  auth.pairingCodes.set(code, {
+    clientId: 'pairing-app',
+    name: 'pairing-app',
+    owner: false,
+    scopes: ['conversation:read'],
+    ceiling: 'auto',
+  })
+  const pairing = await client(path)
+  pairing.send(
+    hello({ pairingCode: code }, { ...window, client: { name: 'test-app', capabilities: ['update-session'] } }),
+  )
+  const unpaired = await pairing.next(isT('bye'))
+  assert.equal(unpaired.t === 'bye' && unpaired.code, 'unsupported_protocol_version')
+  assert.equal(auth.pairingCodes.has(code), true)
+  // Revoked while kept: closed like any connection.
+  const token = pairFakeClient(auth, 'kept', ['conversation:read'])
+  const kept = await client(path)
+  kept.send(keptHello(token, window))
+  await kept.next(isT('incompatible'))
+  auth.revoke('kept')
+  const gone = await kept.next(isT('bye'))
+  assert.equal(gone.t === 'bye' && gone.code, 'revoked')
 })
 
 test('no credential, a wrong one, or a late or missing hello never reaches a request', async () => {

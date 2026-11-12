@@ -90,6 +90,11 @@ export const SHELL_METHODS = {
    * its terminals, which the shell holds, end with it (studio-settlement.ts).
    */
   endWorkspaceTerminals: 'shell.terminals.end-workspace',
+  /**
+   * `{ targetVersion? }` → `StudioUpdateStart`: a client asked this desktop to
+   * update itself (`update.start`); the app updater is the shell's.
+   */
+  updateStart: 'shell.update.start',
 } as const
 
 /** One-way, either direction. */
@@ -136,6 +141,12 @@ export const SERVER_EVENTS = {
    * usage-limit store its IPC draws from and its resumes ask.
    */
   usageStatusLine: 'usage-limits.status-line',
+  /**
+   * Shell → server: where the app's own update stands (`StudioUpdateSide`),
+   * whole, on every change and to a server that has just started; what
+   * `update.status` answers.
+   */
+  updateState: 'update.state',
   /** Shell → server: an SSH machine connected or reconnected `{ key }`; the server follows its chats (phase 8). */
   sshConnected: 'ssh.connected',
   /** Shell → server hints (6.3). */

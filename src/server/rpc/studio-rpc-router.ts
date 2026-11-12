@@ -18,6 +18,7 @@ import {
   type StudioMethodParams,
   type StudioRuntimeRefusalCode,
   type StudioServerInfo,
+  type StudioUpdateStatus,
 } from '../../../packages/studio-protocol/src/public'
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -30,6 +31,12 @@ import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import {
+  externalStudioUpdates,
+  MANUAL_UPDATE_WORDS,
+  studioUpdateStatus,
+  type StudioUpdates,
+} from '../update/studio-updates'
 import type {
   StudioAuditEntry,
   StudioChatBackend,
@@ -88,6 +95,8 @@ export type StudioRpcRouter = {
     params: unknown,
     context?: StudioRequestContext,
   ): Promise<StudioRpcAnswer>
+  /** How this Studio is updated and where an update stands: what `update.status` answers. */
+  updateStatus(): StudioUpdateStatus
   /** A connection closed: what it staged and did not send waits a little for its reconnect. */
   connectionClosed(connectionId: string): void
   /** The RPC is stopping: timers stop and staged uploads go. */
@@ -112,6 +121,8 @@ export type StudioRpcRouterOptions = {
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
   localServers?: StudioLocalServers
   uploads?: StudioUploads
+  /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
+  updates?: StudioUpdates
   now?: () => number
 }
 
@@ -506,6 +517,15 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     return answer
   }
 
+  const updates = options.updates ?? externalStudioUpdates('manual', MANUAL_UPDATE_WORDS)
+  const updateStatus = () => {
+    const info = options.info()
+    return studioUpdateStatus(updates, {
+      version: info.server.version,
+      protocolVersion: info.protocolVersion,
+      minProtocolVersion: info.minProtocolVersion,
+    })
+  }
   const unserved = (method: StudioMethod) => refuse('unavailable', `This Studio does not serve ${method}.`)
   const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
 
@@ -1132,6 +1152,22 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.localServers
         ? { ok: true, result: await options.localServers.remove(server) }
         : unserved('localServers.remove'),
+
+    // ── Updates ────────────────────────────────────────────────────────────
+    // Served on every connection, and on one kept open only for them (an
+    // incompatible client's), so their shapes never change.
+
+    'update.status': () => ({ ok: true, result: updateStatus() }),
+    'update.start': async (params) => {
+      const status = updates.status()
+      if (status.method !== 'self') return refuse('update_unavailable', status.manual ?? MANUAL_UPDATE_WORDS)
+      const started = await updates.start(
+        params.targetVersion === undefined ? {} : { targetVersion: params.targetVersion },
+      )
+      return started.ok
+        ? { ok: true, result: { accepted: true, method: 'self', targetVersion: started.targetVersion } }
+        : refuse('update_unavailable', started.message)
+    },
   }
 
   /** One method's handler, called with that method's params: the table pairs them, so no cast is needed. */
@@ -1145,6 +1181,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   }
 
   return {
+    updateStatus,
     connectionClosed: (connectionId) => uploads.release(connectionId),
     close: () => uploads.close(),
     async handle(grant, method, params, context = NO_CONTEXT) {

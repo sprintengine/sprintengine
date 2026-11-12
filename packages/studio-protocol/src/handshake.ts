@@ -115,6 +115,14 @@ export const STUDIO_APPROVAL_RULES_CAPABILITY = 'approval-rules' as const
 export const STUDIO_PROVIDER_SETTINGS_CAPABILITY = 'provider-settings' as const
 
 /**
+ * `update.status` and `update.start` (`update.ts`), served to every client;
+ * and, to a client that lists this in its hello's `client.capabilities`, a
+ * connection kept open for them when the two ends' protocol windows do not
+ * meet, opened with an `incompatible` frame instead of a `welcome`.
+ */
+export const STUDIO_UPDATE_SESSION_CAPABILITY = 'update-session' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -145,6 +153,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_HISTORY_CAPABILITY,
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_PROVIDER_SETTINGS_CAPABILITY,
+  STUDIO_UPDATE_SESSION_CAPABILITY,
 ] as const
 
 /**
@@ -181,6 +190,43 @@ export function studioPeerSupports(
 }
 
 /**
+ * How a client stands with a Studio, from the client's side:
+ *
+ *   - `compatible`: each serves the other's version.
+ *   - `client-outdated`: the Studio needs a newer protocol than the client
+ *     speaks. The client is updated.
+ *   - `server-outdated`: the Studio speaks only versions older than the
+ *     client still serves. The Studio is updated.
+ *   - `unknown`: the client has not heard the Studio's versions.
+ */
+export type StudioCompatibility = 'compatible' | 'client-outdated' | 'server-outdated' | 'unknown'
+
+/** The protocol versions one end speaks: the newest, and the oldest it still serves. */
+export type StudioProtocolWindow = { protocolVersion: number; minProtocolVersion: number }
+
+/** This build's window. */
+export const STUDIO_PROTOCOL_WINDOW: StudioProtocolWindow = Object.freeze({
+  protocolVersion: STUDIO_PROTOCOL_VERSION,
+  minProtocolVersion: STUDIO_PROTOCOL_MIN_SUPPORTED,
+})
+
+/**
+ * How `client` stands with `server`, by their windows; `unknown` for a
+ * server that has not said. Each must serve the other's newest version or
+ * something above its oldest: the one rule `checkStudioProtocolVersion`
+ * applies at the handshake.
+ */
+export function studioCompatibility(
+  server: StudioProtocolWindow | null | undefined,
+  client: StudioProtocolWindow = STUDIO_PROTOCOL_WINDOW,
+): StudioCompatibility {
+  if (!server) return 'unknown'
+  if (server.protocolVersion < client.minProtocolVersion) return 'server-outdated'
+  if (server.minProtocolVersion > client.protocolVersion) return 'client-outdated'
+  return 'compatible'
+}
+
+/**
  * Whether two ends can talk: each must serve the other's version. Both then
  * speak the lower of the two current versions. The refusal names both numbers
  * and which side to update.
@@ -189,15 +235,19 @@ export function checkStudioProtocolVersion(
   peerVersion: number,
   peerMinVersion: number = peerVersion,
 ): { ok: true; version: number } | { ok: false; message: string } {
-  if (peerVersion < STUDIO_PROTOCOL_MIN_SUPPORTED)
-    return {
-      ok: false,
-      message: `The other end speaks Studio protocol ${peerVersion}, and this one needs ${STUDIO_PROTOCOL_MIN_SUPPORTED} or newer. Update the other end.`,
-    }
-  if (peerMinVersion > STUDIO_PROTOCOL_VERSION)
-    return {
-      ok: false,
-      message: `The other end needs Studio protocol ${peerMinVersion} or newer, and this one speaks ${STUDIO_PROTOCOL_VERSION}. Update this end.`,
-    }
-  return { ok: true, version: Math.min(peerVersion, STUDIO_PROTOCOL_VERSION) }
+  // The peer as the server, this end as the client: `server-outdated` is the peer behind.
+  switch (studioCompatibility({ protocolVersion: peerVersion, minProtocolVersion: peerMinVersion })) {
+    case 'server-outdated':
+      return {
+        ok: false,
+        message: `The other end speaks Studio protocol ${peerVersion}, and this one needs ${STUDIO_PROTOCOL_MIN_SUPPORTED} or newer. Update the other end.`,
+      }
+    case 'client-outdated':
+      return {
+        ok: false,
+        message: `The other end needs Studio protocol ${peerMinVersion} or newer, and this one speaks ${STUDIO_PROTOCOL_VERSION}. Update this end.`,
+      }
+    default:
+      return { ok: true, version: Math.min(peerVersion, STUDIO_PROTOCOL_VERSION) }
+  }
 }

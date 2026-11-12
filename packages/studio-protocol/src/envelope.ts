@@ -23,6 +23,8 @@ import {
   type StudioProgressFrame,
   type StudioReplyFrame,
 } from './tools.js'
+import { STUDIO_PROTOCOL_WINDOW } from './handshake.js'
+import { parseStudioIncompatibleFrame, type StudioIncompatibleFrame } from './update.js'
 
 // The connection envelope: one connection per client, carrying every
 // namespace. A request is answered under its id; a stream is keyed by the
@@ -208,6 +210,7 @@ export type StudioByeFrame = { t: 'bye'; code: string; message: string; retryAft
 
 export type StudioServerFrame =
   | StudioWelcomeFrame
+  | StudioIncompatibleFrame
   | StudioResponseFrame
   | StudioStreamFrame
   | StudioPushFrame
@@ -277,6 +280,10 @@ export const STUDIO_ERROR_CODES = [
   'cli_not_conversational',
   'unknown_skill',
   'conversation_start_failed',
+  // Asked on a connection kept for the update methods only (an `incompatible` one).
+  'unsupported_protocol_version',
+  // `update.start` on a Studio that does not update itself; the words say how to.
+  'update_unavailable',
 ] as const
 
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number]
@@ -440,7 +447,18 @@ export function studioClientFrameIds(value: unknown): { requestId?: string; subs
   return {}
 }
 
-const SERVER_FRAME_TYPES = new Set(['welcome', 'res', 'frame', 'push', 'subFailed', 'chunk', 'bye', 'call', 'cancel'])
+const SERVER_FRAME_TYPES = new Set([
+  'welcome',
+  'incompatible',
+  'res',
+  'frame',
+  'push',
+  'subFailed',
+  'chunk',
+  'bye',
+  'call',
+  'cancel',
+])
 
 /**
  * Whether a frame's `t` is one this version of the envelope defines. A client
@@ -502,6 +520,10 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
         ...(pairing === undefined ? {} : { pairing: { token: (pairing as { token: string }).token } }),
       }
     }
+    case 'incompatible':
+      // Read leniently (`update.ts`): this frame is what a client from any
+      // release reads from a Studio of any later one.
+      return parseStudioIncompatibleFrame(frame, STUDIO_PROTOCOL_WINDOW)
     case 'res': {
       if (!id(frame.id) || typeof frame.ok !== 'boolean') return null
       if (frame.ok) return { t: 'res', id: frame.id, ok: true, result: frame.result }

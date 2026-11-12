@@ -86,7 +86,9 @@ The client keeps its connection:
   coming back online or to the foreground; a refused credential also ends what
   was waiting on it. A refusal waking cannot help
   (`unsupported_protocol_version`) closes it for good; `client.closed` rejects
-  with it.
+  with it. `openStudioUpdateSession` still reaches that Studio: it says which
+  side is behind and how the Studio is updated (`status()`), and asks one that
+  updates itself to do so (`start()`, with `environment:maintain`).
 - It **follows one Studio**: the one its first connection reaches, or the one
   named by `environmentId`. A reconnect that reaches another is refused
   (`environment_changed`) before a cursor is resumed or a request resent.
