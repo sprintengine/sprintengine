@@ -447,9 +447,13 @@ The error, loading and not-yet-sized states fill the body with the kit
   `parseMermaidToExcalidraw(definition)` the editor calls from its "Mermaid to
   Excalidraw" dialog and when Mermaid text is pasted. Drop the override once
   the editor ships importer 3 itself.
-- The other `overrides` entries under the two editor packages resolve pins
-  they carry to patched or React 19 releases — `nanoid`, `@radix-ui/react-tabs`
-  — and are safe to drop once the editor ships with those versions itself.
+- The other `overrides` entries for the two editor packages resolve pins they
+  carry to patched or React 19 releases — the editor's `nanoid` 3 and
+  `@radix-ui/react-tabs`, the importer's `nanoid` 4 — and are safe to drop once
+  they ship with those versions themselves. Each `nanoid` rule names the major
+  it replaces: the importer sits in the editor's subtree, and a bare `nanoid`
+  rule there would reach it too, which npm 10 and 11 resolve differently and
+  `npm ci` then refuses.
 - `@excalidraw/mermaid-to-excalidraw@3` as a DIRECT dependency: the worker
   imports it by name, and a transitive dependency is not a contract.
 - `tsconfig.web.json`: `moduleResolution: "bundler"`.
