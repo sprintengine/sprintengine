@@ -47,4 +47,7 @@ export class ClientCannot extends Error {
   }
 }
 
+/** The origin a desktop window loaded from the app's files says; its tickets are minted for it. */
+export const GATE_WINDOW_ORIGIN = 'file://'
+
 export const MOCK_PROVIDER = { providerId: 'mock-provider', modelId: 'mock-model' } as const

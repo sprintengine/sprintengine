@@ -1575,18 +1575,22 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
 - **Risks.** Latency on the composer's mention search and on large snapshots;
   measured against IPC before the default flips.
 - **As landed.**
-  - _The way in._ A window does not open a WebSocket with a ticket (5.5): main
-    makes a message channel per connection, serves one end in process
-    (`StudioRpcService.connectWindow`, `framePortStream`) and transfers the
-    other to the window's preload (`studio:connect`, `studio:port`), which
-    keeps the port in its own world and lends the page `studioConnect`,
-    `studioPortSend`, `studioPortListen` and `studioPortClose` by connection
-    id. Only an app window's top-level document gets one (the IPC sender
-    check), at most four at once. The hello still carries a credential: a
-    ticket minted for that one connection, good once within thirty seconds,
-    which is all the page ever holds. This is phase 6's port-per-window
-    decision taken a phase early, so phase 6 hands main's end to the server
-    process and changes nothing in the window.
+  - _The way in._ A window opens a WebSocket with a ticket (5.5). Each
+    server runs a window listener on 127.0.0.1 (`studio-window-listener.ts`,
+    started by `StudioRpcService` on the first ticket), serving the protocol
+    on `/ws` only. Before every connection, reconnects included, the window
+    asks main (`studio:window-ticket`, `studioWindowTicket`); main checks the
+    sender is an app window's top-level document and asks the server that
+    holds the chats (in process directly, out of process over the control
+    channel's `studio.window-ticket`). The ticket is good once, within thirty
+    seconds, from that document's origin only, and is all the page ever
+    holds; the upgrade names it and the hello presents it. The listener also
+    refuses a `Host` other than its own address. Main names each document
+    afresh and revokes it when it goes (a navigation, a crashed renderer, a
+    closed window), which ends its connections; a window holds at most four.
+    A restarted server listens on another port, which the next ticket names.
+    (Until 2026-11 this was a message port per connection brokered by main;
+    it went when the window became a WebSocket client.)
   - _Studio's own window._ A connection attached this way (`ownWindow`) is the
     app's chat view: its events and replies are not redacted, a refusal from
     below is told in its own words, its mutations are not audited, and its

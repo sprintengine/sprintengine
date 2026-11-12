@@ -11,11 +11,7 @@ import { registerAgentBrowserToolsIpc } from './ipc/agent-browser-tools-ipc'
 import { registerArtifactsIpc } from './ipc/artifacts-ipc'
 import { registerKeepAwakeIpc } from './ipc/keep-awake-ipc'
 import { registerAuthIpc } from './ipc/auth-ipc'
-import {
-  registerRemoteStudioConnectionIpc,
-  registerStudioConnectionIpc,
-  type RemoteWindowConnector,
-} from './ipc/studio-connection-ipc'
+import { registerStudioWindowTicketIpc, type StudioWindowTicketIssuer } from './ipc/studio-window-ticket-ipc'
 import { assertAppSender } from './ipc/ipc-sender'
 import { registerAppMenuIpc } from './app-menu'
 import { registerBuiltinSkillsIpc } from './ipc/builtin-skills-ipc'
@@ -104,10 +100,10 @@ export type CoreIpcOptions = {
   readThirdPartyLaunchSession?: () => Promise<ThirdPartyLaunchSession>
   /**
    * The Studio server in a process of its own: its domains register there, on
-   * its IPC tunnel, and a chat view's protocol connection is brokered to it.
+   * its IPC tunnel, and it mints the tickets a window's protocol connection to it presents.
    */
   server?: {
-    studioConnections: RemoteWindowConnector
+    windowTickets: StudioWindowTicketIssuer
     /** A model discovery pass, run by the server, which keeps the catalog cache. */
     discoverModels(input: CliModelDiscoveryInput): Promise<unknown>
     /** A chat's transcript and pictures for Export chat, read by the server, which holds the chats. */
@@ -180,8 +176,9 @@ export function registerCoreIpc(
     },
   })
   registerToursIpc(ipcMain, services.tourService)
-  if (options.server) registerRemoteStudioConnectionIpc(ipcMain, options.server.studioConnections)
-  else if (services.studioRpcService) registerStudioConnectionIpc(ipcMain, services.studioRpcService)
+  // A window's tickets come from the server that holds the chats, wherever it runs.
+  const windowTickets = options.server?.windowTickets ?? services.studioRpcService
+  if (windowTickets) registerStudioWindowTicketIpc(ipcMain, windowTickets)
   registerAppMenuIpc(ipcMain)
   registerClipboardIpc(ipcMain)
   // Export chat (a chat tab's menu): the chat read where the chats run, written

@@ -9,6 +9,13 @@ export * from './protocol.js'
 export { StudioError, TERMINAL_CODES } from './runtime.js'
 export type { StudioTransport, StudioTransportFactory } from './runtime.js'
 export {
+  webSocketTransport,
+  type StudioWebSocketConstructor,
+  type StudioWebSocketLike,
+  type StudioWebSocketTicket,
+  type WebSocketTransportOptions,
+} from './runtime.js'
+export {
   connect,
   type ConnectOptions,
   type StudioClient,

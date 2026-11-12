@@ -68,10 +68,12 @@ import type {
 // resumes from its cursors. Writes wait for the socket to drain, so what is
 // waiting is in the queue the bound measures and not in the socket's buffer.
 //
-// The stream need not be a socket. Studio's own windows each reach the RPC
-// over a port main hands them (`studio-frame-port.ts`), one frame per message.
-// Those connections are the app's own chat view (`ownWindow`): what they are
-// sent is not redacted, and what they do is not audited, as over IPC.
+// The stream need not be the owner socket. Studio's own windows each reach
+// the RPC over a WebSocket to the window listener (`studio-window-listener.ts`),
+// admitted by a ticket main asked for; the shell's own session comes over a
+// port main holds (`studio-frame-port.ts`). A window's connections are the
+// app's own chat view (`ownWindow`): what they are sent is not redacted, and
+// what they do is not audited, as over IPC.
 //
 // A connection whose grant may offer tools is also one end of the client
 // tools registry: Studio sends it `call` and `cancel` frames for the tools it
@@ -123,7 +125,7 @@ export type StudioRpcConnectionOptions = {
   backend: StudioConversationBackend
   /** The chat surface: its push streams, and the file searches a closed connection leaves behind. */
   chat?: () => StudioChatBackend | null
-  /** One of Studio's own windows, over the port main handed it. Default false. */
+  /** One of Studio's own windows, admitted by a ticket main minted for it. Default false. */
   ownWindow?: boolean
   /** The desktop's own shell, over a port main holds: it may offer the built-in toolsets. Default false. */
   shell?: boolean

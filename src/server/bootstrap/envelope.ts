@@ -191,12 +191,13 @@ export type SupervisorToServer =
       clientId: string
       windowId: string | null
       /**
-       * A window's IPC tunnel; a chat view's Studio protocol connection (its
-       * ticket follows as the answer to `studio.connect`); the shell's own
-       * session, which offers its toolsets; or a stream on an SSH machine's
-       * relay, which main holds (phase 8).
+       * A window's IPC tunnel; the shell's own Studio protocol session (its
+       * ticket follows as the answer to `studio.connect-shell`), which offers
+       * its toolsets; or a stream on an SSH machine's relay, which main holds
+       * (phase 8). A window's own protocol connection is a WebSocket to the
+       * server's window listener, not a port.
        */
-      kind: 'desktop-window' | 'studio-connection' | 'shell' | 'ssh-stream'
+      kind: 'desktop-window' | 'shell' | 'ssh-stream'
       /** A workspace window (not Diagnostics or an aux view): the `workspace-windows` push target. */
       workspaceWindow?: boolean
     }

@@ -18,7 +18,7 @@ const until = async (check: () => boolean, what: string) => {
   if (!check()) throw new Error(`Timed out waiting for ${what}`)
 }
 
-type Connect = () => Promise<{ connectionId: string; ticket: string }>
+type Ticket = () => Promise<{ url: string; token: string }>
 
 test('a dropped connection is told in words after a moment, and the words go once it is back', async () => {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost' })
@@ -45,9 +45,9 @@ test('a dropped connection is told in words after a moment, and the words go onc
     expect(host.textContent).toBe('')
 
     // Studio stops answering: after the grace, the chat says it is reconnecting.
-    const connect = win.api.studioConnect as Connect
-    win.api.studioConnect = async () => {
-      throw new Error('Studio did not hand this window its connection.')
+    const connect = win.api.studioWindowTicket as Ticket
+    win.api.studioWindowTicket = async () => {
+      throw new Error('Studio server is not running yet, so this window cannot reach its chats yet.')
     }
     await act(async () => loopback.drop())
     expect(host.textContent, 'a blip says nothing').toBe('')
@@ -56,11 +56,11 @@ test('a dropped connection is told in words after a moment, and the words go onc
     expect(host.querySelector('[role="status"]')).not.toBeNull()
 
     // Back: the row goes.
-    win.api.studioConnect = connect
+    win.api.studioWindowTicket = connect
     await until(() => host.textContent === '', 'the row to go')
 
     // A ticket Studio refuses parks the window until it is next used, and says so.
-    win.api.studioConnect = async () => ({ ...(await connect()), ticket: 'seport_not_the_ticket_000000' })
+    win.api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seticket_not_the_ticket_000000' })
     await act(async () => loopback.drop())
     // It reconnects with the refused ticket first, then parks.
     await until(() => host.textContent === parkedWords, 'the parked row')

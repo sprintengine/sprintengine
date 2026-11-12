@@ -175,8 +175,8 @@ test('a picture goes up in pieces and reaches the runtime whole; the socket’s 
     // A reconnect Studio refuses ends the client; the call in flight is told
     // in one plain sentence, not in the socket's words.
     const api = window.api as unknown as Record<string, () => Promise<{ connectionId: string; ticket: string }>>
-    const connect = api.studioConnect
-    api.studioConnect = async () => ({ ...(await connect()), ticket: 'seport_not_the_ticket_000000' })
+    const connect = api.studioWindowTicket
+    api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seticket_not_the_ticket_000000' })
     loopback.drop()
     const refused = await transport.services.providers.list({})
     expect(refused).toEqual({

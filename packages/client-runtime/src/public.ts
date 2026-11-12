@@ -15,6 +15,13 @@
 export { StudioError, TERMINAL_CODES, isTerminalStudioCode } from './rpc/errors.js'
 export type { StudioTransport, StudioTransportFactory } from './rpc/transport.js'
 export {
+  webSocketTransport,
+  type StudioWebSocketConstructor,
+  type StudioWebSocketLike,
+  type StudioWebSocketTicket,
+  type WebSocketTransportOptions,
+} from './rpc/websocket.js'
+export {
   connect,
   type ConnectOptions,
   type StudioClient,

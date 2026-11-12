@@ -190,10 +190,11 @@ async function main(): Promise<number> {
     const tailnetPort = Number(ready.tailnet.detail.split(':').at(-1))
     const pairingToken = async () => (await host.request<{ token: string }>({ op: 'pairing' })).token
 
-    const desktopCutter = await cutter({ path: join(scratch, 'shell.sock') }, join(scratch, 'window.sock'))
+    // The window's sockets go to the server's window listener, which a restart moves.
+    const desktopCutter = await cutter(() => ({ port: Number(new URL(host.ready?.window ?? 'ws://127.0.0.1:0').port) }))
     const peerCutter = await cutter({ port: tailnetPort })
     const phoneCutter = await cutter({ port: tailnetPort })
-    const desktop = desktopClient(desktopCutter, async (chat, patch) => {
+    const desktop = desktopClient(desktopCutter, join(scratch, 'shell.sock'), async (chat, patch) => {
       await host.request({ op: 'recordChat', workspaceId: chat.workspaceId, agentId: chat.agentId, patch })
     })
     const peer = await peerClient({

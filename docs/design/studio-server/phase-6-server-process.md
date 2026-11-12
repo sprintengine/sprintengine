@@ -576,11 +576,12 @@ interface CallerContext {
   app-frame-only), through an injected check, because `ipc-sender.ts` imports
   Electron.
 - **Ports.** The tunnel has a port of its own per window (`kind:
-  'desktop-window'`). The chat view's Studio protocol connections keep the
-  per-connection ports and tickets phase 4 built (`studio:connect`); out of
-  process, main hands the server those ports instead of serving them itself.
-  One multiplexed port would have to reimplement the reconnect and ticket
-  rules phase 4 already has per connection.
+  'desktop-window'`). The chat view's Studio protocol connections are not
+  ports: each is a WebSocket to the server's window listener on 127.0.0.1,
+  admitted by a ticket main asks the server for (`studio.window-ticket` on the
+  control channel) on the window's behalf, good once within thirty seconds
+  from the window's origin. (Built as per-connection ports brokered by main;
+  replaced by the window listener in 2026-11.)
 
 ### 6.3 `ShellBridge` and the shell's toolsets
 
@@ -1208,7 +1209,7 @@ them kept. They are not committed with this document.
 | # | Decision | Recommendation |
 | --- | --- | --- |
 | O1 | Spawn mechanism for the desktop-local server (D1) | **`utilityProcess.fork`**, with the stdio bootstrap kept for WSL, SSH and CI. |
-| O2 | How desktop windows reach the local server (D2, D3) | **A brokered `MessagePort` per window**. No loopback listener until the web client (phase 9). Tickets only for remote environments. |
+| O2 | How desktop windows reach the local server (D2, D3) | **Superseded (2026-11-12).** A loopback WebSocket per window connection, to the server's window listener, admitted by a one-time ticket main mints through the server (R03). Was: a brokered `MessagePort` per window, no loopback listener until the web client (phase 9), and tickets only for remote environments. |
 | O3 | Secrets on the desktop in phase 6 (D4) | **The shell as cipher, formats unchanged.** No re-seal migration in phase 6. |
 | O4 | Linux desktop where `safeStorage` falls back to `basic_text` | Keep today's behaviour in phase 6 and report it. In a later phase, move those secrets to the owner-only key file with a one-time re-seal, which satisfies the owner default. |
 | O5 | Local render host (D5) | **Superseded (2026-10-02).** No render host anywhere. The shell's worker and pane are its `canvas` and `browser` toolsets (phase 5) on every server. |

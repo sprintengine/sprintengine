@@ -1,70 +1,59 @@
-import { connect, type Socket } from 'node:net'
+import { connect } from 'node:net'
 import { createInterface } from 'node:readline'
 
 import { createStudioConversationParts } from '../../../src/renderer/src/components/panels/agentChat/studioChat'
-import type { StudioClient } from '../../../packages/client-runtime/src/public'
-import { windowStudioClient } from '../../../src/renderer/src/studio/windowStudioClient'
+import type { StudioClient, StudioWebSocketConstructor } from '../../../packages/client-runtime/src/public'
+import { configureWindowStudio, windowStudioClient } from '../../../src/renderer/src/studio/windowStudioClient'
 import { conversationNewChatSeed } from '../../../src/renderer/src/components/workspace/conversationSpawnOptions'
 import type { AgentState } from '../../../src/shared/agent-state'
 import type { ConversationSessionFrame } from '../../../src/shared/conversation-runtime'
-import type { StudioConnectResult } from '../../../src/shared/studio-connection'
-import { MOCK_PROVIDER, type Attachment, type ChatRef, type GateClient } from '../client'
+import type { StudioWindowTicket } from '../../../src/shared/studio-connection'
+import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER, type Attachment, type ChatRef, type GateClient } from '../client'
 import type { Cutter } from '../cutter'
 import { Feed } from '../feed'
 
 // The desktop window: its Studio client (`windowStudioClient`) and the chat
 // view's calls over it (`createStudioConversationParts`), the code a window
-// runs with its chats on the Studio protocol. Main's preload and port broker
-// are what this stands in for: a window's `studioConnect` here dials the
-// server host's broker (through the gate's cutter), which hands the port to
-// the same `rpc.connectWindow` the shell does.
+// runs with its chats on the Studio protocol. Before each connection it asks
+// for a ticket, as a window asks main (here the server host's ticket broker,
+// which asks the server's `rpc.windowTicket`), then opens a WebSocket to the
+// server's real window listener, through the gate's cutter, with the origin a
+// window loaded from the app's files says.
 
-type PortApi = Parameters<typeof windowStudioClient>[0]
+type TicketApi = NonNullable<Parameters<typeof windowStudioClient>[0]>
 
-/** The preload's half of the window's port API, over a socket per connection. */
-function socketPortApi(cutter: Cutter): PortApi {
-  const sockets = new Map<string, { socket: Socket; frames: string[]; listen?: (frame: string) => void }>()
+/** Main's half: a ticket for the window's next connection, asked of the host's broker. */
+function brokerTicketApi(brokerPath: string, cutter: Cutter): TicketApi {
   return {
-    studioConnect: () =>
-      new Promise<StudioConnectResult>((resolve, reject) => {
-        const address = cutter.address
-        const socket = 'path' in address ? connect(address.path) : connect(address.port, '127.0.0.1')
-        let entry: { socket: Socket; frames: string[]; listen?: (frame: string) => void } | null = null
-        socket.once('close', () => reject(new Error('The window could not reach Studio.')))
+    studioWindowTicket: () =>
+      new Promise<StudioWindowTicket>((resolve, reject) => {
+        const socket = connect(brokerPath)
+        socket.once('close', () => reject(new Error('The window could not get a ticket from Studio.')))
         socket.on('error', () => undefined)
-        createInterface({ input: socket }).on('line', (line) => {
-          if (!entry) {
-            const connection = JSON.parse(line) as StudioConnectResult
-            entry = { socket, frames: [] }
-            sockets.set(connection.connectionId, entry)
-            resolve(connection)
-            return
-          }
-          if (entry.listen) entry.listen(line)
-          else entry.frames.push(line)
+        // While the server restarts its broker is gone: the window's client tries again.
+        const lines = createInterface({ input: socket })
+        lines.on('error', () => undefined)
+        lines.once('line', (line) => {
+          const ticket = JSON.parse(line) as StudioWindowTicket
+          // The window dials the listener through its cutter; the path and ticket stay.
+          const address = cutter.address
+          if (!('port' in address)) return reject(new Error('The desktop’s cutter has no port.'))
+          const url = new URL(ticket.url)
+          url.port = String(address.port)
+          resolve({ ...ticket, url: url.toString() })
         })
       }),
-    studioPortSend: (connectionId, frame) => {
-      sockets.get(connectionId)?.socket.write(`${frame}\n`)
-    },
-    studioPortListen: (connectionId, onFrame, onClose) => {
-      const entry = sockets.get(connectionId)
-      if (!entry) {
-        queueMicrotask(onClose)
-        return
-      }
-      entry.listen = onFrame
-      for (const frame of entry.frames.splice(0)) onFrame(frame)
-      entry.socket.once('close', () => {
-        sockets.delete(connectionId)
-        onClose()
-      })
-    },
-    studioPortClose: (connectionId) => {
-      sockets.get(connectionId)?.socket.destroy()
-      sockets.delete(connectionId)
-    },
-  } as PortApi
+  } as TicketApi
+}
+
+/** Node's WebSocket, saying the origin a desktop window's says. */
+function windowWebSocket(): StudioWebSocketConstructor {
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
+  return class {
+    constructor(url: string) {
+      return new NodeWebSocket(url, { headers: { origin: GATE_WINDOW_ORIGIN } }) as never
+    }
+  } as unknown as StudioWebSocketConstructor
 }
 
 function fail(result: unknown, what: string): void {
@@ -77,9 +66,11 @@ export type RecordChat = (chat: ChatRef, patch: Partial<AgentState>) => Promise<
 
 export function desktopClient(
   cutter: Cutter,
+  brokerPath: string,
   recordChat: RecordChat,
 ): GateClient & { studio(): Promise<StudioClient> } {
-  const api = socketPortApi(cutter)
+  const api = brokerTicketApi(brokerPath, cutter)
+  configureWindowStudio(api, { WebSocket: windowWebSocket() })
   const parts = createStudioConversationParts(() => windowStudioClient(api))
   const sessions = new Map<string, string>()
   const keyOf = (chat: ChatRef) => `${chat.workspaceId}/${chat.agentId}`
@@ -107,9 +98,9 @@ export function desktopClient(
   return {
     id: 'desktop',
     label: 'Desktop window',
-    transport: 'Studio protocol (window port)',
+    transport: 'Studio protocol (window WebSocket)',
     simulated: [
-      "Electron's preload and main port broker: a socket per window connection to the same rpc.connectWindow",
+      "Electron's preload and main's window tickets: the host asks the server's rpc.windowTicket for each connection, as main does",
       "the chat view's resubscribe if a stream ends (a React hook): the gate subscribes again from its cursor, though the window's client resumes its streams itself across a drop",
       "a New chat's record in its project, which the window writes to main over IPC: the server host writes it",
     ],

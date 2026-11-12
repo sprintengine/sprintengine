@@ -45,7 +45,7 @@ const COALESCE_MS = 250
 /** The window's Studio client, when it serves pull requests; null otherwise (or in a test with no window). */
 async function pullRequestClient(): Promise<StudioClient | null> {
   const api = typeof window === 'undefined' ? null : window.api
-  if (typeof api?.studioConnect !== 'function') return null
+  if (typeof api?.studioWindowTicket !== 'function') return null
   try {
     const client = await windowStudioClient(api)
     return client.supports(STUDIO_PULL_REQUESTS_CAPABILITY) ? client : null
@@ -302,7 +302,7 @@ export async function unwatchPullRequest(
 function useAskWhenPullRequestsMove(ask: () => Promise<void>): void {
   useEffect(() => {
     const api = typeof window === 'undefined' ? null : window.api
-    if (typeof api?.studioConnect !== 'function') return
+    if (typeof api?.studioWindowTicket !== 'function') return
     let alive = true
     let timer: ReturnType<typeof setTimeout> | null = null
     let stop: (() => void) | null = null

@@ -24,6 +24,12 @@
 - **An event whole.** `conversations.event(ref, seq, id)` reads the whole of
   an event that crossed cut to fit one frame (its payload says
   `wireClipped: true`), by the sequence and id it came under.
+- **A WebSocket transport.** `webSocketTransport({ ticket })` opens a fresh
+  WebSocket for each connection, asking `ticket()` first for its URL and the
+  credential its hello presents, so a ticket good once is never presented
+  twice and a Studio that moved is found again. It uses the global
+  `WebSocket` unless given one, and gives up on a socket that has not opened
+  within ten seconds. Studio's own windows connect with it.
 - **Tools for agents.** `client.tools.offer(toolset)` gives Studio's agents
   tools that run in your program, offered again on every connection;
   `withdraw()`, `focus()` and `catalog()` beside it. A handler gets the calling

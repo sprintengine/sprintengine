@@ -174,8 +174,8 @@ export type StudioRequestContext = {
   /** A number this connection alone holds, for the file search slots main keys by number. */
   slot: number
   /**
-   * The connection is one of Studio's own windows, over the port main handed
-   * it: the app's own chat view, which reads conversations over IPC as they
+   * The connection is one of Studio's own windows, admitted by a ticket main
+   * asked for on its behalf: the app's own chat view, which reads conversations over IPC as they
    * are. Its replies are not redacted, its mutations are not audited, and a
    * failure below is told in its own words, as the IPC tells it.
    */

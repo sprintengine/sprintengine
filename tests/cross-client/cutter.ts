@@ -19,7 +19,11 @@ export type Cutter = {
   close(): Promise<void>
 }
 
-export async function startCutter(target: Target, listenOn?: { path: string }): Promise<Cutter> {
+/**
+ * `target` may be read afresh for each connection: a server that listens on a
+ * port of its own choosing (the window listener) moves when it restarts.
+ */
+export async function startCutter(target: Target | (() => Target), listenOn?: { path: string }): Promise<Cutter> {
   const live = new Set<Socket>()
   let blocked = false
   let opened = 0
@@ -29,7 +33,8 @@ export async function startCutter(target: Target, listenOn?: { path: string }): 
       return
     }
     opened += 1
-    const upstream = 'port' in target ? connect(target.port, '127.0.0.1') : connect(target.path)
+    const to = typeof target === 'function' ? target() : target
+    const upstream = 'port' in to ? connect(to.port, '127.0.0.1') : connect(to.path)
     live.add(client)
     live.add(upstream)
     const end = () => {

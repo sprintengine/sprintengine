@@ -38,8 +38,9 @@ import type {
 // and who may connect; nothing here knows it is inside Electron.
 //
 // Two ways in share the one router. The listener accepts clients on the owner
-// socket; `attach` takes a connection main already holds the other end of (a
-// window's port), with that connection's own authenticator. The receipts and
+// socket; `attach` takes a connection that came another way (a window's
+// WebSocket from the window listener, the shell's port), with that connection's
+// own authenticator. The receipts and
 // uploads the router keeps are the same for both, so a window that reconnects
 // finds what it left.
 
@@ -133,7 +134,7 @@ export type StudioRpcServerOptions = {
 
 /** A connection that did not come through the listener, and who may say hello on it. */
 export type StudioRpcAttachOptions = {
-  /** A window's port answers to the one ticket main minted for it. */
+  /** A window's connection answers to the one ticket main minted for it. */
   authenticator: StudioAuthenticator
   /** One of Studio's own windows: shown conversations as its IPC shows them, and not audited. */
   ownWindow: boolean

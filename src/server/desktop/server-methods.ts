@@ -47,8 +47,13 @@ export const SERVER_METHODS = {
   applyModuleEnablement: 'modules.apply-enablement',
   /** → `ThirdPartyLaunchSessionWire`: which third-party main halves loaded here, and what they registered. */
   thirdPartyLaunchSession: 'modules.third-party-launch-session',
-  /** `{ clientId }` → `{ connectionId, ticket }`: a chat view's protocol connection, its port already attached. */
-  studioConnect: 'studio.connect',
+  /**
+   * `{ windowKey, origin }` → `StudioWindowTicket`: a ticket for one connection
+   * of one of the app's windows to the window listener, which starts on the first.
+   */
+  windowTicket: 'studio.window-ticket',
+  /** `{ windowKey }`: that window has gone; its tickets are void and its connections end. */
+  windowRevoke: 'studio.window-revoke',
   /**
    * `{ clientId }` → `{ connectionId, ticket }`: the shell's own Studio
    * connection, with the shell role, over which it offers its toolsets (6.3).
@@ -131,6 +136,9 @@ export const SERVER_EVENTS = {
   hintFocus: 'hint.focus',
   hintOnline: 'hint.online',
 } as const
+
+/** What `shellConnect` answers: the shell's connection, and the ticket its hello presents. */
+export type ShellConnectResult = { connectionId: string; ticket: string }
 
 /** One slot of the server's worktree pool, as `worktree-pool.leases` answers it. */
 export type ServerWorktreeLease = { path: string; lease: { workspaceId: string | null; agentId: string | null } | null }

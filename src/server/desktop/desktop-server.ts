@@ -519,11 +519,10 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         }, SSH_PORT_UNCLAIMED_MS).unref?.()
         return
       }
-      if (attach.kind === 'studio-connection' || attach.kind === 'shell') {
-        // A chat view's protocol connection, or the shell's own: answered with
-        // its ticket by the `studio.connect` or `studio.connect-shell` request
-        // that follows on the same channel.
-        handlers.pendingConnections.set(attach.clientId, { port: port as TunnelPort, shell: attach.kind === 'shell' })
+      if (attach.kind === 'shell') {
+        // The shell's own protocol connection: answered with its ticket by the
+        // `studio.connect-shell` request that follows on the same channel.
+        handlers.pendingConnections.set(attach.clientId, port as TunnelPort)
       }
     },
     detachClient(clientId) {
@@ -617,11 +616,11 @@ function serveShellRequests(deps: {
   gateway: StudioGateway
   envelope: Parameters<ServerStart>[0]['envelope']
   cipherKind: 'shell' | 'key-file'
-}): { pendingConnections: Map<string, { port: TunnelPort; shell: boolean }> } {
+}): { pendingConnections: Map<string, TunnelPort> } {
   const { rpc, core } = deps
   // A port that arrived for a connection, until its request takes it: a chat
   // view's, or the shell's, which only `studio.connect-shell` may take.
-  const pendingConnections = new Map<string, { port: TunnelPort; shell: boolean }>()
+  const pendingConnections = new Map<string, TunnelPort>()
   const startedAt = Date.now()
   rpc.handle(SERVER_METHODS.mirrorSnapshot, () => deps.mirror())
   rpc.handle(SERVER_METHODS.updateWorkspaceAgent, (params) => {
@@ -699,23 +698,30 @@ function serveShellRequests(deps: {
     deps.modules.applyEnablement((params as { overrides?: Record<string, boolean> } | null)?.overrides ?? {}),
   )
   rpc.handle(SERVER_METHODS.thirdPartyLaunchSession, () => deps.modules.thirdPartyLaunchSession())
-  const takePort = (params: unknown, shell: boolean): TunnelPort => {
+  const takePort = (params: unknown): TunnelPort => {
     const clientId = (params as { clientId?: unknown } | null)?.clientId
     const pending = typeof clientId === 'string' ? pendingConnections.get(clientId) : undefined
-    if (!pending || typeof clientId !== 'string' || pending.shell !== shell)
-      throw new Error('No connection port arrived for this request.')
+    if (!pending || typeof clientId !== 'string') throw new Error('No connection port arrived for this request.')
     pendingConnections.delete(clientId)
-    return pending.port
+    return pending
   }
-  rpc.handle(SERVER_METHODS.studioConnect, (params) =>
-    deps.studioRpc.connectWindow(tunnelPortFrames(takePort(params, false))),
-  )
+  // A window's ticket for the window listener. Only the shell asks (the
+  // control channel is process-private), and it asks only for a window it
+  // checked is one of the app's own, from that window's origin.
+  rpc.handle(SERVER_METHODS.windowTicket, (params) => {
+    const request = params as { windowKey?: unknown; origin?: unknown } | null
+    if (typeof request?.windowKey !== 'string' || typeof request.origin !== 'string')
+      throw new Error('A window ticket names its window and origin.')
+    return deps.studioRpc.windowTicket({ windowKey: request.windowKey, origin: request.origin })
+  })
+  rpc.handle(SERVER_METHODS.windowRevoke, (params) => {
+    const windowKey = (params as { windowKey?: unknown } | null)?.windowKey
+    if (typeof windowKey === 'string') deps.studioRpc.revokeWindow(windowKey)
+  })
   // The control channel is process-private, so whatever asks here is the
   // shell: its connection gets the shell role, which may offer the built-in
   // toolsets (phase 5, 7.2).
-  rpc.handle(SERVER_METHODS.shellConnect, (params) =>
-    deps.studioRpc.connectShell(tunnelPortFrames(takePort(params, true))),
-  )
+  rpc.handle(SERVER_METHODS.shellConnect, (params) => deps.studioRpc.connectShell(tunnelPortFrames(takePort(params))))
   rpc.handle(SERVER_METHODS.info, (): ServerInfo => {
     const status = deps.gateway.getStatus()
     return {

@@ -145,7 +145,7 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
   ...(serverHost
     ? {
         server: {
-          studioConnections: { connectPort: (port) => serverHost.connectStudioPort(port) },
+          windowTickets: serverHost.windowTickets,
           discoverModels: (input) =>
             serverHost.supervisor.call(SERVER_METHODS.discoverModels, input, { timeoutMs: 120_000 }),
           // A long chat is tens of megabytes, its pictures more.
