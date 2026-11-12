@@ -61,6 +61,7 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
     follow: (key, cursor, listener) => host.subscribe(key, cursor, listener),
     loadEarlier: (key, beforeCursor, turnLimit) => host.loadEarlier(key, beforeCursor, turnLimit),
     toolDetail: (key, toolUseId) => host.getToolDetail(key, toolUseId),
+    event: (key, seq, id) => host.getEvent(key, seq, id),
     turnDiff: (key, turnSeq, path) => host.getTurnDiff(key, turnSeq, path),
     command: (key, clientId, commandId, command, fingerprint) =>
       host.command(key, clientId, commandId, command, fingerprint),

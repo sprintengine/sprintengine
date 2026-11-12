@@ -70,6 +70,7 @@ import type {
   ConversationSideQuestionExchange,
   ConversationSideQuestionResult,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationTurnDiffResult,
 } from '../../../shared/conversation-runtime'
 import { parseImageAttachments } from '../../conversation-ipc-inputs'
@@ -536,6 +537,7 @@ export type TailnetMeshService = {
     pin?: unknown
   }): Promise<MeshPullRequestCreateResult>
   conversationToolDetail(input: { key: unknown; toolUseId: unknown }): Promise<ConversationToolDetailResult>
+  conversationEvent(input: { key: unknown; seq: unknown; id: unknown }): Promise<ConversationEventReadResult>
   conversationTurnDiff(input: { key: unknown; turnSeq: unknown; path?: unknown }): Promise<ConversationTurnDiffResult>
   /**
    * A followed chat's changes, read from its machine as that machine's Diff tab
@@ -3518,6 +3520,22 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       if (!key || typeof input.toolUseId !== 'string' || !input.toolUseId || input.toolUseId.length > 200)
         return { ok: false, code: 'invalid_input', message: 'Name the conversation and the tool call.' }
       return remoteConversations.toolDetail(key, input.toolUseId)
+    },
+
+    async conversationEvent(input): Promise<ConversationEventReadResult> {
+      const key = meshConversationKeyOf(input.key)
+      const { seq, id } = input
+      if (
+        !key ||
+        typeof seq !== 'number' ||
+        !Number.isSafeInteger(seq) ||
+        seq < 1 ||
+        typeof id !== 'string' ||
+        !id ||
+        id.length > 200
+      )
+        return { ok: false, code: 'invalid_input', message: 'Name the conversation and the event.' }
+      return remoteConversations.event(key, seq, id)
     },
 
     async conversationSideQuestion(input): Promise<ConversationSideQuestionResult> {

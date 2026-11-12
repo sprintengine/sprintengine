@@ -21,6 +21,9 @@
 
 ### Added
 
+- **An event whole.** `conversations.event(ref, seq, id)` reads the whole of
+  an event that crossed cut to fit one frame (its payload says
+  `wireClipped: true`), by the sequence and id it came under.
 - **Tools for agents.** `client.tools.offer(toolset)` gives Studio's agents
   tools that run in your program, offered again on every connection;
   `withdraw()`, `focus()` and `catalog()` beside it. A handler gets the calling

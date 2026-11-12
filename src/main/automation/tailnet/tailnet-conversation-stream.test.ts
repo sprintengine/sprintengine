@@ -18,7 +18,10 @@ import {
   type ConversationCommandAudit,
 } from './tailnet-conversation-stream'
 import { createWebSocketFrameDecoder, encodeMaskedTextFrame } from './websocket-frames'
-import { CONVERSATION_WIRE_PAGE_BYTES } from '../../../server/conversation-stream-shaping'
+import {
+  CONVERSATION_WIRE_EVENT_BYTES,
+  CONVERSATION_WIRE_PAGE_BYTES,
+} from '../../../server/conversation-stream-shaping'
 import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   conversationCloseRetryAfterMs,
@@ -92,6 +95,7 @@ function host(): ConversationGatewayHost {
     },
     loadEarlier: async () => ({ ok: true, page: { events: [], hasMore: false, beforeCursor: null } }),
     getToolDetail: async () => ({ ok: false, code: 'not_found', message: 'Missing.' }),
+    getEvent: async () => ({ ok: false, code: 'not_found', message: 'Missing.' }),
     getTurnDiff: async () => ({ ok: false, message: 'Missing.' }),
     command: async () => ({ ok: true }),
   }
@@ -421,6 +425,35 @@ test('the lane sends a chat as every wire does: a result once, a change without 
   assert.equal(earlier.data.page.events.at(-1)?.seq, 1200)
   assert.equal(earlier.data.page.hasMore, true)
   assert.equal(earlier.data.page.beforeCursor, earlier.data.page.events[0].seq)
+  stream.close(1000, '')
+})
+
+test('one oversized event crosses the lane cut to a frame, and getEvent reads it whole', async () => {
+  const answer = `Start. ${'q'.repeat(2 * 1024 * 1024)}`
+  const stored = wireEvent(7, 'content_delta', { turnId: 't', text: answer })
+  const asked: Array<[number, string]> = []
+  const { socket, stream, emit } = await joinedSocket((gateway) => {
+    gateway.getEvent = async (_key, seq, id) => {
+      asked.push([seq, id])
+      return { ok: true, event: stored }
+    }
+  })
+  emit({ type: 'snapshot', page: { events: [], hasMore: false, beforeCursor: null }, generation: 'g' })
+  emit({ type: 'synchronized', seq: 0, generation: 'g' })
+  emit({ type: 'event', event: stored })
+  await until(() => assemble(socket.output()).some((frame) => frame.event?.seq === 7), 'the event arrives')
+  const sent = assemble(socket.output()).find((frame) => frame.event?.seq === 7)!.event!
+  assert.equal(sent.payload?.wireClipped, true)
+  assert.ok(Buffer.byteLength(JSON.stringify(sent)) <= CONVERSATION_WIRE_EVENT_BYTES)
+  socket.receive({ type: 'getEvent', requestId: 'whole', seq: 7, id: stored.id })
+  await until(() => assemble(socket.output()).some((frame) => frame.type === 'result'), 'the answer arrives')
+  const result = assemble(socket.output()).find((frame) => frame.type === 'result') as unknown as {
+    ok: boolean
+    data: { event: ConversationEvent }
+  }
+  assert.deepEqual(asked, [[7, stored.id]])
+  assert.equal(result.ok, true)
+  assert.equal(result.data.event.payload?.text, answer)
   stream.close(1000, '')
 })
 

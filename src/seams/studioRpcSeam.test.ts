@@ -330,6 +330,7 @@ test('every method the server serves has its call in the SDK, under the same sco
     'conversation.usageLimitResume': 'request',
     'conversation.loadEarlier': 'conversations.loadEarlier',
     'conversation.toolDetail': 'conversations.toolDetail',
+    'conversation.event': 'conversations.event',
     'conversation.turnDiff': 'conversations.turnDiff',
     // The chat surface is Studio's own windows' and is called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CHAT_METHODS).map((method) => [method, 'request'])) as Record<

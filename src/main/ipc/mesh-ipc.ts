@@ -40,6 +40,7 @@ import {
   MESH_CONVERSATION_SEND_CHANNEL,
   MESH_CONVERSATION_SIDE_QUESTION_CHANNEL,
   MESH_CONVERSATION_TOOL_DETAIL_CHANNEL,
+  MESH_CONVERSATION_EVENT_CHANNEL,
   MESH_CONVERSATION_TOOL_IMAGE_CHANNEL,
   MESH_CONVERSATION_ATTACHMENT_CHANNEL,
   MESH_CONVERSATION_TURN_DIFF_CHANNEL,
@@ -308,6 +309,10 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
   ipcMain.handle(MESH_CONVERSATION_TOOL_DETAIL_CHANNEL, (_event, input: unknown) => {
     const record = asRecord(input) ?? {}
     return service.mesh().conversationToolDetail({ key: record.key, toolUseId: record.toolUseId })
+  })
+  ipcMain.handle(MESH_CONVERSATION_EVENT_CHANNEL, (_event, input: unknown) => {
+    const record = asRecord(input) ?? {}
+    return service.mesh().conversationEvent({ key: record.key, seq: record.seq, id: record.id })
   })
   ipcMain.handle(MESH_CONVERSATION_TOOL_IMAGE_CHANNEL, (_event, input: unknown) => {
     const record = asRecord(input) ?? {}

@@ -50,6 +50,8 @@ import type {
   ConversationProviderSignInResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
+  ConversationEventReadInput,
+  ConversationEventReadResult,
   ConversationAttachmentInput,
   ConversationAttachmentResult,
   ConversationPlanDocumentInput,
@@ -194,6 +196,7 @@ type ConversationIpcRenderer = {
     input?: ConversationListSessionsInput,
   ): Promise<ConversationListSessionsResult>
   invoke(channel: 'conversation:tool-detail', input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
+  invoke(channel: 'conversation:event:read', input: ConversationEventReadInput): Promise<ConversationEventReadResult>
   invoke(channel: 'conversation:attachment', input: ConversationAttachmentInput): Promise<ConversationAttachmentResult>
   invoke(
     channel: 'conversation:plan-document',
@@ -303,6 +306,8 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
       renderer.invoke('conversation:sessions:list', input),
     conversationToolDetail: (input: ConversationToolDetailInput): Promise<ConversationToolDetailResult> =>
       renderer.invoke('conversation:tool-detail', input),
+    conversationEvent: (input: ConversationEventReadInput): Promise<ConversationEventReadResult> =>
+      renderer.invoke('conversation:event:read', input),
     conversationAttachment: (input: ConversationAttachmentInput): Promise<ConversationAttachmentResult> =>
       renderer.invoke('conversation:attachment', input),
     conversationPlanDocument: (input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult> =>
@@ -392,6 +397,7 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
     | 'conversationSessionTerminalHandoff'
     | 'conversationSessionsList'
     | 'conversationToolDetail'
+    | 'conversationEvent'
     | 'conversationAttachment'
     | 'conversationPlanDocument'
     | 'conversationLoadEarlier'

@@ -546,6 +546,13 @@ catch-up, so a replay is bounded the same way, and a snapshot a session sends
 after its join (once a chat's server is back) is paced and split like a
 join's. The module SDK's conversation stream is not a reader's wire: a
 module reads events whole.
+No event takes more than one frame (`CONVERSATION_WIRE_EVENT_BYTES`): one
+larger as stored (a long answer, a pasted log, a large approval) crosses with
+its longest text cut to fit and `wireClipped: true`, and a reader reads it
+whole by the `seq` and `id` it came under (`conversation.event` on the Studio
+protocol, `getEvent` on the lane, `conversation:event:read` over IPC). The chat
+view and the phone say when part of a chat came cut short and offer it in
+full.
 
 A reader that falls behind gets consecutive deltas merged instead of queued;
 a large snapshot is sent in parts and never counts against live events. A

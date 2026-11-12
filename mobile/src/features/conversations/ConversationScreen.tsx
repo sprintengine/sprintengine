@@ -1437,6 +1437,12 @@ export function ConversationScreen({
           renderItem={renderRow}
           ListFooterComponent={
             <>
+              {chat.clippedCount > 0 ? (
+                <View>
+                  <Text style={styles.meta}>Part of this chat was too long to send at once, so it is shown cut short.</Text>
+                  <PrimaryButton label="Show in full" variant="ghost" onPress={() => void chat.restoreClipped()} />
+                </View>
+              ) : null}
               {chat.optimistic
                 .filter((item) => !queuedIds.has(item.commandId))
                 .map((item) => {

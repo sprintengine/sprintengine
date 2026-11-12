@@ -182,6 +182,10 @@ export type ConversationClientFrame =
   | { type: 'list'; requestId: string }
   | { type: 'loadEarlier'; requestId: string; beforeCursor: number; turnLimit?: number }
   | { type: 'getToolDetail'; requestId: string; toolUseId: string }
+  // The whole of an event that crossed cut to fit (`wireClipped`), by the
+  // `seq` and `id` it came under; answered `{ ok: true, event }`. A desktop
+  // that sends no cut event is never asked.
+  | { type: 'getEvent'; requestId: string; seq: number; id: string }
   | { type: 'getTurnDiff'; requestId: string; turnSeq: number; path?: string }
   | { type: 'command'; commandId: string; command: ConversationWireCommand }
 
@@ -357,6 +361,10 @@ export function parseConversationClientFrame(value: unknown): ConversationClient
     case 'getToolDetail':
       return id(value.requestId) && id(value.toolUseId)
         ? { type: 'getToolDetail', requestId: value.requestId, toolUseId: value.toolUseId }
+        : null
+    case 'getEvent':
+      return id(value.requestId) && integer(value.seq) && value.seq >= 1 && id(value.id)
+        ? { type: 'getEvent', requestId: value.requestId, seq: value.seq, id: value.id }
         : null
     case 'getTurnDiff':
       return id(value.requestId) &&

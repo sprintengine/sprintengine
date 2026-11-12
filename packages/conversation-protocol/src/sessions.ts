@@ -180,6 +180,15 @@ export type ConversationToolDetail = {
 export type ConversationToolDetailResult =
   | { ok: true; detail: ConversationToolDetail }
   | { ok: false; code: 'not_found' | 'invalid_input' | 'unavailable'; message: string }
+/**
+ * One event of a chat as its log stores it, by the sequence and id a wire
+ * sent it under: what a reader asks for when an event crossed cut to fit
+ * (`wireClipped`). The id says where a catch-up's slice of a merged run of
+ * deltas begins, so the answer is that slice, whole.
+ */
+export type ConversationEventReadResult =
+  | { ok: true; event: ConversationEvent }
+  | { ok: false; code: 'not_found' | 'invalid_input' | 'unavailable'; message: string }
 export type ConversationCapabilities = {
   permissionPresets?: ConversationWirePermissionPreset[]
   // The CLI's own modes this chat can run beside the presets' own, by the ids

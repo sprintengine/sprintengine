@@ -146,6 +146,12 @@ export type StudioConversationService = ConversationService & {
     ref: ConversationRef,
     toolUseId: string,
   ): Promise<ConversationResult<StudioMethodResult<'conversation.toolDetail'>>>
+  /** The whole of an event that crossed cut to fit (`wireClipped`), by the `seq` and `id` it came under. */
+  event(
+    ref: ConversationRef,
+    seq: number,
+    id: string,
+  ): Promise<ConversationResult<StudioMethodResult<'conversation.event'>>>
   turnDiff(
     ref: ConversationRef,
     turnSeq: number,
@@ -1018,6 +1024,7 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
         ...(turnLimit === undefined ? {} : { turnLimit }),
       }),
     toolDetail: (ref, toolUseId) => result('conversation.toolDetail', { key: key(ref), toolUseId }),
+    event: (ref, seq, id) => result('conversation.event', { key: key(ref), seq, id }),
     turnDiff: (ref, turnSeq, path) =>
       result('conversation.turnDiff', { key: key(ref), turnSeq, ...(path === undefined ? {} : { path }) }),
   }

@@ -19,6 +19,7 @@ import type {
   ConversationStartSessionResult,
   ConversationTerminalHandoffResult,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationAttachmentResult,
   ConversationPlanDocumentResult,
   ConversationPageResult,
@@ -632,6 +633,29 @@ export function registerConversationIpc(
         ok: false,
         code: 'unavailable',
         message: 'Tool details are unavailable.',
+      }
+    )
+  })
+
+  // An event that crossed cut to fit (`wireClipped`), read whole. Not the
+  // all-chats push on `conversation:event`: a read, by the `seq` and `id` it
+  // was sent under.
+  ipcMain.handle('conversation:event:read', async (_, input: unknown): Promise<ConversationEventReadResult> => {
+    const parsed = parseTranscriptInput(input)
+    if (
+      !parsed.ok ||
+      !isRecord(input) ||
+      !Number.isSafeInteger(input.seq) ||
+      Number(input.seq) < 1 ||
+      typeof input.id !== 'string' ||
+      !input.id
+    )
+      return { ok: false, code: 'invalid_input', message: 'Conversation and event identity are required.' }
+    return (
+      handlers.readEvent?.({ ...parsed.input, seq: Number(input.seq), id: input.id }) ?? {
+        ok: false,
+        code: 'unavailable',
+        message: 'This chat cannot be read just now.',
       }
     )
   })

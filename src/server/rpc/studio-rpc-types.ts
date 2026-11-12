@@ -30,6 +30,7 @@ import type {
   ConversationSessionFrame,
   ConversationStartSessionResult,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationTurnDiffResult,
 } from '../../shared/conversation-runtime'
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
@@ -71,6 +72,8 @@ export type StudioConversationBackend = {
   ): { dispose(): void; ready: Promise<void> }
   loadEarlier(key: ConversationKey, beforeCursor: number, turnLimit?: number): Promise<ConversationPageResult>
   toolDetail(key: ConversationKey, toolUseId: string): Promise<ConversationToolDetailResult>
+  /** One event as stored, by the sequence and id it was sent under. */
+  event(key: ConversationKey, seq: number, id: string): Promise<ConversationEventReadResult>
   turnDiff(key: ConversationKey, turnSeq: number, path?: string): Promise<ConversationTurnDiffResult>
   /**
    * Carry out one command under an id already namespaced to its client. The

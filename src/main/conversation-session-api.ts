@@ -16,6 +16,7 @@ import type {
   ConversationForkInput,
   ConversationListSessionsInput,
   ConversationToolDetailInput,
+  ConversationEventReadInput,
 } from '../shared/conversation-runtime'
 import type { ConversationBackend } from '../server/core/conversation-backend'
 
@@ -40,6 +41,9 @@ export class ConversationSessionApi {
   }
   getToolDetail(input: ConversationToolDetailInput) {
     return this.runtime.getToolDetail(input)
+  }
+  readEvent(input: ConversationEventReadInput) {
+    return this.runtime.readConversationEvent(input)
   }
   getTurnDiff(input: ConversationTurnDiffInput) {
     return this.runtime.getTurnDiff(input)

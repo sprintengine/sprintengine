@@ -39,6 +39,8 @@ import type {
   ConversationSubscribeInput,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
+  ConversationEventReadInput,
+  ConversationEventReadResult,
   ConversationTurnDiffInput,
   ConversationTurnDiffResult,
 } from '../../../../../shared/conversation-runtime'
@@ -246,6 +248,8 @@ export type ConversationTransport = {
   subscribe(input: ConversationSubscribeInput, cb: (frame: ConversationSessionFrame) => void): () => void
   loadEarlier(input: ConversationLoadEarlierInput): Promise<ConversationPageResult>
   toolDetail(input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
+  /** The whole of an event that crossed cut to fit (`wireClipped`), by the `seq` and `id` it came under. */
+  readEvent(input: ConversationEventReadInput): Promise<ConversationEventReadResult>
   turnDiff(input: ConversationTurnDiffInput): Promise<ConversationTurnDiffResult>
   send(input: ConversationSendTurnInput): Promise<ConversationTransportResult>
   interrupt(input: ConversationInterruptInput): Promise<ConversationTransportResult>
@@ -472,6 +476,7 @@ const ipcConversationParts: Required<
   subscribe: (input, cb) => window.api.onConversationSession(input, cb),
   loadEarlier: (input) => window.api.conversationLoadEarlier(input),
   toolDetail: (input) => window.api.conversationToolDetail(input),
+  readEvent: (input) => window.api.conversationEvent(input),
   turnDiff: (input) => window.api.conversationTurnDiff(input),
   send: (input) => window.api.conversationSessionSendTurn(input),
   interrupt: (input) => window.api.conversationSessionInterrupt(input),
@@ -558,6 +563,7 @@ export const localConversationTransport: ConversationTransport = {
   subscribe: (input, cb) => localParts().subscribe(input, cb),
   loadEarlier: (input) => localParts().loadEarlier(input),
   toolDetail: (input) => localParts().toolDetail(input),
+  readEvent: (input) => localParts().readEvent(input),
   turnDiff: (input) => localParts().turnDiff(input),
   send: (input) => localParts().send(input),
   interrupt: (input) => localParts().interrupt(input),
@@ -707,6 +713,7 @@ export function createRemoteConversationTransport(input: {
     loadEarlier: (page) =>
       window.api.meshConversationLoadEarlier({ key, beforeCursor: page.beforeCursor, turnLimit: page.turnLimit }),
     toolDetail: (detail) => window.api.meshConversationToolDetail({ key, toolUseId: detail.toolUseId }),
+    readEvent: (read) => window.api.meshConversationEvent({ key, seq: read.seq, id: read.id }),
     turnDiff: (diff) => window.api.meshConversationTurnDiff({ key, turnSeq: diff.turnSeq, path: diff.path }),
     // The images go as a chat here sends them; main uploads each to the
     // machine before the send that names them.

@@ -64,6 +64,7 @@ export const REMOTE_BACKEND_MEMBERS = [
   'endTerminalHandoff',
   'noteTerminalHandoff',
   'getToolDetail',
+  'readConversationEvent',
   'findToolCall',
   'readAttachment',
   'planDocument',

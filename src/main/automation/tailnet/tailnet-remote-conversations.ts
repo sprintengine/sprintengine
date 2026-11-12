@@ -48,6 +48,7 @@ import type {
   ConversationSideQuestionResult,
   ConversationToolDetail,
   ConversationToolDetailResult,
+  ConversationEventReadResult,
   ConversationTurnDiffResult,
 } from '../../../shared/conversation-runtime'
 import { tailnetScopeGrantsAccess, type TailnetScope } from '../../../shared/tailnet'
@@ -184,6 +185,8 @@ export type RemoteConversations = {
   unfollow(followId: string): void
   loadEarlier(key: MeshConversationKey, beforeCursor: number, turnLimit?: number): Promise<ConversationPageResult>
   toolDetail(key: MeshConversationKey, toolUseId: string): Promise<ConversationToolDetailResult>
+  /** The whole of an event that crossed cut to fit, by the `seq` and `id` it came under. */
+  event(key: MeshConversationKey, seq: number, id: string): Promise<ConversationEventReadResult>
   turnDiff(key: MeshConversationKey, turnSeq: number, path?: string): Promise<ConversationTurnDiffResult>
   command(key: MeshConversationKey, command: unknown): Promise<MeshConversationCommandResult>
   /**
@@ -1220,6 +1223,16 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
           message: 'That machine answered with a tool detail this build cannot read.',
         }
       return { ok: true, detail: detail as unknown as ConversationToolDetail }
+    },
+
+    async event(key, seq, id) {
+      const answer = await request(key, (requestId) => ({ type: 'getEvent', requestId, seq, id }))
+      if (!answer.ok)
+        return { ok: false, code: answer.code === 'not_found' ? 'not_found' : 'unavailable', message: answer.message }
+      const event = parseConversationWireEvent(asRecord(answer.data)?.event)
+      return event
+        ? { ok: true, event: event as ConversationEvent }
+        : { ok: false, code: 'unavailable', message: 'That machine answered with an event this build cannot read.' }
     },
 
     async turnDiff(key, turnSeq, path) {

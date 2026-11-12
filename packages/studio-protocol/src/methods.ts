@@ -9,6 +9,7 @@ import {
   type ConversationServerFrame,
   type ConversationThread,
   type ConversationToolDetail,
+  type ConversationWireEvent,
   type ConversationWirePage,
   type ConversationWirePermissionPreset,
 } from './conversation.js'
@@ -262,6 +263,15 @@ type StudioConversationMethodMap = {
     result: { detail: ConversationToolDetail }
     errors: 'not_found'
   }
+  /**
+   * One event as the chat's log stores it, by the `seq` and `id` it was sent
+   * under: the whole of an event that crossed cut to fit (`wireClipped`).
+   */
+  'conversation.event': {
+    params: { key: StudioConversationKey; seq: number; id: string }
+    result: { event: ConversationWireEvent }
+    errors: 'not_found'
+  }
   'conversation.turnDiff': {
     params: { key: StudioConversationKey; turnSeq: number; path?: string }
     result: { diff: ConversationCheckpointDiff; patch?: string; original?: string; modified?: string }
@@ -474,6 +484,16 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
       if (!at.ok) return at
       if (!id(value.toolUseId)) return refuse('invalid_params', '"toolUseId" names the tool call.')
       return studioParams({ key: at.params.key, toolUseId: value.toolUseId })
+    },
+  },
+  'conversation.event': {
+    ...read(),
+    params: (value) => {
+      const at = keyed(value)
+      if (!at.ok) return at
+      if (!integer(value.seq) || value.seq < 1) return refuse('invalid_params', '"seq" must be a sequence number.')
+      if (!id(value.id)) return refuse('invalid_params', '"id" names the event.')
+      return studioParams({ key: at.params.key, seq: value.seq, id: value.id })
     },
   },
   'conversation.turnDiff': {

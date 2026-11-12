@@ -32,6 +32,7 @@ import { CONVERSATION_LANE_ACCESS } from './tailnet-scopes'
 import type { ConversationEvent, ConversationKey } from '../../../shared/conversation-runtime'
 import {
   CONVERSATION_CHUNK_CHARS,
+  CONVERSATION_WIRE_EVENT_BYTES,
   conversationDeltaKey,
   boundConversationPage,
   conversationSnapshotParts,
@@ -423,8 +424,17 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     into.bytes += grown
     liveBytes += grown
   }
-  const mergeable = (entry: LiveEntry | BulkEntry | undefined, key: string, subscription?: number) =>
-    entry?.kind === 'live' && entry.delta?.key === key && entry.subscription === subscription
+  // A merged delta stops growing at one event's bound; the next starts another.
+  const mergeable = (
+    entry: LiveEntry | BulkEntry | undefined,
+    key: string,
+    subscription: number | undefined,
+    addedBytes: number,
+  ) =>
+    entry?.kind === 'live' &&
+    entry.delta?.key === key &&
+    entry.subscription === subscription &&
+    entry.bytes + addedBytes <= CONVERSATION_WIRE_EVENT_BYTES
   const removeLive = (entry: LiveEntry): void => {
     const index = pending.indexOf(entry)
     // Already folded into its neighbour by an earlier removal.
@@ -437,7 +447,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     const before = pending[index - 1]
     const after = pending[index]
     if (before?.kind === 'live' && before.delta && after?.kind === 'live' && after.delta) {
-      if (mergeable(after, before.delta.key, before.subscription)) {
+      if (mergeable(after, before.delta.key, before.subscription, before.bytes)) {
         extend(before as LiveEntry & { delta: object }, after.delta.event)
         pending.splice(index, 1)
         liveFrames--
@@ -457,7 +467,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     const tail = pending.at(-1)
     const behindReplay = subscription !== undefined && (replaying.get(subscription) ?? 0) > 0
     const byteBound = behindReplay ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES
-    if (key && event && mergeable(tail, key, subscription)) {
+    if (key && event && mergeable(tail, key, subscription, Buffer.byteLength(String(event.payload!.text)))) {
       // Only an unsent frame is ever in the queue, so this merges only while
       // the reader is behind. The merged delta keeps its first id and takes
       // the last sequence, which is how a stored run reads back too.
@@ -752,6 +762,14 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     if (frame.type === 'getToolDetail') {
       const key = requireKey(frame.requestId)
       if (key) await result(frame.requestId, await host.getToolDetail(key, frame.toolUseId))
+      return
+    }
+    if (frame.type === 'getEvent') {
+      const key = requireKey(frame.requestId)
+      if (!key) return
+      const read = await host.getEvent(key, frame.seq, frame.id)
+      const answer = read.ok ? { ok: true as const, event: read.event } : read
+      await result(frame.requestId, answer)
       return
     }
     if (frame.type === 'getTurnDiff') {

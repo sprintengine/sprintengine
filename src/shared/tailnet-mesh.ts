@@ -1127,6 +1127,7 @@ export const MESH_CONVERSATION_EARLIER_CHANNEL = 'mesh:conversation-earlier'
 export const MESH_CONVERSATION_COMMAND_CHANNEL = 'mesh:conversation-command'
 export const MESH_CONVERSATION_SEND_CHANNEL = 'mesh:conversation-send'
 export const MESH_CONVERSATION_TOOL_DETAIL_CHANNEL = 'mesh:conversation-tool-detail'
+export const MESH_CONVERSATION_EVENT_CHANNEL = 'mesh:conversation-event'
 export const MESH_CONVERSATION_TURN_DIFF_CHANNEL = 'mesh:conversation-turn-diff'
 /** A paired machine's chat's changes, as its Diff tab reads them (`conversation-changes`). */
 export const MESH_CONVERSATION_WATCH_CHANGES_CHANNEL = 'mesh:conversation-watch-changes'

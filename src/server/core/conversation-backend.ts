@@ -45,6 +45,7 @@ export type ConversationBackendMember =
   | 'endTerminalHandoff'
   | 'noteTerminalHandoff'
   | 'getToolDetail'
+  | 'readConversationEvent'
   | 'findToolCall'
   | 'readAttachment'
   | 'planDocument'

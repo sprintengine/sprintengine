@@ -137,6 +137,10 @@ export function createFakeBackend(agentIds: string[] = ['agent-1']): FakeBackend
           }
         : { ok: false, code: 'not_found', message: 'No such tool call.' }
     },
+    async event(key, seq, id) {
+      const event = logs.get(key.agentId)?.events.find((item) => item.seq === seq && item.id === id)
+      return event ? { ok: true, event } : { ok: false, code: 'not_found', message: 'This chat has no such event.' }
+    },
     async turnDiff() {
       return { ok: false, message: 'No checkpoint.' }
     },

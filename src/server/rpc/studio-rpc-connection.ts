@@ -33,6 +33,7 @@ import {
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
 import {
+  CONVERSATION_WIRE_EVENT_BYTES,
   conversationDeltaKey,
   conversationSnapshotParts,
   projectConversationEvent,
@@ -368,10 +369,18 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const tail = pending.at(-1)
     const behindReplay = sub !== undefined && (replaying.get(sub) ?? 0) > 0
     const byteBound = behindReplay ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES
-    if (key && event && tail?.kind === 'live' && tail.delta?.key === key && tail.sub === sub) {
+    if (
+      key &&
+      event &&
+      tail?.kind === 'live' &&
+      tail.delta?.key === key &&
+      tail.sub === sub &&
+      tail.bytes + Buffer.byteLength(String(event.payload!.text)) <= CONVERSATION_WIRE_EVENT_BYTES
+    ) {
       // Only an unsent frame is ever in the queue, so this merges only while
       // the reader is behind. The merged delta keeps its first id and takes
-      // the last sequence, which is how a stored run reads back too.
+      // the last sequence, which is how a stored run reads back too; it stops
+      // growing at one event's bound, and the next delta starts another.
       extend(tail as LiveEntry & { delta: object }, event)
       if (liveBytes > byteBound) resync()
       return
