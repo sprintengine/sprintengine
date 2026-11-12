@@ -8,6 +8,7 @@ import {
   formatEnvironmentRoute,
   isChatAddress,
   isEnvironmentId,
+  isEnvironmentRoute,
   orderEnvironmentRoutes,
   parseChatAddress,
   parseEnvironmentRoute,
@@ -64,6 +65,10 @@ test('a route string that names nothing is not a route, and formatting one throw
   for (const bad of ['', 'Local', 'wsl:', 'wsl:two words', 'ssh:a/b', 'ssh:a:b', 'tailnet:', 'lan:1.2.3.4', 'wsl', 7])
     assert.equal(parseEnvironmentRoute(bad), null, String(bad))
   assert.throws(() => formatEnvironmentRoute({ kind: 'ssh', machine: 'a/b' }))
+  // A record read from disk is checked whole: a missing field is not the word "undefined".
+  for (const bad of [null, 7, {}, { kind: 'wsl' }, { kind: 'ssh', machine: 5 }, { kind: 'lan', host: 'x' }])
+    assert.equal(isEnvironmentRoute(bad), false, JSON.stringify(bad))
+  assert.equal(isEnvironmentRoute({ kind: 'tailnet', connection: 'tnc_1' }), true)
   assert.throws(() => formatEnvironmentRoute({ kind: 'wsl', distro: '' }))
 })
 

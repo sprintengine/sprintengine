@@ -129,9 +129,20 @@ function resolve(path: string, log: ((message: string) => void) | undefined): st
           linkSync(aside, path)
           unlinkSync(aside)
           return moved.id
-        } catch {
-          // Someone else holds the name now, or no hard links: read again below.
-          continue
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+            // A third process holds the name now: read its id below.
+            log?.(`A Studio id another process minted was left at ${aside}; this run reads the one in place.`)
+            continue
+          }
+          // No hard links here: a rename puts it back, over nothing, since
+          // the name was just found free.
+          try {
+            renameSync(aside, path)
+            return moved.id
+          } catch {
+            continue
+          }
         }
       }
       if (moved.kind === 'malformed')

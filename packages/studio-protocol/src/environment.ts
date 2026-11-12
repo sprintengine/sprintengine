@@ -111,16 +111,21 @@ const KEY = /^[A-Za-z0-9_-]{1,128}$/u
  * name WSL accepts, and ids of 1 to 128 characters of `[A-Za-z0-9_-]`. A
  * record read from disk is checked with this before it is used as a route.
  */
-export function isEnvironmentRoute(route: EnvironmentRoute): boolean {
-  switch (route.kind) {
+export function isEnvironmentRoute(route: unknown): route is EnvironmentRoute {
+  if (route === null || typeof route !== 'object') return false
+  const value = route as Record<string, unknown>
+  const text = (field: unknown, pattern: RegExp) => typeof field === 'string' && pattern.test(field)
+  switch (value.kind) {
     case 'local':
       return true
     case 'wsl':
-      return DISTRO.test(route.distro)
+      return text(value.distro, DISTRO)
     case 'ssh':
-      return KEY.test(route.machine)
+      return text(value.machine, KEY)
     case 'tailnet':
-      return KEY.test(route.connection)
+      return text(value.connection, KEY)
+    default:
+      return false
   }
 }
 

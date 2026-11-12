@@ -131,6 +131,8 @@ export function createEnvironmentRegistry(options: {
 
   /** Record that `route` answered as `id`. True when that is news. */
   function remember(route: EnvironmentRoute, id: EnvironmentId): boolean {
+    // Another machine answering as this one is never written down as this one.
+    if (id === options.localEnvironmentId && route.kind !== 'local') return false
     const key = formatEnvironmentRoute(route)
     if (stored.routes.get(key) === id) return false
     stored.routes.set(key, id)

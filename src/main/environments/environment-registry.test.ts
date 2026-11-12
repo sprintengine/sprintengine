@@ -135,6 +135,8 @@ test('another machine answering with this machine’s id is listed apart, never 
   ])
   environments.observe('tailnet', [paired('tnc_1', 'mac-mini', LOCAL)])
   assert.equal(logs.length, 1, 'said once')
+  // Nor is it written down as this machine.
+  assert.equal(environments.learn({ kind: 'tailnet', connection: 'tnc_1' }, LOCAL), false)
 })
 
 test('a renamed machine keeps its id: a new WSL name that answers as the old Studio joins it', () => {
