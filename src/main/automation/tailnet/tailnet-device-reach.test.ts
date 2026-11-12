@@ -158,7 +158,11 @@ function deviceStore() {
 /** The grant a device paired with `scopes` holds on the Studio socket, as the endpoint builds it. */
 function grantOf(scopes: readonly TailnetScope[]): StudioGrant {
   const store = deviceStore()
-  const { device } = store.mintDevice({ name: 'android-phone', scopes: [...scopes], origin: { kind: 'code', by: null } })
+  const { device } = store.mintDevice({
+    name: 'android-phone',
+    scopes: [...scopes],
+    origin: { kind: 'code', by: null },
+  })
   return tailnetDeviceGrant(device)
 }
 

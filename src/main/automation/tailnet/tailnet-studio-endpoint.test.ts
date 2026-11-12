@@ -275,9 +275,7 @@ test('a paired device reads and starts chats over the Studio protocol, with its 
   assert.equal(await refusal(client.request('localServers.stop', server)), 'owner_required')
   assert.equal(await refusal(client.request('localServers.list', {})), 'owner_required')
   assert.equal(
-    await refusal(
-      client.request('tools.grant', { key: ref, toolset: 'acme', granted: true, commandId: 'g-1' }),
-    ),
+    await refusal(client.request('tools.grant', { key: ref, toolset: 'acme', granted: true, commandId: 'g-1' })),
     'scope_required',
   )
 })
