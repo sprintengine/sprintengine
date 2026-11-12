@@ -9,14 +9,13 @@ import { createHostRegistry, installHostRegistry } from '../hosts/host-registry'
 import { setWorktreeBranchPrefixReader } from '../worktree-branch-prefix'
 import type { TerminalRootInfo } from '../workspace-memory'
 import type { GitHubTokenStatus, GitHubTokenStore } from '../github-token-store'
-import type { ProviderSecretStore, ProviderSecretValueResult } from '../secret-store'
 import type { ServerStateMirror } from './server-mirror'
 
 // The shell's view of the core when the Studio server runs in a process of its
 // own (phase 6 spec, sections 5 and 7.3). The shell builds no server-owned
 // store: what it reads synchronously comes from the mirror, what it writes or
-// asks goes over the control channel, and the machines its terminals launch on
-// come from a host registry of its own over the mirrored settings.
+// asks goes over the control channel, and the machines its WSL helpers and git
+// run on come from a host registry of its own over the mirrored settings.
 //
 // It has the core's shape for the members the shell's composition uses, so
 // that composition does not branch on every read. Any other member is the
@@ -54,7 +53,6 @@ const SHELL_CORE_MEMBERS = new Set([
   // process; present so destructuring the core does not throw.
   'conversationModelCatalog',
   'conversationLaunchService',
-  'subagents',
   'resolveAgentPermissionPreset',
 ])
 
@@ -142,7 +140,6 @@ export function createRemoteCore(link: ShellServerLink): StudioCore {
     dataDirLock: null,
     conversationModelCatalog: { forCli: serverOnly('conversationModelCatalog') },
     conversationLaunchService: { launch: serverOnly('conversationLaunchService') },
-    subagents: { result: serverOnly('subagents') },
     resolveAgentPermissionPreset: serverOnly('resolveAgentPermissionPreset'),
   }
   return new Proxy(members, {
@@ -169,21 +166,4 @@ export function createRemoteGitHubTokenStore(
     writeToken: (token: string) => ask<GitHubTokenStatus>('write', { token }),
     clearToken: () => ask<GitHubTokenStatus>('clear'),
   }
-}
-
-/**
- * The credential a terminal launch hands its CLI (phase 6 spec,
- * `secrets.resolveForLaunch`): kept by the server, asked for by the shell
- * only, at the moment of the launch.
- */
-export function createRemoteCredentialStore(rpc: Pick<ControlRpc, 'call'>): ProviderSecretStore {
-  return {
-    resolveSecret: (cli: string) =>
-      rpc
-        .call<ProviderSecretValueResult>(SERVER_METHODS.resolveSecretForLaunch, { cli })
-        .catch((error: unknown): ProviderSecretValueResult => ({
-          ok: false,
-          message: error instanceof Error ? error.message : String(error),
-        })),
-  } as unknown as ProviderSecretStore
 }

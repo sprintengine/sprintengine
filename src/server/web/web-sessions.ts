@@ -65,11 +65,9 @@ type PairingCode = { hash: string; expiresAtMs: number; route: WebRoute; owner: 
 export type WebTicketSubject = { kind: 'session'; sessionId: string } | { kind: 'embed'; embedId: string }
 type Ticket = { hash: string; expiresAtMs: number; subject: WebTicketSubject }
 
-// A browser has no terminal panes, so no browser session holds the terminals;
-// one on the tailnet never gets a shell on this machine either way.
-const BROWSER_SCOPES: StudioScope[] = STUDIO_SCOPES.filter(
-  (scope) => scope !== 'terminal:read' && scope !== 'terminal:operate',
-)
+// What a browser holds. No scope reaches the terminals: a browser never does,
+// an owner's tab included (`studio-browser-reach.ts`).
+const BROWSER_SCOPES: StudioScope[] = [...STUDIO_SCOPES]
 /**
  * The scopes a tailnet browser holds: everything but offering tools (P5c
  * §7.1, R79), updating this machine's Studio, which drains and restarts it,

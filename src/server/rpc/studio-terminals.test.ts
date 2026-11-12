@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { Duplex, PassThrough } from 'node:stream'
 
 import { afterEach, test } from 'vitest'
 
@@ -11,8 +12,12 @@ import {
 import {
   STUDIO_MAX_CLIENT_FRAME_BYTES,
   STUDIO_METHODS,
+  STUDIO_SCOPES,
   STUDIO_TERMINAL_MAX_WRITE_UNITS,
+  STUDIO_TERMINALS_METHODS,
+  STUDIO_TERMINALS_TOPICS,
   type StudioGrant,
+  type StudioScope,
   type TerminalOutputEvent,
   type TerminalSessionSnapshot,
   type TerminalSessionsDelta,
@@ -160,94 +165,91 @@ test('a start that waits on its folder outlives the client read timeout', async 
   assert.deepEqual(opened, { ok: true, sessionId: 'slow' })
 })
 
-test('grants: an owner and an operate grant drive; a read grant lists only; a revoked one is ended', async () => {
+test('only an owner’s connection reaches the terminals: a paired, a read-only and a local app’s grant are refused every method and stream', async () => {
   const { started, runtime } = await serve()
   runtime.terminals.set('term-1', { snapshot: revealingSession(), viewer: null, screen: 'hi', written: [], acked: 0 })
-  const operateToken = pairFakeClient(started.auth, 'app-operate', ['terminal:operate'])
-  const readToken = pairFakeClient(started.auth, 'app-read', ['terminal:read'])
-  const noneToken = pairFakeClient(started.auth, 'app-none', ['conversation:read'])
+  const owner = await client(started.path, OWNER_TOKEN)
+  await owner.subscribe('terminal.output', { sessionId: 'term-1' })
+  assert.deepEqual(resultOf(await owner.request('terminal.open', open('term-1'))), { ok: true, sessionId: 'term-1' })
+  const write = await owner.request('terminal.write', { sessionId: 'term-1', data: 'ls\r', writer: 'w-owner', seq: 1 })
+  assert.deepEqual(resultOf(write), { written: true })
+  assert.equal(resultOf<{ sessions: unknown[] }>(await owner.request('terminal.list', {})).sessions.length, 1)
 
-  for (const token of [OWNER_TOKEN, operateToken]) {
-    const driver = await client(started.path, token)
-    await driver.subscribe('terminal.output', { sessionId: 'term-1' })
-    assert.deepEqual(resultOf(await driver.request('terminal.open', open('term-1'))), { ok: true, sessionId: 'term-1' })
-    const write = await driver.request('terminal.write', {
-      sessionId: 'term-1',
-      data: 'ls\r',
-      writer: `w-${token}`,
-      seq: 1,
-    })
-    assert.deepEqual(resultOf(write), { written: true })
-    assert.equal(resultOf<{ sessions: unknown[] }>(await driver.request('terminal.list', {})).sessions.length, 1)
+  const refused = {
+    // Every scope there is: none reaches a terminal.
+    paired: pairFakeClient(started.auth, 'paired', [...STUDIO_SCOPES]),
+    'read-only': pairFakeClient(started.auth, 'read-only', ['conversation:read']),
+    // A local app granted the terminal scopes before they were removed holds names no longer read.
+    'local app': pairFakeClient(started.auth, 'local-app', [
+      ...STUDIO_SCOPES,
+      ...(['terminal:read', 'terminal:operate'] as unknown as StudioScope[]),
+    ]),
   }
-
-  const reader = await client(started.path, readToken)
-  assert.equal(resultOf<{ sessions: unknown[] }>(await reader.request('terminal.list', {})).sessions.length, 1)
-  assert.deepEqual(resultOf(await reader.request('terminal.status', { sessionId: 'term-1' })), {
-    processAlive: true,
-    suspended: false,
-  })
-  for (const [method, params] of [
-    ['terminal.open', open('term-1', 'reader-open')],
-    ['terminal.write', { sessionId: 'term-1', data: 'x', writer: 'w', seq: 1 }],
-    ['terminal.resize', { sessionId: 'term-1', cols: 80, rows: 24 }],
-    ['terminal.close', { sessionId: 'term-1', commandId: 'reader-close' }],
-  ] as const)
-    assert.deepEqual([method, codeOf(await reader.request(method, params))], [method, 'scope_required'])
-  const refusedOutput = await reader.subscribe('terminal.output', { sessionId: 'term-1' })
-  const failed = await reader.line.next((frame) => frame.t === 'subFailed' && frame.sub === refusedOutput)
-  assert.equal(failed.t === 'subFailed' && failed.code, 'scope_required')
-  // Read-only, the sessions stream is served.
-  const sessions = await reader.subscribe('terminal.sessions')
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  runtime.delta({ upserts: [revealingSession()], removed: [] })
-  await reader.line.next((frame) => frame.t === 'push' && frame.sub === sessions)
-
-  const outsider = await client(started.path, noneToken)
-  assert.equal(codeOf(await outsider.request('terminal.list', {})), 'scope_required')
-  // The owner's own: the machine's policy and the prompts a person wrote.
-  const operator = await client(started.path, operateToken)
-  assert.equal(codeOf(await operator.request('terminal.configure', { idleSuspendMs: 1000 })), 'owner_required')
-  assert.equal(codeOf(await operator.request('terminal.takeUndeliveredPrompts', {})), 'owner_required')
-
-  // Revoked while it follows output: the next frame ends it.
-  const watching = await client(started.path, operateToken)
-  await watching.subscribe('terminal.output', { sessionId: 'term-1' })
-  await watching.request('terminal.open', open('term-1', 'watching-open'))
-  started.auth.grants.delete('app-operate')
-  runtime.emit('term-1', 'after the revoke')
-  const bye = await watching.line.next((frame) => frame.t === 'bye')
-  assert.equal(bye.t === 'bye' && bye.code, 'revoked')
-  assert.equal(
-    watching.line.frames.some((frame) => frame.t === 'push' && JSON.stringify(frame).includes('after the revoke')),
-    false,
-  )
+  for (const [who, token] of Object.entries(refused)) {
+    const app = await client(started.path, token)
+    for (const method of Object.keys(STUDIO_TERMINALS_METHODS))
+      assert.deepEqual(
+        [who, method, codeOf(await app.request(method, { sessionId: 'term-1', commandId: `${who}-${method}` }))],
+        [who, method, 'owner_required'],
+      )
+    for (const topic of Object.keys(STUDIO_TERMINALS_TOPICS)) {
+      const sub = await app.subscribe(topic, { sessionId: 'term-1' })
+      const failed = await app.line.next((frame) => frame.t === 'subFailed' && frame.sub === sub)
+      assert.deepEqual([who, topic, failed.t === 'subFailed' && failed.code], [who, topic, 'owner_required'])
+    }
+  }
+  // Nothing they asked for reached the terminal.
+  assert.deepEqual(runtime.terminals.get('term-1')?.written, ['ls\r'])
 })
 
-test('a client other than the window is never sent a prompt or MCP secrets; a read grant not the folders', async () => {
+test('a browser, an owner’s own tab included, is not offered the terminals and is refused them', async () => {
   const { started, runtime } = await serve()
   runtime.terminals.set('term-1', { snapshot: revealingSession(), viewer: null, screen: '', written: [], acked: 0 })
-  const operateToken = pairFakeClient(started.auth, 'app-operate', ['terminal:operate'])
-  const readToken = pairFakeClient(started.auth, 'app-read', ['terminal:read'])
-
-  for (const token of [OWNER_TOKEN, operateToken, readToken]) {
-    const listed = resultOf<{ sessions: TerminalSessionSnapshot[] }>(
-      await (await client(started.path, token)).request('terminal.list', {}),
-    ).sessions[0]!
-    const wire = JSON.stringify(listed)
-    assert.equal(wire.includes('my private prompt'), false, 'no prompt')
-    assert.equal(wire.includes('lin_secret') || wire.includes('Bearer secret'), false, 'no MCP env or headers')
-    assert.equal(listed.agentRecord?.name, 'Scout', 'the rest of the record stays')
-    assert.equal(wire.includes('/Users/dev/app'), token !== readToken, 'folders only to a grant that may open them')
+  // As the web front door attaches an owner's tab: an owner's grant, Studio's own view.
+  const browser = attachRaw(started.server, {
+    authenticator: started.auth,
+    ownWindow: true,
+    audited: true,
+    browser: true,
+  })
+  browser.send(hello({ token: OWNER_TOKEN }))
+  const welcome = await browser.until((frame) => frame.t === 'welcome')
+  assert.equal((welcome.grant as StudioGrant).owner, true)
+  const offered = welcome.capabilities as string[]
+  assert.equal(offered.includes('terminals'), false)
+  assert.equal(offered.includes('session-terminal-handoff'), false)
+  for (const [id, method, params] of [
+    ['b1', 'terminal.list', {}],
+    ['b2', 'terminal.write', { sessionId: 'term-1', data: 'x', writer: 'w', seq: 1 }],
+    ['b3', 'session.terminalHandoff', { commandId: 'c1', sessionId: 's1' }],
+  ] as const) {
+    browser.send({ t: 'req', id, method, params })
+    const answer = await browser.until((frame) => frame.t === 'res' && frame.id === id)
+    assert.deepEqual([method, (answer.error as { code?: string } | undefined)?.code], [method, 'owner_required'])
   }
+  browser.send({ t: 'sub', id: 's1', topic: 'terminal.sessions', params: {} })
+  const failed = await browser.until((frame) => frame.t === 'subFailed' && frame.sub === 's1')
+  assert.equal(failed.code, 'owner_required')
+  assert.deepEqual(runtime.terminals.get('term-1')?.written, [])
+})
 
-  const reader = await client(started.path, readToken)
-  const sub = await reader.subscribe('terminal.sessions')
+test('an owner’s connection other than the window is never sent a prompt or MCP secrets', async () => {
+  const { started, runtime } = await serve()
+  runtime.terminals.set('term-1', { snapshot: revealingSession(), viewer: null, screen: '', written: [], acked: 0 })
+  const owner = await client(started.path, OWNER_TOKEN)
+  const listed = resultOf<{ sessions: TerminalSessionSnapshot[] }>(await owner.request('terminal.list', {}))
+    .sessions[0]!
+  const wire = JSON.stringify(listed)
+  assert.equal(wire.includes('my private prompt'), false, 'no prompt')
+  assert.equal(wire.includes('lin_secret') || wire.includes('Bearer secret'), false, 'no MCP env or headers')
+  assert.equal(listed.agentRecord?.name, 'Scout', 'the rest of the record stays')
+  assert.equal(wire.includes('/Users/dev/app'), true, 'the folders stay')
+
+  const sub = await owner.subscribe('terminal.sessions')
   await new Promise((resolve) => setTimeout(resolve, 20))
   runtime.delta({ upserts: [revealingSession()], removed: [] })
-  const pushed = await reader.line.next((frame) => frame.t === 'push' && frame.sub === sub)
-  const wire = JSON.stringify(pushed)
-  assert.equal(wire.includes('my private prompt') || wire.includes('lin_secret') || wire.includes('/Users/dev'), false)
+  const pushed = JSON.stringify(await owner.line.next((frame) => frame.t === 'push' && frame.sub === sub))
+  assert.equal(pushed.includes('my private prompt') || pushed.includes('lin_secret'), false)
 
   // The app's own window sees what main sees.
   const router = createStudioRpcRouter({
@@ -255,17 +257,46 @@ test('a client other than the window is never sent a prompt or MCP secrets; a re
     info: () => ({}) as never,
     terminals: createStudioTerminals({ runtime }),
   })
-  const owner: StudioGrant = {
-    clientId: 'owner',
-    name: 'Studio',
-    owner: true,
-    scopes: ['terminal:operate'],
-    ceiling: 'bypass',
-  }
-  const own = await router.handle(owner, 'terminal.list', {}, { connectionId: 'w1', slot: 1, ownWindow: true })
+  const window: StudioGrant = { clientId: 'owner', name: 'Studio', owner: true, scopes: [], ceiling: 'bypass' }
+  const own = await router.handle(window, 'terminal.list', {}, { connectionId: 'w1', slot: 1, ownWindow: true })
   assert.ok(JSON.stringify(own).includes('my private prompt'), 'the window is the app')
   router.close()
 })
+
+/** A connection attached as main attaches one, read and written as lines. */
+function attachRaw(server: ReturnType<typeof createStudioRpcServer>, options: Parameters<typeof server.attach>[1]) {
+  const toClient = new PassThrough()
+  const serverSide = new Duplex({
+    read() {},
+    write(chunk, _encoding, callback) {
+      toClient.write(chunk)
+      callback()
+    },
+  })
+  server.attach(serverSide, options)
+  cleanups.push(() => serverSide.destroy())
+  const frames: Array<Record<string, unknown>> = []
+  let buffer = ''
+  toClient.setEncoding('utf8')
+  toClient.on('data', (chunk: string) => {
+    buffer += chunk
+    for (let newline = buffer.indexOf('\n'); newline !== -1; newline = buffer.indexOf('\n')) {
+      frames.push(JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>)
+      buffer = buffer.slice(newline + 1)
+    }
+  })
+  return {
+    send: (frame: unknown) => serverSide.push(`${JSON.stringify(frame)}\n`),
+    async until(match: (frame: Record<string, unknown>) => boolean) {
+      for (let tries = 0; tries < 200; tries++) {
+        const found = frames.find(match)
+        if (found) return found
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      throw new Error(`No matching frame in ${JSON.stringify(frames)}`)
+    },
+  }
+}
 
 test('a write sent again after a reconnect is dropped, and one over the limit is refused, not swallowed', async () => {
   const { started, runtime } = await serve()

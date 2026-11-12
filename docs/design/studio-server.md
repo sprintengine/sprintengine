@@ -96,11 +96,17 @@ in WSL and on a minimal Linux box.
 
 - **Terminals on the server** (ruling a, superseded 2026-11-12 by the one-server
   plan). The desktop's terminals are now served over the Studio protocol
-  (`terminal.*`, capability `terminals`) by the Studio running in the desktop's
-  process, and its windows reach them only that way; a server in a process of
-  its own does not advertise them until the terminal runtime moves into it.
-  The chat features that open a terminal (CLI sign-in, running a code block,
-  Resume in terminal) are hidden on a server that does not advertise them.
+  (`terminal.*`, capability `terminals`), and its windows reach them only
+  that way. The terminal runtime, the agent-state reporter's listener and the
+  launch service every terminal launch goes through are the Studio core's
+  (`src/server/core/studio-agent-terminals.ts`), so the ptys run in the server
+  in every mode: in Electron main in process, in the desktop's server out of
+  process, under plain Node standalone. A server that cannot load the pty
+  module (a WSL or SSH machine's tree, until design-wsl-ssh-direct) does not
+  advertise `terminals`, and the chat features that open a terminal (CLI
+  sign-in, running a code block, Resume in terminal) are hidden there. The
+  shell keeps only its part of a launch (its plugin copy, MCP sync, skills
+  and hook install), which the server asks for over the shell bridge.
 - The full git panel, file explorer and editor over the protocol (ruling c).
 - A browser or a canvas renderer in the server (ruling f), and with them any
   Chromium download, screencast or server-side drawing.
@@ -526,7 +532,7 @@ by browser fallbacks, is the web client's `window.api` (section 11).
 | Bucket                                                 | Members (approx.) | Fate                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **v1 server** — what the chat view and its panels call | ~75               | conversation (38), the command catalog, providers/models/secrets, `cliModelsDiscover`, launch settings, workspace sync, `searchFiles`/`cancelFileSearch`, `statPath`, `readImageDataUrl`, `getGitRepoRoot`, skills list/scan, `generateChatTitle`, `compactAgentSession`, `readConversationPeek`, `hostsList`           |
-| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile` (terminals moved to `terminal.*`)                                                                                                |
+| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile` (terminals moved to `terminal.*`)                                                                                              |
 | **Later server domains**                               | ~250              | git panel (62), file explorer/editor (most of filesystem's 40), backlog (17), skills management, marketplace, modules, mesh (folded into environments), automation/tailnet admin, canvas (a client module; boards via `files` from phase 5), tours, memory graph, design system, scheduled agents, pull requests, voice |
 
 The rule for each domain that moves: extract a handler object with no IPC in it
@@ -596,13 +602,13 @@ The phase 5 spec
 has the frames, names, limits, routing, approval, and what happens to a call
 whose client disconnects.
 
-`terminal.*`, `agent.launch` and `backlog.work` need a terminal, which only the
-desktop shell has (ruling a). They become the shell's `terminal` toolset in
-phase 6, offered only while a desktop that has terminals is attached to a
-server on its own PC: its local server, and its WSL servers through the
-Windows-side front door, which can open terminals there (phase 7 §3.7,
-§12.8). They are still never offered to a tailnet peer, as today. An SSH or
-headless server does not list them.
+`terminal.*`, `agent.launch` and `backlog.work` need a terminal. Since the
+terminals moved into the server (design-terminal-service), they are the
+gateway's own tools wherever the server runs terminals, in process and out;
+before that they were the shell's `terminal` and `agent` toolsets out of
+process. A WSL distribution's agents still reach the desktop's through the
+Windows-side front door (phase 7 §3.7, §12.8). They are still never offered
+to a tailnet peer, as today.
 
 ### 6.4 Client capabilities
 
@@ -1261,8 +1267,11 @@ and a paired machine's rows in the sidebar read the same status.
   os/arch, and the web client (section 11), which carries the canvas worker
   page and its fonts for the web client's `canvas` toolset. The server itself
   draws nothing.
-- Not in it: `node-pty` (terminals are out), `electron`, `electron-updater`,
-  xterm, Monaco's main-side pieces.
+- Not in it: `electron`, `electron-updater`, Monaco's main-side pieces, and
+  `node-pty`, which the terminal runtime loads on first use: the WSL and SSH
+  tree carries no native code, so its server starts without it and serves no
+  terminals (until design-wsl-ssh-direct). The desktop's server loads it from
+  the app's `node_modules`, where electron-builder unpacks its native files.
 - One archive per target (`studio-server-<version>-<os>-<arch>.tar.gz`) with a
   manifest of SHA-256s. The desktop package carries its own platform's bundle
   and the Linux x64 and arm64 bundles (for WSL and SSH); a macOS desktop carries

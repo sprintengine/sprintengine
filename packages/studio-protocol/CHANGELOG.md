@@ -4,6 +4,14 @@
 
 ### Changed (grants)
 
+- **The terminals are an owner's only.** Every `terminal.*` method and stream
+  declares `owner` (`STUDIO_TERMINALS_OWNER`) and no scope: the app's own
+  windows and the owner's credential reach them, and no paired device, local
+  app or browser does, an owner's tab included. The scopes and permissions
+  `terminal:read` and `terminal:operate` are removed (a stored grant naming
+  them has the names dropped), a topic's `scope` may now be `null` as a
+  method's may, and `projectTerminalSession` takes no access argument: the
+  read-only projection is gone with the read-only grant.
 - **Explicit grants instead of owner-only.** Every method and topic reaches a
   client by the scope it names, except five that are an owner's by
   declaration: `session.terminalHandoff`, `providers.signIn`,

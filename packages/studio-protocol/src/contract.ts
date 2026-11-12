@@ -143,7 +143,8 @@ export type StudioTopicContract = { params: object; payload: unknown; stream: 'p
 
 /** How a topic is held, as a method is, and the validator its params are read by. */
 export type StudioTopicDefinition<C extends StudioTopicContract> = {
-  scope: StudioScope
+  /** As for a method: null where no scope is asked for (an owner's only stream names `owner`). */
+  scope: StudioScope | null
   /** What it needs beyond its scope's permission, as for a method. */
   extraPermissions?: readonly StudioPermission[]
   capability: StudioCapability

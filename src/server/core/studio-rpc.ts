@@ -15,7 +15,6 @@ import { createStudioFiles } from '../rpc/studio-files'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
-import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioCore } from './studio-core'
 import type { StudioGateway } from './studio-gateway'
 import type { StudioModules } from '../rpc/studio-modules'
@@ -39,8 +38,6 @@ export function createStudioRpc(
     updates?: StudioUpdates
     /** What the modules of the kernel beside it say; a Studio without one leaves `module.*` unserved. */
     modules?: StudioModules
-    /** The terminals on this machine, where this process holds the terminal runtime. */
-    terminals?: StudioTerminals
     /** The CLIs on this machine, where this process holds their detection and version check. */
     runtimes?: CliRuntimes
     /** What the agents are set up with beyond their CLIs, where this process holds those services. */
@@ -109,7 +106,8 @@ export function createStudioRpc(
     // The servers the conversations' agents started, checked here and drawn
     // by every client.
     localServers: core.localServers,
-    ...(options.terminals ? { terminals: options.terminals } : {}),
+    // The terminals on this machine, where the core holds the runtime.
+    ...(core.agentTerminals ? { terminals: core.agentTerminals.studioTerminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),
     ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
     // What every launch here reads, and what the CLIs write for it, served

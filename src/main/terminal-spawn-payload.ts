@@ -1,8 +1,4 @@
-import type {
-  AgentLaunchRecord,
-  TerminalOpenParams,
-  TerminalSpawnResult,
-} from '../../packages/studio-protocol/src/public'
+import type { AgentLaunchRecord, TerminalOpenParams } from '../../packages/studio-protocol/src/public'
 
 /**
  * What the terminal runtime starts a session from: a client's `terminal.open`
@@ -25,20 +21,4 @@ export type TerminalSpawnPayload = TerminalOpenParams & {
   // themselves. Typed `never` so handing over a still-nested set of spawn
   // arguments fails to compile instead of silently dropping every field in it.
   metadata?: never
-}
-
-/**
- * Why a terminal cannot start while the Studio server runs in a process of its
- * own: windows reach terminals only over the Studio protocol, and that server
- * does not serve them until it holds the terminal runtime. Every launch the
- * shell would make (`agent.launch`, `backlog.work`, a schedule, Resume in
- * terminal, a tour) is refused in these words rather than started where no
- * window could show or end it.
- */
-export const TERMINALS_NOT_SERVED_OUT_OF_PROCESS =
-  'Terminal agents cannot start while the Studio server runs in its own process (a preview setting): its windows cannot show terminals yet. Turn off "Run Studio server in its own process" in Settings to use them, or start a chat instead.'
-
-/** The answer to a terminal launch while the Studio server runs out of process. */
-export function refuseTerminalSpawnOutOfProcess(payload: { sessionId: string }): TerminalSpawnResult {
-  return { ok: false, sessionId: payload.sessionId, message: TERMINALS_NOT_SERVED_OUT_OF_PROCESS, exitCode: 1 }
 }

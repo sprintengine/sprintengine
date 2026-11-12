@@ -576,7 +576,6 @@ test("OpenCode in WSL gets the helper's Unix socket baked into its plugin", asyn
     resolveAgentStateSpec: (cli) => (cli === 'opencode' ? manifest.agentStateSpec : null),
     resolveReporterScriptPath: () => null,
     resolveReporterTemplatePath: (template) => join(process.cwd(), 'resources', 'hooks', template),
-    onFrame: () => undefined,
   })
   await service.installForWorkspace(root, 'opencode', {
     pathStyle: 'wsl',

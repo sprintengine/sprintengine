@@ -1,4 +1,4 @@
-import * as pty from 'node-pty'
+import type * as Pty from 'node-pty'
 import type {
   AgentCli,
   AgentPhase,
@@ -142,7 +142,30 @@ import { deliverTerminalEvent, type TerminalViewer } from '../server/terminals/t
 import { readTerminalOutputTail, type TerminalOutputTail } from './terminal-output-tail'
 import { worktreeLeases, type WorktreeLeases } from './worktree-leases'
 
-type TerminalRuntimeOptions = {
+// The native pty module, loaded the first time a terminal starts rather than
+// when this file is: the Studio server runs this runtime in every process it
+// is composed in, and a server tree without the module (a WSL or SSH
+// machine's, which carries no native code) must still start. Whether it
+// loads at all is asked once, by `ptyAvailable`, before a server says it
+// serves terminals.
+let ptyModule: typeof Pty | null = null
+function loadPty(): typeof Pty {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded on first use, see above
+  ptyModule ??= require('node-pty') as typeof Pty
+  return ptyModule
+}
+
+/** Whether this process can start a pty: the native module is there and loads. */
+export function ptyAvailable(): boolean {
+  try {
+    loadPty()
+    return true
+  } catch {
+    return false
+  }
+}
+
+export type TerminalRuntimeOptions = {
   diagnosticsEnabled: boolean
   logMainPerfEvent(scope: string, event: string, payload: Record<string, unknown>): void
   // Turns a hook-reported cwd into the checkout containing it.
@@ -304,7 +327,7 @@ type TerminalSessionHandlers = {
   takeUndeliveredPrompts(): TerminalPromptUndelivered[]
 }
 
-type TerminalRuntime = {
+export type TerminalRuntime = {
   sessions: TerminalSessionHandlers
   // The conversation peek's read of a session: whether its runtime reports
   // prompts, and the prompts captured for it. Exposed as a plain reader rather
@@ -3538,7 +3561,7 @@ async function spawnTerminalNow(
     }
 
     const initialSize = getTerminalSize(cols, rows)
-    const termProcess = pty.spawn(command, args, {
+    const termProcess = loadPty().spawn(command, args, {
       name: 'xterm-256color',
       cols: initialSize.cols,
       rows: initialSize.rows,

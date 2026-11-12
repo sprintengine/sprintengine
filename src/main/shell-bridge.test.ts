@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
 
-import type { AgentLaunchRequest, AgentLaunchResult } from '../shared/agent-launch'
+import type { TerminalLaunchPreparation } from '../server/terminals/terminal-launch-preparation'
 import { createControlRpc, type ControlRpc } from '../server/bootstrap/control-rpc'
 import type { StudioNotice } from '../server/platform/notifier'
 import { createRemoteShellBridge } from '../server/shell-bridge/remote'
@@ -26,7 +26,7 @@ type Harness = {
   reveals: ShellRevealTarget[]
   events: ShellAnalyticsEvent[]
   setWindows(present: boolean): void
-  setLauncher(launch: ((request: AgentLaunchRequest) => Promise<AgentLaunchResult>) | null): void
+  setLaunches(launches: TerminalLaunchPreparation | null): void
   openIntegrations(): void
   setEncryptionAvailable(available: boolean): void
 }
@@ -72,7 +72,7 @@ function shellHarness(): Harness & { shellBridge: ShellBridge } {
   const reveals: ShellRevealTarget[] = []
   const events: ShellAnalyticsEvent[] = []
   let windows = true
-  let launcher: ((request: AgentLaunchRequest) => Promise<AgentLaunchResult>) | null = null
+  let launches: TerminalLaunchPreparation | null = null
   let open: () => void = () => undefined
   const gate = new Promise<void>((resolve) => {
     open = resolve
@@ -80,7 +80,7 @@ function shellHarness(): Harness & { shellBridge: ShellBridge } {
   const safeStorage = fakeSafeStorage()
   const shellBridge = createInProcessShellBridge({
     safeStorage,
-    launchAgent: () => launcher,
+    launches: () => launches,
     reveal: (target) => {
       if (!windows) return false
       reveals.push(target)
@@ -100,8 +100,8 @@ function shellHarness(): Harness & { shellBridge: ShellBridge } {
     setWindows: (present) => {
       windows = present
     },
-    setLauncher: (launch) => {
-      launcher = launch
+    setLaunches: (next) => {
+      launches = next
     },
     openIntegrations: () => open(),
     setEncryptionAvailable: (available) => safeStorage.setAvailable(available),
@@ -162,21 +162,64 @@ for (const [name, make] of [
       assert.equal(await harness.bridge.cipher.available(), false)
     })
 
-    test('a terminal launch with no terminals answers that it cannot, and goes through once there are', async () => {
+    test('a launch’s preparation before the shell has it answers that it cannot, and is the shell’s once it has', async () => {
       const harness = make()
-      const refused = await harness.bridge.terminals.launchAgent({ workspaceId: 'ws-1' })
-      assert.equal(refused.ok, false)
-      assert.equal(!refused.ok && refused.code, 'shell_unavailable')
-      harness.setLauncher(async (request) => ({
-        ok: true,
-        workspaceId: request.workspaceId,
-        agentId: 'agent-1',
-        sessionId: 'session-1',
-        cli: 'claude',
-        executionId: 'session-1',
-      }))
-      const launched = await harness.bridge.terminals.launchAgent({ workspaceId: 'ws-1', cli: 'claude' })
-      assert.equal(launched.ok && launched.agentId, 'agent-1')
+      const input = {
+        workspaceRoot: '/Users/dev/repo',
+        cli: 'claude-code' as const,
+        settings: { servers: [] } as never,
+        skillIds: ['backlog'],
+        hostId: 'local',
+        integration: null,
+        connectorLaunch: false,
+      }
+      const early = await harness.bridge.launches.prepareLaunchIntegration(input)
+      assert.equal(early.ok, false)
+      const calls: unknown[][] = []
+      harness.setLaunches({
+        prepareLaunchIntegration: async (asked) => {
+          calls.push(['integration', asked])
+          return { ok: true, integration: null }
+        },
+        syncMcpConfig: async (asked) => {
+          calls.push(['mcp', asked.workspaceRoot, asked.clients])
+          return { ok: false, message: 'The config is not valid JSON.' }
+        },
+        ensureBuiltinSkillInstalled: async (...asked) => {
+          calls.push(['skill', ...asked])
+        },
+        excludeWorktreeMcpConfig: async (worktreePath) => {
+          calls.push(['exclude', worktreePath])
+        },
+        prepareAgentStateHook: async (...asked) => {
+          calls.push(['hook', ...asked])
+        },
+      })
+      assert.deepEqual(await harness.bridge.launches.prepareLaunchIntegration(input), { ok: true, integration: null })
+      assert.deepEqual(
+        await harness.bridge.launches.syncMcpConfig({
+          workspaceRoot: '/Users/dev/repo',
+          settings: { servers: [] } as never,
+          clients: ['claude-code'],
+        }),
+        { ok: false, message: 'The config is not valid JSON.' },
+      )
+      await harness.bridge.launches.ensureBuiltinSkillInstalled('/Users/dev/repo', 'backlog', 'codex', {
+        hostId: 'local',
+        integration: null,
+      })
+      await harness.bridge.launches.excludeWorktreeMcpConfig('/Users/dev/worktree')
+      await harness.bridge.launches.prepareAgentStateHook('/Users/dev/repo', 'codex', {
+        pathStyle: 'posix',
+        hostId: 'local',
+      })
+      assert.deepEqual(calls, [
+        ['integration', input],
+        ['mcp', '/Users/dev/repo', ['claude-code']],
+        ['skill', '/Users/dev/repo', 'backlog', 'codex', { hostId: 'local', integration: null }],
+        ['exclude', '/Users/dev/worktree'],
+        ['hook', '/Users/dev/repo', 'codex', { pathStyle: 'posix', hostId: 'local' }],
+      ])
     })
 
     test('a reveal with no window answers false', async () => {
@@ -271,13 +314,21 @@ describe('ShellBridge over the control channel, reading what it is sent', () => 
 })
 
 describe('ShellBridge when the shell has gone', () => {
-  test('a seal fails, a launch says so, a reveal is false, the integrations gate lets launches go, and a picture goes on unshrunk', async () => {
+  test('a seal fails, a launch’s preparation says so, a reveal is false, the integrations gate lets launches go, and a picture goes on unshrunk', async () => {
     const harness = remoteHarness()
     harness.cutShell()
     await assert.rejects(harness.bridge.cipher.seal(utf8Bytes('x')), /shell has gone/)
     assert.equal(await harness.bridge.cipher.available(), false)
-    const launched = await harness.bridge.terminals.launchAgent({ workspaceId: 'ws-1' })
-    assert.equal(!launched.ok && launched.code, 'shell_unavailable')
+    const prepared = await harness.bridge.launches.prepareLaunchIntegration({
+      workspaceRoot: '/Users/dev/repo',
+      cli: 'claude-code',
+      settings: { servers: [] } as never,
+      skillIds: [],
+      connectorLaunch: false,
+    })
+    assert.equal(prepared.ok, false)
+    // The best-effort steps go on without it.
+    await harness.bridge.launches.prepareAgentStateHook('/Users/dev/repo', 'codex')
     assert.equal(await harness.bridge.reveal.tab({ kind: 'app' }), false)
     await harness.bridge.integrationsReady()
     const picture = await harness.bridge.images.downscale(utf8Bytes('img:4032x3024'), 'image/png')

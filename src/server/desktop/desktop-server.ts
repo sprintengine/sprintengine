@@ -1,14 +1,23 @@
 import { homedir } from 'node:os'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
-import type { TerminalSessionSnapshot } from '../../shared/electron-api'
+import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
+import { isRecord } from '../../shared/records'
 import { applyGatewayLaunchTokenChange, type LaunchTokenChange } from '../core/gateway-launch-tokens'
+import { compactDeps, type StudioAgentTerminals } from '../core/studio-agent-terminals'
+import { compactTerminalAgent } from '../../main/ipc/agent-compact-ipc'
+import { createTerminalPullRequests, type TerminalPullRequests } from '../../main/terminal-pull-requests'
+import {
+  getTerminalSessionById,
+  listLiveTerminalSessions,
+  notePullRequestRecordChanged,
+} from '../../main/terminal-runtime'
+import { setSessionPullRequestReader } from '../../main/terminal-session'
+import type { ShellAnalyticsEvent } from '../shell-bridge/shell-bridge'
 import { createTailnetTools, type TailnetToolsFrontDoor } from '../../main/automation/tailnet/tailnet-tools'
 import { readChatExportSource } from '../../main/chat-export/chat-export-source'
-import { cliResumeCapabilities } from '../../main/cli-resume-capabilities'
 import { parseTranscriptInput } from '../../main/conversation-ipc-inputs'
 import { createConversationAttentionListener } from '../../main/conversation-attention'
-import { chatHandoffStart, createConversationTerminalHandoff } from '../../main/conversation-terminal-handoff'
 import { setDiagnosticsLogName, writeDiagnosticLog } from '../../main/diagnostics-service'
 import { createFilesystemReadHandlers } from '../../main/filesystem-read'
 import { createFilesystemWatchSearchHandlers } from '../../main/filesystem-watch-search-handlers'
@@ -18,10 +27,7 @@ import {
   discoverAndBroadcastCliModels,
   setCliModelDiscoveryRuntimesResolver,
 } from '../../main/model-discovery/discovery-pass'
-import { getPluginRegistry } from '../../main/plugin-registry-instance'
 import { powerActivity } from '../../main/power-activity'
-import { declaredPermissionPresets } from '../../main/plugin-render'
-import { getSharedCredentialStore } from '../../main/secret-store'
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { createTailnetNotifier } from '../../main/tailnet-notifications'
 import { agentBrowserToolGate, agentBrowserToolsEnabledOnDisk } from '../../main/agent-browser-tools-store'
@@ -76,24 +82,26 @@ import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
 import { relayShellToolsets, SSH_RELAYED_TOOLSETS } from '../wsl/wsl-tool-relay'
 import { createShellSshServers } from './shell-ssh-servers'
 import { readStudioEnv } from '../../shared/studio-env'
-import { noteStatusLineRateLimits } from '../../main/usage-limits/store'
 
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
 // its gateway and owner socket, the tunnelled window.api domains, and the
 // module kernel with every module's server half, composed in a utility
-// process the shell forked. What it asks of the shell (the keychain, a
-// notification, a terminal launch) goes over the control channel; what the
-// shell needs of it (the workspace registry and launch settings it mirrors,
-// a credential for a terminal launch, the GitHub token) is answered there too.
+// process the shell forked, and the terminals with their ptys and reporter
+// (studio-agent-terminals.ts). What it asks of the shell (the keychain, a
+// notification, the shell's part of a terminal agent's launch) goes over the
+// control channel; what the shell needs of it (the workspace registry and
+// launch settings it mirrors, the terminal list, the GitHub token) is
+// answered there too.
 //
 // It takes the data directory's run lock with the desktop role, as main does
 // in process: it is the app's own process tree, and a predecessor's lock is
 // its to replace (the supervisor never forks while that predecessor lives).
 //
-// The gateway lists the core's tools and the server-side automation tools;
-// what acts on a screen or a terminal is the shell's, offered as its toolsets
-// (spec 6.3), and the launches the server starts itself (`backlog.work`, a
-// scheduled run, resume in terminal) go through the shell bridge.
+// The gateway lists the core's tools and every automation tool, the terminal
+// and agent families included; what acts on a screen is the shell's, offered
+// as its toolsets (spec 6.3). Every terminal launch (`agent.launch`,
+// `backlog.work`, a scheduled run, Resume in terminal, a tour's author) goes
+// through the core's launch service, here.
 
 export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requestExit }) => {
   // Its own diagnostics file, so two processes never append to one.
@@ -143,25 +151,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     powerActivity.noteFocus(appFocused)
   })
 
-  // The shell's terminals, as the gateway reads them (the launch cap,
-  // `backlog.work`'s confirmation), and the launch tokens they were issued.
-  let terminalSessions: TerminalSessionSnapshot[] = []
-  let terminalSessionsListed = false
-  const terminalSessionsListeners = new Set<() => void>()
-  rpc.on(SERVER_EVENTS.terminalSessions, (payload) => {
-    if (!Array.isArray(payload)) return
-    terminalSessions = payload as TerminalSessionSnapshot[]
-    terminalSessionsListed = true
-    for (const listener of [...terminalSessionsListeners]) listener()
-  })
-  // A Claude terminal's status-line usage, read in the shell: this process's
-  // store is the one the windows draw and the resumes ask.
-  rpc.on(SERVER_EVENTS.usageStatusLine, (payload) => {
-    const reading = payload as { rateLimits?: unknown; at?: unknown } | null
-    if (!reading || typeof reading !== 'object') return
-    const at = typeof reading.at === 'number' && Number.isFinite(reading.at) && reading.at > 0 ? reading.at : Date.now()
-    noteStatusLineRateLimits(reading.rateLimits, at)
-  })
+  // The launch tokens the shell issued (its WSL helper's channels).
   rpc.on(SERVER_EVENTS.launchTokens, (payload) => {
     const update = payload as { reset?: boolean; changes?: LaunchTokenChange[] } | null
     for (const change of update?.changes ?? []) applyGatewayLaunchTokenChange(change)
@@ -210,6 +200,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       if (typeof key === 'string' && /^ssh:[A-Za-z0-9_-]+$/u.test(key)) shellSsh.machineConnected(key)
     })
 
+  // The terminal agents' pull request marks (below), bound once the Studio
+  // socket they are read over exists.
+  let terminalPullRequests: TerminalPullRequests | null = null
   let core: ReturnType<typeof createStudioCore>
   try {
     core = createStudioCore(platform, {
@@ -217,17 +210,20 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
         : {}),
       role: 'desktop',
-      // An agent may start agents only at its own preset or stricter; the
-      // terminal agents it is read for are the shell's.
-      listTerminalSessions: () => terminalSessions,
-      terminalSessionsListed: () => terminalSessionsListed,
-      onTerminalSessionsChanged: (listener) => {
-        terminalSessionsListeners.add(listener)
-        return () => terminalSessionsListeners.delete(listener)
-      },
-      // A chat the rest sweep settled: its terminals are the shell's to end.
-      endWorkspaceTerminals: (workspaceId) => {
-        void rpc.call(SHELL_METHODS.endWorkspaceTerminals, { workspaceId }).catch(() => undefined)
+      // The terminals run here; the shell prepares each agent's launch (its
+      // plugin copy, MCP sync, skills, hook) over the bridge, and hears of
+      // each launch for its analytics.
+      terminalHost: {
+        launchPreparation: bridge.launches,
+        isAppFocused: () => appFocused,
+        onLaunched: (request, result) => bridge.analytics(agentLaunchedEvent(request, result)),
+        // Where each agent works and the tool calls that may have opened a
+        // pull request, for its marks: read below, once the socket exists.
+        observers: {
+          onObservedCheckoutResolved: (session, resolution) =>
+            terminalPullRequests?.noteCheckoutResolved(session, resolution),
+          onAgentToolCall: (session, toolCall) => terminalPullRequests?.noteToolCall(session, toolCall),
+        },
       },
       // A WSL distribution's chats run on a Studio server inside it (phase
       // 7) when the person turned that on for it, as in process. With the
@@ -274,6 +270,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     throw error
   }
   const { agentLaunchSettings, workspaceRegistry, workspaceSyncService, conversations } = core
+  // The terminals and their agents: null only where no pty can start.
+  const terminals = core.agentTerminals
+  const launchAgent = (request: AgentLaunchRequest): Promise<AgentLaunchResult> =>
+    terminals
+      ? terminals.launchService.launch(request)
+      : Promise.resolve({ ok: false, code: 'terminals_unavailable', message: TERMINALS_UNAVAILABLE })
   // The model discovery a pass the server starts itself runs with the
   // person's own per-CLI commands, as in process.
   setCliModelDiscoveryRuntimesResolver(() => agentLaunchSettings.get().cliRuntimes)
@@ -283,13 +285,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   rpc.on(SERVER_EVENTS.moduleRegistrySnapshot, (payload) => {
     if (payload && typeof payload === 'object') moduleRegistry = payload as ModuleRegistrySnapshot
   })
-
-  const permissionPresetsForCli = (cli: string) => {
-    const plugin = getPluginRegistry()
-      .loaded()
-      .find((candidate) => candidate.manifest.id === cli)
-    return plugin ? declaredPermissionPresets(plugin.manifest) : null
-  }
 
   // OS notifications for pairing and reachability, only while no window has
   // focus; a click opens the Remote popover, which the shell does.
@@ -303,6 +298,14 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
 
   const modules = createServerModules({ platform, core, log })
   gateway = createStudioGateway(core, {
+    // An agent that starts a chat hears back from it, as one that launches a
+    // terminal agent does.
+    ...(terminals
+      ? {
+          linkLaunchedAgent: (link) => terminals.launchNotices.link(link),
+          dismissLaunchNotice: (sessionId) => terminals.launchNotices.dismiss(sessionId),
+        }
+      : {}),
     onTailnetEvent: (payload) => {
       tunnel.publish(TAILNET_EVENT_CHANNEL, payload)
       tailnetNotifier.onTailnetEvent(payload)
@@ -334,10 +337,18 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ...serverAutomationTools(
         createServerGatewayBackends({
           getWorkspaceSyncSnapshot: () => workspaceSyncService.getSnapshot(),
-          // The shell's sessions, mirrored: `backlog.work` confirms its launch
-          // against them. `terminal.*` and `agent.*` are the shell's toolsets.
-          listTerminalSessions: () => terminalSessions,
-          launchAgent: (request) => bridge.terminals.launchAgent(request),
+          // The terminals are this process's: `terminal.*`, `agent.*` and
+          // `backlog.work` launch and read them here.
+          listTerminalSessions: () => terminals?.runtime.sessions.listTerminals() ?? [],
+          ...(terminals
+            ? {
+                readTerminalOutputTail: (sessionId: string, options: { maxBytes: number; since?: string }) =>
+                  terminals.runtime.readTerminalOutputTail(sessionId, options),
+                linkLaunchedAgent: (link: Parameters<typeof terminals.launchNotices.link>[0]) =>
+                  terminals.launchNotices.link(link),
+              }
+            : {}),
+          launchAgent: (request) => launchAgent(request),
           resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
           createWorkspace: (input, actor) => workspaceSyncService.createWorkspace(input, actor),
           studioDataDirs: () => [envelope.dataDir],
@@ -407,24 +418,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     readRegistry: () => workspaceRegistry.getState(),
     minRegistryIntervalMs: 10_000,
   })
-  // Resume in terminal: a chat's CLI session handed to a terminal agent, which
-  // the shell starts.
-  const terminalHandoff = createConversationTerminalHandoff({
-    runtime: conversations,
-    launch: (request) => bridge.terminals.launchAgent(request),
-    cliResumesSessions: (cli) => cliResumeCapabilities(cli).resumeSession,
-    permissionPresetsForCli,
-    chatName: (workspaceId, agentId) =>
-      workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId)?.agents?.[
-        agentId
-      ]?.name,
-    chatStart: (workspaceId, agentId) =>
-      chatHandoffStart(
-        workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId),
-        agentId,
-        agentLaunchSettings.get(),
-      ),
-  })
   const files = { ...createFilesystemWatchSearchHandlers(), ...createFilesystemReadHandlers() }
   const domains = registerServerDomainIpc(tunnel.registry as unknown as Parameters<typeof registerServerDomainIpc>[0], {
     core,
@@ -432,7 +425,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     studioRpc,
     githubTokenStore,
     workspaceBackup,
-    terminalHandoff: (input) => terminalHandoff.handoff(input),
+    // Resume in terminal: the core's, launched here.
+    terminalHandoff: (input) =>
+      terminals ? terminals.handoff.handoff(input) : Promise.resolve({ ok: false, message: TERMINALS_UNAVAILABLE }),
     files,
     // The window's port is the check: main brokers one only to an app window.
     assertAppSender: () => undefined,
@@ -440,12 +435,45 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   })
   modules.load(tunnel.registry, gateway)
 
-  // A chat's phase, for the shell's dock badge and taskbar flash.
+  // A chat's or a terminal agent's phase, for the shell's dock badge,
+  // banners, keep-awake and tours.
   conversations.onEvent(
     createConversationAttentionListener({
       onAgentPhase: (event) => rpc.emit(SERVER_EVENTS.attentionPhase, event),
     }),
   )
+  terminals?.runtime.registerAgentPhaseListener((event) => rpc.emit(SERVER_EVENTS.attentionPhase, event))
+  // The shell's own readers of the terminals (tours, keep-awake, the tray, a
+  // quit's count) read this list, sent whole on every change.
+  const sendTerminalSessions = () =>
+    rpc.emit(SERVER_EVENTS.terminalSessions, terminals?.runtime.sessions.listTerminals() ?? [])
+  terminals?.runtime.subscribeSessionsChanged(sendTerminalSessions)
+  // A WSL distribution's reporter frames come through the shell's helper.
+  rpc.on(SERVER_EVENTS.agentStateLine, (payload) => {
+    if (typeof payload === 'string') terminals?.agentState.ingestLine(payload)
+  })
+  serveShellTerminalRequests(rpc, terminals, launchAgent)
+  // The terminal agents' pull request marks, read from this process's record
+  // over a connection of its own, as every client reads them.
+  terminalPullRequests = terminals
+    ? createTerminalPullRequests({
+        transport: studioRpc.shellTransport(),
+        version: envelope.app.version,
+        sessions: { list: () => listLiveTerminalSessions(), get: (sessionId) => getTerminalSessionById(sessionId) },
+        onListsChanged: (affects) => notePullRequestRecordChanged(affects),
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Terminal pull requests', message })
+        },
+      })
+    : null
+  if (terminalPullRequests) {
+    const marks = terminalPullRequests
+    setSessionPullRequestReader((session) => marks.listForSession(session))
+    rpc.handle(SERVER_METHODS.terminalPullRequestsRefresh, (params) => {
+      const sessionId = (params as { sessionId?: unknown } | null)?.sessionId
+      return typeof sessionId === 'string' ? marks.refreshForSession(sessionId) : false
+    })
+  }
 
   // What the shell mirrors (6.3, ServerStateMirror), pushed as it changes.
   const registryView = (): ServerMirrorRegistry => ({
@@ -490,15 +518,19 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   })
   rpc.on(SERVER_EVENTS.conversationIdleThreshold, (payload) => core.conversationOwner.setIdleThresholdMs(payload))
 
-  // The launch tokens the shell's terminal agents hold, before the socket
-  // their bridges reconnect to is back: a bridge that connects first is
-  // proven, not left unattributed until the shell's push after ready.
+  // The launch tokens the shell issued (its WSL helper's channels), before the
+  // socket their bridges reconnect to is back: a bridge that connects first
+  // is proven, not left unattributed until the shell's push after ready.
   const liveTokens = await rpc.call<LaunchTokenChange[]>(SHELL_METHODS.liveLaunchTokens).catch(() => [])
   for (const change of Array.isArray(liveTokens) ? liveTokens : []) applyGatewayLaunchTokenChange(change)
 
   // Listening: the gateway, the owner socket, the module startup hooks.
   const status = await gateway.initialize()
-  void studioRpc.start().catch(() => undefined)
+  void studioRpc
+    .start()
+    .then(() => terminalPullRequests?.start())
+    .catch(() => undefined)
+  sendTerminalSessions()
   modules.startup()
   // The boot pass of model discovery runs where its cache lives, a little
   // after start, so its probes do not compete with the window's first paint.
@@ -555,6 +587,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       clearTimeout(discoveryTimer)
       const legs: Array<readonly [string, () => unknown]> = [
         ['modules (begin)', () => modules.shutdownBegin()],
+        // A child's notices are kept for the next run.
+        ['launch notices', () => terminals?.launchNotices.freeze()],
+        ['terminal pull requests', () => terminalPullRequests?.stop()],
         ['local app socket', () => studioRpc.stop()],
         ['automations', () => gateway?.shutdown()],
         // With the new work: an install the quit cuts short is not recorded,
@@ -565,6 +600,10 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ['workspace registry', () => workspaceSyncService.flush()],
         // What a person would miss most: every chat's buffered transcript.
         ['chat transcripts', () => core.conversationOwner.flushTranscripts()],
+        // The reporter stops hearing frames, and every pty ends with its
+        // painted screen kept for the next run.
+        ['agent state', () => terminals?.stopAgentState()],
+        ['terminals', () => terminals?.shutdown()],
         ['chats', () => core.conversationOwner.shutdown()],
         // After the chats: a pull request a turn opened on the way out is
         // written down, and the watch's timers stop.
@@ -597,6 +636,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       const urgent = new Set([
         'dependency installs',
         'chat transcripts',
+        'terminals',
         'pull requests',
         'local servers',
         'workspace registry (final)',
@@ -623,6 +663,56 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
 }
 
 const BOOT_MODEL_DISCOVERY_DELAY_MS = 10_000
+
+const TERMINALS_UNAVAILABLE = 'Terminals cannot start on this machine: its terminal module did not load.'
+
+/** What the shell's analytics hear of a launch: its CLI and shape, never its words or its folders. */
+function agentLaunchedEvent(
+  request: AgentLaunchRequest,
+  result: Extract<AgentLaunchResult, { ok: true }>,
+): ShellAnalyticsEvent {
+  return {
+    name: 'agent.launched',
+    properties: {
+      cli: result.cli,
+      worktree: request.worktreePath !== undefined,
+      connector: request.connectorId !== undefined,
+      withPrompt: Boolean(request.prompt),
+      ...(request.permissionPreset ? { permissionPreset: request.permissionPreset } : {}),
+    },
+  }
+}
+
+/**
+ * What the shell asks of the terminals, which are this process's: a terminal
+ * agent it starts (a tour's new author), a question typed into one, Compact on
+ * an agent tab, and what the peek card reads.
+ */
+function serveShellTerminalRequests(
+  rpc: Parameters<ServerStart>[0]['rpc'],
+  terminals: StudioAgentTerminals | null,
+  launchAgent: (request: AgentLaunchRequest) => Promise<AgentLaunchResult>,
+): void {
+  rpc.handle(SERVER_METHODS.agentLaunch, (params) => {
+    if (!isRecord(params) || typeof params.workspaceId !== 'string') throw new Error('A launch names its workspace.')
+    return launchAgent(params as AgentLaunchRequest)
+  })
+  rpc.handle(SERVER_METHODS.terminalWrite, (params) => {
+    const input = params as { sessionId?: unknown; data?: unknown } | null
+    if (typeof input?.sessionId === 'string' && typeof input.data === 'string')
+      terminals?.runtime.sessions.writeTerminal(input.sessionId, input.data)
+  })
+  rpc.handle(SERVER_METHODS.agentCompact, (params) => {
+    if (!terminals) return { ok: false, message: TERMINALS_UNAVAILABLE }
+    return compactTerminalAgent(compactDeps(terminals), (params as { sessionId?: unknown } | null)?.sessionId)
+  })
+  rpc.handle(SERVER_METHODS.terminalPeekState, (params) => {
+    const sessionId = (params as { sessionId?: unknown } | null)?.sessionId
+    return typeof sessionId === 'string' && terminals
+      ? terminals.runtime.readConversationPeekSessionState(sessionId)
+      : null
+  })
+}
 
 /** How long main may take to open an SSH machine's stream: a first connect may install and start its server. */
 const SSH_OPEN_TIMEOUT_MS = 20 * 60_000
@@ -655,13 +745,6 @@ function serveShellRequests(deps: {
       (input.actor ?? 'system') as never,
       ...(typeof input.stamp === 'number' ? [input.stamp] : []),
     )
-  })
-  // Only the shell asks this, and only for a terminal it is launching; no
-  // client on any other channel reaches it.
-  rpc.handle(SERVER_METHODS.resolveSecretForLaunch, (params) => {
-    const cli = (params as { cli?: unknown } | null)?.cli
-    if (typeof cli !== 'string') return { ok: false, message: 'A credential is resolved for a named CLI.' }
-    return getSharedCredentialStore().resolveSecret(cli)
   })
   rpc.handle(SERVER_METHODS.githubToken, (params) => {
     const input = params as { op?: string; token?: unknown; explicit?: unknown } | null

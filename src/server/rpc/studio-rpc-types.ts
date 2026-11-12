@@ -325,6 +325,8 @@ export type StudioRequestContext = {
    * or asks about must be one Studio already knows.
    */
   knownFoldersOnly?: boolean
+  /** The connection is a browser's, an owner's tab included: it never reaches the terminals (`studio-browser-reach.ts`). */
+  browser?: boolean
   /** The window this connection is one of Studio's own for, as main names it; absent for any other client. */
   windowKey?: string
 }

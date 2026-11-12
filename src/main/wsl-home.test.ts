@@ -67,7 +67,6 @@ test('a WSL launch installs a user-scoped hook into the Linux home, a native one
     resolveReporterScriptPath: () => reporter,
     resolveReporterTemplatePath: () => null,
     resolveHomeDir: () => windowsHome,
-    onFrame: () => {},
   })
 
   // The helper was not up: nothing is written anywhere.

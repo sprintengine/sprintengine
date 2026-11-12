@@ -338,17 +338,10 @@ export function registerCoreIpc(
   // the runtime that owns one rather than with the core surfaces.
   registerConversationPeekIpc(ipcMain, services.conversationPeek)
 
-  // Compacting a terminal agent types at its prompt, so it registers beside
-  // the runtime that owns the session and goes through the control plane that
-  // owns typing at one.
-  registerAgentCompactIpc(ipcMain, {
-    findTerminal: (sessionId) =>
-      services.terminalRuntime.sessions.listTerminals().find((session) => session.sessionId === sessionId) ?? null,
-    sendPrompt: async (sessionId, text, precondition) => {
-      const result = await services.agentControlPlane.send({ sessionId }, text, { submit: true, precondition })
-      return result.ok ? { ok: true } : { ok: false, message: result.message }
-    },
-  })
+  // Compacting a terminal agent types at its prompt, through the control plane
+  // where the session runs (the core's in process, the server's out of process),
+  // which checks the session as it stands then.
+  registerAgentCompactIpc(ipcMain, (sessionId) => services.shellTerminals.compact(sessionId))
 
   // Same reason: a terminal agent's pull request marks follow its session, so
   // the hover's refresh registers beside the runtime that owns the session.

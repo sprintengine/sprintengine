@@ -21,7 +21,7 @@ import type { IpcMain } from 'electron'
  * a hover must never surface an error.
  */
 export type PullRequestIpcDependencies = {
-  refreshPullRequestsForSession(sessionId: string): boolean
+  refreshPullRequestsForSession(sessionId: string): boolean | Promise<boolean>
 }
 
 /** Cap on an id off the wire. Session ids are uuid-shaped; this is an abuse guard. */

@@ -83,10 +83,9 @@ type RegisterAppLifecycleOptions = {
     start(): Promise<void>
     stop(): Promise<void>
   }
-  // Always-on (no setting gate): the reporter socket must be listening before
-  // any agent launches so the first lifecycle frame is captured.
+  // The reporter's installer: at quit it takes back out the user-scoped hook
+  // registrations this run wrote. The reporter's socket is the core's.
   agentStateService?: {
-    initialize(): Promise<void>
     shutdown(): Promise<void>
   }
   workspaceSyncService?: {
@@ -641,10 +640,6 @@ export function registerAppLifecycle({
           // The index survives a failure, so the next launch tries again.
         })
     }
-
-    // Always-on: start the agent-state reporter socket so launches that follow
-    // can install the hook against a live endpoint.
-    void agentStateService?.initialize()
 
     // An agent that finished or is waiting flashes the taskbar button or
     // bounces the dock; the window itself stays where the person left it.

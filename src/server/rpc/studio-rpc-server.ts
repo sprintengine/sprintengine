@@ -182,6 +182,8 @@ export type StudioRpcAttachOptions = {
   audited?: boolean
   /** Hold the folders it names to the ones Studio knows: a browser on the tailnet. */
   knownFoldersOnly?: boolean
+  /** A browser's connection, an owner's tab included: never the terminals. */
+  browser?: boolean
   /** The window it is one of Studio's own for, as main names it: what a pop-out may attach to is asked by it. */
   windowKey?: string
 }
@@ -305,6 +307,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         shell: attachOptions.shell === true,
         ...(attachOptions.audited === undefined ? {} : { audited: attachOptions.audited }),
         ...(attachOptions.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
+        ...(attachOptions.browser ? { browser: true } : {}),
         ...(attachOptions.windowKey === undefined ? {} : { windowKey: attachOptions.windowKey }),
         welcome,
         audit: options.audit,

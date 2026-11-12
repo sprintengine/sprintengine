@@ -107,8 +107,6 @@ test('each of the six scopes carries only permissions from the closed set, and n
     for (const permission of TAILNET_SCOPE_PERMISSIONS[scope]) assert.equal(isStudioPermission(permission), true)
   const carried = new Set(TAILNET_SCOPES.flatMap((scope) => TAILNET_SCOPE_PERMISSIONS[scope]))
   for (const permission of [
-    'terminal:read',
-    'terminal:operate',
     'filesystem:read',
     'filesystem:write',
     'settings:write',

@@ -28,8 +28,12 @@ export type AgentCompactResult = { ok: true } | { ok: false; message: string }
 /** Cap on an id off the wire. Session ids are uuid-shaped; this is an abuse guard. */
 const MAX_ID_LENGTH = 512
 
-export function registerAgentCompactIpc(ipcMain: IpcMain, deps: AgentCompactIpcDependencies): void {
-  ipcMain.handle('agent:compact', (_event, sessionId: unknown) => compactTerminalAgent(deps, sessionId))
+/** `compact` runs `compactTerminalAgent` where the session runs (shell-terminals.ts). */
+export function registerAgentCompactIpc(
+  ipcMain: IpcMain,
+  compact: (sessionId: unknown) => Promise<AgentCompactResult>,
+): void {
+  ipcMain.handle('agent:compact', (_event, sessionId: unknown) => compact(sessionId))
 }
 
 export async function compactTerminalAgent(

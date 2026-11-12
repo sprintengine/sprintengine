@@ -29,10 +29,8 @@
 // `modules:read` hears what this Studio's modules say: their events and the
 // bell rows they raise (`module.*`). It is not held to an owner's connection.
 //
-// `terminal:read` lists the terminals on the machine and asks after one;
-// `terminal:operate` opens them and types into them, which is a shell on the
-// machine, so it is granted as one. It carries `terminal:read`, as
-// `conversation:operate` carries `conversation:read`.
+// No scope reaches the terminals: a terminal is a shell on the machine, so
+// only an owner's own connections reach them, never a grant (`terminals.ts`).
 
 /** Every scope this version of the protocol defines, narrowest first. */
 export const STUDIO_SCOPES = [
@@ -47,8 +45,6 @@ export const STUDIO_SCOPES = [
   'environment:maintain',
   'settings:write',
   'modules:read',
-  'terminal:read',
-  'terminal:operate',
 ] as const
 
 export type StudioScope = (typeof STUDIO_SCOPES)[number]
@@ -72,6 +68,5 @@ export function normalizeStudioScopes(value: unknown): StudioScope[] {
 /** Whether a grant covers `needed`. An `operate` scope covers its `read`. */
 export function studioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
-  if (needed === 'terminal:read') return scopes.includes('terminal:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }

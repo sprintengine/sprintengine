@@ -103,6 +103,11 @@ import { createStudioAutoCompact } from './studio-auto-compact'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
 import { createStudioSettlement } from './studio-settlement'
 import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
+import {
+  createStudioAgentTerminals,
+  type StudioAgentTerminals,
+  type StudioTerminalHost,
+} from './studio-agent-terminals'
 
 // The Studio core: the services the server owns (studio-server design, section
 // 4.1), composed once. The desktop builds it inside Electron main, from
@@ -123,9 +128,11 @@ import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktr
 // gateway is composed beside it (studio-gateway.ts), because the desktop adds
 // tools to it that act on windows and terminals.
 //
+// And the terminals and their agents (studio-agent-terminals.ts): the ptys,
+// the reporter's listener and the launches, here in every mode.
+//
 // What is not, yet: the module host and its bundled modules (they still take
-// the shell's terminal runtime and account bridge), terminals (owner ruling
-// 2026-10-01: not served by the server in v1), and everything the shell owns.
+// the shell's account bridge), and everything the shell owns.
 // What is not, ever: the browser and the canvas (owner ruling 2026-10-02: the
 // server draws nothing). They are toolsets a client offers, which the gateway
 // lists and routes (src/server/tools/); the server keeps only the board files,
@@ -140,43 +147,12 @@ export type StudioCoreOptions = {
    */
   resolveStudioMcpServer?: ConversationRuntimeOptions['resolveStudioMcpServer']
   /**
-   * The agent terminals this process runs, for the gateway's launch cap: an
-   * agent may start agents only at its own preset or stricter. A server has
-   * none (owner ruling 2026-10-01), so it defaults to an empty list.
+   * What the process around the core adds to its terminal agents: the
+   * shell's part of a launch (over the shell bridge) and, in process, the
+   * shell's observers of the sessions (studio-agent-terminals.ts). Absent,
+   * terminals still run here, launched without the shell's preparation.
    */
-  listTerminalSessions?: () => ReadonlyArray<{
-    sessionId?: string
-    kind?: string
-    workspaceId?: string
-    agentId?: string
-    processAlive: boolean
-    /** What the terminal is doing, for Settle from another device: one mid-turn is working. */
-    activity?: { kind: string }
-    /** What its CLI's hooks say, for the rest sweep: one awaiting input wants the person. */
-    agentState?: { phase?: string }
-    /** When its agent last finished a turn, which the rest sweep reads for a chat no window reported on. */
-    lastTurnEndedAt?: number | null
-    agentRecord?: { cliPermissionPreset?: unknown }
-    /** Where it works, and the checkout it observes: a worktree slot one works in is never recycled. */
-    cwd?: string
-    /** Suspended to save memory, resumable in place: not alive, but still holding its folder. */
-    suspended?: boolean
-    observedCheckout?: { cwd?: string | null; gitRoot?: string | null } | null
-  }>
-  /**
-   * Whether the list above has been read once. Out of process the shell
-   * pushes it after the server starts, and until then every chat would read
-   * idle to the rest sweep. Absent, it always has been (in process).
-   */
-  terminalSessionsListed?: () => boolean
-  /** Hear each change to the list above, for the rest sweep. Returns the unsubscribe. */
-  onTerminalSessionsChanged?: (listener: () => void) => () => void
-  /**
-   * End the terminals of a chat the rest sweep settled, where this process's
-   * shell holds them: a resting chat holds no processes (owner ruling
-   * 2026-09-07), and with no window open nothing else would end them.
-   */
-  endWorkspaceTerminals?: (workspaceId: string) => void
+  terminalHost?: StudioTerminalHost
   /** A machine's settings changed (a distribution turned on or off). */
   onHostSettingsChanged?: () => void
   /**
@@ -297,6 +273,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     return id ? hosts.get(id) : null
   })
 
+  // The terminal agents (studio-agent-terminals.ts), built once the chats and
+  // sub-agents they read exist, below; read lazily by what is built before.
+  let agentTerminals: StudioAgentTerminals | null = null
+
   // The worktree pool, its dependency installs, the `worktree.*` tools and the
   // chat-folder guard every turn passes (studio-worktree-pool.ts): this
   // core's in every mode, beside the agents that work in the slots.
@@ -307,9 +287,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // Read when a step asks, long after `conversations` below is set.
     liveConversationPaths: () => conversations.liveConversationWorkspaceRoots(),
     conversations: () => conversations,
-    ...(options.listTerminalSessions ? { listTerminalSessions: options.listTerminalSessions } : {}),
-    ...(options.terminalSessionsListed ? { terminalSessionsListed: options.terminalSessionsListed } : {}),
-    ...(options.onTerminalSessionsChanged ? { onTerminalSessionsChanged: options.onTerminalSessionsChanged } : {}),
+    // This core's own terminals, read where they run: one starting in a slot
+    // holds it until it is live, through the same holds the pool takes.
+    listTerminalSessions: () => agentTerminals?.list() ?? [],
   })
 
   // The conversation runtime: chat sessions and the providers and agent CLI
@@ -460,6 +440,29 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     if (event.type === 'workspace.agents_updated') subagents.onAgentsChanged(event.payload.workspaceId)
   })
   subagents.reconcile()
+
+  // The terminals and their agents run here, in every mode: the ptys, the
+  // reporter's listener, the launch service every terminal launch goes
+  // through, the control plane and the launch notices. None where this
+  // process cannot load the pty module (a WSL or SSH machine's server).
+  agentTerminals = createStudioAgentTerminals({
+    platform,
+    whenDataDirFree: taken.whenFree,
+    // A desktop that could not take the directory carries on as builds
+    // before the lock did, its reporter included; any other process listens
+    // only with the lock, so two never share the socket.
+    reporterListens: dataDirLock !== null || options.role === 'desktop',
+    workspaceRegistry,
+    workspaceSyncService,
+    agentLaunchSettings,
+    conversations,
+    subagents,
+    onChatIdle: (listener) => {
+      conversationRuntime.onSessionIdle(listener)
+    },
+    setChatIdleThresholdMs: (value) => conversationRuntime.setIdleThresholdMs(value),
+    ...(options.terminalHost ? { host: options.terminalHost } : {}),
+  })
 
   const conversationModelCatalog = createConversationModelCatalog({
     listClis: () => listPluginRegistryEntries(),
@@ -651,7 +654,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       const listed = conversations.listSessions({ agentId })
       return listed.ok ? listed.sessions : []
     },
-    listTerminalSessions: () => options.listTerminalSessions?.() ?? [],
+    listTerminalSessions: () => agentTerminals?.list() ?? [],
     readAgentRecordPreset: (workspaceId, agentId) => {
       const agent = workspaceRegistry.getRecord(workspaceId)?.agents[agentId]
       return agent ? { found: true, preset: agent.cliPermissionPreset } : { found: false }
@@ -745,7 +748,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // working in the background under any parent phase, or one of its agent
   // terminals mid-turn (`conversationSessionWorking`, `terminalAgentWorking`).
   const terminalWorking = (workspaceId: string) =>
-    (options.listTerminalSessions?.() ?? []).some(
+    (agentTerminals?.list() ?? []).some(
       (session) => session.kind === 'agent' && session.workspaceId === workspaceId && terminalAgentWorking(session),
     )
   const chatWorking = (workspaceId: string) => {
@@ -851,10 +854,13 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     },
     settings: settledChatsSettings,
     terminals: {
-      list: () => options.listTerminalSessions?.() ?? [],
-      listed: () => options.terminalSessionsListed?.() ?? true,
-      ...(options.onTerminalSessionsChanged ? { onChanged: options.onTerminalSessionsChanged } : {}),
-      ...(options.endWorkspaceTerminals ? { end: options.endWorkspaceTerminals } : {}),
+      list: () => agentTerminals?.list() ?? [],
+      ...(agentTerminals
+        ? {
+            onChanged: agentTerminals.onChanged,
+            end: (workspaceId: string) => agentTerminals.endWorkspaceTerminals(workspaceId),
+          }
+        : {}),
     },
     lifecycle: conversationLifecycle,
     recordTurnEnd: (workspaceId, at) => {
@@ -1158,6 +1164,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       // installs again at its next lease.
       () => worktrees.installer.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => chatTitler.dispose(),
+      // A child's notices are kept for the next run, the reporter stops
+      // hearing frames, and every pty ends with its painted screen kept.
+      () => agentTerminals?.launchNotices.freeze(),
+      () => agentTerminals?.stopAgentState(),
+      () => agentTerminals?.shutdown(),
       // What the command lists learned is written before the process goes.
       () => commandLists?.dispose(),
       () => conversationOwner.shutdown(),
@@ -1222,6 +1233,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     scheduledMessages,
     /** The worktree pool, its installs and tools, the chat-folder guard (studio-worktree-pool.ts). */
     worktrees,
+    /** The terminals and their agents (studio-agent-terminals.ts); null where no pty can start. */
+    agentTerminals,
     /** The model-written chat titles setting, as the windows push it. */
     textGenerationSettings,
     /** The composer's `/` lists, which a window's IPC and a paired desktop's reads share. */

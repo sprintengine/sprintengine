@@ -181,12 +181,11 @@ were settled:
   windows reach it over the server's IPC domains (`worktree-pool:*`,
   `worktree-install:*`, `settled-chats:*` and the git panel's
   `git:worktree:create|restore|remove|cleanup-agents`), the shell's
-  `agent.launch` asks the server for its worktree, and nothing else keeps one,
-  so a chat's turns and the pool take their path holds in one process.
-  Terminals are still the shell's: out of
-  process, a terminal reaches the pool only through the terminal list the
-  shell pushes, not through a path hold, until terminals move to the server
-  too.
+  agents' `agent.launch` cuts its worktree there, and nothing else keeps one,
+  so a chat's turns, the terminals (the core's too, studio-agent-terminals.ts)
+  and the pool take their path holds in one process: a terminal still starting
+  in a slot holds it, one starting waits for a return under way, and a live one
+  is read straight from the runtime.
 - **Agents that want a worktree** call `worktree.lease` (and optionally
   `worktree.release`) instead of `git worktree add` (question 1: the tool, not
   a shim). The lease is the calling agent's and is kept while that agent
