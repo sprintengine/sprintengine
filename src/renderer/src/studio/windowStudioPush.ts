@@ -22,9 +22,10 @@ export type WindowStudioPushInput<T extends StudioPushTopic> = {
 
 /**
  * Follow one push topic on the window's Studio for as long as the caller
- * wants it. The client resubscribes by itself across a reconnect; a client
- * that closed for good is replaced by a new one, and the topic is followed
- * again on that one once it opens. A window with no Studio, or a Studio that
+ * wants it. The client resubscribes by itself across a reconnect; a stream
+ * that ended (the client parked on a refused credential, say) and a client
+ * that closed for good and was replaced are followed again once the window's
+ * connection opens. A window with no Studio, or a Studio that
  * does not serve the capability, hears nothing. Returns the unsubscriber.
  */
 export function followWindowStudioPush<T extends StudioPushTopic>(input: WindowStudioPushInput<T>): () => void {
@@ -39,7 +40,17 @@ export function followWindowStudioPush<T extends StudioPushTopic>(input: WindowS
         if (!alive || client === subscribed || !client.supports(input.capability)) return
         stop?.()
         subscribed = client
-        stop = client.subscribe(input.topic, input.params, { onPayload: input.onPayload })
+        stop = client.subscribe(input.topic, input.params, {
+          onPayload: input.onPayload,
+          // Ended for good on this client (a refused credential parks it and
+          // ends its streams; a refusal ends one): the next time the window's
+          // connection opens, the topic is followed again, on this client too.
+          onEnd: () => {
+            if (subscribed !== client) return
+            subscribed = null
+            stop = null
+          },
+        })
       })
       .catch(() => {
         // No Studio for this window yet: followed when it opens.

@@ -672,12 +672,14 @@ export type MainHost = {
    *
    * Identity is stamped from this host's scope, so only your module's
    * subscribers receive it and you can never emit as another module. An empty
-   * or over-128-character topic throws. The payload crosses IPC and must be
-   * structured-cloneable.
+   * or over-128-character topic throws. The payload rides the Studio
+   * protocol's `module.events` stream and must be a JSON value (plain objects,
+   * arrays, strings, finite numbers, booleans, null); anything else (a Date, a
+   * Map, NaN, a cycle) throws here, naming where.
    *
    * Delivery contract:
-   * - **Fan-out** — one emit reaches every open window; the channel has no
-   *   addressing, so per-window state is yours to key on.
+   * - **Fan-out** — one emit reaches every client following the stream; it has
+   *   no addressing, so per-window state is yours to key on.
    * - **Ordering** — FIFO per module: a `started` never lands after its `done`.
    * - **No replay** — an event emitted with no window open is dropped, and a
    *   window opened later sees nothing earlier. Events are signals, not state:
