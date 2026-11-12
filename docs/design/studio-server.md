@@ -841,7 +841,8 @@ code and the end of its output) is kept until the next one starts; a stopped
 one has nothing to explain. The server's own end stops every
 run it started, which would otherwise be left holding its port.
 
-**The protocol** (`local-servers` capability, owners only):
+**The protocol** (`local-servers` capability, an owner's by declaration, so
+no paired device or app reaches it whatever its scopes):
 `localServers.list` by workspace or by conversation (`workspaces:read`),
 `localServers.run`, `localServers.stop` and `localServers.remove`
 (`conversation:operate`), and the `localServers.changed` stream.

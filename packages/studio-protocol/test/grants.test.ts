@@ -28,7 +28,10 @@ const REVOKED = { owner: false, scopes: [] as string[] }
 
 /**
  * What only an owner's connection may call, and why: what runs a program or
- * opens a terminal on this machine's screen, or records an agent's own work;
+ * opens a terminal on this machine's screen, or records an agent's own work
+ * (the local servers an agent linked here, which `localServers.run` and
+ * `.stop` start and stop; a title or a commit message an agent CLI writes
+ * outside any chat);
  * of the terminals, the words a person wrote for an agent and the
  * machine-wide idle policy; the launch settings, which name the programs
  * each CLI and MCP server runs here and hold the MCP servers' keys; and what
@@ -39,6 +42,14 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  */
 const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'agentConfig.adopt',
+  'commitMessage.cancel',
+  'commitMessage.draft',
+  'localServers.changed',
+  'localServers.list',
+  'localServers.remove',
+  'localServers.run',
+  'localServers.stop',
+  'textGeneration.chatTitle',
   'mcp.sync',
   'memoryActivity.install',
   'memoryActivity.uninstall',

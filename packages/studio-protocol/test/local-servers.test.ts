@@ -13,9 +13,10 @@ import { STUDIO_METHODS, STUDIO_TOPICS, parseStudioMethodParams, parseStudioTopi
 const conversation = { workspaceId: 'ws-1', agentId: 'agent-1' }
 const refusal = (parsed: { ok: boolean; code?: string }) => (parsed.ok ? null : parsed.code)
 
-test('every localServers method and its topic reach a client by their scopes, behind the local-servers capability', () => {
+test('every localServers method and its topic are an owner’s, under their scopes, behind the local-servers capability', () => {
+  // They start and stop programs here, and list what agents linked on this machine.
   for (const [method, spec] of Object.entries(STUDIO_LOCAL_SERVERS_METHODS)) {
-    assert.equal(spec.owner, undefined, method)
+    assert.ok(spec.owner, method)
     assert.equal(spec.capability, STUDIO_LOCAL_SERVERS_CAPABILITY, method)
     assert.equal(STUDIO_METHODS[method as keyof typeof STUDIO_METHODS], spec, method)
     assert.equal(Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, method), true)
@@ -24,6 +25,7 @@ test('every localServers method and its topic reach a client by their scopes, be
   // Running a command drives the conversation's work.
   assert.equal(STUDIO_LOCAL_SERVERS_METHODS['localServers.run'].scope, 'conversation:operate')
   assert.equal(STUDIO_TOPICS['localServers.changed'], STUDIO_LOCAL_SERVERS_TOPICS['localServers.changed'])
+  assert.ok(STUDIO_LOCAL_SERVERS_TOPICS['localServers.changed'].owner)
   assert.equal(Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, 'localServers.link'), false)
   assert.equal(Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, 'toString'), false)
 })

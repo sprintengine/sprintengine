@@ -26,11 +26,16 @@ import { STUDIO_LOCAL_SERVERS_CAPABILITY } from './handshake.js'
 // moved, never the lists themselves, so a client asks again for what it is
 // showing.
 //
-// Reached by scope (the list by `workspaces:read`, the rest by
-// `conversation:operate`), behind the `local-servers` capability. `run`,
-// `stop` and `remove` name a server by its id and the conversation it is
-// linked to; `run` and `stop` are refused as `not_found` when that
-// conversation has no server with that id.
+// An owner's by declaration, behind the `local-servers` capability: `run`
+// starts a program on this machine and `stop` ends one, and the list is what
+// an agent linked here: the command that starts it, what it printed, and an
+// address that opens only on this machine. No other grant reaches any of it,
+// a paired device's included, whatever scopes it holds. Their scopes stay
+// declared (`workspaces:read` for the list, `conversation:operate` for the
+// rest) and an owner's grant is still checked for them. `run`, `stop` and
+// `remove` name a server by its id and the conversation it is linked to;
+// `run` and `stop` are refused as `not_found` when that conversation has no
+// server with that id.
 
 /**
  * `running`: something accepts connections on the server's port. `stopped`:
@@ -175,10 +180,15 @@ function parseTarget(value: Record<string, unknown>): { ok: true; params: Studio
   return studioParams(target)
 }
 
+// Running or stopping a program here, and what an agent recorded of one.
+const LOCAL_SERVERS_OWNER =
+  "Only an owner's connection starts or stops a program on this machine, or reads the servers its agents linked here."
+
 const read = {
   scope: 'workspaces:read',
   mutation: false,
   capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
+  owner: LOCAL_SERVERS_OWNER,
 } as const
 
 type OneServer = StudioLocalServersMethodMap['localServers.run' | 'localServers.stop' | 'localServers.remove']
@@ -206,6 +216,7 @@ export const STUDIO_LOCAL_SERVERS_TOPICS: StudioTopicTable<StudioLocalServersTop
   'localServers.changed': {
     scope: 'workspaces:read',
     capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
+    owner: LOCAL_SERVERS_OWNER,
     push: true,
     params: studioNoParams,
   },
