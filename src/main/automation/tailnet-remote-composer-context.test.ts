@@ -114,6 +114,7 @@ async function startHarness() {
   const key: MeshConversationKey = { connectionId: paired.connection.id, workspaceId, agentId }
   return {
     runtime,
+    host,
     mesh,
     key,
     workspaceRoot,
@@ -242,28 +243,33 @@ test('a send is the request: its skills go by id, and when it was written goes w
   try {
     await h.mesh.listConversations(h.key.connectionId)
     await h.follow()
-    const turns = vi.spyOn(h.runtime, 'sendTurn')
+    // What crosses the lane, answered there without running a turn.
+    const commands = vi.spyOn(h.host, 'command').mockResolvedValue({ ok: true })
     const composedAt = Date.now()
-    await h.mesh.conversationSend({
+    const sent = await h.mesh.conversationSend({
       key: h.key,
       message: 'Review it',
       skills: [{ id: 'review', sourcePath: join(h.localDir, 'review', 'SKILL.md') }],
       composedAt,
       confirmedStale: true,
     })
-    const turn = turns.mock.calls.at(-1)![0]
+    assert.deepEqual(sent, { ok: true })
     // A skill's file is a path on this machine: only its id goes over.
-    assert.deepEqual(turn.skills, [{ id: 'review' }])
-    assert.equal(turn.composedAt, composedAt)
-    assert.equal(turn.confirmedStale, true)
+    assert.deepEqual(commands.mock.calls.at(-1)![3], {
+      kind: 'send',
+      message: 'Review it',
+      skills: ['review'],
+      composedAt,
+      confirmedStale: true,
+    })
 
     // Refused here, in words, rather than sent without them.
-    const before = turns.mock.calls.length
+    const before = commands.mock.calls.length
     for (const wrong of [{ skills: ['review'] }, { composedAt: -1 }, { confirmedStale: 'yes' }]) {
       const refused = await h.mesh.conversationSend({ key: h.key, message: 'And this', ...wrong })
       assert.equal(refused.ok ? '' : refused.code, 'invalid_arguments', JSON.stringify(wrong))
     }
-    assert.equal(turns.mock.calls.length, before)
+    assert.equal(commands.mock.calls.length, before)
   } finally {
     await h.close()
   }
