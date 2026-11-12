@@ -321,6 +321,7 @@ export function ChatsProvider({
           rows: buildChatRows({
             deviceId: session.deviceId,
             desktopName: session.desktopName,
+            ...(session.environmentId ? { environmentId: session.environmentId } : {}),
             threads: threads ?? [],
             workspaces: workspaces?.ok ? (workspaces.data ?? []) : null,
             lifecycle: lifecycle !== null,

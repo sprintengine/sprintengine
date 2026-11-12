@@ -119,7 +119,10 @@ export function parseChatLink(raw: unknown): ChatLink | null {
  * cannot carry (an id from before the alphabet above, say), so a menu never
  * offers to copy a link that would not open.
  */
-export function chatLinkFor(address: { environmentId: string; chatId: string }, agentId?: string | null): string | null {
+export function chatLinkFor(
+  address: { environmentId: string; chatId: string },
+  agentId?: string | null,
+): string | null {
   if (!LINK_ID.test(address.environmentId) || !LINK_ID.test(address.chatId)) return null
   if (agentId != null && !LINK_ID.test(agentId)) return null
   const base = `${STUDIO_LINK_SCHEME}://chat/${address.environmentId}/${address.chatId}`

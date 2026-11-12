@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseChatLink, parseAppLink, conversationEnabled, conversationCanOperate, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { projectConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseAppLink, conversationEnabled, conversationCanOperate, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 
 // A turn's steps rest inside its fold; these tests read the groups as the fold
 // holds them, in place, as the fold draws them when it is opened.
@@ -66,80 +66,18 @@ test("deep links contain only paired desktop and conversation identifiers", () =
   for (const url of ["https://example.com/conversation/a/b/c", "sprintengine://conversation/a/b", "sprintengine://conversation/a/b/%00", "sprintengine://user:secret@conversation/a/b/c"]) assert.equal(parseConversationLink(url), null);
 });
 
-// The desktop's chat link (`sprintengine://chat/<workspaceId>[?agent=<agentId>]`),
-// read with the desktop's own strictness: these cases are its suite's.
-const chatLink = (workspaceId, agentId = null) => ({ workspaceId, agentId });
-test("a desktop's chat link names its workspace, and its agent when it has one", () => {
-  assert.deepEqual(parseChatLink("sprintengine://chat/V1StGXR8_Z5jdHi6B-myT"), chatLink("V1StGXR8_Z5jdHi6B-myT"));
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1?agent=agent-claude-0a1b2c3d4e5f6g7h"), chatLink("ws-1", "agent-claude-0a1b2c3d4e5f6g7h"));
-  // Scheme and host in any case, the ids exactly as written; the trailing slash a browser adds.
-  assert.deepEqual(parseChatLink("SprintEngine://CHAT/AbC"), chatLink("AbC"));
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1/"), chatLink("ws-1"));
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1/?agent=a1"), chatLink("ws-1", "a1"));
-});
-test("a chat link's other parameters and fragment are ignored, and a bad agent is dropped", () => {
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1?prompt=rm%20-rf%20~&send=1&agent=a1#top"), chatLink("ws-1", "a1"));
-  for (const url of [
-    "sprintengine://chat/ws-1?agent=../../etc",
-    "sprintengine://chat/ws-1?agent=",
-    "sprintengine://chat/ws-1?agent",
-    "sprintengine://chat/ws-1?agent=a1&agent=a2",
-    "sprintengine://chat/ws-1?agent=a%20b",
-    "sprintengine://chat/ws-1?agent=a+b",
-    "sprintengine://chat/ws-1?agent=%E0%A4%A",
-  ])
-    assert.deepEqual(parseChatLink(url), chatLink("ws-1"), url);
-  // A key spelled with an escape is the same key, as URLSearchParams reads it.
-  assert.deepEqual(parseChatLink("sprintengine://chat/ws-1?ag%65nt=a1"), chatLink("ws-1", "a1"));
-});
-test("a chat link refuses any other host, path, scheme, authority or id", () => {
-  for (const url of [
-    "sprintengine://new?project=/Users/dev/app&prompt=hello",
-    "sprintengine://chat",
-    "sprintengine://chat/",
-    "sprintengine://chat/ws-1/agent-1",
-    "sprintengine://chats/ws-1",
-    "sprintengine:chat/ws-1",
-    "sprintengine:///chat/ws-1",
-    "sprintengine://auth/callback?code=abc",
-    "sprintengine://verify/chat/ws-1",
-    "https://chat/ws-1",
-    "javascript://chat/ws-1",
-    "sprintengine2://chat/ws-1",
-    "sprintengine-tailnet://chat/ws-1",
-    "sprintengine://evil@chat/ws-1",
-    "sprintengine://user:pass@chat/ws-1",
-    "sprintengine://chat:80/ws-1",
-    "sprintengine://chat.example.com/ws-1",
-    "sprintengine://chat/..",
-    "sprintengine://chat/../../etc/passwd",
-    "sprintengine://chat/ws-1/../ws-2",
-    "sprintengine://chat/%2e%2e",
-    "sprintengine://chat/ws%2F1",
-    "sprintengine://chat/ws-1;rm",
-    "sprintengine://chat/$(id)",
-    "sprintengine://chat/ws\"1",
-    "sprintengine://chat/ws.1",
-    "sprintengine://chat/ws\\1",
-    `sprintengine://chat/${"a".repeat(129)}`,
-    " sprintengine://chat/ws-1",
-    "sprintengine://chat/ws-1 ",
-    "sprintengine://chat/ws 1",
-    "sprintengine://chat/ws-1\n--inspect",
-    "sprintengine://chat/ws-1\u0000",
-    "sprintengine://chat/ws-1\u007f",
-    `sprintengine://chat/ws-1?pad=${"x".repeat(2048)}`,
-    "",
-  ])
-    assert.equal(parseChatLink(url), null, JSON.stringify(url));
-  for (const raw of [undefined, null, 42, {}, ["sprintengine://chat/ws-1"]]) assert.equal(parseChatLink(raw), null);
-});
-test("an app link is a conversation on a named desktop, or a desktop's chat link", () => {
+// A Studio chat link is read by the protocol package's grammar, whose own
+// suite has its cases (packages/studio-protocol/test/chat-link.test.ts).
+const chatLink = (environmentId, chatId, agentId = null) => ({ kind: "chat", environmentId, chatId, agentId });
+test("an app link is a conversation on a named desktop, or a Studio chat link", () => {
   assert.deepEqual(parseAppLink("sprintengine://conversation/device/workspace/agent"), {
     kind: "conversation",
     link: { deviceId: "device", workspaceId: "workspace", agentId: "agent" },
   });
-  assert.deepEqual(parseAppLink("sprintengine://chat/ws-1?agent=a1"), { kind: "chat", link: chatLink("ws-1", "a1") });
+  assert.deepEqual(parseAppLink("sprintengine://chat/env-mini/ws-1?agent=a1"), { kind: "chat", link: chatLink("env-mini", "ws-1", "a1") });
+  // A link from a desktop before links named an environment still opens.
+  assert.deepEqual(parseAppLink("sprintengine://chat/ws-1?agent=a1"), { kind: "chat", link: chatLink(null, "ws-1", "a1") });
+  assert.equal(parseAppLink("sprintengine://chat/env-mini/ws-1/agent-1"), null);
   assert.equal(parseAppLink("sprintengine://verify/notices"), null);
   assert.equal(parseAppLink("sprintengine-tailnet://pair?code=x"), null);
 });

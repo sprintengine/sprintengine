@@ -17,7 +17,10 @@ const entry = (environmentId: string, route: EnvironmentEntry['routes'][number])
   connection: UNKNOWN_CONNECTION,
   compatibility: null,
 })
-const environments = [entry('env-here', { kind: 'local' }), entry('env-mini', { kind: 'tailnet', connection: 'c-mini' })]
+const environments = [
+  entry('env-here', { kind: 'local' }),
+  entry('env-mini', { kind: 'tailnet', connection: 'c-mini' }),
+]
 
 test('a link names a paired machine’s chat by its address there, and opens what that machine lists', () => {
   const connection = {
@@ -73,7 +76,11 @@ test('a link names a paired machine’s chat by its address there, and opens wha
   assert.equal(target?.machineName, 'mac-mini')
   assert.equal(target?.spec.connectionId, 'c-mini')
   assert.deepEqual(target?.spec.conversation, { workspaceId: 'rw1', agentId: 'agent-1' })
-  assert.deepEqual(remoteChatLinkTargets(link('env-other', 'rw1')), [], 'another environment’s chat of that id is not it')
+  assert.deepEqual(
+    remoteChatLinkTargets(link('env-other', 'rw1')),
+    [],
+    'another environment’s chat of that id is not it',
+  )
   assert.equal(remoteChatLinkTargets(link(null, 'rw1')).length, 1, 'a link that names no environment finds it by id')
   assert.deepEqual(remoteChatLinkTargets(link('env-mini', 'rw-elsewhere')), [])
   assert.deepEqual(remoteChatOnConnection('c-mini', 'rw1')?.conversation, { workspaceId: 'rw1', agentId: 'agent-1' })
@@ -94,7 +101,14 @@ test('a link names a paired machine’s chat by its address there, and opens wha
     chatLinkOfWorkspace({ id: 'ws-here', remoteOrigin: { connectionId: 'c-mini', workspaceId: 'rw1' } }, environments),
     theirs,
   )
-  assert.equal(chatLinkOfWorkspace({ id: 'ws-here', remoteOrigin: null }, environments), 'sprintengine://chat/env-here/ws-here')
+  assert.equal(
+    chatLinkOfWorkspace({ id: 'ws-here', remoteOrigin: null }, environments),
+    'sprintengine://chat/env-here/ws-here',
+  )
   assert.equal(chatLinkOfWorkspace({ id: 'ws-here' }, []), null, 'no link before this machine’s id is read')
-  assert.equal(chatLinkOfRemoteChat('c-unknown', 'rw1', environments), null, 'nor for a machine that has not said its id')
+  assert.equal(
+    chatLinkOfRemoteChat('c-unknown', 'rw1', environments),
+    null,
+    'nor for a machine that has not said its id',
+  )
 })

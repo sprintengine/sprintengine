@@ -1,3 +1,4 @@
+import { isLinkId } from "../../../packages/studio-protocol/src/chat-link";
 import { readPeerRefusal, readTransportDeclaration, type TailnetTransportDeclaration } from "./tailnetTransport";
 import {
   validateMobileControlSnapshot,
@@ -264,18 +265,25 @@ export async function completeTailnetPairing(input: {
 
 /**
  * `GET /tailnet/v1/identity`: what the gateway says about this pairing and
- * itself, of which the phone keeps the grant, the transport declaration and
- * the machine mark. Read on foreground because a Studio
+ * itself, of which the phone keeps the grant, the transport declaration, the
+ * machine mark and the Studio's environment id. Read on foreground because a Studio
  * updates under a standing pairing, and its grant can be widened or narrowed
  * there, so the pair-time answer goes stale. One cheap GET; a 401 is the
  * pairing being gone, which the caller already knows how to say. `scopes` is
- * null when the answer carries none, which says nothing about the grant.
+ * null when the answer carries none, which says nothing about the grant;
+ * `environmentId` is null from a Studio that says none (or one no link can
+ * carry).
  */
 export async function readTailnetIdentity(input: {
   baseUrl: string;
   deviceToken: string;
 }): Promise<
-  ApiResult<{ scopes: string[] | null; transport: TailnetTransportDeclaration; machine: DesktopMachineMark | null }>
+  ApiResult<{
+    scopes: string[] | null;
+    transport: TailnetTransportDeclaration;
+    machine: DesktopMachineMark | null;
+    environmentId: string | null;
+  }>
 > {
   let response: Response;
   try {
@@ -292,7 +300,15 @@ export async function readTailnetIdentity(input: {
     return { ok: false, errorCode: "desktop_unavailable", message: `The desktop answered ${response.status}.` };
   }
   const scopes = Array.isArray(body.scopes) ? body.scopes.filter((scope): scope is string => typeof scope === "string") : null;
-  return { ok: true, data: { scopes, transport: readTransportDeclaration(body), machine: readIdentityMachine(body.machine) } };
+  return {
+    ok: true,
+    data: {
+      scopes,
+      transport: readTransportDeclaration(body),
+      machine: readIdentityMachine(body.machine),
+      environmentId: isLinkId(body.environmentId) ? body.environmentId : null,
+    },
+  };
 }
 
 /**

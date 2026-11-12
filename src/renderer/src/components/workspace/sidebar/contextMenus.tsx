@@ -562,7 +562,6 @@ export type RemoteConversationMenuAction =
   | 'stop-watching'
   | 'new-chat'
 
-
 // A chat on a paired machine that no window here holds: the same menu a
 // local row has, each item asking that machine, which keeps the chat. Its rest
 // (`conversation-lifecycle`), its marks and sleep (`chat-row-menu`) and its read

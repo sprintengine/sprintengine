@@ -100,7 +100,10 @@ test("a paired machine's chat opens as its row does, by its address there", () =
     { remote: [remoteChoice(MINI, 'rw1', 'mac-mini', calls), remoteChoice(BOX, 'rw1', 'build-box', calls)] },
   )
   assert.equal(openChatLink(link(BOX, 'rw1'), deps), true)
-  assert.equal(openChatLink(link(MINI, 'rw-gone'), { ...deps, notOnThisMachine: () => void calls.push('not here') }), false)
+  assert.equal(
+    openChatLink(link(MINI, 'rw-gone'), { ...deps, notOnThisMachine: () => void calls.push('not here') }),
+    false,
+  )
   assert.deepEqual(calls, ['open rw1 on build-box', 'not here'])
 })
 
@@ -117,7 +120,10 @@ test("a row here that follows a paired machine's chat opens here, before the mac
 
 test('an old link that names no environment opens the one chat of that id any machine lists', () => {
   const calls: string[] = []
-  const here = harness({ ws1: chat }, { holders: { ws1: 'primary' }, remote: [remoteChoice(MINI, 'rw1', 'mac-mini', calls)] })
+  const here = harness(
+    { ws1: chat },
+    { holders: { ws1: 'primary' }, remote: [remoteChoice(MINI, 'rw1', 'mac-mini', calls)] },
+  )
   assert.equal(openChatLink(link(null, 'ws1'), here.deps), true)
   assert.equal(openChatLink(link(null, 'rw1'), here.deps), true)
   assert.deepEqual(here.calls, ['select ws1'])

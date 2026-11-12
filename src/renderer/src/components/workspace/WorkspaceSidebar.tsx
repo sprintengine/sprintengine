@@ -4380,7 +4380,8 @@ function WorkspaceSidebar({
             railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId) ?? null
           }
           chatLink={(() => {
-            const workspace = railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId)
+            const workspace =
+              railWorkspaceById.get(contextMenu.workspaceId) ?? workspaceById.get(contextMenu.workspaceId)
             return workspace ? chatLinkOfWorkspace(workspace, environments) : null
           })()}
           moduleOverrides={moduleOverrides}

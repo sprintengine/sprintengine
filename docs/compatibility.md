@@ -390,7 +390,21 @@ send them (`docs/conversations.md`, "Machines and pull requests in the list").
 environment id, the `welcome.environment.id` its Studio protocol gives, which a
 paired desktop keeps on the pairing (`MeshConnection.environmentId`). A build
 from before it leaves it out, and the pairing keeps whatever id it last heard,
-or none; a value that cannot be an id (`isEnvironmentId`) is read as none.
+or none; a value that cannot be an id (`isEnvironmentId`) is read as none. A
+phone keeps it on its pairing too (`MobileSession.environmentId`, 2026-11-12),
+since chat links name it.
+
+Chat links are data that outlives a build: they sit in transcripts, notes and
+clipboards. Since 2026-11-12 a client writes
+`sprintengine://chat/<environmentId>/<chatId>[?agent=<agentId>]`, one grammar in
+`packages/studio-protocol/src/chat-link.ts` that the desktop and the phone both
+read, with ids of `[A-Za-z0-9_-]{1,128}`, the environment id and chat address
+alphabet (the package's test pins the two together). A link an older build
+wrote, `sprintengine://chat/<chatId>`, is still read, as a chat in no named
+environment, which the client looks for among every environment it lists: one
+opens, several are named (the phone offers them), none is said. Nothing writes
+that form any more. An older build reading a new link refuses it as a path it
+does not know, and opens nothing.
 A listed chat's `localServers` (2026-10-25: `{ id, url, title, port, state }`,
 the servers its agents linked, as the desktop last checked them, never the
 command or folder that starts one) is another, listed only for a chat that has

@@ -1,7 +1,7 @@
 import type { ConversationThread } from "../../api/conversationWire";
 import type { MobileSession } from "../../api/types";
 import type { DesktopWorkspace } from "../../api/tailnetWorkspaces";
-import { conversationCanOperate, conversationEnabled, conversationOffered, DEFAULT_MODEL_ID, modelLabel } from "./conversationLogic";
+import { conversationCanOperate, conversationEnabled, conversationOffered, DEFAULT_MODEL_ID, modelLabel, type ChatLink } from "./conversationLogic";
 import { cliForChatProvider } from "./launchLogic";
 
 // Where it lived first; the launch rules need it too, without importing this file.
@@ -15,6 +15,8 @@ export { cliForChatProvider };
 export interface ChatListRow {
   deviceId: string;
   desktopName: string;
+  /** The desktop's Studio environment id, as its identity last said; absent until it has said one. */
+  environmentId?: string;
   /**
    * The project's name, when the desktop's workspace list could be read; the
    * pill is omitted otherwise. A chat in one of the project's worktrees wears
@@ -202,6 +204,8 @@ export function chatRestingAt(thread: Pick<ConversationThread, "lastTurnEndedAt"
 export function buildChatRows(input: {
   deviceId: string;
   desktopName: string;
+  /** The desktop's environment id (`MobileSession.environmentId`), when known. */
+  environmentId?: string;
   threads: readonly ConversationThread[];
   workspaces: readonly DesktopWorkspace[] | null;
   lifecycle: boolean;
@@ -219,6 +223,7 @@ export function buildChatRows(input: {
     listed.push({
       deviceId: input.deviceId,
       desktopName: input.desktopName,
+      ...(input.environmentId ? { environmentId: input.environmentId } : {}),
       projectName: workspace?.projectName ?? null,
       worktree: workspace?.worktree ?? null,
       ...(workspace?.projectless ? { projectless: true } : {}),
@@ -690,33 +695,39 @@ export function matchesChatSearch(row: ChatListRow, query: string): boolean {
 }
 
 /**
- * Where a desktop's chat link (`parseChatLink`) leads among the chats listed
- * from every paired desktop. The link names a workspace and no desktop, so
- * each desktop listing it is a candidate: one is opened, several are offered,
- * none is said. On a desktop, the link's agent's chat where the workspace has
- * it, else the workspace's chat last written in, as the desktop opens the chat
- * as it was left when the agent is not there.
+ * Where a chat link (`parseChatLink`) leads among the chats listed from every
+ * paired desktop. A link names the environment that holds its chat, so only
+ * that desktop's chat is a candidate; while no paired desktop has said that it
+ * is that environment, any desktop that has not said which it is may be it. A
+ * link from before links named one is looked for on every desktop. One
+ * candidate is opened, several are offered, none is said. A desktop reached by
+ * two pairings is one environment and one candidate. On a desktop, the link's
+ * agent's chat where the workspace has it, else the workspace's chat last
+ * written in, as the desktop opens the chat as it was left when the agent is
+ * not there.
  */
 export type ChatLinkTarget =
   | { kind: "none" }
   | { kind: "one"; row: ChatListRow }
   | { kind: "several"; rows: ChatListRow[] };
 
-export function resolveChatLink(
-  link: { workspaceId: string; agentId: string | null },
-  rows: readonly ChatListRow[],
-): ChatLinkTarget {
-  const byDesktop = new Map<string, ChatListRow>();
+export function resolveChatLink(link: ChatLink, rows: readonly ChatListRow[]): ChatLinkTarget {
+  const wanted = link.environmentId;
+  const known = wanted !== null && rows.some((row) => row.environmentId === wanted);
+  const candidate = (row: ChatListRow) =>
+    wanted === null || row.environmentId === wanted || (!known && row.environmentId === undefined);
+  const byEnvironment = new Map<string, ChatListRow>();
   for (const row of rows) {
-    if (row.thread.workspaceId !== link.workspaceId) continue;
-    const held = byDesktop.get(row.deviceId);
+    if (row.thread.workspaceId !== link.chatId || !candidate(row)) continue;
+    const key = row.environmentId ? `environment:${row.environmentId}` : `device:${row.deviceId}`;
+    const held = byEnvironment.get(key);
     const better =
       !held ||
       (link.agentId !== null && row.thread.agentId === link.agentId && held.thread.agentId !== link.agentId) ||
       ((link.agentId === null || held.thread.agentId !== link.agentId) && chatRecencyAt(row) > chatRecencyAt(held));
-    if (better) byDesktop.set(row.deviceId, row);
+    if (better) byEnvironment.set(key, row);
   }
-  const found = [...byDesktop.values()];
+  const found = [...byEnvironment.values()];
   if (found.length === 0) return { kind: "none" };
   if (found.length === 1) return { kind: "one", row: found[0] };
   return { kind: "several", rows: found };

@@ -386,6 +386,17 @@ export function withMachineMark<T extends { machineMark?: { kind: string; color:
 }
 
 /**
+ * The session with the desktop's environment id folded in, or null when it is
+ * the one already held or the identity said none. An id once said is kept
+ * when a later answer says none (a Studio rolled back to a build before ids):
+ * the id names the data directory, which a downgrade does not change.
+ */
+export function withEnvironmentId<T extends { environmentId?: string }>(session: T, environmentId: string | null): T | null {
+  if (!environmentId || environmentId === session.environmentId) return null;
+  return { ...session, environmentId };
+}
+
+/**
  * Why a desktop refused a valid device token, when the refusal was about the
  * tailnet node presenting it rather than the token itself.
  *

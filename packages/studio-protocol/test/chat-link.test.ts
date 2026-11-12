@@ -13,7 +13,10 @@ const chat = (environmentId: string | null, chatId: string, agentId: string | nu
 })
 
 test('a chat link names its environment and chat, and its agent when it has one', () => {
-  assert.deepEqual(parseStudioLink(`sprintengine://chat/${ENV}/V1StGXR8_Z5jdHi6B-myT`), chat(ENV, 'V1StGXR8_Z5jdHi6B-myT'))
+  assert.deepEqual(
+    parseStudioLink(`sprintengine://chat/${ENV}/V1StGXR8_Z5jdHi6B-myT`),
+    chat(ENV, 'V1StGXR8_Z5jdHi6B-myT'),
+  )
   assert.deepEqual(
     parseStudioLink(`sprintengine://chat/${ENV}/ws-1?agent=agent-claude-0a1b2c3d4e5f6g7h`),
     chat(ENV, 'ws-1', 'agent-claude-0a1b2c3d4e5f6g7h'),
@@ -94,7 +97,19 @@ test('another scheme is refused', () => {
 })
 
 test('an id that could mean something to a shell or a file system is refused, in either segment', () => {
-  for (const id of ['..', '%2e%2e', 'ws%2F1', 'ws-1;rm', '$(id)', '`id`', 'ws"1', "ws'1", 'ws.1', 'ws\\1', 'a'.repeat(129)]) {
+  for (const id of [
+    '..',
+    '%2e%2e',
+    'ws%2F1',
+    'ws-1;rm',
+    '$(id)',
+    '`id`',
+    'ws"1',
+    "ws'1",
+    'ws.1',
+    'ws\\1',
+    'a'.repeat(129),
+  ]) {
     assert.equal(parseStudioLink(`sprintengine://chat/${id}`), null, id)
     assert.equal(parseStudioLink(`sprintengine://chat/${ENV}/${id}`), null, id)
     assert.equal(parseStudioLink(`sprintengine://chat/${id}/ws-1`), null, id)

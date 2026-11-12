@@ -67,7 +67,11 @@ export function remoteChatLinkTargets(link: {
     const key = entry.environmentId ? `id:${entry.environmentId}` : `connection:${conversation.connectionId}`
     if (seen.has(key)) continue
     seen.add(key)
-    found.push({ environmentId: entry.environmentId, machineName: conversation.machineName, spec: specFor(conversation, link.agentId) })
+    found.push({
+      environmentId: entry.environmentId,
+      machineName: conversation.machineName,
+      spec: specFor(conversation, link.agentId),
+    })
   }
   return found
 }

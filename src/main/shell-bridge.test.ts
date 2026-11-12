@@ -216,7 +216,9 @@ for (const [name, make] of [
       assert.equal(harness.notices.length, 1)
       assert.equal(harness.notices[0].silent, true)
       harness.notices[0].onActivate?.()
-      assert.deepEqual(harness.reveals, [{ kind: 'chat', environmentId: 'env-here', chatId: 'ws-1', agentId: 'agent-1' }])
+      assert.deepEqual(harness.reveals, [
+        { kind: 'chat', environmentId: 'env-here', chatId: 'ws-1', agentId: 'agent-1' },
+      ])
     })
 
     test('an analytics event goes to the shell, which holds consent', async () => {

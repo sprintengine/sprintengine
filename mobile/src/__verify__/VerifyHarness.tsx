@@ -152,7 +152,11 @@ function ChatLinkTwins({
   }, [chats, workspaceId]);
   return (
     <ChatsContext.Provider value={value}>
-      <ChatLinkScreen link={{ workspaceId, agentId: agent ?? null }} onBack={noop} onOpen={onOpen} />
+      <ChatLinkScreen
+        link={{ kind: "chat", environmentId: null, chatId: workspaceId, agentId: agent ?? null }}
+        onBack={noop}
+        onOpen={onOpen}
+      />
     </ChatsContext.Provider>
   );
 }

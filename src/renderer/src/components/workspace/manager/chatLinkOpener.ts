@@ -62,8 +62,7 @@ const THIS_COMPUTER = 'this computer'
 export function openChatLink(link: ChatLink, deps: ChatLinkOpenerDeps): boolean {
   // While this machine's id is not known the link cannot be placed, so it is
   // read as an old one: its chat id among every machine's.
-  const environmentId =
-    link.environmentId !== null && deps.localEnvironmentId !== null ? link.environmentId : null
+  const environmentId = link.environmentId !== null && deps.localEnvironmentId !== null ? link.environmentId : null
 
   if (environmentId === deps.localEnvironmentId && environmentId !== null) {
     if (openHere(link.chatId, link.agentId, deps)) return true

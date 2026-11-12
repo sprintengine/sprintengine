@@ -121,6 +121,16 @@
   `orderEnvironmentRoutes` (this machine, WSL, tailnet, then SSH); and
   `ChatAddress` `{ environmentId, chatId }` with `formatChatAddress` and
   `parseChatAddress`. Types and helpers only: nothing on the wire changes.
+- **Chat links** (`chat-link.ts`): the one `sprintengine://` grammar every
+  client reads and writes. `parseStudioLink` reads the sign-in callback and
+  `sprintengine://chat/<environmentId>/<chatId>[?agent=<agentId>]` as a
+  `ChatLink` `{ environmentId, chatId, agentId }`, and a link from before links
+  named an environment, `sprintengine://chat/<chatId>`, with `environmentId`
+  null; `parseChatLink` takes chat links only; `chatLinkFor(address, agentId?)`
+  writes the two-segment form, or null for an id a link cannot carry
+  (`isLinkId`, the same alphabet as `isEnvironmentId`). `STUDIO_LINK_SCHEME`
+  and `STUDIO_LINK_SCHEMES` name the scheme. No imports, so a client can build
+  the file on its own.
 - The socket does not advertise `conversation-changes`: its conversation topic
   carries no `changes` frames.
 - **The person's words for one agent** (`conversation-agent-message`, in

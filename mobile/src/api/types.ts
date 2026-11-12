@@ -48,6 +48,12 @@ export interface MobileSession {
    * not send one, and then the desktop wears the generic remote mark.
    */
   machineMark?: DesktopMachineMark;
+  /**
+   * The desktop's Studio environment id, from its identity: the same on every
+   * pairing with it and across a rename, and what a chat link names it by.
+   * Re-read on foreground. Absent until a Studio that says one has answered.
+   */
+  environmentId?: string;
   status?: DesktopSessionStatus;
   lastSeenAt?: string;
   revokedAt?: string;

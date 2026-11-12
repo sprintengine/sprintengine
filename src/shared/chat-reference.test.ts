@@ -27,15 +27,17 @@ test('an id a link cannot carry gives no reference', () => {
 test("a local chat's drag carries its reference as text; a paired machine's, or one with no address, carries none", () => {
   const data = new Map<string, string>()
   const transfer = { setData: (type: string, value: string) => void data.set(type, value) }
-  expect(setChatReferenceDragData(transfer, { id: 'ws-9', name: 'Release notes', remote: false, address: at('ws-9') })).toBe(
-    true,
-  )
+  expect(
+    setChatReferenceDragData(transfer, { id: 'ws-9', name: 'Release notes', remote: false, address: at('ws-9') }),
+  ).toBe(true)
   expect(data.get('text/plain')).toBe(`[Release notes](${chatLinkFor(at('ws-9'))})`)
   expect(data.get(CHAT_REFERENCE_MIME)).toBe('ws-9')
   data.clear()
-  expect(setChatReferenceDragData(transfer, { id: 'ws-9', name: 'Release notes', remote: true, address: at('ws-9') })).toBe(
+  expect(
+    setChatReferenceDragData(transfer, { id: 'ws-9', name: 'Release notes', remote: true, address: at('ws-9') }),
+  ).toBe(false)
+  expect(setChatReferenceDragData(transfer, { id: 'ws-9', name: 'Release notes', remote: false, address: null })).toBe(
     false,
   )
-  expect(setChatReferenceDragData(transfer, { id: 'ws-9', name: 'Release notes', remote: false, address: null })).toBe(false)
   expect(data.size).toBe(0)
 })
