@@ -130,7 +130,6 @@ import { syncStudioMcpConfig } from './studio-mcp-sync'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
 import { excludeMcpConfigFromWorktree } from './git'
 import { createArtifactsServices } from './artifacts-services'
-import type { ArtifactPublishRootsDeps } from './artifacts/artifact-publish-roots'
 import { createConversationPeekService } from './conversation-peek/service'
 import { chatHandoffStart, createConversationTerminalHandoff } from './conversation-terminal-handoff'
 import { createAgentPromptStore, registeredAgentOwners } from './agent-prompt-store'
@@ -217,7 +216,12 @@ import { createStudioGateway } from '../server/core/studio-gateway'
 import { createStudioRpc } from '../server/core/studio-rpc'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../server/desktop/gateway-backends'
-import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS } from '../server/desktop/server-methods'
+import {
+  SERVER_EVENTS,
+  SERVER_METHODS,
+  SHELL_METHODS,
+  type ServerWorktreeLease,
+} from '../server/desktop/server-methods'
 import { agentWorktreesOverRpc } from '../server/desktop/agent-worktree-rpc'
 import {
   createRemoteCore,
@@ -827,7 +831,8 @@ export function createAppServices(
             lastTurnEndedAt: session.lastTurnEndedAt ?? null,
             agentRecord: session.agentRecord,
             // Where it works: the core's worktree pool recycles no slot a
-            // terminal is in.
+            // terminal is in, a suspended one's included.
+            suspended: session.suspended,
             ...(session.cwd ? { cwd: session.cwd } : {}),
             ...(session.observedCheckout ? { observedCheckout: session.observedCheckout } : {}),
           })),
@@ -1690,8 +1695,8 @@ export function createAppServices(
     poolWorktrees: async () => {
       if (worktrees) return (await worktrees.pool.snapshots()).flatMap((snapshot) => snapshot.slots)
       if (!server) return []
-      const listed = await server.rpc.call<unknown>(SERVER_METHODS.worktreeLeases)
-      return Array.isArray(listed) ? (listed as Awaited<ReturnType<ArtifactPublishRootsDeps['poolWorktrees']>>) : []
+      const listed = await server.rpc.call<ServerWorktreeLease[] | null>(SERVER_METHODS.worktreeLeases)
+      return Array.isArray(listed) ? listed : []
     },
   })
 

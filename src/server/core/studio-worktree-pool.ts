@@ -24,7 +24,7 @@ import {
 import type { StudioPlatform } from '../platform/platform'
 
 // The worktree pool, its dependency installs and the `worktree.*` tools, as
-// the Studio core owns them (review of the one-server plan, finding 9): beside
+// the Studio core owns them: beside
 // the agents that work in the slots, so the turn that checks a chat's folder,
 // the pool that hands it out or takes it back, and the holds between them
 // (worktree-leases.ts) are one process's. Built by `createStudioCore` in every
@@ -37,6 +37,13 @@ import type { StudioPlatform } from '../platform/platform'
 
 /** What a terminal this core is told about says about where it works. */
 export type WorktreeTerminalPaths = {
+  /**
+   * False once its process has exited, or while it is suspended. A tab still
+   * showing a shell that exited keeps no slot; a suspended one, which resumes
+   * in place on a keystroke, keeps its slot, as the shell's own live list does.
+   */
+  processAlive?: boolean
+  suspended?: boolean
   cwd?: string | null
   observedCheckout?: { cwd?: string | null; gitRoot?: string | null } | null
 }
@@ -73,11 +80,13 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
 
   // Out of process the shell pushes its terminals after the server starts;
   // until it has, a terminal working in a slot would read as nothing at all.
-  // A step that asks waits for that first list, and fails rather than guess.
+  // A step that asks waits for that first list (one wait, shared by every
+  // step asking meanwhile), and fails rather than guess.
+  let firstList: Promise<void> | null = null
   const terminalsListed = (): Promise<void> => {
     const listed = deps.terminalSessionsListed
     if (!listed || listed() || !deps.onTerminalSessionsChanged) return Promise.resolve()
-    return new Promise<void>((resolve, reject) => {
+    firstList ??= new Promise<void>((resolve, reject) => {
       const stop = deps.onTerminalSessionsChanged!(() => {
         if (!listed()) return
         clearTimeout(timer)
@@ -89,7 +98,10 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
         reject(new Error('The desktop has not said yet which terminals are running; try again in a moment.'))
       }, deps.terminalListWaitMs ?? TERMINAL_LIST_WAIT_MS)
       timer.unref?.()
+    }).finally(() => {
+      firstList = null
     })
+    return firstList
   }
   const liveConversationPaths = (): Promise<string[]> => deps.liveConversationPaths().catch(() => [])
   // Where live work sits, for the pool and the agent worktree cleanup alike:
@@ -100,9 +112,10 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
     await terminalsListed()
     return [
       ...(deps.listTerminalSessions?.() ?? []).flatMap((session) =>
-        [session.cwd, session.observedCheckout?.cwd, session.observedCheckout?.gitRoot].filter(
-          (path): path is string => typeof path === 'string' && path.length > 0,
-        ),
+        (session.processAlive === false && session.suspended !== true
+          ? []
+          : [session.cwd, session.observedCheckout?.cwd, session.observedCheckout?.gitRoot]
+        ).filter((path): path is string => typeof path === 'string' && path.length > 0),
       ),
       ...(await liveConversationPaths()),
     ]

@@ -733,9 +733,10 @@ export function registerAppLifecycle({
   //     module kernel's own shutdown.
   let shutdownRun: Promise<void> | null = null
   let leavingForUpdate = false
-  // The pool's wait for slot steps in flight, short when leaving for an
-  // update: its ten seconds also have to cover the Studio server's drain after
-  // it. A step cut short is recovered at the next start, as after a crash.
+  // The pool's wait for slot steps in flight (in process; out of process the
+  // server keeps the pool and waits within its own drain), short when leaving
+  // for an update. A step cut short is recovered at the next start, as after a
+  // crash.
   const poolShutdownOptions = () => (leavingForUpdate ? { waitMs: POOL_UPDATE_SHUTDOWN_WAIT_MS } : {})
   // Who hears about each leg as it finishes: "Restart to update" passes one in,
   // which drives the progress window and the diagnostics timings. Joined late

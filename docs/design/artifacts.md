@@ -60,15 +60,15 @@ own helper or keys. An address with a sign-in in it is refused.
 
 ## 3. The tools
 
-| Tool | What it does |
-| --- | --- |
-| `artifacts.setup` | Sets the host up from a repository or a Cloudflare token, once the person confirms in Studio. Answers the site's address. |
+| Tool                | What it does                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `artifacts.setup`   | Sets the host up from a repository or a Cloudflare token, once the person confirms in Studio. Answers the site's address.                                                   |
 | `artifacts.publish` | An HTML file, or a folder with its page, with a title, description, tags, project, source repository/branch/commit and an optional picture. Answers the artifact's address. |
-| `artifacts.list` | Newest first, narrowed by tags and project. |
-| `artifacts.search` | By words in the title, description, project, tags and branch. |
-| `artifacts.get` | One artifact and every version's address. |
-| `artifacts.update` | Retitle, describe, re-tag, move project, and/or publish a new version from a path. |
-| `artifacts.delete` | Takes it off the site; a git-kept site keeps it in its history. |
+| `artifacts.list`    | Newest first, narrowed by tags and project.                                                                                                                                 |
+| `artifacts.search`  | By words in the title, description, project, tags and branch.                                                                                                               |
+| `artifacts.get`     | One artifact and every version's address.                                                                                                                                   |
+| `artifacts.update`  | Retitle, describe, re-tag, move project, and/or publish a new version from a path.                                                                                          |
+| `artifacts.delete`  | Takes it off the site; a git-kept site keeps it in its history.                                                                                                             |
 
 With no host set up every tool but `artifacts.setup` refuses with
 `not_configured`, naming the settings page and `artifacts.setup`, so an agent
@@ -88,7 +88,8 @@ Publishing, changing, removing and setting up read files at a path the caller
 names, or change where this machine publishes, and use its credentials, so
 they are mutations served on the local socket only; a paired device gets the
 three reads on the `workspace:read` scope. Main serves the family in process
-and out (the shell's `artifacts` toolset), as it does `worktree.*`.
+and out (the shell's `artifacts` toolset); the worktree pool's slots it may
+publish from are read from the Studio core that keeps the pool.
 
 ## 4. A version, and the site
 

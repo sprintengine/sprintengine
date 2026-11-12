@@ -312,3 +312,39 @@ test('worktree.lease and worktree.release are the core gateway’s, install wher
     }
   }
 })
+
+test('a slot is live while a terminal runs or sits suspended in it, not once its shell exited; out of process the first terminal list is waited for', async () => {
+  const listeners = new Set<() => void>()
+  let listed = false
+  let sessions: Array<{ processAlive: boolean; suspended?: boolean; cwd?: string; kind?: string }> = []
+  const core = createStudioCore(
+    createNodeStudioPlatform({ dataDir: join(scratch, 'live', 'data'), packaged: false, version: '0.0.0-test' }),
+    {
+      role: 'server',
+      listTerminalSessions: () => sessions,
+      terminalSessionsListed: () => listed,
+      onTerminalSessionsChanged: (listener) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    },
+  )
+  try {
+    // Two steps asking before the shell has said anything wait for its first list.
+    const first = core.worktrees.liveWorkPaths()
+    const second = core.worktrees.liveWorkPaths()
+    sessions = [
+      { processAlive: true, cwd: '/Users/dev/.sprintengine-worktrees/app/app-01' },
+      { processAlive: false, suspended: true, cwd: '/Users/dev/.sprintengine-worktrees/app/app-02' },
+      { processAlive: false, cwd: '/Users/dev/.sprintengine-worktrees/app/app-03' },
+    ]
+    listed = true
+    for (const listener of [...listeners]) listener()
+    const expected = ['/Users/dev/.sprintengine-worktrees/app/app-01', '/Users/dev/.sprintengine-worktrees/app/app-02']
+    assert.deepEqual(await first, expected)
+    assert.deepEqual(await second, expected)
+    assert.deepEqual(await core.worktrees.liveWorkPaths(), expected, 'and later steps do not wait')
+  } finally {
+    await core.shutdown()
+  }
+})

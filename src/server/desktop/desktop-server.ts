@@ -61,6 +61,7 @@ import {
   type ServerMirrorLaunchSettings,
   type ServerMirrorRegistry,
   type ServerMirrorState,
+  type ServerWorktreeLease,
 } from './server-methods'
 import { createServerModules } from './server-modules'
 import { serveAgentWorktrees } from './agent-worktree-rpc'
@@ -86,6 +87,9 @@ import { noteStatusLineRateLimits } from '../../main/usage-limits/store'
 // what acts on a screen or a terminal is the shell's, offered as its toolsets
 // (spec 6.3), and the launches the server starts itself (`backlog.work`, a
 // scheduled run, resume in terminal) go through the shell bridge.
+
+/** How long the pool and its installs may wait for steps in flight at quit, inside the drain budget. */
+const QUIT_STEP_WAIT_MS = 2_000
 
 export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requestExit }) => {
   // Its own diagnostics file, so two processes never append to one.
@@ -537,7 +541,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         // so its worktree installs again at its next lease, and an agent
         // waiting on it is not started on the way out. Each runs as a process
         // group of its own, which nothing else would end.
-        ['dependency installs', () => core.worktrees.installer.shutdown()],
+        ['dependency installs', () => core.worktrees.installer.shutdown({ waitMs: QUIT_STEP_WAIT_MS })],
         ['workspace registry', () => workspaceSyncService.flush()],
         // What a person would miss most: every chat's buffered transcript.
         ['chat transcripts', () => core.conversationOwner.flushTranscripts()],
@@ -562,7 +566,10 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ],
         // A lease or return in flight finishes its write, and each pool's
         // container lock is given up so another Studio can take it over.
-        ['worktree pool', () => core.worktrees.pool.shutdown()],
+        // Within the shell's drain budget (eight seconds, less when updating),
+        // so the legs after it still run; a step cut short is recovered at
+        // the next start, as after a crash.
+        ['worktree pool', () => core.worktrees.pool.shutdown({ waitMs: QUIT_STEP_WAIT_MS })],
         ['command lists', () => domains.conversationCommands.dispose()],
         ['workspace registry (final)', () => workspaceSyncService.flush()],
         ['modules', () => modules.shutdown()],
@@ -680,7 +687,7 @@ function serveShellRequests(deps: {
   rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
   // The shell's `agent.launch` cuts its worktree here, from this process's pool.
   serveAgentWorktrees(rpc, core.worktrees.installer)
-  rpc.handle(SERVER_METHODS.worktreeLeases, async () =>
+  rpc.handle(SERVER_METHODS.worktreeLeases, async (): Promise<ServerWorktreeLease[]> =>
     (await core.worktrees.pool.snapshots())
       .flatMap((snapshot) => snapshot.slots)
       .map((slot) => ({

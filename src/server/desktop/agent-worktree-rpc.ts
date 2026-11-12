@@ -20,6 +20,9 @@ type AgentWorktreeInput = Parameters<AutomationBackends['createAgentWorktree']>[
 type AgentWorktreeWire =
   { worktreePath: string; branch: string; dependencyInstall?: WorktreeDependencyInstallView } | { error: string }
 
+/** As long as `agent.launch` itself waits at the gateway: a lease is a fetch and a checkout, not an install. */
+const AGENT_WORKTREE_TIMEOUT_MS = 120_000
+
 /** As long as an install may run (20 minutes), and a minute more for it to say how it ended. */
 const INSTALL_SETTLED_TIMEOUT_MS = 21 * 60_000
 
@@ -52,7 +55,7 @@ export function serveAgentWorktrees(rpc: Pick<ControlRpc, 'handle'>, installer: 
 export function agentWorktreesOverRpc(rpc: Pick<ControlRpc, 'call'>): AutomationBackends['createAgentWorktree'] {
   return async (input): Promise<AgentWorktreeResult> => {
     const answer = await rpc
-      .call<AgentWorktreeWire>(SERVER_METHODS.createAgentWorktree, input, { timeoutMs: 5 * 60_000 })
+      .call<AgentWorktreeWire>(SERVER_METHODS.createAgentWorktree, input, { timeoutMs: AGENT_WORKTREE_TIMEOUT_MS })
       .catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }))
     if ('error' in answer) return answer
     const started = answer.dependencyInstall

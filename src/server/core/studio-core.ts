@@ -158,6 +158,8 @@ export type StudioCoreOptions = {
     agentRecord?: { cliPermissionPreset?: unknown }
     /** Where it works, and the checkout it observes: a worktree slot one works in is never recycled. */
     cwd?: string
+    /** Suspended to save memory, resumable in place: not alive, but still holding its folder. */
+    suspended?: boolean
     observedCheckout?: { cwd?: string | null; gitRoot?: string | null } | null
   }>
   /**
