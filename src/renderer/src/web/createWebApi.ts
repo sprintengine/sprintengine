@@ -9,7 +9,7 @@ import { pickServerFolder } from './FolderBrowserDialog'
 import { refuse } from './unsupported'
 import { ipc } from './webIpcRouter'
 import { randomId } from '../../../shared/random-id'
-import { createWebStudioPorts } from './webStudioPorts'
+import { webStudioTicket } from './webStudio'
 import { uploadFilesToServer } from './webUploads'
 import { webCanvasPaneApi } from './canvas/webCanvasPane'
 
@@ -184,7 +184,7 @@ export function createWebApi(): ElectronApi {
 
     // The chat over the Studio protocol, on the tab's own socket.
     studioChatTransport: 'studio',
-    ...createWebStudioPorts(),
+    studioWindowTicket: webStudioTicket,
 
     // The Canvas pane, over the canvas service the tab runs in the page.
     ...webCanvasPaneApi(),

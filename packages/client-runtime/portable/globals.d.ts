@@ -9,6 +9,7 @@
 declare function setTimeout(run: () => void, ms?: number): unknown
 declare function clearTimeout(handle: unknown): void
 declare function btoa(data: string): string
+declare function queueMicrotask(run: () => void): void
 
 declare const console: {
   warn(...data: unknown[]): void

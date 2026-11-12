@@ -4,12 +4,14 @@ import { createStudioRpcServer, type StudioRpcServer } from '../src/server/rpc/s
 import type { StudioPullRequests } from '../src/server/pull-requests/pull-request-domain'
 import type { StudioConversationBackend } from '../src/server/rpc/studio-rpc-types'
 import type { ConversationSessionFrame } from '../src/shared/conversation-runtime'
+import { configureWindowStudio } from '../src/renderer/src/studio/windowStudioClient'
 import { createMemoryChannel, type MemoryChannelEnd } from './memory-channel'
+import { memoryWebSocketClass } from './memory-websocket'
 
 // The chat view's own tests, run a second time with the window on the Studio
 // protocol. A test stubs `window.api` with the conversation IPC it means to
 // script, as it always has; this puts a real Studio RPC between the view and
-// that stub: the window's client and transport, a port, the connection and
+// that stub: the window's client and transport, a socket, the connection and
 // router, and main's chat backend with its input checks, all answered in the
 // end by the same stubbed IPC members. A test that passes both ways shows the
 // protocol path changes nothing the view does.
@@ -201,35 +203,28 @@ export function installStudioLoopback(
     // The socket is never started; windows say hello with their tickets.
     authenticator: createTicketAuthenticator(mintStudioTicket()),
   })
-  const windowEnds = new Map<string, MemoryChannelEnd>()
+  // The window's sockets, each admitted as the window listener admits one: by
+  // the ticket its URL names, which its hello must then present.
+  const windowEnds = new Set<MemoryChannelEnd>()
   let opened = 0
+  configureWindowStudio(api, {
+    WebSocket: memoryWebSocketClass((url) => {
+      const ticket = new URL(url).searchParams.get('ticket')
+      if (!ticket) return null
+      const [mainEnd, windowEnd] = createMemoryChannel()
+      server.attach(framePortStream(mainEnd), { authenticator: createTicketAuthenticator(ticket), ownWindow: true })
+      windowEnds.add(windowEnd)
+      windowEnd.onClose(() => windowEnds.delete(windowEnd))
+      opened++
+      return windowEnd
+    }),
+  })
   Object.assign(api, {
     studioChatTransport: 'studio',
-    studioConnect: async () => {
-      const [mainEnd, windowEnd] = createMemoryChannel()
+    studioWindowTicket: async () => {
       const ticket = mintStudioTicket()
-      const connection = server.attach(framePortStream(mainEnd), {
-        authenticator: createTicketAuthenticator(ticket),
-        ownWindow: true,
-      })
-      windowEnds.set(connection.connectionId, windowEnd)
-      opened++
-      return { connectionId: connection.connectionId, ticket }
+      return { url: `ws://127.0.0.1:1/ws?ticket=${encodeURIComponent(ticket)}`, token: ticket }
     },
-    studioPortSend: (connectionId: string, frame: string) => windowEnds.get(connectionId)?.post(frame),
-    studioPortListen: (connectionId: string, onFrame: (frame: string) => void, onClose: () => void) => {
-      const end = windowEnds.get(connectionId)
-      if (!end) {
-        onClose()
-        return
-      }
-      end.onFrame(onFrame)
-      end.onClose(() => {
-        windowEnds.delete(connectionId)
-        onClose()
-      })
-    },
-    studioPortClose: (connectionId: string) => windowEnds.get(connectionId)?.close(),
   })
   return {
     server,

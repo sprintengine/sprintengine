@@ -111,6 +111,11 @@ A transport may bring the credential its one connection says hello with
 (`StudioTransport.credential`): a ticket minted for that connection alone, as
 Studio's own windows use. `auth` is then optional.
 
+`webSocketTransport({ ticket })` is such a transport over a WebSocket: before
+each connection, reconnects included, it calls `ticket()` for the URL to open
+and the token the hello presents. It uses the global `WebSocket` unless you
+pass `WebSocket`.
+
 `client.subscribe(topic, params, { onPayload, onEnd? })` follows a push topic
 such as `conversation.commands`: each payload as it comes, subscribed again on
 every new connection, nothing replayed.
@@ -231,5 +236,5 @@ const conversations = fromModuleConversationService(getConversationService(host)
 ## Environments
 
 The main entry runs in Node and in a browser, given a transport (any object
-with `send`, `close`, `onMessage` and `onClose`). `@sprintengine/agent-sdk/node`
+with `send`, `close`, `onMessage` and `onClose`; `webSocketTransport` is one). `@sprintengine/agent-sdk/node`
 adds the socket transport and needs Node 22.12 or later.

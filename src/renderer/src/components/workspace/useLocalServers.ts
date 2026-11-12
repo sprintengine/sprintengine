@@ -39,7 +39,7 @@ const COALESCE_MS = 250
 /** The window's Studio client, when it serves local servers; null otherwise (or in a test with no window). */
 async function localServersClient(): Promise<StudioClient | null> {
   const api = typeof window === 'undefined' ? null : window.api
-  if (typeof api?.studioConnect !== 'function') return null
+  if (typeof api?.studioWindowTicket !== 'function') return null
   try {
     const client = await windowStudioClient(api)
     return client.supports(STUDIO_LOCAL_SERVERS_CAPABILITY) ? client : null
@@ -230,7 +230,7 @@ function readLocalServersChange(payload: unknown): LocalServersChange | null {
 function useAskWhenLocalServersMove(ask: () => Promise<void>, concerns: (change: LocalServersChange) => boolean): void {
   useEffect(() => {
     const api = typeof window === 'undefined' ? null : window.api
-    if (typeof api?.studioConnect !== 'function') return
+    if (typeof api?.studioWindowTicket !== 'function') return
     let alive = true
     let timer: ReturnType<typeof setTimeout> | null = null
     let stop: (() => void) | null = null

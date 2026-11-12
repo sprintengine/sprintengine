@@ -18,6 +18,12 @@ import {
   mintStudioTicket,
   type StudioFramePort,
 } from '../../server/rpc/studio-frame-port'
+import {
+  createStudioWindowListener,
+  type StudioWindowListener,
+  type StudioWindowTicketRequest,
+} from '../../server/rpc/studio-window-listener'
+import type { StudioWindowTicket } from '../../shared/studio-connection'
 import { inProcessStudioTransport } from '../../server/rpc/studio-in-process-port'
 import { STUDIO_SCOPES, type StudioGrant } from '../../../packages/studio-protocol/src/public'
 import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
@@ -46,10 +52,10 @@ import { createStudioLocalAppStore, type StudioLocalAppStore } from './studio-lo
 // cannot start (another Studio on this profile, a directory someone else owns)
 // is reported in Settings and changes nothing else the app does.
 //
-// Studio's own windows reach the same RPC over a port each, which main hands
-// them (`connectWindow`). That way in does not depend on the socket: a window
-// connects whether or not the listener started, and keeps its connection
-// while the socket is down.
+// Studio's own windows reach the same RPC over a WebSocket on 127.0.0.1 (the
+// window listener, `windowTicket`), each connection admitted by a ticket main
+// asks for on the window's behalf. That way in does not depend on the owner
+// socket: a window connects whether or not the socket started.
 
 const REFUSAL_WINDOW_MS = 60_000
 const REFUSALS_PER_WINDOW = 5
@@ -72,11 +78,13 @@ export type StudioRpcService = {
   /** This run's owner credential, for the desktop's own client. Never written to disk. */
   ownerToken(): string
   /**
-   * Serve a window over a port main holds the other end of. The answer names
-   * the connection and the ticket its hello must present, once, within thirty
-   * seconds; nothing longer-lived reaches the window.
+   * A ticket for one connection of one of Studio's windows to the window
+   * listener, which starts on the first ask: good once, within thirty seconds,
+   * from the window's origin. Nothing longer-lived reaches the window.
    */
-  connectWindow(port: StudioFramePort): { connectionId: string; ticket: string }
+  windowTicket(request: StudioWindowTicketRequest): Promise<StudioWindowTicket>
+  /** A window has gone (closed, crashed, navigated away): its tickets are void and its connections end. */
+  revokeWindow(windowKey: string): void
   /**
    * Serve the desktop's shell over a port main holds the other end of, when
    * the server runs in a process of its own (phase 6, 6.3): the shell role,
@@ -166,6 +174,22 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
   let chat: StudioChatBackend | null = null
   let lastError: string | null = null
   let starting: Promise<void> | null = null
+  let windows: StudioWindowListener | null = null
+
+  function windowListener(): StudioWindowListener {
+    windows ??= createStudioWindowListener({
+      attach: (stream, windowAuthenticator) =>
+        hub().attach(stream, {
+          authenticator: windowAuthenticator,
+          // The window is the app's own chat view: shown conversations as its
+          // IPC shows them, and its actions are not a client's to audit.
+          ownWindow: true,
+        }),
+      now,
+      log: options.log,
+    })
+    return windows
+  }
 
   const appStore = (): StudioLocalAppStore => {
     if (!store) {
@@ -344,6 +368,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
     async stop() {
       await starting
       await server?.stop()
+      await windows?.stop()
     },
     getStatus: status,
     // Pairing and revoking are recorded too: they decide who may connect.
@@ -405,15 +430,9 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       return status()
     },
     ownerToken: () => appStore().ownerToken(),
-    connectWindow(port) {
-      const ticket = mintStudioTicket()
-      const connection = hub().attach(framePortStream(port), {
-        authenticator: createTicketAuthenticator(ticket),
-        // The window is the app's own chat view: shown conversations as its
-        // IPC shows them, and its actions are not a client's to audit.
-        ownWindow: true,
-      })
-      return { connectionId: connection.connectionId, ticket }
+    windowTicket: (request) => windowListener().ticket(request),
+    revokeWindow(windowKey) {
+      windows?.revokeWindow(windowKey)
     },
     connectShell(port) {
       const ticket = mintStudioTicket()

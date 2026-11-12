@@ -14,7 +14,7 @@ import { createMemoryChannel, type MemoryChannelEnd } from '../../../tests/memor
 import { connect, type StudioClient, type StudioTransportFactory } from '../src/public'
 
 // The client over a connection that brings its own credential, as a Studio
-// window's does: a port per connection and a ticket good for its one hello.
+// window's does: a fresh ticket per connection, good for its one hello.
 
 const cleanups: Array<() => Promise<void> | void> = []
 afterEach(async () => {

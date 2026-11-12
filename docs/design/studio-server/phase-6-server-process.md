@@ -576,11 +576,12 @@ interface CallerContext {
   app-frame-only), through an injected check, because `ipc-sender.ts` imports
   Electron.
 - **Ports.** The tunnel has a port of its own per window (`kind:
-  'desktop-window'`). The chat view's Studio protocol connections keep the
-  per-connection ports and tickets phase 4 built (`studio:connect`); out of
-  process, main hands the server those ports instead of serving them itself.
-  One multiplexed port would have to reimplement the reconnect and ticket
-  rules phase 4 already has per connection.
+  'desktop-window'`). The chat view's Studio protocol connections are not
+  ports: each is a WebSocket to the server's window listener on 127.0.0.1,
+  admitted by a ticket main asks the server for (`studio.window-ticket` on the
+  control channel) on the window's behalf, good once within thirty seconds
+  from the window's origin. (Built as per-connection ports brokered by main;
+  replaced by the window listener in 2026-11.)
 
 ### 6.3 `ShellBridge` and the shell's toolsets
 
