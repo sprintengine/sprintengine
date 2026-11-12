@@ -9,7 +9,7 @@ import {
 } from './snapshot'
 import { createBacklogItem } from '../../backlog-service'
 import { stableBacklogObjectId } from '../../../shared/backlog/object-id'
-import { mobileControlProtocolVersion, mobileSnapshotCollections, validateMobileControlSnapshot } from './protocol'
+import { mobileControlProtocolVersion, mobileSnapshotCollections, validateMobileControlSnapshot } from '../../../../packages/studio-protocol/src/mobile-control'
 import { test } from 'vitest'
 
 test('snapshot', async () => {

@@ -7,7 +7,7 @@ import type {
   MobileControlBacklogItemCriticality,
   MobileControlBacklogItemDifficulty,
   MobileControlBacklogItemType,
-} from "../../shared/mobile-control";
+} from "../../../../packages/studio-protocol/src/mobile-control";
 import {
   backlogCreateCriticalityOptions,
   backlogCreateDescriptionMaxChars,

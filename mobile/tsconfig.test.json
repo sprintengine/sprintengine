@@ -105,7 +105,7 @@
     "src/features/pairing/pairingSession.ts",
     "src/navigation/sessionFlow.ts",
     "src/navigation/readEach.ts",
-    "src/shared/mobile-control/protocol.ts",
+    "../packages/studio-protocol/src/mobile-control-commands.ts",
     "src/storage/relayCleanup.ts",
     "src/storage/sessionStore.ts",
     "src/storage/conversationCacheModel.ts",

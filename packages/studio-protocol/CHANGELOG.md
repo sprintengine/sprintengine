@@ -16,6 +16,12 @@
   a Studio; `parseStudioUpdateStatus` reads a status forward-compatibly. The
   frame, the two methods and the hello are frozen: members are only added.
 
+- **The mobile-control wire** (`src/mobile-control.ts`, with its command
+  validator in `src/mobile-control-commands.ts`): the snapshot the phone reads
+  and the commands it sends over the tailnet gateway, moved here from the
+  desktop app so the desktop and the phone import one definition. Not part of
+  the package entry: imported by path.
+
 ### Changed (contract)
 
 - **One table builds both ends.** `contract.ts` defines a method as a contract

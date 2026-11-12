@@ -29,7 +29,7 @@ import {
   mobileSnapshotCollections,
   type MobileControlCommandType,
   type MobileSnapshotCollection,
-} from '../../main/mobile/control/protocol'
+} from '../../../packages/studio-protocol/src/mobile-control'
 import { MobileControlSnapshotService, sanitizeMobileSnapshotForTransport } from '../../main/mobile/control/snapshot'
 import { getPluginRegistry } from '../../main/plugin-registry-instance'
 import { readRepositoryIdentity } from '../../main/repository-identity'

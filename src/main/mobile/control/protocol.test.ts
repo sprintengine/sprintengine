@@ -11,7 +11,7 @@ import {
   unsupportedMobileControlProtocolVersion,
   validateMobileControlSnapshot,
   type MobileControlSnapshot,
-} from './protocol'
+} from '../../../../packages/studio-protocol/src/mobile-control'
 
 const now = '2026-04-28T19:00:00.000Z'
 

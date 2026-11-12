@@ -21,7 +21,7 @@ import type {
   MobileControlBacklogEpicSnapshot,
   MobileControlBacklogItemSnapshot,
   MobileControlBacklogWorkspaceSnapshot,
-} from './protocol'
+} from '../../../../packages/studio-protocol/src/mobile-control'
 import { MobileControlCommandError } from './command-error'
 import {
   backlogAbsolutePath,

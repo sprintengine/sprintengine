@@ -11,7 +11,7 @@ import {
   type SnapshotRead,
 } from "../api/tailnetControlClient";
 import type { ApiResult, DesktopSessionStatus, MobileControlSnapshot, MobileSession } from "../api/types";
-import type { MobileControlCommandType } from "../shared/mobile-control";
+import type { MobileControlCommandType } from "../../../packages/studio-protocol/src/mobile-control";
 import type { BacklogCreateInput, BacklogCreateResult } from "../features/backlog/BacklogCreateForm";
 import type { BacklogCommandCapabilities, BacklogUpdateInput } from "../features/backlog/BacklogScreen";
 import { summarizeSnapshotForFleet, type FleetRowState } from "../features/fleet/fleetLogic";
@@ -64,7 +64,6 @@ interface SessionDataValue {
   /** Null unless the paired desktop advertises the capability, so the control hides rather than lying. */
   sendBacklogUpdate: ((input: BacklogUpdateInput) => Promise<void>) | null;
   sendBacklogCreate: ((input: BacklogCreateInput) => Promise<BacklogCreateResult>) | null;
-  revokeOnDesktop: (() => Promise<void>) | null;
 
   selectSession: (deviceId: string) => void;
   removeSession: (deviceId: string) => void;
@@ -566,26 +565,6 @@ export function SessionDataProvider({
     [effectiveSession, markCurrentDeviceRevoked, onSessionRevoked, sessions],
   );
 
-  const revokeOnDesktop = useCallback(async () => {
-    const activeSession = ensureCommandAllowed("device.revoke");
-
-    await withCommandHaptics({ toast, label: "Revoke", successMessage: "Device revoked on desktop." }, async () => {
-      const result = await tailnetClientForSession(activeSession).sendCommand({
-        type: "device.revoke",
-        payload: { deviceId: activeSession.deviceId },
-      });
-
-      if (!result.ok) {
-        throw new DesktopCommandError(
-          formatCommandError(result.errorCode, result.message, "Desktop rejected the revoke command."),
-          result.errorCode,
-        );
-      }
-    });
-
-    markCurrentDeviceRevoked();
-  }, [ensureCommandAllowed, markCurrentDeviceRevoked, toast]);
-
   const connectSession = useCallback(
     (nextSession: MobileSession) => {
       setSessionStatusOverride(null);
@@ -625,7 +604,6 @@ export function SessionDataProvider({
       backlogCapabilities,
       sendBacklogUpdate: backlogCapabilities.canUpdate ? sendBacklogUpdate : null,
       sendBacklogCreate: availableCommands.has("backlog.create") ? sendBacklogCreate : null,
-      revokeOnDesktop: availableCommands.has("device.revoke") ? revokeOnDesktop : null,
       selectSession: (deviceId) => void onSelectSession(deviceId),
       removeSession: (deviceId) => void onRemoveSession(deviceId),
       renameSession: (deviceId, name) => void onRenameSession(deviceId, name),
@@ -652,7 +630,6 @@ export function SessionDataProvider({
     projects,
     refreshFleet,
     refreshSnapshot,
-    revokeOnDesktop,
     selectProject,
     sendBacklogCreate,
     sendBacklogUpdate,

@@ -25,9 +25,9 @@ const {
   reviewSummaryWords,
 } = require(path.join(buildRoot, "src/features/pullRequests/pullRequestView.js"));
 const { tailnetGrantAllows, readSnapshotCommands } = require(path.join(buildRoot, "src/api/tailnetControlClient.js"));
-const { validateMobileControlCommand, mobileControlProtocolVersion } = require(
-  path.join(buildRoot, "src/shared/mobile-control/protocol.js"),
-);
+const packageBuild = path.resolve(buildRoot, "../packages/studio-protocol/src");
+const { mobileControlProtocolVersion } = require(path.join(packageBuild, "mobile-control.js"));
+const { validateMobileControlCommand } = require(path.join(packageBuild, "mobile-control-commands.js"));
 
 const URL = "https://github.com/acme/app/pull/42";
 const detail = (overrides = {}) => ({

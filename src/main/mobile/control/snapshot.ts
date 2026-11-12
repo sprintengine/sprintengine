@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import { resolve } from 'path'
-import { mobileControlProtocolVersion } from './protocol'
+import { mobileControlProtocolVersion } from '../../../../packages/studio-protocol/src/mobile-control'
 // The wire schema is owned by ./protocol. Import the snapshot type tree from
 // there and re-export it, rather than re-declaring it and risking drift from
 // the validator (validateMobileControlSnapshot) that consumes the same schema.
@@ -10,7 +10,7 @@ import type {
   MobileControlSnapshot,
   MobileControlWebTargetSnapshot,
   MobileSnapshotCollection,
-} from './protocol'
+} from '../../../../packages/studio-protocol/src/mobile-control'
 import { readMobileBacklogWorkspaceSnapshot } from './backlog'
 import { deriveWorkspaceId } from './workspace-id'
 import { deepRedactLocalPaths } from './path-safety'

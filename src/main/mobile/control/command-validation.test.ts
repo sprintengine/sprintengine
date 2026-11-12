@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 
-import { validateMobileControlCommand } from './command-validation'
+import { validateMobileControlCommand } from '../../../../packages/studio-protocol/src/mobile-control-commands'
 import {
   mobileControlMinSupportedProtocolVersion,
   mobileControlProtocolVersion,
   mobileControlSupportedProtocolVersions,
-} from './protocol'
+} from '../../../../packages/studio-protocol/src/mobile-control'
 import { test } from 'vitest'
 
 test('command-validation', async () => {

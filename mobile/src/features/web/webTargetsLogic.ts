@@ -1,4 +1,4 @@
-import type { MobileControlSnapshot, MobileControlWebTargetSnapshot } from "../../shared/mobile-control/protocol";
+import type { MobileControlSnapshot, MobileControlWebTargetSnapshot } from "../../../../packages/studio-protocol/src/mobile-control";
 
 /**
  * Dev servers a paired desktop publishes on the tailnet, as this phone may open

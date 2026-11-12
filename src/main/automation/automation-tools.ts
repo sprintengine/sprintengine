@@ -21,7 +21,10 @@ import {
   type LaunchedAgentLink,
   type LaunchLinkResult,
 } from '../agent-launch-notices'
-import { mobileSnapshotCollections, retiredMobileSnapshotCollections } from '../mobile/control/protocol'
+import {
+  mobileSnapshotCollections,
+  retiredMobileSnapshotCollections,
+} from '../../../packages/studio-protocol/src/mobile-control'
 import { workspaceStoresRoot } from '../workspace-store'
 import { refuseWorkspaceFolder } from './workspace-folder-guard'
 import type { Workspace } from '../../renderer/src/types/workspace'

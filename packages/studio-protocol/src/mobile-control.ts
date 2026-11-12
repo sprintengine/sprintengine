@@ -7,11 +7,14 @@
 // repository does not ship. A change here is a compatibility decision, not a
 // local edit: `docs/compatibility.md` is the policy.
 //
-// The phone app keeps its own copy of these types. Nothing compares the two
-// automatically, so an edit that changes what crosses the wire has to be made
-// on the phone's side as well.
+// Defined once, here: the desktop serves it and the phone app imports it from
+// this repository's source, so the two cannot drift apart. A phone already
+// installed keeps the version it was built with, which is what the protocol
+// version window below is for.
 
-import { isRecord } from '../../../shared/records'
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
 
 export const mobileControlProtocolVersion = 4 as const
 
@@ -77,11 +80,7 @@ export function unsupportedMobileControlProtocolVersion(
 }
 
 export type MobileControlCommandType =
-  | 'snapshot.request'
-  | 'backlog.update'
-  | 'backlog.create'
-  | 'pullRequest.read'
-  | 'pullRequest.diff'
+  'snapshot.request' | 'backlog.update' | 'backlog.create' | 'pullRequest.read' | 'pullRequest.diff'
 
 /**
  * The commands that only read: a pull request, and a page of one of its
@@ -204,11 +203,7 @@ export type PullRequestDiffCommand = MobileControlCommandBase<
 >
 
 export type MobileControlCommand =
-  | SnapshotRequestCommand
-  | BacklogUpdateCommand
-  | BacklogCreateCommand
-  | PullRequestReadCommand
-  | PullRequestDiffCommand
+  SnapshotRequestCommand | BacklogUpdateCommand | BacklogCreateCommand | PullRequestReadCommand | PullRequestDiffCommand
 
 /** The most of each list a pull request read carries; the totals say how many there are. */
 export const mobilePullRequestLimits = {

@@ -16,7 +16,7 @@ import { Screen } from "../../components/Screen";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
-import type { MobileControlBacklogItemStatus } from "../../shared/mobile-control";
+import type { MobileControlBacklogItemStatus } from "../../../../packages/studio-protocol/src/mobile-control";
 import type { BacklogUpdateInput, BacklogCommandCapabilities } from "./BacklogScreen";
 import {
   backlogCriticalityOptions,
