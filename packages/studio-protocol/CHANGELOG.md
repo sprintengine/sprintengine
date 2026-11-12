@@ -20,7 +20,14 @@
   `ConversationCommandCatalog`; `providers.*` `StudioProviderListResult`,
   `StudioProviderModelsResult` and `StudioSecretStatusResult`;
   `files.search` a `StudioFileSearchResult`; `files.stat` a `StudioPathStat` or,
-  by root, a `StudioFileStat`. Nothing on the wire changes.
+  by root, a `StudioFileStat`. These are the shapes Studio already sent.
+- **`session.send` reads `mentions` at the edge** with
+  `parseConversationMentions`, the rule the runtime applied below: a malformed
+  mention, or more than 50, is now refused `invalid_params`, where it was
+  answered `ok: true` with `{ ok: false, message }` inside the result, and a
+  mention's unknown members are dropped before the command is fingerprinted.
+- `parseStudioCommand` takes the params as an object (`parseStudioMethodParams`
+  checks that first).
 - A command method's params are the lane's command of that kind
   (`conversation.send` takes `skills`, `mentions`, `steer`, `composedAt`, …
   as the lane does). `session.send`'s `mentions` are read by

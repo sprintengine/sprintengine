@@ -15,9 +15,16 @@ import type { StudioScope } from './scopes.js'
 // anything but the method's params does not either.
 //
 // From the merged table (`methods.ts`) come the server's handler map, which
-// must hold a handler for every method answering exactly that method's result
+// must hold a handler for every method answering that method's result
 // (`StudioHandlers`), and the client, whose calls take and answer the same
-// types (`StudioRpcClient`). Nothing is cast between them.
+// types (`StudioRpcClient`). The server's handlers and the clients cast
+// nothing; the few casts left are inside this package's generic plumbing,
+// where a method name and its own definition are paired by the table.
+//
+// What the types check is each member a contract defines: present, and of its
+// type. They do not forbid a member it does not define (TypeScript's types are
+// not exact), so dropping unknown members is each validator's own work, which
+// its tests hold it to, and a handler answers what the backend gave it.
 
 /** One method: what it takes, what it answers, and the refusals of its own it may answer with. */
 export type StudioMethodContract = {
@@ -74,7 +81,11 @@ export type StudioParsed<P> = { ok: true; params: P } | StudioParamsRefusal
 
 /** A method's definition: how it is held, and the validator its params are read by. */
 export type StudioMethodDefinition<C extends StudioMethodContract> = StudioMethodSpec & {
-  /** Reads an object of params (absent params arrive as `{}`). */
+  /**
+   * Reads an object of params (absent params arrive as `{}`) into the method's
+   * shape, building it member by member so that members it does not define
+   * are dropped.
+   */
   readonly params: (value: Record<string, unknown>) => StudioParsed<C['params']>
 }
 

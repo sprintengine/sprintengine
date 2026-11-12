@@ -150,3 +150,20 @@ test('the protocol’s results and payloads are its own shapes, not open records
   const every: Every[] = Object.keys(STUDIO_METHODS) as StudioMethod[]
   assert.ok(every.length > 50)
 })
+
+test('a topic spec still says a push topic is one', () => {
+  const spec: import('../src/methods').StudioTopicSpec = STUDIO_TOPICS['tools.catalog']
+  assert.equal(spec.push, true)
+})
+
+test('validators drop members a method does not define', () => {
+  // The types check what a contract defines, not what it leaves out (they are
+  // not exact), so each validator builds its params member by member.
+  const sent = { key: { workspaceId: 'w', agentId: 'a' }, commandId: 'c', message: 'hi', junk: 1 }
+  const read = STUDIO_METHODS['conversation.send'].params(sent)
+  assert.ok(read.ok)
+  assert.equal('junk' in read.params, false)
+  const topic = STUDIO_TOPICS['conversation.session'].params({ key: { workspaceId: 'w', agentId: 'a' }, junk: 1 })
+  assert.ok(topic.ok)
+  assert.equal('junk' in topic.params, false)
+})

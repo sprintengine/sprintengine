@@ -5,7 +5,9 @@
 ### Changed (contract)
 
 - `PromptCacheReading`, the mention and attached-file readers are
-  `@sprintengine/conversation-protocol`'s, re-exported here unchanged.
+  `@sprintengine/conversation-protocol`'s, re-exported here unchanged. This
+  package then needs the protocol release that adds them: raise its
+  `@sprintengine/conversation-protocol` range when the two are published.
 
 ### Changed
 

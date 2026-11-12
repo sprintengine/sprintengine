@@ -132,6 +132,7 @@ export type StudioChatBackend = {
       attachments?: ConversationImageAttachment[]
     },
   ): Promise<ConversationSessionActionResult>
+  /** Whether a session command's id has a receipt (or is being carried out): a repeat is answered from it. */
   hasReceipt(input: { sessionId: string; commandId: string }): Promise<boolean>
   interrupt(input: SessionCommand<ChatInput<'session.interrupt'>>): Promise<ConversationSessionActionResult>
   respond(input: SessionCommand<ChatInput<'session.respond'>>): Promise<ConversationSessionActionResult>

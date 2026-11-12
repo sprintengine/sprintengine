@@ -548,7 +548,9 @@ export type StudioPushTopic = {
 }[StudioTopic]
 
 /** How a topic is held: its scope, capability and owner rule, as a method's. */
-export type StudioTopicSpec = Omit<StudioTopicDefinition<StudioTopicMap[StudioTopic]>, 'params'>
+export type StudioTopicSpec = {
+  [T in StudioTopic]: Omit<StudioTopicDefinition<StudioTopicMap[T]>, 'params'>
+}[StudioTopic]
 
 export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   'conversation.session': {
@@ -636,7 +638,13 @@ export function parseStudioTopicParams<T extends StudioTopic>(
   topic: T,
   params: unknown,
 ): StudioParsed<StudioTopicParams<T>> {
-  const value = params === undefined ? {} : params
-  if (!record(value)) return refuse('invalid_params', `${topic} takes an object of params.`)
+  // A topic that follows one thing names it; one that follows everything takes nothing.
+  const names = topic === 'conversation.session' || topic === 'files.watch'
+  const value = params === undefined && !names ? {} : params
+  if (!record(value))
+    return refuse(
+      'invalid_params',
+      topic === 'files.watch' ? 'files.watch takes { root, path }.' : `${topic} takes an object of params.`,
+    )
   return (STUDIO_TOPICS[topic] as StudioTopicDefinition<StudioTopicMap[T]>).params(value)
 }
