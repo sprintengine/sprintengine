@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const { test } = require("node:test");
 
-const build = path.resolve(__dirname, "../../../.mobile-test-build/src/features/conversations");
+const build = path.resolve(__dirname, "../../../.mobile-test-build/mobile/src/features/conversations");
 const { fitPicture, isConversationImagePath, toolPicture } = require(path.join(build, "conversationImageLogic.js"));
 const { toolStep } = require(path.join(build, "conversationLogic.js"));
 

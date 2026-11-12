@@ -8,7 +8,7 @@ const test = require("node:test");
 // belongs to, one colour per project, and "No project" for a chat started
 // without one, as the desktop's sidebar files the same chats.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { createTailnetWorkspacesApi, oneHuePerProject, PROJECTLESS_PROJECT_KEY } = require(
   path.join(buildRoot, "src/api/tailnetWorkspaces.js"),
 );

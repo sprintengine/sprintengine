@@ -5,7 +5,7 @@ const {
   followUpSendLabel,
   readFollowUpBehavior,
   steerOffered,
-} = require("../../../.mobile-test-build/src/features/conversations/followUp.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/followUp.js");
 
 const offered = { declared: true, chatSteers: true, turnBusy: true, uploads: 0 };
 

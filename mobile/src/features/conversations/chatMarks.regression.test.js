@@ -9,7 +9,7 @@ const test = require("node:test");
 // was: no mark, and no colour guessed from a hash that could disagree with the
 // desktop's.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   CONVERSATION_MAX_PULL_REQUESTS,
   parseConversationFrame,

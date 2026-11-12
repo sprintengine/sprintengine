@@ -9,7 +9,7 @@ const test = require("node:test");
 // comes last, on New only and where the pairing may operate the desktop. Plan
 // mode and a goal are not offered: the protocol does not carry them.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   ATTACH_LABELS,
   CHAT_IMAGE_DOWNSCALED_MAX_BYTES,

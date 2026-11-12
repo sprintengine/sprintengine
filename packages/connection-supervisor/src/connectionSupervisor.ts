@@ -41,9 +41,8 @@
 //
 // Pure TypeScript with no imports: the clock, timers and randomness are
 // injected, and nothing here needs Node, a DOM or React, so the desktop's main
-// process, a web tab and the phone app all run this same file. The phone app
-// carries a byte-for-byte copy (it cannot import this package), which the
-// package's tests compare with this one.
+// process, a web tab and the phone app all run this same file; the phone
+// imports it from this repository's source.
 //
 // The connect seam is one attempt at one address. Several routes to one
 // machine would be a `connect` that tries them in its own order; the supervisor

@@ -8,7 +8,7 @@ const test = require("node:test");
 // a repeating one with only the arguments it always took, a one-time one
 // with `once` where the desktop advertises `scheduled-agents`.
 
-const buildRoot = path.resolve(__dirname, "../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../.mobile-test-build/mobile");
 const {
   buildCreateScheduleArgs,
   canOperateSchedules,

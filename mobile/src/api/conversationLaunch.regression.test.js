@@ -6,7 +6,7 @@ const {
   findLaunchedThread,
   readConversationCreateAnswer,
   threadFromLaunch,
-} = require("../../.mobile-test-build/src/api/conversationLaunch.js");
+} = require("../../.mobile-test-build/mobile/src/api/conversationLaunch.js");
 
 const launched = {
   workspaceId: "workspace-1",

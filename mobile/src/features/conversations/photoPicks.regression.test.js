@@ -8,7 +8,7 @@ const test = require("node:test");
 // photos and files together), each photo is read and refused on its own, and
 // each joins the tray as it uploads, so a failure part way keeps the rest.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { librarySelection, readPickedImages, uploadEach } = require(
   path.join(buildRoot, "src/features/conversations/photoPicks.js"),
 );

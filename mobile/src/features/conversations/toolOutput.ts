@@ -1,5 +1,8 @@
-import { presentToolItem, type PresentableTool } from "../../api/conversation-protocol/presentation";
-import type { ConversationToolKind } from "../../api/conversation-protocol/tool-types";
+import {
+  presentToolItem,
+  type ConversationToolKind,
+  type PresentableTool,
+} from "../../../../packages/conversation-protocol/src/public";
 import { formatHunkHeader, parseUnifiedDiff } from "../diff/unifiedDiff";
 
 // What an opened tool step shows: the step's output read the way its kind

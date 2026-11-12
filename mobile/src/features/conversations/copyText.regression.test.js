@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
-const { messageCopyText, replyCopyText } = require("../../../.mobile-test-build/src/features/conversations/copyText.js");
+const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { messageCopyText, replyCopyText } = require("../../../.mobile-test-build/mobile/src/features/conversations/copyText.js");
 
 function event(seq, type, payload) {
   return { id: `event-${seq}`, seq, sessionId: "session", workspaceId: "workspace", agentId: "agent", createdAt: seq, type, payload };

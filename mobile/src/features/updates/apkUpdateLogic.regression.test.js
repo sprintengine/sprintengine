@@ -15,7 +15,7 @@ const {
   updateOffered,
   updateProblemMessage,
   verifyDownload,
-} = require("../../../.mobile-test-build/src/features/updates/apkUpdateLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/updates/apkUpdateLogic.js");
 
 const RELEASE_CERT_COLONS = "ED:44:01:C2:E8:B6:75:3E:25:33:84:35:52:6E:CE:0E:A6:94:59:04:D2:B1:53:FE:9F:1F:5C:2B:40:4E:A7:D7";
 // The stock React Native debug keystore's certificate, which local and pull

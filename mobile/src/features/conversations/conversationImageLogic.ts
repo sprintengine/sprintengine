@@ -1,4 +1,4 @@
-import { presentToolItem } from "../../api/conversation-protocol/presentation";
+import { presentToolItem } from "../../../../packages/conversation-protocol/src/public";
 import { recordValue, stringValue, type MobileTool } from "./conversationLogic";
 
 // Which steps in a chat carry a picture, and how big it is drawn. The picture

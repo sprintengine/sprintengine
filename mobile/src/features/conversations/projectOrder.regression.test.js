@@ -6,8 +6,8 @@ const {
   pickableProjects,
   projectFolderKey,
   recordProjectPick,
-} = require("../../../.mobile-test-build/src/features/conversations/conversationListLogic.js");
-const { createTailnetWorkspacesApi } = require("../../../.mobile-test-build/src/api/tailnetWorkspaces.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationListLogic.js");
+const { createTailnetWorkspacesApi } = require("../../../.mobile-test-build/mobile/src/api/tailnetWorkspaces.js");
 
 // Step one of New lists the projects used most first, in
 // the order New chat on the desktop lists them. The desktop counts the uses and

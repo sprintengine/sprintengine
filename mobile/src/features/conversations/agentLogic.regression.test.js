@@ -16,7 +16,7 @@ const {
   agentTypeDescription,
   agentStopOffer,
   agentMessageOffer,
-} = require("../../../.mobile-test-build/src/features/conversations/agentLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/agentLogic.js");
 
 const lane = (overrides = {}) => ({
   id: "task",

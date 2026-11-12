@@ -9,7 +9,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { createRequire } = require("node:module");
 const { test } = require("node:test");
-const compiled = path.resolve(__dirname, "../../../.mobile-test-build/src/features/conversations/ChatsContext.js");
+const compiled = path.resolve(__dirname, "../../../.mobile-test-build/mobile/src/features/conversations/ChatsContext.js");
 const localRequire = createRequire(compiled);
 const { createDeviceNotesStore } = localRequire("../../storage/sessionStore.js");
 const tick = () => new Promise((resolve) => setImmediate(resolve));

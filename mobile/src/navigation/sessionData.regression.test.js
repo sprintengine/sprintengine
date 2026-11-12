@@ -16,7 +16,7 @@ const { createRequire } = require("node:module");
 const { test } = require("node:test");
 const ts = require("typescript");
 const sourcePath = path.resolve(__dirname, "SessionDataProvider.tsx");
-const compiled = path.resolve(__dirname, "../../.mobile-test-build/src/navigation/SessionDataProvider.js");
+const compiled = path.resolve(__dirname, "../../.mobile-test-build/mobile/src/navigation/SessionDataProvider.js");
 const localRequire = createRequire(compiled);
 const source = ts.transpileModule(fs.readFileSync(sourcePath, "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },

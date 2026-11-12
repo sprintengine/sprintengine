@@ -9,7 +9,7 @@ const test = require("node:test");
 // and an effort ramp only where the CLI declares levels and the desktop takes
 // one.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   DESKTOP_DEFAULT_LABEL,
   EFFORT_UNSET_LABEL,

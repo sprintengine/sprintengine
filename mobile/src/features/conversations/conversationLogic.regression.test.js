@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseChatLink, parseAppLink, conversationEnabled, conversationCanOperate, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+const { projectConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseChatLink, parseAppLink, conversationEnabled, conversationCanOperate, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 
 // A turn's steps rest inside its fold; these tests read the groups as the fold
 // holds them, in place, as the fold draws them when it is opened.
@@ -612,7 +612,7 @@ test("a streamed delta hands the list one new row and keeps every other as it wa
 });
 
 test("an agent that takes another step keeps its earlier steps as they were drawn", () => {
-  const { keepUnchanged } = require("../../../.mobile-test-build/src/features/conversations/keepUnchanged.js");
+  const { keepUnchanged } = require("../../../.mobile-test-build/mobile/src/features/conversations/keepUnchanged.js");
   const events = [
     event(1, "turn_started", { turnId: "t" }),
     event(2, "tool_started", { turnId: "t", toolUseId: "agent", name: "Task", subagentLane: true, input: { description: "Look around" } }),

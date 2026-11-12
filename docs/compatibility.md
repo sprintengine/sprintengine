@@ -923,13 +923,12 @@ a package version change. Presentation-only fixes use a package patch.
 Both ESM and CommonJS tarball consumers and Node16 declarations are checked by
 `npm run test:conversation-protocol:pack` as part of `verify:app`.
 
-Until a published version is adopted, the phone carries the same portable source
-files with a shared SHA-256 pin. A wire or presentation edit must update both
-copies and both pins in companion changes; passing one repo's local hash check
-alone does not prove the two peers agree. The pin covers `index.ts` and the four
-files it re-exports; the package's entry is `public.ts`, which re-exports those
-and the files added since, so an addition goes in a file of its own and leaves
-the pin alone. Publishing is a separate release step.
+The phone app imports this package from the repository's source, as the desktop
+does, so the two build against the same files and nothing is copied or pinned.
+What stays is the version skew between a phone and a desktop that update
+separately: a wire change still follows the capability and version-window rules
+above, since an installed phone keeps the contract it was built with.
+Publishing is a separate release step.
 
 ### The Studio protocol
 

@@ -5,7 +5,7 @@ import {
   parseConversationWireModels,
   type ConversationWireModels,
   type ConversationWirePermissionPreset,
-} from "./conversation-protocol/index";
+} from "../../../packages/conversation-protocol/src/public";
 
 // The phone's source mirror of the additive tailnet conversation lane. The
 // desktop package is the authority until its npm release can be adopted here.
@@ -23,7 +23,7 @@ export {
   CONVERSATION_SCOPE_CLOSE_CODE,
   conversationCloseRetryAfterMs,
   presentToolItem,
-} from "./conversation-protocol/index";
+} from "../../../packages/conversation-protocol/src/public";
 
 /**
  * `bypass` skips the CLI's prompts, `auto` lets edits in the workspace through

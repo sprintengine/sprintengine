@@ -11,7 +11,7 @@ const test = require("node:test");
 // around them: the host page, the frame's policy, the navigation gate, and how
 // every message from the page is read.
 
-const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build/mobile");
 const repoRoot = path.resolve(__dirname, "../../../../..");
 const visual = require(path.join(buildRoot, "src/components/document/rich/visualFrame.js"));
 const { themes } = require(path.join(buildRoot, "src/theme/tokens.js"));

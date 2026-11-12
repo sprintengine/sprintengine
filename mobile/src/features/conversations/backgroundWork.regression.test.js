@@ -3,7 +3,7 @@ const { test } = require("node:test");
 const {
   parseConversationBackgroundWork,
   parseConversationFrame,
-} = require("../../../.mobile-test-build/src/api/conversationWire.js");
+} = require("../../../.mobile-test-build/mobile/src/api/conversationWire.js");
 const {
   CHAT_EARLIER_AFTER_MS,
   chatActivity,
@@ -11,8 +11,8 @@ const {
   chatRowState,
   chatSections,
   chatWorksInBackground,
-} = require("../../../.mobile-test-build/src/features/conversations/conversationListLogic.js");
-const { backgroundWorkLabel } = require("../../../.mobile-test-build/src/features/conversations/agentLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationListLogic.js");
+const { backgroundWorkLabel } = require("../../../.mobile-test-build/mobile/src/features/conversations/agentLogic.js");
 
 // A chat whose turn is over but which still has an agent working in the
 // background, or a monitor that will wake its agent, as the desktop lists it

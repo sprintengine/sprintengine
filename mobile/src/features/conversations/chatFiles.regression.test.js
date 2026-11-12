@@ -7,9 +7,9 @@ const {
   rememberSentFile,
   sentFileName,
   splitSentUploads,
-} = require("../../../.mobile-test-build/src/features/conversations/chatFiles.js");
-const { declaresMessageFiles } = require("../../../.mobile-test-build/src/api/tailnetTransport.js");
-const { conversationFileUploadRefusal } = require("../../../.mobile-test-build/src/api/conversationImages.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/chatFiles.js");
+const { declaresMessageFiles } = require("../../../.mobile-test-build/mobile/src/api/tailnetTransport.js");
+const { conversationFileUploadRefusal } = require("../../../.mobile-test-build/mobile/src/api/conversationImages.js");
 
 // Files of any type a person attaches to a chat's message, beside its photos:
 // offered where the desktop declares `conversation-message-files`, held with

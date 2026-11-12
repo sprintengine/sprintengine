@@ -11,8 +11,8 @@ const {
   queuedSendStale,
   stillHanding,
   turnEndedSince,
-} = require("../../../.mobile-test-build/src/features/conversations/queuedSends.js");
-const { createQueuedSendCourier } = require("../../../.mobile-test-build/src/features/conversations/queuedSendCourier.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/queuedSends.js");
+const { createQueuedSendCourier } = require("../../../.mobile-test-build/mobile/src/features/conversations/queuedSendCourier.js");
 
 const base = { declared: true, attachments: false, turnBusy: true, uploads: 0, phoneQueued: 0 };
 

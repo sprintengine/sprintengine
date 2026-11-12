@@ -6,7 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const repoRoot = path.resolve(__dirname, "../../../..");
-const buildRoot = path.join(repoRoot, ".mobile-test-build");
+const buildRoot = path.join(repoRoot, ".mobile-test-build/mobile");
 const { createRichRenderer, fitDrawing, renderKey } = require(path.join(buildRoot, "src/components/document/rich/richRenderer.js"));
 const { diagramRefusal, loadsFromElsewhere, LOADS_FROM_ELSEWHERE, diagramNote, mathNote, diagramTheme, MAX_DIAGRAM_SOURCE } = require(
   path.join(buildRoot, "src/components/document/rich/diagramSource.js"),

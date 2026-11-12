@@ -229,12 +229,12 @@ under `/tailnet/v1/`:
   from `ws-ticket`, streams the conversation's events
   (`src/api/tailnetConversations.ts`, `src/api/conversationWire.ts`).
 
-Two parts of the wire are copies of Studio's own definitions and are
-hash-pinned by tests so they cannot drift silently:
-`src/api/conversation-protocol/` mirrors `packages/conversation-protocol/src/`,
-and `src/shared/mobile-control/protocol.ts` carries the mobile-control types.
-Change them together with the Studio side; the policy for wire changes is
-`docs/compatibility.md` at the repository root.
+The conversation contract and the connection supervisor are the desktop's own
+packages, imported from the repository's `packages/` folder as source: Metro
+watches that folder (`metro.config.js`), and the test build compiles it beside
+the app (`tsconfig.test.json`). `src/shared/mobile-control/protocol.ts` still
+carries its own copy of the mobile-control types, hash-pinned by a test. The
+policy for wire changes is `docs/compatibility.md` at the repository root.
 
 `docs/conversations.md` describes how the chat list and a chat behave in
 detail, and `docs/canvases.md` how the phone lists a desktop's Canvas boards
