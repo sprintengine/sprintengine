@@ -605,6 +605,21 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
   const followed = backend.followed ?? {}
 
+  /**
+   * A key for what reads or runs in the chat's folder, resolved as `resolve`
+   * does, and a folder an owner names held to the ones Studio knows on a
+   * connection that is (a browser on the tailnet): a search or a command
+   * list there must not reach a folder by naming it.
+   */
+  async function resolveInFolder(wire: StudioConversationKey, asking: Asking): Promise<ConversationKey | null> {
+    if (wire.workspaceRoot !== undefined && !namesAnyPath(asking)) {
+      const chat = options.chat?.() ?? null
+      if (!chat || !(await folderAllowed(chat, asking, wire.workspaceRoot))) return null
+    }
+    return resolve(wire, asking.grant)
+  }
+  const ids = (key: ConversationKey) => ({ workspaceId: key.workspaceId, agentId: key.agentId })
+
   /** A composer read as an answer: the chat gone is `not_found`, anything else `unavailable`. */
   function composerAnswer<T>(
     read: StudioComposerRead<T>,
@@ -755,10 +770,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── Beside a followed chat, by its key (`followed.ts`) ─────────────────
     // The conversation host's own, as the tailnet lane serves them.
 
-    'conversation.askSideQuestion': ({ key: wire, commandId, questionId, question, history }, { grant, voice }) => {
+    'conversation.askSideQuestion': async ({ key: wire, commandId, questionId, question, history }, asking) => {
+      const { grant, voice } = asking
       const ask = followed.askSideQuestion
       if (!ask) return unserved('conversation.askSideQuestion')
-      const key = resolve(wire, grant)
+      const key = await resolveInFolder(wire, asking)
       if (!key) return notFound(wire)
       return once(
         keptId('conversation.askSideQuestion', grant, commandId),
@@ -776,30 +792,32 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       // Under this client's own id: another client's question is passed over.
       return { ok: true, result: voice.redact(await cancel(grant.clientId, questionId)) }
     },
-    'conversation.contextBreakdown': async ({ key: wire }, { grant, voice }) => {
+    'conversation.contextBreakdown': async ({ key: wire }, asking) => {
       const read = followed.contextBreakdown
       if (!read) return unserved('conversation.contextBreakdown')
-      const key = resolve(wire, grant)
+      const key = await resolveInFolder(wire, asking)
       if (!key) return notFound(wire)
-      return { ok: true, result: voice.redact(await read(key)) }
+      return { ok: true, result: asking.voice.redact(await read(key)) }
     },
-    'conversation.searchFiles': async ({ key: wire, query, limit }, { grant, voice }) => {
+    'conversation.searchFiles': async ({ key: wire, query, limit }, asking) => {
+      const { grant, voice } = asking
       const search = followed.searchFiles
       if (!search) return unserved('conversation.searchFiles')
-      const key = resolve(wire, grant)
+      const key = await resolveInFolder(wire, asking)
       if (!key) return notFound(wire)
       // An empty query matches nothing, as the composer's own picker asks none.
       if (!query) return { ok: true, result: { entries: [], truncated: false } }
       return composerAnswer(await search(key, grant.clientId, query, limit), wire, voice, 'conversation.searchFiles')
     },
-    'conversation.listCommands': async ({ key: wire, refresh }, { grant, voice }) => {
+    'conversation.listCommands': async ({ key: wire, refresh }, asking) => {
+      const { grant, voice } = asking
       const list = followed.listCommands
       if (!list) return unserved('conversation.listCommands')
       // Asking the CLI again starts it: for a client that may operate the
       // chat, as the lane's refresh was.
       if (refresh && !studioGrantPrincipal(grant).permissions.has('conversation:operate'))
         return refuse('scope_required', 'This app\'s grant does not include "conversation:operate".')
-      const key = resolve(wire, grant)
+      const key = await resolveInFolder(wire, asking)
       if (!key) return notFound(wire)
       return composerAnswer(await list(key, refresh === true), wire, voice, 'conversation.listCommands')
     },
@@ -808,7 +826,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!settle) return unserved('conversation.settle')
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      const done = settle(key, settled !== false, grant.owner)
+      const done = settle(ids(key), settled !== false, grant.owner)
       if (done.ok) return { ok: true, result: { settledAt: done.settledAt } }
       return settleRefusal(done, wire, voice, 'conversation.settle')
     },
@@ -817,7 +835,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!visit) return unserved('conversation.visit')
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      const done = visit(key, visitedAt, grant.owner)
+      const done = visit(ids(key), visitedAt, grant.owner)
       if (done.ok) return { ok: true, result: { lastVisitedAt: done.lastVisitedAt } }
       return done.code === 'unknown_workspace'
         ? notFound(wire)
@@ -828,7 +846,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!read) return unserved('conversation.changesDiff')
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      const answer = await read(key, selection)
+      const answer = await read(ids(key), selection)
       if (!answer.ok) return changesRefusal(answer, voice, 'conversation.changesDiff')
       const { ok: _ok, ...diff } = answer
       return { ok: true, result: voice.redact(diff) }
@@ -838,7 +856,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!read) return unserved('conversation.changedFile')
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      const answer = await read(key, selection, path)
+      const answer = await read(ids(key), selection, path)
       if (!answer.ok) return changesRefusal(answer, voice, 'conversation.changedFile')
       const { ok: _ok, ...sides } = answer
       return { ok: true, result: voice.redact(sides) }

@@ -9,7 +9,9 @@ import {
   studioGrantAllowsTopic,
   type StudioParsedServerFrame,
 } from '../../../packages/studio-protocol/src/public'
-import type { StudioFollowedBackend } from './studio-rpc-types'
+import type { StudioChatBackend, StudioFollowedBackend } from './studio-rpc-types'
+import { createStudioRpcRouter } from './studio-rpc-router'
+import { studioWindowGrant } from './studio-frame-port'
 import { STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES, studioRpcConversationCapabilities } from './studio-rpc-server'
 import {
   OWNER_TOKEN,
@@ -404,5 +406,44 @@ test('an approval that outlives the chat is taken from a client whose ceiling ma
   assert.equal(
     errorOf(await ask(strict, 'conversation.resolveApproval', { ...always, commandId: 'a2' })),
     'ceiling_exceeded',
+  )
+})
+
+test('a connection held to known folders names a chat by a folder Studio knows, or not at all', async () => {
+  const calls: Calls = []
+  const backend = createFakeBackend()
+  backend.followed = fakeFollowed(calls)
+  const router = createStudioRpcRouter({
+    backend,
+    chat: () => ({ isKnownFolder: async (path: string) => path === '/Users/dev/app' }) as unknown as StudioChatBackend,
+    info: () => ({}) as never,
+  })
+  cleanups.push(() => router.close())
+  const grant = studioWindowGrant()
+  const tailnet = { connectionId: 'w1', slot: 1, ownWindow: false, knownFoldersOnly: true }
+  const search = (workspaceRoot: string) =>
+    router.handle(grant, 'conversation.searchFiles', { key: { ...KEY, workspaceRoot }, query: 'app' }, tailnet)
+  const commands = (workspaceRoot: string) =>
+    router.handle(grant, 'conversation.listCommands', { key: { ...KEY, workspaceRoot }, refresh: true }, tailnet)
+  assert.ok((await search('/Users/dev/app')).ok)
+  const elsewhere = await search('/Users/dev')
+  assert.equal(!elsewhere.ok && elsewhere.error.code, 'not_found')
+  const ran = await commands('/etc')
+  assert.equal(!ran.ok && ran.error.code, 'not_found')
+  assert.deepEqual(
+    calls.map(([kind]) => kind),
+    ['searchFiles'],
+  )
+  // An owner on this machine names any folder, as for every keyed read.
+  const loopback = { connectionId: 'w2', slot: 2, ownWindow: false }
+  assert.ok(
+    (
+      await router.handle(
+        grant,
+        'conversation.searchFiles',
+        { key: { ...KEY, workspaceRoot: '/Users/dev' }, query: 'a' },
+        loopback,
+      )
+    ).ok,
   )
 })
