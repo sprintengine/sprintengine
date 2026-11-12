@@ -180,7 +180,7 @@ export function SshMachineDetail({ machine, api }: { machine: SshEnvironmentSumm
         ) : null}
         <SettingToggle
           label="Keep the server running"
-          description="Otherwise it stops five minutes after the last client leaves with no chat working."
+          description="Otherwise it stops five minutes after the last client leaves, once no chat is working and it has no schedule, pull request watch or message waiting to send."
           enabled={machine.settings.keepRunning}
           onChange={(keepRunning) => write({ keepRunning })}
         />

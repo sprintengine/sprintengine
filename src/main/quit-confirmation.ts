@@ -1,7 +1,9 @@
 /**
  * "Quit SprintEngine Studio? 3 agents are still working." — the question a
- * person's own quit is asked while agent turns are running, and the rules for
- * which quits are never asked.
+ * person's own quit is asked while agent turns are running, or while this
+ * computer's schedules and pull request watches would stop with it (owner
+ * ruling: stopping them is never silent, so the question names them), and the
+ * rules for which quits are never asked.
  *
  * Only a quit the person started is asked about: Cmd+Q, the app menu's or
  * the tray's Quit, and closing the last window where that ends the process.
@@ -14,18 +16,29 @@
  * headless under test; the dialog itself is `quit-confirmation-electron.ts`.
  */
 import type { AgentPhase, TerminalSessionSnapshot } from '../shared/ipc/terminal'
+import { STUDIO_PRODUCT_NAME } from '../shared/product-identity'
 
 export type QuitConfirmationAnswer = { quit: boolean; dontAskAgain: boolean }
+
+/**
+ * What a quit would stop: agent turns under way, and by name the schedules
+ * and pull request watches this computer's servers run (its own and its WSL
+ * distributions').
+ */
+export type QuitStopping = { agents: number; schedules: readonly string[]; watches: readonly string[] }
+
+const stopsAnything = (stopping: QuitStopping): boolean =>
+  stopping.agents > 0 || stopping.schedules.length > 0 || stopping.watches.length > 0
 
 export type QuitConfirmationDeps = {
   /** The Settings switch, read at quit time: it can change mid-session. */
   isEnabled(): boolean
   /** "Don't ask again" was ticked on a Quit. */
   stopAsking(): void
-  /** Agent turns a quit would stop now. Asked only when the switch is on. */
-  countWorkingAgents(): Promise<number>
+  /** What a quit would stop now. Asked only when the switch is on. */
+  whatQuitStops(): Promise<QuitStopping>
   /** Show the question. `signal` aborting takes it down unanswered. */
-  ask(input: { count: number; signal: AbortSignal }): Promise<QuitConfirmationAnswer>
+  ask(input: { stopping: QuitStopping; signal: AbortSignal }): Promise<QuitConfirmationAnswer>
   /** Test seam for the unasked window's timer; `setTimeout` otherwise. */
   setTimer?: (run: () => void, ms: number) => { unref?(): unknown }
   clearTimer?: (timer: { unref?(): unknown }) => void
@@ -66,18 +79,18 @@ export function createQuitConfirmation(deps: QuitConfirmationDeps) {
 
   async function decide(): Promise<'quit' | 'stay'> {
     if (settled() || !deps.isEnabled()) return 'quit'
-    let count: number
+    let stopping: QuitStopping
     try {
-      count = await deps.countWorkingAgents()
+      stopping = await deps.whatQuitStops()
     } catch {
       // A count that cannot be had must not keep the person in the app.
       return 'quit'
     }
-    if (settled() || !(count > 0)) return 'quit'
+    if (settled() || !stopsAnything(stopping)) return 'quit'
     question = new AbortController()
     let answer: QuitConfirmationAnswer
     try {
-      answer = await deps.ask({ count, signal: question.signal })
+      answer = await deps.ask({ stopping, signal: question.signal })
     } catch {
       // No dialog could be shown: quit as the app did before it asked.
       return 'quit'
@@ -213,9 +226,35 @@ export function countWorkingTerminalAgents(
   }).length
 }
 
-/** The question's words. `count` is at least one. */
-export function quitConfirmationDetail(count: number): string {
-  return count === 1
-    ? '1 agent is still working. Quitting stops it.'
-    : `${count} agents are still working. Quitting stops them.`
+/** How many names a list in the question spells out before "and N more". */
+const NAMED = 3
+
+function named(kind: [string, string], names: readonly string[]): string {
+  const shown = names.slice(0, NAMED).map((name) => `“${name}”`)
+  const more = names.length - shown.length
+  const list =
+    more > 0
+      ? `${shown.join(', ')} and ${more} more`
+      : shown.length > 1
+        ? `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`
+        : (shown[0] ?? '')
+  return `${names.length === 1 ? kind[0] : kind[1]} ${list}`
+}
+
+/** The question's words. Something stops: at least one agent, schedule or watch. */
+export function quitConfirmationDetail(stopping: QuitStopping): string {
+  const lines: string[] = []
+  if (stopping.agents > 0)
+    lines.push(
+      stopping.agents === 1
+        ? '1 agent is still working. Quitting stops it.'
+        : `${stopping.agents} agents are still working. Quitting stops them.`,
+    )
+  const background = [
+    ...(stopping.schedules.length > 0 ? [named(['the schedule', 'the schedules'], stopping.schedules)] : []),
+    ...(stopping.watches.length > 0 ? [named(['the watch on', 'the watches on'], stopping.watches)] : []),
+  ]
+  if (background.length > 0)
+    lines.push(`Quitting also stops ${background.join(' and ')} until ${STUDIO_PRODUCT_NAME} opens again.`)
+  return lines.join('\n\n')
 }

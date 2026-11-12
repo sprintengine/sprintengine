@@ -1161,6 +1161,15 @@ is not an owner, and one on an SSH machine is refused in words for now.
 `mcp.sync`, `agentConfig.adopt` and the activity hook's install and uninstall
 are an owner's: they write what the agent CLIs run. A Studio advertises
 `agent-setup` only where it holds those services (a desktop in process).
+`environment-readiness` (2026-11-12) adds `environment.readiness`, under
+`providers:read`: what the Studio's machine has and lacks for the work it
+runs on its own (its CLIs, installed and signed in where it can tell, `gh`, MCP
+servers, extensions) and each schedule or pull request watch waiting on
+something it lacks, with the reason in words. A fact the machine cannot tell
+is `null`, and nothing waits on one. A pull request's `watch` gains an
+optional `waiting` (the words) while a read fails for want of `gh` there; an
+older client reads past it. Additive: an older Studio answers `unknown_method`
+and leaves the capability out.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

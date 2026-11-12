@@ -254,9 +254,9 @@ test('a signal quits without asking, and the ordered shutdown runs before the ex
   const confirmation = createQuitConfirmation({
     isEnabled: () => true,
     stopAsking: () => undefined,
-    countWorkingAgents: async () => 3,
-    ask: ({ count }) => {
-      asked.push(count)
+    whatQuitStops: async () => ({ agents: 3, schedules: [], watches: [] }),
+    ask: ({ stopping }) => {
+      asked.push(stopping.agents)
       return new Promise(() => {})
     },
   })
@@ -280,7 +280,7 @@ test('a signal while the question is up takes it down and quits', async () => {
   const confirmation = createQuitConfirmation({
     isEnabled: () => true,
     stopAsking: () => undefined,
-    countWorkingAgents: async () => 1,
+    whatQuitStops: async () => ({ agents: 1, schedules: [], watches: [] }),
     ask: ({ signal }) => {
       signals.push(signal)
       return new Promise((resolve) =>

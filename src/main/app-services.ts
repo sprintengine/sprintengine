@@ -115,7 +115,8 @@ import { createAgentNotifier } from './agent-notifications'
 import type { ChatLink } from '../shared/deep-link'
 import { createKeepAwakeStore } from './keep-awake-store'
 import { createAgentKeepAwake, terminalAgentWorking } from './agent-keep-awake'
-import { countWorkingTerminalAgents, createQuitConfirmation } from './quit-confirmation'
+import { countWorkingTerminalAgents, createQuitConfirmation, type QuitStopping } from './quit-confirmation'
+import { backgroundWorkOf, quitStopsOf } from '../server/core/background-work'
 import { askToQuitWhileWorking } from './quit-confirmation-electron'
 import { conversationSummaryPhase, conversationTurnInProgress } from '../shared/conversation/phase'
 import { createStudioAreaSkillStore } from './studio-area-skill-store'
@@ -2074,31 +2075,42 @@ export function createAppServices(
     }
   }
 
-  // What a quit would stop: terminal agents mid-turn here in the shell, and
-  // chats with a turn in progress wherever they run. Out of process the chats
-  // are the server's, asked with a short budget: a server that does not
-  // answer must not hold up the quit, so it counts none.
-  async function countWorkingAgents(): Promise<number> {
+  // What a quit would stop: terminal agents mid-turn here in the shell, chats
+  // with a turn in progress wherever they run, and by name the schedules and
+  // pull request watches this computer's servers run (its own core's and each
+  // WSL server's). Out of process they are the server's, asked with a short
+  // budget: a server that does not answer must not hold up the quit, so it
+  // stops nothing it can name.
+  async function whatQuitStops(): Promise<QuitStopping> {
     const terminals = countWorkingTerminalAgents(shellTerminals.list())
     if (!server) {
       const listed = conversations.listSessions()
-      return terminals + (listed.ok ? listed.sessions.filter(conversationTurnInProgress).length : 0)
+      const chats = listed.ok ? listed.sessions.filter(conversationTurnInProgress).length : 0
+      const wsl = (await core.wslServers?.manager.backgroundWork({ budgetMs: QUIT_COUNT_SERVER_BUDGET_MS })) ?? []
+      return { agents: terminals + chats, ...quitStopsOf(backgroundWorkOf(core), wsl) }
     }
-    if (!server.isServing()) return terminals
+    if (!server.isServing()) return { agents: terminals, schedules: [], watches: [] }
     let budget: NodeJS.Timeout | undefined
-    const chats = await Promise.race([
-      server.rpc.call<unknown>(SERVER_METHODS.conversationsWorking).catch(() => 0),
-      new Promise<number>((resolve) => {
-        budget = setTimeout(() => resolve(0), QUIT_COUNT_SERVER_BUDGET_MS)
+    const asked = await Promise.race([
+      server.rpc.call<unknown>(SERVER_METHODS.quitStops).catch(() => null),
+      new Promise<null>((resolve) => {
+        budget = setTimeout(() => resolve(null), QUIT_COUNT_SERVER_BUDGET_MS)
       }),
     ])
     clearTimeout(budget)
-    return terminals + (typeof chats === 'number' && chats > 0 ? chats : 0)
+    const answer = (asked && typeof asked === 'object' ? asked : {}) as Partial<QuitStopping>
+    const names = (value: unknown) =>
+      Array.isArray(value) ? value.filter((name): name is string => typeof name === 'string') : []
+    return {
+      agents: terminals + (typeof answer.agents === 'number' && answer.agents > 0 ? answer.agents : 0),
+      schedules: names(answer.schedules),
+      watches: names(answer.watches),
+    }
   }
   const quitConfirmation = createQuitConfirmation({
     isEnabled: () => quitConfirmationStore.isEnabled(),
     stopAsking: () => quitConfirmationStore.set(false),
-    countWorkingAgents,
+    whatQuitStops,
     ask: askToQuitWhileWorking,
   })
 

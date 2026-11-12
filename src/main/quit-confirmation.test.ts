@@ -11,18 +11,25 @@ import {
   registerUnaskedQuits,
   type QuitConfirmationAnswer,
   type QuitConfirmationDeps,
+  type QuitStopping,
 } from './quit-confirmation'
 
-function harness(overrides: Partial<QuitConfirmationDeps> & { count?: number } = {}) {
+function harness(
+  overrides: Partial<QuitConfirmationDeps> & { count?: number; schedules?: string[]; watches?: string[] } = {},
+) {
   let enabled = true
-  const asked: Array<{ count: number; signal: AbortSignal }> = []
+  const asked: Array<{ stopping: QuitStopping; signal: AbortSignal }> = []
   let answer: (value: QuitConfirmationAnswer) => void = () => undefined
   const confirmation = createQuitConfirmation({
     isEnabled: () => enabled,
     stopAsking: () => {
       enabled = false
     },
-    countWorkingAgents: async () => overrides.count ?? 2,
+    whatQuitStops: async () => ({
+      agents: overrides.count ?? 2,
+      schedules: overrides.schedules ?? [],
+      watches: overrides.watches ?? [],
+    }),
     ask: (input) => {
       asked.push(input)
       return new Promise((resolve) => {
@@ -55,9 +62,9 @@ test('nothing working: the quit goes straight through, unasked', async () => {
 test('the switch off: never counted, never asked', async () => {
   let counted = false
   const h = harness({
-    countWorkingAgents: async () => {
+    whatQuitStops: async () => {
       counted = true
-      return 3
+      return { agents: 3, schedules: [], watches: [] }
     },
   })
   h.setEnabled(false)
@@ -71,7 +78,7 @@ test('agents working: asks with the count, and Cancel keeps the app', async () =
   const decision = h.confirmation.confirm()
   await settle()
   assert.equal(h.asked.length, 1)
-  assert.equal(h.asked[0]?.count, 3)
+  assert.equal(h.asked[0]?.stopping.agents, 3)
   h.answer({ quit: false, dontAskAgain: false })
   assert.equal(await decision, 'stay')
   // Cancelled is not settled: the next quit asks again.
@@ -240,7 +247,7 @@ test('Windows has no signals to listen for, and says a logout on every window', 
 
 test('a count or a dialog that fails never keeps the person in the app', async () => {
   const noCount = harness({
-    countWorkingAgents: async () => {
+    whatQuitStops: async () => {
       throw new Error('server gone')
     },
   })
@@ -277,6 +284,36 @@ test('terminal agents count while a turn is under way or waiting on the person',
 })
 
 test('the question says how many', () => {
-  assert.equal(quitConfirmationDetail(1), '1 agent is still working. Quitting stops it.')
-  assert.equal(quitConfirmationDetail(3), '3 agents are still working. Quitting stops them.')
+  const agents = (count: number) => ({ agents: count, schedules: [], watches: [] })
+  assert.equal(quitConfirmationDetail(agents(1)), '1 agent is still working. Quitting stops it.')
+  assert.equal(quitConfirmationDetail(agents(3)), '3 agents are still working. Quitting stops them.')
+})
+
+test('nothing working, but schedules or watches would stop: asked, naming them (owner ruling)', async () => {
+  const h = harness({ count: 0, schedules: ['Nightly triage'], watches: ['Fix the login (WSL: Ubuntu)'] })
+  void h.confirmation.confirm()
+  await settle()
+  assert.deepEqual(h.asked[0]?.stopping, {
+    agents: 0,
+    schedules: ['Nightly triage'],
+    watches: ['Fix the login (WSL: Ubuntu)'],
+  })
+  h.answer({ quit: true, dontAskAgain: false })
+})
+
+test('the question names the schedules and watches that stop, and how many more', () => {
+  assert.equal(
+    quitConfirmationDetail({ agents: 0, schedules: ['Nightly triage'], watches: [] }),
+    'Quitting also stops the schedule “Nightly triage” until SprintEngine Studio opens again.',
+  )
+  assert.equal(
+    quitConfirmationDetail({
+      agents: 2,
+      schedules: ['Triage, then report', 'Standup'],
+      watches: ['Fix the login', 'Bump deps', 'Docs', 'Release notes'],
+    }),
+    '2 agents are still working. Quitting stops them.\n\n' +
+      'Quitting also stops the schedules “Triage, then report” and “Standup” and the watches on ' +
+      '“Fix the login”, “Bump deps”, “Docs” and 1 more until SprintEngine Studio opens again.',
+  )
 })

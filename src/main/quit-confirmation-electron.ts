@@ -12,19 +12,19 @@ import { BrowserWindow, dialog, type MessageBoxOptions } from 'electron'
 
 import { STUDIO_PRODUCT_NAME } from '../shared/product-identity'
 import { isCanvasWorkerWindow } from './canvas/canvas-worker-window'
-import { quitConfirmationDetail, type QuitConfirmationAnswer } from './quit-confirmation'
+import { quitConfirmationDetail, type QuitConfirmationAnswer, type QuitStopping } from './quit-confirmation'
 
 const QUIT_BUTTON = 0
 const CANCEL_BUTTON = 1
 
 export async function askToQuitWhileWorking(input: {
-  count: number
+  stopping: QuitStopping
   signal: AbortSignal
 }): Promise<QuitConfirmationAnswer> {
   const options: MessageBoxOptions = {
     type: 'warning',
     message: `Quit ${STUDIO_PRODUCT_NAME}?`,
-    detail: quitConfirmationDetail(input.count),
+    detail: quitConfirmationDetail(input.stopping),
     buttons: ['Quit', 'Cancel'],
     // Return and Escape both cancel: a key pressed out of habit, or a second
     // Cmd+Q's Return, must not stop agents mid-turn. Quitting takes a click.

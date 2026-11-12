@@ -204,8 +204,8 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.equal(info.pid, process.pid)
   assert.match(info.cipher, /desktop keychain/)
 
-  // What a quit would stop: no chat has a turn running here.
-  assert.equal(await shellRpc.call(SERVER_METHODS.conversationsWorking), 0)
+  // What a quit would stop: no chat has a turn running here, and no schedule or watch.
+  assert.deepEqual(await shellRpc.call(SERVER_METHODS.quitStops), { agents: 0, schedules: [], watches: [] })
 
   // The worktree pool is this server's: a window's Settings ▸ Worktrees and
   // the installs are answered over the tunnel, and the shell's `agent.launch`
