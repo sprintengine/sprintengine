@@ -530,6 +530,18 @@ merged into one delta numbered with its last sequence. Older turns page in
 through `loadEarlier`. Command ids stay stable across retries, so a send
 acknowledged before a disconnect is not accepted twice.
 
+What crosses is a projection of the log, the same on every wire (the window's
+IPC, the Studio protocol, the tailnet lane), made in one place
+(`src/server/conversation-stream-shaping.ts`); the stored events stay whole. A
+tool's result crosses once, as its preview of at most 4,000 characters; a
+tool's input crosses without its file-change bodies and with a long command
+cut to its head, marked `inputTruncated`; a step's pictures as at most eight
+paths. A reader opening such a step reads the whole of it with `toolDetail`.
+A snapshot, and each earlier page, is the newest of those projected events
+within 2 MiB, older ones one `loadEarlier` away; a reconnect further behind
+than 2 MiB of the log gets a snapshot rather than its catch-up, so a replay is
+bounded the same way.
+
 A reader that falls behind gets consecutive deltas merged instead of queued;
 a large snapshot is sent in parts and never counts against live events. A
 reader that stops reading is told to resync with a retry delay that grows while

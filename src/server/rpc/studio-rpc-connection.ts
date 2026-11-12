@@ -35,6 +35,8 @@ import type { ConversationEvent, ConversationKey, ConversationSessionFrame } fro
 import {
   conversationDeltaKey,
   conversationSnapshotParts,
+  conversationWireFrame,
+  projectConversationEvent,
   type ConversationSnapshotFrame,
 } from '../conversation-stream-shaping'
 import { studioErrorId, type StudioRpcAnswer, type StudioRpcRouter } from './studio-rpc-router'
@@ -477,7 +479,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         producers.push(() => parts.frames(wire, current))
       } else {
         const json = JSON.stringify(
-          source.type === 'event' ? { ...source, event: redact(source.event as ConversationEvent) } : source,
+          source.type === 'event'
+            ? { ...source, event: redact(projectConversationEvent(source.event as ConversationEvent)) }
+            : source,
         )
         bytes += Buffer.byteLength(json)
         producers.push(() => wire(json))
@@ -565,14 +569,28 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       return
     }
     if (frame.type === 'event') {
-      const event = redact(frame.event as ConversationEvent)
-      // A copy the queue may extend in place without touching the runtime's own.
+      const projected = projectConversationEvent(frame.event as ConversationEvent)
+      const event = redact(projected)
+      // A copy the queue may extend in place without touching the runtime's
+      // own, or the projection every subscriber shares.
       const owned =
-        event === frame.event ? { ...event, ...(event.payload ? { payload: { ...event.payload } } : {}) } : event
+        event === projected ? { ...event, ...(event.payload ? { payload: { ...event.payload } } : {}) } : event
       enqueueLive({ t: 'frame', sub: subscription.id, frame: { type: 'event', event: owned } }, subscription.id)
       return
     }
-    enqueueLive({ t: 'frame', sub: subscription.id, frame }, subscription.id)
+    // A reset snapshot after the join (the runtime's catch-up once the chat's
+    // server is back) goes out bounded and redacted, as a join's does.
+    enqueueLive(
+      {
+        t: 'frame',
+        sub: subscription.id,
+        frame:
+          frame.type === 'snapshot'
+            ? redactedSnapshotPart(conversationWireFrame(frame as ConversationSnapshotFrame))
+            : frame,
+      },
+      subscription.id,
+    )
   }
 
   function subscribe(frame: StudioSubscribeFrame, grant: StudioGrant): void {

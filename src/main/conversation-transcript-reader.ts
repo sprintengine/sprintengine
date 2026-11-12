@@ -32,7 +32,13 @@ export type ConversationTranscriptLimits = {
   fullReadBytes: number
   /** Byte budget of one snapshot or earlier page; it ends early, turn-aligned where it can be. */
   pageBytes: number
-  /** A reconnect further behind than either of these gets a fresh snapshot instead of the missed events. */
+  /**
+   * A reconnect further behind than either of these gets a fresh snapshot
+   * instead of the missed events. The bytes are the wire's page budget
+   * (`CONVERSATION_WIRE_PAGE_BYTES`, which a test holds this to), as stored:
+   * a catch-up crosses a wire projected, which is never larger, so a replay
+   * is bounded as a snapshot is.
+   */
   catchUpEvents: number
   catchUpBytes: number
 }
@@ -41,7 +47,7 @@ export const DEFAULT_TRANSCRIPT_LIMITS: ConversationTranscriptLimits = {
   fullReadBytes: MAX_CONVERSATION_TRANSCRIPT_BYTES,
   pageBytes: 8 * 1024 * 1024,
   catchUpEvents: 2000,
-  catchUpBytes: 8 * 1024 * 1024,
+  catchUpBytes: 2 * 1024 * 1024,
 }
 
 /** Generation of a transcript that does not exist yet. */

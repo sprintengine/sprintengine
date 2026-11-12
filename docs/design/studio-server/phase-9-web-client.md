@@ -898,13 +898,14 @@ Cross-Origin-Resource-Policy: same-origin   (on every authenticated response, 3.
 
 ### 7.4 Large transcripts in the browser
 
-- Paging (10 turns, 8 MiB page cap), the 256 KiB frame limit with chunking,
-  and the 32 MiB snapshot cap carry over. The SDK reassembles chunks and
-  snapshot parts in the browser, as `tailnet-remote-conversations.ts` does in
-  main.
-- `JSON.parse` of a 256 KiB frame is about a millisecond. The risk is a
-  32 MiB snapshot parsed on the main thread: the browser SDK parses snapshot
-  parts larger than 1 MiB in a worker.
+- Paging (10 turns, 8 MiB page cap as stored), the 256 KiB frame limit with
+  chunking, and the wire's 2 MiB bound on a projected snapshot or page carry
+  over. The SDK reassembles chunks and snapshot parts in the browser, as
+  `tailnet-remote-conversations.ts` does in main.
+- `JSON.parse` of a 256 KiB frame is about a millisecond. A snapshot is at
+  most 2 MiB of projected events since the wire projection (2026-11), down
+  from up to 32 MiB; the browser SDK parses snapshot parts larger than 1 MiB
+  in a worker.
 - Tool output stays out of the snapshot (`toolDetail` on demand) as today.
 - **Measured target** (test 8.5): a 2,000-turn fixture opens to the last page
   in under 1 s on loopback and keeps the heap under 300 MB after paging to

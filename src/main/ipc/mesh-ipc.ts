@@ -53,6 +53,7 @@ import {
 } from '../../shared/tailnet-mesh'
 import type { AutomationService } from '../automation/automation-service'
 import { asRecord } from '../../shared/records'
+import { boundConversationPage, conversationWireFrame } from '../../server/conversation-stream-shaping'
 
 // The window's door onto the Mesh.
 //
@@ -266,7 +267,9 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
       emit: (frame: MeshConversationFrame) => {
         const sender = followers.get(followId)
         if (!sender || sender.isDestroyed()) return
-        sender.send(channel, frame)
+        // As every wire sends a conversation: a machine on an older build
+        // sends its events whole, and this window reads them projected.
+        sender.send(channel, conversationWireFrame(frame))
       },
     })
   })
@@ -274,11 +277,12 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
     if (typeof followId === 'string') followers.delete(followId)
     service.mesh().unfollowConversation(followId)
   })
-  ipcMain.handle(MESH_CONVERSATION_EARLIER_CHANNEL, (_event, input: unknown) => {
+  ipcMain.handle(MESH_CONVERSATION_EARLIER_CHANNEL, async (_event, input: unknown) => {
     const record = asRecord(input) ?? {}
-    return service
+    const read = await service
       .mesh()
       .conversationLoadEarlier({ key: record.key, beforeCursor: record.beforeCursor, turnLimit: record.turnLimit })
+    return read.ok ? { ...read, page: boundConversationPage(read.page).page } : read
   })
   ipcMain.handle(MESH_CONVERSATION_COMMAND_CHANNEL, (_event, input: unknown) => {
     const record = asRecord(input) ?? {}

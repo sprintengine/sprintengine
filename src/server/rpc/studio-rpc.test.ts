@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
 import type { StudioParsedServerFrame } from '../../../packages/studio-protocol/src/public'
+import { CONVERSATION_WIRE_PAGE_BYTES, CONVERSATION_WIRE_PREVIEW_CHARS } from '../conversation-stream-shaping'
 import {
   OWNER_TOKEN,
   connectLineClient,
@@ -425,13 +426,52 @@ test('a reader that stops reading is told to resync with a delay, then closed', 
   c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
   await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
   c.socket.pause()
-  // Distinct tool outputs do not merge, so the backlog grows past the bound.
+  // Distinct agents' words do not merge, so the backlog grows past the bound.
   for (let index = 0; index < 64; index++)
-    backend.emit('agent-1', 'tool_output', { toolUseId: `t${index}`, output: 'x'.repeat(200_000), isError: false })
+    backend.emit('agent-1', 'subagent_message', { parentToolUseId: `t${index}`, text: 'x'.repeat(200_000) })
   c.socket.resume()
   const bye = await c.next(isT('bye'), 10_000)
   assert.deepEqual(bye.t === 'bye' && [bye.code, bye.retryAfterMs], ['resync_required', 1_500])
   await c.closed
+})
+
+test('a slow reader of large tool results is sent each as its preview, and keeps up', async () => {
+  const { path, auth, backend } = await serve()
+  const c = await open(path, pairFakeClient(auth, 'slow-tools', ['conversation:read']))
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
+  let wire = 0
+  c.socket.on('data', (chunk: string) => (wire += Buffer.byteLength(chunk)))
+  c.socket.pause()
+  // Thirteen megabytes of results, the bodies a reader fetches when it opens a step.
+  for (let index = 0; index < 64; index++)
+    backend.emit('agent-1', 'tool_output', { toolUseId: `t${index}`, output: 'x'.repeat(200_000), isError: false })
+  c.socket.resume()
+  const seen: Array<Record<string, unknown>> = []
+  while (seen.length < 64) {
+    const frame = await c.next((candidate) => candidate.t === 'frame' && candidate.frame.type === 'event', 10_000)
+    if (frame.t === 'frame' && frame.frame.type === 'event') seen.push(frame.frame.event.payload ?? {})
+  }
+  assert.ok(seen.every((payload) => String(payload.output).length === CONVERSATION_WIRE_PREVIEW_CHARS))
+  assert.ok(seen.every((payload) => payload.truncated === true))
+  assert.ok(wire < 1024 * 1024, `${wire} bytes for 64 results`)
+  assert.equal(c.frames.some(isT('bye')), false)
+})
+
+test('a long chat’s snapshot is its newest events within the page budget, older ones paging in', async () => {
+  const { path, auth, backend } = await serve()
+  for (let index = 0; index < 1200; index++)
+    backend.emit('agent-1', 'tool_output', { toolUseId: `t${index}`, output: 'r'.repeat(10_000), isError: false })
+  const c = await open(path, pairFakeClient(auth, 'joiner', ['conversation:read']))
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized', 10_000)
+  const parts = c.frames.flatMap((frame) =>
+    frame.t === 'frame' && frame.frame.type === 'snapshot' ? [frame.frame.page] : [],
+  )
+  const events = parts.flatMap((page) => page.events)
+  assert.ok(Buffer.byteLength(JSON.stringify(events)) <= CONVERSATION_WIRE_PAGE_BYTES)
+  assert.equal(events.at(-1)?.seq, 1200)
+  assert.ok(parts.every((page) => page.hasMore && page.beforeCursor === events[0].seq))
 })
 
 test('consecutive deltas behind a slow reader arrive merged, under the last sequence', async () => {
@@ -440,7 +480,7 @@ test('consecutive deltas behind a slow reader arrive merged, under the last sequ
   c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
   await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
   // A first frame large enough to hold the writer while the deltas queue.
-  backend.emit('agent-1', 'tool_output', { toolUseId: 'big', output: 'y'.repeat(2_000_000), isError: false })
+  backend.emit('agent-1', 'subagent_message', { parentToolUseId: 'big', text: 'y'.repeat(2_000_000) })
   for (const text of ['one ', 'two ', 'three']) backend.emit('agent-1', 'content_delta', { text, turnId: 't1' })
   const deltas: Array<{ seq: number; text: string }> = []
   while (deltas.map((delta) => delta.text).join('') !== 'one two three') {

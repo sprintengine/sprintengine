@@ -33,7 +33,9 @@ import type { ConversationEvent, ConversationKey } from '../../../shared/convers
 import {
   CONVERSATION_CHUNK_CHARS,
   conversationDeltaKey,
+  boundConversationPage,
   conversationSnapshotParts,
+  conversationWireFrame,
   type ConversationSnapshotFrame,
 } from '../../../server/conversation-stream-shaping'
 import type { ConversationGatewayHost } from './tailnet-conversation-host'
@@ -550,7 +552,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
         bytes += parts.bytes
         encoded.push(() => parts.frames(wireFrames, current))
       } else {
-        const frame = redact(source, workspaceRoot)
+        const frame = redact(conversationWireFrame(source), workspaceRoot)
         const json = JSON.stringify(frame)
         bytes += Buffer.byteLength(json)
         encoded.push(() => wireFrames(json))
@@ -668,7 +670,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
       const event: ConversationServerFrame =
         source.type === 'snapshot' || source.type === 'synchronized' ? { ...source, key: wireKey } : source
       if (!replay) {
-        sendLive(event, generation)
+        sendLive(conversationWireFrame(event), generation)
         return
       }
       replay.push(event)
@@ -723,7 +725,10 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     }
     if (frame.type === 'loadEarlier') {
       const key = requireKey(frame.requestId)
-      if (key) await result(frame.requestId, await host.loadEarlier(key, frame.beforeCursor, frame.turnLimit))
+      if (!key) return
+      const read = await host.loadEarlier(key, frame.beforeCursor, frame.turnLimit)
+      const answer = read.ok ? { ...read, page: boundConversationPage(read.page).page } : read
+      await result(frame.requestId, answer)
       return
     }
     if (frame.type === 'getToolDetail') {
