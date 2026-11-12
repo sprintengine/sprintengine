@@ -1284,7 +1284,8 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
 
   /** What an identity answer says about the machine: which Studio it is, and what it can do. */
   function rememberIdentity(connectionId: string, identity: RemoteIdentity): void {
-    store.noteEnvironment(connectionId, identity.environmentId)
+    if (identity.environmentId && store.noteEnvironment(connectionId, identity.environmentId))
+      broadcast({ kind: 'machine-identified', connectionId, environmentId: identity.environmentId })
     rememberCapabilities(connectionId, identity.capabilities)
   }
 

@@ -537,6 +537,12 @@ export type MeshEvent =
   | { kind: 'machine-paired'; revision: number; connection: MeshConnection }
   | { kind: 'machine-forgotten'; revision: number; connectionId: string; machineName: string }
   /**
+   * A paired machine said which Studio it is for the first time, or now says
+   * it is another (`MeshConnection.environmentId`). Whatever lists pairings
+   * by environment reads the list again.
+   */
+  | { kind: 'machine-identified'; revision: number; connectionId: string; environmentId: string }
+  /**
    * A request this machine made to pair with another (phase 3): main owns
    * the wait, so every surface — not just the panel that asked — can show
    * the code while it waits and the answer when it lands. `connection` rides
@@ -579,16 +585,12 @@ export type MeshLiveState = {
 }
 
 /**
- * Whether an event can change the list of paired desktops as
- * `listConnections` gives it: one paired or forgotten, or one that answered
- * (an answer may carry its environment id for the first time).
+ * Whether an event changes the list of paired desktops as `listConnections`
+ * gives it, as far as environments read it: one paired, forgotten, or newly
+ * identified.
  */
 export function meshListChanged(event: MeshEvent): boolean {
-  return (
-    event.kind === 'machine-paired' ||
-    event.kind === 'machine-forgotten' ||
-    (event.kind === 'machine-reachability' && !event.checking && event.reachable)
-  )
+  return event.kind === 'machine-paired' || event.kind === 'machine-forgotten' || event.kind === 'machine-identified'
 }
 
 export const MESH_EVENT_CHANNEL = 'mesh:event'

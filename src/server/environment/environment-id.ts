@@ -55,11 +55,10 @@ function createExclusive(path: string, text: string): boolean {
       linkSync(staging, path)
       return true
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code === 'EEXIST') return false
-      // A file system without hard links: an exclusive create, which a reader
-      // could catch empty for a moment, is the best left.
-      if (code !== 'EPERM' && code !== 'ENOTSUP' && code !== 'EXDEV') throw error
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+      // A file system without hard links (FAT, some network and FUSE mounts)
+      // refuses in words of its own: an exclusive create, which a reader could
+      // catch empty for a moment, is the best left.
     }
     try {
       writeFileSync(path, text, { mode: 0o600, flag: 'wx' })
@@ -84,7 +83,9 @@ function describe(error: unknown): string {
 /**
  * The environment id of the Studio whose data directory this is. Never
  * throws for a file it cannot use: at worst the run gets an id of its own,
- * logged, and the file on disk is left as it was.
+ * logged, and the file on disk is left as it was. That temporary id is this
+ * process's: another process on the same directory that could read the file
+ * goes by the kept one meanwhile.
  */
 export function readStudioEnvironmentId(dataDir: string, options: { log?: (message: string) => void } = {}): string {
   const path = join(dataDir, STUDIO_ENVIRONMENT_FILENAME)
@@ -111,16 +112,30 @@ function resolve(path: string, log: ((message: string) => void) | undefined): st
       return randomUUID()
     }
     if (found.kind === 'malformed') {
-      const aside = `${path}.malformed-${Date.now()}`
+      const aside = `${path}.malformed-${Date.now()}-${process.pid}-${randomUUID().slice(0, 8)}`
       try {
         renameSync(path, aside)
-        log?.(`This Studio's id file held no id; it was moved to ${aside} and a new id minted.`)
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
           log?.(`This Studio's id file held no id and could not be moved aside (${describe(error)}).`)
           return randomUUID()
         }
       }
+      // Another process that met the same file may have moved it aside and
+      // minted first, so what was just moved can be its new id: put that back.
+      const moved = read(aside)
+      if (moved.kind === 'id') {
+        try {
+          linkSync(aside, path)
+          unlinkSync(aside)
+          return moved.id
+        } catch {
+          // Someone else holds the name now, or no hard links: read again below.
+          continue
+        }
+      }
+      if (moved.kind === 'malformed')
+        log?.(`This Studio's id file held no id; it was moved to ${aside} and a new id minted.`)
     }
     const id = randomUUID()
     try {

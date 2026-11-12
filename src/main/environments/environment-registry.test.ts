@@ -102,9 +102,39 @@ test('what a route answered survives a restart', () => {
   second.observe('wsl', wsl('Ubuntu'))
   assert.deepEqual(summary(second.list()).slice(1), [[UBUNTU, 'WSL: Ubuntu', ['wsl:Ubuntu']]])
   assert.equal(second.get(UBUNTU)?.descriptor?.serverVersion, '0.40.0')
-  // The id a paired desktop or an SSH machine gave is kept too, though its own record went.
+  // The id a paired desktop gave is kept too, though a later read of its record lacks it.
   first.observe('tailnet', [paired('tnc_1', 'mac-mini', MINI)])
-  assert.equal(registry(dir).environmentOfRoute({ kind: 'tailnet', connection: 'tnc_1' }), MINI)
+  const third = registry(dir)
+  assert.equal(third.environmentOfRoute({ kind: 'tailnet', connection: 'tnc_1' }), null, 'not listed yet')
+  third.observe('tailnet', [paired('tnc_1', 'mac-mini')])
+  assert.equal(third.environmentOfRoute({ kind: 'tailnet', connection: 'tnc_1' }), MINI)
+  // Forgotten: no owner lists the route, so it reaches nothing.
+  third.observe('tailnet', [])
+  assert.equal(third.environmentOfRoute({ kind: 'tailnet', connection: 'tnc_1' }), null)
+})
+
+test('a record from disk that names no route is left out, never thrown on', () => {
+  const logs: string[] = []
+  const environments = registry(dataDir(), 'win32', (message) => logs.push(message))
+  environments.observe('ssh', [ssh('bad/id', 'odd', BOX), ssh('m_box', 'build-box', 'not:an-id')])
+  environments.observe('tailnet', [paired('', 'nameless')])
+  assert.deepEqual(summary(environments.list()).slice(1), [[null, 'build-box', ['ssh:m_box']]])
+  assert.equal(logs.length, 2)
+  assert.equal(environments.environmentOfRoute({ kind: 'ssh', machine: 'bad/id' }), null)
+  assert.equal(environments.learn({ kind: 'ssh', machine: 'bad/id' }, BOX), false)
+})
+
+test('another machine answering with this machine’s id is listed apart, never merged into it', () => {
+  const logs: string[] = []
+  const environments = registry(dataDir(), 'win32', (message) => logs.push(message))
+  // A data directory copied from here to another machine.
+  environments.observe('tailnet', [paired('tnc_1', 'mac-mini', LOCAL)])
+  assert.deepEqual(summary(environments.list()), [
+    [LOCAL, 'This PC (Windows)', ['local']],
+    [null, 'mac-mini', ['tailnet:tnc_1']],
+  ])
+  environments.observe('tailnet', [paired('tnc_1', 'mac-mini', LOCAL)])
+  assert.equal(logs.length, 1, 'said once')
 })
 
 test('a renamed machine keeps its id: a new WSL name that answers as the old Studio joins it', () => {
@@ -179,9 +209,10 @@ test('a file that is not JSON is kept aside at the first write, and entries that
     }),
   )
   const reread = registry(dir)
+  reread.observe('wsl', wsl('Ubuntu'))
+  reread.observe('ssh', [ssh('m1', 'm1', null)])
   assert.equal(reread.environmentOfRoute({ kind: 'wsl', distro: 'Ubuntu' }), UBUNTU)
   assert.equal(reread.environmentOfRoute({ kind: 'ssh', machine: 'm1' }), null)
-  reread.observe('wsl', wsl('Ubuntu'))
   assert.equal(reread.get(UBUNTU)?.descriptor, null)
 })
 

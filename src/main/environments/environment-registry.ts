@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   ENVIRONMENT_ROUTE_KINDS,
   formatEnvironmentRoute,
+  isEnvironmentRoute,
   isEnvironmentId,
   orderEnvironmentRoutes,
   parseEnvironmentRoute,
@@ -61,7 +62,10 @@ export type EnvironmentRegistry = {
   /** Every environment known now, this machine first, then by best route and name. */
   list(): KnownEnvironment[]
   get(environmentId: EnvironmentId): KnownEnvironment | null
-  /** The environment a route last answered as, or null when it has not. */
+  /**
+   * The environment a route listed now reaches, or null: for a route not
+   * heard from yet, and for one no owner lists any more (a forgotten pairing).
+   */
   environmentOfRoute(route: EnvironmentRoute): EnvironmentId | null
   /** The machines one owner knows, whole: the sources of that kind before are replaced. */
   observe(kind: EnvironmentSourceKind, sources: readonly EnvironmentSource[]): void
@@ -93,6 +97,7 @@ export function createEnvironmentRegistry(options: {
   const local = localEnvironmentSource(options.localEnvironmentId, options.platform)
   const observed = new Map<EnvironmentSourceKind, EnvironmentSource[]>()
   const listeners = new Set<() => void>()
+  const sharingLocalId = new Set<string>()
   let current = build()
 
   function persist(): void {
@@ -100,7 +105,7 @@ export function createEnvironmentRegistry(options: {
     if (loaded.malformed) {
       // Moved aside once, before the first write, so what it held can be recovered.
       try {
-        renameSync(path, `${path}.malformed-${Date.now()}`)
+        renameSync(path, `${path}.malformed-${Date.now()}-${process.pid}`)
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
           writable = false
@@ -150,7 +155,17 @@ export function createEnvironmentRegistry(options: {
       const key = formatEnvironmentRoute(source.route)
       if (seen.has(key)) continue
       seen.add(key)
-      const id = idOf(source)
+      let id = idOf(source)
+      if (id === options.localEnvironmentId && source.route.kind !== 'local') {
+        // Another machine answering as this one: a data directory copied
+        // from here (a restored backup, a migration). It is not this machine,
+        // whatever it says, so it is listed on its own.
+        if (!sharingLocalId.has(key)) {
+          sharingLocalId.add(key)
+          options.log?.(`${source.displayName} answers with this machine's environment id; it is listed apart.`)
+        }
+        id = null
+      }
       if (!id) {
         unidentified.push(source)
         continue
@@ -195,12 +210,24 @@ export function createEnvironmentRegistry(options: {
       return found ? copy(found) : null
     },
     environmentOfRoute: (route) => {
+      if (!isEnvironmentRoute(route)) return null
       const key = formatEnvironmentRoute(route)
-      const source = sources().find((candidate) => formatEnvironmentRoute(candidate.route) === key)
-      return (source ? idOf(source) : null) ?? stored.routes.get(key) ?? null
+      for (const entry of current)
+        if (entry.routes.some((candidate) => formatEnvironmentRoute(candidate) === key)) return entry.environmentId
+      return null
     },
     observe(kind, given) {
-      const own = given.filter((source) => source.route.kind === kind)
+      const own: EnvironmentSource[] = []
+      for (const source of given) {
+        if (source.route.kind !== kind) continue
+        // A record from disk naming a machine by an id no route can carry
+        // is left out, never thrown on: it is not a route anything takes.
+        if (!isEnvironmentRoute(source.route)) {
+          options.log?.(`${source.displayName} is not listed: its record does not name a route.`)
+          continue
+        }
+        own.push(isEnvironmentId(source.environmentId) ? source : { ...source, environmentId: null })
+      }
       observed.set(kind, own)
       let learned = false
       for (const source of own) if (source.environmentId && remember(source.route, source.environmentId)) learned = true
@@ -210,7 +237,7 @@ export function createEnvironmentRegistry(options: {
     learn(route, answered) {
       const descriptor = typeof answered === 'string' ? null : answered
       const id = descriptor ? descriptor.environmentId : (answered as EnvironmentId)
-      if (!isEnvironmentId(id)) return false
+      if (!isEnvironmentId(id) || !isEnvironmentRoute(route)) return false
       let news = remember(route, id)
       if (descriptor && JSON.stringify(stored.descriptors.get(id)) !== JSON.stringify(descriptor)) {
         stored.descriptors.set(id, { ...descriptor, capabilities: [...descriptor.capabilities] })

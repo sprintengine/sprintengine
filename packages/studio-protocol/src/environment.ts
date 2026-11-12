@@ -106,7 +106,12 @@ const DISTRO = /^[A-Za-z0-9._-]{1,128}$/u
 // A saved SSH machine's id and a pairing's id: what the app mints.
 const KEY = /^[A-Za-z0-9_-]{1,128}$/u
 
-function routeOk(route: EnvironmentRoute): boolean {
+/**
+ * Whether a route is one `formatEnvironmentRoute` can write: a distribution
+ * name WSL accepts, and ids of 1 to 128 characters of `[A-Za-z0-9_-]`. A
+ * record read from disk is checked with this before it is used as a route.
+ */
+export function isEnvironmentRoute(route: EnvironmentRoute): boolean {
   switch (route.kind) {
     case 'local':
       return true
@@ -121,7 +126,7 @@ function routeOk(route: EnvironmentRoute): boolean {
 
 /** A route as one string: `local`, `wsl:Ubuntu`, `ssh:<id>`, `tailnet:<id>`. Throws on a route no parse would give. */
 export function formatEnvironmentRoute(route: EnvironmentRoute): string {
-  if (!routeOk(route)) throw new Error(`Not an environment route: ${JSON.stringify(route)}`)
+  if (!isEnvironmentRoute(route)) throw new Error(`Not an environment route: ${JSON.stringify(route)}`)
   switch (route.kind) {
     case 'local':
       return 'local'
@@ -155,7 +160,7 @@ export function parseEnvironmentRoute(value: unknown): EnvironmentRoute | null {
     default:
       return null
   }
-  return routeOk(route) ? route : null
+  return isEnvironmentRoute(route) ? route : null
 }
 
 /** Whether two routes are the same way in. */

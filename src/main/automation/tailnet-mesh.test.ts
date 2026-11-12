@@ -254,6 +254,19 @@ test('tailnet-mesh', async () => {
         harness.mesh.listConnections().find((connection) => connection.id === connectionId)?.environmentId,
         REMOTE_ENVIRONMENT_ID,
       )
+      // Said once, as news: a second answer with the same id is not.
+      await harness.mesh.browse(connectionId)
+      assert.deepEqual(
+        harness.events.filter((event) => event.kind === 'machine-identified'),
+        [
+          {
+            kind: 'machine-identified',
+            revision: harness.events.find((event) => event.kind === 'machine-identified')!.revision,
+            connectionId,
+            environmentId: REMOTE_ENVIRONMENT_ID,
+          },
+        ],
+      )
     } finally {
       await harness.close()
     }

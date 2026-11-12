@@ -307,7 +307,7 @@ test('a stored environment id that is not one is dropped on read, not trusted', 
   })
 })
 
-test('the paired list is re-read after a pairing, a forgetting or an answer, and not for a check in flight', () => {
+test('the paired list is re-read after a pairing, a forgetting or a machine saying which Studio it is', () => {
   const reachability = {
     connectionId: 'tnc_1',
     machineName: 'mac-mini',
@@ -323,8 +323,13 @@ test('the paired list is re-read after a pairing, a forgetting or an answer, and
     true,
   )
   assert.equal(
-    meshListChanged({ kind: 'machine-reachability', revision: 1, ...reachability, checking: false, reachable: true }),
+    meshListChanged({ kind: 'machine-identified', revision: 1, connectionId: 'tnc_1', environmentId: 'env-1' }),
     true,
+  )
+  // An answer by itself changes nothing in the list: the id it carried is news only once.
+  assert.equal(
+    meshListChanged({ kind: 'machine-reachability', revision: 1, ...reachability, checking: false, reachable: true }),
+    false,
   )
   assert.equal(
     meshListChanged({ kind: 'machine-reachability', revision: 1, ...reachability, checking: true, reachable: true }),

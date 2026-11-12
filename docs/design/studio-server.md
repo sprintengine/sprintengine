@@ -1210,8 +1210,11 @@ workspace's SSH record, pairing ids) map onto them in
 `src/shared/environment-keys.ts`; and the desktop keeps the list in
 `src/main/environments/environment-registry.ts`, fed by the WSL settings, the
 saved SSH machines and the paired desktops, with what each route answered kept
-in `environments.json`. No call is routed through it yet: each cut-over to
-direct environments moves its callers onto it.
+in `environments.json`. An SSH machine and a paired desktop have their ids
+from their own records; a WSL distribution has none until something connects
+to its server and tells the registry what it answered, which the cut-over to
+direct WSL environments does. No call is routed through the registry yet: each
+cut-over moves its callers onto it.
 
 ### 10.4 The server bundle
 

@@ -9,14 +9,27 @@
 // onto routes and addresses on its own, one at a time, and mean exactly what
 // the key it replaces meant.
 //
-// Nothing here decides where a call goes. A route names the machine; the
-// router still decides, as it always has, whether a WSL chat runs on that
-// distribution's server or as a process this computer starts there.
+// Nothing here decides where a call goes. A route names the MACHINE a chat
+// runs on; the router's key names the PROCESS that answers for it. The two
+// differ, deliberately, in three cases the router decides at call time:
+//
+//   - a WSL chat whose distribution's chats are not on its server: the route
+//     is `wsl:<distro>`, the router key null (this process starts the CLI in
+//     the distribution);
+//   - a workspace on an SSH machine while SSH machines are off this session:
+//     the route is `ssh:<id>`, and the router answers it here or not at all;
+//   - a router asked without the workspace's folder, which does not see an
+//     `ssh://` folder the record holds.
+//
+// So a router key of null maps to `local` meaning "this process", which is
+// this machine's route but not always the machine the chat runs on.
 //
 // Pure and shared: no fs, no electron.
 
 import {
   formatChatAddress,
+  isChatAddress,
+  isEnvironmentId,
   type ChatAddress,
   type EnvironmentId,
   type EnvironmentRoute,
@@ -132,9 +145,14 @@ export function chatAddressOfWorkspace(
   environments: { local: EnvironmentId; ofRoute(route: EnvironmentRoute): EnvironmentId | null },
 ): ChatAddress | null {
   const origin = workspace.remoteOrigin
-  if (!origin?.connectionId) return { environmentId: environments.local, chatId: workspace.id }
-  const environmentId = environments.ofRoute(environmentRouteOfMeshConnection(origin.connectionId))
-  return environmentId ? { environmentId, chatId: origin.workspaceId } : null
+  const address = !origin?.connectionId
+    ? { environmentId: environments.local, chatId: workspace.id }
+    : {
+        environmentId: environments.ofRoute(environmentRouteOfMeshConnection(origin.connectionId)),
+        chatId: origin.workspaceId,
+      }
+  // An id an address cannot carry (a record from an older build) is no address.
+  return isChatAddress(address) ? address : null
 }
 
 /**
@@ -147,8 +165,8 @@ export function chatAddressKeyOfRemoteChat(
   workspaceId: string,
   ofRoute: (route: EnvironmentRoute) => EnvironmentId | null,
 ): string | null {
-  const environmentId = ofRoute(environmentRouteOfMeshConnection(connectionId))
-  return environmentId ? formatChatAddress({ environmentId, chatId: workspaceId }) : null
+  const address = { environmentId: ofRoute(environmentRouteOfMeshConnection(connectionId)), chatId: workspaceId }
+  return isChatAddress(address) ? formatChatAddress(address) : null
 }
 
 // ── Today's records as environment sources ──────────────────────────────────
@@ -157,7 +175,8 @@ export function chatAddressKeyOfRemoteChat(
  * A machine a client knows of, from the record that names it today: the
  * route to it, what the person calls it, how it is drawn (`MachineRef`, from
  * which its mark id follows), and the environment id that record already
- * holds, if any.
+ * holds, if any. A record read from disk can hold an id no route can carry;
+ * the registry skips such a source (`isEnvironmentRoute`) rather than throw.
  */
 export type EnvironmentSource = {
   route: EnvironmentRoute
@@ -212,7 +231,7 @@ export function sshEnvironmentSource(
     machine: saved.resolved
       ? { kind: 'ssh', host: saved.resolved.hostname, port: saved.resolved.port }
       : { kind: 'ssh', host: saved.destination },
-    environmentId: saved.environmentId,
+    environmentId: isEnvironmentId(saved.environmentId) ? saved.environmentId : null,
   }
 }
 
@@ -224,6 +243,6 @@ export function meshEnvironmentSource(
     route: environmentRouteOfMeshConnection(connection.id),
     displayName: connection.machineName,
     machine: { kind: 'paired', name: connection.machineName },
-    environmentId: connection.environmentId ?? null,
+    environmentId: isEnvironmentId(connection.environmentId) ? connection.environmentId : null,
   }
 }
