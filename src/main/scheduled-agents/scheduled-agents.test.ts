@@ -872,6 +872,7 @@ test('a schedule its machine cannot run waits: its time passes without a run or 
   let lacking: string | null = 'Codex is not signed in on build-box'
   const runs: string[] = []
   const skipped: string[] = []
+  const asked: boolean[] = []
   const scheduler = schedulerWithRunRecords({
     list: () => agents,
     run: async (entry) => {
@@ -881,7 +882,10 @@ test('a schedule its machine cannot run waits: its time passes without a run or 
     recordRun: async (id, run) => {
       agents = agents.map((entry) => (entry.id === id ? { ...entry, lastRun: run } : entry))
     },
-    waitingFor: () => lacking,
+    waitingFor: (_entry, context) => {
+      asked.push(context?.asked === true)
+      return lacking
+    },
     onSkipped: (entry, reason, detail) => skipped.push(`${entry.id}:${reason}:${detail ?? ''}`),
     now: time.now,
     setTimer: time.setTimer,
@@ -897,6 +901,8 @@ test('a schedule its machine cannot run waits: its time passes without a run or 
     refused: 'waiting',
     waiting: 'Codex is not signed in on build-box',
   })
+  // A time is asked as a time; Run now says a person asked (a sign-in misread does not hold it).
+  assert.deepEqual(asked, [false, true])
   // Signed in there: the next time runs.
   lacking = null
   await time.advanceTo(Date.UTC(2026, 9, 1, 13, 0))

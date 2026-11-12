@@ -67,9 +67,10 @@ export type StudioScheduledAgentsDeps = {
   gitHost: (hostId: ExecutionHostId | null) => Parameters<typeof withGitHost>[0]
   /**
    * Why a schedule cannot run on this server now, in words ("Codex is not
-   * signed in on build-box"); null when it can. Asked at each of its times.
+   * signed in on build-box"); null when it can. Asked at each of its times,
+   * and with `asked` when a person pressed Run now.
    */
-  waitingFor?: (agent: ScheduledAgent) => string | null
+  waitingFor?: (agent: ScheduledAgent, context?: { asked: boolean }) => string | null
 }
 
 export type StudioScheduledAgents = {

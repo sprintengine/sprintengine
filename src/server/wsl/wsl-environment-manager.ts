@@ -207,6 +207,36 @@ type Handle = {
   runningState: string | null
 }
 
+/** How long a WSL server is given to say what it does on its own. */
+const BACKGROUND_WORK_ASK_MS = 2_000
+
+/**
+ * What a WSL server does on its own, over the backend wire's one machine
+ * channel for it (the wire goes with design-wsl-ssh-direct; this asks nothing
+ * else of it). A server that refuses the channel (an older build) or fails has
+ * none; one that does not answer in time is `no-answer`, which the idle clock
+ * reads as busy: a slow server is not stopped under its schedules, and a hung
+ * one is the lease's pings to stop.
+ */
+function askBackgroundWork(
+  backend: Pick<RemoteConversationBackend, 'machine'>,
+  budgetMs: number,
+): Promise<BackgroundWork | null | 'no-answer'> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    Promise.resolve()
+      .then(() => backend.machine(BACKGROUND_WORK_MACHINE_CHANNEL, []))
+      .catch(() => null),
+    new Promise<'no-answer'>((resolve) => {
+      timer = setTimeout(() => resolve('no-answer'), budgetMs)
+      timer.unref?.()
+    }),
+  ]).then((answer) => {
+    clearTimeout(timer)
+    return answer === 'no-answer' ? answer : parseBackgroundWork(answer)
+  })
+}
+
 export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): WslEnvironmentManager {
   const now = deps.now ?? Date.now
   const idleMs = deps.idleMs ?? DEFAULT_IDLE_MS
@@ -274,13 +304,10 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       }
       // So does work it does on its own; a server that cannot say has none.
       const connection = handle.connection
-      void Promise.resolve()
-        .then(() => (connection ? connection.backend.machine(BACKGROUND_WORK_MACHINE_CHANNEL, []) : null))
-        .catch(() => null)
-        .then((answer) => {
+      void (connection ? askBackgroundWork(connection.backend, BACKGROUND_WORK_ASK_MS) : Promise.resolve(null)).then(
+        (work) => {
           if (!handle.server || handle.idleTimer) return
-          const work = parseBackgroundWork(answer)
-          if (work && hasBackgroundWork(work)) {
+          if (work === 'no-answer' || (work && hasBackgroundWork(work))) {
             armIdle(handle)
             return
           }
@@ -288,7 +315,8 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
             `Stopping the Studio server in ${handle.distro}: nothing has used it for ${Math.round(idleMs / 60_000)} minutes.`,
           )
           void stopHandle(handle, { budgetMs: QUIT_DRAIN_MS, idle: true })
-        })
+        },
+      )
     }, idleMs)
     handle.idleTimer.unref?.()
   }
@@ -756,25 +784,14 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     },
     status: (distro) => handles.get(distro)?.status ?? { distro, state: 'stopped' },
     async backgroundWork(options = {}) {
-      const budgetMs = options.budgetMs ?? 2_000
+      const budgetMs = options.budgetMs ?? BACKGROUND_WORK_ASK_MS
       const asked = [...handles.entries()].flatMap(([distro, handle]) => {
         const connection = handle.connection
         if (!connection || !handle.server) return []
-        let timer: ReturnType<typeof setTimeout> | undefined
         return [
-          Promise.race([
-            Promise.resolve()
-              .then(() => connection.backend.machine(BACKGROUND_WORK_MACHINE_CHANNEL, []))
-              .catch(() => null),
-            new Promise<null>((resolve) => {
-              timer = setTimeout(() => resolve(null), budgetMs)
-              timer.unref?.()
-            }),
-          ]).then((answer) => {
-            clearTimeout(timer)
-            const work = parseBackgroundWork(answer)
-            return work ? [{ distro, work }] : []
-          }),
+          askBackgroundWork(connection.backend, budgetMs).then((work) =>
+            work && work !== 'no-answer' ? [{ distro, work }] : [],
+          ),
         ]
       })
       return (await Promise.all(asked)).flat()

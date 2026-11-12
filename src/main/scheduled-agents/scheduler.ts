@@ -107,8 +107,10 @@ export type ScheduledAgentsSchedulerDeps = {
   /**
    * Why this machine cannot run the schedule now, in words ("Codex is not
    * signed in on build-box"); null when it can. Absent, every schedule can.
+   * `asked`: a person pressed Run now, which a sign-in this machine only
+   * believes is missing does not hold (a misread must never hold for good).
    */
-  waitingFor?: (agent: ScheduledAgent) => string | null
+  waitingFor?: (agent: ScheduledAgent, context?: { asked: boolean }) => string | null
   /** A time came round and its run was skipped, and why (`detail`: what it waits for). */
   onSkipped?: (
     agent: ScheduledAgent,
@@ -216,8 +218,8 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
     timer = setTimer(tick, delay)
   }
 
-  const fire = async (agent: ScheduledAgent): Promise<ScheduledAgentFireResult> => {
-    const waiting = deps.waitingFor?.(agent) ?? null
+  const fire = async (agent: ScheduledAgent, asked = false): Promise<ScheduledAgentFireResult> => {
+    const waiting = deps.waitingFor?.(agent, { asked }) ?? null
     if (waiting) return { ok: false, refused: 'waiting', waiting }
     const previous = agent.lastRun
     if (previous?.ok && deps.isRunWorking?.(previous.workspaceId)) return { ok: false, refused: 'still_working' }
@@ -334,7 +336,7 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
     isRunning: () => running,
     async runNow(id) {
       const agent = deps.list().find((candidate) => candidate.id === id)
-      return agent ? fire(agent) : { ok: false, refused: 'unknown' }
+      return agent ? fire(agent, true) : { ok: false, refused: 'unknown' }
     },
   }
 }

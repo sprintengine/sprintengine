@@ -60,6 +60,14 @@ test('each thing a machine lacks is said in words naming the machine', () => {
     'Codex is not installed on build-box',
   )
   assert.equal(wait({ cliSignedIn: () => false }), 'Codex is not signed in on build-box')
+  // Run now goes past a sign-in read as missing, which may be a misread; not past a missing command.
+  assert.equal(readiness({ cliSignedIn: () => false }).scheduleWaitingFor(schedule(), { signIn: false }), null)
+  assert.equal(
+    readiness({ clis: () => [{ id: 'codex', name: 'Codex', installed: false }] }).scheduleWaitingFor(schedule(), {
+      signIn: false,
+    }),
+    'Codex is not installed on build-box',
+  )
   assert.equal(
     wait({}, { mcpServers: [{ id: 'github', name: 'GitHub' }] }),
     'the MCP server GitHub is not set up on build-box',
@@ -161,6 +169,12 @@ test('a CLI is signed in where it keeps a key or a sign-in file; a keychain cann
     cliSignedInHere('claude-code', {}, 'linux', '/home/dev', none, settings('{"apiKeyHelper": "~/bin/key"}')),
     true,
   )
+  const local = (path: string) => (path === '/home/dev/.claude/settings.local.json' ? '{"apiKeyHelper": "k"}' : null)
+  assert.equal(cliSignedInHere('claude-code', {}, 'linux', '/home/dev', none, local), true)
+  // A console sign-in's key, kept in the CLI's state file.
+  const state = (path: string) => (path === '/home/dev/.claude.json' ? '{"primaryApiKey": "sk-ant-x"}' : null)
+  assert.equal(cliSignedInHere('claude-code', {}, 'linux', '/home/dev', none, state), true)
+  assert.equal(cliSignedInHere('claude-code', { CLAUDE_CODE_USE_FOUNDRY: '1' }, 'linux', '/home/dev', none), true)
   const config = (text: string) => (path: string) => (path === '/home/dev/.codex/config.toml' ? text : null)
   assert.equal(
     cliSignedInHere('codex', {}, 'linux', '/home/dev', none, config('cli_auth_credentials_store = "keyring"\n')),

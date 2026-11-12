@@ -22,6 +22,7 @@ import {
   type StudioRuntimeRefusalCode,
   type StudioServerInfo,
   type StudioUpdateStatus,
+  studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
 import { createHash, randomBytes } from 'node:crypto'
@@ -1507,8 +1508,15 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     ...createStudioAgentSetupHandlers({ ...(options.agentSetup ? { setup: options.agentSetup } : {}), mayName }),
     // ── Readiness ──────────────────────────────────────────────────────────
 
-    'environment.readiness': async () =>
-      options.readiness ? { ok: true, result: await options.readiness() } : unserved('environment.readiness'),
+    // What the machine has is a providers read; what waits names schedules
+    // (from their prompts) and watched pull requests, which are the chats'
+    // business, so a grant that cannot read chats is told none of it.
+    'environment.readiness': async (_params, { grant, voice }) => {
+      if (!options.readiness) return unserved('environment.readiness')
+      const read = await options.readiness()
+      const waiting = grant.owner || studioScopesGrant(grant.scopes, 'conversation:read') ? read.waiting : []
+      return { ok: true, result: voice.redact({ ...read, waiting }) }
+    },
 
     // ── Modules ────────────────────────────────────────────────────────────
     // A module's declared methods. A read is answered each time; an operate

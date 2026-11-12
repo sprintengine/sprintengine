@@ -54,8 +54,12 @@ export type EnvironmentReadinessDeps = {
 
 export type EnvironmentReadiness = {
   read(): Promise<StudioEnvironmentReadiness>
-  /** Why this machine cannot run the schedule now; null when it can. */
-  scheduleWaitingFor(agent: ScheduledAgent): string | null
+  /**
+   * Why this machine cannot run the schedule now; null when it can.
+   * `signIn: false` leaves the sign-in read out (Run now: a misread sign-in
+   * must not hold a schedule a person asked to run).
+   */
+  scheduleWaitingFor(agent: ScheduledAgent, options?: { signIn?: boolean }): string | null
   /** What a watch's failed read lacks here (`gh` not installed or not signed in); null when neither. */
   ghLacking(reason: string): Promise<string | null>
 }
@@ -78,20 +82,27 @@ export function cliSignedInHere(
         'CLAUDE_CODE_OAUTH_TOKEN',
         'CLAUDE_CODE_USE_BEDROCK',
         'CLAUDE_CODE_USE_VERTEX',
+        'CLAUDE_CODE_USE_FOUNDRY',
       )
     )
       return true
-    const dir = env.CLAUDE_CONFIG_DIR?.trim() || join(home, '.claude')
+    const configDir = env.CLAUDE_CONFIG_DIR?.trim()
+    const dir = configDir || join(home, '.claude')
     if (exists(join(dir, '.credentials.json'))) return true
+    // A key a console sign-in kept beside the CLI's state (`primaryApiKey`).
+    const state = read(configDir ? join(configDir, '.claude.json') : join(home, '.claude.json'))
+    if (state && /"primaryApiKey"\s*:\s*"[^"]/.test(state)) return true
     // A key helper, or a key set in its own settings, signs every run in.
-    const settings = read(join(dir, 'settings.json'))
-    if (
-      settings &&
-      /"(apiKeyHelper|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_USE_BEDROCK|CLAUDE_CODE_USE_VERTEX)"/.test(
-        settings,
+    for (const file of ['settings.json', 'settings.local.json']) {
+      const settings = read(join(dir, file))
+      if (
+        settings &&
+        /"(apiKeyHelper|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_USE_BEDROCK|CLAUDE_CODE_USE_VERTEX|CLAUDE_CODE_USE_FOUNDRY)"/.test(
+          settings,
+        )
       )
-    )
-      return true
+        return true
+    }
     // On macOS the sign-in is in the keychain, which is not read here.
     return platform === 'darwin' ? null : false
   }
@@ -119,7 +130,7 @@ export function createEnvironmentReadiness(deps: EnvironmentReadinessDeps): Envi
   const signedIn = deps.cliSignedIn ?? ((cliId: string) => cliSignedInHere(cliId))
   const on = () => deps.machine() || 'this machine'
 
-  const scheduleWaitingFor = (agent: ScheduledAgent): string | null => {
+  const scheduleWaitingFor = (agent: ScheduledAgent, options: { signIn?: boolean } = {}): string | null => {
     const extensions = deps.extensions()
     if (agent.ownerModuleId && extensions && !extensions.includes(agent.ownerModuleId))
       return `the extension "${agent.ownerModuleId}" that made it is not installed on ${on()}`
@@ -131,7 +142,7 @@ export function createEnvironmentReadiness(deps: EnvironmentReadinessDeps): Envi
       const cli = deps.clis().find((entry) => entry.id === agent.cli)
       const name = cli?.name ?? agent.cli
       if (cli?.installed === false) return `${name} is not installed on ${on()}`
-      if (signedIn(agent.cli) === false) return `${name} is not signed in on ${on()}`
+      if (options.signIn !== false && signedIn(agent.cli) === false) return `${name} is not signed in on ${on()}`
     }
     const servers = deps.mcpServers()
     for (const server of agent.mcpServers) {

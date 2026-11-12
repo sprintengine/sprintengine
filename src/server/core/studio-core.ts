@@ -1167,7 +1167,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     createConversationHost: () => createConversationHost(),
     workspaceRecords: () => workspaceRegistry.getRecords(),
     gitHost: (hostId) => (hostId ? hosts.get(hostId) : null),
-    waitingFor: (agent) => readiness.scheduleWaitingFor(agent),
+    // Run now goes past a sign-in this machine only believes is missing: the
+    // CLI then says for itself whether it is signed in.
+    waitingFor: (agent, context) => readiness.scheduleWaitingFor(agent, { signIn: !context?.asked }),
   })
   if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start()
 
