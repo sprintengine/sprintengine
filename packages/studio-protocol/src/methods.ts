@@ -634,9 +634,11 @@ export const STUDIO_TOPIC_ACCESS = Object.freeze(
 ) as { readonly [T in StudioTopic]: StudioAccess }
 
 /**
- * Whether a grant as it stands reaches a method: the server's own decision
+ * Whether a grant as it stands reaches a method: the server's grant check
  * (`authorizeStudioMethod`), for a client deciding whether to offer a control.
- * Unknown methods are not reached.
+ * Unknown methods are not reached. A request it allows can still be refused
+ * by a rule on its params (a folder only an owner may name, a file's bytes
+ * staged for `files.write`) or for a capability the Studio does not advertise.
  */
 export function studioGrantAllows(grant: { owner: boolean; scopes: readonly string[] }, method: string): boolean {
   return authorizeStudioMethod(grant, method).ok

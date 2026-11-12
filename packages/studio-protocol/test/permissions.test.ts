@@ -139,18 +139,21 @@ test('the access tables a client reads say what the server decides, for every gr
       const principal = studioGrantPrincipal(grant)
       for (const method of Object.keys(STUDIO_METHODS) as StudioMethod[]) {
         const decided = authorizeStudioMethod(grant, method).ok
-        assert.equal(studioGrantAllows(grant, method), decided, method)
         assert.equal(authorizeStudioAccess(principal, STUDIO_METHOD_ACCESS[method]).ok, decided, method)
       }
       for (const topic of Object.keys(STUDIO_TOPICS) as StudioTopic[]) {
         const decided = authorizeStudioTopic(grant, topic).ok
-        assert.equal(studioGrantAllowsTopic(grant, topic), decided, topic)
         assert.equal(authorizeStudioAccess(principal, STUDIO_TOPIC_ACCESS[topic]).ok, decided, topic)
       }
     }
   const owner = { owner: true, scopes: [...STUDIO_SCOPES] }
-  for (const name of ['conversation.compact', 'constructor', '__proto__', ''])
+  for (const name of ['conversation.compact', 'constructor', '__proto__', '']) {
     assert.equal(studioGrantAllows(owner, name), false, name)
+    assert.equal(studioGrantAllowsTopic(owner, name), false, name)
+  }
+  assert.equal(studioGrantAllows(owner, 'conversation.send'), true)
+  assert.equal(studioGrantAllows({ owner: false, scopes: ['conversation:read'] }, 'conversation.send'), false)
+  assert.equal(studioGrantAllowsTopic({ owner: false, scopes: ['conversation:read'] }, 'conversation.session'), true)
 })
 
 test('an unknown method is refused, and so is a name only the prototype has', () => {

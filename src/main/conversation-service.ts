@@ -89,7 +89,6 @@ import {
 } from './plugin-registry-instance'
 import { listOpenAiCompatibleModels } from './providers/openai-compatible-provider'
 import { getSharedCredentialStore } from './secret-store'
-import {} from '../shared/records'
 import { cliForConversationProvider } from '../shared/conversation-harness'
 
 /**

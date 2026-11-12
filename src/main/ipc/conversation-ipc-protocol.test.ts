@@ -1,6 +1,15 @@
 import { expect, test } from 'vitest'
 
-import { STUDIO_METHODS, STUDIO_TOPICS } from '../../../packages/studio-protocol/src/public'
+import {
+  STUDIO_METHODS,
+  STUDIO_METHOD_ACCESS,
+  STUDIO_TOPICS,
+  STUDIO_TOPIC_ACCESS,
+  type StudioAccess,
+  type StudioMethod,
+  type StudioTopic,
+} from '../../../packages/studio-protocol/src/public'
+import type { ConversationIpcProtocol } from '../../shared/conversation-ipc-protocol'
 import { CONVERSATION_IPC_PROTOCOL } from '../../shared/conversation-ipc-protocol'
 import type { ConversationService } from '../conversation-service'
 import { registerConversationCommandsIpc } from './conversation-commands-ipc'
@@ -27,7 +36,9 @@ test('every conversation channel says how a client on the Studio protocol does t
 })
 
 test('a channel names the protocol’s own methods and topics, or what it lacks', () => {
-  for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL)) {
+  for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<
+    [string, ConversationIpcProtocol]
+  >) {
     for (const method of route.methods ?? []) expect(Object.hasOwn(STUDIO_METHODS, method), channel).toBe(true)
     for (const topic of route.topics ?? []) expect(Object.hasOwn(STUDIO_TOPICS, topic), channel).toBe(true)
     // Something does it on the protocol, or something is missing.
@@ -40,5 +51,17 @@ test('a channel names the protocol’s own methods and topics, or what it lacks'
       expect(route.gaps, channel).toContain('declaration')
     }
     if (route.gaps.includes('declaration')) expect(route.planned?.length, channel).toBeGreaterThan(0)
+  }
+})
+
+test('a channel lists a grant gap exactly when a method or topic it names is held to owners', () => {
+  const ownerOnly = (access: StudioAccess) => 'permissions' in access && access.owner === true
+  for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<
+    [string, ConversationIpcProtocol]
+  >) {
+    const held =
+      (route.methods ?? []).some((method: StudioMethod) => ownerOnly(STUDIO_METHOD_ACCESS[method])) ||
+      (route.topics ?? []).some((topic: StudioTopic) => ownerOnly(STUDIO_TOPIC_ACCESS[topic]))
+    expect(route.gaps.includes('grant'), channel).toBe(held)
   }
 })

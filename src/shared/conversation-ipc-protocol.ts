@@ -1,4 +1,5 @@
 import type { StudioMethod, StudioTopic } from '../../packages/studio-protocol/src/public'
+import type { ServerIpcChannelName } from './ipc-channel-owners'
 
 // Every channel the conversation IPC registers, with the Studio protocol
 // methods and topics that do the same for any client, and what still keeps
@@ -36,17 +37,20 @@ export type ConversationIpcProtocol = {
 
 const DONE = [] as const
 
-export const CONVERSATION_IPC_PROTOCOL: Readonly<Record<string, ConversationIpcProtocol>> = {
+export const CONVERSATION_IPC_PROTOCOL = {
   // History, the palette's search and the history navigation.
-  'conversation:threads': { gaps: ['declaration'], planned: ['conversation.threads'] },
+  'conversation:threads': { gaps: ['declaration', 'client'], planned: ['conversation.threads'] },
   'conversation:search': {
-    gaps: ['declaration'],
+    gaps: ['declaration', 'client'],
     planned: ['conversation.search', 'conversation.searchBatches'],
   },
-  'conversation:search:cancel': { gaps: ['declaration'], planned: ['conversation.cancelSearch'] },
+  'conversation:search:cancel': { gaps: ['declaration', 'client'], planned: ['conversation.cancelSearch'] },
   // Settings ▸ Approvals.
-  'conversation:approval-rules:list': { gaps: ['declaration'], planned: ['conversation.approvalRules'] },
-  'conversation:approval-rules:revoke': { gaps: ['declaration'], planned: ['conversation.revokeApprovalRule'] },
+  'conversation:approval-rules:list': { gaps: ['declaration', 'client'], planned: ['conversation.approvalRules'] },
+  'conversation:approval-rules:revoke': {
+    gaps: ['declaration', 'client'],
+    planned: ['conversation.revokeApprovalRule'],
+  },
   // A turn's checkpoint: the chat view and the checkpoint window.
   'conversation:turn:diff': { methods: ['conversation.turnDiff'], gaps: ['client'] },
   'conversation:turn:revert': { methods: ['conversation.revert'], gaps: ['grant'] },
@@ -60,10 +64,10 @@ export const CONVERSATION_IPC_PROTOCOL: Readonly<Record<string, ConversationIpcP
   // Providers and their keys: the model picker and Settings ▸ Providers.
   'conversation:providers:list': { methods: ['providers.list'], gaps: ['grant', 'client'] },
   'conversation:providers:models': { methods: ['providers.models'], gaps: ['grant'] },
-  'conversation:providers:sign-in': { gaps: ['declaration'], planned: ['providers.signIn'] },
+  'conversation:providers:sign-in': { gaps: ['declaration', 'client'], planned: ['providers.signIn'] },
   'conversation:secrets:status': { methods: ['providers.secretStatus'], gaps: ['grant', 'client'] },
-  'conversation:secrets:set': { gaps: ['declaration'], planned: ['providers.setSecret'] },
-  'conversation:secrets:clear': { gaps: ['declaration'], planned: ['providers.clearSecret'] },
+  'conversation:secrets:set': { gaps: ['declaration', 'client'], planned: ['providers.setSecret'] },
+  'conversation:secrets:clear': { gaps: ['declaration', 'client'], planned: ['providers.clearSecret'] },
   // A chat's live session, by its id: the chat view.
   'conversation:sessions:start': { methods: ['session.start'], gaps: ['grant'] },
   'conversation:sessions:send-turn': { methods: ['session.send'], gaps: ['grant'] },
@@ -89,40 +93,37 @@ export const CONVERSATION_IPC_PROTOCOL: Readonly<Record<string, ConversationIpcP
     planned: ['session.messageSubagent'],
   },
   'conversation:sessions:side-question': {
-    gaps: ['declaration', 'withheld'],
+    gaps: ['declaration', 'client', 'withheld'],
     planned: ['session.askSideQuestion', 'conversation.askSideQuestion'],
   },
   'conversation:sessions:cancel-side-question': {
-    gaps: ['declaration', 'withheld'],
+    gaps: ['declaration', 'client', 'withheld'],
     planned: ['session.cancelSideQuestion', 'conversation.cancelSideQuestion'],
   },
   'conversation:sessions:context-breakdown': {
-    gaps: ['declaration', 'withheld'],
+    gaps: ['declaration', 'client', 'withheld'],
     planned: ['session.contextBreakdown', 'conversation.contextBreakdown'],
   },
-  'conversation:sessions:stop': { methods: ['conversation.stop'], gaps: ['declaration'], planned: ['session.stop'] },
-  'conversation:sessions:suspend': { gaps: ['declaration'], planned: ['session.suspend'] },
+  'conversation:sessions:stop': {
+    methods: ['conversation.stop'],
+    gaps: ['declaration', 'client'],
+    planned: ['session.stop'],
+  },
+  'conversation:sessions:suspend': { gaps: ['declaration', 'client'], planned: ['session.suspend'] },
   // Answers the command line; the terminal it opens is the terminal service's.
-  'conversation:sessions:terminal-handoff': { gaps: ['declaration'], planned: ['session.terminalHandoff'] },
-  'conversation:sessions:list': { gaps: ['declaration'], planned: ['session.list'] },
+  'conversation:sessions:terminal-handoff': { gaps: ['declaration', 'client'], planned: ['session.terminalHandoff'] },
+  'conversation:sessions:list': { gaps: ['declaration', 'client'], planned: ['session.list'] },
   // Reads beside a chat.
   'conversation:tool-detail': { methods: ['conversation.toolDetail'], gaps: ['client'] },
   'conversation:attachment': { methods: ['conversation.attachment'], gaps: ['grant'] },
   'conversation:plan-document': { methods: ['conversation.planDocument'], gaps: ['grant'] },
   // Every chat's lifecycle, for the sessions list.
-  'conversation:events:subscribe': { gaps: ['declaration'], planned: ['conversation.events'] },
-  'conversation:events:unsubscribe': { gaps: ['declaration'], planned: ['conversation.events'] },
+  'conversation:events:subscribe': { gaps: ['declaration', 'client'], planned: ['conversation.events'] },
+  'conversation:events:unsubscribe': { gaps: ['declaration', 'client'], planned: ['conversation.events'] },
   // The composer's `/` menu.
   'conversation-commands:list': {
     methods: ['conversation.commands'],
     topics: ['conversation.commands'],
     gaps: ['grant'],
   },
-}
-
-/** The channels whose operation still does not work for every client on the protocol, with why. */
-export function conversationIpcGaps(): Array<{ channel: string; gaps: readonly ConversationIpcGap[] }> {
-  return Object.entries(CONVERSATION_IPC_PROTOCOL)
-    .filter(([, route]) => route.gaps.length > 0)
-    .map(([channel, route]) => ({ channel, gaps: route.gaps }))
-}
+} as const satisfies Partial<Record<ServerIpcChannelName, ConversationIpcProtocol>>
