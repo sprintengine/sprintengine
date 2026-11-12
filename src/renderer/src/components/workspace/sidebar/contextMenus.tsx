@@ -28,7 +28,6 @@ import {
   SwitchGlyph,
 } from '../../ui'
 import { type ProjectColorSetting, type ProjectColor } from '../../../utils/projectColor'
-import { chatLinkFor } from '../../../../../shared/deep-link'
 import { isProjectlessChatsRoot } from '../../../../../shared/projectless-chats'
 import { clientSupports } from '../../../clientCapabilities'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
@@ -304,6 +303,7 @@ export function WorkspaceContextMenu({
   x,
   y,
   workspace,
+  chatLink,
   moduleOverrides,
   isDetachedWindow,
   now,
@@ -324,6 +324,13 @@ export function WorkspaceContextMenu({
   x: number
   y: number
   workspace: Workspace | null
+  /**
+   * The chat's link (`chatLinkOfWorkspace`): by its address, the Studio that
+   * holds it and its id there, so the same link opens it there, here, and on
+   * any other device that follows it. Null when the row has no address yet
+   * (its machine has not said its id) or an id a link cannot carry.
+   */
+  chatLink: string | null
   moduleOverrides: Parameters<typeof resolveEnabledWorkspaceType>[1]
   isDetachedWindow: boolean
   /** An agent in the chat is still working, so Settle and Snooze wait (`workspaceIsWorking`). */
@@ -383,9 +390,8 @@ export function WorkspaceContextMenu({
   const newChatTarget = newChatProjectTarget(workspace)
   const canNewChatInProject = newChatTarget !== null
   // A `sprintengine://` link opens the desktop app, so a browser tab does not
-  // offer one; nor does a row whose id a link cannot carry. A paired
-  // machine's chat is linked by its id there (`chatLinkIdOf`).
-  const canCopyLink = clientSupports('deep-links') && chatLinkFor(chatLinkIdOf(workspace)) !== null
+  // offer one; nor does a row with no link.
+  const canCopyLink = clientSupports('deep-links') && chatLink !== null
   const starred = isStarred(workspace.highlight)
   const settled = isSettledWorkspace(workspace)
   const snoozed = isSnoozedWorkspace(workspace, now)
@@ -556,13 +562,6 @@ export type RemoteConversationMenuAction =
   | 'stop-watching'
   | 'new-chat'
 
-/**
- * The link to a chat: by its id on the machine it runs on, so the same link
- * opens it there, here, and on any other machine that follows it.
- */
-export function chatLinkIdOf(workspace: Pick<Workspace, 'id' | 'remoteOrigin'>): string {
-  return workspace.remoteOrigin?.workspaceId || workspace.id
-}
 
 // A chat on a paired machine that no window here holds: the same menu a
 // local row has, each item asking that machine, which keeps the chat. Its rest
@@ -588,7 +587,7 @@ export function RemoteConversationContextMenu({
   canNewChat = false,
   canMarkUnread,
   isDetachedWindow,
-  workspaceId,
+  chatLink,
   starred,
   color,
   snoozedUntil,
@@ -618,8 +617,8 @@ export function RemoteConversationContextMenu({
   /** Its agent finished something nobody has been marked as missing, and the machine takes Mark unread. */
   canMarkUnread: boolean
   isDetachedWindow: boolean
-  /** The chat's id on its machine, which its link carries. */
-  workspaceId: string
+  /** The chat's link, by its address on its machine (`chatLinkOfRemoteChat`); null while that machine's id is not known. */
+  chatLink: string | null
   starred: boolean
   color: HighlightColor | null
   /** When it wakes, while it sleeps over there. */
@@ -632,7 +631,7 @@ export function RemoteConversationContextMenu({
   onSelect: (action: RemoteConversationMenuAction) => void
   onPickColor: (color: HighlightColor) => void
 }) {
-  const canCopyLink = clientSupports('deep-links') && chatLinkFor(workspaceId) !== null
+  const canCopyLink = clientSupports('deep-links') && chatLink !== null
   const snoozed = isSnoozedWorkspace({ snoozedUntil }, now)
   const where: ChatMenuPlace = { kind: 'remote', machineName, marks, ...(manage ? { manage } : {}) }
   return (

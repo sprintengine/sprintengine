@@ -1,9 +1,12 @@
-// The URL scheme the app answers to, registered with the OS in
-// `main/app-lifecycle`. Shared so the renderer can write the links main reads
-// (`deep-link.ts`).
-export const CURRENT_DEEP_LINK_SCHEME = 'sprintengine' as const
+import { STUDIO_LINK_SCHEME, STUDIO_LINK_SCHEMES } from '../../packages/studio-protocol/src/chat-link'
 
-export const DEEP_LINK_SCHEMES = [CURRENT_DEEP_LINK_SCHEME] as const
+// The URL scheme the app answers to, registered with the OS in
+// `main/app-lifecycle`: the one the link grammar reads and writes
+// (`packages/studio-protocol/src/chat-link.ts`), so what the OS hands over is
+// what the parser takes.
+export const CURRENT_DEEP_LINK_SCHEME = STUDIO_LINK_SCHEME
+
+export const DEEP_LINK_SCHEMES = STUDIO_LINK_SCHEMES
 
 /**
  * Arguments to relaunch with, less any link the app was opened with: on

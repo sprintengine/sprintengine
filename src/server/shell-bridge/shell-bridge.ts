@@ -21,10 +21,11 @@ export type ShellRevealTarget =
   /** The app itself, brought forward. */
   | { kind: 'app' }
   /**
-   * A chat, opened where a `sprintengine://chat/…` link would open it
+   * A chat, by its address (the environment that holds it and its id there),
+   * opened where its `sprintengine://chat/…` link would open it
    * (main/chat-link-router.ts): a chat that finished or is waiting on the person.
    */
-  | { kind: 'chat'; chatId: string; agentId?: string }
+  | { kind: 'chat'; environmentId: string; chatId: string; agentId?: string }
 
 /** An OS notification. `activate` is where a click goes; the shell carries it out itself. */
 export type ShellNotice = {

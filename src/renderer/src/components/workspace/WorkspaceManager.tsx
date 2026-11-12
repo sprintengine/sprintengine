@@ -147,7 +147,9 @@ import { confirmNewChatWith, type NewChatExtension } from './manager/newChatConf
 import { obtainNewChatWorktree, prepareNewChatWorktree, takeReadyNewChatWorktree } from '../../utils/newChatWorktree'
 import type { AgentState } from '../../../../shared/agent-state'
 import { openChatLink } from './manager/chatLinkOpener'
-import { remoteChatLinkTarget } from './remoteBand/remoteChatLinks'
+import { remoteChatLinkTargets, remoteChatOnConnection } from './remoteBand/remoteChatLinks'
+import { environmentIdsOf, environmentRouteOfMeshConnection } from '../../../../shared/environment-keys'
+import { currentEnvironments } from '../../hooks/useEnvironments'
 import { registerRemoteChatOpener } from './remoteBand/remoteChatSearch'
 import { setAppCommandRunner } from '../../commands/appCommandRunner'
 import {
@@ -5027,8 +5029,14 @@ export default function WorkspaceManager() {
     void workspaceRegistryReady.then(() => {
       if (disposed) return
       unsubscribe = window.api.onChatLinkOpen((link) => {
+        // The machines as this window last read them (the sidebar keeps the
+        // list), for which environment is this one and which machine a
+        // paired row is on. Before the first read lands, the link is matched
+        // by its chat id alone.
+        const ids = environmentIdsOf(currentEnvironments())
         const state = useWorkspaceStore.getState()
         openChatLink(link, {
+          localEnvironmentId: ids?.local ?? null,
           getChat: (chatId) => {
             const workspace = state.workspaces.find((candidate) => candidate.id === chatId)
             return workspace && !isHiddenFromRail(workspace, state.appSettings.modules) ? workspace : null
@@ -5038,14 +5046,27 @@ export default function WorkspaceManager() {
           moveHere: (chatId, fromWindowId) => moveWorkspaceToWindow(chatId, workspaceWindowId, fromWindowId),
           select: sidebarSelectWorkspace,
           revealAgent: (workspaceId, agentId, name) => revealAgentTerminalTab({ workspaceId, agentId, name }),
-          // A paired machine's chat, by its id there: the row here that
-          // follows it, or the row its machine lists.
-          openRemote: (chatId) => {
-            const spec = remoteChatLinkTarget(chatId)
-            if (!spec) return false
-            openRemoteSession(spec)
-            return true
-          },
+          // A paired machine's chat, by its address: the row here that
+          // follows it, or the chat its machine lists.
+          followerOf: (address) =>
+            state.workspaces.find(
+              (workspace) =>
+                workspace.remoteOrigin?.workspaceId === address.chatId &&
+                ids?.ofRoute(environmentRouteOfMeshConnection(workspace.remoteOrigin.connectionId)) ===
+                  address.environmentId,
+            )?.id ?? null,
+          remoteChats: (wanted) =>
+            remoteChatLinkTargets(wanted).map((target) => ({
+              environmentId: target.environmentId,
+              machineName: target.machineName,
+              open: () => void openRemoteSession(target.spec),
+            })),
+          several: (places) =>
+            showToast({
+              tone: 'warn',
+              title: 'That link matches chats on more than one machine',
+              description: `It was copied before links named their machine. Open the chat from the sidebar: ${places.join(', ')}.`,
+            }),
           notOnThisMachine: () =>
             showToast({
               tone: 'warn',
@@ -5066,8 +5087,8 @@ export default function WorkspaceManager() {
   useEffect(
     () =>
       registerRemoteChatOpener((target) => {
-        const spec = remoteChatLinkTarget(target.workspaceId)
-        if (!spec || spec.connectionId !== target.connectionId) return null
+        const spec = remoteChatOnConnection(target.connectionId, target.workspaceId)
+        if (!spec) return null
         if (spec.attachedWorkspaceId || spec.conversation.agentId === target.agentId) return openRemoteSession(spec)
         return openRemoteSession({
           ...spec,

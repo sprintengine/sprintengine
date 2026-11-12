@@ -34,6 +34,8 @@ import {
   type EnvironmentId,
   type EnvironmentRoute,
 } from '../../packages/studio-protocol/src/environment'
+import { chatLinkFor } from '../../packages/studio-protocol/src/chat-link'
+import { environmentOfRoute, type EnvironmentEntry } from './environments'
 import { distroOfHostId, executionHostLabel, LOCAL_HOST_ID, wslHostId, workspaceHostIdOf } from './execution-host'
 import type { ExecutionHostId, ExecutionHostSettings } from './execution-host'
 import { isMachinePath, machinePath, parseMachinePath } from './machine-paths'
@@ -153,6 +155,42 @@ export function chatAddressOfWorkspace(
       }
   // An id an address cannot carry (a record from an older build) is no address.
   return isChatAddress(address) ? address : null
+}
+
+/** What a client knows of environment ids: its own, and the one each route reaches. */
+export type EnvironmentIds = { local: EnvironmentId; ofRoute(route: EnvironmentRoute): EnvironmentId | null }
+
+/** The ids a list of environments (`ENVIRONMENT_CHANNELS.list`) knows; null until it names this machine's. */
+export function environmentIdsOf(environments: readonly EnvironmentEntry[]): EnvironmentIds | null {
+  const local = environmentOfRoute(environments, { kind: 'local' })?.environmentId ?? null
+  if (!local) return null
+  return { local, ofRoute: (route) => environmentOfRoute(environments, route)?.environmentId ?? null }
+}
+
+/**
+ * The link to a sidebar row's chat (`chatLinkFor`), by its address
+ * (`chatAddressOfWorkspace`): the same link opens it where it is, here, and on
+ * any other device that follows it. Null while the list does not know the
+ * environment that holds it, or for an id a link cannot carry.
+ */
+export function chatLinkOfWorkspace(
+  workspace: { id: string; remoteOrigin?: { connectionId: string; workspaceId: string } | null },
+  environments: readonly EnvironmentEntry[],
+  agentId?: string | null,
+): string | null {
+  const ids = environmentIdsOf(environments)
+  const address = ids ? chatAddressOfWorkspace(workspace, ids) : null
+  return address ? chatLinkFor(address, agentId) : null
+}
+
+/** The link to a chat a paired machine lists, by its id there; null while that machine's id is not known. */
+export function chatLinkOfRemoteChat(
+  connectionId: string,
+  workspaceId: string,
+  environments: readonly EnvironmentEntry[],
+): string | null {
+  const environmentId = environmentOfRoute(environments, environmentRouteOfMeshConnection(connectionId))?.environmentId
+  return environmentId ? chatLinkFor({ environmentId, chatId: workspaceId }) : null
 }
 
 /**

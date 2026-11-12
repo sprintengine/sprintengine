@@ -210,13 +210,13 @@ for (const [name, make] of [
         title: 'Pricing page polish',
         body: 'Finished.',
         silent: true,
-        activate: { kind: 'chat', chatId: 'ws-1', agentId: 'agent-1' },
+        activate: { kind: 'chat', environmentId: 'env-here', chatId: 'ws-1', agentId: 'agent-1' },
       })
       await settle()
       assert.equal(harness.notices.length, 1)
       assert.equal(harness.notices[0].silent, true)
       harness.notices[0].onActivate?.()
-      assert.deepEqual(harness.reveals, [{ kind: 'chat', chatId: 'ws-1', agentId: 'agent-1' }])
+      assert.deepEqual(harness.reveals, [{ kind: 'chat', environmentId: 'env-here', chatId: 'ws-1', agentId: 'agent-1' }])
     })
 
     test('an analytics event goes to the shell, which holds consent', async () => {
@@ -251,6 +251,22 @@ for (const [name, make] of [
     })
   })
 }
+
+describe('ShellBridge over the control channel, reading what it is sent', () => {
+  test('a chat target that names no environment is no target: the notice shows and its click opens nothing', async () => {
+    const harness = remoteHarness()
+    harness.bridge.notify({
+      key: 'chat:ws-1',
+      title: 'Pricing page polish',
+      // A server from before chat targets carried an address.
+      activate: { kind: 'chat', chatId: 'ws-1', agentId: 'agent-1' } as never,
+    })
+    await settle()
+    assert.equal(harness.notices.length, 1)
+    assert.equal(harness.notices[0].onActivate, undefined)
+    assert.deepEqual(harness.reveals, [])
+  })
+})
 
 describe('ShellBridge when the shell has gone', () => {
   test('a seal fails, a launch says so, a reveal is false, the integrations gate lets launches go, and a picture goes on unshrunk', async () => {

@@ -8,6 +8,7 @@ import {
   type ShellNotice,
   type ShellRevealTarget,
 } from './shell-bridge'
+import { isChatAddress } from '../../../packages/studio-protocol/src/environment'
 import { isRecord } from '../../shared/records'
 
 // The shell's side of the bridge: what a server out of process asks on the
@@ -68,10 +69,14 @@ function revealTarget(value: unknown): ShellRevealTarget | null {
   if (!isRecord(value)) return null
   if (value.kind === 'remote') return { kind: 'remote' }
   if (value.kind === 'app') return { kind: 'app' }
-  if (value.kind === 'chat' && typeof value.chatId === 'string' && value.chatId) {
+  if (value.kind === 'chat') {
+    // A chat by its address only: a target that names no environment is not one.
+    const address = { environmentId: value.environmentId, chatId: value.chatId }
+    if (!isChatAddress(address)) return null
     return {
       kind: 'chat',
-      chatId: value.chatId,
+      environmentId: address.environmentId,
+      chatId: address.chatId,
       ...(typeof value.agentId === 'string' && value.agentId ? { agentId: value.agentId } : {}),
     }
   }
