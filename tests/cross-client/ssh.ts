@@ -1,11 +1,11 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createAskpassBroker } from '../../src/main/environments/ssh/askpass'
 import { DOCKER_TESTS, prepareSshdImage, startSshd } from '../../src/main/environments/ssh/__fixtures__/docker-sshd'
 import { parseDestination, spawnSshSession } from '../../src/main/environments/ssh/ssh-command'
-import { SshEnvironment } from '../../src/main/environments/ssh/ssh-environment'
+import { SshEnvironment, type SshServerConnection } from '../../src/main/environments/ssh/ssh-environment'
 import { ensureNodeBinary, serverTreeDigest } from '../../src/main/environments/ssh/ssh-install'
 import type { SessionProcess } from '../../src/main/environments/ssh/ssh-session'
 import { ConversationSessionApi } from '../../src/main/conversation-session-api'
@@ -112,33 +112,50 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
   let resumes = 0
   router.onRouteResumed(() => (resumes += 1))
   const conversations = new ConversationSessionApi(router)
-  env = new SshEnvironment({
-    id: 'gate',
-    label: () => 'build-box',
-    settings: () => ({ ...DEFAULT_SSH_ENVIRONMENT_SETTINGS, keepRunning: true }),
-    spawn: ({ interactive }) => {
-      const child = spawnSshSession({
-        ssh: 'ssh',
-        destination: destination.destination,
-        label: 'build-box',
-        interactive,
-        askpass: broker,
-        configFile: sshd.configFile,
-        env: { PATH: process.env.PATH, HOME: process.env.HOME },
-      }) as unknown as SessionProcess
-      sessions.push(child)
-      return child
-    },
-    app: { version, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
-    dataName: 'data',
-    startedBy: 'Studio on dev-macbook-air',
-    serverTree: () => ({ dir: tree, digest }),
-    nodeBinary: (target) => ensureNodeBinary(target, { cacheDir: input.cacheDir, subject: 'build-box' }),
-    onChange: () => undefined,
-    // As the desktop wires it: a session that is up again is the router's to follow.
-    onConnected: (connection) => router.attach(connection),
-    timing: { backoff: { baseMs: 200, maxMs: 1_000 } },
-  })
+  // The desktop cut off from the machine: its environment's next sessions
+  // fail at once, as ssh does with the network down, until it is let back.
+  let cutOff = false
+  const machineFor = (id: string, wiring: { cut: boolean; attach: boolean }) =>
+    new SshEnvironment({
+      id,
+      label: () => 'build-box',
+      settings: () => ({ ...DEFAULT_SSH_ENVIRONMENT_SETTINGS, keepRunning: true }),
+      spawn: ({ interactive }) => {
+        if (wiring.cut && cutOff)
+          return spawn(process.execPath, ['-e', 'process.exit(255)']) as unknown as SessionProcess
+        const child = spawnSshSession({
+          ssh: 'ssh',
+          destination: destination.destination,
+          label: 'build-box',
+          interactive,
+          askpass: broker,
+          configFile: sshd.configFile,
+          env: { PATH: process.env.PATH, HOME: process.env.HOME },
+        }) as unknown as SessionProcess
+        if (wiring.cut) sessions.push(child)
+        return child
+      },
+      app: { version, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      dataName: 'data',
+      startedBy: 'Studio on dev-macbook-air',
+      serverTree: () => ({ dir: tree, digest }),
+      nodeBinary: (target) => ensureNodeBinary(target, { cacheDir: input.cacheDir, subject: 'build-box' }),
+      onChange: () => undefined,
+      // As the desktop wires it: a session that is up again is the router's to follow.
+      ...(wiring.attach ? { onConnected: (connection: SshServerConnection) => router.attach(connection) } : {}),
+      timing: { backoff: { baseMs: 200, maxMs: 1_000 } },
+    })
+  env = machineFor('gate', { cut: true, attach: true })
+  // A second desktop on the same machine's server, which the router does not
+  // follow: what it does while the first is cut off is what the first's
+  // catch-up has to bring.
+  const other = machineFor('gate-other', { cut: false, attach: false })
+  const otherBackend = async () =>
+    (await other.connect({ interactive: true })).backend as unknown as {
+      startSession(input: unknown): Promise<unknown>
+      sendTurn(input: unknown): Promise<unknown>
+      respondToRequest(input: unknown): Promise<unknown>
+    }
   const serverPid = () =>
     Number(
       sshd.exec(
@@ -152,23 +169,26 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
     await env.connect({ interactive: true })
     const feed = new Feed('ssh')
     /** Nothing after `cursor` that the machine's transcript has is missing, none twice, and no snapshot. */
-    const resumedFrom = async (cursor: number, before: { duplicates: number; resets: number; resumes: number }) => {
-      if (resumes <= before.resumes) throw new Error('ssh: the router never caught its chats up')
+    /**
+     * The session API caught the chat up after the wire came back (a join ran
+     * to its `synchronized`), and nothing after `cursor` that the machine's
+     * transcript has is missing, none twice, and no snapshot replaced it.
+     */
+    const resumedFrom = async (before: ReturnType<typeof mark>) => {
+      if (resumes <= before.resumes) throw new Error('ssh: the router never said the machine was back')
+      await feed.until((each) => each.syncs > before.syncs, 'the catch-up after the machine came back', 30_000)
       const transcript = ok<{ events: GateEvent[] }>(await router.readTranscript(key), 'transcript')
-      await feed.until(
-        (each) => {
-          const held = new Set(each.seqs)
-          return transcript.events.every(
-            (event) => typeof event.seq !== 'number' || event.seq <= cursor || held.has(event.seq),
-          )
-        },
-        'every event after its cursor',
-        30_000,
+      const held = new Set(feed.seqs)
+      const lost = transcript.events.filter(
+        (event) => typeof event.seq === 'number' && event.seq > before.cursor && !held.has(event.seq),
       )
+      if (lost.length) throw new Error(`ssh: ${lost.length} event(s) never arrived`)
       if (feed.duplicates !== before.duplicates) throw new Error('ssh: events were handed over twice')
       if (feed.resets !== before.resets) throw new Error('ssh: it came back with a snapshot, not by its cursor')
     }
-    const mark = () => ({ cursor: feed.cursor ?? 0, duplicates: feed.duplicates, resets: feed.resets, resumes })
+    function mark() {
+      return { cursor: feed.cursor ?? 0, duplicates: feed.duplicates, resets: feed.resets, syncs: feed.syncs, resumes }
+    }
     let sessionId = ''
     const send = (message: string, extra: Record<string, unknown> = {}) =>
       // Answered when the turn ends, which may be after this connection goes:
@@ -195,6 +215,7 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
             ...(frame.generation ? { generation: frame.generation } : {}),
           })
         else if (frame.type === 'event') feed.event(frame.event)
+        else if (frame.type === 'synchronized') feed.side({ syncs: feed.syncs + 1 })
         else if (frame.type === 'error') feed.side({ lastError: frame.message })
       })
       stopFollowing = following.dispose
@@ -211,21 +232,29 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       )
     })
 
-    // The SSH session drops while the turn waits. The environment comes back
-    // by itself (BatchMode: the key needs no passphrase), the router catches
-    // its chats up, and the answer sent meanwhile ends the turn: all of it
-    // reaches the follower by its cursor.
+    // The desktop is cut off from the machine while the turn waits, and a
+    // second desktop answers it meanwhile. The first comes back by itself
+    // (BatchMode: the key needs no passphrase), the router says so, and the
+    // session API's catch-up brings the turn's end by the cursor: it was
+    // published while nothing of this desktop's was there to hear it.
     await matrix.run('ssh', 'resume', async () => {
       const requestId = String(approvalAfter(feed, first)?.payload?.requestId ?? '')
       if (!requestId) throw new Error('ssh: no turn waiting to resume')
       const before = mark()
       const dropped = machine().current()
+      cutOff = true
       sessions.at(-1)!.kill()
-      if (!(await until(() => machine().current() !== dropped && machine().summary().state === 'connected', 60_000)))
+      if (!(await until(() => machine().current() !== dropped, 10_000)))
+        throw new Error('ssh: the dropped session was not noticed')
+      ok(await (await otherBackend()).respondToRequest({ sessionId, requestId, approved: true }), 'answer')
+      await until(() => false, 1_000)
+      if (resolvedAfter(feed, requestId))
+        throw new Error('ssh: the cut-off desktop heard the answer: the cut did not cut')
+      cutOff = false
+      if (!(await until(() => machine().current() !== null && machine().summary().state === 'connected', 60_000)))
         throw new Error(`ssh: the environment did not come back by itself (${machine().summary().stateText})`)
-      ok(await router.respondToRequest({ sessionId, requestId, approved: true } as never), 'answer')
-      await resumedFrom(before.cursor, before)
-      if (!resolvedAfter(feed, requestId)) throw new Error('ssh: the turn’s end never reached the follower')
+      await resumedFrom(before)
+      if (!resolvedAfter(feed, requestId)) throw new Error('ssh: the catch-up did not carry the turn’s end')
     })
     // The approval a turn raised on one session, answered on the next.
     await matrix.run('ssh', 'approval', async () => {
@@ -282,44 +311,55 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       )
     })
 
-    // The machine's server dies. The environment should notice, reconnect by
-    // itself and start the server again, and the chat come back by its cursor
-    // and go on. Today it does not notice while the SSH session stays up (a
-    // known gap): then the person's Reconnect is checked to bring it all back,
-    // and the row says which.
+    // The machine's server dies, and the desktop is kept off the machine
+    // while a second desktop starts it again and runs a turn. The first should
+    // notice the death by itself; today it does not while its SSH session
+    // stays up (a known gap), and the person's Reconnect stands in. Either
+    // way it then has to catch up by its cursor and go on, and the row says
+    // which way it went.
     await matrix.run('ssh', 'restart', async () => {
       const pid = serverPid()
       const before = mark()
       const dropped = machine().current()
+      cutOff = true
       sshd.exec(`kill -9 ${pid}`)
-      const byItself = await until(
-        () =>
-          machine().current() !== null && machine().current() !== dropped && machine().summary().state === 'connected',
+      const noticed = await until(
+        () => machine().current() !== dropped || machine().summary().state !== 'connected',
         30_000,
       )
       const stateAfter = `${machine().summary().state}: ${machine().summary().stateText}`
-      if (!byItself) {
-        machine().disconnect()
-        await machine().connect({ interactive: true })
-      }
+      if (!noticed) machine().disconnect()
+      const away = 'while the desktop was away from build-box'
+      // The second desktop does not notice the death either (the same gap): it reconnects, which starts the server.
+      other.disconnect()
+      const second = await otherBackend()
       const after = serverPid()
       if (!(after > 0 && after !== pid)) throw new Error('ssh: the server was not started again')
-      await resumedFrom(before.cursor, before)
       sessionId = ok<{ session: { sessionId: string } }>(
-        await router.startSession({ ...key, ...MOCK_PROVIDER } as never),
+        await second.startSession({ ...key, ...MOCK_PROVIDER }),
         'start again',
       ).session.sessionId
-      const text = 'after the restart'
-      send(text)
-      await answer(text)
+      void second.sendTurn({ sessionId, message: away, commandId: 'ssh-away' }).catch(() => undefined)
+      await until(() => false, 2_000)
+      if (feed.find(isUserMessage(away)))
+        throw new Error('ssh: the cut-off desktop heard the turn: the cut did not cut')
+      cutOff = false
+      if (noticed) {
+        if (!(await until(() => machine().current() !== null && machine().summary().state === 'connected', 60_000)))
+          throw new Error(`ssh: the environment did not come back by itself (${machine().summary().stateText})`)
+      } else await machine().connect({ interactive: true })
+      await resumedFrom(before)
+      if (!approvalAfter(feed, away)) throw new Error('ssh: the catch-up did not carry the turn run while it was away')
+      await answer(away)
       if (!feed.find(isUserMessage(first))) throw new Error('ssh: the chat lost its history')
-      if (!byItself)
+      if (!noticed)
         throw new Error(
           `ssh: the environment did not notice its server die (still "${stateAfter}" 30 s later); a Reconnect brought it back, by its cursor`,
         )
     })
   } finally {
     stopFollowing()
+    other.disconnect()
     env.disconnect()
     broker.close()
     sshd.stop()

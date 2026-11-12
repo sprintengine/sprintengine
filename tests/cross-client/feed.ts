@@ -20,6 +20,8 @@ export class Feed {
   /** The sub-agents a side frame named as running, by the call that started each. */
   subagents: string[] = []
   generation: string | undefined
+  /** Catch-ups the client said it finished (`synchronized`), where it says. */
+  syncs = 0
   /** Set while the client's own connection reads as live (where it says). */
   live = false
   lastError: string | null = null
@@ -47,7 +49,7 @@ export class Feed {
     this.changed()
   }
 
-  side(update: Partial<Pick<Feed, 'scheduled' | 'subagents' | 'live' | 'lastError'>>): void {
+  side(update: Partial<Pick<Feed, 'scheduled' | 'subagents' | 'live' | 'lastError' | 'syncs'>>): void {
     Object.assign(this, update)
     this.changed()
   }
