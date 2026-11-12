@@ -3,9 +3,11 @@ import { afterEach, test } from 'vitest'
 
 import type { StudioParsedServerFrame } from '../../../packages/studio-protocol/src/public'
 import { CONVERSATION_WIRE_PAGE_BYTES, CONVERSATION_WIRE_PREVIEW_CHARS } from '../conversation-stream-shaping'
+import type { ConversationSessionFrame } from '../../shared/conversation-runtime'
 import {
   OWNER_TOKEN,
   connectLineClient,
+  createFakeBackend,
   hello,
   pairFakeClient,
   startTestServer,
@@ -490,6 +492,51 @@ test('consecutive deltas behind a slow reader arrive merged, under the last sequ
   }
   assert.equal(deltas.at(-1)?.seq, 4)
   assert.ok(deltas.length < 3, `merged into fewer frames, got ${deltas.length}`)
+})
+
+test('a reset snapshot after the join arrives bounded, in parts, before its fence, as a join’s does', async () => {
+  const backend = createFakeBackend()
+  let push!: (frame: ConversationSessionFrame) => void
+  backend.follow = (_key, _cursor, listener) => {
+    push = listener
+    const ready = Promise.resolve().then(() => {
+      listener({ type: 'snapshot', page: { events: [], hasMore: false, beforeCursor: null }, generation: 'log-1' })
+      listener({ type: 'synchronized', seq: 0, generation: 'log-1' })
+    })
+    return { ready, dispose: () => undefined }
+  }
+  const { path, auth } = await serve({ backend })
+  const c = await open(path, pairFakeClient(auth, 'rejoined', ['conversation:read']))
+  c.send({ t: 'sub', id: 'chat', topic: 'conversation.session', params: { key } })
+  await c.next((frame) => frame.t === 'frame' && frame.frame.type === 'synchronized')
+  // The chat's server came back: the session catches up with a reset snapshot.
+  const events = Array.from({ length: 1200 }, (_, index) => ({
+    id: `e${index + 1}`,
+    seq: index + 1,
+    sessionId: 'session-1',
+    workspaceId: 'ws-1',
+    agentId: 'agent-1',
+    providerId: 'claude-agent',
+    modelId: 'default',
+    type: 'tool_output' as const,
+    createdAt: 1,
+    payload: { toolUseId: `t${index}`, preview: 'r'.repeat(4000), output: 'r'.repeat(4000), isError: false },
+  }))
+  push({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: 1 }, generation: 'log-2', reset: true })
+  push({ type: 'synchronized', seq: 1200, generation: 'log-2' })
+  const fence = await c.next(
+    (frame) => frame.t === 'frame' && frame.frame.type === 'synchronized' && frame.frame.seq === 1200,
+    10_000,
+  )
+  assert.ok(fence)
+  const parts = c.frames.flatMap((frame) =>
+    frame.t === 'frame' && frame.frame.type === 'snapshot' ? [frame.frame] : [],
+  )
+  assert.ok(parts.length > 1, 'in parts')
+  const sent = parts.flatMap((part) => part.page.events)
+  assert.ok(Buffer.byteLength(JSON.stringify(sent)) <= CONVERSATION_WIRE_PAGE_BYTES)
+  assert.equal(sent.at(-1)?.seq, 1200)
+  assert.ok(sent.every((event) => event.payload?.output === undefined))
 })
 
 test('an answer over the frame cap arrives chunked and whole', async () => {

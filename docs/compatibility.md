@@ -434,11 +434,12 @@ sends of an event is a projection of it (2026-11-11,
 `src/server/conversation-stream-shaping.ts`), and no member a reader needs
 went: a `tool_output` carries its text once, as `preview` (every reader,
 every phone build among them, reads `preview` before `output`), and a
-`tool_started` input carries its file-change bodies and a long command cut to
-their heads, marked `inputTruncated`, which every reader already knew from
-inputs too large to store. The phone reads the whole step with
-`getToolDetail` whenever one is opened; a desktop from before reads it behind
-"Show full output", and until then draws the cut change. An MCP step's own
+`tool_started` input carries its file-change bodies cut to their heads,
+marked `inputTruncated`, which every reader already knew from inputs too
+large to store. Both read the whole step with `getToolDetail` when it is
+opened and draw a cut change only from that; a phone or desktop from before
+reads it the same way (the phone on opening, the desktop behind "Show full
+output") but draws the cut change until then. An MCP step's own
 title and its server's name (`displayTitle` and `serverName` on a
 `tool_started`, 2026-10-13: plain text, at most 120 characters each) are the
 same kind of member: a reader that does not know them titles the step from

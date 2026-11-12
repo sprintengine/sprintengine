@@ -34,7 +34,7 @@ export type ToolDetail = {
 };
 
 /** The step as the transcript knows it: enough to draw it before, or without, its detail. */
-export type ToolSummary = PresentableTool & { output?: string };
+export type ToolSummary = PresentableTool & { output?: string; inputTruncated?: boolean };
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -504,6 +504,13 @@ export function toolOutputView(tool: ToolSummary, detail: ToolDetail | null): To
       return { view: { kind: "read", path: read(input, "path", "file_path", "filePath"), output, failed }, clipped };
     case "file_edit":
     case "file_write":
+      // A change that came without its bodies would read as a different
+      // change: it is drawn once the detail is here.
+      if (tool.inputTruncated && !detail)
+        return {
+          view: { kind: "note", text: "The change shows in full once it is read from the desktop." },
+          clipped,
+        };
       return {
         view: { kind: "edit", path: read(input, "path", "file_path", "filePath"), edits: editViews(input), output, failed },
         clipped,

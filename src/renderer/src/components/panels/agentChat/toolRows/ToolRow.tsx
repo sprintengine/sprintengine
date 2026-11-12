@@ -751,9 +751,10 @@ export const ToolRow = memo(function ToolRow({ tool }: { tool: TranscriptToolEnt
       setLoading(false)
     }
   }
-  // A step whose input crossed the wire without its file-change bodies or its
-  // whole command reads them when it is opened, as the phone's row does: the
-  // panel draws from the input, and the cut one is not the step that ran.
+  // A step whose input came cut (its file-change bodies left off the wire, or
+  // an input too large to store) reads the whole when it is opened, as the
+  // phone's row does: the panel draws from the input, and the cut one is not
+  // the step that ran.
   // Output cut to its preview stays behind "Show full output", which can be
   // megabytes to draw.
   const fetchOnOpen = open && expandable && tool.inputTruncated === true && !running && !detail

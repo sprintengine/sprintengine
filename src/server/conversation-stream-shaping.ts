@@ -35,27 +35,18 @@ const SNAPSHOT_PART_BYTES = CONVERSATION_MAX_FRAME_BYTES - 32 * 1024
  */
 export const CONVERSATION_WIRE_PREVIEW_CHARS = 4000
 /**
- * Characters of a file change's body, or of a command, a tool's input
- * carries. The row's title reads the head; the rest is the detail, read when
- * the row is opened. What the collapsed transcript draws from an input (a
- * todo list, a plan, the questions asked, an agent's description) is under
- * other names and stays whole.
+ * Characters of a file change's body a tool's input carries; the rest is the
+ * detail, read when the row is opened. Only bodies are cut: what the closed
+ * transcript draws from an input (a command's title, a todo list, a plan,
+ * the questions asked, an agent's description) is under other names and
+ * stays whole.
  */
 export const CONVERSATION_WIRE_INPUT_FIELD_CHARS = 1024
-// The names an input's file-change bodies and commands go by, at its top
-// level and in each of its `edits`: the ones `deriveEditHunks` reads, a
-// Codex patch (`input`), and a command.
-const INPUT_BODY_FIELDS = [
-  'content',
-  'old_string',
-  'new_string',
-  'oldText',
-  'newText',
-  'patch',
-  'input',
-  'command',
-  'cmd',
-]
+// The names an input's file-change bodies go by, at its top level and in each
+// of its `edits`: the ones `deriveEditHunks` reads, and a Codex patch, which
+// is an `input` that begins as one.
+const INPUT_BODY_FIELDS = ['content', 'old_string', 'new_string', 'oldText', 'newText', 'patch', 'input']
+const PATCH_INPUT = /^\*\*\* Begin Patch/u
 // Pictures a step returned, as paths on the machine that ran it: the runtime
 // keeps eight, and a path is a path.
 const MAX_WIRE_IMAGES = 8
@@ -69,6 +60,9 @@ function clipText(text: string, chars: number, fromEnd: boolean): string {
 }
 
 function toolOutputForWire(payload: Payload): Payload {
+  // A result the runtime kept no detail for (no step id) has nothing to read
+  // back whole: it crosses as it is, but once.
+  if (typeof payload.toolUseId !== 'string') return withoutCopy(payload)
   let next = payload
   const set = (key: string, value: unknown) => {
     if (next === payload) next = { ...payload }
@@ -84,13 +78,7 @@ function toolOutputForWire(payload: Payload): Payload {
     set(key, clipText(text, CONVERSATION_WIRE_PREVIEW_CHARS, fromEnd))
     cut = true
   }
-  // One copy of the text: the stored result carries it as `preview` and again
-  // as `output` for readers that know one name, and every reader reads
-  // `preview` first.
-  if (typeof next.preview === 'string' && next.output === next.preview) {
-    const { output: _copy, ...rest } = next
-    next = rest
-  }
+  next = withoutCopy(next)
   if (cut) set('truncated', true)
   const images = payload.images
   if (
@@ -107,12 +95,13 @@ function toolOutputForWire(payload: Payload): Payload {
   return next
 }
 
-/** An input's file-change bodies and command, each cut to its head; null when nothing needed cutting. */
+/** An input's file-change bodies, each cut to its head; null when nothing needed cutting. */
 function clipInputBodies(input: Payload): Payload | null {
   let next: Payload | null = null
   for (const key of INPUT_BODY_FIELDS) {
     const value = input[key]
     if (typeof value !== 'string' || value.length <= CONVERSATION_WIRE_INPUT_FIELD_CHARS) continue
+    if (key === 'input' && !PATCH_INPUT.test(value)) continue
     next ??= { ...input }
     next[key] = value.slice(0, CONVERSATION_WIRE_INPUT_FIELD_CHARS)
   }
@@ -133,6 +122,15 @@ function clipInputBodies(input: Payload): Payload | null {
   return next
 }
 
+// One copy of the text: the stored result carries it as `preview` and again
+// as `output` for readers that know one name, and every reader reads
+// `preview` first.
+function withoutCopy(payload: Payload): Payload {
+  if (typeof payload.preview !== 'string' || payload.output !== payload.preview) return payload
+  const { output: _copy, ...rest } = payload
+  return rest
+}
+
 function toolStartedForWire(payload: Payload): Payload {
   const input = payload.input
   if (!input || typeof input !== 'object' || Array.isArray(input)) return payload
@@ -140,8 +138,9 @@ function toolStartedForWire(payload: Payload): Payload {
   return clipped ? { ...payload, input: clipped, inputTruncated: true } : payload
 }
 
-// Each event's projection, by the event itself: every subscriber of a chat is
-// sent the same event objects, and a projection is the same for all of them.
+// Each event's projection, by the event itself: every live subscriber of a
+// chat is sent the same event objects, so a live event is projected once for
+// all of them (a page is read afresh for each reader, and projected for it).
 // A projection projects to itself, so a frame that went through once (a
 // paired machine's, relayed to a window here) costs nothing the second time.
 const projections = new WeakMap<ConversationEvent, ConversationEvent>()
@@ -213,11 +212,13 @@ export function conversationDeltaKey(event: ConversationEvent): string | null {
 /**
  * A page as it crosses a wire: its events projected, and only the newest of
  * them that fit the page budget. Anything older is left to `loadEarlier`,
- * with the page's `beforeCursor` moved to match. Measured from the newest
- * back, and only as far as the budget reaches: what is left behind is never
- * measured at all. One event larger than a whole page is kept, and ends the
- * page: otherwise the page before it would hold only what came after it, and
- * the page that pages it in would hold it alone.
+ * with the page's `beforeCursor` moved to match. The cut falls where a turn
+ * begins, so the oldest turn shown has its message and every step's start:
+ * mid-turn only when the newest turn alone is over the budget. Measured from
+ * the newest back, and only as far as the budget reaches: what is left
+ * behind is never measured at all. One event larger than a whole page is
+ * kept, and ends the page: otherwise the page before it would hold only what
+ * came after it, and the page that pages it in would hold it alone.
  */
 export function boundConversationPage(
   page: ConversationPage,
@@ -227,15 +228,30 @@ export function boundConversationPage(
   const kept: ConversationEvent[] = []
   const sizes: number[] = []
   let bytes = 0
+  // How many of the newest events reach back to the oldest turn kept whole.
+  let whole = 0
+  let wholeBytes = 0
+  let over = false
   for (let index = events.length - 1; index >= 0; index--) {
     const event = projectConversationEvent(events[index])
     const size = eventBytes(event)
-    const over = kept.length > 0 && bytes + size > budget
+    over = kept.length > 0 && bytes + size > budget
     if (over && size <= budget) break
     bytes += size
     kept.push(event)
     sizes.push(size)
     if (over) break
+    if (event.type === 'user_message') {
+      whole = kept.length
+      wholeBytes = bytes
+    }
+  }
+  // Cut back to the oldest whole turn, unless the page ended on an event
+  // larger than a whole page, which is kept.
+  if (over && whole > 0 && whole < kept.length && sizes[kept.length - 1] <= budget) {
+    kept.length = whole
+    sizes.length = whole
+    bytes = wholeBytes
   }
   kept.reverse()
   sizes.reverse()

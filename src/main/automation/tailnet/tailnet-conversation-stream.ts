@@ -669,6 +669,10 @@ export function createTailnetConversationStream(options: TailnetConversationStre
       }
       const event: ConversationServerFrame =
         source.type === 'snapshot' || source.type === 'synchronized' ? { ...source, key: wireKey } : source
+      // A reset snapshot after the join (the runtime catching up once the
+      // chat's server is back) is a join again: collected with its fence and
+      // sent as a paced replay, in parts, as the first one was.
+      if (!replay && event.type === 'snapshot') replay = []
       if (!replay) {
         sendLive(conversationWireFrame(event), generation)
         return

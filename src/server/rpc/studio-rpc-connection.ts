@@ -35,7 +35,6 @@ import type { ConversationEvent, ConversationKey, ConversationSessionFrame } fro
 import {
   conversationDeltaKey,
   conversationSnapshotParts,
-  conversationWireFrame,
   projectConversationEvent,
   type ConversationSnapshotFrame,
 } from '../conversation-stream-shaping'
@@ -559,6 +558,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const key = { workspaceId: subscription.key.workspaceId, agentId: subscription.key.agentId }
     const frame: ConversationServerFrame =
       source.type === 'snapshot' || source.type === 'synchronized' ? { ...source, key } : source
+    // A reset snapshot after the join (the runtime catching up once the
+    // chat's server is back) is a join again: collected with its fence and
+    // sent as a paced replay, in parts, as the first one was.
+    if (!subscription.replay && frame.type === 'snapshot') subscription.replay = []
     if (subscription.replay) {
       subscription.replay.push(frame)
       if (frame.type === 'synchronized') {
@@ -578,19 +581,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       enqueueLive({ t: 'frame', sub: subscription.id, frame: { type: 'event', event: owned } }, subscription.id)
       return
     }
-    // A reset snapshot after the join (the runtime's catch-up once the chat's
-    // server is back) goes out bounded and redacted, as a join's does.
-    enqueueLive(
-      {
-        t: 'frame',
-        sub: subscription.id,
-        frame:
-          frame.type === 'snapshot'
-            ? redactedSnapshotPart(conversationWireFrame(frame as ConversationSnapshotFrame))
-            : frame,
-      },
-      subscription.id,
-    )
+    enqueueLive({ t: 'frame', sub: subscription.id, frame }, subscription.id)
   }
 
   function subscribe(frame: StudioSubscribeFrame, grant: StudioGrant): void {

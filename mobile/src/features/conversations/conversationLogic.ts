@@ -150,6 +150,8 @@ export function parseAppLink(value: string): AppLink | null {
 export type MobileTool = PresentableTool & {
   id: string;
   output?: string;
+  /** The input came without its file-change bodies or its whole command; the detail has them. */
+  inputTruncated?: boolean;
   /** When the call started, by the desktop's clock: it places an agent's words between its steps. */
   startedAt?: number;
   /** The agent lane this call ran inside, when an agent made it. */
@@ -462,6 +464,7 @@ export function projectConversation(events: ConversationEvent[]) {
         kind: presentToolItem({ name, kind: p.kind as PresentableTool["kind"] }).icon,
         input: p.input as PresentableTool["input"], summary: stringValue(p.summary), status: "running",
         startedAt: event.createdAt,
+        ...(p.inputTruncated === true ? { inputTruncated: true } : {}),
         ...(parentId && parentId !== id ? { parentToolUseId: parentId } : {}),
       };
       const subagentType = stringValue(p.subagentType) || stringValue(recordValue(p.input).subagent_type).trim();

@@ -122,6 +122,12 @@ test('a large tool output crosses as its preview, cut from its end while it stre
   assert.ok(String(blocks.payload?.output).length <= CONVERSATION_WIRE_PREVIEW_CHARS)
 })
 
+test('a result the runtime kept no detail for crosses whole, but once', () => {
+  const long = 'n'.repeat(20_000)
+  const shown = projectConversationEvent(event(1, 'tool_output', { preview: long, output: long, isError: false }))
+  assert.deepEqual(shown.payload, { preview: long, isError: false })
+})
+
 test('a step’s pictures cross as at most eight paths, never their bytes', () => {
   const paths = Array.from({ length: 12 }, (_, index) => `/Users/dev/.sprintengine/pictures/shot-${index}.png`)
   const shown = projectConversationEvent(
@@ -166,19 +172,17 @@ test('a file change crosses without its bodies, and what the transcript draws cl
   assert.deepEqual(edits[1], { old_string: 'b', new_string: 'c' })
   assert.equal(multi.payload?.inputTruncated, true)
 
-  const command = projectConversationEvent(
-    event(3, 'tool_started', {
-      toolUseId: 'c',
-      name: 'Bash',
-      input: { command: `cat <<EOF\n${body}EOF`, description: 'Write it' },
-    }),
+  const patch = projectConversationEvent(
+    event(3, 'tool_started', { toolUseId: 'p', name: 'apply_patch', input: { input: `*** Begin Patch\n${body}` } }),
   )
-  assert.ok(String((command.payload?.input as Record<string, string>).command).startsWith('cat <<EOF'))
-  assert.equal(command.payload?.inputTruncated, true)
+  assert.equal((patch.payload?.input as { input: string }).input.length, CONVERSATION_WIRE_INPUT_FIELD_CHARS)
+  assert.equal(patch.payload?.inputTruncated, true)
 
-  // A plan, a todo list, the questions asked and an agent's prompt are drawn
-  // without opening the step, so they cross whole.
+  // A command's title, a plan, a todo list, the questions asked and an
+  // agent's prompt are drawn without opening the step, so they cross whole.
   for (const input of [
+    { command: `cd app && cat <<EOF\n${body}EOF`, description: 'Write it' },
+    { input: body },
     { plan: body },
     { todos: [{ content: body, status: 'pending' }] },
     { questions: [{ question: body }] },
@@ -274,4 +278,25 @@ test('one event larger than a whole page is sent, and ends its page', () => {
 test('a catch-up is bounded by the page budget, so a replay is never larger than a snapshot', () => {
   // As stored; projected it is no larger.
   assert.equal(DEFAULT_TRANSCRIPT_LIMITS.catchUpBytes, CONVERSATION_WIRE_PAGE_BYTES)
+})
+
+test('a page is cut where a turn begins, mid-turn only when the newest turn alone is over the budget', () => {
+  const step = (seq: number, turnId: string) =>
+    event(seq, 'tool_output', { turnId, toolUseId: `u${seq}`, preview: 'p'.repeat(3900), truncated: true })
+  const turnOf = (first: number, steps: number) => [
+    event(first, 'user_message', { turnId: `t${first}`, text: 'go' }),
+    ...Array.from({ length: steps }, (_, index) => step(first + 1 + index, `t${first}`)),
+  ]
+  // Three turns of about 1.2 MB: the budget ends inside the second newest.
+  const events = [...turnOf(1, 300), ...turnOf(302, 300), ...turnOf(603, 300)]
+  const bounded = boundConversationPage({ events, hasMore: false, beforeCursor: 1 })
+  assert.equal(bounded.page.events[0].seq, 603, 'the page begins with the newest turn’s message')
+  assert.equal(bounded.page.beforeCursor, 603)
+  assert.equal(bounded.page.events.length, 301)
+  // One turn of 2.4 MB: cut inside it, its newest steps kept.
+  const giant = turnOf(1, 600)
+  const inside = boundConversationPage({ events: giant, hasMore: false, beforeCursor: 1 })
+  assert.equal(inside.page.events.at(-1)?.seq, 601)
+  assert.ok(inside.page.events[0].type === 'tool_output' && inside.page.events.length < 600)
+  assert.ok(inside.bytes <= CONVERSATION_WIRE_PAGE_BYTES)
 })
