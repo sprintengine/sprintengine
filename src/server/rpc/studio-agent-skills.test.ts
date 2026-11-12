@@ -11,8 +11,11 @@ import {
   type StudioScope,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
+import { studioWindowGrant } from './studio-frame-port'
+import { createStudioRpcRouter } from './studio-rpc-router'
 import {
   connectLineClient,
+  createFakeBackend,
   hello,
   OWNER_TOKEN,
   pairFakeClient,
@@ -23,8 +26,9 @@ import type { StudioChatBackend } from './studio-rpc-types'
 
 // The `agent-skills` family over a real socket: every method under an owner,
 // a paired app and a grant that may only read chats; the folders a client
-// that is not an owner may name, checked on what they resolve to; the library
-// a paired app is shown; and the sources' stream.
+// that is not an owner may name, checked on what they resolve to, including
+// the folder an id stands for (a library entry, a local source); the library
+// and the sources a paired app is shown; and the sources' stream.
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
@@ -33,6 +37,9 @@ afterEach(async () => {
 
 const HERE = '/Users/dev/app'
 const ELSEWHERE = '/Users/dev/private'
+/** A local source's id is its folder: one inside what Studio knows, one outside. */
+const LOCAL_HERE = `local:${HERE}/skills`
+const LOCAL_ELSEWHERE = `local:${ELSEWHERE}/skills`
 /** Studio knows HERE and everything under it, as `confineToRoots` holds a path. */
 const knows = {
   isKnownFolder: async (path: string) => {
@@ -86,25 +93,35 @@ function stub() {
     }
   const group = (prefix: string, names: string[]) =>
     Object.fromEntries(names.map((name) => [name, record(`${prefix}.${name}`)]))
+  const listSources = async () => {
+    asked.push('skills.listSources')
+    return {
+      ok: true,
+      sources: ['github:a/b', LOCAL_HERE, LOCAL_ELSEWHERE].map((id) => ({ id, kind: id.split(':')[0] })),
+      transport: 'git',
+    }
+  }
   const domain = {
-    skills: group('skills', [
-      'listSources',
-      'checkSourceUpdates',
-      'addSource',
-      'addLocalSource',
-      'removeSource',
-      'syncSource',
-      'getScan',
-      'readFile',
-      'install',
-      'uninstall',
-      'search',
-      'listPopularRepos',
-      'scanLinkedPlugin',
-      'installPlugin',
-      'uninstallPlugin',
-      'listInstalledPlugins',
-    ]),
+    skills: {
+      ...group('skills', [
+        'checkSourceUpdates',
+        'addSource',
+        'addLocalSource',
+        'removeSource',
+        'syncSource',
+        'getScan',
+        'readFile',
+        'install',
+        'uninstall',
+        'search',
+        'listPopularRepos',
+        'scanLinkedPlugin',
+        'installPlugin',
+        'uninstallPlugin',
+        'listInstalledPlugins',
+      ]),
+      listSources,
+    },
     onSourcesUpdated: (listener: (check: SkillSourceUpdateCheck) => void) => {
       sources.add(listener)
       return () => void sources.delete(listener)
@@ -175,16 +192,16 @@ const CALLS: Record<StudioAgentSkillsMethod, () => Record<string, unknown>> = {
   'skillSources.checkUpdates': () => ({}),
   'skillSources.add': () => ({ commandId: c(), repo: 'sprintengine/studio-releases' }),
   'skillSources.addLocal': () => ({ commandId: c(), folder: `${ELSEWHERE}/skills` }),
-  'skillSources.remove': () => ({ commandId: c(), sourceId: 'github:a/b' }),
+  'skillSources.remove': () => ({ commandId: c(), sourceId: LOCAL_ELSEWHERE }),
   'skillSources.sync': () => ({ commandId: c(), sourceId: 'github:a/b', workspaceFolder: ELSEWHERE }),
-  'skills.scan': () => ({ sourceId: 'github:a/b' }),
-  'skills.readFile': () => ({ sourceId: 'github:a/b', skillId: 's', path: 'SKILL.md' }),
+  'skills.scan': () => ({ sourceId: LOCAL_ELSEWHERE }),
+  'skills.readFile': () => ({ sourceId: LOCAL_ELSEWHERE, skillId: 's', path: 'SKILL.md' }),
   'skills.install': () => ({ commandId: c(), sourceId: 'github:a/b', skillId: 's', workspaceFolder: ELSEWHERE }),
   'skills.uninstall': () => ({ commandId: c(), workspaceFolder: ELSEWHERE, dirName: 's' }),
   'skills.search': () => ({ query: 'review' }),
   'skills.popularRepos': () => ({}),
   'skills.ensureUserFolder': () => ({ commandId: c() }),
-  'skillPlugins.scanLinked': () => ({ sourceId: 'github:a/b', pluginId: 'p' }),
+  'skillPlugins.scanLinked': () => ({ sourceId: LOCAL_ELSEWHERE, pluginId: 'p' }),
   'skillPlugins.install': () => ({ commandId: c(), sourceId: 'github:a/b', pluginId: 'p', workspaceRoot: ELSEWHERE }),
   'skillPlugins.uninstall': () => ({ commandId: c(), sourceId: 'github:a/b', pluginId: 'p', workspaceRoot: ELSEWHERE }),
   'skillPlugins.listInstalled': () => ({ workspaceFolder: ELSEWHERE }),
@@ -201,7 +218,7 @@ const CALLS: Record<StudioAgentSkillsMethod, () => Record<string, unknown>> = {
   'designSystem.library': () => ({}),
   'designSystem.arrivals': () => ({}),
   'designSystem.register': () => ({ commandId: c(), folder: `${ELSEWHERE}/design` }),
-  'designSystem.forget': () => ({ commandId: c(), id: 'inside' }),
+  'designSystem.forget': () => ({ commandId: c(), id: 'outside' }),
   'designSystem.read': () => ({ bundleFolder: `${ELSEWHERE}/design` }),
   'designSystem.seed': () => ({
     commandId: c(),
@@ -229,8 +246,9 @@ const ownersOnly = (method: string) => {
   const access = STUDIO_METHOD_ACCESS[method as StudioAgentSkillsMethod]
   return 'permissions' in access && access.owner !== undefined
 }
+/** Whether a call names a folder outside what Studio knows, itself or by the id of a library entry registered there. */
 const namesAFolder = (params: Record<string, unknown>) =>
-  JSON.stringify(params).includes(ELSEWHERE) || (params.source as { kind?: string } | undefined)?.kind === 'library'
+  JSON.stringify(params).includes(ELSEWHERE) || JSON.stringify(params).includes('"outside"')
 
 test('every method of the family has a call here, and only those four are an owner’s', () => {
   assert.deepEqual(Object.keys(CALLS).sort(), Object.keys(STUDIO_AGENT_SKILLS_METHODS).sort())
@@ -257,6 +275,11 @@ test('an owner reaches every method, names any folder, sees the whole library an
   assert.deepEqual(
     library.entries.map((entry) => entry.id),
     ['inside', 'outside'],
+  )
+  const listed = resultOf(await owner.request('skillSources.list', {})) as { sources: Array<{ id: string }> }
+  assert.deepEqual(
+    listed.sources.map((source) => source.id),
+    ['github:a/b', LOCAL_HERE, LOCAL_ELSEWHERE],
   )
   // A workspace on an SSH machine is answered in words, not read here.
   const remote = await owner.request('workspaceSkills.list', { workspaceFolder: 'ssh://build-box/home/dev/app' })
@@ -285,6 +308,10 @@ test('a paired app names only the folders Studio knows, on what they resolve to,
   // Nothing about a folder it may not name, nor anything only an owner may do, reached the domain.
   const aboutAFolder = [
     'skills.addLocalSource',
+    'skills.removeSource',
+    'skills.getScan',
+    'skills.readFile',
+    'skills.scanLinkedPlugin',
     'skills.syncSource',
     'skills.install',
     'skills.uninstall',
@@ -297,6 +324,7 @@ test('a paired app names only the folders Studio knows, on what they resolve to,
     'agentCapabilities.resolve',
     'agentSkillInstaller.attach',
     'designSystem.register',
+    'designSystem.forget',
     'designSystem.read',
     'designSystem.seed',
     'designSystem.lint',
@@ -319,11 +347,41 @@ test('a paired app names only the folders Studio knows, on what they resolve to,
     ],
     ['designSystem.attach', { commandId: c(), source: { kind: 'library', id: 'inside' }, workspaceFolder: HERE }],
     ['skills.install', { commandId: c(), sourceId: 'github:a/b', skillId: 's', workspaceFolder: null }],
+    ['skills.install', { commandId: c(), sourceId: LOCAL_HERE, skillId: 's', workspaceFolder: HERE }],
+    ['designSystem.forget', { commandId: c(), id: 'inside' }],
+    // An id the library does not hold names no folder: forgetting it forgets nothing.
+    ['designSystem.forget', { commandId: c(), id: 'unknown' }],
+    ['skills.scan', { sourceId: 'github:a/b' }],
+    ['skills.scan', { sourceId: LOCAL_HERE }],
+    ['skills.readFile', { sourceId: LOCAL_HERE, skillId: 's', path: 'SKILL.md' }],
+    ['skillPlugins.scanLinked', { sourceId: LOCAL_HERE, pluginId: 'p' }],
+    ['skillSources.remove', { commandId: c(), sourceId: LOCAL_HERE }],
+    ['skillSources.remove', { commandId: c(), sourceId: 'github:a/b' }],
   ] as const)
     assert.deepEqual([method, codeOf(await app.request(method, params))], [method, null])
-  // A path that climbs out of a known folder is the folder it climbs to.
+  // A path that climbs out of a known folder is the folder it climbs to, a local source's included.
   const climbs = await app.request('designSystem.read', { bundleFolder: `${HERE}/../private/design` })
   assert.equal(codeOf(climbs), 'not_found')
+  const climbsSource = await app.request('skills.scan', { sourceId: `local:${HERE}/../private/skills` })
+  assert.equal(codeOf(climbsSource), 'not_found')
+  // A source named on its own, without a workspace, is still its folder.
+  const syncOutside = await app.request('skillSources.sync', {
+    commandId: c(),
+    sourceId: LOCAL_ELSEWHERE,
+    workspaceFolder: HERE,
+  })
+  assert.equal(codeOf(syncOutside), 'not_found')
+  const installOutside = await app.request('skills.install', {
+    commandId: c(),
+    sourceId: LOCAL_ELSEWHERE,
+    skillId: 's',
+    workspaceFolder: null,
+  })
+  assert.equal(codeOf(installOutside), 'not_found')
+  assert.deepEqual(
+    asked.filter((path) => path === 'skills.syncSource'),
+    [],
+  )
   // The library shows it only what it could name.
   const library = resultOf(await app.request('designSystem.library', {})) as { entries: Array<{ id: string }> }
   assert.deepEqual(
@@ -334,6 +392,12 @@ test('a paired app names only the folders Studio knows, on what they resolve to,
   assert.deepEqual(
     arrivals.bundles.map((bundle) => bundle.bundleId),
     ['inside'],
+  )
+  // The sources show it every repository, and only the local sources it could name.
+  const listed = resultOf(await app.request('skillSources.list', {})) as { sources: Array<{ id: string }> }
+  assert.deepEqual(
+    listed.sources.map((source) => source.id),
+    ['github:a/b', LOCAL_HERE],
   )
 })
 
@@ -362,4 +426,36 @@ test('a card whose params are not one is refused before anything runs', async ()
   ])
     assert.equal(codeOf(await owner.request('cards.run', bad)), 'invalid_params')
   assert.deepEqual(asked, [])
+})
+
+test('an owner held to the folders Studio knows names only those, by id as by path', async () => {
+  const { domain, asked } = stub()
+  const router = createStudioRpcRouter({
+    backend: createFakeBackend(),
+    chat: () => knows,
+    info: () => ({}) as never,
+    agentSkills: domain,
+  })
+  const grant = studioWindowGrant()
+  const tailnet = { connectionId: 'w1', slot: 1, ownWindow: false, knownFoldersOnly: true }
+  const loopback = { connectionId: 'w2', slot: 2, ownWindow: false }
+  const code = (answer: { ok: boolean; error?: { code: string } }) => (answer.ok ? null : (answer.error?.code ?? null))
+  const card = (workspaceRoot: string | null) => ({ ...CALLS['cards.run'](), workspaceRoot })
+  const calls = [
+    ['cards.run', card(ELSEWHERE)],
+    ['designSystem.forget', CALLS['designSystem.forget']()],
+    ['skillPlugins.install', { ...CALLS['skillPlugins.install'](), sourceId: LOCAL_ELSEWHERE, workspaceRoot: HERE }],
+    ['skills.readFile', CALLS['skills.readFile']()],
+  ] as const
+  for (const [method, params] of calls)
+    assert.deepEqual([method, code(await router.handle(grant, method, params, tailnet))], [method, 'not_found'])
+  assert.deepEqual(
+    asked.filter((path) => path !== 'skills.listSources'),
+    [],
+  )
+  assert.equal(code(await router.handle(grant, 'cards.run', card(HERE), tailnet)), null)
+  assert.equal(code(await router.handle(grant, 'cards.run', card(null), tailnet)), null)
+  // On this machine, the owner names any folder.
+  for (const [method, params] of calls)
+    assert.deepEqual([method, code(await router.handle(grant, method, params, loopback))], [method, null])
 })

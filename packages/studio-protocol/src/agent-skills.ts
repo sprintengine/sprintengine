@@ -1567,15 +1567,19 @@ export type StudioAgentSkillsMethodMap = {
     result: SkillAddSourceResult
     errors: 'not_found'
   }
-  'skillSources.remove': { params: Commanded<SkillRemoveSourceInput>; result: SkillRemoveSourceResult }
+  'skillSources.remove': {
+    params: Commanded<SkillRemoveSourceInput>
+    result: SkillRemoveSourceResult
+    errors: 'not_found'
+  }
   /** Re-read a source and refresh every copy installed from it. */
   'skillSources.sync': {
     params: Commanded<AtFolder & { sourceId: string; mcpServers?: McpServerConfig[] }>
     result: SkillSyncSourceOutcome
     errors: 'not_found'
   }
-  'skills.scan': { params: SkillScanInput; result: SkillScanOutcome }
-  'skills.readFile': { params: SkillReadFileInput; result: SkillReadFileResult }
+  'skills.scan': { params: SkillScanInput; result: SkillScanOutcome; errors: 'not_found' }
+  'skills.readFile': { params: SkillReadFileInput; result: SkillReadFileResult; errors: 'not_found' }
   'skills.install': {
     params: Commanded<{ sourceId: string; skillId: string; workspaceFolder?: string | null; scope?: SkillInstallScope }>
     result: SkillInstallOutcome
@@ -1590,7 +1594,11 @@ export type StudioAgentSkillsMethodMap = {
   'skills.popularRepos': { params: Record<string, never>; result: SkillPopularReposOutcome }
   /** The folder skills a person writes by hand are kept in, made if it is not there yet. */
   'skills.ensureUserFolder': { params: { commandId: string }; result: { folder: string } }
-  'skillPlugins.scanLinked': { params: SkillPluginScanLinkedInput; result: SkillPluginScanLinkedOutcome }
+  'skillPlugins.scanLinked': {
+    params: SkillPluginScanLinkedInput
+    result: SkillPluginScanLinkedOutcome
+    errors: 'not_found'
+  }
   'skillPlugins.install': {
     params: Commanded<SkillPluginInstallInput>
     result: SkillPluginInstallOutcome
@@ -1643,7 +1651,11 @@ export type StudioAgentSkillsMethodMap = {
     result: DesignSystemRegisterResult
     errors: 'not_found'
   }
-  'designSystem.forget': { params: Commanded<{ id: string }>; result: { ok: true; forgotten: boolean } }
+  'designSystem.forget': {
+    params: Commanded<{ id: string }>
+    result: { ok: true; forgotten: boolean }
+    errors: 'not_found'
+  }
   'designSystem.read': { params: { bundleFolder: string }; result: DesignSystemBundleReadResult; errors: 'not_found' }
   /** A new bundle in `targetFolder`, seeded from `sourceFolder` or bare from the shipped templates. */
   'designSystem.seed': {
@@ -1668,7 +1680,7 @@ export type StudioAgentSkillsMethodMap = {
     errors: 'not_found'
   }
   /** Go on a card: its actions, re-read by the Studio's own parser, run in order. */
-  'cards.run': { params: Commanded<CardRunInput>; result: CardRunResult }
+  'cards.run': { params: Commanded<CardRunInput>; result: CardRunResult; errors: 'not_found' }
 }
 
 /** Where an attach takes its bundle from, and the workspace it goes into. */
