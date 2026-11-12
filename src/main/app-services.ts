@@ -2210,7 +2210,10 @@ export function createAppServices(
     studioPluginService,
     studioAreaSkillStore,
     studioCore: core,
-    createConversationHost: core.createConversationHost,
+    // Read when a module asks, not here: out of process the core is the
+    // server's, and reading its member at composition throws (remote-core.ts).
+    createConversationHost: (...args: Parameters<typeof core.createConversationHost>) =>
+      core.createConversationHost(...args),
     conversationOwner,
     conversations,
     githubTokenStore,
