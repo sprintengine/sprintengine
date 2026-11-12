@@ -1010,7 +1010,19 @@ without it reads `session.send` with a validator that keeps only the members
 it knows, so it would drop the files without a word and send the words as if
 nothing were attached — which is why a client sends `files` only to a Studio
 that advertises it, and the desktop's own window refuses such a send in words
-otherwise. A hello's `client.kind` and `client.instanceId` are
+otherwise. `session-controls`, `session-terminal-handoff`,
+`conversation-history`, `approval-rules` and `provider-settings` (2026-11-12)
+add, owners only for now, the rest of what the window's conversation IPC does:
+`session.list`, `session.stop`, `session.suspend`, `session.mcpServerAction`,
+`session.stopSubagent`, `session.messageSubagent`, `session.askSideQuestion`,
+`session.cancelSideQuestion`, `session.contextBreakdown` and the
+`conversation.events` stream (every chat's lifecycle, each event without its
+payload); `session.terminalHandoff`, advertised only by a Studio that opens
+terminals; `conversation.threads`, `conversation.search` (every hit at once,
+no partial batches) and `conversation.cancelSearch`;
+`conversation.approvalRules` and `conversation.revokeApprovalRule`; and
+`providers.signIn`, `providers.setSecret` and `providers.clearSecret`. A
+client calls each only on a Studio that advertises its capability. A hello's `client.kind` and `client.instanceId` are
 optional hints a Studio that does not know them ignores. Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

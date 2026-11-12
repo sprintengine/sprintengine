@@ -28,6 +28,7 @@ import type {
 import type {
   ConversationCliRuntimeOverrides,
   ConversationEvent,
+  ConversationEventType,
   ConversationInterruptInput,
   ConversationProvidersListInput,
   ConversationProviderSignInInput,
@@ -146,6 +147,8 @@ export type ConversationService = {
   listApprovalRules?(): Promise<ConversationApprovalRulesResult>
   revokeApprovalRule?(ruleId: string): Promise<ConversationApprovalRuleRevokeResult>
   onEvent(listener: (event: ConversationEvent) => void): () => void
+  /** Every chat's lifecycle and status events, each without its payload (`isConversationBroadcastEvent`). */
+  onLifecycleEvent(listener: (event: ConversationEvent) => void): () => void
 }
 
 // Agent-harness conversation providers ride a local CLI (the shared table in
@@ -223,6 +226,65 @@ export function createHarnessCliCheck(
     rechecks.set(key, { at: now(), installed })
     return installed
   }
+}
+
+/**
+ * What every chat's lifecycle stream (`onLifecycleEvent`) carries: a chat's
+ * lifecycle and status, never its per-token stream. Every workspace window
+ * follows it (the IPC's `conversation:event`, the protocol's
+ * `conversation.events`), and its readers (the session list, the history rows)
+ * only ask whether a chat started, moved, waited or ended. Reply and reasoning
+ * deltas, and a running tool's partial output, went to every window, hidden
+ * ones included, dozens of times a second per streaming chat, only to be
+ * dropped there. The pane showing a chat reads its own stream.
+ */
+const BROADCAST_EVENT_TYPES: ReadonlySet<ConversationEventType> = new Set<ConversationEventType>([
+  'session_started',
+  'session_ready',
+  'session_updated',
+  'session_closed',
+  'user_message',
+  'turn_started',
+  'tool_started',
+  'tool_output',
+  'approval_requested',
+  'approval_resolved',
+  'usage_updated',
+  'context_compacted',
+  'context_compacting',
+  'context_handed_off',
+  'command_output',
+  'turn_completed',
+  'turn_failed',
+  'subagent_status',
+  'subagent_message',
+])
+
+/**
+ * What the lifecycle stream carries of an event: whose it is, what kind,
+ * and when. Its reader (the sessions list) only learns from it that a chat
+ * moved and asks for the list again; the payload, a tool's input or result
+ * among them, went to every window for every step of every chat unread.
+ */
+function broadcastEnvelope(event: ConversationEvent): ConversationEvent {
+  const { payload: _payload, parts: _parts, ...envelope } = event as ConversationEvent & { parts?: unknown }
+  return envelope
+}
+
+export function isConversationBroadcastEvent(event: ConversationEvent): boolean {
+  if (!BROADCAST_EVENT_TYPES.has(event.type)) return false
+  // A running tool's output streams; its final output says the tool is done.
+  return !(event.type === 'tool_output' && event.payload?.partial === true)
+}
+
+/** Every chat's lifecycle events out of all of its events, each as its envelope. */
+export function conversationLifecycleEvents(
+  onEvent: (listener: (event: ConversationEvent) => void) => () => void,
+): (listener: (event: ConversationEvent) => void) => () => void {
+  return (listener) =>
+    onEvent((event) => {
+      if (isConversationBroadcastEvent(event)) listener(broadcastEnvelope(event))
+    })
 }
 
 export function createConversationService(
@@ -373,6 +435,7 @@ export function createConversationService(
     onEvent(listener: (event: ConversationEvent) => void): () => void {
       return runtime.onEvent(listener)
     },
+    onLifecycleEvent: conversationLifecycleEvents((listener) => runtime.onEvent(listener)),
   }
 }
 

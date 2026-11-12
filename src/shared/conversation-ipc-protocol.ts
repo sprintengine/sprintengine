@@ -38,19 +38,15 @@ export type ConversationIpcProtocol = {
 const DONE = [] as const
 
 export const CONVERSATION_IPC_PROTOCOL = {
-  // History, the palette's search and the history navigation.
-  'conversation:threads': { gaps: ['declaration', 'client'], planned: ['conversation.threads'] },
-  'conversation:search': {
-    gaps: ['declaration', 'client'],
-    planned: ['conversation.search', 'conversation.searchBatches'],
-  },
-  'conversation:search:cancel': { gaps: ['declaration', 'client'], planned: ['conversation.cancelSearch'] },
+  // History, the palette's search and the history navigation. The IPC's
+  // partial batches (`conversation:search:batch`) are not carried: the method
+  // answers every hit of a workspace at once.
+  'conversation:threads': { methods: ['conversation.threads'], gaps: ['client', 'grant'] },
+  'conversation:search': { methods: ['conversation.search'], gaps: ['client', 'grant'] },
+  'conversation:search:cancel': { methods: ['conversation.cancelSearch'], gaps: ['client', 'grant'] },
   // Settings ▸ Approvals.
-  'conversation:approval-rules:list': { gaps: ['declaration', 'client'], planned: ['conversation.approvalRules'] },
-  'conversation:approval-rules:revoke': {
-    gaps: ['declaration', 'client'],
-    planned: ['conversation.revokeApprovalRule'],
-  },
+  'conversation:approval-rules:list': { methods: ['conversation.approvalRules'], gaps: ['client', 'grant'] },
+  'conversation:approval-rules:revoke': { methods: ['conversation.revokeApprovalRule'], gaps: ['client', 'grant'] },
   // A turn's checkpoint: the chat view and the checkpoint window.
   'conversation:turn:diff': { methods: ['conversation.turnDiff'], gaps: ['client'] },
   'conversation:turn:revert': { methods: ['conversation.revert'], gaps: ['grant'] },
@@ -64,10 +60,10 @@ export const CONVERSATION_IPC_PROTOCOL = {
   // Providers and their keys: the model picker and Settings ▸ Providers.
   'conversation:providers:list': { methods: ['providers.list'], gaps: ['grant', 'client'] },
   'conversation:providers:models': { methods: ['providers.models'], gaps: ['grant'] },
-  'conversation:providers:sign-in': { gaps: ['declaration', 'client'], planned: ['providers.signIn'] },
+  'conversation:providers:sign-in': { methods: ['providers.signIn'], gaps: ['client', 'grant'] },
   'conversation:secrets:status': { methods: ['providers.secretStatus'], gaps: ['grant', 'client'] },
-  'conversation:secrets:set': { gaps: ['declaration', 'client'], planned: ['providers.setSecret'] },
-  'conversation:secrets:clear': { gaps: ['declaration', 'client'], planned: ['providers.clearSecret'] },
+  'conversation:secrets:set': { methods: ['providers.setSecret'], gaps: ['client', 'grant'] },
+  'conversation:secrets:clear': { methods: ['providers.clearSecret'], gaps: ['client', 'grant'] },
   // A chat's live session, by its id: the chat view.
   'conversation:sessions:start': { methods: ['session.start'], gaps: ['grant'] },
   'conversation:sessions:send-turn': { methods: ['session.send'], gaps: ['grant'] },
@@ -75,52 +71,48 @@ export const CONVERSATION_IPC_PROTOCOL = {
   'conversation:sessions:respond-to-request': { methods: ['session.respond'], gaps: ['grant'] },
   'conversation:sessions:set-permission': { methods: ['session.setPermission'], gaps: ['grant'] },
   'conversation:sessions:set-model': { methods: ['session.setModel'], gaps: ['grant'] },
-  // Declared by key for a follower (`conversation.mcpServerAction`, …), with
-  // no session form the window's client could call.
+  // By the session for the window, by the chat's key for a follower.
   'conversation:sessions:mcp-action': {
-    methods: ['conversation.mcpServerAction'],
-    gaps: ['declaration', 'client', 'grant'],
-    planned: ['session.mcpServerAction'],
+    methods: ['session.mcpServerAction', 'conversation.mcpServerAction'],
+    gaps: ['client', 'grant'],
   },
   'conversation:sessions:stop-subagent': {
-    methods: ['conversation.stopSubagent'],
-    gaps: ['declaration', 'client', 'grant'],
-    planned: ['session.stopSubagent'],
+    methods: ['session.stopSubagent', 'conversation.stopSubagent'],
+    gaps: ['client', 'grant'],
   },
   'conversation:sessions:message-subagent': {
-    methods: ['conversation.messageSubagent'],
-    gaps: ['declaration', 'client', 'grant'],
-    planned: ['session.messageSubagent'],
+    methods: ['session.messageSubagent', 'conversation.messageSubagent'],
+    gaps: ['client', 'grant'],
   },
+  // A follower's keyed form is the conversation lane's, which the socket withholds.
   'conversation:sessions:side-question': {
-    gaps: ['declaration', 'client', 'withheld'],
-    planned: ['session.askSideQuestion', 'conversation.askSideQuestion'],
+    methods: ['session.askSideQuestion'],
+    gaps: ['declaration', 'client', 'grant', 'withheld'],
+    planned: ['conversation.askSideQuestion'],
   },
   'conversation:sessions:cancel-side-question': {
-    gaps: ['declaration', 'client', 'withheld'],
-    planned: ['session.cancelSideQuestion', 'conversation.cancelSideQuestion'],
+    methods: ['session.cancelSideQuestion'],
+    gaps: ['declaration', 'client', 'grant', 'withheld'],
+    planned: ['conversation.cancelSideQuestion'],
   },
   'conversation:sessions:context-breakdown': {
-    gaps: ['declaration', 'client', 'withheld'],
-    planned: ['session.contextBreakdown', 'conversation.contextBreakdown'],
+    methods: ['session.contextBreakdown'],
+    gaps: ['declaration', 'client', 'grant', 'withheld'],
+    planned: ['conversation.contextBreakdown'],
   },
-  'conversation:sessions:stop': {
-    methods: ['conversation.stop'],
-    gaps: ['declaration', 'client'],
-    planned: ['session.stop'],
-  },
-  'conversation:sessions:suspend': { gaps: ['declaration', 'client'], planned: ['session.suspend'] },
-  // Answers the command line; the terminal it opens is the terminal service's.
-  'conversation:sessions:terminal-handoff': { gaps: ['declaration', 'client'], planned: ['session.terminalHandoff'] },
-  'conversation:sessions:list': { gaps: ['declaration', 'client'], planned: ['session.list'] },
+  'conversation:sessions:stop': { methods: ['session.stop', 'conversation.stop'], gaps: ['client', 'grant'] },
+  'conversation:sessions:suspend': { methods: ['session.suspend'], gaps: ['client', 'grant'] },
+  // Answers the terminal agent it started; the terminal itself is the terminal service's.
+  'conversation:sessions:terminal-handoff': { methods: ['session.terminalHandoff'], gaps: ['client', 'grant'] },
+  'conversation:sessions:list': { methods: ['session.list'], gaps: ['client', 'grant'] },
   // Reads beside a chat.
   'conversation:tool-detail': { methods: ['conversation.toolDetail'], gaps: ['client'] },
   'conversation:event:read': { methods: ['conversation.event'], gaps: DONE },
   'conversation:attachment': { methods: ['conversation.attachment'], gaps: ['grant'] },
   'conversation:plan-document': { methods: ['conversation.planDocument'], gaps: ['grant'] },
   // Every chat's lifecycle, for the sessions list.
-  'conversation:events:subscribe': { gaps: ['declaration', 'client'], planned: ['conversation.events'] },
-  'conversation:events:unsubscribe': { gaps: ['declaration', 'client'], planned: ['conversation.events'] },
+  'conversation:events:subscribe': { topics: ['conversation.events'], gaps: ['client', 'grant'] },
+  'conversation:events:unsubscribe': { topics: ['conversation.events'], gaps: ['client', 'grant'] },
   // The composer's `/` menu.
   'conversation-commands:list': {
     methods: ['conversation.commands'],

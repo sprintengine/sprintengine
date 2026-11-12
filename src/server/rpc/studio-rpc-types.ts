@@ -12,7 +12,16 @@ import type {
   StudioWorkspace,
 } from '../../../packages/studio-protocol/src/public'
 import type {
+  ConversationApprovalRuleRevokeResult,
+  ConversationApprovalRulesResult,
   ConversationAttachmentResult,
+  ConversationContextBreakdownResult,
+  ConversationEvent,
+  ConversationListSessionsResult,
+  ConversationMcpServerActionResult,
+  ConversationProviderSignInResult,
+  ConversationSideQuestionResult,
+  ConversationTerminalHandoffResult,
   ConversationForkInput,
   ConversationForkResult,
   ConversationKey,
@@ -39,6 +48,7 @@ import type {
   ConversationProviderModelsResult,
   ConversationSecretStatusResult,
 } from '../../shared/ipc/conversations'
+import type { ConversationSearchResult, ConversationThreadsResult } from '../../shared/conversation-index'
 import type { FileSearchResult, FileSystemStat } from '../../shared/ipc/filesystem'
 
 // What the Studio RPC needs from the rest of Studio, as interfaces, so the
@@ -166,6 +176,44 @@ export type StudioChatBackend = {
   /** Whether a folder is inside one a chat can be about: a workspace's, or Studio's own stores. */
   isKnownFolder?(path: string): Promise<boolean>
   workspaces(): StudioWorkspace[]
+  listSessions(input: ChatInput<'session.list'>): Promise<ConversationListSessionsResult>
+  /** Through the runtime's receipts, as the other session commands. */
+  stopSession(input: SessionCommand<ChatInput<'session.stop'>>): Promise<ConversationSessionActionResult>
+  suspendSession(input: ChatInput<'session.suspend'>): Promise<ConversationSessionActionResult>
+  mcpServerAction(input: ChatInput<'session.mcpServerAction'>): Promise<ConversationMcpServerActionResult>
+  stopSubagent(input: ChatInput<'session.stopSubagent'>): Promise<ConversationSessionActionResult>
+  messageSubagent(input: ChatInput<'session.messageSubagent'>): Promise<ConversationSessionActionResult>
+  askSideQuestion(input: ChatInput<'session.askSideQuestion'>): Promise<ConversationSideQuestionResult>
+  cancelSideQuestion(
+    input: ChatInput<'session.cancelSideQuestion'>,
+  ): Promise<{ ok: true } | { ok: false; message: string }>
+  contextBreakdown(input: ChatInput<'session.contextBreakdown'>): Promise<ConversationContextBreakdownResult>
+  /** A terminal agent on this machine carrying the chat on; absent where Studio opens no terminals. */
+  terminalHandoff?(
+    input: { sessionId: string } | { workspaceId: string; agentId: string },
+  ): Promise<ConversationTerminalHandoffResult>
+  threads(input: { workspaceId: string; workspaceRoot: string }): Promise<ConversationThreadsResult>
+  /**
+   * Search a workspace's history in the slot of the connection asking: a
+   * newer search under the same request id ends the older one, as does
+   * `cancelSearch`, and a closed connection's are ended.
+   */
+  searchHistory(
+    slot: number,
+    input: { workspaceId: string; workspaceRoot: string; query: string; requestId?: string },
+  ): Promise<ConversationSearchResult>
+  cancelHistorySearch(slot: number, requestId: string): void
+  releaseHistorySearches(slot: number): void
+  approvalRules(): Promise<ConversationApprovalRulesResult>
+  revokeApprovalRule(ruleId: string): Promise<ConversationApprovalRuleRevokeResult>
+  signIn(input: ChatInput<'providers.signIn'>): Promise<ConversationProviderSignInResult>
+  setSecret(input: ChatInput<'providers.setSecret'>): Promise<ConversationSecretStatusResult>
+  clearSecret(input: ChatInput<'providers.clearSecret'>): Promise<ConversationSecretStatusResult>
+  /**
+   * Every chat's lifecycle events as the all-chats broadcast carries them:
+   * lifecycle and status kinds only, each without its payload.
+   */
+  onLifecycleEvent(listener: (event: ConversationEvent) => void): () => void
 }
 
 /** Who a request came from, beyond its grant. */

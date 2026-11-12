@@ -30,6 +30,15 @@ function call(api: Api, name: string, ...args: unknown[]): Promise<never> {
   return Promise.resolve((member as (...values: unknown[]) => unknown)(...args)) as Promise<never>
 }
 const has = (api: Api, name: string) => typeof api[name] === 'function'
+/** A stubbed IPC member taking one input, or undefined where the test stubs none. */
+const optional = (api: Api, name: string) =>
+  has(api, name) ? (input: unknown): Promise<never> => call(api, name, input) : undefined
+/** A stubbed IPC subscription, or one that hears nothing where the test stubs none. */
+function subscribeTo<T>(api: Api, name: string, listener: (value: T) => void): () => void {
+  const subscribe = api[name] as ((cb: (value: T) => void) => unknown) | undefined
+  const stop = typeof subscribe === 'function' ? subscribe(listener) : undefined
+  return () => (typeof stop === 'function' ? stop() : undefined)
+}
 
 function conversationsOver(api: Api): StudioConversationBackend {
   return {
@@ -137,6 +146,55 @@ function chatOver(api: Api) {
       listProviders: (input) => call(api, 'conversationProvidersList', input),
       listProviderModels: (input) => call(api, 'conversationProviderModels', input),
       getSecretStatus: (input) => call(api, 'conversationSecretStatus', input),
+      setSecret: (input) => call(api, 'conversationSecretSet', input),
+      clearSecret: (input) => call(api, 'conversationSecretClear', input),
+      get resolveSignIn() {
+        return optional(api, 'conversationProviderSignIn')
+      },
+      stopSession: (input) => receipts.run(input, (rest) => call(api, 'conversationSessionStop', rest)),
+      // The IPC answers it as a promise; the runtime's own is synchronous.
+      listSessions: (input) => call(api, 'conversationSessionsList', input) as never,
+      get suspendSession() {
+        return optional(api, 'conversationSessionSuspend')
+      },
+      get mcpServerAction() {
+        return optional(api, 'conversationSessionMcpAction')
+      },
+      get stopSubagent() {
+        return optional(api, 'conversationSessionStopSubagent')
+      },
+      get messageSubagent() {
+        return optional(api, 'conversationSessionMessageSubagent')
+      },
+      get askSideQuestion() {
+        return optional(api, 'conversationSessionAskSideQuestion')
+      },
+      get cancelSideQuestion() {
+        return optional(api, 'conversationSessionCancelSideQuestion')
+      },
+      get readContextBreakdown() {
+        return optional(api, 'conversationSessionContextBreakdown')
+      },
+      get terminalHandoff() {
+        return optional(api, 'conversationSessionTerminalHandoff')
+      },
+      get listThreads() {
+        return optional(api, 'conversationThreads')
+      },
+      get searchThreads() {
+        return has(api, 'conversationSearch') ? (input: unknown) => call(api, 'conversationSearch', input) : undefined
+      },
+      get listApprovalRules() {
+        return has(api, 'conversationApprovalRules') ? () => call(api, 'conversationApprovalRules') : undefined
+      },
+      get revokeApprovalRule() {
+        return has(api, 'conversationRevokeApprovalRule')
+          ? (ruleId: string) => call(api, 'conversationRevokeApprovalRule', { ruleId })
+          : undefined
+      },
+      // The window's all-chats stream is already its lifecycle, each event an envelope.
+      onEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
+      onLifecycleEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
     },
     files: {
       searchFiles: (_slot, input) =>

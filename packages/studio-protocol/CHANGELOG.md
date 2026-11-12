@@ -48,6 +48,20 @@
 
 ### Added
 
+- **The rest of the window's conversation IPC** (`chat.ts`, owners only for
+  now): `session.list`, `session.stop`, `session.suspend`,
+  `session.mcpServerAction`, `session.stopSubagent`, `session.messageSubagent`,
+  `session.askSideQuestion`, `session.cancelSideQuestion` and
+  `session.contextBreakdown`, and the `conversation.events` push topic
+  (`session-controls`); `session.terminalHandoff`
+  (`session-terminal-handoff`); `conversation.threads`, `conversation.search`
+  and `conversation.cancelSearch` (`conversation-history`);
+  `conversation.approvalRules` and `conversation.revokeApprovalRule`
+  (`approval-rules`); `providers.signIn`, `providers.setSecret` and
+  `providers.clearSecret` (`provider-settings`). Their result types are the
+  conversation contract's (`ConversationListSessionsResult`,
+  `ConversationContextBreakdownResult`, `ConversationThreadsResult`,
+  `ConversationApprovalRulesResult`, `ConversationProviderSignInResult`, …).
 - **What a grant reaches, from the table** (`methods.ts`):
   `STUDIO_METHOD_ACCESS` and `STUDIO_TOPIC_ACCESS` (each method's and topic's
   permissions, and whether it is an owner's only), and `studioGrantAllows` /

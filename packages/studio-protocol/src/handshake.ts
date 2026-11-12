@@ -94,6 +94,27 @@ export const STUDIO_SESSION_FILES_CAPABILITY = 'session-files' as const
 export const STUDIO_HANDOFF_CAPABILITY = 'conversation-handoff' as const
 
 /**
+ * The rest of what a chat view does to a live session by its id: stop it,
+ * suspend it (its process ends, the session keeps its place), act on one of
+ * its MCP servers, stop or message an agent it spawned, ask it a side
+ * question, read what fills its context window, list sessions, and follow
+ * every chat's lifecycle (`conversation.events`).
+ */
+export const STUDIO_SESSION_CONTROLS_CAPABILITY = 'session-controls' as const
+
+/** `session.terminalHandoff`: a chat carried on by a terminal agent on the Studio's machine. */
+export const STUDIO_TERMINAL_HANDOFF_CAPABILITY = 'session-terminal-handoff' as const
+
+/** `conversation.threads` and `conversation.search`: a workspace's history and a search of it. */
+export const STUDIO_HISTORY_CAPABILITY = 'conversation-history' as const
+
+/** `conversation.approvalRules` and `conversation.revokeApprovalRule`: the rules that answer by themselves. */
+export const STUDIO_APPROVAL_RULES_CAPABILITY = 'approval-rules' as const
+
+/** `providers.signIn`, `providers.setSecret` and `providers.clearSecret`: a provider's sign-in and key. */
+export const STUDIO_PROVIDER_SETTINGS_CAPABILITY = 'provider-settings' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -119,6 +140,11 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_SESSION_FILES_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
+  STUDIO_SESSION_CONTROLS_CAPABILITY,
+  STUDIO_TERMINAL_HANDOFF_CAPABILITY,
+  STUDIO_HISTORY_CAPABILITY,
+  STUDIO_APPROVAL_RULES_CAPABILITY,
+  STUDIO_PROVIDER_SETTINGS_CAPABILITY,
 ] as const
 
 /**
@@ -137,6 +163,11 @@ export const STUDIO_CHAT_CAPABILITIES = [
   STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_SESSION_FILES_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
+  STUDIO_SESSION_CONTROLS_CAPABILITY,
+  STUDIO_TERMINAL_HANDOFF_CAPABILITY,
+  STUDIO_HISTORY_CAPABILITY,
+  STUDIO_APPROVAL_RULES_CAPABILITY,
+  STUDIO_PROVIDER_SETTINGS_CAPABILITY,
 ] as const
 
 export type StudioCapability = (typeof STUDIO_CAPABILITIES)[number]

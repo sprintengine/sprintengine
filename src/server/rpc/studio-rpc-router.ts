@@ -4,6 +4,7 @@ import {
   authorizeStudioMethod,
   studioRefusedGrantName,
   type ConversationCommand,
+  type StudioChatMethod,
   type StudioCommandAnswer,
   type StudioCommonErrorCode,
   type StudioConversationKey,
@@ -515,6 +516,36 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   const isRefusal = (value: StudioChatBackend | Refused<'unavailable'>): value is Refused<'unavailable'> =>
     'ok' in value && value.ok === false
 
+  /**
+   * A chat-surface mutation the runtime keeps no receipt for, carried out
+   * once under its id: a repeat is answered with the first answer.
+   */
+  function sessionOnce<M extends StudioChatMethod, R>(
+    method: M,
+    grant: StudioGrant,
+    commandId: string,
+    voice: Voice,
+    work: (chat: StudioChatBackend) => Promise<R>,
+  ): Promise<{ ok: true; result: R } | Refused<'unavailable'>> | Refused<'unavailable'> {
+    const chat = chatOr(method)
+    if (isRefusal(chat)) return chat
+    return once(
+      keptId(method, grant, commandId),
+      async () => ({ ok: true as const, result: voice.redact(await work(chat)) }),
+      voice,
+      method,
+    )
+  }
+
+  /**
+   * The folder of a workspace's history: the one an owner names, else the
+   * workspace's own, as this Studio resolves a chat's key by its workspace.
+   */
+  function historyRoot(workspaceId: string, workspaceRoot: string | undefined, grant: StudioGrant): string | null {
+    if (workspaceRoot !== undefined && grant.owner) return workspaceRoot
+    return backend.resolveKey(workspaceId, 'history')?.workspaceRoot ?? null
+  }
+
   /** A runtime id under the client's namespace, and the kept-answer id of one method's mutation. */
   const runtimeId = (grant: StudioGrant, id: string) => studioRuntimeCommandId(grant, id)
   const keptId = (method: StudioMethod, grant: StudioGrant, id: string) => `${method}:${runtimeId(grant, id)}`
@@ -855,6 +886,85 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       return { ok: true, result: { workspaces: voice.redact(chat.workspaces()) } }
     },
+    'session.list': async (input, { voice }) => {
+      const chat = chatOr('session.list')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.listSessions(input)) }
+    },
+    'session.stop': async ({ commandId, ...input }, { grant, voice, fingerprint }) => {
+      const chat = chatOr('session.stop')
+      if (isRefusal(chat)) return chat
+      const sent = await chat.stopSession({ ...input, commandId: runtimeId(grant, commandId), ...stamp(fingerprint) })
+      return { ok: true, result: voice.redact(sent) }
+    },
+    // The runtime keeps no receipt for these, so a repeat under the same id
+    // is answered here with the first answer, as a checkpoint's is.
+    'session.suspend': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.suspend', grant, commandId, voice, (chat) => chat.suspendSession(input)),
+    'session.mcpServerAction': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.mcpServerAction', grant, commandId, voice, (chat) => chat.mcpServerAction(input)),
+    'session.stopSubagent': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.stopSubagent', grant, commandId, voice, (chat) => chat.stopSubagent(input)),
+    'session.messageSubagent': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.messageSubagent', grant, commandId, voice, (chat) => chat.messageSubagent(input)),
+    'session.askSideQuestion': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('session.askSideQuestion', grant, commandId, voice, (chat) => chat.askSideQuestion(input)),
+    'session.cancelSideQuestion': async (input, { voice }) => {
+      const chat = chatOr('session.cancelSideQuestion')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.cancelSideQuestion(input)) }
+    },
+    'session.contextBreakdown': async (input, { voice }) => {
+      const chat = chatOr('session.contextBreakdown')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.contextBreakdown(input)) }
+    },
+    'session.terminalHandoff': ({ commandId, ...input }, { grant, voice }) => {
+      const chat = chatOr('session.terminalHandoff')
+      if (isRefusal(chat)) return chat
+      const handoff = chat.terminalHandoff
+      if (!handoff) return unserved('session.terminalHandoff')
+      return sessionOnce('session.terminalHandoff', grant, commandId, voice, () => handoff(input))
+    },
+    'conversation.threads': async ({ workspaceId, workspaceRoot }, { grant, voice }) => {
+      const chat = chatOr('conversation.threads')
+      if (isRefusal(chat)) return chat
+      const root = historyRoot(workspaceId, workspaceRoot, grant)
+      if (!root) return refuse('not_found', `No workspace "${workspaceId}" here.`)
+      return { ok: true, result: voice.redact(await chat.threads({ workspaceId, workspaceRoot: root })) }
+    },
+    'conversation.search': async ({ workspaceId, workspaceRoot, ...search }, { grant, context, voice }) => {
+      const chat = chatOr('conversation.search')
+      if (isRefusal(chat)) return chat
+      const root = historyRoot(workspaceId, workspaceRoot, grant)
+      if (!root) return refuse('not_found', `No workspace "${workspaceId}" here.`)
+      const found = await chat.searchHistory(context.slot, { ...search, workspaceId, workspaceRoot: root })
+      return { ok: true, result: voice.redact(found) }
+    },
+    'conversation.cancelSearch': ({ requestId }, { context }) => {
+      const chat = chatOr('conversation.cancelSearch')
+      if (isRefusal(chat)) return chat
+      chat.cancelHistorySearch(context.slot, requestId)
+      return { ok: true, result: { ok: true } }
+    },
+    'conversation.approvalRules': async (_params, { voice }) => {
+      const chat = chatOr('conversation.approvalRules')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.approvalRules()) }
+    },
+    'conversation.revokeApprovalRule': ({ commandId, ruleId }, { grant, voice }) =>
+      sessionOnce('conversation.revokeApprovalRule', grant, commandId, voice, (chat) =>
+        chat.revokeApprovalRule(ruleId),
+      ),
+    'providers.signIn': async (input, { voice }) => {
+      const chat = chatOr('providers.signIn')
+      if (isRefusal(chat)) return chat
+      return { ok: true, result: voice.redact(await chat.signIn(input)) }
+    },
+    'providers.setSecret': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('providers.setSecret', grant, commandId, voice, (chat) => chat.setSecret(input)),
+    'providers.clearSecret': ({ commandId, ...input }, { grant, voice }) =>
+      sessionOnce('providers.clearSecret', grant, commandId, voice, (chat) => chat.clearSecret(input)),
 
     // ── Client tools ───────────────────────────────────────────────────────
 
@@ -1105,10 +1215,10 @@ async function folderAllowed(chat: StudioChatBackend, context: StudioRequestCont
   return chat.isKnownFolder ? chat.isKnownFolder(path).catch(() => false) : false
 }
 
-/** Whether parsed params name a conversation by its folder, which only an owner may. */
+/** Whether parsed params name a conversation or a workspace by its folder, which only an owner may. */
 function namesFolder(params: unknown): boolean {
-  const key = (params as { key?: { workspaceRoot?: unknown } } | null)?.key
-  return key?.workspaceRoot !== undefined
+  const named = params as { key?: { workspaceRoot?: unknown }; workspaceRoot?: unknown } | null
+  return named?.key?.workspaceRoot !== undefined || named?.workspaceRoot !== undefined
 }
 
 // What a request names, for the audit: its conversation and command id when

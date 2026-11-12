@@ -49,12 +49,23 @@ export type {
 // Who a `user_message` came from when it was not the person (`origin`).
 export { readConversationMessageOrigin } from '../../packages/conversation-protocol/src/public'
 import type {
-  ConversationSessionSummary,
   ConversationMcpServerAction,
   ConversationCapabilities,
 } from '../../packages/conversation-protocol/src/public'
 // A live session's summary and its methods' results are the contract's too.
 export type {
+  ConversationApprovalRuleRevokeResult,
+  ConversationApprovalRulesResult,
+  ConversationContextBreakdown,
+  ConversationContextBreakdownResult,
+  ConversationContextCategory,
+  ConversationContextItem,
+  ConversationContextMcpServer,
+  ConversationListSessionsResult,
+  ConversationMcpServerActionResult,
+  ConversationProviderSignInResult,
+  ConversationSideQuestionResult,
+  ConversationTerminalHandoffResult,
   ConversationFileActivity,
   ConversationSessionSummary,
   ConversationAttachmentResult,
@@ -149,17 +160,6 @@ export type ConversationProviderSignInInput = {
   providerId: string
   cliRuntimes?: ConversationCliRuntimeOverrides
 }
-
-export type ConversationProviderSignInResult =
-  | {
-      ok: true
-      commandLine: string
-      cwd: string
-      platform: string
-      /** The machine the sign-in terminal opens on; absent is this one. */
-      hostId?: import('./execution-host').ExecutionHostId
-    }
-  | { ok: false; message: string }
 
 export type ConversationTranscriptInput = {
   workspaceRoot: string
@@ -301,12 +301,6 @@ export type ConversationMcpServerActionInput = {
   action: ConversationMcpServerAction
 }
 
-/**
- * `authUrl` is where a sign-in is finished, in the person's browser; the CLI
- * waits on its own callback and reconnects the server once it arrives.
- */
-export type ConversationMcpServerActionResult = { ok: true; authUrl?: string } | { ok: false; message: string }
-
 /** One agent a chat spawned, named by the call that spawned it (its lane), to stop on its own. */
 export type ConversationStopSubagentInput = {
   sessionId: string
@@ -338,11 +332,7 @@ export type ConversationSideQuestionInput = {
   history?: ConversationSideQuestionExchange[]
 }
 export type ConversationSideQuestionExchange = { question: string; answer: string }
-/** `cancelled`: called off before it was answered, which says nothing to the person. */
-export type ConversationSideQuestionResult =
-  { ok: true; answer: string } | { ok: false; message: string; cancelled?: true; code?: string }
 export type ConversationCancelSideQuestionInput = { sessionId: string; requestId: string }
-
 /**
  * What fills a chat's context window, item by item, as its agent measured it
  * (Claude Code's own `/context` reading). Asked for when a person opens the
@@ -350,54 +340,6 @@ export type ConversationCancelSideQuestionInput = { sessionId: string; requestId
  * the conversation it holds, so there is nothing to keep fresh in between.
  */
 export type ConversationContextBreakdownInput = { sessionId: string }
-
-/**
- * One row of the window's breakdown. `used` fills the window, `free` is what
- * is left of it, `buffer` is held back for compaction, and `deferred` is
- * listed for awareness but not in the window (tool schemas loaded on demand).
- */
-export type ConversationContextCategory = {
-  name: string
-  tokens: number
-  kind: 'used' | 'free' | 'buffer' | 'deferred'
-}
-
-/** A skill, memory file or custom agent and what it costs; `detail` is where it comes from. */
-export type ConversationContextItem = { name: string; tokens: number; detail?: string }
-
-/** An MCP server, the tokens its loaded tools' schemas take, and each tool. */
-export type ConversationContextMcpServer = {
-  name: string
-  /** Its loaded tools' tokens: a deferred tool is not in the window until it is used. */
-  tokens: number
-  tools: Array<{ name: string; tokens: number; loaded: boolean }>
-}
-
-export type ConversationContextBreakdown = {
-  model: string
-  usedTokens: number
-  /** The window the agent measures against: the model's, or a smaller one it compacts at. */
-  windowTokens: number
-  categories: ConversationContextCategory[]
-  mcpServers: ConversationContextMcpServer[]
-  skills: ConversationContextItem[]
-  memoryFiles: ConversationContextItem[]
-  agents: ConversationContextItem[]
-  /** Where the agent compacts on its own; null when it does not. */
-  autoCompactAt: number | null
-  /** The agent estimated the rows rather than counting each one with the API. */
-  estimated: boolean
-  measuredAt: number
-}
-
-/**
- * `stale`: the agent is not running now, and this is the last reading it gave.
- * `not-running`: nothing to ask and nothing read before. `unsupported`: the
- * chat's agent, or its version, gives no breakdown.
- */
-export type ConversationContextBreakdownResult =
-  | { ok: true; breakdown: ConversationContextBreakdown; stale?: true }
-  | { ok: false; reason: 'unsupported' | 'not-running' | 'failed'; message: string }
 
 export type ConversationStopSessionInput = {
   // What the command was, hashed by whoever named its id: a receipt keeps it,
@@ -427,17 +369,10 @@ export type ConversationTerminalHandoffInput =
   // restart, when nothing has been sent to the chat yet.
   | { workspaceId: string; agentId: string }
 
-export type ConversationTerminalHandoffResult =
-  // The terminal agent now carrying the conversation on, in the chat's workspace.
-  { ok: true; workspaceId: string; agentId: string } | { ok: false; message: string }
-
 export type ConversationListSessionsInput = {
   workspaceId?: string
   agentId?: string
 }
-
-export type ConversationListSessionsResult =
-  { ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message: string }
 
 export type ConversationToolDetailInput = ConversationTranscriptInput & { toolUseId: string }
 /** An event by the sequence and id a wire sent it under (`ConversationEventReadResult`). */
@@ -516,10 +451,6 @@ export type ConversationImportTranscriptInput = {
 }
 export type ConversationImportTranscriptResult = { ok: true } | { ok: false; message: string }
 export type ConversationSkillRef = { id: string; sourcePath?: string }
-export type ConversationApprovalRulesResult =
-  | { ok: true; rules: import('./conversation/approvalRules').ConversationApprovalRule[] }
-  | { ok: false; message: string }
-export type ConversationApprovalRuleRevokeResult = { ok: true } | { ok: false; message: string }
 
 export type ConversationKey = ConversationTranscriptInput
 // `afterSeq` with the `generation` from an earlier snapshot or synchronized

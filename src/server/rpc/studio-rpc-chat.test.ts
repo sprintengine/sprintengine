@@ -8,7 +8,7 @@ import {
   type StudioParsedServerFrame,
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
-import type { ConversationSendTurnInput } from '../../shared/conversation-runtime'
+import type { ConversationEvent, ConversationSendTurnInput } from '../../shared/conversation-runtime'
 import {
   createTicketAuthenticator,
   framePortStream,
@@ -44,10 +44,22 @@ type ChatCalls = {
   searchSlots: number[]
   released: number[]
   commandListeners: Set<(catalog: ConversationCommandCatalog) => void>
+  controls: string[]
+  releasedHistory: number[]
+  lifecycleListeners: Set<(event: ConversationEvent) => void>
 }
 
 function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
-  const calls: ChatCalls = { sends: [], reverts: 0, searchSlots: [], released: [], commandListeners: new Set() }
+  const calls: ChatCalls = {
+    sends: [],
+    reverts: 0,
+    searchSlots: [],
+    released: [],
+    commandListeners: new Set(),
+    controls: [],
+    releasedHistory: [],
+    lifecycleListeners: new Set(),
+  }
   const session = {
     sessionId: 's1',
     workspaceId: 'ws-1',
@@ -98,6 +110,88 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
     readImage: async () => 'data:image/png;base64,AAAA',
     repoRoot: async () => '/Users/dev/app',
     workspaces: () => [{ id: 'ws-1', name: 'App', folderPath: '/Users/dev/app' }],
+    listSessions: async () => ({ ok: true, sessions: [session] }),
+    stopSession: async (input) => {
+      calls.controls.push(`stop:${input.sessionId}:${input.commandId}`)
+      return { ok: true, session }
+    },
+    suspendSession: async (input) => {
+      calls.controls.push(`suspend:${input.sessionId}`)
+      return { ok: true, session }
+    },
+    mcpServerAction: async (input) => {
+      calls.controls.push(`mcp:${input.serverId}:${input.action}`)
+      return { ok: true }
+    },
+    stopSubagent: async (input) => {
+      calls.controls.push(`stop-subagent:${input.toolUseId}`)
+      return { ok: true, session }
+    },
+    messageSubagent: async (input) => {
+      calls.controls.push(`message-subagent:${input.toolUseId}:${input.message}`)
+      return { ok: true, session }
+    },
+    askSideQuestion: async (input) => {
+      calls.controls.push(`side-question:${input.requestId}:${input.history?.length ?? 0}`)
+      return { ok: true, answer: 'Because.' }
+    },
+    cancelSideQuestion: async (input) => {
+      calls.controls.push(`cancel-side-question:${input.requestId}`)
+      return { ok: true }
+    },
+    contextBreakdown: async () => ({ ok: false, reason: 'not-running', message: 'No agent yet.' }),
+    terminalHandoff: async (input) => {
+      calls.controls.push(`terminal-handoff:${'sessionId' in input ? input.sessionId : input.agentId}`)
+      return { ok: true, workspaceId: 'ws-1', agentId: 'terminal-1' }
+    },
+    threads: async (input) => {
+      calls.controls.push(`threads:${input.workspaceRoot}`)
+      return { ok: true, threads: [] }
+    },
+    searchHistory: async (_slot, input) => {
+      calls.controls.push(`search:${input.workspaceRoot}:${input.query}`)
+      return { ok: true, hits: [{ agentId: 'agent-1', seq: 3, snippet: input.query }] }
+    },
+    cancelHistorySearch: (_slot, requestId) => void calls.controls.push(`cancel-search:${requestId}`),
+    releaseHistorySearches: (slot) => void calls.releasedHistory.push(slot),
+    approvalRules: async () => ({ ok: true, rules: [] }),
+    revokeApprovalRule: async (ruleId) => {
+      calls.controls.push(`revoke:${ruleId}`)
+      return { ok: true }
+    },
+    signIn: async () => ({ ok: true, commandLine: 'claude login', cwd: '/Users/dev', platform: 'darwin' }),
+    setSecret: async (input) => {
+      calls.controls.push(`set-secret:${input.providerId}`)
+      return {
+        ok: true,
+        status: {
+          providerId: input.providerId,
+          configured: true,
+          source: 'settings',
+          persistence: 'encrypted',
+          encryptionAvailable: true,
+          label: 'Key',
+        },
+      }
+    },
+    clearSecret: async (input) => {
+      calls.controls.push(`clear-secret:${input.providerId}`)
+      return {
+        ok: true,
+        status: {
+          providerId: input.providerId,
+          configured: false,
+          source: 'none',
+          persistence: 'encrypted',
+          encryptionAvailable: true,
+          label: 'Key',
+        },
+      }
+    },
+    onLifecycleEvent: (listener) => {
+      calls.lifecycleListeners.add(listener)
+      return () => calls.lifecycleListeners.delete(listener)
+    },
   }
 }
 
@@ -536,4 +630,161 @@ test('a connection held to known folders searches and asks only about the folder
   // A browser on this machine names any folder, as before.
   assert.ok((await search('/Users/dev', loopback)).ok)
   assert.ok((await repoRoot('/etc', loopback)).ok)
+})
+
+test('every operation the window’s conversation IPC offers is a method an owner calls on the socket', async () => {
+  const { server, chat } = await served()
+  const window = await windowClient(server)
+  const answers = {
+    list: await ask(window, 'a1', 'session.list', { workspaceId: 'ws-1' }),
+    stop: await ask(window, 'a2', 'session.stop', { commandId: 'c-stop', sessionId: 's1' }),
+    suspend: await ask(window, 'a3', 'session.suspend', { commandId: 'c-suspend', sessionId: 's1' }),
+    mcp: await ask(window, 'a4', 'session.mcpServerAction', {
+      commandId: 'c-mcp',
+      sessionId: 's1',
+      serverId: 'github',
+      action: 'reconnect',
+    }),
+    stopSubagent: await ask(window, 'a5', 'session.stopSubagent', {
+      commandId: 'c-ss',
+      sessionId: 's1',
+      toolUseId: 'task-1',
+    }),
+    messageSubagent: await ask(window, 'a6', 'session.messageSubagent', {
+      commandId: 'c-ms',
+      sessionId: 's1',
+      toolUseId: 'task-1',
+      message: 'Look at the tests too.',
+    }),
+    side: await ask(window, 'a7', 'session.askSideQuestion', {
+      commandId: 'c-side',
+      sessionId: 's1',
+      requestId: 'q1',
+      question: 'Why?',
+      history: [{ question: 'What?', answer: 'This.' }],
+    }),
+    cancelSide: await ask(window, 'a8', 'session.cancelSideQuestion', { sessionId: 's1', requestId: 'q1' }),
+    context: await ask(window, 'a9', 'session.contextBreakdown', { sessionId: 's1' }),
+    handoff: await ask(window, 'a10', 'session.terminalHandoff', { commandId: 'c-th', sessionId: 's1' }),
+    threads: await ask(window, 'a11', 'conversation.threads', { workspaceId: 'ws-1', workspaceRoot: '/Users/dev/app' }),
+    search: await ask(window, 'a12', 'conversation.search', {
+      workspaceId: 'ws-1',
+      workspaceRoot: '/Users/dev/app',
+      query: 'flaky',
+      requestId: 's-1',
+    }),
+    cancelSearch: await ask(window, 'a13', 'conversation.cancelSearch', { requestId: 's-1' }),
+    rules: await ask(window, 'a14', 'conversation.approvalRules'),
+    revoke: await ask(window, 'a15', 'conversation.revokeApprovalRule', { commandId: 'c-rv', ruleId: 'rule-1' }),
+    signIn: await ask(window, 'a16', 'providers.signIn', { providerId: 'claude-code' }),
+    setSecret: await ask(window, 'a17', 'providers.setSecret', {
+      commandId: 'c-set',
+      providerId: 'openai-compatible',
+      value: 'sk-test',
+    }),
+    clearSecret: await ask(window, 'a18', 'providers.clearSecret', {
+      commandId: 'c-clear',
+      providerId: 'openai-compatible',
+    }),
+  }
+  for (const [name, answer] of Object.entries(answers)) assert.equal(answer.ok, true, name)
+  assert.deepEqual(answers.search.ok && answers.search.result, {
+    ok: true,
+    hits: [{ agentId: 'agent-1', seq: 3, snippet: 'flaky' }],
+  })
+  assert.deepEqual(chat!.calls.controls, [
+    'stop:s1:owner:c-stop',
+    'suspend:s1',
+    'mcp:github:reconnect',
+    'stop-subagent:task-1',
+    'message-subagent:task-1:Look at the tests too.',
+    'side-question:q1:1',
+    'cancel-side-question:q1',
+    'terminal-handoff:s1',
+    'threads:/Users/dev/app',
+    'search:/Users/dev/app:flaky',
+    'cancel-search:s-1',
+    'revoke:rule-1',
+    'set-secret:openai-compatible',
+    'clear-secret:openai-compatible',
+  ])
+  // A control the runtime keeps no receipt for is carried out once per command id.
+  const again = await ask(window, 'b1', 'session.suspend', { commandId: 'c-suspend', sessionId: 's1' })
+  assert.deepEqual(again.ok && again.result, answers.suspend.ok && answers.suspend.result)
+  assert.equal(chat!.calls.controls.filter((call) => call === 'suspend:s1').length, 1)
+  window.close()
+  await window.closed
+  for (let tries = 0; chat!.calls.releasedHistory.length === 0 && tries < 50; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(chat!.calls.releasedHistory.length, 1, 'a closed connection’s history searches are ended')
+})
+
+test('a malformed control is refused at the edge, before the chat surface sees it', async () => {
+  const { server, chat } = await served()
+  const window = await windowClient(server)
+  const refusals = [
+    await ask(window, 'm1', 'session.mcpServerAction', {
+      commandId: 'c',
+      sessionId: 's1',
+      serverId: 'x',
+      action: 'wipe',
+    }),
+    await ask(window, 'm2', 'session.messageSubagent', {
+      commandId: 'c',
+      sessionId: 's1',
+      toolUseId: 't',
+      message: ' ',
+    }),
+    await ask(window, 'm3', 'session.askSideQuestion', {
+      commandId: 'c',
+      sessionId: 's1',
+      requestId: 'q',
+      question: 'Why?',
+      history: Array.from({ length: 21 }, () => ({ question: 'a', answer: 'b' })),
+    }),
+    await ask(window, 'm4', 'session.terminalHandoff', { commandId: 'c' }),
+    await ask(window, 'm5', 'conversation.search', { workspaceId: 'ws-1', query: '' }),
+    await ask(window, 'm6', 'providers.setSecret', { commandId: 'c', providerId: 'p', value: '' }),
+  ]
+  for (const refusal of refusals) assert.equal(!refusal.ok && refusal.error.code, 'invalid_params')
+  assert.deepEqual(chat!.calls.controls, [])
+  window.close()
+})
+
+test('every chat’s lifecycle is pushed to an owner as it happens, and its stream ends with the connection', async () => {
+  const { server, chat } = await served()
+  const window = await windowClient(server)
+  window.send({ t: 'sub', id: 'life', topic: 'conversation.events' })
+  for (let tries = 0; chat!.calls.lifecycleListeners.size === 0 && tries < 50; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  const event = {
+    id: 'e1',
+    seq: 4,
+    sessionId: 's1',
+    workspaceId: 'ws-1',
+    agentId: 'agent-1',
+    type: 'turn_completed',
+    createdAt: 5,
+  } as unknown as ConversationEvent
+  for (const listener of chat!.calls.lifecycleListeners) listener(event)
+  const push = await window.next(isT('push'))
+  assert.deepEqual(push.t === 'push' && push.payload, event)
+  window.close()
+  await window.closed
+  for (let tries = 0; chat!.calls.lifecycleListeners.size > 0 && tries < 50; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(chat!.calls.lifecycleListeners.size, 0)
+})
+
+test('terminal handoff is advertised only where the chat surface opens terminals', async () => {
+  const { terminalHandoff: _handoff, ...withoutTerminals } = fakeChat()
+  const served_ = await served({ chat: withoutTerminals as ReturnType<typeof fakeChat> })
+  const owner = await connectLineClient(served_.path)
+  owner.send(hello({ token: OWNER_TOKEN }))
+  const welcome = await owner.next(isT('welcome'))
+  assert.equal(welcome.t === 'welcome' && welcome.capabilities.includes('session-terminal-handoff'), false)
+  assert.equal(welcome.t === 'welcome' && welcome.capabilities.includes('session-controls'), true)
+  const refused = await ask(owner, 'h1', 'session.terminalHandoff', { commandId: 'c', sessionId: 's1' })
+  assert.equal(!refused.ok && refused.error.code, 'unavailable')
+  owner.close()
 })

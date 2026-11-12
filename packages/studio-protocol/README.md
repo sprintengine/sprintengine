@@ -213,9 +213,10 @@ both numbers. Features are asked about by capability (`studioPeerSupports`),
 never by version: `conversations`, `conversation-create`, `local-pairing`,
 and with the chat surface `conversation-folders`, `conversation-sessions`,
 `conversation-files`, `conversation-checkpoints`, `conversation-commands`,
-`providers`, `files-mention`, `workspaces` and `session-files`
-(`STUDIO_CHAT_CAPABILITIES`; the last lets `session.send` attach files by
-path). The
+`providers`, `files-mention`, `workspaces`, `session-files` (it lets
+`session.send` attach files by path), `conversation-handoff`,
+`session-controls`, `session-terminal-handoff`, `conversation-history`,
+`approval-rules` and `provider-settings` (`STUDIO_CHAT_CAPABILITIES`). The
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's
 `docs/compatibility.md`.

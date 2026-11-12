@@ -1,6 +1,6 @@
 import type { ConversationWirePermissionPreset } from './index.js'
 import type { ConversationBackgroundTask, ConversationEvent, ConversationSessionStatus } from './events.js'
-import type { ConversationJsonValue, ConversationToolStatus } from './tool-types.js'
+import type { ConversationJsonValue, ConversationToolKind, ConversationToolStatus } from './tool-types.js'
 
 // A live session as Studio's runtime summarises it, and what its session
 // methods answer: the shapes every client of a chat reads, whichever way it
@@ -279,3 +279,132 @@ export type ConversationRewindResult = { ok: true } | { ok: false; message: stri
 export type ConversationHandoffResult = { ok: true; path: string } | { ok: false; message: string }
 
 export type ConversationForkResult = { ok: true } | { ok: false; message: string }
+
+/** The live sessions of the chats asked about, newest last. */
+export type ConversationListSessionsResult =
+  { ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message: string }
+
+/** `authUrl` is where a sign-in is finished, in the person's browser; the CLI waits on its own callback. */
+export type ConversationMcpServerActionResult = { ok: true; authUrl?: string } | { ok: false; message: string }
+
+/** `cancelled`: called off before it was answered, which says nothing to the person. */
+export type ConversationSideQuestionResult =
+  { ok: true; answer: string } | { ok: false; message: string; cancelled?: true; code?: string }
+
+/**
+ * One row of a chat's context window. `used` fills the window, `free` is what
+ * is left of it, `buffer` is held back for compaction, and `deferred` is
+ * listed for awareness but not in the window (tool schemas loaded on demand).
+ */
+export type ConversationContextCategory = {
+  name: string
+  tokens: number
+  kind: 'used' | 'free' | 'buffer' | 'deferred'
+}
+
+/** A skill, memory file or custom agent and what it costs; `detail` is where it comes from. */
+export type ConversationContextItem = { name: string; tokens: number; detail?: string }
+
+/** An MCP server, the tokens its loaded tools' schemas take, and each tool. */
+export type ConversationContextMcpServer = {
+  name: string
+  /** Its loaded tools' tokens: a deferred tool is not in the window until it is used. */
+  tokens: number
+  tools: Array<{ name: string; tokens: number; loaded: boolean }>
+}
+
+/** What fills a chat's context window, item by item, as its agent measured it. */
+export type ConversationContextBreakdown = {
+  model: string
+  usedTokens: number
+  /** The window the agent measures against: the model's, or a smaller one it compacts at. */
+  windowTokens: number
+  categories: ConversationContextCategory[]
+  mcpServers: ConversationContextMcpServer[]
+  skills: ConversationContextItem[]
+  memoryFiles: ConversationContextItem[]
+  agents: ConversationContextItem[]
+  /** Where the agent compacts on its own; null when it does not. */
+  autoCompactAt: number | null
+  /** The agent estimated the rows rather than counting each one with the API. */
+  estimated: boolean
+  measuredAt: number
+}
+
+/**
+ * `stale`: the agent is not running now, and this is the last reading it gave.
+ * `not-running`: nothing to ask and nothing read before. `unsupported`: the
+ * chat's agent, or its version, gives no breakdown.
+ */
+export type ConversationContextBreakdownResult =
+  | { ok: true; breakdown: ConversationContextBreakdown; stale?: true }
+  | { ok: false; reason: 'unsupported' | 'not-running' | 'failed'; message: string }
+
+/** The terminal agent now carrying a chat on, in the chat's workspace. */
+export type ConversationTerminalHandoffResult =
+  { ok: true; workspaceId: string; agentId: string } | { ok: false; message: string }
+
+/**
+ * Signing a chat's CLI back in after its login lapsed: the line a plain
+ * terminal on the Studio's machine runs, resolved to the executable the
+ * provider runs, and the machine the terminal opens on (absent: the Studio's own).
+ */
+export type ConversationProviderSignInResult =
+  { ok: true; commandLine: string; cwd: string; platform: string; hostId?: string } | { ok: false; message: string }
+
+/** One chat in a workspace's history, as its transcript reads. */
+export type ConversationHistoryThread = {
+  agentId: string
+  title: string
+  titleSource: 'first-message' | 'generated' | 'user'
+  createdAt: number
+  updatedAt: number
+  turnCount: number
+  model: string
+  providerId: string
+  lastSeq: number
+  firstUserText: string
+  totalCostUsd?: number
+  /** When the agent last finished or failed a turn; absent before it has. */
+  lastTurnEndedAt?: number
+  /** The opening of the agent's last reply; empty once the person has written again. */
+  lastAssistantText?: string
+}
+
+export type ConversationThreadsResult =
+  { ok: true; threads: ConversationHistoryThread[] } | { ok: false; message: string }
+
+/** Where a search of a workspace's history matched. */
+export type ConversationSearchHit = {
+  agentId: string
+  seq: number
+  turnId?: string
+  snippet: string
+  /** Who said the matching words: the person, the agent, or Studio on the person's behalf. */
+  from?: 'person' | 'agent' | 'studio'
+}
+
+export type ConversationSearchResult = { ok: true; hits: ConversationSearchHit[] } | { ok: false; message: string }
+
+/**
+ * A rule that answers a kind of approval request by itself, everywhere in a
+ * folder. `subcommand` absent means any arguments to a program whose
+ * arguments are data; an empty string means the bare program.
+ */
+export type ConversationApprovalRule = {
+  id: string
+  workspaceRoot: string
+  toolKind: ConversationToolKind
+  toolName: string
+  matcher:
+    | { type: 'command'; program: string; subcommand?: string }
+    | { type: 'path'; prefix: string }
+    | { type: 'mcp'; server: string; tool: string }
+  label: string
+  createdAt: number
+}
+
+export type ConversationApprovalRulesResult =
+  { ok: true; rules: ConversationApprovalRule[] } | { ok: false; message: string }
+
+export type ConversationApprovalRuleRevokeResult = { ok: true } | { ok: false; message: string }

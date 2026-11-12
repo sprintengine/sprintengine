@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added (what the rest of a chat's operations answer)
+
+- `ConversationListSessionsResult`, `ConversationMcpServerActionResult`,
+  `ConversationSideQuestionResult`, `ConversationContextBreakdown` and its
+  rows, `ConversationContextBreakdownResult`, `ConversationTerminalHandoffResult`,
+  `ConversationProviderSignInResult`, `ConversationHistoryThread`,
+  `ConversationThreadsResult`, `ConversationSearchHit`,
+  `ConversationSearchResult`, `ConversationApprovalRule`,
+  `ConversationApprovalRulesResult` and `ConversationApprovalRuleRevokeResult`
+  (`sessions.ts`): the answers of the Studio protocol's session controls,
+  history and settings methods, defined here once and re-exported by the desktop.
+
 ### Added (forward-compatible decoding)
 
 - **`decodeConversationServerFrame`** reads one frame's JSON text the way a
