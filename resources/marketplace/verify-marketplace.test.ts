@@ -398,8 +398,8 @@ function testUnclaimedPayloadDirFails(): void {
   // A committed payload nothing in the index claims is verified by nothing, yet
   // the packaged-seed install path would still stage it.
   const root = copySeedRegistry('orphan-payload-registry')
-  mkdirSync(join(root, 'plugins', 'nobody-claims-me'), { recursive: true })
-  writeFileSync(join(root, 'plugins', 'nobody-claims-me', 'plugin.json'), '{}\n', 'utf8')
+  addSignedProbeBundle(root)
+  cpSync(join(root, 'plugins', SIGNED_PROBE_ID), join(root, 'plugins', 'nobody-claims-me'), { recursive: true })
 
   const result = runVerifier(root)
   assert.equal(result.status, 1)
@@ -511,14 +511,15 @@ function testTamperedComponentFailsThroughCliVerify(): void {
   assert.match(result.stderr, /component digests/i)
 }
 
-// A seed entry, given a `source` to point somewhere. Any entry's source is
-// held to the allowlist; the seed's own carry none since Reviews left.
+// A bundle entry's `source`, pointed somewhere else. The seed carries no
+// bundle entry since Reviews left, so the signed probe stands in for one.
 function testEntrySourceOnNonAllowlistedHostFails(): void {
   const root = copySeedRegistry('evil-source-registry')
+  addSignedProbeBundle(root)
   const path = join(root, 'marketplace.json')
   const marketplace = JSON.parse(readFileSync(path, 'utf8')) as { plugins: Array<{ id: string; source?: string }> }
-  const target = marketplace.plugins[0]
-  assert.ok(target, 'seed registry must carry an entry')
+  const target = marketplace.plugins.find((plugin) => plugin.id === SIGNED_PROBE_ID)
+  assert.ok(target, 'the probe entry is listed')
   target.source = `https://evil.example.com/plugins/${target.id}`
   writeFileSync(path, `${JSON.stringify(marketplace, null, 2)}\n`, 'utf8')
 
@@ -530,10 +531,11 @@ function testEntrySourceOnNonAllowlistedHostFails(): void {
 
 function testEntrySourceOnAllowlistedNonCanonicalOwnerPasses(): void {
   const root = copySeedRegistry('non-canonical-owner-registry')
+  addSignedProbeBundle(root)
   const path = join(root, 'marketplace.json')
   const marketplace = JSON.parse(readFileSync(path, 'utf8')) as { plugins: Array<{ id: string; source?: string }> }
-  const first = marketplace.plugins[0]
-  assert.ok(first, 'seed registry must carry an entry')
+  const first = marketplace.plugins.find((plugin) => plugin.id === SIGNED_PROBE_ID)
+  assert.ok(first, 'the probe entry is listed')
   first.source = `https://github.com/another-org/registry/tree/main/plugins/${first.id}`
   writeFileSync(path, `${JSON.stringify(marketplace, null, 2)}\n`, 'utf8')
 
