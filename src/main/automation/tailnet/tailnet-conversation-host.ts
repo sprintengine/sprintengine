@@ -647,10 +647,10 @@ export type ConversationRegistryLink = {
   noteUserMessage?: (workspaceId: string, at: number) => void
   /**
    * List as the `conversation-lifecycle` capability promises: the chats this
-   * desktop has settled left out, the rest in its sidebar's order. Only a
-   * door that advertises the capability turns it on (the tailnet lane); the
-   * Studio RPC does not advertise it, and lists every chat by `updatedAt`, as
-   * it always has.
+   * desktop has settled left out, the rest in its sidebar's order. A door
+   * that advertises the capability turns it on (the tailnet lane and the
+   * Studio RPC); a host for Studio's own sends leaves it off, and lists every
+   * chat by `updatedAt`.
    */
   lifecycleList?: boolean
   /**

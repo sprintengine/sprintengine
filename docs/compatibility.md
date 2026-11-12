@@ -514,10 +514,13 @@ peer is refused over any of it: a client offers no Settle for a desktop that
 does not advertise it, and an older one answers either tool "Unknown tool"
 (`docs/conversations.md`, "Rest, order and read state in the list").
 The leaving out and the order are the capability's promise, so they hold only
-where it is advertised: the Studio RPC does not advertise it, and its
-`conversation.list` is the list it always was, every chat (settled ones
-included) most recently moved first. The members ride along there too, as
-optional additions a client that does not read them never sees.
+where it is advertised. The Studio RPC advertises it (2026-11-12): its
+`conversation.list` leaves settled chats out in the sidebar's order, as the
+lane's does, and `conversation.settle` (`settled: false` brings a chat back;
+`conflict` while an agent in it works) and `conversation.visit` (no command
+id, not audited) write the same record, on `conversation:operate`. Before
+that it did not advertise it, and listed every chat most recently moved
+first.
 Mark unread (2026-10-07) is a gateway tool beside them,
 `conversation.mark_unread`, advertised as `chat-mark-unread` (no
 `conversation-` prefix: it names a tool, not the conversation lane). It
@@ -537,7 +540,7 @@ beside `lastVisitedAt`, an optional member with no capability of its own: a
 phone drops only the readings it took before the stamp, so a chat marked
 unread while the phone was closed reads unread there, and an older phone
 ignores the member. The Studio
-RPC does not advertise it, having no method for either tool.
+RPC does not advertise it, having no method for the tool.
 A queued message is the `conversation-queued-sends` capability (2026-10-08):
 a `send` that says `queue` is held by the desktop and sent when the chat's
 turn ends, `cancelQueued` takes one back, and a client that asks with a
@@ -547,9 +550,11 @@ drops `queue` and refuses a send made mid-turn `busy`, as it always did, and
 answers the new command and request under their ids; a desktop sends `queued`
 frames only to a client that asked, so a phone that never asks never sees
 one. A client asks whenever the desktop has not said it lacks the
-capability, since an older desktop's refusal is harmless. The Studio RPC does
-not advertise it: its conversation topic carries no `queued` frames, and its
-`conversation.cancelQueued` method needs `conversation:operate`.
+capability, since an older desktop's refusal is harmless. The Studio RPC
+advertises it (2026-11-12): `conversation.send` takes `queue`,
+`conversation.cancelQueued` needs `conversation:operate`, and the per-chat
+topic `conversation.queued` pushes the lane's `queued` frame, now and on each
+change, on `conversation:read`.
 A steered message is the `conversation-steer-sends` capability (2026-10-14):
 a `send` that says `steer: true` goes into the turn the chat is running, where
 its provider takes one, and each listed chat says whether it does as
@@ -646,9 +651,13 @@ chat says whether its provider can as `capabilities.fork`,
 booleans. A desktop without them refuses `fork` as `unsupported_command` and
 the three frames as `invalid_frame` under their request ids, and a desktop
 following another machine's chat refuses each there in words first. The
-Studio RPC advertises none of them: it forks by its own `conversation.fork`,
-whose new chat's record is the asking window's to write, and has no method for
-the other two.
+Studio RPC advertises the last two (2026-11-12): `conversation.askSideQuestion`
+(`key`, `commandId`, the client's `questionId`, `question`, optional
+`history`; `conversation:operate`, answered once per command id),
+`conversation.cancelSideQuestion` (`questionId`, the asker's own only) and
+`conversation.contextBreakdown` (`key`, `conversation:read`). It does not
+advertise `conversation-fork`: it forks by its own `conversation.fork`, whose
+new chat's record is the asking window's to write.
 An answered side question is kept in the chat's transcript as a
 `side_question` event (2026-11-11; `ConversationSideQuestionPayload`:
 `question`, `answer`, `requestId`, and `truncated` where the answer was cut at
@@ -659,8 +668,9 @@ that does not know one skips it, as it skips `turn_retrying` and
 `conversation-side-question-records` adds is the desktop's word that it keeps
 them, which a paired desktop reads to say, in its side question drawer, that a
 machine without it keeps nothing. No frame changed, and `askSideQuestion`
-answers as before. The Studio RPC does not advertise it, having no side
-questions to ask, though its conversation topic carries the event. The
+answers as before. The Studio RPC advertises it beside
+`conversation-side-questions` (2026-11-12), and its conversation topic carries
+the event. The
 module SDK's `ModuleConversationEventType` and the phone read the event too.
 A paired desktop's composer reaches a chat's folder through three
 capabilities (2026-10-25). `conversation-send-mentions`: a `send` may name
@@ -682,9 +692,11 @@ answers the routes 404, and a client sends or asks only where they are
 advertised (a desktop following another machine's chat refuses each there in
 words first). A paired desktop's files attached by path ride the existing
 `conversation-message-files` upload, which a desktop now sends as well as the
-phone. The Studio RPC advertises `conversation-send-mentions`, its
-`conversation.send` reading the lane's own validator, and not the two reads,
-which it has no method for.
+phone. The Studio RPC advertises all three: its `conversation.send` reads the
+lane's own validator, and `conversation.searchFiles` (`key`, `query`, `limit?`)
+and `conversation.listCommands` (`key`, `refresh?`, which needs
+`conversation:operate` as well) answer the routes' bodies, naming the chat,
+never a folder (2026-11-12).
 The mode a turn runs in is the `conversation-send-mode` capability
 (2026-10-25): a `send` may say `mode`, `ask`, or `plan` where the listed chat's
 `capabilities.planMode` says its provider plans, and the desktop runs the turn
@@ -758,9 +770,9 @@ three kinds as `unsupported_command` and `watchScheduled` as `invalid_frame`,
 and a client sends them only where it is advertised (a desktop following
 another machine's chat refuses them there in words first). The Studio RPC
 carries the three as owners' methods (`conversation.scheduleSend`,
-`conversation.sendScheduledNow`, `conversation.cancelScheduled`), as it carries
-`conversation.cancelQueued`, but does not advertise the capability: its
-conversation topic carries no `scheduled` frames.
+`conversation.sendScheduledNow`, `conversation.cancelScheduled`), and
+advertises the capability (2026-11-12): the per-chat topic
+`conversation.scheduled` pushes the lane's `scheduled` frame.
 A desktop's usage limits are the `conversation-usage-limits` capability
 (2026-10-25): `{ type: 'watchUsageLimits', requestId }` has it send a
 `usageLimits` frame (`ConversationUsageLimitsFrame`: the chat's `key`, the
@@ -775,9 +787,9 @@ capability refuses the kind as `unsupported_command` and the request as
 `invalid_frame`, and a client asks only where it is advertised. A provider
 or a plan name a client does not know passes the validator, for a newer
 desktop to add one; the desktop client leaves such a plan out. The Studio
-RPC carries the command as an owner's method, `conversation.usageLimitResume`,
-but does not advertise the capability: its conversation topic carries no
-`usageLimits` frames. The phone asks with `watchUsageLimits` after each fence
+RPC carries the command as `conversation.usageLimitResume` and advertises the
+capability (2026-11-12): the per-chat topic `conversation.usageLimits` pushes
+the lane's `usageLimits` frame. The phone asks with `watchUsageLimits` after each fence
 where the capability is listed, and reads `limits` alone for its chat page's
 Usage row; it sends no `usageLimitResume`.
 A held message that carries more than words is the
@@ -800,8 +812,8 @@ desktop without the capability refuses a queued send carrying any of the
 three as `invalid_frame`, so a client hands such a message over only where
 the capability is advertised (a desktop following another machine's chat
 keeps it in its own pane otherwise, as before). The phone's pinned files are
-unchanged. The Studio RPC does not advertise it, as it does not advertise
-queued sends.
+unchanged. The Studio RPC does not advertise it yet: its `conversation.send`
+refuses `uploadIds` until one upload path every client uses carries them.
 An approval answered with a rule that outlives the conversation is the
 `conversation-permanent-approvals` capability (2026-10-25): `resolveApproval`
 takes `decision: 'always'` from a device with `conversation:operate`, and the
@@ -811,8 +823,9 @@ desktop's, through `approval-rules`) list and revoke it. It is additive: the
 first version's validator, and so every desktop without the capability and
 the phone's pinned copy, refuses the decision as `unsafe_remote_decision`, as
 it always did, and a client offers the rule only where it is advertised. The
-Studio RPC does not advertise it: `conversation.resolveApproval` there still
-refuses the decision.
+Studio RPC advertises it (2026-11-12): `conversation.resolveApproval` takes
+the decision from a client whose ceiling allows a rule for the rest of the
+conversation (`auto` or looser), and refuses it `ceiling_exceeded` below.
 A chat's sub-agents are the `conversation-subagents` capability (2026-11-07):
 `{ type: 'watchSubagents', requestId }` has the desktop send a `subagents`
 frame (`ConversationSubagentsFrame`: the followed chat's `key` and its
@@ -839,8 +852,8 @@ desktop sends `subagents` frames only to a client that asked. The phone asks
 after each fence where the capability is listed, and opens each row as a chat
 on a socket of its own; elsewhere it lists the agents the CLI spawned, as it
 always did. One row a client cannot read is dropped
-alone. The Studio RPC does not advertise it: its conversation topic carries no
-`subagents` frames, and a window on it reads the records themselves.
+alone. The Studio RPC advertises it (2026-11-12): the per-chat topic
+`conversation.subagents` pushes the lane's `subagents` frame.
 A chat's changes are the `conversation-changes` capability (2026-11-07): what
 the desktop's own Diff tab shows when its Changes row is pressed, read in the
 chat's checkout there. `{ type: 'watchChanges', requestId }` has the desktop
@@ -867,8 +880,10 @@ It is additive: a desktop without it refuses each request `invalid_frame` under
 its id, and a client asks only where it is advertised, so a paired Changes row
 stays the read-only count it was. A desktop sends `changes` frames only to a
 client that asked, so a phone, which does not, sees exactly what it saw. The
-Studio RPC does not advertise it: its conversation topic carries no `changes`
-frames.
+Studio RPC advertises it (2026-11-12): the per-chat topic
+`conversation.changes` pushes the lane's `changes` frame, and
+`conversation.changesDiff` and `conversation.changedFile` answer the two
+reads, on `conversation:read`.
 A `send` may say when it was written, `composedAt` (epoch ms, the client's
 clock), and that the person confirmed one written long ago, `confirmedStale`
 (2026-10-20). A desktop that reads them records `composedAt` on the
@@ -1040,7 +1055,18 @@ terminals; `conversation.threads`, `conversation.search` (every hit at once,
 no partial batches) and `conversation.cancelSearch`;
 `conversation.approvalRules` and `conversation.revokeApprovalRule`; and
 `providers.signIn`, `providers.setSecret` and `providers.clearSecret`. A
-client calls each only on a Studio that advertises its capability. `modules`
+client calls each only on a Studio that advertises its capability. What a
+follower of one chat reads and does beside its stream, by the chat's key, as
+the tailnet lane served it (2026-11-12, `followed.ts`): the per-chat push
+topics `conversation.queued`, `.scheduled`, `.usageLimits`, `.subagents` and
+`.changes`, each the lane's own frame of that kind, and the methods
+`conversation.askSideQuestion`, `.cancelSideQuestion`, `.contextBreakdown`,
+`.searchFiles`, `.listCommands`, `.settle`, `.visit`, `.changesDiff` and
+`.changedFile`, each under the `conversations` capability and offered by the
+conversation capability the lane names it by, which the welcome's
+`conversation.capabilities` lists. They are additive: an older Studio answers
+`unknown_method` and `unknown_topic`, and lists none of those conversation
+capabilities. `modules`
 adds the `module.events` and `module.notifications` streams, what a Studio's
 modules say to clients, under the `modules:read` scope a grant holds
 explicitly (a pairing made before it never gains it); a module event's payload

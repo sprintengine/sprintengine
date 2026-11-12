@@ -8,13 +8,13 @@ import {
   createConversationGatewayHost,
   type ConversationListWorkspace,
 } from '../../main/automation/tailnet/tailnet-conversation-host'
-import { STUDIO_RPC_CONVERSATION_CAPABILITIES } from './studio-rpc-server'
+import { studioRpcConversationCapabilities } from './studio-rpc-server'
 import { connectLineClient, createFakeBackend, hello, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
-// The owner socket does not advertise `conversation-lifecycle`, so its list
-// keeps the shape it had before that capability: every chat, settled ones
-// included, most recently moved first. Only the tailnet lane, which does
-// advertise it, leaves settled chats out and lists in the sidebar's order.
+// The Studio socket advertises `conversation-lifecycle`, as the tailnet lane
+// does, and its list keeps the promise the capability makes on both: settled
+// chats left out, the rest in the sidebar's order. A host built without the
+// lifecycle list (Studio's own sends) lists every chat by when each last moved.
 
 const cleanups: Array<() => Promise<void> | void> = []
 afterEach(async () => {
@@ -69,16 +69,24 @@ function host(lifecycleList: boolean) {
   )
 }
 
-test('the owner socket lists every chat, settled ones too, by when each last moved', async () => {
-  const conversationHost = host(false)
-  const started = await startTestServer({ backend: { ...createFakeBackend(), list: () => conversationHost.list() } })
+test('the Studio socket advertises conversation-lifecycle and lists as it promises', async () => {
+  const conversationHost = host(true)
+  const fake = createFakeBackend()
+  const backend = {
+    ...fake,
+    list: () => conversationHost.list(),
+    followed: {
+      settle: () => ({ ok: true as const, settledAt: 1 }),
+      visit: () => ({ ok: true as const, lastVisitedAt: 1 }),
+    },
+  }
+  const started = await startTestServer({ backend })
   cleanups.push(() => started.dispose())
   const c = await connectLineClient(started.path)
   cleanups.push(() => c.close())
   c.send(hello({ token: pairFakeClient(started.auth, 'reader', ['conversation:read']) }))
   const welcome = await c.next((frame: StudioParsedServerFrame) => frame.t === 'welcome')
-  assert.ok(welcome.t === 'welcome' && !welcome.capabilities.includes('conversation-lifecycle'))
-  assert.equal(STUDIO_RPC_CONVERSATION_CAPABILITIES.includes('conversation-lifecycle'), false)
+  assert.ok(welcome.t === 'welcome' && welcome.conversation.capabilities.includes('conversation-lifecycle'))
 
   c.send({ t: 'req', id: 'l1', method: 'conversation.list' })
   const listed = await c.next((frame: StudioParsedServerFrame) => frame.t === 'res' && frame.id === 'l1')
@@ -86,6 +94,18 @@ test('the owner socket lists every chat, settled ones too, by when each last mov
   const conversations = (listed.result as { conversations: Array<{ workspaceId: string }> }).conversations
   assert.deepEqual(
     conversations.map((conversation) => conversation.workspaceId),
+    ['written', 'moved'],
+  )
+})
+
+test('a Studio that cannot settle a chat does not advertise conversation-lifecycle', () => {
+  assert.equal(studioRpcConversationCapabilities(createFakeBackend()).includes('conversation-lifecycle'), false)
+})
+
+test('a host without the lifecycle list lists every chat, settled ones too, by when each last moved', async () => {
+  const listed = await host(false).list()
+  assert.deepEqual(
+    listed.map((conversation) => conversation.workspaceId),
     ['resting', 'moved', 'written'],
   )
 })

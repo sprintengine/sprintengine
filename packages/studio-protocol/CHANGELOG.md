@@ -15,8 +15,31 @@
   `files.readImage` may be refused `not_found`. A Studio still refuses a
   client that is not an owner a conversation's folder, a CLI's `command`, and
   any path outside the folders it knows, by its params.
+- **`conversation.list` leaves settled chats out**, in the sidebar's order
+  (`conversation-lifecycle`, now in the welcome), as the tailnet lane's list
+  does: every client reads the one list the desktop draws. A settled chat is
+  still read, followed and woken by its key (`conversation.settle` with
+  `settled: false`).
+- **`conversation.resolveApproval` takes `decision: 'always'`**, a rule that
+  outlives the conversation, as the lane takes it
+  (`conversation-permanent-approvals`); a Studio holds it to the client's
+  ceiling as it holds `conversation`. Its params type no longer leaves the
+  decision out.
 
 ### Added
+
+- **What a follower of one chat reads and does beside its stream, by its
+  key** (`followed.ts`), as the tailnet lane served it: the push topics
+  `conversation.queued`, `conversation.scheduled`, `conversation.usageLimits`,
+  `conversation.subagents` and `conversation.changes`, each carrying the
+  lane's own frame of that kind (`ConversationQueuedFrame`, …), and the
+  methods `conversation.askSideQuestion`, `conversation.cancelSideQuestion`,
+  `conversation.contextBreakdown`, `conversation.searchFiles`,
+  `conversation.listCommands`, `conversation.settle`, `conversation.visit`,
+  `conversation.changesDiff` and `conversation.changedFile`
+  (`STUDIO_FOLLOWED_METHODS`, `STUDIO_FOLLOWED_TOPICS`). Reads need
+  `conversation:read`; a side question, a settle and a visit
+  `conversation:operate`, and so does a command list's `refresh`.
 
 - **An incompatible client keeps a way to recover.** `update-session`: a
   client that lists it in its hello and authenticates with a token is sent an

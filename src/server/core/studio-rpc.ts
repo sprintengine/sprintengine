@@ -51,12 +51,15 @@ export function createStudioRpc(
     clients: core.platform.clients,
     backend: () =>
       createStudioConversationBackend({
-        host: core.createConversationHost(),
+        // Listed as `conversation-lifecycle` promises, which this socket
+        // advertises: settled chats left out, in the sidebar's order.
+        host: core.createConversationHost({ lifecycleList: true }),
         launch: (request) => core.conversationLaunchService.launch(request),
         listSessions: (input) => core.conversations.listSessions(input),
         stopSession: (input) => core.conversations.stopSession(input),
         // The live workspace state the module conversation service reads too.
         getWorkspaceAgents: () => core.workspaceSyncService.getSnapshot().state.workspaces,
+        lifecycle: core.conversationLifecycle,
       }),
     audit: () => gateway.gatewayAudit(),
     tools: gateway.clientTools,

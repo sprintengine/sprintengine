@@ -41,6 +41,12 @@ import {
   type StudioPermission,
 } from './permissions.js'
 import { STUDIO_CHAT_METHODS, STUDIO_CHAT_TOPICS, type StudioChatMethodMap, type StudioChatTopicMap } from './chat.js'
+import {
+  STUDIO_FOLLOWED_METHODS,
+  STUDIO_FOLLOWED_TOPICS,
+  type StudioFollowedMethodMap,
+  type StudioFollowedTopicMap,
+} from './followed.js'
 import { parseStudioConversationKey, type StudioConversationKey } from './key.js'
 import {
   STUDIO_FILES_METHODS,
@@ -110,11 +116,13 @@ type Addressed<T> = { key: StudioConversationKey; commandId: string } & T
 /**
  * A command method's params: the conversation lane's command of that kind,
  * its `kind` given by the method, addressed. Pictures (`uploadIds`) are not
- * carried by this connection (`parseStudioCommand`), and a rule that outlives
- * the conversation (`always`) is not taken from it.
+ * carried by this connection (`parseStudioCommand`). A rule that outlives the
+ * conversation (`always`) is taken, as the lane takes it
+ * (`conversation-permanent-approvals`), from a client the router lets allow a
+ * kind of request for the rest of the conversation.
  */
 type CommandParams<K extends ConversationCommand['kind']> = Addressed<
-  Omit<Exclude<Extract<ConversationCommand, { kind: K }>, { decision: 'always' }>, 'kind' | 'uploadIds'>
+  Omit<Extract<ConversationCommand, { kind: K }>, 'kind' | 'uploadIds'>
 >
 
 /**
@@ -166,6 +174,7 @@ export type StudioServerInfo = {
 }
 
 export type StudioMethodMap = StudioConversationMethodMap &
+  StudioFollowedMethodMap &
   StudioChatMethodMap &
   StudioToolsMethodMap &
   StudioFilesMethodMap &
@@ -341,8 +350,7 @@ const COMMAND_ID = '"commandId" must be a string of 1 to 200 characters.'
  * A command method's params as the conversation command they carry, read by
  * the conversation lane's own validator. The refusal is the lane's own
  * (`explainRejectedConversationMessage`), so an over-long message is refused
- * as too large, exactly as on the tailnet. An `always` decision is refused as
- * unsafe, as by a desktop without `conversation-permanent-approvals`.
+ * as too large, exactly as on the tailnet.
  */
 export function parseStudioCommand(
   method: StudioCommandMethod,
@@ -354,12 +362,6 @@ export function parseStudioCommand(
   // Pictures travel beside the socket, not in it, and this version has no
   // upload route: refused rather than dropped, so a send never silently loses one.
   if (params.uploadIds !== undefined) return refuse('invalid_params', 'This connection does not carry pictures yet.')
-  // A rule that outlives the conversation is taken on the tailnet from a
-  // desktop that advertises `conversation-permanent-approvals`; this socket
-  // does not advertise it, and refuses the decision as the lane's first
-  // version does.
-  if (method === 'conversation.resolveApproval' && params.decision === 'always')
-    return refuse('unsafe_remote_decision', 'A remote device cannot choose a permanent rule.')
   const { key: _key, commandId, ...members } = params
   const frame = { type: 'command', commandId, command: { ...members, kind: STUDIO_COMMAND_METHODS[method] } }
   const parsed = parseConversationClientMessage(frame)
@@ -519,6 +521,7 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
 /** Every method: how it is held and how its params are read. A method of the map without one does not compile. */
 export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_CONVERSATION_METHODS,
+  ...STUDIO_FOLLOWED_METHODS,
   ...STUDIO_CHAT_METHODS,
   ...STUDIO_TOOLS_METHODS,
   ...STUDIO_FILES_METHODS,
@@ -557,7 +560,8 @@ export type StudioTopicMap = {
     payload: ConversationServerFrame
     stream: 'frames'
   }
-} & StudioChatTopicMap &
+} & StudioFollowedTopicMap &
+  StudioChatTopicMap &
   StudioToolsTopicMap &
   StudioFilesTopicMap &
   StudioPullRequestsTopicMap &
@@ -591,6 +595,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
       return studioParams({ key: at.params.key, ...limit.params })
     },
   },
+  ...STUDIO_FOLLOWED_TOPICS,
   ...STUDIO_CHAT_TOPICS,
   ...STUDIO_TOOLS_TOPICS,
   ...STUDIO_FILES_TOPICS,
