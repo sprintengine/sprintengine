@@ -134,6 +134,8 @@ test('on a server that holds no record of the chat, a watched chat is found by i
     // A chat it has never run, and one in a workspace the registry removed, are gone.
     assert.equal(wakes.chat({ workspaceId: 'ws-wsl', agentId: 'agent-9' }), null)
     assert.equal(wakes.chat({ workspaceId: 'ws-removed', agentId: 'agent-1' }), null)
+    // What `remember` wrote is on disk before the folder goes, or the cleanup races the write.
+    await wakes.flushFolders?.()
   } finally {
     rmSync(dataDir, { recursive: true, force: true })
   }
