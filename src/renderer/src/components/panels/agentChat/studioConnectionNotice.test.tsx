@@ -1,5 +1,5 @@
 import { JSDOM } from 'jsdom'
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import { installStudioLoopback, type StudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
@@ -7,7 +7,6 @@ import { installStudioLoopback, type StudioLoopback } from '../../../../../../te
 // is being made again, and only once the drop has outlasted a blip; it says
 // nothing once the connection is back, and nothing at all on the IPC.
 
-beforeEach(() => vi.stubEnv('STUDIO_CHAT_TRANSPORT_UNDER_TEST', 'studio'))
 afterEach(() => vi.unstubAllEnvs())
 
 // Each step is its own `act`, so React draws what changed before the next look.
@@ -76,8 +75,7 @@ test('a dropped connection is told in words after a moment, and the words go onc
   }
 })
 
-test('a window on the conversation IPC never draws it', async () => {
-  vi.unstubAllEnvs()
+test('a page with no connection, or one that is open or still connecting, draws nothing', async () => {
   const { studioConnectionWords } = await import('./studioConnectionNotice')
   expect(studioConnectionWords(null)).toBeNull()
   expect(studioConnectionWords('open')).toBeNull()

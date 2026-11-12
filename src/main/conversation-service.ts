@@ -1,8 +1,6 @@
 // The conversation service: every operation a chat offers, over the core's
-// runtime. The conversation IPC (ipc/conversation-ipc.ts) serves Studio's
-// windows from it and the Studio protocol's chat surface
-// (studio-rpc/studio-chat-backend.ts) serves its clients from it; neither
-// imports the other.
+// runtime. The Studio protocol's chat surface (studio-rpc/studio-chat-backend.ts)
+// serves every client from it, the app's own windows included.
 
 import type {
   ConversationSearchHit,
@@ -95,10 +93,9 @@ import { getSharedCredentialStore } from './secret-store'
 import { cliForConversationProvider } from '../shared/conversation-harness'
 
 /**
- * Every operation a chat offers a client: what the conversation IPC registers
- * windows on and what the Studio protocol's chat surface calls. One object,
- * built once over the core's chats, so a window over IPC and a client over the
- * protocol reach one chat by the same rules.
+ * Every operation a chat offers a client: what the Studio protocol's chat
+ * surface calls. One object, built once over the core's chats, so every
+ * client reaches one chat by the same rules.
  */
 export type ConversationService = {
   listThreads?(input: ConversationWorkspaceKey): Promise<ConversationThreadsResult>

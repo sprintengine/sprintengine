@@ -13,9 +13,7 @@ import { installStudioLoopback, type StudioLoopback } from '../../../../../../te
 // repeats or skips text after the connection drops mid-turn, a picture that
 // arrives cut, a socket's own words in an error — is what these look for.
 
-beforeEach(() => {
-  vi.stubEnv('STUDIO_CHAT_TRANSPORT_UNDER_TEST', 'studio')
-})
+beforeEach(() => {})
 afterEach(() => {
   vi.unstubAllEnvs()
 })

@@ -15,20 +15,6 @@ export const STUDIO_WINDOW_TICKET_CHANNEL = 'studio:window-ticket'
  */
 export type StudioWindowTicket = { url: string; token: string }
 
-/** Which way the chat view reaches conversations in this window. */
-export type StudioChatTransportMode = 'ipc' | 'studio'
-
-/**
- * Set to `studio` to put the chat view on the Studio protocol, or `ipc` to
- * keep it on the conversation IPC. The IPC path is the default until the
- * protocol path has had its release beside it.
- */
-export const STUDIO_CHAT_TRANSPORT_ENV = 'SPRINTENGINE_CHAT_TRANSPORT'
-
-export function studioChatTransportMode(value: string | undefined): StudioChatTransportMode {
-  return value?.trim().toLowerCase() === 'studio' ? 'studio' : 'ipc'
-}
-
 /**
  * The `Origin` a window's socket carries, from the address of the document
  * that asked for its ticket. A page loaded from a file says `file://`; any

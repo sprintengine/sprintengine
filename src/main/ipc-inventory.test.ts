@@ -174,7 +174,7 @@ import { attachStartupTimeline } from './startup-timeline'
  * deletes their rows; lower the count in the same change.
  */
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
-  conversations: 29,
+  conversations: 6,
   terminals: 3,
   modules: 2,
   extensions: 33,
@@ -216,7 +216,6 @@ const NO_CHANNEL: Readonly<Record<string, string>> = {
   getPathForFile: "reads a dropped file's path through webUtils",
   uploadFiles: 'reads files the person picked in this window',
   startupTimelineEnabled: 'a value from the command line',
-  studioChatTransport: 'a value from the command line',
 }
 
 /** Push rows the api modules do not listen on, and the file that does. */

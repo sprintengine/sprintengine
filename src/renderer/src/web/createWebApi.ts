@@ -171,8 +171,7 @@ export function createWebApi(): ElectronApi {
     isDiagnosticsEnabled: diagnosticsOnLoopback(),
     diagnosticsGetIpcStats: () => ({ sampledAt: Date.now(), channels: [] }),
 
-    // The chat over the Studio protocol, on the tab's own socket.
-    studioChatTransport: 'studio',
+    // The tab's own socket to its Studio.
     studioWindowTicket: webStudioTicket,
 
     // The Canvas pane, over the canvas service the tab runs in the page.

@@ -1267,7 +1267,7 @@ test('AgentChatView', async () => {
   // equality: a re-typed array here would pass a deepEqual today and drift
   // tomorrow. The other half of the pairing — that the boundary accepts exactly
   // these values — is asserted against the real handler in
-  // src/main/ipc/conversation-ipc.test.ts.
+  // src/main/studio-rpc/studio-chat-backend-inputs.test.ts.
   assert.equal(ATTACHABLE_IMAGE_TYPES, SHARED_ATTACHABLE_IMAGE_TYPES, 'the composer offers the shared media-type set')
   assert.equal(MAX_ATTACHMENT_BYTES, SHARED_MAX_ATTACHMENT_BYTES, 'the composer sizes against the shared ceiling')
   assert.equal(MAX_ATTACHMENTS_PER_TURN, SHARED_MAX_ATTACHMENTS_PER_TURN, 'the composer trims to the shared cap')

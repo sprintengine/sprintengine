@@ -51,9 +51,6 @@ const TUNNEL_OWNER = "A browser tab reaches this desktop's own channels only und
 const owner = (...permissions: StudioPermission[]): StudioAccess => ({ permissions, owner: TUNNEL_OWNER })
 const desktopOnly = (reason: string): StudioAccess => ({ localOnly: reason })
 
-const READ_CHAT = owner('conversation:read')
-const DRIVE_CHAT = owner('conversation:read', 'conversation:operate')
-
 const ACCESS_ADMIN =
   'Who may reach this machine (paired apps, other machines, the tailnet) is administered in the desktop app.'
 const CREDENTIALS = 'A provider key or the GitHub token is set and cleared in the desktop app.'
@@ -84,28 +81,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'backlog:update-module-metadata': owner('backlog:operate'),
   'backlog:update-status': owner('backlog:operate'),
   'backlog:update-triage': owner('backlog:operate'),
-  'conversation:attachment': READ_CHAT,
-  'conversation:handoff': DRIVE_CHAT,
-  'conversation:session:earlier': READ_CHAT,
-  'conversation:session:subscribe': READ_CHAT,
-  'conversation:session:unsubscribe': READ_CHAT,
-  'conversation:sessions:interrupt': DRIVE_CHAT,
-  'conversation:sessions:respond-to-request': DRIVE_CHAT,
-  'conversation:sessions:send-turn': DRIVE_CHAT,
-  'conversation:sessions:set-model': DRIVE_CHAT,
-  'conversation:sessions:stop-subagent': DRIVE_CHAT,
-  'conversation:sessions:message-subagent': DRIVE_CHAT,
-  'conversation:sessions:side-question': DRIVE_CHAT,
-  'conversation:sessions:cancel-side-question': READ_CHAT,
-  'conversation:sessions:context-breakdown': READ_CHAT,
-  'conversation:sessions:set-permission': DRIVE_CHAT,
-  'conversation:sessions:start': DRIVE_CHAT,
-  'conversation:tool-detail': READ_CHAT,
-  'conversation:event:read': READ_CHAT,
-  'conversation:turn:diff': READ_CHAT,
-  'conversation:turn:fork': owner('conversation:create'),
-  'conversation:turn:revert': DRIVE_CHAT,
-  'conversation:turn:rewind': DRIVE_CHAT,
   'git:worktree:cleanup-agents': desktopOnly(DESKTOP),
   'git:worktree:create': desktopOnly(DESKTOP),
   'git:worktree:remove': desktopOnly(DESKTOP),
@@ -249,14 +224,14 @@ export const WEB_HTTP_ACCESS = {
 
 /**
  * What an owner's browser holds on its tunnel: the permissions the channels
- * above name, listed rather than derived, so a channel that comes to need one
+ * and HTTP routes above name, listed rather than derived, so a channel that comes to need one
  * no tab held before is refused until it is given here on purpose. No
  * terminal, no upkeep of this machine, and no tools of its own.
  */
 export const WEB_OWNER_TUNNEL_PERMISSIONS: readonly StudioPermission[] = [
+  // The upload route's (`WEB_HTTP_ACCESS`): a dropped file for a chat.
   'conversation:read',
   'conversation:operate',
-  'conversation:create',
   'workspace:read',
   'workspace:operate',
   'backlog:read',

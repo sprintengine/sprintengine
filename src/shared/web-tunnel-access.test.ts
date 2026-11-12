@@ -5,6 +5,7 @@ import { authorizeStudioAccess, isStudioPermission } from '../../packages/studio
 import { SERVER_IPC_CHANNELS } from './ipc-channel-owners'
 import { WEB_TUNNEL_CHANNELS } from './web-client'
 import {
+  WEB_HTTP_ACCESS,
   WEB_OWNER_TUNNEL_PERMISSIONS,
   WEB_TUNNEL_ACCESS,
   webTunnelAllows,
@@ -97,7 +98,9 @@ test('a browser that is not the owner reaches no channel at all', () => {
 
 test('an owner’s tab holds only the permissions some channel it reaches needs, and nothing for terminals or upkeep', () => {
   const needed = new Set(
-    Object.values(WEB_TUNNEL_ACCESS).flatMap((access) => ('permissions' in access ? access.permissions : [])),
+    [...Object.values(WEB_TUNNEL_ACCESS), ...Object.values(WEB_HTTP_ACCESS)].flatMap((access) =>
+      'permissions' in access ? access.permissions : [],
+    ),
   )
   assert.deepEqual([...WEB_OWNER_TUNNEL_PERMISSIONS].sort(), [...needed].sort())
   for (const permission of ['environment:maintain', 'tools:offer'])

@@ -1073,7 +1073,8 @@ nothing were attached — which is why a client sends `files` only to a Studio
 that advertises it, and the desktop's own window refuses such a send in words
 otherwise. `session-controls`, `session-terminal-handoff`,
 `conversation-history`, `approval-rules` and `provider-settings` (2026-11-12)
-add, owners only for now, the rest of what the window's conversation IPC does:
+add, owners only for now, the rest of what the window's conversation IPC did
+(that IPC is gone; the window reaches its chats only this way):
 `session.list`, `session.stop`, `session.suspend`, `session.mcpServerAction`,
 `session.stopSubagent`, `session.messageSubagent`, `session.askSideQuestion`,
 `session.cancelSideQuestion`, `session.contextBreakdown` and the

@@ -2,9 +2,11 @@
 
 Status: proposed, 2026-10-01. Phases 1 (the Electron seams), 2 (the Studio
 RPC), 3 (the Electron-free core and the `studio-server` entry) and 4 (the chat
-view over the protocol, behind the `SPRINTENGINE_CHAT_TRANSPORT=studio`
+view over the protocol, at first behind the `SPRINTENGINE_CHAT_TRANSPORT=studio`
 environment variable) have landed (section 13, "As
-landed"); nothing after them is. Phases 5 to 10 were replanned on 2026-10-02
+landed"); nothing after them is. Since 2026-11-12 the chat view runs on the
+protocol only: the variable, the window's conversation IPC and the
+`chat-over-studio` test project are gone. Phases 5 to 10 were replanned on 2026-10-02
 for a server with no browser and no canvas (section 1.1). This file replaces
 the remaining steps of the agent SDK plan on `feat/studio-agent-sdk` (the work
 after the protocol package and the tailnet lane and module service that speak
@@ -223,8 +225,8 @@ document, the command catalog, @-mention search, history — are still direct
   (`resources/wsl-helper/`, newline JSON over stdio, a `boot` line then
   `hello`) are the template for both the WSL server and the SSH bootstrap.
 - **`ConversationService`** (`conversation-service.ts`): a service object
-  with no IPC in it, which the conversation IPC binds to `ipcMain` and the
-  Studio protocol's chat surface calls. Every domain that moves to the server
+  with no IPC in it, which the Studio protocol's chat surface calls (the
+  conversation IPC that once bound it to `ipcMain` is gone). Every domain that moves to the server
   gets this shape first.
 
 There was no SSH host, no headless entry point and no Electron-free

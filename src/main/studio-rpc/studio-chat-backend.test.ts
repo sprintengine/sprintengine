@@ -8,10 +8,10 @@ import { join } from 'node:path'
 import type { ConversationSendTurnInput } from '../../shared/conversation-runtime'
 import { createStudioChatBackend, type StudioChatBackendDeps } from './studio-chat-backend'
 
-// The RPC's chat surface in main is the conversation IPC's own handlers behind
-// the IPC's own input checks: a send the IPC would refuse is refused in the
-// same words, one it would take reaches the same handler with the same input,
-// and the client's command id rides through for the runtime's receipts.
+// The RPC's chat surface in main is the conversation service behind its input
+// checks: a send they refuse is refused in their words, one they take reaches
+// the service with the same input, and the client's command id rides through
+// for the runtime's receipts.
 
 const session = {
   sessionId: 's1',

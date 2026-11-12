@@ -2,7 +2,7 @@
 // of the send-turn boundary: the composer stages against them
 // (src/renderer/src/components/panels/AgentChatView.tsx) and
 // `parseImageAttachments` rejects against them
-// (src/main/ipc/conversation-ipc.ts). They were independently declared on each
+// (src/main/conversation-ipc-inputs.ts). They were independently declared on each
 // side; drift showed up as the composer staging an image the boundary then
 // refused mid-send, or trimming to a cap main had already raised (1810).
 //

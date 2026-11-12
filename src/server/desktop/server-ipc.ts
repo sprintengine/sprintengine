@@ -15,7 +15,6 @@ import type { GitHubTokenStore } from '../../main/github-token-store'
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { registerBacklogIpc } from '../../main/ipc/backlog-ipc'
-import { registerConversationIpc } from '../../main/ipc/conversation-ipc'
 import { createConversationService } from '../../main/conversation-service'
 import { registerGitHubReposIpc } from '../../main/ipc/github-repos-ipc'
 import { registerGitHubTokenIpc } from '../../main/ipc/github-token-ipc'
@@ -111,14 +110,12 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerBacklogIpc(ipc)
   registerGitHubTokenIpc(ipc, deps.githubTokenStore)
   registerGitHubReposIpc(ipc, deps.githubTokenStore)
-  // One conversation service over the core's chats: the windows' IPC and the
-  // Studio RPC's chat surface both serve it, so a chat view on the protocol
-  // and one on IPC reach one chat by the same rules.
+  // One conversation service over the core's chats, which the Studio RPC's
+  // chat surface serves to every client, the app's own windows included.
   const conversationService = {
     ...createConversationService(core.conversations),
     terminalHandoff: deps.terminalHandoff,
   }
-  registerConversationIpc(ipc, conversationService)
   deps.studioRpc.provideChat(
     createStudioChatBackend({
       conversation: conversationService,

@@ -121,9 +121,8 @@ test('the clipboard and links act in the browser, never on the server', async ()
   expect(posted).toHaveLength(0)
 })
 
-test('the chat rides the Studio protocol, and boot reads find empty states', async () => {
+test('boot reads find empty states', async () => {
   const api = createWebApi()
-  expect(api.studioChatTransport).toBe('studio')
   expect((await api.authGetState()).status).toBe('signed_out')
   expect((await api.listThirdPartyRendererEntries()).entries).toEqual([])
 })

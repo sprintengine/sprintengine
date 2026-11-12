@@ -17,7 +17,7 @@ import {
   loadCodeLanguage,
   normalizeCodeLanguage,
 } from '../../../../lib/highlight/codeHighlight'
-import { installStudioLoopback } from '../../../../../../../tests/studio-chat-loopback'
+import { installStudioLoopback, settleStudio } from '../../../../../../../tests/studio-chat-loopback'
 
 function tool(values: Partial<TranscriptToolEntry>): TranscriptToolEntry {
   return { kind: 'tool', id: 'tool', turnId: 'turn', name: 'Bash', status: 'done', ...values }
@@ -95,6 +95,7 @@ test('a press on the row ground goes through the label button, and a portalled c
     expect(button.getAttribute('aria-expanded')).toBe('false')
     const chevron = host.querySelector('[data-tool-kind] > div > svg:last-child')!
     await act(async () => chevron.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })))
+    await settleStudio(act)
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(guarded.at(-1)).toBe(button)
     // A click React bubbled up from a menu portalled elsewhere in the page.
@@ -228,6 +229,7 @@ test('truncated output is fetched only on request and failures can be retried', 
       },
     },
   })
+  installStudioLoopback(dom.window as never)
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -262,11 +264,14 @@ test('truncated output is fetched only on request and failures can be retried', 
     )
     expect(calls).toBe(0)
     await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
+    await settleStudio(act)
     expect(calls).toBe(0)
     await act(async () => click('Show full output'))
+    await settleStudio(act)
     expect(calls).toBe(1)
     expect(host.textContent).toContain('Temporarily unavailable')
     await act(async () => click('Retry'))
+    await settleStudio(act)
     expect(calls).toBe(2)
     expect(host.textContent).not.toContain('snippet')
     expect(host.textContent!.length).toBeGreaterThan(50_000)
@@ -338,6 +343,7 @@ test('a change that crossed without its bodies is read whole when its row opens,
       },
     },
   })
+  installStudioLoopback(dom.window as never)
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -367,6 +373,7 @@ test('a change that crossed without its bodies is read whole when its row opens,
     )
     expect(calls).toBe(0)
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+    await settleStudio(act)
     expect(calls).toBe(1)
     expect(host.textContent).not.toContain('first line only')
     await act(async () =>
@@ -466,6 +473,7 @@ async function withToolDetailDom(
       },
     },
   })
+  installStudioLoopback(dom.window as never)
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -988,6 +996,7 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
     const openRead = async (id: string) => {
       await render(tool({ id, name: 'Read', toolKind: 'file_read', input: { path: 'shots/screen.png' } }))
       await act(async () => host.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+      await settleStudio(act)
     }
     await openRead('read-shot')
     expect(host.querySelector('[data-tool-step-body] img')?.getAttribute('src')).toBe('data:image/png;base64,read-shot')
