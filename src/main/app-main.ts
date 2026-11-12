@@ -54,13 +54,7 @@ import {
   writeServerFallbackNote,
   writeServerMode,
 } from './server-mode'
-import {
-  readSavedSshPreview,
-  readSshPreview,
-  setSessionSshPreview,
-  writeSshPreview,
-} from './environments/ssh/ssh-preview'
-import { SSH_PREVIEW_CHANNELS, type SshPreviewStatus } from '../shared/ssh-preview'
+import { readSshPreview, registerSshPreviewIpc, setSessionSshPreview } from './environments/ssh/ssh-preview'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { STUDIO_SERVER_CHANNELS } from '../shared/studio-server-status'
 import { createDesktopServerHost } from './server-supervisor/desktop-server-host'
@@ -401,18 +395,7 @@ registerAppRestartIpc(ipcMain, {
   confirm: () => services.quitConfirmation.confirm(),
   relaunch: () => relaunchApp(),
 })
-// The SSH machines switch: answered whether or not this session has them.
-const sshPreviewStatus = (): SshPreviewStatus => ({
-  enabled: sshPreview.enabled,
-  saved: sshPreview.fromEnvironment ? sshPreview.enabled : readSavedSshPreview(app.getPath('userData')),
-  fromEnvironment: sshPreview.fromEnvironment,
-})
-ipcMain.handle(SSH_PREVIEW_CHANNELS.get, () => sshPreviewStatus())
-ipcMain.handle(SSH_PREVIEW_CHANNELS.set, (_event, payload: unknown) => {
-  const enabled = (payload as { enabled?: unknown } | null)?.enabled
-  if (typeof enabled === 'boolean' && !sshPreview.fromEnvironment) writeSshPreview(app.getPath('userData'), enabled)
-  return sshPreviewStatus()
-})
+registerSshPreviewIpc(ipcMain, sshPreview, app.getPath('userData'))
 registerStudioServerIpc(ipcMain, {
   choice: serverMode,
   supervisor: serverHost?.supervisor ?? null,

@@ -4,6 +4,7 @@ import { isAbsolute, relative } from 'node:path'
 
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
+import { noteModuleIpcChannel } from '../ipc/ipc-registration-rule'
 import { MODULE_BRIDGE_INVOKE_CHANNEL, type ModuleBridgeInvokeResult } from '../../shared/modules/bridge'
 import { MODULE_EVENTS_CHANNEL, validateModuleEventTopic, type ModuleEventEnvelope } from '../../shared/modules/events'
 import type { CapabilityManifest, ModuleFileDigests } from '../../shared/modules/manifest'
@@ -799,6 +800,7 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
           throw new Error(`IPC channel "${channel}" is already registered by module "${existing.owner}".`)
         }
         channels.set(channel, { owner: moduleId, handler })
+        noteModuleIpcChannel(channel)
         ipcMain.handle(channel, handler)
       },
       registerMcpTools(tools) {

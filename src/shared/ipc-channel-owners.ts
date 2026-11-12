@@ -4,10 +4,11 @@
 // with the shell. In process everything goes to main, as it always has.
 //
 // A domain is listed whole when its registration moves into the server, and
-// the completeness test (src/server/desktop/server-ipc.test.ts) holds this
-// table and the server's registrations to each other in both directions. When
-// phase 10 turns a domain's channels into typed protocol methods, its entries
-// leave this table; the tunnel is done when the table is empty.
+// the inventory test (src/main/ipc-inventory.test.ts) holds this table and the
+// server's registrations to each other in both directions. When a domain's
+// channels become typed protocol methods, its entries leave this table and
+// its rows leave the IPC inventory (shared/ipc-inventory.ts); the tunnel is
+// done when the table is empty.
 //
 // `retry: 'once'` marks an idempotent read the preload sends again, once, on
 // the next port when the server restarts under it.

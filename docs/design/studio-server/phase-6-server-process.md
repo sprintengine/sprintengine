@@ -548,9 +548,10 @@ interface CallerContext {
     process, so both modes register the same handlers.
 - **Classification completeness.** A test fails when a channel the server
   registers is missing from the table, or the table lists one the server does
-  not register (`src/server/desktop/server-ipc.test.ts`). This is the same
-  rule as `STUDIO_METHOD_SCOPES` in the design. Since the shell is the
-  default, a shell channel needs no entry.
+  not register (`src/main/ipc-inventory.test.ts`). This is the same
+  rule as `STUDIO_METHOD_SCOPES` in the design. Every channel, the shell's
+  included, also has a row in the IPC inventory (`src/shared/ipc-inventory.ts`),
+  which says whether it stays with the shell or moves to the Studio protocol.
 - **Before the port arrives**, invokes on server channels queue in the preload.
   The queue holds at most 256 entries, and each times out after 30 s with
   `ServerUnavailable`. Listeners for server push channels are kept locally and

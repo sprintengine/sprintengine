@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, net, powerMonitor } from 'electron'
 import { createAppMenu, setChatWindowsForCloseChord } from './app-menu'
 import { sweepRetiredCheckpoints } from './checkpoint-sweep'
-import { createBootReveal } from './boot-reveal'
+import { createBootReveal, onRendererBootComplete } from './boot-reveal'
 import { DEEP_LINK_SCHEMES, withoutDeepLinks } from '../shared/deep-link-scheme'
 import { CHAT_LINK_OPEN_CHANNEL, chatLinkFromArgv, type ChatLink } from '../shared/deep-link'
 import { createChatLinkRouter } from './chat-link-router'
@@ -509,9 +509,7 @@ export function registerAppLifecycle({
       }
     })
 
-    // `once`: a renderer that reloads mid-boot (dev HMR) must not re-arm a
-    // reveal that has already happened.
-    ipcMain.once('app:boot-complete', () => {
+    onRendererBootComplete(ipcMain, () => {
       void workspacesPrepared.then(() => bootReveal.trigger())
     })
     // A renderer that dies before its first frame never sends the signal, and
