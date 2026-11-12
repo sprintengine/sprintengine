@@ -30,8 +30,7 @@
   checks that first).
 - A command method's params are the lane's command of that kind
   (`conversation.send` takes `skills`, `mentions`, `steer`, `composedAt`, …
-  as the lane does). `session.send`'s `mentions` are read by
-  `parseConversationMentions` at the edge, as the runtime reads them.
+  as the lane does).
 - `STUDIO_ERROR_CODES` names the launch's refusals the server already sent
   (`unknown_workspace`, `workspace_folder_missing`, `no_cli_selected`,
   `cli_not_conversational`, `unknown_skill`, `conversation_start_failed`).

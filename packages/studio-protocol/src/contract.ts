@@ -17,9 +17,9 @@ import type { StudioScope } from './scopes.js'
 // From the merged table (`methods.ts`) come the server's handler map, which
 // must hold a handler for every method answering that method's result
 // (`StudioHandlers`), and the client, whose calls take and answer the same
-// types (`StudioRpcClient`). The server's handlers and the clients cast
-// nothing; the few casts left are inside this package's generic plumbing,
-// where a method name and its own definition are paired by the table.
+// types (`StudioRpcClient`). The handler map casts nothing. What casts are
+// left sit where one generic call is paired with its method's definition (the
+// dispatch to a handler, `createStudioRpcClient`, a client's own transport).
 //
 // What the types check is each member a contract defines: present, and of its
 // type. They do not forbid a member it does not define (TypeScript's types are
@@ -143,7 +143,7 @@ export type StudioTopicDefinition<C extends StudioTopicContract> = {
   extraPermissions?: readonly StudioPermission[]
   capability: StudioCapability
   owner?: true
-  /** Reads an object of params (absent params arrive as `{}`). */
+  /** Reads an object of params; absent params are read as `{}`, which a topic that names something refuses. */
   readonly params: (value: Record<string, unknown>) => StudioParsed<C['params']>
 } & (C['stream'] extends 'push' ? { push: true } : { push?: never })
 

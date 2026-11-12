@@ -638,13 +638,16 @@ export function parseStudioTopicParams<T extends StudioTopic>(
   topic: T,
   params: unknown,
 ): StudioParsed<StudioTopicParams<T>> {
-  // A topic that follows one thing names it; one that follows everything takes nothing.
-  const names = topic === 'conversation.session' || topic === 'files.watch'
-  const value = params === undefined && !names ? {} : params
-  if (!record(value))
-    return refuse(
-      'invalid_params',
-      topic === 'files.watch' ? 'files.watch takes { root, path }.' : `${topic} takes an object of params.`,
-    )
-  return (STUDIO_TOPICS[topic] as StudioTopicDefinition<StudioTopicMap[T]>).params(value)
+  const definition = STUDIO_TOPICS[topic] as StudioTopicDefinition<StudioTopicMap[T]>
+  const notObject = refuse(
+    'invalid_params',
+    topic === 'files.watch' ? 'files.watch takes { root, path }.' : `${topic} takes an object of params.`,
+  )
+  // A topic that follows everything takes nothing; one that names what it
+  // follows (its validator refuses `{}`) needs its params.
+  if (params === undefined) {
+    const empty = definition.params({})
+    return empty.ok ? empty : notObject
+  }
+  return record(params) ? definition.params(params) : notObject
 }
