@@ -1004,7 +1004,15 @@ export type ScheduledAgentDraft = Pick<
 >
 
 /** A scheduled agent as listed: the record plus when it runs next (epoch ms). */
-export type ScheduledAgentView = ScheduledAgent & { nextRunAt: number | null }
+export type ScheduledAgentView = ScheduledAgent & {
+  nextRunAt: number | null
+  /**
+   * Why the machine it lives on cannot run it now, in words: its times pass
+   * without a run, which is not a failure, until the machine has what it
+   * lacks. Absent when it can run.
+   */
+  waiting?: string
+}
 
 export type ScheduledAgentWriteResult = { ok: true; agent: ScheduledAgentView } | { ok: false; message: string }
 
