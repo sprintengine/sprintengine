@@ -239,9 +239,9 @@ test('each environment reads as its routes’ owners report: up on any way in, e
   environments.observe('tailnet', [paired('tnc_1', 'mac-mini', MINI)])
   environments.observe('ssh', [ssh('m_mini', 'mac-mini-ssh', MINI), ssh('m_box', 'build-box', BOX)])
   const connection = (id: string) => environments.get(id)?.connection
-  // Nothing reported yet: unknown, and no compatibility until design-server-update records it.
+  // Nothing reported yet: unknown, and so is its compatibility.
   assert.deepEqual(connection(MINI), { state: 'unknown', detail: null, lastReachedAt: null })
-  assert.equal(environments.get(MINI)?.compatibility, null)
+  assert.equal(environments.get(MINI)?.compatibility, 'unknown')
 
   environments.report('tailnet', [
     {
@@ -286,4 +286,56 @@ test('a changed report is announced, an unchanged one is not', () => {
   assert.equal(calls, 1)
   report('offline')
   assert.equal(calls, 2)
+})
+
+test("each machine's compatibility is read from the window its server last said, against this build's", () => {
+  const dir = dataDir()
+  const known = registry(dir)
+  known.observe('ssh', [ssh('box', 'build-box', BOX), ssh('new', 'new-box', null)])
+  known.observe('wsl', wsl('Ubuntu'))
+  const compat = (list: KnownEnvironment[]) => list.map((entry) => [entry.displayName, entry.compatibility])
+  // Nothing heard yet: unknown; this machine is the one asking.
+  assert.deepEqual(compat(known.list()), [
+    ['This PC (Windows)', 'compatible'],
+    ['WSL: Ubuntu', 'unknown'],
+    ['build-box', 'unknown'],
+    ['new-box', 'unknown'],
+  ])
+  const up = { state: 'up' as const, detail: null, lastReachedAt: null }
+  const offline = { state: 'offline' as const, detail: null, lastReachedAt: null }
+  known.report('ssh', [
+    // A server far past this build, and one far behind it, as their records said.
+    {
+      route: { kind: 'ssh', machine: 'box' },
+      connection: offline,
+      window: { protocolVersion: 99, minProtocolVersion: 98 },
+    },
+    {
+      route: { kind: 'ssh', machine: 'new' },
+      connection: offline,
+      window: { protocolVersion: 0.5, minProtocolVersion: 1 },
+    },
+  ])
+  known.learn({ kind: 'wsl', distro: 'Ubuntu' }, descriptor(UBUNTU, 'WSL: Ubuntu'))
+  assert.deepEqual(compat(known.list()).slice(1), [
+    ['WSL: Ubuntu', 'compatible'],
+    ['build-box', 'client-outdated'],
+    ['new-box', 'unknown'],
+  ])
+  // A report with no window leaves what was heard.
+  known.report('ssh', [{ route: { kind: 'ssh', machine: 'box' }, connection: up }])
+  assert.equal(known.get(BOX)?.compatibility, 'client-outdated')
+  // Kept beside the descriptor across a restart, for a machine with an id.
+  const again = registry(dir)
+  again.observe('ssh', [ssh('box', 'build-box', BOX)])
+  assert.equal(again.get(BOX)?.compatibility, 'client-outdated')
+  const stored = JSON.parse(readFileSync(join(dir, ENVIRONMENTS_FILENAME), 'utf8')) as {
+    environments: Record<string, unknown>
+  }
+  assert.deepEqual(stored.environments[BOX], { window: { protocolVersion: 99, minProtocolVersion: 98 } })
+  // The server updated: the next window heard is the one that counts.
+  again.report('ssh', [
+    { route: { kind: 'ssh', machine: 'box' }, connection: up, window: { protocolVersion: 1, minProtocolVersion: 1 } },
+  ])
+  assert.equal(again.get(BOX)?.compatibility, 'compatible')
 })

@@ -36,9 +36,12 @@ and the conversation backend wire (`BACKEND_WIRE_VERSION`), and the SSH
 relay's multiplexer (`MUX_VERSION` in `resources/wsl-server/relay-mux.mjs`).
 Both ends are this app's own build: the tree is installed per app version and
 checked by digest. An SSH machine can run another version's server (a newer
-desktop installed it); the desktop then speaks to it only when it is this
-version, upgrades an older managed one, and otherwise refuses in words
-(`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`). Bump
+desktop installed it); its `run/server.json` says the Studio protocol window
+it speaks, and the desktop attaches it when that window meets its own and the
+backend wire is the same, upgrades an older managed one, and otherwise refuses
+in words (`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`).
+An upgrade that does not start falls back to the previous server and is not
+retried on its own (`run/update-failed.json`). Bump
 `BACKEND_WIRE_VERSION` whenever a forwarded member's arguments or answer
 change, and `MUX_VERSION` whenever a frame does. A number once on `main` is
 spent, even before a release, since a nightly may already carry it: two changes
@@ -1128,7 +1131,8 @@ answers `method`: `self` for a desktop, which updates itself through its app
 updater; `bootstrap` for a server a desktop installed (inside WSL, or over
 SSH), which that desktop replaces when it next connects; `manual` for one
 started by hand. `manual` carries the words for the last two. `update.start`
-(a mutation with a `commandId`, scope `environment:maintain`) asks a `self`
+(a mutation with a `commandId`, scope `environment:maintain`; the same
+`commandId` asked again, even after the restart, is answered as it was) asks a `self`
 Studio to check, download, drain its running turns and restart into the new
 version; it is answered before the restart, and the client reads the outcome
 from the next welcome's version or `lastFailure`. A desktop installs what its
@@ -1138,6 +1142,16 @@ that PC. A Studio that does not update itself refuses it `update_unavailable`
 with its words. Owners hold
 `environment:maintain`; a paired app only when Settings gave it; a browser on
 the tailnet never.
+
+A server's data directory says the format its files are in
+(`<data>/format.json`, `{ format, writtenBy }`; `src/server/environment/
+data-format.ts`). A server refuses to start on data in a newer format than it
+reads ("this data was written by Studio X; update this server"), so a server
+rolled back to an older tree never rewrites what a newer one wrote. A format
+changes only through a step in that file, which copies the files it touches
+aside first and is undone if it fails or is interrupted. Format 1 is the
+layout every build before the marker wrote; the first store change an older
+server cannot read adds format 2.
 
 **The `incompatible` frame, `update.status`, `update.start`, their params,
 results and codes never change shape**, since they are what two ends that

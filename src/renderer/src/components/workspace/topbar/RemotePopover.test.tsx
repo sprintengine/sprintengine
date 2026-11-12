@@ -180,7 +180,7 @@ test('RemotePopover', async () => {
       machine: { kind: 'paired', name: entry.machineName },
       descriptor: null,
       connection: meshConnection(p.meshReachability.get(entry.id)),
-      compatibility: null,
+      compatibility: 'unknown',
     }))
   }
   const glyph = (p: TailnetPresence) => remoteGlyphState(p, envs(p))

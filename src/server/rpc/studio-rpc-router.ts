@@ -1428,9 +1428,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'update.start': async (params) => {
       const status = updates.status()
       if (status.method !== 'self') return refuse('update_unavailable', status.manual ?? MANUAL_UPDATE_WORDS)
-      const started = await updates.start(
-        params.targetVersion === undefined ? {} : { targetVersion: params.targetVersion },
-      )
+      const started = await updates.start({
+        commandId: params.commandId,
+        ...(params.targetVersion === undefined ? {} : { targetVersion: params.targetVersion }),
+      })
       return started.ok
         ? { ok: true, result: { accepted: true, method: 'self', targetVersion: started.targetVersion } }
         : refuse('update_unavailable', started.message)

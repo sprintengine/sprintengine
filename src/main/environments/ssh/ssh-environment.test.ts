@@ -212,6 +212,47 @@ test('a newer server on the machine is left alone: version-blocked, in words', a
   assert.equal(readFileSync(join(run, 'server.json'), 'utf8').includes('99.0.0'), true, 'never replaced')
 })
 
+test('an update that failed before is not tried again on its own: the row says what failed and offers Retry', async () => {
+  const home = join(scratch, 'failed-update')
+  const run = join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run')
+  mkdirSync(run, { recursive: true, mode: 0o700 })
+  // The previous server runs again (this test process holds its lock, so
+  // nothing here may replace it), and its update to this version failed.
+  writeFileSync(
+    join(run, 'studio.lock'),
+    JSON.stringify({ role: 'server', pid: process.pid, hostname: hostname(), startedAt: '', token: 't' }),
+  )
+  writeFileSync(
+    join(run, 'server.json'),
+    JSON.stringify({
+      v: 1,
+      pid: process.pid,
+      version: '0.0.1',
+      origin: 'bootstrap',
+      protocolVersion: 1,
+      minProtocolVersion: 1,
+      backendWire: BACKEND_WIRE_VERSION,
+      hostId: 'x',
+      socketPath: '/nowhere.sock',
+    }),
+  )
+  writeFileSync(
+    join(run, 'update-failed.json'),
+    JSON.stringify({ from: '0.0.1', to: VERSION, at: 1, reason: 'The Studio server did not become ready. EADDRINUSE' }),
+  )
+  const machine = harness(home)
+  await assert.rejects(machine.env.connect({ interactive: true }))
+  const summary = machine.env.summary()
+  assert.equal(summary.state, 'version-blocked')
+  assert.equal(
+    summary.stateText,
+    `Updating the Studio server on build-box to ${VERSION} failed, so 0.0.1 runs again: The Studio server did not become ready. EADDRINUSE`,
+  )
+  assert.equal(summary.action, 'retry-update')
+  // The window its record said is kept for the machine list's compatibility.
+  assert.deepEqual(summary.protocol, { protocolVersion: 1, minProtocolVersion: 1 })
+})
+
 test('Disconnect and Stop server hold until the person connects again; nothing in the background undoes them', async () => {
   const home = join(scratch, 'held')
   mkdirSync(home)

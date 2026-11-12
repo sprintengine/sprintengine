@@ -26,7 +26,7 @@ function environments(): EnvironmentEntry[] {
       machine: { kind: 'local' },
       descriptor: null,
       connection: up,
-      compatibility: null,
+      compatibility: 'unknown',
     },
     {
       environmentId: null,
@@ -35,7 +35,7 @@ function environments(): EnvironmentEntry[] {
       machine: { kind: 'wsl', hostId: 'wsl:Ubuntu' },
       descriptor: null,
       connection: up,
-      compatibility: null,
+      compatibility: 'unknown',
     },
   ]
 }

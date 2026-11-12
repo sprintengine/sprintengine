@@ -15,7 +15,7 @@ const entry = (environmentId: string, route: EnvironmentEntry['routes'][number])
   machine: { kind: 'local' },
   descriptor: null,
   connection: UNKNOWN_CONNECTION,
-  compatibility: null,
+  compatibility: 'unknown',
 })
 const environments = [
   entry('env-here', { kind: 'local' }),

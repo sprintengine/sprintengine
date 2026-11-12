@@ -44,8 +44,9 @@ export type EnvironmentConnectionState =
 
 /**
  * Whether this desktop and the environment's server speak an overlapping
- * protocol window: design-server-update's states. Null until that item
- * records them.
+ * protocol window (`studioCompatibility`), from the window the server last
+ * said it speaks; `unknown` before it has said. This machine is always
+ * `compatible`.
  */
 export type EnvironmentCompatibility = 'compatible' | 'client-outdated' | 'server-outdated' | 'unknown'
 
@@ -62,7 +63,7 @@ export type EnvironmentEntry = {
   /** What its server said about itself the last time this desktop heard, or null. */
   descriptor: EnvironmentDescriptor | null
   connection: EnvironmentConnection
-  compatibility: EnvironmentCompatibility | null
+  compatibility: EnvironmentCompatibility
 }
 
 export const UNKNOWN_CONNECTION: EnvironmentConnection = { state: 'unknown', detail: null, lastReachedAt: null }

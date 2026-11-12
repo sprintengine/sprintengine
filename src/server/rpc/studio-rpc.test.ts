@@ -107,8 +107,8 @@ test('a client outside the version window is refused with both numbers named', a
 // ── Updates, and a client whose protocol does not meet this Studio's ───────
 
 /** A desktop that updates itself, with 9.9.9 waiting; what `start` was asked. */
-function selfUpdates(): StudioUpdates & { started: Array<{ targetVersion?: string }> } {
-  const started: Array<{ targetVersion?: string }> = []
+function selfUpdates(): StudioUpdates & { started: Array<{ commandId: string; targetVersion?: string }> } {
+  const started: Array<{ commandId: string; targetVersion?: string }> = []
   return {
     started,
     status: () => ({ method: 'self', state: 'available', available: { version: '9.9.9' } }),
@@ -152,7 +152,8 @@ test('a newer client that asks to be kept is told who this Studio is and how it 
   assert.equal(failed.t === 'subFailed' && failed.retryable, false)
   const started = await request(c, 'u1', 'update.start', { commandId: 'update-1' })
   assert.deepEqual(started.ok && started.result, { accepted: true, method: 'self', targetVersion: '9.9.9' })
-  assert.deepEqual(updates.started, [{}])
+  // The command id reaches the host, which answers a retry of it as it was.
+  assert.deepEqual(updates.started, [{ commandId: 'update-1' }])
   assert.deepEqual([backend.commands, backend.creates, backend.followers('agent-1')], [[], [], 0])
 })
 

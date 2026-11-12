@@ -566,7 +566,7 @@ test('a hello refused as late may be tried again; any other hello refusal ends t
 test('a Studio this client cannot talk to is still reached for its updates, and updated when the grant allows', async () => {
   const dataDir = await mkdtemp(join(tmpdir(), 'agent-sdk-update-'))
   const auth = createFakeAuthenticator()
-  const started: Array<{ targetVersion?: string }> = []
+  const started: Array<{ commandId: string; targetVersion?: string }> = []
   // A Studio that has moved on to protocol 3, which updates itself.
   const server = createStudioRpcServer({
     dataDir,
@@ -611,7 +611,9 @@ test('a Studio this client cannot talk to is still reached for its updates, and 
   assert.equal(session.incompatible?.server.version, '9.0.0')
   assert.equal((await session.status()).method, 'self')
   assert.deepEqual(await session.start(), { accepted: true, method: 'self', targetVersion: '9.1.0' })
-  assert.deepEqual(started, [{}])
+  // The session minted the command id, which reaches the Studio so a retry of it is answered as it was.
+  assert.equal(started.length, 1)
+  assert.match(started[0]!.commandId, /^update-/u)
   // A grant without environment:maintain may look, not update.
   const reader = await openStudioUpdateSession({
     transport: socketTransport({ dataDir }),

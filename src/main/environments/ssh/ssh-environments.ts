@@ -363,6 +363,7 @@ export class SshEnvironments {
         working: view?.working ?? false,
         action: view ? view.action : 'connect',
         server: view?.server ?? null,
+        protocol: view?.protocol ?? null,
         notes: view?.notes ?? [],
         gh: view?.gh ?? null,
       }

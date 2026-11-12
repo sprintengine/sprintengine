@@ -73,7 +73,8 @@ export function useSshMachines(api: Api | null = window.api): {
 
 /**
  * What only an SSH machine offers on its row: Disconnect while connected, and
- * Update for a server this app may replace. Connect and Retry are the
+ * Update for a server this app may replace, Retry update for one whose
+ * update did not start. Connect and Retry are the
  * machine list's own action, the same for every machine.
  */
 export function SshMachineActions({
@@ -92,6 +93,18 @@ export function SshMachineActions({
         onClick={() => void api.sshEnvironmentDisconnect(machine.id)}
       >
         Disconnect
+      </OutlineButton>
+    )
+  // This app's own update of its server did not start (the row says why):
+  // trying it again is the person's call, and needs no warning about others.
+  if (machine.action === 'retry-update')
+    return (
+      <OutlineButton
+        size="xs"
+        aria-label={`Retry the update, ${machine.label}`}
+        onClick={() => void api.sshEnvironmentUpgradeServer(machine.id)}
+      >
+        Retry update
       </OutlineButton>
     )
   if (machine.action === 'upgrade')

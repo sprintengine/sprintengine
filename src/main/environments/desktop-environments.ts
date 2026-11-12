@@ -44,7 +44,7 @@ export function createDesktopEnvironments(deps: {
   ssh:
     | (ObservedList<
         Pick<SavedSshFields, 'id' | 'label' | 'destination' | 'resolved' | 'environmentId'> &
-          Partial<Pick<SshEnvironmentSummary, 'state' | 'stateText'>>
+          Partial<Pick<SshEnvironmentSummary, 'state' | 'stateText' | 'protocol'>>
       > & { connect?(id: string): Promise<unknown> })
     | null
   /** The desktops paired over the tailnet, wherever the mesh runs. */
@@ -96,6 +96,8 @@ export function createDesktopEnvironments(deps: {
         machines.map((machine) => ({
           route: { kind: 'ssh', machine: machine.id },
           connection: sshConnection(machine),
+          // The window its server record or relay last said: the machine's compatibility.
+          window: machine.protocol ?? null,
         })),
       )
     }
