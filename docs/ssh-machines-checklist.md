@@ -12,11 +12,11 @@ examples call it `build-box`, with a user `dev`.
 
 ## 1. Add and connect (any desktop)
 
-1. Settings › Machines › SSH machines. Type `build-box` (an alias in your
+1. Settings › Machines › Add an SSH machine. Type `build-box` (an alias in your
    `~/.ssh/config`), then Check.
    Expect: the route it resolves to, `dev@<host>:<port>`, and the jump host if
    your config names one. Nothing has connected yet.
-2. Add it, then Connect.
+2. Add it; it joins the Machines list. Connect it from its row.
    Expect, on a first connection: "New machine: build-box" with the key type
    and the SHA-256 fingerprint. Cancel is focused, not Trust.
 3. Check the fingerprint against the machine (`ssh-keygen -lf

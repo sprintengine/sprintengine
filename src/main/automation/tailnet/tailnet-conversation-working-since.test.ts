@@ -459,7 +459,7 @@ test('one summary reads as the same work, from the same start, in this desktopâ€
       browses: new Map([
         [mini.id, { browse: null, loading: false, error: null, at: 1, conversations: frame.sessions }],
       ]),
-      reachability: new Map(),
+      environments: [],
       workspaces: [],
     })
     const row = group!.rows[0]!

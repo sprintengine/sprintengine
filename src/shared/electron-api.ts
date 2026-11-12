@@ -20,6 +20,7 @@ import type {
   SshPromptRequest,
   SshResolveResult,
 } from './ssh-environments'
+import type { EnvironmentEntry } from './environments'
 import type { SshPreviewStatus } from './ssh-preview'
 import type { ServerMode } from './server-mode'
 import type { ChatExportInput, ChatExportResult } from './chat-export'
@@ -1068,8 +1069,6 @@ export type ElectronApi = {
     },
   ) => Promise<MeshRequestPairingResult>
   meshCancelPairing: (requestId: string) => Promise<void>
-  /** Re-check whether one paired machine (or every one, with no id) answers right now (phase 4). */
-  meshCheckReachability: (connectionId?: string) => Promise<MeshLiveState>
   /** Drop this machine's credential for a peer. Revoking the device THERE is the other half. */
   meshForget: (connectionId: string) => Promise<MeshConnection[]>
   /** One machine's workspaces, or the gap that says why this pairing may not read them. */
@@ -1714,6 +1713,15 @@ export type ElectronApi = {
   hostsHome: (hostId: ExecutionHostId) => Promise<HostHomeResult>
   /** The machine list may read differently now; ask again. Returns the unsubscribe. */
   onHostsChanged: (cb: () => void) => () => void
+  /**
+   * Every machine this desktop knows, this one first, with how each stands
+   * (design-environments): the one list every surface draws machines from.
+   */
+  environmentsList: () => Promise<EnvironmentEntry[]>
+  /** Ask the owner of a route (`formatEnvironmentRoute`) to try it again now. */
+  environmentsRetry: (route: string) => Promise<void>
+  /** The machine list reads differently now; ask again. Returns the unsubscribe. */
+  onEnvironmentsChanged: (cb: () => void) => () => void
   /** SSH machines (phase 8): saved, with their state in words. */
   sshEnvironmentsList: () => Promise<SshEnvironmentSummary[]>
   /** What `ssh -G` makes of a destination, shown before it is saved. */

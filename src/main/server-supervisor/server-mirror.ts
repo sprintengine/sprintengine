@@ -14,7 +14,7 @@ import {
 } from '../../shared/launch-settings'
 import type { WorkspaceSyncEvent, WorkspaceSyncSnapshot, WorkspaceSyncState } from '../../shared/workspace-sync'
 import type { WorkspaceRegistryRecord } from '../../shared/workspace-registry'
-import type { MeshConnection } from '../../shared/tailnet-mesh'
+import type { MeshConnection, MeshMachineReachability } from '../../shared/tailnet-mesh'
 
 // The shell's read-only copy of what the Studio server owns and the shell
 // reads synchronously (phase 6 spec, section 5): the workspace registry, the
@@ -42,6 +42,13 @@ export type ServerStateMirror = {
   readonly workspaceSync: MirrorWorkspaceSync
   readonly launchSettings: MirrorLaunchSettings
   readonly meshConnections: MirrorMeshConnections
+  readonly meshReachability: MirrorMeshReachability
+}
+
+/** Whether each paired desktop answers, as the environment registry reads their connections. */
+export type MirrorMeshReachability = {
+  list(): MeshMachineReachability[]
+  onChanged(listener: () => void): () => void
 }
 
 /** The paired desktops, without credentials, as the environment registry reads them. */
@@ -105,6 +112,8 @@ export function createServerStateMirror(deps: {
   const launchListeners = new Set<(record: AgentLaunchSettingsRecord) => void>()
   let meshConnections: MeshConnection[] = []
   const meshListeners = new Set<() => void>()
+  let meshReachability: MeshMachineReachability[] = []
+  const reachabilityListeners = new Set<() => void>()
   // Agent records the server could not take yet, oldest first.
   const heldWrites: Array<Record<string, unknown>> = []
   let markLoaded: () => void = () => undefined
@@ -139,6 +148,11 @@ export function createServerStateMirror(deps: {
     fan(meshListeners, undefined)
   }
   deps.rpc.on(SERVER_EVENTS.mirrorMeshConnections, applyMesh)
+  const applyReachability = (next: unknown): void => {
+    meshReachability = Array.isArray(next) ? (next as MeshMachineReachability[]) : []
+    fan(reachabilityListeners, undefined)
+  }
+  deps.rpc.on(SERVER_EVENTS.mirrorMeshReachability, applyReachability)
 
   const serverAway = (error: unknown): boolean =>
     error instanceof ControlRpcError && (error.code === 'unavailable' || error.code === 'no_handler')
@@ -175,6 +189,7 @@ export function createServerStateMirror(deps: {
       applyRegistry({ state: state.state, snapshot: state.snapshot, needsHydration: state.needsHydration })
       applyLaunch(state.launchSettings)
       applyMesh(state.meshConnections)
+      applyReachability(state.meshReachability)
       markLoaded()
     },
     whenLoaded: () => loaded,
@@ -236,6 +251,15 @@ export function createServerStateMirror(deps: {
         meshListeners.add(listener)
         return () => {
           meshListeners.delete(listener)
+        }
+      },
+    },
+    meshReachability: {
+      list: () => meshReachability.map((entry) => ({ ...entry })),
+      onChanged(listener) {
+        reachabilityListeners.add(listener)
+        return () => {
+          reachabilityListeners.delete(listener)
         }
       },
     },

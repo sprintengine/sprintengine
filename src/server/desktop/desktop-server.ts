@@ -30,7 +30,12 @@ import { conversationTurnInProgress } from '../../shared/conversation/phase'
 import { isWslHostId } from '../../shared/execution-host'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
 import { TAILNET_EVENT_CHANNEL } from '../../shared/tailnet'
-import { MESH_EVENT_CHANNEL, meshListChanged, type MeshConnection } from '../../shared/tailnet-mesh'
+import {
+  MESH_EVENT_CHANNEL,
+  meshListChanged,
+  type MeshConnection,
+  type MeshMachineReachability,
+} from '../../shared/tailnet-mesh'
 import type { ModuleRegistrySnapshot } from '../../shared/modules/registry-snapshot'
 import { SERVER_EXIT } from '../bootstrap/envelope'
 import type { RunningServer, ServerStart } from '../bootstrap/serve'
@@ -164,6 +169,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   let gateway: StudioGateway | null = null
   // The paired desktops, for the shell's environment registry (the mesh is this process's).
   const meshConnectionsView = (): MeshConnection[] => gateway?.mesh().listConnections() ?? []
+  const meshReachabilityView = (): MeshMachineReachability[] => gateway?.mesh().getLiveState().reachability ?? []
   const whenAgentLaunchReady = async (): Promise<void> => {
     await Promise.all([gateway?.whenGatewayReady(), bridge.integrationsReady()])
   }
@@ -304,6 +310,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       tunnel.publish(MESH_EVENT_CHANNEL, event)
       tailnetNotifier.onMeshEvent(event)
       if (meshListChanged(event)) rpc.emit(SERVER_EVENTS.mirrorMeshConnections, meshConnectionsView())
+      if (meshListChanged(event) || event.kind === 'machine-reachability')
+        rpc.emit(SERVER_EVENTS.mirrorMeshReachability, meshReachabilityView())
     },
     hasWindow: () => anyWindowVisible,
     // A paired device's picture is shrunk by the shell, which has the image
@@ -444,6 +452,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ...registryView(),
       launchSettings: launchSettingsView(),
       meshConnections: meshConnectionsView(),
+      meshReachability: meshReachabilityView(),
     }),
     core,
     githubTokenStore,
@@ -722,6 +731,10 @@ function serveShellRequests(deps: {
   // shell: its connection gets the shell role, which may offer the built-in
   // toolsets (phase 5, 7.2).
   rpc.handle(SERVER_METHODS.shellConnect, (params) => deps.studioRpc.connectShell(tunnelPortFrames(takePort(params))))
+  rpc.handle(SERVER_METHODS.meshCheckReachability, async (params) => {
+    const { connectionId } = (params ?? {}) as { connectionId?: unknown }
+    await deps.gateway.mesh().checkReachability(typeof connectionId === 'string' ? connectionId : undefined)
+  })
   rpc.handle(SERVER_METHODS.info, (): ServerInfo => {
     const status = deps.gateway.getStatus()
     return {

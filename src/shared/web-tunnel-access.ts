@@ -149,7 +149,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'launch-settings:update': owner('settings:write'),
   'mesh:browse': desktopOnly(BEYOND),
   'mesh:cancel-pairing': desktopOnly(BEYOND),
-  'mesh:check-reachability': desktopOnly(BEYOND),
   'mesh:conversation-cancel-side-question': desktopOnly(BEYOND),
   'mesh:conversation-command': desktopOnly(BEYOND),
   'mesh:conversation-context-breakdown': desktopOnly(BEYOND),

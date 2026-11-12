@@ -1,21 +1,36 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 
+import { formatEnvironmentRoute, type EnvironmentRoute } from '../../../../../packages/studio-protocol/src/environment'
+import { hostIdOfEnvironmentRoute } from '../../../../shared/environment-keys'
+import { environmentStatus } from '../../../../shared/environment-status'
+import { environmentKey } from '../../../../shared/environments'
 import {
   emptyExecutionHostSettings,
-  LOCAL_HOST_ID,
+  executionHostStateWords,
   type ExecutionHostId,
   type ExecutionHostSettings,
   type ExecutionHostSummary,
   type WslChatServerSummary,
 } from '../../../../shared/execution-host'
-import type { MeshConnection } from '../../../../shared/tailnet-mesh'
+import type { SshEnvironmentSummary } from '../../../../shared/ssh-environments'
+import { retryEnvironment, useEnvironments } from '../../hooks/useEnvironments'
 import { useExecutionHosts } from '../../hooks/useExecutionHosts'
-import { useMachineIdentity } from '../../hooks/useMachineIdentity'
+import { useRelativeNow } from '../../hooks/useRelativeNow'
 import { useWorkspaceStore } from '../../store/workspaceStore'
-import { GhostButton, InlineNotice, Input, OutlineButton, ProviderRow, ProviderStateId, Select, Textarea } from '../ui'
-import { MachineMarkPicker, MachineRowMark, machineMarkWords } from './MachineMarkPicker'
+import {
+  GhostButton,
+  InlineNotice,
+  Input,
+  OutlineButton,
+  ProviderRow,
+  ProviderStateId,
+  Select,
+  Textarea,
+  WorkingMark,
+} from '../ui'
+import { MachineMarkPicker, MachineRowMark } from './MachineMarkPicker'
 import { SettingCard, SettingsPageHeader, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
-import { SshMachinesSection } from './SshMachinesSection'
+import { AddSshMachine, SshMachineActions, SshMachineDetail, useSshMachines } from './SshMachinesSection'
 
 const ROW_FIELD = 'w-60 max-w-full font-mono'
 
@@ -37,20 +52,6 @@ export function formatEnvLines(env: Record<string, string>): string {
   return Object.entries(env)
     .map(([name, value]) => `${name}=${value}`)
     .join('\n')
-}
-
-/** The state line for a WSL machine, in words. */
-export function machineStateWords(host: ExecutionHostSummary): string {
-  const lead =
-    host.state === 'ready'
-      ? 'Running'
-      : host.state === 'stopped'
-        ? 'Stopped — starts when a workspace on it needs it'
-        : host.state === 'starting'
-          ? (host.reason ?? 'Starting')
-          : (host.reason ?? 'Unavailable')
-  const version = host.wslVersion ? ` · WSL ${host.wslVersion}` : ''
-  return `${lead}${version}`
 }
 
 const CHAT_SERVER_ITEMS: Array<{ value: 'off' | 'on'; label: string }> = [
@@ -80,44 +81,56 @@ export function chatServerWords(server: WslChatServerSummary): string {
   }
 }
 
-/** This computer's own row, by the platform it runs. */
-function thisComputerLabel(platform: string | undefined): string {
-  return platform === 'win32' ? 'This PC (Windows)' : platform === 'darwin' ? 'This Mac' : 'This computer'
-}
+const MUTED = 'text-body leading-5 text-[color:var(--text-muted)]'
 
 /**
- * Settings ▸ Machines: the machines a workspace can run on. On every
- * platform, the SSH machines a person added (phase 8). On Windows, also the
- * machines on this computer This PC always is; each WSL distribution becomes one
- * when it is turned on here, and then appears in the New chat machine
- * dropdown as "WSL: <name>". A workspace whose folder is inside a
- * distribution runs there whether or not it is turned on — the switch only
- * decides what new chats are offered.
+ * Settings ▸ Machines: every machine this desktop can run chats on, in one
+ * list (design-environments): this computer, its WSL distributions turned on
+ * as machines, the SSH machines a person added, and the desktops paired over
+ * the tailnet. Each row says how the machine stands, in the same words every
+ * other surface uses (`environmentStatus`), and offers the one thing to do
+ * about it. Its detail is where that kind of machine is set up: a
+ * distribution's shell and environment, an SSH machine's server, a pairing.
  *
- * Each distribution keeps its own settings, because it is its own machine:
- * the environment every launch there exports and the shell a plain terminal
- * opens. Its agent CLIs — which are installed, the command each runs as, and
- * installing one — are on the Agents tab with this machine picked there, which
- * each row's "Agent CLIs on this machine" opens (owner ruling 2026-09-24): one
- * list of CLIs with a machine switcher, rather than a second list here that
- * never said how it differed from the first.
+ * A distribution not turned on is not a machine yet; it is listed under the
+ * list, with the switch that makes it one. Its agent CLIs, like this
+ * computer's, are on the Agents tab with the machine picked there (owner
+ * ruling 2026-09-24).
  */
 export function MachinesSettingsTab({
   onShowAgentClis,
+  onOpenRemoteSettings,
 }: {
   /** Open Settings ▸ Agents with this machine picked. */
   onShowAgentClis?: (id: ExecutionHostId) => void
+  /** Open Settings ▸ Remote, where a pairing is made, renewed and forgotten. */
+  onOpenRemoteSettings?: () => void
 } = {}): React.JSX.Element {
   const { listing, refresh } = useExecutionHosts({ all: true, refreshOnMount: true })
+  const environments = useEnvironments()
+  const sshOn = window.api?.sshMachinesEnabled === true
+  const { machines: sshMachines } = useSshMachines(sshOn ? window.api : null)
   const [refreshing, setRefreshing] = useState(false)
   const hostSettings = useWorkspaceStore((s) => s.appSettings.hosts)
   const setHostSettings = useWorkspaceStore((s) => s.setHostSettings)
-  const [expanded, setExpanded] = useState<ExecutionHostId | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const now = useRelativeNow(30_000)
 
-  const wslHosts = (listing?.hosts ?? []).filter((host) => host.kind === 'wsl')
   const settingsOf = (id: ExecutionHostId): ExecutionHostSettings => hostSettings?.[id] ?? emptyExecutionHostSettings()
   const write = (id: ExecutionHostId, patch: Partial<ExecutionHostSettings>): void => {
     setHostSettings(id, { ...settingsOf(id), ...patch })
+  }
+  const hostOf = (id: ExecutionHostId): ExecutionHostSummary | null =>
+    listing?.hosts.find((host) => host.id === id) ?? null
+  const sshOf = (id: string): SshEnvironmentSummary | null => sshMachines.find((machine) => machine.id === id) ?? null
+  // The distributions not turned on: not machines yet, so not in the list.
+  const offDistros = (listing?.hosts ?? []).filter((host) => host.kind === 'wsl' && !settingsOf(host.id).enabled)
+
+  const routeParts = (route: EnvironmentRoute) => {
+    const hostId = hostIdOfEnvironmentRoute(route)
+    const host = route.kind === 'wsl' && hostId ? hostOf(hostId) : null
+    const ssh = route.kind === 'ssh' ? sshOf(route.machine) : null
+    return { hostId, host, ssh }
   }
 
   return (
@@ -143,126 +156,167 @@ export function MachinesSettingsTab({
       ) : null}
 
       <section className="space-y-2">
-        <SettingsSectionTitle count={listing ? wslHosts.length + 1 : undefined}>On this computer</SettingsSectionTitle>
-        <SettingCard as="ul" ariaLabel="Machines on this computer">
-          <ProviderRow
-            as="li"
-            surface="card"
-            icon={<span aria-hidden="true" className="size-icon-lg" />}
-            name={thisComputerLabel(window.api?.platform)}
-            stateLine="Always available."
-            actions={
-              <AgentClisLink
-                hostId={LOCAL_HOST_ID}
-                label={thisComputerLabel(window.api?.platform)}
-                onShow={onShowAgentClis}
-              />
+        <SettingsSectionTitle count={environments.length || undefined}>Machines</SettingsSectionTitle>
+        <SettingCard as="ul" ariaLabel="Machines">
+          {environments.map((entry) => {
+            const key = environmentKey(entry)
+            const best = entry.routes[0]!
+            const { hostId, host, ssh } = routeParts(best)
+            const status = environmentStatus(entry, now)
+            const details = entry.routes.flatMap((route) => {
+              const parts = routeParts(route)
+              const detail = (
+                <RouteDetail
+                  route={route}
+                  host={parts.host}
+                  hostSettings={parts.hostId ? settingsOf(parts.hostId) : null}
+                  onHostChange={(patch) => (parts.hostId ? write(parts.hostId, patch) : undefined)}
+                  ssh={parts.ssh}
+                  onOpenRemoteSettings={onOpenRemoteSettings}
+                />
+              )
+              return route.kind === 'local' ||
+                (route.kind === 'wsl' && !parts.host) ||
+                (route.kind === 'ssh' && !parts.ssh)
+                ? []
+                : [<React.Fragment key={formatEnvironmentRoute(route)}>{detail}</React.Fragment>]
+            })
+            const isOpen = expanded === key
+            const act = (): void => {
+              if (status.action === 'retry') void retryEnvironment(entry)
+              else if (best.kind === 'tailnet') onOpenRemoteSettings?.()
+              else setExpanded(key)
             }
-          />
-          {wslHosts.map((host) => {
-            const own = settingsOf(host.id)
-            const isOpen = expanded === host.id
             return (
+              <ProviderRow
+                key={key}
+                as="li"
+                surface="card"
+                icon={
+                  status.tone === 'working' ? (
+                    <WorkingMark label={`${entry.displayName}: ${status.words}`} className="size-icon-lg" />
+                  ) : best.kind === 'local' ? (
+                    <span aria-hidden="true" className="size-icon-lg" />
+                  ) : (
+                    <MachineRowMark machine={entry.machine} />
+                  )
+                }
+                recessed={status.kind === 'offline'}
+                name={entry.displayName}
+                version={
+                  host?.isDefaultDistro ? 'default' : (entry.descriptor?.serverVersion ?? ssh?.server?.version ?? null)
+                }
+                stateLine={status.words}
+                {...(best.kind === 'wsl' && hostId
+                  ? {
+                      enabled: settingsOf(hostId).enabled,
+                      onEnabledChange: (enabled: boolean) => write(hostId, { enabled }),
+                    }
+                  : {})}
+                {...(details.length > 0
+                  ? { expanded: isOpen, onExpandedChange: (next: boolean) => setExpanded(next ? key : null) }
+                  : {})}
+                actions={
+                  <>
+                    {best.kind !== 'local' ? (
+                      <MachineMarkPicker machine={entry.machine} name={entry.displayName} />
+                    ) : null}
+                    {status.action && status.actionLabel ? (
+                      <OutlineButton size="xs" aria-label={`${status.actionLabel}, ${entry.displayName}`} onClick={act}>
+                        {status.actionLabel}
+                      </OutlineButton>
+                    ) : null}
+                    {ssh ? <SshMachineActions machine={ssh} api={window.api} /> : null}
+                    {hostId && (best.kind === 'local' || (host && settingsOf(hostId).enabled)) ? (
+                      <AgentClisLink hostId={hostId} label={entry.displayName} onShow={onShowAgentClis} />
+                    ) : null}
+                  </>
+                }
+              >
+                {details.length > 0 ? <div className="space-y-4">{details}</div> : null}
+              </ProviderRow>
+            )
+          })}
+        </SettingCard>
+      </section>
+
+      {offDistros.length > 0 ? (
+        <section className="space-y-2">
+          <SettingsSectionTitle count={offDistros.length}>WSL distributions not turned on</SettingsSectionTitle>
+          <p className={MUTED}>
+            Turn one on to run chats and terminals in it. A workspace whose folder is inside a distribution runs there
+            either way; this only decides what New chat offers.
+          </p>
+          <SettingCard as="ul" ariaLabel="WSL distributions not turned on">
+            {offDistros.map((host) => (
               <ProviderRow
                 key={host.id}
                 as="li"
                 surface="card"
                 icon={<MachineRowMark machine={{ kind: 'wsl', hostId: host.id }} />}
-                recessed={host.state === 'unavailable'}
+                recessed
                 name={host.label}
                 version={host.isDefaultDistro ? 'default' : null}
-                stateLine={machineStateWords(host)}
-                enabled={own.enabled}
+                stateLine={executionHostStateWords(host)}
+                enabled={false}
                 onEnabledChange={(enabled) => write(host.id, { enabled })}
-                expanded={isOpen}
-                onExpandedChange={(next) => setExpanded(next ? host.id : null)}
-                // Only a machine that is on is one the Agents tab offers, so
-                // only its row can open it there.
-                actions={
-                  <>
-                    <MachineMarkPicker machine={{ kind: 'wsl', hostId: host.id }} name={host.label} />
-                    {own.enabled ? (
-                      <AgentClisLink hostId={host.id} label={host.label} onShow={onShowAgentClis} />
-                    ) : null}
-                  </>
-                }
-              >
-                <MachineDetail host={host} settings={own} onChange={(patch) => write(host.id, patch)} />
-              </ProviderRow>
-            )
-          })}
-        </SettingCard>
-        {listing?.wsl?.available && wslHosts.length === 0 ? (
-          <p className="text-body leading-5 text-[color:var(--text-muted)]">
-            No WSL distributions are installed. Install one with <ProviderStateId>wsl --install</ProviderStateId>.
+              />
+            ))}
+          </SettingCard>
+        </section>
+      ) : listing?.wsl?.available && !(listing.hosts ?? []).some((host) => host.kind === 'wsl') ? (
+        <p className={MUTED}>
+          No WSL distributions are installed. Install one with <ProviderStateId>wsl --install</ProviderStateId>.
+        </p>
+      ) : null}
+
+      {sshOn ? (
+        <section className="space-y-2">
+          <SettingsSectionTitle>Add an SSH machine</SettingsSectionTitle>
+          <p className={MUTED}>
+            A machine you reach over SSH runs its own Studio server, which Studio installs and starts for you. Your SSH
+            config, keys and agent are used as they are; Studio keeps no password or passphrase.
           </p>
-        ) : null}
-      </section>
-
-      {window.api?.sshMachinesEnabled ? <SshMachinesSection /> : null}
-
-      <PairedMachinesSection />
+          <AddSshMachine api={window.api} />
+        </section>
+      ) : null}
     </div>
   )
 }
 
-/**
- * The machines this one is paired with over the tailnet, for their kind and
- * colour (owner ruling 2026-10-04). Pairing itself — and forgetting a pairing —
- * stays in Settings › Remote; this list is here so every machine's mark is
- * changed in one place. Absent while nothing is paired.
- */
-function PairedMachinesSection(): React.JSX.Element | null {
-  const [machines, setMachines] = useState<MeshConnection[]>([])
-  useEffect(() => {
-    if (typeof window.api?.meshListConnections !== 'function') return
-    let cancelled = false
-    const load = (): void => {
-      void window.api
-        .meshListConnections()
-        .then((connections) => {
-          if (!cancelled) setMachines(Array.isArray(connections) ? connections : [])
-        })
-        .catch(() => undefined)
-    }
-    load()
-    const off =
-      typeof window.api.onMeshEvent === 'function'
-        ? window.api.onMeshEvent((event) => {
-            if (event.kind === 'machine-paired' || event.kind === 'machine-forgotten') load()
-          })
-        : null
-    return () => {
-      cancelled = true
-      off?.()
-    }
-  }, [])
-  if (machines.length === 0) return null
-  return (
-    <section className="space-y-2">
-      <SettingsSectionTitle count={machines.length}>Paired machines</SettingsSectionTitle>
-      <SettingCard as="ul" ariaLabel="Paired machines">
-        {machines.map((machine) => (
-          <PairedMachineRow key={machine.id} machine={machine} />
-        ))}
-      </SettingCard>
-    </section>
-  )
-}
-
-function PairedMachineRow({ machine }: { machine: MeshConnection }): React.JSX.Element {
-  const ref = React.useMemo(() => ({ kind: 'paired' as const, name: machine.machineName }), [machine.machineName])
-  const identity = useMachineIdentity(ref)
-  return (
-    <ProviderRow
-      as="li"
-      surface="card"
-      icon={<MachineRowMark machine={ref} />}
-      name={machine.machineName}
-      stateLine={identity ? `Paired · ${machineMarkWords(identity)}` : 'Paired'}
-      actions={<MachineMarkPicker machine={ref} name={machine.machineName} />}
-    />
-  )
+/** One way into a machine, and what is set up for it there. */
+function RouteDetail({
+  route,
+  host,
+  hostSettings,
+  onHostChange,
+  ssh,
+  onOpenRemoteSettings,
+}: {
+  route: EnvironmentRoute
+  host: ExecutionHostSummary | null
+  hostSettings: ExecutionHostSettings | null
+  onHostChange: (patch: Partial<ExecutionHostSettings>) => void
+  ssh: SshEnvironmentSummary | null
+  onOpenRemoteSettings?: () => void
+}): React.JSX.Element | null {
+  if (route.kind === 'wsl' && host && hostSettings)
+    return <MachineDetail host={host} settings={hostSettings} onChange={onHostChange} />
+  if (route.kind === 'ssh' && ssh) return <SshMachineDetail machine={ssh} api={window.api} />
+  if (route.kind === 'tailnet')
+    return (
+      <div className="flex items-center gap-3">
+        <p className={`${MUTED} min-w-0 flex-1`}>
+          Paired over the tailnet. Pairing again and forgetting it are in Remote.
+        </p>
+        {onOpenRemoteSettings ? (
+          <OutlineButton size="xs" onClick={onOpenRemoteSettings}>
+            Remote settings
+          </OutlineButton>
+        ) : null}
+      </div>
+    )
+  return null
 }
 
 // How long the environment field waits after the last keystroke before it

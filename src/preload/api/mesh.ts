@@ -23,7 +23,6 @@ import {
   MESH_GET_LIVE_STATE_CHANNEL,
   MESH_LIST_CONNECTIONS_CHANNEL,
   MESH_CANCEL_PAIRING_CHANNEL,
-  MESH_CHECK_REACHABILITY_CHANNEL,
   MESH_PAIR_CHANNEL,
   MESH_REQUEST_PAIRING_CHANNEL,
   MESH_EVENT_CHANNEL,
@@ -135,8 +134,6 @@ export const meshApi = {
       ...(options?.scopes ? { scopes: options.scopes } : {}),
       ...(options?.reverseScopes ? { reverseScopes: options.reverseScopes } : {}),
     }) as Promise<MeshRequestPairingResult>,
-  meshCheckReachability: (connectionId?: string): Promise<MeshLiveState> =>
-    ipcRenderer.invoke(MESH_CHECK_REACHABILITY_CHANNEL, connectionId ?? null) as Promise<MeshLiveState>,
   meshCancelPairing: (requestId: string): Promise<void> =>
     ipcRenderer.invoke(MESH_CANCEL_PAIRING_CHANNEL, requestId) as Promise<void>,
   meshForget: (connectionId: string): Promise<MeshConnection[]> =>
@@ -477,7 +474,6 @@ export const meshApi = {
   | 'meshPair'
   | 'meshRequestPairing'
   | 'meshCancelPairing'
-  | 'meshCheckReachability'
   | 'meshForget'
   | 'meshBrowse'
   | 'meshCreateConversation'

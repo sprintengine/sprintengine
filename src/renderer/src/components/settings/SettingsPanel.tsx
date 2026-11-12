@@ -717,11 +717,9 @@ export default function SettingsPanel({
   )
   const visibleSettingsTabs = useMemo(
     (): SettingsTabDescriptor[] => [
-      // The server's machine on Windows: its WSL distributions. Any platform
-      // with the SSH machines preview on: the SSH machines (phase 8).
-      ...settingsTabs.filter(
-        (tab) => tab.id !== 'machines' || hostPlatform() === 'win32' || window.api.sshMachinesEnabled === true,
-      ),
+      // Machines is on every platform: every machine this desktop knows is
+      // listed there, this one and the paired desktops included (design-environments).
+      ...settingsTabs,
       ...moduleSections.map((section) => ({
         id: moduleSectionTabId(section.id),
         label: section.label,
@@ -1643,6 +1641,10 @@ export default function SettingsPanel({
             selectAgentsMachine(id)
             setActiveSettingsTab('agents')
             window.requestAnimationFrame(() => tabRefs.current.agents?.focus())
+          }}
+          onOpenRemoteSettings={() => {
+            setActiveSettingsTab('remote')
+            window.requestAnimationFrame(() => tabRefs.current.remote?.focus())
           }}
         />
       ) : null}

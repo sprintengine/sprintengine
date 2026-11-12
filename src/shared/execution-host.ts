@@ -86,6 +86,20 @@ export type ExecutionHostSettings = {
 /** Where a WSL distribution's chats run when the person has not chosen: off until the flip criteria are met. */
 export const DEFAULT_WSL_CHAT_SERVER: 'on' | 'off' = 'off'
 
+/** A machine on this computer's state, in words: Settings and the environment list read it. */
+export function executionHostStateWords(host: Pick<ExecutionHostSummary, 'state' | 'reason' | 'wslVersion'>): string {
+  const lead =
+    host.state === 'ready'
+      ? 'Running'
+      : host.state === 'stopped'
+        ? 'Stopped — starts when a workspace on it needs it'
+        : host.state === 'starting'
+          ? (host.reason ?? 'Starting')
+          : (host.reason ?? 'Unavailable')
+  const version = host.wslVersion ? ` · WSL ${host.wslVersion}` : ''
+  return `${lead}${version}`
+}
+
 export const HOSTS_CHANNELS = {
   /** renderer → main: the machines this computer offers, `{ refresh?: boolean }`. */
   list: 'hosts:list',

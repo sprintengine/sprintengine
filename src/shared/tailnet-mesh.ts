@@ -599,8 +599,6 @@ export const MESH_GET_LIVE_STATE_CHANNEL = 'mesh:get-live-state'
 
 export const MESH_REQUEST_PAIRING_CHANNEL = 'mesh:request-pairing'
 export const MESH_CANCEL_PAIRING_CHANNEL = 'mesh:cancel-pairing'
-/** Re-check one paired machine now (the row's Retry), or every machine when no id is given. */
-export const MESH_CHECK_REACHABILITY_CHANNEL = 'mesh:check-reachability'
 export const MESH_LIST_CONNECTIONS_CHANNEL = 'mesh:list-connections'
 export const MESH_PAIR_CHANNEL = 'mesh:pair'
 export const MESH_FORGET_CHANNEL = 'mesh:forget'
