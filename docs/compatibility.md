@@ -342,8 +342,8 @@ characters, so a long question's answer was refused as `invalid_frame`. Since
 with the frame's total still the message limit. Only the validator widened:
 a client sends the same frame to either desktop, and an older one goes on
 refusing a long question as it always did. The first version's reader in
-`index.ts` is unchanged, since the phone carries it byte for byte; the wider
-rule is in `clientFrames.ts`, the server half.
+`index.ts` is unchanged, since phones built against it are still in use; the
+wider rule is in `clientFrames.ts`, the server half.
 
 The initial `0.1.0` contract requires the `conversations` capability. Additive
 optional fields preserve that contract. Model switching is one such addition: its own

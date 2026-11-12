@@ -7,8 +7,9 @@ import {
   type ConversationWirePermissionPreset,
 } from "../../../packages/conversation-protocol/src/public";
 
-// The phone's source mirror of the additive tailnet conversation lane. The
-// desktop package is the authority until its npm release can be adopted here.
+// The phone's side of the tailnet conversation lane. The contract is the
+// desktop's package, imported above; what is written out here still is the
+// phone's own reading of it.
 export const CONVERSATION_SOCKET_PATH = "/tailnet/v1/conversation";
 export const CONVERSATION_CAPABILITY = "conversations";
 export {

@@ -16,7 +16,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     (moduleName.startsWith("./") || moduleName.startsWith("../")) &&
     moduleName.endsWith(".js")
   ) {
-    return resolveNext(context, moduleName.slice(0, -3) + ".ts", platform);
+    try {
+      return resolveNext(context, moduleName.slice(0, -3) + ".ts", platform);
+    } catch {
+      // A real `.js` file, if a package ever reaches one, resolves as named.
+    }
   }
   return resolveNext(context, moduleName, platform);
 };
