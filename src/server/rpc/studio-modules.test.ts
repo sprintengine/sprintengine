@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
 import type { StudioModuleEvent, StudioModuleNotification } from '../../../packages/studio-protocol/src/public'
+import { createFakeIpcMain } from '../../main/module-host/ipc-main-fake.test-helper'
+import { createMainKernel } from '../../main/module-host/main-host'
+import type { ModuleMethodParsed } from '../../shared/modules/methods'
 import { createStudioModuleHub, type StudioModules } from './studio-modules'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
@@ -10,6 +13,8 @@ import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer 
 // capability, the scope, the module filter, and the bell's kept rows sent
 // before the live ones. The hub is the real one; the kernel behind it is not
 // here (module-events.test.ts and module-notifications.test.ts hold it).
+// `module.read` and `module.operate` are called through the hub into a real
+// kernel, with a module's declared methods behind it.
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
@@ -159,4 +164,155 @@ test('one listener that throws does not keep an event from the others', () => {
   hub.onEvent((delivered) => heard.push(delivered.topic))
   hub.deliverEvent(event('acme.board', 'changed'))
   assert.deepEqual(heard, ['changed'])
+})
+
+// ── Declared methods ─────────────────────────────────────────────────────────
+
+/** A hub served by a real kernel in which `acme.board` declares a read and an operate. */
+function hubWithBoard() {
+  const kernel = createMainKernel(createFakeIpcMain().ipcMain, {
+    resolveModuleManifest: (id) =>
+      id === 'acme.board'
+        ? { id, displayName: 'Board', version: 1, defaultEnabled: true, source: 'third-party', permissions: ['module:bridge'] }
+        : undefined,
+  })
+  const saved: Array<{ title: string; commandId?: string; clientId: string }> = []
+  const title = (value: unknown): ModuleMethodParsed<{ title: string }> =>
+    typeof (value as { title?: unknown } | undefined)?.title === 'string'
+      ? { ok: true, params: { title: (value as { title: string }).title } }
+      : { ok: false, message: '"title" is the card\'s title.' }
+  kernel.hostFor('acme.board').registerMethods({
+    'cards.list': {
+      access: 'read',
+      params: () => ({ ok: true, params: {} }),
+      handler: () => ({ ok: true, result: saved.map((card) => card.title) }),
+    },
+    'cards.add': {
+      access: 'operate',
+      params: title,
+      handler: (params, context) => {
+        if (params.title === 'taken') return { ok: false, code: 'duplicate', message: 'A card has that title.' }
+        saved.push({ title: params.title, clientId: context.clientId, ...(context.commandId ? { commandId: context.commandId } : {}) })
+        return { ok: true, result: { count: saved.length } }
+      },
+    },
+  })
+  const hub = createStudioModuleHub()
+  hub.serveCallsFrom((request) => kernel.callModuleMethod(request))
+  return { hub, saved }
+}
+
+async function caller(modules: StudioModules, token?: (started: Awaited<ReturnType<typeof startTestServer>>) => string) {
+  const started = await startTestServer({ modules })
+  cleanups.push(() => started.dispose())
+  const client = await connectLineClient(started.path)
+  cleanups.push(() => client.close())
+  client.send(hello({ token: token ? token(started) : OWNER_TOKEN }))
+  await client.next((frame) => frame.t === 'welcome')
+  let seq = 0
+  const request = async (method: string, params: unknown) => {
+    const id = `r${++seq}`
+    client.send({ t: 'req', id, method, params })
+    return client.next((frame) => frame.t === 'res' && frame.id === id)
+  }
+  return { started, request }
+}
+
+const answerOf = (frame: { t: string; ok?: boolean; result?: unknown }) => (frame.t === 'res' && frame.ok ? frame.result : null)
+const codeOf = (frame: { t: string; ok?: boolean; error?: { code: string } }) =>
+  frame.t === 'res' && !frame.ok ? frame.error?.code : null
+
+test('a module’s read and operate methods answer over the socket, its own refusals as answers', async () => {
+  const { hub, saved } = hubWithBoard()
+  const { request } = await caller(hub)
+  const added = await request('module.operate', {
+    moduleId: 'acme.board',
+    method: 'cards.add',
+    params: { title: 'Ship it' },
+    commandId: 'c1',
+  })
+  assert.deepEqual(answerOf(added), { ok: true, result: { count: 1 } })
+  assert.deepEqual(saved, [{ title: 'Ship it', clientId: 'owner', commandId: 'owner:c1' }])
+  assert.deepEqual(answerOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), {
+    ok: true,
+    result: ['Ship it'],
+  })
+  const taken = await request('module.operate', {
+    moduleId: 'acme.board',
+    method: 'cards.add',
+    params: { title: 'taken' },
+    commandId: 'c2',
+  })
+  assert.deepEqual(answerOf(taken), { ok: false, code: 'duplicate', message: 'A card has that title.' })
+})
+
+test('the host’s refusals: no such module, no such method, the wrong entry, and params the module refuses', async () => {
+  const { hub } = hubWithBoard()
+  const { request } = await caller(hub)
+  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.gone', method: 'cards.list' })), 'module_unavailable')
+  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.burn' })), 'module_method_unknown')
+  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.add' })), 'module_method_unknown')
+  const refused = await request('module.operate', {
+    moduleId: 'acme.board',
+    method: 'cards.add',
+    params: { name: 'x' },
+    commandId: 'c1',
+  })
+  assert.equal(codeOf(refused), 'invalid_params')
+  assert.match(refused.t === 'res' && !refused.ok ? refused.error.message : '', /"title"/)
+})
+
+test('a retried operate is carried out once; the same id for another call is refused', async () => {
+  const { hub, saved } = hubWithBoard()
+  const { request } = await caller(hub)
+  const params = { moduleId: 'acme.board', method: 'cards.add', params: { title: 'Once' }, commandId: 'c1' }
+  const first = await request('module.operate', params)
+  const again = await request('module.operate', params)
+  assert.deepEqual(answerOf(again), answerOf(first))
+  assert.equal(saved.length, 1)
+  const other = await request('module.operate', { ...params, params: { title: 'Twice' } })
+  assert.equal(codeOf(other), 'command_id_conflict')
+  assert.equal(saved.length, 1)
+})
+
+test('a paired client reads with modules:read, operates only with modules:operate, and its operates are audited', async () => {
+  const { hub, saved } = hubWithBoard()
+  const reader = await caller(hub, (started) => pairFakeClient(started.auth, 'reader', ['modules:read']))
+  assert.deepEqual(answerOf(await reader.request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), {
+    ok: true,
+    result: [],
+  })
+  const refused = await reader.request('module.operate', {
+    moduleId: 'acme.board',
+    method: 'cards.add',
+    params: { title: 'No' },
+    commandId: 'c1',
+  })
+  assert.equal(codeOf(refused), 'scope_required')
+  assert.equal(saved.length, 0)
+
+  const operator = await caller(hub, (started) => pairFakeClient(started.auth, 'operator', ['modules:operate']))
+  await operator.request('module.operate', {
+    moduleId: 'acme.board',
+    method: 'cards.add',
+    params: { title: 'Yes' },
+    commandId: 'c1',
+  })
+  assert.deepEqual(saved, [{ title: 'Yes', clientId: 'operator', commandId: 'client:operator:c1' }])
+  assert.equal(
+    operator.started.audit.some(
+      (entry) =>
+        entry.tool === 'module.operate' && entry.moduleId === 'acme.board' && entry.moduleMethod === 'cards.add',
+    ),
+    true,
+    'an operate from a paired client is audited',
+  )
+  // A read-only grant without modules:read reaches nothing.
+  const none = await caller(hub, (started) => pairFakeClient(started.auth, 'none', ['conversation:read']))
+  assert.equal(codeOf(await none.request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), 'scope_required')
+})
+
+test('a Studio with no kernel yet answers module_unavailable; one without modules does not serve the methods', async () => {
+  const { request } = await caller(createStudioModuleHub())
+  assert.equal(codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.list' })), 'module_unavailable')
 })

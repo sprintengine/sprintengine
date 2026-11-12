@@ -326,6 +326,8 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
         ...(entry.suppressed ? { suppressed: entry.suppressed } : {}),
         ...(entry.toolset ? { toolset: entry.toolset } : {}),
         ...(entry.tools !== undefined ? { tools: entry.tools } : {}),
+        ...(entry.moduleId ? { moduleId: entry.moduleId } : {}),
+        ...(entry.moduleMethod ? { method: entry.moduleMethod } : {}),
       },
       result: entry.ok
         ? toolSuccess({ ok: true })

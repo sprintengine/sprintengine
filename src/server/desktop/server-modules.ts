@@ -72,6 +72,12 @@ export function createServerModules(deps: {
   const enabled = new Set<string>()
   const hub = createStudioModuleHub()
   hub.readRecentFrom(() => load?.kernel.recentNotifications() ?? [])
+  // A module's declared methods, called over the Studio RPC's `module.read` and `module.operate`.
+  hub.serveCallsFrom(async (request) =>
+    load
+      ? load.kernel.callModuleMethod(request)
+      : { ok: false, code: 'module_unavailable', message: `Module "${request.moduleId}" is not running on this Studio.` },
+  )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
   let manifests: CapabilityManifest[] = []

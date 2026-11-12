@@ -241,6 +241,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
     ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
+    ...(options.modules ? { modules: options.modules } : {}),
     log: options.log,
   })
   // A revoked app's offers go at once, with its names: a later app that takes

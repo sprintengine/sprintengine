@@ -1,4 +1,8 @@
-import type { StudioModuleEvent, StudioModuleNotification } from '../../../packages/studio-protocol/src/public'
+import type {
+  StudioModuleAnswer,
+  StudioModuleEvent,
+  StudioModuleNotification,
+} from '../../../packages/studio-protocol/src/public'
 
 // What a Studio's modules say to its clients, between the module kernel and
 // the Studio RPC: the kernel delivers each event and bell row here, and every
@@ -6,10 +10,35 @@ import type { StudioModuleEvent, StudioModuleNotification } from '../../../packa
 // The kernel keeps the recent bell rows; a new `module.notifications`
 // subscriber is sent those first, read from the kernel through `readRecentFrom`.
 //
+// A module's declared methods are called through here too: the router hands
+// `module.read` / `module.operate` to `call`, which the kernel serves once it
+// exists (`serveCallsFrom`); before then, and on a Studio with no kernel, a
+// call is answered `module_unavailable`.
+//
 // Delivery is best effort per listener: one connection whose send throws does
 // not keep the row or event from the others.
 
+/** One call of a module's method, as the router hands it over. */
+export type StudioModuleCallRequest = {
+  moduleId: string
+  method: string
+  access: 'read' | 'operate'
+  params: unknown
+  clientId: string
+  /** An operate's command id, namespaced by the client. */
+  commandId?: string
+}
+
+/** The module's answer, or the host's refusal before the module heard the call. */
+export type StudioModuleCallOutcome =
+  | { ok: true; answer: StudioModuleAnswer }
+  | { ok: false; code: 'module_unavailable' | 'module_method_unknown' | 'invalid_params'; message: string }
+
 export type StudioModules = {
+  /** Call a module's declared method. Rejects when its handler throws. */
+  call(request: StudioModuleCallRequest): Promise<StudioModuleCallOutcome>
+  /** Where calls are served from: the kernel, once it exists. */
+  serveCallsFrom(serve: (request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>): void
   /** One event a module emitted, to every listener, in the order delivered. */
   deliverEvent(event: StudioModuleEvent): void
   /** One bell row, to every listener. The kernel has already kept it. */
@@ -28,6 +57,7 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
   const eventListeners = new Set<(event: StudioModuleEvent) => void>()
   const notificationListeners = new Set<(notification: StudioModuleNotification) => void>()
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
+  let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
 
   function each<T>(listeners: Set<(value: T) => void>, value: T, what: string): void {
     // A copy, so a listener that unsubscribes (or subscribes) while hearing does not skip another.
@@ -43,6 +73,18 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
   }
 
   return {
+    async call(request) {
+      if (!serve)
+        return {
+          ok: false,
+          code: 'module_unavailable',
+          message: `Module "${request.moduleId}" is not running on this Studio: its modules have not loaded.`,
+        }
+      return serve(request)
+    },
+    serveCallsFrom(next) {
+      serve = next
+    },
     deliverEvent: (event) => each(eventListeners, event, 'event'),
     deliverNotification: (notification) => each(notificationListeners, notification, 'notification'),
     onEvent(listener) {
