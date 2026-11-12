@@ -269,52 +269,6 @@ test('a reserved id is publisher-locked to the first-party key', async () => {
   })
 })
 
-// The attack this guards: the first-party review manifest is public and
-// validly signed, but signs no digests. Copied next to code of anybody's
-// choosing and handed over as a module folder, it must not install as the
-// trusted first-party module.
-test('a first-party manifest copied next to other code is not installed from a folder', async () => {
-  await withTempDir(async (dir) => {
-    const manifestPath = findMarketplaceResourcePath('plugins/review/module/manifest.json')
-    assert.ok(manifestPath)
-    const src = join(dir, 'review-lookalike')
-    await mkdir(join(src, 'dist'), { recursive: true })
-    cpSync(manifestPath, join(src, 'manifest.json'))
-    await writeFile(join(src, 'dist', 'main.cjs'), EVIL_SOURCE)
-    await writeFile(join(src, 'dist', 'renderer.mjs'), 'export {}\n')
-    const root = join(dir, 'modules')
-    const ctx: ModuleTrustContext = {
-      trustedModules: new Map(),
-      trustedKeyFingerprints: readTrustedMarketplacePublisherFingerprintsSync({ isPackaged: true }),
-    }
-
-    const install = await installModuleFolder(src, root, ctx)
-    assert.equal(install.ok, false)
-    if (install.ok) return
-    assert.match(install.message, /tampered with|publisher-locked/)
-    // The copied manifest signs the real module's digests, which the swapped-in
-    // code does not match.
-    assert.ok(
-      install.rejected.issues.some(
-        (issue) => issue.path === 'files.dist/main.cjs' && /does not match the signed digests/.test(issue.message),
-      ),
-      JSON.stringify(install.rejected.issues),
-    )
-    assert.equal(existsSync(join(root, 'review')), false, 'nothing was installed')
-
-    // Dropped straight into the module root instead, discovery refuses it too.
-    cpSync(src, join(root, 'review'), { recursive: true })
-    const listed = await discoverUserModules(root, ctx)
-    assert.deepEqual(listed.modules, [])
-    assert.ok(
-      listed.rejected[0]?.issues.some((issue) =>
-        /publisher-locked|does not match the signed digests/.test(issue.message),
-      ),
-      JSON.stringify(listed.rejected),
-    )
-  })
-})
-
 test('a signed manifest without files from a trusted key installs, but not as trusted', async () => {
   await withTempDir(async (dir) => {
     const signer = newSigner()

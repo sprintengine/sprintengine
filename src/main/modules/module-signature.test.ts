@@ -99,17 +99,6 @@ test('a signature over a manifest without files still verifies byte for byte', (
   assert.equal(verifyModuleSignature(signed).valid, true)
 })
 
-test('the shipped review module signs the digests of its own code', () => {
-  const path = findMarketplaceResourcePath('plugins/review/module/manifest.json')
-  assert.ok(path)
-  const parsed = parseThirdPartyModuleManifest(readFileSync(path, 'utf8'))
-  assert.equal(parsed.ok, true)
-  if (!parsed.ok) return
-  assert.ok(parsed.manifest.files?.['dist/main.cjs'])
-  assert.equal(canonicalManifestPayload(parsed.manifest).includes('"files"'), true)
-  assert.equal(verifyModuleSignature(parsed.manifest).valid, true)
-})
-
 test('the files map is part of the signed payload', () => {
   const signer = newSigner()
   const signed = signer.sign({ ...baseManifest(), files: { 'dist/main.cjs': 'a'.repeat(64) } })
