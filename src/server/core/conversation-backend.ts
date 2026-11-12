@@ -63,6 +63,7 @@ export type ConversationBackendMember =
   | 'revertToTurn'
   | 'rewindToTurn'
   | 'handoffConversation'
+  | 'switchConversationProvider'
   | 'forkAtTurn'
 
 export type ConversationBackend = Pick<ConversationRuntime, ConversationBackendMember>
