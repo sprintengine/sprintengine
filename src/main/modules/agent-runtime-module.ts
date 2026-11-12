@@ -11,6 +11,7 @@ import {
   ChatRuntimesToken,
   CompanionAgentServiceToken,
   CompanionAgentsModuleServiceToken,
+  ConversationHostToken,
   ConversationLaunchServiceToken,
   ConversationModuleServiceToken,
   ConversationRuntimeToken,
@@ -96,6 +97,7 @@ export type AgentRuntimeServices = Pick<
   | 'conversations'
   | 'conversationLaunchService'
   | 'conversationModelCatalog'
+  | 'createConversationHost'
 > &
   Partial<Pick<AppServices, 'terminalRuntime' | 'agentControlPlane' | 'agentLaunchService' | 'sprintengineAuth'>>
 
@@ -197,6 +199,7 @@ export function createAgentRuntimeModule(
       // `conversation:operate` and the chat's owner on every call.
       host.provideService(ConversationLaunchServiceToken, () => services.conversationLaunchService)
       host.provideService(ConversationRuntimeToken, () => services.conversations)
+      host.provideService(ConversationHostToken, () => services.createConversationHost)
       const conversationSessions = new ConversationSessionApi(services.conversations)
       const conversations = createConversationModuleRegistry({
         launch: (request) => services.conversationLaunchService.launch(request),

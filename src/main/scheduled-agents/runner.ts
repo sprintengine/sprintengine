@@ -7,6 +7,12 @@
 // workspace. That is what the sidebar marks a run's chat by, what the schedule's
 // editor lists its runs by, and what keeps a run from starting while the one
 // before it is still working.
+//
+// A run goes under a command id the scheduler wrote down before calling it
+// (`ScheduledRunRecord`). The chat is stamped with it (`launchCommandId`), and
+// its first message goes under it, so a start after a crash finds the chat the
+// run made, and sends that message again under the same id: the chat's
+// receipt answers a repeat, and the run is finished once.
 
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../conversation-launch-service'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
@@ -43,6 +49,8 @@ export type ScheduledAgentRunnerDeps = {
    * schedule's card should say so rather than show it as started.
    */
   onFirstSendFailed?: (workspaceId: string, message: string) => void
+  /** The run's chat answered its first message, however it went: the run is done. */
+  onFirstSendDone?: () => void
   now?: () => number
 }
 
@@ -51,6 +59,7 @@ const RUN_CALLED_OFF = 'The run was called off: Studio was quitting.'
 
 export async function runScheduledAgent(
   agent: ScheduledAgent,
+  commandId: string,
   deps: ScheduledAgentRunnerDeps,
   signal?: AbortSignal,
 ): Promise<ScheduledAgentLastRun> {
@@ -80,6 +89,7 @@ export async function runScheduledAgent(
   const firstSendFailed = (message: string): void => {
     if (launchedWorkspaceId) deps.onFirstSendFailed?.(launchedWorkspaceId, message)
     else refusedBeforeLaunch = message
+    deps.onFirstSendDone?.()
   }
   const launched = await deps
     .launchConversation({
@@ -99,7 +109,10 @@ export async function runScheduledAgent(
       // must not take the window from whatever the person is doing; it waits
       // in the list with the schedule's clock on it.
       background: true,
+      launchCommandId: commandId,
+      firstCommandId: commandId,
       onFirstSendFailed: firstSendFailed,
+      onFirstSent: () => deps.onFirstSendDone?.(),
     })
     .catch((error: unknown): ConversationLaunchResult => ({
       ok: false,

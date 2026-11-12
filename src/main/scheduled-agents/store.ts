@@ -22,6 +22,13 @@
 // not its own, and an older app would lose every schedule over two fields it
 // can do without; reading this file, it drops them and runs its schedules,
 // which is what it did before there was a pause.
+//
+// Runs on their way added the file's `runs` the same way: each run is written
+// down before it makes anything, keyed by the command id its first message
+// goes under (`ScheduledRunRecord`), and leaves once that message is answered.
+// A plain record, keyed as the chat's own receipt is, so a hand-over to
+// another machine carries it as it is. An older app reading the file drops it,
+// and what it does then is what it did before runs were written down.
 
 import { readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -40,7 +47,29 @@ import { isRecord } from '../../shared/records'
 
 const FILE_VERSION = 1
 
-type StoreFile = { version: typeof FILE_VERSION; agents: ScheduledAgent[]; pausedAll?: ScheduledAgentsPause }
+type StoreFile = {
+  version: typeof FILE_VERSION
+  agents: ScheduledAgent[]
+  pausedAll?: ScheduledAgentsPause
+  runs?: Record<string, ScheduledRunRecord>
+}
+
+/**
+ * A scheduled run on its way, in the file under the command id its first
+ * message goes under. Written before the run makes anything; it says what the
+ * run sends, so a start after a crash can finish the run under that id, once,
+ * whether or not the schedule is still there.
+ */
+export type ScheduledRunRecord = {
+  scheduledAgentId: string
+  /** When the run began: the time its outcome is recorded at. */
+  startedAt: number
+  /** The first message, as the run sends it. */
+  prompt: string
+  skills?: string[]
+  /** The chat the run made, once its launch answered; until then the run is still starting. */
+  chat?: { workspaceId: string; agentId: string }
+}
 
 export function scheduledAgentsFilePath(userDataDir: string): string {
   return join(userDataDir, 'scheduled-agents.json')
@@ -61,7 +90,23 @@ export type ScheduledAgentsStore = {
   create(draft: ScheduledAgentDraft, ownerModuleId?: string | null): Promise<ScheduledAgent>
   update(id: string, draft: ScheduledAgentDraft): Promise<ScheduledAgent | null>
   remove(id: string): Promise<boolean>
-  recordRun(id: string, run: ScheduledAgentLastRun): Promise<void>
+  /** The runs on their way, by command id. */
+  runs(): Readonly<Record<string, ScheduledRunRecord>>
+  /**
+   * A run begins: written down under `commandId` before it makes anything.
+   * False, and nothing written, when a run of the same schedule is still
+   * starting (its chat not yet made).
+   */
+  beginRun(commandId: string, run: ScheduledRunRecord): Promise<boolean>
+  /** A run's first message was answered, or the run was called off before it tried anything: its record goes. */
+  endRun(commandId: string): Promise<void>
+  /**
+   * A run's outcome, as the schedule's last run. With the run's `commandId`,
+   * in the same write: a run that started its chat keeps its record, now
+   * naming that chat, until its first message is answered; one that failed
+   * ends it.
+   */
+  recordRun(id: string, run: ScheduledAgentLastRun, commandId?: string): Promise<void>
   /**
    * The run recorded as started in `workspaceId` failed after all: its last
    * run becomes that failure. False when the last run is another one (or none).
@@ -94,6 +139,7 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
   // Entries in the file this build would not schedule, kept as they were.
   let heldBack: unknown[] = []
   let pausedAll: ScheduledAgentsPause | null = null
+  let runs: Record<string, ScheduledRunRecord> = {}
   // Why the file could not be read, while it could not: nothing is written over it.
   let unreadable: string | null = null
   let ready: Promise<void> | null = null
@@ -122,6 +168,7 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
       agents = parsed.agents
       heldBack = parsed.heldBack
       pausedAll = parsed.pausedAll
+      runs = parsed.runs
       return
     }
     // Truncated, hand-edited, or written by a version this build does not
@@ -149,6 +196,7 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
       version: FILE_VERSION,
       agents: [...agents, ...heldBack] as ScheduledAgent[],
       ...(pausedAll ? { pausedAll } : {}),
+      ...(Object.keys(runs).length > 0 ? { runs } : {}),
     }
     writing = writing
       .catch(() => undefined)
@@ -198,11 +246,39 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
       await persist()
       return true
     },
-    async recordRun(id, run) {
+    runs: () => runs,
+    async beginRun(commandId, run) {
+      await writable()
+      const starting = Object.values(runs).some(
+        (other) => other.scheduledAgentId === run.scheduledAgentId && !other.chat,
+      )
+      if (starting || Object.hasOwn(runs, commandId)) return false
+      runs = { ...runs, [commandId]: run }
+      await persist()
+      return true
+    },
+    async endRun(commandId) {
+      await writable()
+      if (!Object.hasOwn(runs, commandId)) return
+      const { [commandId]: _ended, ...rest } = runs
+      runs = rest
+      await persist()
+    },
+    async recordRun(id, run, commandId) {
       await writable()
       const current = agents.find((agent) => agent.id === id)
-      if (!current) return
-      replace(id, { ...current, lastRun: run })
+      const record = commandId !== undefined ? runs[commandId] : undefined
+      if (!current && !record) return
+      if (current) replace(id, { ...current, lastRun: run })
+      if (record && commandId !== undefined) {
+        // A run that failed made nothing to finish; one whose chat is not
+        // named in full could not be finished: either way its record ends.
+        const { [commandId]: _ended, ...rest } = runs
+        runs =
+          run.ok && run.agentId
+            ? { ...runs, [commandId]: { ...record, chat: { workspaceId: run.workspaceId, agentId: run.agentId } } }
+            : rest
+      }
       await persist()
     },
     async failRun(id, workspaceId, message) {
@@ -265,7 +341,12 @@ function parseStoreFile(
   input: unknown,
   now: number,
   warn?: (message: string) => void,
-): { agents: ScheduledAgent[]; heldBack: unknown[]; pausedAll: ScheduledAgentsPause | null } | null {
+): {
+  agents: ScheduledAgent[]
+  heldBack: unknown[]
+  pausedAll: ScheduledAgentsPause | null
+  runs: Record<string, ScheduledRunRecord>
+} | null {
   if (!isRecord(input) || !Array.isArray(input.agents)) return null
   if (typeof input.version === 'number' && input.version > FILE_VERSION) return null
   const agents: ScheduledAgent[] = []
@@ -292,7 +373,39 @@ function parseStoreFile(
       ...(isInstant(entry.pausedAt) ? { pausedAt: entry.pausedAt } : {}),
     })
   }
-  return { agents, heldBack, pausedAll: parsePausedAll(input.pausedAll) }
+  return { agents, heldBack, pausedAll: parsePausedAll(input.pausedAll), runs: parseRuns(input.runs, warn) }
+}
+
+// A run record this build would not have written is dropped with a warning:
+// what a start does with it is send a message, and one it cannot read in full
+// is not sent.
+function parseRuns(input: unknown, warn?: (message: string) => void): Record<string, ScheduledRunRecord> {
+  if (!isRecord(input)) return {}
+  const runs: Record<string, ScheduledRunRecord> = {}
+  for (const [commandId, entry] of Object.entries(input)) {
+    const run = parseRun(entry)
+    if (run && commandId) runs[commandId] = run
+    else warn?.(`A scheduled run on its way ("${commandId}") could not be read and was dropped.`)
+  }
+  return runs
+}
+
+function parseRun(input: unknown): ScheduledRunRecord | null {
+  if (!isRecord(input) || typeof input.scheduledAgentId !== 'string' || !input.scheduledAgentId) return null
+  if (!isInstant(input.startedAt) || typeof input.prompt !== 'string') return null
+  const skills = Array.isArray(input.skills) ? input.skills.filter((id): id is string => typeof id === 'string') : []
+  const chat = input.chat
+  const parsedChat =
+    isRecord(chat) && typeof chat.workspaceId === 'string' && chat.workspaceId && typeof chat.agentId === 'string'
+      ? { workspaceId: chat.workspaceId, agentId: chat.agentId }
+      : null
+  return {
+    scheduledAgentId: input.scheduledAgentId,
+    startedAt: input.startedAt,
+    prompt: input.prompt,
+    ...(skills.length > 0 ? { skills } : {}),
+    ...(parsedChat ? { chat: parsedChat } : {}),
+  }
 }
 
 const isInstant = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)

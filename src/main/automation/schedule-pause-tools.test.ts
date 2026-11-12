@@ -9,7 +9,7 @@ import type { McpConnectionContext, McpToolResult } from '../../shared/modules/m
 import { isAgentLaunchingGatewayTool } from '../../shared/conversation/approvalRules'
 import type { WorkspaceSyncSnapshot } from '../../shared/workspace-sync'
 import type { Workspace } from '../../renderer/src/types/workspace'
-import { createScheduledAgentsScheduler } from '../scheduled-agents/scheduler'
+import { schedulerWithRunRecords } from '../scheduled-agents/scheduled-runs.test-helper'
 import { createScheduledAgentsService, type ScheduledAgentsService } from '../scheduled-agents/service'
 import { createScheduledAgentsStore } from '../scheduled-agents/store'
 import { createAutomationTools, type AutomationBackends } from './automation-tools'
@@ -47,7 +47,7 @@ async function harness(options: { callerPreset?: CliPermissionPreset; preset?: C
     newId: () => 'sa-1',
   })
   await store.load()
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => store.list(),
     recordRun: (id, run) => store.recordRun(id, run),
     run: async () => ({ at: NOW, ok: true, workspaceId: 'ws-run' }),

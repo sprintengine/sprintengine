@@ -13,7 +13,7 @@ import {
   type ScheduledAgentDraft,
 } from '../../shared/scheduled-agents'
 import { isRunChatWorking, runScheduledAgent } from './runner'
-import { createScheduledAgentsScheduler } from './scheduler'
+import { schedulerWithRunRecords } from './scheduled-runs.test-helper'
 import { runAsModuleToolCall } from '../module-host/module-tool-caller'
 import { createScheduledAgentsModuleRegistry, createScheduledAgentsService, withinOwnerModuleCeiling } from './service'
 import { createScheduledAgentsStore } from './store'
@@ -144,7 +144,7 @@ test('the scheduler runs each agent when its schedule comes round, then counts o
   const time = fakeTime(NOW)
   const agents = [agent()]
   const runs: string[] = []
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => agents,
     run: async (entry) => {
       runs.push(new Date(time.now()).toISOString())
@@ -165,7 +165,7 @@ test('the scheduler runs each agent when its schedule comes round, then counts o
 test('times missed while the computer slept run once on waking, not once each', async () => {
   const time = fakeTime(NOW)
   let runCount = 0
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => [agent({ schedule: { cron: '0 * * * *', timezone: 'UTC' } })],
     run: async () => {
       runCount += 1
@@ -186,7 +186,7 @@ test('times missed while the computer slept run once on waking, not once each', 
 test('a schedule that changes counts from now; one that closes stops', async () => {
   const time = fakeTime(NOW)
   let agents = [agent()]
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => agents,
     run: async () => ({ at: time.now(), ok: true, workspaceId: 'w' }),
     recordRun: async () => undefined,
@@ -208,7 +208,7 @@ test('a one-time schedule runs once at its time, and never again', async () => {
   const at = Date.UTC(2026, 8, 30, 15, 30)
   let agents = [agent({ schedule: { cron: cronForInstant(at, 'UTC'), timezone: 'UTC', once: at } })]
   const runs: number[] = []
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => agents,
     run: async () => {
       runs.push(time.now())
@@ -243,7 +243,7 @@ test('a one-time schedule that comes due while a Run now of it is still working 
   let working = true
   const runs: number[] = []
   const skipped: string[] = []
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => agents,
     run: async () => {
       runs.push(time.now())
@@ -277,7 +277,7 @@ test('a one-time schedule whose time passed while the app was closed runs once i
   const time = fakeTime(NOW)
   const at = NOW - 60 * 60 * 1000
   let runCount = 0
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => [agent({ schedule: { cron: cronForInstant(at, 'UTC'), timezone: 'UTC', once: at } })],
     run: async () => {
       runCount += 1
@@ -292,7 +292,7 @@ test('a one-time schedule whose time passed while the app was closed runs once i
   await time.advanceTo(NOW + 1)
   assert.equal(runCount, 1)
   // One whose run already went (it failed, and is kept to say so) is done.
-  const ran = createScheduledAgentsScheduler({
+  const ran = schedulerWithRunRecords({
     list: () => [
       agent({
         schedule: { cron: cronForInstant(at, 'UTC'), timezone: 'UTC', once: at },
@@ -331,7 +331,7 @@ test('a time that comes round while the last run is still working is skipped, an
   const working = new Set(['run-1'])
   const runs: string[] = []
   const skipped: string[] = []
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => agents,
     run: async (entry) => {
       runs.push(entry.id)
@@ -363,7 +363,7 @@ test('a time that comes round while the last run is still working is skipped, an
 })
 
 test('a failed last run started no chat, so it holds nothing up', async () => {
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => [agent({ lastRun: { at: NOW, ok: false, message: 'not a git repository' } })],
     run: async () => ({ at: NOW, ok: true, workspaceId: 'run-2' }),
     recordRun: async () => undefined,
@@ -394,6 +394,7 @@ test('a run is a new chat in the project, on its machine, with what it was made 
       skills: [{ id: 'triage', name: 'Triage' }],
       mcpServers: [{ id: 'github', name: 'GitHub' }],
     }),
+    'scheduled-run:test',
     {
       launchConversation: async (request) => {
         requests.push(request)
@@ -415,8 +416,9 @@ test('a run is a new chat in the project, on its machine, with what it was made 
   )
   assert.deepEqual(result, { at: NOW, ok: true, workspaceId: 'w-1', agentId: 'a' })
   assert.equal(typeof requests[0]?.onFirstSendFailed, 'function', 'the run hears if its first message is refused')
+  assert.equal(typeof requests[0]?.onFirstSent, 'function', 'and when it was answered')
   assert.deepEqual(
-    requests.map(({ onFirstSendFailed: _heard, ...request }) => request),
+    requests.map(({ onFirstSendFailed: _heard, onFirstSent: _answered, ...request }) => request),
     [
       {
         newChatIn: { folderPath: '/Users/dev/acme', hostId: 'wsl:Ubuntu', worktree: null },
@@ -430,6 +432,11 @@ test('a run is a new chat in the project, on its machine, with what it was made 
         scheduledAgentId: 'sa-1',
         // And it opens without taking the window from whatever is on screen.
         background: true,
+        // Stamped with the run's command id, and its first message goes under
+        // it, so a start after a crash finds the chat and sends that message
+        // once.
+        launchCommandId: 'scheduled-run:test',
+        firstCommandId: 'scheduled-run:test',
       },
     ],
   )
@@ -438,7 +445,7 @@ test('a run is a new chat in the project, on its machine, with what it was made 
 test('a worktree run starts in a fresh worktree named for the run, on the machine’s own git', async () => {
   const requests: ConversationLaunchRequest[] = []
   const worktrees: Array<{ branchName: string; hostId: string | null }> = []
-  await runScheduledAgent(agent({ hostId: 'wsl:Ubuntu', worktree: { name: 'triage' } }), {
+  await runScheduledAgent(agent({ hostId: 'wsl:Ubuntu', worktree: { name: 'triage' } }), 'scheduled-run:test', {
     launchConversation: async (request) => {
       requests.push(request)
       return {
@@ -466,7 +473,7 @@ test('a worktree run starts in a fresh worktree named for the run, on the machin
 
 test('a run whose chat does not start gives back the worktree it made for it', async () => {
   const discarded: Array<{ repoRoot: string; path: string; leaseId: string | null }> = []
-  const result = await runScheduledAgent(agent({ worktree: { name: 'triage' } }), {
+  const result = await runScheduledAgent(agent({ worktree: { name: 'triage' } }), 'scheduled-run:test', {
     launchConversation: async () => ({ ok: false, code: 'conversation_start_failed', message: 'No CLI.' }),
     getRepoRoot: async () => '/Users/dev/acme',
     createWorktree: async () => ({ ok: true, path: '/Users/dev/acme-run', branch: 'agent/triage-run', leaseId: 'l-1' }),
@@ -491,7 +498,7 @@ test('a run whose first message is refused is a failed run, whenever the refusal
     sessionId: 's',
   }
   // Refused before the launch has answered: the run fails outright.
-  const early = await runScheduledAgent(agent(), {
+  const early = await runScheduledAgent(agent(), 'scheduled-run:test', {
     launchConversation: async (request) => {
       request.onFirstSendFailed?.('The first message was refused: not signed in')
       return launched
@@ -505,7 +512,7 @@ test('a run whose first message is refused is a failed run, whenever the refusal
   // Refused after: the run is recorded as started, and told of the failure by its chat.
   let refuse: ((message: string) => void) | undefined
   const late: Array<[string, string]> = []
-  const started = await runScheduledAgent(agent(), {
+  const started = await runScheduledAgent(agent(), 'scheduled-run:test', {
     launchConversation: async (request) => {
       refuse = request.onFirstSendFailed
       return launched
@@ -536,7 +543,7 @@ test('a started run that failed after all is recorded as failed, only while it i
 })
 
 test('a run that cannot start says why, and nothing starts', async () => {
-  const notRepo = await runScheduledAgent(agent({ worktree: { name: '' } }), {
+  const notRepo = await runScheduledAgent(agent({ worktree: { name: '' } }), 'scheduled-run:test', {
     launchConversation: async () => {
       throw new Error('must not launch')
     },
@@ -547,7 +554,7 @@ test('a run that cannot start says why, and nothing starts', async () => {
   assert.equal(notRepo.ok, false)
   if (!notRepo.ok) assert.match(notRepo.message, /not a git repository/u)
 
-  const refused = await runScheduledAgent(agent(), {
+  const refused = await runScheduledAgent(agent(), 'scheduled-run:test', {
     launchConversation: async () => ({ ok: false, code: 'cli_not_conversational', message: 'No chat runtime.' }),
     getRepoRoot: async () => null,
     createWorktree: async () => ({ ok: false, message: 'unused' }),
@@ -562,7 +569,7 @@ test('the service validates every write and an extension reaches only its own', 
     let id = 0
     const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
     await store.load()
-    const scheduler = createScheduledAgentsScheduler({
+    const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -611,7 +618,7 @@ test("an extension's schedule goes no looser than the extension, or the agent ca
     const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
     await store.load()
     const ran: string[] = []
-    const scheduler = createScheduledAgentsScheduler({
+    const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
       run: async (entry) => {
         ran.push(entry.id)
@@ -673,7 +680,7 @@ test("Run now says why it did not run when the last run's chat is still working"
     await store.create(draft())
     await store.recordRun('sa-1', { at: NOW, ok: true, workspaceId: 'run-1' })
     let working = true
-    const scheduler = createScheduledAgentsScheduler({
+    const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'run-2' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -720,7 +727,7 @@ test('a file that is there but cannot be read refuses every write, rather than r
     const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-2' })
     await store.load()
     await assert.rejects(store.create(draft()), /could not be read/u)
-    const scheduler = createScheduledAgentsScheduler({
+    const scheduler = schedulerWithRunRecords({
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -785,7 +792,7 @@ test('a run whose record cannot be written is logged, not left as an unhandled r
   const time = fakeTime(Date.UTC(2026, 8, 30, 12, 59))
   const logs: string[] = []
   const ran: string[] = []
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => [agent()],
     run: async () => ({ at: time.now(), ok: true, workspaceId: 'w' }),
     recordRun: async () => {
@@ -810,12 +817,13 @@ test('a run on its way when the scheduler stops (the app quitting) starts no cha
   let release: () => void = () => undefined
   const recorded: unknown[] = []
   const launched: string[] = []
-  const scheduler = createScheduledAgentsScheduler({
+  const scheduler = schedulerWithRunRecords({
     list: () => [agent({ worktree: { name: 'nightly' } })],
     // The run is making its worktree when the quit comes.
     run: (entry, signal) =>
       runScheduledAgent(
         entry,
+        'scheduled-run:test',
         {
           getRepoRoot: async () => '/Users/dev/acme',
           createWorktree: async (input) => {

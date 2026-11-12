@@ -155,7 +155,11 @@ import { registerEnvironmentsIpc } from './ipc/environments-ipc'
 import { registerSshEnvironmentsIpc } from './ipc/ssh-environments-ipc'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { loadMainModules } from './module-host/load-modules'
-import { ConversationLaunchServiceToken, ConversationRuntimeToken } from './module-host/service-tokens'
+import {
+  ConversationHostToken,
+  ConversationLaunchServiceToken,
+  ConversationRuntimeToken,
+} from './module-host/service-tokens'
 import { createBundledMainModules } from './modules'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
 import { computeModuleFileDigestsSync, manifestFingerprint } from './modules/module-signature'
@@ -365,6 +369,7 @@ test('what main and the server register, and what the preload uses, is the inven
         registerMain(host) {
           host.provideService(ConversationLaunchServiceToken, () => anything())
           host.provideService(ConversationRuntimeToken, () => anything())
+          host.provideService(ConversationHostToken, () => anything())
         },
       },
       ...createBundledMainModules(platform, () => undefined),

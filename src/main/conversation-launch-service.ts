@@ -234,6 +234,14 @@ export type ConversationLaunchRequest = {
    * first turn learns that none is coming.
    */
   onFirstSendFailed?: (message: string) => void
+  /**
+   * The command id the first message goes under: a caller that wrote it down
+   * before the launch (a scheduled run) can send that message again after a
+   * restart, and the chat's receipt answers the repeat. Absent, one is made.
+   */
+  firstCommandId?: string
+  /** Told when the chat answered the first message, as a send is answered: when its turn ended. */
+  onFirstSent?: () => void
 }
 
 export type ConversationLaunchResult =
@@ -771,7 +779,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
           if (!go) return
           const sent = await deps.send({
             sessionId,
-            commandId: newCommandId(),
+            commandId: request.firstCommandId ?? newCommandId(),
             message: prompt,
             ...(turnEffort ? { reasoningEffort: turnEffort } : {}),
             ...(turnMode ? { mode: turnMode } : {}),
@@ -780,6 +788,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
             ...(request.attachments?.length ? { attachments: request.attachments } : {}),
           })
           if (!sent.ok) failed(`The first message of chat "${agentId}" was refused: ${sent.message}`)
+          else request.onFirstSent?.()
         })
         .catch((error: unknown) => {
           failed(
