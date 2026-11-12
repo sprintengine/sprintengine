@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import { existsSync, watch as fsWatch, type FSWatcher } from 'fs'
 import { copyFile, mkdir, readFile, readdir, writeFile, rm } from 'fs/promises'
 import { join, resolve, sep } from 'path'
@@ -17,6 +16,7 @@ import {
 import { hostIdForPath, recordIntegrationWrite } from './integrations/ledger'
 import { removeHooksDirIfOnlyOurs } from './agent-state'
 import { ensureWorkspaceStoreDir, workspaceStorePath } from './workspace-store'
+import { installedStudioPlatform } from '../server/platform/platform'
 
 // =============================================================================
 // Types
@@ -139,14 +139,20 @@ function liveTraceDir(workspaceRoot: string): string {
   return traceDirsFor(workspaceRoot)[0]!
 }
 
+// Where the app ships the hook, from the Studio platform's paths: this module
+// is served by the Studio server (agent-setup-domain.ts), which never imports
+// Electron. A plain-Node test has no platform and reads the checkout.
 function getBundledHookScriptPath(): string | null {
-  if (app.isPackaged) {
-    const packaged = join(process.resourcesPath, 'hooks', 'claude-knowledge-activity.mjs')
-    return existsSync(packaged) ? packaged : null
+  const paths = installedStudioPlatform()?.paths
+  if (paths?.isPackaged()) {
+    const resourcesDir = paths.resourcesDir()
+    const packaged = resourcesDir ? join(resourcesDir, 'hooks', 'claude-knowledge-activity.mjs') : null
+    return packaged && existsSync(packaged) ? packaged : null
   }
+  const appRoot = paths?.appRoot() ?? null
   const candidates = [
     join(process.cwd(), 'resources', 'hooks', 'claude-knowledge-activity.mjs'),
-    join(app.getAppPath(), 'resources', 'hooks', 'claude-knowledge-activity.mjs'),
+    ...(appRoot ? [join(appRoot, 'resources', 'hooks', 'claude-knowledge-activity.mjs')] : []),
     join(__dirname, '..', '..', 'resources', 'hooks', 'claude-knowledge-activity.mjs'),
     join(__dirname, '..', '..', '..', 'resources', 'hooks', 'claude-knowledge-activity.mjs'),
   ]
