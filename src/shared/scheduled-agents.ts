@@ -97,6 +97,13 @@ export type ScheduledAgent = {
    * alone.
    */
   pausedAt?: number
+  /**
+   * When a run began that has not been recorded yet: written before the run
+   * makes its chat, cleared in the same write as the run's outcome. A start
+   * that finds it set records that run as cut off, rather than running a
+   * one-time schedule twice or showing a run that never reported.
+   */
+  runStartedAt?: number
 }
 
 /**

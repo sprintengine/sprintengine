@@ -24,6 +24,19 @@ import { createScheduledAgentsScheduler } from './scheduler'
 import { createScheduledAgentsModuleRegistry, createScheduledAgentsService } from './service'
 import { createScheduledAgentsStore } from './store'
 
+/**
+ * A run on its way, as the store writes it down: one at a time per scheduled
+ * agent. These schedulers record runs into stand-ins that do not clear it, so
+ * each fires a scheduled agent once at most, or says when it does not.
+ */
+function runMarks() {
+  const started = new Set<string>()
+  return {
+    beginRun: async (id: string) => !started.has(id) && Boolean(started.add(id)),
+    abandonRun: async (id: string) => void started.delete(id),
+  }
+}
+
 // What a scheduled agent's creator can tell about it and its runs: a name the
 // sidebar shows, a tag each run's chat carries, the chat each run started, and
 // a word each time one does.
@@ -179,6 +192,7 @@ test('onRun hears each run that started a chat, and an extension hears only its 
     const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
     await store.load()
     const scheduler = createScheduledAgentsScheduler({
+      ...runMarks(),
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w', agentId: 'a' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -225,6 +239,7 @@ test('runNow tells onRun too, through the scheduler’s report', async () => {
     await store.load()
     let service: ReturnType<typeof createScheduledAgentsService> | null = null
     const scheduler = createScheduledAgentsScheduler({
+      ...runMarks(),
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w-run', agentId: 'agent-run' }),
       recordRun: (entry, run) => store.recordRun(entry, run),

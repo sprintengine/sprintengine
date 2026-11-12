@@ -15,6 +15,19 @@ import { createScheduledAgentsStore } from '../scheduled-agents/store'
 import { createAutomationTools, type AutomationBackends } from './automation-tools'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
 
+/**
+ * A run on its way, as the store writes it down: one at a time per scheduled
+ * agent. These schedulers record runs into stand-ins that do not clear it, so
+ * each fires a scheduled agent once at most, or says when it does not.
+ */
+function runMarks() {
+  const started = new Set<string>()
+  return {
+    beginRun: async (id: string) => !started.has(id) && Boolean(started.add(id)),
+    abandonRun: async (id: string) => void started.delete(id),
+  }
+}
+
 // `schedule.pause` and `schedule.resume`, and what `schedule.list` says about a
 // pause, over the real scheduled agents service.
 
@@ -48,6 +61,7 @@ async function harness(options: { callerPreset?: CliPermissionPreset; preset?: C
   })
   await store.load()
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => store.list(),
     recordRun: (id, run) => store.recordRun(id, run),
     run: async () => ({ at: NOW, ok: true, workspaceId: 'ws-run' }),

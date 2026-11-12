@@ -9,6 +9,19 @@ import { createScheduledAgentsScheduler } from './scheduler'
 import { createScheduledAgentsService, type ScheduledAgentsService } from './service'
 import { createScheduledAgentsStore, type ScheduledAgentsStore } from './store'
 
+/**
+ * A run on its way, as the store writes it down: one at a time per scheduled
+ * agent. These schedulers record runs into stand-ins that do not clear it, so
+ * each fires a scheduled agent once at most, or says when it does not.
+ */
+function runMarks() {
+  const started = new Set<string>()
+  return {
+    beginRun: async (id: string) => !started.has(id) && Boolean(started.add(id)),
+    abandonRun: async (id: string) => void started.delete(id),
+  }
+}
+
 // Pausing a scheduled agent, and every one of them for a while. The rules the
 // person reads in the app, held here against the real store, scheduler and
 // service on a clock the test moves:
@@ -111,6 +124,7 @@ function harness(
   const store = createScheduledAgentsStore({ filePath, now: time.now, newId: () => `sa-${(ids += 1)}` })
   let service: ScheduledAgentsService | null = null
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => store.list(),
     recordRun: (id, ran) => store.recordRun(id, ran),
     run: async (agent) => {

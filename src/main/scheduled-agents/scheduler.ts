@@ -14,6 +14,13 @@
 // chats doing the same job on the same checkout. A skipped time is not queued —
 // the next one counts on from it, as a missed one does.
 //
+// A run is written down as on its way (`runStartedAt`, in the store) before it
+// makes its chat, and that ends in the same write as its outcome: the store,
+// not this process's memory, is what says a run is still starting. A start
+// that finds a run still on its way records it as cut off: the process that
+// began it stopped before it reported, so a one-time schedule is not run a
+// second time beside a chat that may already exist.
+//
 // A one-time schedule is the exception to "missed runs are not replayed": it
 // is one message the person asked to have sent, and late is closer to that
 // than never, so one whose time passed while the app was closed runs once the
@@ -65,10 +72,19 @@ export type ScheduledAgentRunRefusal = 'unknown' | 'starting' | 'still_working' 
 export type ScheduledAgentFireResult =
   { ok: true; run: ScheduledAgentLastRun } | { ok: false; refused: ScheduledAgentRunRefusal }
 
+/** What a run the last process began and never finished recording says. */
+export const RUN_INTERRUPTED =
+  'Studio stopped while this run was starting its chat. Its chat may be missing or may not have its prompt; Run now starts it again.'
+
 export type ScheduledAgentsSchedulerDeps = {
   list: () => ScheduledAgent[]
   /** Start a run. `signal` aborts when the scheduler stops: a run not yet launched is called off. */
   run: (agent: ScheduledAgent, signal: AbortSignal) => Promise<ScheduledAgentLastRun>
+  /** A run begins: written down before it makes anything; false when one is already on its way. */
+  beginRun: (id: string, at: number) => Promise<boolean>
+  /** A run that began was called off before it tried anything. */
+  abandonRun: (id: string) => Promise<void>
+  /** A run's outcome, which ends the run begun. */
   recordRun: (id: string, run: ScheduledAgentLastRun) => Promise<void>
   onRan?: (agent: ScheduledAgent, run: ScheduledAgentLastRun) => void
   /**
@@ -113,7 +129,6 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
     string,
     { at: number | null; cron: string; timezone: string; once: number | undefined; paused: boolean }
   >()
-  const inFlight = new Set<string>()
   // Aborted by stop: a run on its way when the app quits starts no chat.
   let stopping = new AbortController()
   const describe = (error: unknown) => (error instanceof Error ? error.message : String(error))
@@ -178,31 +193,53 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
   }
 
   const fire = async (agent: ScheduledAgent): Promise<ScheduledAgentFireResult> => {
-    if (inFlight.has(agent.id)) return { ok: false, refused: 'starting' }
     const previous = agent.lastRun
     if (previous?.ok && deps.isRunWorking?.(previous.workspaceId)) return { ok: false, refused: 'still_working' }
-    inFlight.add(agent.id)
+    // The run is written down as on its way before it makes anything, so a
+    // start after a crash finds it (`start`); one already on its way refuses.
+    // A store that cannot be written is said, and the run goes as it would
+    // have: only its record is lost.
+    const begun = await deps.beginRun(agent.id, now()).catch((error: unknown) => {
+      deps.log?.(`A scheduled agent's run could not be written down as started: ${describe(error)}`)
+      return true
+    })
+    if (!begun) return { ok: false, refused: 'starting' }
     const signal = stopping.signal
-    try {
-      const run = await deps.run(agent, signal).catch((error: unknown): ScheduledAgentLastRun => ({
-        at: now(),
-        ok: false,
-        message: error instanceof Error ? error.message : String(error),
-      }))
-      // Called off by the stop before its chat started: nothing was tried, so
-      // nothing is recorded, and a one-time schedule runs at the next start.
-      if (signal.aborted && !run.ok) return { ok: false, refused: 'stopped' }
-      // A scheduled agent closed while its run was starting is gone; its run
-      // is not recorded against nothing.
-      // The run happened whether or not it could be written down.
-      if (deps.list().some((candidate) => candidate.id === agent.id))
-        await deps.recordRun(agent.id, run).catch((error: unknown) => {
-          deps.log?.(`A scheduled agent's run could not be recorded: ${describe(error)}`)
-        })
+    const run = await deps.run(agent, signal).catch((error: unknown): ScheduledAgentLastRun => ({
+      at: now(),
+      ok: false,
+      message: error instanceof Error ? error.message : String(error),
+    }))
+    // Called off by the stop before its chat started: nothing was tried, so
+    // nothing is recorded, and a one-time schedule runs at the next start.
+    if (signal.aborted && !run.ok) {
+      await deps.abandonRun(agent.id).catch(() => undefined)
+      return { ok: false, refused: 'stopped' }
+    }
+    // A scheduled agent closed while its run was starting is gone; its run
+    // is not recorded against nothing.
+    // The run happened whether or not it could be written down.
+    if (deps.list().some((candidate) => candidate.id === agent.id))
+      await deps.recordRun(agent.id, run).catch((error: unknown) => {
+        deps.log?.(`A scheduled agent's run could not be recorded: ${describe(error)}`)
+      })
+    deps.onRan?.(agent, run)
+    return { ok: true, run }
+  }
+
+  /**
+   * Runs the last process began and never recorded: it stopped while they were
+   * making their chats. Each is recorded as cut off, so the card says so and a
+   * one-time schedule is not run a second time; Run now runs it again.
+   */
+  const recordInterruptedRuns = async (): Promise<void> => {
+    for (const agent of deps.list()) {
+      if (agent.runStartedAt === undefined) continue
+      const run: ScheduledAgentLastRun = { at: agent.runStartedAt, ok: false, message: RUN_INTERRUPTED }
+      await deps.recordRun(agent.id, run).catch((error: unknown) => {
+        deps.log?.(`A scheduled agent's cut-off run could not be recorded: ${describe(error)}`)
+      })
       deps.onRan?.(agent, run)
-      return { ok: true, run }
-    } finally {
-      inFlight.delete(agent.id)
     }
   }
 
@@ -247,6 +284,7 @@ export function createScheduledAgentsScheduler(deps: ScheduledAgentsSchedulerDep
     start() {
       if (running) return
       running = true
+      void recordInterruptedRuns()
       if (stopping.signal.aborted) stopping = new AbortController()
       dueAt.clear()
       reconcile()

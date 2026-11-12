@@ -13,10 +13,23 @@ import {
   type ScheduledAgentDraft,
 } from '../../shared/scheduled-agents'
 import { isRunChatWorking, runScheduledAgent } from './runner'
-import { createScheduledAgentsScheduler } from './scheduler'
+import { createScheduledAgentsScheduler, RUN_INTERRUPTED } from './scheduler'
 import { runAsModuleToolCall } from '../module-host/module-tool-caller'
 import { createScheduledAgentsModuleRegistry, createScheduledAgentsService, withinOwnerModuleCeiling } from './service'
 import { createScheduledAgentsStore } from './store'
+
+/**
+ * A run on its way, as the store writes it down: one at a time per scheduled
+ * agent. These schedulers record runs into stand-ins that do not clear it, so
+ * each fires a scheduled agent once at most, or says when it does not.
+ */
+function runMarks() {
+  const started = new Set<string>()
+  return {
+    beginRun: async (id: string) => !started.has(id) && Boolean(started.add(id)),
+    abandonRun: async (id: string) => void started.delete(id),
+  }
+}
 
 // Wednesday 30 September 2026, 12:10 UTC.
 const NOW = Date.UTC(2026, 8, 30, 12, 10)
@@ -145,6 +158,7 @@ test('the scheduler runs each agent when its schedule comes round, then counts o
   const agents = [agent()]
   const runs: string[] = []
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => agents,
     run: async (entry) => {
       runs.push(new Date(time.now()).toISOString())
@@ -166,6 +180,7 @@ test('times missed while the computer slept run once on waking, not once each', 
   const time = fakeTime(NOW)
   let runCount = 0
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => [agent({ schedule: { cron: '0 * * * *', timezone: 'UTC' } })],
     run: async () => {
       runCount += 1
@@ -187,6 +202,7 @@ test('a schedule that changes counts from now; one that closes stops', async () 
   const time = fakeTime(NOW)
   let agents = [agent()]
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => agents,
     run: async () => ({ at: time.now(), ok: true, workspaceId: 'w' }),
     recordRun: async () => undefined,
@@ -209,6 +225,7 @@ test('a one-time schedule runs once at its time, and never again', async () => {
   let agents = [agent({ schedule: { cron: cronForInstant(at, 'UTC'), timezone: 'UTC', once: at } })]
   const runs: number[] = []
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => agents,
     run: async () => {
       runs.push(time.now())
@@ -244,6 +261,7 @@ test('a one-time schedule that comes due while a Run now of it is still working 
   const runs: number[] = []
   const skipped: string[] = []
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => agents,
     run: async () => {
       runs.push(time.now())
@@ -278,6 +296,7 @@ test('a one-time schedule whose time passed while the app was closed runs once i
   const at = NOW - 60 * 60 * 1000
   let runCount = 0
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => [agent({ schedule: { cron: cronForInstant(at, 'UTC'), timezone: 'UTC', once: at } })],
     run: async () => {
       runCount += 1
@@ -293,6 +312,7 @@ test('a one-time schedule whose time passed while the app was closed runs once i
   assert.equal(runCount, 1)
   // One whose run already went (it failed, and is kept to say so) is done.
   const ran = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => [
       agent({
         schedule: { cron: cronForInstant(at, 'UTC'), timezone: 'UTC', once: at },
@@ -332,6 +352,7 @@ test('a time that comes round while the last run is still working is skipped, an
   const runs: string[] = []
   const skipped: string[] = []
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => agents,
     run: async (entry) => {
       runs.push(entry.id)
@@ -364,6 +385,7 @@ test('a time that comes round while the last run is still working is skipped, an
 
 test('a failed last run started no chat, so it holds nothing up', async () => {
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => [agent({ lastRun: { at: NOW, ok: false, message: 'not a git repository' } })],
     run: async () => ({ at: NOW, ok: true, workspaceId: 'run-2' }),
     recordRun: async () => undefined,
@@ -563,6 +585,7 @@ test('the service validates every write and an extension reaches only its own', 
     const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => `sa-${++id}` })
     await store.load()
     const scheduler = createScheduledAgentsScheduler({
+      ...runMarks(),
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -612,6 +635,7 @@ test("an extension's schedule goes no looser than the extension, or the agent ca
     await store.load()
     const ran: string[] = []
     const scheduler = createScheduledAgentsScheduler({
+      ...runMarks(),
       list: () => store.list(),
       run: async (entry) => {
         ran.push(entry.id)
@@ -674,6 +698,7 @@ test("Run now says why it did not run when the last run's chat is still working"
     await store.recordRun('sa-1', { at: NOW, ok: true, workspaceId: 'run-1' })
     let working = true
     const scheduler = createScheduledAgentsScheduler({
+      ...runMarks(),
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'run-2' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -721,6 +746,7 @@ test('a file that is there but cannot be read refuses every write, rather than r
     await store.load()
     await assert.rejects(store.create(draft()), /could not be read/u)
     const scheduler = createScheduledAgentsScheduler({
+      ...runMarks(),
       list: () => store.list(),
       run: async () => ({ at: NOW, ok: true, workspaceId: 'w' }),
       recordRun: (entry, run) => store.recordRun(entry, run),
@@ -786,6 +812,7 @@ test('a run whose record cannot be written is logged, not left as an unhandled r
   const logs: string[] = []
   const ran: string[] = []
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => [agent()],
     run: async () => ({ at: time.now(), ok: true, workspaceId: 'w' }),
     recordRun: async () => {
@@ -811,6 +838,7 @@ test('a run on its way when the scheduler stops (the app quitting) starts no cha
   const recorded: unknown[] = []
   const launched: string[] = []
   const scheduler = createScheduledAgentsScheduler({
+    ...runMarks(),
     list: () => [agent({ worktree: { name: 'nightly' } })],
     // The run is making its worktree when the quit comes.
     run: (entry, signal) =>
@@ -856,4 +884,67 @@ test('a run on its way when the scheduler stops (the app quitting) starts no cha
   release()
   assert.equal((await ran).ok, true)
   assert.deepEqual(launched, ['discarded:true', 'chat'])
+})
+
+test('a run Studio stopped while it was starting is recorded as cut off at the next start, never run twice', async () => {
+  const file = tempFile()
+  try {
+    const once = NOW + 60_000
+    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    await store.load()
+    await store.create(draft({ schedule: { cron: '0 13 * * *', timezone: 'UTC', once } }))
+    const time = fakeTime(NOW)
+    let started: () => void = () => undefined
+    const making = new Promise<void>((resolve) => (started = resolve))
+    const first = createScheduledAgentsScheduler({
+      list: () => store.list(),
+      beginRun: (id, at) => store.beginRun(id, at),
+      abandonRun: (id) => store.abandonRun(id),
+      recordRun: (id, run) => store.recordRun(id, run),
+      // The process dies while the run is making its chat.
+      run: () => {
+        started()
+        return new Promise<never>(() => undefined)
+      },
+      now: time.now,
+      setTimer: time.setTimer,
+      clearTimer: time.clearTimer,
+    })
+    first.start()
+    await time.advanceTo(once)
+    await making
+    assert.equal(store.get('sa-1')?.runStartedAt, once, 'written down before the chat was made')
+
+    // The next process, over the same file.
+    const reopened = createScheduledAgentsStore({ filePath: file.path, now: () => once + 1 })
+    await reopened.load()
+    let runs = 0
+    const recorded = new Promise<void>((resolve) => {
+      const next = createScheduledAgentsScheduler({
+        list: () => reopened.list(),
+        beginRun: (id, at) => reopened.beginRun(id, at),
+        abandonRun: (id) => reopened.abandonRun(id),
+        recordRun: async (id, run) => {
+          await reopened.recordRun(id, run)
+          resolve()
+        },
+        run: async () => {
+          runs += 1
+          return { at: once + 1, ok: true, workspaceId: 'ws-2' }
+        },
+        now: () => once + 1,
+        setTimer: () => null,
+        clearTimer: () => undefined,
+      })
+      next.start()
+    })
+    await recorded
+    const after = reopened.get('sa-1')
+    assert.deepEqual(after?.lastRun, { at: once, ok: false, message: RUN_INTERRUPTED })
+    assert.equal(after?.runStartedAt, undefined, 'ended in the same write')
+    assert.equal(runs, 0, 'a one-time schedule is not run a second time')
+    first.stop()
+  } finally {
+    file.cleanup()
+  }
 })

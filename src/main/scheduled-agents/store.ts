@@ -15,6 +15,9 @@
 // starts empty; and an entry that no longer validates is held back, written
 // back as it was, rather than dropped by the next change.
 //
+// A run on its way added `runStartedAt` the same way: an older app reading it
+// drops it, and records its next run as it always did.
+//
 // Pausing added two fields and no version: an entry's `pausedAt`, and the
 // file's `pausedAll` (every schedule paused, since and until when). A file
 // without them is every schedule running, as it always was. The version stays
@@ -61,6 +64,14 @@ export type ScheduledAgentsStore = {
   create(draft: ScheduledAgentDraft, ownerModuleId?: string | null): Promise<ScheduledAgent>
   update(id: string, draft: ScheduledAgentDraft): Promise<ScheduledAgent | null>
   remove(id: string): Promise<boolean>
+  /**
+   * A run of it begins at `at`: written before it makes its chat. False when
+   * one is already on its way (or it is gone), and nothing is written.
+   */
+  beginRun(id: string, at: number): Promise<boolean>
+  /** A run that began was called off before it tried anything: nothing is recorded for it. */
+  abandonRun(id: string): Promise<void>
+  /** A run's outcome, which ends the run begun (`beginRun`) in the same write. */
   recordRun(id: string, run: ScheduledAgentLastRun): Promise<void>
   /**
    * The run recorded as started in `workspaceId` failed after all: its last
@@ -198,11 +209,28 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
       await persist()
       return true
     },
+    async beginRun(id, at) {
+      await writable()
+      const current = agents.find((agent) => agent.id === id)
+      if (!current || current.runStartedAt !== undefined) return false
+      replace(id, { ...current, runStartedAt: at })
+      await persist()
+      return true
+    },
+    async abandonRun(id) {
+      await writable()
+      const current = agents.find((agent) => agent.id === id)
+      if (!current || current.runStartedAt === undefined) return
+      const { runStartedAt: _began, ...rest } = current
+      replace(id, rest)
+      await persist()
+    },
     async recordRun(id, run) {
       await writable()
       const current = agents.find((agent) => agent.id === id)
       if (!current) return
-      replace(id, { ...current, lastRun: run })
+      const { runStartedAt: _began, ...rest } = current
+      replace(id, { ...rest, lastRun: run })
       await persist()
     },
     async failRun(id, workspaceId, message) {
@@ -290,6 +318,7 @@ function parseStoreFile(
       lastRun: parseLastRun(entry.lastRun),
       lastFailureSeenAt: typeof entry.lastFailureSeenAt === 'number' ? entry.lastFailureSeenAt : null,
       ...(isInstant(entry.pausedAt) ? { pausedAt: entry.pausedAt } : {}),
+      ...(isInstant(entry.runStartedAt) ? { runStartedAt: entry.runStartedAt } : {}),
     })
   }
   return { agents, heldBack, pausedAll: parsePausedAll(input.pausedAll) }

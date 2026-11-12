@@ -83,6 +83,8 @@ export function createScheduledAgentsModule(
       })
       const scheduler = createScheduledAgentsScheduler({
         list: () => store.list(),
+        beginRun: (id, at) => store.beginRun(id, at),
+        abandonRun: (id) => store.abandonRun(id),
         recordRun: outcomes.recordRun,
         onRan: outcomes.onRan,
         isRunWorking: (workspaceId) => {
