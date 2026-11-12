@@ -98,6 +98,7 @@ import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
+import { createPullRequestChatFolders } from '../pull-requests/pull-request-chat-folders'
 import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends } from './studio-scheduled-messages'
 import { createStudioAutoCompact } from './studio-auto-compact'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
@@ -585,6 +586,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     wakes: studioPullRequestWakes({
       conversations,
       workspaceRecord: (workspaceId) => workspaceRegistry.getRecord(workspaceId),
+      workspaceRemoved: (workspaceId) => isWorkspaceTombstoned(workspaceRegistry.getTombstones(), workspaceId),
+      // A WSL distribution's server and an SSH machine's hold no record of
+      // their chats: a watched one's folder is kept here for its wakes.
+      chatFolders: createPullRequestChatFolders({
+        dataDir,
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Pull request watch', message })
+        },
+      }),
       // Called only once a wake goes, long after the core is composed.
       createHost: (hostOptions) => createConversationHost(hostOptions),
       log: (message) => {
