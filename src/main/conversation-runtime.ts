@@ -690,8 +690,14 @@ export class ConversationRuntime {
   // finds it busy re-arms the announcement for its next rest.
   private noteSettled(session: RuntimeSession): void {
     this.noteWorkingStretch(session)
-    // Nothing open in the log any more: the chat leaves the outbox.
-    if (!isSessionBusy(session) && !session.providerTurn && !session.stoppingUnsaved)
+    // Nothing open in the log any more: the chat leaves the outbox. Not while
+    // a write it refused may have left a turn open (`unclosedLogs`).
+    if (
+      !isSessionBusy(session) &&
+      !session.providerTurn &&
+      !session.stoppingUnsaved &&
+      !this.unclosedLogs.has(this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId))
+    )
       this.runInBackground(this.outbox.settle(session))
     const settled =
       this.sessions.get(session.sessionId) === session &&
@@ -824,6 +830,8 @@ export class ConversationRuntime {
     path: string,
   ): Promise<ConversationStartSessionResult | null> {
     const existing = this.liveSessionFor(path)
+    // One being stopped because its log refused a write is not handed out again.
+    if (existing?.stoppingUnsaved) return null
     if (!existing) return null
     if (isSessionBusy(existing)) return { ok: true, session: this.toSummary(existing) }
     if (existing.status === 'failed') return null
@@ -861,7 +869,6 @@ export class ConversationRuntime {
     for (const session of this.sessions.values())
       if (
         session.status !== 'stopped' &&
-        !session.stoppingUnsaved &&
         this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId) === path
       )
         live = session
@@ -1389,33 +1396,34 @@ export class ConversationRuntime {
         // The turn this opens is the command's effect: the chat is listed
         // before the message commits, so a start after a crash finds the
         // turn and closes it (conversation-outbox.ts). A list that cannot be
-        // written refuses the send as a log that cannot be written does.
-        const listed = await this.outbox.open(session).then(
-          () => true,
-          () => false,
-        )
+        // written is an aid lost, not a refusal: the turn is then closed when
+        // its chat is next opened.
+        await this.outbox.open(session).catch((error: unknown) => {
+          console.warn(
+            '[conversation-runtime] a turn starts unlisted in the outbox:',
+            error instanceof Error ? error.message : error,
+          )
+        })
         // The command is accepted here: its message and its receipt are one
         // write. A message the log does not take opened no turn, and nothing
         // of the command is recorded, so the same id may be sent again.
-        const opened =
-          listed &&
-          (await this.emit(
-            session,
-            this.eventForSession(session, 'user_message', {
-              turnId,
-              text: message,
-              ...(storedAttachments.length ? { attachments: storedAttachments } : {}),
-              ...(input.localTurnId ? { localTurnId: input.localTurnId } : {}),
-              ...(command?.given ? { commandId: command.id } : {}),
-              ...(skills.ids.length ? { skills: skills.ids } : {}),
-              ...(mentions.refs.length ? { mentions: mentions.refs } : {}),
-              ...(files.length ? { files } : {}),
-              ...(input.origin ? { origin: input.origin } : {}),
-              ...(input.subagentMessage ? { subagentMessage: input.subagentMessage } : {}),
-              ...composedAtOf(input),
-            }),
-            { turnId, records: this.acceptTurn(command, turnId) },
-          ))
+        const opened = await this.emit(
+          session,
+          this.eventForSession(session, 'user_message', {
+            turnId,
+            text: message,
+            ...(storedAttachments.length ? { attachments: storedAttachments } : {}),
+            ...(input.localTurnId ? { localTurnId: input.localTurnId } : {}),
+            ...(command?.given ? { commandId: command.id } : {}),
+            ...(skills.ids.length ? { skills: skills.ids } : {}),
+            ...(mentions.refs.length ? { mentions: mentions.refs } : {}),
+            ...(files.length ? { files } : {}),
+            ...(input.origin ? { origin: input.origin } : {}),
+            ...(input.subagentMessage ? { subagentMessage: input.subagentMessage } : {}),
+            ...composedAtOf(input),
+          }),
+          { turnId, records: this.acceptTurn(command, turnId) },
+        )
         if (!opened) {
           // Nothing of the command reached the log: the same id may come again.
           if (command) command.unrecorded = true
@@ -1809,10 +1817,12 @@ export class ConversationRuntime {
     // The message a send opens its turn with: nothing runs yet (a steer's
     // message joins a stream that does).
     if (event.type === 'user_message' && !session.providerTurn) return
-    if (this.shutDown || this.deletingTranscripts.has(path)) return
     const turnId = typeof event.payload?.turnId === 'string' ? event.payload.turnId : (options.turnId ?? null)
     if (!turnId && !session.activeTurnId) return
+    // Said before anything else: a quit or a deletion still leaves the turn
+    // to be closed when the chat is next taken up, and the chat listed.
     this.unclosedLogs.add(path)
+    if (this.shutDown || this.deletingTranscripts.has(path)) return
     if (session.status === 'stopped' || session.stoppingUnsaved) return
     session.stoppingUnsaved = true
     console.warn(
@@ -2348,6 +2358,8 @@ export class ConversationRuntime {
     session.pendingSkills = undefined
     session.invokedSkills = undefined
     session.updatedAt = this.now()
+    // Nothing of it runs any more: the chat leaves the outbox, if its log holds no turn open.
+    this.noteSettled(session)
     this.releaseTranscript(session)
     return { ok: true, session: this.toSummary(session) }
   }
@@ -4058,8 +4070,16 @@ export class ConversationRuntime {
    * and the chat list hear the end without anyone opening the chat. A chat
    * stays listed while its log cannot be written, for the next start.
    */
-  async recoverInterruptedTurns(): Promise<void> {
+  recoverInterruptedTurns(): Promise<void> {
+    // Waited for by a quit, so nothing is appended after the logs close.
+    const recovering = this.recoverInterruptedTurnsNow()
+    this.runInBackground(recovering)
+    return recovering
+  }
+
+  private async recoverInterruptedTurnsNow(): Promise<void> {
     for (const chat of await this.outbox.pending()) {
+      if (this.shutDown) return
       if (this.liveSessionFor(this.transcriptPath(chat.workspaceRoot, chat.workspaceId, chat.agentId))) continue
       const closed = await this.initializeSequence(chat).catch((error: unknown) => {
         console.warn(
@@ -4125,6 +4145,9 @@ export class ConversationRuntime {
           await this.eventLog.append(path, event, input.workspaceRoot).catch(() => 'failed' as const),
         ) && closed
     if (closed && !live) this.unclosedLogs.delete(path)
+    // A session here still running the log (one being stopped included) is
+    // what ends its turn; this took up nothing it could close.
+    if (live) closed = false
     this.sequences.set(path, closures.at(-1)?.seq ?? floor)
     // Expiry lists every thread in the workspace; opening a conversation must not wait on it.
     const expiredAt = this.checkpointsExpiredAt.get(input.workspaceRoot)

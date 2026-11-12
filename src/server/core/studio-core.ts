@@ -343,10 +343,15 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   conversationRuntime.startIdleSweep(powerActivity)
   // The turns the last run left open end now, in their chats' logs, rather
-  // than when someone next opens each chat.
-  void conversationRuntime.recoverInterruptedTurns().catch((error: unknown) => {
-    console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
-  })
+  // than when someone next opens each chat: once the data directory is this
+  // process's alone (a server it took over may still be finishing those
+  // turns), and never by a process running without its lock.
+  if (dataDirLock)
+    void taken.whenFree
+      .then(() => conversationRuntime.recoverInterruptedTurns())
+      .catch((error: unknown) => {
+        console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
+      })
   // Each project's state lives in its store in the person's home, on the
   // machine its chats run on (main/workspace-store.ts). An older build kept it
   // in `<project>/.sprintengine/`: moved out the first time a folder reaches

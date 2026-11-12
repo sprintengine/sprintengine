@@ -51,3 +51,23 @@ test('changes made while a write is out are all written, in order', async () => 
     await rm(dataDir, { recursive: true, force: true })
   }
 })
+
+test('a list that cannot be written says so to the one listing, and is written once it can be', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'conversation-outbox-'))
+  try {
+    // The directory it is written into is, for now, a file.
+    const blocked = join(dataDir, 'data')
+    await writeFile(blocked, 'not a directory')
+    const outbox = new ConversationOutbox(blocked)
+    await assert.rejects(outbox.open(chat('a')))
+    await rm(blocked)
+    await outbox.open(chat('a'))
+    assert.deepEqual(
+      await new ConversationOutbox(blocked).pending(),
+      [chat('a')],
+      'the change that failed is written now',
+    )
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})

@@ -472,6 +472,29 @@ test('a start closes every turn the last run left open, without anyone opening t
   }
 })
 
+test('a send goes when the list of open turns cannot be written: it is an aid, not the log', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'conversation-outbox-'))
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'conversation-session-'))
+  const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
+  const blocked = join(dataDir, 'data')
+  await writeFile(blocked, 'not a directory')
+  const runtime = new ConversationRuntime({
+    adapters: [createMockConversationProvider()],
+    getProviderById: () => undefined,
+    outbox: new ConversationOutbox(blocked),
+  })
+  try {
+    const started = await runtime.startSession({ ...key, providerId: 'mock-provider', modelId: 'mock-model' })
+    assert.ok(started.ok)
+    const sent = await runtime.sendTurn({ sessionId: started.session.sessionId, message: '/tools', commandId: 'c-1' })
+    assert.equal(sent.ok, true, sent.ok ? '' : sent.message)
+  } finally {
+    await runtime.shutdown()
+    await rm(workspaceRoot, { recursive: true, force: true })
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('first subscription pages even a small transcript while reconnects keep exact sequence replay', async () => {
   const f = await fixture({
     ...createMockConversationProvider(),
