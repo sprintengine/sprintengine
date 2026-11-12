@@ -44,7 +44,10 @@ import type {
   ConversationTurnDiffInput,
   ConversationTurnDiffResult,
 } from '../../../../../shared/conversation-runtime'
-import { parseConversationRevertAnswer } from '../../../../../../packages/conversation-protocol/src/public'
+import {
+  conciseConversationSendRequest,
+  parseConversationRevertAnswer,
+} from '../../../../../../packages/conversation-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import type { ConversationFileSearchEntry } from '../../../../../../packages/conversation-protocol/src/public'
 import type {
@@ -673,11 +676,14 @@ export function createRemoteConversationTransport(input: {
         reasoningEffort: _reasoningEffort,
         ...request
       } = turn
-      return commandResult(await window.api.meshConversationSend({ key, ...request }))
+      return commandResult(await window.api.meshConversationSend({ key, ...conciseConversationSendRequest(request) }))
     },
     // What it carries goes up first, as a send's does, and the machine keeps
     // it with the message; main refuses it in words for one that would not.
-    queue: async (turn) => commandResult(await window.api.meshConversationSend({ key, ...turn, queue: true })),
+    queue: async (turn) =>
+      commandResult(
+        await window.api.meshConversationSend({ key, ...conciseConversationSendRequest(turn), queue: true }),
+      ),
     cancelQueued: async (held) =>
       commandResult(await window.api.meshConversationCancelQueued({ key, queuedId: held.queuedId })),
     searchMentions: async ({ query }) => {

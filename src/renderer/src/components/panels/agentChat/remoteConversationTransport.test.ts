@@ -16,7 +16,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-test('a send hands main the request whole, and keeps here what only this machine reads', async () => {
+test('a send hands main the request, saying only what it means, and keeps here what only this machine reads', async () => {
   const meshConversationSend = vi.fn(async () => ({ ok: true as const }))
   const transport = transportWith({ meshConversationSend })
   await transport.send({ sessionId: 'remote-session', message: 'Why does it flake?', mode: 'ask' })
@@ -41,7 +41,6 @@ test('a send hands main the request whole, and keeps here what only this machine
       {
         key,
         message: 'Fix it',
-        mode: 'default',
         skills: [{ id: 'review', sourcePath: '/Users/dev/.claude/skills/review/SKILL.md' }],
         mentions: [{ path: 'src/app.ts', kind: 'file' }],
         files: [{ path: '/Users/dev/brief.pdf' }],

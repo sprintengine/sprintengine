@@ -4,6 +4,7 @@ import { test } from 'vitest'
 import {
   CONVERSATION_APPROVAL_DECISIONS,
   CONVERSATION_REQUEST_DECISIONS,
+  conciseConversationSendRequest,
   parseConversationClientMessage,
   type ConversationApprovalDecision,
   type ConversationCommand,
@@ -132,4 +133,25 @@ test('every decision the union names is taken where an answer is given, and noth
       }),
       decision,
     )
+})
+
+test('a concise request leaves out only what says nothing', () => {
+  assert.deepEqual(
+    conciseConversationSendRequest({
+      message: 'hi',
+      mode: 'default',
+      skills: [],
+      mentions: [],
+      steer: false,
+      localTurnId: undefined,
+      composedAt: 0,
+      confirmedStale: true,
+    }),
+    { message: 'hi', composedAt: 0, confirmedStale: true },
+  )
+  assert.deepEqual(conciseConversationSendRequest({ message: '', mode: 'plan', skills: [{ id: 'review' }] }), {
+    message: '',
+    mode: 'plan',
+    skills: [{ id: 'review' }],
+  })
 })
