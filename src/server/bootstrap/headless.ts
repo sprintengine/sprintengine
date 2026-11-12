@@ -14,6 +14,10 @@ import type { FrontDoorPurpose } from '../wsl/front-door-proof'
 import { SERVER_EXIT, type FrontDoorReady, type ServerBootstrapEnvelope } from './envelope'
 import { runShutdownLegs, type ServerStart } from './serve'
 import { readHostId, writeServerRecord } from './server-record'
+import {
+  STUDIO_PROTOCOL_MIN_SUPPORTED,
+  STUDIO_PROTOCOL_VERSION,
+} from '../../../packages/studio-protocol/src/public'
 import type { Duplex } from 'node:stream'
 
 // A headless server's start from its envelope: the same core, gateway and
@@ -249,6 +253,8 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       hostId: readHostId(),
       environmentId,
       socketPath: frontDoor.socketPath,
+      protocolVersion: STUDIO_PROTOCOL_VERSION,
+      minProtocolVersion: STUDIO_PROTOCOL_MIN_SUPPORTED,
       backendWire: BACKEND_WIRE_VERSION,
       dataDir: envelope.dataDir,
     })

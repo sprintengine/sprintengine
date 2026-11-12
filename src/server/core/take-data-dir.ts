@@ -13,6 +13,7 @@ import {
   type StudioRole,
 } from './data-dir'
 import { errorMessage } from '../../shared/errors'
+import { prepareDataFormat } from '../environment/data-format'
 
 // How a core takes its data directory: the run lock, then the record of whose
 // cipher seals it. The two roles answer a problem in opposite ways.
@@ -30,6 +31,10 @@ import { errorMessage } from '../../shared/errors'
 // name says (a Mac's host name changes with the network). A lock naming a
 // Studio server is taken over too; the server sees it lost its lock and stops,
 // and the desktop waits for it to exit before opening its own sockets.
+//
+// Then the data's format (`data-format.ts`): a server refuses data newer than
+// it reads, or a format step that failed; the desktop says so and runs, as it
+// does for everything else here.
 
 export type TakenDataDir = {
   /** Null only in a desktop that could not take it, and runs without, as builds before the lock did. */
@@ -61,6 +66,8 @@ export type TakeDataDirDeps = {
   acquire?: typeof acquireDataDirLock
   readSecrets?: typeof readDataDirSecrets
   record?: typeof recordDataDirSecrets
+  /** Brings the data to this build's format, or throws in words (`data-format.ts`). */
+  prepareFormat?: (dataDir: string, version: string) => void
   log?: (diagnostic: DiagnosticLogInput) => void
   isRunning?: (pid: number) => boolean
   /** How long the desktop waits for a displaced server to exit, and how often it looks. */
@@ -136,7 +143,17 @@ function takeForDesktop(
       error,
     )
   }
+
+  try {
+    prepareFormat(deps)(dataDir, platform.identity.version())
+  } catch (error) {
+    report('Data directory format', errorMessage(error))
+  }
   return { lock, whenFree }
+}
+
+function prepareFormat(deps: TakeDataDirDeps): (dataDir: string, version: string) => void {
+  return deps.prepareFormat ?? ((dataDir, version) => void prepareDataFormat(dataDir, { version }))
 }
 
 function takeForServer(platform: StudioPlatform, deps: TakeDataDirDeps): TakenDataDir {
@@ -165,6 +182,13 @@ function takeForServer(platform: StudioPlatform, deps: TakeDataDirDeps): TakenDa
     lock.release()
     if (error instanceof StudioDataDirUnusableError) throw error
     return unusable(error)
+  }
+  try {
+    prepareFormat(deps)(dataDir, platform.identity.version())
+  } catch (error) {
+    lock.release()
+    // Its own words: "this data was written by Studio X; update this server".
+    throw new StudioDataDirUnusableError(errorMessage(error))
   }
   return { lock, whenFree: Promise.resolve() }
 }
