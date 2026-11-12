@@ -6,6 +6,7 @@ import {
 } from '../../../../../../packages/client-runtime/src/public'
 import {
   STUDIO_SESSION_FILES_CAPABILITY,
+  STUDIO_TERMINAL_HANDOFF_CAPABILITY,
   type StudioMethod,
   type StudioMethodParams,
   type StudioMethodResult,
@@ -259,14 +260,17 @@ export function createStudioChatServices(
       suspend: (input) =>
         outcome(() => ask(client, 'session.suspend', { sessionId: input.sessionId, commandId: commandId() })),
       terminalHandoff: (input) =>
-        outcome(() =>
-          ask(client, 'session.terminalHandoff', {
+        outcome(async () => {
+          // Only a Studio that opens terminals offers it.
+          if (!(await client()).supports(STUDIO_TERMINAL_HANDOFF_CAPABILITY))
+            return { ok: false as const, message: 'This Studio cannot open a terminal to resume the chat in.' }
+          return await ask(client, 'session.terminalHandoff', {
             ...('sessionId' in input
               ? { sessionId: input.sessionId }
               : { workspaceId: input.workspaceId, agentId: input.agentId }),
             commandId: commandId(),
-          }),
-        ),
+          })
+        }),
       // A wire event is the runtime's event as it was stored, without its payload.
       onLifecycleEvent: (listener, onReconnected) => {
         const stopFollowing = followPush(client, 'conversation.events', (event) => listener(event as ConversationEvent))
