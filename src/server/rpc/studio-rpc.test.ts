@@ -529,10 +529,12 @@ test('a reset snapshot after the join arrives bounded, in parts, before its fenc
     10_000,
   )
   assert.ok(fence)
+  // The reset's frames only, not the join's empty snapshot: each one a part.
   const parts = c.frames.flatMap((frame) =>
-    frame.t === 'frame' && frame.frame.type === 'snapshot' ? [frame.frame] : [],
+    frame.t === 'frame' && frame.frame.type === 'snapshot' && frame.frame.generation === 'log-2' ? [frame.frame] : [],
   )
   assert.ok(parts.length > 1, 'in parts')
+  assert.ok(parts.every((part, index) => part.part?.index === index && part.part.total === parts.length))
   const sent = parts.flatMap((part) => part.page.events)
   assert.ok(Buffer.byteLength(JSON.stringify(sent)) <= CONVERSATION_WIRE_PAGE_BYTES)
   assert.equal(sent.at(-1)?.seq, 1200)

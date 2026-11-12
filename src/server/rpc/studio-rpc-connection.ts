@@ -160,7 +160,15 @@ type LiveEntry = {
   delta?: { key: string; event: ConversationEvent }
   partialToolUseId?: string
 }
-type BulkEntry = { kind: 'bulk'; lines: Iterator<string>; bytes: number; started: boolean; sub?: string }
+// `end`: a replay's, called once when its fence goes out or it is done or dropped.
+type BulkEntry = {
+  kind: 'bulk'
+  lines: Iterator<string>
+  bytes: number
+  started: boolean
+  sub?: string
+  end?: () => void
+}
 
 type Subscription = {
   id: string
@@ -201,7 +209,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   let commandsInFlight = 0
   const subscriptions = new Map<string, Subscription>()
   // Subscriptions whose replay is still queued or being written.
-  const replaying = new Set<string>()
+  // Replays in flight per subscription: a reset snapshot after the join can
+  // queue a second behind the first, and the first ending must not end both.
+  const replaying = new Map<string, number>()
   const releases: Array<() => void> = []
   let helloTimer: ReturnType<typeof setTimeout> | undefined
   // Whether this connection is one end of the client tools registry.
@@ -318,7 +328,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         if (next.done) {
           pending.shift()
           bulkBytes -= entry.bytes
-          if (entry.sub !== undefined) replaying.delete(entry.sub)
+          entry.end?.()
           releaseBulkWaiters()
           continue
         }
@@ -356,7 +366,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const event = frame.t === 'frame' && frame.frame.type === 'event' ? (frame.frame.event as ConversationEvent) : null
     const key = event ? conversationDeltaKey(event) : null
     const tail = pending.at(-1)
-    const behindReplay = sub !== undefined && replaying.has(sub)
+    const behindReplay = sub !== undefined && (replaying.get(sub) ?? 0) > 0
     const byteBound = behindReplay ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES
     if (key && event && tail?.kind === 'live' && tail.delta?.key === key && tail.sub === sub) {
       // Only an unsent frame is ever in the queue, so this merges only while
@@ -397,9 +407,16 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     void drain()
   }
 
-  function enqueueBulk(lines: Iterator<string>, bytes: number, sub?: string): void {
+  function enqueueBulk(lines: Iterator<string>, bytes: number, sub?: string, end?: () => void): void {
     if (state === 'closed') return
-    pending.push({ kind: 'bulk', lines, bytes, started: false, ...(sub === undefined ? {} : { sub }) })
+    pending.push({
+      kind: 'bulk',
+      lines,
+      bytes,
+      started: false,
+      ...(sub === undefined ? {} : { sub }),
+      ...(end ? { end } : {}),
+    })
     bulkBytes += bytes
     void drain()
   }
@@ -486,7 +503,17 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         producers.push(() => wire(json))
       }
     }
-    replaying.add(sub)
+    replaying.set(sub, (replaying.get(sub) ?? 0) + 1)
+    let ended = false
+    const end = () => {
+      if (ended) return
+      ended = true
+      // A dropped subscription's count went with it; its id may be another's now.
+      if (subscriptions.get(sub) !== subscription) return
+      const left = (replaying.get(sub) ?? 1) - 1
+      if (left > 0) replaying.set(sub, left)
+      else replaying.delete(sub)
+    }
     enqueueBulk(
       (function* () {
         for (const [index, produce] of producers.entries()) {
@@ -494,12 +521,13 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
           // The fence is the replay's last frame. Once it is on its way the
           // client holds a newer cursor, so live frames behind it count against
           // the usual bound again.
-          if (index === producers.length - 1) replaying.delete(sub)
+          if (index === producers.length - 1) end()
           yield* produce()
         }
       })(),
       bytes,
       sub,
+      end,
     )
   }
 

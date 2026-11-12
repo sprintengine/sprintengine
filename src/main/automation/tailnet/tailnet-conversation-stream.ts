@@ -201,6 +201,8 @@ type BulkEntry = {
   bytes: number
   started: boolean
   subscription?: number
+  // A replay's: called once when its fence goes out or it is done or dropped.
+  end?: () => void
 }
 
 /** A single scoped socket: replay, a synchronization fence, then live events. */
@@ -271,7 +273,9 @@ export function createTailnetConversationStream(options: TailnetConversationStre
   let readsInFlight = 0
   let commandsInFlight = 0
   // Subscriptions whose replay is still queued or being written.
-  const replaying = new Set<number>()
+  // Replays in flight per subscription: a reset snapshot after the join can
+  // queue a second behind the first, and the first ending must not end both.
+  const replaying = new Map<number, number>()
 
   const close = (code: number, reason: string): void => {
     if (closed) return
@@ -388,7 +392,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
         if (next.done) {
           pending.shift()
           bulkBytes -= entry.bytes
-          if (entry.subscription !== undefined) replaying.delete(entry.subscription)
+          entry.end?.()
           releaseBulkWaiters()
           continue
         }
@@ -451,7 +455,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     const event = frame.type === 'event' ? (frame.event as ConversationEvent) : null
     const key = event ? conversationDeltaKey(event) : null
     const tail = pending.at(-1)
-    const behindReplay = subscription !== undefined && replaying.has(subscription)
+    const behindReplay = subscription !== undefined && (replaying.get(subscription) ?? 0) > 0
     const byteBound = behindReplay ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES
     if (key && event && mergeable(tail, key, subscription)) {
       // Only an unsent frame is ever in the queue, so this merges only while
@@ -488,7 +492,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
     liveBytes += bytes
     void drain()
   }
-  const sendBulk = (frames: Iterator<string>, bytes: number, subscription?: number): void => {
+  const sendBulk = (frames: Iterator<string>, bytes: number, subscription?: number, end?: () => void): void => {
     if (closed) return
     pending.push({
       kind: 'bulk',
@@ -496,6 +500,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
       bytes,
       started: false,
       ...(subscription === undefined ? {} : { subscription }),
+      ...(end ? { end } : {}),
     })
     bulkBytes += bytes
     void drain()
@@ -558,7 +563,15 @@ export function createTailnetConversationStream(options: TailnetConversationStre
         encoded.push(() => wireFrames(json))
       }
     }
-    replaying.add(subscription)
+    replaying.set(subscription, (replaying.get(subscription) ?? 0) + 1)
+    let ended = false
+    const end = () => {
+      if (ended) return
+      ended = true
+      const left = (replaying.get(subscription) ?? 1) - 1
+      if (left > 0) replaying.set(subscription, left)
+      else replaying.delete(subscription)
+    }
     sendBulk(
       (function* () {
         for (const [index, produce] of encoded.entries()) {
@@ -567,12 +580,13 @@ export function createTailnetConversationStream(options: TailnetConversationStre
           // client holds a newer cursor, so live frames behind it count
           // against the usual bound again: a resync from here on still moves
           // the client forward, and one that has stopped reading is found.
-          if (index === encoded.length - 1) replaying.delete(subscription)
+          if (index === encoded.length - 1) end()
           yield* produce()
         }
       })(),
       bytes,
       subscription,
+      end,
     )
   }
   const error = (code: ConversationWireErrorCode, message: string): void => sendLive({ type: 'error', code, message })
@@ -613,7 +627,7 @@ export function createTailnetConversationStream(options: TailnetConversationStre
       else if (!entry.started) {
         pending.splice(pending.indexOf(entry), 1)
         bulkBytes -= entry.bytes
-        replaying.delete(entry.subscription)
+        entry.end?.()
       }
     }
     releaseBulkWaiters()

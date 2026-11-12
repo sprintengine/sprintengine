@@ -19,7 +19,10 @@ import type {
 // name and result for result: a ref `{ workspaceId, agentId }`, an optional
 // `commandId` on every mutation, and `{ ok: true, … } | { ok: false, code,
 // message }` answers. Code written against `getConversationService(host)` in a
-// module runs against a Studio client by swapping the service object.
+// module runs against a Studio client by swapping the service object. The
+// events differ in one way: a client's cross the wire projected (a tool's
+// result once, within its preview; a file change without its bodies), and
+// `toolDetail` reads the whole, where a module's arrive whole.
 //
 // `Conversation` is the handle on top of it, for scripts: one chat's methods,
 // which throw a `StudioError` instead of answering `ok: false`, and its

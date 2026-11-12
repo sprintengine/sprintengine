@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { ConversationTranscriptReader } from './conversation-transcript-reader'
-import type { ConversationEvent } from '../shared/conversation-runtime'
+import type { ConversationEvent, ConversationPage } from '../shared/conversation-runtime'
+import { boundConversationPage } from '../server/conversation-stream-shaping'
 
 let root: string
 let path: string
@@ -141,4 +142,36 @@ test('the parsed tails stay within their budget', async () => {
   const read = parses()
   expect(await reader.sync(root, path, { turnLimit: 100 })).toEqual(snapshot)
   expect(parses() - read, 'only the record past the budget, which says there is more').toBeLessThanOrEqual(1)
+})
+
+test('paging back from where a wire cut each page seeks near the cursor, so every page costs about the same', async () => {
+  // About 2.4 MB, thirty times the parsed tail of a reader with 64 KiB pages,
+  // as a long chat is to the default's: past the tail, a cursor this reader
+  // never gave out used to mean parsing down to it from the tail's edge.
+  const lines: string[] = []
+  let seq = 0
+  for (let turn = 0; turn < 150; turn++) {
+    lines.push(record(++seq, 'user_message', { turnId: `t${turn}`, text: 'go' }))
+    for (let step = 0; step < 20; step++)
+      lines.push(record(++seq, 'tool_output', { turnId: `t${turn}`, toolUseId: `u${seq}`, preview: 'o'.repeat(700) }))
+  }
+  await writeFile(path, lines.join(''))
+  const reader = new ConversationTranscriptReader({ pageBytes: 64 * 1024 })
+  // As the wire sends each page: the newest 16 KiB of it, from a turn's start.
+  const cut = (page: ConversationPage) => boundConversationPage(page, 16 * 1024).page
+  const synced = await reader.sync(root, path, { turnLimit: 10 })
+  if (synced.kind !== 'snapshot') throw new Error('expected a snapshot')
+  let page = cut(synced.page)
+  const parses: number[] = []
+  while (page.hasMore && page.beforeCursor !== null && parses.length < 120) {
+    const parsed = countParses()
+    const read = await reader.before(root, path, page.beforeCursor, 10)
+    parses.push(parsed())
+    vi.restoreAllMocks()
+    expect(read.events.at(-1)!.seq).toBe(page.beforeCursor - 1)
+    page = cut(read)
+  }
+  expect(parses.length).toBeGreaterThan(60)
+  const early = Math.max(...parses.slice(0, 5))
+  expect(Math.max(...parses.slice(-20))).toBeLessThan(early * 2)
 })

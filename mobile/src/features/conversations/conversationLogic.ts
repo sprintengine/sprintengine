@@ -150,7 +150,7 @@ export function parseAppLink(value: string): AppLink | null {
 export type MobileTool = PresentableTool & {
   id: string;
   output?: string;
-  /** The input came without its file-change bodies or its whole command; the detail has them. */
+  /** The input came without its file-change bodies; the detail has them. */
   inputTruncated?: boolean;
   /** When the call started, by the desktop's clock: it places an agent's words between its steps. */
   startedAt?: number;
