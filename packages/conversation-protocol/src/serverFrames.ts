@@ -310,6 +310,20 @@ export type ConversationThread = Omit<ConversationWireThread, 'capabilities'> & 
   autoCompact?: boolean
 }
 
+/**
+ * A listed chat as a client reads it from a desktop: the full contract's row,
+ * with the phase `unknown` where a newer desktop names one this build does not
+ * know, so the chat is listed all the same (`readableConversationPhase`).
+ */
+export type ConversationListedThread = Omit<ConversationThread, 'phase'> & {
+  phase: ConversationWirePhase | 'unknown'
+}
+
+/** A listed phase as this build can show it: one it does not know reads as idle, with nothing to show. */
+export function readableConversationPhase(phase: ConversationListedThread['phase']): ConversationWirePhase {
+  return phase === 'unknown' ? 'idle' : phase
+}
+
 /** A listed chat's background work (`ConversationThread.backgroundWork`). At least one count is above zero. */
 export type ConversationBackgroundWork = { agents: number; monitors: number }
 
@@ -443,7 +457,14 @@ const MARK_TOKEN = /^[a-z][a-z0-9-]{0,31}$/
 /** A listed chat's machine, or null when it is not one. */
 export function parseConversationWireHost(value: unknown): ConversationWireHost | null {
   if (!record(value)) return null
-  if (!id(value.id) || !text(value.label, 200) || typeof value.kind !== 'string' || typeof value.color !== 'string')
+  // A machine with no name to show is no mark at all, rather than a blank one.
+  if (
+    !id(value.id) ||
+    !text(value.label, 200) ||
+    !value.label.trim() ||
+    typeof value.kind !== 'string' ||
+    typeof value.color !== 'string'
+  )
     return null
   if (!MARK_TOKEN.test(value.kind) || !MARK_TOKEN.test(value.color)) return null
   return { id: value.id, kind: value.kind, label: value.label, color: value.color }
@@ -458,14 +479,17 @@ export function parseConversationWirePullRequests(value: unknown): ConversationW
     if (!record(entry)) continue
     if (!(typeof entry.number === 'number' && Number.isSafeInteger(entry.number) && entry.number > 0)) continue
     if (!PULL_REQUEST_STATES.has(entry.state as ConversationWirePullRequestState)) continue
-    if (typeof entry.url !== 'string' || !/^https?:\/\//.test(entry.url) || entry.url.length > 2_000) continue
-    if (!text(entry.title, 2_000)) continue
+    // Only a web page, with no credentials before its host, so
+    // `https://github.com@elsewhere.example/` cannot pass for GitHub.
+    const url = typeof entry.url === 'string' ? entry.url.trim() : ''
+    if (url.length > 2_000 || !/^https?:\/\/[^\s/?#@\\]+(?:[/?#][^\s]*)?$/iu.test(url)) continue
     const watch = parseConversationWirePullRequestWatch(entry.watch)
     pullRequests.push({
       number: entry.number,
       state: entry.state as ConversationWirePullRequestState,
-      url: entry.url,
-      title: entry.title,
+      url,
+      // A title this client cannot read is none; the pull request is still its own.
+      title: text(entry.title, 2_000) ? entry.title : '',
       ...(watch ? { watch } : {}),
     })
   }
@@ -502,7 +526,7 @@ export type ConversationParsedServerFrame =
       { type: 'event' } | { type: 'snapshot' } | { type: 'sessions' } | { type: 'commandResult' }
     >
   | ConversationCommandResultFrame
-  | { type: 'sessions'; requestId: string; sessions: ConversationThread[] }
+  | { type: 'sessions'; requestId: string; sessions: ConversationListedThread[] }
   | { type: 'event'; event: ConversationWireEvent }
   | {
       type: 'snapshot'
@@ -857,13 +881,13 @@ function subagent(value: unknown): ConversationSubagent | null {
 }
 
 /** One listed conversation, or null. Capabilities absent or malformed read as unknown, not as refused. */
-function thread(value: unknown): ConversationThread | null {
+function thread(value: unknown): ConversationListedThread | null {
   if (!record(value)) return null
   const listed = key(value)
   if (
     !listed ||
     !text(value.title, 2_000) ||
-    !PHASES.has(value.phase as ConversationWirePhase) ||
+    !(typeof value.phase === 'string' && /^[a-z_]{1,64}$/.test(value.phase)) ||
     typeof value.updatedAt !== 'number' ||
     typeof value.createdAt !== 'number' ||
     !text(value.providerId, 200) ||
@@ -880,7 +904,8 @@ function thread(value: unknown): ConversationThread | null {
   const host = value.host === undefined ? null : parseConversationWireHost(value.host)
   const pullRequests = value.pullRequests === undefined ? null : parseConversationWirePullRequests(value.pullRequests)
   const localServers = value.localServers === undefined ? null : parseConversationWireLocalServers(value.localServers)
-  const chatTitle = text(value.chatTitle, 2_000) && value.chatTitle.trim() ? value.chatTitle : null
+  // A title is shown as a line of its own: its spaces at either end are not part of it.
+  const chatTitle = text(value.chatTitle, 2_000) && value.chatTitle.trim() ? value.chatTitle.trim() : null
   // A preview past its length is cut rather than refused: it is a sidebar's
   // line, and the row is worth more than the words.
   // A branch name is one line of git's own: anything else is not one, and is left out.
@@ -901,7 +926,8 @@ function thread(value: unknown): ConversationThread | null {
   return {
     ...listed,
     title: value.title,
-    phase: value.phase as ConversationWirePhase,
+    // A phase a newer desktop names is listed as unknown, not dropped with its row.
+    phase: PHASES.has(value.phase as ConversationWirePhase) ? (value.phase as ConversationWirePhase) : 'unknown',
     updatedAt: value.updatedAt,
     createdAt: value.createdAt,
     providerId: value.providerId,
@@ -1029,7 +1055,7 @@ export function parseConversationServerFrame(value: unknown): ConversationParsed
   switch (frame.type) {
     case 'sessions': {
       if (!id(frame.requestId) || !Array.isArray(frame.sessions)) return null
-      const sessions: ConversationThread[] = []
+      const sessions: ConversationListedThread[] = []
       for (const entry of frame.sessions) {
         const listed = thread(entry)
         // One unreadable row does not hide the rest of the list.

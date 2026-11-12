@@ -361,19 +361,19 @@ const event = (
   payload: Record<string, unknown>,
   agoMs = 0,
   owner: ConversationThread = verifyConversation,
-): ConversationEvent =>
-  ({
-    id: `event-${++sequence}`,
-    seq: sequence,
-    workspaceId: owner.workspaceId,
-    agentId: owner.agentId,
-    sessionId: owner.sessionId!,
-    // The desktop stamps the model on every event; turn meta reads it.
-    modelId: "claude-opus-5-5",
-    type,
-    payload,
-    createdAt: at(agoMs),
-  }) as ConversationEvent;
+): ConversationEvent => ({
+  id: `event-${++sequence}`,
+  seq: sequence,
+  workspaceId: owner.workspaceId,
+  agentId: owner.agentId,
+  sessionId: owner.sessionId!,
+  // The desktop stamps the provider and model on every event; turn meta reads it.
+  providerId: owner.providerId,
+  modelId: "claude-opus-5-5",
+  type,
+  payload,
+  createdAt: at(agoMs),
+});
 const tool = (id: string, name: string, input: Record<string, unknown>, agoMs: number, extra: Record<string, unknown> = {}) =>
   event("tool_started", { turnId: extra.turnId ?? "turn-one", toolUseId: id, name, input, ...extra }, agoMs);
 const done = (id: string, output: string, agoMs: number, extra: Record<string, unknown> = {}) =>
@@ -1129,7 +1129,7 @@ export const fakeConversationsApi: ConversationApi = {
       // The main chat's subagents and its plan's usage, to a stream that asks.
       if (options?.subagents && key.agentId === verifyConversation.agentId)
         handlers.onFrame({ type: "subagents", key, subagents: VERIFY_SUBAGENTS });
-      if (options?.usageLimits) handlers.onFrame({ type: "usageLimits", key, limits: VERIFY_USAGE });
+      if (options?.usageLimits) handlers.onFrame({ type: "usageLimits", key, notice: null, autoResume: false, limits: VERIFY_USAGE });
     });
     const publish = (entry: ConversationEvent) => {
       history.push(entry);

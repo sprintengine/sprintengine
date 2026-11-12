@@ -7,8 +7,8 @@
 // and marks it with an `origin` on the payload (the desktop's
 // `readConversationMessageOrigin`, conversation-protocol's events.ts).
 //
-// `origin` is an optional payload member the phone's pinned wire types do not
-// name, so it is read here off the payload, defensively: anything but
+// `origin` is an optional payload member the contract leaves open on the
+// event, so it is read here off the payload, defensively: anything but
 // `{ kind: 'studio' }` is the person's message, as every message recorded
 // before the member existed is. A reason this phone does not know is still
 // Studio's; only the reason is dropped.

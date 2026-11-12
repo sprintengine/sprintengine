@@ -1,7 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
-  parseConversationBackgroundWork,
   parseConversationFrame,
 } = require("../../../.mobile-test-build/mobile/src/api/conversationWire.js");
 const {
@@ -52,7 +51,7 @@ test("background work in the wrong shape is left out, and the chat still lists",
   const chats = parseList(malformed.map((backgroundWork, index) => listed({ agentId: `a${index}`, backgroundWork })));
   assert.equal(chats.length, malformed.length);
   for (const chat of chats) assert.equal("backgroundWork" in chat, false);
-  assert.equal(parseConversationBackgroundWork(null), null);
+  assert.equal("backgroundWork" in parseList([listed({ backgroundWork: null })])[0], false);
 });
 
 test("an older desktop lists no background work, and its finished chat reads as at rest, as before", () => {

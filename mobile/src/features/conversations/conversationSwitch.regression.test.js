@@ -28,6 +28,8 @@ const event = (agentId, seq, type, payload = {}) => ({
   sessionId: `s-${agentId}`,
   workspaceId: "w",
   agentId,
+  providerId: "p",
+  modelId: "m",
   createdAt: seq,
   payload,
 });

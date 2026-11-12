@@ -13,11 +13,12 @@ import type {
   ConversationChangesDiff,
   ConversationCheckoutChanges,
   ConversationSubagent,
-  ConversationThread,
+  ConversationListedThread,
   ConversationUsageLimitNotice,
   ConversationUsageLimitResumeAction,
   ConversationUsageLimitSnapshot,
 } from '../../packages/conversation-protocol/src/public'
+import { readableConversationPhase } from '../../packages/conversation-protocol/src/public'
 import type { ConversationSessionFrame } from './conversation-runtime'
 import { conversationPhaseWorking, phaseWithBackgroundWork } from './conversation/phase'
 import type { RepositoryIdentity } from './repository-identity'
@@ -673,7 +674,7 @@ export type MeshConversationAccess = 'read' | 'operate'
 export type MeshConversationKey = { connectionId: string; workspaceId: string; agentId: string }
 
 /** A conversation as that machine lists it, with the members its protocol version keeps. */
-export type MeshConversation = ConversationThread
+export type MeshConversation = ConversationListedThread
 
 export type MeshConversationLink = {
   type: 'link'
@@ -1033,7 +1034,7 @@ export function meshConversationPresence(
   phase: MeshConversation['phase'],
   backgroundWork?: MeshConversation['backgroundWork'] | null,
 ): 'running' | 'needs-input' | 'idle' {
-  const counted = phaseWithBackgroundWork(phase, Boolean(backgroundWork))
+  const counted = phaseWithBackgroundWork(readableConversationPhase(phase), Boolean(backgroundWork))
   if (conversationPhaseWorking(counted)) return 'running'
   if (counted === 'waiting_for_approval' || counted === 'waiting_for_input') return 'needs-input'
   return 'idle'

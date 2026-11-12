@@ -229,8 +229,11 @@ under `/tailnet/v1/`:
   from `ws-ticket`, streams the conversation's events
   (`src/api/tailnetConversations.ts`, `src/api/conversationWire.ts`).
 
-The conversation contract and the connection supervisor are the desktop's own
-packages, imported from the repository's `packages/` folder as source: Metro
+The conversation contract, its decoder and the connection supervisor are the
+desktop's own packages, imported from the repository's `packages/` folder as
+source: `src/api/conversationWire.ts` holds only the phone's own rules beside
+them, and a frame, event or listed chat this build does not know is passed
+over or listed as unknown rather than refused. Metro
 watches that folder (`metro.config.js`), and the test build compiles it beside
 the app (`tsconfig.test.json`). `src/shared/mobile-control/protocol.ts` still
 carries its own copy of the mobile-control types, hash-pinned by a test. The

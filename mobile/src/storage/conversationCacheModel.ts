@@ -1,4 +1,4 @@
-import { parseConversationClientFrame } from "../../../packages/conversation-protocol/src/public";
+import { parseConversationClientFrame, parseConversationWireEvent } from "../../../packages/conversation-protocol/src/public";
 import type {
   ConversationCommand,
   ConversationEvent,
@@ -48,20 +48,12 @@ const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 const integer = (value: unknown): value is number =>
   Number.isSafeInteger(value) && Number(value) >= 0;
-// What the wire takes as an event (`conversationWire.ts`), and no more: an
+// What the wire takes as an event (the contract's reader), and no more: an
 // event the screen holds is one the cache can keep. Asking more of it here
 // (it once wanted the session, workspace and agent ids to be strings, which
 // the wire never checked) failed every write of a chat whose log held one.
 function validEvent(value: unknown): value is ConversationEvent {
-  return (
-    object(value) &&
-    typeof value.id === "string" &&
-    value.id.length > 0 &&
-    typeof value.type === "string" &&
-    integer(value.createdAt) &&
-    (value.seq === undefined || integer(value.seq)) &&
-    (value.payload === undefined || object(value.payload))
-  );
+  return parseConversationWireEvent(value) !== null;
 }
 function validCache(value: unknown): value is CachedConversation {
   if (
