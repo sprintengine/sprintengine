@@ -23,6 +23,7 @@ import type {
 import { projectConversation, type TranscriptEntry } from './conversationProjection'
 import { resetAttachedFilePreviewsForTests } from './ComposerFileChip'
 import { UserTimelineRow } from './timelineRows'
+import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
 
 const CAPABILITIES: ConversationCapabilities = {
   tools: true,
@@ -91,7 +92,10 @@ beforeEach(() => {
     previewAttachedFile: async () => ({ kind: 'file', thumbnailDataUrl: null, openable: true }),
     openAttachedFile: async () => undefined,
     showItemInFolder: async () => undefined,
+    // A path a message names is a file on the window's Studio's disk.
+    statPath: async () => ({ isFile: true, isDirectory: false, size: 1, mtimeMs: 1 }),
   }
+  installStudioLoopback(window as never)
 })
 
 afterEach(async () => {
