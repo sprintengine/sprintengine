@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline'
 
 import { writeTailnetSettings } from '../../src/main/automation/tailnet/tailnet-settings'
 import { defaultAgent, type AgentState } from '../../src/shared/agent-state'
-import { readStudioEnvironmentId } from '../../src/main/studio-rpc/studio-rpc-service'
+import { readStudioEnvironmentId } from '../../src/server/environment/environment-id'
 import type { StudioFramePort } from '../../src/server/rpc/studio-frame-port'
 import type { StudioServer, StudioServerOptions } from '../../src/server/studio-server'
 
