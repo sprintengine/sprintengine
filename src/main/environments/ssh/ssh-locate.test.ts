@@ -60,6 +60,8 @@ test('compatibility is the protocol window, not equal versions', () => {
     ['a newer server past this app', server('2.0.0', [5, 4]), 'blocked'],
     ['a newer server with no window', server('2.0.0', null), 'blocked'],
     ['an older desktop-started server with no window', server('1.0.0', null), 'upgrade'],
+    // This build's own server, read without its window, is not replaced by itself.
+    ['the same build with no window', server('1.5.0', null), 'attach'],
     ['a server whose version does not read', server('?', null), 'blocked'],
     // The backend wire is one more input while it carries the chat.
     ['a newer server on another wire', server('1.6.0', [3, 2], { backendWire: WIRE + 1 }), 'blocked'],

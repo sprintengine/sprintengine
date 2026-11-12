@@ -579,6 +579,9 @@ export function locateServer(
   const upgrade = (): Located => (failed ? retry(version) : { action: 'upgrade', from: version })
   if (compatibility === 'compatible' && wire === app.backendWire)
     return origin === 'bootstrap' && order !== null && order < 0 ? upgrade() : { action: 'attach' }
+  // A record with no window from this very build (one this app's server
+  // wrote, read by a relay older than the window): the same server as ours.
+  if (compatibility === 'unknown' && order === 0 && wire === app.backendWire) return { action: 'attach' }
   if (compatibility === 'client-outdated')
     return {
       action: 'blocked',
