@@ -27,7 +27,9 @@ const REVOKED = { owner: false, scopes: [] as string[] }
 
 /**
  * What only an owner's connection may call, and why: what runs a program or
- * opens a terminal on this machine's screen, or records an agent's own work.
+ * opens a terminal on this machine's screen, or records an agent's own work;
+ * and of the terminals, the words a person wrote for an agent and the
+ * machine-wide idle policy.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -37,6 +39,9 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'pullRequests.noteWork',
   'pullRequests.noteToolCall',
   'session.terminalHandoff',
+  'terminal.configure',
+  'terminal.promptUndelivered',
+  'terminal.takeUndeliveredPrompts',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [

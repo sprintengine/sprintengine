@@ -607,6 +607,10 @@ function withSession<P extends object>(
   }
 }
 
+// The first messages a person wrote for terminal agents are the app's own, as
+// a session's `lastPrompt` is: no other client is handed them.
+const UNDELIVERED_PROMPTS_OWNER = 'It hands over the words a person wrote for a terminal agent.'
+
 const read = { scope: 'terminal:read', mutation: false, capability: STUDIO_TERMINALS_CAPABILITY } as const
 const operate = { ...read, scope: 'terminal:operate' } as const
 // A start or an end is a command: it carries an id, is audited, and is never given up on by a read timeout.
@@ -671,12 +675,10 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
       typeof value.exempt === 'boolean' ? studioParams({ exempt: value.exempt }) : refuse('"exempt" is true or false.'),
     ),
   },
-  // The text a person wrote for an agent: the app's own, as its prompts are.
-  'terminal.takeUndeliveredPrompts': { ...operate, owner: true, params: studioNoParams },
-  // A policy for the whole machine, not one terminal.
+  'terminal.takeUndeliveredPrompts': { ...operate, owner: UNDELIVERED_PROMPTS_OWNER, params: studioNoParams },
   'terminal.configure': {
     ...operate,
-    owner: true,
+    owner: 'It sets the idle policy of every terminal on this machine, not one terminal’s.',
     params: (value) => {
       const params: { idleSuspendMs?: number; keepRecentAlive?: number } = {}
       if (value.idleSuspendMs !== undefined) {
@@ -708,7 +710,7 @@ export const STUDIO_TERMINALS_TOPICS: StudioTopicTable<StudioTerminalsTopicMap> 
   'terminal.promptUndelivered': {
     scope: 'terminal:operate',
     capability: STUDIO_TERMINALS_CAPABILITY,
-    owner: true,
+    owner: UNDELIVERED_PROMPTS_OWNER,
     push: true,
     params: studioNoParams,
   },

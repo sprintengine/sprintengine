@@ -95,12 +95,23 @@ The `welcome`'s `grant` is what the connection may do:
 - `modules:read` — hear what this Studio's modules say: the `module.events`
   and `module.notifications` streams, under the `modules` capability. Not an
   owner's only; a pairing holds it when it was given it.
+- `terminal:read`, `terminal:operate` — see the terminals on this machine
+  (`terminal.list`, `.status`, the `terminal.sessions` stream), and open and
+  type into them (`terminal.open` and the rest, the `terminal.output` stream),
+  under the `terminals` capability. `terminal:operate` is a shell on the
+  machine and carries `terminal:read`; a browser session holds neither, and a
+  client other than the app's own window is sent sessions without the prompts
+  a person wrote or a launch's MCP settings (and, holding only read, without
+  their folders).
 - `owner` — the connection is Studio's own, with every scope and no ceiling.
-  Five methods are an owner's only, whatever scopes another grant holds, and
-  are refused `owner_required`; each says why in `STUDIO_METHODS[m].owner`:
-  `session.terminalHandoff` and `providers.signIn` (a terminal on Studio's own
-  screen), and `pullRequests.noteWork`, `.noteToolCall` and `.link` (what
-  Studio's own agents report). Everything else reaches a client by its scope.
+  A few methods and topics are an owner's only, whatever scopes another grant
+  holds, and are refused `owner_required`; each says why in its table entry's
+  `owner`: `session.terminalHandoff` and `providers.signIn` (a terminal on
+  Studio's own screen), `pullRequests.noteWork`, `.noteToolCall` and `.link`
+  (what Studio's own agents report), `terminal.takeUndeliveredPrompts` and the
+  `terminal.promptUndelivered` topic (words a person wrote for an agent), and
+  `terminal.configure` (the machine's idle policy). Everything else reaches a
+  client by its scope.
   A client that is not an owner never names a conversation's folder or a
   CLI's `command`, and names files and folders (a stat, a picture, a search,
   a file attached to a send, a `/` list's folder, an agent's plan file) only
