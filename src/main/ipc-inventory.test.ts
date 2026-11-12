@@ -152,7 +152,6 @@ import { registerSshPreviewIpc } from './environments/ssh/ssh-preview'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
 import { mayRegisterInMain } from './ipc/ipc-registration-rule'
 import { registerSshEnvironmentsIpc } from './ipc/ssh-environments-ipc'
-import { registerStudioConnectionIpc } from './ipc/studio-connection-ipc'
 import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { loadMainModules } from './module-host/load-modules'
 import { ConversationLaunchServiceToken, ConversationRuntimeToken } from './module-host/service-tokens'
@@ -171,11 +170,11 @@ import { attachStartupTimeline } from './startup-timeline'
  * deletes their rows; lower the count in the same change.
  */
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
-  conversations: 69,
+  conversations: 67,
   terminals: 24,
   modules: 6,
   extensions: 33,
-  'paired-machines': 51,
+  'paired-machines': 52,
   access: 46,
   workspaces: 47,
   'worktree-pool': 16,
@@ -215,9 +214,6 @@ const NO_CHANNEL: Readonly<Record<string, string>> = {
   uploadFiles: 'reads files the person picked in this window',
   startupTimelineEnabled: 'a value from the command line',
   studioChatTransport: 'a value from the command line',
-  studioPortSend: "the chat's MessagePort, which the window WebSocket replaces",
-  studioPortListen: "the chat's MessagePort, which the window WebSocket replaces",
-  studioPortClose: "the chat's MessagePort, which the window WebSocket replaces",
 }
 
 /** Push rows the api modules do not listen on, and the file that does. */
@@ -341,7 +337,6 @@ test('what main and the server register, and what the preload uses, is the inven
   const shellSeen: Seen[] = []
   const shell = recordingIpcMain(shellSeen)
   registerCoreIpc(shell, anything(), true, { server: anything() })
-  registerStudioConnectionIpc(shell, anything())
   attachBuildSkewWatch(shell, anything())
   attachStartupTimeline(shell)
   onRendererBootComplete(shell, () => undefined)
@@ -404,6 +399,9 @@ test('what main and the server register, and what the preload uses, is the inven
       usedBy.set(seen.channel, users)
     }
     if (preloadSeen.length === before) assert.ok(name in NO_CHANNEL, `window.api.${name} used no channel`)
+  }
+  for (const name of Object.keys(NO_CHANNEL)) {
+    assert.ok(name in apiModules, `NO_CHANNEL names window.api.${name}, which no longer exists`)
   }
 
   // ── Registrations against the inventory ──
