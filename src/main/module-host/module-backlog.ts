@@ -1,5 +1,5 @@
 // The Backlog for capability modules (SDK `getBacklogService`, and the
-// renderer's Backlog write methods through the host-service bridge): list,
+// renderer's Backlog write methods over the protocol's `moduleBacklog.*`): list,
 // locate, create and change items of a workspace's Backlog.
 //
 // Nothing here writes a file. Every write is a call into the app's own Backlog

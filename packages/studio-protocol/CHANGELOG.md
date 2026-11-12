@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added (modules)
+
+- **A module's host services are protocol methods** (`module-services.ts`,
+  under the `modules` capability): `moduleBacklog.location` and
+  `moduleUsage.query` (scope `modules:read`), and the Backlog writes
+  `moduleBacklog.create`, `.updateStatus`, `.updateTriage`, `.addLink` and
+  `.updateModuleMetadata` (scope `modules:operate`, each a mutation under its
+  `commandId`). Each call names the calling module; one not running on the
+  Studio is refused `module_unavailable`. The service's answer is the result,
+  its own refusals (`permission_missing`, `not_found`, …) included.
+
 ### Changed (grants)
 
 - **The terminals are an owner's only.** Every `terminal.*` method and stream

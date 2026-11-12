@@ -383,6 +383,14 @@ test('every method the server serves has its call in the SDK, under the same sco
     // A module's declared methods, called by name: a window's renderer halves.
     'module.read': 'request',
     'module.operate': 'request',
+    // The host's services a renderer half calls, by name too.
+    'moduleBacklog.location': 'request',
+    'moduleBacklog.create': 'request',
+    'moduleBacklog.updateStatus': 'request',
+    'moduleBacklog.updateTriage': 'request',
+    'moduleBacklog.addLink': 'request',
+    'moduleBacklog.updateModuleMetadata': 'request',
+    'moduleUsage.query': 'request',
     // And what a client reads before it starts a chat.
     'workspaces.list': 'request',
     'cliRuntimes.list': 'request',

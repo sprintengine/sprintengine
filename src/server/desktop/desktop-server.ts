@@ -448,7 +448,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     assertAppSender: () => undefined,
     scheduledAgents: () => modules.scheduledAgents(),
   })
-  modules.load(tunnel.registry, gateway)
+  modules.load(gateway)
 
   // A chat's or a terminal agent's phase, for the shell's dock badge,
   // banners, keep-awake and tours.

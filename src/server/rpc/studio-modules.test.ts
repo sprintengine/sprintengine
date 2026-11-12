@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
 import type { StudioModuleEvent, StudioModuleNotification } from '../../../packages/studio-protocol/src/public'
-import { createFakeIpcMain } from '../../main/module-host/ipc-main-fake.test-helper'
-import { createMainKernel } from '../../main/module-host/main-host'
+import { createMainKernel, createServiceToken } from '../../main/module-host/main-host'
+import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
+import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 import type { ModuleMethodParsed } from '../../shared/modules/methods'
 import { createStudioModuleHub, type StudioModules } from './studio-modules'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
@@ -170,7 +171,7 @@ test('one listener that throws does not keep an event from the others', () => {
 
 /** A hub served by a real kernel in which `acme.board` declares a read and an operate. */
 function hubWithBoard() {
-  const kernel = createMainKernel(createFakeIpcMain().ipcMain, {
+  const kernel = createMainKernel({
     resolveModuleManifest: (id) =>
       id === 'acme.board'
         ? {
@@ -347,5 +348,158 @@ test('a Studio with no kernel yet answers module_unavailable; one without module
   assert.equal(
     codeOf(await request('module.read', { moduleId: 'acme.board', method: 'cards.list' })),
     'module_unavailable',
+  )
+})
+
+// ── The host's services a module's window half calls ──────────────────────
+
+/** A real kernel running `acme.board`, with Backlog and usage registries that record each call. */
+function hubWithServices(provide: { backlog?: boolean; usage?: boolean } = { backlog: true, usage: true }) {
+  const kernel = createMainKernel({
+    resolveModuleManifest: (id) =>
+      id === 'acme.board'
+        ? { id, displayName: 'Board', version: 1, defaultEnabled: true, source: 'third-party', permissions: [] }
+        : undefined,
+  })
+  const calls: unknown[][] = []
+  const host = kernel.hostFor('@host')
+  if (provide.backlog)
+    host.provideService(createServiceToken<Omit<ModuleBacklogRegistry, 'list'>>('backlog.module-service'), () => ({
+      getLocation: async (...args) => {
+        calls.push(['getLocation', ...args])
+        return { ok: true, location: { root: 'backlog', isDefault: true, exists: true } }
+      },
+      create: async (...args) => {
+        calls.push(['create', ...args])
+        return args[2].title === 'denied'
+          ? { ok: false, code: 'permission_missing', message: 'No backlog.write.' }
+          : { ok: true, id: 'backlog/unfiled/x.md', relativePath: 'unfiled/x.md', path: '/p/x.md' }
+      },
+      updateStatus: async (...args) => {
+        calls.push(['updateStatus', ...args])
+        return { ok: true }
+      },
+      updateTriage: async (...args) => {
+        calls.push(['updateTriage', ...args])
+        return { ok: true }
+      },
+      addLink: async (...args) => {
+        calls.push(['addLink', ...args])
+        return { ok: true }
+      },
+      updateModuleMetadata: async (...args) => {
+        calls.push(['updateModuleMetadata', ...args])
+        return { ok: true }
+      },
+    }))
+  if (provide.usage)
+    host.provideService(createServiceToken<Pick<ModuleUsageRegistry, 'query'>>('usage.module-service'), () => ({
+      query: async (...args) => {
+        calls.push(['query', ...args])
+        return { ok: true, rows: [], scannedAt: 5, sources: [] }
+      },
+    }))
+  const hub = createStudioModuleHub()
+  hub.serveHostServicesFrom((moduleId) => kernel.hostServicesFor(moduleId))
+  return { hub, calls }
+}
+
+test('a module’s Backlog writes and usage query reach the services under its id, their answers as results', async () => {
+  const { hub, calls } = hubWithServices()
+  const { request } = await caller(hub)
+  const at = { moduleId: 'acme.board', workspaceId: 'ws-1' }
+  assert.deepEqual(answerOf(await request('moduleBacklog.location', at)), {
+    ok: true,
+    location: { root: 'backlog', isDefault: true, exists: true },
+  })
+  assert.deepEqual(
+    answerOf(await request('moduleBacklog.create', { ...at, input: { title: 'Ship' }, commandId: 'c1' })),
+    { ok: true, id: 'backlog/unfiled/x.md', relativePath: 'unfiled/x.md', path: '/p/x.md' },
+  )
+  const item = { ...at, itemId: 'backlog/a.md' }
+  await request('moduleBacklog.updateStatus', { ...item, status: 'ready', commandId: 'c2' })
+  await request('moduleBacklog.updateTriage', { ...item, triage: { risk: null }, commandId: 'c3' })
+  const link = { id: 'l', type: 'external', label: 'L', target: { kind: 'url', id: 'u' } }
+  await request('moduleBacklog.addLink', { ...item, link, commandId: 'c4' })
+  await request('moduleBacklog.updateModuleMetadata', { ...item, value: { lane: 1 }, commandId: 'c5' })
+  assert.deepEqual(
+    answerOf(await request('moduleUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 9 } })),
+    { ok: true, rows: [], scannedAt: 5, sources: [] },
+  )
+  assert.deepEqual(calls, [
+    ['getLocation', 'acme.board', 'ws-1'],
+    ['create', 'acme.board', 'ws-1', { title: 'Ship' }],
+    ['updateStatus', 'acme.board', 'ws-1', 'backlog/a.md', 'ready'],
+    ['updateTriage', 'acme.board', 'ws-1', 'backlog/a.md', { risk: null }],
+    ['addLink', 'acme.board', 'ws-1', 'backlog/a.md', link],
+    ['updateModuleMetadata', 'acme.board', 'ws-1', 'backlog/a.md', { lane: 1 }],
+    ['query', 'acme.board', { from: 0, to: 9 }],
+  ])
+  // The service's own refusal is the answer, in its words.
+  assert.deepEqual(
+    answerOf(await request('moduleBacklog.create', { ...at, input: { title: 'denied' }, commandId: 'c6' })),
+    { ok: false, code: 'permission_missing', message: 'No backlog.write.' },
+  )
+})
+
+test('a host-service call for a module not running here is module_unavailable; a service not provided answers in its words', async () => {
+  const { hub, calls } = hubWithServices({ backlog: false })
+  const { request } = await caller(hub)
+  assert.equal(
+    codeOf(await request('moduleBacklog.location', { moduleId: 'acme.gone', workspaceId: 'ws-1' })),
+    'module_unavailable',
+  )
+  assert.equal(
+    codeOf(await request('moduleUsage.query', { moduleId: '@host', query: { from: 0, to: 1 } })),
+    'module_unavailable',
+    'the host is not a module a client speaks for',
+  )
+  const missing = answerOf(await request('moduleBacklog.location', { moduleId: 'acme.board', workspaceId: 'ws-1' }))
+  assert.equal((missing as { code?: string }).code, 'backlog_unavailable')
+  assert.equal(calls.length, 0)
+  const before = await caller(createStudioModuleHub())
+  assert.equal(
+    codeOf(await before.request('moduleUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })),
+    'module_unavailable',
+    'before the kernel exists',
+  )
+})
+
+test('a retried Backlog write is carried out once', async () => {
+  const { hub, calls } = hubWithServices()
+  const { request } = await caller(hub)
+  const params = { moduleId: 'acme.board', workspaceId: 'ws-1', input: { title: 'Once' }, commandId: 'c1' }
+  const first = await request('moduleBacklog.create', params)
+  assert.deepEqual(answerOf(await request('moduleBacklog.create', params)), answerOf(first))
+  assert.equal(calls.length, 1)
+  assert.equal(
+    codeOf(await request('moduleBacklog.create', { ...params, input: { title: 'Twice' } })),
+    'command_id_conflict',
+  )
+})
+
+test('a paired client reads the host services with modules:read and writes them only with modules:operate', async () => {
+  const { hub, calls } = hubWithServices()
+  const reader = await caller(hub, (started) => pairFakeClient(started.auth, 'reader', ['modules:read']))
+  assert.equal(
+    (
+      answerOf(await reader.request('moduleUsage.query', { moduleId: 'acme.board', query: { from: 0, to: 1 } })) as {
+        ok: boolean
+      }
+    ).ok,
+    true,
+  )
+  const write = { moduleId: 'acme.board', workspaceId: 'ws-1', input: { title: 'No' }, commandId: 'c1' }
+  assert.equal(codeOf(await reader.request('moduleBacklog.create', write)), 'scope_required')
+  const operator = await caller(hub, (started) => pairFakeClient(started.auth, 'operator', ['modules:operate']))
+  await operator.request('moduleBacklog.create', { ...write, input: { title: 'Yes' } })
+  assert.deepEqual(
+    calls.map((call) => call[0]),
+    ['query', 'create'],
+  )
+  assert.equal(
+    operator.started.audit.some((entry) => entry.tool === 'moduleBacklog.create' && entry.moduleId === 'acme.board'),
+    true,
+    'a write from a paired client is audited',
   )
 })

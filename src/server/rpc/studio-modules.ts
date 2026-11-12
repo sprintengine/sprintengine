@@ -3,6 +3,7 @@ import type {
   StudioModuleEvent,
   StudioModuleNotification,
 } from '../../../packages/studio-protocol/src/public'
+import type { ModuleHostServicesOutcome } from '../../main/module-host/main-host'
 
 // What a Studio's modules say to its clients, between the module kernel and
 // the Studio RPC: the kernel delivers each event and bell row here, and every
@@ -14,6 +15,11 @@ import type {
 // `module.read` / `module.operate` to `call`, which the kernel serves once it
 // exists (`serveCallsFrom`); before then, and on a Studio with no kernel, a
 // call is answered `module_unavailable`.
+//
+// So are the host's services a module's window half calls (the Backlog's
+// writes, the usage query): the router asks `hostServices` for the calling
+// module's, which the kernel answers once it exists (`serveHostServicesFrom`),
+// `module_unavailable` for a module not running here.
 //
 // Delivery is best effort per listener: one connection whose send throws does
 // not keep the row or event from the others.
@@ -39,6 +45,10 @@ export type StudioModules = {
   call(request: StudioModuleCallRequest): Promise<StudioModuleCallOutcome>
   /** Where calls are served from: the kernel, once it exists. */
   serveCallsFrom(serve: (request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>): void
+  /** The host's services, as the module named reaches them here; `module_unavailable` before a kernel. */
+  hostServices(moduleId: string): ModuleHostServicesOutcome
+  /** Where host services are read from: the kernel, once it exists. */
+  serveHostServicesFrom(read: (moduleId: string) => ModuleHostServicesOutcome): void
   /** One event a module emitted, to every listener, in the order delivered. */
   deliverEvent(event: StudioModuleEvent): void
   /** One bell row, to every listener. The kernel has already kept it. */
@@ -58,6 +68,7 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
   const notificationListeners = new Set<(notification: StudioModuleNotification) => void>()
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
   let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
+  let readHostServices: ((moduleId: string) => ModuleHostServicesOutcome) | null = null
 
   function each<T>(listeners: Set<(value: T) => void>, value: T, what: string): void {
     // A copy, so a listener that unsubscribes (or subscribes) while hearing does not skip another.
@@ -84,6 +95,18 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
     },
     serveCallsFrom(next) {
       serve = next
+    },
+    hostServices(moduleId) {
+      if (!readHostServices)
+        return {
+          ok: false,
+          code: 'module_unavailable',
+          message: `Module "${moduleId}" is not running on this Studio: its modules have not loaded.`,
+        }
+      return readHostServices(moduleId)
+    },
+    serveHostServicesFrom(read) {
+      readHostServices = read
     },
     deliverEvent: (event) => each(eventListeners, event, 'event'),
     deliverNotification: (notification) => each(notificationListeners, notification, 'notification'),

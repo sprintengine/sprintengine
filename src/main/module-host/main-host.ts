@@ -2,8 +2,6 @@ import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative } from 'node:path'
 
-import type { IpcMain } from 'electron'
-
 import {
   moduleEventPayloadProblem,
   validateModuleEventTopic,
@@ -42,8 +40,8 @@ import {
   unregisterModuleSkills,
 } from '../builtin-skills'
 import { resolveContainedPath, resolveModuleSkillDirectory } from '../modules/entry-containment'
-import { MODULE_HOST_SERVICE_CHANNEL } from '../../shared/modules/host-service-bridge'
-import { createModuleHostServiceDispatcher } from './module-host-service-ipc'
+import type { ModuleUsageRegistry } from '../../shared/modules/activity-service'
+import type { ModuleBacklogRegistry } from '../../shared/modules/backlog-service'
 
 // Main-process host kernel. Replaces the static, central wiring in
 // app-services.ts / register-*-ipc.ts with registries that capability modules
@@ -342,6 +340,14 @@ export type MainKernel = {
    * refusal. Rejects when the handler throws or answers something not JSON.
    */
   callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome>
+  /**
+   * The host's services a module's window half calls on this server (the
+   * protocol's `moduleBacklog.*` and `moduleUsage.query`), for a module that
+   * runs here: its main half loaded, or its manifest alone. Each service
+   * checks the module's own permission on every call; one this Studio does
+   * not provide is null.
+   */
+  hostServicesFor(moduleId: string): ModuleHostServicesOutcome
   /** skill id -> owning module id, for diagnostics and collision reports. */
   ownedSkills(): ReadonlyMap<string, string>
   /** Module-contributed Studio gateway tools, in registration order. */
@@ -397,6 +403,16 @@ export type ModuleMethodCallRequest = {
   commandId?: string
 }
 
+/** The host's services a module's window half reaches, each null where this Studio does not provide it. */
+export type ModuleHostServices = {
+  backlog: Omit<ModuleBacklogRegistry, 'list'> | null
+  usage: Pick<ModuleUsageRegistry, 'query'> | null
+}
+
+/** A module's host services, or why it has none here. */
+export type ModuleHostServicesOutcome =
+  { ok: true; services: ModuleHostServices } | { ok: false; code: 'module_unavailable'; message: string }
+
 /** What a call came to: the module's answer, or why the host refused it before the module heard it. */
 export type ModuleMethodCallOutcome =
   | { ok: true; answer: ModuleMethodAnswer<ModuleMethodContract> }
@@ -431,6 +447,12 @@ export type MainKernelOptions = {
    * running. Absent, a module is running when it declares a method.
    */
   isModuleActive?: (moduleId: string) => boolean
+  /**
+   * Whether a module runs here at all: its main half loaded, or (a module
+   * with only a window half) its manifest. What a host-service call checks.
+   * Absent, a module runs when its manifest resolves.
+   */
+  isModulePresent?: (moduleId: string) => boolean
   /**
    * Resolves a module id to its root directory on disk, for containment-
    * checking the skill directories it registers. Third-party modules have one
@@ -505,7 +527,7 @@ type ModuleAppStateReader = {
   subscribe(moduleId: string, listener: (values: Readonly<Record<string, unknown>>) => void): () => void
 }
 
-export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = {}): MainKernel {
+export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   // Declared methods, per module, in registration order.
   const methods = new Map<string, Map<string, ModuleMethodRegistration>>()
   // name -> owning module + registration; insertion order is the gateway's
@@ -537,14 +559,6 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
   let notificationSeq = 0
   const floodStateByModule = new Map<string, ModuleNotificationFloodState>()
   let started = false
-
-  // The renderer's door to the Backlog and usage services a module's main half
-  // reaches through the SDK (shared/modules/host-service-bridge.ts). The
-  // kernel's one IPC channel, until those services are protocol methods too.
-  ipcMain.handle(
-    MODULE_HOST_SERVICE_CHANNEL,
-    createModuleHostServiceDispatcher((key) => services.get(key)?.value),
-  )
 
   function registerMethods(moduleId: string, batch: ModuleMethodRegistrations): void {
     if (
@@ -579,6 +593,27 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     const next = own ?? new Map<string, ModuleMethodRegistration>()
     for (const [name, registration] of entries) next.set(name, registration)
     methods.set(moduleId, next)
+  }
+
+  function hostServicesFor(moduleId: string): ModuleHostServicesOutcome {
+    const present = options.isModulePresent
+      ? options.isModulePresent(moduleId)
+      : options.resolveModuleManifest?.(moduleId) !== undefined
+    if (!present || moduleId.startsWith('@'))
+      return {
+        ok: false,
+        code: 'module_unavailable',
+        message: `Module "${moduleId}" is not running on this Studio: it is not installed, is switched off, or did not load.`,
+      }
+    const backlog = services.get('backlog.module-service')?.value as ModuleBacklogRegistry | undefined
+    const usage = services.get('usage.module-service')?.value as ModuleUsageRegistry | undefined
+    return {
+      ok: true,
+      services: {
+        backlog: typeof backlog?.create === 'function' ? backlog : null,
+        usage: typeof usage?.query === 'function' ? usage : null,
+      },
+    }
   }
 
   async function callModuleMethod(request: ModuleMethodCallRequest): Promise<ModuleMethodCallOutcome> {
@@ -1098,6 +1133,7 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     declaredMethods: (moduleId) =>
       [...(methods.get(moduleId) ?? [])].map(([name, registration]) => ({ name, access: registration.access })),
     callModuleMethod,
+    hostServicesFor,
     ownedSkills: () =>
       new Map([...skillIdsByModule].flatMap(([owner, ids]) => [...ids].map((id) => [id, owner] as const))),
     mcpToolRegistrations: () =>

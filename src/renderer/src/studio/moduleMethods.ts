@@ -1,7 +1,18 @@
-import { STUDIO_MODULES_CAPABILITY } from '../../../../packages/studio-protocol/src/public'
+import {
+  STUDIO_MODULES_CAPABILITY,
+  type StudioModuleServicesMethodMap,
+} from '../../../../packages/studio-protocol/src/public'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import type { ModuleCallAnswer, ModuleMethodContract } from '../../../shared/modules/methods'
-import type { ModuleMethodCall, ModuleMethodCaller } from '../modules/renderer-host'
+import {
+  moduleServiceRefusal,
+  type ModuleMethodCall,
+  type ModuleMethodCaller,
+  type ModuleServiceAnswer,
+  type ModuleServiceCaller,
+  type ModuleServiceMethod,
+  type ModuleServiceParams,
+} from '../modules/renderer-host'
 import { windowStudioClient } from './windowStudioClient'
 
 // A module's renderer half calls its own declared methods over the window's
@@ -9,6 +20,10 @@ import { windowStudioClient } from './windowStudioClient'
 // operate (under the caller's command id, or one made for the call). The
 // answer is the module's own, or the refusal Studio or the connection gave:
 // a module renderer never sees a throw.
+//
+// The host's services a module's window half calls (the Backlog's writes,
+// the usage query) go over the same client: a read as it is, a write under a
+// command id made for the call.
 
 type Answer = ModuleCallAnswer<ModuleMethodContract>
 
@@ -17,13 +32,17 @@ function randomId(): string {
   return crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-function refusal(error: unknown): Answer {
+/** What a thrown request said: the protocol's code when it carried one. */
+function refusalOf(error: unknown): { code: string; message: string } {
   const code = (error as { code?: unknown } | null)?.code
   return {
-    ok: false,
     code: typeof code === 'string' && code ? code : 'unavailable',
     message: error instanceof Error ? error.message : String(error),
   }
+}
+
+function refusal(error: unknown): Answer {
+  return { ok: false, ...refusalOf(error) }
 }
 
 /** One call over a client: the protocol's entry for its access, the module's answer as it came. */
@@ -57,5 +76,50 @@ export function windowModuleMethodCaller(api?: Parameters<typeof windowStudioCli
       return refusal(error)
     }
     return callModuleMethod(client, call)
+  }
+}
+
+/** The Backlog writes: each a mutation, carried out once under its command id. */
+const MODULE_SERVICE_WRITES: ReadonlySet<ModuleServiceMethod> = new Set<ModuleServiceMethod>([
+  'moduleBacklog.create',
+  'moduleBacklog.updateStatus',
+  'moduleBacklog.updateTriage',
+  'moduleBacklog.addLink',
+  'moduleBacklog.updateModuleMetadata',
+])
+
+/** One host-service call over a client: the service's answer, or the refusal in its words. */
+export async function callModuleService<M extends ModuleServiceMethod>(
+  client: StudioClient,
+  method: M,
+  params: ModuleServiceParams<M>,
+): Promise<ModuleServiceAnswer<M>> {
+  if (!client.supports(STUDIO_MODULES_CAPABILITY))
+    return moduleServiceRefusal(method, 'unavailable', 'This Studio does not serve host services to modules.')
+  // A write's params are its read's plus the command id made here.
+  const sent = (
+    MODULE_SERVICE_WRITES.has(method) ? { ...params, commandId: randomId() } : params
+  ) as StudioModuleServicesMethodMap[M]['params']
+  try {
+    return await client.request(method, sent)
+  } catch (error) {
+    const { code, message } = refusalOf(error)
+    return moduleServiceRefusal(method, code, message)
+  }
+}
+
+/** The caller the Backlog writes and `queryUsage` use in a window: over the window's own Studio client. */
+export function windowModuleServiceCaller(api?: Parameters<typeof windowStudioClient>[0]): ModuleServiceCaller {
+  return async (method, params) => {
+    const windowApi = api ?? (typeof window === 'undefined' ? undefined : window.api)
+    if (typeof windowApi?.studioWindowTicket !== 'function')
+      return moduleServiceRefusal(method, 'unavailable', 'This window has no Studio connection.')
+    let client: StudioClient
+    try {
+      client = await windowStudioClient(windowApi)
+    } catch (error) {
+      return moduleServiceRefusal(method, 'unavailable', refusalOf(error).message)
+    }
+    return callModuleService(client, method, params)
   }
 }

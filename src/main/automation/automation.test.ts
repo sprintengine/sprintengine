@@ -17,7 +17,6 @@ import { createMcpSocketServer, type McpConnectionContext, type McpToolRegistrat
 import { createWorkspaceRegistryService } from '../workspace-registry-service'
 import { createInMemoryWorkspaceRegistryStore } from '../workspace-registry-store'
 import { createWorkspaceSyncService } from '../workspace-sync-service'
-import { createFakeIpcMain } from '../module-host/ipc-main-fake.test-helper'
 import { loadMainModules, type CapabilityModule } from '../module-host/load-modules'
 import { createAutomationTools, type AutomationBackends } from './automation-tools'
 import { createAgentLaunchService } from '../agent-launch-service'
@@ -2967,7 +2966,6 @@ test('automation', async () => {
       registerMain: (host) => host.registerMcpTools(tools),
     })
     const { kernel, report } = loadMainModules({
-      ipcMain: createFakeIpcMain().ipcMain,
       modules: [
         moduleOf('first-owner', [registrationOf('weather_deck_forecast', 'first')]),
         moduleOf('second-owner', [
@@ -3052,7 +3050,7 @@ test('automation', async () => {
       },
       registerMain: (host) => host.registerMcpTools([forecastTool]),
     }
-    const { kernel, report } = loadMainModules({ ipcMain: createFakeIpcMain().ipcMain, modules: [fixtureModule] })
+    const { kernel, report } = loadMainModules({ modules: [fixtureModule] })
     assert.deepEqual(report.loaded, ['weather-deck'])
 
     let moduleEnabled = true
@@ -3404,7 +3402,7 @@ test('automation', async () => {
       permissions: ['mcp:tools' as const],
     }
     const fixtureModule: CapabilityModule = { manifest, registerMain: (host) => host.registerMcpTools([forecastTool]) }
-    const { kernel } = loadMainModules({ ipcMain: createFakeIpcMain().ipcMain, modules: [fixtureModule] })
+    const { kernel } = loadMainModules({ modules: [fixtureModule] })
 
     // The one resolver, behind both surfaces — the production wiring. Feeding the
     // gateway and `module.status` separate literals would agree by construction.

@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import { createFakeIpcMain } from './ipc-main-fake.test-helper'
 import { createMainKernel, type MainKernelOptions, type ModuleSkillHostRegistry } from './main-host'
 
 // The main-host plumbing a module reaches through its scoped host: skill
@@ -14,7 +13,7 @@ import { createMainKernel, type MainKernelOptions, type ModuleSkillHostRegistry 
 // here is the host's half — scoping, permission gates, refusals.
 
 function kernelWith(options: MainKernelOptions = {}) {
-  return createMainKernel(createFakeIpcMain().ipcMain, options)
+  return createMainKernel(options)
 }
 
 test('getSkillStatus reads through the skill registry and writes nothing', async () => {

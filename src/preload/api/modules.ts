@@ -7,8 +7,6 @@ import type {
   ThirdPartyModuleUninstallInput,
   ThirdPartyModuleUninstallResult,
 } from '../../shared/electron-api'
-import type { ModuleHostServiceRequest } from '../../shared/modules/host-service-bridge'
-import { MODULE_HOST_SERVICE_CHANNEL } from '../../shared/modules/host-service-bridge'
 import type {
   ThirdPartyModuleInstallResult,
   ThirdPartyModuleListResult,
@@ -38,7 +36,6 @@ type ModulesIpcRenderer = {
     input: ThirdPartyModuleUninstallInput,
   ): Promise<ThirdPartyModuleUninstallResult>
   invoke(channel: typeof THIRD_PARTY_RENDERER_ENTRIES_CHANNEL): Promise<ThirdPartyRendererEntriesResult>
-  invoke(channel: typeof MODULE_HOST_SERVICE_CHANNEL, request: ModuleHostServiceRequest): Promise<unknown>
   on(channel: 'modules:third-party:changed', listener: (event: IpcRendererEvent) => void): unknown
   removeListener(channel: 'modules:third-party:changed', listener: (event: IpcRendererEvent) => void): unknown
 }
@@ -67,8 +64,6 @@ export function createModulesApi(renderer: ModulesIpcRenderer) {
       renderer.on('modules:third-party:changed', handler)
       return () => renderer.removeListener('modules:third-party:changed', handler)
     },
-    moduleHostServiceInvoke: (request: ModuleHostServiceRequest): Promise<unknown> =>
-      renderer.invoke(MODULE_HOST_SERVICE_CHANNEL, request),
   } satisfies Pick<
     ElectronApi,
     | 'setModuleEnablement'
@@ -81,7 +76,6 @@ export function createModulesApi(renderer: ModulesIpcRenderer) {
     | 'revealThirdPartyModule'
     | 'listThirdPartyRendererEntries'
     | 'onThirdPartyModulesChanged'
-    | 'moduleHostServiceInvoke'
   >
 }
 

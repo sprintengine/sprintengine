@@ -4,6 +4,7 @@ import { test } from 'vitest'
 import { STUDIO_ERROR_CODES } from '../src/envelope'
 import { STUDIO_MODULES_CAPABILITY } from '../src/handshake'
 import { STUDIO_METHODS, parseStudioMethodParams } from '../src/methods'
+import { STUDIO_MODULE_SERVICES_METHODS } from '../src/module-services'
 import { STUDIO_MODULE_METHOD_MAX_CHARS, STUDIO_MODULES_METHODS, isStudioModuleMethodName } from '../src/modules'
 import { STUDIO_SCOPE_PERMISSIONS, studioGrantPrincipal } from '../src/permissions'
 import { studioScopesGrant } from '../src/scopes'
@@ -68,4 +69,91 @@ test('a method name is a lower-case word, then letters, digits, dots and dashes,
     assert.equal(isStudioModuleMethodName(name), false, String(name))
   assert.equal(isStudioModuleMethodName(`a${'b'.repeat(STUDIO_MODULE_METHOD_MAX_CHARS - 1)}`), true)
   assert.equal(isStudioModuleMethodName(`a${'b'.repeat(STUDIO_MODULE_METHOD_MAX_CHARS)}`), false)
+})
+
+// ── The host's services a module's window half calls ──────────────────────
+
+test('a module’s host services are read under modules:read and written under modules:operate, behind the modules capability', () => {
+  for (const [method, spec] of Object.entries(STUDIO_MODULE_SERVICES_METHODS)) {
+    assert.equal(spec.owner, undefined, `${method} is not held to an owner`)
+    assert.equal(spec.capability, STUDIO_MODULES_CAPABILITY, method)
+    assert.equal(STUDIO_METHODS[method as keyof typeof STUDIO_METHODS], spec, method)
+    assert.equal(spec.scope, spec.mutation ? 'modules:operate' : 'modules:read', method)
+  }
+  assert.deepEqual(
+    Object.entries(STUDIO_MODULE_SERVICES_METHODS)
+      .filter(([, spec]) => !spec.mutation)
+      .map(([method]) => method),
+    ['moduleBacklog.location', 'moduleUsage.query'],
+  )
+})
+
+test('a host-service call names its module, and a write its commandId', () => {
+  assert.deepEqual(parseStudioMethodParams('moduleBacklog.location', { moduleId: 'acme', workspaceId: 'ws', x: 1 }), {
+    ok: true,
+    params: { moduleId: 'acme', workspaceId: 'ws' },
+  })
+  assert.equal(refusal(parseStudioMethodParams('moduleBacklog.location', { workspaceId: 'ws' })), 'invalid_params')
+  const status = { moduleId: 'acme', workspaceId: 'ws', itemId: 'backlog/a.md', status: 'ready' }
+  assert.equal(refusal(parseStudioMethodParams('moduleBacklog.updateStatus', status)), 'invalid_params')
+  assert.deepEqual(parseStudioMethodParams('moduleBacklog.updateStatus', { ...status, commandId: 'c1' }), {
+    ok: true,
+    params: { ...status, commandId: 'c1' },
+  })
+  assert.equal(
+    refusal(parseStudioMethodParams('moduleBacklog.updateStatus', { ...status, status: 'done', commandId: 'c1' })),
+    'invalid_params',
+  )
+})
+
+test('a new item, a triage, a link and a usage query are read member by member', () => {
+  const at = { moduleId: 'acme', workspaceId: 'ws', commandId: 'c1' }
+  assert.deepEqual(
+    parseStudioMethodParams('moduleBacklog.create', {
+      ...at,
+      input: { title: 'Ship', status: 'idea', epic: 'launch', stray: true },
+    }),
+    { ok: true, params: { ...at, input: { title: 'Ship', status: 'idea', epic: 'launch' } } },
+  )
+  assert.equal(
+    refusal(parseStudioMethodParams('moduleBacklog.create', { ...at, input: { body: 'x' } })),
+    'invalid_params',
+  )
+  assert.equal(
+    refusal(parseStudioMethodParams('moduleBacklog.create', { ...at, input: { title: 'x', risk: 3 } })),
+    'invalid_params',
+  )
+  const item = { ...at, itemId: 'backlog/a.md' }
+  assert.deepEqual(
+    parseStudioMethodParams('moduleBacklog.updateTriage', { ...item, triage: { risk: null, difficulty: 'm', x: 1 } }),
+    { ok: true, params: { ...item, triage: { risk: null, difficulty: 'm' } } },
+  )
+  const link = { id: 'l1', type: 'review', label: 'PR', target: { kind: 'pr', id: '7', url: 'https://example.com/7' } }
+  assert.deepEqual(parseStudioMethodParams('moduleBacklog.addLink', { ...item, link: { ...link, extra: 1 } }), {
+    ok: true,
+    params: { ...item, link },
+  })
+  assert.equal(
+    refusal(parseStudioMethodParams('moduleBacklog.addLink', { ...item, link: { ...link, type: 'other' } })),
+    'invalid_params',
+  )
+  assert.deepEqual(parseStudioMethodParams('moduleBacklog.updateModuleMetadata', { ...item, value: { n: 1 } }), {
+    ok: true,
+    params: { ...item, value: { n: 1 } },
+  })
+  assert.deepEqual(parseStudioMethodParams('moduleBacklog.updateModuleMetadata', item), { ok: true, params: item })
+  assert.deepEqual(
+    parseStudioMethodParams('moduleUsage.query', { moduleId: 'acme', query: { from: 1, to: 2, groupBy: ['day'] } }),
+    { ok: true, params: { moduleId: 'acme', query: { from: 1, to: 2, groupBy: ['day'] } } },
+  )
+  assert.equal(
+    refusal(
+      parseStudioMethodParams('moduleUsage.query', { moduleId: 'acme', query: { from: 1, to: 2, groupBy: ['week'] } }),
+    ),
+    'invalid_params',
+  )
+  assert.equal(
+    refusal(parseStudioMethodParams('moduleUsage.query', { moduleId: 'acme', query: { from: 1 } })),
+    'invalid_params',
+  )
 })

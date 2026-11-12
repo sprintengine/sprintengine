@@ -3,7 +3,6 @@ import { test } from 'vitest'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import type { ModuleMethodParsed } from '../../shared/modules/methods'
-import { createFakeIpcMain } from './ipc-main-fake.test-helper'
 import { createMainKernel, type ModuleMethodCallRequest } from './main-host'
 
 // A module's declared methods: registered as a batch, called by module id,
@@ -28,7 +27,7 @@ const city = (value: unknown): ModuleMethodParsed<{ city: string }> =>
     : { ok: false, message: '"city" is a city name.' }
 
 function kernel(active?: (id: string) => boolean) {
-  return createMainKernel(createFakeIpcMain().ipcMain, {
+  return createMainKernel({
     resolveModuleManifest: (id) => MANIFESTS[id],
     ...(active ? { isModuleActive: active } : {}),
   })
@@ -159,9 +158,7 @@ test('unloading a module takes its methods, and a call to it is then module_unav
   assert.equal(!after.ok && after.code, 'module_unavailable')
 })
 
-test('the kernel no longer registers IPC for modules: no bridge channel, no registerIpc', () => {
-  const fake = createFakeIpcMain()
-  const k = createMainKernel(fake.ipcMain)
-  assert.equal(fake.handled.includes('modules:bridge:invoke'), false)
-  assert.equal('registerIpc' in k.hostFor('deck'), false)
+test('the kernel holds no IPC: it is made without one, and a module has no registerIpc', () => {
+  assert.equal(createMainKernel.length, 0)
+  assert.equal('registerIpc' in createMainKernel().hostFor('deck'), false)
 })

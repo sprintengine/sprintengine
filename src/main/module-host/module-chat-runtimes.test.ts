@@ -1,11 +1,8 @@
 import { expect, test } from 'vitest'
 
-import type { IpcMain } from 'electron'
 import { createMainKernel } from './main-host'
 import { createChatRuntimeLister } from './module-chat-runtimes'
 import { ChatRuntimesToken } from './service-tokens'
-
-const ipcMain = { handle: () => undefined, removeHandler: () => undefined } as unknown as IpcMain
 
 test('the chat runtimes are the conversational CLIs, with availability, models and the last choice', async () => {
   const asked: string[] = []
@@ -61,7 +58,7 @@ test('a probe or catalog that fails leaves the rows, not the call, without an an
 })
 
 test('MainHost.listChatRuntimes answers from the agent runtime module, and with nothing before it provides one', async () => {
-  const kernel = createMainKernel(ipcMain)
+  const kernel = createMainKernel()
   const host = kernel.hostFor('acme')
   expect(await host.listChatRuntimes()).toEqual([])
   kernel

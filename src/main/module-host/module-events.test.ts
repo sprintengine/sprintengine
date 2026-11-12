@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import type { IpcMain } from 'electron'
 
 import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import { loadMainModules, type CapabilityModule } from './load-modules'
@@ -13,24 +12,10 @@ test('module-events', async () => {
   // host's, topic and payload are the module's — plus the two decisions the item
   // asked for: no replay buffer, and no flood bound.
 
-  function createFakeIpcMain(): { ipcMain: IpcMain; handlers: Map<string, (...args: unknown[]) => unknown> } {
-    const handlers = new Map<string, (...args: unknown[]) => unknown>()
-    const ipcMain = {
-      handle(channel: string, handler: (...args: unknown[]) => unknown): void {
-        handlers.set(channel, handler)
-      },
-      removeHandler(channel: string): void {
-        handlers.delete(channel)
-      },
-    } as unknown as IpcMain
-    return { ipcMain, handlers }
-  }
-
   function testEmitStampsScopedIdentityAndTime(): void {
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
     let clock = 1_000
-    const kernel = createMainKernel(ipcMain, {
+    const kernel = createMainKernel({
       deliverModuleEvent: (event) => delivered.push(event),
       now: () => (clock += 1),
     })
@@ -50,8 +35,7 @@ test('module-events', async () => {
   }
 
   function testEmitValidatesTheTopic(): void {
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain, { deliverModuleEvent: () => {} })
+    const kernel = createMainKernel({ deliverModuleEvent: () => {} })
     const host = kernel.hostFor('widgets')
 
     assert.throws(() => host.emit('', {}), /non-empty topic/)
@@ -66,8 +50,7 @@ test('module-events', async () => {
 
   function testTopicIsTrimmedNotRewritten(): void {
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
-    createMainKernel(ipcMain, { deliverModuleEvent: (event) => delivered.push(event) })
+    createMainKernel({ deliverModuleEvent: (event) => delivered.push(event) })
       .hostFor('widgets')
       .emit('  run-status  ')
     assert.equal(delivered[0]?.topic, 'run-status', 'the topic is trimmed, never prefixed by the host')
@@ -78,8 +61,7 @@ test('module-events', async () => {
     // so a window opened after startup still sees launch diagnostics. Events are
     // signals: one emitted with no window open is dropped, and a subscriber must
     // be correct having missed it.
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain)
+    const kernel = createMainKernel()
     assert.doesNotThrow(
       () => kernel.hostFor('widgets').emit('run-status', { phase: 'done' }),
       'an emit with no delivery wired is a no-op, never a throw',
@@ -96,8 +78,7 @@ test('module-events', async () => {
     // user-visible. Dropping an event would instead make a subscriber wrong — a
     // door that never learns its run finished — so nothing here is bounded.
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain, {
+    const kernel = createMainKernel({
       deliverModuleEvent: (event) => delivered.push(event),
       now: () => 0,
     })
@@ -108,7 +89,6 @@ test('module-events', async () => {
 
   async function testEmitFlowsThroughALoadedModule(): Promise<void> {
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
     const module: CapabilityModule = {
       manifest: { id: 'widgets', displayName: 'Widgets', version: 1, defaultEnabled: true },
       registerMain(host) {
@@ -118,7 +98,6 @@ test('module-events', async () => {
       },
     }
     const loaded = loadMainModules({
-      ipcMain,
       modules: [module],
       deliverModuleEvent: (event) => delivered.push(event),
     })
@@ -134,8 +113,7 @@ test('module-events', async () => {
     // The delivery is best effort per client, so a payload that cannot cross
     // to a client is refused at `emit`, back to the module that sent it.
     const delivered: ModuleEventEnvelope[] = []
-    const { ipcMain } = createFakeIpcMain()
-    const host = createMainKernel(ipcMain, { deliverModuleEvent: (event) => delivered.push(event) }).hostFor('widgets')
+    const host = createMainKernel({ deliverModuleEvent: (event) => delivered.push(event) }).hostFor('widgets')
     assert.throws(() => host.emit('run-status', { onDone: () => undefined }), /widgets.*run-status.*cannot be sent/)
     assert.equal(delivered.length, 0, 'nothing half-sent')
     assert.throws(() => host.emit('run-status', { at: new Date(0) }), /payload\.at is a Date, not a plain object/)

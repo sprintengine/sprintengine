@@ -5,45 +5,26 @@
 // The SDK mirrors these shapes by hand and the drift guard pins the two
 // together. Type-only.
 
+import type {
+  StudioModuleUsageAnswer,
+  StudioModuleUsageErrorCode,
+  StudioModuleUsageGroupBy,
+  StudioModuleUsageQuery,
+  StudioModuleUsageRow,
+  StudioModuleUsageSource,
+  StudioModuleUsageTokens,
+} from '../../../packages/studio-protocol/src/public'
 import type { ModuleConversationStatus } from './conversation-service'
 
 // ── Usage ────────────────────────────────────────────────────────────────────
 
-export type UsageGroupBy = 'day' | 'model' | 'workspace' | 'session' | 'provider'
-
-export type UsageQuery = {
-  from: number
-  to: number
-  groupBy?: UsageGroupBy[]
-}
-
-export type UsageTokens = {
-  input: number
-  output: number
-  cacheRead: number
-  cacheWrite: number
-}
-
-export type UsageRow = {
-  day?: string
-  model?: string
-  providerId?: string
-  workspaceId?: string | null
-  sessionId?: string
-  agentId?: string
-  chatTitle?: string | null
-  tokens: UsageTokens
-  requests: number
-  reportedCostUsd: number | null
-}
-
-export type UsageSource = {
-  id: 'studio' | 'claude-code' | 'codex' | 'opencode' | 'gemini' | 'grok'
-  found: number
-  error: string | null
-}
-
-export type ModuleUsageErrorCode = 'permission_missing' | 'invalid_input' | 'unavailable'
+// The wire shapes are the Studio protocol's (`module-services.ts`).
+export type UsageGroupBy = StudioModuleUsageGroupBy
+export type UsageQuery = StudioModuleUsageQuery
+export type UsageTokens = StudioModuleUsageTokens
+export type UsageRow = StudioModuleUsageRow
+export type UsageSource = StudioModuleUsageSource
+export type ModuleUsageErrorCode = StudioModuleUsageErrorCode
 
 export type ModuleUsageResult<T extends object = object> =
   ({ ok: true } & T) | { ok: false; code: ModuleUsageErrorCode; message: string }
@@ -53,6 +34,14 @@ export type UsageQueryResult = ModuleUsageResult<{
   scannedAt: number | null
   sources: UsageSource[]
 }>
+
+// What the protocol carries is what the service answers.
+const usageShape: [UsageQueryResult] extends [StudioModuleUsageAnswer]
+  ? [StudioModuleUsageAnswer] extends [UsageQueryResult]
+    ? true
+    : false
+  : false = true
+void usageShape
 
 export type ModuleUsageService = {
   query(query: UsageQuery): Promise<UsageQueryResult>
