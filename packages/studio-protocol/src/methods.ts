@@ -221,9 +221,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioAgentSetupMethodMap &
   StudioWorkspacesMethodMap &
   StudioReadinessMethodMap &
-  StudioChatStoresMethodMap
-  StudioAgentSkillsMethodMap &
-  StudioWorkspacesMethodMap
+  StudioChatStoresMethodMap &
+  StudioAgentSkillsMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -698,7 +697,7 @@ export type StudioTopicMap = {
   StudioTerminalsTopicMap &
   StudioAgentSettingsTopicMap &
   StudioAgentSetupTopicMap &
-  StudioChatStoresTopicMap
+  StudioChatStoresTopicMap &
   StudioAgentSkillsTopicMap
 
 export type StudioTopic = keyof StudioTopicMap

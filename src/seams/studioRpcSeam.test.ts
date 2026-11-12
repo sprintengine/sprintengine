@@ -25,8 +25,6 @@ import {
   type StudioAgentSettingsMethod,
   type StudioAgentSetupMethod,
   type StudioChatStoresMethod,
-      string
-    >),
   type StudioAgentSkillsMethod,
   type StudioChatMethod,
   type StudioMethod,
