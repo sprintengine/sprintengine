@@ -191,6 +191,19 @@ instead, and which of the enforcement sites have to agree.
 [`docs/compatibility.md`](docs/compatibility.md) is the policy, and it is short.
 Read it before you change anything that crosses either wire.
 
+## Adding a channel between a window and main
+
+IPC is for the desktop shell alone: windows, dialogs, updates, revealing a
+file. Everything else a window does goes over the Studio protocol, the same
+methods a paired desktop, the phone and a browser tab use, so a feature built
+for the local window works on every client. Every channel has a row in
+`src/shared/ipc-inventory.ts`, saying whether it is the shell's (and why) or
+which part of the protocol replaces it. Main refuses to register a channel
+without a row, and `src/main/ipc-inventory.test.ts` holds the rows to what
+main, the server, the modules and the preload really register and use. It
+also counts the rows still waiting to move, so a new non-shell channel fails
+it: add a protocol method instead.
+
 ## Names that do not go in the tree
 
 This repository was private for most of its life, and three habits from then

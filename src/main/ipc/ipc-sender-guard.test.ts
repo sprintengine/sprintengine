@@ -109,3 +109,34 @@ test('handlers registered through a wrapper of ipcMain are guarded too, and the 
   assert.equal(await invoke('git:status', app), 'clean')
   await assert.rejects(invoke('git:status', guest), /did not come from/)
 })
+
+test('a channel the registration rule does not allow fails as it registers, every way of registering', () => {
+  const { ipc, emitter, handlers } = fakeIpcMain()
+  const listed = new Set(['window:close', 'chat-link:ready'])
+  guardIpcSenders(
+    ipc,
+    isTrusted,
+    () => {},
+    (channel) => listed.has(channel),
+  )
+  ipc.handle('window:close', () => undefined)
+  ipc.on('chat-link:ready', () => undefined)
+  const listener = () => undefined
+  for (const register of [
+    () => ipc.handle('backlog:secret-door', () => undefined),
+    () => ipc.handleOnce('backlog:secret-door', () => undefined),
+    () => ipc.on('backlog:secret-door', listener),
+    () => ipc.once('backlog:secret-door', listener),
+    () => ipc.addListener('backlog:secret-door', listener),
+    () => ipc.prependListener('backlog:secret-door', listener),
+    () => ipc.prependOnceListener('backlog:secret-door', listener),
+  ]) {
+    assert.throws(
+      register,
+      (error: Error) => error.name === 'UnlistedIpcChannelError' && /ipc-inventory/.test(error.message),
+    )
+  }
+  assert.deepEqual([...handlers.keys()], ['window:close'])
+  assert.equal(emitter.listenerCount('backlog:secret-door'), 0)
+  assert.equal(emitter.listenerCount('chat-link:ready'), 1)
+})

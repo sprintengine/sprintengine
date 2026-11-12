@@ -85,7 +85,7 @@ test('an owner’s tab reaches exactly the channels it reached before permission
 
 test('a name no table holds is refused, even where the old prefix rule would have let it through', () => {
   // These reach no handler: the server registers exactly the channels above
-  // (src/server/desktop/server-ipc.test.ts holds it to that).
+  // (src/main/ipc-inventory.test.ts holds it to that).
   for (const channel of ['backlog:drop-everything', 'conversation:sessions:new-thing', 'constructor', '__proto__', ''])
     assert.equal(webTunnelAllows(channel), false, channel)
 })
