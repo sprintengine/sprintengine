@@ -144,9 +144,9 @@ export type CapabilityPermission =
   | 'ipc:workspace-write'
   | 'ipc:settings'
   | 'ipc:invoke'
-  // The renderer→own-main bridge alone (`RendererHost.invoke` to the module's
-  // own `MainHost.registerIpc` channels), split out of `ipc:invoke`, which
-  // still opens it for manifests written before the split.
+  // Your own declared methods alone (`MainHost.registerMethods`, called by
+  // your window code through `RendererHost.methods`), split out of
+  // `ipc:invoke`, which still allows them for manifests written before the split.
   | 'module:bridge'
   | 'backlog.read'
   | 'backlog.write'
@@ -207,7 +207,7 @@ export const KNOWN_CAPABILITY_PERMISSIONS: readonly string[] = [
   'ipc:workspace-write',
   'ipc:settings',
   'ipc:invoke',
-  // The renderer→own-main bridge, split out of `ipc:invoke`.
+  // Your own declared methods, split out of `ipc:invoke`.
   'module:bridge',
   'backlog.read',
   'backlog.write',
@@ -292,12 +292,44 @@ export type ModuleEventEnvelope = {
 
 // ── Main-process host (entry.main) ───────────────────────────────────────────
 
-/**
- * The raw IPC event is typed `unknown` in the SDK so the package carries no
- * Electron dependency; treat it as opaque unless you depend on Electron types
- * yourself.
- */
-export type IpcInvokeHandler = (event: unknown, ...args: unknown[]) => unknown | Promise<unknown>
+// ── Declared methods ─────────────────────────────────────────────────────────
+// What your `entry.main` serves your window code (and any client the person
+// granted it) over the Studio protocol: a typed contract per method, a
+// validator for its params and a handler (`MainHost.registerMethods`), called
+// through `RendererHost.methods<Contract>()`. Host API 2 replaced host API 1's
+// IPC channels (`registerIpc` / `invoke`) with these.
+//
+//   type Board = {
+//     'cards.list': { access: 'read'; params: { column: string }; result: Card[] }
+//     'cards.add': { access: 'operate'; params: { title: string }; result: Card; errors: 'duplicate' }
+//   }
+//   host.registerMethods<Board>({ 'cards.list': { access: 'read', params: readColumn, handler: list }, … })
+//   const board = rendererHost.methods<Board>()
+//   const answer = await board.operate('cards.add', { title: 'Ship it' })
+//   if (!answer.ok) rendererHost.toast({ title: answer.message, tone: 'error' })
+
+export type {
+  ModuleCallAnswer,
+  ModuleCallRefusalCode,
+  ModuleMethodAccess,
+  ModuleMethodAnswer,
+  ModuleMethodContext,
+  ModuleMethodContract,
+  ModuleMethodContracts,
+  ModuleMethodErrorCode,
+  ModuleMethodParsed,
+  ModuleMethodRegistration,
+  ModuleMethodRegistrations,
+  ModuleMethodsClient,
+  ModuleOperateMethod,
+  ModuleReadMethod,
+} from './methods.js'
+import type {
+  ModuleMethodContracts,
+  ModuleMethodRegistrations,
+  ModuleMethodsClient,
+} from './methods.js'
+export { MODULE_METHOD_MAX_CHARS, isModuleMethodName } from './methods.js'
 
 export type StartupHook = () => void | Promise<void>
 export type ShutdownBeginHook = () => void | Promise<void>
@@ -544,7 +576,19 @@ export type MainHost = {
    * `host.supports('chat-runtimes')`: an older host has no such method.
    */
   listChatRuntimes(): Promise<ModuleChatRuntimeOption[]>
-  registerIpc(channel: string, handler: IpcInvokeHandler): void
+  /**
+   * Declare the methods your window code (and each client the person granted
+   * `modules:read` / `modules:operate`) calls: each with its access (`read`
+   * or `operate`, the only way it is called), a validator for its params and
+   * a handler answering `{ ok: true, result }` (JSON) or its own
+   * `{ ok: false, code, message }`. Names are a lower-case letter, then
+   * letters, digits, dots and dashes; your module id is their namespace. The
+   * whole batch is validated before one of it lands; a name you already
+   * declared, a missing validator or a bad name throws. Unloading your module
+   * takes its methods with it. Declare the `module:bridge` permission.
+   * Replaces host API 1's `registerIpc`.
+   */
+  registerMethods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(methods: ModuleMethodRegistrations<Cs>): void
   /**
    * Contribute MCP tools to the Studio gateway, owned by this module's id. A
    * tool name another module already registered, or one that collides with a
@@ -666,8 +710,8 @@ export type MainHost = {
    */
   notify(input: ModuleNotifyInput): void
   /**
-   * Push an event to your module's renderer half — the subscribe verb the
-   * request/response bridge does not have. The receiving end is
+   * Push an event to your module's renderer half — the subscribe verb your
+   * declared methods do not have. The receiving end is
    * `RendererHost.subscribe(topic, cb)`.
    *
    * Identity is stamped from this host's scope, so only your module's
@@ -1219,7 +1263,7 @@ export type ModuleStorageResult<T> = ({ ok: true } & T) | { ok: false; code: Mod
  * resolve it via the workspace context) for workspace-scoped keys, omit it for
  * the module's global store. Declare the `storage` permission (install-time
  * disclosure). Renderer panels reach storage through the module's own
- * `host.invoke` channels.
+ * declared methods (`MainHost.registerMethods`).
  *
  * Workspace-scoped keys are not in the project's folder, so they never show
  * in its `git status` and do not travel with a clone; data that belongs to
@@ -2217,8 +2261,8 @@ export type RendererHost = {
   /** The host API this app provides (`HOST_API_VERSION` of the SDK it was built with). */
   readonly hostApiVersion: number
   /**
-   * Your module id, as your manifest declares it — the prefix your `invoke`
-   * channels carry and the `source` your bell rows are filed under. Absent on a
+   * Your module id, as your manifest declares it — the module your `methods`
+   * calls reach and the `source` your bell rows are filed under. Absent on a
    * host older than `supports('module-id')`.
    */
   readonly moduleId: string
@@ -2475,13 +2519,13 @@ export type RendererHost = {
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
   /**
    * Subscribe to events your `entry.main` pushed with `MainHost.emit` — the
-   * subscribe verb `invoke` does not have. Scoped to your module: another
+   * subscribe verb `methods` does not have. Scoped to your module: another
    * module's events never reach you, and yours never reach it. `cb` receives
    * the emitted payload. Returns the unsubscriber; call it on unmount.
    *
    * Nothing is replayed, so a subscriber must be correct having missed every
    * event emitted before it subscribed — read current state through
-   * `invoke` and let events tell you when to read it again. Delivery stops
+   * a `read` method and let events tell you when to read it again. Delivery stops
    * while your module is disabled and resumes when it is re-enabled.
    */
   subscribe(topic: string, cb: (payload: unknown) => void): () => void
@@ -2566,32 +2610,18 @@ export type RendererHost = {
    */
   openExternal(url: string): Promise<ModuleOpenExternalResult>
   /**
-   * Invoke an IPC channel this module's own `entry.main` registered via
-   * `MainHost.registerIpc`, e.g. `host.invoke('my-module:save', data)`.
-   *
-   * The channel MUST start with `<moduleId>:` (your own module id); other
-   * channel names throw before IPC happens. The host additionally routes only
-   * to channels owned by a module whose manifest declares the `module:bridge`
-   * permission (or the broad `ipc:invoke` it was split out of, which still
-   * opens the bridge for older manifests). A refused invoke rejects with an Error whose
-   * `code` property carries the `ModuleBridgeRefusalCode`, so callers can
-   * branch on the refusal kind without parsing the message.
-   *
-   * This bridge is a contract, not a security boundary: all renderer code
-   * shares one world. Trust gating (only `trusted` modules execute) remains
-   * the actual boundary.
+   * Call the methods your own `entry.main` declared with
+   * `MainHost.registerMethods`, typed by your contract:
+   * `host.methods<Board>().read('cards.list', { column: 'todo' })`. `read`
+   * offers the methods declared `read`, `operate` the ones declared
+   * `operate`; a call never names another module. Calls travel over the
+   * window's Studio connection to the server your module runs on, and never
+   * throw: your handler's refusals and the host's (`module_unavailable`,
+   * `module_method_unknown`, `invalid_params`, …) are answers. Replaces host
+   * API 1's `invoke`.
    */
-  invoke(channel: string, payload?: unknown): Promise<unknown>
+  methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
 }
-
-/**
- * Why the host refused a `RendererHost.invoke`, attached as `code` on the
- * rejection Error: the channel was never registered (`unknown_channel`), it is
- * not `<ownerModuleId>:`-prefixed (`not_bridgeable`), the owner manifest
- * could not be resolved (`not_bridgeable`), or the owner declares neither
- * `module:bridge` nor `ipc:invoke` (`permission_missing`).
- */
-export type ModuleBridgeRefusalCode = 'unknown_channel' | 'not_bridgeable' | 'permission_missing'
 
 // ── File-drop drag-and-drop contract ─────────────────────────────────────────
 // The payload the Backlog panel and Files tree put on a drag (and the terminal

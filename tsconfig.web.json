@@ -38,7 +38,8 @@
     "packages/module-sdk/src/backlog.ts",
     "packages/module-sdk/src/activity.ts",
     "packages/module-sdk/src/services.ts",
-    "packages/module-sdk/src/json-value.ts"
+    "packages/module-sdk/src/json-value.ts",
+    "packages/module-sdk/src/methods.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {

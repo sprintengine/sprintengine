@@ -13,5 +13,5 @@ test('an agent can ask which extension this is', async () => {
   const fake = createFakeMainHost({ manifest })
   await registerMain(fake.host)
   const result = await fake.tools.call(`${manifest.id.replace(/-/g, '_')}_about`)
-  assert.deepEqual(result.structuredContent, { moduleId: manifest.id, hostApiVersion: 1 })
+  assert.deepEqual(result.structuredContent, { moduleId: manifest.id, hostApiVersion: 2 })
 })

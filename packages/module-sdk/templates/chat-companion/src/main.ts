@@ -1,6 +1,6 @@
 import { getConversationService, type RegisterMain } from '@sprintengine/module-sdk'
 
-import { CHANGED_TOPIC, CHANNELS, isStartRequest, isStopRequest } from './protocol'
+import { CHANGED_TOPIC, readNothing, readStartRequest, readStopRequest, type CompanionMethods } from './protocol'
 
 const OPENING_PROMPT =
   "Read this project's README and its main entry point, then summarise in five bullet points what it does and how it is built. Do not change any files."
@@ -22,14 +22,14 @@ export const registerMain: RegisterMain = (host) => {
   }
   const conversations = getConversationService(host)
 
-  host.registerIpc(CHANNELS.list, async () => conversations.list())
-
-  host.registerIpc(CHANNELS.start, async (_event, request) => {
-    if (!isStartRequest(request)) return { ok: false, code: 'invalid_input', message: 'Pick a workspace first.' }
+  // Started below, once per command id: a retried call passes the same
+  // `commandId` on, so the conversation service finds the chat the first made.
+  async function start(request: { workspaceId: string }, commandId: string | undefined) {
     const started = await conversations.create({
       workspaceId: request.workspaceId,
       name: 'Project summary',
       prompt: OPENING_PROMPT,
+      ...(commandId ? { commandId } : {}),
     })
     if (!started.ok) return started
 
@@ -51,17 +51,25 @@ export const registerMain: RegisterMain = (host) => {
       }
     })
     if (finished) stop()
-    return started
-  })
+    return { ok: true as const, result: { conversation: started.conversation } }
+  }
 
-  host.registerIpc(CHANNELS.stop, async (_event, request) => {
-    if (!isStopRequest(request)) return { ok: false, code: 'invalid_input', message: 'Which chat?' }
-    return conversations.stop(request)
+  host.registerMethods<CompanionMethods>({
+    list: { access: 'read', params: readNothing, handler: () => ({ ok: true, result: conversations.list() }) },
+    start: { access: 'operate', params: readStartRequest, handler: (request, context) => start(request, context.commandId) },
+    stop: {
+      access: 'operate',
+      params: readStopRequest,
+      handler: async (request) => {
+        const stopped = await conversations.stop(request)
+        return stopped.ok ? { ok: true, result: null } : stopped
+      },
+    },
   })
 
   // Tell every open window to read the list again whenever it changes. An
   // event is a signal, not state: a window opened later reads through
-  // CHANNELS.list and never needs an old event.
+  // the `list` method and never needs an old event.
   let stopWatching = () => {}
   host.onStartup(() => {
     stopWatching = conversations.watch(undefined, () => host.emit(CHANGED_TOPIC))

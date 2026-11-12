@@ -549,7 +549,7 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
       isThirdParty(moduleId) &&
       !options.resolveModuleManifest?.(moduleId)?.permissions?.some((permission) => METHOD_PERMISSIONS.has(permission))
     ) {
-      throw new Error(`Module "${moduleId}" must declare the "module:bridge" permission to declare methods.`)
+      throw new Error(`Module "${moduleId}" needs the "module:bridge" permission to declare methods.`)
     }
     if (batch === null || typeof batch !== 'object' || Array.isArray(batch)) {
       throw new Error(`Module "${moduleId}" declares its methods as an object of name to method.`)
@@ -870,7 +870,7 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
         return list ? list() : []
       },
       registerMethods(batch) {
-        registerMethods(moduleId, batch as ModuleMethodRegistrations)
+        registerMethods(moduleId, batch as unknown as ModuleMethodRegistrations)
       },
       registerMcpTools(tools) {
         const thirdParty = isThirdParty(moduleId)

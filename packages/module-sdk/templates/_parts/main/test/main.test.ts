@@ -12,7 +12,8 @@ import { registerMain } from '../src/main'
 test('the window half can ask when the main half started', async () => {
   const fake = createFakeMainHost({ manifest })
   await registerMain(fake.host)
-  const status = (await fake.ipc.invoke('{{id}}:status')) as { startedAt: number }
-  assert.equal(typeof status.startedAt, 'number')
+  const status = await fake.methods.read('status', {})
+  assert.ok(status.ok, JSON.stringify(status))
+  assert.equal(typeof (status.result as { startedAt: number }).startedAt, 'number')
   assert.deepEqual(fake.undeclared, [])
 })

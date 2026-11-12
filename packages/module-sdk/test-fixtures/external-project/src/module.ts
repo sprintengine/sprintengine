@@ -1,6 +1,6 @@
 // An external author's module, compiled against the packed SDK tarball only.
-// Exercises the v1 surface: manifest shape, entry.main registration (IPC,
-// service token, sidecar, notification, chat conversations, brokered
+// Exercises the host API 2 surface: manifest shape, entry.main registration
+// (declared methods, service token, sidecar, notification, chat conversations, brokered
 // credentials), and entry.renderer registration (panel, workspace type,
 // Backlog action, command, settings section, opening a chat).
 
@@ -27,6 +27,7 @@ import {
   type McpToolRegistration,
   type ModuleCommandDefinition,
   type ModuleConversationEvent,
+  type ModuleMethodParsed,
   type ModuleWorkspaceView,
   type RegisterMain,
   type RegisterRenderer,
@@ -55,7 +56,7 @@ export const manifest: CapabilityManifest = {
   permissions: [
     'network',
     'ipc:workspace-read',
-    'ipc:invoke',
+    'module:bridge',
     'mcp:tools',
     'scheduled-agents.manage',
     'backlog.read',
@@ -113,6 +114,13 @@ const forecastTool: McpToolRegistration = {
   },
 }
 
+// Every method reads its params; these take what the window sends as it is
+// and check it in the handler. Each answers what its work returns.
+const anything = (value: unknown): ModuleMethodParsed<unknown> => ({ ok: true, params: value })
+function answering<R>(work: (params: unknown) => Promise<R>) {
+  return async (params: unknown) => ({ ok: true as const, result: await work(params) })
+}
+
 export const registerMain: RegisterMain = (host) => {
   host.provideService(forecastService, () => ({
     refresh: async () => undefined,
@@ -127,67 +135,91 @@ export const registerMain: RegisterMain = (host) => {
       description: 'Summarize the forecast for the workspace city.',
     },
   ])
-  host.registerIpc('weather-deck:forecast', async (_event, city: unknown) => {
-    if (typeof city !== 'string' || city.trim().length === 0) {
-      throw new Error('weather-deck:forecast requires a city name.')
-    }
-    return { city, summary: 'clear' }
+  host.registerMethods({
+    'forecast': {
+      access: 'read',
+      params: anything,
+      handler: answering(async (city: unknown) => {
+        if (typeof city !== 'string' || city.trim().length === 0) {
+          throw new Error('weather-deck:forecast requires a city name.')
+        }
+        return { city, summary: 'clear' }
+      }),
+    },
   })
   // Workspace context from entry.main: id → root/name/mode for per-workspace
   // persistence paths. Unknown ids resolve to null, never a throw.
-  host.registerIpc('weather-deck:workspace-root', async (_event, workspaceId: unknown) => {
-    if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
-      throw new Error('weather-deck:workspace-root requires a workspace id.')
-    }
-    const workspaces = host.requireService(WorkspaceContextToken)
-    const view = await workspaces.get(workspaceId)
-    return { folderPath: view?.folderPath ?? null }
+  host.registerMethods({
+    'workspaceRoot': {
+      access: 'read',
+      params: anything,
+      handler: answering(async (workspaceId: unknown) => {
+        if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+          throw new Error('weather-deck:workspace-root requires a workspace id.')
+        }
+        const workspaces = host.requireService(WorkspaceContextToken)
+        const view = await workspaces.get(workspaceId)
+        return { folderPath: view?.folderPath ?? null }
+      }),
+    },
   })
   // Scoped module storage composed with the workspace context: resolve the
   // root, persist under it (host-placed), read back. Declare `storage`.
-  host.registerIpc('weather-deck:save-preferences', async (_event, input: unknown) => {
-    const { workspaceId, preferences } = (input ?? {}) as { workspaceId?: unknown; preferences?: unknown }
-    if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
-      throw new Error('weather-deck:save-preferences requires a workspace id.')
-    }
-    const view = await host.requireService(WorkspaceContextToken).get(workspaceId)
-    // Not-yet-resolvable (null view) is a transient state — fail the save so
-    // the caller retries, rather than silently writing to a scope the data
-    // would later appear "lost" from. A RESOLVED workspace without a folder
-    // is genuinely folderless: its data lives in the global per-user store.
-    if (!view) throw new Error(`Workspace "${workspaceId}" is not resolvable yet — retry the save.`)
-    const storage = getModuleStorage(host)
-    const scope = view.folderPath ? { workspaceRoot: view.folderPath } : {}
-    const saved = await storage.set({ ...scope, key: 'preferences', value: preferences ?? {} })
-    if (!saved.ok) throw new Error(`${saved.code}: ${saved.message}`)
-    const roundTrip = await storage.get({ ...scope, key: 'preferences' })
-    if (!roundTrip.ok) throw new Error(`${roundTrip.code}: ${roundTrip.message}`)
-    return { found: roundTrip.found, value: roundTrip.value }
+  host.registerMethods({
+    'savePreferences': {
+      access: 'operate',
+      params: anything,
+      handler: answering(async (input: unknown) => {
+        const { workspaceId, preferences } = (input ?? {}) as { workspaceId?: unknown; preferences?: unknown }
+        if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+          throw new Error('weather-deck:save-preferences requires a workspace id.')
+        }
+        const view = await host.requireService(WorkspaceContextToken).get(workspaceId)
+        // Not-yet-resolvable (null view) is a transient state — fail the save so
+        // the caller retries, rather than silently writing to a scope the data
+        // would later appear "lost" from. A RESOLVED workspace without a folder
+        // is genuinely folderless: its data lives in the global per-user store.
+        if (!view) throw new Error(`Workspace "${workspaceId}" is not resolvable yet — retry the save.`)
+        const storage = getModuleStorage(host)
+        const scope = view.folderPath ? { workspaceRoot: view.folderPath } : {}
+        const saved = await storage.set({ ...scope, key: 'preferences', value: preferences ?? {} })
+        if (!saved.ok) throw new Error(`${saved.code}: ${saved.message}`)
+        const roundTrip = await storage.get({ ...scope, key: 'preferences' })
+        if (!roundTrip.ok) throw new Error(`${roundTrip.code}: ${roundTrip.message}`)
+        return { found: roundTrip.found, value: roundTrip.value }
+      }),
+    },
   })
   // A scheduled agent the module owns, through the scoped service: a morning
   // chat that refreshes the forecast notes with the module's skill. Idempotent:
   // a second call finds the one it made in list() and makes no other.
-  host.registerIpc('weather-deck:schedule-refresh', async (_event, folderPath: unknown) => {
-    if (typeof folderPath !== 'string' || folderPath.trim().length === 0) {
-      throw new Error('weather-deck:schedule-refresh requires a project folder.')
-    }
-    const scheduled = getScheduledAgentsService(host)
-    const existing = (await scheduled.list()).find((agent) => agent.folderPath === folderPath)
-    if (existing) return { created: false, id: existing.id }
-    const created = await scheduled.create({
-      prompt: 'Refresh the forecast notes for the watched city.',
-      schedule: { cron: '0 9 * * *', timezone: 'UTC' },
-      folderPath,
-      hostId: null,
-      cli: 'claude-code',
-      cliModel: 'sonnet',
-      permissionPreset: null,
-      skills: [{ id: 'weather-deck-forecast', name: 'Weather Deck forecast' }],
-      mcpServers: [],
-      worktree: null,
-    })
-    if (!created.ok) throw new Error(created.message)
-    return { created: true, id: created.agent.id }
+  host.registerMethods({
+    'scheduleRefresh': {
+      access: 'operate',
+      params: anything,
+      handler: answering(async (folderPath: unknown) => {
+        if (typeof folderPath !== 'string' || folderPath.trim().length === 0) {
+          throw new Error('weather-deck:schedule-refresh requires a project folder.')
+        }
+        const scheduled = getScheduledAgentsService(host)
+        const existing = (await scheduled.list()).find((agent) => agent.folderPath === folderPath)
+        if (existing) return { created: false, id: existing.id }
+        const created = await scheduled.create({
+          prompt: 'Refresh the forecast notes for the watched city.',
+          schedule: { cron: '0 9 * * *', timezone: 'UTC' },
+          folderPath,
+          hostId: null,
+          cli: 'claude-code',
+          cliModel: 'sonnet',
+          permissionPreset: null,
+          skills: [{ id: 'weather-deck-forecast', name: 'Weather Deck forecast' }],
+          mcpServers: [],
+          worktree: null,
+        })
+        if (!created.ok) throw new Error(created.message)
+        return { created: true, id: created.agent.id }
+      }),
+    },
   })
   // Cross-surface briefing (seam proof): ONE channel that composes workspace
   // context resolution with a scoped storage round-trip — the resolved view's
@@ -195,122 +227,164 @@ export const registerMain: RegisterMain = (host) => {
   // get→set→return chain. The renderer half (below) feeds the result into
   // per-module workspace state, so the value crosses three published
   // surfaces end to end instead of each being exercised in isolation.
-  host.registerIpc('weather-deck:workspace-briefing', async (_event, workspaceId: unknown) => {
-    if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
-      throw new Error('weather-deck:workspace-briefing requires a workspace id.')
-    }
-    const view = await host.requireService(WorkspaceContextToken).get(workspaceId)
-    if (!view) throw new Error(`Workspace "${workspaceId}" is not resolvable yet — retry the briefing.`)
-    const storage = getModuleStorage(host)
-    const scope = view.folderPath ? { workspaceRoot: view.folderPath } : {}
-    const read = await storage.get({ ...scope, key: 'briefing-count' })
-    if (!read.ok) throw new Error(`${read.code}: ${read.message}`)
-    const briefingCount = (read.found && typeof read.value === 'number' ? read.value : 0) + 1
-    const wrote = await storage.set({ ...scope, key: 'briefing-count', value: briefingCount })
-    if (!wrote.ok) throw new Error(`${wrote.code}: ${wrote.message}`)
-    return { workspaceName: view.name, mode: view.mode, briefingCount }
+  host.registerMethods({
+    'workspaceBriefing': {
+      access: 'operate',
+      params: anything,
+      handler: answering(async (workspaceId: unknown) => {
+        if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+          throw new Error('weather-deck:workspace-briefing requires a workspace id.')
+        }
+        const view = await host.requireService(WorkspaceContextToken).get(workspaceId)
+        if (!view) throw new Error(`Workspace "${workspaceId}" is not resolvable yet — retry the briefing.`)
+        const storage = getModuleStorage(host)
+        const scope = view.folderPath ? { workspaceRoot: view.folderPath } : {}
+        const read = await storage.get({ ...scope, key: 'briefing-count' })
+        if (!read.ok) throw new Error(`${read.code}: ${read.message}`)
+        const briefingCount = (read.found && typeof read.value === 'number' ? read.value : 0) + 1
+        const wrote = await storage.set({ ...scope, key: 'briefing-count', value: briefingCount })
+        if (!wrote.ok) throw new Error(`${wrote.code}: ${wrote.message}`)
+        return { workspaceName: view.name, mode: view.mode, briefingCount }
+      }),
+    },
   })
   // Companion agent: a workspace-bound background helper that answers a
   // structured question. Exercises the SDK's CompanionAgentsService surface.
-  host.registerIpc('weather-deck:ask-guide', async (_event, workspaceRoot: unknown) => {
-    if (typeof workspaceRoot !== 'string' || workspaceRoot.trim().length === 0) {
-      throw new Error('weather-deck:ask-guide requires a workspace root.')
-    }
-    const companions = getCompanionAgentsService(host)
-    const guide = companions.attach({
-      workspaceId: 'weather-deck',
-      agentId: 'forecast-guide',
-      name: 'Forecast Guide',
-      workspaceRoot,
-      systemPrompt: 'You summarize the forecast as strict JSON.',
-    })
-    guide.onStatus((status) => void status)
-    const summary = await guide.runStructured<{ outlook: string }>({
-      prompt: 'Summarize today as {"outlook": string}.',
-      retries: 1,
-      // The default, said out loud: the guide answers from the prompt alone.
-      tools: 'none',
-      validate: (raw) => {
-        const record = raw as { outlook?: unknown }
-        return typeof record.outlook === 'string'
-          ? { ok: true, value: { outlook: record.outlook } }
-          : { ok: false, errors: ['outlook must be a string'] }
-      },
-    })
-    guide.dispose()
-    return summary
+  host.registerMethods({
+    'askGuide': {
+      access: 'operate',
+      params: anything,
+      handler: answering(async (workspaceRoot: unknown) => {
+        if (typeof workspaceRoot !== 'string' || workspaceRoot.trim().length === 0) {
+          throw new Error('weather-deck:ask-guide requires a workspace root.')
+        }
+        const companions = getCompanionAgentsService(host)
+        const guide = companions.attach({
+          workspaceId: 'weather-deck',
+          agentId: 'forecast-guide',
+          name: 'Forecast Guide',
+          workspaceRoot,
+          systemPrompt: 'You summarize the forecast as strict JSON.',
+        })
+        guide.onStatus((status) => void status)
+        const summary = await guide.runStructured<{ outlook: string }>({
+          prompt: 'Summarize today as {"outlook": string}.',
+          retries: 1,
+          // The default, said out loud: the guide answers from the prompt alone.
+          tools: 'none',
+          validate: (raw) => {
+            const record = raw as { outlook?: unknown }
+            return typeof record.outlook === 'string'
+              ? { ok: true, value: { outlook: record.outlook } }
+              : { ok: false, errors: ['outlook must be a string'] }
+          },
+        })
+        guide.dispose()
+        return summary
+      }),
+    },
   })
-  // The module-owned event channel: the subscribe verb the
-  // request/response bridge does not have. `emit` stamps this module's identity,
+  // The module-owned event stream: the subscribe verb the
+  // declared methods do not have. `emit` stamps this module's identity,
   // so only this module's renderer subscribers see it. Nothing is replayed, so
-  // the channel below stays the way a late panel reads the current value —
+  // the `readOutlook` method stays the way a late panel reads the current value —
   // the event only says "read it again".
-  host.registerIpc('weather-deck:refresh-outlook', async (_event, city: unknown) => {
-    const name = typeof city === 'string' ? city.trim() : ''
-    if (!name) throw new Error('weather-deck:refresh-outlook requires a city name.')
-    const outlook = { city: name, summary: 'clear', refreshedAt: 0 }
-    host.emit('outlook-refreshed', outlook)
-    return outlook
+  host.registerMethods({
+    'refreshOutlook': {
+      access: 'operate',
+      params: anything,
+      handler: answering(async (city: unknown) => {
+        const name = typeof city === 'string' ? city.trim() : ''
+        if (!name) throw new Error('weather-deck:refresh-outlook requires a city name.')
+        const outlook = { city: name, summary: 'clear', refreshedAt: 0 }
+        host.emit('outlook-refreshed', outlook)
+        return outlook
+      }),
+    },
   })
-  host.registerIpc('weather-deck:read-outlook', async () => ({ city: 'Dublin', summary: 'clear', refreshedAt: 0 }))
+  host.registerMethods({ 'readOutlook': { access: 'read', params: anything, handler: answering(async () => ({ city: 'Dublin', summary: 'clear', refreshedAt: 0 })) } })
   // A chat conversation this module starts and drives: create, follow its
   // events, send a steer, read the transcript back. Only this module's own
   // conversations are reachable; the host says whether chats exist at all.
-  host.registerIpc('weather-deck:ask-forecaster', async (_event, workspaceId: unknown) => {
-    if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
-      throw new Error('weather-deck:ask-forecaster requires a workspace id.')
-    }
-    if (!host.supports('conversations')) return { ok: false as const, reason: 'chats are unavailable' }
-    const conversations = getConversationService(host)
-    const created = await conversations.create({
-      workspaceId,
-      prompt: "Summarize today's forecast for the workspace city.",
-      skills: ['weather-deck-forecast'],
-      name: 'Forecaster',
-    })
-    if (!created.ok) return { ok: false as const, reason: `${created.code}: ${created.message}` }
-    const ref = { workspaceId, agentId: created.conversation.agentId }
-    const seen: ModuleConversationEvent[] = []
-    const off = conversations.subscribe(ref, (event) => {
-      seen.push(event)
-      if (event.type === 'approval_requested' && typeof event.payload?.requestId === 'string') {
-        void conversations.respondToApproval(ref, { requestId: event.payload.requestId, approved: false })
-      }
-    })
-    const steered = await conversations.send(ref, { message: 'Keep it to one line.', steer: true })
-    if (!steered.ok && steered.code === 'not_owned') throw new Error(steered.message)
-    const transcript = await conversations.transcript(ref)
-    off()
-    return {
-      ok: true as const,
-      sessionId: created.conversation.sessionId,
-      events: transcript.ok ? transcript.events.length : seen.length,
-      open: conversations.list({ workspaceId }).length,
-    }
+  host.registerMethods({
+    'askForecaster': {
+      access: 'operate',
+      params: anything,
+      handler: answering(async (workspaceId: unknown) => {
+        if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+          throw new Error('weather-deck:ask-forecaster requires a workspace id.')
+        }
+        if (!host.supports('conversations')) return { ok: false as const, reason: 'chats are unavailable' }
+        const conversations = getConversationService(host)
+        const created = await conversations.create({
+          workspaceId,
+          prompt: "Summarize today's forecast for the workspace city.",
+          skills: ['weather-deck-forecast'],
+          name: 'Forecaster',
+        })
+        if (!created.ok) return { ok: false as const, reason: `${created.code}: ${created.message}` }
+        const ref = { workspaceId, agentId: created.conversation.agentId }
+        const seen: ModuleConversationEvent[] = []
+        const off = conversations.subscribe(ref, (event) => {
+          seen.push(event)
+          if (event.type === 'approval_requested' && typeof event.payload?.requestId === 'string') {
+            void conversations.respondToApproval(ref, { requestId: event.payload.requestId, approved: false })
+          }
+        })
+        const steered = await conversations.send(ref, { message: 'Keep it to one line.', steer: true })
+        if (!steered.ok && steered.code === 'not_owned') throw new Error(steered.message)
+        const transcript = await conversations.transcript(ref)
+        off()
+        return {
+          ok: true as const,
+          sessionId: created.conversation.sessionId,
+          events: transcript.ok ? transcript.events.length : seen.length,
+          open: conversations.list({ workspaceId }).length,
+        }
+      }),
+    },
   })
   // Brokered credentials: the forecast API key goes to the one origin it was
   // stored for, and the GitHub call rides the user's sign-in. Neither the key
   // nor the token is ever in this module's hands.
-  host.registerIpc('weather-deck:save-api-key', async (_event, key: unknown) => {
-    if (typeof key !== 'string' || key.length === 0) throw new Error('weather-deck:save-api-key requires a key.')
-    return getSecretsService(host).set('forecast-api', key, { allowedOrigins: ['https://api.example.com'] })
+  host.registerMethods({
+    'saveApiKey': {
+      access: 'operate',
+      params: anything,
+      handler: answering(async (key: unknown) => {
+        if (typeof key !== 'string' || key.length === 0) throw new Error('weather-deck:save-api-key requires a key.')
+        return getSecretsService(host).set('forecast-api', key, { allowedOrigins: ['https://api.example.com'] })
+      }),
+    },
   })
-  host.registerIpc('weather-deck:fetch-forecast', async (_event, city: unknown) => {
-    const secrets = getSecretsService(host)
-    if (!(await secrets.has('forecast-api'))) return { ok: false as const, code: 'not_set' as const }
-    const response = await secrets.fetchWithSecret(
-      'forecast-api',
-      `https://api.example.com/forecast?city=${encodeURIComponent(String(city))}`,
-      { placement: { header: 'Authorization', scheme: 'Bearer' }, timeoutMs: 10_000 },
-    )
-    return response.ok ? { ok: true as const, body: response.body } : { ok: false as const, code: response.code }
+  host.registerMethods({
+    'fetchForecast': {
+      access: 'read',
+      params: anything,
+      handler: answering(async (city: unknown) => {
+        const secrets = getSecretsService(host)
+        if (!(await secrets.has('forecast-api'))) return { ok: false as const, code: 'not_set' as const }
+        const response = await secrets.fetchWithSecret(
+          'forecast-api',
+          `https://api.example.com/forecast?city=${encodeURIComponent(String(city))}`,
+          { placement: { header: 'Authorization', scheme: 'Bearer' }, timeoutMs: 10_000 },
+        )
+        return response.ok ? { ok: true as const, body: response.body } : { ok: false as const, code: response.code }
+      }),
+    },
   })
-  host.registerIpc('weather-deck:forecast-issues', async () => {
-    const github = getGitHubService(host)
-    const status = await github.status()
-    if (!status.signedIn) return 0
-    const issues = await github.request({ route: '/repos/acme/weather/issues', params: { state: 'open' } })
-    return issues.ok && Array.isArray(issues.data) ? issues.data.length : 0
+  host.registerMethods({
+    'forecastIssues': {
+      access: 'read',
+      params: anything,
+      handler: answering(async () => {
+        const github = getGitHubService(host)
+        const status = await github.status()
+        if (!status.signedIn) return 0
+        const issues = await github.request({ route: '/repos/acme/weather/issues', params: { state: 'open' } })
+        return issues.ok && Array.isArray(issues.data) ? issues.data.length : 0
+      }),
+    },
   })
   host.registerSidecar({ id: 'weather-deck-poller', kind: 'process', description: 'Background forecast poller.' })
   host.onStartup(() => {
@@ -343,16 +417,16 @@ function createForecastPanel(host: Parameters<RegisterRenderer>[0]): WorkspacePa
         setOutlook(typeof next === 'string' ? next : null)
       })
       // Events are signals, not state: read the durable value through the
-      // module's own channel first, then let the event say "read it again".
+      // module's own method first, then let the event say "read it again".
       // A subscriber that assumed replay would render nothing until the next
       // refresh happened to fire.
       void host
-        .invoke('weather-deck:read-outlook')
+        .methods()
+        .read('readOutlook', {})
         .then((current) => {
-          const record = current as { summary?: unknown }
+          const record = (current.ok ? current.result : {}) as { summary?: unknown }
           if (typeof record.summary === 'string') setOutlook(record.summary)
         })
-        .catch(() => undefined)
       const offEvent = host.subscribe('outlook-refreshed', (payload) => {
         const record = payload as { summary?: unknown }
         if (typeof record.summary !== 'string') return
@@ -368,7 +442,7 @@ function createForecastPanel(host: Parameters<RegisterRenderer>[0]): WorkspacePa
       }
     }, [])
     useEffect(() => {
-      // Renderer half of the cross-surface briefing: bridge → main channel
+      // Renderer half of the cross-surface briefing: a declared method
       // (workspace context + storage round-trip) → per-module workspace
       // state write-back. The stored entry is read first so the briefing
       // composes with — never clobbers — whatever else the module keeps on
@@ -376,10 +450,13 @@ function createForecastPanel(host: Parameters<RegisterRenderer>[0]): WorkspacePa
       let disposed = false
       const brief = () => {
         void host
-          .invoke('weather-deck:workspace-briefing', workspaceId)
+          .methods()
+          .operate('workspaceBriefing', workspaceId)
           .then((briefing) => {
-            if (disposed) return
-            const record = briefing as { briefingCount?: unknown }
+            // A refusal or a not-yet-resolvable workspace keeps the last
+            // rendered count; the palette command retries on demand.
+            if (disposed || !briefing.ok) return
+            const record = briefing.result as { briefingCount?: unknown }
             const count = typeof record.briefingCount === 'number' ? record.briefingCount : 0
             const prior = host.getWorkspaceModuleState<{ lastCity?: string; briefingCount?: number }>(workspaceId)
             // A false write-back (unknown workspace, early boot) means "not
@@ -389,9 +466,6 @@ function createForecastPanel(host: Parameters<RegisterRenderer>[0]): WorkspacePa
             host.setWorkspaceModuleState(workspaceId, { ...prior, briefingCount: count })
             setBriefingCount(count)
           })
-          // A refused bridge invoke or a not-yet-resolvable workspace keeps
-          // the last rendered count; the palette command retries on demand.
-          .catch(() => undefined)
       }
       brief()
       const onPanelCommand = (event: Event) => {
@@ -637,11 +711,10 @@ const openForecastNotes: FileAction = {
   run: () => undefined,
 }
 
-// The command round-trips to entry.main through the bridge: registerIpc set
-// the channel up, host.invoke calls it from renderer code. The palette fires
-// command run() without awaiting it, so a refusal (channel never registered,
-// permission missing) must be handled here — an unhandled rejection surfaces
-// nowhere the user can see.
+// The command round-trips to entry.main through a declared method:
+// registerMethods declared it, host.methods() calls it from renderer code. A
+// call never throws: a refusal (no such method, the module switched off) is an
+// answer, handled here, since the palette fires run() without awaiting it.
 function quickCheck(host: Parameters<RegisterRenderer>[0]): ModuleCommandDefinition {
   return {
     id: 'quick-check',
@@ -649,11 +722,8 @@ function quickCheck(host: Parameters<RegisterRenderer>[0]): ModuleCommandDefinit
     category: 'Weather Deck',
     scopes: ['global'],
     run: async () => {
-      try {
-        await host.invoke('weather-deck:forecast', 'Dublin')
-      } catch (error) {
-        console.error('[weather-deck] forecast check failed:', error)
-      }
+      const answer = await host.methods().read('forecast', 'Dublin')
+      if (!answer.ok) console.error('[weather-deck] forecast check failed:', answer.message)
     },
   }
 }

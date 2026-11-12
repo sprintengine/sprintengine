@@ -69,7 +69,14 @@ const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string
   {
     scope: 'modules:read',
     title: 'Hear extensions',
-    description: 'Hear what this machine’s extensions say: their events and the notifications they raise.',
+    description:
+      'Hear what this machine’s extensions say, their events and the notifications they raise, and ask them what they declare as reading only.',
+  },
+  {
+    scope: 'modules:operate',
+    title: 'Use extensions',
+    description:
+      'Ask this machine’s extensions to do what they declare as changing something. What that is depends on each extension and the permissions you trusted it with.',
   },
 ]
 

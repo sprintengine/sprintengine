@@ -41,7 +41,7 @@ import type {
 import type { ScheduledAgentsModuleRegistry as AppScheduledAgentsModuleRegistry } from '../../../src/main/scheduled-agents/service'
 import type { CapabilityPermission as AppCapabilityPermission } from '../../../src/shared/modules/permissions'
 import { KNOWN_CAPABILITY_PERMISSIONS as APP_KNOWN_CAPABILITY_PERMISSIONS } from '../../../src/shared/modules/permissions'
-import type { ModuleBridgeRefusalCode as AppModuleBridgeRefusalCode } from '../../../src/shared/modules/bridge'
+import { isStudioModuleMethodName } from '../../studio-protocol/src/modules'
 import type { ModuleEventEnvelope as AppModuleEventEnvelope } from '../../../src/shared/modules/events'
 import type { FileDropPayload as AppFileDropPayload } from '../../../src/renderer/src/utils/terminalDrop'
 import { SPRINTENGINE_FILE_DROP_MIME as APP_FILE_DROP_MIME } from '../../../src/renderer/src/utils/terminalDrop'
@@ -212,7 +212,6 @@ import type {
   ModuleSkillStatusResult as SdkModuleSkillStatusResult,
   ModuleSkillTargetPolicy as SdkModuleSkillTargetPolicy,
   McpToolResult as SdkMcpToolResult,
-  ModuleBridgeRefusalCode as SdkModuleBridgeRefusalCode,
   ModuleEventEnvelope as SdkModuleEventEnvelope,
   ModuleCommandContext as SdkModuleCommandContext,
   ModuleCommandDefinition as SdkModuleCommandDefinition,
@@ -318,6 +317,10 @@ import type * as appNotifications from '../../../src/shared/modules/notification
 import type { RowBadge as AppRowBadge } from '../../../src/renderer/src/components/workspace/SidebarNavButton'
 // The published service table and the testing kit (see the end of this file).
 import { MODULE_SERVICE_REQUIREMENTS as SDK_MODULE_SERVICE_REQUIREMENTS } from '../src/services'
+import {
+  MODULE_METHOD_MAX_CHARS as SDK_MODULE_METHOD_MAX_CHARS,
+  isModuleMethodName as sdkIsModuleMethodName,
+} from '../src/methods'
 
 type Extends<A, B> = [A] extends [B] ? true : false
 // Type identity via the generic-function-identity trick: detects added/removed
@@ -337,7 +340,8 @@ expectType<IsExact<AppModuleFileDigests, SdkModuleFileDigests>>()
 expectType<IsExact<AppModuleSource, SdkModuleSource>>()
 expectType<IsExact<AppModuleTrustStatus, SdkModuleTrustStatus>>()
 expectType<IsExact<AppCapabilityPermission, SdkCapabilityPermission>>()
-expectType<IsExact<AppModuleBridgeRefusalCode, SdkModuleBridgeRefusalCode>>()
+// Declared methods' types are the SDK's own (src/methods.ts), imported by the
+// app; the host members that take and give them are held equal below.
 expectType<IsExact<AppFileDropPayload, SdkFileDropPayload>>()
 expectType<IsExact<AppModuleNotification, SdkModuleNotification>>()
 expectType<IsExact<AppModuleNotifyInput, SdkModuleNotifyInput>>()
@@ -416,6 +420,8 @@ expectType<IsExact<AppMcpToolRegistration, SdkMcpToolRegistration>>()
 expectType<IsExact<AppMcpConnectionMetadata, SdkMcpConnectionMetadata>>()
 expectType<IsExact<AppMcpConnectionContext, SdkMcpConnectionContext>>()
 expectType<IsExact<AppMainHost['registerMcpTools'], SdkMainHost['registerMcpTools']>>()
+expectType<IsExact<AppMainHost['registerMethods'], SdkMainHost['registerMethods']>>()
+expectType<IsExact<AppRendererHost['methods'], SdkRendererHost['methods']>>()
 
 // Module-owned skills (WP-D): the registration and result shapes mirror
 // exactly — an optional-property drift here would silently change what a
@@ -800,6 +806,10 @@ assert.deepEqual(
 )
 assert.equal(SDK_FILE_DROP_MIME, APP_FILE_DROP_MIME, 'SPRINTENGINE_FILE_DROP_MIME drifted between SDK and app')
 assert.equal(SDK_HOST_API_VERSION, APP_HOST_API_VERSION, 'HOST_API_VERSION drifted between SDK and app')
+// A method name the SDK lets a module declare is one the protocol carries, and no other.
+assert.equal(SDK_MODULE_METHOD_MAX_CHARS, 100)
+for (const name of ['list', 'cards.add', 'v2-get', 'List', '1x', '.x', 'a:b', 'a b', '', `a${'b'.repeat(99)}`, `a${'b'.repeat(100)}`])
+  assert.equal(sdkIsModuleMethodName(name), isStudioModuleMethodName(name), `method name "${name}" drifted between SDK and protocol`)
 assert.equal(
   SDK_HOST_API_MIN_SUPPORTED,
   APP_HOST_API_MIN_SUPPORTED,

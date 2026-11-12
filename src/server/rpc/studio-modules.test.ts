@@ -181,7 +181,10 @@ function hubWithBoard() {
     typeof (value as { title?: unknown } | undefined)?.title === 'string'
       ? { ok: true, params: { title: (value as { title: string }).title } }
       : { ok: false, message: '"title" is the card\'s title.' }
-  kernel.hostFor('acme.board').registerMethods({
+  kernel.hostFor('acme.board').registerMethods<{
+    'cards.list': { access: 'read'; params: Record<string, never>; result: string[] }
+    'cards.add': { access: 'operate'; params: { title: string }; result: { count: number }; errors: 'duplicate' }
+  }>({
     'cards.list': {
       access: 'read',
       params: () => ({ ok: true, params: {} }),

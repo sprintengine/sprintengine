@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type {
-  ModuleConversationResult,
   ModuleConversationSummary,
   ModuleWorkspaceView,
   RendererHost,
@@ -17,7 +16,7 @@ import {
 } from '@sprintengine/module-sdk/ui'
 import { GlobalSurfaceShell, useSurfaceBackNav } from '@sprintengine/module-sdk/surface'
 
-import { CHANGED_TOPIC, CHANNELS } from './protocol'
+import { CHANGED_TOPIC, type CompanionMethods } from './protocol'
 
 const STATUS_WORDS: Record<ModuleConversationSummary['status'], string> = {
   starting: 'Starting',
@@ -30,6 +29,7 @@ const STATUS_WORDS: Record<ModuleConversationSummary['status'], string> = {
 }
 
 export function createCompanion(host: RendererHost) {
+  const methods = host.methods<CompanionMethods>()
   return function Companion() {
     const { onBack, canGoBack } = useSurfaceBackNav()
     const [workspaces, setWorkspaces] = useState<ModuleWorkspaceView[]>([])
@@ -39,11 +39,9 @@ export function createCompanion(host: RendererHost) {
     const [busy, setBusy] = useState(false)
 
     const reload = useCallback(async () => {
-      try {
-        setChats((await host.invoke(CHANNELS.list)) as ModuleConversationSummary[])
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause))
-      }
+      const listed = await methods.read('list', {})
+      if (listed.ok) setChats(listed.result)
+      else setError(listed.message)
     }, [])
 
     useEffect(() => host.watchWorkspaces(setWorkspaces), [])
@@ -58,12 +56,10 @@ export function createCompanion(host: RendererHost) {
       if (!target) return
       setBusy(true)
       setError(null)
-      const result = (await host.invoke(CHANNELS.start, { workspaceId: target })) as ModuleConversationResult<{
-        conversation: ModuleConversationSummary
-      }>
+      const result = await methods.operate('start', { workspaceId: target })
       setBusy(false)
       if (!result.ok) setError(result.message)
-      else host.focusTab({ workspaceId: target, kind: 'chat', id: result.conversation.agentId })
+      else host.focusTab({ workspaceId: target, kind: 'chat', id: result.result.conversation.agentId })
     }
 
     // openChat puts the prompt in a new chat's composer as a draft: the person

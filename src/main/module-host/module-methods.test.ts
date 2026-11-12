@@ -46,7 +46,9 @@ const call = (overrides: Partial<ModuleMethodCallRequest>): ModuleMethodCallRequ
 test('a read method answers through its validator and handler, told who called', async () => {
   const k = kernel()
   const heard: unknown[] = []
-  k.hostFor('deck').registerMethods({
+  k.hostFor('deck').registerMethods<{
+    forecast: { access: 'read'; params: { city: string }; result: { city: string; sky: string } }
+  }>({
     forecast: {
       access: 'read',
       params: city,

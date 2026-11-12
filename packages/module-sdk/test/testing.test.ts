@@ -107,25 +107,66 @@ describe('createFakeMainHost', () => {
     assert.equal(fake.host.requireService({ key: 'notes.index' }), own)
   })
 
-  test('the bridge reaches own channels only, with module:bridge, and clones like IPC', async () => {
+  test('declared methods need module:bridge, are called by access, and are refused as the host refuses', async () => {
+    type Notes = {
+      echo: { access: 'read'; params: { text: string }; result: { got: string } }
+      save: { access: 'operate'; params: { text: string }; result: { count: number }; errors: 'empty' }
+    }
     const fake = createFakeMainHost({ moduleId: 'notes', permissions: [] })
-    fake.host.registerIpc('notes:echo', (_event, payload) => ({ got: payload }))
-    await assert.rejects(fake.ipc.invoke('other:echo'), /may only invoke its own channels/)
-    await assert.rejects(
-      fake.ipc.invoke('notes:missing'),
-      (error: Error & { code?: string }) => error.code === 'unknown_channel',
-    )
-    await assert.rejects(
-      fake.ipc.invoke('notes:echo', 1),
-      (error: Error & { code?: string }) => error.code === 'permission_missing' && /module:bridge/.test(error.message),
-    )
-    fake.permissions.add('module:bridge')
-    assert.deepEqual(await fake.ipc.invoke('notes:echo', { a: 1 }), { got: { a: 1 } })
-    fake.permissions.delete('module:bridge')
+    const text = (value: unknown) =>
+      typeof (value as { text?: unknown } | undefined)?.text === 'string'
+        ? { ok: true as const, params: { text: (value as { text: string }).text } }
+        : { ok: false as const, message: '"text" is the note.' }
+    let saved = 0
+    const contexts: unknown[] = []
+    const methods = {
+      echo: { access: 'read' as const, params: text, handler: (params: { text: string }) => ({ ok: true as const, result: { got: params.text } }) },
+      save: {
+        access: 'operate' as const,
+        params: text,
+        handler: (params: { text: string }, context: unknown) => {
+          contexts.push(context)
+          if (!params.text) return { ok: false as const, code: 'empty' as const, message: 'Nothing to save.' }
+          return { ok: true as const, result: { count: (saved += 1) } }
+        },
+      },
+    }
+    assert.throws(() => fake.host.registerMethods<Notes>(methods), /module:bridge/)
     fake.permissions.add('ipc:invoke')
-    assert.deepEqual(await fake.ipc.invoke('notes:echo', 2), { got: 2 }, 'the broad legacy scope still opens it')
-    fake.host.registerIpc('notes:fn', () => ({ run() {} }))
-    await assert.rejects(fake.ipc.invoke('notes:fn'), /could not be cloned/, 'a result IPC cannot carry fails')
+    fake.host.registerMethods<Notes>(methods)
+    assert.throws(() => fake.host.registerMethods<Notes>(methods), /already declares "echo"/)
+    assert.throws(
+      () => fake.host.registerMethods({ 'notes:x': methods.echo } as never),
+      /"notes:x" is not a method name/,
+    )
+    assert.deepEqual(fake.methods.declared(), [
+      { name: 'echo', access: 'read' },
+      { name: 'save', access: 'operate' },
+    ])
+
+    assert.deepEqual(await fake.methods.read('echo', { text: 'hi' }), { ok: true, result: { got: 'hi' } })
+    const asRead = await fake.methods.read('save', { text: 'x' })
+    assert.equal(!asRead.ok && asRead.code, 'module_method_unknown')
+    const missing = await fake.methods.read('nothing', {})
+    assert.equal(!missing.ok && missing.code, 'module_method_unknown')
+    const refused = await fake.methods.read('echo', { words: 'hi' })
+    assert.deepEqual(refused, { ok: false, code: 'invalid_params', message: '"text" is the note.' })
+
+    assert.deepEqual(await fake.methods.operate('save', { text: '' }), {
+      ok: false,
+      code: 'empty',
+      message: 'Nothing to save.',
+    })
+    const first = await fake.methods.operate('save', { text: 'a' }, { commandId: 'c1' })
+    const again = await fake.methods.operate('save', { text: 'a' }, { commandId: 'c1' })
+    assert.deepEqual(again, first, 'a retry under the same id is answered with the first answer')
+    assert.equal(saved, 1)
+    assert.deepEqual(contexts.at(-1), { clientId: 'owner', commandId: 'owner:c1' })
+
+    fake.host.registerMethods({
+      fn: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: { run() {} } }) },
+    })
+    await assert.rejects(fake.methods.read('fn', {}), /not JSON/, 'a result the protocol cannot carry fails')
   })
 
   test('MCP tools need mcp:tools, and a call reaches the handler with agent metadata', async () => {
@@ -353,9 +394,11 @@ describe('createFakeMainHost', () => {
 })
 
 describe('createFakeRendererHost', () => {
-  test('records registrations, renders a door with the kit, and bridges to the main fake', async () => {
+  test('records registrations, renders a door with the kit, and calls the main fake’s methods', async () => {
     const main = createFakeMainHost({ moduleId: 'notes', permissions: ['module:bridge', 'conversation:operate'] })
-    main.host.registerIpc('notes:list', () => ['First note'])
+    main.host.registerMethods({
+      list: { access: 'read', params: () => ({ ok: true, params: {} }), handler: () => ({ ok: true, result: ['First note'] }) },
+    })
     const renderer = createFakeRendererHost({ main })
     const Door = () =>
       createElement(
@@ -384,7 +427,7 @@ describe('createFakeRendererHost', () => {
     await renderer.runCommand('notes.open')
     assert.deepEqual(renderer.openedSurfaces, [{ kind: 'global', id: 'notes' }])
 
-    assert.deepEqual(await renderer.host.invoke('notes:list'), ['First note'])
+    assert.deepEqual(await renderer.host.methods().read('list', {}), { ok: true, result: ['First note'] })
     const heard: unknown[] = []
     renderer.host.subscribe('changed', (payload) => heard.push(payload))
     main.host.emit('changed', { id: 2 })
