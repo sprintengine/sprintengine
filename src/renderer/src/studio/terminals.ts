@@ -39,6 +39,20 @@ import { watchWindowStudio, windowStudioClient, windowStudioState } from './wind
 
 const RETRY_MS = [250, 1_000, 2_000, 5_000]
 
+// A stream Studio refused for what the grant or the Studio is (a browser tab
+// holds no terminal scope; an owner's stream; a Studio that serves none) is
+// not asked again on a timer, which would only be refused again: the next
+// time the window's connection opens, it is (the grant may have changed).
+const REFUSED_FOR_GOOD = new Set([
+  'scope_required',
+  'owner_required',
+  'permission_required',
+  'local_only',
+  'unavailable',
+])
+const refusedForGood = (error?: { code?: string }): boolean =>
+  error?.code !== undefined && REFUSED_FOR_GOOD.has(error.code)
+
 type Api = Parameters<typeof windowStudioClient>[0]
 
 function windowApi(): Api | null {
@@ -188,11 +202,11 @@ function subscribeOn(follow: Follow, client: StudioClient): void {
       onPayload: (event) => dispatch(follow, event),
       // Ended for good (refused, or the client closed): the next client,
       // or a later try, takes over. A drop the client resumes is no end.
-      onEnd: () => {
+      onEnd: (error) => {
         if (follow.stop !== stop) return
         follow.stop = null
         follow.client = null
-        retryBind(follow)
+        if (!refusedForGood(error)) retryBind(follow)
       },
     },
   )
@@ -500,11 +514,11 @@ function followPush(
             {},
             {
               onPayload,
-              onEnd: () => {
+              onEnd: (error) => {
                 if (stop !== own) return
                 stop = null
                 client = null
-                later()
+                if (!refusedForGood(error)) later()
               },
             },
           )

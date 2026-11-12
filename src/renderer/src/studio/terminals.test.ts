@@ -7,6 +7,7 @@ import { STUDIO_TERMINAL_MAX_WRITE_UNITS } from '../../../../packages/studio-pro
 import { createStudioRpcServer, type StudioRpcServer } from '../../../server/rpc/studio-rpc-server'
 import { createFakeAuthenticator, createFakeBackend } from '../../../server/rpc/studio-rpc.test-helper'
 import { createStudioWindowListener } from '../../../server/rpc/studio-window-listener'
+import type { StudioGrant } from '../../../../packages/studio-protocol/src/public'
 import { createStudioTerminals } from '../../../server/terminals/studio-terminals'
 import {
   createFakeTerminalRuntime,
@@ -39,17 +40,28 @@ afterEach(async () => {
   delete (globalThis as { window?: unknown }).window
 })
 
-function socketFromWindow(): StudioWebSocketConstructor {
+function socketFromWindow(sent?: string[]): StudioWebSocketConstructor {
   const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
   return class {
     constructor(url: string) {
-      return new NodeWebSocket(url, { headers: { origin: 'file://' } }) as never
+      const socket = new NodeWebSocket(url, { headers: { origin: 'file://' } }) as { send(data: string): void }
+      if (sent) {
+        const send = socket.send.bind(socket)
+        socket.send = (data: string) => {
+          sent.push(String(data))
+          send(data)
+        }
+      }
+      return socket as never
     }
   } as unknown as StudioWebSocketConstructor
 }
 
 /** A window of its own over a Studio whose server can be restarted, as a crash and relaunch would. */
-async function windowOver(runtime: FakeTerminalRuntime, options: { failFirstTickets?: number } = {}) {
+async function windowOver(
+  runtime: FakeTerminalRuntime,
+  options: { failFirstTickets?: number; withoutTerminalScopes?: boolean; sent?: string[] } = {},
+) {
   const terminals = createStudioTerminals({ runtime })
   const serve = (): StudioRpcServer =>
     createStudioRpcServer({
@@ -61,8 +73,31 @@ async function windowOver(runtime: FakeTerminalRuntime, options: { failFirstTick
       terminals,
     })
   let server = serve()
+  // A connection whose grant holds no terminal scope, as a browser tab's does.
+  const narrow = (grant: StudioGrant): StudioGrant => ({
+    ...grant,
+    owner: false,
+    scopes: grant.scopes.filter((scope) => !scope.startsWith('terminal:')),
+  })
   const listener = createStudioWindowListener({
-    attach: (stream, authenticator, windowKey) => server.attach(stream, { authenticator, ownWindow: true, windowKey }),
+    attach: (stream, authenticator, windowKey) =>
+      options.withoutTerminalScopes
+        ? server.attach(stream, {
+            authenticator: {
+              ...authenticator,
+              authenticate: (auth, client) => {
+                const outcome = authenticator.authenticate(auth, client)
+                return outcome.ok ? { ...outcome, grant: narrow(outcome.grant) } : outcome
+              },
+              grantFor: (clientId) => {
+                const grant = authenticator.grantFor(clientId)
+                return grant ? narrow(grant) : null
+              },
+            },
+            ownWindow: false,
+            windowKey,
+          })
+        : server.attach(stream, { authenticator, ownWindow: true, windowKey }),
   })
   let failing = options.failFirstTickets ?? 0
   const api = {
@@ -74,7 +109,7 @@ async function windowOver(runtime: FakeTerminalRuntime, options: { failFirstTick
       return listener.ticket({ windowKey: 'window-1-1', origin: 'file://' })
     },
   }
-  configureWindowStudio(api, { WebSocket: socketFromWindow() })
+  configureWindowStudio(api, { WebSocket: socketFromWindow(options.sent) })
   ;(globalThis as { window?: unknown }).window = { api }
   cleanups.push(async () => {
     const client = await windowStudioClient(api).catch(() => null)
@@ -178,4 +213,20 @@ test('the sessions stream starts, and the list is read, even when the first conn
   )
   runtime.delta({ upserts: [], removed: ['term-0'] })
   await until(() => deltas.length === 1, 'and it hears what changes')
+})
+
+test('a stream the grant does not reach is asked for once per connection, not again on a timer', async () => {
+  const sent: string[] = []
+  await windowOver(createFakeTerminalRuntime(), { withoutTerminalScopes: true, sent })
+  const stop = onTerminalSessionsDelta(() => undefined)
+  cleanups.push(stop)
+  const subscribes = () => sent.filter((frame) => frame.includes('"t":"sub"') && frame.includes('terminal.sessions'))
+  await until(() => subscribes().length >= 1, 'asked once')
+  // Retrying on a timer would ask again within 250 ms, 1 s and 2 s.
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  assert.equal(
+    subscribes().length,
+    1,
+    'a refusal for what the grant is is not asked again until the connection opens anew',
+  )
 })
