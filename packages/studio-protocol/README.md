@@ -106,14 +106,14 @@ The `welcome`'s `grant` is what the connection may do:
 - `modules:read` — hear what this Studio's modules say: the `module.events`
   and `module.notifications` streams, under the `modules` capability. Not an
   owner's only; a pairing holds it when it was given it.
-- `terminal:read`, `terminal:operate` — see the terminals on this machine
-  (`terminal.list`, `.status`, the `terminal.sessions` stream), and open and
-  type into them (`terminal.open` and the rest, the `terminal.output` stream),
-  under the `terminals` capability. `terminal:operate` is a shell on the
-  machine and carries `terminal:read`; a browser session holds neither, and a
-  client other than the app's own window is sent sessions without the prompts
-  a person wrote or a launch's MCP settings (and, holding only read, without
-  their folders).
+- No scope reaches the terminals (`terminal.*`, under the `terminals`
+  capability). A terminal is a shell on this machine, so every terminal
+  method and stream is an owner's: the app's own windows and the owner's
+  credential only. A paired device, a local app or a browser, an owner's tab
+  included, is refused them whatever it holds, and a browser is not offered
+  `terminals` or `session-terminal-handoff`. An owner's connection other than
+  the app's own window is sent sessions without the prompts a person wrote or
+  a launch's MCP settings.
 - `owner` — the connection is Studio's own, with every scope and no ceiling.
   A few methods and topics are an owner's only, whatever scopes another grant
   holds, and are refused `owner_required`; each says why in its table entry's

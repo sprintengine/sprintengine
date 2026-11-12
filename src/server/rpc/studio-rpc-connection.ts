@@ -17,7 +17,6 @@ import {
   parseStudioTopicParams,
   studioClientFrameIds,
   authorizeStudioTopic,
-  authorizeStudioMethod,
   projectTerminalSession,
   studioGrantPrincipal,
   studioRefusedGrantName,
@@ -38,6 +37,7 @@ import {
   type StudioTopicPayload,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
+import { BROWSER_NO_TERMINALS, browserCapabilities, refusedToBrowser } from './studio-browser-reach'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
 import {
   CONVERSATION_WIRE_EVENT_BYTES,
@@ -150,6 +150,8 @@ export type StudioRpcConnectionOptions = {
   audited?: boolean
   /** Hold the folders it names to the ones Studio knows: a browser on the tailnet. */
   knownFoldersOnly?: boolean
+  /** A browser's connection, an owner's tab included: never the terminals. */
+  browser?: boolean
   /** The client tools registry, when this Studio serves client tools. */
   tools?: ClientToolRegistry
   /** Files under a workspace's roots: the `files.watch` stream. */
@@ -228,6 +230,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     ownWindow,
     ...(options.audited === undefined ? {} : { audited: options.audited }),
     ...(options.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
+    ...(options.browser ? { browser: true } : {}),
     ...(options.windowKey === undefined ? {} : { windowKey: options.windowKey }),
   }
   // `incompatible`: authenticated, but the client's protocol window does not
@@ -674,6 +677,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     }
     const spec = STUDIO_TOPICS[frame.topic]
     const decision = authorizeStudioTopic(grant, frame.topic)
+    if (decision.ok && refusedToBrowser(spec, options.browser)) {
+      subscriptionFailed(frame.id, 'owner_required', BROWSER_NO_TERMINALS)
+      return
+    }
     if (!decision.ok) {
       if (decision.reason === 'permission_required')
         subscriptionFailed(
@@ -1174,11 +1181,8 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         push('terminal.sessions', id, delta)
         return
       }
-      const grant = liveGrant()
-      if (!grant) return
-      const operate = authorizeStudioMethod(grant, 'terminal.write').ok
       push('terminal.sessions', id, {
-        upserts: delta.upserts.map((session) => projectTerminalSession(session, { operate })),
+        upserts: delta.upserts.map((session) => projectTerminalSession(session)),
         removed: delta.removed,
       })
     })
@@ -1431,6 +1435,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     enqueueLive({
       t: 'welcome',
       ...info,
+      ...(options.browser ? { capabilities: browserCapabilities(info.capabilities) } : {}),
       grant: outcome.grant,
       ...(outcome.pairingToken ? { pairing: { token: outcome.pairingToken } } : {}),
     })
@@ -1492,7 +1497,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       const scope =
         decision.reason === 'permission_required'
           ? studioRefusedGrantName(STUDIO_TOPICS[subscription.topic], decision.permission)
-          : STUDIO_TOPICS[subscription.topic].scope
+          : (STUDIO_TOPICS[subscription.topic].scope ?? 'an owner’s grant')
       dropSubscription(subscription)
       subscriptionFailed(subscription.id, 'scope_required', `This app's grant no longer includes "${scope}".`)
     }

@@ -29,11 +29,9 @@ import {
 import { STUDIO_SCOPES, type StudioScope } from '../src/scopes'
 
 // The check as it stood before permissions, frozen here as the oracle the new
-// one must agree with: a scope covers itself, and operate covers read (for
-// terminals as for conversations, since the terminal scopes arrived).
+// one must agree with: a scope covers itself, and operate covers read.
 function legacyStudioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
-  if (needed === 'terminal:read') return scopes.includes('terminal:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }
 function legacyAllows(
@@ -96,18 +94,14 @@ test('every Studio scope a grant can hold carries only permissions from the clos
     assert.ok(STUDIO_SCOPE_PERMISSIONS[scope].length > 0, scope)
     for (const permission of STUDIO_SCOPE_PERMISSIONS[scope]) assert.equal(isStudioPermission(permission), true, scope)
   }
-  // Nothing a grant made today holds reaches who may reach this machine; a
-  // terminal only through the terminal scopes; this machine's upkeep
+  // Nothing a grant made today holds reaches who may reach this machine, nor
+  // its terminals (an owner's only, by no scope); this machine's upkeep
   // (updating it) and its settings only through the scope that names each.
-  const carried = new Set(STUDIO_SCOPES.flatMap((scope) => STUDIO_SCOPE_PERMISSIONS[scope]))
-  assert.equal(carried.has('access:write' as never), false, 'access:write')
-  for (const scope of STUDIO_SCOPES)
-    assert.equal(
-      STUDIO_SCOPE_PERMISSIONS[scope].some((permission) => permission.startsWith('terminal:')),
-      scope.startsWith('terminal:'),
-      scope,
-    )
-  assert.deepEqual(STUDIO_SCOPE_PERMISSIONS['terminal:operate'], ['terminal:read', 'terminal:operate'])
+  const carried = new Set<string>(STUDIO_SCOPES.flatMap((scope) => STUDIO_SCOPE_PERMISSIONS[scope]))
+  assert.equal(carried.has('access:write'), false, 'access:write')
+  for (const permission of carried) assert.equal(permission.startsWith('terminal:'), false, permission)
+  assert.equal(isStudioPermission('terminal:read'), false)
+  assert.equal(isStudioPermission('terminal:operate'), false)
   for (const named of ['environment:maintain', 'settings:write'] as const)
     for (const scope of STUDIO_SCOPES)
       assert.equal(STUDIO_SCOPE_PERMISSIONS[scope].includes(named), scope === named, `${named} in ${scope}`)

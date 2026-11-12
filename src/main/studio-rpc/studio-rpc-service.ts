@@ -483,6 +483,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
         authenticator: input.authenticator,
         ownWindow: input.ownWindow,
         audited: true,
+        browser: true,
         ...(input.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
       })
       return { connectionId: connection.connectionId }

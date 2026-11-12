@@ -24,11 +24,14 @@ test('every method and topic names its scope and a capability this package defin
     const spec = STUDIO_METHODS[method]
     if (method === 'server.info' || method === 'server.ping' || method === 'update.status')
       assert.equal(spec.scope, null, method)
-    else assert.ok(spec.scope && (STUDIO_SCOPES as readonly string[]).includes(spec.scope), method)
+    // A method no scope reaches (a terminal's) is an owner's, never open to every client.
+    else if (spec.scope === null) assert.ok(spec.owner, method)
+    else assert.ok((STUDIO_SCOPES as readonly string[]).includes(spec.scope), method)
     if (spec.capability) assert.ok((STUDIO_CAPABILITIES as readonly string[]).includes(spec.capability), method)
     assert.equal(isStudioMethod(method), true)
   }
-  for (const [topic, spec] of Object.entries(STUDIO_TOPICS)) assert.ok(STUDIO_SCOPES.includes(spec.scope), topic)
+  for (const [topic, spec] of Object.entries(STUDIO_TOPICS))
+    assert.ok(spec.scope === null ? spec.owner : STUDIO_SCOPES.includes(spec.scope), topic)
   assert.equal(isStudioMethod('constructor'), false)
   assert.equal(isStudioMethod('conversation.compact'), false)
 })

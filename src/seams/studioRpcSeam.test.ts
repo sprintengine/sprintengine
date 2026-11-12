@@ -430,7 +430,7 @@ test('every method the server serves has its call in the SDK, under the same sco
           () => ({ ok: true }),
           (error: StudioError) => ({ ok: false, code: error.code }),
         ),
-      // A terminal's start and end need `terminal:operate`, a scope no app holds unless given.
+      // A terminal's start and end are an owner's: no app's grant reaches them.
       ...Object.fromEntries(
         (['terminal.open', 'terminal.resume'] as const).map((method) => [
           method,

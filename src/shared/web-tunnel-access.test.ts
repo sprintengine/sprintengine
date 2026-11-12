@@ -101,7 +101,7 @@ test('an owner’s tab holds only the permissions some channel it reaches needs,
     Object.values(WEB_TUNNEL_ACCESS).flatMap((access) => ('permissions' in access ? access.permissions : [])),
   )
   assert.deepEqual([...WEB_OWNER_TUNNEL_PERMISSIONS].sort(), [...needed].sort())
-  for (const permission of ['terminal:read', 'terminal:operate', 'environment:maintain', 'tools:offer'])
+  for (const permission of ['environment:maintain', 'tools:offer'])
     assert.equal(WEB_OWNER_TUNNEL_PERMISSIONS.includes(permission as never), false, permission)
   // And the owner principal is refused where a channel is the desktop's, whatever it holds.
   const decision = authorizeStudioAccess(

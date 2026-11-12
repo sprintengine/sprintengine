@@ -29,6 +29,7 @@ import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
 import type { ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
+import { BROWSER_NO_TERMINALS, refusedToBrowser } from './studio-browser-reach'
 import { boundConversationPage } from '../conversation-stream-shaping'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
@@ -1377,19 +1378,15 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         : unserved('localServers.remove'),
 
     // ── Terminals ──────────────────────────────────────────────────────────
-    // A client other than the app's own window is sent sessions projected:
-    // never a prompt a person typed or a launch's MCP secrets, and to a grant
-    // that may only read, not the folders they work in either.
+    // An owner's only, and never a browser's. An owner's connection other
+    // than the app's own window is sent sessions projected: never a prompt a
+    // person typed or a launch's MCP secrets.
 
-    'terminal.list': (_params, { grant, context }) =>
+    'terminal.list': (_params, { context }) =>
       terminal('terminal.list', (terminals) => ({
         sessions: context.ownWindow
           ? terminals.list()
-          : terminals
-              .list()
-              .map((session) =>
-                projectTerminalSession(session, { operate: authorizeStudioMethod(grant, 'terminal.write').ok }),
-              ),
+          : terminals.list().map((session) => projectTerminalSession(session)),
       })),
     'terminal.status': ({ sessionId }, { context }) =>
       terminal('terminal.status', (terminals) => terminals.status(sessionId, caller(context))),
@@ -1491,7 +1488,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       // as the connection refuses it before it ever reaches this router.
       if (!decision.ok && decision.reason === 'unknown_method')
         return refuse('unknown_method', `No method "${method}".`)
-      if (!decision.ok) {
+      if (decision.ok && refusedToBrowser(spec, context.browser))
+        answer = refuse('owner_required', BROWSER_NO_TERMINALS)
+      else if (!decision.ok) {
         answer =
           decision.reason === 'permission_required'
             ? refuse(

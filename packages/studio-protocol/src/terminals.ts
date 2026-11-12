@@ -33,10 +33,10 @@ import type {
 // moved between windows always has. The acknowledgements pace the process, so
 // a flood pauses the pty rather than outgrowing the connection.
 //
-// `terminal:read` lists and asks; `terminal:operate` (which carries read) is a
-// shell on the machine, so nothing finer than the grant itself (a folder, a
-// command) is held back from it. The reaper's machine-wide policy and the
-// prompts a person wrote are an owner's.
+// Every method and stream is an owner's: a terminal is a shell on the
+// machine, so only the app's own windows and the owner's credential reach
+// them. No scope reaches them, and no paired device, local app or browser is
+// given them, whatever it holds.
 
 export type TerminalKind = 'agent' | 'terminal'
 export type TerminalPathStyle = 'posix' | 'windows' | 'wsl'
@@ -470,31 +470,18 @@ export type StudioTerminalsTopicMap = {
 // ── What a client other than the app's own window is sent ───────────────────
 
 /**
- * A session as a client other than the app's own window sees it. The prompt
- * a person typed and a connector launch's MCP settings (their env and headers
- * carry secrets) are left out for every such client; a client that may only
- * read terminals is not told the folders the session works in either.
+ * A session as an owner's connection other than the app's own window (the
+ * owner's credential, used by a script or a tool) sees it: the prompt a person
+ * typed and a connector launch's MCP settings (their env and headers carry
+ * secrets) are left out.
  */
-export function projectTerminalSession<S extends TerminalSessionDeltaEntry>(
-  session: S,
-  access: { operate: boolean },
-): S {
+export function projectTerminalSession<S extends TerminalSessionDeltaEntry>(session: S): S {
   const { lastPrompt: _prompt, ...rest } = session
   const projected = { ...rest } as S
   if (session.agentRecord) {
     const { connectorMcpSettings: _mcp, ...record } = session.agentRecord
     projected.agentRecord = record
   }
-  if (access.operate) return projected
-  delete projected.cwd
-  delete projected.worktreePath
-  delete projected.observedCheckout
-  if (projected.agentRecord) {
-    const { worktreePath: _path, ...record } = projected.agentRecord
-    projected.agentRecord = record
-  }
-  if (projected.agentSession) projected.agentSession = { ...projected.agentSession, workspaceRoot: '' }
-  if (projected.fileChanges) projected.fileChanges = []
   return projected
 }
 
@@ -607,22 +594,26 @@ function withSession<P extends object>(
   }
 }
 
-// The first messages a person wrote for terminal agents are the app's own, as
-// a session's `lastPrompt` is: no other client is handed them.
-const UNDELIVERED_PROMPTS_OWNER = 'It hands over the words a person wrote for a terminal agent.'
+/** Why every terminal method and stream is an owner's. */
+export const STUDIO_TERMINALS_OWNER =
+  'A terminal is a shell on this machine: only Studio’s own windows and the owner’s credential reach it.'
 
-const read = { scope: 'terminal:read', mutation: false, capability: STUDIO_TERMINALS_CAPABILITY } as const
-const operate = { ...read, scope: 'terminal:operate' } as const
+const owners = {
+  scope: null,
+  owner: STUDIO_TERMINALS_OWNER,
+  mutation: false,
+  capability: STUDIO_TERMINALS_CAPABILITY,
+} as const
 // A start or an end is a command: it carries an id, is audited, and is never given up on by a read timeout.
-const command = { ...operate, mutation: true } as const
+const command = { ...owners, mutation: true } as const
 
 export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMap> = {
-  'terminal.list': { ...read, params: studioNoParams },
-  'terminal.status': { ...read, params: parseSessionId },
+  'terminal.list': { ...owners, params: studioNoParams },
+  'terminal.status': { ...owners, params: parseSessionId },
   'terminal.open': { ...command, params: parseOpen },
   'terminal.resume': { ...command, params: parseOpen },
   'terminal.write': {
-    ...operate,
+    ...owners,
     params: withSession((value) => {
       if (typeof value.data !== 'string' || value.data.length > STUDIO_TERMINAL_MAX_WRITE_UNITS)
         return studioParamsRefused(
@@ -636,7 +627,7 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
     }),
   },
   'terminal.ack': {
-    ...operate,
+    ...owners,
     params: withSession((value) =>
       count(value.units, STUDIO_TERMINAL_MAX_ACK_UNITS) && value.units > 0
         ? studioParams({ units: value.units })
@@ -644,7 +635,7 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
     ),
   },
   'terminal.resize': {
-    ...operate,
+    ...owners,
     params: withSession((value) =>
       cells(value.cols) && cells(value.rows)
         ? studioParams({ cols: value.cols, rows: value.rows })
@@ -652,7 +643,7 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
     ),
   },
   'terminal.setVisible': {
-    ...operate,
+    ...owners,
     params: withSession((value) => {
       if (typeof value.visible !== 'boolean') return refuse('"visible" is true or false.')
       if (value.freshPane !== undefined && typeof value.freshPane !== 'boolean')
@@ -660,7 +651,7 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
       return studioParams({ visible: value.visible, ...(value.freshPane === true ? { freshPane: true } : {}) })
     }),
   },
-  'terminal.suspend': { ...operate, params: parseSessionId },
+  'terminal.suspend': { ...owners, params: parseSessionId },
   'terminal.close': {
     ...command,
     params: withSession((value) =>
@@ -670,15 +661,14 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
     ),
   },
   'terminal.setReapExempt': {
-    ...operate,
+    ...owners,
     params: withSession((value) =>
       typeof value.exempt === 'boolean' ? studioParams({ exempt: value.exempt }) : refuse('"exempt" is true or false.'),
     ),
   },
-  'terminal.takeUndeliveredPrompts': { ...operate, owner: UNDELIVERED_PROMPTS_OWNER, params: studioNoParams },
+  'terminal.takeUndeliveredPrompts': { ...owners, params: studioNoParams },
   'terminal.configure': {
-    ...operate,
-    owner: 'It sets the idle policy of every terminal on this machine, not one terminal’s.',
+    ...owners,
     params: (value) => {
       const params: { idleSuspendMs?: number; keepRecentAlive?: number } = {}
       if (value.idleSuspendMs !== undefined) {
@@ -696,21 +686,23 @@ export const STUDIO_TERMINALS_METHODS: StudioMethodTable<StudioTerminalsMethodMa
 
 export const STUDIO_TERMINALS_TOPICS: StudioTopicTable<StudioTerminalsTopicMap> = {
   'terminal.output': {
-    scope: 'terminal:operate',
+    scope: null,
+    owner: STUDIO_TERMINALS_OWNER,
     capability: STUDIO_TERMINALS_CAPABILITY,
     push: true,
     params: parseSessionId,
   },
   'terminal.sessions': {
-    scope: 'terminal:read',
+    scope: null,
+    owner: STUDIO_TERMINALS_OWNER,
     capability: STUDIO_TERMINALS_CAPABILITY,
     push: true,
     params: studioNoParams,
   },
   'terminal.promptUndelivered': {
-    scope: 'terminal:operate',
+    scope: null,
+    owner: STUDIO_TERMINALS_OWNER,
     capability: STUDIO_TERMINALS_CAPABILITY,
-    owner: UNDELIVERED_PROMPTS_OWNER,
     push: true,
     params: studioNoParams,
   },

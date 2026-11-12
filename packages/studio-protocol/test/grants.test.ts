@@ -12,6 +12,7 @@ import {
   type StudioTopic,
 } from '../src/methods'
 import type { StudioAccess } from '../src/permissions'
+import { STUDIO_TERMINALS_METHODS, STUDIO_TERMINALS_TOPICS } from '../src/terminals'
 import { STUDIO_SCOPES } from '../src/scopes'
 
 // What each grant reaches, method by method: the table a client reads to
@@ -50,9 +51,9 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'pullRequests.noteWork',
   'pullRequests.noteToolCall',
   'session.terminalHandoff',
-  'terminal.configure',
-  'terminal.promptUndelivered',
-  'terminal.takeUndeliveredPrompts',
+  // Every terminal method and stream: a terminal is a shell on this machine.
+  ...(Object.keys(STUDIO_TERMINALS_METHODS) as StudioMethod[]),
+  ...(Object.keys(STUDIO_TERMINALS_TOPICS) as StudioTopic[]),
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [
