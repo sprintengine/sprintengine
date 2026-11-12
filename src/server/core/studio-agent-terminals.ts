@@ -1,7 +1,11 @@
 import { join } from 'node:path'
 
 import { createAgentControlPlane } from '../../main/agent-control-plane'
-import { createAgentLaunchNotices, LAUNCH_NOTICES_FILE, launchNoticesFileStorage } from '../../main/agent-launch-notices'
+import {
+  createAgentLaunchNotices,
+  LAUNCH_NOTICES_FILE,
+  launchNoticesFileStorage,
+} from '../../main/agent-launch-notices'
 import { createAgentLaunchService, type AgentLaunchService } from '../../main/agent-launch-service'
 import type { AgentCompactIpcDependencies } from '../../main/ipc/agent-compact-ipc'
 import { createAgentPromptStore, registeredAgentOwners } from '../../main/agent-prompt-store'
@@ -83,9 +87,10 @@ export type StudioTerminalHost = {
 
 export type StudioAgentTerminalsDeps = {
   platform: Pick<StudioPlatform, 'paths'>
-  /** Resolves once the data directory is this process's; the reporter's socket is opened then, and only with the lock. */
+  /** Resolves once the data directory is this process's; the reporter's socket is opened then. */
   whenDataDirFree: Promise<unknown>
-  holdsDataDir: boolean
+  /** Whether this process opens the reporter's socket at all (it holds the directory, or is a desktop carrying on without). */
+  reporterListens: boolean
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecord' | 'getState' | 'subscribe' | 'needsHydration'>
   workspaceSyncService: WorkspaceSyncService
   agentLaunchSettings: Pick<AgentLaunchSettingsStore, 'get'>
@@ -163,7 +168,10 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
     ...host.observers,
     // Suspended agent terminals keep their painted screen on disk and reopen
     // painted after a restart.
-    snapshotSidecars: createTerminalSnapshotSidecarStore({ resolveUserDataDir: () => dataDir, logDiagnostic: logTerminal }),
+    snapshotSidecars: createTerminalSnapshotSidecarStore({
+      resolveUserDataDir: () => dataDir,
+      logDiagnostic: logTerminal,
+    }),
     agentPrompts,
     logDiagnostic: logTerminal,
     ...(prepare
@@ -197,7 +205,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
       void writeDiagnosticLog({ ...diagnostic, source: 'workspace' })
     },
   })
-  if (deps.holdsDataDir) void deps.whenDataDirFree.then(() => agentState.start()).catch(() => undefined)
+  if (deps.reporterListens) void deps.whenDataDirFree.then(() => agentState.start()).catch(() => undefined)
 
   // The one way to type at a live agent, terminal or chat: concurrent prompts
   // serialise per session, and no window is needed.

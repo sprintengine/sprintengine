@@ -103,7 +103,11 @@ import { createStudioAutoCompact } from './studio-auto-compact'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
 import { createStudioSettlement } from './studio-settlement'
 import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
-import { createStudioAgentTerminals, type StudioAgentTerminals, type StudioTerminalHost } from './studio-agent-terminals'
+import {
+  createStudioAgentTerminals,
+  type StudioAgentTerminals,
+  type StudioTerminalHost,
+} from './studio-agent-terminals'
 
 // The Studio core: the services the server owns (studio-server design, section
 // 4.1), composed once. The desktop builds it inside Electron main, from
@@ -444,7 +448,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   agentTerminals = createStudioAgentTerminals({
     platform,
     whenDataDirFree: taken.whenFree,
-    holdsDataDir: dataDirLock !== null,
+    // A desktop that could not take the directory carries on as builds
+    // before the lock did, its reporter included; any other process listens
+    // only with the lock, so two never share the socket.
+    reporterListens: dataDirLock !== null || options.role === 'desktop',
     workspaceRegistry,
     workspaceSyncService,
     agentLaunchSettings,
@@ -849,7 +856,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     terminals: {
       list: () => agentTerminals?.list() ?? [],
       ...(agentTerminals
-        ? { onChanged: agentTerminals.onChanged, end: (workspaceId: string) => agentTerminals.endWorkspaceTerminals(workspaceId) }
+        ? {
+            onChanged: agentTerminals.onChanged,
+            end: (workspaceId: string) => agentTerminals.endWorkspaceTerminals(workspaceId),
+          }
         : {}),
     },
     lifecycle: conversationLifecycle,

@@ -209,7 +209,10 @@ for (const [name, make] of [
         integration: null,
       })
       await harness.bridge.launches.excludeWorktreeMcpConfig('/Users/dev/worktree')
-      await harness.bridge.launches.prepareAgentStateHook('/Users/dev/repo', 'codex', { pathStyle: 'posix', hostId: 'local' })
+      await harness.bridge.launches.prepareAgentStateHook('/Users/dev/repo', 'codex', {
+        pathStyle: 'posix',
+        hostId: 'local',
+      })
       assert.deepEqual(calls, [
         ['integration', input],
         ['mcp', '/Users/dev/repo', ['claude-code']],

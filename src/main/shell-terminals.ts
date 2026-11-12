@@ -72,8 +72,6 @@ export function remoteShellTerminals(rpc: Pick<ControlRpc, 'on' | 'call'>): Shel
         .call<AgentCompactResult>(SERVER_METHODS.agentCompact, { sessionId })
         .catch((error: unknown): AgentCompactResult => ({ ok: false, message: unanswered(error) })),
     peekState: (sessionId) =>
-      rpc
-        .call<ConversationPeekSessionState | null>(SERVER_METHODS.terminalPeekState, { sessionId })
-        .catch(() => null),
+      rpc.call<ConversationPeekSessionState | null>(SERVER_METHODS.terminalPeekState, { sessionId }).catch(() => null),
   }
 }

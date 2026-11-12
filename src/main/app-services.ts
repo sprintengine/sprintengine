@@ -212,11 +212,7 @@ import {
   SHELL_METHODS,
   type ServerWorktreeLease,
 } from '../server/desktop/server-methods'
-import {
-  createRemoteCore,
-  createRemoteGitHubTokenStore,
-  type ShellServerLink,
-} from './server-supervisor/remote-core'
+import { createRemoteCore, createRemoteGitHubTokenStore, type ShellServerLink } from './server-supervisor/remote-core'
 import { anyWindowFocused, broadcastToAllWindows } from './window-broadcast'
 
 // How long the quit gives the session integrations' removal. What it does not
@@ -339,8 +335,8 @@ export function createAppServices(
     invalidate: (workspaceRoot, harnessId) => capabilityWatcher.invalidate(workspaceRoot, harnessId),
   })
 
-  // Declared before terminalRuntime so the runtime can ensure-install a skill
-  // at spawn. Reads loaded CLI plugins to compute native targets.
+  // The skill installer a launch's skill-at-spawn uses (terminalLaunchPreparation).
+  // Reads loaded CLI plugins to compute native targets.
   const builtinSkillManager = createBuiltinSkillManager({
     listPlugins: () => getPluginRegistry().loaded(),
   })
@@ -1887,18 +1883,19 @@ export function createAppServices(
   // connection of the shell's own: where each agent works goes to the record,
   // and the lists it answers ride the terminal snapshot. In process only: out
   // of process the terminals are the server's, which reads them itself.
-  terminalPullRequests = studioRpc && coreTerminals
-    ? createTerminalPullRequests({
-        transport: studioRpc.shellTransport(),
-        version: app.getVersion(),
-        sessions: {
-          list: () => listLiveTerminalSessions(),
-          get: (sessionId) => getTerminalSessionById(sessionId),
-        },
-        onListsChanged: (affects) => notePullRequestRecordChanged(affects),
-        log: logDesktopTools,
-      })
-    : null
+  terminalPullRequests =
+    studioRpc && coreTerminals
+      ? createTerminalPullRequests({
+          transport: studioRpc.shellTransport(),
+          version: app.getVersion(),
+          sessions: {
+            list: () => listLiveTerminalSessions(),
+            get: (sessionId) => getTerminalSessionById(sessionId),
+          },
+          onListsChanged: (affects) => notePullRequestRecordChanged(affects),
+          log: logDesktopTools,
+        })
+      : null
   if (server) {
     // The launch tokens the shell issues (its WSL helper's channels, R87), by
     // digest: each change as it happens, and all of them again to a server

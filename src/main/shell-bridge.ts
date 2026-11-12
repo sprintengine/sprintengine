@@ -52,7 +52,8 @@ export function createInProcessShellBridge(deps: InProcessShellBridgeDeps): Shel
     launches: {
       prepareLaunchIntegration: async (input) =>
         deps.launches()?.prepareLaunchIntegration(input) ?? { ok: false, message: LAUNCHES_NOT_READY },
-      syncMcpConfig: async (input) => deps.launches()?.syncMcpConfig(input) ?? { ok: false, message: LAUNCHES_NOT_READY },
+      syncMcpConfig: async (input) =>
+        deps.launches()?.syncMcpConfig(input) ?? { ok: false, message: LAUNCHES_NOT_READY },
       ensureBuiltinSkillInstalled: async (...args) => deps.launches()?.ensureBuiltinSkillInstalled(...args),
       excludeWorktreeMcpConfig: async (worktreePath) => deps.launches()?.excludeWorktreeMcpConfig(worktreePath),
       prepareAgentStateHook: async (...args) => deps.launches()?.prepareAgentStateHook(...args),

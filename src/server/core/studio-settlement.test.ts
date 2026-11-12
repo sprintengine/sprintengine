@@ -15,10 +15,7 @@ import { createStudioSettlement } from './studio-settlement'
 const DAY = 24 * 60 * 60 * 1000
 const BORN = 1_000_000_000_000
 
-function harness(
-  records: Array<Partial<WorkspaceRegistryRecord>>,
-  options: { known?: boolean } = {},
-) {
+function harness(records: Array<Partial<WorkspaceRegistryRecord>>, options: { known?: boolean } = {}) {
   let clock = BORN + 4 * DAY
   const pending: Array<() => void> = []
   const store = new Map<string, WorkspaceRegistryRecord>()

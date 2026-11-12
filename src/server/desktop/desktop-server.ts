@@ -86,19 +86,22 @@ import { readStudioEnv } from '../../shared/studio-env'
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
 // its gateway and owner socket, the tunnelled window.api domains, and the
 // module kernel with every module's server half, composed in a utility
-// process the shell forked. What it asks of the shell (the keychain, a
-// notification, a terminal launch) goes over the control channel; what the
-// shell needs of it (the workspace registry and launch settings it mirrors,
-// a credential for a terminal launch, the GitHub token) is answered there too.
+// process the shell forked, and the terminals with their ptys and reporter
+// (studio-agent-terminals.ts). What it asks of the shell (the keychain, a
+// notification, the shell's part of a terminal agent's launch) goes over the
+// control channel; what the shell needs of it (the workspace registry and
+// launch settings it mirrors, the terminal list, the GitHub token) is
+// answered there too.
 //
 // It takes the data directory's run lock with the desktop role, as main does
 // in process: it is the app's own process tree, and a predecessor's lock is
 // its to replace (the supervisor never forks while that predecessor lives).
 //
-// The gateway lists the core's tools and the server-side automation tools;
-// what acts on a screen or a terminal is the shell's, offered as its toolsets
-// (spec 6.3), and the launches the server starts itself (`backlog.work`, a
-// scheduled run, resume in terminal) go through the shell bridge.
+// The gateway lists the core's tools and every automation tool, the terminal
+// and agent families included; what acts on a screen is the shell's, offered
+// as its toolsets (spec 6.3). Every terminal launch (`agent.launch`,
+// `backlog.work`, a scheduled run, Resume in terminal, a tour's author) goes
+// through the core's launch service, here.
 
 export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requestExit }) => {
   // Its own diagnostics file, so two processes never append to one.
@@ -442,7 +445,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   terminals?.runtime.registerAgentPhaseListener((event) => rpc.emit(SERVER_EVENTS.attentionPhase, event))
   // The shell's own readers of the terminals (tours, keep-awake, the tray, a
   // quit's count) read this list, sent whole on every change.
-  const sendTerminalSessions = () => rpc.emit(SERVER_EVENTS.terminalSessions, terminals?.runtime.sessions.listTerminals() ?? [])
+  const sendTerminalSessions = () =>
+    rpc.emit(SERVER_EVENTS.terminalSessions, terminals?.runtime.sessions.listTerminals() ?? [])
   terminals?.runtime.subscribeSessionsChanged(sendTerminalSessions)
   // A WSL distribution's reporter frames come through the shell's helper.
   rpc.on(SERVER_EVENTS.agentStateLine, (payload) => {
@@ -514,9 +518,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   })
   rpc.on(SERVER_EVENTS.conversationIdleThreshold, (payload) => core.conversationOwner.setIdleThresholdMs(payload))
 
-  // The launch tokens the shell's terminal agents hold, before the socket
-  // their bridges reconnect to is back: a bridge that connects first is
-  // proven, not left unattributed until the shell's push after ready.
+  // The launch tokens the shell issued (its WSL helper's channels), before the
+  // socket their bridges reconnect to is back: a bridge that connects first
+  // is proven, not left unattributed until the shell's push after ready.
   const liveTokens = await rpc.call<LaunchTokenChange[]>(SHELL_METHODS.liveLaunchTokens).catch(() => [])
   for (const change of Array.isArray(liveTokens) ? liveTokens : []) applyGatewayLaunchTokenChange(change)
 
@@ -663,7 +667,7 @@ const BOOT_MODEL_DISCOVERY_DELAY_MS = 10_000
 const TERMINALS_UNAVAILABLE = 'Terminals cannot start on this machine: its terminal module did not load.'
 
 /** What the shell's analytics hear of a launch: its CLI and shape, never its words or its folders. */
-export function agentLaunchedEvent(
+function agentLaunchedEvent(
   request: AgentLaunchRequest,
   result: Extract<AgentLaunchResult, { ok: true }>,
 ): ShellAnalyticsEvent {

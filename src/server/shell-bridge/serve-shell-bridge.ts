@@ -56,7 +56,9 @@ export function serveShellBridge(rpc: ControlRpc, bridge: ShellBridge): () => vo
       await bridge.launches.prepareAgentStateHook(
         input.workspaceRoot as string,
         input.cli,
-        isRecord(input.execution) ? (input.execution as Parameters<TerminalLaunchPreparation['prepareAgentStateHook']>[2]) : undefined,
+        isRecord(input.execution)
+          ? (input.execution as Parameters<TerminalLaunchPreparation['prepareAgentStateHook']>[2])
+          : undefined,
       )
       return true
     }),

@@ -53,9 +53,13 @@ export function createRemoteShellBridge(rpc: ControlRpc): ShellBridge {
           .catch((error: unknown) => ({ ok: false as const, message: shellFailure(error) })),
       syncMcpConfig: (input) =>
         rpc
-          .call<Awaited<ReturnType<ShellBridge['launches']['syncMcpConfig']>>>(SHELL_BRIDGE_METHODS.launchMcpSync, input, {
-            timeoutMs: LAUNCH_TIMEOUT_MS,
-          })
+          .call<Awaited<ReturnType<ShellBridge['launches']['syncMcpConfig']>>>(
+            SHELL_BRIDGE_METHODS.launchMcpSync,
+            input,
+            {
+              timeoutMs: LAUNCH_TIMEOUT_MS,
+            },
+          )
           .catch((error: unknown) => ({ ok: false as const, message: shellFailure(error) })),
       // Best effort, as in process: the launch's prompt still says what to do.
       ensureBuiltinSkillInstalled: async (workspaceRoot, skillId, cli, launch) => {
