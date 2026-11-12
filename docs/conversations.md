@@ -753,10 +753,9 @@ the desktop's own sidebar — agrees with it. A desktop that advertises
   own creation as its visit.
 
 The first two are the capability's promise and hold only where it is
-advertised. The Studio RPC on the owner socket does not advertise it, and its
-`conversation.list` stays the list it always was: every chat, settled ones
-included, most recently moved first, with the five members as optional
-additions.
+advertised. The Studio RPC advertises it too, and its `conversation.list` is
+the same list; `conversation.settle` and `conversation.visit` write the same
+record a paired device's tools do.
 
 - **`conversation.settle`** `{ workspaceId, settled? }` (default `true`)
   writes the same patch as the row menu's Settle, or with `false` its

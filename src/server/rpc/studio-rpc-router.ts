@@ -622,7 +622,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     voice: Voice,
     method: StudioMethod,
   ): Refused<'not_found' | 'unavailable'> {
-    return read.code === 'not_found' ? refuse('not_found', read.message) : voice.failed('unavailable', read.message, method)
+    return read.code === 'not_found'
+      ? refuse('not_found', read.message)
+      : voice.failed('unavailable', read.message, method)
   }
 
   /**

@@ -10,10 +10,7 @@ import {
   type StudioParsedServerFrame,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioFollowedBackend } from './studio-rpc-types'
-import {
-  STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES,
-  studioRpcConversationCapabilities,
-} from './studio-rpc-server'
+import { STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES, studioRpcConversationCapabilities } from './studio-rpc-server'
 import {
   OWNER_TOKEN,
   connectLineClient,
@@ -189,7 +186,10 @@ test('each keyed method reaches the host for an owner and a paired client that m
   )
   for (const c of [owner, paired])
     for (const [method, params] of Object.entries(CALLS)) {
-      const answer = await ask(c, method, { ...params, ...('commandId' in params ? { commandId: `${method}-${c === owner}` } : {}) })
+      const answer = await ask(c, method, {
+        ...params,
+        ...('commandId' in params ? { commandId: `${method}-${c === owner}` } : {}),
+      })
       assert.equal(answer.ok, true, `${method}: ${JSON.stringify(answer)}`)
     }
   assert.deepEqual(
@@ -212,7 +212,8 @@ test('a read-only grant reads the chat but is refused what runs its agent or wri
   for (const [method, params] of Object.entries(CALLS)) {
     const answer = await ask(reader, method, params)
     const access = STUDIO_METHOD_ACCESS[method as keyof typeof STUDIO_METHOD_ACCESS]
-    const reads = 'permissions' in access && access.permissions.every((permission) => permission === 'conversation:read')
+    const reads =
+      'permissions' in access && access.permissions.every((permission) => permission === 'conversation:read')
     assert.equal(answer.ok, reads, method)
     if (!reads) assert.equal(errorOf(answer), 'scope_required', method)
     // What the server answers is what the package says a client may offer.
@@ -400,5 +401,8 @@ test('an approval that outlives the chat is taken from a client whose ceiling ma
     requestId: 'req-1',
     decision: 'always',
   })
-  assert.equal(errorOf(await ask(strict, 'conversation.resolveApproval', { ...always, commandId: 'a2' })), 'ceiling_exceeded')
+  assert.equal(
+    errorOf(await ask(strict, 'conversation.resolveApproval', { ...always, commandId: 'a2' })),
+    'ceiling_exceeded',
+  )
 })

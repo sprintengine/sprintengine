@@ -164,9 +164,7 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
       ...(host.watchSubagents ? { watchSubagents: (chat, listener) => host.watchSubagents!(chat, listener) } : {}),
       ...(host.watchChanges ? { watchChanges: (chat, listener) => host.watchChanges!(chat, listener) } : {}),
       ...(host.changesDiff ? { changesDiff: (chat, selection) => host.changesDiff!(chat, selection) } : {}),
-      ...(host.changedFile
-        ? { changedFile: (chat, selection, path) => host.changedFile!(chat, selection, path) }
-        : {}),
+      ...(host.changedFile ? { changedFile: (chat, selection, path) => host.changedFile!(chat, selection, path) } : {}),
       ...(host.askSideQuestion
         ? {
             askSideQuestion: (key, clientId, questionId, question, history) =>

@@ -230,11 +230,18 @@ export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap>
       const at = keyed(value)
       if (!at.ok) return at
       if (typeof value.query !== 'string' || value.query.length > CONVERSATION_MAX_FILE_SEARCH_QUERY_CHARS)
-        return refuse(`"query" is the name searched for, at most ${CONVERSATION_MAX_FILE_SEARCH_QUERY_CHARS} characters.`)
+        return refuse(
+          `"query" is the name searched for, at most ${CONVERSATION_MAX_FILE_SEARCH_QUERY_CHARS} characters.`,
+        )
       const limit = value.limit
       if (
         limit !== undefined &&
-        !(typeof limit === 'number' && Number.isSafeInteger(limit) && limit >= 1 && limit <= CONVERSATION_MAX_FILE_SEARCH_RESULTS)
+        !(
+          typeof limit === 'number' &&
+          Number.isSafeInteger(limit) &&
+          limit >= 1 &&
+          limit <= CONVERSATION_MAX_FILE_SEARCH_RESULTS
+        )
       )
         return refuse(`"limit" is between 1 and ${CONVERSATION_MAX_FILE_SEARCH_RESULTS}.`)
       return studioParams({ ...at.params, query: value.query.trim(), ...(limit === undefined ? {} : { limit }) })
@@ -247,7 +254,8 @@ export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap>
     params: (value) => {
       const at = keyed(value)
       if (!at.ok) return at
-      if (value.refresh !== undefined && typeof value.refresh !== 'boolean') return refuse('"refresh" is true or false.')
+      if (value.refresh !== undefined && typeof value.refresh !== 'boolean')
+        return refuse('"refresh" is true or false.')
       return studioParams({ ...at.params, ...(value.refresh === true ? { refresh: true } : {}) })
     },
   },
@@ -257,7 +265,8 @@ export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap>
       const at = keyed(value)
       if (!at.ok) return at
       if (!id(value.commandId)) return refuse(COMMAND_ID)
-      if (value.settled !== undefined && typeof value.settled !== 'boolean') return refuse('"settled" is true or false.')
+      if (value.settled !== undefined && typeof value.settled !== 'boolean')
+        return refuse('"settled" is true or false.')
       return studioParams({
         ...at.params,
         commandId: value.commandId,

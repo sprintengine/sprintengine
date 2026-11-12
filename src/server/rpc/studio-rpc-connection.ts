@@ -790,7 +790,11 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         ? backend.resolveKey(wireKey.workspaceId, wireKey.agentId)
         : { workspaceRoot: wireKey.workspaceRoot, workspaceId: wireKey.workspaceId, agentId: wireKey.agentId }
     if (!known) {
-      subscriptionFailed(id, 'not_found', `No conversation "${wireKey.agentId}" in workspace "${wireKey.workspaceId}" here.`)
+      subscriptionFailed(
+        id,
+        'not_found',
+        `No conversation "${wireKey.agentId}" in workspace "${wireKey.workspaceId}" here.`,
+      )
       return
     }
     const subscription: Subscription = { id, topic, key: known, replay: null, handle: null }
@@ -815,7 +819,8 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       'conversation.queued',
       params,
       followed.watchQueued &&
-        ((chat, send) => followed.watchQueued!(chat, (messages) => send({ type: 'queued', key: chatOf(chat), messages }))),
+        ((chat, send) =>
+          followed.watchQueued!(chat, (messages) => send({ type: 'queued', key: chatOf(chat), messages }))),
     )
   const subscribeScheduled = (id: string, params: StudioTopicParams<'conversation.scheduled'>) =>
     subscribeFollowed(

@@ -81,7 +81,12 @@ test('a command’s params are read by the conversation lane’s own validator, 
   // A rule that outlives the conversation is read as the lane reads it
   // (`conversation-permanent-approvals`); the router holds it to the ceiling.
   assert.deepEqual(
-    parseStudioMethodParams('conversation.resolveApproval', { key, commandId: 'c4', requestId: 'r1', decision: 'always' }),
+    parseStudioMethodParams('conversation.resolveApproval', {
+      key,
+      commandId: 'c4',
+      requestId: 'r1',
+      decision: 'always',
+    }),
     { ok: true, params: { key, commandId: 'c4', requestId: 'r1', decision: 'always' } },
   )
   const long = parseStudioMethodParams('conversation.send', {

@@ -166,7 +166,10 @@ export type StudioFollowedBackend = {
     listener: (state: Omit<ConversationUsageLimitsFrame, 'type' | 'key'>) => void,
   ): () => void
   watchSubagents?(chat: StudioChatRef, listener: (subagents: ConversationSubagent[]) => void): () => void
-  watchChanges?(chat: StudioChatRef, listener: (said: Omit<ConversationChangesFrame, 'type' | 'key'>) => void): () => void
+  watchChanges?(
+    chat: StudioChatRef,
+    listener: (said: Omit<ConversationChangesFrame, 'type' | 'key'>) => void,
+  ): () => void
   changesDiff?(
     chat: StudioChatRef,
     selection: ConversationChangesSelection,
