@@ -754,10 +754,14 @@ but the pull request's author (approval and changes requested said as such),
 merged or closed. The news wakes the chat through the same send a resume after
 a usage limit takes, as one Studio message per wake (`origin` reason
 `pull-request-watch`), never into a running turn, a usage limit, or a settled
-or deleted chat (`pull-request-wakes.ts`). The watch is stored on its pull
-request's row and ends when it merges or closes, when it is stopped, when its
-chat is settled or deleted, after ten wakes in a row that bring only comments,
-or after eight failed reads in a row; a rate limit only waits. A listed pull
+or deleted chat (`pull-request-wakes.ts`). News the chat has not been told
+is stored on the row too, in the same write as the watch state that found it,
+and a message goes under a command id stamped on it first, so a restart
+neither loses news nor tells it twice (`pull-request-untold.ts`). The watch is
+stored on its pull request's row and ends when it merges or closes, when it is
+stopped, when its chat is settled or deleted, after ten wakes in a row that
+bring only comments, or after eight failed reads in a row; a rate limit only
+waits. A listed pull
 request carries `watch` (what it waits on) while it is watched.
 
 **The protocol** (`pull-requests` capability, owners only, `workspaces:read`):

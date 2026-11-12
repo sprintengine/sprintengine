@@ -19,6 +19,7 @@ import {
   type PullRequestConversationKey,
   type PullRequestRecord,
   type PullRequestRecordOptions,
+  type PullRequestWatchNewsEvent,
   type WatchOutcome,
 } from './pull-request-record'
 import { createPullRequestWakes, type PullRequestWakes, type PullRequestWakesDeps } from './pull-request-wakes'
@@ -119,7 +120,7 @@ export type PullRequestDomainOptions = {
    * watches are read and shown but wake nobody: a test, or a server with no
    * chats to send into.
    */
-  wakes?: Omit<PullRequestWakesDeps, 'onChatGone' | 'onConversationEvent'>
+  wakes?: Omit<PullRequestWakesDeps, 'onChatGone' | 'onConversationEvent' | 'untold'>
   log?(message: string, error?: unknown): void
 }
 
@@ -143,19 +144,29 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
         ...options.wakes,
         onConversationEvent: (listener) => options.conversations.onEvent(listener),
         onChatGone: stopWatchesOf,
+        // The record keeps what chats have not been told; it is made below.
+        untold: {
+          chats: () => record.untoldWakes.chats(),
+          next: (key) => record.untoldWakes.next(key),
+          told: (key, commandId) => record.untoldWakes.told(key, commandId),
+          forget: (key) => record.untoldWakes.forget(key),
+        },
       })
     : null
 
-  const record =
+  const record: PullRequestRecord =
     options.record ??
     createPullRequestRecord({
       loadStoredOnStart: true,
       ...options.recordOptions,
       userDataDir: options.dataDir,
       onRecordChanged: (change) => publish(change),
-      onWatchNews: (news) => wakes?.deliver(news),
+      // With nobody to wake, news is not kept for anyone.
+      ...(wakes ? { onWatchNews: (news: PullRequestWatchNewsEvent) => wakes.deliver(news) } : {}),
       logWarning: options.recordOptions?.logWarning ?? ((message, error) => log(message, error)),
     })
+  // News the last run found and did not get to tell its chat goes now.
+  void wakes?.resume().catch((error: unknown) => log('could not resume pull request wakes', error))
 
   function publish(change: PullRequestsChanged): void {
     if (disposed || (change.workspaceIds.length === 0 && change.conversations.length === 0)) return
@@ -315,6 +326,16 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
         const found = chat(watched.conversation)
         if (!found || found.settled) record.unwatch(watched.conversation, watched.url)
       }
+      // News for a chat put away goes with it, watched or not; a chat the
+      // records name now (they may have been loading at the start) is looked
+      // at; one they do not name keeps its news, as the start left it.
+      void record.untoldWakes.chats().then((chats) => {
+        for (const key of chats) {
+          const found = chat(key)
+          if (found?.settled) record.untoldWakes.forget(key)
+          else if (found) wakes?.lookAt(key)
+        }
+      })
     },
     wakeWatches() {
       wakes?.wake()
