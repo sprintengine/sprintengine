@@ -546,11 +546,14 @@ does not force a resync before the fence.
 
 ### Commands and the chat's log
 
-Every command a chat receives, from any client (this window, the Studio
-protocol, a paired device or the phone, an agent's MCP tool, a module, a
-schedule, a pull-request wake), reaches the same runtime method, which runs it
-as a command under the caller's `commandId`, or one made for a caller that
-gave none (`ConversationRuntime.runCommand`). The chat's transcript is its one
+A send, an answer to a request, a permission or model change, Stop and ending
+a session reach the same runtime method from any client (this window, the
+Studio protocol, a paired device or the phone, an agent's MCP tool, a module, a
+schedule, a pull-request wake), which runs each as a command under the
+caller's `commandId`, or one made for a caller that gave none
+(`ConversationRuntime.runCommand`). Revert, rewind, fork, handoff, stopping
+one sub-agent and side questions are not commands of this kind yet: the hosts
+that take them remember their ids in memory. The chat's transcript is its one
 log: beside the events it holds each command's receipt, a line with no `type`
 that every reader passes over (`conversation-command-receipts.ts`).
 
@@ -570,11 +573,13 @@ that every reader passes over (`conversation-command-receipts.ts`).
   the same id may be sent again. The same id for a different command (by its
   fingerprint) is refused `command_id_conflict`.
 - **Nothing is published before it is written.** A batch of the log is one
-  write, and a write that fails is taken back, so a client only ever holds
-  sequence numbers that are on disk. An event the log cannot take stops the
-  turn it belongs to; that turn's end, "the conversation could not be saved to
-  disk", reaches the chat with the log's next write that succeeds (the next
-  message, Stop, or reopening the chat).
+  write, and a write that fails is cut back off, so a client only ever holds
+  sequence numbers that are on disk. A write that does not finish is waited
+  for, not given up on (the log warns after 30 seconds): what it holds may yet
+  land. An event of a turn the log cannot take stops the chat's session, its
+  agent with it, and the turn is closed as interrupted when the chat is next
+  resumed. A send whose message the log cannot take is answered "not sent" and
+  nothing else happens.
 
 ### The protocol
 

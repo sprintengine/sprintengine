@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, test, vi } from 'vitest'
@@ -230,25 +230,36 @@ test('a failed write is reported, never thrown, and the next write reopens', asy
   assert.equal(attempt, 2)
 })
 
-test('a write that never settles fails after the timeout instead of stalling every later event', async () => {
-  const errors: unknown[] = []
+test('a write that has not settled is reported slow and waited for, and nothing after it is answered first', async () => {
+  let release: () => void = () => undefined
   let opened = 0
+  const stalled: number[] = []
   const log = new ConversationEventLog({
-    writeTimeoutMs: 30,
-    onError: (_path, error) => errors.push(error),
+    slowWriteMs: 1,
+    onStall: (_path, ms) => stalled.push(ms),
     openStream: async () => {
-      const first = ++opened === 1
+      opened += 1
       return {
-        write: (chunk) => (first ? new Promise<void>(() => undefined) : Promise.resolve(void chunk)),
+        write: (chunk) =>
+          chunk.includes('turn_started') ? new Promise<void>((resolve) => (release = resolve)) : Promise.resolve(),
         close: async () => undefined,
       }
     },
   })
-  assert.equal(await log.append('/t.jsonl', event('turn_started', { turnId: 't1' })), 'failed')
-  assert.equal(errors.length, 1)
-  assert.match(String((errors[0] as Error).message), /took longer than 30 ms/)
-  assert.equal(await log.append('/t.jsonl', event('turn_completed', { turnId: 't1' })), 'written')
-  assert.equal(opened, 2, 'the stuck stream is abandoned and a fresh one takes the next write')
+  const first = log.append('/t.jsonl', event('turn_started', { turnId: 't1' }))
+  const second = log.append('/t.jsonl', event('turn_completed', { turnId: 't1' }))
+  let answered = false
+  void second.then(() => (answered = true))
+  await new Promise<void>((resolve) => {
+    const check = () => (stalled.length > 0 ? resolve() : setImmediate(check))
+    check()
+  })
+  assert.deepEqual(stalled, [1], 'said once it has taken too long')
+  assert.equal(answered, false, 'what comes after it waits: it may yet be on disk')
+  release()
+  assert.equal(await first, 'written', 'and what it held counts once it lands')
+  assert.equal(await second, 'written')
+  assert.equal(opened, 1, 'on the same stream')
   await log.closeAll()
 })
 
@@ -324,26 +335,39 @@ test('an event and the receipt it commits with are one write, after the deltas q
   )
 })
 
-test('a batch the disk takes only part of is taken back whole, unless the log gave up on it', async () => {
-  const file = (bytes: string[]) => ({
-    writeFile: async (text: string) => {
+test('a batch the disk takes only part of is cut back off the real file, opened to append', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-event-log-'))
+  try {
+    const path = join(root, 'agent.jsonl')
+    await writeFile(path, '{"seq":1}\n')
+    const appending = await open(path, 'a')
+    try {
       // A disk that fills halfway through the write.
-      bytes.push(text.slice(0, text.length / 2))
-      throw new Error('ENOSPC: no space left on device')
-    },
-    truncate: async (size: number) => {
-      bytes.splice(0, bytes.length, bytes.join('').slice(0, size))
-    },
-  })
-  const written = ['{"seq":1}\n']
-  await assert.rejects(
-    writeWhole(file(written) as never, '{"seq":2}\n{"receipt":{}}\n', 10, () => false),
-    /ENOSPC/,
-  )
-  assert.deepEqual(written, ['{"seq":1}\n'], 'nothing of the failed batch is left')
-  const abandoned = ['{"seq":1}\n']
-  await assert.rejects(writeWhole(file(abandoned) as never, '{"seq":2}\n', 10, () => true))
-  assert.equal(abandoned.length, 2, 'a write given up on is left alone: the next stream may follow it')
+      const filling = {
+        stat: () => appending.stat(),
+        writeFile: async (text: string) => {
+          await appending.appendFile(text.slice(0, text.length / 2))
+          throw new Error('ENOSPC: no space left on device')
+        },
+      }
+      const cut = async (size: number) => {
+        const writable = await open(path, 'r+')
+        try {
+          await writable.truncate(size)
+        } finally {
+          await writable.close()
+        }
+      }
+      await assert.rejects(writeWhole(filling, '{"seq":2}\n{"receipt":{"id":"c"}}\n', cut), /ENOSPC/)
+      assert.equal(await readFile(path, 'utf8'), '{"seq":1}\n', 'nothing of the failed batch is left')
+      await appending.appendFile('{"seq":3}\n')
+      assert.equal(await readFile(path, 'utf8'), '{"seq":1}\n{"seq":3}\n', 'and the next append follows on')
+    } finally {
+      await appending.close()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
 
 test('a merged record whose parts do not add up is read as one delta, not split wrongly', () => {

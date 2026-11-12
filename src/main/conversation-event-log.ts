@@ -44,11 +44,13 @@ export const DEFAULT_DELTA_FLUSH_MS = 40
 const DEFAULT_TOOL_OUTPUT_FLUSH_MS = 500
 
 /**
- * How long one write may take before it counts as failed. Events are published
- * only once their write settles, so a write that never does (a hung network
- * volume, a wedged disk) would otherwise stall the chat without a word.
+ * How long one write may take before it is reported as stalled. It is still
+ * waited for: what a write that has not settled holds may yet be on disk, so
+ * counting it failed would let a retry write it twice, and publishing what
+ * comes after it would hand out numbers the log may not hold. A hung volume
+ * stalls the chat, and the log says why.
  */
-const DEFAULT_WRITE_TIMEOUT_MS = 30_000
+const DEFAULT_SLOW_WRITE_MS = 30_000
 
 /**
  * How an append ended. `superseded`: a later event for the same tool replaced
@@ -90,20 +92,16 @@ export type AppendStream = {
    */
   write(chunk: string): Promise<void>
   close(): Promise<void>
-  /**
-   * The log gave up waiting on a write that has not settled and will not use
-   * this stream again: should that write fail later, it must not roll the
-   * file back, because a later stream may have appended after it.
-   */
-  abandon?(): void
 }
 
 export type ConversationEventLogOptions = {
   flushDelayMs?: number
   toolOutputFlushDelayMs?: number
-  writeTimeoutMs?: number
+  slowWriteMs?: number
   openStream?: (filePath: string, storageRoot?: string) => Promise<AppendStream>
   onError?: (filePath: string, error: unknown) => void
+  /** A write has not settled in `slowWriteMs`; it is still waited for. */
+  onStall?: (filePath: string, ms: number) => void
 }
 
 type FileLog = {
@@ -124,9 +122,10 @@ export class ConversationEventLog {
   private readonly closing = new Map<string, Promise<void>>()
   private readonly flushDelayMs: number
   private readonly toolOutputFlushDelayMs: number
-  private readonly writeTimeoutMs: number
+  private readonly slowWriteMs: number
   private readonly openStream: (filePath: string, storageRoot?: string) => Promise<AppendStream>
   private readonly onError: (filePath: string, error: unknown) => void
+  private readonly onStall: (filePath: string, ms: number) => void
 
   constructor(options: ConversationEventLogOptions = {}) {
     this.flushDelayMs = Math.max(0, options.flushDelayMs ?? DEFAULT_DELTA_FLUSH_MS)
@@ -134,9 +133,13 @@ export class ConversationEventLog {
       this.flushDelayMs,
       options.toolOutputFlushDelayMs ?? Math.max(DEFAULT_TOOL_OUTPUT_FLUSH_MS, this.flushDelayMs),
     )
-    this.writeTimeoutMs = options.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS
+    this.slowWriteMs = options.slowWriteMs ?? DEFAULT_SLOW_WRITE_MS
     this.openStream = options.openStream ?? openAppendStream
     this.onError = options.onError ?? (() => undefined)
+    this.onStall =
+      options.onStall ??
+      ((filePath, ms) =>
+        console.warn(`[conversation-event-log] a write to ${filePath} has not finished after ${ms} ms; still waiting`))
   }
 
   /**
@@ -319,34 +322,22 @@ export class ConversationEventLog {
       entry.kind === 'event' && entry.superseded ? 'superseded' : ok ? 'written' : 'failed'
     log.tail = log.tail.then(async () => {
       let ok = true
-      let timedOut = false
       let timer: NodeJS.Timeout | undefined
       try {
         if (chunk) {
           if (!log.stream) log.stream = this.openStream(filePath, log.storageRoot)
           const stream = log.stream
-          await Promise.race([
-            stream.then((open) => open.write(chunk)),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(() => {
-                timedOut = true
-                reject(new Error(`Writing the conversation transcript took longer than ${this.writeTimeoutMs} ms.`))
-              }, this.writeTimeoutMs)
-              timer.unref?.()
-            }),
-          ]).finally(() => clearTimeout(timer))
+          timer = setTimeout(() => this.onStall(filePath, this.slowWriteMs), this.slowWriteMs)
+          timer.unref?.()
+          await stream.then((open) => open.write(chunk)).finally(() => clearTimeout(timer))
         }
       } catch (error) {
         ok = false
         // Drop the broken stream so the next write reopens rather than failing
-        // forever on a handle that is gone. A stream whose write never settled
-        // may never close either, so that close is not waited for, and it is
-        // told it was given up on: the next stream may append after it.
+        // forever on a handle that is gone.
         const broken = log.stream
         log.stream = null
-        if (timedOut) void broken?.then((stream) => stream.abandon?.()).catch(() => undefined)
-        const closing = broken?.then((stream) => stream.close()).catch(() => undefined)
-        if (!timedOut) await closing
+        await broken?.then((stream) => stream.close()).catch(() => undefined)
         try {
           this.onError(filePath, error)
         } catch (reported) {
@@ -458,52 +449,63 @@ function isDeltaPart(value: unknown): value is DeltaPart {
 async function openAppendStream(filePath: string, storageRoot = dirname(filePath)): Promise<AppendStream> {
   const file = await openConversationAppendFile(storageRoot, filePath)
   let unterminated: boolean
-  let size: number
   try {
-    size = (await file.stat()).size
-    unterminated = await endsMidLine(storageRoot, filePath, size)
+    unterminated = await endsMidLine(storageRoot, filePath, (await file.stat()).size)
   } catch (error) {
     await file.close()
     throw error
   }
-  let abandoned = false
   return {
     write: async (chunk) => {
       // A crash or a full disk can leave the last record without its newline.
       // Appending straight after it would glue the next record onto the
       // fragment, and both would be unreadable although this write succeeded
       // and its events were published. The fragment gets a line of its own.
-      const text = unterminated ? `\n${chunk}` : chunk
-      size = await writeWhole(file, text, size, () => abandoned)
+      await writeWhole(file, unterminated ? `\n${chunk}` : chunk, async (size) => {
+        // Through a handle of its own: one opened to append cannot be cut on
+        // every platform.
+        const cut = await openConfinedExistingFile(
+          await conversationConfinementRoot(storageRoot, filePath),
+          filePath,
+          'write',
+        )
+        try {
+          await cut.truncate(size)
+        } finally {
+          await cut.close()
+        }
+      })
       unterminated = false
     },
     close: () => file.close(),
-    abandon: () => {
-      abandoned = true
-    },
   }
 }
 
 /**
- * Append `text` to a file `size` bytes long, all of it or none: whatever part
- * of a write that failed reached the file (a disk that filled mid-write) is
- * taken back, so no line of a batch that failed, a command's receipt among
- * them, is read after a restart. Not once the write was given up on: a later
- * stream may have appended after it. The file's size after.
+ * Append `text` all of it or none: whatever part of a write that failed
+ * reached the file (a disk that filled mid-write) is cut back off, so no line
+ * of a batch that failed, a command's receipt among them, is read after a
+ * restart. The size it cuts back to is read just before the write: this
+ * file's one writer is the log, one write at a time. A cut that fails is
+ * reported with the write's own error, so the batch counts as failed.
  */
 export async function writeWhole(
-  file: Pick<FileHandle, 'writeFile' | 'truncate'>,
+  file: Pick<FileHandle, 'writeFile' | 'stat'>,
   text: string,
-  size: number,
-  abandoned: () => boolean,
-): Promise<number> {
+  truncate: (size: number) => Promise<void>,
+): Promise<void> {
+  const { size } = await file.stat()
   try {
     await file.writeFile(text, 'utf8')
   } catch (error) {
-    if (!abandoned()) await file.truncate(size).catch(() => undefined)
+    await truncate(size).catch((cut: unknown) => {
+      console.warn(
+        '[conversation-event-log] a failed write could not be taken back:',
+        cut instanceof Error ? cut.message : cut,
+      )
+    })
     throw error
   }
-  return size + Buffer.byteLength(text)
 }
 
 async function endsMidLine(storageRoot: string, filePath: string, size: number): Promise<boolean> {

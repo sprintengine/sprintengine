@@ -274,11 +274,9 @@ type RuntimeSession = ConversationSessionSummary & {
   // The provider stream of the turn a send is running, once the provider has
   // been handed it; see ProviderTurn.
   providerTurn: ProviderTurn | null
-  // The end of a turn stopped because the chat's log could not take its
-  // events, waiting to be committed: nothing unwritten is published, so the
-  // chat hears that the turn ended once the log takes this (the next write to
-  // it, a Stop, or reopening the chat after a restart).
-  unsavedTurnEnd?: ConversationEvent
+  // The chat's log refused a write, and the session is being stopped for it
+  // (`lostCommit`).
+  stoppingUnsaved?: boolean
 }
 
 /**
@@ -449,8 +447,6 @@ const TURN_BUSY_RETRY_MS = 1_000
  */
 const LAST_ASSISTANT_TAIL_CHARS = 320
 
-const UNSAVED_TURN_END = 'This turn stopped: the conversation could not be saved to disk.'
-
 // Cap on how many persisted events a transcript replay returns to the
 // renderer; the JSONL on disk keeps everything.
 const MAX_TRANSCRIPT_REPLAY_EVENTS = 2000
@@ -566,6 +562,9 @@ export class ConversationRuntime {
   private readonly listeners = new Set<ConversationRuntimeListener>()
   private readonly idleListeners = new Set<(summary: ConversationSessionSummary) => void>()
   private readonly sequences = new Map<string, number>()
+  // Logs a write was refused to this run, whose open turn is closed when the
+  // chat is next taken up (`lostCommit`, `initializeSequence`).
+  private readonly unclosedLogs = new Set<string>()
   // When each workspace's checkpoint refs were last expired this run.
   private readonly checkpointsExpiredAt = new Map<string, number>()
   // Housekeeping that must not delay the caller but must finish before shutdown.
@@ -1332,6 +1331,15 @@ export class ConversationRuntime {
     const turnId = `turn_${this.randomId()}`
     const requestId = `approval_${this.randomId()}`
     const turnAbort = new AbortController()
+    // What the session was before this turn, to go back to if its message
+    // never reaches the log.
+    const before = {
+      status: session.status,
+      phase: session.phase,
+      turnStartedAt: session.turnStartedAt,
+      workingStretch: session.workingStretch,
+      resting: session.resting,
+    }
     session.activeTurnId = turnId
     // Live from here (`liveConversationWorkspaceRoots`): the folder's hold has
     // done its part.
@@ -1386,15 +1394,23 @@ export class ConversationRuntime {
           { turnId, records: this.acceptTurn(command, turnId) },
         )
         if (!opened) {
+          // Nothing of the command reached the log: the same id may come again.
           if (command) command.unrecorded = true
-          if (session.activeTurnId === turnId) {
-            session.activeTurnId = null
-            session.pendingRequestId = null
-            session.turnLockRequestId = null
-            session.activeTurnAbort = null
-            session.status = 'ready'
-            session.updatedAt = this.now()
-          }
+          // Stopped while its message waited to be written (a Stop, the
+          // session ending): that stop has already settled the session.
+          if (session.activeTurnId !== turnId || session.canceledTurnIds.has(turnId))
+            return { ok: false, message: 'The message was not sent: the conversation was stopped first.' }
+          // The log refused it: the turn never began, and the session is as it was.
+          session.activeTurnId = null
+          session.pendingRequestId = null
+          session.turnLockRequestId = null
+          session.activeTurnAbort = null
+          session.status = before.status
+          session.phase = before.phase
+          session.turnStartedAt = before.turnStartedAt
+          session.workingStretch = before.workingStretch
+          session.resting = before.resting
+          session.updatedAt = this.now()
           return { ok: false, message: 'The message was not sent: the conversation could not be saved to disk.' }
         }
         // The model sees prior completed turns plus this message, so it has memory.
@@ -1733,17 +1749,6 @@ export class ConversationRuntime {
 
   private async failTurn(session: RuntimeSession, error: unknown): Promise<ConversationSessionActionResult> {
     const turnId = session.activeTurnId
-    this.endTurnState(session)
-    const message = error instanceof Error ? error.message : 'Conversation turn failed.'
-    const event = this.eventForSession(session, 'turn_failed', { turnId, reason: 'runtime', message })
-    // Not written, it is not published either: the chat hears of the end once
-    // the log takes it (`unsavedTurnEnd`).
-    const stamped = await this.emit(session, event, { allowCanceledTurnId: turnId }).catch(() => null)
-    return stamped ? { ok: false, message, event: stamped } : { ok: false, message }
-  }
-
-  /** A turn's state let go of, as its failure leaves it: nothing runs, and the chat takes a message. */
-  private endTurnState(session: RuntimeSession): void {
     session.activeTurnAbort?.abort()
     this.closeContinuation(session)
     session.activeTurnId = null
@@ -1754,54 +1759,43 @@ export class ConversationRuntime {
     session.status = 'failed'
     session.phase = 'failed'
     session.updatedAt = this.now()
+    const message = error instanceof Error ? error.message : 'Conversation turn failed.'
+    const event = this.eventForSession(session, 'turn_failed', { turnId, reason: 'runtime', message })
+    // Not written, it is not published either (`lostCommit`).
+    const stamped = await this.emit(session, event, { allowCanceledTurnId: turnId }).catch(() => null)
+    return stamped ? { ok: false, message, event: stamped } : { ok: false, message }
   }
 
   /**
    * An event the log could not take. It is not published: a client only ever
-   * holds what is on disk, so its cursor stays good after a restart. The
-   * turn it belongs to cannot go on unrecorded, so it is stopped, and its end
-   * waits on the session to be committed with the log's next write
-   * (`commitUnsavedTurnEnd`); it is tried once now, as the disk may have been
-   * only briefly away. A message that never committed opened nothing to end:
-   * its send answers that it was not saved.
+   * holds what is on disk, so its cursor stays good after a restart. The log
+   * is no longer the whole of what the session has done, so the session is
+   * stopped (its agent with it) once what it is doing now has let go of the
+   * chat's emissions; its open turn is closed, as interrupted, when the chat
+   * is next taken up (`initializeSequence`). A send's message that never
+   * committed opened nothing: the send says it was not saved, and no session
+   * stops.
    */
-  private lostCommit(session: RuntimeSession, event: ConversationEvent): void {
-    const turnId = typeof event.payload?.turnId === 'string' ? event.payload.turnId : null
-    if (event.type === 'user_message' || !turnId) return
-    if (session.unsavedTurnEnd?.payload?.turnId === turnId) return
-    if (session.activeTurnId === turnId) this.endTurnState(session)
-    session.unsavedTurnEnd = this.eventForSession(session, 'turn_failed', {
-      turnId,
-      reason: 'runtime',
-      message: UNSAVED_TURN_END,
-    })
+  private lostCommit(session: RuntimeSession, event: ConversationEvent, options: EmitOptions = {}): void {
     const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
-    const attempt = (this.emissionTails.get(path) ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(() => this.commitUnsavedTurnEnd(session))
-    this.emissionTails.set(path, attempt)
-    this.runInBackground(attempt)
-  }
-
-  /**
-   * Commit the end of a turn the log lost, ahead of whatever the chat says
-   * next; whether it is in the log now. Runs in the chat's emission order.
-   */
-  private async commitUnsavedTurnEnd(session: RuntimeSession): Promise<boolean> {
-    const end = session.unsavedTurnEnd
-    if (!end) return true
-    const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
-    const stamped: ConversationEvent = {
-      ...end,
-      id: `conv_evt_${this.eventEpoch}_${++this.eventSequence}`,
-      seq: (this.sequences.get(path) ?? 0) + 1,
-      createdAt: this.now(),
-    }
-    this.sequences.set(path, stamped.seq!)
-    if ((await this.persistEvent(session, stamped).catch(() => 'failed')) !== 'written') return false
-    if (session.unsavedTurnEnd === end) session.unsavedTurnEnd = undefined
-    this.notify(stamped)
-    return true
+    // The reader's cached tail assumed the file only grows; a failed write was cut back.
+    this.transcripts.forget(path)
+    // The message a send opens its turn with: nothing runs yet (a steer's
+    // message joins a stream that does).
+    if (event.type === 'user_message' && !session.providerTurn) return
+    if (this.shutDown || this.deletingTranscripts.has(path)) return
+    const turnId = typeof event.payload?.turnId === 'string' ? event.payload.turnId : (options.turnId ?? null)
+    if (!turnId && !session.activeTurnId) return
+    this.unclosedLogs.add(path)
+    if (session.status === 'stopped' || session.stoppingUnsaved) return
+    session.stoppingUnsaved = true
+    console.warn(
+      '[conversation-runtime] a conversation could not be saved to disk; its session is stopped:',
+      `${session.workspaceId}/${session.agentId}`,
+    )
+    // Not awaited: this runs inside the chat's emissions, which the stop
+    // waits on.
+    this.runInBackground(this.stopSessionNow({ sessionId: session.sessionId }))
   }
 
   /**
@@ -1817,8 +1811,9 @@ export class ConversationRuntime {
 
   /** Append and publish an event outside any session's emissions, or fail saying the log did not take it. */
   private async commitOrThrow(root: string, path: string, event: ConversationEvent): Promise<void> {
-    if (!this.publish(event, await this.eventLog.append(path, event, root).catch(() => 'failed' as const)))
-      throw new Error('The conversation could not be saved to disk.')
+    if (this.publish(event, await this.eventLog.append(path, event, root).catch(() => 'failed' as const))) return
+    this.transcripts.forget(path)
+    throw new Error('The conversation could not be saved to disk.')
   }
 
   private notify(event: ConversationEvent): void {
@@ -2089,18 +2084,6 @@ export class ConversationRuntime {
     const session = this.sessions.get(input.sessionId)
     if (!session) return sessionNotFound()
     const adapter = this.getAdapterForProviderId(session.providerId)
-    // A turn the log lost is over, and Stop is how the person asks for it to
-    // say so: its end is committed now, if the log takes it.
-    if (!session.activeTurnId && session.unsavedTurnEnd) {
-      const path = this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId)
-      const ended = (this.emissionTails.get(path) ?? Promise.resolve())
-        .catch(() => undefined)
-        .then(() => this.commitUnsavedTurnEnd(session))
-      this.emissionTails.set(path, ended)
-      return (await ended)
-        ? { ok: true, session: this.toSummary(session) }
-        : { ok: false, message: 'The conversation could not be saved to disk.' }
-    }
     if (!session.activeTurnId) {
       // A message still waiting for its folder is the turn Stop means: it is
       // abandoned, and never starts.
@@ -2826,8 +2809,6 @@ export class ConversationRuntime {
       }
     }
     if (this.shouldSuppressEvent(session, event, options)) return null
-    // A turn the log lost ends in it before anything said after it.
-    if (session.unsavedTurnEnd) await this.commitUnsavedTurnEnd(session)
     // A turn a steer ended goes on as the next one: its tools keep running, its
     // cards stay open, and nothing is settled until the stream really ends.
     const steered = event.type === 'turn_completed' && event.payload?.steered === true
@@ -2936,10 +2917,10 @@ export class ConversationRuntime {
     if (isStreamedEvent(stamped)) {
       this.persistEvent(session, stamped).then(
         (outcome) => {
-          if (outcome === 'failed') this.lostCommit(session, stamped)
+          if (outcome === 'failed') this.lostCommit(session, stamped, options)
           else this.publish(stamped, outcome)
         },
-        () => this.lostCommit(session, stamped),
+        () => this.lostCommit(session, stamped, options),
       )
       return stamped
     }
@@ -2949,7 +2930,7 @@ export class ConversationRuntime {
     )
     if (ends) await this.closeToolStreams(session)
     if (outcome === 'failed') {
-      this.lostCommit(session, stamped)
+      this.lostCommit(session, stamped, options)
       return null
     }
     if (options.records?.length) this.noteReceipts(path, options.records)
@@ -3208,6 +3189,10 @@ export class ConversationRuntime {
       if (this.shutDown || this.sessions.get(sessionId) !== session || this.deletingTranscripts.has(path)) return answer
       if ((await this.eventLog.appendRecord(path, record, session.workspaceRoot).catch(() => 'failed')) === 'written')
         this.noteReceipts(path, [record])
+      // A chat the command stopped, or one at rest, keeps no stream open: the
+      // answer was its last write until it is spoken to again.
+      const live = this.liveSessionFor(path)
+      if (!live || live.resting) await this.eventLog.close(path)
       return answer
     })()
     this.pendingCommands.set(key, result)
@@ -3672,6 +3657,7 @@ export class ConversationRuntime {
       this.receipts.delete(path)
       this.transcripts.forget(path)
       this.sequences.delete(path)
+      this.unclosedLogs.delete(path)
       this.emissionTails.delete(path)
       this.forkedMcpServers.delete(path)
       for (const session of matching) this.sessions.delete(session.sessionId)
@@ -4057,7 +4043,10 @@ export class ConversationRuntime {
 
   private async initializeSequenceNow(input: ConversationTranscriptInput): Promise<void> {
     const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
-    if (this.sequences.has(path)) return
+    const known = this.sequences.get(path)
+    // Taken up already this run, unless a write it refused may have left a
+    // turn open in it since (`lostCommit`).
+    if (known !== undefined && !this.unclosedLogs.has(path)) return
     await this.eventLog.flush(path)
     // Only the last turn can still be open, so the end of the log is all this
     // needs: its last sequence number and any turn it left unfinished.
@@ -4069,9 +4058,18 @@ export class ConversationRuntime {
         session.agentId === input.agentId &&
         session.status !== 'stopped',
     )
-    const floor = sync.head
-    const closures = sync.kind === 'snapshot' && !live ? syntheticTurnClosures(sync.page.events, floor) : []
-    for (const event of closures) await this.eventLog.append(path, event, input.workspaceRoot)
+    const floor = Math.max(sync.head, known ?? 0)
+    const closures = (sync.kind === 'snapshot' && !live ? syntheticTurnClosures(sync.page.events, floor) : []).map(
+      (event) => ({ ...event, id: `conv_evt_${this.eventEpoch}_${++this.eventSequence}` }),
+    )
+    let closed = true
+    for (const event of closures)
+      closed =
+        this.publish(
+          event,
+          await this.eventLog.append(path, event, input.workspaceRoot).catch(() => 'failed' as const),
+        ) && closed
+    if (closed && !live) this.unclosedLogs.delete(path)
     this.sequences.set(path, closures.at(-1)?.seq ?? floor)
     // Expiry lists every thread in the workspace; opening a conversation must not wait on it.
     const expiredAt = this.checkpointsExpiredAt.get(input.workspaceRoot)
@@ -5357,8 +5355,6 @@ function forkedPayload(event: ConversationEvent): ConversationEvent['payload'] {
   } = event.payload
   return rest
 }
-
-/** Beside the transcript: the highest sequence number published that may not be in it. */
 
 // Events a turn opens with before its runtime has done anything with it. A
 // turn that fails after only these never got as far as the model: its child
