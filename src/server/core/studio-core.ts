@@ -48,6 +48,7 @@ import { createConversationCheckoutChanges } from '../../main/conversation-check
 import { createConversationImportService } from '../../main/conversation-import/conversation-import-service'
 import { createConversationModelCatalog } from '../../main/conversation-model-catalog'
 import { ConversationPlanStore } from '../../main/conversation-plan-store'
+import { ConversationOutbox } from '../../main/conversation-outbox'
 import { ConversationRuntime, type ConversationRuntimeOptions } from '../../main/conversation-runtime'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { createGitWorktree, getGitRepoRoot } from '../../main/git'
@@ -322,6 +323,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     attachmentStore: new ConversationAttachmentStore(dataDir),
     uploadRoots: [join(dataDir, TAILNET_UPLOADS_DIRNAME), join(dataDir, WEB_UPLOADS_DIRNAME)],
     planStore: new ConversationPlanStore(dataDir),
+    outbox: new ConversationOutbox(dataDir),
     heldChatMode: ({ workspaceId, agentId }) => {
       const agent = workspaceRegistry.getRecord(workspaceId)?.agents[agentId]
       return agent?.conversationModeHeld && agent.conversationMode !== 'default' ? agent.conversationMode : undefined
@@ -340,6 +342,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     prepareChatFolder: worktrees.prepareChatFolder,
   })
   conversationRuntime.startIdleSweep(powerActivity)
+  // The turns the last run left open end now, in their chats' logs, rather
+  // than when someone next opens each chat.
+  void conversationRuntime.recoverInterruptedTurns().catch((error: unknown) => {
+    console.warn('[studio-core] open turns could not be closed:', error instanceof Error ? error.message : error)
+  })
   // Each project's state lives in its store in the person's home, on the
   // machine its chats run on (main/workspace-store.ts). An older build kept it
   // in `<project>/.sprintengine/`: moved out the first time a folder reaches

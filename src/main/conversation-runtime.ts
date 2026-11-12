@@ -132,6 +132,7 @@ import { applyPromptCacheEvent } from '../shared/prompt-cache'
 import { ConversationApprovalRuleStore } from './conversation-approval-rules'
 import { ConversationAttachmentStore } from './conversation-attachment-store'
 import { ConversationPlanStore } from './conversation-plan-store'
+import { ConversationOutbox } from './conversation-outbox'
 import { approvalRememberLabels, approvalRuleCandidate } from '../shared/conversation/approvalRules'
 import {
   looksLikePermissionSettingRefusal,
@@ -320,6 +321,12 @@ export type ConversationRuntimeOptions = {
     current: CliPermissionPreset | undefined
   }) => CliPermissionPreset | undefined
   approvalRules?: ConversationApprovalRuleStore
+  /**
+   * The chats whose turn may still be open (conversation-outbox.ts), so a
+   * start closes the turns the last run left open. Without one, a turn left
+   * open is closed when its chat is next opened.
+   */
+  outbox?: ConversationOutbox
   attachmentStore?: ConversationAttachmentStore
   /**
    * The folders files uploaded from a phone or a browser are kept in. One sent
@@ -537,6 +544,7 @@ export class ConversationRuntime {
   private readonly attachmentStore: ConversationAttachmentStore
   private readonly uploadRoots: string[]
   private readonly planStore: ConversationPlanStore
+  private readonly outbox: ConversationOutbox
   private readonly sessions = new Map<string, RuntimeSession>()
   private readonly deletingTranscripts = new Set<string>()
   private readonly startingTranscripts = new Set<string>()
@@ -558,7 +566,7 @@ export class ConversationRuntime {
   private readonly forkedMcpServers = new Map<string, ConversationMcpServer[]>()
   // The side questions being answered, by session and the caller's request id.
   private readonly sideQuestions = new Map<string, AbortController>()
-  private readonly sequenceInitializations = new Map<string, Promise<void>>()
+  private readonly sequenceInitializations = new Map<string, Promise<boolean>>()
   private readonly listeners = new Set<ConversationRuntimeListener>()
   private readonly idleListeners = new Set<(summary: ConversationSessionSummary) => void>()
   private readonly sequences = new Map<string, number>()
@@ -653,6 +661,7 @@ export class ConversationRuntime {
     this.attachmentStore = options.attachmentStore ?? new ConversationAttachmentStore()
     this.uploadRoots = options.uploadRoots ?? []
     this.planStore = options.planStore ?? new ConversationPlanStore()
+    this.outbox = options.outbox ?? new ConversationOutbox()
     // Startup-time epoch (not randomId — tests inject deterministic id
     // sequences that must not be consumed by construction).
     this.eventEpoch = this.now().toString(36)
@@ -681,6 +690,9 @@ export class ConversationRuntime {
   // finds it busy re-arms the announcement for its next rest.
   private noteSettled(session: RuntimeSession): void {
     this.noteWorkingStretch(session)
+    // Nothing open in the log any more: the chat leaves the outbox.
+    if (!isSessionBusy(session) && !session.providerTurn && !session.stoppingUnsaved)
+      this.runInBackground(this.outbox.settle(session))
     const settled =
       this.sessions.get(session.sessionId) === session &&
       (session.status === 'ready' || session.status === 'failed') &&
@@ -849,6 +861,7 @@ export class ConversationRuntime {
     for (const session of this.sessions.values())
       if (
         session.status !== 'stopped' &&
+        !session.stoppingUnsaved &&
         this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId) === path
       )
         live = session
@@ -1373,26 +1386,36 @@ export class ConversationRuntime {
             files.map((file) => file.path),
             this.transcriptPath(session.workspaceRoot, session.workspaceId, session.agentId),
           )
+        // The turn this opens is the command's effect: the chat is listed
+        // before the message commits, so a start after a crash finds the
+        // turn and closes it (conversation-outbox.ts). A list that cannot be
+        // written refuses the send as a log that cannot be written does.
+        const listed = await this.outbox.open(session).then(
+          () => true,
+          () => false,
+        )
         // The command is accepted here: its message and its receipt are one
         // write. A message the log does not take opened no turn, and nothing
         // of the command is recorded, so the same id may be sent again.
-        const opened = await this.emit(
-          session,
-          this.eventForSession(session, 'user_message', {
-            turnId,
-            text: message,
-            ...(storedAttachments.length ? { attachments: storedAttachments } : {}),
-            ...(input.localTurnId ? { localTurnId: input.localTurnId } : {}),
-            ...(command?.given ? { commandId: command.id } : {}),
-            ...(skills.ids.length ? { skills: skills.ids } : {}),
-            ...(mentions.refs.length ? { mentions: mentions.refs } : {}),
-            ...(files.length ? { files } : {}),
-            ...(input.origin ? { origin: input.origin } : {}),
-            ...(input.subagentMessage ? { subagentMessage: input.subagentMessage } : {}),
-            ...composedAtOf(input),
-          }),
-          { turnId, records: this.acceptTurn(command, turnId) },
-        )
+        const opened =
+          listed &&
+          (await this.emit(
+            session,
+            this.eventForSession(session, 'user_message', {
+              turnId,
+              text: message,
+              ...(storedAttachments.length ? { attachments: storedAttachments } : {}),
+              ...(input.localTurnId ? { localTurnId: input.localTurnId } : {}),
+              ...(command?.given ? { commandId: command.id } : {}),
+              ...(skills.ids.length ? { skills: skills.ids } : {}),
+              ...(mentions.refs.length ? { mentions: mentions.refs } : {}),
+              ...(files.length ? { files } : {}),
+              ...(input.origin ? { origin: input.origin } : {}),
+              ...(input.subagentMessage ? { subagentMessage: input.subagentMessage } : {}),
+              ...composedAtOf(input),
+            }),
+            { turnId, records: this.acceptTurn(command, turnId) },
+          ))
         if (!opened) {
           // Nothing of the command reached the log: the same id may come again.
           if (command) command.unrecorded = true
@@ -1663,7 +1686,7 @@ export class ConversationRuntime {
           // The work since the running turn's first file change is one change,
           // under that turn's number; a turn with none yet takes the new one.
           const checkpointTurnSeq = session.checkpointCapture ? session.checkpointTurnSeq : null
-          await this.emitNow(
+          const handedOver = await this.emitNow(
             session,
             this.eventForSession(session, 'turn_completed', {
               turnId: running.turnId,
@@ -1672,6 +1695,9 @@ export class ConversationRuntime {
             }),
             { turnId: running.turnId },
           )
+          // The log refused the running turn's end: the session is being
+          // stopped for it (`lostCommit`), and no new turn opens under it.
+          if (!handedOver || session.stoppingUnsaved) return running
           running.turnId = turnId
           session.activeTurnId = turnId
           session.updatedAt = this.now()
@@ -3363,6 +3389,9 @@ export class ConversationRuntime {
       session.resting = undefined
       // From here a steer can join it, as it joins a send's turn.
       session.providerTurn = openProviderTurn(turnId, true)
+      // Listed before its start is written, as a send's turn is; the agent
+      // already began it, so a list that cannot be written does not stop it.
+      await this.outbox.open(session).catch(() => undefined)
     }
     await this.emit(session, event, streamTurnId ? { turnId: streamTurnId } : {})
     // Looked up again: a steer can have landed while the event waited its turn to be written.
@@ -4022,31 +4051,57 @@ export class ConversationRuntime {
     }
   }
 
+  /**
+   * Close every turn the last run left open, at start: the turns of the
+   * chats the outbox lists, each ended in its log as interrupted
+   * (`initializeSequence`), so a client waiting on a send, a schedule's run
+   * and the chat list hear the end without anyone opening the chat. A chat
+   * stays listed while its log cannot be written, for the next start.
+   */
+  async recoverInterruptedTurns(): Promise<void> {
+    for (const chat of await this.outbox.pending()) {
+      if (this.liveSessionFor(this.transcriptPath(chat.workspaceRoot, chat.workspaceId, chat.agentId))) continue
+      const closed = await this.initializeSequence(chat).catch((error: unknown) => {
+        console.warn(
+          '[conversation-runtime] a turn left open could not be closed:',
+          error instanceof Error ? error.message : error,
+        )
+        return false
+      })
+      if (closed) await this.outbox.settle(chat)
+    }
+  }
+
   async recoverTranscript(input: ConversationTranscriptInput): Promise<void> {
     if (this.deletingTranscripts.has(this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)))
       throw new Error('Conversation is being deleted.')
     await this.initializeSequence(input)
   }
 
-  private async initializeSequence(input: ConversationTranscriptInput): Promise<void> {
+  /**
+   * Take up a chat's log for this run: its last sequence number, and an end
+   * written for any turn the last run left open, unless a session here is
+   * running it. Whether the log now leaves no turn open that nothing runs.
+   */
+  private async initializeSequence(input: ConversationTranscriptInput): Promise<boolean> {
     const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
     const existing = this.sequenceInitializations.get(path)
     if (existing) return existing
     const pending = this.initializeSequenceNow(input)
     this.sequenceInitializations.set(path, pending)
     try {
-      await pending
+      return await pending
     } finally {
       if (this.sequenceInitializations.get(path) === pending) this.sequenceInitializations.delete(path)
     }
   }
 
-  private async initializeSequenceNow(input: ConversationTranscriptInput): Promise<void> {
+  private async initializeSequenceNow(input: ConversationTranscriptInput): Promise<boolean> {
     const path = this.transcriptPath(input.workspaceRoot, input.workspaceId, input.agentId)
     const known = this.sequences.get(path)
     // Taken up already this run, unless a write it refused may have left a
     // turn open in it since (`lostCommit`).
-    if (known !== undefined && !this.unclosedLogs.has(path)) return
+    if (known !== undefined && !this.unclosedLogs.has(path)) return true
     await this.eventLog.flush(path)
     // Only the last turn can still be open, so the end of the log is all this
     // needs: its last sequence number and any turn it left unfinished.
@@ -4073,7 +4128,7 @@ export class ConversationRuntime {
     this.sequences.set(path, closures.at(-1)?.seq ?? floor)
     // Expiry lists every thread in the workspace; opening a conversation must not wait on it.
     const expiredAt = this.checkpointsExpiredAt.get(input.workspaceRoot)
-    if (expiredAt !== undefined && this.now() - expiredAt < CHECKPOINT_EXPIRY_INTERVAL_MS) return
+    if (expiredAt !== undefined && this.now() - expiredAt < CHECKPOINT_EXPIRY_INTERVAL_MS) return closed
     this.checkpointsExpiredAt.set(input.workspaceRoot, this.now())
     this.runInBackground(
       this.threadIndex
@@ -4086,6 +4141,7 @@ export class ConversationRuntime {
           ]),
         ),
     )
+    return closed
   }
 
   /**
