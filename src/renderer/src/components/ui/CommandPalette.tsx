@@ -107,6 +107,7 @@ import {
 import { OVERLAY_SHELL_CHROME_CLASS, overlayWidthStyle } from './tokens'
 import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
+import { agentSkillsApi } from '../../studio/agentSkills'
 
 // The four canonical source groups the global-search palette organizes results
 // into (T6), plus the two disk-backed groups: Files (name matches, plus the
@@ -335,7 +336,7 @@ export default function CommandPalette({
       return
     }
     let cancelled = false
-    void window.api
+    void agentSkillsApi
       .workspaceSkillsList({ workspaceRoot: activeFolderPath })
       .then((result) => {
         if (cancelled) return

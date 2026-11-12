@@ -67,6 +67,7 @@ import { ConnectorRow, ConnectorSectionHeading } from './ConnectorRow'
 import { ModuleUpdateBanner, type ModuleUpdateFlow, type ModuleUpdateNotice } from './ExtensionUpdateBanner'
 import { cliOnlyRegistryIds, deriveManageUpdateBanner } from './extensionUpdates'
 import { errorMessage } from '../../../../../shared/errors'
+import { agentSkillsApi } from '../../../studio/agentSkills'
 
 // Per-row actions, all optional: the host wires only the handlers that exist
 // today (no new IPC), and rows without a matching handler carry no affordance.
@@ -183,14 +184,14 @@ export function InstalledExtensionsInventory({
   }, [])
 
   const loadSkills = useCallback(async () => {
-    if (typeof window.api.workspaceSkillsList !== 'function') {
+    if (typeof agentSkillsApi.workspaceSkillsList !== 'function') {
       setSkills({ status: 'unsupported' })
       return
     }
     try {
       // The skills installed for every project are as much "installed" as the
       // folder's: every agent reads them, with or without a folder open.
-      const result = await window.api.workspaceSkillsList({ workspaceRoot, includeGlobal: true })
+      const result = await agentSkillsApi.workspaceSkillsList({ workspaceRoot, includeGlobal: true })
       setSkills(result.ok ? { status: 'ok', value: result.skills } : { status: 'error', message: result.message })
     } catch (error) {
       setSkills({ status: 'error', message: errorMessage(error, 'Could not list installed skills.') })

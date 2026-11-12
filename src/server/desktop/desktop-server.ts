@@ -204,9 +204,25 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // The terminal agents' pull request marks (below), bound once the Studio
   // socket they are read over exists.
   let terminalPullRequests: TerminalPullRequests | null = null
+  // The GitHub token the skills and the shell's own readers use: sealed by the shell's keychain.
+  const githubTokenStore = new GitHubTokenStore()
   let core: ReturnType<typeof createStudioCore>
   try {
     core = createStudioCore(platform, {
+      // What the shell adds to the agents' skills and cards: its Trash, and
+      // the marketplace and module trust store a card's `install.module`
+      // goes through. The GitHub token is this process's own store's.
+      agentSkills: {
+        resolveGitHubToken: () => githubTokenStore.resolveToken(),
+        trash: async (path) => {
+          await rpc.call(SHELL_METHODS.trash, { path })
+        },
+        marketplace: {
+          readMarketplaceRegistry: () => rpc.call(SHELL_METHODS.marketplaceRead, {}),
+          listMarketplaceReceipts: () => rpc.call(SHELL_METHODS.marketplaceReceipts),
+          installMarketplaceEntry: (input) => rpc.call(SHELL_METHODS.marketplaceInstall, input),
+        },
+      },
       ...(shellSsh
         ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
         : {}),
@@ -412,7 +428,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   })
   rpc.on(SERVER_EVENTS.updateState, (payload) => desktopUpdates.mirror(payload))
   const studioRpc = createStudioRpc(core, gateway, { updates: desktopUpdates.updates, modules: modules.hub })
-  const githubTokenStore = new GitHubTokenStore()
   const workspaceBackup = createWorkspaceBackupService({
     resolveUserDataDir: () => envelope.dataDir,
     readRegistry: () => workspaceRegistry.getState(),
@@ -727,6 +742,7 @@ function serveShellAgentRequests(rpc: Parameters<ServerStart>[0]['rpc'], agents:
     return detectCliMachines({ which: which === 'wsl' ? 'wsl' : 'local' })
   })
   rpc.handle(SERVER_METHODS.cliVersionsRefresh, () => readCliVersionAdvisories())
+  rpc.handle(SERVER_METHODS.skillSourcesCheck, () => agents.skills.skills.checkSourceUpdates())
   rpc.on(SERVER_EVENTS.cliPathsChanged, (payload) => {
     const hostId = (payload as { hostId?: unknown } | null)?.hostId
     if (typeof hostId === 'string' && isWslHostId(hostId)) invalidateCliAvailabilityOnHost(hostId)

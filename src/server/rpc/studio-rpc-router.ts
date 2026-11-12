@@ -42,6 +42,8 @@ import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import { createStudioAgentSettingsHandlers } from './studio-agent-settings'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import type { StudioAgentSkills } from '../core/studio-agent-skills'
+import { createStudioAgentSkillsHandlers } from './studio-agent-skills'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
@@ -154,6 +156,7 @@ export type StudioRpcRouterOptions = {
   agentSettings?: StudioAgentSettings
   /** What the agents are set up with beyond their CLIs; without it, `memory.*`, `mcp.sync` and the rest are answered `unavailable`. */
   agentSetup?: StudioAgentSetup
+  agentSkills?: StudioAgentSkills
   /** The modules beside this Studio; without it, `module.read` and `module.operate` are answered `unavailable`. */
   modules?: StudioModules
   /** What the Studio keeps beside its chats; without it, `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report` and `conversationImport.*` are answered `unavailable`. */
@@ -1521,6 +1524,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const waiting = grant.owner || studioScopesGrant(grant.scopes, 'conversation:read') ? read.waiting : []
       return { ok: true, result: voice.redact({ ...read, waiting }) }
     },
+    ...createStudioAgentSkillsHandlers({ ...(options.agentSkills ? { skills: options.agentSkills } : {}), mayName }),
 
     // ── Modules ────────────────────────────────────────────────────────────
     // A module's declared methods. A read is answered each time; an operate

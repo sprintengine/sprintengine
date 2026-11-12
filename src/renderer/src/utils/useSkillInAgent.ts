@@ -25,6 +25,7 @@ import {
 import { bracketedPaste } from './terminalDrop'
 import { listTerminals, writeTerminal } from '../studio/terminals'
 import { agentSetupApi } from '../studio/agentSetup'
+import { agentSkillsApi } from '../studio/agentSkills'
 
 /**
  * The little a CLI entry has to tell this flow: who it is, what to call it, and
@@ -346,7 +347,7 @@ export async function resolveWorkspaceSkill(input: {
   try {
     // A skill installed for every project is as usable here as the folder's
     // own — installs land there by default.
-    const result = await window.api.workspaceSkillsList({ workspaceRoot: input.workspaceRoot, includeGlobal: true })
+    const result = await agentSkillsApi.workspaceSkillsList({ workspaceRoot: input.workspaceRoot, includeGlobal: true })
     if (!result.ok) return { ok: false, message: result.message }
     const skill = result.skills.find((candidate) => candidate.id === input.skillId)
     if (!skill) return { ok: false, message: SKILL_NOT_IN_WORKSPACE_MESSAGE }

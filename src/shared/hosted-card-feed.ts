@@ -30,6 +30,8 @@
 // counted, because one bad row must never blank the home page.
 
 import { isRecord } from './records'
+import type { CardAction, CardActionVerb, CardSurfaceView } from '../../packages/studio-protocol/src/public'
+export type { CardAction, CardActionVerb, CardSurfaceView } from '../../packages/studio-protocol/src/public'
 
 export const HOSTED_CARD_FEED_SCHEMA_VERSION = 1 as const
 
@@ -47,141 +49,7 @@ export type HostedCardKind = 'mcp' | 'skill' | 'plugin' | 'showcase'
 
 const CARD_KINDS: readonly HostedCardKind[] = ['mcp', 'skill', 'plugin', 'showcase']
 
-// The doors a card may open. `plugins` and `skills` are VIEWS OF THE EXTENSIONS
-// DOOR — exactly `EXTENSIONS_DRAWER_VIEWS` in the renderer's
-// extensionsSurfaceTarget.ts — and `home` is the card feed's own page beside
-// them. The renderer latches the view and then opens the door.
-//
-// `agent-clis` named a third view until the owner moved agent CLIs to Settings ▸
-// Agents (2026-09-25). It stays in the union because the union is a permanent
-// contract and published cards still name it: the renderer now opens Settings ▸
-// Agents on this machine for it, which is where that view's list went.
-//
-// The rule is the wide one: **every door the app has, whether or not it lives
-// under Extensions**, may be named here. Adding one is additive and safe,
-// because a build that does not know a view drops the card and counts it rather
-// than opening nothing.
-//
-// Restated here rather than imported because src/shared may not reach into the
-// renderer. Added to, never renamed: this union is a permanent contract.
-export type CardSurfaceView = 'home' | 'plugins' | 'skills' | 'agent-clis'
-
 const CARD_SURFACE_VIEWS: readonly CardSurfaceView[] = ['home', 'plugins', 'skills', 'agent-clis']
-
-// The closed verb set, and it is closed against the call sites rather than
-// against an imagination of them. The first cut of this union carried thirteen
-// verbs, nine of which no installer in this repository could execute:
-// `add.source`, `seed.backlog`, `create.workflow`,
-// `create.automation` and `design.import` named nothing, and the four that
-// remained were shaped wrong — `install.mcp` carried a source the catalogue does
-// not have, `clone.repo` a `ref` git-clone does not take, `open.chat` one
-// attachment list where the composer keeps two, and `open.surface` a
-// surface/tab pair the door stopped speaking in September. A schema is a
-// permanent forward-compatible contract, so shipping a fictional vocabulary is
-// worse than shipping a small true one: adding a verb later is cheap and
-// additive, while un-shipping one is a breaking change to every build in the
-// field. Each verb below is a call this repository already makes.
-//
-// **No action carries a workspace, deliberately.** A card runs in the workspace
-// the person is already in, and the executor supplies it — a card that could
-// name a workspace could reach into a project the person was not looking at.
-// `clone.repo` is the one verb that makes a new one, and everything after it in
-// the same card runs in that.
-export type CardAction =
-  // Make sure an agent CLI is there — and say which one is missing rather than
-  // installing it. Installing a CLI runs a shell command on the person's
-  // machine, and `CliInstallMethodInfo` exists so that command is shown before
-  // anybody consents to it; a card may not answer that disclosure on somebody's
-  // behalf, so the executor refuses and points at Settings → Agents — the app's
-  // one install route (and see `openChat`'s neighbour in
-  // src/main/cards/run-card.ts for why a card's refusal names it rather than the
-  // Agent CLIs view the card is standing in). This comment said "and install it
-  // if not" until 2026-09-06, which described behaviour the executor
-  // deliberately does not have. `cli` is a plugin id under `resources/plugins/`
-  // (`claude-code`, `codex`), never a vendor name or a binary path.
-  | { verb: 'require.cli'; cli: string }
-  // An MCP server by its id. The bundled catalogue this used to resolve against
-  // was retired with the third-party ruling (2026-09-08) — sixteen
-  // servers nobody here wrote — and no bundled list replaced it: an MCP server
-  // arrives inside a plugin now, which `install.plugin` installs. The verb stays
-  // in the schema because it is a published contract every build in the field
-  // parses, but the executor can only honour an id the workspace already holds
-  // in its MCP settings; any other id is refused by name
-  // (`src/main/cards/run-card.ts`).
-  | { verb: 'install.mcp'; id: string }
-  // A skill and a plugin each name a source the app already holds and an id
-  // within it. `source` is a source id as src/shared/skills.ts mints them:
-  // `github:owner/name` or `local:<absolute path>` — `builtin` is gone. For a
-  // skill, `id` is a `ScannedSkill.id`, which is the skill directory's path
-  // relative to its source (`skills/engineering/prototype`).
-  | { verb: 'install.skill'; source: string; id: string }
-  // For a plugin, `id` is the plugin's name in its source's marketplace
-  // manifest. The card carries nothing else: `installPlugin` also wants
-  // `marketplaceName`, `marketplaceRepo` and `commitSha`, and the executor
-  // resolves all three from that source's scan at run time. A card that carried
-  // them would be carrying facts that go stale the moment the marketplace is
-  // republished, and a stale commitSha installs the wrong bytes.
-  | { verb: 'install.plugin'; source: string; id: string }
-  // A capability module from the app's OWN signed marketplace registry — the
-  // one `readMarketplaceRegistry` reads, not a Claude marketplace a source
-  // points at. `id` is the registry entry's id, and the executor resolves it
-  // there before anything is downloaded.
-  //
-  // It carries no `source` for the reason `install.plugin` carries one: there
-  // is exactly one registry, it ships with the app, and a card that could name
-  // another would be a card choosing where this machine's code comes from.
-  //
-  // A module is code that runs in-process, so the executor honours this verb
-  // ONLY for a `verified` entry — signed by a publisher in
-  // `trusted-publishers.json`. Everything else needs the trust prompt, which is
-  // a disclosure a person reads and answers; R4's "Go goes" removes the card's
-  // own ceremony and does not repeal somebody else's gate (the same rule
-  // `require.cli` follows). Such a card is refused by name, pointing at
-  // Extensions → Plugins where the disclosure lives.
-  | { verb: 'install.module'; id: string }
-  // Open a chat with the named tools attached and the prompt sent. Two lists and
-  // not one because the composer draft keeps them apart (newChatDraft.ts:
-  // `skills: WorkspaceSkill[]` beside `mcpServers: AgentComposerConnector[]`),
-  // and a flat list could not say which an entry was. `skills` names installed
-  // skills by directory name — a `WorkspaceSkill.id`; `mcpServers` names
-  // MCP server ids. `send` is required rather than optional: R4 is "Go goes", and
-  // an unstated `send` leaves the reader guessing whether the card meant to park
-  // its prompt in the composer for somebody to approve.
-  //
-  // **`mcpServers` is an assertion, not an attachment** — read this before you
-  // write one (2026-09-06,
-  // backlog/2026-09-06-the-seams-that-lead-nowhere.md §2). Listing a server here
-  // does not put it on the chat: the executor's `openChat`
-  // (src/main/cards/run-card.ts) deliberately carries nothing across, because
-  // the card's servers reach the chat by already being in the workspace's
-  // `.mcp.json`, which the `install.mcp` earlier in the same card wrote on the
-  // way past. What the field does is bound what the card may CLAIM —
-  // `refuseCardActions` below refuses a card whose chat names a server the card
-  // does not install itself — so it is the place a card states its own
-  // dependency and is held to it, not a way to reach a server it never
-  // installed. `skills` is the opposite shape and that asymmetry is real: the
-  // renderer attaches skills by name because a chip in the composer is the only
-  // way a skill shows up, while an MCP server is already there in the file.
-  //
-  // Kept rather than deleted for the reason at the head of this file: the schema
-  // is a permanent contract, and a field years-old builds parse cannot be
-  // withdrawn just because the executor stopped forwarding it.
-  | { verb: 'open.chat'; prompt: string; skills?: string[]; mcpServers?: string[]; send: boolean }
-  // A door, on one of the Extensions views. Mirrors `ExtensionsSurfaceTarget`
-  // exactly: a view, and optionally its Installed tab. The pair it replaces
-  // (`surface` + `tab`) was the vocabulary of a surface that no longer exists.
-  | { verb: 'open.surface'; view: CardSurfaceView; installed?: boolean }
-  // Clone a public GitHub repository and open it. `repo` is `owner/name`: a card
-  // names a repository, never a URL, so no card can point git at a host of its
-  // choosing, and the owner must be one of `CARD_CLONE_OWNERS` below.
-  // `folderName` is the single directory name to clone into, and the executor
-  // supplies `parentDir` — where this app keeps projects is the app's business,
-  // not a card's. There is no `ref`: the clone takes a branch now, but a
-  // schema field is a permanent contract, and no card has needed anything but
-  // the default branch — it is added when one does, not before.
-  | { verb: 'clone.repo'; repo: string; folderName?: string }
-
-export type CardActionVerb = CardAction['verb']
 
 /**
  * The GitHub owners a card may clone from — the one rule in this file that

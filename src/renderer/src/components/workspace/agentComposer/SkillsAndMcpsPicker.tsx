@@ -36,6 +36,7 @@ import {
 import type { AgentComposerConnector } from './useAgentComposer'
 import { isImeKey } from '../../../utils/imeKey'
 import { agentSetupApi } from '../../../studio/agentSetup'
+import { agentSkillsApi } from '../../../studio/agentSkills'
 
 // The composer's one picker for what a new agent starts with (browser-pane
 // epic, child 7): the skills this workspace has, the skills it could have,
@@ -854,7 +855,7 @@ function useCliMcpServers(
   useEffect(() => {
     if (!active || !workspaceRoot || !cli) return
     let cancelled = false
-    window.api
+    agentSkillsApi
       .agentCapabilities({ workspaceRoot, pluginId: cli })
       .then((answer) => {
         if (!cancelled) setServers(answer.ok ? (answer.servers ?? []) : [])
@@ -1033,7 +1034,7 @@ function useSkillSourcesById(active: boolean): ReadonlyMap<string, SkillSource> 
   useEffect(() => {
     if (!active) return
     let cancelled = false
-    Promise.resolve(window.api.skillsListSources?.())
+    Promise.resolve(agentSkillsApi.skillsListSources?.())
       .then((answer) => {
         if (!cancelled && answer?.ok) setSources(new Map(answer.sources.map((source) => [source.id, source])))
       })

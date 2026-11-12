@@ -83,7 +83,6 @@ const KNOWN_BOOT_REFUSALS = new Set([
   'git:get-workspace-change-summary',
   'git:checkout-watch-retain',
   'hosted-card-feed:get',
-  'skills:list-workspace',
   // Third-party modules run in the desktop app only (the module bridge is
   // refused to a web tab too): the push of module settings to main has
   // nothing to serve in a browser.

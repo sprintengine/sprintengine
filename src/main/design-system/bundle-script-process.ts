@@ -1,15 +1,15 @@
-import { utilityProcess } from 'electron'
+import { spawn, type ChildProcess } from 'node:child_process'
 
 import { bundleScriptEnv } from './bundle-script-env'
 import type { BundleScriptExit, BundleScriptFork } from './bundle-lint-run'
 
-// Bundle generator scripts run in an Electron utility process, never in the
-// main process itself — the same trust boundary as the bypass designer
-// session that authored them. Verified against Electron 41: utilityProcess
-// forks bundle-local .mjs entry points, and the scripts terminate themselves
-// with an explicit flush-then-exit (the parent IPC port would otherwise keep
-// their event loop alive forever — the timeout below is the backstop for a
-// script that does not honor that contract).
+// Bundle scripts run in a process of their own, never in the Studio's: the
+// same trust boundary as the designer session that authored them. The Studio
+// server runs them wherever it runs (in the desktop, in a process of its own,
+// on a WSL or SSH machine), with the Node it runs on: plain Node for a
+// standalone server, the app's binary as Node inside the desktop. No IPC
+// channel is opened, so a script's event loop ends when its work does; the
+// timeout below is the backstop for one that never ends.
 const SCRIPT_TIMEOUT_MS = 30_000
 
 // 'exit' can fire before the final stdio chunks are delivered; wait briefly
@@ -24,23 +24,24 @@ function streamClosed(stream: NodeJS.ReadableStream | null): Promise<void> {
   })
 }
 
-export const forkBundleScriptInUtilityProcess: BundleScriptFork = (scriptPath, args, options) =>
+export const runBundleScriptInChildProcess: BundleScriptFork = (scriptPath, args, options) =>
   new Promise<BundleScriptExit>((resolve) => {
-    let child: Electron.UtilityProcess
+    let child: ChildProcess
     try {
-      // Bundle scripts never see the full main-process env — only the
-      // minimal allowlist (bundle-script-env.ts): main-env secrets must not
-      // leak into every generator script the runner executes.
-      child = utilityProcess.fork(scriptPath, args, {
+      // Bundle scripts never see the Studio's full env, only the minimal
+      // allowlist (bundle-script-env.ts): its secrets must not reach every
+      // generator script the runner executes.
+      child = spawn(process.execPath, [scriptPath, ...args], {
         cwd: options.cwd,
-        stdio: 'pipe',
-        env: bundleScriptEnv(process.env),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...bundleScriptEnv(process.env), ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
+        windowsHide: true,
       })
     } catch (error) {
       resolve({
         exitCode: null,
         stdout: '',
-        stderr: `failed to fork ${scriptPath}: ${error instanceof Error ? error.message : String(error)}`,
+        stderr: `failed to start ${scriptPath}: ${error instanceof Error ? error.message : String(error)}`,
       })
       return
     }
@@ -67,6 +68,12 @@ export const forkBundleScriptInUtilityProcess: BundleScriptFork = (scriptPath, a
       })
     }, SCRIPT_TIMEOUT_MS)
 
+    child.once('error', (error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      resolve({ exitCode: null, stdout, stderr: `failed to start ${scriptPath}: ${error.message}` })
+    })
     child.once('exit', (exitCode) => {
       if (settled) return
       settled = true

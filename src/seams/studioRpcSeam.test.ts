@@ -16,6 +16,7 @@ import {
   STUDIO_AGENT_SETTINGS_METHODS,
   STUDIO_AGENT_SETUP_METHODS,
   STUDIO_CHAT_STORES_METHODS,
+  STUDIO_AGENT_SKILLS_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -24,6 +25,9 @@ import {
   type StudioAgentSettingsMethod,
   type StudioAgentSetupMethod,
   type StudioChatStoresMethod,
+      string
+    >),
+  type StudioAgentSkillsMethod,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -419,6 +423,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // trays, Settings, the usage dashboard, onboarding), called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CHAT_STORES_METHODS).map((method) => [method, 'request'])) as Record<
       StudioChatStoresMethod,
+      string
+    >),
+    // And the skills, design systems and cards they are given.
+    ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SKILLS_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioAgentSkillsMethod,
       string
     >),
   }

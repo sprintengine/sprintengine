@@ -62,12 +62,6 @@ export type {
 import type { BuildStamp } from './build-stamp'
 export type { BuildStamp } from './build-stamp'
 import type {
-  InstalledSkillsInput,
-  InstalledSkillsResult,
-  InstalledSkillRemoveInput,
-  InstalledSkillRemoveResult,
-} from './installed-skills'
-import type {
   BrowserCaptureInput,
   BrowserClearResult,
   BrowserConfig,
@@ -112,7 +106,6 @@ export type {
   FolderOpenTargetAvailability,
   FolderOpenTargetId,
 } from './folder-open-targets'
-import type { AgentCapabilitiesInput, AgentCapabilitiesResult } from './skills'
 // Re-exported because the harness identity is part of this IPC contract: it
 // rides BuiltinSkill, WorkspaceSkill and every install/uninstall result.
 export type { SkillHarness } from './skills'
@@ -206,16 +199,6 @@ import type {
 // Write-back config + IPC contracts: schema owned by T10, IPC surface
 // consumed by the T11 settings UI. Re-exported through the single electron-api
 // surface like the rest of the tracker seam.
-import type { DesignSystemBundleLintRunResult } from './design-system/bundle-lint-run'
-import type { DesignSystemScaffoldResult } from './design-system/bundle-scaffold'
-import type { DesignSystemBundleReadResult } from './design-system/bundle-view'
-import type { DesignSystemLibraryListResult, DesignSystemRegisterResult } from './design-system/library'
-import type { DesignSystemArrivalsResult } from './design-system/arrivals'
-import type {
-  DesignSystemAttachResult,
-  DesignSystemAttachSource,
-  DesignSystemDetachResult,
-} from './design-system/attach'
 import type {
   ConversationContextBreakdownResult,
   ConversationSideQuestionExchange,
@@ -291,7 +274,6 @@ import type {
   BacklogStatusInput,
   BacklogTriageInput,
 } from './ipc/backlog'
-import type { CardRunInput, CardRunResult } from './ipc/cards'
 import type { DiagnosticLogEntry, DiagnosticLogInput, ProjectLogo, WorkspaceFolderCheckResult } from './ipc/diagnostics'
 import type { ContentSearchResult, FileSearchResult, FileSystemStat, FileWatchEvent } from './ipc/filesystem'
 import type {
@@ -369,40 +351,6 @@ import type {
   MarketplaceUpdateStatesResult,
 } from './ipc/marketplace-registry'
 import type { WorkspaceBackupPayload, WorkspaceBackupReadResult } from './ipc/workspace-backup'
-import type {
-  AgentSkillWriteInput,
-  AgentSkillWriteResult,
-  SkillAddLocalSourceInput,
-  SkillAddSourceInput,
-  SkillAddSourceResult,
-  SkillInstallInput,
-  SkillInstallOutcome,
-  SkillInstalledPluginsInput,
-  SkillInstalledPluginsOutcome,
-  SkillPluginInstallInput,
-  SkillPluginInstallOutcome,
-  SkillPluginScanLinkedInput,
-  SkillPluginScanLinkedOutcome,
-  SkillPluginUninstallInput,
-  SkillPluginUninstallOutcome,
-  SkillPopularReposOutcome,
-  SkillReadFileInput,
-  SkillReadFileResult,
-  SkillRemoveSourceInput,
-  SkillRemoveSourceResult,
-  SkillScanInput,
-  SkillScanOutcome,
-  SkillSearchInput,
-  SkillSearchOutcome,
-  SkillSourceUpdateCheck,
-  SkillSourcesResult,
-  SkillSyncSourceInput,
-  SkillSyncSourceOutcome,
-  SkillUninstallInput,
-  SkillUninstallOutcome,
-  WorkspaceSkillsListInput,
-  WorkspaceSkillsListResult,
-} from './ipc/skills'
 import type { PluginRegistryListResult, StudioPluginStatus } from './ipc/studio-plugin'
 import type { IpcStatsSnapshot, ProcessMetricsSnapshot, WorkspaceRegistryHydrateResult } from './ipc/terminal'
 import type {
@@ -1357,10 +1305,6 @@ export type ElectronApi = {
   hostedCardFeedGet: () => Promise<HostedCardFeedReadResult>
   hostedCardFeedRefresh: (input?: Pick<HostedCardFeedReadInput, 'forceRefresh'>) => Promise<HostedCardFeedReadResult>
   onHostedCardFeedChanged: (cb: (result: HostedCardFeedReadResult) => void) => () => void
-  // Pressing Go on a card on the Extensions home. One call runs the card's
-  // ordered actions in the workspace the person is in and hands back what to
-  // open; the renderer never runs an installer of its own (item 2469).
-  cardsRun: (input: CardRunInput) => Promise<CardRunResult>
   // Verify resolves the entry by id in main and answers with what an install
   // would put on the machine, plus the one-time trust token that installs
   // exactly that (see src/main/marketplace/trust-tokens.ts).
@@ -1510,8 +1454,6 @@ export type ElectronApi = {
   openDir: (options?: { defaultPath?: string }) => Promise<string | null>
   /** The file dialog for a project's icon, filtered to images. */
   openProjectIconFile: (options?: { defaultPath?: string }) => Promise<string | null>
-  /** Creates `~/.sprintengine/skills` if needed and returns its absolute path. */
-  ensureDefaultUserSkillsDir: () => Promise<string>
   defaultWorkspaceParentDir: () => Promise<string | null>
   /** Creates `~/.sprintengine/chats` if needed and returns it: New chat's "No project" scope. */
   projectlessChatsRoot: () => Promise<string>
@@ -1722,40 +1664,6 @@ export type ElectronApi = {
   cancelRepositoryClone: (cloneId: string) => Promise<void>
   /** Every running clone's progress, for the caller to filter on its `cloneId`. */
   onRepositoryCloneProgress: (cb: (progress: CloneProgress) => void) => () => void
-  workspaceSkillsList: (input: WorkspaceSkillsListInput) => Promise<WorkspaceSkillsListResult>
-  installedSkillsList: (input: InstalledSkillsInput) => Promise<InstalledSkillsResult>
-  installedSkillRemove: (input: InstalledSkillRemoveInput) => Promise<InstalledSkillRemoveResult>
-  // Everything the agent in one CLI can reach in one workspace, in one call:
-  // its skills, its MCP servers, and any path that failed to read.
-  agentCapabilities: (input: AgentCapabilitiesInput) => Promise<AgentCapabilitiesResult>
-  // Put one skill where every installed, skill-capable CLI reads it, and take
-  // it away again. Both report per target and neither returns the new list: the
-  // write invalidates, and the surface re-reads through agentCapabilities.
-  agentSkillAttach: (input: AgentSkillWriteInput) => Promise<AgentSkillWriteResult>
-  skillsListSources: () => Promise<SkillSourcesResult>
-  skillsAddSource: (input: SkillAddSourceInput) => Promise<SkillAddSourceResult>
-  skillsAddLocalSource: (input: SkillAddLocalSourceInput) => Promise<SkillAddSourceResult>
-  skillsRemoveSource: (input: SkillRemoveSourceInput) => Promise<SkillRemoveSourceResult>
-  skillsGetScan: (input: SkillScanInput) => Promise<SkillScanOutcome>
-  skillsReadFile: (input: SkillReadFileInput) => Promise<SkillReadFileResult>
-  skillsInstall: (input: SkillInstallInput) => Promise<SkillInstallOutcome>
-  skillsUninstall: (input: SkillUninstallInput) => Promise<SkillUninstallOutcome>
-  skillsSyncSource: (input: SkillSyncSourceInput) => Promise<SkillSyncSourceOutcome>
-  skillsSearch: (input: SkillSearchInput) => Promise<SkillSearchOutcome>
-  skillsListPopularRepos: () => Promise<SkillPopularReposOutcome>
-  skillsScanLinkedPlugin: (input: SkillPluginScanLinkedInput) => Promise<SkillPluginScanLinkedOutcome>
-  skillsInstallPlugin: (input: SkillPluginInstallInput) => Promise<SkillPluginInstallOutcome>
-  skillsUninstallPlugin: (input: SkillPluginUninstallInput) => Promise<SkillPluginUninstallOutcome>
-  skillsListInstalledPlugins: (input: SkillInstalledPluginsInput) => Promise<SkillInstalledPluginsOutcome>
-  /** Every check's result, pushed from main — the poller's hourly leg or a manual check. */
-  /**
-   * Ask for an update check now. Same check the hourly poller leg runs, under
-   * the same per-source cadence window: a source inside its window is
-   * reported in `skipped` with the sentence saying when it was last checked and
-   * why it is waiting, rather than being asked again.
-   */
-  skillsCheckSourceUpdates: () => Promise<SkillSourceUpdateCheck>
-  onSkillSourcesUpdated: (cb: (check: SkillSourceUpdateCheck) => void) => () => void
   // The chat's "Create PR" (src/main/pull-request-create.ts): whether it may
   // show for a checkout, a drafted title and description, the push, and the
   // creation. This computer's checkouts only. Never rejects.
@@ -1779,40 +1687,6 @@ export type ElectronApi = {
     body: string
     pin?: PullRequestCheckoutPin
   }) => Promise<CreatePullRequestOutcome>
-  /** Create a new design-system bundle in a user-chosen folder — seeded from an existing bundle, or bare from the shipped templates. Never overwrites; rolls back on failure. */
-  seedDesignSystemBundle: (
-    sourceDir: string | null,
-    targetDir: string,
-    name: string,
-    summary: string,
-  ) => Promise<DesignSystemScaffoldResult>
-  /**
-   * Run a bundle's own scripts/lint.mjs on demand (the bundle author's
-   * contribution gate). NO CALLER as of 2026-09-08 — the orphan sweep found the
-   * method reachable from nothing but its preload implementation. Kept rather
-   * than deleted because it is the only programmatic route to a real, tested
-   * capability (`src/main/design-system/bundle-lint-run.ts` and the
-   * pipeline round-trip's author gate); the owner decides whether the Design
-   * door's bundle view should call it or the whole chain should go.
-   */
-  lintDesignSystemBundle: (bundleDir: string) => Promise<DesignSystemBundleLintRunResult>
-  /** Read one design-system bundle directory for the Design door: identity, accent resolved from the token SOURCE, and the parsed manifest. Read-only — never writes, never forks a bundle script. */
-  readDesignSystemBundle: (bundleDir: string) => Promise<DesignSystemBundleReadResult>
-  /** List the library: every registered folder, probed live for its source state. */
-  listDesignSystemLibrary: () => Promise<DesignSystemLibraryListResult>
-  /** The same library reduced to arrival dates — one `addedAt` map per readable bundle, for the Extensions drawer's Design count. Never inlines an asset; a broken registration is skipped. */
-  listDesignSystemArrivals: () => Promise<DesignSystemArrivalsResult>
-  /** Point the library at a folder on disk. Registers a reference — copies nothing. */
-  registerDesignSystemFolder: (folderPath: string) => Promise<DesignSystemRegisterResult>
-  /** Drop a registration. Removes the reference only; the user's folder is untouched. */
-  forgetDesignSystemFolder: (id: string) => Promise<{ ok: true; forgotten: boolean }>
-  /** Attach a design-system bundle (library entry or browsed folder) to a workspace as a one-time copy at design-system/, provenance stamped. Refuses if design-system/ already exists. */
-  attachDesignSystemBundle: (
-    source: DesignSystemAttachSource,
-    workspaceRoot: string,
-  ) => Promise<DesignSystemAttachResult>
-  /** Remove the workspace's design-system/ copy. Idempotent; the caller owns the destructive confirmation. */
-  detachDesignSystemBundle: (workspaceRoot: string) => Promise<DesignSystemDetachResult>
   /** List installed third-party capability modules with trust, permissions, and launch readiness. */
   listThirdPartyModules: () => Promise<ThirdPartyModuleListResult>
   /** Install a third-party capability module from a folder (validated, not executed). */

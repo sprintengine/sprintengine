@@ -105,6 +105,12 @@ import {
   type StudioChatStoresMethodMap,
   type StudioChatStoresTopicMap,
 } from './chat-stores.js'
+import {
+  STUDIO_AGENT_SKILLS_METHODS,
+  STUDIO_AGENT_SKILLS_TOPICS,
+  type StudioAgentSkillsMethodMap,
+  type StudioAgentSkillsTopicMap,
+} from './agent-skills.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -216,6 +222,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioWorkspacesMethodMap &
   StudioReadinessMethodMap &
   StudioChatStoresMethodMap
+  StudioAgentSkillsMethodMap &
+  StudioWorkspacesMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -645,6 +653,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_UPDATE_METHODS,
   ...STUDIO_AGENT_SETTINGS_METHODS,
   ...STUDIO_AGENT_SETUP_METHODS,
+  ...STUDIO_AGENT_SKILLS_METHODS,
   ...STUDIO_WORKSPACES_METHODS,
   ...STUDIO_READINESS_METHODS,
   ...STUDIO_CHAT_STORES_METHODS,
@@ -690,6 +699,7 @@ export type StudioTopicMap = {
   StudioAgentSettingsTopicMap &
   StudioAgentSetupTopicMap &
   StudioChatStoresTopicMap
+  StudioAgentSkillsTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
 export type StudioTopicParams<T extends StudioTopic> = StudioTopicMap[T]['params']
@@ -728,6 +738,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_AGENT_SETTINGS_TOPICS,
   ...STUDIO_AGENT_SETUP_TOPICS,
   ...STUDIO_CHAT_STORES_TOPICS,
+  ...STUDIO_AGENT_SKILLS_TOPICS,
 }
 
 /** Whether a string names a topic this version of the protocol defines. */

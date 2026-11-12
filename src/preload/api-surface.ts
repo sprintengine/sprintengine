@@ -17,7 +17,6 @@ import { chatExportApi } from './api/chat-export'
 import { conversationPeekApi } from './api/conversation-peek'
 import { agentCompactApi } from './api/agent-compact'
 import { pullRequestApi } from './api/pull-request'
-import { designSystemApi } from './api/design-system'
 import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
 import { artifactsApi } from './api/artifacts'
@@ -26,7 +25,6 @@ import { hostedSourcesFeedApi } from './api/hosted-sources-feed'
 import { hostedCardFeedApi } from './api/hosted-card-feed'
 import { modulesApi } from './api/modules'
 import { pluginsApi } from './api/plugins'
-import { skillsApi } from './api/skills'
 import { hostsApi } from './api/hosts'
 import { sshEnvironmentsApi } from './api/ssh-environments'
 import { environmentsApi } from './api/environments'
@@ -39,7 +37,6 @@ import { canvasApi } from './api/canvas'
 import { editorRevealApi } from './api/editor-reveal'
 import { toursApi } from './api/tours'
 import { workspaceBackupApi } from './api/workspace-backup'
-import { workspaceSkillsApi } from './api/workspace-skills'
 import { workspaceSyncApi } from './api/workspace-sync'
 import { extensionScaffoldApi } from './api/extension-scaffold'
 import { previewsApi } from './api/previews'
@@ -98,12 +95,9 @@ export const apiModules = {
   ...conversationPeekApi,
   ...agentCompactApi,
   ...pullRequestApi,
-  ...designSystemApi,
-  ...skillsApi,
   ...updateApi,
   ...appMenuApi,
   ...workspaceBackupApi,
-  ...workspaceSkillsApi,
   ...workspaceSyncApi,
   ...extensionScaffoldApi,
   ...previewsApi,

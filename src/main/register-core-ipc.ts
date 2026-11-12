@@ -30,22 +30,18 @@ import { registerFilesystemWatchSearchIpc } from './ipc/filesystem-watch-search-
 import { registerGitRepoWatchIpc } from './ipc/git-repo-watch-ipc'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
-import { registerDesignSystemIpc } from './ipc/design-system-ipc'
 import { registerMenuDialogIpc } from './ipc/menu-dialog-ipc'
 import { registerProjectlessChatsIpc } from './ipc/projectless-chats-ipc'
 import { registerMarketplacePluginIpc } from './ipc/marketplace-plugin-ipc'
 import { registerMarketplaceRegistryIpc } from './ipc/marketplace-registry-ipc'
 import { registerHostedSourcesFeedIpc } from './ipc/hosted-feed-ipc'
 import { registerHostedCardFeedIpc } from './ipc/card-feed-ipc'
-import { registerCardsIpc } from './ipc/cards-ipc'
 import { registerModuleEnablementIpc, type ModuleEnablementLiveApplier } from './ipc/module-enablement-ipc'
 import { registerModuleAppStateIpc } from './ipc/module-app-state-ipc'
 import { registerModuleRegistryIpc } from './ipc/module-registry-ipc'
 import { registerPluginIpc } from './ipc/plugins-ipc'
 import { registerPullRequestIpc } from './ipc/pull-request-ipc'
-import { registerSkillsIpc } from './ipc/skills-ipc'
 import { webContentsIdOfWindowKey } from './ipc/studio-window-ticket-ipc'
-import { registerWorkspaceSkillsIpc } from './ipc/workspace-skills-ipc'
 import { registerThirdPartyModuleIpc } from './ipc/third-party-module-ipc'
 import type { ThirdPartyLaunchSession } from './modules/third-party-main-loader'
 import { registerUpdateIpc } from './ipc/update-ipc'
@@ -196,12 +192,6 @@ export function registerCoreIpc(
   registerPullRequestCreateIpc(ipcMain)
   registerAuthIpc(ipcMain, services.sprintengineAuth)
   registerStudioPluginIpc(ipcMain, services.studioPluginService)
-  registerSkillsIpc(ipcMain, services.skillsService)
-  registerWorkspaceSkillsIpc(machineIpc, {
-    workspaceSkills: services.workspaceSkillsService,
-    agentCapabilities: services.agentCapabilityService,
-    agentSkillInstaller: services.agentSkillInstaller,
-  })
   const filesystemSearchHandlers = createFilesystemWatchSearchHandlers()
   registerFilesystemWatchSearchIpc(machineIpc, filesystemSearchHandlers)
   const filesystemReadHandlers = createFilesystemReadHandlers({ opener: shell, projectLogoIo: createProjectLogoIo() })
@@ -291,13 +281,6 @@ export function registerCoreIpc(
   registerMarketplaceRegistryIpc(ipcMain)
   registerHostedSourcesFeedIpc(ipcMain)
   registerHostedCardFeedIpc(ipcMain)
-  // Go, on a card on the Extensions home. Registered after the skills and MCP
-  // services it composes, because it is those services said in one press.
-  registerCardsIpc(ipcMain, {
-    skillsService: services.skillsService,
-    mcpConfigService: services.mcpConfigService,
-    githubTokenStore: services.githubTokenStore,
-  })
   registerMarketplacePluginIpc(ipcMain, services)
   registerPluginIpc(ipcMain)
   // The domains the Studio server owns: registered here while it runs in
@@ -319,7 +302,6 @@ export function registerCoreIpc(
         })
       : // The server registers them, and disposes its own command lists.
         { conversationCommands: { dispose: async () => undefined } }
-  registerDesignSystemIpc(ipcMain)
   registerThirdPartyModuleIpc(ipcMain, services, {
     ...(options.readThirdPartyLaunchSession ? { readLaunchSession: options.readThirdPartyLaunchSession } : {}),
   })

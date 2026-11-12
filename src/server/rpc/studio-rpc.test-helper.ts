@@ -27,6 +27,7 @@ import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -368,6 +369,7 @@ export async function startTestServer(
     agentSettings?: StudioAgentSettings
     agentSetup?: StudioAgentSetup
     chatStores?: StudioChatStores
+    agentSkills?: StudioAgentSkills
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
     modules?: StudioModules
@@ -408,6 +410,7 @@ export async function startTestServer(
     ...(input.agentSettings ? { agentSettings: input.agentSettings } : {}),
     ...(input.agentSetup ? { agentSetup: input.agentSetup } : {}),
     ...(input.chatStores ? { chatStores: input.chatStores } : {}),
+    ...(input.agentSkills ? { agentSkills: input.agentSkills } : {}),
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),

@@ -1,4 +1,9 @@
 import { newDesignSystemEntryKeys } from './new-entries'
+import type { DesignSystemBundleArrivals } from '../../../packages/studio-protocol/src/public'
+export type {
+  DesignSystemArrivalsResult,
+  DesignSystemBundleArrivals,
+} from '../../../packages/studio-protocol/src/public'
 
 // The Design row's count, OUTSIDE the Design door.
 //
@@ -13,17 +18,6 @@ import { newDesignSystemEntryKeys } from './new-entries'
 // summed here. The RULE is not restated — `newDesignSystemEntryKeys` is the one
 // definition of new, so the row and the door can never disagree about what
 // counts, only about how fresh their data is.
-
-/** One bundle's arrival dates: its registration id, its folder, and entry key → ISO date. */
-export type DesignSystemBundleArrivals = {
-  /** `designSystemRegistrationId(path)` — the key `appSettings.designSystemSeen` stamps. */
-  bundleId: string
-  path: string
-  addedAt: Record<string, string>
-}
-
-/** What the arrivals IPC returns: one row per readable registered bundle. */
-export type DesignSystemArrivalsResult = { bundles: DesignSystemBundleArrivals[] }
 
 /**
  * How many entries across the whole library arrived since each bundle was last

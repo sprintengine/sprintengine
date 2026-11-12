@@ -17,6 +17,7 @@ import { setCliModelDiscoveryRuntimesResolver } from '../../main/model-discovery
 import { getPluginRegistry } from '../../main/plugin-registry-instance'
 import { createStudioAreaSkillStore, type StudioAreaSkillStore } from '../../main/studio-area-skill-store'
 import { createStudioAgentSetup, type StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import { createStudioAgentSkills, type StudioAgentSkills, type StudioAgentSkillsDeps } from './studio-agent-skills'
 import type { StudioPlatform } from '../platform/platform'
 
 // What a Studio's agents run and are set up with, composed in the core so
@@ -70,13 +71,20 @@ export type StudioAgents = {
   services: StudioAgentServices
   runtimes: CliRuntimes
   setup: StudioAgentSetup
+  /** The skills, design systems and cards they are given (studio-agent-skills.ts). */
+  skills: StudioAgentSkills
   /** Stop following the launch settings and detection for the version check. */
   stop(): void
 }
 
 export function createStudioAgents(
   platform: StudioPlatform,
-  deps: { agentLaunchSettings: AgentLaunchSettingsStore; services?: StudioAgentServices },
+  deps: {
+    agentLaunchSettings: AgentLaunchSettingsStore
+    services?: StudioAgentServices
+    /** What a desktop's shell adds to the skills (studio-agent-skills.ts). */
+    skills?: Omit<StudioAgentSkillsDeps, 'mcpConfig'>
+  },
 ): StudioAgents {
   const services = deps.services ?? createStudioAgentServices(platform)
   const { agentLaunchSettings } = deps
@@ -111,6 +119,7 @@ export function createStudioAgents(
       builtinSkills: services.builtinSkills,
       areaSkills: services.areaSkills,
     }),
+    skills: createStudioAgentSkills(platform, { ...deps.skills, mcpConfig: services.mcpConfig }),
     stop() {
       stopFollowingDetection()
       stopFollowingMachines()

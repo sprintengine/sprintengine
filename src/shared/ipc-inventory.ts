@@ -34,7 +34,6 @@ export type IpcServerArea =
   | 'worktree-pool'
   | 'files'
   | 'git'
-  | 'agent-setup'
   | 'web-tab'
 
 export type IpcInventoryRow =
@@ -89,8 +88,6 @@ const worktreePool = server('worktree-pool')
 const files = server('files')
 /** Moves to the protocol: a project's git and GitHub. */
 const git = server('git')
-/** Moves to the protocol: skills, MCP servers, memory, design systems and the cards that install them. */
-const agentSetup = server('agent-setup')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
 const webTab = server('web-tab')
 
@@ -579,39 +576,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'github:token-status': git('invoke'),
   'version-control:probe-host-gh': git('invoke'),
   'version-control:probe-providers': git('invoke'),
-  'cards:run': agentSetup('invoke'),
-  'design-system:attach': agentSetup('invoke'),
-  'design-system:detach': agentSetup('invoke'),
-  'design-system:library-arrivals': agentSetup('invoke'),
-  'design-system:library-forget': agentSetup('invoke'),
-  'design-system:library-list': agentSetup('invoke'),
-  'design-system:library-register': agentSetup('invoke'),
-  'design-system:lint-bundle': agentSetup('invoke'),
-  'design-system:read-bundle': agentSetup('invoke'),
-  'design-system:seed-bundle': agentSetup('invoke'),
-  'skills:add-local-source': agentSetup('invoke'),
-  'skills:add-source': agentSetup('invoke'),
-  'skills:agent-capabilities': agentSetup('invoke'),
-  'skills:agent-skill-attach': agentSetup('invoke'),
-  'skills:check-source-updates': agentSetup('invoke'),
-  'skills:ensure-default-user-dir': agentSetup('invoke'),
-  'skills:install': agentSetup('invoke'),
-  'skills:install-plugin': agentSetup('invoke'),
-  'skills:list-installed': agentSetup('invoke'),
-  'skills:list-installed-plugins': agentSetup('invoke'),
-  'skills:list-popular-repos': agentSetup('invoke'),
-  'skills:list-sources': agentSetup('invoke'),
-  'skills:list-workspace': agentSetup('invoke'),
-  'skills:read-file': agentSetup('invoke'),
-  'skills:remove-installed': agentSetup('invoke'),
-  'skills:remove-source': agentSetup('invoke'),
-  'skills:scan': agentSetup('invoke'),
-  'skills:scan-linked-plugin': agentSetup('invoke'),
-  'skills:search': agentSetup('invoke'),
-  'skills:sources-updated': agentSetup('push'),
-  'skills:sync-source': agentSetup('invoke'),
-  'skills:uninstall': agentSetup('invoke'),
-  'skills:uninstall-plugin': agentSetup('invoke'),
   'browser:local-servers': webTab('invoke'),
   'web:browse-folders': webTab('invoke'),
   'web:previews:changed': webTab('push'),

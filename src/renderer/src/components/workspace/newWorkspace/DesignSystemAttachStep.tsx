@@ -7,6 +7,7 @@ import { DESIGN_SYSTEM_BUNDLE_DIRECTORY_NAME } from '../../../../../shared/desig
 import type { DesignSystemLibraryEntry } from '../../../../../shared/design-system/library'
 import { CardButton, GhostButton } from '../../ui'
 import { pathJoin } from '../../../utils/paths'
+import { agentSkillsApi } from '../../../studio/agentSkills'
 
 // Attach-a-design-system section of the wizard's Advanced setup, shared by
 // every create flow. Follows the
@@ -85,7 +86,7 @@ export function DesignSystemAttachStep({
 
   useEffect(() => {
     let cancelled = false
-    window.api
+    agentSkillsApi
       .listDesignSystemLibrary()
       .then((result) => {
         if (cancelled) return

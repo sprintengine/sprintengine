@@ -15,6 +15,17 @@ import { test, vi } from 'vitest'
 
 // The IPC wire between the real preload and the real main handlers.
 vi.mock('electron', () => import('../../tests/stubs/electron'))
+// The window's Studio client: a real client of a real Studio server, over the
+// real skill services (set in `main` below), so a method the facade names
+// differently from the one the server answers fails here, not in production.
+const seamStudio: { client: unknown } = { client: null }
+vi.mock('../renderer/src/studio/windowStudioClient', async (original) => ({
+  ...(await original<typeof import('../renderer/src/studio/windowStudioClient')>()),
+  windowStudioClient: async () => {
+    if (!seamStudio.client) throw new Error('The seam has no Studio yet.')
+    return seamStudio.client
+  },
+}))
 
 test('skillSourcesSeam', async () => {
   // ── Seam: a skill source, end to end ─
@@ -313,11 +324,11 @@ test('skillSourcesSeam', async () => {
     const { createCapabilityWatcher } = await import('../main/capability-watcher')
     const { createAgentSkillInstaller } = await import('../main/agent-skill-installer')
     const { createMcpServerResolver } = await import('../main/mcp-config-readers/resolve-servers')
-    const { registerSkillsIpc } = await import('../main/ipc/skills-ipc')
-    const { registerWorkspaceSkillsIpc } = await import('../main/ipc/workspace-skills-ipc')
-    const { skillsApi } = await import('../preload/api/skills')
-    const { workspaceSkillsApi } = await import('../preload/api/workspace-skills')
-    const { ipcMain } = await import('electron')
+    const { connect } = await import('../../packages/client-runtime/src/public')
+    const { createStudioRpcServer } = await import('../server/rpc/studio-rpc-server')
+    const { createTicketAuthenticator, mintStudioTicket } = await import('../server/rpc/studio-frame-port')
+    const { inProcessStudioTransport } = await import('../server/rpc/studio-in-process-port')
+    const { createFakeAuthenticator, createFakeBackend } = await import('../server/rpc/studio-rpc.test-helper')
 
     const service = createSkillsService(userDataDir, {
       resolveToken: async () => '',
@@ -332,14 +343,16 @@ test('skillSourcesSeam', async () => {
       homeDir,
     })
 
-    // The real registrations, on the stub `electron` that wires `ipcMain.handle`
-    // to `ipcRenderer.invoke`: a channel the preload spells differently from the
-    // one main registers fails here rather than in production.
-    registerSkillsIpc(ipcMain, service)
     // No plugins in this seam: it exercises the skill-source half, and an empty
     // registry is what "this machine has no CLI installed" resolves to.
     const capabilityWatcher = createCapabilityWatcher({ listPlugins: () => [], lookupManifest: () => undefined })
-    registerWorkspaceSkillsIpc(ipcMain, {
+    const unused = async (): Promise<never> => {
+      throw new Error('not part of this seam')
+    }
+    const skills = {
+      skills: service,
+      onSourcesUpdated: () => () => undefined,
+      ensureUserSkillsFolder: () => join(homeDir, '.agents', 'skills'),
       workspaceSkills: createWorkspaceSkillsService({ homeDir }),
       agentCapabilities: createAgentCapabilityService({
         reader: createFsSkillDirectoryReader(),
@@ -350,8 +363,42 @@ test('skillSourcesSeam', async () => {
         homeDir,
       }),
       agentSkillInstaller: createAgentSkillInstaller({ listPlugins: () => [], homeDir }),
+      installedSkills: { list: unused, remove: unused },
+      designSystem: {
+        library: unused,
+        arrivals: unused,
+        register: unused,
+        forget: unused,
+        read: unused,
+        seed: unused,
+        lint: unused,
+        attach: unused,
+        detach: unused,
+      },
+      runCard: unused,
+    } as unknown as import('../server/core/studio-agent-skills').StudioAgentSkills
+    // The real Studio server, answering `agent-skills` from those services,
+    // and the window's client of it, as the app's own window connects.
+    const studio = createStudioRpcServer({
+      dataDir: userDataDir,
+      version: '0.0.0-test',
+      environmentId: 'env-skill-sources-seam',
+      backend: createFakeBackend(),
+      authenticator: createFakeAuthenticator(),
+      agentSkills: skills,
     })
-    domWindow.api = withInertPreloadFallback({ platform: 'darwin', ...skillsApi, ...workspaceSkillsApi })
+    seamStudio.client = await connect({
+      transport: async () => {
+        const ticket = mintStudioTicket()
+        return inProcessStudioTransport(
+          (stream) => studio.attach(stream, { authenticator: createTicketAuthenticator(ticket), ownWindow: true }),
+          () => ({ token: ticket }),
+        )()
+      },
+      client: { name: 'Studio desktop', kind: 'desktop' },
+      heartbeat: false,
+    })
+    domWindow.api = withInertPreloadFallback({ platform: 'darwin' })
 
     await testScanBrowseReadInstallSync(workspaceRoot, homeDir)
     await testCrossSourceCollisionKeepsItsOwnBytes(homeDir)
@@ -384,7 +431,7 @@ test('skillSourcesSeam', async () => {
       await import('../renderer/src/components/workspace/globalSurface/extensions/skills/useSkillSources')
     const { renderSkillInvocation, skillInstalledForHarness } = await import('../renderer/src/utils/skillInvocation')
 
-    const api = domWindow.api as {
+    const api = (await import('../renderer/src/studio/agentSkills')).agentSkillsApi as unknown as {
       skillsAddSource: (input: { repo: string }) => Promise<{ ok: boolean; message?: string }>
       skillsGetScan: (input: { sourceId: string }) => Promise<{ ok: boolean; scan: ScanResult }>
       workspaceSkillsList: (input: { workspaceRoot: string; includeGlobal?: boolean }) => Promise<{
@@ -438,9 +485,12 @@ test('skillSourcesSeam', async () => {
     }
 
     const markup = (): string => container.innerHTML
-    /** Let a real round trip finish — install and sync read and write real files. */
+    /**
+     * Let a real round trip finish — install and sync read and write real
+     * files, over the Studio protocol — for up to about five seconds.
+     */
     const settleUntil = async (what: string, ready: () => boolean): Promise<void> => {
-      for (let round = 0; round < 200; round += 1) {
+      for (let round = 0; round < 1000; round += 1) {
         if (ready()) return
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 5))
@@ -826,7 +876,7 @@ test('skillSourcesSeam', async () => {
     const { skillDirName } = await import('../shared/skills')
     const { readSkillProvenance, SKILL_PROVENANCE_FILE } = await import('../main/skills/install')
 
-    const api = domWindow.api as {
+    const api = (await import('../renderer/src/studio/agentSkills')).agentSkillsApi as unknown as {
       skillsGetScan: (input: { sourceId: string }) => Promise<{ ok: boolean; scan: ScanResult }>
       skillsInstall: (input: {
         sourceId: string
