@@ -442,12 +442,6 @@ export const TAILNET_CAPABILITIES = [
   // offers none of the four for this machine's chats; an older machine
   // answers the tools "Unknown tool".
   'chat-row-menu',
-  // A paired desktop's Usage counts what this machine spent (2026-10-21):
-  // `usage.report` answers a window with rows of one hour of one model in one
-  // session, each session by a hash of its id, on `workspace:read`. The
-  // desktop asking prices them itself. A client that does not see it says
-  // the machine's Studio needs updating rather than asking.
-  'usage-report',
   // ── A paired desktop's chat management (2026-10-25) ──
   // What a paired desktop's menus ask of a chat here beyond its marks. Each
   // names gateway tools served to paired devices only; a client that does not
@@ -481,20 +475,6 @@ export const TAILNET_CAPABILITIES = [
   // a path), and `conversation.approval_rule_revoke` revokes one, so a paired
   // desktop's Settings lists them beside its own.
   'approval-rules',
-  // A paired device's Scheduled section (2026-10-29): `schedule.list` and
-  // `schedule.run`, `schedule.pause`, `schedule.resume` and `schedule.delete`
-  // were always served on `workspace:*`; this names `schedule.create` taking
-  // `name`, `once` (a one-time instant) and `worktreeName`, so a paired
-  // desktop's or phone's New chat can schedule here what it schedules on its
-  // own machine. A client that does not see it lists this machine's
-  // schedules and controls them, but makes none here: an older handler
-  // refuses the new arguments.
-  'scheduled-agents',
-  // A paired device's schedule editor (2026-11-02): `schedule.update` changes
-  // one of this machine's schedules in place, so a paired desktop opens one
-  // in the same editor it opens its own in and saves it here. A client that
-  // does not see it still runs, pauses and closes them.
-  'scheduled-agents-edit',
   // An outside MCP client may sign in with OAuth (the MCP authorization spec)
   // instead of pairing: discovery from the MCP endpoint's 401.
   'mcp-oauth',

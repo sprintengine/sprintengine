@@ -15,7 +15,8 @@ import { STUDIO_CHAT_STORES_CAPABILITY } from './handshake.js'
 // limits its agents reported (`usageLimits.*`), the chats a limit stopped and
 // the resume each can have (`usageLimitResumes.*`), the messages a person
 // scheduled or queued into a chat (`scheduledMessages.*`), the priced usage
-// report (`usage.report`), and the sessions an agent CLI saved on the
+// report (`usage.report`) and this machine's rows for another desktop's
+// (`usage.rows`), and the sessions an agent CLI saved on the
 // machine, to bring in as chats (`conversationImport.*`).
 //
 // The conversation lane's per-chat frames (`conversation.scheduled`,
@@ -230,6 +231,64 @@ export type UsageReportRequest = {
 
 export type UsagePeerMode = 'cached' | 'ask' | 'await'
 
+// ── A machine's usage rows, for another desktop's dashboard ─────────────────
+//
+// What a desktop paired with this machine asks when its dashboard counts the
+// person's machines together (`usage.rows`): this machine's own counts, by
+// hour, agent, model and speed, and a hash of each session's id. No title,
+// folder, path, workspace or transcript: the dashboard shows totals, so a
+// total is all that is sent. Every desktop prices the rows with its own list.
+
+/** A speed above the standard one, as a row names it. */
+export type UsageWireSpeed = 'fast' | 'ultrafast'
+
+/**
+ * One row: `[hourStartMs, agent, sessionIndex, model, input, output, cacheRead,
+ * cacheWrite, requests, reportedCostUsd, speed?]`. `sessionIndex` points into
+ * the answer's `sessions`; `speed` is absent at standard speed.
+ */
+export type UsageWireRow = [
+  hour: number,
+  agent: string,
+  session: number,
+  model: string,
+  input: number,
+  output: number,
+  cacheRead: number,
+  cacheWrite: number,
+  requests: number,
+  reportedCostUsd: number | null,
+  speed?: UsageWireSpeed,
+]
+
+/** The window asked for, and whether to read the logs again or wait for a read already running. */
+export type UsageWireArgs = { from: number; to: number; refresh?: boolean; wait?: boolean }
+
+export const USAGE_WIRE_VERSION = 1
+
+/** `usage.rows`'s answer. */
+export type UsageWireAnswer = {
+  ok: true
+  /** Bumped only with a change an older reader would misread; a new member is not one. */
+  version: typeof USAGE_WIRE_VERSION
+  scannedAt: number | null
+  /** The figures predate a read of the logs that is running now; ask again with `wait`. */
+  scanning: boolean
+  sources: Array<{ id: string; found: number; error: string | null }>
+  /** The hash of each session the rows name, each once. */
+  sessions: string[]
+  rows: UsageWireRow[]
+  /**
+   * Where the next slice starts when the window's rows did not fit in one
+   * answer, else null. A slice always ends on an hour, so no hour is split
+   * between two.
+   */
+  nextFrom: number | null
+}
+
+/** The longest window one `usage.rows` reads; a dashboard asks for ninety days at most. */
+export const USAGE_ROWS_MAX_WINDOW_MS = 400 * 24 * 3_600_000
+
 export const USAGE_PEER_MODES: readonly UsagePeerMode[] = ['cached', 'ask', 'await']
 
 export type UsageReportTokens = {
@@ -435,6 +494,8 @@ export type StudioChatStoresMethodMap = {
   'scheduledMessages.hold': { params: Commanded<ScheduledMessageHoldRequest>; result: ScheduledMessageHoldAnswer }
   /** Every agent's token use and its price, on this machine and on the machines paired with it. */
   'usage.report': { params: UsageReportRequest; result: UsageReportResult }
+  /** This machine's own usage rows over a window, for a paired desktop's dashboard to count with its own. */
+  'usage.rows': { params: UsageWireArgs; result: UsageWireAnswer }
   /** The sessions the agent CLIs saved on this machine, by the folder each ran in. */
   'conversationImport.scan': { params: Record<string, never>; result: ConversationImportScanResult }
   /** A chat for each session named, in the folder it ran in, carrying its id. */
@@ -541,6 +602,21 @@ function usageReport(value: Record<string, unknown>): StudioParsed<UsageReportRe
   })
 }
 
+function usageRows(value: Record<string, unknown>): StudioParsed<UsageWireArgs> {
+  const { from, to, refresh, wait } = value
+  if (typeof from !== 'number' || typeof to !== 'number' || !Number.isFinite(from) || !(to > from))
+    return refuse('"from" and "to" are times in epoch ms, "from" first.')
+  if (to - from > USAGE_ROWS_MAX_WINDOW_MS) return refuse('Ask for 400 days at most.')
+  if ((refresh !== undefined && typeof refresh !== 'boolean') || (wait !== undefined && typeof wait !== 'boolean'))
+    return refuse('"refresh" and "wait" are true or false.')
+  return studioParams({
+    from,
+    to,
+    ...(refresh === true ? { refresh: true } : {}),
+    ...(wait === true ? { wait: true } : {}),
+  })
+}
+
 function importSessions(value: Record<string, unknown>): StudioParsed<ConversationImportInput> {
   const list = value.sessions
   if (!Array.isArray(list) || list.length > CONVERSATION_IMPORT_MAX_SESSIONS)
@@ -613,6 +689,15 @@ export const STUDIO_CHAT_STORES_METHODS: StudioMethodTable<StudioChatStoresMetho
     }),
   },
   'usage.report': { ...held('providers:read', false), owner: USAGE_REPORT_OWNER, params: usageReport },
+  // This machine's counts alone, by hashed session, for the person's other
+  // desktop: reading what one of their machines spent is reading it, as any
+  // app-wide read is (`workspaces:read`, a paired device's `workspace:read`).
+  'usage.rows': {
+    scope: 'workspaces:read',
+    mutation: false,
+    capability: STUDIO_CHAT_STORES_CAPABILITY,
+    params: usageRows,
+  },
   'conversationImport.scan': { ...held('conversation:create', false), owner: IMPORT_OWNER, params: studioNoParams },
   'conversationImport.import': {
     ...held('conversation:create', true),

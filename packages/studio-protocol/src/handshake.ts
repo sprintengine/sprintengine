@@ -171,7 +171,7 @@ export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' a
 
 /**
  * What a Studio keeps beside its chats, for every chat at once:
- * `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report`
+ * `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report`, `usage.rows`
  * and `conversationImport.*`, with their streams.
  */
 export const STUDIO_CHAT_STORES_CAPABILITY = 'chat-stores' as const
@@ -183,6 +183,12 @@ export const STUDIO_CHAT_STORES_CAPABILITY = 'chat-stores' as const
  * `designSystem.*` and `cards.run`, with `skillSources.updated`.
  */
 export const STUDIO_AGENT_SKILLS_CAPABILITY = 'agent-skills' as const
+
+/**
+ * A Studio's scheduled agents (`schedules.ts`): `schedules.*` and the
+ * `schedules.changed` stream. Offered where the Studio runs schedules.
+ */
+export const STUDIO_SCHEDULES_CAPABILITY = 'schedules' as const
 
 /**
  * Every Studio capability this version of the package knows, in the order
@@ -224,6 +230,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,
+  STUDIO_SCHEDULES_CAPABILITY,
 ] as const
 
 /**

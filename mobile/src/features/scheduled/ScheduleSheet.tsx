@@ -77,7 +77,7 @@ export function ScheduleSheet({
   visible: boolean;
   schedule: PickedSchedule;
   timezone: string;
-  /** Whether the desktop takes a one-time run (`scheduled-agents`); without it there is no Once tab. */
+  /** Whether a one-time run is offered; without it there is no Once tab. */
   onceOffered: boolean;
   onChange: (schedule: PickedSchedule) => void;
   onClose: () => void;

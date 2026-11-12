@@ -26,7 +26,6 @@ import { createWorktreePoolTools } from '../worktree-pool/worktree-pool-tools'
 import { createArtifactsTools } from '../artifacts/artifacts-tools'
 import { createExtensionTools } from './extension-tools'
 import { createPluginTools } from './plugin-tools'
-import { createUsageTools } from '../usage/usage-tools'
 
 // The tools/list agents see from the desktop, byte for byte: names,
 // descriptions, schemas and order, for an agent Studio launched, a CLI the
@@ -65,7 +64,6 @@ export function desktopToolParts(): Parameters<typeof desktopGatewayTools>[0] & 
       ...createConversationPullRequestTools(stub),
       ...createPullRequestTools(stub),
       ...createLocalServerTools(stub),
-      ...createUsageTools(stub),
       ...createWorktreePoolTools(stub),
     ],
   }

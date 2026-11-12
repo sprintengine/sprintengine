@@ -56,6 +56,7 @@ import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type {
@@ -175,6 +176,8 @@ export type StudioRpcConnectionOptions = {
   /** What the Studio keeps beside its chats: the `usageLimits.changed`, `usageLimitResumes.changed` and `scheduledMessages.changed` streams. */
   chatStores?: StudioChatStores
   agentSkills?: StudioAgentSkills
+  /** The scheduled agents: the `schedules.changed` stream. */
+  schedules?: StudioSchedulesDomain
   /** The window this connection is one of Studio's own for, as main names it. */
   windowKey?: string
   /** The welcome's server-wide members: who this Studio is and what it serves. */
@@ -1329,6 +1332,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'scheduledMessages.changed', options.chatStores?.onScheduledMessagesChanged ?? null),
     'skillSources.updated': (id) =>
       subscribeFeed(id, 'skillSources.updated', options.agentSkills?.onSourcesUpdated ?? null),
+    'schedules.changed': (id) => subscribeFeed(id, 'schedules.changed', options.schedules?.onChanged ?? null),
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

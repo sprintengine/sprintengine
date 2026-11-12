@@ -51,6 +51,8 @@ import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
+import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
+import { createStudioSchedulesHandlers } from './studio-schedules'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -164,6 +166,8 @@ export type StudioRpcRouterOptions = {
   modules?: StudioModules
   /** What the Studio keeps beside its chats; without it, `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report` and `conversationImport.*` are answered `unavailable`. */
   chatStores?: StudioChatStores
+  /** The scheduled agents this Studio runs; without them, `schedules.*` is answered `unavailable`. */
+  schedules?: StudioSchedulesDomain
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -1668,6 +1672,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       ),
     'moduleUsage.query': ({ moduleId, query }) =>
       moduleService('moduleUsage.query', moduleId, 'usage', USAGE_MISSING, (usage) => usage.query(moduleId, query)),
+    // ── Scheduled agents ───────────────────────────────────────────────────
+
+    ...createStudioSchedulesHandlers({
+      ...(options.schedules ? { schedules: options.schedules } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+    }),
 
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an

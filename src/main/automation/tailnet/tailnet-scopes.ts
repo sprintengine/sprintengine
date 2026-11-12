@@ -236,14 +236,11 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
 
 /**
  * Tools served to paired devices and left out of the local socket's list: the
- * other side of `localOnlyGatewayToolReason`. `usage.report` answers another
- * desktop's usage dashboard with counts by hashed session, which no agent
- * here has a use for, and every tool an agent is listed costs it context.
- * The chat management tools below answer a paired desktop's menus on a chat
- * here, which an agent here has its own ways to.
+ * other side of `localOnlyGatewayToolReason`. The chat management tools
+ * below answer a paired desktop's menus on a chat here, which an agent here
+ * has its own ways to, and every tool an agent is listed costs it context.
  */
 const PAIRED_DEVICE_ONLY_TOOLS: ReadonlySet<string> = new Set([
-  'usage.report',
   // ── A paired desktop's chat management ──
   'conversation.rename',
   'conversation.auto_compact',

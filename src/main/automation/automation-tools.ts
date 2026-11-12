@@ -49,6 +49,13 @@ import type {
   BacklogReadItemResult,
 } from '../backlog-service'
 import type { ScheduledAgentsService } from '../scheduled-agents/service'
+import {
+  scheduleChangeOf,
+  scheduleDraftOf,
+  type ScheduleRequestDeps,
+  type ScheduleRequestRefusal,
+} from '../scheduled-agents/schedule-requests'
+import type { StudioScheduleChange } from '../../../packages/studio-protocol/src/schedules'
 import { scheduledAgentScheduleWords, type ScheduledAgentView } from '../../shared/scheduled-agents'
 import type { LoadedPlugin } from '../../shared/plugin-manifest'
 import type { MarketplaceRegistryReadInput, MarketplaceRegistryReadResult } from '../../shared/electron-api'
@@ -79,7 +86,6 @@ import type { WorkspaceCreateRequest, WorkspaceCreateResult } from '../workspace
 import type { WorkspaceMutationActor } from '../workspace-sync-service'
 import { getWorkspaceChangeSummary } from '../workspace-change-summary'
 import {
-  capScheduledAgentPreset,
   capLaunchPermissionPreset,
   launchPermissionCeiling,
   refuseScheduledAgentRun,
@@ -2566,6 +2572,58 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     nextRunAt: isoOrNull(agent.nextRunAt),
   })
 
+  // A schedule's tool arguments as the request every way in shares
+  // (`schedule-requests.ts`): the instant from ISO, and each optional member
+  // only where it was sent as its type.
+  const scheduleRequestDeps: ScheduleRequestDeps = {
+    findWorkspace: (workspaceId) => findWorkspace(workspaceId),
+    defaultCli: () => backends.defaultChatCli(),
+  }
+  function scheduleRequestOfArgs(
+    args: Record<string, unknown>,
+  ): { ok: true; value: Omit<StudioScheduleChange, 'id'> } | { ok: false; refused: McpToolResult } {
+    const preset =
+      typeof args.permissionPreset === 'string' ? parseCliPermissionPreset(args.permissionPreset) : undefined
+    if (preset === null)
+      return {
+        ok: false,
+        refused: failure(
+          'invalid_arguments',
+          `"permissionPreset" must be one of: ${LAUNCH_PERMISSION_PRESETS.join(', ')}.`,
+        ),
+      }
+    const once = typeof args.once === 'string' && args.once.trim() ? Date.parse(args.once) : undefined
+    if (once !== undefined && !Number.isFinite(once))
+      return {
+        ok: false,
+        refused: failure('invalid_arguments', '"once" must be an ISO 8601 instant, such as 2026-10-07T15:30:00Z.'),
+      }
+    const strings = (value: unknown) =>
+      Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        : undefined
+    const skills = strings(args.skills)
+    const mcpServers = strings(args.mcpServers)
+    return {
+      ok: true,
+      value: {
+        ...(typeof args.name === 'string' ? { name: args.name } : {}),
+        ...(typeof args.timezone === 'string' ? { timezone: args.timezone } : {}),
+        ...(once !== undefined ? { once } : {}),
+        ...(typeof args.cli === 'string' ? { cli: args.cli } : {}),
+        ...(typeof args.model === 'string' ? { model: args.model } : {}),
+        ...(preset ? { permissionPreset: preset } : {}),
+        ...(typeof args.worktree === 'boolean' ? { worktree: args.worktree } : {}),
+        ...(typeof args.worktreeName === 'string' ? { worktreeName: args.worktreeName } : {}),
+        ...(skills ? { skills } : {}),
+        ...(mcpServers ? { mcpServers } : {}),
+      },
+    }
+  }
+  // The tools' own codes, as they have always answered.
+  const scheduleRequestFailure = (refusal: ScheduleRequestRefusal): McpToolResult =>
+    failure(refusal.code === 'workspace_folder_missing' ? 'workspace_without_folder' : refusal.code, refusal.message)
+
   const scheduledAgentList: McpToolRegistration = {
     name: 'schedule.list',
     description:
@@ -2641,60 +2699,23 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (dashed) return dashed
       const workspaceId = requireString(args, 'workspaceId')
       if (typeof workspaceId !== 'string') return workspaceId
-      const workspace = findWorkspace(workspaceId)
-      if (!workspace?.folderPath) return resolveWorkspaceRoot(workspaceId) as McpToolResult
+      // What is wrong with the request is said before whether this app runs schedules.
+      if (!findWorkspace(workspaceId)?.folderPath) return resolveWorkspaceRoot(workspaceId) as McpToolResult
       const service = scheduledAgentsOrFailure()
       if (!('create' in service)) return service
-      const requested =
-        typeof args.permissionPreset === 'string' ? parseCliPermissionPreset(args.permissionPreset) : null
-      if (typeof args.permissionPreset === 'string' && requested === null) {
-        return failure(
-          'invalid_arguments',
-          `"permissionPreset" must be one of: ${LAUNCH_PERMISSION_PRESETS.join(', ')}.`,
-        )
-      }
-      // A scheduled agent launches later with nobody watching, so one made by
-      // an agent of this app stores no looser a preset than the agent's own.
-      const capped = capScheduledAgentPreset(
-        requested,
+      const request = scheduleRequestOfArgs(args)
+      if (!request.ok) return request.refused
+      if (typeof args.prompt !== 'string' || typeof args.cron !== 'string')
+        return failure('invalid_arguments', '"prompt" and "cron" are strings.')
+      // A one-time schedule from an agent's "remind me at three": the
+      // instant, which the service holds to the future.
+      const draft = scheduleDraftOf(
+        { ...request.value, workspaceId, prompt: args.prompt, cron: args.cron },
+        scheduleRequestDeps,
         launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
       )
-      if ('refused' in capped) return failure(capped.refused.code, capped.refused.message)
-      const cli = (typeof args.cli === 'string' && args.cli.trim()) || backends.defaultChatCli()
-      if (!cli) return failure('no_cli_selected', 'Name a "cli": no agent CLI has been picked on this computer yet.')
-      const strings = (value: unknown) =>
-        Array.isArray(value)
-          ? value.filter((id): id is string => typeof id === 'string').map((id) => ({ id, name: id }))
-          : []
-      // A one-time schedule from a paired device's New chat, or an agent's
-      // "remind me at three": the instant, which the service holds to the future.
-      const once = typeof args.once === 'string' && args.once.trim() ? Date.parse(args.once) : undefined
-      if (once !== undefined && !Number.isFinite(once)) {
-        return failure('invalid_arguments', '"once" must be an ISO 8601 instant, such as 2026-10-07T15:30:00Z.')
-      }
-      const worktreeName = typeof args.worktreeName === 'string' ? args.worktreeName.trim() : ''
-      const created = await service.create({
-        ...(typeof args.name === 'string' ? { name: args.name } : {}),
-        prompt: args.prompt,
-        schedule: {
-          cron: args.cron,
-          timezone:
-            typeof args.timezone === 'string' && args.timezone.trim()
-              ? args.timezone
-              : Intl.DateTimeFormat().resolvedOptions().timeZone,
-          ...(once !== undefined ? { once } : {}),
-        },
-        // A workspace on a worktree schedules into its project, not into that
-        // one worktree: each run makes its own.
-        folderPath: workspace.worktree?.repoRoot ?? workspace.folderPath,
-        hostId: workspace.hostId ?? null,
-        cli,
-        cliModel: typeof args.model === 'string' ? args.model : null,
-        permissionPreset: capped.permissionPreset,
-        skills: strings(args.skills),
-        mcpServers: strings(args.mcpServers),
-        worktree: args.worktree === true || worktreeName ? { name: worktreeName } : null,
-      })
+      if (!draft.ok) return scheduleRequestFailure(draft)
+      const created = await service.create(draft.value)
       if (!created.ok) return failure('scheduled_agent_invalid', created.message)
       return success({ scheduledAgent: scheduledAgentForCaller(created.agent) })
     },
@@ -2756,76 +2777,22 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (!('update' in service)) return service
       const existing = service.get(id)
       if (!existing) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
-      if (args.prompt !== undefined) {
-        const dashed = refuseOptionLikePrompt(args.prompt)
-        if (dashed) return dashed
-      }
-      let folderPath = existing.folderPath
-      let hostId = existing.hostId
-      if (typeof args.workspaceId === 'string' && args.workspaceId) {
-        const workspace = findWorkspace(args.workspaceId)
-        if (!workspace?.folderPath) return resolveWorkspaceRoot(args.workspaceId) as McpToolResult
-        folderPath = workspace.worktree?.repoRoot ?? workspace.folderPath
-        hostId = workspace.hostId ?? null
-      }
-      const requested =
-        typeof args.permissionPreset === 'string' ? parseCliPermissionPreset(args.permissionPreset) : null
-      if (typeof args.permissionPreset === 'string' && requested === null) {
-        return failure(
-          'invalid_arguments',
-          `"permissionPreset" must be one of: ${LAUNCH_PERMISSION_PRESETS.join(', ')}.`,
-        )
-      }
-      // The preset it will run on, held to the caller's own ceiling whether it
-      // was named here or kept: a new prompt on a looser preset is a new launch.
-      const capped = capScheduledAgentPreset(
-        requested ?? existing.permissionPreset,
+      const request = scheduleRequestOfArgs(args)
+      if (!request.ok) return request.refused
+      const change = scheduleChangeOf(
+        existing,
+        {
+          ...request.value,
+          id,
+          ...(typeof args.workspaceId === 'string' && args.workspaceId ? { workspaceId: args.workspaceId } : {}),
+          ...(typeof args.prompt === 'string' ? { prompt: args.prompt } : {}),
+          ...(typeof args.cron === 'string' ? { cron: args.cron } : {}),
+        },
+        scheduleRequestDeps,
         launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
       )
-      if ('refused' in capped) return failure(capped.refused.code, capped.refused.message)
-      const once = typeof args.once === 'string' && args.once.trim() ? Date.parse(args.once) : undefined
-      if (once !== undefined && !Number.isFinite(once)) {
-        return failure('invalid_arguments', '"once" must be an ISO 8601 instant, such as 2026-10-07T15:30:00Z.')
-      }
-      const cron = typeof args.cron === 'string' ? args.cron : undefined
-      const timezone =
-        typeof args.timezone === 'string' && args.timezone.trim() ? args.timezone : existing.schedule.timezone
-      const schedule =
-        once !== undefined
-          ? { cron: cron ?? existing.schedule.cron, timezone, once }
-          : cron !== undefined
-            ? { cron, timezone }
-            : { ...existing.schedule, timezone }
-      // An attachment keeps the name it was saved with; a new one is named by its id.
-      const attachments = (value: unknown, kept: ScheduledAgentView['skills']) =>
-        Array.isArray(value)
-          ? value
-              .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
-              .map((entryId) => kept.find((attachment) => attachment.id === entryId) ?? { id: entryId, name: entryId })
-          : kept
-      const worktreeName = typeof args.worktreeName === 'string' ? args.worktreeName.trim() : ''
-      const worktree = worktreeName
-        ? { name: worktreeName }
-        : args.worktree === true
-          ? { name: '' }
-          : args.worktree === false
-            ? null
-            : existing.worktree
-      const name = typeof args.name === 'string' ? args.name.trim() : existing.name
-      const updated = await service.update(id, {
-        ...(name ? { name } : {}),
-        ...(existing.tag ? { tag: existing.tag } : {}),
-        prompt: typeof args.prompt === 'string' ? args.prompt : existing.prompt,
-        schedule,
-        folderPath,
-        hostId,
-        cli: (typeof args.cli === 'string' && args.cli.trim()) || existing.cli,
-        cliModel: typeof args.model === 'string' ? args.model.trim() || null : existing.cliModel,
-        permissionPreset: capped.permissionPreset,
-        skills: attachments(args.skills, existing.skills),
-        mcpServers: attachments(args.mcpServers, existing.mcpServers),
-        worktree,
-      })
+      if (!change.ok) return scheduleRequestFailure(change)
+      const updated = await service.update(id, change.value)
       if (!updated.ok) return failure('scheduled_agent_invalid', updated.message)
       return success({ scheduledAgent: scheduledAgentForCaller(updated.agent) })
     },

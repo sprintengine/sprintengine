@@ -7,7 +7,7 @@ import type {
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 
 // The router's answers to `usageLimits.*`, `usageLimitResumes.*`,
-// `scheduledMessages.*`, `usage.report` and `conversationImport.*`: each
+// `scheduledMessages.*`, `usage.report`, `usage.rows` and `conversationImport.*`: each
 // method's store call, once the router has held the grant to the method's
 // scope (and the report and the import to an owner). A change is carried out
 // once per command id: a retry after a dropped connection is answered with
@@ -67,6 +67,7 @@ export function createStudioChatStoresHandlers<A extends Asking>(
         ? ok(stores.holdScheduledMessage(chat, text, options.commandIdOf(grant, commandId)))
         : unserved('scheduledMessages.hold'),
     'usage.report': async (request) => (stores ? ok(await stores.usageReport(request)) : unserved('usage.report')),
+    'usage.rows': async (args) => (stores ? ok(await stores.usageRows(args)) : unserved('usage.rows')),
     'conversationImport.scan': async () =>
       stores ? ok(await stores.scanImports()) : unserved('conversationImport.scan'),
     'conversationImport.import': ({ commandId, sessions }, asking) =>

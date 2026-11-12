@@ -110,7 +110,10 @@ export function tailnetDevicePrincipal(scopes: readonly unknown[]): StudioPrinci
  *   the gateway's `conversation.create` tool has always been an operate call
  *   for a device, and the protocol names it `conversation:create`.
  * - Either `workspace` scope carries the workspace reads (`workspaces:read`):
- *   the list, the CLIs a chat may run, a checkout, a project's skills.
+ *   the list, the CLIs a chat may run, a checkout, a project's skills, and
+ *   the scheduled agents and the usage rows another desktop's dashboard reads.
+ * - `workspace:operate` also carries `workspaces:operate`: making, changing,
+ *   running, pausing and closing the scheduled agents.
  * - The backlog scopes carry nothing here yet: no backlog method is served to
  *   a device on this socket.
  *
@@ -119,7 +122,7 @@ export function tailnetDevicePrincipal(scopes: readonly unknown[]): StudioPrinci
  */
 export const TAILNET_SCOPE_STUDIO_SCOPES: { readonly [S in TailnetScope]: readonly StudioScope[] } = {
   'workspace:read': ['workspaces:read'],
-  'workspace:operate': ['workspaces:read'],
+  'workspace:operate': ['workspaces:read', 'workspaces:operate'],
   'backlog:read': [],
   'backlog:operate': [],
   'conversation:read': ['conversation:read'],
