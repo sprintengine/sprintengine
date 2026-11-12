@@ -17,7 +17,6 @@ import type { HostRegistry } from '../../main/hosts/host-registry'
 import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { registerBacklogIpc } from '../../main/ipc/backlog-ipc'
 import { registerCliModelDiscoveryIpc } from '../../main/ipc/cli-model-discovery-ipc'
-import { registerConversationCommandsIpc } from '../../main/ipc/conversation-commands-ipc'
 import { registerConversationImportIpc } from '../../main/ipc/conversation-import-ipc'
 import { registerConversationIpc } from '../../main/ipc/conversation-ipc'
 import { createConversationService } from '../../main/conversation-service'
@@ -116,8 +115,8 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerMeshIpc(ipc, deps.gateway)
   registerWorkspaceBackupIpc(ipc, deps.workspaceBackup)
   registerCliModelDiscoveryIpc(ipc)
-  // The core's own lists, which a paired desktop's `/` menu reads as well.
-  const conversationCommands = registerConversationCommandsIpc(ipc, { service: core.conversationCommands() })
+  // The core's own `/` lists, which every window and a paired desktop read over the protocol.
+  const conversationCommands = core.conversationCommands()
   // The subscription usage limits the chats' agents report.
   registerUsageLimitsIpc(ipc, { userDataDir: dataDir() })
   // The chats a usage limit stopped, and the resume each can have when it resets.

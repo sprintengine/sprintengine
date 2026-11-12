@@ -3,6 +3,7 @@ import type { Workspace } from '../../types/workspace'
 import { workspaceSwitchRowId } from '../commandPaletteSearch'
 import { openConversationMatch } from '../../utils/conversationHistoryNavigation'
 import { bestConversationHit } from './conversationSnippet'
+import { windowChatServices } from '../panels/agentChat/windowChat'
 import type { PaletteCommand, PaletteResultProvider } from './paletteProvider'
 
 /** A chat whose transcripts the palette searches: the sidebar's row, by the store it is kept in. */
@@ -32,21 +33,18 @@ const CONVERSATION_SEARCH_DEBOUNCE_MS = 200
  * matched (the person's own words first, then the newest) and how many others
  * did; the palette folds it into the chat's switch row when that matched too.
  *
- * The chats are searched one at a time, most recently spoken in first, so the
- * likely answer is on screen while the rest are read, and a superseded run
- * stops at the chat it is in.
+ * The chats are searched one at a time, most recently spoken in first, each
+ * answered whole, so the likely answer is on screen while the rest are read,
+ * and a superseded run stops at the chat it is in.
  */
 export function createConversationHistoryProvider(options: {
   getChats: () => readonly SearchableChat[]
 }): PaletteResultProvider {
   let requestId: string | null = null
   let generation = 0
-  let stopBatches: (() => void) | undefined
   const cancel = (): void => {
     generation++
-    stopBatches?.()
-    stopBatches = undefined
-    if (requestId) void window.api.conversationCancelSearch({ requestId }).catch(() => undefined)
+    if (requestId) void windowChatServices().history.cancelSearch(requestId).catch(() => undefined)
     requestId = null
   }
   return {
@@ -57,7 +55,6 @@ export function createConversationHistoryProvider(options: {
     cancel,
     async load(query, context, publish) {
       cancel()
-      if (typeof window.api.conversationSearch !== 'function') return []
       const epoch = generation
       const found = new Map<string, { chat: SearchableChat; hits: ConversationSearchHit[] }>()
       const rows = (): PaletteCommand[] =>
@@ -87,14 +84,6 @@ export function createConversationHistoryProvider(options: {
             },
           ]
         })
-      let searching: SearchableChat | null = null
-      stopBatches = window.api.onConversationSearchBatch?.((batch) => {
-        if (epoch !== generation || batch.requestId !== requestId || !searching) return
-        const entry = found.get(searching.workspaceId)
-        if (entry) entry.hits.push(...batch.hits)
-        else found.set(searching.workspaceId, { chat: searching, hits: [...batch.hits] })
-        publish?.(rows())
-      })
       let failure: string | null = null
       let answered = false
       try {
@@ -102,9 +91,8 @@ export function createConversationHistoryProvider(options: {
           if (found.size >= CONVERSATION_MATCH_CHAT_LIMIT) break
           const id = crypto.randomUUID()
           requestId = id
-          searching = chat
-          const search = await window.api
-            .conversationSearch({
+          const search = await windowChatServices()
+            .history.search({
               workspaceRoot: chat.workspaceRoot,
               workspaceId: chat.workspaceId,
               query,
@@ -120,7 +108,6 @@ export function createConversationHistoryProvider(options: {
             continue
           }
           answered = true
-          // The answer is the whole list; the batches were its first part.
           if (search.hits.length > 0) found.set(chat.workspaceId, { chat, hits: search.hits })
           else found.delete(chat.workspaceId)
           publish?.(rows())
@@ -128,12 +115,7 @@ export function createConversationHistoryProvider(options: {
         if (!answered && failure) throw new Error(failure)
         return rows()
       } finally {
-        if (epoch === generation) {
-          requestId = null
-          searching = null
-          stopBatches?.()
-          stopBatches = undefined
-        }
+        if (epoch === generation) requestId = null
       }
     },
   }

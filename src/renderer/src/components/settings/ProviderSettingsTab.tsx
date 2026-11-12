@@ -11,6 +11,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { ConversationProviderListResult, ConversationSecretStatusResult } from '../../../../shared/electron-api'
+import { windowChatServices } from '../panels/agentChat/windowChat'
 import {
   type ActionResult,
   ActionResultMessage,
@@ -60,11 +61,12 @@ function errText(err: unknown, fallback: string): string {
 
 export function ProviderSettingsTab() {
   const dialog = useConfirmDialog()
-  const ipcAvailable = typeof window.api.conversationProvidersList === 'function'
+  // The providers are this window's Studio's, over the protocol.
+  const available = typeof window.api.studioWindowTicket === 'function'
 
   // The last launch's list, drawn at once; the real one is read behind it.
   const [listResult, setListResult] = useState<ConversationProviderListResult | null>(() =>
-    ipcAvailable ? readCachedProviderList(browserStorage()) : null,
+    available ? readCachedProviderList(browserStorage()) : null,
   )
   const [refreshing, setRefreshing] = useState(false)
   const [secretViews, setSecretViews] = useState<Record<string, ProviderSecretView | undefined>>({})
@@ -72,20 +74,20 @@ export function ProviderSettingsTab() {
   const [pending, setPending] = useState<Record<string, PendingKind | undefined>>({})
   const [messages, setMessages] = useState<Record<string, ProviderMessage>>({})
 
-  const tabState = useMemo(() => deriveProviderTabState(listResult, ipcAvailable), [listResult, ipcAvailable])
+  const tabState = useMemo(() => deriveProviderTabState(listResult, available), [listResult, available])
 
   const setMessage = useCallback((providerId: string, message: ProviderMessage) => {
     setMessages((current) => ({ ...current, [providerId]: message }))
   }, [])
 
   const loadProviders = useCallback(async () => {
-    if (!ipcAvailable) return
+    if (!available) return
     // A list already on screen stays while it is read again; only an error
     // (or nothing yet) goes back to loading.
     setListResult((current) => (current?.ok ? current : null))
     setRefreshing(true)
     try {
-      const result = await window.api.conversationProvidersList()
+      const result = await windowChatServices().providers.list()
       setListResult(result)
       // The list is current now; each row says for itself while its key is
       // still being checked.
@@ -95,7 +97,7 @@ export function ProviderSettingsTab() {
       const entries = await Promise.all(
         result.providers.map(async (entry) => {
           try {
-            const statusResult = await window.api.conversationSecretStatus({ providerId: entry.id })
+            const statusResult = await windowChatServices().providers.secretStatus({ providerId: entry.id })
             return [entry.id, deriveProviderSecretView(statusResult)] as const
           } catch (err) {
             return [
@@ -111,7 +113,7 @@ export function ProviderSettingsTab() {
     } finally {
       setRefreshing(false)
     }
-  }, [ipcAvailable])
+  }, [available])
 
   useEffect(() => {
     void loadProviders()
@@ -131,7 +133,7 @@ export function ProviderSettingsTab() {
       setPending((current) => ({ ...current, [provider.id]: 'saving' }))
       setMessage(provider.id, undefined)
       try {
-        const result = await window.api.conversationSecretSet({ providerId: provider.id, value: draft })
+        const result = await windowChatServices().providers.setSecret({ providerId: provider.id, value: draft })
         if (result.ok) {
           applyStatusResult(provider.id, result)
           setDrafts((current) => ({ ...current, [provider.id]: '' }))
@@ -159,7 +161,7 @@ export function ProviderSettingsTab() {
       setPending((current) => ({ ...current, [provider.id]: 'clearing' }))
       setMessage(provider.id, undefined)
       try {
-        const result = await window.api.conversationSecretClear({ providerId: provider.id })
+        const result = await windowChatServices().providers.clearSecret({ providerId: provider.id })
         if (result.ok) {
           applyStatusResult(provider.id, result)
           setMessage(provider.id, { tone: 'info', text: 'API key removed.' })

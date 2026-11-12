@@ -1,26 +1,11 @@
 import type { IpcMain, WebContents } from 'electron'
 import type {
-  ConversationProviderListResult,
-  ConversationProviderModelsResult,
-  ConversationSecretClearResult,
-  ConversationSecretSetResult,
-  ConversationSecretStatusResult,
-} from '../../shared/electron-api'
-import type {
-  ConversationProvidersListInput,
-  ConversationProviderSignInInput,
-  ConversationProviderSignInResult,
-  ConversationListSessionsInput,
-  ConversationListSessionsResult,
   ConversationSessionActionResult,
   ConversationSideQuestionResult,
-  ConversationMcpServerActionResult,
   ConversationStartSessionResult,
-  ConversationTerminalHandoffResult,
   ConversationToolDetailResult,
   ConversationEventReadResult,
   ConversationAttachmentResult,
-  ConversationPlanDocumentResult,
   ConversationPageResult,
   ConversationTurnDiffResult,
   ConversationRevertResult,
@@ -30,13 +15,10 @@ import type {
   ConversationContextBreakdownResult,
 } from '../../shared/conversation-runtime'
 import {
-  parseProviderInput,
   parseRespondToRequestInput,
-  parseSecretSetInput,
   parseSendTurnInput,
   parseSessionIdInput,
   parseSetModelInput,
-  parseMcpServerActionInput,
   parseMessageSubagentInput,
   parseStopSubagentInput,
   parseSideQuestionInput,
@@ -54,8 +36,6 @@ export function registerConversationIpc(
   ipcMain: IpcMain,
   handlers: ConversationService = createConversationService(),
 ): void {
-  let nextSubscriptionId = 0
-  const eventSubscriptions = new Map<string, { senderId: number; dispose: () => void }>()
   const scopedSubscriptions = new Map<string, { senderId: number; dispose: () => void }>()
   // A reload keeps the webContents, so `destroyed` never fires for the page it
   // replaced: the new page subscribes again while the old page's subscriptions
@@ -69,64 +49,10 @@ export function registerConversationIpc(
     // Emitted for main-frame, cross-document navigations only — a reload is
     // one — once the new page has committed, before its scripts run.
     sender.on('did-navigate', () => {
-      for (const subscription of [...eventSubscriptions.values(), ...scopedSubscriptions.values()])
+      for (const subscription of [...scopedSubscriptions.values()])
         if (subscription.senderId === senderId) subscription.dispose()
     })
   }
-  const searches = new Map<string, AbortController>()
-  ipcMain.handle('conversation:threads', (_, input: unknown) => {
-    const parsed = parseTranscriptInput(isRecord(input) ? { ...input, agentId: 'history' } : input)
-    if (!parsed.ok) return parsed
-    return handlers.listThreads?.(parsed.input) ?? { ok: false, message: 'Conversation history is unavailable.' }
-  })
-  ipcMain.handle('conversation:search', async (event, input: unknown) => {
-    const parsed = parseTranscriptInput(isRecord(input) ? { ...input, agentId: 'history' } : input)
-    if (!parsed.ok) return parsed
-    if (
-      !isRecord(input) ||
-      typeof input.query !== 'string' ||
-      input.query.length > 1000 ||
-      (input.requestId !== undefined && (typeof input.requestId !== 'string' || input.requestId.length > 200))
-    )
-      return { ok: false, message: 'Search query and optional request identity are required.' }
-    const key = `${event.sender.id}:${input.requestId ?? ++nextSubscriptionId}`
-    searches.get(key)?.abort()
-    const controller = new AbortController()
-    searches.set(key, controller)
-    const dispose = () => controller.abort()
-    event.sender.once('destroyed', dispose)
-    try {
-      return (
-        (await handlers.searchThreads?.(
-          { ...parsed.input, query: input.query, requestId: input.requestId as string | undefined },
-          {
-            signal: controller.signal,
-            onBatch: (hits) => {
-              if (typeof input.requestId === 'string' && !controller.signal.aborted && !event.sender.isDestroyed())
-                event.sender.send('conversation:search:batch', { requestId: input.requestId, hits })
-            },
-          },
-        )) ?? { ok: false, message: 'Conversation search is unavailable.' }
-      )
-    } finally {
-      event.sender.removeListener('destroyed', dispose)
-      if (searches.get(key) === controller) searches.delete(key)
-    }
-  })
-  ipcMain.handle('conversation:search:cancel', (event, input: unknown) => {
-    if (!isRecord(input) || typeof input.requestId !== 'string') return { ok: false }
-    searches.get(`${event.sender.id}:${input.requestId}`)?.abort()
-    return { ok: true }
-  })
-  ipcMain.handle(
-    'conversation:approval-rules:list',
-    () => handlers.listApprovalRules?.() ?? { ok: false, message: 'Permission rules are unavailable.' },
-  )
-  ipcMain.handle('conversation:approval-rules:revoke', (_, input: unknown) => {
-    if (!isRecord(input) || typeof input.ruleId !== 'string')
-      return { ok: false, message: 'Rule identity is required.' }
-    return handlers.revokeApprovalRule?.(input.ruleId) ?? { ok: false, message: 'Permission rules are unavailable.' }
-  })
   ipcMain.handle('conversation:turn:diff', async (_, input: unknown): Promise<ConversationTurnDiffResult> => {
     if (
       !isRecord(input) ||
@@ -280,79 +206,6 @@ export function registerConversationIpc(
     return result.ok ? { ...result, page: boundConversationPage(result.page).page } : result
   })
 
-  ipcMain.handle('conversation:providers:list', async (_, input: unknown): Promise<ConversationProviderListResult> => {
-    if (input !== undefined && !isRecord(input)) return { ok: false, message: 'Provider list input must be an object.' }
-    try {
-      return await handlers.listProviders(input as ConversationProvidersListInput | undefined)
-    } catch (err) {
-      return { ok: false, message: formatError(err) }
-    }
-  })
-
-  ipcMain.handle(
-    'conversation:providers:models',
-    async (_, input: unknown): Promise<ConversationProviderModelsResult> => {
-      const parsed = parseProviderInput(input)
-      if (!parsed.ok) return parsed
-      try {
-        return await handlers.listProviderModels(parsed.input)
-      } catch (err) {
-        return { ok: false, message: formatError(err) }
-      }
-    },
-  )
-
-  ipcMain.handle(
-    'conversation:providers:sign-in',
-    async (_, input: unknown): Promise<ConversationProviderSignInResult> => {
-      const parsed = parseProviderInput(input)
-      if (!parsed.ok) return parsed
-      const cliRuntimes = isRecord(input) ? input.cliRuntimes : undefined
-      if (cliRuntimes !== undefined && !isRecord(cliRuntimes))
-        return { ok: false, message: 'cliRuntimes must be an object.' }
-      try {
-        return (
-          (await handlers.resolveSignIn?.({
-            providerId: parsed.input.providerId,
-            ...(cliRuntimes ? { cliRuntimes: cliRuntimes as ConversationProviderSignInInput['cliRuntimes'] } : {}),
-          })) ?? { ok: false, message: 'Sign-in is unavailable.' }
-        )
-      } catch (err) {
-        return { ok: false, message: formatError(err) }
-      }
-    },
-  )
-
-  ipcMain.handle('conversation:secrets:status', async (_, input: unknown): Promise<ConversationSecretStatusResult> => {
-    const parsed = parseProviderInput(input)
-    if (!parsed.ok) return parsed
-    try {
-      return handlers.getSecretStatus(parsed.input)
-    } catch (err) {
-      return { ok: false, message: formatError(err) }
-    }
-  })
-
-  ipcMain.handle('conversation:secrets:set', async (_, input: unknown): Promise<ConversationSecretSetResult> => {
-    const parsed = parseSecretSetInput(input)
-    if (!parsed.ok) return parsed
-    try {
-      return handlers.setSecret(parsed.input)
-    } catch (err) {
-      return { ok: false, message: formatError(err) }
-    }
-  })
-
-  ipcMain.handle('conversation:secrets:clear', async (_, input: unknown): Promise<ConversationSecretClearResult> => {
-    const parsed = parseProviderInput(input)
-    if (!parsed.ok) return parsed
-    try {
-      return handlers.clearSecret(parsed.input)
-    } catch (err) {
-      return { ok: false, message: formatError(err) }
-    }
-  })
-
   ipcMain.handle('conversation:sessions:start', async (_, input: unknown): Promise<ConversationStartSessionResult> => {
     const parsed = parseStartSessionInput(input)
     if (!parsed.ok) return parsed
@@ -409,20 +262,6 @@ export function registerConversationIpc(
       if (!parsed.ok) return parsed
       try {
         return handlers.setPermission(parsed.input)
-      } catch (err) {
-        return { ok: false, message: formatError(err) }
-      }
-    },
-  )
-
-  ipcMain.handle(
-    'conversation:sessions:mcp-action',
-    async (_, input: unknown): Promise<ConversationMcpServerActionResult> => {
-      const parsed = parseMcpServerActionInput(input)
-      if (!parsed.ok) return parsed
-      if (!handlers.mcpServerAction) return { ok: false, message: 'MCP server actions are unavailable.' }
-      try {
-        return await handlers.mcpServerAction(parsed.input)
       } catch (err) {
         return { ok: false, message: formatError(err) }
       }
@@ -514,65 +353,6 @@ export function registerConversationIpc(
     },
   )
 
-  ipcMain.handle('conversation:sessions:stop', async (_, input: unknown): Promise<ConversationSessionActionResult> => {
-    const parsed = parseSessionIdInput(input)
-    if (!parsed.ok) return parsed
-    try {
-      return handlers.stopSession(parsed.input)
-    } catch (err) {
-      return { ok: false, message: formatError(err) }
-    }
-  })
-
-  ipcMain.handle(
-    'conversation:sessions:suspend',
-    async (_, input: unknown): Promise<ConversationSessionActionResult> => {
-      const parsed = parseSessionIdInput(input)
-      if (!parsed.ok) return parsed
-      if (!handlers.suspendSession) return { ok: false, message: 'Suspending a conversation is unavailable.' }
-      try {
-        return await handlers.suspendSession(parsed.input)
-      } catch (err) {
-        return { ok: false, message: formatError(err) }
-      }
-    },
-  )
-
-  ipcMain.handle(
-    'conversation:sessions:terminal-handoff',
-    async (_, input: unknown): Promise<ConversationTerminalHandoffResult> => {
-      // A session, or the chat by its identity (a tab's menu holds no session).
-      const chat =
-        isRecord(input) &&
-        input.sessionId === undefined &&
-        typeof input.workspaceId === 'string' &&
-        input.workspaceId.trim() &&
-        typeof input.agentId === 'string' &&
-        input.agentId.trim()
-          ? { workspaceId: input.workspaceId, agentId: input.agentId }
-          : null
-      const parsed = chat ? { ok: true as const, input: chat } : parseSessionIdInput(input)
-      if (!parsed.ok) return parsed
-      if (!handlers.terminalHandoff) return { ok: false, message: 'Resuming a chat in a terminal is unavailable.' }
-      try {
-        return await handlers.terminalHandoff(
-          'sessionId' in parsed.input ? { sessionId: parsed.input.sessionId } : parsed.input,
-        )
-      } catch (err) {
-        return { ok: false, message: formatError(err) }
-      }
-    },
-  )
-
-  ipcMain.handle('conversation:sessions:list', async (_, input: unknown): Promise<ConversationListSessionsResult> => {
-    if (input !== undefined && !isRecord(input)) return { ok: false, message: 'Session list input must be an object.' }
-    try {
-      return handlers.listSessions(input as ConversationListSessionsInput | undefined)
-    } catch (err) {
-      return { ok: false, message: formatError(err) }
-    }
-  })
-
   ipcMain.handle('conversation:tool-detail', async (_, input: unknown): Promise<ConversationToolDetailResult> => {
     const parsed = parseTranscriptInput(input)
     if (!parsed.ok || !isRecord(input) || typeof input.toolUseId !== 'string' || !input.toolUseId.trim())
@@ -615,59 +395,6 @@ export function registerConversationIpc(
     if (!isRecord(input) || typeof input.ref !== 'string') return { ok: false, message: 'ref is required.' }
     return handlers.readAttachment?.(input.ref) ?? { ok: false, message: 'Attachments are unavailable.' }
   })
-
-  // A proposed plan, as a file the workspace pane opens. The agent's own plan
-  // file is only ever answered with when it still holds this text; otherwise
-  // the text is copied into app data (conversation-plan-store).
-  ipcMain.handle('conversation:plan-document', async (_, input: unknown): Promise<ConversationPlanDocumentResult> => {
-    const key = parseTranscriptInput(input)
-    if (!key.ok) return key
-    if (!isRecord(input) || typeof input.plan !== 'string') return { ok: false, message: 'plan is required.' }
-    const title = typeof input.title === 'string' ? input.title : undefined
-    const planFilePath = typeof input.planFilePath === 'string' ? input.planFilePath : undefined
-    try {
-      return (
-        (await handlers.planDocument?.({ ...key.input, plan: input.plan, title, planFilePath })) ?? {
-          ok: false,
-          message: 'Plans are unavailable.',
-        }
-      )
-    } catch (err) {
-      return { ok: false, message: formatError(err) }
-    }
-  })
-
-  ipcMain.handle('conversation:events:subscribe', (event): { ok: true; subscriptionId: string } => {
-    const sender = event.sender
-    const subscriptionId = `conversation-subscription-${++nextSubscriptionId}`
-    const cleanup = (): void => {
-      if (!eventSubscriptions.delete(subscriptionId)) return
-      sender.removeListener('destroyed', cleanup)
-      unsubscribe()
-    }
-    const unsubscribe = handlers.onLifecycleEvent((conversationEvent) => {
-      if (sender.isDestroyed()) {
-        cleanup()
-        return
-      }
-      sender.send('conversation:event', conversationEvent)
-    })
-    eventSubscriptions.set(subscriptionId, { senderId: sender.id, dispose: cleanup })
-    sender.once('destroyed', cleanup)
-    releaseOnNavigation(sender)
-    return { ok: true, subscriptionId }
-  })
-
-  ipcMain.handle(
-    'conversation:events:unsubscribe',
-    (_event, input: unknown): { ok: true } | { ok: false; message: string } => {
-      if (!isRecord(input) || typeof input.subscriptionId !== 'string') {
-        return { ok: false, message: 'subscriptionId is required.' }
-      }
-      eventSubscriptions.get(input.subscriptionId)?.dispose()
-      return { ok: true }
-    },
-  )
 }
 
 function formatError(err: unknown): string {

@@ -29,6 +29,7 @@ import type {
 } from '../../../shared/conversation-runtime'
 import { conversationPhaseWorking, conversationSummaryPhase } from '../../../shared/conversation/phase'
 import { onWindowVisibilityChange, windowActivity, type WindowActivity } from '../utils/windowActivity'
+import { windowChatServices } from '../components/panels/agentChat/windowChat'
 
 /**
  * A summary as the renderer holds it: main's fields, plus when the work now
@@ -43,12 +44,16 @@ export type ConversationSessionEntry = ConversationSessionSummary & {
   turnStartedAt?: number
 }
 
+/** Where the store reads the sessions: the window's Studio; absent where the window has none (a test). */
 export type ConversationSessionsApi = {
-  conversationSessionsList?: () => Promise<
-    { ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message?: string }
-  >
-  onConversationEvent?: (listener: (event: ConversationEvent) => void) => () => void
+  list?: () => Promise<{ ok: true; sessions: ConversationSessionSummary[] } | { ok: false; message?: string }>
+  onLifecycleEvent?: (listener: (event: ConversationEvent) => void, onReconnected?: () => void) => () => void
 }
+
+const windowSessions = (): ConversationSessionsApi =>
+  typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
+    ? windowChatServices().sessions
+    : {}
 
 // Lifecycle events only. The all-conversations broadcast is not guaranteed to
 // carry token deltas at all, so nothing here may depend on them.
@@ -124,7 +129,7 @@ export type ConversationSessionsStore = {
 }
 
 export function createConversationSessionsStore({
-  api = () => window.api as ConversationSessionsApi,
+  api = windowSessions,
   activity = windowActivity,
   refreshMs = CONVERSATION_SESSIONS_REFRESH_MS,
 }: {
@@ -231,7 +236,7 @@ export function createConversationSessionsStore({
   const visible = (): boolean => activity().get().visible
 
   const fetchNow = (): void => {
-    const list = api().conversationSessionsList
+    const list = api().list
     if (typeof list !== 'function') return
     if (inFlight) {
       pending = true
@@ -280,7 +285,7 @@ export function createConversationSessionsStore({
   const connect = (): void => {
     connected = true
     const source = api()
-    if (typeof source.conversationSessionsList !== 'function') {
+    if (typeof source.list !== 'function') {
       // Nothing to ask: an empty list is the answer, not a wait.
       if (!loaded) {
         loaded = true
@@ -288,7 +293,10 @@ export function createConversationSessionsStore({
       }
       return
     }
-    unsubscribeEvents = typeof source.onConversationEvent === 'function' ? source.onConversationEvent(onEvent) : null
+    // Back from a dropped connection, the list is read again: what changed
+    // while it was down was never heard.
+    unsubscribeEvents =
+      typeof source.onLifecycleEvent === 'function' ? source.onLifecycleEvent(onEvent, () => schedule()) : null
     unsubscribeVisibility = onWindowVisibilityChange((isVisible) => {
       if (!isVisible) {
         if (timer !== null) {

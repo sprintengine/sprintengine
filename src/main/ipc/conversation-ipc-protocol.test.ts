@@ -12,7 +12,6 @@ import {
 import type { ConversationIpcProtocol } from '../../shared/conversation-ipc-protocol'
 import { CONVERSATION_IPC_PROTOCOL } from '../../shared/conversation-ipc-protocol'
 import type { ConversationService } from '../conversation-service'
-import { registerConversationCommandsIpc } from './conversation-commands-ipc'
 import { registerConversationIpc } from './conversation-ipc'
 
 // The conversation IPC's channels and the table that says how a client on the
@@ -22,10 +21,6 @@ function registeredChannels(): string[] {
   const channels: string[] = []
   const ipcMain = { handle: (channel: string) => channels.push(channel) } as never
   registerConversationIpc(ipcMain, {} as ConversationService)
-  const { stop } = registerConversationCommandsIpc(ipcMain, {
-    service: { list: async () => ({ cli: 'claude', cwd: '/', commands: [] }) } as never,
-  })
-  stop()
   return channels
 }
 
@@ -64,4 +59,11 @@ test('a channel lists a grant gap exactly when a method or topic it names is hel
       (route.topics ?? []).some((topic: StudioTopic) => ownerOnly(STUDIO_TOPIC_ACCESS[topic]))
     expect(route.gaps.includes('grant'), channel).toBe(held)
   }
+})
+
+test("the window's protocol client calls every method a channel names: no channel is left to the IPC for want of it", () => {
+  for (const [channel, route] of Object.entries(CONVERSATION_IPC_PROTOCOL) as Array<
+    [string, ConversationIpcProtocol]
+  >)
+    expect(route.gaps, channel).not.toContain('client')
 })

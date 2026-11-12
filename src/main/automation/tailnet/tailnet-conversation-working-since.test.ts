@@ -426,7 +426,7 @@ test('one summary reads as the same work, from the same start, in this desktopâ€
     // This desktop: the sidebar's store, and the phase its rows read.
     vi.useFakeTimers()
     const store = createConversationSessionsStore({
-      api: () => ({ conversationSessionsList: async () => ({ ok: true as const, sessions: [summary] }) }),
+      api: () => ({ list: async () => ({ ok: true as const, sessions: [summary] }) }),
       activity: () => ({
         get: () => ({ visible: true, focused: true }),
         subscribe: () => () => undefined,

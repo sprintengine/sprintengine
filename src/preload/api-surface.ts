@@ -19,7 +19,6 @@ import { textGenerationApi } from './api/text-generation'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
 import { conversationApi } from './api/conversation'
-import { conversationCommandsApi } from './api/conversation-commands'
 import { usageLimitsApi } from './api/usage-limits'
 import { usageApi } from './api/usage'
 import { usageLimitResumeApi } from './api/usage-limit-resume'
@@ -120,7 +119,6 @@ export const apiModules = {
   ...modulesApi,
   ...pluginsApi,
   ...conversationApi,
-  ...conversationCommandsApi,
   ...usageLimitsApi,
   ...usageApi,
   ...usageLimitResumeApi,

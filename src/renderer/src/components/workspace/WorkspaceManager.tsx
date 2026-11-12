@@ -307,6 +307,7 @@ import {
   workspaceWindowBoundsForDrop,
   type AgentSpawnPlacement,
 } from './manager/layoutTabActions'
+import { windowChatServices } from '../panels/agentChat/windowChat'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -4858,7 +4859,7 @@ export default function WorkspaceManager() {
     // A conversation agent has no PTY behind its sessionId: killing it through
     // the terminal runtime would report nothing and leave the agent running.
     if (item.transport === 'conversation') {
-      void window.api.conversationSessionStop({ sessionId: item.sessionId }).catch(() => {})
+      void windowChatServices().sessions.stop({ sessionId: item.sessionId }).catch(() => {})
     } else {
       void window.api.terminalKill(item.sessionId).catch(() => {})
     }
