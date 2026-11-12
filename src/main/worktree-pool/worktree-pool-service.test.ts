@@ -89,12 +89,14 @@ function makeService(
     userData?: string
     branchPrefix?: string
     recorded?: Array<[string, string]>
-    /** The chats on record, as worktree-services.ts reads them off the registry; left out, unknown. */
+    /** The chats on record, as server/core/studio-worktree-pool.ts reads them off the registry; left out, unknown. */
     chats?: PoolChat[]
     /** The holds on worktree paths; a fresh set unless given, so no case meets another's. */
     leases?: WorktreeLeases
     /** Fails the next record write while it answers true, as a full disk would. */
     failWrite?: () => boolean
+    /** Holds every record write while it answers true, as a stalled volume would. */
+    stallWrite?: () => boolean
   } = {},
 ) {
   const live = options.live ?? []
@@ -109,16 +111,19 @@ function makeService(
   const prefix = options.branchPrefix
   const store = createPoolStore(options.userData ?? userData)
   const failWrite = options.failWrite
+  const stallWrite = options.stallWrite
   const service = createWorktreePoolService({
-    store: failWrite
-      ? {
-          ...store,
-          write: async (record) => {
-            if (failWrite()) throw new Error('ENOSPC: no space left on device')
-            return store.write(record)
-          },
-        }
-      : store,
+    store:
+      failWrite || stallWrite
+        ? {
+            ...store,
+            write: async (record) => {
+              if (failWrite?.()) throw new Error('ENOSPC: no space left on device')
+              if (stallWrite?.()) await new Promise(() => {})
+              return store.write(record)
+            },
+          }
+        : store,
     ...(options.git ? { git: options.git } : {}),
     ...(options.fetchBackoffMs !== undefined ? { fetchBackoffMs: options.fetchBackoffMs } : {}),
     livePaths: () => [...live, ...sessions],
@@ -1338,6 +1343,20 @@ test('quitting stops a disk measurement part-way, and a short wait is not stretc
   await stuck.service.shutdown({ waitMs: 50 })
   assert.ok(Date.now() - before < 2_000, 'the short wait is kept')
   assert.equal(await exists(join(container, '.pool.lock')), false)
+})
+
+test('quitting gives up on a pool step that hangs at the cap, keeping that pool’s lock for the next start to take over', async () => {
+  let stall = false
+  const harness = makeService({ stallWrite: () => stall })
+  const leased = await lease(harness, 'stuck')
+  // The return's record write sits on the pool's queue and never lands.
+  stall = true
+  void harness.service.release(leased.leaseId)
+  await new Promise((resolveTick) => setTimeout(resolveTick, 50))
+  const before = Date.now()
+  await harness.service.shutdown({ waitMs: 50 })
+  assert.ok(Date.now() - before < 2_000, 'the cap holds, the step on the pool’s queue included')
+  assert.equal(await exists(join(container, '.pool.lock')), true, 'the lock stays with the step still running')
 })
 
 test('a Studio that lost the pool’s lock no longer returns a slot', async () => {
@@ -2721,7 +2740,7 @@ test('a finished scheduled run whose agent moved to a branch of its own gives it
   ])
   assert.ok(await git(repo, 'rev-parse', '--verify', 'agent/daily-low'), 'its branch is kept')
 
-  // Its chat, moved to that branch (worktree-services.ts), brings it back there.
+  // Its chat, moved to that branch (server/core/studio-worktree-pool.ts), brings it back there.
   assert.equal(harness.service.awaitsChat(run.path, 'agent/daily-low'), true)
   const restored = await restoreGitWorktree({ repoRoot: repo, path: run.path, branchName: 'agent/daily-low' })
   assert.equal(restored.ok, true, restored.ok ? '' : restored.message)

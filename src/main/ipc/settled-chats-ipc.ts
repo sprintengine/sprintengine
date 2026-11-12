@@ -5,8 +5,9 @@ import type { SettledChatDeletion } from '../settled-chat-deletion'
 
 /**
  * The windows' side of deleting settled chats: what a delete would do (for
- * the confirmation), and the delete. Main's alone, beside the worktree pool
- * it gives worktrees back to; a window never removes a chat's files itself.
+ * the confirmation), and the delete. The Studio core's, beside the worktree
+ * pool it gives worktrees back to (server-ipc.ts registers it in process and
+ * out); a window never removes a chat's files itself.
  */
 
 /** More than any page asks for at once; a bigger list is a fault, not a request. */

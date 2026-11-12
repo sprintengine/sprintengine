@@ -118,8 +118,7 @@ export type ConversationToolsDeps = {
   /**
    * Deleting a settled chat as this machine's own Delete does
    * (settled-chat-deletion-app.ts), for a paired desktop's Delete; null or
-   * absent where this process cannot (a Studio server out of process, which
-   * has no worktree pool of its own).
+   * absent where this process cannot.
    */
   settledChatDeletion?: () => ChatDeletion | null
   /** What was said in this machine's chats, for a paired desktop's palette (conversation-search.ts). */

@@ -620,8 +620,8 @@ async function finishAddedWorktree(
 }
 
 /**
- * An agent worktree on the default branch: a pool slot when this process keeps
- * a pool (worktree-pool/), else a fresh worktree forked from the same ref.
+ * An agent worktree on the default branch: a slot of the pool the Studio core
+ * keeps (worktree-pool/), else a fresh worktree forked from the same ref.
  *
  * The pool declining is never the caller's problem — another Studio holds it,
  * the repository is on a WSL machine, the pool is off or full — and the fresh
@@ -706,8 +706,8 @@ async function createAgentWorktreeFromPool(
  * opted in and the worktree's lockfile changed since it last installed: before
  * the agent starts, which it does whatever came of it. The choice is read from
  * the pool's settings, where Settings ▸ Worktrees keeps it, so a process
- * without a pool (a Studio server out of process) installs nothing, as it has
- * no installer either.
+ * without a pool (no Studio core in it) installs nothing, as it has no
+ * installer either.
  */
 async function withDependencyInstall(
   created: GitWorktreeCreated,

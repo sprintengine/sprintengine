@@ -187,9 +187,9 @@ export type WorktreePoolServiceDeps = {
   /**
    * The chats on record that are not settled, or are open in a window, with
    * the folders they name, whether one is on screen, and when each was last
-   * active (worktree-services.ts, from the workspace registry). Null or left
-   * out: unknown, and no slot a chat may be using is given back while it
-   * exists (pool-idle.ts).
+   * active (server/core/studio-worktree-pool.ts, from the workspace
+   * registry). Null or left out: unknown, and no slot a chat may be using is
+   * given back while it exists (pool-idle.ts).
    */
   chats?: () => readonly PoolChat[] | null
   /**
@@ -699,7 +699,8 @@ export function createWorktreePoolService(deps: WorktreePoolServiceDeps) {
 
   /**
    * Stop, wait up to `waitMs` (ten seconds unless the caller is short of time)
-   * for the steps in flight, and give each pool's lock up.
+   * for the steps in flight, and give up the lock of each pool that is idle by
+   * then.
    */
   async function shutdown(options: { waitMs?: number } = {}): Promise<void> {
     stopped = true
@@ -709,23 +710,31 @@ export function createWorktreePoolService(deps: WorktreePoolServiceDeps) {
     // for, briefly, before the lock that keeps another Studio off it goes.
     // Until none is left, not just the ones running now: a recovery already
     // under way when quitting began still schedules its slot moves (`track`).
-    if (inFlight.size > 0) {
-      let timer: NodeJS.Timeout | null = null
-      let timedOut = false
-      const deadline = new Promise<void>((resolveWait) => {
-        timer = setTimeout(() => {
-          timedOut = true
-          resolveWait()
-        }, options.waitMs ?? SHUTDOWN_WAIT_MS)
-        timer.unref?.()
-      })
-      while (inFlight.size > 0 && !timedOut) await Promise.race([Promise.allSettled([...inFlight]), deadline])
-      if (timer) clearTimeout(timer)
-    }
+    // One deadline for all of it, the queued pool steps included: a quit has
+    // a budget of its own, and the steps after this one must still run.
+    let timedOut = false
+    let resolveDeadline!: () => void
+    const deadline = new Promise<void>((resolveWait) => (resolveDeadline = resolveWait))
+    const timer = setTimeout(() => {
+      timedOut = true
+      resolveDeadline()
+    }, options.waitMs ?? SHUTDOWN_WAIT_MS)
+    timer.unref?.()
+    while (inFlight.size > 0 && !timedOut) await Promise.race([Promise.allSettled([...inFlight]), deadline])
     for (const pool of pools.values()) {
-      await pool.chain.catch(() => {})
-      if (pool.instance === 'held') await releaseInstanceLock(pool.containerPath, instanceId)
+      const settled = await Promise.race([
+        pool.chain.then(
+          () => true,
+          () => true,
+        ),
+        deadline.then(() => false),
+      ])
+      // A step still running at the deadline keeps its pool's lock: the
+      // process is leaving, and the next start finds the lock's holder gone
+      // and takes the pool over, recovering the step as after a crash.
+      if (settled && pool.instance === 'held') await releaseInstanceLock(pool.containerPath, instanceId)
     }
+    clearTimeout(timer)
   }
 
   return {

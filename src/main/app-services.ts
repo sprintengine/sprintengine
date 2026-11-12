@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage } from 'electron'
-import { createAppSettledChatDeletion } from './settled-chat-deletion-app'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
 import { basename, dirname, join } from 'path'
@@ -129,11 +128,7 @@ import { getPluginManifest, listPluginRegistryEntries } from './plugin-registry-
 import { createMcpServerResolver } from './mcp-config-readers/resolve-servers'
 import { syncStudioMcpConfig } from './studio-mcp-sync'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
-import { excludeMcpConfigFromWorktree, restoreGitWorktree } from './git'
-import { activeWorktreePool } from './worktree-pool/active-pool'
-import { createChatFolderGuard, type GuardedChat } from './worktree-pool/chat-folder-guard'
-import { createMainCheckoutCatchUp } from './main-checkout-catch-up'
-import { createWorktreeServices } from './worktree-services'
+import { excludeMcpConfigFromWorktree } from './git'
 import { createArtifactsServices } from './artifacts-services'
 import { createConversationPeekService } from './conversation-peek/service'
 import { chatHandoffStart, createConversationTerminalHandoff } from './conversation-terminal-handoff'
@@ -221,7 +216,13 @@ import { createStudioGateway } from '../server/core/studio-gateway'
 import { createStudioRpc } from '../server/core/studio-rpc'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../server/desktop/gateway-backends'
-import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS } from '../server/desktop/server-methods'
+import {
+  SERVER_EVENTS,
+  SERVER_METHODS,
+  SHELL_METHODS,
+  type ServerWorktreeLease,
+} from '../server/desktop/server-methods'
+import { agentWorktreesOverRpc } from '../server/desktop/agent-worktree-rpc'
 import {
   createRemoteCore,
   createRemoteCredentialStore,
@@ -757,7 +758,7 @@ export function createAppServices(
   // and the pane's forward is a session proxy.
   // Read lazily: the registry is the core's, built just below.
   const workspaceRegistryOf = (): {
-    getRecord(id: string): (GuardedChat & { environment?: WorkspaceEnvironmentRef | null }) | null | undefined
+    getRecord(id: string): { environment?: WorkspaceEnvironmentRef | null } | null | undefined
   } => core.workspaceRegistry
   const ssh: DesktopSsh | null = sessionSshPreview()
     ? createDesktopSsh({
@@ -774,16 +775,6 @@ export function createAppServices(
   // even when the core, which also moves every registered project at start,
   // runs in a server process of its own (main/workspace-store.ts).
   installWorkspaceStoreMigration({ log: (message) => console.info(`[workspace-store] ${message}`) })
-  const chatFolderGuard = createChatFolderGuard({
-    pool: activeWorktreePool,
-    chat: (workspaceId) => workspaceRegistryOf().getRecord(workspaceId),
-    restore: restoreGitWorktree,
-  })
-  const catchUpMainCheckout = createMainCheckoutCatchUp({
-    chat: (workspaceId) => workspaceRegistryOf().getRecord(workspaceId),
-    // Read when a chat starts, long after `liveConversationPaths` below is set.
-    liveSessionPaths: () => liveConversationPaths(),
-  })
   // The rest sweep hears the terminals change, and ends a chat's terminals
   // when it settles the chat (studio-settlement.ts). The runtime is made
   // further down, so its changes are fanned out from here once it is.
@@ -807,17 +798,6 @@ export function createAppServices(
     ? createRemoteCore(server)
     : createStudioCore(platform, {
         role: 'desktop',
-        // A worktree chat whose pool slot was given back while it sat idle
-        // gets its branch checked out again, at the same path, before any
-        // agent runs in it, whoever sent the turn (worktree-pool/pool-idle.ts).
-        prepareChatFolder: async (input) => {
-          const folder = await chatFolderGuard(input)
-          // A new chat in a project's own checkout starts on the default
-          // branch as origin has it, when that touches no one's work; never
-          // refused for it (main-checkout-catch-up.ts).
-          if (folder.ok && input.fresh) await catchUpMainCheckout(input)
-          return folder
-        },
         // A chat's agent is handed the gateway itself, on the machine its CLI
         // runs on: a Claude chat's child loads no project settings, so the
         // gateway pinned into a workspace's `.mcp.json` never reached it, and a
@@ -850,6 +830,11 @@ export function createAppServices(
             agentState: session.agentState,
             lastTurnEndedAt: session.lastTurnEndedAt ?? null,
             agentRecord: session.agentRecord,
+            // Where it works: the core's worktree pool recycles no slot a
+            // terminal is in, a suspended one's included.
+            suspended: session.suspended,
+            ...(session.cwd ? { cwd: session.cwd } : {}),
+            ...(session.observedCheckout ? { observedCheckout: session.observedCheckout } : {}),
           })),
         onTerminalSessionsChanged: (listener: () => void) => {
           terminalSessionsListeners.add(listener)
@@ -1695,32 +1680,24 @@ export function createAppServices(
     broadcastPending: (workspaceIds) => broadcastToWorkspaceWindows(EDITOR_REVEAL_PENDING_CHANNEL, { workspaceIds }),
   })
 
-  // Where live work sits, for the pool and the agent worktree cleanup alike:
-  // every live terminal, the checkout it observes, and the folder of every chat
-  // whose provider session is working now. One list, so neither recycles a
-  // folder the other would have kept.
-  const liveConversationPaths = (): Promise<string[]> => conversations.liveConversationWorkspaceRoots().catch(() => [])
-  const liveWorkPaths = async (): Promise<string[]> => [
-    ...listLiveTerminalSessions().flatMap((session) =>
-      [session.cwd, session.observedCheckout?.cwd, session.observedCheckout?.gitRoot].filter(
-        (path): path is string => typeof path === 'string' && path.length > 0,
-      ),
-    ),
-    ...(await liveConversationPaths()),
-  ]
-  const { worktreePool, dependencyInstaller, worktreeTools } = createWorktreeServices({
-    userDataPath: app.getPath('userData'),
-    liveWorkPaths,
-    liveConversationPaths,
-    workspaceSyncService,
-  })
+  // The worktree pool, its installs and `worktree.*` are the core's
+  // (server/core/studio-worktree-pool.ts): in process this one's, out of
+  // process the server's, which the windows reach over their tunnel.
+  const worktrees = 'worktrees' in core ? core.worktrees : null
   // Settings ▸ Artifacts and the `artifacts.*` tools. Main serves them in
-  // process and out, as it does `worktree.*`: the pages are this machine's
-  // files, and publishing signs in with this machine's credentials.
+  // process and out: the pages are this machine's files, and publishing signs
+  // in with this machine's credentials.
   const { artifactsSettingsStore, artifactsTools, setUpArtifacts, artifactsSetupConsent } = createArtifactsServices({
     githubTokenStore,
     findWorkspace: (workspaceId) =>
       workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
+    // The pool's slots and who holds each, from the core that keeps the pool.
+    poolWorktrees: async () => {
+      if (worktrees) return (await worktrees.pool.snapshots()).flatMap((snapshot) => snapshot.slots)
+      if (!server) return []
+      const listed = await server.rpc.call<ServerWorktreeLease[] | null>(SERVER_METHODS.worktreeLeases)
+      return Array.isArray(listed) ? listed : []
+    },
   })
 
   const canvasSubscribers = createCanvasSubscriberRegistry()
@@ -1947,25 +1924,6 @@ export function createAppServices(
         // a terminal agent does.
         linkLaunchedAgent: (link) => agentLaunchNotices.link(link),
         dismissLaunchNotice: (sessionId) => agentLaunchNotices.dismiss(sessionId),
-        // A paired desktop's Delete on a settled chat here, made as a window's
-        // Delete makes it (settled-chat-deletion-app.ts), its record removed
-        // as the paired device's. Built on first ask.
-        settledChatDeletion: (() => {
-          let deletion: ReturnType<typeof createAppSettledChatDeletion> | null = null
-          return () => {
-            deletion ??= createAppSettledChatDeletion(
-              { workspaceSyncService, conversations, worktreePool, liveWorkPaths },
-              'mobile',
-            )
-            const made = deletion
-            return {
-              plan: (ids) => made.plan(ids),
-              delete: (ids) => made.delete(ids),
-              has: (workspaceId) =>
-                workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
-            }
-          }
-        })(),
         appTools: desktopGatewayTools({
           browser: clientToolsEnabled ? [] : browserTools,
           canvas: clientToolsEnabled ? [] : canvasTools,
@@ -2012,7 +1970,6 @@ export function createAppServices(
           ),
           // Remote-control configuration, local socket only: the listener refuses
           // this whole family regardless of a device's scopes (tailnet-scopes.ts).
-          worktree: worktreeTools,
           artifacts: artifactsTools,
           extension: extensionTools,
           plugin: pluginTools,
@@ -2141,7 +2098,6 @@ export function createAppServices(
             { name: 'editor', registrations: editorTools },
             { name: 'tour', registrations: tourTools },
             { name: 'visual', registrations: visualTools },
-            { name: 'worktree', registrations: worktreeTools },
             { name: 'artifacts', registrations: artifactsTools },
             { name: 'extension', registrations: extensionTools },
             { name: 'plugin', registrations: pluginTools },
@@ -2152,6 +2108,8 @@ export function createAppServices(
                 readTerminalOutputTail: (sessionId, options) =>
                   terminalRuntime.readTerminalOutputTail(sessionId, options),
                 launchAgent: (request) => agentLaunchService.launch(request),
+                // Its worktree from the server's pool, which the shell keeps no copy of.
+                createAgentWorktree: agentWorktreesOverRpc(server.rpc),
                 linkLaunchedAgent: (link) => agentLaunchNotices.link(link),
                 // An agent launches no looser than it runs: its terminal here,
                 // or the preset its record holds (a chat's live preset is the
@@ -2508,12 +2466,12 @@ export function createAppServices(
     browserRecorder,
     canvasService,
     canvasSubscribers,
-    worktreePool,
+    /** The core's worktree pool and installs, in process; out of process the server's, which quits them itself. */
+    worktreePool: worktrees?.pool,
+    dependencyInstaller: worktrees?.installer,
     artifactsSettingsStore,
     setUpArtifacts,
     artifactsSetupConsent,
-    liveWorkPaths,
-    dependencyInstaller,
     automationService,
     studioRpcService,
     backgroundModeStore,

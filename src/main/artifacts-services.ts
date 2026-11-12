@@ -21,7 +21,6 @@ import { sharedGhRunner } from './github/gh'
 import { createGhHostTokenResolver } from './github/host-token'
 import type { GitHubTokenStore } from './github-token-store'
 import { broadcastToWorkspaceWindows, listWorkspaceWindows } from './window-factory'
-import { activeWorktreePool } from './worktree-pool/active-pool'
 
 /**
  * The site's files as they ship: an extraResource in a packaged build
@@ -64,10 +63,13 @@ const ghApi: GhApi = async (host, path, request) => {
 export function createArtifactsServices({
   githubTokenStore,
   findWorkspace,
+  poolWorktrees,
 }: {
   githubTokenStore: Pick<GitHubTokenStore, 'resolveToken'>
   /** The chat a publishing agent belongs to, for the folders it may publish from. */
   findWorkspace: ArtifactPublishRootsDeps['findWorkspace']
+  /** The worktree pool's slots and who holds each, asked of the Studio core that keeps the pool. */
+  poolWorktrees: ArtifactPublishRootsDeps['poolWorktrees']
 }) {
   const settingsStore = createArtifactsSettingsStore({ resolveUserDataDir: () => app.getPath('userData') })
   const ghHostToken = createGhHostTokenResolver(sharedGhRunner())
@@ -122,10 +124,7 @@ export function createArtifactsServices({
     service,
     publishRoots: createArtifactPublishRoots({
       findWorkspace,
-      poolWorktrees: async () => {
-        const pool = activeWorktreePool()
-        return pool ? (await pool.snapshots()).flatMap((snapshot) => snapshot.slots) : []
-      },
+      poolWorktrees,
       appDirs: [hostDeps.dataDir],
     }),
     setup: {

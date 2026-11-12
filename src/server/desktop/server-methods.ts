@@ -27,8 +27,20 @@ export const SERVER_METHODS = {
   conversationExportSource: 'conversations.export-source',
   /** → the folders the chats live in, for diagnostics. */
   conversationRoots: 'conversations.live-roots',
-  /** → the folders chats are working in now, which the shell's worktree cleanup never removes. */
-  conversationWorkspaceRoots: 'conversations.live-workspace-roots',
+  /**
+   * → `Array<{ path, lease: { workspaceId, agentId } | null }>`: the worktree
+   * pool's slots and who holds each, for the folders an agent may publish
+   * artifacts from (the shell serves `artifacts.*`; the pool is the server's).
+   */
+  worktreeLeases: 'worktree-pool.leases',
+  /**
+   * `{ workspaceRoot, name, baseRef? }` → `{ worktreePath, branch, dependencyInstall? }` or
+   * `{ error }`: an agent-at-launch worktree for the shell's `agent.launch`, cut
+   * from the server's pool, with its install's view as it started.
+   */
+  createAgentWorktree: 'worktree-pool.create-agent-worktree',
+  /** `{ id }` → the install's view once it ended, or null when quitting: answered when it ends. */
+  dependencyInstallSettled: 'worktree-install.settled',
   /** → how many chats have a turn in progress, which a quit would stop. */
   conversationsWorking: 'conversations.working',
   /** `{ overrides }` → the module enablement result: the shell wrote the file, the server applies it live. */
@@ -119,6 +131,9 @@ export const SERVER_EVENTS = {
   hintFocus: 'hint.focus',
   hintOnline: 'hint.online',
 } as const
+
+/** One slot of the server's worktree pool, as `worktree-pool.leases` answers it. */
+export type ServerWorktreeLease = { path: string; lease: { workspaceId: string | null; agentId: string | null } | null }
 
 export type ServerMirrorRegistry = {
   state: WorkspaceSyncState

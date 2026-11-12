@@ -7,7 +7,7 @@ import { afterAll, test } from 'vitest'
 
 import { setAgentWorktreeLockProfile } from '../agent-worktree-lock'
 import { worktreeLeases } from '../worktree-leases'
-import { registerGitIpc } from './git-ipc'
+import { registerWorktreePoolIpc } from './worktree-pool-ipc'
 
 const scratch: string[] = []
 
@@ -25,11 +25,13 @@ test('a window’s restore of a worktree waits for a removal of its path under w
   scratch.push(userDataDir)
   const handlers = new Map<string, Handler>()
   const ipcMain = { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) }
-  registerGitIpc(
-    ipcMain as unknown as IpcMain,
-    { enabled: false, logMainPerfEvent: () => undefined, withIpcDiagnostics: (_scope, _name, _details, run) => run() },
-    { userDataDir },
-  )
+  // The pool's channels, as the Studio core registers them; the restore never reaches the pool here.
+  registerWorktreePoolIpc(ipcMain as unknown as IpcMain, {
+    pool: {} as never,
+    installer: null,
+    liveWorkPaths: async () => [],
+    knownWorkspaceIds: () => null,
+  })
   const restore = handlers.get('git:worktree:restore')
   assert.ok(restore)
   // Not one of the app's worktrees, so the restore itself refuses at once.

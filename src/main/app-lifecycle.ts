@@ -113,15 +113,17 @@ type RegisterAppLifecycleOptions = {
   canvasService?: {
     dispose(): Promise<void>
   }
-  // The worktree pool: a lease or return in flight finishes its write, and
-  // each pool's container lock is given up so another Studio can take the pool
-  // over.
+  // The worktree pool, the Studio core's (in process; out of process the
+  // server quits its own): a lease or return in flight finishes its write,
+  // and each pool's container lock is given up so another Studio can take the
+  // pool over.
   worktreePool?: {
     shutdown(options?: { waitMs?: number }): Promise<void>
   }
   // The dependency installs agent worktrees are running (worktree-pool/
-  // dependency-install.ts). Each runs detached, as a process group of its own,
-  // so nothing would end it with the app: the quit stops every one.
+  // dependency-install.ts), the core's beside its pool. Each runs detached, as
+  // a process group of its own, so nothing would end it with the app: the
+  // quit stops every one.
   dependencyInstaller?: {
     shutdown(options?: { waitMs?: number }): Promise<void>
   }
@@ -731,9 +733,10 @@ export function registerAppLifecycle({
   //     module kernel's own shutdown.
   let shutdownRun: Promise<void> | null = null
   let leavingForUpdate = false
-  // The pool's wait for slot steps in flight, short when leaving for an
-  // update: its ten seconds also have to cover the Studio server's drain after
-  // it. A step cut short is recovered at the next start, as after a crash.
+  // The pool's wait for slot steps in flight (in process; out of process the
+  // server keeps the pool and waits within its own drain), short when leaving
+  // for an update. A step cut short is recovered at the next start, as after a
+  // crash.
   const poolShutdownOptions = () => (leavingForUpdate ? { waitMs: POOL_UPDATE_SHUTDOWN_WAIT_MS } : {})
   // Who hears about each leg as it finishes: "Restart to update" passes one in,
   // which drives the progress window and the diagnostics timings. Joined late
@@ -829,11 +832,10 @@ export function registerAppLifecycle({
         },
       ],
       ['launch notices', () => launchNotices?.freeze()],
-      ['dependency installs', () => dependencyInstaller?.shutdown()],
       ['browser recordings', () => browserRecorder?.stopAll('app_quit')],
       // The canvas's last board write lands before the server stops serving.
+      // The worktree pool and its installs are the server's, which ends them.
       ['canvas', () => canvasService?.dispose()],
-      ['worktree pool', () => worktreePool?.shutdown(poolShutdownOptions())],
       ['desktop tools', () => desktopShell?.stop()],
       [
         'studio server (drain)',

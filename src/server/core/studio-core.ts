@@ -101,6 +101,7 @@ import { createStudioScheduledMessages, studioHeldMessages, studioScheduledSends
 import { createStudioAutoCompact } from './studio-auto-compact'
 import { createSettledChatsSettingsStore } from '../../main/settled-chats-settings-store'
 import { createStudioSettlement } from './studio-settlement'
+import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
 
 // The Studio core: the services the server owns (studio-server design, section
 // 4.1), composed once. The desktop builds it inside Electron main, from
@@ -113,7 +114,8 @@ import { createStudioSettlement } from './studio-settlement'
 // registry and its sync, git's machine resolver, the conversation runtime and
 // the backend every caller drives chats through (providers, checkpoints, the
 // thread index and transcripts are the runtime's), the model catalog, the
-// launch service that starts a chat for a caller with no window, the pull
+// launch service that starts a chat for a caller with no window, the worktree
+// pool the chats' worktrees are leased from and brought back by, the pull
 // request record, which reacts to chats and so is the server's (owner ruling
 // 2026-10-03), and the local servers the agents started, which are checked
 // where the agents run (owner ruling 2026-10-04). The MCP
@@ -137,12 +139,6 @@ export type StudioCoreOptions = {
    */
   resolveStudioMcpServer?: ConversationRuntimeOptions['resolveStudioMcpServer']
   /**
-   * Brings a chat's folder back before an agent runs in it, where this
-   * process keeps a worktree pool that may have given it back
-   * (main/worktree-pool/chat-folder-guard.ts). A server keeps no pool.
-   */
-  prepareChatFolder?: ConversationRuntimeOptions['prepareChatFolder']
-  /**
    * The agent terminals this process runs, for the gateway's launch cap: an
    * agent may start agents only at its own preset or stricter. A server has
    * none (owner ruling 2026-10-01), so it defaults to an empty list.
@@ -160,6 +156,11 @@ export type StudioCoreOptions = {
     /** When its agent last finished a turn, which the rest sweep reads for a chat no window reported on. */
     lastTurnEndedAt?: number | null
     agentRecord?: { cliPermissionPreset?: unknown }
+    /** Where it works, and the checkout it observes: a worktree slot one works in is never recycled. */
+    cwd?: string
+    /** Suspended to save memory, resumable in place: not alive, but still holding its folder. */
+    suspended?: boolean
+    observedCheckout?: { cwd?: string | null; gitRoot?: string | null } | null
   }>
   /**
    * Whether the list above has been read once. Out of process the shell
@@ -295,6 +296,21 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     return id ? hosts.get(id) : null
   })
 
+  // The worktree pool, its dependency installs, the `worktree.*` tools and the
+  // chat-folder guard every turn passes (studio-worktree-pool.ts): this
+  // core's in every mode, beside the agents that work in the slots.
+  const worktrees = createStudioWorktreePool({
+    platform,
+    workspaceRegistry,
+    workspaceSyncService,
+    // Read when a step asks, long after `conversations` below is set.
+    liveConversationPaths: () => conversations.liveConversationWorkspaceRoots(),
+    conversations: () => conversations,
+    ...(options.listTerminalSessions ? { listTerminalSessions: options.listTerminalSessions } : {}),
+    ...(options.terminalSessionsListed ? { terminalSessionsListed: options.terminalSessionsListed } : {}),
+    ...(options.onTerminalSessionsChanged ? { onTerminalSessionsChanged: options.onTerminalSessionsChanged } : {}),
+  })
+
   // The conversation runtime: chat sessions and the providers and agent CLI
   // children behind them, transcripts, the thread index and checkpoints. Owned
   // here so the owner's shutdown disposes its child processes.
@@ -319,7 +335,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       return parent?.cliPermissionPreset ? normalizeCliPermissionPreset(parent.cliPermissionPreset) : current
     },
     ...(options.resolveStudioMcpServer ? { resolveStudioMcpServer: options.resolveStudioMcpServer } : {}),
-    ...(options.prepareChatFolder ? { prepareChatFolder: options.prepareChatFolder } : {}),
+    // Every session start and turn, whoever sent it, finds the chat's folder
+    // where it should be first: a slot the pool gave back is brought back.
+    prepareChatFolder: worktrees.prepareChatFolder,
   })
   conversationRuntime.startIdleSweep(powerActivity)
   // Each project's state lives in its store in the person's home, on the
@@ -468,9 +486,9 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         .find((entry) => entry.id === cli)
         ?.reasoningSelection?.levels.map((level) => level.id) ?? [],
     // A new chat's worktree, cut by the machine the chat runs on, as a
-    // scheduled run's is: from the worktree pool when this process keeps one
-    // (the desktop's main does; a server out of process forks a fresh one), on
-    // the default branch, locked to its branch until the chat claims it.
+    // scheduled run's is: from this core's worktree pool (a fresh one when the
+    // pool declines), on the default branch, locked to its branch until the
+    // chat claims it.
     getRepoRoot: (folderPath, hostId) =>
       withGitHost(hostId ? hosts.get(hostId) : null, () => getGitRepoRoot(folderPath)),
     createWorktree: async (input) => {
@@ -1124,10 +1142,16 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
       stopUsageLimitResumes,
       stopScheduledMessages,
       stopAutoCompact,
+      // An install the quit cuts short is not recorded, so its worktree
+      // installs again at its next lease.
+      () => worktrees.installer.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => chatTitler.dispose(),
       // What the command lists learned is written before the process goes.
       () => commandLists?.dispose(),
       () => conversationOwner.shutdown(),
+      // A lease or return in flight finishes its write, and each pool's
+      // container lock is given up so another Studio can take it over.
+      () => worktrees.pool.shutdown({ waitMs: WORKTREE_QUIT_WAIT_MS }),
       () => {
         for (const stop of stopFollowingWatchedChats.splice(0)) stop()
         pullRequests.dispose()
@@ -1184,6 +1208,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     localServers,
     usageLimitResumes,
     scheduledMessages,
+    /** The worktree pool, its installs and tools, the chat-folder guard (studio-worktree-pool.ts). */
+    worktrees,
     /** The model-written chat titles setting, as the windows push it. */
     textGenerationSettings,
     /** The composer's `/` lists, which a window's IPC and a paired desktop's reads share. */
