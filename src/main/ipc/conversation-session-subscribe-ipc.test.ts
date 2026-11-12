@@ -211,6 +211,7 @@ test('the window reads an event that crossed cut to fit whole, by its sequence a
       listSessions: () => ({ ok: true, sessions: [] }),
       readTranscript: unused,
       onEvent: () => () => undefined,
+      onLifecycleEvent: () => () => undefined,
       readEvent: async (input) => {
         asked.push(input)
         return { ok: true as const, event: whole }
