@@ -15,6 +15,11 @@
   `files.readImage` may be refused `not_found`. A Studio still refuses a
   client that is not an owner a conversation's folder, a CLI's `command`, and
   any path outside the folders it knows, by its params.
+- **`conversation.list` leaves settled chats out**, in the sidebar's order
+  (`conversation-lifecycle`, now in the welcome), as the tailnet lane's list
+  does: every client reads the one list the desktop draws. A settled chat is
+  still read, followed and woken by its key (`conversation.settle` with
+  `settled: false`).
 - **`conversation.resolveApproval` takes `decision: 'always'`**, a rule that
   outlives the conversation, as the lane takes it
   (`conversation-permanent-approvals`); a Studio holds it to the client's

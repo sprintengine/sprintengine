@@ -16,6 +16,10 @@
 
 ### Changed (contract)
 
+- `client.list()` leaves out the chats settled in Studio, and lists the rest
+  in the order its sidebar draws them, as every client does. A settled chat
+  is still reached by its key: `client.conversation(ref)`.
+
 - `StudioClient` gains `rpc`, one call per protocol method. Code that builds
   its own object typed `StudioClient` (a test double, say) must add it.
 

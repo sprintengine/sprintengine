@@ -821,14 +821,23 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!key) return notFound(wire)
       return composerAnswer(await list(key, refresh === true), wire, voice, 'conversation.listCommands')
     },
-    'conversation.settle': async ({ key: wire, settled }, { grant, voice }) => {
+    'conversation.settle': async ({ key: wire, commandId, settled }, { grant, voice }) => {
       const settle = followed.settle
       if (!settle) return unserved('conversation.settle')
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      const done = settle(ids(key), settled !== false, grant.owner)
-      if (done.ok) return { ok: true, result: { settledAt: done.settledAt } }
-      return settleRefusal(done, wire, voice, 'conversation.settle')
+      // A retry under its command id is answered with the first answer, not
+      // written again over an un-settle that came in between.
+      return once(
+        keptId('conversation.settle', grant, commandId),
+        async () => {
+          const done = settle(ids(key), settled !== false, grant.owner)
+          if (done.ok) return { ok: true as const, result: { settledAt: done.settledAt } }
+          return settleRefusal(done, wire, voice, 'conversation.settle')
+        },
+        voice,
+        'conversation.settle',
+      )
     },
     'conversation.visit': async ({ key: wire, visitedAt }, { grant, voice }) => {
       const visit = followed.visit
