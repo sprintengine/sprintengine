@@ -86,7 +86,7 @@ export class Matrix {
 
     console.log('\nScenarios')
     for (const scenario of SCENARIOS) console.log(`  ${scenario}: ${SCENARIO_WORDS[scenario]}`)
-    console.log('\nKnown gaps (each closes with the step named; the gate fails once one passes)')
+    console.log('\nKnown gaps (each closes with the change named; the gate fails once one passes)')
     for (const [row, gap] of Object.entries(KNOWN_GAPS)) {
       const outcome = this.results.get(row)
       const seen = outcome && 'error' in outcome ? ` [${outcome.error.split('\n')[0]}]` : ''

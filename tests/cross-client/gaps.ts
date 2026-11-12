@@ -49,43 +49,38 @@ export const KNOWN_GAPS: Partial<Record<`${ClientId}:${ScenarioId}`, KnownGap>> 
   'desktop:subagent': {
     reason:
       "the window's chat over the Studio protocol has no call to message one agent; it goes to main over IPC (conversationTransport.ts)",
-    closedBy: 'the Studio protocol does everything the IPC does, and the chat view on it (plan steps 4 and 5)',
+    closedBy: "the change that puts the window's chat on the Studio protocol alone, with every call its IPC carries",
     expect: /has no call to/u,
   },
   'desktop:schedule': {
     reason:
       "the window's chat over the Studio protocol has no call to schedule a send, and no list of them; both go to main over IPC",
-    closedBy: 'the Studio protocol does everything the IPC does, and the chat view on it (plan steps 4 and 5)',
+    closedBy: "the change that puts the window's chat on the Studio protocol alone, with every call its IPC carries",
     expect: /has no call to/u,
   },
   'peer:create': {
     reason:
       'another device starts a chat by naming a CLI (conversation.create), and the fake provider has none; the request is sent and must be refused as it is today',
-    closedBy: 'one contract where a chat is started by provider (plan step 3), or a fake CLI runtime in the gate',
+    closedBy: 'a contract that starts a chat by provider as well as by CLI, or a fake CLI runtime in the gate',
     expect: /cannot run as a chat/u,
   },
   'phone:create': {
     reason:
       'the phone starts a chat by naming a CLI (conversation.create), and the fake provider has none; the request is sent and must be refused as it is today',
-    closedBy: 'one contract where a chat is started by provider (plan step 3), or a fake CLI runtime in the gate',
+    closedBy: 'a contract that starts a chat by provider as well as by CLI, or a fake CLI runtime in the gate',
     expect: /cannot run as a chat/u,
   },
-  'ssh:upload': {
+  'ssh:restart': {
     reason:
-      "the SSH leg drives the desktop's SSH environment over the backend wire, and does not send pictures over it",
-    closedBy: 'WSL and SSH machines as direct environments (plan step 9): the leg becomes a Studio protocol client',
-    expect: /has no call to/u,
-  },
-  'ssh:subagent': {
-    reason:
-      "the SSH leg drives the desktop's SSH environment over the backend wire, and does not message sub-agents over it",
-    closedBy: 'WSL and SSH machines as direct environments (plan step 9): the leg becomes a Studio protocol client',
-    expect: /has no call to/u,
+      "the desktop does not notice an SSH machine's server dying while the SSH session stays up: it reads Connected over a dead backend until the session drops. The gate checks that a Reconnect then brings the server and the chat back by its cursor",
+    closedBy: 'the change that makes SSH machines environments a client connects to, watched by the connection itself',
+    expect: /did not notice its server die .* a Reconnect brought it back, by its cursor/u,
   },
   'ssh:schedule': {
     reason:
       "a scheduled send into an SSH machine's chat is kept by the desktop's scheduler, which this leg does not run",
-    closedBy: 'WSL and SSH machines as direct environments (plan step 9), with schedules moved to their environment',
+    closedBy:
+      'the change that makes SSH machines environments a client connects to, with their schedules kept on the machine',
     expect: /has no call to/u,
   },
 }

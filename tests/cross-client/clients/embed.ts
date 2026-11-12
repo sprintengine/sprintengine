@@ -51,8 +51,29 @@ function ticketSocket(url: string): Promise<StudioTransport> {
   })
 }
 
+/** What became of one ask: answered, or refused with the words it was refused in. No answer at all is neither. */
+export type ProbeAnswer = { allowed: true } | { allowed: false; why: string }
+
+/** An ask's outcome within ten seconds; one that hangs throws, since silence proves nothing. */
+export async function answerOf(asked: Promise<unknown>): Promise<ProbeAnswer> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const hung = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('the ask had no answer in 10 s')), 10_000)
+  })
+  try {
+    await Promise.race([asked, hung])
+    return { allowed: true }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'the ask had no answer in 10 s') throw error
+    return { allowed: false, why: error instanceof Error ? error.message : String(error) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export function embedClient(input: { cutter: Cutter; link: () => Promise<EmbedLink> }): GateClient & {
-  probe(what: string, ask: (client: StudioClient) => Promise<unknown>): Promise<'refused' | 'allowed'>
+  /** One ask on a connection of the embed's own, as a page holding its token could open. */
+  probe(ask: (client: StudioClient) => Promise<unknown>): Promise<ProbeAnswer>
 } {
   const address = input.cutter.address
   if (!('port' in address)) throw new Error('The embed reaches the server by a port.')
@@ -100,7 +121,7 @@ export function embedClient(input: { cutter: Cutter; link: () => Promise<EmbedLi
       )
       return feed
     },
-    async probe(_what, ask) {
+    async probe(ask) {
       const link = await input.link()
       const session = await fetch(`${origin}/embed/session`, {
         method: 'POST',
@@ -114,17 +135,7 @@ export function embedClient(input: { cutter: Cutter; link: () => Promise<EmbedLi
         reconnect: false,
         wakeups: false,
       })
-      try {
-        await Promise.race([
-          ask(client),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('no answer')), 10_000)),
-        ])
-        return 'allowed'
-      } catch {
-        return 'refused'
-      } finally {
-        client.close()
-      }
+      return answerOf(ask(client)).finally(() => client.close())
     },
     cut: () => input.cutter.cut(),
     heal: () => input.cutter.heal(),

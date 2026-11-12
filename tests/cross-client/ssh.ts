@@ -9,41 +9,32 @@ import { SshEnvironment } from '../../src/main/environments/ssh/ssh-environment'
 import { ensureNodeBinary, serverTreeDigest } from '../../src/main/environments/ssh/ssh-install'
 import type { SessionProcess } from '../../src/main/environments/ssh/ssh-session'
 import { BACKEND_WIRE_VERSION } from '../../src/server/wsl/backend-wire'
-import type { ConversationEvent } from '../../src/shared/conversation-runtime'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../src/shared/ssh-environments'
-import { MOCK_PROVIDER } from './client'
+import { ClientCannot, MOCK_PROVIDER } from './client'
+import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
 import type { Matrix } from './matrix'
 
 // An SSH machine, for real: the dockerized sshd the SSH machine suites use,
 // the desktop's SSH environment (ssh-environment.ts) installing the server tree
 // and the pinned Node there and starting it, and a chat on the fake provider
 // driven over the backend wire. That wire is today's path to an SSH machine's
-// chats; plan step 9 replaces it with a direct environment, and this leg's
+// chats; once SSH machines are environments a client connects to directly, this leg's
 // client with it.
 
 export const SSH_TRANSPORT = 'backend wire (SSH environment)'
 
+type TranscriptSync =
+  | { kind: 'events'; events: GateEvent[]; generation: string }
+  | { kind: 'snapshot'; page: { events: GateEvent[] }; generation: string }
+
 type Backend = {
+  readConversationSync(key: unknown, input: { afterSeq?: number; generation?: string }): Promise<unknown>
+  messageSubagent(input: unknown): Promise<unknown>
   startSession(input: unknown): Promise<unknown>
   sendTurn(input: unknown): Promise<unknown>
   respondToRequest(input: unknown): Promise<unknown>
   readTranscript(input: unknown): Promise<unknown>
-  onEvent(listener: (event: ConversationEvent) => void): () => void
-}
-
-function nextEvent(backend: Backend, test: (event: ConversationEvent) => boolean, what: string, ms = 30_000) {
-  return new Promise<ConversationEvent>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      stop()
-      reject(new Error(`ssh: no ${what} in ${ms / 1000} s`))
-    }, ms)
-    const stop = backend.onEvent((event) => {
-      if (!test(event)) return
-      clearTimeout(timer)
-      stop()
-      resolve(event)
-    })
-  })
+  onEvent(listener: (event: GateEvent & { workspaceId: string; agentId: string }) => void): () => void
 }
 
 function ok<T>(result: unknown, what: string): T {
@@ -57,6 +48,11 @@ const until = async (check: () => boolean, ms: number) => {
   while (Date.now() < end && !check()) await new Promise((resolve) => setTimeout(resolve, 200))
   return check()
 }
+
+const PICTURE = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 export async function runSshLeg(input: { root: string; scratch: string; matrix: Matrix; cacheDir: string }) {
   const { matrix } = input
@@ -116,75 +112,189 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       ),
     )
   try {
-    let backend = (await env.connect({ interactive: true })).backend as unknown as Backend
     sshd.exec('mkdir -p /home/dev/repo', 'dev')
+    let connection = await env.connect({ interactive: true })
+    let backend = connection.backend as unknown as Backend
+    // The SSH chat, as the desktop follows it: live events while connected,
+    // and after a reconnect the catch-up from its cursor (the router's resume).
+    const feed = new Feed('ssh')
+    let stopEvents: () => void = () => undefined
+    const follow = (next: Backend) => {
+      stopEvents()
+      stopEvents = next.onEvent((event) => {
+        if (event.workspaceId === key.workspaceId && event.agentId === key.agentId) feed.event(event)
+      })
+    }
+    const catchUp = async (from: Backend) => {
+      const read = ok<TranscriptSync>(
+        await from.readConversationSync(key, {
+          ...(feed.cursor === undefined ? {} : { afterSeq: feed.cursor }),
+          ...(feed.generation === undefined ? {} : { generation: feed.generation }),
+        }),
+        'catch up',
+      )
+      if (read.kind === 'events') for (const event of read.events) feed.event(event)
+      // Anything but the events after the cursor replaces what the feed held.
+      else feed.snapshot(read.page.events, { reset: true })
+      feed.side({ live: true })
+      feed.generation = read.generation
+    }
+    /** Nothing after `cursor` that the machine's transcript has is missing, none twice, and no reset. */
+    const resumedFrom = async (cursor: number, before: { duplicates: number; resets: number }) => {
+      const transcript = ok<{ events: GateEvent[] }>(await backend.readTranscript(key), 'transcript')
+      const held = new Set(feed.seqs)
+      const lost = transcript.events.filter(
+        (event) => typeof event.seq === 'number' && event.seq > cursor && !held.has(event.seq),
+      )
+      if (lost.length) throw new Error(`ssh: ${lost.length} event(s) never arrived`)
+      if (feed.duplicates !== before.duplicates) throw new Error('ssh: events were handed over twice')
+      if (feed.resets !== before.resets) throw new Error('ssh: it came back with a snapshot, not by its cursor')
+    }
     let sessionId = ''
+    const send = (message: string, extra: Record<string, unknown> = {}) =>
+      // Answered when the turn ends, which may be after this connection goes:
+      // a call in flight then fails with the wire, as it does in the app.
+      void backend.sendTurn({ sessionId, message, commandId: `ssh-${Date.now()}`, ...extra }).catch(() => undefined)
+    const answer = async (text: string) => {
+      await feed.until((each) => approvalAfter(each, text) !== undefined, `the approval after "${text}"`, 30_000)
+      const requestId = String(approvalAfter(feed, text)!.payload?.requestId)
+      ok(await backend.respondToRequest({ sessionId, requestId, approved: true }), 'answer')
+      await feed.until((each) => resolvedAfter(each, requestId), `"${text}" ending`, 30_000)
+    }
+
     await matrix.run('ssh', 'create', async () => {
       sessionId = ok<{ session: { sessionId: string } }>(
         await backend.startSession({ ...key, ...MOCK_PROVIDER }),
         'start',
       ).session.sessionId
+      await catchUp(backend)
+      follow(backend)
     })
 
-    let approval: ConversationEvent | null = null
+    const first = 'turn on build-box'
     await matrix.run('ssh', 'stream', async () => {
-      const reply = nextEvent(backend, (event) => event.type === 'content_delta', 'reply')
-      const asking = nextEvent(backend, (event) => event.type === 'approval_requested', 'approval')
-      // Answered when the turn ends; the session is dropped before that, and
-      // the call in flight fails with the wire, as it does in the app.
-      backend.sendTurn({ sessionId, message: 'turn on build-box', commandId: 'ssh-1' }).catch(() => undefined)
-      if (String((await reply).payload?.text) !== 'Mock response for: turn on build-box')
-        throw new Error('ssh: the reply is not the turn’s')
-      approval = await asking
+      send(first)
+      await feed.until(
+        (each) => each.find(isReplyTo(first)) !== undefined && approvalAfter(each, first) !== undefined,
+        `"${first}" streamed`,
+        30_000,
+      )
     })
 
-    // The session drops while the turn waits; the server keeps it; a new
-    // session finds the same turn still waiting, and its answer ends it.
+    // The session drops while the turn waits. The person's answer goes on the
+    // next session before anything follows the chat again, so the turn's end
+    // is missed and has to come back by the cursor.
     await matrix.run('ssh', 'resume', async () => {
-      if (!approval) throw new Error('ssh: no turn to resume')
+      const requestId = String(approvalAfter(feed, first)?.payload?.requestId ?? '')
+      if (!requestId) throw new Error('ssh: no turn waiting to resume')
+      const cursor = feed.cursor ?? 0
+      const before = { duplicates: feed.duplicates, resets: feed.resets }
+      stopEvents()
       sessions.at(-1)!.kill()
       if (!(await until(() => env.summary().state !== 'connected', 10_000)))
         throw new Error('ssh: the dropped session was not noticed')
-      backend = (await env.connect({ interactive: true })).backend as unknown as Backend
-      const done = nextEvent(backend, (event) => event.type === 'turn_completed', 'end of the turn')
-      ok(
-        await backend.respondToRequest({
-          sessionId,
-          requestId: String(approval.payload?.requestId),
-          approved: true,
-        }),
-        'answer',
-      )
-      await done
+      connection = await env.connect({ interactive: true })
+      backend = connection.backend as unknown as Backend
+      ok(await backend.respondToRequest({ sessionId, requestId, approved: true }), 'answer')
+      await until(() => false, 500)
+      if (resolvedAfter(feed, requestId)) throw new Error('ssh: the feed heard the answer while it followed nothing')
+      await catchUp(backend)
+      follow(backend)
+      if (!resolvedAfter(feed, requestId)) throw new Error('ssh: the catch-up did not carry the turn’s end')
+      await resumedFrom(cursor, before)
     })
+    // The approval a turn raised on one session, answered on the next.
     await matrix.run('ssh', 'approval', async () => {
-      const transcript = JSON.stringify(await backend.readTranscript(key))
-      if (!transcript.includes('approval_resolved')) throw new Error('ssh: the approval is not in the transcript')
+      const requestId = String(approvalAfter(feed, first)?.payload?.requestId ?? '')
+      if (!requestId || !resolvedAfter(feed, requestId)) throw new Error('ssh: the approval was not answered')
     })
 
-    // The machine's server dies; the environment starts it again and the
-    // chat goes on from its transcript.
+    await matrix.run('ssh', 'upload', async () => {
+      const text = 'picture on build-box'
+      sshd.exec(`echo ${PICTURE.toString('base64')} | base64 -d > /home/dev/repo/picture.png`, 'dev')
+      send(text, { files: [{ path: '/home/dev/repo/picture.png' }] })
+      await feed.until(
+        (each) => {
+          const message = each.find(isUserMessage(text))
+          return Array.isArray(message?.payload?.files) && (message.payload.files as unknown[]).length === 1
+        },
+        `"${text}" with its file`,
+        30_000,
+      )
+      await answer(text)
+    })
+
+    await matrix.run('ssh', 'subagent', async () => {
+      send('/subagent')
+      await feed.until(
+        (each) =>
+          each.find((event) => event.type === 'subagent_status' && event.payload?.status === 'running') !== undefined,
+        'a sub-agent running',
+        30_000,
+      )
+      const toolUseId = String(feed.find((event) => event.type === 'subagent_status')!.payload?.toolUseId)
+      const text = 'note on build-box'
+      ok(await backend.messageSubagent({ sessionId, toolUseId, message: text }), 'message the sub-agent')
+      await feed.until(
+        (each) =>
+          each.find((event) => (event.payload?.subagentMessage as { text?: string } | undefined)?.text === text) !==
+          undefined,
+        `"${text}" passed to the sub-agent`,
+        30_000,
+      )
+      const relayed = feed.find(
+        (event) => (event.payload?.subagentMessage as { text?: string } | undefined)?.text === text,
+      )
+      await answer(String(relayed?.payload?.text))
+    })
+
+    await matrix.run('ssh', 'schedule', async () => {
+      throw new ClientCannot(
+        'the SSH leg',
+        'schedule a send: the desktop’s scheduler keeps them, and this leg runs none',
+      )
+    })
+
+    // The machine's server dies. The environment should notice, reconnect by
+    // itself (BatchMode: the key needs no passphrase) and start the server
+    // again, and the chat come back by its cursor and go on. Today it does not
+    // notice while the SSH session stays up (a known gap): then the person's
+    // Reconnect is checked to bring it all back, and the row says which.
     await matrix.run('ssh', 'restart', async () => {
-      const before = serverPid()
-      sshd.exec(`kill -9 ${before}`)
-      env.disconnect()
-      backend = (await env.connect({ interactive: true })).backend as unknown as Backend
+      const pid = serverPid()
+      const cursor = feed.cursor ?? 0
+      const before = { duplicates: feed.duplicates, resets: feed.resets }
+      const dropped = connection
+      sshd.exec(`kill -9 ${pid}`)
+      const byItself = await until(
+        () => env.current() !== null && env.current() !== dropped && env.summary().state === 'connected',
+        30_000,
+      )
+      const stateAfter = `${env.summary().state}: ${env.summary().stateText}`
+      if (!byItself) {
+        env.disconnect()
+        await env.connect({ interactive: true })
+      }
+      connection = env.current()!
+      backend = connection.backend as unknown as Backend
       const after = serverPid()
-      if (!(after > 0 && after !== before)) throw new Error('ssh: the server was not started again')
+      if (!(after > 0 && after !== pid)) throw new Error('ssh: the server was not started again')
+      await catchUp(backend)
+      follow(backend)
+      await resumedFrom(cursor, before)
       sessionId = ok<{ session: { sessionId: string } }>(
         await backend.startSession({ ...key, ...MOCK_PROVIDER }),
         'start again',
       ).session.sessionId
-      const asking = nextEvent(backend, (event) => event.type === 'approval_requested', 'approval after the restart')
-      backend.sendTurn({ sessionId, message: 'after the restart', commandId: 'ssh-2' }).catch(() => undefined)
-      await asking
-      const transcript = JSON.stringify(await backend.readTranscript(key))
-      if (!transcript.includes('turn on build-box')) throw new Error('ssh: the chat lost its history')
+      const text = 'after the restart'
+      send(text)
+      await answer(text)
+      if (!feed.find(isUserMessage(first))) throw new Error('ssh: the chat lost its history')
+      if (!byItself)
+        throw new Error(
+          `ssh: the environment did not notice its server die (still "${stateAfter}" 30 s later); a Reconnect brought it back, by its cursor`,
+        )
     })
-    for (const scenario of ['upload', 'subagent', 'schedule'] as const)
-      await matrix.run('ssh', scenario, async () => {
-        throw new Error(`the SSH leg has no call to ${scenario} over the backend wire`)
-      })
   } finally {
     env.disconnect()
     broker.close()

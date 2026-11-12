@@ -9,8 +9,9 @@ commit, never squash or rebase, with Conventional Commit titles; see
 ## Before merging
 
 - Pass the required PR-title, build, JS and cross-client checks. The release also runs
-  `npm run verify:app` and the marketplace signature check against the exact
-  source commit before it publishes.
+  `npm run verify:app`, the marketplace signature check, the SSH machine suites
+  and the cross-client gate against the exact source commit before it
+  publishes.
 - Select the intended version bump: `feat` means minor, `!` or a
   `BREAKING CHANGE:` footer means major from 1.x and minor while the version
   is 0.x (1.0.0 is only ever typed into a promotion's `version` input), and

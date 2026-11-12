@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 
+import type { StudioClient } from '../../packages/agent-sdk/src/index'
 import { ClientCannot, type ChatRef, type GateClient } from './client'
 import { desktopClient } from './clients/desktop'
-import { embedClient, parseEmbedLink } from './clients/embed'
+import { answerOf, embedClient, parseEmbedLink } from './clients/embed'
 import { peerClient } from './clients/peer'
 import { phoneClient, type PhoneProtocol } from './clients/phone'
 import { startCutter, type Cutter } from './cutter'
@@ -380,6 +381,30 @@ async function main(): Promise<number> {
       if (ok) scheduledBy.set(sender, text)
     }
 
+    /**
+     * Back by its cursor: every event the server's transcript has after the
+     * cursor reached it, none twice, and no page replaced what it held.
+     */
+    const resumedFrom = async (client: GateClient, before: { cursor: number; duplicates: number; resets: number }) => {
+      const feed = feedOf(client)
+      const transcript = await host.request<GateEvent[]>({
+        op: 'transcript',
+        workspaceId: shared.workspaceId,
+        agentId: shared.agentId,
+      })
+      const held = new Set(feed.seqs)
+      const lost = transcript.filter(
+        (event) => typeof event.seq === 'number' && event.seq > before.cursor && !held.has(event.seq),
+      )
+      if (lost.length)
+        throw new Error(
+          `${lost.length} event(s) never arrived: ${lost.map((event) => `${event.seq} ${event.type}`).join(', ')}`,
+        )
+      if (feed.duplicates !== before.duplicates)
+        throw new Error(`${feed.duplicates - before.duplicates} event(s) were handed over twice`)
+      if (feed.resets !== before.resets) throw new Error('it came back with a snapshot, not by its cursor')
+    }
+
     // resume: each client is cut off mid-turn and misses what the others do.
     for (const client of [desktop, peer, phone, embed]) {
       const driver = client === desktop ? peer : desktop
@@ -403,25 +428,13 @@ async function main(): Promise<number> {
         client.heal()
         client.resume?.()
         await feed.until((each) => approvalAfter(each, missed) !== undefined, `"${missed}" after coming back`, 30_000)
-        const transcript = await host.request<GateEvent[]>({
-          op: 'transcript',
-          workspaceId: shared.workspaceId,
-          agentId: shared.agentId,
-        })
-        const held = new Set(feed.seqs)
-        const lost = transcript.filter(
-          (event) => typeof event.seq === 'number' && event.seq > cursor && !held.has(event.seq),
-        )
-        if (lost.length)
-          throw new Error(
-            `${lost.length} event(s) never arrived: ${lost.map((event) => `${event.seq} ${event.type}`).join(', ')}`,
-          )
-        if (feed.duplicates !== duplicates)
-          throw new Error(`${feed.duplicates - duplicates} event(s) were handed over twice`)
-        if (feed.resets !== resets) throw new Error('it came back with a reset snapshot, not by its cursor')
+        await resumedFrom(client, { cursor, duplicates, resets })
         if (cutterOf.get(client)!.opened <= opened) throw new Error('it never opened a new connection')
       })
-      await settle(`while ${client.id} was away`).catch(() => undefined)
+      // A row that failed may have left its turn waiting; the next row starts clean or says why it cannot.
+      await settle(`while ${client.id} was away`).catch((error: unknown) =>
+        console.log(`  (the turn sent while ${client.id} was away could not be ended: ${String(error)})`),
+      )
     }
 
     // restart: the server is killed with a turn waiting, and started again.
@@ -429,12 +442,19 @@ async function main(): Promise<number> {
     await desktop.send!(shared, inFlight)
     await pendingApproval(inFlight)
     const openedBefore = new Map([...cutterOf].map(([client, made]) => [client, made.opened]))
+    const heldBefore = new Map(
+      all().map((feed) => [feed, { cursor: feed.cursor ?? 0, duplicates: feed.duplicates, resets: feed.resets }]),
+    )
     await host.kill()
     await host.start(false)
-    /** Came back by itself over a new connection, and was never handed an event twice. */
-    const cameBack = (client: GateClient) => {
+    /**
+     * Came back by itself over a new connection and by its cursor: whatever the
+     * server wrote of the turn the kill cut off, and everything after, every
+     * client holds alike.
+     */
+    const cameBack = async (client: GateClient) => {
       if (cutterOf.get(client)!.opened <= openedBefore.get(client)!) throw new Error('it never opened a new connection')
-      if (feedOf(client).duplicates) throw new Error(`${feedOf(client).duplicates} event(s) were handed over twice`)
+      await resumedFrom(client, heldBefore.get(feedOf(client))!)
     }
     for (const sender of writers) {
       const text = `after the restart from ${sender.id}`
@@ -442,7 +462,7 @@ async function main(): Promise<number> {
         await feedOf(sender).until((feed) => feed.live, 'its connection back', 60_000)
         await sender.send!(shared, text)
         await everyone(streamedTo(text), `"${text}" streamed`, 60_000)
-        cameBack(sender)
+        await cameBack(sender)
         // What was scheduled before the restart is still there.
         const kept = scheduledBy.get(sender)
         if (kept && listers.includes(sender))
@@ -454,7 +474,7 @@ async function main(): Promise<number> {
       if (sent) await settle(text)
     }
     await matrix.run('embed', 'restart', async () => {
-      cameBack(embed)
+      await cameBack(embed)
       for (const sender of writers)
         if (!feedOf(embed).find(isUserMessage(`after the restart from ${sender.id}`)))
           throw new Error(`the embed did not see the turn ${sender.id} sent after the restart`)
@@ -475,27 +495,17 @@ async function main(): Promise<number> {
     // isolation: the embed asks for more than its one chat, reading.
     const other = await desktop.createChat!(project, 'gate-other-chat')
     await matrix.run('embed', 'isolation', async () => {
-      // Each ask is well formed (typed by the protocol's method map) and one
-      // an owner's connection would be answered; only the embed's grant and
-      // its frame gate stand in the way.
+      // A turn waits on its approval, so answering it is a real ask.
+      const waiting = 'waiting while the embed asks'
+      await desktop.send!(shared, waiting)
+      const requestId = await pendingApproval(waiting)
+      // Each ask is well formed (typed by the protocol's method map), and the
+      // window's own connection is answered for every one of them below: only
+      // the embed's frame gate and read-only grant stand in its way.
       const own = { workspaceId: shared.workspaceId, agentId: shared.agentId }
       const otherChat = { workspaceId: other.workspaceId, agentId: other.agentId }
-      const asks: Array<[string, Parameters<typeof embed.probe>[1]]> = [
-        [
-          'send into its chat',
-          (client) =>
-            client.request('conversation.send', { key: own, commandId: 'embed-send', message: 'from the embed' }),
-        ],
-        [
-          'answer an approval',
-          (client) =>
-            client.request('conversation.resolveApproval', {
-              key: own,
-              commandId: 'embed-approve',
-              requestId: 'request-1',
-              decision: 'once',
-            }),
-        ],
+      type Ask = (client: StudioClient, who: 'embed' | 'owner') => Promise<unknown>
+      const asks: Array<[string, Ask]> = [
         ['list the chats', (client) => client.request('conversation.list', {})],
         [
           'read another chat',
@@ -506,24 +516,53 @@ async function main(): Promise<number> {
                 if (frame.type === 'error') reject(new Error(frame.message))
                 else resolve(frame)
               })
-              void client.closed.then(() => reject(new Error('closed')), reject)
+              void client.closed.then(() => reject(new Error('The connection to Studio closed.')), reject)
             }),
         ],
+        [
+          'answer an approval',
+          (client, who) =>
+            client.request('conversation.resolveApproval', {
+              key: own,
+              commandId: `${who}-approve`,
+              requestId,
+              decision: 'once',
+            }),
+        ],
+        [
+          'send into its chat',
+          (client, who) =>
+            client.request('conversation.send', { key: own, commandId: `${who}-send`, message: `from the ${who}` }),
+        ],
       ]
-      // The control: what an embed may do, asked the same way, is let through.
-      if ((await embed.probe('ping', (client) => client.request('server.ping', {}))) !== 'allowed')
+      // What an embed may do, asked the same way, is answered: the probe can tell.
+      if (!(await embed.probe((client) => client.request('server.ping', {}))).allowed)
         throw new Error('the probe could not ask even what an embed may: it proves nothing')
-      const allowed: string[] = []
-      for (const [what, ask] of asks) if ((await embed.probe(what, ask)) === 'allowed') allowed.push(what)
-      if (allowed.length) throw new Error(`the embed was let ${allowed.join(', ')}`)
-      if (feedOf(embed).find(isUserMessage('from the embed'))) throw new Error('the embed’s send reached the chat')
-      const text = 'after the embed asked'
-      await desktop.send!(shared, text)
+      // Refused by the frame gate (it ends the socket) or the read-only grant (forbidden), and nothing else.
+      const refusedAsItShould = /connection to Studio closed|forbidden|not allowed|permission|scope/iu
+      const wrong: string[] = []
+      for (const [what, ask] of asks) {
+        const answer = await embed.probe((client) => ask(client, 'embed'))
+        if (answer.allowed) wrong.push(`${what} (allowed)`)
+        else if (!refusedAsItShould.test(answer.why)) wrong.push(`${what} (refused, but as "${answer.why}")`)
+      }
+      if (wrong.length) throw new Error(`the embed was not held to its chat: ${wrong.join('; ')}`)
+      if (resolvedAfter(feedOf(desktop), requestId)) throw new Error('the embed’s answer reached the chat')
+      if (feedOf(desktop).find(isUserMessage('from the embed'))) throw new Error('the embed’s send reached the chat')
+      // The same asks from the window, an owner: each is answered.
+      const owner = await desktop.studio()
+      for (const [what, ask] of asks) {
+        const answer = await answerOf(ask(owner, 'owner'))
+        if (!answer.allowed)
+          throw new Error(`the window could not ${what} either (${answer.why}): the ask proves nothing`)
+      }
+      await everyone((feed) => resolvedAfter(feed, requestId), 'the approval the window answered')
+      await settle('from the owner')
+      // And the embed still follows its own chat.
       await feedOf(embed).until(
-        (feed) => feed.find(isUserMessage(text)) !== undefined,
-        `"${text}" (its own chat, still)`,
+        (feed) => feed.find(isUserMessage('from the owner')) !== undefined,
+        'its own chat, still, after its asks',
       )
-      await settle(text)
     })
 
     for (const client of clients) await client.close()

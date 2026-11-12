@@ -94,7 +94,7 @@ export async function peerClient(input: {
         prompt: name,
       })
       if (!created.ok) throw new Error(`peer: create: ${created.message}`)
-      throw new Error('peer: create answered ok for a CLI that has no chat runtime')
+      return { workspaceId: created.workspaceId, agentId: created.agentId, workspaceRoot: workspace.workspaceRoot }
     },
     send: (chat, text) => command(chat, 'send', { kind: 'send', message: text }),
     async sendWithAttachment(chat, text, attachment: Attachment) {

@@ -2,6 +2,7 @@ import { connect, type Socket } from 'node:net'
 import { createInterface } from 'node:readline'
 
 import { createStudioConversationParts } from '../../../src/renderer/src/components/panels/agentChat/studioChat'
+import type { StudioClient } from '../../../packages/agent-sdk/src/index'
 import { windowStudioClient } from '../../../src/renderer/src/studio/windowStudioClient'
 import { conversationNewChatSeed } from '../../../src/renderer/src/components/workspace/conversationSpawnOptions'
 import type { AgentState } from '../../../src/shared/agent-state'
@@ -74,7 +75,10 @@ function fail(result: unknown, what: string): void {
 /** Main's half of a window's New chat: the chat's record in its project, written over IPC. */
 export type RecordChat = (chat: ChatRef, patch: Partial<AgentState>) => Promise<void>
 
-export function desktopClient(cutter: Cutter, recordChat: RecordChat): GateClient {
+export function desktopClient(
+  cutter: Cutter,
+  recordChat: RecordChat,
+): GateClient & { studio(): Promise<StudioClient> } {
   const api = socketPortApi(cutter)
   const parts = createStudioConversationParts(() => windowStudioClient(api))
   const sessions = new Map<string, string>()
@@ -106,7 +110,7 @@ export function desktopClient(cutter: Cutter, recordChat: RecordChat): GateClien
     transport: 'Studio protocol (window port)',
     simulated: [
       "Electron's preload and main port broker: a socket per window connection to the same rpc.connectWindow",
-      "the chat view's resubscribe after a stream ends (a React hook): the gate subscribes again from its cursor",
+      "the chat view's resubscribe if a stream ends (a React hook): the gate subscribes again from its cursor, though the window's client resumes its streams itself across a drop",
       "a New chat's record in its project, which the window writes to main over IPC: the server host writes it",
     ],
     async follow(chat) {
@@ -182,6 +186,8 @@ export function desktopClient(cutter: Cutter, recordChat: RecordChat): GateClien
     messageSubagent: undefined,
     scheduleSend: undefined,
     sendScheduledNow: undefined,
+    /** The window's own Studio client: an owner's connection, for asks the gate checks against. */
+    studio: () => windowStudioClient(api),
     cut: () => cutter.cut(),
     heal: () => cutter.heal(),
     async close() {

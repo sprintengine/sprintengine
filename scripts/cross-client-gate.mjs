@@ -20,6 +20,10 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+if (process.platform === 'win32') {
+  console.error('cross-client gate: runs on Linux and macOS; the window and shell sockets it opens are Unix sockets.')
+  process.exit(1)
+}
 const serverBundle = join(root, 'out', 'server', 'server.cjs')
 if (!existsSync(serverBundle)) {
   console.error(`cross-client gate: ${serverBundle} is missing. Run npm run build:server first.`)

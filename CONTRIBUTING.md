@@ -115,7 +115,8 @@ machine in a container. They share one chat on the built-in fake provider:
 start it, stream a turn, send a picture, answer an approval another client's
 turn raised, message a sub-agent, schedule a send, drop mid-turn and come back
 by cursor, and survive the server being killed and started again. It takes
-under a minute on a laptop.
+under a minute on a laptop, and runs on Linux and macOS (its sockets are Unix
+sockets).
 
 Its output is a table of client by scenario, and it says what it simulates
 (the Electron shell's port broker, the phone's file module, the tailnet bound

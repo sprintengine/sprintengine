@@ -55,7 +55,10 @@ export type PhoneProtocol = {
   createConversation(
     target: { baseUrl: string; deviceToken: string; machineName: string },
     input: Record<string, unknown>,
-  ): Promise<{ ok: boolean; title?: string; message?: string }>
+  ): Promise<
+    | { ok: true; conversation: { workspaceId: string; agentId: string } }
+    | { ok: false; title: string; message?: string }
+  >
   createTailnetConversationsApi(input: { baseUrl: string; deviceToken: string }): PhoneApi
 }
 
@@ -153,8 +156,12 @@ export async function phoneClient(input: {
         { baseUrl, deviceToken, machineName: 'mac-mini' },
         { workspaceId: workspace.workspaceId, newChat: true, cli: 'mock-provider', prompt: name },
       )
-      if (!created.ok) throw new Error(`phone: create: ${JSON.stringify(created)}`)
-      throw new Error('phone: create answered ok for a CLI that has no chat runtime')
+      if (!created.ok) throw new Error(`phone: create: ${created.title} ${created.message ?? ''}`.trim())
+      return {
+        workspaceId: created.conversation.workspaceId,
+        agentId: created.conversation.agentId,
+        workspaceRoot: workspace.workspaceRoot,
+      }
     },
     send: (chat, text) => command(chat, 'send', { kind: 'send', message: text, composedAt: Date.now() }),
     async sendWithAttachment(chat, text, attachment: Attachment) {

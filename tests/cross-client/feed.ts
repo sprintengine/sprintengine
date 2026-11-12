@@ -12,7 +12,7 @@ export class Feed {
   private readonly waiters = new Set<() => void>()
   /** An event frame for a sequence number this feed already held. */
   duplicates = 0
-  /** Snapshots after the first that replaced what the feed held. */
+  /** Snapshots after the first: a client that came back by a page, not by its cursor. */
   resets = 0
   private snapshots = 0
   /** The newest list of scheduled sends a side frame named; null until one did. */
@@ -28,9 +28,11 @@ export class Feed {
 
   snapshot(events: readonly GateEvent[], options: { reset?: boolean; generation?: string } = {}): void {
     this.snapshots += 1
-    if (options.reset && this.snapshots > 1) {
+    // A resume by cursor hands over the events after it, never a page: any
+    // snapshot after the first counts, whatever the client says it is.
+    if (this.snapshots > 1) {
       this.resets += 1
-      this.bySeq.clear()
+      if (options.reset) this.bySeq.clear()
     }
     if (options.generation) this.generation = options.generation
     for (const event of events) if (typeof event.seq === 'number') this.bySeq.set(event.seq, event)
