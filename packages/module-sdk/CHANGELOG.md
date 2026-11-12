@@ -42,6 +42,12 @@ with no shim, and Studio no longer loads a module built for host API 1.
 - Templates, the `main` part (now with `src/methods.ts` and `module:bridge`
   always) and the guides use declared methods.
 
+### Added
+
+- `ScheduledAgentView.waiting`: why the machine a scheduled agent lives on
+  cannot run it now, in words, while its times pass without a run. Absent when
+  it can run.
+
 To move a module from host API 1: write a contract type for its channels, turn
 each `registerIpc('<id>:name', (event, payload) => result)` into a
 `registerMethods` entry with an access, a params validator and a handler
