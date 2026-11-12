@@ -72,6 +72,7 @@ import {
   type StudioModulesMethodMap,
   type StudioModulesTopicMap,
 } from './modules.js'
+import { STUDIO_WORKSPACES_METHODS, type StudioWorkspacesMethodMap } from './workspaces.js'
 import {
   STUDIO_TERMINALS_METHODS,
   STUDIO_TERMINALS_TOPICS,
@@ -155,6 +156,9 @@ export type StudioRuntimeRefusalCode =
   | 'cli_not_conversational'
   | 'unknown_skill'
   | 'conversation_start_failed'
+  // New chat's own: no worktree could be cut or found for it, or its CLI has no such effort.
+  | 'worktree_unavailable'
+  | 'unsupported_effort'
 
 /** A command's own refusals: the runtime's, a ceiling it would exceed, and a decision no remote client makes. */
 type CommandRefusal = StudioRuntimeRefusalCode | 'ceiling_exceeded' | 'unsafe_remote_decision'
@@ -201,7 +205,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioTerminalsMethodMap &
   StudioUpdateMethodMap &
   StudioAgentSettingsMethodMap &
-  StudioAgentSetupMethodMap
+  StudioAgentSetupMethodMap &
+  StudioWorkspacesMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -214,7 +219,7 @@ type StudioConversationMethodMap = {
   'server.ping': { params: Record<string, never>; result: { at: number } }
   'conversation.list': { params: Record<string, never>; result: { conversations: ConversationThread[] } }
   'conversation.create': {
-    params: ConversationCreateRequest & { commandId: string }
+    params: StudioConversationCreateParams
     result: { conversation: StudioCreatedConversation }
     errors: StudioRuntimeRefusalCode | 'ceiling_exceeded'
   }
@@ -449,6 +454,85 @@ function command<K extends ConversationCommand['kind'], M extends StudioCommandM
 
 const noParams = (): StudioParsed<Record<string, never>> => studioParams({})
 
+/**
+ * How New chat starts one, beyond the contract's create: as a chat of its own
+ * in the project's folder (`newChat`) rather than one more agent in a
+ * workspace, in a worktree cut for it (`worktree`, named from `worktreeName`)
+ * or one the project already has (`inWorktree`, a path `workspaces.checkout`
+ * lists), under no project at all (`noProject`, in place of `workspaceId`),
+ * and at a reasoning effort (`effort`, one of the CLI's `reasoningLevels`).
+ * The gateway's `conversation.create` tool takes the same, for agents.
+ */
+export type StudioNewChatOptions = {
+  newChat?: boolean
+  worktree?: boolean
+  worktreeName?: string
+  inWorktree?: string
+  effort?: string
+}
+
+/** A create as the protocol takes it: in a workspace, or (`noProject`) in a folder of its own. */
+export type StudioConversationCreate = StudioNewChatOptions &
+  (
+    | (ConversationCreateRequest & { noProject?: undefined })
+    | (Omit<ConversationCreateRequest, 'workspaceId'> & { workspaceId?: undefined; noProject: true })
+  )
+
+export type StudioConversationCreateParams = StudioConversationCreate & { commandId: string }
+
+const EFFORT_ID = /^[a-z][a-z0-9_-]{0,31}$/iu
+
+/** A create's members, read and held to New chat's rules; `commandId` is the caller's to read. */
+export function parseStudioConversationCreate(
+  value: Record<string, unknown>,
+): { ok: true; create: StudioConversationCreate } | { ok: false; message: string } {
+  const { commandId: _commandId, noProject, newChat, worktree, worktreeName, inWorktree, effort, ...request } = value
+  if (noProject !== undefined && noProject !== true) return { ok: false, message: '"noProject", when given, is true.' }
+  for (const [name, flag] of [
+    ['newChat', newChat],
+    ['worktree', worktree],
+  ] as const)
+    if (flag !== undefined && typeof flag !== 'boolean') return { ok: false, message: `"${name}" is a boolean.` }
+  for (const [name, text, max] of [
+    ['worktreeName', worktreeName, 200],
+    ['inWorktree', inWorktree, 4096],
+  ] as const)
+    if (text !== undefined && (typeof text !== 'string' || !text.trim() || text.length > max))
+      return { ok: false, message: `"${name}" is a string of 1 to ${max} characters.` }
+  if (effort !== undefined && (typeof effort !== 'string' || !EFFORT_ID.test(effort.trim())))
+    return { ok: false, message: '"effort" is an effort level id, such as "high".' }
+  if (noProject) {
+    if (request.workspaceId !== undefined)
+      return { ok: false, message: '"noProject" takes the place of "workspaceId".' }
+    if (worktree || worktreeName !== undefined || inWorktree !== undefined)
+      return { ok: false, message: 'A chat with no project has no checkout to take a worktree from.' }
+  }
+  if (worktree && newChat !== true)
+    return { ok: false, message: '"worktree" starts a new chat: set "newChat" with it.' }
+  if (worktreeName !== undefined && worktree !== true)
+    return { ok: false, message: '"worktreeName" names a new worktree: set "worktree" with it.' }
+  if (inWorktree !== undefined && newChat !== true)
+    return { ok: false, message: '"inWorktree" starts a new chat: set "newChat" with it.' }
+  if (inWorktree !== undefined && worktree)
+    return { ok: false, message: 'Ask for a new worktree or name one, not both.' }
+  // The contract's own members, read by its own validator; a chat under no
+  // project names no workspace, so it is read with a stand-in and given none.
+  const parsed = parseConversationCreateRequest(noProject ? { ...request, workspaceId: 'no-project' } : request)
+  if (!parsed.ok) return { ok: false, message: parsed.message }
+  const options: StudioNewChatOptions = {
+    ...(newChat === true ? { newChat: true } : {}),
+    ...(worktree === true ? { worktree: true } : {}),
+    ...(typeof worktreeName === 'string' ? { worktreeName: worktreeName.trim() } : {}),
+    ...(typeof inWorktree === 'string' ? { inWorktree: inWorktree.trim() } : {}),
+    ...(typeof effort === 'string' ? { effort: effort.trim() } : {}),
+  }
+  if (noProject) {
+    const { workspaceId: _standIn, ...rest } = parsed.request
+    return { ok: true, create: { ...rest, ...options, noProject: true } }
+  }
+  return { ok: true, create: { ...parsed.request, ...options } }
+}
+
 const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap> = {
   'server.info': { ...read(null), params: noParams },
   'server.ping': { ...read(null), params: noParams },
@@ -459,10 +543,10 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
     capability: STUDIO_CONVERSATION_CREATE_CAPABILITY,
     params: (value) => {
       if (!id(value.commandId)) return refuse('invalid_params', COMMAND_ID)
-      const { commandId, ...request } = value
-      const parsed = parseConversationCreateRequest(request)
-      if (!parsed.ok) return refuse('invalid_params', parsed.message)
-      return studioParams({ ...parsed.request, commandId: value.commandId })
+      const parsed = parseStudioConversationCreate(value)
+      return parsed.ok
+        ? studioParams({ ...parsed.create, commandId: value.commandId })
+        : refuse('invalid_params', parsed.message)
     },
   },
   'conversation.send': command('conversation.send', 'send'),
@@ -552,6 +636,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_UPDATE_METHODS,
   ...STUDIO_AGENT_SETTINGS_METHODS,
   ...STUDIO_AGENT_SETUP_METHODS,
+  ...STUDIO_WORKSPACES_METHODS,
 }
 
 /** Whether a string names a method this version of the protocol defines. */

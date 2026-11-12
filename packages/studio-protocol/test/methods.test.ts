@@ -159,3 +159,38 @@ test('reads and the session stream take a key and their own bounds', () => {
   assert.equal(parseStudioTopicParams('conversation.session', { key, turnLimit: 101 }).ok, false)
   assert.equal(parseStudioMethodParams('conversation.list', 'nope').ok, false)
 })
+
+test('a create takes New chat’s options, held to its rules, and "No project" in place of a workspace', () => {
+  const create = (params: Record<string, unknown>) =>
+    parseStudioMethodParams('conversation.create', { commandId: 'c-1', ...params })
+  assert.deepEqual(
+    create({ workspaceId: 'ws-1', newChat: true, worktree: true, worktreeName: ' fix ', effort: 'high' }),
+    {
+      ok: true,
+      params: {
+        workspaceId: 'ws-1',
+        newChat: true,
+        worktree: true,
+        worktreeName: 'fix',
+        effort: 'high',
+        commandId: 'c-1',
+      },
+    },
+  )
+  assert.deepEqual(create({ noProject: true, prompt: 'hi' }), {
+    ok: true,
+    params: { prompt: 'hi', noProject: true, commandId: 'c-1' },
+  })
+  for (const refused of [
+    { noProject: true, workspaceId: 'ws-1' },
+    { noProject: true, newChat: true, worktree: true },
+    { noProject: false, workspaceId: 'ws-1' },
+    { workspaceId: 'ws-1', worktree: true },
+    { workspaceId: 'ws-1', newChat: true, worktreeName: 'fix' },
+    { workspaceId: 'ws-1', inWorktree: '/Users/dev/app-wt' },
+    { workspaceId: 'ws-1', newChat: true, worktree: true, inWorktree: '/Users/dev/app-wt' },
+    { workspaceId: 'ws-1', effort: 'not an effort!' },
+    {},
+  ])
+    assert.equal(create(refused).ok, false, JSON.stringify(refused))
+})

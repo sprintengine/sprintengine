@@ -1,19 +1,20 @@
 import { isConversationWirePermissionPreset } from "../../../packages/conversation-protocol/src/public";
+import type { StudioConversationCreate } from "../../../packages/studio-protocol/src/public";
+import { StudioError } from "../../../packages/client-runtime/src/public";
 import { plainLineBreaks, type ConversationPermissionPreset, type ConversationThread } from "./conversationWire";
-import { readPeerRefusal } from "./tailnetTransport";
+import { desktopStudio, type DesktopStudioOptions } from "./desktopStudio";
 
-// Starting a chat on a paired desktop: the gateway's `conversation.create` tool,
-// over the same stateless JSON-RPC POST `workspace.list` rides. The tool starts
-// a new chat in the chosen project's folder, starts its session and sends the
-// prompt as its first message, and answers once the session is up, without waiting for the
+// Starting a chat on a paired desktop: `conversation.create` on the desktop's
+// Studio protocol (desktopStudio.ts). The desktop starts a new chat in the
+// chosen project's folder, starts its session and sends the prompt as its
+// first message, and answers once the session is up, without waiting for the
 // reply. The phone then subscribes to the conversation like any other.
 //
 // Everything that decides what is sent and what an answer means is pure and
 // exported, so the regression suite reads the same rules the screen runs.
 
-const TAILNET_MCP_PATH = "/tailnet/v1/mcp";
-// A launch waits on a real CLI starting on the desktop; the desktop's own mesh
-// caller allows a minute for the same call.
+// A launch waits on a real CLI starting on the desktop; a paired desktop
+// allows a minute for the same call.
 export const CONVERSATION_CREATE_TIMEOUT_MS = 60_000;
 
 export interface CreateConversationInput {
@@ -62,7 +63,7 @@ export interface CreateConversationInput {
   effort?: string;
 }
 
-/** What the tool answers once the session is up. */
+/** What the desktop answers once the session is up. */
 export interface LaunchedConversation {
   workspaceId: string;
   agentId: string;
@@ -74,7 +75,7 @@ export interface LaunchedConversation {
 }
 
 /**
- * `unsupported` means the desktop is on a build from before the tool: nothing
+ * `unsupported` means the desktop is on a build from before the Studio protocol: nothing
  * the phone can send will start a chat there, and updating Studio is the one
  * way on.
  */
@@ -91,102 +92,64 @@ export type CreateConversationResult =
       code?: string;
     };
 
+/** What `conversation.create` is asked, without the command id the call adds. */
+export type ConversationCreateArgs = StudioConversationCreate;
+
 /**
- * The tool's arguments, as the desktop's own mesh caller builds them: only
- * what was actually chosen. An empty string would be a choice of nothing, and
- * the tool reads a present field as a choice.
+ * The create's params: only what was actually chosen. An empty string would
+ * be a choice of nothing, and the desktop reads a present field as a choice.
  */
-export function buildConversationCreateArgs(input: CreateConversationInput): Record<string, unknown> {
-  // "No project" takes the workspace's place, and no worktree: there is no
-  // checkout to cut one from.
+export function buildConversationCreateArgs(input: CreateConversationInput): ConversationCreateArgs {
   const args: Record<string, unknown> = input.noProject ? { noProject: true } : { workspaceId: input.workspaceId.trim() };
   const prompt = input.prompt === undefined ? "" : plainLineBreaks(input.prompt).trim();
   if (prompt) args.prompt = prompt;
   if (input.cli?.trim()) args.cli = input.cli.trim();
-  if (input.cliModel?.trim()) args.cliModel = input.cliModel.trim();
+  if (input.cliModel?.trim()) args.model = input.cliModel.trim();
   if (isConversationWirePermissionPreset(input.permissionPreset)) {
     args.permissionPreset = input.permissionPreset;
   }
   if (input.newChat) args.newChat = true;
   // A worktree is where a new chat is born; the desktop refuses one asked
   // for a chat joining a workspace, so it is never sent without `newChat`.
+  // "No project" takes the workspace's place, and no worktree: there is no
+  // checkout to cut one from.
   if (input.newChat && input.worktree && !input.noProject) args.worktree = true;
   const effort = input.effort?.trim();
   if (effort) args.effort = effort;
-  return args;
+  return args as ConversationCreateArgs;
 }
 
 /**
- * What the gateway's answer means, in the words the screen shows.
+ * What the desktop's refusal means, in the words the screen shows.
  *
- * The desktop's refusals are written for its own log and for an agent calling
- * the tool ("Workspace "ws-3" is not known to the running app."), so the codes
- * a person can act on are said again here in their terms. A code this phone
- * does not know keeps the desktop's own sentence: it is still the most precise
- * thing available.
+ * The desktop says each refusal in its own stable sentence, written for any
+ * client; the codes a person can act on are said again here in their terms.
+ * A code this phone does not know keeps the desktop's sentence.
  */
-export function readConversationCreateAnswer(
-  status: number,
-  body: unknown,
-  machineName: string,
-): CreateConversationResult {
+export function readConversationCreateFailure(error: unknown, machineName: string): CreateConversationResult {
   const machine = machineName.trim() || "The desktop";
-  if (status === 401) {
-    // Refused over the tailnet node, not the token: whois could not place this
-    // phone for a moment (try again), or knows the pairing from another node.
-    const refusal = readPeerRefusal(status, body);
-    if (refusal?.code === "peer_unverified")
-      return { ok: false, failure: "unavailable", title: `${machine} could not confirm this phone through Tailscale.`, message: "Try again in a moment." };
-    if (refusal) return { ok: false, failure: "unpaired", title: refusal.message };
-    return { ok: false, failure: "unpaired", title: `This phone is no longer paired with ${machine}.`, message: "Pair again from Settings." };
+  const code = error instanceof StudioError ? error.code : "";
+  const detail = error instanceof Error ? error.message : "";
+  switch (code) {
+    case "unauthorized":
+    case "revoked":
+      return { ok: false, failure: "unpaired", title: `This phone is no longer paired with ${machine}.`, message: "Pair again from Settings." };
+    case "peer_mismatch":
+      return { ok: false, failure: "unpaired", title: detail };
+    case "outdated":
+    case "unknown_method":
+      return chatLaunchUnsupported(machine);
+    case "unavailable":
+    case "disconnected":
+    case "offline":
+    case "":
+      return { ok: false, failure: "unavailable", title: `${machine} did not answer.`, message: detail || "Is Tailscale up on both devices?" };
+    default:
+      return refusal(code, detail, machine);
   }
-  if (!isRecord(body) || status < 200 || status >= 300) {
-    return { ok: false, failure: "unavailable", title: `${machine} could not start the chat.`, message: `It answered ${status}.` };
-  }
-  if (isRecord(body.error)) {
-    const message = typeof body.error.message === "string" ? body.error.message : "";
-    // A build from before `conversation.create` has no such tool. The mesh
-    // caller on the desktop reads the same sentence for the same reason.
-    if (/Unknown tool/u.test(message) || body.error.code === JSONRPC_METHOD_NOT_FOUND) return chatLaunchUnsupported(machine);
-    return { ok: false, failure: "refused", title: `${machine} could not start the chat.`, message: message || undefined };
-  }
-  const result = isRecord(body.result) ? body.result : null;
-  const structured = result && isRecord(result.structuredContent) ? result.structuredContent : null;
-  if (result?.isError === true || structured?.ok === false) {
-    const error = structured && isRecord(structured.error) ? structured.error : null;
-    const code = typeof error?.code === "string" ? error.code : "";
-    const detail = typeof error?.message === "string" ? error.message : "";
-    return refusal(code, detail, machine);
-  }
-  // Anything without the tool's own shape is a desktop that answered some other
-  // call than the one asked, which in practice is an older build.
-  const conversation = structured && isRecord(structured.conversation) ? structured.conversation : null;
-  if (!conversation) return chatLaunchUnsupported(machine);
-  const workspaceId = text(conversation.workspaceId);
-  const agentId = text(conversation.agentId);
-  if (!workspaceId || !agentId) {
-    return {
-      ok: false,
-      failure: "refused",
-      title: `${machine} started the chat but did not say which one it is.`,
-      message: "Find it under Chats.",
-    };
-  }
-  return {
-    ok: true,
-    conversation: {
-      workspaceId,
-      agentId,
-      name: text(conversation.name),
-      cli: text(conversation.cli),
-      providerId: text(conversation.providerId),
-      modelId: text(conversation.modelId),
-      sessionId: text(conversation.sessionId),
-    },
-  };
 }
 
-/** What an older desktop earns, worded as the desktop's own mesh caller words it. */
+/** What a desktop from before the Studio protocol earns. */
 export function chatLaunchUnsupported(machine: string): CreateConversationResult {
   return {
     ok: false,
@@ -205,7 +168,7 @@ function refusal(code: string, detail: string, machine: string): CreateConversat
     ...(carried ? { code: carried } : {}),
   });
   switch (code) {
-    case "tailnet_scope_required":
+    case "scope_required":
       return refused(`This phone may not start chats on ${machine}.`, "Pair again with chat control to start one here.");
     case "unknown_workspace":
       return refused(`That project is no longer open on ${machine}.`, "Open it in Studio there, then try again.");
@@ -230,7 +193,7 @@ function refusal(code: string, detail: string, machine: string): CreateConversat
 /**
  * The thread to open when the list has not caught up with the launch yet.
  *
- * Only what the tool said is filled in; the rest is what a chat that has just
+ * Only what the desktop said is filled in; the rest is what a chat that has just
  * started is. The conversation screen replaces all of it from its first
  * snapshot, so a guess here lasts one frame.
  */
@@ -254,7 +217,7 @@ export function threadFromLaunch(
   };
 }
 
-/** The listed thread for a launch, which carries the catalog and capabilities the tool does not. */
+/** The listed thread for a launch, which carries the catalog and capabilities the create answer does not. */
 export function findLaunchedThread(
   threads: readonly ConversationThread[],
   conversation: Pick<LaunchedConversation, "workspaceId" | "agentId">,
@@ -265,6 +228,11 @@ export function findLaunchedThread(
   );
 }
 
+/** A command id for one New: its retries carry the same id, so the desktop starts the chat once. */
+function newCommandId(): string {
+  return `chat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /**
  * Starts a chat on one paired desktop. Never throws: a desktop that did not
  * answer is a result the screen shows, like any refusal.
@@ -272,45 +240,43 @@ export function findLaunchedThread(
 export async function createConversation(
   target: { baseUrl: string; deviceToken: string; machineName: string },
   input: CreateConversationInput,
-  options: { fetchImpl?: typeof fetch; timeoutMs?: number; requestId?: string } = {},
+  options: DesktopStudioOptions & { timeoutMs?: number; commandId?: string } = {},
 ): Promise<CreateConversationResult> {
-  const fetchImpl = options.fetchImpl ?? fetch;
   const machine = target.machineName.trim() || "The desktop";
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? CONVERSATION_CREATE_TIMEOUT_MS);
-  let response: Response;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tooLong = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), options.timeoutMs ?? CONVERSATION_CREATE_TIMEOUT_MS);
+  });
   try {
-    response = await fetchImpl(`${target.baseUrl}${TAILNET_MCP_PATH}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${target.deviceToken}` },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: options.requestId ?? `chat-${Date.now().toString(36)}`,
-        method: "tools/call",
-        params: { name: "conversation.create", arguments: buildConversationCreateArgs(input) },
-      }),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    clearTimeout(timer);
+    const answer = await Promise.race([
+      desktopStudio(target, options).then((client) =>
+        client.rpc["conversation.create"]({ ...buildConversationCreateArgs(input), commandId: options.commandId ?? newCommandId() }),
+      ),
+      tooLong,
+    ]);
     // A minute is long past a healthy start, but the desktop may still have
     // started it: say where it would be rather than that it failed.
-    if (controller.signal.aborted || (isRecord(error) && error.name === "AbortError")) {
+    if (answer === "timeout")
       return { ok: false, failure: "unavailable", title: `${machine} took too long to start the chat.`, message: "If it started, it is under Chats." };
+    const conversation = answer.conversation;
+    if (!conversation.workspaceId || !conversation.agentId) {
+      return { ok: false, failure: "refused", title: `${machine} started the chat but did not say which one it is.`, message: "Find it under Chats." };
     }
-    return { ok: false, failure: "unavailable", title: `${machine} did not answer.`, message: "Is Tailscale up on both devices?" };
+    return {
+      ok: true,
+      conversation: {
+        workspaceId: conversation.workspaceId,
+        agentId: conversation.agentId,
+        name: conversation.name ?? "",
+        cli: conversation.cli ?? "",
+        providerId: conversation.providerId ?? "",
+        modelId: conversation.modelId ?? "",
+        sessionId: conversation.sessionId ?? "",
+      },
+    };
+  } catch (error) {
+    return readConversationCreateFailure(error, machine);
+  } finally {
+    clearTimeout(timer);
   }
-  clearTimeout(timer);
-  const body = (await response.json().catch(() => null)) as unknown;
-  return readConversationCreateAnswer(response.status, body, target.machineName);
-}
-
-const JSONRPC_METHOD_NOT_FOUND = -32601;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function text(value: unknown): string {
-  return typeof value === "string" ? value : "";
 }

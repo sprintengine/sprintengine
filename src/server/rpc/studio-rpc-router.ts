@@ -50,6 +50,8 @@ import {
 } from '../update/studio-updates'
 import type {
   StudioAuditEntry,
+  StudioDiscovery,
+  StudioDiscoveryAnswer,
   StudioChatBackend,
   StudioComposerRead,
   StudioConversationBackend,
@@ -136,6 +138,8 @@ export type StudioRpcRouterOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
   localServers?: StudioLocalServers
+  /** What a client reads before it starts a chat; without it, `workspaces.*` and `providers.runtimes` are `unavailable`. */
+  discovery?: StudioDiscovery
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
   terminals?: StudioTerminals
   /** The CLIs on this machine; without them, `cliRuntimes.*` and `cliVersions.*` are answered `unavailable`. */
@@ -199,6 +203,8 @@ const STABLE_MESSAGES: Readonly<Record<StableCode, string>> = {
   cli_not_conversational: 'That agent CLI does not run as a chat here.',
   unknown_skill: 'A skill the request names is not installed here.',
   conversation_start_failed: 'The conversation could not be started.',
+  worktree_unavailable: 'No worktree could be made or found for the chat here, so nothing was started.',
+  unsupported_effort: "That effort is not one this chat's agent CLI offers here.",
   command_id_conflict: 'That command id was already used for a different command. Send this one under a new id.',
   // Another send to the chat is being prepared: the client tries again after
   // `retryAfterMs` (the SDK does so by itself), rather than failing for good.
@@ -258,6 +264,14 @@ const MAX_REMEMBERED_STOPS = 1024
 
 function refuse<C extends StudioErrorCode>(code: C, message: string): Refused<C> {
   return { ok: false, error: { code, message } }
+}
+
+/** A discovery read's answer as the method's: its value, or its refusal in the protocol's words. */
+function discovered<T>(
+  answer: StudioDiscoveryAnswer<T>,
+  voice: { redact<V>(value: V): V },
+): { ok: true; result: T } | Refused<'not_found' | 'unavailable'> {
+  return answer.ok ? { ok: true, result: voice.redact(answer.value) } : refuse(answer.code, answer.message)
 }
 
 /** A refusal from below whose code the protocol already names, carried as it is. */
@@ -1162,11 +1176,6 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!(await folderAllowed(chat, { context, grant }, folderPath))) return refuse('not_found', UNKNOWN_FOLDER)
       return { ok: true, result: { repoRoot: voice.redact(await chat.repoRoot(folderPath, hostId)) } }
     },
-    'workspaces.list': (_params, { voice }) => {
-      const chat = chatOr('workspaces.list')
-      if (isRefusal(chat)) return chat
-      return { ok: true, result: { workspaces: voice.redact(chat.workspaces()) } }
-    },
     'session.list': async (input, { voice }) => {
       const chat = chatOr('session.list')
       if (isRefusal(chat)) return chat
@@ -1393,6 +1402,20 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
     // ── Local servers ──────────────────────────────────────────────────────
 
+    'workspaces.list': async (_params, { voice }) =>
+      options.discovery
+        ? { ok: true, result: { workspaces: voice.redact(await options.discovery.workspaces()) } }
+        : unserved('workspaces.list'),
+    'providers.runtimes': async ({ cli }, { voice }) =>
+      options.discovery ? discovered(await options.discovery.runtimes(cli), voice) : unserved('providers.runtimes'),
+    'workspaces.checkout': async ({ workspaceId }, { voice }) =>
+      options.discovery
+        ? discovered(await options.discovery.checkout(workspaceId), voice)
+        : unserved('workspaces.checkout'),
+    'workspaces.extensions': async ({ workspaceId, cli }, { voice }) =>
+      options.discovery
+        ? discovered(await options.discovery.extensions(workspaceId, cli), voice)
+        : unserved('workspaces.extensions'),
     'localServers.list': async (target) =>
       options.localServers
         ? { ok: true, result: await options.localServers.list(target) }

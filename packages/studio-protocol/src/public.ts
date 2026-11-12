@@ -20,6 +20,7 @@ export * from './tools.js'
 export * from './files.js'
 export * from './pull-requests.js'
 export * from './local-servers.js'
+export * from './workspaces.js'
 // The terminals on a Studio's machine, and the agent vocabulary their sessions are described in.
 export * from './agents.js'
 export * from './terminals.js'

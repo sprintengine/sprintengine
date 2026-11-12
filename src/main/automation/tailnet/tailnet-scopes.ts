@@ -43,11 +43,18 @@ export const TAILNET_ROUTE_ACCESS = {
   // A paired desktop's Canvas pane on this machine's boards (`canvas-live-boards`):
   // looking at one is a read; its messages are judged one by one below.
   canvas: { permissions: ['workspace:read'] },
+  // The Studio protocol: opening it needs only the pairing; every method and
+  // topic it carries is judged by the Studio router against the device's
+  // grant as it stands at that request (`tailnetDeviceStudioScopes`).
+  studio: { permissions: [] },
 } as const satisfies Readonly<Record<string, StudioAccess>>
 
 export type TailnetDeviceRoute = keyof typeof TAILNET_ROUTE_ACCESS
 /** The routes a ticket opens as a WebSocket upgrade; every other route is an HTTP request. */
-export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'events' | 'conversation' | 'canvas'>
+export type TailnetUpgradeRoute = Extract<
+  TailnetDeviceRoute,
+  'stream' | 'events' | 'conversation' | 'canvas' | 'studio'
+>
 export type TailnetHttpRoute = Exclude<TailnetDeviceRoute, TailnetUpgradeRoute>
 
 const FOLLOW: StudioAccess = { permissions: ['conversation:read'] }

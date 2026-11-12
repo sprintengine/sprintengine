@@ -1,16 +1,21 @@
 import { unauthorizedResult } from "./tailnetControlClient";
 import type { ApiResult } from "./types";
+import { desktopStudio, studioFailure, type DesktopStudioOptions } from "./desktopStudio";
+import type { StudioClient } from "../../../packages/client-runtime/src/public";
 import { readCliRuntimes, type CliRuntime } from "../features/conversations/launchLogic";
 import { isProjectHue } from "../theme/projectHue";
 import { comparablePath, lastPathSegment, workspaceProject } from "../features/projects/worktreeProjectLogic";
 
-// The phone's client for the desktop gateway's two reads a chat needs beside
-// the conversation lane itself: `workspace.list`, which names the projects a
-// desktop has open (the chat's project pill, and step one of New), and
-// `cli.runtime.list`, which names the CLIs and models New may offer. JSON-RPC
-// tools over the same stateless POST the snapshot uses. Never sends an Origin
-// header: React Native's fetch is a native stack, which is the whole reason
-// this can talk to the gateway at all.
+// The phone's reads of what a desktop holds, before and beside a chat: the
+// projects it has open (`workspaces.list`: the chat's project pill, and step
+// one of New), the CLIs and models New may offer (`providers.runtimes`), and a
+// project's checkout (`workspaces.checkout`). Asked over the desktop's Studio
+// protocol (desktopStudio.ts), which answers them from the same services its
+// gateway tools do.
+//
+// The gateway tool caller below stays for the families that have not moved onto
+// the protocol yet (a chat's lifecycle, schedules, boards): JSON-RPC tools over
+// a stateless POST, with no Origin header.
 
 const TAILNET_MCP_PATH = "/tailnet/v1/mcp";
 const READ_TIMEOUT_MS = 10_000;
@@ -205,75 +210,104 @@ export function createGatewayToolCaller(options: { baseUrl: string; deviceToken:
   };
 }
 
-export function createTailnetWorkspacesApi(options: { baseUrl: string; deviceToken: string }): WorkspacesApi {
-  const callTool = createGatewayToolCaller(options);
+/**
+ * One read over the desktop's Studio, answered or failed in the phone's words.
+ * A read that has not answered in `READ_TIMEOUT_MS` fails as unavailable; the
+ * connection itself stays, to answer the next.
+ */
+async function ask<T>(
+  options: { baseUrl: string; deviceToken: string },
+  read: (client: StudioClient) => Promise<T>,
+  studio: DesktopStudioOptions,
+): Promise<ApiResult<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const answer = await Promise.race([
+      desktopStudio(options, studio).then(read),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("The desktop did not answer in time.")), READ_TIMEOUT_MS);
+      }),
+    ]);
+    return { ok: true, data: answer };
+  } catch (error) {
+    const failed = studioFailure(error);
+    return { ok: false, errorCode: failed.errorCode, message: failed.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
+/** The desktop's projects, from `workspaces.list`'s rows: what the picker and the chat's pill show. */
+export function readDesktopWorkspaces(rows: readonly unknown[]): DesktopWorkspace[] {
+  const workspaces: DesktopWorkspace[] = [];
+  for (const entry of rows) {
+    if (!isRecord(entry)) continue;
+    const workspaceId = typeof entry.id === "string" ? entry.id : null;
+    if (!workspaceId) continue;
+    const folderPath = typeof entry.folderPath === "string" && entry.folderPath ? entry.folderPath : null;
+    const name = typeof entry.name === "string" && entry.name ? entry.name : workspaceId;
+    // The picker lists the PROJECT, not the desktop's window name: those are
+    // two vocabularies ("Chat" vs "mobile") and the person picking
+    // a project is thinking of the folder. The window name is the fallback
+    // when a workspace has no folder at all.
+    const repository = isRecord(entry.repository) ? entry.repository : null;
+    const canonicalKey =
+      typeof repository?.canonicalKey === "string" && repository.canonicalKey.trim()
+        ? repository.canonicalKey.trim().toLowerCase()
+        : null;
+    // A worktree's folder files under the project it was cut from. The
+    // desktop's own record wins where it sends one.
+    const recorded = isRecord(entry.worktree) && typeof entry.worktree.repoRoot === "string" ? entry.worktree.repoRoot : null;
+    const project = workspaceProject({ folderPath, recordedRoot: recorded });
+    // "No project" is one group per desktop, and not a project: no hue.
+    const projectKey = project.projectless
+      ? PROJECTLESS_PROJECT_KEY
+      : canonicalKey
+        ? `repo:${canonicalKey}`
+        : project.projectFolder
+          ? `folder:${comparablePath(project.projectFolder)}`
+          : null;
+    const projectHue = !project.projectless && isProjectHue(entry.projectHue) ? entry.projectHue : null;
+    const lastUsedAt = typeof entry.projectLastUsedAt === "string" ? Date.parse(entry.projectLastUsedAt) : NaN;
+    const settledAt = readSettledAt(entry.settledAt);
+    workspaces.push({
+      workspaceId,
+      name,
+      projectName: project.projectName ?? name,
+      folderPath,
+      projectFolder: project.projectFolder,
+      worktree: project.worktree,
+      ...(project.projectless ? { projectless: true } : {}),
+      projectKey,
+      projectHue,
+      ...(typeof entry.projectFrecency === "number" && Number.isFinite(entry.projectFrecency) && entry.projectFrecency >= 0
+        ? { projectFrecency: entry.projectFrecency, projectLastUsedAt: Number.isFinite(lastUsedAt) ? lastUsedAt : null }
+        : {}),
+      ...(settledAt !== null ? { settledAt } : {}),
+    });
+  }
+  return oneHuePerProject(workspaces);
+}
+
+export function createTailnetWorkspacesApi(
+  options: { baseUrl: string; deviceToken: string },
+  studio: DesktopStudioOptions = {},
+): WorkspacesApi {
   return {
-    async listCliRuntimes() {
-      const result = await callTool("cli.runtime.list", {}, READ_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      return { ok: true as const, data: readCliRuntimes(result.data) };
-    },
-
-    async listWorkspaces() {
-      const result = await callTool("workspace.list", {}, READ_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      const rows = Array.isArray(result.data?.workspaces) ? result.data.workspaces : [];
-      const workspaces: DesktopWorkspace[] = [];
-      for (const entry of rows) {
-        if (!isRecord(entry)) continue;
-        const workspaceId = typeof entry.id === "string" ? entry.id : null;
-        if (!workspaceId) continue;
-        const folderPath = typeof entry.folderPath === "string" && entry.folderPath ? entry.folderPath : null;
-        const name = typeof entry.name === "string" && entry.name ? entry.name : workspaceId;
-        // The picker lists the PROJECT, not the desktop's window name: those are
-        // two vocabularies ("Chat" vs "mobile") and the person picking
-        // a project is thinking of the folder. The window name is the fallback
-        // when a workspace has no folder at all.
-        const repository = isRecord(entry.repository) ? entry.repository : null;
-        const canonicalKey =
-          typeof repository?.canonicalKey === "string" && repository.canonicalKey.trim()
-            ? repository.canonicalKey.trim().toLowerCase()
-            : null;
-        // A worktree's folder files under the project it was cut from. The
-        // desktop's own record wins where it sends one.
-        const recorded = isRecord(entry.worktree) && typeof entry.worktree.repoRoot === "string" ? entry.worktree.repoRoot : null;
-        const project = workspaceProject({ folderPath, recordedRoot: recorded });
-        // "No project" is one group per desktop, and not a project: no hue.
-        const projectKey = project.projectless
-          ? PROJECTLESS_PROJECT_KEY
-          : canonicalKey
-            ? `repo:${canonicalKey}`
-            : project.projectFolder
-              ? `folder:${comparablePath(project.projectFolder)}`
-              : null;
-        const projectHue = !project.projectless && isProjectHue(entry.projectHue) ? entry.projectHue : null;
-        const lastUsedAt = typeof entry.projectLastUsedAt === "string" ? Date.parse(entry.projectLastUsedAt) : NaN;
-        const settledAt = readSettledAt(entry.settledAt);
-        workspaces.push({
-          workspaceId,
-          name,
-          projectName: project.projectName ?? name,
-          folderPath,
-          projectFolder: project.projectFolder,
-          worktree: project.worktree,
-          ...(project.projectless ? { projectless: true } : {}),
-          projectKey,
-          projectHue,
-          ...(typeof entry.projectFrecency === "number" && Number.isFinite(entry.projectFrecency) && entry.projectFrecency >= 0
-            ? { projectFrecency: entry.projectFrecency, projectLastUsedAt: Number.isFinite(lastUsedAt) ? lastUsedAt : null }
-            : {}),
-          ...(settledAt !== null ? { settledAt } : {}),
-        });
-      }
-      return { ok: true as const, data: oneHuePerProject(workspaces) };
-    },
-
-    async readCheckout(workspace) {
-      const result = await callTool("workspace.checkout", { workspaceId: workspace.workspaceId }, READ_TIMEOUT_MS);
-      if (!result.ok) return { ok: false as const, errorCode: result.errorCode, message: result.message };
-      return { ok: true as const, data: readWorkspaceCheckout(result.data, workspace.folderPath) };
-    },
+    listCliRuntimes: () =>
+      ask(options, async (client) => readCliRuntimes(await client.rpc["providers.runtimes"]({})), studio),
+    listWorkspaces: () =>
+      ask(options, async (client) => readDesktopWorkspaces((await client.rpc["workspaces.list"]({})).workspaces), studio),
+    readCheckout: (workspace) =>
+      ask(
+        options,
+        async (client) =>
+          readWorkspaceCheckout(
+            await client.rpc["workspaces.checkout"]({ workspaceId: workspace.workspaceId }),
+            workspace.folderPath,
+          ),
+        studio,
+      ),
   };
 }
 

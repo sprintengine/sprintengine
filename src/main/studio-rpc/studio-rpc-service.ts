@@ -47,6 +47,7 @@ import type {
   StudioAuthenticator,
   StudioChatBackend,
   StudioConversationBackend,
+  StudioDiscovery,
 } from '../../server/rpc/studio-rpc-types'
 import type { GatewayAuditStore } from '../automation/gateway-audit'
 import { createResyncBackoff } from '../automation/tailnet/tailnet-conversation-stream'
@@ -114,6 +115,14 @@ export type StudioRpcService = {
     stream: Duplex,
     input: { authenticator: StudioAuthenticator; ownWindow: boolean; knownFoldersOnly?: boolean },
   ): { connectionId: string }
+  /**
+   * Serve a paired device's socket from the tailnet listener
+   * (`/tailnet/v1/studio`): the phone, or another desktop's window. Its
+   * authenticator is the device's, whose grant is read from the device store
+   * at every request and is never an owner's; it is a client of this server,
+   * audited, and the folders it names are held to the ones Studio knows.
+   */
+  connectDevice(stream: Duplex, authenticator: StudioAuthenticator): { connectionId: string }
   /** The chat surface, from the handlers the app's own IPC serves its windows with. */
   provideChat(chat: StudioChatBackend): void
   /** Which agents a paired app's tools reach. */
@@ -155,6 +164,8 @@ export type StudioRpcServiceOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners (`local-servers`). */
   localServers?: StudioLocalServers
+  /** What a client reads before it starts a chat (`workspaces`). */
+  discovery?: StudioDiscovery
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
   terminals?: StudioTerminals
   /** The CLIs on this machine (`agent-runtimes`): given only where this process holds their detection. */
@@ -359,6 +370,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.files ? { files: options.files } : {}),
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
+      ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.terminals ? { terminals: options.terminals } : {}),
       ...(options.runtimes ? { runtimes: options.runtimes } : {}),
       ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
@@ -487,6 +499,15 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
         audited: true,
         browser: true,
         ...(input.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
+      })
+      return { connectionId: connection.connectionId }
+    },
+    connectDevice(stream, authenticator) {
+      const connection = hub().attach(stream, {
+        authenticator,
+        ownWindow: false,
+        audited: true,
+        knownFoldersOnly: true,
       })
       return { connectionId: connection.connectionId }
     },

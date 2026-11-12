@@ -43,6 +43,15 @@ export const TAILNET_CONVERSATION_PATH = `${TAILNET_ROUTE_PREFIX}/conversation`
 export const TAILNET_CANVAS_PATH = `${TAILNET_ROUTE_PREFIX}/canvas`
 export const TAILNET_EVENTS_PATH = `${TAILNET_ROUTE_PREFIX}/events`
 /**
+ * The Studio protocol, for a paired device: the one contract every client
+ * speaks (`packages/studio-protocol`), over a WebSocket opened with a ticket
+ * from `ws-ticket`, attached to the same Studio server this machine's own
+ * windows use. What a device may ask is its grant, read again at every
+ * request. A desktop window's socket names its origin when it asks for the
+ * ticket and carries exactly that origin; every other socket carries none.
+ */
+export const TAILNET_STUDIO_PATH = `${TAILNET_ROUTE_PREFIX}/studio`
+/**
  * One image from a paired device, staged for a conversation it may operate.
  *
  * A plain streaming POST rather than a JSON-RPC tool: base64 inside an RPC

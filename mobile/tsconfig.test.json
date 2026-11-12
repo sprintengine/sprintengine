@@ -33,6 +33,8 @@
     "src/api/conversationWire.ts",
     "src/api/tailnetConversations.ts",
     "src/api/conversationLaunch.ts",
+    "src/api/desktopStudio.ts",
+    "src/__verify__/fakeDesktopStudio.ts",
     "src/api/conversationImages.ts",
     "src/api/conversationLifecycle.ts",
     "src/api/pullRequests.ts",

@@ -42,6 +42,7 @@ import {
   TAILNET_STREAM_PATH,
   TAILNET_CONVERSATION_PATH,
   TAILNET_CANVAS_PATH,
+  TAILNET_STUDIO_PATH,
   TAILNET_CONVERSATION_IMAGE_PATH,
   TAILNET_CONVERSATION_FILES_PATH,
   TAILNET_CONVERSATION_COMMANDS_PATH,
@@ -77,6 +78,12 @@ import {
 import type { ConversationGatewayHost } from './tailnet-conversation-host'
 import type { TailnetCollectOutcome, TailnetDeviceStore, TailnetPeerCheck } from './tailnet-devices'
 import type { TailnetPeerResolver } from './tailnet-peer-identity'
+import { acceptWebSocket, webSocketStream, type WebSocketPeer } from '../../../server/web/web-socket'
+import {
+  createTailnetDeviceAuthenticator,
+  isDesktopWindowOrigin,
+  type TailnetStudioHost,
+} from './tailnet-studio-endpoint'
 import { TAILNET_PEER_REFUSED_AUDIT_TOOL } from '../gateway-audit'
 import { normalizeAddress } from './tailnet-peer-identity'
 import { parseTailnetEndpoint } from './tailnet-remote-client'
@@ -250,6 +257,12 @@ export type TailnetGatewayServerOptions = {
    * Absent, the bound tailnet address alone.
    */
   publicOrigins?: () => TailnetPublicOrigins
+  /**
+   * This machine's Studio server, for a paired device's socket on
+   * `/tailnet/v1/studio`, read when one opens: the server is built after the
+   * gateway, and a Studio without one answers the socket unavailable.
+   */
+  studio?: () => TailnetStudioHost | null
 }
 
 type TailnetGatewayPeer = { peerNode: string | null; peerAddress: string }
@@ -304,6 +317,12 @@ type StreamSession = {
 
 type EventStream = { socket: Duplex; deviceId: string }
 
+/** A device's Studio protocol socket, for revocation, shutdown and the connected state. */
+type StudioSocket = { peer: WebSocketPeer; deviceId: string }
+
+/** Studio sockets one device may hold at once: a phone and a desktop window reconnecting. Past this the oldest goes. */
+const MAX_STUDIO_SOCKETS_PER_DEVICE = 8
+
 type ChangeKind = 'workspaces' | 'conversations'
 
 /**
@@ -337,7 +356,10 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
   // each time instead of reconnecting straight into the same backlog.
   const conversationResyncDelay = createResyncBackoff(now)
   const eventStreams = new Set<EventStream>()
-  const tickets = new Map<string, { deviceId: string; expiresAtMs: number }>()
+  // `origin`: the one a desktop window's Studio socket will say, named when
+  // the ticket was asked for; null for every other socket, which says none.
+  const tickets = new Map<string, { deviceId: string; expiresAtMs: number; origin: string | null }>()
+  const studioSockets = new Set<StudioSocket>()
   // Streamable HTTP sessions of the revisions that keep one (2025-03-26 to
   // 2025-11-25), minted on `initialize`. A session holds one connection
   // context, so a client's `notifications/cancelled` finds the call it names;
@@ -581,6 +603,10 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     conversationStreams.clear()
     for (const canvas of [...canvasStreams]) canvas.close(WEBSOCKET_CLOSE_GOING_AWAY, 'Server stopping.')
     canvasStreams.clear()
+    // The listener is going, not the Studio: a device's client comes back
+    // when the listener does, and resumes by its cursors.
+    for (const studio of [...studioSockets]) studio.peer.close(WEBSOCKET_CLOSE_GOING_AWAY, 'Server stopping.')
+    studioSockets.clear()
     for (const state of Object.values(changePush)) {
       if (state.timer) clearTimeout(state.timer)
       state.timer = null
@@ -1195,15 +1221,33 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       handleConversationComposerRead(response, device, parseUrl(request.url), 'commands'),
     'conversation-commands:refresh': ({ request, response, device }) =>
       handleConversationComposerRead(response, device, parseUrl(request.url), 'commands'),
-    'ws-ticket': ({ response, device }) => {
+    'ws-ticket': async ({ request, response, device }) => {
       // The upgrade carries its credential in the query string, where it lands
       // in proxy logs and browser history — so what it carries is a 30-second
       // single-use ticket, never the long-lived device token.
+      const body = await readOptionalJsonBody(request, response, MAX_CONTROL_BODY_BYTES)
+      if (body === undefined) return
+      // A desktop window's Studio socket says the window's origin, as any
+      // browser socket must; the ticket names it, and only it opens with it.
+      const origin = body && typeof body === 'object' ? (body as Record<string, unknown>).origin : undefined
+      if (origin !== undefined && (typeof origin !== 'string' || !isDesktopWindowOrigin(origin))) {
+        writeJson(response, 400, {
+          error: { code: 'origin_not_allowed', message: 'A ticket names a desktop window’s origin, or none.' },
+        })
+        return
+      }
       const ticket = `mctk_${randomBytes(24).toString('base64url')}`
       const expiresAtMs = now() + WS_TICKET_TTL_MS
       pruneTickets()
-      tickets.set(ticket, { deviceId: device.id, expiresAtMs })
-      writeJson(response, 200, { ticket, expiresAt: new Date(expiresAtMs).toISOString(), path: TAILNET_STREAM_PATH })
+      tickets.set(ticket, { deviceId: device.id, expiresAtMs, origin: origin ?? null })
+      // `studioPath` says this machine serves the Studio protocol: a device
+      // that finds it missing is talking to a build from before it.
+      writeJson(response, 200, {
+        ticket,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+        path: TAILNET_STREAM_PATH,
+        studioPath: TAILNET_STUDIO_PATH,
+      })
     },
     mcp: async ({ request, response, device, peerNode }) => {
       const body = await readJsonBody(request, response, MAX_MCP_BODY_BYTES)
@@ -1635,11 +1679,19 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     head: Buffer,
     via: TailnetListenerKind,
   ): Promise<void> {
-    if (request.headers.origin) return rejectUpgrade(socket, 403, 'origin_not_allowed')
-    // No stream opens behind Serve: see the loopback listener's rule above.
-    if (via === 'serve') return rejectUpgrade(socket, 404, 'not_served_over_https')
     const path = pathOf(request.url)
     const route = tailnetUpgradeRouteOf(path)
+    // A browser labels every socket with its page's origin. Only a desktop
+    // window's Studio socket may carry one, and only the one its ticket names
+    // (checked once the ticket is spent, below); everything else refuses any.
+    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : null
+    if (
+      request.headers.origin !== undefined &&
+      (route !== 'studio' || origin === null || !isDesktopWindowOrigin(origin))
+    )
+      return rejectUpgrade(socket, 403, 'origin_not_allowed')
+    // No stream opens behind Serve: see the loopback listener's rule above.
+    if (via === 'serve') return rejectUpgrade(socket, 404, 'not_served_over_https')
     if (!route) return rejectUpgrade(socket, 404, 'not_found')
     if ((headerOf(request, 'upgrade') ?? '').toLowerCase() !== 'websocket')
       return rejectUpgrade(socket, 400, 'not_a_websocket_upgrade')
@@ -1649,8 +1701,14 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     if (!key) return rejectUpgrade(socket, 400, 'missing_websocket_key')
 
     const query = queryOf(request.url)
-    const device = redeemTicket(query.get('ticket'))
-    if (!device) return rejectUpgrade(socket, 401, 'unauthorized')
+    const presentedTicket = query.get('ticket')
+    const redeemed = redeemTicket(presentedTicket)
+    if (!redeemed) return rejectUpgrade(socket, 401, 'unauthorized')
+    const { device } = redeemed
+    // A ticket asked for a window's origin opens that window's Studio socket
+    // and nothing else, and a socket says exactly the origin its ticket names.
+    if (redeemed.origin !== origin || (redeemed.origin !== null && route !== 'studio'))
+      return rejectUpgrade(socket, 403, 'origin_not_allowed')
     // The ticket was minted behind `admitPeer`, but it rides in a URL; the
     // socket presenting it is held to the device's node all the same.
     const admitted = await admitPeer(device, normalizeAddress(remoteAddressOf(socket)), path)
@@ -1665,6 +1723,18 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       !authorizeStudioAccess(tailnetDevicePrincipal(device.scopes), TAILNET_ROUTE_ACCESS[route]).ok
     )
       return rejectUpgrade(socket, 403, 'tailnet_scope_required')
+
+    if (route === 'studio') {
+      const host = options.studio?.() ?? null
+      if (!host) return rejectUpgrade(socket, 503, 'studio_unavailable')
+      // As the conversation socket: a revoke during the awaits above must not
+      // open a socket after its listener has fired.
+      const currentDevice = options.devices.listDevices().find((entry) => entry.id === device.id)
+      if (!currentDevice || !presentedTicket) return rejectUpgrade(socket, 401, 'unauthorized')
+      options.devices.recordSeen(currentDevice.id, peerNode)
+      openStudioSocket(socket, key, head, currentDevice, presentedTicket, host, { peerNode, peerAddress })
+      return
+    }
 
     if (path === TAILNET_EVENTS_PATH) {
       // Any paired device may watch: the feed says only that something
@@ -1859,7 +1929,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     }
   }
 
-  function redeemTicket(ticket: string | null): TailnetDevice | null {
+  function redeemTicket(ticket: string | null): { device: TailnetDevice; origin: string | null } | null {
     pruneTickets()
     if (!ticket) return null
     const entry = tickets.get(ticket)
@@ -1867,7 +1937,45 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     // Single use: consumed whether or not the device still exists.
     tickets.delete(ticket)
     if (entry.expiresAtMs <= now()) return null
-    return options.devices.listDevices().find((device) => device.id === entry.deviceId) ?? null
+    const device = options.devices.listDevices().find((candidate) => candidate.id === entry.deviceId)
+    return device ? { device, origin: entry.origin } : null
+  }
+
+  /**
+   * Hand an admitted socket to this machine's Studio server, as the device's
+   * connection: its hello must present the ticket the socket was opened with,
+   * and every request it makes is judged by the device's grant as it stands
+   * then (`createTailnetDeviceAuthenticator`). A revoke reaches it through that
+   * authenticator, which says `bye` before the socket closes.
+   */
+  function openStudioSocket(
+    socket: Duplex,
+    key: string,
+    head: Buffer,
+    device: TailnetDevice,
+    ticket: string,
+    host: TailnetStudioHost,
+    peer: TailnetGatewayPeer,
+  ): void {
+    const held = [...studioSockets].filter((entry) => entry.deviceId === device.id)
+    for (const stale of held.slice(0, Math.max(0, held.length - MAX_STUDIO_SOCKETS_PER_DEVICE + 1)))
+      stale.peer.close(WEBSOCKET_CLOSE_GOING_AWAY, 'This device opened a newer connection.')
+    const webSocket = acceptWebSocket(socket, key, head)
+    const entry: StudioSocket = { peer: webSocket, deviceId: device.id }
+    studioSockets.add(entry)
+    options.onActivity?.({ kind: 'stream', device, open: true, ...peer })
+    webSocket.onClose(() => {
+      if (studioSockets.delete(entry)) options.onActivity?.({ kind: 'stream', device, open: false })
+    })
+    host.attach(
+      webSocketStream(webSocket),
+      createTailnetDeviceAuthenticator({
+        devices: options.devices,
+        deviceId: device.id,
+        ticket,
+        peerNode: peer.peerNode,
+      }),
+    )
   }
 
   function pruneTickets(): void {
@@ -1889,6 +1997,13 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     for (const stream of [...eventStreams]) {
       if (stream.deviceId === deviceId)
         closeEventStream(stream, WEBSOCKET_CLOSE_REVOKED, 'This device has been revoked.')
+    }
+    // The Studio connection hears the revoke from its authenticator and says
+    // `bye` first; a socket still open a moment later is closed here.
+    for (const studio of [...studioSockets]) {
+      if (studio.deviceId !== deviceId) continue
+      const timer = setTimeout(() => studio.peer.close(WEBSOCKET_CLOSE_REVOKED, 'This device has been revoked.'), 500)
+      timer.unref?.()
     }
     for (const [ticket, entry] of tickets) if (entry.deviceId === deviceId) tickets.delete(ticket)
     for (const [id, session] of mcpSessions) if (session.deviceId === deviceId) mcpSessions.delete(id)
@@ -1940,10 +2055,20 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
    * Returns `undefined` when it already wrote the response — callers must
    * return immediately on that, and must not treat it as a valid body.
    */
+  /** A body that may be empty, which reads as `{}`: a ticket asked for with nothing to say. */
+  function readOptionalJsonBody(
+    request: IncomingMessage,
+    response: ServerResponse,
+    maxBytes: number,
+  ): Promise<unknown | undefined> {
+    return readJsonBody(request, response, maxBytes, { empty: {} })
+  }
+
   async function readJsonBody(
     request: IncomingMessage,
     response: ServerResponse,
     maxBytes: number,
+    options: { empty?: unknown } = {},
   ): Promise<unknown | undefined> {
     const chunks: Buffer[] = []
     let size = 0
@@ -1972,6 +2097,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       return undefined
     }
     if (response.headersSent) return undefined
+    if (size === 0 && options.empty !== undefined) return options.empty
     try {
       return JSON.parse(Buffer.concat(chunks).toString('utf8'))
     } catch {
@@ -2320,6 +2446,7 @@ export function tailnetUpgradeRouteOf(path: string): TailnetUpgradeRoute | null 
   if (path === TAILNET_EVENTS_PATH) return 'events'
   if (path === TAILNET_CONVERSATION_PATH) return 'conversation'
   if (path === TAILNET_CANVAS_PATH) return 'canvas'
+  if (path === TAILNET_STUDIO_PATH) return 'studio'
   return null
 }
 

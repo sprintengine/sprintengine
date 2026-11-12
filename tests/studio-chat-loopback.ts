@@ -232,7 +232,6 @@ function chatOver(api: Api) {
       const subscribe = api.onConversationCommandsChanged as ((cb: typeof listener) => () => void) | undefined
       return typeof subscribe === 'function' ? subscribe(listener) : () => undefined
     },
-    workspaces: () => [],
   })
 }
 

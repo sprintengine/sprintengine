@@ -111,7 +111,6 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
     stat: async () => ({ isFile: true, isDirectory: false, sizeBytes: 1, modifiedAt: '', modifiedAtMs: 1 }),
     readImage: async () => 'data:image/png;base64,AAAA',
     repoRoot: async () => '/Users/dev/app',
-    workspaces: () => [{ id: 'ws-1', name: 'App', folderPath: '/Users/dev/app' }],
     listSessions: async () => ({ ok: true, sessions: [session] }),
     stopSession: async (input) => {
       calls.controls.push(`stop:${input.sessionId}:${input.commandId}`)
@@ -338,7 +337,7 @@ test('the welcome names the chat capabilities only where there is a chat surface
   const bare = await other.next(isT('welcome'))
   for (const capability of STUDIO_CHAT_CAPABILITIES)
     assert.ok(bare.t === 'welcome' && !bare.capabilities.includes(capability), capability)
-  const refused = await ask(other, 'r1', 'workspaces.list')
+  const refused = await ask(other, 'r1', 'session.list')
   assert.equal(!refused.ok && refused.error.code, 'unavailable')
   other.close()
 })
@@ -425,7 +424,6 @@ test('a paired grant reaches every chat control by its scopes; only a terminal h
     ['conversation.revokeApprovalRule', { commandId: 'c6', ruleId: 'rule-1' }],
     ['conversation.approvalRules', {}],
     ['files.search', { rootPath: '/Users/dev/app', query: 'a' }],
-    ['workspaces.list', {}],
   ]
   for (const [method, params] of calls) assert.equal(code(await handle(paired, method, params)), 'ok', method)
   for (const [method, params] of [

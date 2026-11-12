@@ -8,7 +8,7 @@ import {
   createStudioChunkAssembler,
   parseStudioServerFrame,
   type ConversationCommand,
-  type ConversationCreateRequest,
+  type StudioConversationCreate,
   type ConversationWirePermissionPreset,
   type StudioCreatedConversation,
   type StudioGrant,
@@ -34,6 +34,7 @@ import type {
   StudioChatBackend,
   StudioCommandOutcome,
   StudioConversationBackend,
+  StudioDiscovery,
 } from './studio-rpc-types'
 
 // Test doubles for the Studio RPC: an in-memory conversation backend with the
@@ -48,7 +49,7 @@ export type FakeBackend = StudioConversationBackend & {
   commands: Array<{ clientId: string; commandId: string; command: ConversationCommand }>
   /** The fingerprint each command carried, in order. */
   fingerprints: Array<string | undefined>
-  creates: Array<{ request: ConversationCreateRequest; launchCommandId: string }>
+  creates: Array<{ request: StudioConversationCreate; launchCommandId: string }>
   /** Every stop carried out, by its namespaced command id. */
   stops: string[]
   presets: Map<string, ConversationWirePermissionPreset>
@@ -359,6 +360,7 @@ export async function startTestServer(
     files?: StudioFiles
     pullRequests?: StudioPullRequests
     localServers?: StudioLocalServers
+    discovery?: StudioDiscovery
     terminals?: StudioTerminals
     runtimes?: CliRuntimes
     agentSettings?: StudioAgentSettings
@@ -396,6 +398,7 @@ export async function startTestServer(
     ...(input.files ? { files: input.files } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
+    ...(input.discovery ? { discovery: input.discovery } : {}),
     ...(input.terminals ? { terminals: input.terminals } : {}),
     ...(input.runtimes ? { runtimes: input.runtimes } : {}),
     ...(input.agentSettings ? { agentSettings: input.agentSettings } : {}),

@@ -36,7 +36,12 @@ export const STUDIO_COMMANDS_CAPABILITY = 'conversation-commands' as const
 export const STUDIO_PROVIDERS_CAPABILITY = 'providers' as const
 /** File search for @-mentions, and the file facts a chat's links and pictures need: `files.*`. */
 export const STUDIO_FILES_CAPABILITY = 'files-mention' as const
-/** The workspaces this Studio holds: `workspaces.list`. */
+/**
+ * What a client reads before it starts a chat: the workspaces this Studio
+ * holds, the CLIs a chat may run, a folder's checkout and a project's skills
+ * (`workspaces.list`, `providers.runtimes`, `workspaces.checkout`,
+ * `workspaces.extensions`).
+ */
 export const STUDIO_WORKSPACES_CAPABILITY = 'workspaces' as const
 /**
  * A client may offer toolsets for Studio's agents (`tools.*`), and is sent a
@@ -210,7 +215,6 @@ export const STUDIO_CHAT_CAPABILITIES = [
   STUDIO_COMMANDS_CAPABILITY,
   STUDIO_PROVIDERS_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
-  STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_SESSION_FILES_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
   STUDIO_SESSION_CONTROLS_CAPABILITY,
