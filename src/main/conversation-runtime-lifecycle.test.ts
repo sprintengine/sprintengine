@@ -816,7 +816,12 @@ test('a stateful turn the person stopped ends as stopped, not as a stream that e
         yield runtimeEvent(input, 'turn_started', { turnId: input.turnId })
         yield runtimeEvent(input, 'content_delta', { turnId: input.turnId, text: 'Working' })
         // The provider answers Stop by ending its stream, with no end of its own.
-        await new Promise<void>((resolve) => input.signal?.addEventListener('abort', () => resolve()))
+        // Stop can land while the runtime is still writing the delta, before
+        // this listens: a signal already aborted ends the stream too.
+        await new Promise<void>((resolve) => {
+          if (input.signal?.aborted) resolve()
+          else input.signal?.addEventListener('abort', () => resolve())
+        })
       })(),
     interrupt: () => [],
   })
