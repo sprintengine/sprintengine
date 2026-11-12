@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'vitest'
 
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
@@ -79,4 +82,26 @@ test('a create carries New chat’s options to the launch service, and "No proje
     { newChatIn: { folderPath: '/Users/dev/No project/fix-it-abc123' }, prompt: 'fix it', launchCommandId: 'launch-3' },
   ])
   assert.deepEqual(made, ['fix it'])
+})
+
+test('a "No project" create the launch refuses leaves no empty folder behind', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'projectless-'))
+  try {
+    const folder = join(root, 'fix-it-abc123')
+    const outcome = await createStudioConversationBackend({
+      host: { permissionOf: () => 'manual' } as never,
+      launch: async () => ({ ok: false, code: 'unknown_cli', message: 'no such CLI' }),
+      listSessions: () => ({ ok: true, sessions: [] }),
+      stopSession: async () => ({ ok: true, session: session() }),
+      getWorkspaceAgents: () => [],
+      makeProjectlessFolder: async () => {
+        mkdirSync(folder)
+        return folder
+      },
+    }).create({ noProject: true, prompt: 'fix it' }, 'launch-1')
+    assert.equal(outcome.ok, false)
+    assert.equal(existsSync(folder), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

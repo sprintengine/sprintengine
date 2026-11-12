@@ -49,7 +49,10 @@ export function tailnetDeviceGrant(device: TailnetDevice): StudioGrant {
 /**
  * The origin a desktop window's socket may say, when the ticket it asked for
  * named it: a window loaded from the app's files (`file://`), or from the
- * development server on the machine it runs on. Nothing a web page could be.
+ * development server on the machine it runs on. A page served on loopback
+ * could say the latter too, so the origin is never the credential: the
+ * single-use ticket, minted behind the device token that only the desktop's
+ * main process holds, is.
  */
 export function isDesktopWindowOrigin(origin: string): boolean {
   if (origin === 'file://') return true

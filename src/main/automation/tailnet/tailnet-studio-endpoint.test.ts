@@ -60,7 +60,7 @@ const DISCOVERY: StudioDiscovery = {
   }),
 }
 
-async function rig(): Promise<Rig> {
+async function rig(clock: { now: number } | null = null): Promise<Rig> {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-studio-'))
   const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
   const studio = await startTestServer({ backend: createFakeBackend(['agent-1']), discovery: DISCOVERY })
@@ -74,6 +74,7 @@ async function rig(): Promise<Rig> {
       isMutation: () => false,
       devices,
       peers: { identify: async () => null, resolve: async () => null },
+      ...(clock ? { now: () => clock.now } : {}),
       // As the core links it (src/server/core/studio-rpc.ts → connectDevice).
       studio: () => ({
         attach: (stream, authenticator) =>
@@ -388,6 +389,19 @@ test('a desktop window’s socket says exactly the origin its ticket names, and 
   const once = (await ticketFor(r.port(), desktop.token)).body.ticket!
   assert.match(await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${once}`), / 101 /u)
   assert.match(await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${once}`), / 401 /u)
+})
+
+test('the phone’s socket says an empty Origin, which is none; a ticket is good for thirty seconds', async () => {
+  const clock = { now: Date.now() }
+  const r = await rig(clock)
+  const phone = r.pair(['conversation:read'])
+  // React Native, told to say no origin of its own, sends `Origin: ` empty.
+  const plain = (await ticketFor(r.port(), phone.token)).body.ticket!
+  assert.match(await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${plain}`, { Origin: '' }), / 101 /u)
+  // A ticket not spent within thirty seconds opens nothing.
+  const stale = (await ticketFor(r.port(), phone.token)).body.ticket!
+  clock.now += 30_001
+  assert.match(await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${stale}`), / 401 /u)
 })
 
 test('a hello that presents another ticket than the socket was opened with is refused', async () => {

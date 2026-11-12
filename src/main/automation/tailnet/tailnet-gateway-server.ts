@@ -1684,11 +1684,10 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     // A browser labels every socket with its page's origin. Only a desktop
     // window's Studio socket may carry one, and only the one its ticket names
     // (checked once the ticket is spent, below); everything else refuses any.
-    const origin = typeof request.headers.origin === 'string' ? request.headers.origin : null
-    if (
-      request.headers.origin !== undefined &&
-      (route !== 'studio' || origin === null || !isDesktopWindowOrigin(origin))
-    )
+    // An empty one is none, as on the HTTP side: React Native says `Origin: `
+    // when the phone tells it to say no origin of its own.
+    const origin = request.headers.origin ? request.headers.origin : null
+    if (origin !== null && (route !== 'studio' || !isDesktopWindowOrigin(origin)))
       return rejectUpgrade(socket, 403, 'origin_not_allowed')
     // No stream opens behind Serve: see the loopback listener's rule above.
     if (via === 'serve') return rejectUpgrade(socket, 404, 'not_served_over_https')

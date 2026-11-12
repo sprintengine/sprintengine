@@ -1,3 +1,5 @@
+import { rmdir } from 'node:fs/promises'
+
 import type {
   ConversationWirePermissionPreset,
   StudioCreatedConversation,
@@ -147,7 +149,12 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
         ...(request.allowedTools?.length ? { allowedTools: request.allowedTools } : {}),
         launchCommandId,
       })
-      if (!launched.ok) return { ok: false, code: launched.code, message: launched.message }
+      if (!launched.ok) {
+        // A launch refused leaves no empty "No project" folder behind; one it
+        // already wrote into is kept (rmdir takes only an empty folder).
+        if (projectlessFolder) await rmdir(projectlessFolder).catch(() => undefined)
+        return { ok: false, code: launched.code, message: launched.message }
+      }
       const record = deps.getWorkspaceAgents().find((workspace) => workspace.id === launched.workspaceId)?.agents[
         launched.agentId
       ]
