@@ -5,7 +5,7 @@
 // scheduled it says when it goes out, and Cancel takes it back.
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type {
   UsageLimitResumeNotice,
@@ -13,7 +13,10 @@ import type {
   UsageLimitResumeUpdate,
 } from '../../../../../shared/usage-limit-resume'
 import { useUsageLimitResumeStore } from '../../../store/usageLimitResumeStore'
+import { chatStoresDouble, resetChatStoresDouble } from '../../../studio/chatStores.double'
 import { formatResumeClock, UsageLimitResumeRow, usageLimitResumeWords } from './usageLimitResume'
+
+vi.mock('../../../studio/chatStores', () => import('../../../studio/chatStores.double'))
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -46,14 +49,14 @@ let updates: UsageLimitResumeUpdate[] = []
 
 function installApi(state: UsageLimitResumeState) {
   updates = []
-  ;(window as unknown as { api: unknown }).api = {
+  resetChatStoresDouble()
+  Object.assign(chatStoresDouble, {
     usageLimitResumes: async () => state,
     updateUsageLimitResume: async (update: UsageLimitResumeUpdate) => {
       updates.push(update)
       return state
     },
-    onUsageLimitResumesChanged: () => () => undefined,
-  }
+  })
 }
 
 beforeEach(() => {

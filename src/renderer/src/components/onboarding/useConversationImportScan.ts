@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { ConversationImportFolder } from '../../../../shared/electron-api'
+import { windowChatStores } from '../../studio/chatStores'
 
 // Apart from the picker so the shell can ask whether there is anything to
 // offer without loading the list that offers it.
@@ -16,7 +17,12 @@ export function useConversationImportScan(enabled = true): ConversationImportSca
   useEffect(() => {
     if (!enabled) return
     let disposed = false
-    void window.api
+    const stores = windowChatStores()
+    if (!stores) {
+      setScan({ status: 'error', message: 'This window reaches no Studio.' })
+      return
+    }
+    void stores
       .scanImportableConversations()
       .then((result) => {
         if (disposed) return

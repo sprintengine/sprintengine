@@ -1472,12 +1472,13 @@ keeps the same swaps, since the browser's own window still takes
   tunnelled domains the web client draws: workspace sync and the registry,
   launch settings, machines, the chats (`conversation:*`), command lists,
   model discovery, backlog files, workspace backups, the automation status,
-  and the reads `credential:secrets:status`, `github:token-status`,
+  and the reads `github:token-status`,
   `github:list-repos`, `scheduled-agents:list` and `mark-seen`. It does not
   reach, and the desktop app alone offers: pairing local apps
   (`studio-local-apps:*`), the tailnet lane's administration (`tailnet:*`),
   other machines (`mesh:*`), setting or clearing provider keys
-  (`conversation:secrets:set`/`clear`, `credential:secrets:set`/`clear`),
+  (`conversation:secrets:set`/`clear`; a key's status and both of these are
+  the protocol's `providers.*Secret` since, held to `settings:write`),
   the GitHub token and clone, a provider's CLI sign-in, terminal hand-off,
   scheduled agents' changes (they launch terminals), and the module bridge.
   The spec names none of these for the web client, so v1 keeps them on the

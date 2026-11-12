@@ -42,6 +42,8 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'mcp.sync',
   'memoryActivity.install',
   'memoryActivity.uninstall',
+  'conversationImport.import',
+  'conversationImport.scan',
   'launchSettings.changed',
   'launchSettings.get',
   'launchSettings.migrate',
@@ -54,6 +56,7 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   // Every terminal method and stream: a terminal is a shell on this machine.
   ...(Object.keys(STUDIO_TERMINALS_METHODS) as StudioMethod[]),
   ...(Object.keys(STUDIO_TERMINALS_TOPICS) as StudioTopic[]),
+  'usage.report',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [
@@ -67,7 +70,7 @@ const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 
 const allows = (grant: { owner: boolean; scopes: string[] }, name: string, kind: 'method' | 'topic') =>
   kind === 'method' ? studioGrantAllows(grant, name) : studioGrantAllowsTopic(grant, name)
 
-test('only what runs a program or a terminal here, or records an agent’s own work, is an owner’s, each with its reason', () => {
+test('only what runs a program or a terminal here, records an agent’s own work, or reads the agents’ own logs and session files, is an owner’s, each with its reason', () => {
   const held = entries()
     .filter(([, access]) => 'permissions' in access && access.owner !== undefined)
     .map(([name]) => name)

@@ -28,6 +28,7 @@ export * from './terminals.js'
 export * from './agent-settings.js'
 // What a Studio's agents are set up with beyond their CLIs.
 export * from './agent-setup.js'
+export * from './chat-stores.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.
 export * from './update.js'
 export * from './modules.js'

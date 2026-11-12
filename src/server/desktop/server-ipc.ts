@@ -1,4 +1,3 @@
-import { hostname } from 'node:os'
 import { join } from 'node:path'
 
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
@@ -16,22 +15,16 @@ import type { GitHubTokenStore } from '../../main/github-token-store'
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { registerBacklogIpc } from '../../main/ipc/backlog-ipc'
-import { registerConversationImportIpc } from '../../main/ipc/conversation-import-ipc'
 import { registerConversationIpc } from '../../main/ipc/conversation-ipc'
 import { createConversationService } from '../../main/conversation-service'
-import { registerCredentialIpc } from '../../main/ipc/credential-ipc'
 import { registerGitHubReposIpc } from '../../main/ipc/github-repos-ipc'
 import { registerGitHubTokenIpc } from '../../main/ipc/github-token-ipc'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
 import { registerStudioLocalAppsIpc } from '../../main/ipc/studio-local-apps-ipc'
-import { registerUsageLimitResumeIpc } from '../../main/ipc/usage-limit-resume-ipc'
-import { registerScheduledMessagesIpc } from '../../main/ipc/scheduled-messages-ipc'
 import { registerScheduledAgentsIpc } from '../../main/scheduled-agents/scheduled-agents-ipc'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { registerSettledChatsIpc } from '../../main/ipc/settled-chats-ipc'
-import { registerUsageLimitsIpc } from '../../main/ipc/usage-limits-ipc'
-import { registerUsageIpc } from '../../main/ipc/usage-ipc'
 import { registerWorkspaceBackupIpc } from '../../main/ipc/workspace-backup-ipc'
 import { registerWorkspaceSyncIpc } from '../../main/ipc/workspace-sync-ipc'
 import { registerWorktreePoolIpc } from '../../main/ipc/worktree-pool-ipc'
@@ -52,9 +45,7 @@ import type { StudioGateway } from '../core/studio-gateway'
 // What is here: the workspace bus and registry hydration, launch settings and
 // machines, the gateway's settings and the tailnet and mesh, the paired local
 // apps, workspace backups, model discovery, the composer's command lists,
-// the subscription usage limits and the resumes after them, the usage
-// dashboard's report, backlog files, provider credentials and the GitHub
-// token, the chats, with the copy of the model-written titles setting the
+// backlog files, the GitHub token, the chats, with the copy of the model-written titles setting the
 // server titles them by, and the worktree pool with the git panel's agent
 // worktree steps that go through it.
 // What is not: anything that acts on a window, a terminal or the shell's own
@@ -72,13 +63,10 @@ export type ServerDomainIpcDeps = {
     | 'agentLaunchSettings'
     | 'hosts'
     | 'conversations'
-    | 'conversationImport'
     | 'conversationLifecycle'
     | 'settledChatsSettings'
     | 'settlement'
     | 'platform'
-    | 'usageLimitResumes'
-    | 'scheduledMessages'
     | 'textGenerationSettings'
     | 'conversationCommands'
     | 'worktrees'
@@ -117,21 +105,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerWorkspaceBackupIpc(ipc, deps.workspaceBackup)
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.
   const conversationCommands = core.conversationCommands()
-  // The subscription usage limits the chats' agents report.
-  registerUsageLimitsIpc(ipc, { userDataDir: dataDir() })
-  // The chats a usage limit stopped, and the resume each can have when it resets.
-  registerUsageLimitResumeIpc(ipc, core.usageLimitResumes)
-  // Every agent's token use on this machine and on the machines paired with
-  // it over the tailnet, priced, for the usage dashboard.
-  registerUsageIpc(ipc, {
-    dataDir,
-    getWorkspaces: () => core.workspaceSyncService.getSnapshot().state.workspaces,
-    mesh: () => deps.gateway.mesh(),
-    hostName: () => hostname(),
-    machineMarks: () => core.agentLaunchSettings.get().machineMarks,
-  })
-  // The messages a person scheduled into a chat, sent when their time comes.
-  registerScheduledMessagesIpc(ipc, core.scheduledMessages)
   // The Schedules window's: always registered, refused while the module is off.
   registerScheduledAgentsIpc(ipc, { service: deps.scheduledAgents })
   registerHostsIpc(ipc, { hosts: core.hosts })
@@ -163,8 +136,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
       commands: (input) => conversationCommands.list(input),
     }),
   )
-  registerConversationImportIpc(ipc, core.conversationImport)
-  registerCredentialIpc(ipc)
   // The worktree pool the core keeps (studio-worktree-pool.ts): Settings ▸
   // Worktrees, the installs, and the agent worktree steps that lease, bring
   // back, remove or return one. And deleting a settled chat, whose worktree

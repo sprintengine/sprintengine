@@ -156,6 +156,8 @@ import {
 } from './agentChat/scheduledMessages'
 import {
   canScheduleMessages,
+  canHoldQueuedMessages,
+  holdQueuedMessage,
   updateScheduledMessage,
   useScheduledMessagesStore,
 } from '../../store/scheduledMessagesStore'
@@ -1707,22 +1709,17 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // or for one message by Primary+Enter (`commitComposerNow`). A steer the
   // turn cannot take now queues instead, and one the runtime refuses goes back
   // to the queue, so a message is never lost to the race with the turn's end.
-  // Hand a queued message to main to hold. One main would not keep waits here,
+  // Hand a queued message to the Studio to hold. One it would not keep waits here,
   // whole, ahead of anything queued since, as every queued message did before.
   const holdQueuedInMain = useCallback(
     async (turn: QueuedTurn) => {
       let reason: string
       try {
-        const held = await window.api.holdQueuedMessage({
-          workspaceId,
-          agentId,
-          text: turn.text,
-          source: `${workspaceId}:${agentId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
-        })
+        const held = await holdQueuedMessage({ workspaceId, agentId, text: turn.text })
         if (held.ok) return
         reason = held.reason
       } catch (error) {
-        reason = error instanceof Error ? error.message : 'main did not answer'
+        reason = error instanceof Error ? error.message : 'Studio did not answer'
       }
       setQueuedTurn((current) =>
         current ? queueComposerDraft(turn, current.text, current.attachments, current.metadata).turn : turn,
@@ -3910,11 +3907,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     listed: binding.listed ?? null,
   })
   holdQueueInMainRef.current =
-    operate &&
-    transport.kind !== 'remote' &&
-    !stripFacts.machine &&
-    canScheduleMessages() &&
-    typeof window.api?.holdQueuedMessage === 'function'
+    operate && transport.kind !== 'remote' && !stripFacts.machine && canScheduleMessages() && canHoldQueuedMessages()
   // ── What the agent touched ───────────────────────────────────────────────
   // Published for the title bar's pill (ChatActivityCard). Its Changes row
   // counts what the strip counts, so the two never disagree.

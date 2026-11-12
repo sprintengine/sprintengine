@@ -1170,6 +1170,21 @@ is `null`, and nothing waits on one. A pull request's `watch` gains an
 optional `waiting` (the words) while a read fails for want of `gh` there; an
 older client reads past it. Additive: an older Studio answers `unknown_method`
 and leaves the capability out.
+`chat-stores` (2026-11-12) is what a Studio keeps beside its chats, for every
+chat at once: `usageLimits.get` with `usageLimits.changed`,
+`usageLimitResumes.get`, `.update` (one chat's notice) and `.setAuto` (the
+setting) with `usageLimitResumes.changed`, `scheduledMessages.get`, `.update`
+and `.hold` (a composer's queued message, held once per command id) with
+`scheduledMessages.changed`, `usage.report`, and `conversationImport.scan` and
+`.import`. Each stream pushes its store whole and replays nothing: a client
+reads the state when it subscribes and again when its connection returns. The
+limits are `providers:read`; reading the held and scheduled messages and the
+resumes is `conversation:read`, changing them `conversation:operate`, and the
+resume setting `settings:write`. The usage report and the import are an
+owner's (they read the agents' own logs and session files on the machine).
+A CLI's API key is a provider's key under the CLI's manifest id, read and set
+with `providers.secretStatus`, `.setSecret` and `.clearSecret`. The desktop's
+windows reach all of these only this way: their window IPC is gone.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

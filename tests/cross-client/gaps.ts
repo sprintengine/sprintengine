@@ -47,18 +47,6 @@ export const ROWS: Record<ClientId, readonly ScenarioId[]> = {
 export type KnownGap = { reason: string; closedBy: string; expect: RegExp }
 
 export const KNOWN_GAPS: Partial<Record<`${ClientId}:${ScenarioId}`, KnownGap>> = {
-  'desktop:subagent': {
-    reason:
-      "the window's chat over the Studio protocol has no call to message one agent; it goes to main over IPC (conversationTransport.ts)",
-    closedBy: "the change that puts the window's chat on the Studio protocol alone, with every call its IPC carries",
-    expect: /has no call to/u,
-  },
-  'desktop:schedule': {
-    reason:
-      "the window's chat over the Studio protocol has no call to schedule a send, and no list of them; both go to main over IPC",
-    closedBy: "the change that puts the window's chat on the Studio protocol alone, with every call its IPC carries",
-    expect: /has no call to/u,
-  },
   'peer:create': {
     reason:
       'another device starts a chat by naming a CLI (conversation.create), and the fake provider has none; the request is sent and must be refused as it is today',

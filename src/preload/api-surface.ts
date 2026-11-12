@@ -1,5 +1,4 @@
 import type { ElectronApi } from '../shared/electron-api'
-import { conversationImportApi } from './api/conversation-import'
 import { appMenuApi } from './api/app-menu'
 import { appearanceApi } from './api/appearance'
 import { authApi } from './api/auth'
@@ -16,14 +15,9 @@ import { textGenerationApi } from './api/text-generation'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
 import { conversationApi } from './api/conversation'
-import { usageLimitsApi } from './api/usage-limits'
-import { usageApi } from './api/usage'
-import { usageLimitResumeApi } from './api/usage-limit-resume'
-import { scheduledMessagesApi } from './api/scheduled-messages'
 import { conversationPeekApi } from './api/conversation-peek'
 import { agentCompactApi } from './api/agent-compact'
 import { pullRequestApi } from './api/pull-request'
-import { credentialApi } from './api/credential'
 import { designSystemApi } from './api/design-system'
 import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
@@ -70,7 +64,6 @@ export type ComputedApiMembers =
   | 'diagnosticsGetIpcStats'
 
 export const apiModules = {
-  ...conversationImportApi,
   ...windowApi,
   ...browserApi,
   ...canvasApi,
@@ -104,14 +97,9 @@ export const apiModules = {
   ...modulesApi,
   ...pluginsApi,
   ...conversationApi,
-  ...usageLimitsApi,
-  ...usageApi,
-  ...usageLimitResumeApi,
-  ...scheduledMessagesApi,
   ...conversationPeekApi,
   ...agentCompactApi,
   ...pullRequestApi,
-  ...credentialApi,
   ...designSystemApi,
   ...skillsApi,
   ...updateApi,
