@@ -435,6 +435,60 @@ test('a server whose wire is being reconnected is not stopped for being idle onc
   )
 }, 30_000)
 
+test('a server with nothing to do is stopped once it has been idle', async () => {
+  const home = fakeHome('idle-nothing')
+  const statuses: WslServerStatus[] = []
+  const { manager: wsl } = manager({ homes: { Ubuntu: home }, statuses, idleMs: 1_000 })
+  await wsl.connect('Ubuntu')
+  for (let waited = 0; wsl.status('Ubuntu').state !== 'stopped' && waited < 10_000; waited += 100)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  assert.equal(wsl.status('Ubuntu').state, 'stopped')
+}, 30_000)
+
+test('a server with a schedule of its own to run is not stopped for being idle', async () => {
+  const home = fakeHome('idle-schedule')
+  // A schedule in the server's own store: the server runs it, whoever is connected.
+  const dataDir = join(home, WSL_DATA_REL, 'data-0123456789ab')
+  mkdirSync(dataDir, { recursive: true })
+  writeFileSync(
+    join(dataDir, 'scheduled-agents.json'),
+    JSON.stringify({
+      version: 1,
+      agents: [
+        {
+          id: 'sa-1',
+          prompt: 'Triage the issues opened since the last run.',
+          schedule: { cron: '0 9 * * *', timezone: 'UTC' },
+          folderPath: join(home, 'repo'),
+          hostId: null,
+          cli: 'codex',
+          cliModel: null,
+          permissionPreset: null,
+          skills: [],
+          mcpServers: [],
+          worktree: null,
+          ownerModuleId: null,
+          createdAt: 1,
+          updatedAt: 1,
+          lastRun: null,
+          lastFailureSeenAt: null,
+        },
+      ],
+    }),
+  )
+  const statuses: WslServerStatus[] = []
+  const { manager: wsl } = manager({ homes: { Ubuntu: home }, statuses, idleMs: 1_000 })
+  await wsl.connect('Ubuntu')
+  const pid = readServerPid(home)
+  await new Promise((resolve) => setTimeout(resolve, 3_000))
+  assert.equal(wsl.status('Ubuntu').state, 'ready')
+  assert.equal(readServerPid(home), pid)
+  assert.equal(
+    statuses.some((status) => status.state === 'stopped'),
+    false,
+  )
+}, 30_000)
+
 test('a server that stops answering its pings is taken for hung, stopped, and said to be', async () => {
   const home = fakeHome('hung')
   const { manager: wsl } = manager({ homes: { Ubuntu: home }, pingMs: 200 })

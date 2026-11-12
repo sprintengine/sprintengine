@@ -608,6 +608,31 @@ that every reader passes over (`conversation-command-receipts.ts`).
   a run that made no chat sent nothing, so a one-time schedule runs once now
   and a repeating one is recorded as cut off and waits for its next time
   (`scheduled-agents/run-recovery.ts`).
+- **Where background work runs.** Every Studio server runs its own schedules
+  and pull request watches, with its scheduled messages and usage-limit
+  resumes: the desktop's (in process or out), a standalone server, a WSL
+  distribution's and an SSH machine's (`server/core/studio-scheduled-agents.ts`,
+  composed by `createStudioCore`). A schedule runs on the server whose store
+  holds it, in its chats, from its worktree pool. Where a module kernel runs,
+  the person's Scheduled agents switch turns the scheduler on and off
+  (`modules/scheduled-agents-switch.ts`). A watch an agent asks for is kept by
+  the server its gateway belongs to; where that server holds no record of the
+  chat (a WSL or SSH server, whose chat records the desktop keeps), the folder
+  the chat works in is kept with the watch (`pull-requests/chat-folders.json`),
+  so its wake reaches the chat after a restart.
+- **Nothing stops silently.** Each server answers `environment.readiness`:
+  its CLIs (installed, signed in where it can tell), `gh`, MCP servers,
+  extensions, and every schedule or watch waiting on something it lacks. A
+  schedule whose CLI is not installed or signed in there, whose MCP server is
+  not set up or switched off, whose skill is unknown, or whose extension is
+  not loaded, waits: its times pass without a run or a failure, its row says
+  "Waiting: …", and Run now says why. A watch whose read fails for want of
+  `gh` (not installed, or not signed in) holds, says so, and does not count
+  toward the eight-failures stop. Keys and sign-ins are never copied between
+  machines on their own: the person signs in there. A detached server (an SSH
+  machine's) does not stop for being idle while it has such work, nor does
+  the desktop stop a WSL server for it; the desktop's quit question names the
+  schedules and watches its quit stops, its WSL servers' included.
 - A send refused `busy`, or one the log could not take, records nothing, so
   the same id may be sent again. The same id for a different command (by its
   fingerprint) is refused `command_id_conflict`.

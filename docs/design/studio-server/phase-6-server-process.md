@@ -1148,8 +1148,9 @@ are written atomically.
 
 - **Bundled modules move to the kernel.** Backlog, git, design, tours, pull
   requests, skills and marketplace stop being static wiring in
-  `app-services.ts` and `register-core-ipc.ts`. Each becomes a
-  `createBundledMainModules()` entry whose `registerMain` runs in the server.
+  `app-services.ts` and `register-core-ipc.ts`. Each is composed by the
+  server's core, as scheduled agents are (`server/core/studio-scheduled-agents.ts`),
+  with a kernel entry only for the person's switch.
   Its renderer half is a kernel renderer module. Canvas has no server half
   (12.1): it becomes a kernel renderer module and the shell's toolset.
 - **Tunnelled channels become protocol methods.** Each domain's tunnelled

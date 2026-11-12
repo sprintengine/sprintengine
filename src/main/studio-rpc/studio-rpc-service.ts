@@ -25,7 +25,11 @@ import {
 } from '../../server/rpc/studio-window-listener'
 import type { StudioWindowTicket } from '../../shared/studio-connection'
 import { inProcessStudioTransport } from '../../server/rpc/studio-in-process-port'
-import { STUDIO_SCOPES, type StudioGrant } from '../../../packages/studio-protocol/src/public'
+import {
+  STUDIO_SCOPES,
+  type StudioEnvironmentReadiness,
+  type StudioGrant,
+} from '../../../packages/studio-protocol/src/public'
 import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
 import {
   createStudioRpcServer,
@@ -166,6 +170,8 @@ export type StudioRpcServiceOptions = {
   localServers?: StudioLocalServers
   /** What a client reads before it starts a chat (`workspaces`). */
   discovery?: StudioDiscovery
+  /** What this machine has and lacks for its background work (`environment-readiness`). */
+  readiness?: () => Promise<StudioEnvironmentReadiness>
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
   terminals?: StudioTerminals
   /** The CLIs on this machine (`agent-runtimes`): given only where this process holds their detection. */
@@ -371,6 +377,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
+      ...(options.readiness ? { readiness: options.readiness } : {}),
       ...(options.terminals ? { terminals: options.terminals } : {}),
       ...(options.runtimes ? { runtimes: options.runtimes } : {}),
       ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),

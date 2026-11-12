@@ -11,6 +11,7 @@ import {
   type StudioConversationCreate,
   type ConversationWirePermissionPreset,
   type StudioCreatedConversation,
+  type StudioEnvironmentReadiness,
   type StudioGrant,
   type StudioParsedServerFrame,
   type StudioProtocolWindow,
@@ -368,6 +369,7 @@ export async function startTestServer(
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
     modules?: StudioModules
+    readiness?: () => Promise<StudioEnvironmentReadiness>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
 ): Promise<{
@@ -406,6 +408,7 @@ export async function startTestServer(
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),
+    ...(input.readiness ? { readiness: input.readiness } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),
     resyncRetryAfterMs: () => 1_500,

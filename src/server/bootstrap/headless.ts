@@ -5,6 +5,7 @@ import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { driveMountRootFromMounts, driveMountRootFromWslConf } from '../../shared/host-paths'
 import { chatsAreWorking } from '../core/chats-working'
+import { BACKGROUND_WORK_MACHINE_CHANNEL, backgroundWorkOf, hasBackgroundWork } from '../core/background-work'
 import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '../update/studio-updates'
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
 import { BACKEND_WIRE_VERSION, serveConversationBackend } from '../wsl/backend-wire'
@@ -113,7 +114,12 @@ export function serveFrontDoorPurpose(
   if (purpose === 'backend') {
     serveConversationBackend(server.core.conversations, stream, {
       log,
-      machine: machineChannels,
+      // Whether this server has work of its own, which the Windows side asks
+      // before stopping a WSL server for being idle; else a machine channel.
+      machine: (channel, args) =>
+        channel === BACKGROUND_WORK_MACHINE_CHANNEL
+          ? Promise.resolve(backgroundWorkOf(server.core))
+          : machineChannels(channel, args),
       signIns: signInsLoaded,
     })
     return
@@ -141,7 +147,10 @@ async function adoptLoginEnvironment(log: (message: string) => void): Promise<vo
 
 /**
  * A detached server's idle rule (decision R32): it stops once no client has
- * been connected for `idleMs` and no chat is working, and never while one is.
+ * been connected for `idleMs` and it has no work, and never while it has.
+ * Work is a chat working, and the work it does on its own (background-work.ts):
+ * a schedule with a run to come, a pull request watch, a message kept to send
+ * later, a resume after a usage limit. Stopping would end those unseen.
  */
 export function createIdleRule(input: { idleMs: number; working: () => boolean; stop: (reason: string) => void }): {
   connections(count: number): void
@@ -156,7 +165,7 @@ export function createIdleRule(input: { idleMs: number; working: () => boolean; 
         arm()
         return
       }
-      input.stop(`No client for ${Math.round(input.idleMs / 60_000)} minutes and no chat working; stopping.`)
+      input.stop(`No client for ${Math.round(input.idleMs / 60_000)} minutes and no work to do; stopping.`)
     }, input.idleMs)
     timer.unref?.()
   }
@@ -196,7 +205,7 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
     detached && detached.idleMs !== null
       ? createIdleRule({
           idleMs: detached.idleMs,
-          working: () => chatsAreWorking(server.core.conversations),
+          working: () => chatsAreWorking(server.core.conversations) || hasBackgroundWork(backgroundWorkOf(server.core)),
           stop: (reason) => requestExit(SERVER_EXIT.ok, reason),
         })
       : null

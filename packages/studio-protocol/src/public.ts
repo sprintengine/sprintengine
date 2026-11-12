@@ -31,6 +31,8 @@ export * from './agent-setup.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.
 export * from './update.js'
 export * from './modules.js'
+// What a Studio's machine has and lacks for the work it runs on its own.
+export * from './readiness.js'
 export * from './permissions.js'
 export * from './environment.js'
 // `sprintengine://` links: the one grammar every client reads and writes.

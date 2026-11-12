@@ -21,9 +21,11 @@ import {
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
   STUDIO_AGENT_SETTINGS_CAPABILITY,
   STUDIO_AGENT_SETUP_CAPABILITY,
+  STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
+  type StudioEnvironmentReadiness,
   type StudioProtocolWindow,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
@@ -161,6 +163,8 @@ export type StudioRpcServerOptions = {
   protocol?: StudioProtocolWindow
   /** What this Studio's modules say to clients. Advertised as `modules` only when given. */
   modules?: StudioModules
+  /** What this machine has and lacks for its background work. Advertised as `environment-readiness` only when given. */
+  readiness?: () => Promise<StudioEnvironmentReadiness>
   resyncRetryAfterMs?: (clientId: string) => number
   socketPath?: string
   helloTimeoutMs?: number
@@ -218,6 +222,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
         (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
         (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
+        (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&
         (capability !== STUDIO_TERMINALS_CAPABILITY || options.terminals !== undefined) &&
         (capability !== STUDIO_AGENT_RUNTIMES_CAPABILITY || options.runtimes !== undefined) &&
         (capability !== STUDIO_AGENT_SETTINGS_CAPABILITY || options.agentSettings !== undefined) &&
@@ -242,6 +247,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
+    ...(options.readiness ? { readiness: options.readiness } : {}),
     ...(options.terminals ? { terminals: options.terminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),
     ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),

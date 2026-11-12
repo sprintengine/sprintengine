@@ -865,3 +865,102 @@ test('a run on its way when the scheduler stops (the app quitting) starts no cha
   assert.equal((await ran).ok, true)
   assert.deepEqual(launched, ['discarded:true', 'chat'])
 })
+
+test('a schedule its machine cannot run waits: its time passes without a run or a failure, and says why', async () => {
+  const time = fakeTime(NOW)
+  let agents = [agent()]
+  let lacking: string | null = 'Codex is not signed in on build-box'
+  const runs: string[] = []
+  const skipped: string[] = []
+  const asked: boolean[] = []
+  const scheduler = schedulerWithRunRecords({
+    list: () => agents,
+    run: async (entry) => {
+      runs.push(entry.id)
+      return { at: time.now(), ok: true, workspaceId: 'run-1' }
+    },
+    recordRun: async (id, run) => {
+      agents = agents.map((entry) => (entry.id === id ? { ...entry, lastRun: run } : entry))
+    },
+    waitingFor: (_entry, context) => {
+      asked.push(context?.asked === true)
+      return lacking
+    },
+    onSkipped: (entry, reason, detail) => skipped.push(`${entry.id}:${reason}:${detail ?? ''}`),
+    now: time.now,
+    setTimer: time.setTimer,
+    clearTimer: time.clearTimer,
+  })
+  scheduler.start()
+  await time.advanceTo(Date.UTC(2026, 8, 30, 13, 0))
+  assert.deepEqual(runs, [])
+  assert.deepEqual(skipped, ['sa-1:waiting:Codex is not signed in on build-box'])
+  assert.equal(agents[0]?.lastRun, null, 'a held time is not a failed run')
+  assert.deepEqual(await scheduler.runNow('sa-1'), {
+    ok: false,
+    refused: 'waiting',
+    waiting: 'Codex is not signed in on build-box',
+  })
+  // A time is asked as a time; Run now says a person asked (a sign-in misread does not hold it).
+  assert.deepEqual(asked, [false, true])
+  // Signed in there: the next time runs.
+  lacking = null
+  await time.advanceTo(Date.UTC(2026, 9, 1, 13, 0))
+  assert.deepEqual(runs, ['sa-1'])
+})
+
+test('a one-time schedule its machine cannot run yet runs once it can, late rather than never', async () => {
+  const time = fakeTime(NOW)
+  const at = Date.UTC(2026, 8, 30, 12, 30)
+  let agents = [agent({ schedule: { cron: cronForInstant(at, 'UTC'), timezone: 'UTC', once: at } })]
+  let lacking: string | null = 'the extension "weather-deck" that made it is not installed on build-box'
+  const runs: string[] = []
+  const scheduler = schedulerWithRunRecords({
+    list: () => agents,
+    run: async (entry) => {
+      runs.push(entry.id)
+      return { at: time.now(), ok: true, workspaceId: 'run-1' }
+    },
+    recordRun: async (id, run) => {
+      agents = agents.map((entry) => (entry.id === id ? { ...entry, lastRun: run } : entry))
+    },
+    waitingFor: () => lacking,
+    now: time.now,
+    setTimer: time.setTimer,
+    clearTimer: time.clearTimer,
+  })
+  scheduler.start()
+  await time.advanceTo(at)
+  assert.deepEqual(runs, [])
+  assert.ok(time.armedAt() !== null, 'it is looked at again')
+  lacking = null
+  await time.advanceTo(time.armedAt()!)
+  assert.deepEqual(runs, ['sa-1'])
+})
+
+test('the list says what a waiting schedule waits for, and Run now says it in words', async () => {
+  const file = tempFile()
+  try {
+    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-1' })
+    await store.load()
+    await store.create(draft({ cli: 'codex' }))
+    const waitingFor = (entry: ScheduledAgent) => (entry.cli === 'codex' ? 'Codex is not signed in on build-box' : null)
+    const scheduler = schedulerWithRunRecords({
+      list: () => store.list(),
+      run: async () => ({ at: NOW, ok: true, workspaceId: 'run-1' }),
+      recordRun: (entry, run) => store.recordRun(entry, run),
+      waitingFor,
+      now: () => NOW,
+      setTimer: () => null,
+      clearTimer: () => undefined,
+    })
+    const service = createScheduledAgentsService({ store, scheduler, now: () => NOW, waitingFor })
+    assert.equal(service.get('sa-1')?.waiting, 'Codex is not signed in on build-box')
+    assert.deepEqual(await service.runNow('sa-1'), {
+      ok: false,
+      message: 'It is waiting: Codex is not signed in on build-box.',
+    })
+  } finally {
+    file.cleanup()
+  }
+})

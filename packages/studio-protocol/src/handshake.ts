@@ -164,6 +164,12 @@ export const STUDIO_AGENT_SETTINGS_CAPABILITY = 'agent-settings' as const
 export const STUDIO_AGENT_SETUP_CAPABILITY = 'agent-setup' as const
 
 /**
+ * `environment.readiness` (`readiness.ts`): what this Studio's machine has and
+ * lacks for its schedules and pull request watches, and what waits on it.
+ */
+export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -200,6 +206,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
   STUDIO_AGENT_SETTINGS_CAPABILITY,
   STUDIO_AGENT_SETUP_CAPABILITY,
+  STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
 ] as const
 
 /**

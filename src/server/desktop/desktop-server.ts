@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { backgroundWorkOf, quitStopsOf } from '../core/background-work'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
@@ -210,6 +211,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
         : {}),
       role: 'desktop',
+      // The person's Scheduled agents switch turns the scheduler on and off,
+      // through the module kernel (modules/scheduled-agents-switch.ts).
+      scheduledAgentsSwitch: 'modules',
       // The terminals run here; the shell prepares each agent's launch (its
       // plugin copy, MCP sync, skills, hook) over the bridge, and hears of
       // each launch for its analytics.
@@ -793,9 +797,13 @@ function serveShellRequests(deps: {
         lease: slot.lease ? { workspaceId: slot.lease.workspaceId, agentId: slot.lease.agentId } : null,
       })),
   )
-  rpc.handle(SERVER_METHODS.conversationsWorking, () => {
+  rpc.handle(SERVER_METHODS.quitStops, async () => {
     const listed = core.conversations.listSessions()
-    return listed.ok ? listed.sessions.filter(conversationTurnInProgress).length : 0
+    const wsl = (await core.wslServers?.manager.backgroundWork({ budgetMs: 800 })) ?? []
+    return {
+      agents: listed.ok ? listed.sessions.filter(conversationTurnInProgress).length : 0,
+      ...quitStopsOf(backgroundWorkOf(core), wsl),
+    }
   })
   rpc.handle(SERVER_METHODS.applyModuleEnablement, (params) =>
     deps.modules.applyEnablement((params as { overrides?: Record<string, boolean> } | null)?.overrides ?? {}),

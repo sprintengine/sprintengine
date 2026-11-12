@@ -121,14 +121,15 @@ Usage: studio-server start --detach --data-dir <dir> [options]
   Start a server that outlives this command (an SSH machine's managed server),
   or report the one already running on that data directory.
 
-  --idle-ms <n>              Stop after this long with no client and no chat working (default 5 minutes)
+  --idle-ms <n>              Stop after this long with no client and no work: no chat working, no
+                             schedule, pull request watch or message to send (default 5 minutes)
   --keep-running             Never stop for being idle
   --started-by-b64 <label>   Who started it, base64url, for Settings ("Studio on dev-macbook-air")
   --replace                  Drain and stop a running server first (an upgrade)
   --channel <latest|nightly> The release channel of the client that starts it
 `
 
-/** How long a managed server on an SSH machine waits with no client and no chat working (phase 8 spec, 6.4). */
+/** How long a managed server on an SSH machine waits with no client and no work (phase 8 spec, 6.4). */
 const DEFAULT_DETACHED_IDLE_MS = 5 * 60_000
 
 function bundledBuild(): { version: string; commit: string | null; builtAt: string } | null {

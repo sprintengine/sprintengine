@@ -36,6 +36,14 @@
 
 ### Added
 
+- **`environment.readiness`** (`readiness.ts`, capability
+  `environment-readiness`, scope `providers:read`): what the Studio's machine
+  has and lacks for its schedules and pull request watches (CLIs installed and
+  signed in, `gh`, MCP servers, extensions) and what waits on it, in words. A
+  fact the machine cannot tell is `null`.
+- **`StudioPullRequestWatch.waiting`**: the words while a watch holds because
+  its machine lacks `gh` or a `gh` sign-in.
+
 - **What a follower of one chat reads and does beside its stream, by its
   key** (`followed.ts`), as the tailnet lane served it: the push topics
   `conversation.queued`, `conversation.scheduled`, `conversation.usageLimits`,

@@ -6,7 +6,7 @@ import { loadMainModules, type LoadMainModulesResult } from '../../main/module-h
 import type { McpToolContribution } from '../../main/module-host/main-host'
 import { ScheduledAgentsServiceToken } from '../../main/module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/modules/agent-runtime-module'
-import { createBundledMainModules } from '../../main/modules'
+import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
 import { applyHostApiGate } from '../../main/modules/host-api-gate'
 import {
   encodeThirdPartyLaunchSession,
@@ -18,7 +18,6 @@ import {
 import { readModuleTrustContextSync } from '../../main/modules/trust-context'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
-import { activeForChannel } from '../../shared/modules/dev-only'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
 import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest } from '../../shared/modules/manifest'
 import { resolveModuleEnablement } from '../../shared/modules/resolve'
@@ -61,7 +60,6 @@ export function createServerModules(deps: {
 }): ServerModules {
   const { platform, core } = deps
   const dataDir = platform.paths.dataDir()
-  const includeDevModules = !platform.paths.isPackaged()
   const readOverrides = (): Record<string, boolean> => {
     try {
       return readModuleOverridesSync(dataDir)
@@ -106,15 +104,15 @@ export function createServerModules(deps: {
       )
       installElectronRequireGuard(() => Object.values(thirdParty.moduleRoots))
       applyHostApiGate(thirdParty.ineligible, thirdParty.modules)
-      const bundled = activeForChannel(
-        // Read only once a module asks, by which time `byId` exists.
-        createBundledMainModules(
-          platform,
+      // The schedules are the core's; the kernel holds them under the
+      // person's Scheduled agents switch.
+      const bundled = [
+        scheduledAgentsSwitchModule(
+          core.scheduledAgents,
+          // Read only once a module asks, by which time `byId` exists.
           (moduleId): readonly string[] | undefined => byId.get(moduleId)?.permissions,
         ),
-        (module) => module.manifest.id,
-        includeDevModules,
-      )
+      ]
       const byId = new Map<string, CapabilityManifest>(
         [AGENT_RUNTIME_MANIFEST, ...bundled.map((m) => m.manifest), ...thirdParty.modules.map((m) => m.manifest)].map(
           (manifest) => [manifest.id, manifest],
@@ -158,6 +156,11 @@ export function createServerModules(deps: {
         ...thirdParty.modules.map((m) => m.manifest),
       ]
       recompute(overrides)
+      // An extension's schedules are held to its permissions, and wait while it is not here.
+      core.attachModules({
+        permissions: (moduleId) => byId.get(moduleId)?.permissions,
+        loaded: () => [...enabled],
+      })
       recordThirdPartyMainLaunchReport(
         thirdParty.modules.map((module) => module.manifest.id),
         load.report,

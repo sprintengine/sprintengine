@@ -120,6 +120,9 @@ export function createStudioRpc(
     // What a client reads before it starts a chat: the gateway's own tools
     // answer it, so the protocol and MCP read one thing.
     discovery: createStudioDiscovery(() => gateway.ownTools()),
+    // What this machine lacks for its schedules and watches, which every
+    // client shows and none can fix from afar.
+    readiness: () => core.readiness.read(),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },

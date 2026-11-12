@@ -109,6 +109,12 @@ export type StudioPullRequestWatch = {
   base?: string
   /** How many checks failed on its head, while some did. */
   failedChecks?: number
+  /**
+   * The Studio's machine cannot read it now, and the watch holds rather than
+   * counting failed reads: what the machine lacks, in words ("gh is not
+   * signed in on build-box"). Gone at the next read that works.
+   */
+  waiting?: string
 }
 
 /** A conversation by its workspace and agent. */

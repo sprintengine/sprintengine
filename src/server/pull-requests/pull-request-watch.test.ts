@@ -406,6 +406,25 @@ test(`${WATCH_FAILED_READ_LIMIT} failed reads in a row stop the watch; a rate li
   assert.equal(evaluatePullRequestWatch(state, read()).state.failedReads, 0)
 })
 
+test('a read that fails for want of gh on this machine holds the watch: nothing counts, and it says why', () => {
+  let state = primed()
+  for (let index = 0; index < WATCH_FAILED_READ_LIMIT * 2; index += 1) {
+    const held = notePullRequestWatchReadFailed(state, 'gh-failed', 'gh is not signed in on build-box')
+    assert.equal(held.stop, null)
+    state = held.state
+  }
+  assert.equal(state.failedReads, 0)
+  assert.equal(state.view.waiting, 'gh is not signed in on build-box')
+  // It survives a restart, as the rest of the watch does.
+  assert.equal(parsePullRequestWatchState(JSON.parse(JSON.stringify(state)))?.view.waiting, state.view.waiting)
+  // Signed in: a failure counts again, and the watch no longer says it waits.
+  const counted = notePullRequestWatchReadFailed(state, 'timeout')
+  assert.equal(counted.state.failedReads, 1)
+  assert.equal(counted.state.view.waiting, undefined)
+  // A read that settles says what the pull request waits on, not the machine.
+  assert.equal(evaluatePullRequestWatch(state, read()).state.view.waiting, undefined)
+})
+
 test('what the pull request waits on, most pressing first', () => {
   const view = (overrides: Partial<Read>) => evaluatePullRequestWatch(primed(), read(overrides)).state.view
   assert.equal(view({ checks: [check('Build', 'pending')] }).waitingOn, 'checks')

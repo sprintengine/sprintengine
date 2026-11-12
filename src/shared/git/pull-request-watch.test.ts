@@ -31,8 +31,17 @@ test('each thing a watch waits on has its own words', () => {
     [{ waitingOn: 'merge', approved: true, autoMerge: true }, 'Approved · merging'],
     [{ waitingOn: 'merge', approved: true }, 'Approved · ready to merge'],
     [{ waitingOn: 'merge' }, 'Ready to merge'],
+    // Its machine cannot read it: the watch holds, whatever it last read.
+    [{ waitingOn: 'checks', waiting: 'gh is not signed in on build-box' }, 'Watch waiting'],
   ]
   for (const [overrides, words] of cases) assert.equal(pullRequestWatchWords(view(overrides)), words)
+})
+
+test('a watch its machine cannot read says what it waits for', () => {
+  assert.equal(
+    pullRequestWatchSentence(view({ waitingOn: 'checks', waiting: 'gh is not signed in on build-box' })),
+    'The watch is waiting: gh is not signed in on build-box. It reads the pull request again once it can.',
+  )
 })
 
 test('a word a newer Studio sends reads as plain watching, and only failures are trouble', () => {

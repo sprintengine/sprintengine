@@ -39,8 +39,12 @@ export const SERVER_METHODS = {
   createAgentWorktree: 'worktree-pool.create-agent-worktree',
   /** `{ id }` → the install's view once it ended, or null when quitting: answered when it ends. */
   dependencyInstallSettled: 'worktree-install.settled',
-  /** → how many chats have a turn in progress, which a quit would stop. */
-  conversationsWorking: 'conversations.working',
+  /**
+   * → `QuitStopping` without the shell's terminals: how many chats have a
+   * turn in progress, and by name the schedules and pull request watches this
+   * server and its WSL servers run, all of which a quit would stop.
+   */
+  quitStops: 'quit.stops',
   /** `{ overrides }` → the module enablement result: the shell wrote the file, the server applies it live. */
   applyModuleEnablement: 'modules.apply-enablement',
   /** → `ThirdPartyLaunchSessionWire`: which third-party main halves loaded here, and what they registered. */

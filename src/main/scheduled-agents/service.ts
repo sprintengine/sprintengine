@@ -88,6 +88,8 @@ export type ScheduledAgentsServiceDeps = {
   now?: () => number
   /** Keeps the images a prompt names past the temp folder's clearing (`prompt-images.ts`). Absent, prompts are stored as written. */
   promptImages?: ScheduledPromptImages
+  /** Why this machine cannot run a schedule now (the scheduler's `waitingFor`); absent, every one can. */
+  waitingFor?: (agent: ScheduledAgent) => string | null
 }
 
 export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): ScheduledAgentsService {
@@ -95,10 +97,10 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
   const listeners = new Set<(agents: ScheduledAgentView[]) => void>()
   const runListeners = new Set<(agent: ScheduledAgentView, run: ScheduledAgentRun) => void>()
 
-  const view = (agent: ScheduledAgent): ScheduledAgentView => ({
-    ...agent,
-    nextRunAt: deps.scheduler.nextRunAt(agent.id),
-  })
+  const view = (agent: ScheduledAgent): ScheduledAgentView => {
+    const waiting = deps.waitingFor?.(agent) ?? null
+    return { ...agent, nextRunAt: deps.scheduler.nextRunAt(agent.id), ...(waiting ? { waiting } : {}) }
+  }
   const listViews = (): ScheduledAgentView[] => deps.store.list().map(view)
   // A prompt's temp images, copied where a later run can still read them.
   const withKeptImages = async (draft: ScheduledAgentDraft): Promise<ScheduledAgentDraft> =>
@@ -193,6 +195,8 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
       const fired = await deps.scheduler.runNow(id)
       if (fired.ok) return { ok: true, run: fired.run }
       if (fired.refused === 'unknown') return notFound(id)
+      if (fired.refused === 'waiting')
+        return { ok: false, message: `It is waiting: ${fired.waiting ?? 'this machine cannot run it yet'}.` }
       return {
         ok: false,
         message:

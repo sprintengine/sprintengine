@@ -120,7 +120,14 @@ export type PullRequestDomainOptions = {
    * watches are read and shown but wake nobody: a test, or a server with no
    * chats to send into.
    */
-  wakes?: Omit<PullRequestWakesDeps, 'onChatGone' | 'onConversationEvent' | 'untold'>
+  wakes?: Omit<PullRequestWakesDeps, 'onChatGone' | 'onConversationEvent' | 'untold'> & {
+    /** A watch was asked for: keep where the chat works, where its record does not say. */
+    remember?(key: PullRequestConversationKey): void
+    /** Let go of what was kept for every chat but these: the ones a watch or waiting news names. */
+    retain?(keys: readonly PullRequestConversationKey[]): void
+    /** Settles once what was kept is on disk. */
+    flushFolders?(): Promise<void>
+  }
   log?(message: string, error?: unknown): void
 }
 
@@ -167,6 +174,15 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
     })
   // News the last run found and did not get to tell its chat goes now.
   void wakes?.resume().catch((error: unknown) => log('could not resume pull request wakes', error))
+  // What was kept for chats no watch and no waiting news names any more goes.
+  const retainWatchedChats = async (): Promise<void> => {
+    if (!options.wakes?.retain) return
+    await record.whenLoaded()
+    if (disposed) return
+    const keys = [...record.watches().map((watched) => watched.conversation), ...(await record.untoldWakes.chats())]
+    options.wakes.retain(keys)
+  }
+  void retainWatchedChats().catch((error: unknown) => log('could not let go of unwatched chats', error))
 
   function publish(change: PullRequestsChanged): void {
     if (disposed || (change.workspaceIds.length === 0 && change.conversations.length === 0)) return
@@ -310,6 +326,7 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
       return record.noteOpened(key, input)
     },
     watchForAgent(key, input) {
+      options.wakes?.remember?.(key)
       return record.watch(key, input)
     },
     unwatchForAgent(key, input) {
@@ -356,6 +373,7 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
     },
     async flush() {
       await record.flush()
+      await options.wakes?.flushFolders?.()
     },
     dispose() {
       disposed = true

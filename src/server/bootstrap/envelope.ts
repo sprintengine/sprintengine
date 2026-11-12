@@ -111,8 +111,9 @@ export type ServerBootstrapEnvelope = {
    * Set for a server that outlives whoever started it (an SSH machine's
    * managed server, phase 8): its starter's stdin ending is not its parent
    * gone, so it keeps running, and stops when a signal asks or when it has
-   * been idle `idleMs` (no front-door connection and no chat working; null
-   * keeps it running). It writes `run/server.json` for the next client to
+   * been idle `idleMs` (no front-door connection, no chat working, and no
+   * schedule, watch or message of its own to see to: core/background-work.ts;
+   * null keeps it running). It writes `run/server.json` for the next client to
    * find, and removes it when it stops.
    */
   detached?: {
