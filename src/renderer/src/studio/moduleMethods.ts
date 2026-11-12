@@ -1,4 +1,5 @@
 import {
+  STUDIO_MODULE_SERVICES_METHODS,
   STUDIO_MODULES_CAPABILITY,
   type StudioModuleServicesMethodMap,
 } from '../../../../packages/studio-protocol/src/public'
@@ -79,15 +80,6 @@ export function windowModuleMethodCaller(api?: Parameters<typeof windowStudioCli
   }
 }
 
-/** The Backlog writes: each a mutation, carried out once under its command id. */
-const MODULE_SERVICE_WRITES: ReadonlySet<ModuleServiceMethod> = new Set<ModuleServiceMethod>([
-  'moduleBacklog.create',
-  'moduleBacklog.updateStatus',
-  'moduleBacklog.updateTriage',
-  'moduleBacklog.addLink',
-  'moduleBacklog.updateModuleMetadata',
-])
-
 /** One host-service call over a client: the service's answer, or the refusal in its words. */
 export async function callModuleService<M extends ModuleServiceMethod>(
   client: StudioClient,
@@ -96,9 +88,9 @@ export async function callModuleService<M extends ModuleServiceMethod>(
 ): Promise<ModuleServiceAnswer<M>> {
   if (!client.supports(STUDIO_MODULES_CAPABILITY))
     return moduleServiceRefusal(method, 'unavailable', 'This Studio does not serve host services to modules.')
-  // A write's params are its read's plus the command id made here.
+  // A write (a mutation in the contract) is sent under a command id made here.
   const sent = (
-    MODULE_SERVICE_WRITES.has(method) ? { ...params, commandId: randomId() } : params
+    STUDIO_MODULE_SERVICES_METHODS[method].mutation ? { ...params, commandId: randomId() } : params
   ) as StudioModuleServicesMethodMap[M]['params']
   try {
     return await client.request(method, sent)
