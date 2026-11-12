@@ -9,6 +9,7 @@ import {
   ConversationEventLog,
   DEFAULT_DELTA_FLUSH_MS,
   expandCoalescedDeltas,
+  writeWhole,
   type AppendStream,
 } from './conversation-event-log'
 import { ConversationTranscriptReader } from './conversation-transcript-reader'
@@ -295,6 +296,54 @@ test('an append after a torn last line starts a line of its own and stays readab
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('an event and the receipt it commits with are one write, after the deltas queued before them', async () => {
+  const streams = recordingStreams()
+  const log = new ConversationEventLog({ flushDelayMs: 60_000, openStream: streams.openStream })
+  void log.append('/t.jsonl', event('content_delta', { turnId: 't0', text: 'tail' }))
+  const committed = log.append('/t.jsonl', event('user_message', { turnId: 't1', text: 'hi' }), undefined, [
+    { receipt: { id: 'cmd-1', at: 1, turnId: 't1' } },
+  ])
+  assert.equal(await committed, 'written')
+  assert.equal(streams.writes.length, 1)
+  assert.deepEqual(
+    streams.lines().map((line) => line.type ?? Object.keys(line)[0]),
+    ['content_delta', 'user_message', 'receipt'],
+  )
+  // A receipt on its own takes whatever is queued with it, at once.
+  void log.append('/t.jsonl', event('content_delta', { turnId: 't1', text: 'a' }))
+  assert.equal(await log.appendRecord('/t.jsonl', { receipt: { id: 'cmd-1', at: 2, answer: { ok: true } } }), 'written')
+  assert.equal(streams.writes.length, 2)
+  assert.deepEqual(
+    streams
+      .lines()
+      .slice(-2)
+      .map((line) => line.type ?? Object.keys(line)[0]),
+    ['content_delta', 'receipt'],
+  )
+})
+
+test('a batch the disk takes only part of is taken back whole, unless the log gave up on it', async () => {
+  const file = (bytes: string[]) => ({
+    writeFile: async (text: string) => {
+      // A disk that fills halfway through the write.
+      bytes.push(text.slice(0, text.length / 2))
+      throw new Error('ENOSPC: no space left on device')
+    },
+    truncate: async (size: number) => {
+      bytes.splice(0, bytes.length, bytes.join('').slice(0, size))
+    },
+  })
+  const written = ['{"seq":1}\n']
+  await assert.rejects(
+    writeWhole(file(written) as never, '{"seq":2}\n{"receipt":{}}\n', 10, () => false),
+    /ENOSPC/,
+  )
+  assert.deepEqual(written, ['{"seq":1}\n'], 'nothing of the failed batch is left')
+  const abandoned = ['{"seq":1}\n']
+  await assert.rejects(writeWhole(file(abandoned) as never, '{"seq":2}\n', 10, () => true))
+  assert.equal(abandoned.length, 2, 'a write given up on is left alone: the next stream may follow it')
 })
 
 test('a merged record whose parts do not add up is read as one delta, not split wrongly', () => {

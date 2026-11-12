@@ -167,6 +167,8 @@ test("a send's mentions are resolved against the chat's folder here, and one out
     await mkdir(join(f.workspaceRoot, 'docs'))
     await writeFile(join(f.workspaceRoot, 'docs', 'notes.md'), 'Remember the flaky test.')
     const sendTurn = vi.spyOn(f.runtime, 'sendTurn')
+    // Bypass answers the mock's approval by itself, and the chat comes to rest then.
+    const ended = new Promise<void>((resolve) => f.runtime.onSessionIdle(() => resolve()))
     const sent = await f.host.command(f.key, 'phone', 'send-1', {
       kind: 'send',
       message: 'Read this',
@@ -174,6 +176,7 @@ test("a send's mentions are resolved against the chat's folder here, and one out
     })
     assert.equal(sent.ok, true, sent.message ?? '')
     assert.deepEqual(sendTurn.mock.calls[0]![0].mentions, [{ path: 'docs/notes.md', kind: 'file' }])
+    await ended
     // The wire refuses such a path before it gets here; the runtime refuses
     // it again, so nothing outside the folder is ever read into a turn.
     const outside = await f.host.command(f.key, 'phone', 'send-2', {

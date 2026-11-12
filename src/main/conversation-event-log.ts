@@ -1,3 +1,4 @@
+import type { FileHandle } from 'node:fs/promises'
 import { dirname } from 'path'
 import { openConfinedExistingFile } from './conversation-file-access'
 import { openConversationAppendFile } from './conversation-persistence'
@@ -66,6 +67,15 @@ type DeltaRun = { event: ConversationEvent; text: string; parts: DeltaPart[] }
 type Entry =
   | { kind: 'run'; run: DeltaRun }
   | { kind: 'event'; event: ConversationEvent; partialToolUseId?: string; superseded?: boolean }
+  // A line of the log that is not an event (a command's receipt): it has no
+  // `type`, so every transcript reader passes over it.
+  | { kind: 'record'; record: ConversationLogRecord }
+
+/**
+ * A line of a chat's log that is not an event. It must not carry a string
+ * `type`: readers take a line with one for an event.
+ */
+export type ConversationLogRecord = { readonly type?: never } & Record<string, unknown>
 
 type Waiter = {
   entry: Entry
@@ -74,8 +84,18 @@ type Waiter = {
 }
 
 export type AppendStream = {
+  /**
+   * Append `chunk` whole or not at all: a write that fails leaves the file as
+   * it was before it (the default stream truncates back what got through).
+   */
   write(chunk: string): Promise<void>
   close(): Promise<void>
+  /**
+   * The log gave up waiting on a write that has not settled and will not use
+   * this stream again: should that write fail later, it must not roll the
+   * file back, because a later stream may have appended after it.
+   */
+  abandon?(): void
 }
 
 export type ConversationEventLogOptions = {
@@ -120,21 +140,47 @@ export class ConversationEventLog {
   }
 
   /**
-   * Record `event`. Settles once the batch holding it has been written (or it
-   * was superseded before that). A write failure resolves `failed` after
-   * `onError` has seen it — a transcript that cannot be written must not take
-   * the live chat down — and rejects only when `onError` itself throws.
+   * Record `event`, and after it in the same write the `records` it commits
+   * with (a command's receipt). Settles once the batch holding it has been
+   * written (or it was superseded before that). A batch is written whole or
+   * not at all; a failure resolves `failed` after `onError` has seen it — a
+   * transcript that cannot be written must not take the live chat down — and
+   * rejects only when `onError` itself throws.
    */
-  append(filePath: string, event: ConversationEvent, storageRoot?: string): Promise<ConversationAppendOutcome> {
+  append(
+    filePath: string,
+    event: ConversationEvent,
+    storageRoot?: string,
+    records: readonly ConversationLogRecord[] = [],
+  ): Promise<ConversationAppendOutcome> {
     const log = this.fileLog(filePath)
     log.storageRoot ??= storageRoot
     const done = new Promise<ConversationAppendOutcome>((resolve, reject) => {
       const entry = this.enqueue(log, event)
       log.waiters.push({ entry, resolve, reject })
     })
-    if (isDelta(event)) this.schedule(filePath, log, this.flushDelayMs)
+    for (const record of records) log.entries.push({ kind: 'record', record })
+    if (records.length > 0) void this.write(filePath, log)
+    else if (isDelta(event)) this.schedule(filePath, log, this.flushDelayMs)
     else if (partialToolUseId(event)) this.schedule(filePath, log, this.toolOutputFlushDelayMs)
     else void this.write(filePath, log)
+    return done
+  }
+
+  /** Record a line that is not an event, with whatever is queued before it, now. */
+  appendRecord(
+    filePath: string,
+    record: ConversationLogRecord,
+    storageRoot?: string,
+  ): Promise<ConversationAppendOutcome> {
+    const log = this.fileLog(filePath)
+    log.storageRoot ??= storageRoot
+    const entry: Entry = { kind: 'record', record }
+    const done = new Promise<ConversationAppendOutcome>((resolve, reject) => {
+      log.entries.push(entry)
+      log.waiters.push({ entry, resolve, reject })
+    })
+    void this.write(filePath, log)
     return done
   }
 
@@ -260,8 +306,14 @@ export class ConversationEventLog {
     log.entries = []
     log.waiters = []
     const chunk = entries
-      .filter((entry) => entry.kind === 'run' || !entry.superseded)
-      .map((entry) => (entry.kind === 'run' ? serializeRun(entry.run) : serialize(entry.event)))
+      .filter((entry) => entry.kind !== 'event' || !entry.superseded)
+      .map((entry) =>
+        entry.kind === 'run'
+          ? serializeRun(entry.run)
+          : entry.kind === 'record'
+            ? `${JSON.stringify(entry.record)}\n`
+            : serialize(entry.event),
+      )
       .join('')
     const outcome = (entry: Entry, ok: boolean): ConversationAppendOutcome =>
       entry.kind === 'event' && entry.superseded ? 'superseded' : ok ? 'written' : 'failed'
@@ -288,9 +340,11 @@ export class ConversationEventLog {
         ok = false
         // Drop the broken stream so the next write reopens rather than failing
         // forever on a handle that is gone. A stream whose write never settled
-        // may never close either, so that close is not waited for.
+        // may never close either, so that close is not waited for, and it is
+        // told it was given up on: the next stream may append after it.
         const broken = log.stream
         log.stream = null
+        if (timedOut) void broken?.then((stream) => stream.abandon?.()).catch(() => undefined)
         const closing = broken?.then((stream) => stream.close()).catch(() => undefined)
         if (!timedOut) await closing
         try {
@@ -404,23 +458,52 @@ function isDeltaPart(value: unknown): value is DeltaPart {
 async function openAppendStream(filePath: string, storageRoot = dirname(filePath)): Promise<AppendStream> {
   const file = await openConversationAppendFile(storageRoot, filePath)
   let unterminated: boolean
+  let size: number
   try {
-    unterminated = await endsMidLine(storageRoot, filePath, (await file.stat()).size)
+    size = (await file.stat()).size
+    unterminated = await endsMidLine(storageRoot, filePath, size)
   } catch (error) {
     await file.close()
     throw error
   }
+  let abandoned = false
   return {
     write: async (chunk) => {
       // A crash or a full disk can leave the last record without its newline.
       // Appending straight after it would glue the next record onto the
       // fragment, and both would be unreadable although this write succeeded
       // and its events were published. The fragment gets a line of its own.
-      await file.writeFile(unterminated ? `\n${chunk}` : chunk, 'utf8')
+      const text = unterminated ? `\n${chunk}` : chunk
+      size = await writeWhole(file, text, size, () => abandoned)
       unterminated = false
     },
     close: () => file.close(),
+    abandon: () => {
+      abandoned = true
+    },
   }
+}
+
+/**
+ * Append `text` to a file `size` bytes long, all of it or none: whatever part
+ * of a write that failed reached the file (a disk that filled mid-write) is
+ * taken back, so no line of a batch that failed, a command's receipt among
+ * them, is read after a restart. Not once the write was given up on: a later
+ * stream may have appended after it. The file's size after.
+ */
+export async function writeWhole(
+  file: Pick<FileHandle, 'writeFile' | 'truncate'>,
+  text: string,
+  size: number,
+  abandoned: () => boolean,
+): Promise<number> {
+  try {
+    await file.writeFile(text, 'utf8')
+  } catch (error) {
+    if (!abandoned()) await file.truncate(size).catch(() => undefined)
+    throw error
+  }
+  return size + Buffer.byteLength(text)
 }
 
 async function endsMidLine(storageRoot: string, filePath: string, size: number): Promise<boolean> {

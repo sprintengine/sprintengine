@@ -108,12 +108,14 @@ function transcriptFile(workspaceRoot: string): string {
   return workspaceStorePath(workspaceRoot, 'conversations', 'workspace', 'agent.jsonl')
 }
 
+/** The events on disk; a command's receipt is a line of the log too, with no `type`. */
 async function readLines(workspaceRoot: string): Promise<Record<string, unknown>[]> {
   const raw = await readFile(transcriptFile(workspaceRoot), 'utf-8')
   return raw
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((line) => typeof line.type === 'string')
 }
 
 test('streamed deltas reach listeners only once written, and a batch of them is one record', async () => {
@@ -177,7 +179,8 @@ test('a crash with a batch still unwritten never leaves a published sequence num
           // The second batch of deltas never lands: the process dies with it in flight.
           if (chunk.includes('"content_delta"') && ++deltaWrites >= 2) return new Promise<void>(() => undefined)
           for (const line of chunk.trim().split('\n')) {
-            const record = JSON.parse(line) as { seq: number; parts?: unknown[][] }
+            const record = JSON.parse(line) as { seq?: number; parts?: unknown[][] }
+            if (record.seq === undefined) continue
             written.push(record.seq, ...(record.parts ?? []).map((part) => part[3] as number))
           }
         },
@@ -255,7 +258,7 @@ test('after a completed turn the transcript rebuilds the full message', async ()
   })
 })
 
-test('numbers published but lost to a failed write are never reissued after a restart', async () => {
+test('after a write the disk refused, a restart numbers above every event a client was given', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
   const key = { workspaceRoot, workspaceId: 'workspace', agentId: 'agent' }
   const provider = streamingProvider(['lost ', 'to ', 'the ', 'disk'])
@@ -326,7 +329,7 @@ test('numbers published but lost to a failed write are never reissued after a re
   }
 })
 
-test('a transcript write that never settles fails in time, says so, and the turn still ends', async () => {
+test('an event the log never takes is not published, and its turn ends saying the chat could not be saved', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-conversation-persistence-'))
   const provider = streamingProvider(['stuck ', 'disk'])
   provider.release()
@@ -355,19 +358,20 @@ test('a transcript write that never settles fails in time, says so, and the turn
     })
     assert.ok(started.ok)
     const result = await runtime.sendTurn({ sessionId: started.session.sessionId, message: 'hi' })
-    assert.ok(result.ok)
+    assert.ok(result.ok, 'the message was committed; what became of its turn is said in the chat')
+    await runtime.flushTranscripts()
     assert.equal(
-      published
-        .filter((event) => event.type === 'content_delta')
-        .map((event) => event.payload?.text)
-        .join(''),
-      'stuck disk',
-      'the live chat still shows what could not be saved',
+      published.some((event) => event.type === 'content_delta'),
+      false,
+      'nothing the log did not take reaches a client',
     )
-    const notices = published.filter((event) => typeof event.payload?.notice === 'string')
-    assert.equal(notices.length, 1)
-    assert.match(String(notices[0].payload?.notice), /could not be saved/)
-    assert.equal(published.at(-1)?.type, 'turn_completed')
+    const end = published.at(-1)
+    assert.equal(end?.type, 'turn_failed')
+    assert.match(String(end?.payload?.message), /could not be saved/)
+    assert.equal(published.filter((event) => event.type === 'turn_completed').length, 0)
+    const listed = runtime.listSessions()
+    assert.ok(listed.ok)
+    assert.equal(listed.sessions[0]?.status, 'failed', 'the chat takes the next message')
   } finally {
     await runtime.shutdown()
     await rm(workspaceRoot, { recursive: true, force: true })
