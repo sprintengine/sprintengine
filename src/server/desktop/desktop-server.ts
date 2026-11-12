@@ -50,6 +50,7 @@ import {
 import { createStudioGateway, type StudioGateway } from '../core/studio-gateway'
 import { WORKTREE_QUIT_WAIT_MS } from '../core/studio-worktree-pool'
 import { createStudioRpc } from '../core/studio-rpc'
+import { mirroredStudioUpdates, type StudioUpdateStart } from '../update/studio-updates'
 import { createIpcTunnel, type TunnelPort } from '../ipc/ipc-tunnel'
 import { createStaticAppIdentity } from '../platform/app-identity'
 import { installStudioPlatform, type StudioPlatform } from '../platform/platform'
@@ -387,7 +388,19 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
       },
     })
-  const studioRpc = createStudioRpc(core, gateway)
+  // This desktop updates itself through the app updater, which is the
+  // shell's: its state is mirrored here, and an update is begun there.
+  const desktopUpdates = mirroredStudioUpdates(async (input) => {
+    const started = await rpc.call<StudioUpdateStart>(SHELL_METHODS.updateStart, input).catch((error: unknown) => ({
+      ok: false as const,
+      message: `The update could not be started: ${error instanceof Error ? error.message : String(error)}`,
+    }))
+    return started && typeof started === 'object' && 'ok' in started
+      ? started
+      : { ok: false, message: 'The update could not be started.' }
+  })
+  rpc.on(SERVER_EVENTS.updateState, (payload) => desktopUpdates.mirror(payload))
+  const studioRpc = createStudioRpc(core, gateway, { updates: desktopUpdates.updates })
   const githubTokenStore = new GitHubTokenStore()
   const workspaceBackup = createWorkspaceBackupService({
     resolveUserDataDir: () => envelope.dataDir,

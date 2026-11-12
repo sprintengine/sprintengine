@@ -19,6 +19,10 @@
 // Settings shows it as "Give agents tools from this app", off unless ticked.
 // `files:write` is the board files' write half beside `files:read`; like the
 // reads, it is held to an owner's connection for now.
+//
+// `environment:maintain` lets a client update this Studio (`update.start`):
+// download a new version, drain and restart into it. An owner's grant holds
+// it; a pairing only when it was given it.
 
 /** Every scope this version of the protocol defines, narrowest first. */
 export const STUDIO_SCOPES = [
@@ -30,6 +34,7 @@ export const STUDIO_SCOPES = [
   'workspaces:read',
   'tools:offer',
   'files:write',
+  'environment:maintain',
 ] as const
 
 export type StudioScope = (typeof STUDIO_SCOPES)[number]

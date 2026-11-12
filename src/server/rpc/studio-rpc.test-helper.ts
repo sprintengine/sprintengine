@@ -13,6 +13,7 @@ import {
   type StudioCreatedConversation,
   type StudioGrant,
   type StudioParsedServerFrame,
+  type StudioProtocolWindow,
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
 import { redactConversationValue } from '../../main/conversation-tool-details'
@@ -21,6 +22,7 @@ import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioFiles } from './studio-files'
+import type { StudioUpdates } from '../update/studio-updates'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -352,6 +354,8 @@ export async function startTestServer(
     files?: StudioFiles
     pullRequests?: StudioPullRequests
     localServers?: StudioLocalServers
+    updates?: StudioUpdates
+    protocol?: StudioProtocolWindow
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
 ): Promise<{
@@ -382,6 +386,8 @@ export async function startTestServer(
     ...(input.files ? { files: input.files } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
+    ...(input.updates ? { updates: input.updates } : {}),
+    ...(input.protocol ? { protocol: input.protocol } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),
     resyncRetryAfterMs: () => 1_500,

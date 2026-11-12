@@ -41,6 +41,20 @@ test('a headless server says where it runs: in a WSL distribution, detached on a
   assert.equal(kind({ detached: { idleMs: null, origin: 'bootstrap', startedBy: 'Studio on dev-macbook-air' } }), 'ssh')
 })
 
+test('a headless server says how it is updated: by the desktop that installed it, or by hand', () => {
+  const headless = envelope({ role: 'headless', secrets: { kind: 'key-file' } }) as ServerBootstrapEnvelope
+  const updates = (overrides: Partial<ServerBootstrapEnvelope>) =>
+    headlessServerOptions({ ...headless, ...overrides }, () => undefined).updates!.status()
+  const detached = (origin: 'bootstrap' | 'systemd') => ({ detached: { idleMs: null, origin, startedBy: 'x' } })
+  assert.equal(updates({ wsl: { distro: 'Ubuntu' } }).method, 'bootstrap')
+  assert.match(updates({ wsl: { distro: 'Ubuntu' } }).manual ?? '', /Windows PC that started it/)
+  assert.equal(updates(detached('bootstrap')).method, 'bootstrap')
+  assert.match(updates(detached('bootstrap')).manual ?? '', /when it next connects/)
+  assert.equal(updates(detached('systemd')).method, 'manual')
+  assert.match(updates(detached('systemd')).manual ?? '', /started by systemd/)
+  assert.equal(updates({}).method, 'manual')
+})
+
 test('a complete envelope is accepted as it is', () => {
   const parsed = parseServerBootstrapEnvelope(envelope())
   assert.equal(parsed.ok, true)

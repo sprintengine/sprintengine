@@ -43,11 +43,11 @@ export const STUDIO_PERMISSIONS = [
   // See and change who may reach this machine: paired browsers, embeds, endpoints.
   'access:read',
   'access:write',
-  // Remote terminals and keeping this machine's Studio itself: named so the
-  // methods that need them declare them when they ship. No method requires
-  // them yet and no grant that exists today carries them.
+  // Remote terminals: named so the methods that need them declare them when
+  // they ship. No method requires them yet and no grant carries them.
   'terminal:read',
   'terminal:operate',
+  // Keep this machine's Studio itself: update it, which drains and restarts it.
   'environment:maintain',
 ] as const
 
@@ -129,6 +129,7 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'workspaces:read': ['workspace:read'],
   'tools:offer': ['tools:offer'],
   'files:write': ['filesystem:write'],
+  'environment:maintain': ['environment:maintain'],
 }
 
 /** The permission each Studio scope is the grant name for. */
@@ -141,6 +142,7 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'workspaces:read': 'workspace:read',
   'tools:offer': 'tools:offer',
   'files:write': 'filesystem:write',
+  'environment:maintain': 'environment:maintain',
 }
 
 /**

@@ -30,6 +30,11 @@
   twice and a Studio that moved is found again. It uses the global
   `WebSocket` unless given one, and gives up on a socket that has not opened
   within ten seconds. Studio's own windows connect with it.
+- **Reach a Studio this client cannot talk to.** `openStudioUpdateSession`
+  opens one connection that asks to be kept (`update-session`) when the
+  protocol windows do not meet: it says which side is behind (`compatibility`,
+  the `incompatible` frame), how the Studio is updated (`status()`), and asks
+  one that updates itself to do so (`start()`).
 - **Tools for agents.** `client.tools.offer(toolset)` gives Studio's agents
   tools that run in your program, offered again on every connection;
   `withdraw()`, `focus()` and `catalog()` beside it. A handler gets the calling

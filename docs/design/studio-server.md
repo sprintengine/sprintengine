@@ -460,6 +460,14 @@ grants on every frame.
   accepts, and nothing else (no label, no paths), so a client can tell "wrong
   version" from "wrong credentials" before it pairs. It is the tailnet lane's
   `health` route, generalised.
+- A client outside the window that asked to be kept (`update-session` in its
+  hello, and a token) is answered with an `incompatible` frame instead of the
+  welcome: who the Studio is, which side is behind, and how it is updated
+  (`self`: a desktop, through its app updater; `bootstrap`: a WSL or SSH server,
+  by the desktop that installed it; `manual`). Its connection serves
+  `update.status` and `update.start` (scope `environment:maintain`) and nothing
+  else, so a client always has an update or a manual way back. That frame, the
+  two methods and the hello never change shape (`docs/compatibility.md`).
 - The client's `hello` carries its own capabilities (6.4), a `kind`
   (`desktop`, `web`, `app` or `headless`, read only from an owner grant) and
   an `instanceId` that stays the same across one process's reconnects, so the

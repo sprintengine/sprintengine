@@ -66,6 +66,7 @@ import {
   type StudioToolsMethodMap,
   type StudioToolsTopicMap,
 } from './tools.js'
+import { STUDIO_UPDATE_METHODS, type StudioUpdateMethodMap } from './update.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -162,7 +163,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioToolsMethodMap &
   StudioFilesMethodMap &
   StudioPullRequestsMethodMap &
-  StudioLocalServersMethodMap
+  StudioLocalServersMethodMap &
+  StudioUpdateMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -521,6 +523,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_FILES_METHODS,
   ...STUDIO_PULL_REQUESTS_METHODS,
   ...STUDIO_LOCAL_SERVERS_METHODS,
+  ...STUDIO_UPDATE_METHODS,
 }
 
 /** Whether a string names a method this version of the protocol defines. */

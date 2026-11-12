@@ -23,6 +23,8 @@ import {
   type StudioProgressFrame,
   type StudioReplyFrame,
 } from './tools.js'
+import { studioCompatibility } from './handshake.js'
+import { parseStudioUpdateStatus, type StudioIncompatibleFrame } from './update.js'
 
 // The connection envelope: one connection per client, carrying every
 // namespace. A request is answered under its id; a stream is keyed by the
@@ -208,6 +210,7 @@ export type StudioByeFrame = { t: 'bye'; code: string; message: string; retryAft
 
 export type StudioServerFrame =
   | StudioWelcomeFrame
+  | StudioIncompatibleFrame
   | StudioResponseFrame
   | StudioStreamFrame
   | StudioPushFrame
@@ -277,6 +280,10 @@ export const STUDIO_ERROR_CODES = [
   'cli_not_conversational',
   'unknown_skill',
   'conversation_start_failed',
+  // Asked on a connection kept for the update methods only (an `incompatible` one).
+  'unsupported_protocol_version',
+  // `update.start` on a Studio that does not update itself; the words say how to.
+  'update_unavailable',
 ] as const
 
 export type StudioErrorCode = (typeof STUDIO_ERROR_CODES)[number]
@@ -440,7 +447,18 @@ export function studioClientFrameIds(value: unknown): { requestId?: string; subs
   return {}
 }
 
-const SERVER_FRAME_TYPES = new Set(['welcome', 'res', 'frame', 'push', 'subFailed', 'chunk', 'bye', 'call', 'cancel'])
+const SERVER_FRAME_TYPES = new Set([
+  'welcome',
+  'incompatible',
+  'res',
+  'frame',
+  'push',
+  'subFailed',
+  'chunk',
+  'bye',
+  'call',
+  'cancel',
+])
 
 /**
  * Whether a frame's `t` is one this version of the envelope defines. A client
@@ -500,6 +518,37 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
         conversation,
         grant: granted,
         ...(pairing === undefined ? {} : { pairing: { token: (pairing as { token: string }).token } }),
+      }
+    }
+    case 'incompatible': {
+      const server = frame.server
+      const where = environment(frame.environment)
+      const update = parseStudioUpdateStatus(frame.update)
+      if (!version(frame.protocolVersion) || !version(frame.minProtocolVersion)) return null
+      if (!record(server) || !text(server.name, 120) || !text(server.version, 64)) return null
+      if (!where || !update || !text(frame.message)) return null
+      // Judged again from the versions, against this client's own window: the
+      // side to update is the one that is behind it. Only a frame whose
+      // versions meet this client's (sent to another) falls back to its word.
+      const judged = studioCompatibility({
+        protocolVersion: frame.protocolVersion,
+        minProtocolVersion: frame.minProtocolVersion,
+      })
+      const compatibility =
+        judged === 'server-outdated' || judged === 'client-outdated'
+          ? judged
+          : frame.compatibility === 'server-outdated'
+            ? 'server-outdated'
+            : 'client-outdated'
+      return {
+        t: 'incompatible',
+        protocolVersion: frame.protocolVersion,
+        minProtocolVersion: frame.minProtocolVersion,
+        server: { name: server.name, version: server.version },
+        environment: where,
+        compatibility,
+        message: frame.message,
+        update,
       }
     }
     case 'res': {

@@ -88,6 +88,8 @@ The `welcome`'s `grant` is what the connection may do:
   `bypass` ceiling, since a tool allowed unasked is as loose as bypass for it,
   and answering a request `conversation` (an allow rule for its kind) needs a
   ceiling of at least `auto`.
+- `environment:maintain` — update this Studio (`update.start`): download a
+  new version, drain and restart into it.
 - `owner` — the connection is Studio's own, with every scope and no ceiling.
   Some methods are an owner's only (`STUDIO_METHODS[m].owner`), whatever
   scopes another grant holds, and are refused `owner_required`. A client asks
@@ -137,6 +139,8 @@ method `createStudioRpcClient` builds from the same table.
 | `conversation.toolDetail`          | read           | `key`, `toolUseId`                              | `{ detail }`                                     |
 | `conversation.event`               | read           | `key`, `seq`, `id`                              | `{ event }`                                      |
 | `conversation.turnDiff`            | read           | `key`, `turnSeq`, `path?`                       | `{ diff, patch?, … }`                            |
+| `update.status`                    | any            | —                                               | `StudioUpdateStatus`: how it is updated          |
+| `update.start`                     | maintain       | `commandId`, `targetVersion?`                   | `{ accepted, method: 'self', targetVersion }`    |
 
 A key is `{ workspaceId, agentId }`. An owner may add `workspaceRoot`, the
 folder the conversation is kept in when that is not its workspace's (a chat
@@ -220,3 +224,12 @@ and with the chat surface `conversation-folders`, `conversation-sessions`,
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's
 `docs/compatibility.md`.
+
+A client outside the window is closed with `bye unsupported_protocol_version`,
+unless its hello lists `update-session` and it authenticates with a token: then
+it is sent an `incompatible` frame in place of the welcome (who the Studio is,
+which side is behind, and its `update.status`), and the connection serves the
+two update methods only. `studioCompatibility` reads `compatible`,
+`client-outdated`, `server-outdated` or `unknown` from any window a client has
+heard. The frame, the update methods and the hello never change shape: members
+are only added, optional (`update.ts`).

@@ -14,6 +14,7 @@ import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
+import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioCore } from './studio-core'
 import type { StudioGateway } from './studio-gateway'
 
@@ -28,10 +29,13 @@ import type { StudioGateway } from './studio-gateway'
 export function createStudioRpc(
   core: StudioCore,
   gateway: StudioGateway,
-  options: { hostKind?: StudioRpcServiceOptions['hostKind'] } = {},
+  options: { hostKind?: StudioRpcServiceOptions['hostKind']; updates?: StudioUpdates } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
+    // How this Studio is updated: the host says (a desktop itself, a WSL or
+    // SSH server by the desktop that manages it, a hand-started one by hand).
+    ...(options.updates ? { updates: options.updates } : {}),
     paths: core.platform.paths,
     identity: core.platform.identity,
     clients: core.platform.clients,

@@ -7,7 +7,9 @@ import {
   STUDIO_MAX_FRAME_BYTES,
   STUDIO_METHODS,
   STUDIO_TOPICS,
-  checkStudioProtocolVersion,
+  STUDIO_UPDATE_SESSION_CAPABILITY,
+  STUDIO_UPDATE_SESSION_METHODS,
+  studioIncompatibility,
   isStudioMethod,
   isStudioTopic,
   parseStudioClientFrame,
@@ -198,7 +200,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     ...(options.audited === undefined ? {} : { audited: options.audited }),
     ...(options.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
   }
-  let state: 'hello' | 'open' | 'closed' = 'hello'
+  // `incompatible`: authenticated, but the client's protocol window does not
+  // meet this Studio's; only the update methods are served (`update.ts`).
+  let state: 'hello' | 'open' | 'incompatible' | 'closed' = 'hello'
   let clientId: string | null = null
   let clientName = ''
   let frameSequence = 0
@@ -935,9 +939,24 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       bye('hello_required', 'The first frame must be a hello carrying a token or a pairing code.')
       return
     }
-    const version = checkStudioProtocolVersion(frame.protocolVersion, frame.minProtocolVersion ?? frame.protocolVersion)
-    if (!version.ok) {
-      bye('unsupported_protocol_version', version.message)
+    const info = options.welcome()
+    const incompatible = studioIncompatibility(
+      {
+        version: info.server.version,
+        protocolVersion: info.protocolVersion,
+        minProtocolVersion: info.minProtocolVersion,
+      },
+      { protocolVersion: frame.protocolVersion, minProtocolVersion: frame.minProtocolVersion ?? frame.protocolVersion },
+    )
+    // A client that cannot speak this Studio's protocol is closed, unless it
+    // asked to keep a connection for the update methods and authenticates
+    // with a token: a pairing code is never spent on a client that could not
+    // use what it pairs.
+    if (
+      incompatible &&
+      !(frame.client.capabilities?.includes(STUDIO_UPDATE_SESSION_CAPABILITY) && 'token' in frame.auth)
+    ) {
+      bye('unsupported_protocol_version', incompatible.message)
       return
     }
     const outcome = authenticator.authenticate(frame.auth, frame.client)
@@ -958,7 +977,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       bye('too_many_connections', 'This app has as many connections open as Studio allows one app.', 1_000)
       return
     }
-    state = 'open'
+    state = incompatible ? 'incompatible' : 'open'
     clientId = outcome.grant.clientId
     clientName = outcome.grant.name
     if (outcome.pairingToken) options.audit?.({ clientId, clientName, tool: 'studio.paired', ok: true, durationMs: 0 })
@@ -973,9 +992,23 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       }),
     )
     authenticator.recordSeen?.(clientId)
+    if (incompatible) {
+      // In place of the welcome: who this Studio is, which side is behind,
+      // and how it is updated. No tools are attached and no stream opens.
+      enqueueLive({
+        t: 'incompatible',
+        protocolVersion: info.protocolVersion,
+        minProtocolVersion: info.minProtocolVersion,
+        server: info.server,
+        environment: info.environment,
+        ...incompatible,
+        update: router.updateStatus(),
+      })
+      return
+    }
     enqueueLive({
       t: 'welcome',
-      ...options.welcome(),
+      ...info,
       grant: outcome.grant,
       ...(outcome.pairingToken ? { pairing: { token: outcome.pairingToken } } : {}),
     })
@@ -1091,6 +1124,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       else options.tools.progress(options.connectionId, frame)
       return
     }
+    if (state === 'incompatible') {
+      outOfWindow(frame, grant)
+      return
+    }
     if (frame.t === 'req') request(frame, grant)
     else if (frame.t === 'sub') subscribe(frame, grant)
     else {
@@ -1099,14 +1136,27 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     }
   }
 
+  /** On a connection kept for the update methods: those are served, and nothing else. */
+  function outOfWindow(
+    frame: StudioRequestFrame | StudioSubscribeFrame | { t: 'unsub'; id: string },
+    grant: StudioGrant,
+  ) {
+    const message =
+      'This connection serves only the update methods, until this app or this Studio is updated to a protocol both speak.'
+    if (frame.t === 'req') {
+      if ((STUDIO_UPDATE_SESSION_METHODS as readonly string[]).includes(frame.method)) request(frame, grant)
+      else refuseRequest(frame.id, { code: 'unsupported_protocol_version', message })
+    } else if (frame.t === 'sub') subscriptionFailed(frame.id, 'unsupported_protocol_version', message)
+  }
+
   /** A line over the cap, refused under the id at its start: a client puts ids ahead of a long message. */
   function refuseOversized(prefix: string): void {
     const field = (name: string) => new RegExp(`"${name}"\\s*:\\s*"([^"\\\\]{1,200})"`).exec(prefix)?.[1]
     const message = `A frame may be at most ${STUDIO_MAX_CLIENT_FRAME_BYTES} bytes.`
     const id = field('id')
     const type = field('t')
-    if (state === 'open' && id && type === 'req') refuseRequest(id, { code: 'too_large', message })
-    else if (state === 'open' && id && type === 'sub') subscriptionFailed(id, 'too_large', message)
+    if (state !== 'hello' && id && type === 'req') refuseRequest(id, { code: 'too_large', message })
+    else if (state !== 'hello' && id && type === 'sub') subscriptionFailed(id, 'too_large', message)
     else bye('invalid_frame', message)
   }
 
