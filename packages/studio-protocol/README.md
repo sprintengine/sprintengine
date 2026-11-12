@@ -107,6 +107,13 @@ The `welcome`'s `grant` is what the connection may do:
   a chat's title or a commit message (`textGeneration.chatTitle`,
   `commitMessage.draft` and `.cancel`) is an owner's: it runs a CLI on the
   Studio's machine outside any chat.
+- The skills, design systems and cards a Studio's agents are given are under
+  `agent-skills`: what can be installed and what a workspace's agents have is
+  `providers:read`, reading a design bundle `files:read`, the skill sources and
+  the design library `settings:write`, installing or removing a skill
+  `environment:maintain`, and seeding, attaching or detaching a bundle
+  `files:write`. A plugin's install and uninstall, a bundle's lint and a card's
+  Go (`cards.run`) are an owner's.
 - `modules:read` — hear what this Studio's modules say: the `module.events`
   and `module.notifications` streams, and call the methods they declare
   `read` (`module.read`), under the `modules` capability. Not an owner's only;

@@ -9,7 +9,6 @@ import type {
   SkillSourceUpdateCheck,
 } from '../../../packages/studio-protocol/src/public'
 import { createAgentSkillInstaller, type AgentSkillInstaller } from '../../main/agent-skill-installer'
-import { getBundledStudioPluginRoot } from '../../main/bundled-resources'
 import { createCapabilityWatcher } from '../../main/capability-watcher'
 import { runCard, type CardRunDeps } from '../../main/cards/run-card'
 import { detectCli } from '../../main/cli-runtime-install'
@@ -41,6 +40,7 @@ import type { McpConfigService } from '../../main/mcp-config-service'
 import { getPluginManifest, listPluginRegistryEntries } from '../../main/plugin-registry-instance'
 import { createSkillsService, type SkillsService } from '../../main/skills'
 import { sweepGitRepoCache } from '../../main/skills/git-repo-reader'
+import { STUDIO_MARKETPLACE_RESOURCE_DIR } from '../../main/skills/studio-plugin'
 import { installedSkillCopies } from '../../main/skills/sync'
 import { ensureDefaultUserSkillsDir } from '../../main/skills/user-skills-dir'
 import { probeWslHome } from '../../main/wsl-home'
@@ -152,7 +152,7 @@ export function createStudioAgentSkills(platform: StudioPlatform, deps: StudioAg
     },
     refreshTransport: () => gitTransport.refresh(),
     // The bundled plugin tree, read as the offline seed of Studio's own tab.
-    studioMarketplaceSeedRoot: getBundledStudioPluginRoot,
+    studioMarketplaceSeedRoot: () => bundledStudioPluginRoot(platform),
     broadcastSourceUpdates: (check) => {
       for (const listener of [...sourceListeners]) listener(check)
     },
@@ -349,4 +349,15 @@ function absoluteOrNull(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const path = value.trim()
   return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : null
+}
+
+/** `resources/studio-plugin` in this build: beside the other resources when packaged, in the checkout otherwise. */
+function bundledStudioPluginRoot(platform: StudioPlatform): string | null {
+  const { paths } = platform
+  const resources = paths.resourcesDir()
+  const candidates = [
+    ...(paths.isPackaged() && resources ? [join(resources, STUDIO_MARKETPLACE_RESOURCE_DIR)] : []),
+    join(paths.appRoot() ?? process.cwd(), 'resources', STUDIO_MARKETPLACE_RESOURCE_DIR),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
 }

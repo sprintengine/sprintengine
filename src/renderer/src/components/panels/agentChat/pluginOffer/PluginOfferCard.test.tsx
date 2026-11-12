@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { InstalledPluginRecord } from '../../../../../../shared/ipc/skills'
 import {
@@ -16,6 +16,7 @@ import { ConversationLinkProvider } from '../conversationLinks'
 import type { TranscriptToolEntry } from '../conversationProjection'
 import { PluginOfferCard, PluginOfferChatProvider, type PluginOfferChat } from './PluginOfferCard'
 import { PRESELECT_SKILLS_UP_TO } from './pluginOfferModel'
+vi.mock('../../../../studio/agentSkills', () => import('../../../../studio/agentSkills.double'))
 
 // The card an agent's `plugin.offer` draws: one button that installs through
 // the dialog, signs this chat in once a server it added asks for that, and

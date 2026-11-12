@@ -20,6 +20,7 @@ import { terminalsDouble } from '../studio/terminals.double'
 
 vi.mock('../studio/terminals', () => import('../studio/terminals.double'))
 import { agentSetupDouble } from '../studio/agentSetup.double'
+vi.mock('../studio/agentSkills', () => import('../studio/agentSkills.double'))
 vi.mock('../studio/agentSetup', () => import('../studio/agentSetup.double'))
 
 test('terminalDrop', async () => {

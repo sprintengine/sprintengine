@@ -7,8 +7,10 @@ import type * as AgentSkills from './agentSkills'
 //   vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 //
 // and sets what it needs on `agentSkillsDouble`: each call goes to the member
-// of the same name there, as it stands when the call is made. Unset, a call
-// answers as a Studio with no sources, skills or bundles would.
+// of the same name there, as it stands when the call is made. A suite written
+// when these were the preload's may set them on `window.api` instead, and a
+// member set there is called first. Unset, a call answers as a Studio with no
+// sources, skills or bundles would.
 
 type Api = AgentSkills.AgentSkillsApi
 
@@ -83,9 +85,16 @@ export function resetAgentSkillsDouble(): void {
 
 export const windowHasStudio: typeof AgentSkills.windowHasStudio = () => agentSkillsHasStudio.value
 
+function onWindowApi(name: string): ((...args: unknown[]) => unknown) | null {
+  const api = (globalThis as { window?: { api?: Record<string, unknown> } }).window?.api
+  const member = api?.[name]
+  return typeof member === 'function' ? (member as (...args: unknown[]) => unknown) : null
+}
+
 export const agentSkillsApi: Api = Object.fromEntries(
   (Object.keys(blank()) as Array<keyof Api>).map((name) => [
     name,
-    (...args: unknown[]) => (agentSkillsDouble[name] as (...args: unknown[]) => unknown)(...args),
+    (...args: unknown[]) =>
+      (onWindowApi(name) ?? (agentSkillsDouble[name] as (...args: unknown[]) => unknown))(...args),
   ]),
 ) as Api

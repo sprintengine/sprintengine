@@ -14,6 +14,7 @@ import {
 import { test, vi } from 'vitest'
 
 import { agentSetupDouble } from '../../../studio/agentSetup.double'
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 vi.mock('../../../studio/agentSetup', () => import('../../../studio/agentSetup.double'))
 

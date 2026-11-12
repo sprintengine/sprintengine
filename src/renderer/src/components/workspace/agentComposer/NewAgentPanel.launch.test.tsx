@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
 import { composerField, typeIntoComposer } from '../../../../../../tests/composer-field'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 test('NewAgentPanel launch paths', async () => {
   // Every kind New chat could start before the "+" menu replaced the ⋯ menu

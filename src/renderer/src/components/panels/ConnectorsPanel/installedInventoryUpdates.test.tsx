@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { JSDOM } from 'jsdom'
 import { test, vi } from 'vitest'
 import { terminalsDouble } from '../../../studio/terminals.double'
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 vi.mock('../../../studio/terminals', () => import('../../../studio/terminals.double'))
 

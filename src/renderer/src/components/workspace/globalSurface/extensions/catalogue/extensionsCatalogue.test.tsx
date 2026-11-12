@@ -23,7 +23,8 @@ import {
   type ScanResult,
   type SkillSource,
 } from '../../../../../../../shared/skills'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+vi.mock('../../../../../studio/agentSkills', () => import('../../../../../studio/agentSkills.double'))
 
 test('extensionsCatalogue', async () => {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {

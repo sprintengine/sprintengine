@@ -57,6 +57,25 @@
   `conversation:read`; a side question, a settle and a visit
   `conversation:operate`, and so does a command list's `refresh`.
 
+- **The skills, design systems and cards a Studio's agents are given**
+  (`src/agent-skills.ts`), under `agent-skills`: `skillSources.list`,
+  `.checkUpdates`, `.add`, `.addLocal`, `.remove`, `.sync` with the
+  `skillSources.updated` stream; `skills.scan`, `.readFile`, `.install`,
+  `.uninstall`, `.search`, `.popularRepos`, `.ensureUserFolder`;
+  `skillPlugins.scanLinked`, `.install`, `.uninstall`, `.listInstalled`;
+  `workspaceSkills.list`; `installedSkills.list`, `.remove`;
+  `agentCapabilities.resolve`; `agentSkills.attach`; `designSystem.library`,
+  `.arrivals`, `.register`, `.forget`, `.read`, `.seed`, `.lint`, `.attach`,
+  `.detach`; and `cards.run`. What can be installed and what a workspace's
+  agents have is `providers:read`; reading a bundle `files:read`; the source
+  list and the design library `settings:write`; installing or removing a skill
+  `environment:maintain`; seeding, attaching and detaching a bundle
+  `files:write`. A plugin's install and uninstall, a bundle's lint and a card's
+  Go are an owner's, each with its reason. Every folder a client that is not
+  an owner names is held to the folders the Studio knows, on the path it
+  resolves to, and a library listing shows it only those. The skill, design
+  system and card shapes move here from the desktop app.
+
 - **What a Studio's agents are set up with** (`src/agent-setup.ts`), under
   `agent-setup`: `memory.resolveRoot`, `.index`, `.readPreview`;
   `memoryActivity.install`, `.uninstall`, `.startWatching`, `.status`,
