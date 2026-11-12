@@ -170,6 +170,13 @@ export const STUDIO_AGENT_SETUP_CAPABILITY = 'agent-setup' as const
 export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' as const
 
 /**
+ * What a Studio keeps beside its chats, for every chat at once:
+ * `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report`
+ * and `conversationImport.*`, with their streams.
+ */
+export const STUDIO_CHAT_STORES_CAPABILITY = 'chat-stores' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -207,6 +214,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_AGENT_SETTINGS_CAPABILITY,
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
+  STUDIO_CHAT_STORES_CAPABILITY,
 ] as const
 
 /**

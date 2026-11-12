@@ -40,6 +40,8 @@ import { SettingCard, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
 import type { SettingsUpdateBadge } from '../../utils/settingsUpdateBadges'
 import { isImeKey } from '../../utils/imeKey'
 import { agentSettingsApi } from '../../studio/agentSettings'
+import { windowChatServices } from '../panels/agentChat/windowChat'
+import type { ConversationSecretStatusResult } from '../../../../shared/electron-api'
 
 // The bare shell runtime is the machine's own `sh`, not a CLI this app
 // installs or updates. Asked `--version`, bash answers with its whole banner
@@ -658,20 +660,23 @@ export function AgentClisSection({
 }
 
 // API-key entry for a CLI whose manifest declares `auth` (e.g. Z.AI). Reads and
-// writes through the shared credential store via the generic `credentialSecret*`
-// IPC — the same store the chat Providers tab uses. Mirrors the Providers tab's
-// masked/save/remove pattern; the value is write-only and never read back.
+// writes the Studio's one credential store over the protocol's
+// `providers.secretStatus` / `setSecret` / `clearSecret`, by the CLI's manifest
+// id: the same store, and the same calls, the chat Providers tab uses. Mirrors
+// its masked/save/remove pattern; the value is write-only and never read back.
 function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; displayName: string; label: string }) {
-  const [status, setStatus] = useState<Awaited<ReturnType<typeof window.api.credentialSecretStatus>> | null>(null)
+  const [status, setStatus] = useState<ConversationSecretStatusResult | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
-    void window.api.credentialSecretStatus({ id: pluginId }).then((result) => {
-      if (active) setStatus(result)
-    })
+    void windowChatServices()
+      .providers.secretStatus({ providerId: pluginId })
+      .then((result) => {
+        if (active) setStatus(result)
+      })
     return () => {
       active = false
     }
@@ -689,7 +694,7 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
     if (!value || busy) return
     setBusy(true)
     setMessage(null)
-    const result = await window.api.credentialSecretSet({ id: pluginId, value })
+    const result = await windowChatServices().providers.setSecret({ providerId: pluginId, value })
     setBusy(false)
     if (result.ok) {
       setStatus(result)
@@ -705,7 +710,7 @@ function CliCredentialRow({ pluginId, displayName, label }: { pluginId: string; 
     if (busy) return
     setBusy(true)
     setMessage(null)
-    const result = await window.api.credentialSecretClear({ id: pluginId })
+    const result = await windowChatServices().providers.clearSecret({ providerId: pluginId })
     setBusy(false)
     if (result.ok) {
       setStatus(result)

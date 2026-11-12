@@ -3,7 +3,13 @@ import { createInterface } from 'node:readline'
 
 import { createStudioConversationParts } from '../../../src/renderer/src/components/panels/agentChat/studioChat'
 import type { StudioClient, StudioWebSocketConstructor } from '../../../packages/client-runtime/src/public'
-import { configureWindowStudio, windowStudioClient } from '../../../src/renderer/src/studio/windowStudioClient'
+import {
+  configureWindowStudio,
+  watchWindowStudio,
+  windowStudioClient,
+  windowStudioState,
+} from '../../../src/renderer/src/studio/windowStudioClient'
+import type { ScheduledMessagesState } from '../../../src/shared/scheduled-messages'
 import { conversationNewChatSeed } from '../../../src/renderer/src/components/workspace/conversationSpawnOptions'
 import type { AgentState } from '../../../src/shared/agent-state'
 import type { ConversationSessionFrame } from '../../../src/shared/conversation-runtime'
@@ -108,6 +114,28 @@ export function desktopClient(
       const feed = new Feed('desktop')
       let stopped = false
       let stop: (() => void) | null = null
+      // The chat's tray: every chat's scheduled messages, as the window's
+      // store follows them (`scheduledMessages.*`), read again when the
+      // connection opens, since a change made while it was down is not pushed.
+      const showScheduled = (state: ScheduledMessagesState) =>
+        feed.side({
+          scheduled: state.messages
+            .filter((message) => message.workspaceId === chat.workspaceId && message.agentId === chat.agentId)
+            .map((message) => ({ id: message.id, text: message.text })),
+        })
+      const readScheduled = () =>
+        void windowStudioClient(api)
+          .then((client) => client.request('scheduledMessages.get', {}))
+          .then(showScheduled, () => undefined)
+      const studio = await windowStudioClient(api)
+      const stopScheduled = studio.subscribe('scheduledMessages.changed', {}, { onPayload: showScheduled })
+      readScheduled()
+      let wasOpen = windowStudioState(api) === 'open'
+      const unwatch = watchWindowStudio(api, () => {
+        const open = windowStudioState(api) === 'open'
+        if (open && !wasOpen) readScheduled()
+        wasOpen = open
+      })
       const subscribe = () => {
         if (stopped) return
         stop = parts.subscribe(
@@ -139,6 +167,8 @@ export function desktopClient(
       stops.push(() => {
         stopped = true
         stop?.()
+        stopScheduled()
+        unwatch()
       })
       return feed
     },
@@ -172,11 +202,26 @@ export function desktopClient(
       ),
     answerApproval: (chat, requestId, approve) =>
       onSession(chat, 'answer an approval', (sessionId) => parts.respond({ sessionId, requestId, approved: approve })),
-    // The window's chat over the Studio protocol has no call for these yet:
-    // they reach main over IPC (conversationTransport.ts).
-    messageSubagent: undefined,
-    scheduleSend: undefined,
-    sendScheduledNow: undefined,
+    messageSubagent: (chat, toolUseId, text) =>
+      onSession(chat, 'message a sub-agent', (sessionId) =>
+        parts.messageSubagent!({ sessionId, toolUseId, message: text }),
+      ),
+    // The composer's "+": the chat's message kept by its Studio for a time
+    // (`scheduledMessages.update`), as the window's store asks.
+    async scheduleSend(chat, text, sendAt) {
+      const client = await windowStudioClient(api)
+      await client.request('scheduledMessages.update', {
+        commandId: `schedule-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        update: { kind: 'schedule', workspaceId: chat.workspaceId, agentId: chat.agentId, text, sendAt },
+      })
+    },
+    async sendScheduledNow(_chat, scheduledId) {
+      const client = await windowStudioClient(api)
+      await client.request('scheduledMessages.update', {
+        commandId: `send-now-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        update: { kind: 'send-now', id: scheduledId },
+      })
+    },
     /** The window's own Studio client: an owner's connection, for asks the gate checks against. */
     studio: () => windowStudioClient(api),
     cut: () => cutter.cut(),

@@ -72,6 +72,16 @@
   hook's install and uninstall) is an owner's. The memory, MCP sync, adopted
   configuration and built-in skill shapes move here from the desktop app.
 
+- **What a Studio keeps beside its chats** (`src/chat-stores.ts`, capability
+  `chat-stores`). `usageLimits.get` and `usageLimits.changed`;
+  `usageLimitResumes.get`, `.update`, `.setAuto` and
+  `usageLimitResumes.changed`; `scheduledMessages.get`, `.update`, `.hold` and
+  `scheduledMessages.changed`; `usage.report`; `conversationImport.scan` and
+  `.import`. The report and the import are an owner's. The shapes
+  (`UsageLimitsState`, `UsageLimitResumeState`, `ScheduledMessagesState`,
+  `UsageReport`, `ConversationImportScanResult` and the rest) move here from
+  the desktop app, which re-exports them under the same names.
+
 - **Agent CLIs and launch settings on the protocol** (`src/agent-settings.ts`).
   `agent-runtimes`: `cliRuntimes.detect`, `.installMethods`, `.install`,
   `.update`, `.updateAll` with the `cliRuntimes.output` (per CLI and machine)

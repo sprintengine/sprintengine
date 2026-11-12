@@ -95,7 +95,8 @@ The `welcome`'s `grant` is what the connection may do:
 - `settings:write` — change this Studio's settings: set or clear a provider's
   key (`providers.setSecret`, `.clearSecret`), revoke an approval rule, turn
   the CLI version check on or off (`cliVersions.setEnabled`), set the
-  model-written titles setting (`textGeneration.setSettings`).
+  model-written titles setting (`textGeneration.setSettings`), switch the
+  resume after a usage limit for every chat (`usageLimitResumes.setAuto`).
 - `providers:read` also reads the agent CLIs: detect one, its install methods
   and version advisories (`cliRuntimes.detect`, `.installMethods`,
   `cliVersions.advisories` and its `cliVersions.changed` stream, under

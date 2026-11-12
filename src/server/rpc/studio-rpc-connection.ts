@@ -56,6 +56,7 @@ import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
+import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -170,6 +171,8 @@ export type StudioRpcConnectionOptions = {
   agentSettings?: StudioAgentSettings
   /** What the agents are set up with: the `memoryActivity.*` and `areaSkills.changed` streams. */
   agentSetup?: StudioAgentSetup
+  /** What the Studio keeps beside its chats: the `usageLimits.changed`, `usageLimitResumes.changed` and `scheduledMessages.changed` streams. */
+  chatStores?: StudioChatStores
   /** The window this connection is one of Studio's own for, as main names it. */
   windowKey?: string
   /** The welcome's server-wide members: who this Studio is and what it serves. */
@@ -1316,6 +1319,12 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'memoryActivity.synapsesChanged', options.agentSetup?.onMemoryActivitySynapses ?? null),
     'areaSkills.changed': (id) =>
       subscribeFeed(id, 'areaSkills.changed', options.agentSetup?.onAreaSkillsChanged ?? null),
+    'usageLimits.changed': (id) =>
+      subscribeFeed(id, 'usageLimits.changed', options.chatStores?.onUsageLimitsChanged ?? null),
+    'usageLimitResumes.changed': (id) =>
+      subscribeFeed(id, 'usageLimitResumes.changed', options.chatStores?.onUsageLimitResumesChanged ?? null),
+    'scheduledMessages.changed': (id) =>
+      subscribeFeed(id, 'scheduledMessages.changed', options.chatStores?.onScheduledMessagesChanged ?? null),
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import { connectToStudio } from '../../packages/agent-sdk/src/node'
 import {
   STUDIO_AGENT_SETTINGS_METHODS,
   STUDIO_AGENT_SETUP_METHODS,
+  STUDIO_CHAT_STORES_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -22,6 +23,7 @@ import {
   studioGrantAllows,
   type StudioAgentSettingsMethod,
   type StudioAgentSetupMethod,
+  type StudioChatStoresMethod,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -413,6 +415,12 @@ test('every method the server serves has its call in the SDK, under the same sco
     >),
     // What the machine lacks for its schedules and watches, asked like any read.
     'environment.readiness': 'request',
+    // What a Studio keeps beside its chats, which its own windows draw (the
+    // trays, Settings, the usage dashboard, onboarding), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_CHAT_STORES_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioChatStoresMethod,
+      string
+    >),
   }
   assert.deepEqual(Object.keys(sdkCalls).sort(), Object.keys(STUDIO_METHODS).sort())
   const client = await pairedClient(['conversation:read'], 'manual')

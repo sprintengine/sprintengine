@@ -1,3 +1,5 @@
+import { hostname } from 'node:os'
+
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import {
   conversationStartedBy,
@@ -22,6 +24,7 @@ import type { StudioModules } from '../rpc/studio-modules'
 import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import { createStudioAgentSettings } from '../agent-settings/agent-settings-domain'
+import { createStudioChatStores } from '../chat-stores/chat-stores-domain'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
 // applications follow, drive and start chats through. It serves the same
@@ -123,6 +126,19 @@ export function createStudioRpc(
     // What this machine lacks for its schedules and watches, which every
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),
+    // What the core keeps beside its chats, for every chat at once: the usage
+    // limits and the resumes after them, the scheduled and held messages, the
+    // usage dashboard's report and the import of a CLI's saved sessions.
+    chatStores: createStudioChatStores({
+      resumes: core.usageLimitResumes,
+      scheduled: core.scheduledMessages,
+      imports: core.conversationImport,
+      dataDir: () => core.platform.paths.dataDir(),
+      getWorkspaces: () => core.workspaceSyncService.getSnapshot().state.workspaces,
+      mesh: () => gateway.mesh(),
+      hostName: () => hostname(),
+      machineMarks: () => core.agentLaunchSettings.get().machineMarks,
+    }),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },

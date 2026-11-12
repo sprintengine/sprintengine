@@ -281,26 +281,12 @@ export type {
   VersionControlProviderProbe,
 } from './version-control'
 import type { SprintEngineAuthState } from './ipc/account'
-import type { UsageLimitsState } from './usage-limits'
-import type { UsageReportRequest, UsageReportResult } from './usage-report'
-import type { UsageLimitResumeState, UsageLimitResumeUpdate } from './usage-limit-resume'
-import type {
-  ScheduledMessageHoldAnswer,
-  ScheduledMessageHoldRequest,
-  ScheduledMessagesState,
-  ScheduledMessageUpdate,
-} from './scheduled-messages'
 import type {
   AgentLaunchPreviewInput,
   AgentLaunchPreviewResult,
   PluginAvailabilityResult,
   PluginDetectAvailabilityInput,
 } from './ipc/agent-cli'
-import type {
-  ConversationImportInput,
-  ConversationImportResult,
-  ConversationImportScanResult,
-} from './ipc/conversation-import'
 import type { CliPermissionPreset } from './ipc/agent-runtime'
 import type {
   AppMenuAcceleratorUpdate,
@@ -335,14 +321,6 @@ import type {
   BacklogTriageInput,
 } from './ipc/backlog'
 import type { CardRunInput, CardRunResult } from './ipc/cards'
-import type {
-  CredentialSecretClearInput,
-  CredentialSecretClearResult,
-  CredentialSecretSetInput,
-  CredentialSecretSetResult,
-  CredentialSecretStatusInput,
-  CredentialSecretStatusResult,
-} from './ipc/conversations'
 import type { DiagnosticLogEntry, DiagnosticLogInput, ProjectLogo, WorkspaceFolderCheckResult } from './ipc/diagnostics'
 import type { ContentSearchResult, FileSearchResult, FileSystemStat, FileWatchEvent } from './ipc/filesystem'
 import type {
@@ -1438,9 +1416,6 @@ export type ElectronApi = {
   resolveGithubExtension: (input: GithubExtensionResolveInput) => Promise<GithubExtensionResolveResult>
   installGithubExtension: (input: GithubExtensionInstallInput) => Promise<MarketplacePluginRegistryInstallResult>
   checkGithubExtensionUpdate: (input: GithubExtensionCheckUpdateInput) => Promise<GithubExtensionCheckUpdateResult>
-  credentialSecretStatus: (input: CredentialSecretStatusInput) => Promise<CredentialSecretStatusResult>
-  credentialSecretSet: (input: CredentialSecretSetInput) => Promise<CredentialSecretSetResult>
-  credentialSecretClear: (input: CredentialSecretClearInput) => Promise<CredentialSecretClearResult>
   conversationSessionStart: (input: ConversationStartSessionInput) => Promise<ConversationStartSessionResult>
   conversationSessionSendTurn: (input: ConversationSendTurnInput) => Promise<ConversationSessionActionResult>
   conversationSessionInterrupt: (input: ConversationInterruptInput) => Promise<ConversationSessionActionResult>
@@ -1827,8 +1802,6 @@ export type ElectronApi = {
   cancelRepositoryClone: (cloneId: string) => Promise<void>
   /** Every running clone's progress, for the caller to filter on its `cloneId`. */
   onRepositoryCloneProgress: (cb: (progress: CloneProgress) => void) => () => void
-  scanImportableConversations: () => Promise<ConversationImportScanResult>
-  importConversations: (input: ConversationImportInput) => Promise<ConversationImportResult>
   workspaceSkillsList: (input: WorkspaceSkillsListInput) => Promise<WorkspaceSkillsListResult>
   installedSkillsList: (input: InstalledSkillsInput) => Promise<InstalledSkillsResult>
   installedSkillRemove: (input: InstalledSkillRemoveInput) => Promise<InstalledSkillRemoveResult>
@@ -1863,26 +1836,6 @@ export type ElectronApi = {
    */
   skillsCheckSourceUpdates: () => Promise<SkillSourceUpdateCheck>
   onSkillSourcesUpdated: (cb: (check: SkillSourceUpdateCheck) => void) => () => void
-  // The subscription usage limits (five-hour and weekly windows) the agents
-  // reported, per provider, and every change main hears afterwards
-  // (src/main/usage-limits).
-  usageLimits: () => Promise<UsageLimitsState>
-  onUsageLimitsChanged: (listener: (state: UsageLimitsState) => void) => () => void
-  // The chats a usage limit stopped, with the resume each has scheduled, and
-  // the setting that schedules one for every such chat (usage-limits/resume.ts).
-  usageLimitResumes: () => Promise<UsageLimitResumeState>
-  // The usage dashboard's priced report of every agent's token use on this
-  // machine over a window (src/main/usage).
-  usageReport: (request: UsageReportRequest) => Promise<UsageReportResult>
-  updateUsageLimitResume: (update: UsageLimitResumeUpdate) => Promise<UsageLimitResumeState>
-  onUsageLimitResumesChanged: (listener: (state: UsageLimitResumeState) => void) => () => void
-  // The messages a person scheduled into a chat from its composer's "+", sent
-  // when their time comes (src/main/scheduled-messages), and every change after.
-  scheduledMessages: () => Promise<ScheduledMessagesState>
-  updateScheduledMessage: (update: ScheduledMessageUpdate) => Promise<ScheduledMessagesState>
-  /** Hold a message this window's chat queued, in main, to go when the chat's turn ends. */
-  holdQueuedMessage: (request: ScheduledMessageHoldRequest) => Promise<ScheduledMessageHoldAnswer>
-  onScheduledMessagesChanged: (listener: (state: ScheduledMessagesState) => void) => () => void
   // The chat's "Create PR" (src/main/pull-request-create.ts): whether it may
   // show for a checkout, a drafted title and description, the push, and the
   // creation. This computer's checkouts only. Never rejects.

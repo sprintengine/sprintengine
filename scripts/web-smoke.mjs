@@ -84,9 +84,6 @@ const KNOWN_BOOT_REFUSALS = new Set([
   'git:checkout-watch-retain',
   'hosted-card-feed:get',
   'skills:list-workspace',
-  // Importing this machine's CLI conversations is the desktop's: a browser has
-  // none of its own to offer at first run.
-  'conversation-import:scan',
   // Third-party modules run in the desktop app only (the module bridge is
   // refused to a web tab too): the push of module settings to main has
   // nothing to serve in a browser.

@@ -35,7 +35,6 @@ const LEGACY_EXCLUDED = new Set([
   'workspace-sync:set-module-run-states',
 ])
 const LEGACY_SINGLE = new Set([
-  'credential:secrets:status',
   'github:token-status',
   'github:list-repos',
   'scheduled-agents:list',

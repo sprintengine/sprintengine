@@ -25,19 +25,13 @@ function fakePort() {
 }
 
 test('a web tab reaches the domains it draws, and not the ones that act beyond this server', () => {
-  for (const channel of [
-    'workspace-sync:dispatch',
-    'workspace-sync:lifecycle',
-    'conversation:sessions:send-turn',
-    'credential:secrets:status',
-  ])
+  for (const channel of ['workspace-sync:dispatch', 'workspace-sync:lifecycle', 'conversation:sessions:send-turn'])
     expect(webTunnelAllows(channel), channel).toBe(true)
   for (const channel of [
     'studio-local-apps:offer',
     'tailnet:set-enabled',
     'tailnet:approve-pair-request',
     'mesh:pair',
-    'credential:secrets:set',
     'conversation:secrets:set',
     'github:set-token',
     'github:clone',

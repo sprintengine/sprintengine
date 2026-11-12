@@ -24,6 +24,7 @@ import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioModules } from './studio-modules'
 import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioTerminals } from '../terminals/studio-terminals'
@@ -366,6 +367,7 @@ export async function startTestServer(
     runtimes?: CliRuntimes
     agentSettings?: StudioAgentSettings
     agentSetup?: StudioAgentSetup
+    chatStores?: StudioChatStores
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
     modules?: StudioModules
@@ -405,6 +407,7 @@ export async function startTestServer(
     ...(input.runtimes ? { runtimes: input.runtimes } : {}),
     ...(input.agentSettings ? { agentSettings: input.agentSettings } : {}),
     ...(input.agentSetup ? { agentSetup: input.agentSetup } : {}),
+    ...(input.chatStores ? { chatStores: input.chatStores } : {}),
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),

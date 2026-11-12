@@ -44,6 +44,8 @@ import { createStudioAgentSettingsHandlers } from './studio-agent-settings'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
+import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
+import { createStudioChatStoresHandlers } from './studio-chat-stores'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -154,6 +156,8 @@ export type StudioRpcRouterOptions = {
   agentSetup?: StudioAgentSetup
   /** The modules beside this Studio; without it, `module.read` and `module.operate` are answered `unavailable`. */
   modules?: StudioModules
+  /** What the Studio keeps beside its chats; without it, `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report` and `conversationImport.*` are answered `unavailable`. */
+  chatStores?: StudioChatStores
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -1533,6 +1537,20 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         'module.operate',
         moduleRefusedBefore,
       ),
+
+    // ── What the Studio keeps beside its chats ───────────────────────────────
+
+    ...createStudioChatStoresHandlers({
+      ...(options.chatStores ? { stores: options.chatStores } : {}),
+      commandIdOf: runtimeId,
+      kept: (method, { grant, voice }, commandId, work) =>
+        once(
+          keptId(method, grant, commandId),
+          async () => ({ ok: true as const, result: await work() }),
+          voice,
+          method,
+        ),
+    }),
 
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an

@@ -33,6 +33,8 @@ const ListRow = memo(
   },
   (previous, next) => previous.item === next.item && previous.extraData === next.extraData,
 )
+import { chatStoresDouble, chatStoresDoubleState, resetChatStoresDouble } from '../../../studio/chatStores.double'
+vi.mock('../../../studio/chatStores', () => import('../../../studio/chatStores.double'))
 vi.mock('@legendapp/list/react', () => ({
   LegendList: forwardRef(function LegendList(
     {
@@ -235,6 +237,13 @@ async function mountChat({
       ...extraApi,
     },
   })
+  // What the Studio keeps beside its chats is reached over the protocol: the
+  // test's members for it go to that client's stand-in, and a test that gives
+  // none has a window whose Studio keeps none.
+  resetChatStoresDouble()
+  const stores = Object.entries(extraApi).filter(([member]) => member in chatStoresDouble)
+  Object.assign(chatStoresDouble, Object.fromEntries(stores))
+  chatStoresDoubleState.reachable = stores.length > 0
   installStudioLoopback(dom.window as unknown as { api: Record<string, unknown> })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
@@ -1258,7 +1267,6 @@ test('a message queued in words on a chat here is held by main, so a reload does
     await chat.act(async () => chat.enter())
     expect(held).toHaveLength(1)
     expect(held[0]).toMatchObject({ text: 'Use the staging config' })
-    expect(typeof held[0]?.source).toBe('string')
     expect(chat.host.querySelector('[aria-label="Queued message"]'), 'not kept in the view').toBeNull()
     expect(turn.sendTurn).toHaveBeenCalledOnce()
   } finally {

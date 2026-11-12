@@ -1,10 +1,18 @@
 import { create } from 'zustand'
 
-import type { ScheduledMessagesState, ScheduledMessageUpdate } from '../../../shared/scheduled-messages'
+import { windowChatStores, type ChatStoresApi } from '../studio/chatStores'
 
-// The messages a person scheduled into their chats, as main last reported
-// them (`scheduled-messages:*`). Held once per window so every chat's tray
-// reads one answer. Not persisted: main keeps them, in a file of its own.
+import type {
+  ScheduledMessageHoldAnswer,
+  ScheduledMessageHoldRequest,
+  ScheduledMessagesState,
+  ScheduledMessageUpdate,
+} from '../../../shared/scheduled-messages'
+
+// The messages a person scheduled into their chats, as the window's Studio
+// last told them (`scheduledMessages.*`). Held once per window so every chat's
+// tray reads one answer. Not persisted: the Studio keeps them, in a file of
+// its own.
 //
 // Subscribed only while something draws it: every chat that can schedule a
 // message retains it as it mounts.
@@ -20,10 +28,13 @@ export const useScheduledMessagesStore = create<ScheduledMessagesStore>()((set) 
 }))
 
 type ScheduledMessagesApi = Partial<
-  Pick<Window['api'], 'scheduledMessages' | 'updateScheduledMessage' | 'onScheduledMessagesChanged'>
+  Pick<
+    ChatStoresApi,
+    'scheduledMessages' | 'updateScheduledMessage' | 'onScheduledMessagesChanged' | 'holdQueuedMessage'
+  >
 >
 
-const defaultApi = (): ScheduledMessagesApi | null => (typeof window === 'undefined' ? null : window.api)
+const defaultApi = (): ScheduledMessagesApi | null => windowChatStores()
 
 let holders = 0
 let release: (() => void) | null = null
@@ -70,7 +81,7 @@ export function retainScheduledMessages(api: ScheduledMessagesApi | null = defau
   }
 }
 
-/** Whether this window can schedule a message at all: main answers the channel. */
+/** Whether this window can schedule a message at all: it reaches a Studio. */
 export function canScheduleMessages(api: ScheduledMessagesApi | null = defaultApi()): boolean {
   return typeof api?.updateScheduledMessage === 'function'
 }
@@ -91,4 +102,21 @@ export async function updateScheduledMessage(
     // Main did not answer: the push that follows a change it made says so.
     return false
   }
+}
+
+/**
+ * Hand a message this window's chat queued to the Studio, to hold and send
+ * when the chat's turn ends. Answers why not when it was not held.
+ */
+export async function holdQueuedMessage(
+  request: ScheduledMessageHoldRequest,
+  api: ScheduledMessagesApi | null = defaultApi(),
+): Promise<ScheduledMessageHoldAnswer> {
+  if (typeof api?.holdQueuedMessage !== 'function') return { ok: false, reason: 'This window reaches no Studio.' }
+  return api.holdQueuedMessage(request)
+}
+
+/** Whether this window can hand a queued message to its Studio to hold. */
+export function canHoldQueuedMessages(api: ScheduledMessagesApi | null = defaultApi()): boolean {
+  return typeof api?.holdQueuedMessage === 'function'
 }
