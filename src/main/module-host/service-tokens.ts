@@ -61,8 +61,7 @@ export const ConversationRuntimeToken = createServiceToken<AppServices['conversa
 // from its record, as a paired device's send does. For first-party work that
 // sends to a chat it did not just start (a scheduled run finished after a
 // restart). First-party only.
-export const ConversationHostToken =
-  createServiceToken<AppServices['createConversationHost']>('core.conversation-host')
+export const ConversationHostToken = createServiceToken<AppServices['createConversationHost']>('core.conversation-host')
 // Scheduled agents: the one door every caller — the New chat panel, an
 // extension, an agent's MCP call — creates and changes them through.
 export const ScheduledAgentsServiceToken = createServiceToken<ScheduledAgentsService>('scheduled-agents.service')
