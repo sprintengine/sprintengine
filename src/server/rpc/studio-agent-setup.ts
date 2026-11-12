@@ -4,6 +4,7 @@ import type {
   StudioGrant,
   StudioHandlerOf,
 } from '../../../packages/studio-protocol/src/public'
+import { resolve } from 'node:path'
 import { isMachinePath } from '../../shared/machine-paths'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioRequestContext } from './studio-rpc-types'
@@ -50,45 +51,77 @@ export function createStudioAgentSetupHandlers(options: StudioAgentSetupHandlerO
   const { setup } = options
   const unserved = (method: StudioAgentSetupMethod) => refuse('unavailable', `This Studio does not serve ${method}.`)
 
-  /** Answer from the domain about a workspace the asker may name, or why not. */
+  /**
+   * Answer from the domain about a workspace the asker may name, or why not.
+   * A knowledge root under it is held to the same rule, resolved: a relative
+   * root may climb (`../notes`), and it must not climb out of what the asker
+   * may name.
+   */
   async function about<T>(
     method: StudioAgentSetupMethod,
     workspaceRoot: string | null,
     asking: Asking,
     answer: (domain: StudioAgentSetup) => Promise<T> | T,
+    knowledgeRoot: string | null = null,
   ): Promise<{ ok: true; result: T } | Refused<'unavailable' | 'not_found'>> {
     if (!setup) return unserved(method)
     if (workspaceRoot !== null) {
       if (isMachinePath(workspaceRoot)) return refuse('unavailable', onMachine(method))
       if (!(await options.mayName(workspaceRoot, asking))) return refuse('not_found', UNKNOWN_FOLDER)
+      if (knowledgeRoot !== null && !(await options.mayName(resolve(workspaceRoot, knowledgeRoot), asking)))
+        return refuse('not_found', UNKNOWN_FOLDER)
     }
     return ok(await answer(setup))
   }
 
   return {
     'memory.resolveRoot': ({ workspaceFolder, relativeRoot }, asking) =>
-      about('memory.resolveRoot', workspaceFolder, asking, (domain) =>
-        domain.resolveMemoryRoot(workspaceFolder, relativeRoot),
+      about(
+        'memory.resolveRoot',
+        workspaceFolder,
+        asking,
+        (domain) => domain.resolveMemoryRoot(workspaceFolder, relativeRoot),
+        relativeRoot,
       ),
     'memory.index': ({ workspaceFolder, relativeRoot }, asking) =>
-      about('memory.index', workspaceFolder, asking, (domain) => domain.indexMemory(workspaceFolder, relativeRoot)),
+      about(
+        'memory.index',
+        workspaceFolder,
+        asking,
+        (domain) => domain.indexMemory(workspaceFolder, relativeRoot),
+        relativeRoot,
+      ),
     'memory.readPreview': ({ workspaceFolder, relativeRoot, relativePath }, asking) =>
-      about('memory.readPreview', workspaceFolder, asking, (domain) =>
-        domain.readMemoryPreview(workspaceFolder, relativeRoot, relativePath),
+      about(
+        'memory.readPreview',
+        workspaceFolder,
+        asking,
+        (domain) => domain.readMemoryPreview(workspaceFolder, relativeRoot, relativePath),
+        relativeRoot,
       ),
     'memoryActivity.install': ({ workspaceFolder, memoryRelativeRoot }, asking) =>
-      about('memoryActivity.install', workspaceFolder, asking, (domain) =>
-        domain.installMemoryActivity(workspaceFolder, memoryRelativeRoot),
+      about(
+        'memoryActivity.install',
+        workspaceFolder,
+        asking,
+        (domain) => domain.installMemoryActivity(workspaceFolder, memoryRelativeRoot),
+        memoryRelativeRoot,
       ),
     'memoryActivity.uninstall': ({ workspaceFolder }, asking) =>
       about('memoryActivity.uninstall', workspaceFolder, asking, (domain) =>
         domain.uninstallMemoryActivity(workspaceFolder),
       ),
     'memoryActivity.startWatching': ({ workspaceFolder, memoryRelativeRoot }, asking) =>
-      about('memoryActivity.startWatching', workspaceFolder, asking, async (domain) => {
-        await domain.startMemoryActivityWatching(workspaceFolder, memoryRelativeRoot)
-        return {}
-      }),
+      about(
+        'memoryActivity.startWatching',
+        workspaceFolder,
+        asking,
+        async (domain) => {
+          await domain.startMemoryActivityWatching(workspaceFolder, memoryRelativeRoot)
+          return {}
+        },
+        memoryRelativeRoot,
+      ),
     'memoryActivity.status': ({ workspaceFolder }, asking) =>
       about('memoryActivity.status', workspaceFolder, asking, (domain) => domain.memoryActivityStatus(workspaceFolder)),
     'memoryActivity.synapses': ({ workspaceFolder }, asking) =>

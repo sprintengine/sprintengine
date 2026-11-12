@@ -19,6 +19,7 @@ import {
   startTestServer,
   type LineClient,
 } from './studio-rpc.test-helper'
+import type { StudioChatBackend } from './studio-rpc-types'
 
 // `memory.*`, `memoryActivity.*`, `mcp.sync`, `agentConfig.*`,
 // `builtinSkills.*` and `areaSkills.*` over the owner socket, under every kind
@@ -88,9 +89,12 @@ function stub() {
   }
 }
 
-async function serve(withSetup = true) {
+async function serve(withSetup = true, chat?: StudioChatBackend) {
   const domain = stub()
-  const started = await startTestServer(withSetup ? { agentSetup: domain.setup } : {})
+  const started = await startTestServer({
+    ...(withSetup ? { agentSetup: domain.setup } : {}),
+    ...(chat ? { chat } : {}),
+  })
   cleanups.push(() => started.dispose())
   return { started, ...domain }
 }
@@ -205,6 +209,29 @@ test('a paired app reaches what its scopes name, no folder Studio does not know,
   assert.deepEqual(asked.map(([kind]) => kind).sort(), ['areaDismiss', 'areaEnabled', 'builtins', 'detect'])
   // With no workspace named, the reads that take none are answered.
   assert.equal(codeOf(await app.request('memoryActivity.status', { workspaceFolder: null })), null)
+})
+
+test('a knowledge root a paired app names stays inside the folders Studio knows', async () => {
+  // Studio knows HERE and everything under it, as `confineToRoots` holds a path.
+  const knows = { isKnownFolder: async (path: string) => path === HERE || path.startsWith(`${HERE}/`) }
+  const { started, asked } = await serve(true, knows as unknown as StudioChatBackend)
+  const app = await client(started.path, pairFakeClient(started.auth, 'app', ['files:read']))
+  const inside = { workspaceFolder: HERE, relativeRoot: 'docs' }
+  const climbs = { workspaceFolder: HERE, relativeRoot: '../../..' }
+  assert.equal(codeOf(await app.request('memory.resolveRoot', inside)), null)
+  assert.equal(codeOf(await app.request('memory.index', inside)), null)
+  for (const [method, params] of [
+    ['memory.resolveRoot', climbs],
+    ['memory.index', climbs],
+    ['memory.readPreview', { ...climbs, relativePath: 'etc/hosts' }],
+    ['memory.readPreview', { workspaceFolder: HERE, relativeRoot: '/', relativePath: 'etc/hosts' }],
+    ['memoryActivity.startWatching', { workspaceFolder: HERE, memoryRelativeRoot: '../other' }],
+  ] as const)
+    assert.deepEqual([method, codeOf(await app.request(method, params))], [method, 'not_found'])
+  assert.deepEqual(
+    asked.map(([kind]) => kind),
+    ['resolveRoot', 'index'],
+  )
 })
 
 test('a grant that may only read chats reaches none of it', async () => {

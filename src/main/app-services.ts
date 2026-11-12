@@ -1458,7 +1458,7 @@ export function createAppServices(
       return (plugin && declaredPermissionModes(plugin.manifest).find((own) => own.id === mode)?.level) ?? null
     },
     cliResumesSessions: (cli) => cliResumeCapabilities(cli).resumeSession,
-    // The same resolver the renderer reaches over `memory:resolve-root`, so a
+    // The same resolver the window reaches over `memory.resolveRoot`, so a
     // headless launch carries the project's Knowledge Graph exactly like an
     // interactively-spawned agent does.
     resolveKnowledgeRoot: (input) => resolveMemoryRoot(input.workspaceRoot, input.relativeRoot),
