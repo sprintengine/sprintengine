@@ -5,10 +5,10 @@ discovered on launch. Both folders are created (and seeded with a README) the
 first time the app runs — including on a packaged install — so there is always
 a discoverable place to drop things.
 
-| Kind                      | Folder                          | Manifest                                | Surfaced in                             |
-| ------------------------- | ------------------------------- | --------------------------------------- | --------------------------------------- |
-| **Capability module**     | `~/.sprintengine/modules/<id>/` | `manifest.json`                         | Settings → Modules, the Extensions door |
-| **Conversation provider** | `~/.sprintengine/plugins/<id>/` | `plugin.json` with `"kind": "provider"` | Settings → Providers                    |
+| Kind | Folder | Manifest | Surfaced in |
+| --- | --- | --- | --- |
+| **Capability module** | `~/.sprintengine/modules/<id>/` | `manifest.json` | Settings → Modules, the Extensions door |
+| **Conversation provider** | `~/.sprintengine/plugins/<id>/` | `plugin.json` with `"kind": "provider"` | Settings → Providers |
 
 In both cases the folder name must equal the manifest `id`. Agent CLIs are not
 drop-in: they ship with the app, and nothing a user installs adds or replaces
@@ -184,8 +184,8 @@ skill directories and register them at startup:
 host.registerSkills([
   {
     id: 'review-guide',
-    sourceDir: 'skills/review-guide', // relative to the module root
-    targetPolicy: 'all-native', // or 'agents'
+    sourceDir: 'skills/review-guide',      // relative to the module root
+    targetPolicy: 'all-native',            // or 'agents'
     description: 'Walk a human reviewer through a code change.',
   },
 ])

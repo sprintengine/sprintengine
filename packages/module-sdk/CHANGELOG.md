@@ -388,14 +388,14 @@ beside it.
 
 - **`turn_completed` carries `text` and `usage`.** `text` is the agent's last
   message of the turn; `usage` is `{ inputTokens, outputTokens,
-cacheReadTokens, cacheWriteTokens }` summed over the turn, fresh input
+  cacheReadTokens, cacheWriteTokens }` summed over the turn, fresh input
   apart from the prompt cache's share, a count the runtime cannot report left
   out (`ModuleConversationTurnCompletedPayload`,
   `ModuleConversationTurnUsage`). Claude Code, Codex and ACP agents report
   them. `reply(ref, turnId?)` reads a finished turn's text off the transcript;
   `no_reply` joins the error codes. `conversation-replies`.
 - **`getTextGenerationService(host).generate({ prompt, system?, model?,
-maxOutputTokens?, json?, cli? })`**: one prompt answered by the person's own
+  maxOutputTokens?, json?, cli? })`**: one prompt answered by the person's own
   agent CLI (`claude-code` or `codex`; absent, the runtime and model they chose
   for Studio's text generation, else Claude Code) with no workspace or chat,
   as `{ ok, text, usage, model }` or a typed failure. `maxOutputTokens` is
@@ -714,10 +714,10 @@ module must change every import, including the `--external:` flags for
 
   Both subpaths ship TYPES ONLY: their runtime is a stub that throws
   `"@sprintengine/module-sdk/ui is provided by the host at runtime; mark it
-external in your bundler"`, so forgetting the external is a loud failure at
+  external in your bundler"`, so forgetting the external is a loud failure at
   load rather than a silent second React. Add
   `--external:@monaco-editor/react --external:@sprintengine/module-sdk/ui
---external:@sprintengine/module-sdk/surface` to your bundle.
+  --external:@sprintengine/module-sdk/surface` to your bundle.
 
   Two things this does NOT give you. Tailwind utility classes written inside a
   module compile to nothing — the app's Tailwind build scans app source only —
@@ -726,7 +726,6 @@ external in your bundler"`, so forgetting the external is a loud failure at
   purpose: it is a versioned contract pinned in both directions by the drift
   guard, so a component that is not on it is cheaper copied into your module
   than frozen here forever.
-
 - **A modal surface contributes the row that opens it** (D7, 2026-09-10).
   `ModalSurfaceDefinition.launcher = { label, letter, Glyph }` puts your
   surface in the workspace pane's kind list — the strip's "+" menu and the
@@ -788,7 +787,7 @@ external in your bundler"`, so forgetting the external is a loud failure at
   and print the `provides` array to paste.** A registry entry's `provides` must
   equal the component kinds the app derives from the bundle, and the app derives
   them by filtering `MARKETPLACE_COMPONENT_KINDS` (`mcp, skills, module, cli,
-automation`) — so an author who typed `--component cli --component mcp`, or who
+  automation`) — so an author who typed `--component cli --component mcp`, or who
   hand-wrote `plugin.json`, read one order out of their own file and the
   downloader computed another. The mismatch surfaced as a registry-mismatch
   failure on the user's machine, naming two lists that look the same. Both
@@ -815,7 +814,7 @@ automation`) — so an author who typed `--component cli --component mcp`, or wh
   else. Every method checks `agents:session` at runtime — the third scope that
   is genuinely gated, alongside `ipc:invoke` and `agents:companion`.
 
-  _Known limitation._ Agent-id namespaces are registered on the RENDERER host and
+  *Known limitation.* Agent-id namespaces are registered on the RENDERER host and
   main holds no mirror of that registry yet, so main cannot verify that a prefix
   is one you registered. Until it can, a prefix is validated as non-empty and
   ownership falls back to "prefixes this module has spawned under in this
@@ -832,7 +831,7 @@ automation`) — so an author who typed `--component cli --component mcp`, or wh
   into the app, so a module that wanted an agent to run with its own skill had
   no way to say so — it could spawn an agent and name a skill that was never
   copied anywhere. `registerSkills([{ id, sourceDir, targetPolicy,
-description }])` hands the host a directory inside your module root
+  description }])` hands the host a directory inside your module root
   (resolved and containment-checked; a rootless bundled module passes an
   absolute path) and the host then treats it exactly as it treats its own:
   same check-first install, same managed manifest, same `'all-native'` fan-out
@@ -885,7 +884,7 @@ description }])` hands the host a directory inside your module root
 
 - **Modal surfaces** (doors→modals, 2026-09-01). A new contribution kind beside
   the door pair: `registerModalSurface({ id, order, label, Icon, onOpen?,
-Component })` mounts your zero-prop body in the shell's modal shell (workbench
+  Component })` mounts your zero-prop body in the shell's modal shell (workbench
   width, flat darkening scrim — never a backdrop blur, terminals render at 60fps
   behind it — focus trap, Escape/scrim close) and renders your trigger as a
   glyph button in the sidebar footer's settings cluster, tooltip and accessible
@@ -1023,7 +1022,7 @@ Component })` mounts your zero-prop body in the shell's modal shell (workbench
   filtered CLI catalog (no plugin internals);
   `watchWorkspaceFile(workspaceId, relativePath, cb)` — debounced content
   watch (null = file absent), absolute/escaping paths reject with a named
-  cause; and `getWorkingRoot(workspaceId)` — the _effective working root_
+  cause; and `getWorkingRoot(workspaceId)` — the *effective working root*
   (`ModuleWorkspaceView.folderPath` stays the durable primary checkout;
   worktree-backed workspaces do live work under a worktree, and the file
   watch, spawn cwd, and file-tab focus all resolve against that root).

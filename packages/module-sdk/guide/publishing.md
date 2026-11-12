@@ -54,11 +54,11 @@ npx sprintengine-module pack module --out packed/<id>                     # an i
 
 ## Where people get it
 
-| Channel     | What they do                                                                                    | What you need                                                   |
-| ----------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Folder      | Settings → Modules → "Install a module from a folder", pointing at `module/` (or `packed/<id>`) | Nothing more                                                    |
-| GitHub      | Install from GitHub with the repository URL                                                     | `plugin.json` at the repo root, `module/dist` committed — below |
-| Marketplace | Find it in the Extensions door's Plugins view                                                   | A signed bundle and a registry pull request (below)             |
+| Channel | What they do | What you need |
+| --- | --- | --- |
+| Folder | Settings → Modules → "Install a module from a folder", pointing at `module/` (or `packed/<id>`) | Nothing more |
+| GitHub | Install from GitHub with the repository URL | `plugin.json` at the repo root, `module/dist` committed — below |
+| Marketplace | Find it in the Extensions door's Plugins view | A signed bundle and a registry pull request (below) |
 
 ## The marketplace registry
 

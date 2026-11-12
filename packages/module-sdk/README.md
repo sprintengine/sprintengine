@@ -37,28 +37,28 @@ scaffolds a project that already builds, passes its own tests and installs.
 `--sdk-tarball <file>` depends on a local SDK build instead of the npm release
 (for working on the SDK itself). Templates:
 
-| Template           | What it starts you with                                                    |
-| ------------------ | -------------------------------------------------------------------------- |
-| `blank`            | A palette command and nothing else: the smallest extension that runs       |
-| `panel`            | A notes panel in a workspace of its own, saved in module app state         |
-| `global-surface`   | A full-page surface behind its own row, drawn with the host's door shell   |
-| `top-bar-item`     | A compact control in the app's top bar                                     |
-| `settings-section` | A section in Settings, and a command that reads what it saved              |
-| `workspace-type`   | A workspace type with a creation step                                      |
-| `backlog-action`   | A Backlog item action that opens a planning chat for the item              |
-| `file-action`      | A Files-tree context-menu action                                           |
-| `mcp-tools`        | Tools any agent in a workspace calls through the Studio MCP gateway        |
-| `chat-companion`   | Starts and follows chats of its own, and opens chat drafts with `openChat` |
+| Template | What it starts you with |
+| --- | --- |
+| `blank` | A palette command and nothing else: the smallest extension that runs |
+| `panel` | A notes panel in a workspace of its own, saved in module app state |
+| `global-surface` | A full-page surface behind its own row, drawn with the host's door shell |
+| `top-bar-item` | A compact control in the app's top bar |
+| `settings-section` | A section in Settings, and a command that reads what it saved |
+| `workspace-type` | A workspace type with a creation step |
+| `backlog-action` | A Backlog item action that opens a planning chat for the item |
+| `file-action` | A Files-tree context-menu action |
+| `mcp-tools` | Tools any agent in a workspace calls through the Studio MCP gateway |
+| `chat-companion` | Starts and follows chats of its own, and opens chat drafts with `openChat` |
 
 Templates combine. `--with` adds parts on top of the one you start from, and
 `sprintengine-module add <part>...` adds them to a project you already have:
 
-| Part       | What it adds                                                                                                                                                 |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `main`     | `src/main.ts`, its methods' contract in `src/methods.ts`, and `entry.main` with its `build:main` script, `dependsOn: ["agent-runtime"]`, and `module:bridge` |
-| `mcp`      | MCP tools registered from `entry.main` (`mcp:tools`); brings `main` when missing                                                                             |
-| `settings` | A Settings section (`storage`)                                                                                                                               |
-| `door`     | A full-page surface drawn with the host's door shell                                                                                                         |
+| Part | What it adds |
+| --- | --- |
+| `main` | `src/main.ts`, its methods' contract in `src/methods.ts`, and `entry.main` with its `build:main` script, `dependsOn: ["agent-runtime"]`, and `module:bridge` |
+| `mcp` | MCP tools registered from `entry.main` (`mcp:tools`); brings `main` when missing |
+| `settings` | A Settings section (`storage`) |
+| `door` | A full-page surface drawn with the host's door shell |
 
 A part copies its files and its test, merges its entry, permissions and
 `dependsOn` into `module/manifest.json` and `plugin.json`, adds its scripts
@@ -117,15 +117,15 @@ import manifest from '../module/manifest.json'
 import { registerMain } from '../src/main'
 import { registerRenderer } from '../src/renderer'
 
-const main = createFakeMainHost({ manifest }) // id and permissions from the manifest
+const main = createFakeMainHost({ manifest })            // id and permissions from the manifest
 await registerMain(main.host)
-await main.methods.operate('start', { workspaceId: 'ws-app' }) // as the renderer would
-main.services.conversations.emitEvent(ref, { type: 'turn_completed' }) // make the agent answer
-await main.tools.call('my_extension_search', { query: 'x' }) // as an agent would
+await main.methods.operate('start', { workspaceId: 'ws-app' })          // as the renderer would
+main.services.conversations.emitEvent(ref, { type: 'turn_completed' })  // make the agent answer
+await main.tools.call('my_extension_search', { query: 'x' })            // as an agent would
 
-const renderer = createFakeRendererHost({ main }) // invoke and subscribe reach `main`
+const renderer = createFakeRendererHost({ main })        // invoke and subscribe reach `main`
 await registerRenderer(renderer.host)
-const html = await renderer.render.surface('my-extension') // a door, rendered to HTML
+const html = await renderer.render.surface('my-extension')   // a door, rendered to HTML
 ```
 
 - **`createFakeMainHost({ moduleId, permissions } | { manifest }, …)`** is a
@@ -177,7 +177,6 @@ const html = await renderer.render.surface('my-extension') // a door, rendered t
   `ensureSkillInstalled`, and `setChatRuntimes` what `listChatRuntimes`
   answers (default `claude-code` and `codex`). `emitted`, `notifications` (validated, `target`
   included), `skills`, `startup()` and `shutdown()` cover the rest.
-
 - **`createFakeRendererHost({ … , main? })`** records every registration
   (`registrations`), renders a registered door, modal, panel, settings section,
   top-bar item or nav entry to HTML (`render.*`), and records `openChat`,
@@ -226,17 +225,17 @@ rejection or a timeout fails that module alone.
 
 The manifest fields that matter most:
 
-| Field         | Notes                                                                                           |
-| ------------- | ----------------------------------------------------------------------------------------------- |
-| `id`          | `^[a-z0-9][a-z0-9-]{0,62}$`, equal to the install folder name, not one of `BUNDLED_MODULE_IDS`. |
-| `version`     | Positive integer.                                                                               |
-| `source`      | `"third-party"`.                                                                                |
-| `engines`     | `{ "hostApi": 2 }` — **required**. See "Host API version".                                      |
-| `permissions` | What the module touches; shown before anyone trusts it.                                         |
-| `dependsOn`   | Module ids that load first, e.g. `scheduled-agents`, `agent-runtime`.                           |
-| `entry`       | `{ "renderer": "dist/renderer.mjs", "main": "dist/main.cjs" }`.                                 |
-| `files`       | Written by `sign` / `dev:install`: every file's sha256. **Required** to load.                   |
-| `signature`   | Written by `sign`.                                                                              |
+| Field | Notes |
+| --- | --- |
+| `id` | `^[a-z0-9][a-z0-9-]{0,62}$`, equal to the install folder name, not one of `BUNDLED_MODULE_IDS`. |
+| `version` | Positive integer. |
+| `source` | `"third-party"`. |
+| `engines` | `{ "hostApi": 2 }` — **required**. See "Host API version". |
+| `permissions` | What the module touches; shown before anyone trusts it. |
+| `dependsOn` | Module ids that load first, e.g. `scheduled-agents`, `agent-runtime`. |
+| `entry` | `{ "renderer": "dist/renderer.mjs", "main": "dist/main.cjs" }`. |
+| `files` | Written by `sign` / `dev:install`: every file's sha256. **Required** to load. |
+| `signature` | Written by `sign`. |
 
 **Trust.** Only a module the person trusts runs code. A valid signature from a
 publisher key shows who vouches for it; the person still grants trust. A grant
@@ -270,7 +269,7 @@ is the same check, exported; `sprintengine-module sign`, `verify` and `pack`
 run it too.
 
 The version says which contract a module was built for. What the running host
-provides _today_ is a separate question, and every host answers it:
+provides *today* is a separate question, and every host answers it:
 
 ```ts
 if (host.supports('conversations')) registerChatFeatures(host)
@@ -296,22 +295,22 @@ disclosure: the consent prompt lists them before the person trusts the module.
 Most are not a sandbox — trusted code runs in the app's process — but these are
 checked on every call, and a module without them gets `permission_missing`:
 
-| Permission              | Checked on                                                                                                                                                            |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation:read`     | `getConversationService`: `subscribe`, `follow`, `transcript`, `reply`, `list`, `watch`                                                                               |
-| `conversation:operate`  | Everything in the conversation service, `RendererHost.openChat` with `send: true`, and allowing a companion's tool call. Implies read.                                |
-| `conversation:bypass`   | Running the module's chats on `bypass` (without it they go no looser than `auto`), and a companion task with `tools: 'auto'`                                          |
-| `chat:draft`            | `RendererHost.openChat` without `send` (a draft the person reads and sends)                                                                                           |
-| `secrets`               | `getSecretsService`                                                                                                                                                   |
-| `github`                | `getGitHubService`                                                                                                                                                    |
-| `mcp:tools`             | `MainHost.registerMcpTools`                                                                                                                                           |
-| `agents:companion`      | Attaching a companion agent                                                                                                                                           |
-| `module:bridge`         | Declaring methods your window code calls (`MainHost.registerMethods`, `RendererHost.methods`). The broad `ipc:invoke` also allows it; declare `module:bridge` instead |
-| `backlog.read`          | `getBacklogService` reads; `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation`                                                                              |
-| `backlog.write`         | `getBacklogService` writes; the renderer's `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata`         |
-| `usage:read`            | `getUsageService`, `RendererHost.queryUsage`                                                                                                                          |
-| `conversation:read-all` | `getActivityService` (flagged as a broad scope in the consent prompt)                                                                                                 |
-| `agents:generate`       | `getTextGenerationService(host).generate`                                                                                                                             |
+| Permission | Checked on |
+| --- | --- |
+| `conversation:read` | `getConversationService`: `subscribe`, `follow`, `transcript`, `reply`, `list`, `watch` |
+| `conversation:operate` | Everything in the conversation service, `RendererHost.openChat` with `send: true`, and allowing a companion's tool call. Implies read. |
+| `conversation:bypass` | Running the module's chats on `bypass` (without it they go no looser than `auto`), and a companion task with `tools: 'auto'` |
+| `chat:draft` | `RendererHost.openChat` without `send` (a draft the person reads and sends) |
+| `secrets` | `getSecretsService` |
+| `github` | `getGitHubService` |
+| `mcp:tools` | `MainHost.registerMcpTools` |
+| `agents:companion` | Attaching a companion agent |
+| `module:bridge` | Declaring methods your window code calls (`MainHost.registerMethods`, `RendererHost.methods`). The broad `ipc:invoke` also allows it; declare `module:bridge` instead |
+| `backlog.read` | `getBacklogService` reads; `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation` |
+| `backlog.write` | `getBacklogService` writes; the renderer's `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata` |
+| `usage:read` | `getUsageService`, `RendererHost.queryUsage` |
+| `conversation:read-all` | `getActivityService` (flagged as a broad scope in the consent prompt) |
+| `agents:generate` | `getTextGenerationService(host).generate` |
 
 The full vocabulary and its consent copy is in
 [`docs/module-authors/permissions.md`](../../docs/module-authors/permissions.md)
@@ -416,7 +415,7 @@ reads its chats) and `dependsOn: ["agent-runtime"]`.
   run's chat carries `scheduledAgentId` and `scheduledAgentTag`.
 - **Replies and usage.** A `turn_completed` event's payload carries `text`
   (the agent's last message of the turn), `usage` (`{ inputTokens,
-outputTokens, cacheReadTokens, cacheWriteTokens }`, summed over the turn's
+  outputTokens, cacheReadTokens, cacheWriteTokens }`, summed over the turn's
   model requests, fresh input apart from the prompt cache's share; a count
   the runtime cannot report is absent) and `costUsd`, where the runtime can
   say them (`ModuleConversationTurnCompletedPayload`).
@@ -560,7 +559,7 @@ Beyond plain requests:
   or `subscription` is refused (`invalid_query`) before it is sent, so a poll is
   a read, not a write acting as the person. `data` is `{ data, errors? }`.
 - **Downloads** (`supports('github-download')`): `github.download({ route,
-params, encoding? })` for a job's logs or an archive. GitHub answers those
+  params, encoding? })` for a job's logs or an archive. GitHub answers those
   with a redirect to its own storage; the host follows that one redirect only
   to a GitHub storage host and strips the token before it does
   (`redirect_not_allowed` otherwise).
@@ -632,8 +631,8 @@ your module's enablement, so turning it off removes it without a reload; an id
 another module already holds is a registration error that fails your module's
 load.
 
-- **Who you are:** `moduleId` — your manifest id, the prefix of your
-  `invoke` channels.
+- **Who you are:** `moduleId` — your manifest id, the module your
+  `methods()` calls reach.
 - **Where you appear:** `registerPanel`, `registerWorkspaceType`,
   `registerSidebarNavEntry`, `registerGlobalSurface`, `registerModalSurface`,
   `registerTopBarItem`, `registerSettingsSection`, `registerCommand`,
@@ -805,12 +804,7 @@ const backlog = getBacklogService(host)
 const created = await backlog.create(workspaceId, { title: 'Faster refunds', status: 'ready', epic: 'payments' })
 if (created.ok) console.log(created.displayId, created.relativePath) // "MC-241", "backlog/payments/2026-10-09-faster-refunds.md"
 await backlog.updateStatus(workspaceId, itemId, 'in_progress')
-await backlog.addLink(workspaceId, itemId, {
-  id: 'board-chat',
-  type: 'agent',
-  label: 'Board chat',
-  target: { kind: 'chat', id: agentId },
-})
+await backlog.addLink(workspaceId, itemId, { id: 'board-chat', type: 'agent', label: 'Board chat', target: { kind: 'chat', id: agentId } })
 
 // renderer
 const moved = await host.updateBacklogStatus(workspaceId, item.id, 'completed')
@@ -821,7 +815,7 @@ const moved = await host.updateBacklogStatus(workspaceId, item.id, 'completed')
   mutation lane, so it never interleaves with another writer. `create` takes
   the app's create path: it allocates the next number, files the item under
   its epic's folder with a unique name, and answers `{ id, relativePath,
-path, numericId, displayId }`.
+  path, numericId, displayId }`.
 - `addLink` records the link as your module's (a `moduleId` naming another
   module is refused); `updateModuleMetadata` writes your module's entry only.
 - `getLocation` / `getBacklogLocation` answer `{ root, isDefault, exists }`:
@@ -881,10 +875,10 @@ every agent session on this machine"); check `host.supports('usage')`.
 workspace, read-only:
 
 - `listChats({ from?, to?, workspaceId? })` → `{ workspaceId, agentId, title,
-cli, providerId, model, createdAt, updatedAt, turnCount, status }` per chat,
+  cli, providerId, model, createdAt, updatedAt, turnCount, status }` per chat,
   newest first.
 - `prompts({ from, to, workspaceId?, limit? })` → `{ at, workspaceId,
-agentId, text, replyTail? }`: each message the person sent, with the last
+  agentId, text, replyTail? }`: each message the person sent, with the last
   few hundred characters of the agent's reply. `limit` defaults to 200 (at
   most 1000); `truncated` says older ones were left out.
 
@@ -958,12 +952,7 @@ run is still working is skipped, not queued. Check
 
 ```ts
 host.registerSkills([
-  {
-    id: 'my-review-guide',
-    sourceDir: 'skills/my-review-guide',
-    targetPolicy: 'all-native',
-    description: 'Walk a reviewer through a change.',
-  },
+  { id: 'my-review-guide', sourceDir: 'skills/my-review-guide', targetPolicy: 'all-native', description: 'Walk a reviewer through a change.' },
 ])
 ```
 
@@ -997,22 +986,22 @@ it does not recognise. `hasFileDropData` is the `dragover`-safe presence check;
 `THEME_TOKENS` lists the CSS custom properties present in every app theme.
 Use them as CSS variables (`var(--bg-surface)`); only the names are contract.
 
-| Family | Tokens                                                                                                    |
-| ------ | --------------------------------------------------------------------------------------------------------- |
-| Chrome | `--bg-app`, `--bg-surface`, `--bg-surface-raised`, `--bg-hover`, `--bg-selected`                          |
-| Border | `--border-subtle`, `--border-default`, `--border-strong`                                                  |
-| Text   | `--text-strong`, `--text-default`, `--text-muted`, `--text-subtle`, `--text-disabled`, `--text-on-accent` |
-| Accent | `--accent-primary`, `--accent-primary-soft`, `--focus-ring`                                               |
-| Tone   | `--tone-neutral`, `--tone-accent`, `--tone-warn`, `--tone-good`, `--tone-error`, `--tone-merged`          |
-| Motion | `--motion-normal`, `--motion-ease` (use as a pair)                                                        |
+| Family | Tokens |
+|---|---|
+| Chrome | `--bg-app`, `--bg-surface`, `--bg-surface-raised`, `--bg-hover`, `--bg-selected` |
+| Border | `--border-subtle`, `--border-default`, `--border-strong` |
+| Text | `--text-strong`, `--text-default`, `--text-muted`, `--text-subtle`, `--text-disabled`, `--text-on-accent` |
+| Accent | `--accent-primary`, `--accent-primary-soft`, `--focus-ring` |
+| Tone | `--tone-neutral`, `--tone-accent`, `--tone-warn`, `--tone-good`, `--tone-error`, `--tone-merged` |
+| Motion | `--motion-normal`, `--motion-ease` (use as a pair) |
 
 ## UI kit, surface shell and Monaco
 
-| Specifier                          | What it is                                   |
-| ---------------------------------- | -------------------------------------------- |
-| `@sprintengine/module-sdk/ui`      | A curated slice of the app's component kit   |
+| Specifier | What it is |
+|---|---|
+| `@sprintengine/module-sdk/ui` | A curated slice of the app's component kit |
 | `@sprintengine/module-sdk/surface` | The door shell and its rail/canvas substrate |
-| `@monaco-editor/react`             | The Monaco wrapper the app ships             |
+| `@monaco-editor/react` | The Monaco wrapper the app ships |
 
 These are **host-provided**: this package ships their types, and the `.js`
 behind `./ui` and `./surface` throws if evaluated. The app answers them (and
