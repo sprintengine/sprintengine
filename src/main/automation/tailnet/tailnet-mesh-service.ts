@@ -115,6 +115,7 @@ import {
   parseTailnetEndpoint,
   readRemoteIdentity,
   type RemoteEventsSocket,
+  type RemoteIdentity,
   uploadRemoteConversationImage,
   readRemoteConversationComposer,
 } from './tailnet-remote-client'
@@ -1193,7 +1194,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       if (identity.ok) {
         store.updateScopes(connection.id, identity.value.scopes)
         store.markConnected(connection.id)
-        rememberCapabilities(connection.id, identity.value.capabilities)
+        rememberIdentity(connection.id, identity.value)
         recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
         return
       }
@@ -1279,6 +1280,13 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       code: 'unsupported_permission_preset',
       message: `${connection.machineName} runs a Studio that takes only Bypass or No flag. Update it there to use ${preset === 'manual' ? 'Manual' : 'Auto'}.`,
     }
+  }
+
+  /** What an identity answer says about the machine: which Studio it is, and what it can do. */
+  function rememberIdentity(connectionId: string, identity: RemoteIdentity): void {
+    if (identity.environmentId && store.noteEnvironment(connectionId, identity.environmentId))
+      broadcast({ kind: 'machine-identified', connectionId, environmentId: identity.environmentId })
+    rememberCapabilities(connectionId, identity.capabilities)
   }
 
   function rememberCapabilities(connectionId: string, capabilities: string[] | null): void {
@@ -1637,7 +1645,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     }
     store.updateScopes(connection.id, identity.value.scopes)
     store.markConnected(connection.id)
-    rememberCapabilities(connection.id, identity.value.capabilities)
+    rememberIdentity(connection.id, identity.value)
     recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
     const scopes = identity.value.scopes
 
@@ -1736,7 +1744,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     const known = peerCapabilities.get(connection.id)
     if (known) return known
     const identity = await readRemoteIdentity({ endpoint: endpointOf(connection), token: connection.deviceToken })
-    if (identity.ok) rememberCapabilities(connection.id, identity.value.capabilities)
+    if (identity.ok) rememberIdentity(connection.id, identity.value)
     return peerCapabilities.get(connection.id)
   }
 
@@ -1824,7 +1832,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     }
     store.updateScopes(connection.id, identity.value.scopes)
     store.markConnected(connection.id)
-    rememberCapabilities(connection.id, identity.value.capabilities)
+    rememberIdentity(connection.id, identity.value)
     recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
     if (!tailnetPeerSupports(identity.value.capabilities, 'usage-report'))
       return {
@@ -2664,7 +2672,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     }
     store.updateScopes(connection.id, identity.value.scopes)
     store.markConnected(connection.id)
-    rememberCapabilities(connection.id, identity.value.capabilities)
+    rememberIdentity(connection.id, identity.value)
     recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
     // A published list without the lane is a machine that cannot answer;
     // one that published none is asked anyway and answers for itself.
@@ -3217,7 +3225,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
       const identity = await readRemoteIdentity({ endpoint: endpointOf(connection), token: connection.deviceToken })
       if (!identity.ok) return identity
-      rememberCapabilities(connection.id, identity.value.capabilities)
+      rememberIdentity(connection.id, identity.value)
       return { ok: true, value: { scopes: identity.value.scopes, capabilities: identity.value.capabilities } }
     },
     knownCapabilities: (connectionId) => peerCapabilities.get(connectionId),

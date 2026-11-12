@@ -173,6 +173,12 @@ export type TailnetGatewayServerOptions = {
   port: number
   serverName: string
   serverVersion: string
+  /**
+   * This Studio's environment id (`welcome.environment.id` on the Studio
+   * protocol), said on `identity` so a paired desktop knows which Studio a
+   * pairing reaches, whatever the machine is called or how it is reached.
+   */
+  environmentId?: string
   /** The tools a connection may see, per request: client tools differ by connection. */
   resolveTools: (context?: McpConnectionContext) => McpToolRegistration[]
   /** Client tools: a stream is told alone when its list grows. */
@@ -1174,6 +1180,7 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
         deviceId: device.id,
         deviceName: device.name,
         scopes: device.scopes,
+        ...(options.environmentId ? { environmentId: options.environmentId } : {}),
         serverInfo: { name: options.serverName, version: options.serverVersion },
         transportVersion: TAILNET_TRANSPORT_VERSION,
         capabilities: [...capabilities],

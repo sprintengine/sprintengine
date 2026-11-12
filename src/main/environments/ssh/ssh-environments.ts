@@ -157,6 +157,7 @@ export class SshEnvironments {
   private brokerReady: AskpassBroker | null = null
   private readonly prompts = new Map<string, Prompt>()
   private readonly connectedListeners: Array<(connection: SshServerConnection) => void> = []
+  private readonly changedListeners = new Set<() => void>()
   private tree: { dir: string; digest: string } | null | undefined
   private readonly path: string
   private readonly log: (message: string) => void
@@ -201,6 +202,19 @@ export class SshEnvironments {
 
   private changed(): void {
     this.deps.broadcast(SSH_ENV_CHANNELS.changed, null)
+    for (const listener of [...this.changedListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        this.log(`An SSH machines listener threw: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
+  /** Called whenever the list or a machine's state changes, as the windows are told. */
+  onChanged(listener: () => void): () => void {
+    this.changedListeners.add(listener)
+    return () => this.changedListeners.delete(listener)
   }
 
   get(id: string): SavedSshEnvironment | null {

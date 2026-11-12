@@ -43,6 +43,7 @@ import {
 } from './tailnet-gateway-https'
 import { readSelfDnsName } from './tailscale-serve'
 import { TAILNET_MCP_PATH } from './tailnet-routes'
+import { readStudioEnvironmentId } from '../../../server/environment/environment-id'
 
 // Lifecycle for tailnet remote control: settings, paired devices, and the
 // listener itself.
@@ -630,6 +631,7 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
       port: current.port,
       serverName: options.serverName,
       serverVersion: options.serverVersion,
+      environmentId: readStudioEnvironmentId(options.resolveUserDataDir(), { log: options.log }),
       resolveTools: options.resolveTools,
       ...(options.clientTools ? { clientTools: options.clientTools } : {}),
       isMutation: options.isMutation,

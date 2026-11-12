@@ -189,6 +189,25 @@ test('tailnet-transport-version', async () => {
     })
   })
 
+  check('the handshake says which Studio answered, and an older or malformed one says none', async () => {
+    const environmentId = '6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b'
+    await withIdentity(identityBody({ environmentId }), async (port) => {
+      const identity = await readRemoteIdentity({ endpoint: { host: '127.0.0.1', port }, token: 'tok' })
+      assert.equal(identity.ok && identity.value.environmentId, environmentId)
+    })
+    // A build from before the member: the same handshake, with no id.
+    await withIdentity(identityBody(), async (port) => {
+      const identity = await readRemoteIdentity({ endpoint: { host: '127.0.0.1', port }, token: 'tok' })
+      assert.equal(identity.ok, true)
+      assert.equal(identity.ok && identity.value.environmentId, null)
+    })
+    for (const bad of [42, '', 'a:b', 'x'.repeat(129)])
+      await withIdentity(identityBody({ environmentId: bad }), async (port) => {
+        const identity = await readRemoteIdentity({ endpoint: { host: '127.0.0.1', port }, token: 'tok' })
+        assert.equal(identity.ok && identity.value.environmentId, null, String(bad))
+      })
+  })
+
   // ── The capability gate, end to end ─────────────────────────────────────────
 
   /**

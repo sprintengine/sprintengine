@@ -52,6 +52,7 @@ function memoryStore(initial: StoredMeshConnection[]): TailnetMeshStore {
     },
     updateScopes: () => undefined,
     markConnected: () => undefined,
+    noteEnvironment: () => false,
     forget(id) {
       const before = connections.length
       connections = connections.filter((entry) => entry.id !== id)

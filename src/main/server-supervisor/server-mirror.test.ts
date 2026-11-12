@@ -77,6 +77,40 @@ test('pushes keep it current and reach its subscribers', async () => {
   assert.equal(mirror.launchSettings.get().lastSelectedCli, 'codex')
 })
 
+test("the server's paired desktops reach the shell, from the snapshot and then from each push", async () => {
+  const { shell, server } = pair()
+  const mini = {
+    id: 'tnc_1',
+    machineName: 'mac-mini',
+    endpoint: '100.64.0.2:8443',
+    deviceId: 'dev_1',
+    deviceName: 'build-box',
+    scopes: ['workspace:read'],
+    pairedAt: '2026-11-01T00:00:00.000Z',
+    lastConnectedAt: null,
+    pairedVia: 'link',
+  }
+  server.handle(SERVER_METHODS.mirrorSnapshot, () => ({ ...snapshotWith([]), meshConnections: [mini] }) as never)
+  const mirror = createServerStateMirror({ rpc: shell })
+  assert.deepEqual(mirror.meshConnections.list(), [])
+  let heard = 0
+  mirror.meshConnections.onChanged(() => (heard += 1))
+  await mirror.load()
+  assert.deepEqual(
+    mirror.meshConnections.list().map((connection) => connection.id),
+    ['tnc_1'],
+  )
+  const environmentId = '3c2b1a09-8f7e-4d6c-9b5a-4f3e2d1c0b9a'
+  server.emit(SERVER_EVENTS.mirrorMeshConnections, [{ ...mini, environmentId }])
+  await settle()
+  assert.equal(mirror.meshConnections.list()[0]?.environmentId, environmentId)
+  // A server with no mesh sends none: nothing is paired, rather than a stale list.
+  server.emit(SERVER_EVENTS.mirrorMeshConnections, null)
+  await settle()
+  assert.deepEqual(mirror.meshConnections.list(), [])
+  assert.equal(heard, 3)
+})
+
 test('an agent record the shell writes goes to the server, answered at once', async () => {
   const { shell, server } = pair()
   const written: unknown[] = []

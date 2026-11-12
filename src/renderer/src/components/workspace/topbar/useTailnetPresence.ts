@@ -209,6 +209,8 @@ function startPresence(): (() => void) | null {
       })
       return
     }
+    // A machine saying which Studio it is changes nothing this presence shows.
+    if (event.kind !== 'remote-changed') return
     updatePresence((current) => {
       const meshRemoteChanges = new Map(current.meshRemoteChanges)
       const previous = current.meshRemoteChanges.get(event.connectionId)

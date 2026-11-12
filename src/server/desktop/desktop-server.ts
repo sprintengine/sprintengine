@@ -22,7 +22,7 @@ import { getPluginRegistry } from '../../main/plugin-registry-instance'
 import { powerActivity } from '../../main/power-activity'
 import { declaredPermissionPresets } from '../../main/plugin-render'
 import { getSharedCredentialStore } from '../../main/secret-store'
-import { readStudioEnvironmentId } from '../../main/studio-rpc/studio-rpc-service'
+import { readStudioEnvironmentId } from '../environment/environment-id'
 import { createTailnetNotifier } from '../../main/tailnet-notifications'
 import { agentBrowserToolGate, agentBrowserToolsEnabledOnDisk } from '../../main/agent-browser-tools-store'
 import { createWorkspaceBackupService } from '../../main/workspace-backup'
@@ -30,7 +30,7 @@ import { conversationTurnInProgress } from '../../shared/conversation/phase'
 import { isWslHostId } from '../../shared/execution-host'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
 import { TAILNET_EVENT_CHANNEL } from '../../shared/tailnet'
-import { MESH_EVENT_CHANNEL } from '../../shared/tailnet-mesh'
+import { MESH_EVENT_CHANNEL, meshListChanged, type MeshConnection } from '../../shared/tailnet-mesh'
 import type { ModuleRegistrySnapshot } from '../../shared/modules/registry-snapshot'
 import { SERVER_EXIT } from '../bootstrap/envelope'
 import type { RunningServer, ServerStart } from '../bootstrap/serve'
@@ -159,6 +159,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   })
 
   let gateway: StudioGateway | null = null
+  // The paired desktops, for the shell's environment registry (the mesh is this process's).
+  const meshConnectionsView = (): MeshConnection[] => gateway?.mesh().listConnections() ?? []
   const whenAgentLaunchReady = async (): Promise<void> => {
     await Promise.all([gateway?.whenGatewayReady(), bridge.integrationsReady()])
   }
@@ -298,6 +300,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     onMeshEvent: (event) => {
       tunnel.publish(MESH_EVENT_CHANNEL, event)
       tailnetNotifier.onMeshEvent(event)
+      if (meshListChanged(event)) rpc.emit(SERVER_EVENTS.mirrorMeshConnections, meshConnectionsView())
     },
     hasWindow: () => anyWindowVisible,
     // A paired device's picture is shrunk by the shell, which has the image
@@ -434,7 +437,11 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   agentLaunchSettings.subscribe(() => rpc.emit(SERVER_EVENTS.mirrorLaunchSettings, launchSettingsView()))
   const handlers = serveShellRequests({
     rpc,
-    mirror: (): ServerMirrorState => ({ ...registryView(), launchSettings: launchSettingsView() }),
+    mirror: (): ServerMirrorState => ({
+      ...registryView(),
+      launchSettings: launchSettingsView(),
+      meshConnections: meshConnectionsView(),
+    }),
     core,
     githubTokenStore,
     modules,

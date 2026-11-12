@@ -1,5 +1,6 @@
 import type { AgentLaunchSettings, AgentLaunchSettingsRecord } from '../../shared/launch-settings'
 import type { WorkspaceSyncSnapshot, WorkspaceSyncState } from '../../shared/workspace-sync'
+import type { MeshConnection } from '../../shared/tailnet-mesh'
 
 // What the shell and its out-of-process server say to each other on the
 // control channel beyond the bootstrap frames and the ShellBridge (phase 6
@@ -80,6 +81,12 @@ export const SERVER_EVENTS = {
   mirrorWorkspaceEvent: 'mirror.workspace-event',
   /** Server → shell: the launch settings changed. `{ settings, record }`. */
   mirrorLaunchSettings: 'mirror.launch-settings',
+  /**
+   * Server → shell: the desktops this one is paired with changed (paired,
+   * forgotten, or one answered and said its environment id). `MeshConnection[]`,
+   * whole, without credentials: the shell's environment registry lists them.
+   */
+  mirrorMeshConnections: 'mirror.mesh-connections',
   /** Server → shell: a chat's phase moved; the shell's dock badge and taskbar flash follow it. */
   attentionPhase: 'attention.agent-phase',
   /** Shell → server: the renderer's module registry, mirrored. */
@@ -121,7 +128,11 @@ export type ServerMirrorRegistry = {
 
 export type ServerMirrorLaunchSettings = { settings: AgentLaunchSettings; record: AgentLaunchSettingsRecord | null }
 
-export type ServerMirrorState = ServerMirrorRegistry & { launchSettings: ServerMirrorLaunchSettings }
+export type ServerMirrorState = ServerMirrorRegistry & {
+  launchSettings: ServerMirrorLaunchSettings
+  /** The paired desktops (`mirrorMeshConnections`); absent from a server with no mesh. */
+  meshConnections?: MeshConnection[]
+}
 
 export type PowerHint = 'suspend' | 'resume' | 'lock' | 'unlock' | 'battery' | 'ac'
 

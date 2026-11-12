@@ -2,7 +2,7 @@ import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs'
-import { readStudioEnvironmentId } from '../../main/studio-rpc/studio-rpc-service'
+import { readStudioEnvironmentId } from '../environment/environment-id'
 import { driveMountRootFromMounts, driveMountRootFromWslConf } from '../../shared/host-paths'
 import { chatsAreWorking } from '../core/chats-working'
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
