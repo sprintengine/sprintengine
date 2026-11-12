@@ -552,12 +552,22 @@ As built (2026-10-03), `src/main/environments/ssh/ssh-environment.ts`:
   `needs-sign-in`, "build-box needs you to sign in.", and no background
   attempt runs until the person connects. A changed host key stops at
   `failed` with the `ssh-keygen -R` line.
-- The window is one app version: a server of another version is attached
-  only when it is this version, upgraded when it is an older managed one,
-  and otherwise refused in words (newer: "Update this app"; an older external
-  one: an Update button that asks first, R31). The backend wire is private
-  and changes with the app, so "inside the window" is exactly "this version"
-  until it is published.
+- The window is the Studio protocol's (2026-11, design-server-update): the
+  server's record carries its `protocolVersion` and `minProtocolVersion`, and
+  `locateServer` reads `studioCompatibility` from them. A server whose window
+  meets this app's is attached whatever its version, except an older managed
+  one, which is upgraded; one outside it is refused in words (newer: "Update
+  this app"; an older external one: an Update button that asks first, R31). A
+  record without a window reads as `unknown`, and is decided by version
+  order alone. While the private backend wire carries the chat it is one more
+  input: a server on another wire is never attached.
+- A failed upgrade is recovered: when the new server does not start after the
+  old one drained, `start --detach --replace` writes `run/update-failed.json`
+  (`{ from, to, at, reason }`), starts the previous tree again
+  (`server-<from>/`, which an install keeps while that record names it) and
+  fails `update-failed`. The desktop does not try the same update again on
+  its own: the row says what failed and offers **Retry update**. The next
+  start that succeeds removes the record.
 - Resume, as built: the private backend wire has no stream cursors. A new
   wire re-reads the server's sessions (`refresh`), and a call that carries a
   `commandId` is answered once by the server's receipts, so repeating it after
