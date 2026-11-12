@@ -203,6 +203,20 @@ async function boot(file: string, world: ReturnType<typeof chatWorld>, now: numb
   }
 }
 
+/**
+ * Waits, on a machine under load, for what a process does without being
+ * awaited (a run's writes, a schedule closing) to have happened.
+ */
+async function until(check: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 5000
+  while (!check()) {
+    if (Date.now() > deadline) assert.fail(`timed out waiting until ${what}`)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
+const recordsOnDisk = (file: string): ScheduledRunRecord[] => Object.values(runsOnDisk(file))
+
 /** The file's run records, as the next process (or a hand-over) reads them. */
 function runsOnDisk(file: string): Record<string, ScheduledRunRecord> {
   return (JSON.parse(readFileSync(file, 'utf8')) as { runs?: Record<string, ScheduledRunRecord> }).runs ?? {}
@@ -221,7 +235,7 @@ test('a run is written down with its first message before it makes anything, and
   const first = await boot(file, world, NOW)
   world.hangAt('before-chat')
   void first.scheduler.runNow((await first.store.list())[0]!.id)
-  await first.advanceTo(NOW)
+  await until(() => recordsOnDisk(file).length === 1, 'the run is on disk')
   assert.deepEqual(Object.values(runsOnDisk(file)), [
     {
       scheduledAgentId: first.store.list()[0]!.id,
@@ -242,7 +256,7 @@ test('a crash before the run made its chat: a repeating schedule records the run
   const first = await boot(file, world, NOW)
   world.hangAt('before-chat')
   void first.scheduler.runNow(id)
-  await first.advanceTo(NOW)
+  await until(() => recordsOnDisk(file).length === 1, 'the run is on disk')
   // The process stops here, and the next one starts.
   world.hangAt(null)
   const second = await boot(file, world, NOW + HOUR / 2)
@@ -261,11 +275,12 @@ test('a crash before the run made its chat: a one-time schedule runs once at the
   const first = await boot(file, world, NOW)
   world.hangAt('before-chat')
   await first.advanceTo(NOW)
-  assert.equal(Object.keys(runsOnDisk(file)).length, 1, 'the run was written down as it began')
+  await until(() => recordsOnDisk(file).length === 1, 'the run was written down as it began')
   world.hangAt(null)
   const second = await boot(file, world, NOW + HOUR)
   await second.advanceTo(NOW + HOUR)
   await second.settled()
+  await until(() => second.store.get(id) === null && recordsOnDisk(file).length === 0, 'the run is done')
 
   assert.equal(world.chats.length, 1)
   assert.deepEqual(
@@ -283,6 +298,7 @@ test('a crash after the chat was made and before its first message went: the nex
   const first = await boot(file, world, NOW)
   world.hangAt('before-message')
   await first.advanceTo(NOW)
+  await until(() => recordsOnDisk(file)[0]?.chat !== undefined, 'the run names its chat on disk')
   const [commandId] = Object.keys(runsOnDisk(file))
   assert.ok(commandId)
   assert.equal(world.chats[0]?.launchCommandId, commandId, 'the chat carries the id its run was written down with')
@@ -292,6 +308,7 @@ test('a crash after the chat was made and before its first message went: the nex
   const second = await boot(file, world, NOW + HOUR)
   await second.advanceTo(NOW + HOUR)
   await second.settled()
+  await until(() => second.store.get(id) === null && recordsOnDisk(file).length === 0, 'the run is done')
 
   assert.equal(world.chats.length, 1, 'no second chat')
   assert.deepEqual(world.turns, [
@@ -313,7 +330,10 @@ test('a crash after the first message went: the next start finishes the run with
   const first = await boot(file, world, NOW)
   world.hangAt('mid-turn')
   await first.scheduler.runNow(id)
-  await first.advanceTo(NOW)
+  await until(
+    () => recordsOnDisk(file)[0]?.chat !== undefined && world.turns.length === 1,
+    'the first message went and the run names its chat on disk',
+  )
   const [commandId] = Object.keys(runsOnDisk(file))
   assert.deepEqual(runsOnDisk(file)[commandId!]?.chat, { workspaceId: 'ws-1', agentId: 'agent-1' })
   assert.equal(world.turns.length, 1)
@@ -321,6 +341,7 @@ test('a crash after the first message went: the next start finishes the run with
   world.hangAt(null)
   const second = await boot(file, world, NOW + HOUR / 2)
   await second.settled()
+  await until(() => recordsOnDisk(file).length === 0, 'the run is done')
 
   assert.equal(world.turns.length, 1, 'the repeat was answered from the chat’s receipt')
   assert.equal(world.chats.length, 1)
@@ -335,12 +356,13 @@ test('a run whose chat has gone by the next start is recorded as failed, and its
   const first = await boot(file, world, NOW)
   world.hangAt('before-message')
   await first.scheduler.runNow(id)
-  await first.advanceTo(NOW)
+  await until(() => recordsOnDisk(file)[0]?.chat !== undefined, 'the run names its chat on disk')
   // The person deleted the chat before the next start.
   world.chats.splice(0)
   world.hangAt(null)
   const second = await boot(file, world, NOW + HOUR / 2)
   await second.settled()
+  await until(() => second.store.get(id)?.lastRun?.ok === false, 'the run is recorded as failed')
 
   const lastRun = second.store.get(id)?.lastRun
   assert.equal(lastRun?.ok, false)
@@ -357,6 +379,10 @@ test('a missed start time: a one-time schedule runs once, a repeating one waits 
   const started = await boot(file, world, NOW)
   await started.advanceTo(NOW)
   await started.settled()
+  await until(
+    () => world.turns.length === 1 && started.store.get(once) === null && recordsOnDisk(file).length === 0,
+    'the one-time schedule ran and closed',
+  )
 
   assert.equal(world.turns.length, 1)
   assert.equal(started.store.get(once), null)

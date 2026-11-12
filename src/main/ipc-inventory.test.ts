@@ -159,6 +159,7 @@ import {
   ConversationHostToken,
   ConversationLaunchServiceToken,
   ConversationRuntimeToken,
+  WorkspaceRegistryToken,
 } from './module-host/service-tokens'
 import { createBundledMainModules } from './modules'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
@@ -370,6 +371,7 @@ test('what main and the server register, and what the preload uses, is the inven
           host.provideService(ConversationLaunchServiceToken, () => anything())
           host.provideService(ConversationRuntimeToken, () => anything())
           host.provideService(ConversationHostToken, () => anything())
+          host.provideService(WorkspaceRegistryToken, () => anything())
         },
       },
       ...createBundledMainModules(platform, () => undefined),
