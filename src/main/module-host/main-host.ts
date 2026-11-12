@@ -4,7 +4,6 @@ import { isAbsolute, relative } from 'node:path'
 
 import type { IpcMain } from 'electron'
 
-import { noteModuleIpcChannel } from '../ipc/ipc-registration-rule'
 import {
   moduleEventPayloadProblem,
   validateModuleEventTopic,
@@ -540,7 +539,6 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
   // The renderer's door to the Backlog and usage services a module's main half
   // reaches through the SDK (shared/modules/host-service-bridge.ts). The
   // kernel's one IPC channel, until those services are protocol methods too.
-  noteModuleIpcChannel(MODULE_HOST_SERVICE_CHANNEL)
   ipcMain.handle(
     MODULE_HOST_SERVICE_CHANNEL,
     createModuleHostServiceDispatcher((key) => services.get(key)?.value),

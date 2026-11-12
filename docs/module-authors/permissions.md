@@ -28,7 +28,7 @@ known scopes.
 | `ipc:workspace-write` | Create and change workspaces, files, and tasks through the app's APIs | See tier mapping below |
 | `ipc:settings` | Read and change app settings and integrations | See tier mapping below |
 | `ipc:invoke` | Call any of the app's internal APIs, including its own background code (broad scope) | The entire `window.api` surface, **and** the renderer&rarr;module-main bridge |
-| `module:bridge` | Let its window code talk to its own background code | The renderer&rarr;module-main bridge alone: `RendererHost.invoke` to the module's own `registerIpc` channels |
+| `module:bridge` | Let its window code talk to its own background code | Its own declared methods alone: `RendererHost.methods` calling what its `entry.main` declared with `MainHost.registerMethods` |
 | `backlog.read` | Read Backlog item details and source content | `listBacklogItems`, `watchBacklogItems`, `getBacklogLocation`, and the reads of `getBacklogService` |
 | `backlog.write` | Change Backlog item status, triage, links, and metadata, and create new items | The Backlog write API (`getBacklogService`, `createBacklogItem`, `updateBacklogStatus`, `updateBacklogTriage`, `addBacklogLink`, `updateBacklogModuleMetadata`) and the same writes in a Backlog action |
 | `backlog.link.open` | Open links and targets attached to Backlog items | Opening a link provider's target |

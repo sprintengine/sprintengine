@@ -318,7 +318,7 @@ offers.
 
 | `MainHost` member today                    | On the server                                                                                                          |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `registerIpc(channel, handler)`            | a protocol method `module.invoke { moduleId, channel, payload }`, routed by the same ownership and `ipc:invoke` checks |
+| `registerMethods({ name: { access, params, handler } })` | `module.read` (`modules:read`) and `module.operate` (`modules:operate`, once per command id), by module id and method name; host API 2 (built) |
 | `emit(topic, payload)`                     | the `module.events` stream (`modules:read`), per module, a JSON payload, nothing replayed (built)                      |
 | `registerMcpTools`                         | the server's gateway, unchanged                                                                                        |
 | `notify`                                   | the `module.notifications` stream (`modules:read`): the kept rows first, then each new one (built)                     |
@@ -330,7 +330,7 @@ offers.
 | `RendererHost` member                                     | In a client                                                                          |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `registerPanel`, surfaces, commands, settings sections, … | unchanged                                                                            |
-| `invoke(channel)` / `subscribe(topic)`                    | carried by `module.invoke` / `module.events`                                         |
+| `methods()` / `subscribe(topic)`                          | carried by `module.read` and `module.operate` / `module.events` (built)              |
 | workspaces, backlog, chats, app state                     | the matching protocol methods                                                        |
 | `getAssetUrl`                                             | an HTTP path the server serves (`/modules/<id>/assets/…`), signed per client session |
 

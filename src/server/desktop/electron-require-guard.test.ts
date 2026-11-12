@@ -79,7 +79,7 @@ test('a module that declares it needs electron-main loads manifest-only where th
 test('an undeclared require during registerMain is reported as needing electron-main, not as a crash', () => {
   const undeclared = trustedModule(
     'reaches-for-electron',
-    "module.exports = { registerMain(host) { host.registerIpc('x:y', () => 1); require('electron') } }\n",
+    "module.exports = { registerMain(host) { host.onStartup(() => undefined); require('electron') } }\n",
   )
   const plan = planThirdPartyMainModules({ modules: [undeclared], rejected: [] }, { electronMain: false })
   const undo = installElectronRequireGuard(() => Object.values(plan.moduleRoots))

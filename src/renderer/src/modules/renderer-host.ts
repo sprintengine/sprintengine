@@ -3,6 +3,13 @@ import type { ComponentType, LazyExoticComponent } from 'react'
 import type { RowBadge } from '../components/workspace/SidebarNavButton'
 
 import type { ModuleEventEnvelope } from '../../../shared/modules/events'
+import type {
+  ModuleCallAnswer,
+  ModuleMethodAccess,
+  ModuleMethodContract,
+  ModuleMethodContracts,
+  ModuleMethodsClient,
+} from '../../../shared/modules/methods'
 import type { CapabilityManifest } from '../../../shared/modules/manifest'
 import { COMMAND_REGISTRY } from '../commands/commandRegistry'
 import { collapseDuplicateKeybindings } from '../commands/keybindings'
@@ -803,6 +810,21 @@ export type ModuleAppStateStore = {
 // events. One stream subscription backs every module's subscriptions.
 export type ModuleEventSource = (cb: (envelope: ModuleEventEnvelope) => void) => () => void
 
+/** One call of a module's own method, as the window's Studio client carries it. */
+export type ModuleMethodCall = {
+  moduleId: string
+  method: string
+  access: ModuleMethodAccess
+  params: unknown
+  /** An operate's command id: given by the caller, or made for the call. */
+  commandId?: string
+}
+
+// Caller of a module's declared methods: modules/index.ts wires it over the
+// window's Studio client (`module.read` / `module.operate`). It never throws:
+// every refusal, the host's or the module's, is an answer.
+export type ModuleMethodCaller = (call: ModuleMethodCall) => Promise<ModuleCallAnswer<ModuleMethodContract>>
+
 // ── Shell feedback, links and context for module code ──────────────────────
 
 /** A toast's tone: the toast region's own vocabulary (components/ui/tokens `Tone`). */
@@ -846,7 +868,7 @@ export type RendererHost = {
   readonly hostApiVersion: number
   /**
    * This module's id: the one its manifest declares, which every scoped call
-   * is stamped with — the prefix its `invoke` channels carry, the `source`
+   * is stamped with — the module its `methods` calls reach, the `source`
    * its notification rows are filed under.
    */
   readonly moduleId: string
@@ -933,14 +955,15 @@ export type RendererHost = {
    */
   openModalSurface(id: string): boolean
   /**
-   * Invoke an IPC channel this module's own `entry.main` registered via
-   * `MainHost.registerIpc`. The channel must be `<moduleId>:`-prefixed —
-   * validated here before any IPC, and again by the main-side dispatcher,
-   * which requires the owning module to declare `module:bridge` (or the broad
-   * `ipc:invoke` it was split out of).
-   * A contract, not a security boundary.
+   * Call the methods this module's own `entry.main` declared with
+   * `MainHost.registerMethods`, typed by the module's contract: `read` offers
+   * the methods declared `read`, `operate` the ones declared `operate`. They
+   * travel over the window's Studio connection (`module.read` /
+   * `module.operate`) to the server the module runs on, and never throw: a
+   * refusal, the module's own or the host's (`module_unavailable`,
+   * `module_method_unknown`, `invalid_params`, …), is an answer.
    */
-  invoke(channel: string, payload?: unknown): Promise<unknown>
+  methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs>
   /** The workspace's Backlog items (read-only views; change them with the write methods below). Requires `backlog.read`. */
   listBacklogItems(workspaceId: string): Promise<BacklogItem[]>
   /**
@@ -1057,12 +1080,12 @@ export type RendererHost = {
   watchModuleAppState(cb: (values: Readonly<Record<string, unknown>>) => void): () => void
   /**
    * Subscribe to events your module's `entry.main` pushed with
-   * `MainHost.emit` — the subscribe verb `invoke` does not have.
+   * `MainHost.emit` — the subscribe verb `methods` does not have.
    * Scoped to your module: another module's events never reach you, and yours
    * never reach it. `cb` receives the emitted payload. Returns the
    * unsubscriber; call it on unmount. Nothing is replayed, so a subscriber
    * must be correct having missed every event emitted before it subscribed —
-   * read current state through an invoke and let events keep it fresh. See the
+   * read current state through a `read` method and let events keep it fresh. See the
    * delivery contract in shared/modules/events.ts.
    */
   subscribe(topic: string, cb: (payload: unknown) => void): () => void
@@ -1305,6 +1328,12 @@ export type RendererKernel = {
    */
   setModuleEventSource(source: ModuleEventSource): void
   /**
+   * Caller for `RendererHost.methods`. Wired once at boot by modules/index.ts
+   * over the window's Studio client; absent (tests, windowless bundles) a call
+   * is answered `unavailable`.
+   */
+  setModuleMethodCaller(caller: ModuleMethodCaller): void
+  /**
    * Working-root source for `RendererHost.getWorkingRoot`. Wired once at boot
    * by modules/index.ts (store + worktree resolution); absent (early boot,
    * tests) every lookup resolves to null.
@@ -1455,6 +1484,7 @@ export function createRendererHost(): RendererKernel {
   type ModuleEventSubscriber = { moduleId: string; topic: string; cb: (payload: unknown) => void }
   const moduleEventSubscribers = new Set<ModuleEventSubscriber>()
   let detachModuleEventSource: (() => void) | null = null
+  let moduleMethodCaller: ModuleMethodCaller | null = null
   type ModuleAppStateWatcher = {
     moduleId: string
     cb: (values: Readonly<Record<string, unknown>>) => void
@@ -2174,19 +2204,27 @@ export function createRendererHost(): RendererKernel {
             }
           }
         },
-        async invoke(channel, payload) {
-          if (!channel.startsWith(`${moduleId}:`)) {
-            throw new Error(
-              `Module "${moduleId}" may only invoke its own channels ("${moduleId}:*"); got "${channel}".`,
-            )
+        methods<Cs extends ModuleMethodContracts = ModuleMethodContracts>(): ModuleMethodsClient<Cs> {
+          // Always this module's own methods: the module id is not the caller's to name.
+          const call = (access: ModuleMethodAccess, method: string, params: unknown, commandId?: string) => {
+            if (!moduleMethodCaller)
+              return Promise.resolve({
+                ok: false as const,
+                code: 'unavailable' as const,
+                message: 'This window has no Studio connection to call a module method over.',
+              })
+            return moduleMethodCaller({
+              moduleId,
+              method,
+              access,
+              params,
+              ...(commandId === undefined ? {} : { commandId }),
+            })
           }
-          const outcome = await window.api.moduleBridgeInvoke(channel, payload)
-          if (!outcome.ok) {
-            // Keep the structured refusal code on the thrown error so module
-            // code can branch on the refusal kind without parsing prose.
-            throw Object.assign(new Error(outcome.message), { code: outcome.code })
+          return {
+            read: (method, params) => call('read', method, params) as never,
+            operate: (method, params, options) => call('operate', method, params, options?.commandId) as never,
           }
-          return outcome.result
         },
       }
     },
@@ -2318,6 +2356,9 @@ export function createRendererHost(): RendererKernel {
       // Attach anything that watched before the store landed (a module's
       // registerRenderer runs synchronously, this wiring a microtask later).
       for (const watcher of moduleAppStateWatchers) attachModuleAppStateWatcher(watcher)
+    },
+    setModuleMethodCaller(caller) {
+      moduleMethodCaller = caller
     },
     setModuleEventSource(source) {
       // One listener on the source, whoever subscribed and whenever. Re-wiring

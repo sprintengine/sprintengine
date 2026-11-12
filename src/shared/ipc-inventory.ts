@@ -73,7 +73,7 @@ const CHAT_LINK = shell("A chat link from the operating system, opened in one of
 const conversations = server('conversations')
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
-/** Moves to the protocol: the module kernel: its bridge, host services, events and notifications. */
+/** Moves to the protocol: the module kernel: its host services and enablement. */
 const modules = server('modules')
 /** Moves to the protocol: installing, trusting and listing extensions; the marketplace, plugins, the extension scaffold, artifacts and the hosted feeds. */
 const extensions = server('extensions')
@@ -328,7 +328,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),
-  'modules:bridge:invoke': modules('invoke'),
   'modules:host-service:invoke': modules('invoke'),
   'modules:set-enablement': modules('invoke'),
   'artifacts:get-settings': extensions('invoke'),
