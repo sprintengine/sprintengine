@@ -622,6 +622,12 @@ test("a chat started again in the same run keeps the lanes its earlier session s
 test('settling a chat whose session is still starting cancels the child being spawned', async () => {
   let release!: () => void
   const spawning = new Promise<void>((resolve) => (release = resolve))
+  // The spawn is in flight once the runtime has asked the adapter to start it:
+  // that, not the session showing in the list, is the moment to settle. The
+  // list has it a disk read earlier, and polling the list gave up when a loaded
+  // machine's disk made the start slower than the poll's budget.
+  let spawnStarted!: (sessionId: string) => void
+  const inFlight = new Promise<string>((resolve) => (spawnStarted = resolve))
   const disposed: string[] = []
   const base = echoProvider()
   const adapter: ConversationProviderAdapter = {
@@ -629,6 +635,7 @@ test('settling a chat whose session is still starting cancels the child being sp
     sessions: 'stateful',
     startSession: (input) =>
       (async function* () {
+        spawnStarted(input.sessionId)
         await spawning
         yield* base.startSession(input) as ConversationEvent[]
       })(),
@@ -646,13 +653,13 @@ test('settling a chat whose session is still starting cancels the child being sp
       providerId: 'echo-provider',
       modelId: 'model',
     })
-    let sessionId: string | undefined
-    await until(() => {
-      const listed = runtime.listSessions()
-      sessionId = listed.ok ? listed.sessions[0]?.sessionId : undefined
-      return sessionId !== undefined
-    })
-    assert.ok((await runtime.suspendSession({ sessionId: sessionId! })).ok)
+    const sessionId = await Promise.race([
+      inFlight,
+      starting.then((result) => assert.fail(`the start ended before it spawned: ${JSON.stringify(result)}`)),
+    ])
+    const listed = runtime.listSessions()
+    assert.equal(listed.ok && listed.sessions[0]?.status, 'starting', 'the session is still starting')
+    assert.ok((await runtime.suspendSession({ sessionId })).ok)
     assert.deepEqual(disposed, [sessionId])
     await starting
   })

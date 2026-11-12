@@ -52,6 +52,8 @@ const REFUSED_FOR_GOOD = new Set([
 ])
 const refusedForGood = (error?: { code?: string }): boolean =>
   error?.code !== undefined && REFUSED_FOR_GOOD.has(error.code)
+// No connection has refused anything yet.
+const NEVER_REFUSED = -1
 
 type Api = Parameters<typeof windowStudioClient>[0]
 
@@ -122,6 +124,8 @@ type Follow = {
   /** What the pane last said: whether it shows the terminal, and on which connection it said so. */
   visible: boolean | null
   shownOn: number
+  /** The connection that refused it for good, if one did: that one is not asked again. */
+  refusedOn: number
 }
 
 const follows = new Map<string, Follow>()
@@ -206,7 +210,8 @@ function subscribeOn(follow: Follow, client: StudioClient): void {
         if (follow.stop !== stop) return
         follow.stop = null
         follow.client = null
-        if (!refusedForGood(error)) retryBind(follow)
+        if (refusedForGood(error)) follow.refusedOn = connectionGeneration
+        else retryBind(follow)
       },
     },
   )
@@ -221,7 +226,9 @@ function rebindAll(): void {
       follow.stop = null
       follow.client = null
     }
-    bind(follow)
+    // The connection's open is heard a turn after it opens, so a stream asked
+    // for at once can already have been refused on it: ask on the next one.
+    if (follow.refusedOn !== connectionGeneration) bind(follow)
     if (follow.visible === true && follow.shownOn < connectionGeneration) {
       follow.shownOn = connectionGeneration
       void terminalsClient(follow.sessionId)
@@ -248,6 +255,7 @@ function followOf(sessionId: string): Follow {
     retry: null,
     visible: null,
     shownOn: 0,
+    refusedOn: NEVER_REFUSED,
   }
   follows.set(sessionId, follow)
   bind(follow)
@@ -491,6 +499,7 @@ function followPush(
   let stop: (() => void) | null = null
   let retries = 0
   let retry: ReturnType<typeof setTimeout> | null = null
+  let refusedOn = NEVER_REFUSED
   const later = () => {
     if (!alive || retry) return
     retry = setTimeout(
@@ -518,7 +527,8 @@ function followPush(
                 if (stop !== own) return
                 stop = null
                 client = null
-                if (!refusedForGood(error)) later()
+                if (refusedForGood(error)) refusedOn = connectionGeneration
+                else later()
               },
             },
           )
@@ -530,7 +540,11 @@ function followPush(
     )
   }
   watchConnection()
-  const reopen = () => subscribe()
+  // Heard a turn after the connection opens: the first ask, made at once, can
+  // already have been refused on it, and asking again would only be refused.
+  const reopen = () => {
+    if (refusedOn !== connectionGeneration) subscribe()
+  }
   onConnectionOpen.add(reopen)
   subscribe()
   return () => {

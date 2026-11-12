@@ -631,6 +631,20 @@ test('NewAgentPanel', async () => {
       const start = [...view.container.querySelectorAll('button')].find(
         (button) => button.getAttribute('aria-label') === 'Open terminal',
       )
+      // Picking Terminal hands focus to Open terminal a frame later. Wait for
+      // that hand-off rather than racing it: if it lands after the Tab below
+      // (as it did on a loaded machine), the button is already focused, the
+      // Tab's `.focus()` is a no-op, and no keyboard focus ever reaches it.
+      for (let frame = 0; frame < 200 && dom.window.document.activeElement !== start; frame += 1) {
+        await act(async () => {
+          await new Promise((resolve) => dom.window.setTimeout(resolve, 0))
+        })
+      }
+      assert.equal(dom.window.document.activeElement, start, 'picking Terminal hands focus to Open terminal')
+      // Step off it, so the Tab below is a real focus change.
+      await act(async () => {
+        ;(start as HTMLElement).blur()
+      })
       // Tabbed to, as a keyboard user reaches it: a tooltip answers
       // `:focus-visible`, and focus with no key behind it is not that.
       await act(async () => {
