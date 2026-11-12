@@ -155,4 +155,16 @@ test('a CLI is signed in where it keeps a key or a sign-in file; a keychain cann
   )
   assert.equal(cliSignedInHere('claude-code', { ANTHROPIC_API_KEY: 'k' }, 'linux', '/home/dev', none), true)
   assert.equal(cliSignedInHere('cursor', {}, 'linux', '/home/dev', none), null)
+  // A key helper in Claude Code's settings, or Codex keeping its login in the keyring.
+  const settings = (text: string) => (path: string) => (path === '/home/dev/.claude/settings.json' ? text : null)
+  assert.equal(
+    cliSignedInHere('claude-code', {}, 'linux', '/home/dev', none, settings('{"apiKeyHelper": "~/bin/key"}')),
+    true,
+  )
+  const config = (text: string) => (path: string) => (path === '/home/dev/.codex/config.toml' ? text : null)
+  assert.equal(
+    cliSignedInHere('codex', {}, 'linux', '/home/dev', none, config('cli_auth_credentials_store = "keyring"\n')),
+    null,
+  )
+  assert.equal(cliSignedInHere('codex', {}, 'linux', '/home/dev', none, config('model = "o4"\n')), false)
 })

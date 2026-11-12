@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -24,8 +24,9 @@ import { scheduledAgentTitle, type ScheduledAgent, type ScheduledAgentView } fro
 //
 //   - A CLI's command: the availability this process already probed; a CLI
 //     not looked for yet is null.
-//   - A CLI's sign-in: where the CLI keeps one in a file, or a key in the
-//     environment. A keychain (Claude Code on macOS) cannot be read, so null.
+//   - A CLI's sign-in: where the CLI keeps one in a file, a key in the
+//     environment, or a key helper in its settings. A keychain (Claude Code
+//     on macOS, Codex set to keep its login in one) cannot be read, so null.
 //   - `gh`: its command and `gh auth token`, asked when a watch's read fails.
 //   - MCP servers: the launch settings, by the same rule a launch refuses by.
 //   - Skills: the ids the launch's installer answers to.
@@ -66,6 +67,7 @@ export function cliSignedInHere(
   platform: NodeJS.Platform = process.platform,
   home: string = homedir(),
   exists: (path: string) => boolean = existsSync,
+  read: (path: string) => string | null = readText,
 ): boolean | null {
   const has = (...names: string[]) => names.some((name) => Boolean(env[name]?.trim()))
   if (cliId === 'claude-code') {
@@ -81,15 +83,36 @@ export function cliSignedInHere(
       return true
     const dir = env.CLAUDE_CONFIG_DIR?.trim() || join(home, '.claude')
     if (exists(join(dir, '.credentials.json'))) return true
+    // A key helper, or a key set in its own settings, signs every run in.
+    const settings = read(join(dir, 'settings.json'))
+    if (
+      settings &&
+      /"(apiKeyHelper|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_USE_BEDROCK|CLAUDE_CODE_USE_VERTEX)"/.test(
+        settings,
+      )
+    )
+      return true
     // On macOS the sign-in is in the keychain, which is not read here.
     return platform === 'darwin' ? null : false
   }
   if (cliId === 'codex') {
     if (has('OPENAI_API_KEY', 'CODEX_API_KEY')) return true
     const dir = env.CODEX_HOME?.trim() || join(home, '.codex')
-    return exists(join(dir, 'auth.json'))
+    if (exists(join(dir, 'auth.json'))) return true
+    // Told to keep its login in the system's keyring: not read here.
+    const config = read(join(dir, 'config.toml'))
+    if (config && /^\s*cli_auth_credentials_store\s*=\s*["'](keyring|auto)["']/m.test(config)) return null
+    return false
   }
   return null
+}
+
+function readText(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
 }
 
 export function createEnvironmentReadiness(deps: EnvironmentReadinessDeps): EnvironmentReadiness {

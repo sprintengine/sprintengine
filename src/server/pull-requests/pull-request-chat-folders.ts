@@ -33,7 +33,7 @@ export type PullRequestChatFolders = {
 
 const idOf = (key: PullRequestConversationKey) => JSON.stringify([key.workspaceId, key.agentId])
 
-export function pullRequestChatFoldersPath(dataDir: string): string {
+function pullRequestChatFoldersPath(dataDir: string): string {
   return join(dataDir, 'pull-requests', 'chat-folders.json')
 }
 
