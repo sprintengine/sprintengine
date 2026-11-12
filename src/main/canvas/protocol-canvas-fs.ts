@@ -1,7 +1,6 @@
 import { posix } from 'node:path'
 
-import type { StudioClient } from '../../../packages/agent-sdk/src/client'
-import { StudioError } from '../../../packages/agent-sdk/src/errors'
+import { type StudioClient, StudioError } from '../../../packages/client-runtime/src/public'
 import {
   STUDIO_UPLOAD_CHUNK_BYTES,
   type StudioFileEntry,

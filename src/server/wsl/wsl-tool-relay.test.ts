@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import type { connect } from '../../../packages/agent-sdk/src/client'
-import type { ToolCall, ToolsetInput } from '../../../packages/agent-sdk/src/tools'
+import type { connect, ToolCall, ToolsetInput } from '../../../packages/client-runtime/src/public'
 import { desktopToolParts } from '../../main/automation/gateway-tools-parity.test-helper'
 import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'

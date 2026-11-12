@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import type { SupervisorClock } from '../../../../packages/connection-supervisor/src/connectionSupervisor'
+import type { SupervisorClock } from '../../../../packages/client-runtime/src/public'
 import { superviseTabSocket, WEB_CLOSE_REVOKED, type TabSocket } from './webReconnect'
 
 // The web tab's socket on the connection supervisor, with the browser's

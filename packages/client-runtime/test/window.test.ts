@@ -11,7 +11,7 @@ import {
 import type { StudioChatBackend } from '../../../src/server/rpc/studio-rpc-types'
 import type { ConversationSessionFrame } from '../../../src/shared/conversation-runtime'
 import { createMemoryChannel, type MemoryChannelEnd } from '../../../tests/memory-channel'
-import { connect, type StudioClient, type StudioTransportFactory } from '../src/index'
+import { connect, type StudioClient, type StudioTransportFactory } from '../src/public'
 
 // The client over a connection that brings its own credential, as a Studio
 // window's does: a port per connection and a ticket good for its one hello.

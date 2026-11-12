@@ -15,6 +15,7 @@ import {
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   checkStudioProtocolVersion,
+  createStudioRpcClient,
   createStudioChunkAssembler,
   isKnownStudioServerFrameType,
   parseStudioServerFrame,
@@ -33,11 +34,12 @@ import {
   type StudioParsedServerFrame,
   type StudioPushTopic,
   type StudioRequest,
+  type StudioRpcClient,
   type StudioTopic,
   type StudioTopicParams,
   type StudioTopicPayload,
   type StudioWelcomeFrame,
-} from './protocol.js'
+} from '../protocol.js'
 import type { StudioTransport, StudioTransportFactory } from './transport.js'
 import { createClientTools, type StudioClientTools } from './tools.js'
 
@@ -169,6 +171,11 @@ export type StudioClient = AgentConversations & {
   supports(capability: StudioCapability): boolean
   /** One request, typed by the protocol's method table, answered or thrown as a `StudioError`. */
   request: StudioRequest
+  /**
+   * The same requests as one call per method, built from the protocol's method
+   * table (`createStudioRpcClient`): `client.rpc['conversation.list']({})`.
+   */
+  readonly rpc: StudioRpcClient
   /** Give Studio's agents tools that run here (`supports('client-tools')`). */
   readonly tools: StudioClientTools
   /**
@@ -1029,6 +1036,7 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     },
     supports: (capability) => studioPeerSupports(welcome?.capabilities, capability),
     request,
+    rpc: createStudioRpcClient(request),
     tools: tools.api,
     wake,
     subscribe(topic, params, listener) {

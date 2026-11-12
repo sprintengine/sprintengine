@@ -4,10 +4,7 @@ import { hashSecret } from './secret-hash'
 import { hostname } from 'os'
 
 import { backoffDelayMs } from '../../../shared/exponentialBackoff'
-import {
-  ConnectionSupervisor,
-  type ConnectionAttempt,
-} from '../../../../packages/connection-supervisor/src/connectionSupervisor'
+import { ConnectionSupervisor, type ConnectionAttempt } from '../../../../packages/client-runtime/src/public'
 import {
   normalizeTailnetScopes,
   tailnetScopeGrantsAccess,

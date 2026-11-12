@@ -11,7 +11,7 @@ import {
   type MessagePortMain,
 } from 'electron'
 
-import type { StudioTransport } from '../../../packages/agent-sdk/src/transport'
+import type { StudioTransport } from '../../../packages/client-runtime/src/public'
 import type { ServerBootstrapEnvelope } from '../../server/bootstrap/envelope'
 import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS, type PowerHint } from '../../server/desktop/server-methods'
 import { serveShellBridge } from '../../server/shell-bridge/serve-shell-bridge'

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'vitest'
 
 import { socketTransport } from '../../packages/agent-sdk/src/node'
-import type { StudioTransportFactory } from '../../packages/agent-sdk/src/transport'
+import type { StudioTransportFactory } from '../../packages/client-runtime/src/public'
 import type { StudioPullRequest, StudioPullRequestsMethodMap } from '../../packages/studio-protocol/src/public'
 import type { PullRequestsChanged, StudioPullRequests } from '../server/pull-requests/pull-request-domain'
 import { OWNER_TOKEN, startTestServer } from '../server/rpc/studio-rpc.test-helper'

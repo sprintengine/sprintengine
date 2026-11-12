@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 
-import type { OfferedToolset, ToolsetInput } from '../../../../../packages/agent-sdk/src/tools'
+import type { OfferedToolset, ToolsetInput } from '../../../../../packages/client-runtime/src/public'
 import { startWebCanvasToolset, type CanvasToolsetClient } from './webCanvasToolset'
 
 // When a web tab offers `canvas` (phase 9 spec, 3.8; R79).

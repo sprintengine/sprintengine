@@ -989,7 +989,7 @@ one per SSH environment, in main:
   background. A wake also restarts a reconnect's ten minutes (time asleep is
   not time spent trying) and lets a machine shown Disconnected try
   again; Needs sign-in and the person's own Disconnect stay held.
-- **Reconnect**: `BatchMode=yes`, jittered backoff 1 → 30 s (5 min once shown Disconnected), reset on wake, never given up; the rules are the shared connection supervisor's (`packages/connection-supervisor`). On success
+- **Reconnect**: `BatchMode=yes`, jittered backoff 1 → 30 s (5 min once shown Disconnected), reset on wake, never given up; the rules are the shared connection supervisor's (`packages/client-runtime/src/connection`). On success
   the client resumes every open stream with its `afterSeq` and `generation`
   (parent 5.1); a cursor the server cannot vouch for gets a reset snapshot.
   Commands in flight are retried with their `commandId`, so a send lost with

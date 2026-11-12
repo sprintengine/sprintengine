@@ -3,7 +3,7 @@ import {
   type StudioClient,
   type StudioTransport,
   type StudioTransportFactory,
-} from '../../../../packages/agent-sdk/src/index'
+} from '../../../../packages/client-runtime/src/public'
 import type { ElectronApi } from '../../../shared/electron-api'
 
 // This window's client of the Studio RPC: the same `@sprintengine/agent-sdk`

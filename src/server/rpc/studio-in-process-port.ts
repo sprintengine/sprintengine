@@ -1,7 +1,7 @@
 import { Duplex } from 'node:stream'
 
 import type { StudioAuth } from '../../../packages/studio-protocol/src/public'
-import type { StudioTransport, StudioTransportFactory } from '../../../packages/agent-sdk/src/transport'
+import type { StudioTransport, StudioTransportFactory } from '../../../packages/client-runtime/src/public'
 
 // A Studio connection whose two ends are in one process: the server reads and
 // writes a stream, and a client holds an `@sprintengine/agent-sdk` transport.

@@ -22,7 +22,7 @@ import { installTree, wslNodeDigests } from '../../main/hosts/wsl-helper-runtime
 import { WSL_NODE_VERSION } from '../../main/hosts/wsl-node-runtime'
 import type { WslRunner } from '../../main/hosts/wsl-runner'
 import type { RunOutcome } from '../../main/process-run'
-import { connect } from '../../../packages/agent-sdk/src/client'
+import { connect } from '../../../packages/client-runtime/src/public'
 import { createConnection } from 'node:net'
 import { desktopToolParts } from '../../main/automation/gateway-tools-parity.test-helper'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'

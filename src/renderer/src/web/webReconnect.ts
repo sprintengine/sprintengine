@@ -1,7 +1,4 @@
-import {
-  ConnectionSupervisor,
-  type SupervisorClock,
-} from '../../../../packages/connection-supervisor/src/connectionSupervisor'
+import { ConnectionSupervisor, type SupervisorClock } from '../../../../packages/client-runtime/src/public'
 import { onWindowVisibilityChange } from '../utils/windowActivity'
 
 // When a web tab tries its sockets again at once rather than waiting out a

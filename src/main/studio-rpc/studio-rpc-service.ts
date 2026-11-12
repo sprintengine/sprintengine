@@ -20,7 +20,7 @@ import {
 } from '../../server/rpc/studio-frame-port'
 import { inProcessStudioTransport } from '../../server/rpc/studio-in-process-port'
 import { STUDIO_SCOPES, type StudioGrant } from '../../../packages/studio-protocol/src/public'
-import type { StudioTransportFactory } from '../../../packages/agent-sdk/src/transport'
+import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
 import {
   createStudioRpcServer,
   type StudioRpcServer,

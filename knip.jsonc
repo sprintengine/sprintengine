@@ -40,6 +40,8 @@
     // The protocol packages' published entries; app code imports their files directly.
     "packages/conversation-protocol/src/public.ts",
     "packages/studio-protocol/src/public.ts",
+    // The client runtime's published entry.
+    "packages/client-runtime/src/public.ts",
     // The agent SDK's published entries, the client and its Node half.
     "packages/agent-sdk/src/index.ts",
     "packages/agent-sdk/src/node.ts",

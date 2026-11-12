@@ -9,9 +9,9 @@ import {
   StudioError,
   type ConversationFollowFrame,
   type ConversationEventStream,
-} from '../../packages/agent-sdk/src/index'
+  type StudioClient,
+} from '../../packages/client-runtime/src/public'
 import { connectToStudio } from '../../packages/agent-sdk/src/node'
-import type { StudioClient } from '../../packages/agent-sdk/src/client'
 import {
   STUDIO_CHAT_METHODS,
   STUDIO_METHODS,
