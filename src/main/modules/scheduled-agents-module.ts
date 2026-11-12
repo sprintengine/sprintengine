@@ -5,15 +5,18 @@ import { hostRegistry } from '../hosts/host-registry'
 import { powerActivity } from '../power-activity'
 import { writeDiagnosticLog } from '../diagnostics-service'
 import {
+  ConversationHostToken,
   ConversationLaunchServiceToken,
   ConversationRuntimeToken,
   ScheduledAgentsModuleServiceToken,
   ScheduledAgentsServiceToken,
+  WorkspaceRegistryToken,
 } from '../module-host/service-tokens'
 import type { CapabilityModule } from '../module-host/load-modules'
 import { createScheduledPromptImages } from '../scheduled-agents/prompt-images'
 import { isRunChatWorking, runScheduledAgent } from '../scheduled-agents/runner'
 import { createScheduledRunOutcomes } from '../scheduled-agents/run-outcomes'
+import { recoverScheduledRuns } from '../scheduled-agents/run-recovery'
 import { createScheduledAgentsScheduler } from '../scheduled-agents/scheduler'
 import {
   createScheduledAgentsModuleRegistry,
@@ -30,6 +33,9 @@ import {
   type ScheduledAgentView,
 } from '../../shared/scheduled-agents'
 import type { StudioPlatform } from '../../server/platform/platform'
+
+/** The client a scheduled run's first message is sent again as, after a restart. */
+const SCHEDULED_RUN_CLIENT_ID = 'studio-scheduled-agents'
 
 // The machine whose git answers for a folder: the run's own machine, so its
 // worktree names a gitdir that machine can follow. Nothing named leaves the
@@ -66,6 +72,8 @@ export function createScheduledAgentsModule(
     registerMain(host) {
       const conversationLaunchService = host.requireService(ConversationLaunchServiceToken)
       const conversations = host.requireService(ConversationRuntimeToken)
+      const createConversationHost = host.requireService(ConversationHostToken)
+      const workspaceRegistry = host.requireService(WorkspaceRegistryToken)
       const store = createScheduledAgentsStore({
         filePath: scheduledAgentsFilePath(platform.paths.dataDir()),
         warn: (message) => console.warn(`[scheduled-agents] ${message}`),
@@ -81,6 +89,8 @@ export function createScheduledAgentsModule(
       })
       const scheduler = createScheduledAgentsScheduler({
         list: () => store.list(),
+        beginRun: (commandId, run) => store.beginRun(commandId, run),
+        endRun: (commandId) => store.endRun(commandId),
         recordRun: outcomes.recordRun,
         onRan: outcomes.onRan,
         isRunWorking: (workspaceId) => {
@@ -115,9 +125,10 @@ export function createScheduledAgentsModule(
             ...(workspaceId ? { workspaceId } : {}),
           }).catch(() => undefined)
         },
-        run: (agent, signal) =>
+        run: (agent, signal, commandId) =>
           runScheduledAgent(
             withinOwnerModuleCeiling(agent, getModulePermissions),
+            commandId,
             {
               launchConversation: (request) => conversationLaunchService.launch(request),
               getRepoRoot: (folderPath, hostId) => withGitHost(gitHostFor(hostId), () => getGitRepoRoot(folderPath)),
@@ -161,6 +172,12 @@ export function createScheduledAgentsModule(
                 await withGitHost(gitHostFor(hostId), () => removeGitWorktree({ repoRoot, path, force: true }))
               },
               onFirstSendFailed: (workspaceId, message) => outcomes.firstSendFailed(agent.id, workspaceId, message),
+              // The run is done: its record goes.
+              onFirstSendDone: () => {
+                void store.endRun(commandId).catch((error: unknown) => {
+                  console.warn(`[scheduled-agents] A finished run could not be let go of: ${String(error)}`)
+                })
+              },
             },
             signal,
           ),
@@ -192,6 +209,33 @@ export function createScheduledAgentsModule(
         {
           start: async () => {
             await store.load()
+            // Runs the last process left on their way are settled before any
+            // schedule is looked at, so a one-time schedule is due or done.
+            await recoverScheduledRuns({
+              store,
+              outcomes,
+              findChat: (commandId) => {
+                for (const record of workspaceRegistry.getRecords())
+                  for (const [agentId, agent] of Object.entries(record.agents))
+                    if (agent?.launchCommandId === commandId) return { workspaceId: record.id, agentId }
+                return null
+              },
+              // The chat's ordinary send, which resumes a chat at rest.
+              send: async (chat, commandId, message) => {
+                const conversationHost = createConversationHost()
+                const key = conversationHost.resolveKey(chat.workspaceId, chat.agentId)
+                if (!key) return { ok: false, message: 'The chat is no longer there.' }
+                const sent = await conversationHost.command(key, SCHEDULED_RUN_CLIENT_ID, commandId, {
+                  kind: 'send',
+                  message: message.prompt,
+                  ...(message.skills.length > 0 ? { skills: message.skills } : {}),
+                })
+                return sent.ok ? { ok: true } : { ok: false, message: sent.message ?? 'The chat did not take it.' }
+              },
+              warn: (message) => console.warn(`[scheduled-agents] ${message}`),
+            }).catch((error: unknown) => {
+              console.warn(`[scheduled-agents] Runs cut off by the last stop could not be settled: ${String(error)}`)
+            })
             scheduler.start()
             scheduledAgents.notifyChanged()
             // A timer armed before a sleep counts only awake time, so a run

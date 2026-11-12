@@ -2609,6 +2609,7 @@ export function createAppServices(
     studioPluginService,
     studioAreaSkillStore,
     studioCore: core,
+    createConversationHost: core.createConversationHost,
     conversationOwner,
     conversations,
     githubTokenStore,

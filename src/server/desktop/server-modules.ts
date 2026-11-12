@@ -119,6 +119,7 @@ export function createServerModules(deps: {
           conversations: core.conversations,
           conversationLaunchService: core.conversationLaunchService,
           conversationModelCatalog: core.conversationModelCatalog,
+          createConversationHost: core.createConversationHost,
         },
         {
           getModulePermissions: (moduleId) => byId.get(moduleId)?.permissions,

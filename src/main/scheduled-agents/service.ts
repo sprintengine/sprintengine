@@ -105,7 +105,13 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
     deps.promptImages ? { ...draft, prompt: await deps.promptImages.keep(draft.prompt) } : draft
   const pruneImages = (): void => {
     if (!deps.promptImages) return
-    void deps.promptImages.prune(deps.store.list().map((agent) => agent.prompt)).catch(() => undefined)
+    // A run on its way still sends its prompt (after a restart, too), even
+    // once its schedule has closed or gone.
+    const prompts = [
+      ...deps.store.list().map((agent) => agent.prompt),
+      ...Object.values(deps.store.runs()).map((run) => run.prompt),
+    ]
+    void deps.promptImages.prune(prompts).catch(() => undefined)
   }
   const changed = (): void => {
     deps.scheduler.refresh()
