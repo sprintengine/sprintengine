@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync } from 'fs'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -9,8 +9,6 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { test } from 'vitest'
 
 import { canonicalManifestPayload, validateThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
-import { findMarketplaceResourcePath } from '../marketplace/resources'
-import { readTrustedMarketplacePublisherFingerprintsSync } from '../marketplace/trusted-publishers'
 import {
   computeModuleFileDigestsSync,
   manifestFingerprint,

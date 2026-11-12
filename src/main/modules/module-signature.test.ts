@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, sign } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { test } from 'vitest'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { canonicalManifestPayload, parseThirdPartyModuleManifest } from '../../shared/modules/third-party-manifest'
-import { findMarketplaceResourcePath } from '../marketplace/resources'
+import { canonicalManifestPayload } from '../../shared/modules/third-party-manifest'
 import {
   classifyModuleTrust,
   classifySignedManifestTrust,

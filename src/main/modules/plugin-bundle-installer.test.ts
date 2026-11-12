@@ -16,12 +16,7 @@ import {
   canonicalManifestPayload as moduleCanonicalPayload,
   validateThirdPartyModuleManifest,
 } from '../../shared/modules/third-party-manifest'
-import { findMarketplaceResourcePath } from '../marketplace/resources'
-import { readTrustedMarketplacePublisherFingerprintsSync } from '../marketplace/trusted-publishers'
-import type { ModuleTrustContext } from './module-signature'
 import { installMarketplacePlugin } from './plugin-bundle-installer'
-import { planThirdPartyMainModules } from './third-party-main-loader'
-import { discoverUserModules } from './user-module-registry'
 import { test } from 'vitest'
 
 test('plugin-bundle-installer', async () => {
