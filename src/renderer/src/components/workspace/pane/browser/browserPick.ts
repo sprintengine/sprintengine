@@ -6,6 +6,7 @@ import {
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
 import { focusedAgentTabInLayout } from '../../../../utils/modelRegistry'
 import { bracketedPaste } from '../../../../utils/terminalDrop'
+import { listTerminals, writeTerminal } from '../../../../studio/terminals'
 
 // What an element pick becomes for an agent (browser-pane epic, decision 8):
 // a `<browser_element>` block with the page URL, a stable selector, the React
@@ -137,7 +138,7 @@ export async function sendTextToFocusedAgent(workspaceId: string, text: string):
   if (!focused) return { ok: false, reason: 'no_agent' }
   let sessionId = focused.sessionId
   try {
-    const sessions = await window.api.terminalList()
+    const sessions = await listTerminals()
     const live = sessions.find(
       (session) =>
         session.kind === 'agent' &&
@@ -150,7 +151,7 @@ export async function sendTextToFocusedAgent(workspaceId: string, text: string):
     // A trailing space, the convention every other prefill follows: the caret
     // sits after the block, and nothing submits even in a CLI without
     // bracketed-paste support (a literal newline would).
-    await window.api.terminalWrite(sessionId, bracketedPaste(`${text} `))
+    await writeTerminal(sessionId, bracketedPaste(`${text} `))
     return { ok: true }
   } catch {
     return { ok: false, reason: 'write_failed' }

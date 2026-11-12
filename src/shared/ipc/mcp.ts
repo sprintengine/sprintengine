@@ -1,76 +1,18 @@
 // Part of the IPC contract: MCP server configuration, listings and sync.
 // ../electron-api.ts re-exports everything here.
 
-import type { McpClientTarget, McpTransport } from './agent-runtime'
+import type { McpClientTarget, McpServerConfig, McpSettings } from '../../../packages/studio-protocol/src/public'
 
-export type McpScope = 'workspace' | 'user'
-// 'source' is a server a *source* installed (backlog/2026-09-05-plugin-sources.md,
-// "Provenance"): it is neither bundled with the app nor typed by hand, and Sync
-// owns it. The distinction is what lets a sync overwrite exactly what it wrote
-// and nothing else — the same rule `.sprintengine-skill.json` gives skills.
-export type McpServerSource = 'bundled' | 'custom' | 'source'
-export type McpRiskLevel = 'low' | 'network' | 'local-command' | 'secrets'
-
-/**
- * Which source installed a server, which of its items it is, and the commit its
- * declaration was read at. A config carrying this is `source: 'source'`; one
- * without it can never be, so nothing a person typed is ever taken over by a
- * sync.
- */
-export type McpServerSourceRef = {
-  sourceId: string
-  /** The `ScannedMcpServer.id` in that source's scan. */
-  itemId: string
-  commitSha: string
-  /**
-   * Set by a sync that re-read the source and no longer found `itemId`. The
-   * entry stays and keeps working; the surface says it is no longer in its
-   * source rather than deleting a server someone is using.
-   */
-  missing?: boolean
-  /**
-   * Where the declaring plugin's own files landed in this workspace, for a
-   * server whose command was `${CLAUDE_PLUGIN_ROOT}`-relative. Absent for every
-   * other server.
-   *
-   * Kept on the entry, not looked up: MCP settings are app-level and a sync
-   * runs with no workspace open, so this is the only place the re-read knows
-   * what to resolve the variable to. Without it the next sync would write the
-   * literal token back over a working path
-   * (backlog/2026-09-06-a-plugins-own-files-must-land-before-its-server-can-start.md).
-   */
-  pluginRoot?: string
-}
-
-export type McpServerConfig = {
-  id: string
-  name: string
-  category?: string
-  description?: string
-  transport: McpTransport
-  command?: string
-  args?: string[]
-  url?: string
-  env?: Record<string, string>
-  envVarNames?: string[]
-  headers?: Record<string, string>
-  enabled: boolean
-  required?: boolean
-  clients: McpClientTarget[]
-  scope: McpScope
-  source: McpServerSource
-  /** Present exactly when `source` is 'source'; see McpServerSourceRef. */
-  sourceRef?: McpServerSourceRef
-  riskLevel: McpRiskLevel
-  auth?: string
-  capabilities?: string[]
-  sourceUrl?: string
-}
-
-export type McpSettings = {
-  syncEnabled: boolean
-  servers: Record<string, McpServerConfig>
-}
+// A server's configuration is the Studio protocol's, which a terminal
+// session's launch record carries (`packages/studio-protocol/src/agents.ts`).
+export type {
+  McpRiskLevel,
+  McpScope,
+  McpServerConfig,
+  McpServerSource,
+  McpServerSourceRef,
+  McpSettings,
+} from '../../../packages/studio-protocol/src/public'
 
 /**
  * An MCP server presented for display, without the fields that only a server

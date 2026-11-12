@@ -7,7 +7,7 @@ import type { IpcMain } from 'electron'
  *
  * It returns no pull requests. The record is the Studio server's, and a
  * session's list travels the way every other fact about a session does — a
- * `terminal:sessions-delta` snapshot carrying its `pullRequests`, filled from
+ * `terminal.sessions` snapshot carrying its `pullRequests`, filled from
  * what the server answered (terminal-pull-requests.ts). The sidebar's rows read
  * the server's lists by workspace over the Studio protocol themselves.
  *

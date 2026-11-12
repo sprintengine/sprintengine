@@ -40,6 +40,18 @@ import { TerminalJumpToLatest } from '../terminal/TerminalJumpToLatest'
 import { TerminalLinkMenu } from '../terminal/TerminalLinkMenu'
 import type { TerminalLinkTarget } from '../../utils/terminalLinkActions'
 import { hostPlatform } from '../../clientCapabilities'
+import {
+  closeTerminal,
+  onTerminalData,
+  onTerminalError,
+  onTerminalExit,
+  onTerminalReplay,
+  openTerminal,
+  resizeTerminal,
+  setTerminalVisible,
+  terminalStatus,
+  writeTerminal,
+} from '../../studio/terminals'
 
 interface Props {
   workspaceId: string
@@ -268,7 +280,7 @@ function PlainTerminalPanelOnThisComputer({
       if (mount.clientWidth === 0 || mount.clientHeight === 0) return
       fitAddon.fit()
       if (term.cols > 0 && term.rows > 0) {
-        void window.api.terminalResize(sessionId, term.cols, term.rows)
+        void resizeTerminal(sessionId, term.cols, term.rows)
       }
     }
 
@@ -365,14 +377,14 @@ function PlainTerminalPanelOnThisComputer({
       },
     })
 
-    const disposeData = window.api.onTerminalData(sessionId, (data) => {
+    const disposeData = onTerminalData(sessionId, (data) => {
       replayGate.handleLiveData(data)
     })
-    const disposeReplay = window.api.onTerminalReplay(sessionId, (data) => {
+    const disposeReplay = onTerminalReplay(sessionId, (data) => {
       replayGate.handleReplay(data)
     })
 
-    const disposeExit = window.api.onTerminalExit(sessionId, (code) => {
+    const disposeExit = onTerminalExit(sessionId, (code) => {
       term.write(`\r\n\x1b[31m[Terminal exited with code ${code}]\x1b[0m\r\n`)
       if (code !== 0 && !reportedTerminalFailure) {
         reportedTerminalFailure = true
@@ -389,7 +401,7 @@ function PlainTerminalPanelOnThisComputer({
       }
     })
 
-    const disposeError = window.api.onTerminalError(sessionId, (message) => {
+    const disposeError = onTerminalError(sessionId, (message) => {
       term.write(`\r\n\x1b[31m${message}\x1b[0m\r\n`)
       reportedTerminalFailure = true
       publishDiagnosticSync({
@@ -406,12 +418,12 @@ function PlainTerminalPanelOnThisComputer({
 
     const onDataDisposable = term.onData((data) => {
       terminalDiagnostics.recordInput(data)
-      window.api.terminalWriteFast(sessionId, data)
+      writeTerminal(sessionId, data)
       terminalDiagnostics.recordInputDispatch(data)
     })
 
     const onResizeDisposable = term.onResize(({ cols, rows }) => {
-      void window.api.terminalResize(sessionId, cols, rows)
+      void resizeTerminal(sessionId, cols, rows)
     })
 
     const fitScheduler = createTerminalFitScheduler(fitTerminal, mount)
@@ -465,8 +477,7 @@ function PlainTerminalPanelOnThisComputer({
             `\r\n\x1b[31m[worktree missing — opened in main checkout: ${terminalCwd ?? savedFolderPath ?? 'the workspace folder'}]\x1b[0m\r\n`,
           )
         }
-        void window.api
-          .terminalStatus(sessionId)
+        void terminalStatus(sessionId)
           .then((status) => {
             logPerfEvent(
               'PlainTerminalPanel',
@@ -484,13 +495,12 @@ function PlainTerminalPanelOnThisComputer({
           })
           .catch(() => {})
         replayGate.beginReplayWait()
-        void window.api
-          .terminalSpawn(sessionId, term.cols, term.rows, terminalCwd, false, undefined, undefined, undefined, true, {
-            kind: 'terminal',
-            workspaceId,
-            terminalId,
-            visible: true,
-          })
+        void openTerminal(sessionId, term.cols, term.rows, terminalCwd, false, undefined, undefined, undefined, true, {
+          kind: 'terminal',
+          workspaceId,
+          terminalId,
+          visible: true,
+        })
           .then((spawnResult) => {
             replayGate.finishReplayWait()
             // A pane gone before its answer came — a popped-out terminal brought
@@ -570,7 +580,7 @@ function PlainTerminalPanelOnThisComputer({
       // above may still be reading `term`.
       studioTerminal.dispose()
       if (killOnUnmount || shouldKillOnUnmount?.(sessionId)) {
-        void window.api.terminalKill(sessionId).catch(() => {})
+        void closeTerminal(sessionId).catch(() => {})
       } else {
         logPerfEvent('PlainTerminalPanel', 'terminal-detached-from-renderer', {
           sessionId,
@@ -578,7 +588,7 @@ function PlainTerminalPanelOnThisComputer({
           terminalId,
           kind: 'terminal',
         })
-        void window.api.terminalSetVisible(sessionId, false).catch(() => {})
+        void setTerminalVisible(sessionId, false).catch(() => {})
       }
     }
   }, [

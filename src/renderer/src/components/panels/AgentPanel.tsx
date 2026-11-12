@@ -22,6 +22,7 @@ import { requestPaletteOpen } from '../palette/paletteOpenRequest'
 import { CliInstallCta } from '../workspace/cliInstallRoute'
 import { ChatViewErrorBoundary } from './agentChat/ChatViewErrorBoundary'
 import { AgentChatView } from './agentPanelChunks'
+import { setTerminalReapExempt, suspendTerminal } from '../../studio/terminals'
 
 const TerminalView = React.lazy(() => import('./TerminalView'))
 
@@ -152,11 +153,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
   const canLockTerminal = canSuspendTerminal
   const toggleTerminalLock = () => {
     if (!effectiveSessionId) return
-    // Feature-guard: against an old preload (dev HMR, stale built renderer)
-    // the method is missing and an unguarded call would throw synchronously
-    // in the click handler — the .catch only covers the promise.
-    if (typeof window.api.setTerminalReapExempt !== 'function') return
-    void window.api.setTerminalReapExempt(effectiveSessionId, !isTerminalLocked).catch(() => {})
+    void setTerminalReapExempt(effectiveSessionId, !isTerminalLocked).catch(() => {})
   }
   // "Use a skill": live PTY agents only. Worktree agents are excluded like the
   // backlog file-drop path — ensure-install writes the main checkout's harness
@@ -186,9 +183,9 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
       target: { sessionId: effectiveSessionId, cli: cli ?? undefined, workspaceId },
     })
   }
-  const suspendTerminal = () => {
+  const suspendThisTerminal = () => {
     if (!effectiveSessionId) return
-    void window.api.terminalSuspend(effectiveSessionId).catch(() => {})
+    void suspendTerminal(effectiveSessionId).catch(() => {})
   }
   // Resume is owned by TerminalView (it holds the relaunch payload + keystroke
   // buffer), so the paused footer asks it to resume via a window event keyed by
@@ -253,7 +250,7 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
               // while locked — the lock's whole promise is "never paused".
               <Tooltip content="Suspend agent — free its memory, keep the output to read" placement="bottom">
                 <IconButton
-                  onClick={suspendTerminal}
+                  onClick={suspendThisTerminal}
                   aria-label="Suspend agent to free memory"
                   className="bg-[color:var(--bg-surface-raised)] opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
                 >

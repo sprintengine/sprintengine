@@ -1,4 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
+import { terminalsDouble } from '../../../studio/terminals.double'
+
+vi.mock('../../../studio/terminals', () => import('../../../studio/terminals.double'))
 
 const openedTabs: Array<{ workspaceId: string; terminalId: string; name?: string }> = []
 vi.mock('../../../utils/modelRegistry', () => ({
@@ -18,6 +21,15 @@ function installApi(input: {
   spawnFails?: string
 }): Calls {
   const calls: Calls = { spawns: [], writes: [], signIns: [] }
+  terminalsDouble.openTerminal = async (...args: unknown[]) => {
+    calls.spawns.push(args)
+    return input.spawnFails
+      ? { ok: false as const, sessionId: String(args[0]), message: input.spawnFails, exitCode: 1 }
+      : { ok: true as const, sessionId: String(args[0]) }
+  }
+  terminalsDouble.writeTerminal = async (sessionId: string, data: string) => {
+    calls.writes.push({ sessionId, data })
+  }
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -32,15 +44,6 @@ function installApi(input: {
               platform: 'win32',
             }
           )
-        },
-        terminalSpawn: async (...args: unknown[]) => {
-          calls.spawns.push(args)
-          return input.spawnFails
-            ? { ok: false as const, sessionId: String(args[0]), message: input.spawnFails, exitCode: 1 }
-            : { ok: true as const, sessionId: String(args[0]) }
-        },
-        terminalWrite: async (sessionId: string, data: string) => {
-          calls.writes.push({ sessionId, data })
         },
       },
     },

@@ -26,6 +26,12 @@ export type StudioWindowTicketIssuer = {
 
 type Watched = { key: string; generation: number }
 
+/** The webContents id a window key names (`window-<id>-<generation>`), or null for a key that is not one. */
+export function webContentsIdOfWindowKey(windowKey: string): number | null {
+  const match = /^window-(\d+)-\d+$/.exec(windowKey)
+  return match ? Number(match[1]) : null
+}
+
 export function registerStudioWindowTicketIpc(ipcMain: IpcMain, issuer: StudioWindowTicketIssuer): void {
   const windows = new Map<number, Watched>()
   let generations = 0

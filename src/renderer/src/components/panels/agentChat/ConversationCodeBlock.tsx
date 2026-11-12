@@ -6,6 +6,7 @@ import { useConversationTransport } from './conversationTransport'
 import { clientSupports } from '../../../clientCapabilities'
 import { useDiagramDrawing } from './conversationDiagram'
 import { useVisualDrawing } from './conversationVisual'
+import { onTerminalData, onTerminalReplay, openTerminal, writeTerminal } from '../../../studio/terminals'
 
 // How long a new terminal's shell gets to show it takes a bracketed paste:
 // long enough for rc files that load a prompt framework, short enough that a
@@ -62,10 +63,7 @@ function watchBracketedPaste(sessionId: string) {
     enabled = track(data)
     if (enabled) settle?.(true)
   }
-  const stops = [
-    window.api.onTerminalData(sessionId, receive(live)),
-    window.api.onTerminalReplay(sessionId, receive(replayed)),
-  ]
+  const stops = [onTerminalData(sessionId, receive(live)), onTerminalReplay(sessionId, receive(replayed))]
   return {
     enabled: (timeoutMs: number): Promise<boolean> =>
       enabled
@@ -99,18 +97,11 @@ async function pasteInTerminal(context: ConversationLinkContext, command: string
   const sessionId = `terminal-${terminalId}`
   const watch = watchBracketedPaste(sessionId)
   try {
-    const result = await window.api.terminalSpawn(
-      sessionId,
-      100,
-      30,
-      context.cwd,
-      false,
-      undefined,
-      undefined,
-      undefined,
-      true,
-      { kind: 'terminal', workspaceId: context.workspaceId, terminalId },
-    )
+    const result = await openTerminal(sessionId, 100, 30, context.cwd, false, undefined, undefined, undefined, true, {
+      kind: 'terminal',
+      workspaceId: context.workspaceId,
+      terminalId,
+    })
     if (!result.ok) return report('Could not start a terminal', result.message)
     const firstLine = command.split('\n', 1)[0]
     focusOrAddTerminalTab(
@@ -120,7 +111,7 @@ async function pasteInTerminal(context: ConversationLinkContext, command: string
     )
     const plan = terminalPastePlan(command, await watch.enabled(BRACKETED_PASTE_WAIT_MS))
     if (plan.kind !== 'copy') {
-      await window.api.terminalWrite(sessionId, plan.data)
+      await writeTerminal(sessionId, plan.data)
       return
     }
     await window.api.clipboardWriteText(command)

@@ -94,11 +94,13 @@ in WSL and on a minimal Linux box.
 
 **Non-goals for v1**
 
-- **Terminals on the server** (ruling a). The desktop keeps its terminals for
-  the machine it runs on (and for WSL through today's `wsl.exe` path), served
-  by Electron main as today. A remote or headless server has none. The chat
-  features that open a terminal (CLI sign-in, running a code block, Resume in
-  terminal) are hidden on a server that does not advertise them.
+- **Terminals on the server** (ruling a, superseded 2026-11-12 by the one-server
+  plan). The desktop's terminals are now served over the Studio protocol
+  (`terminal.*`, capability `terminals`) by the Studio running in the desktop's
+  process, and its windows reach them only that way; a server in a process of
+  its own does not advertise them until the terminal runtime moves into it.
+  The chat features that open a terminal (CLI sign-in, running a code block,
+  Resume in terminal) are hidden on a server that does not advertise them.
 - The full git panel, file explorer and editor over the protocol (ruling c).
 - A browser or a canvas renderer in the server (ruling f), and with them any
   Chromium download, screencast or server-side drawing.
@@ -524,7 +526,7 @@ by browser fallbacks, is the web client's `window.api` (section 11).
 | Bucket                                                 | Members (approx.) | Fate                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **v1 server** — what the chat view and its panels call | ~75               | conversation (38), the command catalog, providers/models/secrets, `cliModelsDiscover`, launch settings, workspace sync, `searchFiles`/`cancelFileSearch`, `statPath`, `readImageDataUrl`, `getGitRepoRoot`, skills list/scan, `generateChatTitle`, `compactAgentSession`, `readConversationPeek`, `hostsList`           |
-| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile`, terminals (21, for the local machine)                                                                                         |
+| **Shell, stays in the preload**                        | ~120              | window (19), browser pane (25), app menu, update, clipboard, dialogs, appearance, splash/startup/build-stamp, `openExternal`, `showItemInFolder`, `openFolderInTarget`, `getPathForFile` (terminals moved to `terminal.*`)                                                                                                |
 | **Later server domains**                               | ~250              | git panel (62), file explorer/editor (most of filesystem's 40), backlog (17), skills management, marketplace, modules, mesh (folded into environments), automation/tailnet admin, canvas (a client module; boards via `files` from phase 5), tours, memory graph, design system, scheduled agents, pull requests, voice |
 
 The rule for each domain that moves: extract a handler object with no IPC in it

@@ -7,7 +7,11 @@ import {
   DEFAULT_AGENT_SPAWN_PERMISSION_PRESET,
   emptyAgentLaunchSettings,
 } from '../shared/launch-settings'
-import type { TerminalSpawnPayload } from './ipc/terminal-ipc'
+import {
+  refuseTerminalSpawnOutOfProcess,
+  TERMINALS_NOT_SERVED_OUT_OF_PROCESS,
+  type TerminalSpawnPayload,
+} from './terminal-spawn-payload'
 import {
   createAgentLaunchService,
   type AgentLaunchServiceDeps,
@@ -110,6 +114,16 @@ test('agent-launch-service', async () => {
     assert.equal(spawn.resume, true)
     assert.equal(spawn.cliSessionId, '5d1c2a3e-chat-session', 'the spawn resumes the named session')
     assert.equal(spawn.initialPrompt, undefined, 'a resumed conversation is not sent a message nobody typed')
+  })
+
+  run('out of process a launch is refused in words and starts nothing a window could not show', async () => {
+    const app = harness({ spawnResult: refuseTerminalSpawnOutOfProcess({ sessionId: 'session-minted' }) })
+
+    const launched = await app.service.launch({ workspaceId: 'ws-1', cli: 'claude-code', prompt: 'Look at the tests.' })
+
+    assert.equal(launched.ok, false)
+    assert.equal(!launched.ok && launched.code, 'agent_spawn_failed')
+    assert.equal(!launched.ok && launched.message, TERMINALS_NOT_SERVED_OUT_OF_PROCESS)
   })
 
   run('a resume is refused on a CLI that cannot resume, rather than started fresh', async () => {

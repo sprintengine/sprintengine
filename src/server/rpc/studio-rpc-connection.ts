@@ -17,6 +17,8 @@ import {
   parseStudioTopicParams,
   studioClientFrameIds,
   authorizeStudioTopic,
+  authorizeStudioMethod,
+  projectTerminalSession,
   studioGrantPrincipal,
   studioRefusedGrantName,
   studioWireFrames,
@@ -49,6 +51,7 @@ import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioModules } from './studio-modules'
+import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -105,6 +108,10 @@ const MAX_SUBSCRIPTIONS = 32
 // shows. Its bounds are there to stop a runaway, not to pace a view.
 const OWN_WINDOW_MAX_IN_FLIGHT = 512
 const OWN_WINDOW_MAX_SUBSCRIPTIONS = 512
+// A terminal's output queued behind a slow reader past this is dropped and the
+// pane is sent its screen again instead: the connection is not given up for one
+// terminal that printed faster than it could be read.
+const MAX_TERMINAL_QUEUED_BYTES = 1024 * 1024
 const BUSY_RETRY_MS = 250
 const SUBSCRIBE_RETRY_MS = 2_000
 // How long a closing connection waits for the client to read its `bye`.
@@ -148,6 +155,10 @@ export type StudioRpcConnectionOptions = {
   localServers?: StudioLocalServers
   /** What this Studio's modules say: the `module.events` and `module.notifications` streams. */
   modules?: StudioModules
+  /** The terminals on this machine: the `terminal.*` streams. */
+  terminals?: StudioTerminals
+  /** The window this connection is one of Studio's own for, as main names it. */
+  windowKey?: string
   /** The welcome's server-wide members: who this Studio is and what it serves. */
   welcome: () => Omit<StudioWelcomeFrame, 't' | 'grant' | 'pairing'>
   /** The delay a client that fell behind is told to wait; it should grow with repeated resyncs. */
@@ -169,6 +180,8 @@ type LiveEntry = {
   sub?: string
   delta?: { key: string; event: ConversationEvent }
   partialToolUseId?: string
+  /** A terminal's `data` push: the next one for the same subscription joins it while it waits. */
+  terminalData?: { data: string }
 }
 // `end`: a replay's, called once when its fence goes out or it is done or dropped.
 type BulkEntry = {
@@ -204,6 +217,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     ownWindow,
     ...(options.audited === undefined ? {} : { audited: options.audited }),
     ...(options.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
+    ...(options.windowKey === undefined ? {} : { windowKey: options.windowKey }),
   }
   // `incompatible`: authenticated, but the client's protocol window does not
   // meet this Studio's; only the update methods are served (`update.ts`).
@@ -887,6 +901,153 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /** Whether the grant as it stands still reaches a topic; a revoked or narrowed one ends what it no longer reaches. */
+  function stillGranted(topic: StudioTopic): boolean {
+    const grant = liveGrant()
+    if (!grant) return false
+    if (authorizeStudioTopic(grant, topic).ok) return true
+    refreshGrant()
+    return false
+  }
+
+  /**
+   * One session's output for the pane that subscribed. A replay (a screen in
+   * full: up to a couple of megabytes, and an escape-heavy one grows six-fold
+   * in JSON) is queued as a paced unit, as a conversation's join is, so a
+   * window showing several terminals at once is never taken for a reader that
+   * stopped. What was queued for the pane before it is dropped: the replay
+   * holds it. Output waiting behind a slow reader joins the push before it,
+   * and past `MAX_TERMINAL_QUEUED_BYTES` it is dropped and the pane repainted.
+   */
+  function subscribeTerminalOutput(id: string, params: StudioTopicParams<'terminal.output'>): void {
+    const terminals = options.terminals
+    if (!terminals) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve terminal.output.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'terminal.output', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    let follow: StudioTerminalFollow | null = null
+    let repainting = false
+    follow = terminals.follow(options.connectionId, params.sessionId, (event) => {
+      if (!current() || !stillGranted('terminal.output')) return
+      if (event.type === 'replay') {
+        repainting = false
+        dropQueued(id)
+        const json = JSON.stringify({ t: 'push', sub: id, payload: event })
+        replaying.set(id, (replaying.get(id) ?? 0) + 1)
+        let ended = false
+        const end = () => {
+          if (ended) return
+          ended = true
+          if (subscriptions.get(id) !== subscription) return
+          const left = (replaying.get(id) ?? 1) - 1
+          if (left > 0) replaying.set(id, left)
+          else replaying.delete(id)
+        }
+        enqueueBulk(
+          (function* () {
+            for (const line of studioWireFrames(json, nextFrameId())) {
+              if (!current()) return
+              yield line
+            }
+            end()
+          })(),
+          Buffer.byteLength(json),
+          id,
+          end,
+        )
+        return
+      }
+      if (repainting) return
+      if (event.type === 'data') {
+        const tail = pending.at(-1)
+        if (tail?.kind === 'live' && tail.sub === id && tail.terminalData) {
+          const grown = Buffer.byteLength(JSON.stringify(event.data)) - 2
+          if (queuedBytes(id) + grown > MAX_TERMINAL_QUEUED_BYTES) return repaint()
+          tail.terminalData.data += event.data
+          tail.json = undefined
+          tail.bytes += grown
+          liveBytes += grown
+          if (liveBytes > ((replaying.get(id) ?? 0) > 0 ? MAX_LIVE_BYTES_BEHIND_REPLAY : MAX_LIVE_BYTES)) resync()
+          return
+        }
+        const payload = { type: 'data' as const, data: event.data }
+        const json = JSON.stringify({ t: 'push', sub: id, payload })
+        if (queuedBytes(id) + Buffer.byteLength(json) > MAX_TERMINAL_QUEUED_BYTES) return repaint()
+        enqueueLive({ t: 'push', sub: id, payload }, id, json)
+        const queued = pending.at(-1)
+        if (queued?.kind === 'live' && queued.sub === id && queued.json === json) queued.terminalData = payload
+        return
+      }
+      push('terminal.output', id, event)
+    })
+    function repaint(): void {
+      repainting = true
+      dropQueued(id)
+      // Asked once the current frame is handled: the replay it answers with comes back through this follow.
+      queueMicrotask(() => {
+        if (current()) follow?.repaint()
+        else repainting = false
+      })
+    }
+    subscription.handle = { dispose: () => follow?.dispose() }
+  }
+
+  /** The bytes of live frames still waiting for one subscription. */
+  function queuedBytes(sub: string): number {
+    let bytes = 0
+    for (const entry of pending) if (entry.kind === 'live' && entry.sub === sub) bytes += entry.bytes
+    return bytes
+  }
+
+  /**
+   * Drop the output and replays waiting for one terminal subscription that have
+   * not started out: a replay behind them holds the screen they would paint.
+   * An exit or an error is kept, since no replay says either.
+   */
+  function dropQueued(sub: string): void {
+    for (const entry of [...pending]) {
+      if (entry.sub !== sub) continue
+      if (entry.kind === 'live') {
+        if (entry.terminalData) removeLive(entry)
+      } else if (!entry.started) {
+        pending.splice(pending.indexOf(entry), 1)
+        bulkBytes -= entry.bytes
+        entry.end?.()
+      }
+    }
+    releaseBulkWaiters()
+  }
+
+  /** What changed among the terminals, each session as this client may see it. */
+  function subscribeTerminalSessions(id: string): void {
+    const terminals = options.terminals
+    if (!terminals) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve terminal.sessions.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'terminal.sessions', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = terminals.onSessionsDelta((delta) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      if (!stillGranted('terminal.sessions')) return
+      if (ownWindow) {
+        push('terminal.sessions', id, delta)
+        return
+      }
+      const grant = liveGrant()
+      if (!grant) return
+      const operate = authorizeStudioMethod(grant, 'terminal.write').ok
+      push('terminal.sessions', id, {
+        upserts: delta.upserts.map((session) => projectTerminalSession(session, { operate })),
+        removed: delta.removed,
+      })
+    })
+    subscription.handle = { dispose: stop }
+  }
+
   /** The bell: the rows the kernel still keeps, oldest first, then each new one. */
   function subscribeModuleNotifications(id: string): void {
     const modules = options.modules
@@ -909,6 +1070,28 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     // The backlog and the listener in one turn: nothing raised between them is lost or heard twice.
     for (const notification of modules.recentNotifications()) send(notification)
     subscription.handle = { dispose: modules.onNotification(send) }
+  }
+
+  /** A first message could not be typed into its agent: the client takes it with `terminal.takeUndeliveredPrompts`. */
+  function subscribePromptUndelivered(id: string): void {
+    const terminals = options.terminals
+    if (!terminals) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve terminal.promptUndelivered.')
+      return
+    }
+    const subscription: Subscription = {
+      id,
+      topic: 'terminal.promptUndelivered',
+      key: null,
+      replay: null,
+      handle: null,
+    }
+    subscriptions.set(id, subscription)
+    const stop = terminals.onPromptUndelivered(() => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      if (stillGranted('terminal.promptUndelivered')) push('terminal.promptUndelivered', id, {})
+    })
+    subscription.handle = { dispose: stop }
   }
 
   /** The client toolsets this client may see, whole, after each change; a burst of changes is one push. */
@@ -950,6 +1133,9 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'localServers.changed': subscribeLocalServers,
     'module.events': subscribeModuleEvents,
     'module.notifications': subscribeModuleNotifications,
+    'terminal.output': subscribeTerminalOutput,
+    'terminal.sessions': subscribeTerminalSessions,
+    'terminal.promptUndelivered': subscribePromptUndelivered,
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

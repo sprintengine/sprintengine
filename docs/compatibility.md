@@ -1053,7 +1053,26 @@ by its scope. `session.terminalHandoff`, `providers.signIn` and the three
 `pullRequests` reports of Studio's own agents stay an owner's, each with its
 reason in the method table. `settings:write` is a new scope, so an older Studio
 drops it from a grant it does not know, and keeps its owner-only rule on the
-methods that need it. A client asks `studioGrantAllows`, never `grant.owner`. A hello's `client.kind` and `client.instanceId` are
+methods that need it. A client asks `studioGrantAllows`, never `grant.owner`.
+`terminals` (2026-11-12) adds the terminals on the Studio's machine:
+`terminal.list`, `terminal.status`, `terminal.open`, `terminal.resume`,
+`terminal.write`, `terminal.ack`, `terminal.resize`, `terminal.setVisible`,
+`terminal.suspend`, `terminal.close`, `terminal.setReapExempt`, and the
+owner-only `terminal.takeUndeliveredPrompts` and `terminal.configure`; and the
+streams `terminal.output` (one session's `replay`, `data`, `exit` and
+`error`, for the pane that opened or showed it), `terminal.sessions` (deltas;
+ask `terminal.list` after subscribing) and the owner-only
+`terminal.promptUndelivered`. They are held to two new scopes, `terminal:read`
+and `terminal:operate` (which carries read): a grant made before them holds
+neither, and a browser session's never does. `terminal.open`, `terminal.resume`
+and `terminal.close` are commands (`commandId`, no read timeout); a
+`terminal.write` carries its pane's `writer` and a `seq`, so one sent again
+after a reconnect is dropped, and at most `STUDIO_TERMINAL_MAX_WRITE_UNITS`
+units, a longer paste going in numbered pieces. A client other than the app's
+own window is never sent a session's `lastPrompt` or its launch record's MCP
+settings, and one holding only `terminal:read` not its folders either. The
+desktop's own window reaches its terminals only this way: the window IPC for
+them is gone. A hello's `client.kind` and `client.instanceId` are
 optional hints a Studio that does not know them ignores. Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

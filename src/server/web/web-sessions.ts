@@ -65,13 +65,18 @@ type PairingCode = { hash: string; expiresAtMs: number; route: WebRoute; owner: 
 export type WebTicketSubject = { kind: 'session'; sessionId: string } | { kind: 'embed'; embedId: string }
 type Ticket = { hash: string; expiresAtMs: number; subject: WebTicketSubject }
 
+// A browser has no terminal panes, so no browser session holds the terminals;
+// one on the tailnet never gets a shell on this machine either way.
+const BROWSER_SCOPES: StudioScope[] = STUDIO_SCOPES.filter(
+  (scope) => scope !== 'terminal:read' && scope !== 'terminal:operate',
+)
 /**
  * The scopes a tailnet browser holds: everything but offering tools (P5c
  * §7.1, R79), updating this machine's Studio, which drains and restarts it,
  * and changing its settings (a provider's key): a browser that reaches it over
  * the tailnet is told how, not given it.
  */
-const TAILNET_SCOPES: StudioScope[] = STUDIO_SCOPES.filter(
+const TAILNET_SCOPES: StudioScope[] = BROWSER_SCOPES.filter(
   (scope) => scope !== 'tools:offer' && scope !== 'environment:maintain' && scope !== 'settings:write',
 )
 
@@ -272,7 +277,7 @@ export function createWebSessionStore(options: {
       owner: input.owner,
       // A tailnet browser never offers tools (R79); what else it may not do
       // is held where it is served (no previews, no folder browser).
-      scopes: input.route === 'loopback' ? [...STUDIO_SCOPES] : [...TAILNET_SCOPES],
+      scopes: input.route === 'loopback' ? [...BROWSER_SCOPES] : [...TAILNET_SCOPES],
       createdAt: new Date(at).toISOString(),
       expiresAt: new Date(at + SESSION_LIFETIME_MS).toISOString(),
       lastSeenAt: new Date(at).toISOString(),

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { emptyAgentLaunchSettings } from '../shared/launch-settings'
-import type { TerminalSpawnPayload } from './ipc/terminal-ipc'
+import type { TerminalSpawnPayload } from './terminal-spawn-payload'
 import { planAgentLaunch, renderAgentLaunchArgv } from './agent-launch-render'
 import { LAUNCH_ARG_BUDGETS } from './launch-arg-budget'
 import { createAgentLaunchService } from './agent-launch-service'

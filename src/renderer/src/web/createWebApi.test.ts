@@ -54,7 +54,7 @@ test('a member a browser cannot do is a rejected promise, never a throw or undef
   let thrown: unknown = null
   let pending: Promise<unknown> | null = null
   expect(() => {
-    pending = api.terminalSpawn('session-1', 80, 24, '/Users/dev/app')
+    pending = api.panePopOutOpen({ popOutId: 'pop-1', tabs: [] } as never)
   }).not.toThrow()
   try {
     await pending
@@ -62,7 +62,7 @@ test('a member a browser cannot do is a rejected promise, never a throw or undef
     thrown = error
   }
   expect(isUnsupportedOnThisClient(thrown)).toBe(true)
-  expect(refusedChannels()).toContain('terminal:spawn')
+  expect(refusedChannels()).toContain('pane-popout:open')
   expect(posted).toHaveLength(0)
 })
 
@@ -85,7 +85,6 @@ test('the clipboard and links act in the browser, never on the server', async ()
 test('the chat rides the Studio protocol, and boot reads find empty states', async () => {
   const api = createWebApi()
   expect(api.studioChatTransport).toBe('studio')
-  expect(await api.terminalList()).toEqual([])
   expect((await api.authGetState()).status).toBe('signed_out')
   expect((await api.listThirdPartyRendererEntries()).entries).toEqual([])
 })

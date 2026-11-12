@@ -1,5 +1,6 @@
-import type { WebContents } from 'electron'
 import type { TerminalSession } from './terminal-session'
+import type { TerminalViewer } from '../server/terminals/terminal-viewer'
+import type { TerminalOutputEvent } from '../../packages/studio-protocol/src/public'
 
 type TerminalOutputCause = 'timer' | 'exit' | 'dispose' | 'visibility'
 
@@ -35,7 +36,7 @@ export const TERMINAL_FLOW_STALL_RESUME_MS = 2_000
 
 type TerminalOutputBufferOptions = {
   getSession(sessionId: string): TerminalSession | undefined
-  sendTerminalEvent(sender: WebContents, channel: string, payload: string | number): void
+  sendTerminalEvent(viewer: TerminalViewer, event: TerminalOutputEvent): void
   recordDataBatch(
     session: TerminalSession | undefined,
     cause: TerminalOutputCause,
@@ -56,7 +57,7 @@ const TERMINAL_THROTTLE_NOTICE = '\r\n[Terminal output throttled to keep the UI 
 type PendingBatch = {
   // The session the newest chunk was queued for. A resume can respawn under
   // the same id between the first chunk of a batch and its flush; the batch
-  // goes to the window the newest chunk's session is routed to.
+  // goes to the viewer the newest chunk's session is routed to.
   session: TerminalSession
   chunks: string[]
   bytes: number
@@ -99,10 +100,10 @@ export function createTerminalOutputBuffer({
     // and the reveal path resends them, so forwarding here would only
     // duplicate the tail.
     if (session?.visible !== false) {
-      sendTerminalEvent(pending.session.sender, `terminal:data:${pending.session.sessionId}`, data)
+      sendTerminalEvent(pending.session.viewer, { type: 'data', data })
       if (session) {
         session.rendererDeliveredOffset = pending.endOffset
-        session.rendererDeliveredTo = session.sender
+        session.rendererDeliveredTo = session.viewer
         noteRendererForwarded(sessionId, data.length)
       }
     }

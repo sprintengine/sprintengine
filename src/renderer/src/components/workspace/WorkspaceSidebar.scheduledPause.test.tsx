@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { afterEach, beforeAll, test } from 'vitest'
+import { afterEach, beforeAll, test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 // Pausing scheduled agents from the sidebar, on the real sidebar: a paused
 // schedule's row is quiet and says "Paused", its hover button pauses and
@@ -82,13 +85,13 @@ async function mount(agents: unknown[]) {
   let publishAgents: (agents: unknown) => void = () => {}
   let publishPause: (pause: unknown) => void = () => {}
   const viewOf = (id: string) => agents.find((agent) => (agent as { id: string }).id === id)
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
+  terminalsDouble.closeTerminal = async () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
-    terminalKill: async () => {},
     listScheduledAgents: async () => agents,
     onScheduledAgentsChanged: (listener: (agents: unknown) => void) => {
       publishAgents = listener

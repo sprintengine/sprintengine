@@ -5,6 +5,9 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import type { InstalledSkill, InstalledSkillsResult } from '../../../../shared/installed-skills'
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
 import { InstalledSkillsPanel, pickSkillsCli, type InstalledSkillsPanelHandle } from './InstalledSkillsPanel'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 type FixtureSession = Partial<TerminalSessionSnapshot> & { sessionId: string }
 
@@ -58,12 +61,12 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   HTMLElement.prototype.scrollIntoView = vi.fn()
   list.mockResolvedValue({ ok: true, skills: rows, diagnostics: [] })
+  terminalsDouble.listTerminals = async () => fixtures.sessions
+  terminalsDouble.writeTerminal = write
   Object.assign(window, {
     api: {
       installedSkillsList: list,
       installedSkillRemove: remove,
-      terminalList: async () => fixtures.sessions,
-      terminalWrite: write,
       showItemInFolder: vi.fn(),
     },
   })

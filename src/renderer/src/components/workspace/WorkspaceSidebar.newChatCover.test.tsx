@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.newChatCover', async () => {
   // The window's chat under New chat is not on screen. A chat started with ⌘⏎
@@ -49,21 +52,21 @@ test('WorkspaceSidebar.newChatCover', async () => {
 
   // Alpha's agent is alive and hook-reported idle once its turn ends: the
   // "genuinely finished" shape that earns the mark when its clock stops.
+  terminalsDouble.listTerminals = async () => [
+    {
+      sessionId: 's1',
+      workspaceId: 'w1',
+      processAlive: true,
+      kind: 'agent',
+      cli: 'claude-code',
+      activity: { kind: 'idle', since: 1 },
+      agentState: { phase: 'idle', since: 1, source: 'hook' },
+    },
+  ]
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [
-      {
-        sessionId: 's1',
-        workspaceId: 'w1',
-        processAlive: true,
-        kind: 'agent',
-        cli: 'claude-code',
-        activity: { kind: 'idle', since: 1 },
-        agentState: { phase: 'idle', since: 1, source: 'hook' },
-      },
-    ],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
   }
 

@@ -46,7 +46,6 @@ import { sshEnvironmentsApi } from './api/ssh-environments'
 import { environmentsApi } from './api/environments'
 import { splashApi } from './api/splash'
 import { startupApi } from './api/startup'
-import { terminalApi } from './api/terminal'
 import { updateApi } from './api/update'
 import { windowApi } from './api/window'
 import { browserApi } from './api/browser'
@@ -129,7 +128,6 @@ export const apiModules = {
   ...credentialApi,
   ...designSystemApi,
   ...skillsApi,
-  ...terminalApi,
   ...updateApi,
   ...appMenuApi,
   ...workspaceBackupApi,

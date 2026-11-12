@@ -22,7 +22,7 @@ import { loadMainModules, type CapabilityModule } from '../module-host/load-modu
 import { createAutomationTools, type AutomationBackends } from './automation-tools'
 import { createAgentLaunchService } from '../agent-launch-service'
 import { resolvePermissionArgs } from '../plugin-render'
-import type { TerminalSpawnPayload } from '../ipc/terminal-ipc'
+import type { TerminalSpawnPayload } from '../terminal-spawn-payload'
 import {
   emptyAgentLaunchSettings,
   resolveAgentSpawnPermissionPreset,

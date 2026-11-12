@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.quietFolders', async () => {
   // Quiet folders (owner ruling, 2026-09-07). A project whose every chat has
@@ -50,13 +53,13 @@ test('WorkspaceSidebar.quietFolders', async () => {
   anyGlobal.ResizeObserver = NoopResizeObserver
   dom.window.ResizeObserver = NoopResizeObserver as unknown as typeof dom.window.ResizeObserver
 
+  terminalsDouble.listTerminals = async () => []
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
+  terminalsDouble.closeTerminal = async () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => [],
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
-    terminalKill: async () => {},
   }
 
   async function main(): Promise<void> {

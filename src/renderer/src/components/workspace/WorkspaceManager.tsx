@@ -276,6 +276,14 @@ import { LEGACY_COMMAND_ID_ALIASES, type KeybindingPlatform } from '../../comman
 import type { CommandAvailabilityContext } from '../../commands/availability'
 import type { CommandScope, ModuleCommandContext } from '../../commands/types'
 import { dispatchPanelCommandEvent } from '../../utils/panelCommands'
+import {
+  closeTerminal,
+  onTerminalPromptUndelivered,
+  setTerminalVisible,
+  suspendTerminal,
+  takeUndeliveredPrompts,
+  terminalStatus,
+} from '../../studio/terminals'
 // From the pure search module, not the palette component: the palette is
 // React.lazy and importing a type through it would be a needless edge into the
 // deferred chunk.
@@ -1675,12 +1683,8 @@ export default function WorkspaceManager() {
   // the bell where Copy message gives it back. The toast is button-free; the
   // row is where the message lives.
   useEffect(() => {
-    const api = window.api
-    if (typeof api?.onTerminalPromptUndelivered !== 'function') return
-    if (typeof api.terminalTakeUndeliveredPrompts !== 'function') return
     const take = (): void => {
-      void api
-        .terminalTakeUndeliveredPrompts()
+      void takeUndeliveredPrompts()
         .then((events) => {
           const store = useWorkspaceStore.getState()
           for (const event of events) {
@@ -1702,7 +1706,7 @@ export default function WorkspaceManager() {
     }
     // Anything that went undelivered while no window was open.
     take()
-    return api.onTerminalPromptUndelivered(take)
+    return onTerminalPromptUndelivered(take)
   }, [])
 
   // Model discovery: main pushes a CLI's catalog whenever a probe answers (the
@@ -1984,7 +1988,7 @@ export default function WorkspaceManager() {
       if (!send) continue
       applied.set(session.sessionId, shouldPaint)
       if (shouldPaint) clearPaneAttachedHidden(session.sessionId)
-      void window.api.terminalSetVisible(session.sessionId, shouldPaint).catch(() => {})
+      void setTerminalVisible(session.sessionId, shouldPaint).catch(() => {})
     }
     // Forget sessions that unmounted or moved to another window; their own
     // TerminalView teardown already set them hidden on the main side.
@@ -2504,7 +2508,7 @@ export default function WorkspaceManager() {
   // bold them as "hot" — instant to switch into, versus suspended/exited rows that
   // re-launch on open. Derived from the same live `terminalSessions` snapshot as
   // activity, and recomputes the moment the reaper suspends an agent (it disposes
-  // the session, and the terminal:sessions-delta broadcast carries the change).
+  // the session, and the terminal.sessions broadcast carries the change).
   const residentWorkspaceIdsRef = useRef<ReadonlySet<string> | null>(null)
   const residentWorkspaceIds = useMemo(() => {
     const ids = residentAgentWorkspaceIds(terminalSessions, conversationSessions)
@@ -4807,7 +4811,7 @@ export default function WorkspaceManager() {
     // updateAgent would fabricate one and focusOrAddAgentTab would open a pane
     // for it. For those rows activation is plain workspace focus only.
     const agentId = item.agentId && workspace.agents[item.agentId] ? item.agentId : null
-    const status = await window.api.terminalStatus(item.sessionId)
+    const status = await terminalStatus(item.sessionId)
     if (!status.processAlive) {
       setTerminalSessions((sessions) => sessions.filter((session) => session.sessionId !== item.sessionId))
       if (agentId) {
@@ -4865,7 +4869,7 @@ export default function WorkspaceManager() {
         .sessions.stop({ sessionId: item.sessionId })
         .catch(() => {})
     } else {
-      void window.api.terminalKill(item.sessionId).catch(() => {})
+      void closeTerminal(item.sessionId).catch(() => {})
     }
     // Killing the process always works; the derived state resets only exist for
     // a row that has a workspace behind it.
@@ -4890,11 +4894,11 @@ export default function WorkspaceManager() {
   // Pause = freeze-the-view suspend: kill the agent PTY to free memory but keep
   // the painted scrollback and the resume flags, so reopening relaunches the CLI
   // with --resume. Unlike stopSession we do NOT reset launch flags or prune the
-  // session — the suspend broadcast (terminal:sessions-delta) flips it to
+  // session — the suspend broadcast (terminal.sessions) flips it to
   // suspended (processAlive=false), which drops it out of the working-sessions
   // list on its own.
   const pauseSession = (item: SessionItem) => {
-    void window.api.terminalSuspend(item.sessionId).catch(() => {})
+    void suspendTerminal(item.sessionId).catch(() => {})
   }
 
   const stopSessionGroup = async (group: SessionGroup, items: SessionItem[]) => {

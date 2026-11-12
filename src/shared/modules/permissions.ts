@@ -22,7 +22,7 @@
 //   snapshots/events (`workspaceSyncGetSnapshot`, `onWorkspaceSyncEvent`),
 //   window state, git read models (`getGitStatus`, branches/history/graph/
 //   worktree lists), backlog reads, knowledge/memory reads, terminal session
-//   lists (`terminalList`, `terminalStatus`), workspace backup reads.
+//   lists (`terminal.list`, `terminal.status`), workspace backup reads.
 // - `ipc:workspace-write` — changing workspace and project state through the
 //   studio: `workspaceSyncDispatch`, filesystem mutation routes (`writefile`,
 //   create/rename/copy/delete), git mutations (stage/commit/push/branch/

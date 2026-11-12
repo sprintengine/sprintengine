@@ -142,6 +142,8 @@ import type {
   WorkspaceRegistryEmptyState,
   WorkspaceWorktree,
 } from '../types/workspace'
+import { configureTerminals, listTerminals } from '../studio/terminals'
+import { watchWindowStudio, windowStudioState } from '../studio/windowStudioClient'
 
 migrateLegacyWorkspaceStorageKey()
 
@@ -1535,47 +1537,37 @@ function syncModuleEnablementToMain(): void {
 }
 syncModuleEnablementToMain()
 
-// Mirror the "Pause idle terminals after" setting (minutes → ms) to the main
-// reap policy so the next idle sweep uses the user's value. Renderer is the
-// source of truth; pushed on startup and on every change (deduped). Main clamps.
-function syncTerminalIdleSuspendToMain(): void {
+// Mirror the "Pause idle terminals after" setting (minutes → ms) and the
+// "Always keep running" recency floor to the Studio's reaper (`terminal.configure`),
+// so its next idle sweep uses the person's values. The window is the source of
+// truth: they are sent on startup, on every change, and again whenever the
+// window's connection opens (a restarted server starts from its defaults). A
+// send that fails is sent again on the next. The Studio clamps both.
+function syncTerminalPolicyToStudio(): void {
   if (typeof window === 'undefined') return
-  const api = window.api as { setTerminalIdleSuspendMs?: (ms: number) => Promise<unknown> } | undefined
-  if (!api?.setTerminalIdleSuspendMs) return
-
-  let lastSent = NaN
-  const push = (minutes: number): void => {
-    const ms = Math.round(minutes * 60 * 1000)
-    if (ms === lastSent) return
-    lastSent = ms
-    void api.setTerminalIdleSuspendMs!(ms)
+  const api = window.api as Parameters<typeof watchWindowStudio>[0] & { studioWindowTicket?: unknown }
+  if (typeof api?.studioWindowTicket !== 'function') return
+  let sent = ''
+  const push = (force = false): void => {
+    const { terminalIdleSuspendMinutes, terminalKeepRecentAlive } = useWorkspaceStore.getState().appSettings
+    const policy = {
+      idleSuspendMs: Math.round(terminalIdleSuspendMinutes * 60 * 1000),
+      keepRecentAlive: terminalKeepRecentAlive,
+    }
+    const key = `${policy.idleSuspendMs}:${policy.keepRecentAlive}`
+    if (key === sent && !force) return
+    sent = key
+    void configureTerminals(policy).catch(() => {
+      if (sent === key) sent = ''
+    })
   }
-
-  push(useWorkspaceStore.getState().appSettings.terminalIdleSuspendMinutes)
-  useWorkspaceStore.subscribe((state) => push(state.appSettings.terminalIdleSuspendMinutes))
+  push()
+  useWorkspaceStore.subscribe(() => push())
+  watchWindowStudio(api, () => {
+    if (windowStudioState(api) === 'open') push(true)
+  })
 }
-syncTerminalIdleSuspendToMain()
-
-// Mirror the "Always keep running" recency floor to the main reap policy so the
-// next idle sweep never pauses below the user's N most recently used agents.
-// Renderer is the source of truth; pushed on startup and on every change
-// (deduped). Main clamps.
-function syncTerminalKeepRecentAliveToMain(): void {
-  if (typeof window === 'undefined') return
-  const api = window.api as { setTerminalKeepRecentAliveCount?: (count: number) => Promise<unknown> } | undefined
-  if (!api?.setTerminalKeepRecentAliveCount) return
-
-  let lastSent = NaN
-  const push = (count: number): void => {
-    if (count === lastSent) return
-    lastSent = count
-    void api.setTerminalKeepRecentAliveCount!(count)
-  }
-
-  push(useWorkspaceStore.getState().appSettings.terminalKeepRecentAlive)
-  useWorkspaceStore.subscribe((state) => push(state.appSettings.terminalKeepRecentAlive))
-}
-syncTerminalKeepRecentAliveToMain()
+syncTerminalPolicyToStudio()
 
 // One-time hydration handshake. On the first boot after the registry
 // inverted, main has no registry file and this window is the only place the
@@ -1738,7 +1730,7 @@ function adoptRegistrySnapshot(rawSnapshot: import('../../../shared/workspace-sy
 async function repairRegistryAgentNames(): Promise<void> {
   // Read retained sessions too: a paused agent can still carry its original
   // name. Re-read the store after the await so a rename or removal wins.
-  const sessions = (await window.api?.terminalList?.().catch(() => [])) ?? []
+  const sessions = (await listTerminals().catch(() => [])) ?? []
   const repairs: { workspaceId: string; agentId: string; name: string }[] = []
   useWorkspaceStore.setState((current) => {
     const workspaces = nameGenericWorkspaceAgents(current.workspaces, (workspaceId, agentId) => {

@@ -15,6 +15,7 @@ import { createStudioFiles } from '../rpc/studio-files'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
+import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioCore } from './studio-core'
 import type { StudioGateway } from './studio-gateway'
 import type { StudioModules } from '../rpc/studio-modules'
@@ -35,6 +36,8 @@ export function createStudioRpc(
     updates?: StudioUpdates
     /** What the modules of the kernel beside it say; a Studio without one leaves `module.*` unserved. */
     modules?: StudioModules
+    /** The terminals on this machine, where this process holds the terminal runtime. */
+    terminals?: StudioTerminals
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -96,6 +99,7 @@ export function createStudioRpc(
     // The servers the conversations' agents started, checked here and drawn
     // by every client.
     localServers: core.localServers,
+    ...(options.terminals ? { terminals: options.terminals } : {}),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },

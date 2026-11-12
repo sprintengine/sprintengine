@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import type { WebContents } from 'electron'
+import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings } from '../shared/electron-api'
 import { standIn } from '../../tests/stand-in'
 import { stubWslHelper } from '../../tests/wsl-helper-stub'
@@ -47,7 +47,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
       return process
     },
   }
-  const sender = { isDestroyed: () => false, send: () => undefined }
+  const sender: TerminalViewer = { isGone: () => false, deliver: () => undefined }
   const restore = standIn({
     electron: {
       app: {
@@ -96,7 +96,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
       const platform = Object.getOwnPropertyDescriptor(process, 'platform')
       Object.defineProperty(process, 'platform', { value: 'win32' })
       try {
-        const result = await runtime.ipcHandlers.spawnTerminal(sender as unknown as WebContents, {
+        const result = await runtime.sessions.spawnTerminal(sender, {
           sessionId,
           cols: 120,
           rows: 30,
@@ -156,8 +156,8 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
     assert.ok(read.idleReaped.includes('wsl-quiet'), 'the session at rest is suspended')
     assert.equal(quiet.pty.killed, true)
 
-    runtime.ipcHandlers.killTerminal('wsl-dev-server')
-    runtime.ipcHandlers.killTerminal('wsl-quiet')
+    runtime.sessions.killTerminal('wsl-dev-server')
+    runtime.sessions.killTerminal('wsl-quiet')
     await runtime.shutdown()
   } finally {
     restore()

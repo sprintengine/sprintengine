@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import type { WebContents } from 'electron'
+import type { TerminalViewer } from '../../server/terminals/terminal-viewer'
 import type { MarketplacePluginInstallInput, McpClientTarget, McpSettings } from '../../shared/electron-api'
 import { canonicalManifestPayload, validateMarketplacePluginManifest } from '../../shared/marketplace'
 import type { PluginManifest, PluginMcpConfigFormat } from '../../shared/plugin-manifest'
@@ -69,15 +70,18 @@ test('plugin-bundle-installer', async () => {
     await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   }
 
-  function createMockWebContents(): WebContents & { sent: SentEvent[] } {
+  // A window, and the terminal pane in it the launch streams to.
+  function createMockWebContents(): WebContents & TerminalViewer & { sent: SentEvent[] } {
     const sender = {
       sent: [] as SentEvent[],
       isDestroyed: () => false,
+      isGone: () => false,
+      deliver: () => undefined,
       send(channel: string, payload: unknown): void {
         sender.sent.push({ channel, payload })
       },
     }
-    return sender as unknown as WebContents & { sent: SentEvent[] }
+    return sender as unknown as WebContents & TerminalViewer & { sent: SentEvent[] }
   }
 
   async function withElectronMock<T>(userDataDir: string, sender: WebContents, fn: () => Promise<T>): Promise<T> {
@@ -476,7 +480,7 @@ test('plugin-bundle-installer', async () => {
         })
 
         try {
-          const launch = await runtime.ipcHandlers.spawnTerminal(sender, {
+          const launch = await runtime.sessions.spawnTerminal(sender, {
             sessionId: 'bundle-mcp-launch',
             cols: 100,
             rows: 24,
@@ -490,12 +494,12 @@ test('plugin-bundle-installer', async () => {
           })
 
           assert.equal(launch.ok, true, JSON.stringify(launch))
-          assert.equal((await runtime.ipcHandlers.getTerminalStatus('bundle-mcp-launch')).processAlive, true)
+          assert.equal((await runtime.sessions.getTerminalStatus('bundle-mcp-launch')).processAlive, true)
           assert.equal(syncInputs.length, 1)
           assert.equal(syncInputs[0].clients.includes('codex'), true)
           assert.equal(syncInputs[0].settings.servers['bundle-mcp']?.enabled, true)
         } finally {
-          runtime.ipcHandlers.killTerminal('bundle-mcp-launch')
+          runtime.sessions.killTerminal('bundle-mcp-launch')
           await runtime.shutdown()
         }
       })

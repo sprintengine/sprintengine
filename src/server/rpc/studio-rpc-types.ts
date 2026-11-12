@@ -244,6 +244,8 @@ export type StudioRequestContext = {
    * or asks about must be one Studio already knows.
    */
   knownFoldersOnly?: boolean
+  /** The window this connection is one of Studio's own for, as main names it; absent for any other client. */
+  windowKey?: string
 }
 
 export type StudioAuthOutcome = { ok: true; grant: StudioGrant; pairingToken?: string } | { ok: false; message: string }

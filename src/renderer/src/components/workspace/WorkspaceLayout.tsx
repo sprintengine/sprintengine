@@ -12,6 +12,7 @@ import {
   type ITabSetRenderValues,
   type NodeMouseEvent,
 } from 'flexlayout-react'
+import { closeTerminal } from '../../studio/terminals'
 // combined.css carries the structural FlexLayout CSS — its theme variables
 // are scoped under `.flexlayout__theme_*` classes that we never apply. Our own
 // `.flexlayout__layout { --fl-*: var(--bg-*) }` block in
@@ -913,7 +914,7 @@ function WorkspaceLayoutBody({
           .forEach((session) => sessionIds.add(session.sessionId))
         sessionIds.forEach((sessionId) => {
           killOnUnmountSessionIdsRef.current.add(sessionId)
-          void window.api.terminalKill(sessionId).catch(() => {})
+          void closeTerminal(sessionId).catch(() => {})
         })
         if (agent) {
           updateAgent(workspaceId, agentId, {
@@ -938,7 +939,7 @@ function WorkspaceLayoutBody({
           .forEach((session) => sessionIds.add(session.sessionId))
         sessionIds.forEach((sessionId) => {
           killOnUnmountSessionIdsRef.current.add(sessionId)
-          void window.api.terminalKill(sessionId).catch(() => {})
+          void closeTerminal(sessionId).catch(() => {})
         })
       }
     },

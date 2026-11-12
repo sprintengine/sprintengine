@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import type { StudioPullRequest } from '../../../../../packages/studio-protocol/src/public'
 import type { PullRequestsChanged, StudioPullRequests } from '../../../../server/pull-requests/pull-request-domain'
 import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+import { terminalsDouble } from '../../studio/terminals.double'
+
+vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 
 test('WorkspaceSidebar.allChats', async () => {
   // The flat stream (all-chats-view, 2026-09-07). "All chats" drops the folder
@@ -53,13 +56,13 @@ test('WorkspaceSidebar.allChats', async () => {
   dom.window.ResizeObserver = NoopResizeObserver as unknown as typeof dom.window.ResizeObserver
 
   let terminalAnswer: unknown[] = []
+  terminalsDouble.listTerminals = async () => terminalAnswer
+  terminalsDouble.onTerminalSessionsDelta = () => () => {}
+  terminalsDouble.closeTerminal = async () => {}
   domWindow.api = {
     platform: 'darwin',
     detectProjectLogo: async () => null,
-    terminalList: async () => terminalAnswer,
-    onTerminalSessionsDelta: () => () => {},
     getWorkspaceChangeSummary: async () => null,
-    terminalKill: async () => {},
   }
   // The pull request record is the Studio server's, read over the window's
   // own client: a table the test fills, and a push naming what moved.

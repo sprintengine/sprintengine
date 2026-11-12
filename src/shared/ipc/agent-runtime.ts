@@ -4,27 +4,13 @@
 import type { AgentCli } from './conversations'
 import type { ExecutionHostId } from '../execution-host'
 
-export type AgentExecutionMode = 'current_workspace' | 'worktree'
-export type { CliPermissionPreset } from '../cli-permission-preset'
-
-export type CliRuntimeSettings = {
-  command: string
-  /**
-   * The machine this runtime is resolved for, when it is not this one: a
-   * detection, install or command run for a WSL distribution names it here,
-   * with `command` already that machine's own override. Absent means this
-   * machine. Never stored — the settings keep a machine's commands on the
-   * machine (`AgentLaunchSettings.hosts`).
-   */
-  hostId?: ExecutionHostId
-  // User-added model ids for this CLI, shown in pickers alongside the plugin
-  // manifest's seed options. Terminal CLIs expose no live model catalog, so
-  // this list is how users keep pace with new models.
-  models?: string[]
-  // Ids the person took off this CLI's list. They stay off when a refresh lists
-  // them again, until Settings puts them back.
-  removedModels?: string[]
-}
+export type {
+  AgentExecutionMode,
+  CliPermissionPreset,
+  CliRuntimeSettings,
+  McpClientTarget,
+  McpTransport,
+} from '../../../packages/studio-protocol/src/public'
 
 // Result of probing whether an agent CLI binary is installed and runnable.
 export type CliDetectResult = {
@@ -68,6 +54,3 @@ export type CliInstallResult = {
   log: string
   error: string | null
 }
-
-export type McpClientTarget = AgentCli
-export type McpTransport = 'stdio' | 'http' | 'sse'
