@@ -139,7 +139,6 @@ test('the window is sent a chat as every wire sends it: results once, a snapshot
       setPermission: unused,
       stopSession: unused,
       listSessions: () => ({ ok: true, sessions: [] }),
-      readTranscript: unused,
       onEvent: () => () => undefined,
       subscribe: (_input, listener) => {
         listener({ type: 'snapshot', page, generation: 'g' })
@@ -147,7 +146,7 @@ test('the window is sent a chat as every wire sends it: results once, a snapshot
         return { dispose: () => undefined, ready: Promise.resolve() }
       },
       loadEarlier: async () => ({ ok: true as const, page }),
-    } as ConversationIpcHandlers,
+    } as ConversationService,
   )
   const received: ConversationSessionFrame[] = []
   const sender = {

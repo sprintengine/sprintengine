@@ -21,7 +21,6 @@ import type {
   ConversationToolDetailResult,
   ConversationAttachmentResult,
   ConversationPlanDocumentResult,
-  ConversationSessionFrame,
   ConversationPageResult,
   ConversationTurnDiffResult,
   ConversationRevertResult,
