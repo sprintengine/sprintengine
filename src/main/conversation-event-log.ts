@@ -1,4 +1,3 @@
-import type { FileHandle } from 'node:fs/promises'
 import { dirname } from 'path'
 import { openConfinedExistingFile } from './conversation-file-access'
 import { openConversationAppendFile } from './conversation-persistence'
@@ -490,7 +489,7 @@ async function openAppendStream(filePath: string, storageRoot = dirname(filePath
  * reported with the write's own error, so the batch counts as failed.
  */
 export async function writeWhole(
-  file: Pick<FileHandle, 'writeFile' | 'stat'>,
+  file: { stat(): Promise<{ size: number }>; writeFile(text: string, encoding: 'utf8'): Promise<void> },
   text: string,
   truncate: (size: number) => Promise<void>,
 ): Promise<void> {
