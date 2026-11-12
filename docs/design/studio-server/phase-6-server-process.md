@@ -1209,7 +1209,7 @@ them kept. They are not committed with this document.
 | # | Decision | Recommendation |
 | --- | --- | --- |
 | O1 | Spawn mechanism for the desktop-local server (D1) | **`utilityProcess.fork`**, with the stdio bootstrap kept for WSL, SSH and CI. |
-| O2 | How desktop windows reach the local server (D2, D3) | **A brokered `MessagePort` per window**. No loopback listener until the web client (phase 9). Tickets only for remote environments. |
+| O2 | How desktop windows reach the local server (D2, D3) | **Superseded (2026-11-12).** A loopback WebSocket per window connection, to the server's window listener, admitted by a one-time ticket main mints through the server (R03). Was: a brokered `MessagePort` per window, no loopback listener until the web client (phase 9), and tickets only for remote environments. |
 | O3 | Secrets on the desktop in phase 6 (D4) | **The shell as cipher, formats unchanged.** No re-seal migration in phase 6. |
 | O4 | Linux desktop where `safeStorage` falls back to `basic_text` | Keep today's behaviour in phase 6 and report it. In a later phase, move those secrets to the owner-only key file with a one-time re-seal, which satisfies the owner default. |
 | O5 | Local render host (D5) | **Superseded (2026-10-02).** No render host anywhere. The shell's worker and pane are its `canvas` and `browser` toolsets (phase 5) on every server. |

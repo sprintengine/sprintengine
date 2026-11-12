@@ -11,10 +11,12 @@ import {
 import type { StudioChatBackend } from '../../../src/server/rpc/studio-rpc-types'
 import type { ConversationSessionFrame } from '../../../src/shared/conversation-runtime'
 import { createMemoryChannel, type MemoryChannelEnd } from '../../../tests/memory-channel'
-import { connect, type StudioClient, type StudioTransportFactory } from '../src/public'
+import { memoryWebSocketClass } from '../../../tests/memory-websocket'
+import { connect, webSocketTransport, type StudioClient, type StudioTransportFactory } from '../src/public'
 
 // The client over a connection that brings its own credential, as a Studio
-// window's does: a fresh ticket per connection, good for its one hello.
+// window's does: `webSocketTransport` with a fresh ticket per socket, good for
+// its one hello.
 
 const cleanups: Array<() => Promise<void> | void> = []
 afterEach(async () => {
@@ -68,30 +70,39 @@ function window(
   const sent: Array<Record<string, unknown>> = []
   const tickets: string[] = []
   let open: MemoryChannelEnd | null = null
-  const transport: StudioTransportFactory = async () => {
-    const [mainEnd, clientEnd] = createMemoryChannel()
-    const ticket = mintStudioTicket()
-    tickets.push(ticket)
-    server.attach(framePortStream(mainEnd), { authenticator: createTicketAuthenticator(ticket), ownWindow: true })
-    open = clientEnd
-    const messages: Array<(frame: string) => void> = []
-    clientEnd.onFrame((frame) => {
-      const delivered = options.rewrite
-        ? JSON.stringify(options.rewrite(JSON.parse(frame) as Record<string, unknown>))
-        : frame
-      messages.forEach((listener) => listener(delivered))
-    })
-    return {
-      credential: { token: ticket },
-      send: (frame) => {
-        sent.push(JSON.parse(frame) as Record<string, unknown>)
-        clientEnd.post(frame)
-      },
-      close: () => clientEnd.close(),
-      onMessage: (listener) => void messages.push(listener),
-      onClose: (listener) => clientEnd.onClose(() => listener()),
-    }
-  }
+  // The window's own transport: a fresh ticket asked for before each socket,
+  // admitted as the window listener admits one, by the ticket its URL names.
+  const transport = webSocketTransport({
+    ticket: async () => {
+      const ticket = mintStudioTicket()
+      tickets.push(ticket)
+      return { url: `ws://127.0.0.1:1/ws?ticket=${encodeURIComponent(ticket)}`, token: ticket }
+    },
+    WebSocket: memoryWebSocketClass((url) => {
+      const ticket = new URL(url).searchParams.get('ticket')
+      if (!ticket) return null
+      const [serverEnd, clientEnd] = createMemoryChannel()
+      server.attach(framePortStream(serverEnd), { authenticator: createTicketAuthenticator(ticket), ownWindow: true })
+      open = clientEnd
+      return {
+        post: (frame: string) => {
+          sent.push(JSON.parse(frame) as Record<string, unknown>)
+          clientEnd.post(frame)
+        },
+        onFrame: (listener: (frame: string) => void) =>
+          clientEnd.onFrame((frame) =>
+            listener(
+              options.rewrite ? JSON.stringify(options.rewrite(JSON.parse(frame) as Record<string, unknown>)) : frame,
+            ),
+          ),
+        onClose: (listener: () => void) => clientEnd.onClose(listener),
+        close: () => clientEnd.close(),
+        get closed() {
+          return clientEnd.closed
+        },
+      }
+    }),
+  })
   return {
     get server() {
       return server
@@ -331,4 +342,23 @@ test('a request answered busy just before a drop is sent once on the next connec
   const secondHello = target.sent.findIndex((frame, index) => frame.t === 'hello' && index > 0)
   const resent = target.sent.slice(secondHello).filter((frame) => frame.t === 'req' && frame.id === refused)
   assert.equal(resent.length, 1)
+})
+
+test('a socket that never opens is given up after its open timeout, and closed', async () => {
+  let closed = 0
+  class Silent {
+    readyState = 0
+    send(): void {}
+    close(): void {
+      closed++
+    }
+    addEventListener(): void {}
+  }
+  const transport = webSocketTransport({
+    ticket: async () => ({ url: 'ws://127.0.0.1:1/ws?ticket=t', token: 't' }),
+    WebSocket: Silent as never,
+    openTimeoutMs: 20,
+  })
+  await assert.rejects(transport(), /did not answer in time/)
+  assert.equal(closed, 1)
 })

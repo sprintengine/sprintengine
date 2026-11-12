@@ -176,7 +176,7 @@ test('a picture goes up in pieces and reaches the runtime whole; the socket’s 
     // in one plain sentence, not in the socket's words.
     const api = window.api as unknown as Record<string, () => Promise<{ connectionId: string; ticket: string }>>
     const connect = api.studioWindowTicket
-    api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seport_not_the_ticket_000000' })
+    api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seticket_not_the_ticket_000000' })
     loopback.drop()
     const refused = await transport.services.providers.list({})
     expect(refused).toEqual({

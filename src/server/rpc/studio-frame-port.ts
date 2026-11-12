@@ -86,9 +86,12 @@ export function framePortStream(port: StudioFramePort): Duplex {
 
 const TICKET_TTL_MS = 30_000
 
-/** A ticket: printable, unguessable, and shaped as a hello's credential must be. */
+/**
+ * A ticket for one connection (a window's socket, the shell's port): 32 random
+ * bytes, printable, and shaped as a hello's credential must be.
+ */
 export function mintStudioTicket(): string {
-  return `seport_${randomBytes(24).toString('base64url')}`
+  return `seticket_${randomBytes(32).toString('base64url')}`
 }
 
 function sameSecret(presented: string, expected: string): boolean {

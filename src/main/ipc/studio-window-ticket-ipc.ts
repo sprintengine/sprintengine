@@ -39,19 +39,20 @@ export function registerStudioWindowTicketIpc(ipcMain: IpcMain, issuer: StudioWi
     const end = () => {
       sender.off('destroyed', end)
       sender.off('render-process-gone', end)
-      sender.off('did-start-navigation', navigated as never)
+      sender.off('did-navigate', end)
       if (windows.get(sender.id) === watched) windows.delete(sender.id)
       issuer.revokeWindow(watched.key)
     }
-    // The top-level document is being replaced; a same-document navigation
-    // (a hash change) keeps it.
-    const navigated = (details: { isMainFrame?: boolean; isSameDocument?: boolean }) => {
-      if (details?.isMainFrame === false || details?.isSameDocument) return
-      end()
-    }
+    // `did-navigate` is the top-level document replaced: a navigation that
+    // committed, a reload included. It is not `did-start-navigation`, which
+    // Electron emits before `will-navigate` (checked with this repository's
+    // Electron), so it fires for a navigation the window guard then refuses,
+    // and would cut a document that stays. A hash change is
+    // `did-navigate-in-page` and keeps the document, as does a subframe's
+    // navigation (`did-frame-navigate`).
     sender.on('destroyed', end)
     sender.on('render-process-gone', end)
-    sender.on('did-start-navigation', navigated as never)
+    sender.on('did-navigate', end)
     return watched
   }
 
@@ -59,7 +60,15 @@ export function registerStudioWindowTicketIpc(ipcMain: IpcMain, issuer: StudioWi
     assertAppSender(event)
     const origin = studioWindowOrigin(event.senderFrame?.url ?? '')
     if (!origin) throw new Error('This window has no origin Studio can admit.')
-    const { key } = watch(event.sender)
-    return issuer.windowTicket({ windowKey: key, origin })
+    const watched = watch(event.sender)
+    const ticket = await issuer.windowTicket({ windowKey: watched.key, origin })
+    // The document may have gone while the server minted it (or while a
+    // server still starting was waited for, when a revoke reaches nothing):
+    // revoke again now the server can hear it, so the ticket is void too.
+    if (windows.get(event.sender.id) !== watched) {
+      issuer.revokeWindow(watched.key)
+      throw new Error('This window changed while it was connecting to Studio.')
+    }
+    return ticket
   })
 }

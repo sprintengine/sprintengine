@@ -78,11 +78,13 @@ function hostName(host: string | undefined): string | null {
   }
 }
 
-/** A page loaded from a file says `file://`; some Chromium builds say `null` for the same page. */
+/**
+ * The socket comes from the document the ticket was minted for. A page loaded
+ * from a file says `file://` (checked with this repository's Electron); `null`
+ * is any opaque origin (a sandboxed frame, a `data:` page), so it is refused.
+ */
 function originMatches(presented: string | undefined, expected: string): boolean {
-  if (presented === undefined) return false
-  if (expected === 'file://') return presented === 'file://' || presented === 'null'
-  return presented === expected
+  return presented !== undefined && presented === expected
 }
 
 export function createStudioWindowListener(options: StudioWindowListenerOptions): StudioWindowListener {
@@ -177,6 +179,8 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
       // A server on its way out mints nothing: the window asks again, and finds its successor.
       if (stopped) throw new Error('Studio is closing, so this window cannot connect to it now.')
       const listeningOn = await listen()
+      // Stopped while it started listening: no ticket for a listener that is gone.
+      if (stopped) throw new Error('Studio is closing, so this window cannot connect to it now.')
       prune()
       const ticket = mintStudioTicket()
       outstanding.set(hashTicket(ticket), { windowKey: request.windowKey, origin: request.origin, mintedAt: now() })

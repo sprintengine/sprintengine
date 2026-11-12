@@ -19,7 +19,7 @@ function windowEvent(id: number, options: { url?: string; parent?: object | null
   return { sender, senderFrame: { parent: options.parent ?? null, url: options.url ?? appUrl } }
 }
 
-async function register() {
+async function register(mint?: (request: { windowKey: string; origin: string }) => Promise<void>) {
   const { registerStudioWindowTicketIpc } = await import('./studio-window-ticket-ipc')
   const handlers = new Map<string, (event: unknown) => Promise<unknown>>()
   const asked: Array<{ windowKey: string; origin: string }> = []
@@ -31,6 +31,7 @@ async function register() {
     {
       windowTicket: async (request) => {
         asked.push(request)
+        await mint?.(request)
         return { url: `ws://127.0.0.1:4100/ws?ticket=t${asked.length}`, token: `t${asked.length}` }
       },
       revokeWindow: (windowKey) => void revoked.push(windowKey),
@@ -74,13 +75,17 @@ test('a document that goes is revoked at once, and the next document is a window
   await ask(event)
   const first = asked[0].windowKey
 
-  // A hash change keeps the document; a subframe's navigation is not the window's.
-  event.sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
-  event.sender.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
+  // A hash change keeps the document; a subframe's navigation is not the
+  // window's. Nor is a navigation that only starts: Electron emits
+  // `did-start-navigation` before `will-navigate`, where the window guard
+  // refuses one that leaves the app, and that document stays.
+  event.sender.emit('did-navigate-in-page', {}, `${appUrl}#x`, true)
+  event.sender.emit('did-frame-navigate', {}, 'https://example.com/', 200, 'OK', false)
+  event.sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'https://example.com/' })
   assert.deepEqual(revoked, [])
 
-  // A reload replaces it.
-  event.sender.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+  // A reload, or any navigation that commits, replaces it.
+  event.sender.emit('did-navigate', {}, appUrl, 200, 'OK')
   assert.deepEqual(revoked, [first])
   await ask(event)
   const second = asked[1].windowKey
@@ -95,4 +100,17 @@ test('a document that goes is revoked at once, and the next document is a window
   // Each document was revoked once, however many of its events came after.
   event.sender.emit('destroyed')
   assert.equal(revoked.length, 3)
+})
+
+test('a document that goes while its ticket is minted gets none, and the ticket is revoked again', async () => {
+  const event = windowEvent(11)
+  let minted!: () => void
+  const { ask, asked, revoked } = await register(() => new Promise<void>((resolve) => (minted = resolve)))
+  const asking = ask(event)
+  await vi.waitFor(() => assert.equal(asked.length, 1))
+  // The revoke may reach nothing (a server still starting), so it is sent again after the mint.
+  event.sender.emit('did-navigate', {}, appUrl, 200, 'OK')
+  minted()
+  await assert.rejects(asking, /changed while it was connecting/)
+  assert.deepEqual(revoked, [asked[0].windowKey, asked[0].windowKey])
 })

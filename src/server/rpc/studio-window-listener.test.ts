@@ -129,7 +129,7 @@ test('a socket without a good ticket is refused before it opens', async () => {
   const port = new URL(base).port
 
   assert.deepEqual(await upgrade(`ws://127.0.0.1:${port}/ws`), { status: 401, code: 'ticket_required' })
-  assert.deepEqual(await upgrade(`ws://127.0.0.1:${port}/ws?ticket=seport_made_up_ticket_000000`), {
+  assert.deepEqual(await upgrade(`ws://127.0.0.1:${port}/ws?ticket=seticket_made_up_ticket_000000`), {
     status: 401,
     code: 'ticket_spent_or_expired',
   })
@@ -159,6 +159,10 @@ test('a page on another origin, a rebound host name and another path are refused
   const unlabelled = await listener.ticket({ windowKey: 'w', origin: 'http://localhost:5173' })
   assert.deepEqual(await upgrade(unlabelled.url, { Origin: APP_ORIGIN }), { status: 403, code: 'origin_refused' })
 
+  // An opaque origin (a sandboxed frame, a data: page) is no file-loaded window.
+  const opaque = await listener.ticket({ windowKey: 'w', origin: 'file://' })
+  assert.deepEqual(await upgrade(opaque.url, { Origin: 'null' }), { status: 403, code: 'origin_refused' })
+
   const rebound = await listener.ticket({ windowKey: 'w', origin: APP_ORIGIN })
   const port = new URL(rebound.url).port
   assert.deepEqual(await upgrade(rebound.url, { Host: `studio.example.com:${port}` }), {
@@ -176,7 +180,7 @@ test('a hello that presents anything but its socket’s ticket is refused', asyn
       transport: webSocketTransport({
         ticket: async () => ({
           ...(await listener.ticket({ windowKey: 'w', origin: APP_ORIGIN })),
-          token: 'seport_not_the_ticket_000000',
+          token: 'seticket_not_the_ticket_000000',
         }),
         WebSocket: socketFrom(APP_ORIGIN),
       }),

@@ -101,7 +101,7 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
   }
 }
 
-/** A window's end of a port, reading frames as a client does. */
+/** A client's end of an in-memory connection, reading frames as a client does. */
 type PortClient = {
   send(frame: unknown): void
   next(match?: (frame: StudioParsedServerFrame) => boolean): Promise<StudioParsedServerFrame>
@@ -184,6 +184,7 @@ async function served(input: { chat?: ReturnType<typeof fakeChat> | null } = {})
   return { ...started, chat }
 }
 
+/** A window's connection as the window listener attaches one: admitted by its ticket, as the app's own view. */
 async function windowClient(server: Awaited<ReturnType<typeof served>>['server']): Promise<PortClient> {
   const { server: serverEnd, client } = portPair()
   const ticket = mintStudioTicket()
@@ -208,12 +209,12 @@ async function ask(client: PortClient | LineClient, id: string, method: string, 
   return answer
 }
 
-test('a window says hello once with the ticket main minted for it, and no other credential opens its port', async () => {
+test('a window ticket says one hello, once, within thirty seconds, and is no other credential', async () => {
   const now = { at: 0 }
   const ticket = mintStudioTicket()
   const auth = createTicketAuthenticator(ticket, { now: () => now.at })
   assert.match(ticket, /^[\x21-\x7e]{16,256}$/)
-  assert.equal(auth.authenticate({ token: 'seport_wrongwrongwrongwrong' }, { name: 'w' }).ok, false)
+  assert.equal(auth.authenticate({ token: 'seticket_wrongwrongwrongwrong' }, { name: 'w' }).ok, false)
   assert.equal(auth.authenticate({ pairingCode: ticket }, { name: 'w' }).ok, false)
   assert.equal(auth.grantFor('owner'), null)
   const first = auth.authenticate({ token: ticket }, { name: 'w' })
@@ -223,17 +224,8 @@ test('a window says hello once with the ticket main minted for it, and no other 
   const late = createTicketAuthenticator(ticket, { now: () => now.at })
   now.at = 30_001
   assert.equal(late.authenticate({ token: ticket }, { name: 'w' }).ok, false, 'and for thirty seconds')
-
-  const { server } = await served()
-  const { server: serverEnd, client } = portPair()
-  server.attach(framePortStream(serverEnd), {
-    authenticator: createTicketAuthenticator(mintStudioTicket()),
-    ownWindow: true,
-  })
-  client.send(hello({ token: OWNER_TOKEN }))
-  const bye = await client.next(isT('bye'))
-  assert.equal(bye.t === 'bye' && bye.code, 'unauthorized')
-  await client.closed
+  // A hello that presents anything else over a window's socket is the window
+  // listener's to refuse (studio-window-listener.test.ts).
 })
 
 test('the welcome names the chat capabilities only where there is a chat surface', async () => {

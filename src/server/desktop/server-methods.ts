@@ -137,10 +137,10 @@ export const SERVER_EVENTS = {
   hintOnline: 'hint.online',
 } as const
 
-/** One slot of the server's worktree pool, as `worktree-pool.leases` answers it. */
 /** What `shellConnect` answers: the shell's connection, and the ticket its hello presents. */
 export type ShellConnectResult = { connectionId: string; ticket: string }
 
+/** One slot of the server's worktree pool, as `worktree-pool.leases` answers it. */
 export type ServerWorktreeLease = { path: string; lease: { workspaceId: string | null; agentId: string | null } | null }
 
 export type ServerMirrorRegistry = {

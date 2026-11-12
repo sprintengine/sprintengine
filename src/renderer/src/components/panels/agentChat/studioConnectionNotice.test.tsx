@@ -60,7 +60,7 @@ test('a dropped connection is told in words after a moment, and the words go onc
     await until(() => host.textContent === '', 'the row to go')
 
     // A ticket Studio refuses parks the window until it is next used, and says so.
-    win.api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seport_not_the_ticket_000000' })
+    win.api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seticket_not_the_ticket_000000' })
     await act(async () => loopback.drop())
     // It reconnects with the refused ticket first, then parks.
     await until(() => host.textContent === parkedWords, 'the parked row')

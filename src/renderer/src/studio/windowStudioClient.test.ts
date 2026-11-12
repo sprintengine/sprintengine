@@ -23,7 +23,7 @@ test('a window keeps one client; one parked by a refused ticket tries again when
 
   // A reconnect Studio refuses parks the client: trying again would be refused again.
   const connect = win.api.studioWindowTicket as Ticket
-  win.api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seport_not_the_ticket_000000' })
+  win.api.studioWindowTicket = async () => ({ ...(await connect()), token: 'seticket_not_the_ticket_000000' })
   loopback.drop()
   for (let tries = 0; first.state !== 'parked' && tries < 100; tries++)
     await new Promise((resolve) => setTimeout(resolve, 5))
