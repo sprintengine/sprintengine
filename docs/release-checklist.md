@@ -8,9 +8,10 @@ commit, never squash or rebase, with Conventional Commit titles; see
 
 ## Before merging
 
-- Pass the required PR-title, build and JS checks. The release also runs
-  `npm run verify:app` and the marketplace signature check against the exact
-  source commit before it publishes.
+- Pass the required PR-title, build, JS and cross-client checks. The release also runs
+  `npm run verify:app`, the marketplace signature check, the SSH machine suites
+  and the cross-client gate against the exact source commit before it
+  publishes.
 - Select the intended version bump: `feat` means minor, `!` or a
   `BREAKING CHANGE:` footer means major from 1.x and minor while the version
   is 0.x (1.0.0 is only ever typed into a promotion's `version` input), and
@@ -284,8 +285,8 @@ no longer read and can be deleted.
 The versioned ruleset is [main-ruleset.json](../.github/main-ruleset.json).
 It requires a PR, a merge commit (no squash, no rebase), resolved
 conversations and these checks from GitHub Actions: **Conventional PR title**, **Build
-(ubuntu-latest)**, **Build (windows-latest)**, **Build (macos-latest)** and
-**JS tests (ubuntu-latest)**. It prohibits force pushes and branch deletion,
+(ubuntu-latest)**, **Build (windows-latest)**, **Build (macos-latest)**,
+**JS tests (ubuntu-latest)** and **Cross-client gate**. It prohibits force pushes and branch deletion,
 requires checks against current main, and has no bypass actors. No additional
 human approval count is imposed.
 

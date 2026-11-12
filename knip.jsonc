@@ -32,6 +32,11 @@
     "packages/module-sdk/drift/*.ts",
     // The standalone Studio server, bundled by scripts/build-server.mjs.
     "src/server/main.ts",
+    // The cross-client gate's two processes and the phone's file-module
+    // stand-in, bundled by scripts/cross-client-gate.mjs.
+    "tests/cross-client/main.ts",
+    "tests/cross-client/host.ts",
+    "tests/cross-client/expo-file-system-node.ts",
     // The protocol packages' published entries; app code imports their files directly.
     "packages/conversation-protocol/src/public.ts",
     "packages/studio-protocol/src/public.ts",

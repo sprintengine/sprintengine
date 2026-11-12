@@ -72,6 +72,14 @@ export type StudioServerOptions = {
    * WSL distribution, or one an SSH machine runs detached. `local` when not said.
    */
   hostKind?: 'local' | 'wsl' | 'ssh'
+  /**
+   * Bind the tailnet listener (when its settings turn it on) here rather than
+   * on this machine's Tailscale interface: loopback, for a test that drives
+   * the real listener with a paired desktop and the phone's own client
+   * (scripts/cross-client-gate.mjs). A library option only: the `serve` entry
+   * and the bootstrap envelope never set it.
+   */
+  tailnetBindAddress?: string
 }
 
 export type StudioServerReady = {
@@ -239,7 +247,10 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
     throw error
   }
 
-  const started = createStudioGateway(core)
+  const started = createStudioGateway(
+    core,
+    options.tailnetBindAddress === undefined ? {} : { tailnetBindAddress: options.tailnetBindAddress },
+  )
   gateway = started
   const rpc = createStudioRpc(core, started, options.hostKind ? { hostKind: options.hostKind } : {})
   let status: Awaited<ReturnType<StudioGateway['initialize']>>

@@ -98,6 +98,55 @@ order and asserts with `node:assert/strict`, because the cases share state and
 their order matters. Write a new file with a `test()` per case, and split an
 old one the same way when you are working in it anyway.
 
+### The cross-client gate
+
+```
+npm run build:server && npm run test:cross-client
+```
+
+Passing suites side by side do not show that the clients of one server agree.
+The cross-client gate (`scripts/cross-client-gate.mjs`, the scenarios in
+`tests/cross-client/`) boots the built server and drives it with several of
+its clients at once, each running the code that surface really runs: the
+desktop window over the Studio protocol, a paired desktop and the phone's own
+protocol client (the modules under `mobile/src/api`) over the tailnet lane, a
+read-only embed, and, with `STUDIO_TEST_DOCKER=1` and Docker running, an SSH
+machine in a container. They share one chat on the built-in fake provider:
+start it, stream a turn, send a picture, answer an approval another client's
+turn raised, message a sub-agent, schedule a send, drop mid-turn and come back
+by cursor, and survive the server being killed and started again. It takes
+under a minute on a laptop, and runs on Linux and macOS (its sockets are Unix
+sockets).
+
+Its output is a table of client by scenario, and it says what it simulates
+(the Electron shell's port broker, the phone's file module, the tailnet bound
+to loopback) and what it cannot run. A scenario a client cannot do yet is a
+known gap in `tests/cross-client/gaps.ts`, naming the change that closes it; a
+gap that starts passing fails the gate, so the change that closes one deletes
+its line. A change that moves a client to another transport changes that
+client's adapter in `tests/cross-client/clients/`, not the scenarios.
+
+WSL cannot run on the hosted runners. Check a change to WSL chats by hand, on
+a Windows PC with a WSL 2 distribution: build the app (`npm run dist:win`),
+turn on WSL chats, start a chat in the distribution, send a turn, answer its
+approval from the phone and from a paired desktop, then quit and reopen the
+app and send again. The gate prints the same steps.
+
+### The checks a pull request needs
+
+CI (`.github/workflows/ci.yml`) runs on every pull request. These checks are
+required to merge, as `.github/main-ruleset.json` lists them:
+
+| Check | What it runs |
+|---|---|
+| Conventional PR title | The title, as the merge commit's subject |
+| Build (ubuntu-latest), Build (windows-latest), Build (macos-latest) | Typecheck and build on each OS; the whole suite on macOS |
+| JS tests (ubuntu-latest) | `npm run verify:app` and the marketplace signatures |
+| Cross-client gate | `npm run test:cross-client -- --require-ssh` against the built server, the SSH machine included |
+
+The web client smoke, the phone app, the Android APK and the SSH machine
+suites run beside them and are expected green too.
+
 ## The design-system rule
 
 UI contributions must consume the design system in `design-system/` rather
