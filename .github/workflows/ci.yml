@@ -168,7 +168,8 @@ jobs:
 
   # The phone app under mobile/: its own package and lockfile, so its own
   # install and its own gate (mobile/package.json's `ci`): typecheck, ESLint,
-  # the token lint and the regression suite. The Android build is the job
+  # the token lint, the regression suite, and the shared client runtime's and
+  # conversation timeline's tests under the phone's settings. The Android build is the job
   # below; there is no iOS build, which needs Xcode and a signing team.
   # Skipped under the release gate: the desktop release does not ship it.
   mobile:

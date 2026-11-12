@@ -911,7 +911,7 @@ before the client has re-offered, answers `client_unavailable` (5.3, step 5).
 ### 9.1 API
 
 ```ts
-// packages/agent-sdk/src/tools.ts
+// packages/client-runtime/src/rpc/tools.ts (re-exported by @sprintengine/agent-sdk)
 export type ToolHandler<I = Record<string, unknown>> = (input: I, call: ToolCall) => Promise<ToolAnswer> | ToolAnswer
 
 export type ToolCall = {

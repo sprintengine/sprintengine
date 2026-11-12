@@ -5,9 +5,15 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  // The client runtime's parts the phone does not import yet are checked
-  // under React Native's types as well (the runtime itself arrives through
-  // src/api/tailnetConversations.ts), so the phone's cut-over finds them
-  // compiling here.
-  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx", "../packages/conversation-timeline/src/public.ts"]
+  // The shared client runtime and the conversation timeline are checked under
+  // React Native's types too, although the app imports only the runtime's
+  // connection supervisor so far: the phone's cut-over onto them finds them
+  // compiling here. Listing them adds nothing to the app's bundle.
+  "include": [
+    "App.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "../packages/client-runtime/src/public.ts",
+    "../packages/conversation-timeline/src/public.ts"
+  ]
 }

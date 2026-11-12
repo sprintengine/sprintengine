@@ -30,6 +30,11 @@ function equals(actual, expected, subset) {
   if (expected instanceof Asymmetric) return expected.matches(actual);
   if (Object.is(actual, expected)) return true;
   if (!isPlainRecord(actual) || !isPlainRecord(expected)) return false;
+  // An error's name and message are not own enumerable keys; vitest compares them.
+  if (expected instanceof Error || actual instanceof Error) {
+    if (!(expected instanceof Error) || !(actual instanceof Error)) return false;
+    if (actual.name !== expected.name || actual.message !== expected.message) return false;
+  }
   if (expected instanceof Date || actual instanceof Date)
     return actual instanceof Date && expected instanceof Date && actual.getTime() === expected.getTime();
   if (expected instanceof RegExp || actual instanceof RegExp)
@@ -93,6 +98,7 @@ function matchers(actual, negated, label) {
     toHaveBeenCalledTimes: (times) =>
       check(actual.mock.calls.length === times, `a spy called ${actual.mock.calls.length} times to be called ${times}`),
     toThrow: (expected) => {
+      if (typeof actual !== "function") assert.fail(`Expected a function to call, got ${show(actual)}`);
       let thrown;
       let threw = false;
       try {
@@ -180,9 +186,14 @@ const vi = {
   },
 };
 
+// vitest stops a test after five seconds; node:test never does. A hung test
+// fails here too, with room for a slow machine.
+const TEST_TIMEOUT_MS = 60_000;
+const timed = (run) => (name, body) => run(name, { timeout: TEST_TIMEOUT_MS }, body);
+
 const bridge = {
-  test: nodeTest.test,
-  it: nodeTest.it,
+  test: timed(nodeTest.test),
+  it: timed(nodeTest.it),
   describe: nodeTest.describe,
   beforeEach: nodeTest.beforeEach,
   afterEach: nodeTest.afterEach,

@@ -6,10 +6,13 @@
 
 - The client (`connect`, the conversation handles, client tools and
   `StudioError`) lives in `@sprintengine/client-runtime`, a new dependency,
-  and is re-exported here under the same names: nothing to change for an app.
-  `StudioClient` gains `rpc`, one call per protocol method.
+  and is re-exported here under the same names: an app that calls them has
+  nothing to change.
 
 ### Changed (contract)
+
+- `StudioClient` gains `rpc`, one call per protocol method. Code that builds
+  its own object typed `StudioClient` (a test double, say) must add it.
 
 - `request` is `StudioRequest`, typed by the protocol's method table, and
   `subscribe` is typed by topic: it takes push topics only (`StudioPushTopic`),

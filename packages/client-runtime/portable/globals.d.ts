@@ -15,9 +15,11 @@ declare const console: {
   error(...data: unknown[]): void
 }
 
+// React Native's AbortController (the `abort-controller` polyfill) drops the
+// reason `abort()` is given, and its signal has no `reason`: code here may
+// pass one, for a browser's or Node's sake, but must never read it back.
 interface AbortSignal {
   readonly aborted: boolean
-  readonly reason: unknown
   addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void
   removeEventListener(type: 'abort', listener: () => void): void
 }
@@ -30,6 +32,9 @@ interface AbortController {
 declare const AbortController: { prototype: AbortController; new (): AbortController }
 
 // Read by the conversation protocol's tool wording (a web tool's host).
+// React Native's `URL` never throws on a malformed address and reads `host`
+// from http(s) addresses only, so code here must not rely on either: a
+// `catch` around it is a browser's and Node's fallback, not the phone's.
 interface URL {
   readonly host: string
 }

@@ -186,11 +186,11 @@ That runs, in order:
 
 | Script | What it does |
 | --- | --- |
-| `npm run typecheck` | `tsc --noEmit` over the whole app. |
+| `npm run typecheck` | `tsc --noEmit` over the whole app, and over the shared client runtime and conversation timeline in `../packages/`. |
 | `npm run lint` | ESLint with Expo's config. |
 | `npm run lint:tokens` | Checks that screens use the design tokens in `src/theme/tokens.ts` rather than raw colours, spacing and font values. |
 | `npm run test:mobile` | Compiles the logic modules to `.mobile-test-build/` and runs the `*.regression.test.js` suites with `node --test`. |
-| `npm run test:runtime` | Compiles the shared client runtime's portable tests (the connection supervisor's and the conversation timeline's, in `../packages/`) the same way and runs them with `node --test`; `scripts/vitest-bridge.cjs` answers their `vitest` imports, so the desktop's suite runs the same files. |
+| `npm run test:runtime` | Compiles the shared client runtime's portable tests (the connection supervisor's and the conversation timeline's, in `../packages/`) the same way and runs them with `node --test` (`scripts/run-runtime-tests.cjs`); `scripts/vitest-bridge.cjs` answers their `vitest` imports, so the desktop's suite runs the same files. |
 
 The tests run on plain Node with no simulator. A new suite has to be added to
 the `test:mobile` list in `package.json`, and any module it loads to
@@ -230,12 +230,12 @@ under `/tailnet/v1/`:
   from `ws-ticket`, streams the conversation's events
   (`src/api/tailnetConversations.ts`, `src/api/conversationWire.ts`).
 
-The conversation contract, its decoder and the client runtime
-(`packages/client-runtime`: the Studio protocol's client and the connection
-supervisor) are the desktop's own packages, imported from the repository's
-`packages/` folder as source: `src/api/conversationWire.ts` holds only the
-phone's own rules beside them, and a frame, event or listed chat this build
-does not know is passed over or listed as unknown rather than refused. Metro
+The conversation contract, its decoder and the connection supervisor (part of
+the shared client runtime, `packages/client-runtime`) are the desktop's own
+packages, imported from the repository's `packages/` folder as source:
+`src/api/conversationWire.ts` holds only the phone's own rules beside them, and
+a frame, event or listed chat this build does not know is passed over or listed
+as unknown rather than refused. Metro
 watches that folder (`metro.config.js`), and the test build compiles it beside
 the app (`tsconfig.test.json`). `src/shared/mobile-control/protocol.ts` still
 carries its own copy of the mobile-control types, hash-pinned by a test. The
