@@ -15,6 +15,8 @@ import { connectToStudio } from '../../packages/agent-sdk/src/node'
 import {
   STUDIO_CHAT_METHODS,
   STUDIO_METHODS,
+  STUDIO_METHOD_ACCESS,
+  studioGrantAllows,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -314,11 +316,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     'conversation.stop': 'conversations.stop',
     // Taking back a held message is Studio's own windows', called by name.
     'conversation.cancelQueued': 'request',
-    // So is stopping one agent of a chat, an owner's for now: no SDK call names it yet.
+    // So is stopping one agent of a chat: no SDK call names it yet.
     'conversation.stopSubagent': 'request',
     'conversation.messageSubagent': 'request',
-    // And a chat's effort, its MCP servers and its agent's restart, owners' for
-    // now, as a chat followed from another desktop uses them.
+    // And a chat's effort, its MCP servers and its agent's restart, as a chat
+    // followed from another desktop uses them.
     'conversation.setReasoningEffort': 'request',
     'conversation.mcpServerAction': 'request',
     'conversation.restartSession': 'request',
@@ -395,19 +397,34 @@ test('every method the server serves has its call in the SDK, under the same sco
           (error: StudioError) => ({ ok: false, code: error.code }),
         ),
     }
+    // Every other mutation is refused it by name, before its params are read.
+    const byName = (method: StudioMethod) => () =>
+      client.request(method, {} as never).then(
+        () => ({ ok: true }),
+        (error: StudioError) => ({ ok: false, code: error.code }),
+      )
     const mutations = Object.entries(STUDIO_METHODS).filter(([, spec]) => spec.mutation && !spec.owner)
-    assert.deepEqual(mutations.map(([method]) => method).sort(), Object.keys(refusals).sort())
     for (const [method] of mutations) {
-      const answer = await refusals[method]()
+      const answer = await (refusals[method] ?? byName(method as StudioMethod))()
       assert.deepEqual([method, answer.ok, answer.code], [method, false, 'scope_required'])
     }
-    // The chat surface is refused to any app that is not Studio's own, whatever it was granted.
+    // The chat surface reaches an app by its scopes, as the protocol's table
+    // says: an owner's method is refused as one, one that needs more than
+    // reading as a scope, and a read is not refused for its grant at all.
     for (const method of Object.keys(STUDIO_CHAT_METHODS) as StudioChatMethod[]) {
       const refused = await client.request(method, {} as never).then(
         () => null,
         (error: { code?: string }) => error.code,
       )
-      assert.deepEqual([method, refused], [method, 'owner_required'])
+      const access = STUDIO_METHOD_ACCESS[method]
+      const expected =
+        'permissions' in access && access.owner !== undefined
+          ? 'owner_required'
+          : studioGrantAllows(client.grant, method)
+            ? 'not refused for its grant'
+            : 'scope_required'
+      const got = refused === 'owner_required' || refused === 'scope_required' ? refused : 'not refused for its grant'
+      assert.deepEqual([method, got], [method, expected])
     }
     const info = await client.request('server.info', {})
     assert.equal(info.grant.clientId, client.grant.clientId)

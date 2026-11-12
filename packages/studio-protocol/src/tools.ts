@@ -596,7 +596,6 @@ export const STUDIO_TOOLS_METHODS: StudioMethodTable<StudioToolsMethodMap> = {
     scope: 'conversation:read',
     mutation: false,
     capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-    owner: true,
     params: (value) => {
       const key = parseStudioConversationKey(value.key)
       return key ? studioParams({ key }) : refuse(KEY)
@@ -606,7 +605,6 @@ export const STUDIO_TOOLS_METHODS: StudioMethodTable<StudioToolsMethodMap> = {
     scope: 'conversation:operate',
     mutation: true,
     capability: STUDIO_CLIENT_TOOLS_CAPABILITY,
-    owner: true,
     params: (value) => {
       const key = parseStudioConversationKey(value.key)
       if (!key) return refuse(KEY)

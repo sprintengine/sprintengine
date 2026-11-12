@@ -13,9 +13,9 @@ import { STUDIO_METHODS, STUDIO_TOPICS, parseStudioMethodParams, parseStudioTopi
 const conversation = { workspaceId: 'ws-1', agentId: 'agent-1' }
 const refusal = (parsed: { ok: boolean; code?: string }) => (parsed.ok ? null : parsed.code)
 
-test('every localServers method and its topic are owner-only, behind the local-servers capability', () => {
+test('every localServers method and its topic reach a client by their scopes, behind the local-servers capability', () => {
   for (const [method, spec] of Object.entries(STUDIO_LOCAL_SERVERS_METHODS)) {
-    assert.equal(spec.owner, true, method)
+    assert.equal(spec.owner, undefined, method)
     assert.equal(spec.capability, STUDIO_LOCAL_SERVERS_CAPABILITY, method)
     assert.equal(STUDIO_METHODS[method as keyof typeof STUDIO_METHODS], spec, method)
     assert.equal(Object.hasOwn(STUDIO_LOCAL_SERVERS_METHODS, method), true)

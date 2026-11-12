@@ -119,14 +119,14 @@ test('offering needs tools:offer; the shell’s names and another app’s are re
   // A bad offer is refused by its shape before the registry sees it.
   const bad = await request(game, 'r5', 'tools.offer', { toolset: { name: 'Bad_Name', tools: [] } })
   assert.equal(bad.t === 'res' && !bad.ok && bad.error.code, 'invalid_params')
-  // The grant is the owner's to give.
+  // Granting a chat a toolset drives the chat: conversation:operate, which an app offering tools lacks.
   const grant = await request(game, 'r6', 'tools.grant', {
     key: { workspaceId: 'ws-1', agentId: 'agent-1' },
     toolset: 'game',
     granted: true,
     commandId: 'g1',
   })
-  assert.equal(grant.t === 'res' && !grant.ok && grant.error.code, 'owner_required')
+  assert.equal(grant.t === 'res' && !grant.ok && grant.error.code, 'scope_required')
   const owner = await open(OWNER_TOKEN, {
     name: 'Studio desktop',
     kind: 'desktop',

@@ -159,8 +159,8 @@ test('an owner’s browser and another browser are told apart by every remote ch
   const grant = (id: string) => reloaded.grantFor(id)!
 
   // The protocol: an owner's methods are the owner's, whatever scopes another holds.
-  expect(authorizeStudioMethod(grant(owned.session.id), 'conversation.scheduleSend')).toEqual({ ok: true })
-  expect(authorizeStudioMethod(grant(guest.session.id), 'conversation.scheduleSend')).toEqual({
+  expect(authorizeStudioMethod(grant(owned.session.id), 'session.terminalHandoff')).toEqual({ ok: true })
+  expect(authorizeStudioMethod(grant(guest.session.id), 'session.terminalHandoff')).toEqual({
     ok: false,
     reason: 'owner_required',
   })

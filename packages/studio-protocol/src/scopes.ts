@@ -10,19 +10,21 @@
 //
 // The three read families after them are what a chat view reads beside its
 // conversation: the providers and models it can run, files for @-mentions and
-// links, and the workspace list. Every method that needs one is also held to
-// an owner's connection for now (`STUDIO_METHODS[m].owner`), so no pairing can
-// use them yet; a pairing stored before they existed never gains them, since
-// a grant holds exactly the names it was given.
+// links, and the workspace list. A pairing stored before they existed never
+// gains them, since a grant holds exactly the names it was given. A client
+// that is not an owner names files only inside the folders Studio knows.
 //
 // `tools:offer` lets a client give Studio's agents tools of its own (`tools.*`):
 // Settings shows it as "Give agents tools from this app", off unless ticked.
-// `files:write` is the board files' write half beside `files:read`; like the
-// reads, it is held to an owner's connection for now.
+// `files:write` is the board files' write half beside `files:read`.
 //
 // `environment:maintain` lets a client update this Studio (`update.start`):
 // download a new version, drain and restart into it. An owner's grant holds
 // it; a pairing only when it was given it.
+//
+// `settings:write` changes this Studio's settings from a client: a provider's
+// key, an approval rule revoked. Like `environment:maintain`, an owner holds
+// it and a pairing only when it was given it.
 
 /** Every scope this version of the protocol defines, narrowest first. */
 export const STUDIO_SCOPES = [
@@ -35,6 +37,7 @@ export const STUDIO_SCOPES = [
   'tools:offer',
   'files:write',
   'environment:maintain',
+  'settings:write',
 ] as const
 
 export type StudioScope = (typeof STUDIO_SCOPES)[number]

@@ -178,7 +178,6 @@ const read = {
   scope: 'workspaces:read',
   mutation: false,
   capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
-  owner: true,
 } as const
 
 type OneServer = StudioLocalServersMethodMap['localServers.run' | 'localServers.stop' | 'localServers.remove']
@@ -206,7 +205,6 @@ export const STUDIO_LOCAL_SERVERS_TOPICS: StudioTopicTable<StudioLocalServersTop
   'localServers.changed': {
     scope: 'workspaces:read',
     capability: STUDIO_LOCAL_SERVERS_CAPABILITY,
-    owner: true,
     push: true,
     params: studioNoParams,
   },

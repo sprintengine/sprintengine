@@ -1026,7 +1026,15 @@ terminals; `conversation.threads`, `conversation.search` (every hit at once,
 no partial batches) and `conversation.cancelSearch`;
 `conversation.approvalRules` and `conversation.revokeApprovalRule`; and
 `providers.signIn`, `providers.setSecret` and `providers.clearSecret`. A
-client calls each only on a Studio that advertises its capability. A hello's `client.kind` and `client.instanceId` are
+client calls each only on a Studio that advertises its capability. Explicit grants
+(2026-11-12) replace "owners only" on everything above and on the chat
+surface, the conversation commands, `files.*` by root, `tools.grant*`,
+`localServers.*` and `pullRequests.list/refresh/unwatch`: each reaches a client
+by its scope. `session.terminalHandoff`, `providers.signIn` and the three
+`pullRequests` reports of Studio's own agents stay an owner's, each with its
+reason in the method table. `settings:write` is a new scope, so an older Studio
+drops it from a grant it does not know, and keeps its owner-only rule on the
+methods that need it. A client asks `studioGrantAllows`, never `grant.owner`. A hello's `client.kind` and `client.instanceId` are
 optional hints a Studio that does not know them ignores. Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

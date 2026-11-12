@@ -79,10 +79,14 @@ import type { StudioScope } from './scopes.js'
 //   which providers and models it can run, @-mention search and the file facts
 //   its links and pictures need, and the workspace list.
 //
-// Every one of them is held to an owner's connection for now (`owner: true`):
-// they take paths on Studio's disk and a CLI's own executable, which no
-// pairing has been asked about. Each still names the scope it would need, so
-// opening one to paired clients later is a decision about that one method.
+// Each reaches a client by the scope it names. Two are an owner's by
+// declaration, each with its reason (`owner`): handing a chat to a terminal
+// and a CLI's sign-in line, which run on the screen of Studio's own machine.
+// What takes a path or a CLI's executable is held by a rule on its params
+// instead, at the router: a client that is not an owner names files only in
+// the folders Studio knows, never a key's folder, and never a CLI's
+// `command`. A provider's key and an approval rule are Settings, written
+// under `settings:write`.
 //
 // A session method answers with the runtime's own outcome, a refusal by the
 // runtime included: `{ ok: true, session } | { ok: false, message, event? }`
@@ -321,7 +325,7 @@ export type StudioChatMethodMap = {
     result: { stat: StudioPathStat | StudioFileStat }
     errors: 'not_found'
   }
-  'files.readImage': { params: { path: string }; result: { dataUrl: string } }
+  'files.readImage': { params: { path: string }; result: { dataUrl: string }; errors: 'not_found' }
   'files.repoRoot': {
     params: { folderPath: string; hostId?: string }
     result: { repoRoot: string | null }
@@ -503,28 +507,27 @@ function addressed(value: Record<string, unknown>): StudioParsed<{ commandId: st
   return studioParams({ commandId: value.commandId, key })
 }
 
-// Every one of these is held to an owner's connection for now (the header).
+// Each reaches a client by its scope; the few that are an owner's say why (the header).
 type Held = Pick<StudioMethodDefinition<never>, 'scope' | 'mutation' | 'capability' | 'owner'>
-const owned = (scope: StudioScope, capability: StudioCapability, mutation: boolean): Held => ({
+const held = (scope: StudioScope, capability: StudioCapability, mutation: boolean): Held => ({
   scope,
   mutation,
   capability,
-  owner: true,
 })
-const sessions = owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true)
+const sessions = held('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true)
 // Staging bytes changes nothing anyone sees until a send names them, and an
 // append is idempotent by its offset, so neither carries a command id;
 // discarding unsent bytes is as safe to repeat as staging them.
-const staging = owned('conversation:operate', STUDIO_SESSIONS_CAPABILITY, false)
-const checkpoints = owned('conversation:operate', STUDIO_CHECKPOINTS_CAPABILITY, true)
-const conversationFiles = owned('conversation:read', STUDIO_CONVERSATION_FILES_CAPABILITY, false)
-const providers = owned('providers:read', STUDIO_PROVIDERS_CAPABILITY, false)
-const files = owned('files:read', STUDIO_FILES_CAPABILITY, false)
+const staging = held('conversation:operate', STUDIO_SESSIONS_CAPABILITY, false)
+const checkpoints = held('conversation:operate', STUDIO_CHECKPOINTS_CAPABILITY, true)
+const conversationFiles = held('conversation:read', STUDIO_CONVERSATION_FILES_CAPABILITY, false)
+const providers = held('providers:read', STUDIO_PROVIDERS_CAPABILITY, false)
+const files = held('files:read', STUDIO_FILES_CAPABILITY, false)
 
 // Reading a session changes nothing; acting on one carries a command id.
-const sessionReads = owned('conversation:read', STUDIO_SESSION_CONTROLS_CAPABILITY, false)
-const sessionControls = owned('conversation:operate', STUDIO_SESSION_CONTROLS_CAPABILITY, true)
-const history = owned('conversation:read', STUDIO_HISTORY_CAPABILITY, false)
+const sessionReads = held('conversation:read', STUDIO_SESSION_CONTROLS_CAPABILITY, false)
+const sessionControls = held('conversation:operate', STUDIO_SESSION_CONTROLS_CAPABILITY, true)
+const history = held('conversation:read', STUDIO_HISTORY_CAPABILITY, false)
 
 const MCP_SERVER_ACTIONS: readonly ConversationMcpServerAction[] = ['reconnect', 'enable', 'disable', 'sign-in']
 const TOOL_USE_ID = '"toolUseId" names the call that spawned the agent.'
@@ -797,7 +800,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'conversation.fork': {
-    ...owned('conversation:create', STUDIO_CHECKPOINTS_CAPABILITY, true),
+    ...held('conversation:create', STUDIO_CHECKPOINTS_CAPABILITY, true),
     params: (value) => {
       const at = addressed(value)
       if (!at.ok) return at
@@ -817,7 +820,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       return refuse('A fork is { side: "assistant", turnId } or { side: "user", turnSeq }.')
     },
   },
-  'conversation.handoff': { ...owned('conversation:operate', STUDIO_HANDOFF_CAPABILITY, true), params: addressed },
+  'conversation.handoff': { ...held('conversation:operate', STUDIO_HANDOFF_CAPABILITY, true), params: addressed },
   'conversation.attachment': {
     ...conversationFiles,
     params: (value) =>
@@ -844,7 +847,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'conversation.commands': {
-    ...owned('conversation:read', STUDIO_COMMANDS_CAPABILITY, false),
+    ...held('conversation:read', STUDIO_COMMANDS_CAPABILITY, false),
     params: (value) => {
       if (!id(value.cli)) return refuse('"cli" names the chat’s CLI.')
       if (!isStudioPath(value.cwd)) return refuse('"cwd" is the folder the list is for.')
@@ -931,7 +934,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       })
     },
   },
-  'workspaces.list': { ...owned('workspaces:read', STUDIO_WORKSPACES_CAPABILITY, false), params: studioNoParams },
+  'workspaces.list': { ...held('workspaces:read', STUDIO_WORKSPACES_CAPABILITY, false), params: studioNoParams },
   'session.list': {
     ...sessionReads,
     params: (value) => {
@@ -1014,7 +1017,8 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     params: (value) => (id(value.sessionId) ? studioParams({ sessionId: value.sessionId }) : refuse(SESSION_ID)),
   },
   'session.terminalHandoff': {
-    ...owned('conversation:operate', STUDIO_TERMINAL_HANDOFF_CAPABILITY, true),
+    ...held('conversation:operate', STUDIO_TERMINAL_HANDOFF_CAPABILITY, true),
+    owner: 'It opens a terminal on the screen of the machine Studio runs on.',
     params: (value) => {
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       if (value.sessionId !== undefined) {
@@ -1047,11 +1051,11 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     params: (value) => (id(value.requestId) ? studioParams({ requestId: value.requestId }) : refuse(REQUEST_ID)),
   },
   'conversation.approvalRules': {
-    ...owned('conversation:read', STUDIO_APPROVAL_RULES_CAPABILITY, false),
+    ...held('conversation:read', STUDIO_APPROVAL_RULES_CAPABILITY, false),
     params: studioNoParams,
   },
   'conversation.revokeApprovalRule': {
-    ...owned('conversation:operate', STUDIO_APPROVAL_RULES_CAPABILITY, true),
+    ...held('settings:write', STUDIO_APPROVAL_RULES_CAPABILITY, true),
     params: (value) => {
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       if (!id(value.ruleId)) return refuse('"ruleId" names the rule.')
@@ -1059,7 +1063,8 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'providers.signIn': {
-    ...owned('providers:read', STUDIO_PROVIDER_SETTINGS_CAPABILITY, false),
+    ...held('providers:read', STUDIO_PROVIDER_SETTINGS_CAPABILITY, false),
+    owner: 'It answers a command line to run in a terminal on the machine Studio runs on.',
     params: (value) => {
       const provider = providerId(value)
       if (!provider.ok) return provider
@@ -1069,7 +1074,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'providers.setSecret': {
-    ...owned('providers:read', STUDIO_PROVIDER_SETTINGS_CAPABILITY, true),
+    ...held('settings:write', STUDIO_PROVIDER_SETTINGS_CAPABILITY, true),
     params: (value) => {
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       const provider = providerId(value)
@@ -1080,7 +1085,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'providers.clearSecret': {
-    ...owned('providers:read', STUDIO_PROVIDER_SETTINGS_CAPABILITY, true),
+    ...held('settings:write', STUDIO_PROVIDER_SETTINGS_CAPABILITY, true),
     params: (value) => {
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       const provider = providerId(value)
@@ -1114,14 +1119,12 @@ export const STUDIO_CHAT_TOPICS: StudioTopicTable<StudioChatTopicMap> = {
   'conversation.commands': {
     scope: 'conversation:read',
     capability: STUDIO_COMMANDS_CAPABILITY,
-    owner: true,
     push: true,
     params: studioNoParams,
   },
   'conversation.events': {
     scope: 'conversation:read',
     capability: STUDIO_SESSION_CONTROLS_CAPABILITY,
-    owner: true,
     push: true,
     params: studioNoParams,
   },

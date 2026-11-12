@@ -42,48 +42,48 @@ const DONE = [] as const
 export const CONVERSATION_IPC_PROTOCOL = {
   // A turn's checkpoint: the chat view and the checkpoint window.
   'conversation:turn:diff': { methods: ['conversation.turnDiff'], gaps: DONE },
-  'conversation:turn:revert': { methods: ['conversation.revert'], gaps: ['grant'] },
-  'conversation:turn:rewind': { methods: ['conversation.rewind'], gaps: ['grant'] },
-  'conversation:handoff': { methods: ['conversation.handoff'], gaps: ['grant'] },
-  'conversation:turn:fork': { methods: ['conversation.fork'], gaps: ['grant'] },
+  'conversation:turn:revert': { methods: ['conversation.revert'], gaps: DONE },
+  'conversation:turn:rewind': { methods: ['conversation.rewind'], gaps: DONE },
+  'conversation:handoff': { methods: ['conversation.handoff'], gaps: DONE },
+  'conversation:turn:fork': { methods: ['conversation.fork'], gaps: DONE },
   // Following one chat.
   'conversation:session:subscribe': { topics: ['conversation.session'], gaps: DONE },
   'conversation:session:unsubscribe': { topics: ['conversation.session'], gaps: DONE },
   'conversation:session:earlier': { methods: ['conversation.loadEarlier'], gaps: DONE },
   // A chat's live session, by its id: the chat view.
-  'conversation:sessions:start': { methods: ['session.start'], gaps: ['grant'] },
-  'conversation:sessions:send-turn': { methods: ['session.send'], gaps: ['grant'] },
-  'conversation:sessions:interrupt': { methods: ['session.interrupt'], gaps: ['grant'] },
-  'conversation:sessions:respond-to-request': { methods: ['session.respond'], gaps: ['grant'] },
-  'conversation:sessions:set-permission': { methods: ['session.setPermission'], gaps: ['grant'] },
-  'conversation:sessions:set-model': { methods: ['session.setModel'], gaps: ['grant'] },
+  'conversation:sessions:start': { methods: ['session.start'], gaps: DONE },
+  'conversation:sessions:send-turn': { methods: ['session.send'], gaps: DONE },
+  'conversation:sessions:interrupt': { methods: ['session.interrupt'], gaps: DONE },
+  'conversation:sessions:respond-to-request': { methods: ['session.respond'], gaps: DONE },
+  'conversation:sessions:set-permission': { methods: ['session.setPermission'], gaps: DONE },
+  'conversation:sessions:set-model': { methods: ['session.setModel'], gaps: DONE },
   // By the session for the window, by the chat's key for a follower.
   'conversation:sessions:stop-subagent': {
     methods: ['session.stopSubagent', 'conversation.stopSubagent'],
-    gaps: ['grant'],
+    gaps: DONE,
   },
   'conversation:sessions:message-subagent': {
     methods: ['session.messageSubagent', 'conversation.messageSubagent'],
-    gaps: ['grant'],
+    gaps: DONE,
   },
   // A follower's keyed form is the conversation lane's, which the socket withholds.
   'conversation:sessions:side-question': {
     methods: ['session.askSideQuestion'],
-    gaps: ['declaration', 'grant', 'withheld'],
+    gaps: ['declaration', 'withheld'],
     planned: ['conversation.askSideQuestion'],
   },
   'conversation:sessions:cancel-side-question': {
     methods: ['session.cancelSideQuestion'],
-    gaps: ['declaration', 'grant', 'withheld'],
+    gaps: ['declaration', 'withheld'],
     planned: ['conversation.cancelSideQuestion'],
   },
   'conversation:sessions:context-breakdown': {
     methods: ['session.contextBreakdown'],
-    gaps: ['declaration', 'grant', 'withheld'],
+    gaps: ['declaration', 'withheld'],
     planned: ['conversation.contextBreakdown'],
   },
   // Reads beside a chat.
   'conversation:tool-detail': { methods: ['conversation.toolDetail'], gaps: DONE },
   'conversation:event:read': { methods: ['conversation.event'], gaps: DONE },
-  'conversation:attachment': { methods: ['conversation.attachment'], gaps: ['grant'] },
+  'conversation:attachment': { methods: ['conversation.attachment'], gaps: DONE },
 } as const satisfies Partial<Record<ServerIpcChannelName, ConversationIpcProtocol>>

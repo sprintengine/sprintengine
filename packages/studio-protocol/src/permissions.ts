@@ -62,11 +62,16 @@ export function isStudioPermission(value: unknown): value is StudioPermission {
  * What one method asks of its caller.
  *
  * Either the permissions it needs, all of them, and whether only an owner's
- * connection may call it at all; or that it is not served remotely, whatever
+ * connection may call it at all (with the reason); or that it is not served remotely, whatever
  * a caller holds, with the reason a refusal says.
  */
 export type StudioAccess =
-  { readonly permissions: readonly StudioPermission[]; readonly owner?: true } | { readonly localOnly: string }
+  | {
+      readonly permissions: readonly StudioPermission[]
+      /** Only an owner's connection may call it, and why. */
+      readonly owner?: string
+    }
+  | { readonly localOnly: string }
 
 /** Who is asking, as far as authorization goes: whether it is an owner, and what it holds. */
 export type StudioPrincipal = { readonly owner: boolean; readonly permissions: ReadonlySet<StudioPermission> }
@@ -130,6 +135,7 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'tools:offer': ['tools:offer'],
   'files:write': ['filesystem:write'],
   'environment:maintain': ['environment:maintain'],
+  'settings:write': ['settings:write'],
 }
 
 /** The permission each Studio scope is the grant name for. */
@@ -143,6 +149,7 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'tools:offer': 'tools:offer',
   'files:write': 'filesystem:write',
   'environment:maintain': 'environment:maintain',
+  'settings:write': 'settings:write',
 }
 
 /**

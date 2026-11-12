@@ -61,6 +61,11 @@ const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string
     title: 'Update Studio',
     description: 'Download a new version of Studio and restart into it. Running turns get time to finish first.',
   },
+  {
+    scope: 'settings:write',
+    title: 'Change settings',
+    description: 'Set or remove a provider’s API key, and revoke a rule that answers approvals by itself.',
+  },
 ]
 
 const REACH_ITEMS: Array<{ value: StudioLocalAppToolReach; label: string }> = [

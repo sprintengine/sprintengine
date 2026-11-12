@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed (grants)
+
+- **Explicit grants instead of owner-only.** Every method and topic reaches a
+  client by the scope it names, except five that are an owner's by
+  declaration: `session.terminalHandoff`, `providers.signIn`,
+  `pullRequests.noteWork`, `pullRequests.noteToolCall` and `pullRequests.link`.
+  A definition's `owner` is now the reason (a string), not `true`, and
+  `StudioAccess.owner` carries it. New scope and permission `settings:write`
+  for `providers.setSecret`, `providers.clearSecret` and
+  `conversation.revokeApprovalRule`; a pairing holds it only when given it.
+  `files.readImage` may be refused `not_found`. A Studio still refuses a
+  client that is not an owner a conversation's folder, a CLI's `command`, and
+  any path outside the folders it knows, by its params.
+
 ### Added
 
 - **An incompatible client keeps a way to recover.** `update-session`: a

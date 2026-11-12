@@ -152,9 +152,20 @@ test('run, stop and remove reach the domain, and its refusals keep their codes',
   assert.deepEqual(none.t === 'res' && none.ok && none.result, { removed: false })
 })
 
-test('a paired app is refused, whatever it holds', async () => {
+test('a paired app runs a server under conversation:operate and follows the list under workspaces:read', async () => {
   const { stub, asked } = stubLocalServers()
   const { started } = await ownerOver(stub)
+  const reader = await connectLineClient(started.path)
+  cleanups.push(() => reader.close())
+  reader.send(hello({ token: pairFakeClient(started.auth, 'reader', ['conversation:read']) }))
+  await reader.next((frame) => frame.t === 'welcome')
+  reader.send({ t: 'req', id: 'r1', method: 'localServers.run', params: { conversation: CONVERSATION, id: 'srv-2' } })
+  const refused = await reader.next((frame) => frame.t === 'res' && frame.id === 'r1')
+  assert.equal(codeOf(refused), 'scope_required')
+  reader.send({ t: 'sub', id: 's0', topic: 'localServers.changed', params: {} })
+  const failed = await reader.next((frame) => frame.t === 'subFailed' && frame.sub === 's0')
+  assert.equal(failed.t === 'subFailed' && failed.code, 'scope_required')
+  assert.deepEqual(asked, [])
   const app = await connectLineClient(started.path)
   cleanups.push(() => app.close())
   app.send(
@@ -164,12 +175,10 @@ test('a paired app is refused, whatever it holds', async () => {
   )
   await app.next((frame) => frame.t === 'welcome')
   app.send({ t: 'req', id: 'a1', method: 'localServers.run', params: { conversation: CONVERSATION, id: 'srv-2' } })
-  const refused = await app.next((frame) => frame.t === 'res' && frame.id === 'a1')
-  assert.equal(codeOf(refused), 'owner_required')
-  app.send({ t: 'sub', id: 's1', topic: 'localServers.changed', params: {} })
-  const failed = await app.next((frame) => frame.t === 'subFailed' && frame.sub === 's1')
-  assert.equal(failed.t === 'subFailed' && failed.code, 'owner_required')
-  assert.deepEqual(asked, [])
+  const ran = await app.next((frame) => frame.t === 'res' && frame.id === 'a1')
+  assert.notEqual(codeOf(ran), 'owner_required')
+  assert.notEqual(codeOf(ran), 'scope_required')
+  assert.ok(asked.length > 0, 'the run reached the local servers')
 })
 
 test('the stream names what moved, never the lists', async () => {

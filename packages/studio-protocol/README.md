@@ -90,11 +90,19 @@ The `welcome`'s `grant` is what the connection may do:
   ceiling of at least `auto`.
 - `environment:maintain` — update this Studio (`update.start`): download a
   new version, drain and restart into it.
+- `settings:write` — change this Studio's settings: set or clear a provider's
+  key (`providers.setSecret`, `.clearSecret`), revoke an approval rule.
 - `owner` — the connection is Studio's own, with every scope and no ceiling.
-  Some methods are an owner's only (`STUDIO_METHODS[m].owner`), whatever
-  scopes another grant holds, and are refused `owner_required`. A client asks
-  whether its grant reaches a method with `studioGrantAllows(grant, method)`
-  (`STUDIO_METHOD_ACCESS` holds the table) rather than reading `grant.owner`.
+  Five methods are an owner's only, whatever scopes another grant holds, and
+  are refused `owner_required`; each says why in `STUDIO_METHODS[m].owner`:
+  `session.terminalHandoff` and `providers.signIn` (a terminal on Studio's own
+  screen), and `pullRequests.noteWork`, `.noteToolCall` and `.link` (what
+  Studio's own agents report). Everything else reaches a client by its scope.
+  A client that is not an owner never names a conversation's folder or a
+  CLI's `command`, and names files only inside the folders Studio knows. A
+  client asks whether its grant reaches a method with
+  `studioGrantAllows(grant, method)` (`STUDIO_METHOD_ACCESS` holds the table)
+  rather than reading `grant.owner`.
 
 ## Methods
 
@@ -111,36 +119,36 @@ contract, so a missing handler, a wrong result or an undeclared refusal does
 not compile either. A client calls through `StudioRequest`, or the call per
 method `createStudioRpcClient` builds from the same table.
 
-| Method                             | Scope          | Takes                                           | Answers                                          |
-| ---------------------------------- | -------------- | ----------------------------------------------- | ------------------------------------------------ |
-| `server.info`                      | any            | —                                               | the welcome, without its pairing                 |
-| `server.ping`                      | any            | —                                               | `{ at }`, at once: the line is alive             |
-| `conversation.list`                | read           | —                                               | `{ conversations: ConversationThread[] }`        |
-| `conversation.create`              | create         | `ConversationCreateRequest` + `commandId`       | `{ conversation }`                               |
-| `conversation.send`                | operate        | `key`, `commandId`, the lane's `send` members   | `{ notice? }`, when the turn ends                |
-| `conversation.interrupt`           | operate        | `key`, `commandId`                              | `{}`                                             |
-| `conversation.resolveApproval`     | operate        | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
-| `conversation.answerQuestion`      | operate        | `key`, `commandId`, `requestId`, `answers`      | `{}`                                             |
-| `conversation.resolvePlan`         | operate        | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
-| `conversation.setPermissionPreset` | operate        | `key`, `commandId`, `preset`, `permissionMode?` | `{ permissionPreset, permissionMode?, notice? }` |
-| `conversation.setModel`            | operate        | `key`, `commandId`, `modelId`                   | `{ modelId, notice? }`                           |
-| `conversation.cancelQueued`        | operate, owner | `key`, `commandId`, `queuedId`                  | `{}`                                             |
-| `conversation.stopSubagent`        | operate, owner | `key`, `commandId`, `toolUseId`                 | `{}`                                             |
-| `conversation.messageSubagent`     | operate, owner | `key`, `commandId`, `toolUseId`, `message`      | `{}`                                             | Passes the person's words to one agent, through the chat's model. |
-| `conversation.setReasoningEffort`  | operate, owner | `key`, `commandId`, `effort?`                   | `{ notice? }`                                    |
-| `conversation.mcpServerAction`     | operate, owner | `key`, `commandId`, `serverId`, `action`        | `{}`                                             |
-| `conversation.restartSession`      | operate, owner | `key`, `commandId`                              | `{ notice? }`                                    |
-| `conversation.scheduleSend`        | operate, owner | `key`, `commandId`, `message`, `sendAt`         | `{}`, once it is kept                            |
-| `conversation.sendScheduledNow`    | operate, owner | `key`, `commandId`, `scheduledId`               | `{}`                                             |
-| `conversation.cancelScheduled`     | operate, owner | `key`, `commandId`, `scheduledId`               | `{}`                                             |
-| `conversation.usageLimitResume`    | operate, owner | `key`, `commandId`, `action`, `always?`         | `{}`                                             |
-| `conversation.stop`                | operate        | `key`, `commandId`                              | `{}`                                             |
-| `conversation.loadEarlier`         | read           | `key`, `beforeCursor`, `turnLimit?`             | `{ page }`                                       |
-| `conversation.toolDetail`          | read           | `key`, `toolUseId`                              | `{ detail }`                                     |
-| `conversation.event`               | read           | `key`, `seq`, `id`                              | `{ event }`                                      |
-| `conversation.turnDiff`            | read           | `key`, `turnSeq`, `path?`                       | `{ diff, patch?, … }`                            |
-| `update.status`                    | any            | —                                               | `StudioUpdateStatus`: how it is updated          |
-| `update.start`                     | maintain       | `commandId`, `targetVersion?`                   | `{ accepted, method: 'self', targetVersion }`    |
+| Method                             | Scope    | Takes                                           | Answers                                          |
+| ---------------------------------- | -------- | ----------------------------------------------- | ------------------------------------------------ |
+| `server.info`                      | any      | —                                               | the welcome, without its pairing                 |
+| `server.ping`                      | any      | —                                               | `{ at }`, at once: the line is alive             |
+| `conversation.list`                | read     | —                                               | `{ conversations: ConversationThread[] }`        |
+| `conversation.create`              | create   | `ConversationCreateRequest` + `commandId`       | `{ conversation }`                               |
+| `conversation.send`                | operate  | `key`, `commandId`, the lane's `send` members   | `{ notice? }`, when the turn ends                |
+| `conversation.interrupt`           | operate  | `key`, `commandId`                              | `{}`                                             |
+| `conversation.resolveApproval`     | operate  | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
+| `conversation.answerQuestion`      | operate  | `key`, `commandId`, `requestId`, `answers`      | `{}`                                             |
+| `conversation.resolvePlan`         | operate  | `key`, `commandId`, `requestId`, `decision`     | `{}`                                             |
+| `conversation.setPermissionPreset` | operate  | `key`, `commandId`, `preset`, `permissionMode?` | `{ permissionPreset, permissionMode?, notice? }` |
+| `conversation.setModel`            | operate  | `key`, `commandId`, `modelId`                   | `{ modelId, notice? }`                           |
+| `conversation.cancelQueued`        | operate  | `key`, `commandId`, `queuedId`                  | `{}`                                             |
+| `conversation.stopSubagent`        | operate  | `key`, `commandId`, `toolUseId`                 | `{}`                                             |
+| `conversation.messageSubagent`     | operate  | `key`, `commandId`, `toolUseId`, `message`      | `{}`                                             | Passes the person's words to one agent, through the chat's model. |
+| `conversation.setReasoningEffort`  | operate  | `key`, `commandId`, `effort?`                   | `{ notice? }`                                    |
+| `conversation.mcpServerAction`     | operate  | `key`, `commandId`, `serverId`, `action`        | `{}`                                             |
+| `conversation.restartSession`      | operate  | `key`, `commandId`                              | `{ notice? }`                                    |
+| `conversation.scheduleSend`        | operate  | `key`, `commandId`, `message`, `sendAt`         | `{}`, once it is kept                            |
+| `conversation.sendScheduledNow`    | operate  | `key`, `commandId`, `scheduledId`               | `{}`                                             |
+| `conversation.cancelScheduled`     | operate  | `key`, `commandId`, `scheduledId`               | `{}`                                             |
+| `conversation.usageLimitResume`    | operate  | `key`, `commandId`, `action`, `always?`         | `{}`                                             |
+| `conversation.stop`                | operate  | `key`, `commandId`                              | `{}`                                             |
+| `conversation.loadEarlier`         | read     | `key`, `beforeCursor`, `turnLimit?`             | `{ page }`                                       |
+| `conversation.toolDetail`          | read     | `key`, `toolUseId`                              | `{ detail }`                                     |
+| `conversation.event`               | read     | `key`, `seq`, `id`                              | `{ event }`                                      |
+| `conversation.turnDiff`            | read     | `key`, `turnSeq`, `path?`                       | `{ diff, patch?, … }`                            |
+| `update.status`                    | any      | —                                               | `StudioUpdateStatus`: how it is updated          |
+| `update.start`                     | maintain | `commandId`, `targetVersion?`                   | `{ accepted, method: 'self', targetVersion }`    |
 
 A key is `{ workspaceId, agentId }`. An owner may add `workspaceRoot`, the
 folder the conversation is kept in when that is not its workspace's (a chat
@@ -162,8 +170,8 @@ command's result.
 ## The chat surface
 
 What a chat view needs beside the conversation lane, so any client can show
-and drive a chat as Studio's own windows do (`chat.ts`). Every one of these is
-an owner's only for now; each still names the scope it would need.
+and drive a chat as Studio's own windows do (`chat.ts`). Each reaches a client
+by its scope; `session.terminalHandoff` and `providers.signIn` are an owner's.
 
 | Method                                                                  | Scope                  | What                                                                                    |
 | ----------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |

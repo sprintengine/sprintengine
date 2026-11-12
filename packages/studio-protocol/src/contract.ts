@@ -63,8 +63,13 @@ export type StudioMethodSpec = {
   mutation: boolean
   /** The capability a client checks before calling it. */
   capability: StudioCapability | null
-  /** Only an owner's connection may call it, whatever scopes another grant holds. */
-  owner?: true
+  /**
+   * Only an owner's connection may call it, whatever scopes another grant
+   * holds, and why: it runs a program or opens a terminal on this machine, or
+   * records what only Studio's own agents report. Everything else reaches a
+   * paired client by its scope.
+   */
+  owner?: string
 }
 
 /**
@@ -142,7 +147,8 @@ export type StudioTopicDefinition<C extends StudioTopicContract> = {
   /** What it needs beyond its scope's permission, as for a method. */
   extraPermissions?: readonly StudioPermission[]
   capability: StudioCapability
-  owner?: true
+  /** As for a method: why only an owner may follow it. */
+  owner?: string
   /** Reads an object of params; absent params are read as `{}`, which a topic that names something refuses. */
   readonly params: (value: Record<string, unknown>) => StudioParsed<C['params']>
 } & (C['stream'] extends 'push' ? { push: true } : { push?: never })

@@ -162,13 +162,11 @@ const reading = {
   scope: 'files:read',
   mutation: false,
   capability: STUDIO_BOARD_FILES_CAPABILITY,
-  owner: true,
 } as const
 const writing = {
   scope: 'files:write',
   mutation: true,
   capability: STUDIO_BOARD_FILES_CAPABILITY,
-  owner: true,
 } as const
 
 const readingAt: StudioMethodDefinition<StudioFilesMethodMap['files.list' | 'files.read']> = {
@@ -207,7 +205,6 @@ export const STUDIO_FILES_TOPICS: StudioTopicTable<StudioFilesTopicMap> = {
   'files.watch': {
     scope: 'files:read',
     capability: STUDIO_BOARD_FILES_CAPABILITY,
-    owner: true,
     push: true,
     params: located,
   },

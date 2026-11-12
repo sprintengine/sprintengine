@@ -3,6 +3,7 @@ import { afterEach, test } from 'vitest'
 
 import {
   STUDIO_CHAT_CAPABILITIES,
+  STUDIO_SCOPES,
   createStudioChunkAssembler,
   parseStudioServerFrame,
   type StudioParsedServerFrame,
@@ -28,6 +29,7 @@ import {
   type LineClient,
 } from './studio-rpc.test-helper'
 import type { StudioChatBackend } from './studio-rpc-types'
+type StudioGrant = Parameters<ReturnType<typeof createStudioRpcRouter>['handle']>[0]
 
 // The chat surface and the window's way in: what Studio's own chat view asks
 // of the RPC beside the conversation lane, held to owners, answered as its IPC
@@ -341,21 +343,27 @@ test('the welcome names the chat capabilities only where there is a chat surface
   other.close()
 })
 
-test('the chat surface and a conversation’s folder are an owner’s; a paired app is refused them whatever it holds', async () => {
-  const { path, auth, backend } = await served()
+test('a paired app reaches the chat surface by its scopes; a conversation’s folder stays an owner’s', async () => {
+  const { path, auth, backend, chat } = await served()
   const token = pairFakeClient(auth, 'app', ['conversation:read', 'conversation:operate', 'conversation:create'])
   const app = await socketClient(path, token)
   const send = await ask(app, 's1', 'session.send', { commandId: 'c1', sessionId: 's1', message: 'hi' })
-  assert.equal(!send.ok && send.error.code, 'owner_required')
+  assert.equal(send.ok, true)
+  assert.equal(chat!.calls.sends.length, 1, 'the send reached the runtime')
   const folder = { workspaceId: 'ws-1', agentId: 'agent-1', workspaceRoot: '/Users/dev/elsewhere' }
   const earlier = await ask(app, 'e1', 'conversation.loadEarlier', { key: folder, beforeCursor: 3 })
   assert.equal(!earlier.ok && earlier.error.code, 'owner_required')
   app.send({ t: 'sub', id: 'sub-1', topic: 'conversation.session', params: { key: folder } })
   const failed = await app.next(isT('subFailed'))
   assert.equal(failed.t === 'subFailed' && failed.code, 'owner_required')
+  // The `/` lists follow by conversation:read.
   app.send({ t: 'sub', id: 'sub-2', topic: 'conversation.commands', params: {} })
-  const commands = await app.next(isT('subFailed'))
-  assert.equal(commands.t === 'subFailed' && commands.code, 'owner_required')
+  for (let tries = 0; chat!.calls.commandListeners.size === 0 && tries < 50; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  const catalog = { cli: 'claude-code', cwd: '/Users/dev/app', commands: [], fetchedAt: 2 }
+  for (const listener of chat!.calls.commandListeners) listener(catalog)
+  const pushed = await app.next((frame) => frame.t === 'push' || frame.t === 'subFailed')
+  assert.equal(pushed.t, 'push')
   // An owner's folder is followed as named, not resolved by its workspace.
   const owner = await socketClient(path, OWNER_TOKEN)
   backend.emit('agent-1', 'user_message', { text: 'hello' })
@@ -364,6 +372,129 @@ test('the chat surface and a conversation’s folder are an owner’s; a paired 
   assert.equal(snapshot.t === 'frame' && snapshot.sub, 'sub-3')
   app.close()
   owner.close()
+})
+
+// One grant of each kind against the router, with a chat surface behind it
+// that answers everything: what each reaches is what the protocol's table
+// says it reaches (`studioGrantAllows`), and what it names on this disk is
+// held by the router's rules on params.
+function grantsRouter() {
+  const chat: StudioChatBackend & { calls: ChatCalls } = {
+    ...fakeChat(),
+    isKnownFolder: async (path) => path === '/Users/dev/app' || path.startsWith('/Users/dev/app/'),
+  }
+  const uploads = createStudioUploads()
+  disposers.push(async () => uploads.close())
+  const router = createStudioRpcRouter({
+    backend: createFakeBackend(),
+    chat: () => chat,
+    info: () => ({}) as never,
+    uploads,
+  })
+  disposers.push(async () => router.close())
+  const context = { connectionId: 'c1', slot: 1, ownWindow: false }
+  const grant = (owner: boolean, scopes: StudioGrant['scopes']): StudioGrant => ({
+    clientId: owner ? 'owner' : 'app',
+    name: owner ? 'Owner' : 'App',
+    owner,
+    scopes,
+    ceiling: 'bypass',
+  })
+  return {
+    chat,
+    owner: grant(true, [...STUDIO_SCOPES]),
+    paired: grant(false, [...STUDIO_SCOPES]),
+    readOnly: grant(false, ['conversation:read']),
+    handle: (asking: StudioGrant, method: string, params: unknown) =>
+      router.handle(asking, method as never, params as never, context),
+  }
+}
+
+const code = (answer: { ok: boolean; error?: { code: string } }) => (answer.ok ? 'ok' : answer.error!.code)
+
+test('a paired grant reaches every chat control by its scopes; only a terminal here and a CLI’s sign-in are an owner’s', async () => {
+  const { owner, paired, handle } = grantsRouter()
+  const calls: Array<[string, unknown]> = [
+    ['session.send', { commandId: 'c1', sessionId: 's1', message: 'hi' }],
+    ['session.list', {}],
+    ['session.suspend', { commandId: 'c2', sessionId: 's1' }],
+    ['session.mcpServerAction', { commandId: 'c3', sessionId: 's1', serverId: 'srv', action: 'reconnect' }],
+    ['conversation.revert', { commandId: 'c4', key: { workspaceId: 'ws-1', agentId: 'agent-1' }, turnSeq: 1 }],
+    ['providers.list', {}],
+    ['providers.setSecret', { commandId: 'c5', providerId: 'p', value: 'sk-test' }],
+    ['conversation.revokeApprovalRule', { commandId: 'c6', ruleId: 'rule-1' }],
+    ['conversation.approvalRules', {}],
+    ['files.search', { rootPath: '/Users/dev/app', query: 'a' }],
+    ['workspaces.list', {}],
+  ]
+  for (const [method, params] of calls) assert.equal(code(await handle(paired, method, params)), 'ok', method)
+  for (const [method, params] of [
+    ['session.terminalHandoff', { commandId: 'c7', sessionId: 's1' }],
+    ['providers.signIn', { providerId: 'p' }],
+  ] as const) {
+    assert.equal(code(await handle(paired, method, params)), 'owner_required', method)
+    assert.equal(code(await handle(owner, method, params)), 'ok', method)
+  }
+})
+
+test('a read-only grant follows chats and is refused every method that needs more', async () => {
+  const { readOnly, handle, chat } = grantsRouter()
+  assert.equal(code(await handle(readOnly, 'session.list', {})), 'ok')
+  assert.equal(code(await handle(readOnly, 'conversation.approvalRules', {})), 'ok')
+  for (const [method, params] of [
+    ['session.send', { commandId: 'c1', sessionId: 's1', message: 'hi' }],
+    ['session.stop', { commandId: 'c2', sessionId: 's1' }],
+    ['providers.setSecret', { commandId: 'c3', providerId: 'p', value: 'sk-test' }],
+    ['providers.list', {}],
+    ['files.search', { rootPath: '/Users/dev/app', query: 'a' }],
+  ] as const)
+    assert.equal(code(await handle(readOnly, method, params)), 'scope_required', method)
+  assert.equal(chat.calls.sends.length, 0)
+})
+
+test('what a client that is not an owner names on this disk is held to the folders Studio knows, and never a CLI’s program', async () => {
+  const { owner, paired, handle, chat } = grantsRouter()
+  for (const [method, params] of [
+    ['files.stat', { path: '/etc/passwd' }],
+    ['files.readImage', { path: '/Users/dev/secret.png' }],
+    ['files.search', { rootPath: '/Users/dev', query: 'a' }],
+    ['files.repoRoot', { folderPath: '/etc' }],
+    ['session.send', { commandId: 'c1', sessionId: 's1', message: 'read this', files: [{ path: '/etc/passwd' }] }],
+  ] as const) {
+    assert.equal(code(await handle(paired, method, params)), 'not_found', method)
+    assert.equal(code(await handle(owner, method, params)), 'ok', method)
+  }
+  assert.equal(chat.calls.sends.length, 1, 'only the owner’s send reached the runtime')
+  assert.equal(code(await handle(paired, 'files.stat', { path: '/Users/dev/app/README.md' })), 'ok')
+  const command = { cliRuntimes: { 'claude-code': { command: '/tmp/not-claude' } } }
+  assert.equal(code(await handle(paired, 'providers.list', command)), 'owner_required')
+  assert.equal(code(await handle(owner, 'providers.list', command)), 'ok')
+  assert.equal(
+    code(await handle(paired, 'providers.list', { cliRuntimes: { 'claude-code': { models: ['m'] } } })),
+    'ok',
+  )
+  // A file's bytes for `files.write` are staged only under files:write.
+  const file = { purpose: 'file', mediaType: 'application/octet-stream', byteLength: 4 }
+  assert.equal(
+    code(await handle({ ...paired, scopes: ['conversation:operate'] }, 'uploads.begin', file)),
+    'scope_required',
+  )
+  assert.equal(code(await handle(paired, 'uploads.begin', file)), 'ok')
+})
+
+test('a revoked app is refused everything: its connection is closed, and it cannot connect again', async () => {
+  const { path, auth } = await served()
+  const token = pairFakeClient(auth, 'app', [...STUDIO_SCOPES])
+  const app = await socketClient(path, token)
+  assert.equal((await ask(app, 'l1', 'session.list')).ok, true)
+  auth.revoke('app')
+  const bye = await app.next((frame) => frame.t === 'bye')
+  assert.equal(bye.t === 'bye' && bye.code, 'revoked')
+  const again = await connectLineClient(path)
+  again.send(hello({ token }))
+  const refused = await again.next((frame) => frame.t === 'bye' || frame.t === 'welcome')
+  assert.notEqual(refused.t, 'welcome')
+  again.close()
 })
 
 test('a window is shown events as its IPC shows them; a client is shown them redacted', async () => {
