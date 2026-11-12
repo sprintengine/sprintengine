@@ -1,4 +1,4 @@
-import { connect, type StudioClient, type StudioTransport } from '../../../../../packages/agent-sdk/src/index'
+import { connect, type StudioClient, type StudioTransport } from '../../../../../packages/client-runtime/src/public'
 
 // The embed page's Studio connection (phase 9 spec, 5.4). The page holds the
 // embed's token, never a session: before each connection it trades the token

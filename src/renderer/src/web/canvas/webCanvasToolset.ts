@@ -1,4 +1,8 @@
-import type { OfferedToolset, StudioClientTools, ToolDefinition } from '../../../../../packages/agent-sdk/src/tools'
+import type {
+  OfferedToolset,
+  StudioClientTools,
+  ToolDefinition,
+} from '../../../../../packages/client-runtime/src/public'
 import {
   STUDIO_BOARD_FILES_CAPABILITY,
   STUDIO_CLIENT_TOOLS_CAPABILITY,

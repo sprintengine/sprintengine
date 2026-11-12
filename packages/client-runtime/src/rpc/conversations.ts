@@ -11,7 +11,7 @@ import type {
   ConversationWirePhase,
   StudioCreatedConversation,
   StudioCursor,
-} from './protocol.js'
+} from '../protocol.js'
 
 // The conversation API, in two layers.
 //

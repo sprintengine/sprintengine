@@ -5,5 +5,15 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx"]
+  // The shared client runtime and the conversation timeline are checked under
+  // React Native's types too, although the app imports only the runtime's
+  // connection supervisor so far: the phone's cut-over onto them finds them
+  // compiling here. Listing them adds nothing to the app's bundle.
+  "include": [
+    "App.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "../packages/client-runtime/src/public.ts",
+    "../packages/conversation-timeline/src/public.ts"
+  ]
 }

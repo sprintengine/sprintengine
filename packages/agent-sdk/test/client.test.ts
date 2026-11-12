@@ -22,7 +22,7 @@ import {
   type StudioClient,
   type StudioClientState,
 } from '../src/index'
-import { isTerminalStudioCode } from '../src/errors'
+import { isTerminalStudioCode } from '../src/runtime'
 import { connectToStudio, discoverStudio, socketTransport, studioDataDir } from '../src/node'
 
 const ref = { workspaceId: 'ws-1', agentId: 'agent-1' }

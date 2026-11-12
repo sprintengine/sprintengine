@@ -1,4 +1,4 @@
-import type { StudioAuth } from './protocol.js'
+import type { StudioAuth } from '../protocol.js'
 
 // How a client reaches a Studio: anything that carries whole frames both ways.
 //

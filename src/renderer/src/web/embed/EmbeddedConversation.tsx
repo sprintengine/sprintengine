@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 
-import type { StudioClient } from '../../../../../packages/agent-sdk/src/index'
+import type { StudioClient } from '../../../../../packages/client-runtime/src/public'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { InlineNotice } from '../../components/ui/InlineNotice'
 import type { UserTurn } from '../../components/panels/agentChat/conversationProjection'

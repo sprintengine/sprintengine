@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 
-import type { StudioClient } from '../../packages/agent-sdk/src/index'
+import type { StudioClient } from '../../packages/client-runtime/src/public'
 import { ClientCannot, type ChatRef, type GateClient } from './client'
 import { desktopClient } from './clients/desktop'
 import { answerOf, embedClient, parseEmbedLink } from './clients/embed'

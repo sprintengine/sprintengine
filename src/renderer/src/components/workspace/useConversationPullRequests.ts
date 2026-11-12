@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { StudioClient } from '../../../../../packages/agent-sdk/src/index'
+import type { StudioClient } from '../../../../../packages/client-runtime/src/public'
 import {
   STUDIO_PULL_REQUEST_LINK_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,

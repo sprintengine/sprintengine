@@ -1,4 +1,4 @@
-import type { StudioTransportFactory } from '../../../packages/agent-sdk/src/transport'
+import type { StudioTransportFactory } from '../../../packages/client-runtime/src/public'
 import type { StudioCore } from '../../server/core/studio-core'
 import type { ControlRpc } from '../../server/bootstrap/control-rpc'
 import { SERVER_EVENTS, SERVER_METHODS } from '../../server/desktop/server-methods'

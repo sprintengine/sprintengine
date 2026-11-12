@@ -25,7 +25,7 @@ import {
   ConnectTimeoutError,
   type ConnectionAttempt,
   type ConnectionState,
-} from '../../../../packages/connection-supervisor/src/connectionSupervisor'
+} from '../../../../packages/client-runtime/src/public'
 
 // One SSH machine's connection, in main (phase 8 spec, 5.6). Serialised: a
 // second `connect` while a bootstrap runs waits for it. The one exception is
@@ -43,7 +43,7 @@ import {
 //                          still tried every five minutes, and at once on a wake
 //
 // When to try, how long to wait and what a wake does are the connection
-// supervisor's (packages/connection-supervisor), the same rules every other
+// supervisor's (packages/client-runtime/src/connection), the same rules every other
 // reconnecting connection in the app follows; this class is the bootstrap it
 // runs for each attempt and the words the machine's row says.
 //

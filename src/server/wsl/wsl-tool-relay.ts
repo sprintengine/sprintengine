@@ -1,9 +1,13 @@
 import type { Duplex } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
 
-import { connect, type StudioClient } from '../../../packages/agent-sdk/src/client'
-import type { OfferedToolset, ToolDefinition } from '../../../packages/agent-sdk/src/tools'
-import type { StudioTransport } from '../../../packages/agent-sdk/src/transport'
+import {
+  connect,
+  type StudioClient,
+  type OfferedToolset,
+  type ToolDefinition,
+  type StudioTransport,
+} from '../../../packages/client-runtime/src/public'
 import {
   STUDIO_RESERVED_TOOLSET_NAMES,
   STUDIO_TOOL_NAME_PATTERN,

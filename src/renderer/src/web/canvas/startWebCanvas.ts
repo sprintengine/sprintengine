@@ -1,4 +1,4 @@
-import { connect } from '../../../../../packages/agent-sdk/src/index'
+import { connect } from '../../../../../packages/client-runtime/src/public'
 import { windowPortTransport } from '../../studio/windowStudioClient'
 import { isWindowVisible, onWindowVisibilityChange } from '../../utils/windowActivity'
 import { webPageUrl } from '../webLocation'

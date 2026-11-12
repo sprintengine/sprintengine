@@ -8,7 +8,7 @@ import {
   type ConnectionPhase,
   type ConnectionSupervisorOptions,
   type SupervisorClock,
-} from '../src/connectionSupervisor.js'
+} from '../src/connection/connectionSupervisor.js'
 
 // Every case runs on a fake clock: time moves only when a test says so, and a
 // timer fires only when the clock passes it. `sleep` moves the clock without

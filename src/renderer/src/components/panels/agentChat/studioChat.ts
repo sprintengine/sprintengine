@@ -1,13 +1,15 @@
 import {
-  STUDIO_SESSION_FILES_CAPABILITY,
   StudioError,
   type ConversationFollowFrame,
   type ConversationRef,
   type StudioClient,
+} from '../../../../../../packages/client-runtime/src/public'
+import {
+  STUDIO_SESSION_FILES_CAPABILITY,
   type StudioMethod,
   type StudioMethodParams,
   type StudioMethodResult,
-} from '../../../../../../packages/agent-sdk/src/index'
+} from '../../../../../../packages/studio-protocol/src/public'
 import { mapWithLimit } from '../../../../../shared/concurrency'
 import { randomId as commandId } from '../../../../../shared/random-id'
 import type {

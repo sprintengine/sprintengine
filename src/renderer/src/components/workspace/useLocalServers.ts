@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { StudioClient } from '../../../../../packages/agent-sdk/src/index'
+import type { StudioClient } from '../../../../../packages/client-runtime/src/public'
 import {
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_LOCAL_SERVERS_MAX_IDS,

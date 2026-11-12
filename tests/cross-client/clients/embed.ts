@@ -1,4 +1,9 @@
-import { connect, StudioError, type StudioClient, type StudioTransport } from '../../../packages/agent-sdk/src/index'
+import {
+  connect,
+  StudioError,
+  type StudioClient,
+  type StudioTransport,
+} from '../../../packages/client-runtime/src/public'
 import { connectEmbed } from '../../../src/renderer/src/web/embed/embedClient'
 import type { ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'

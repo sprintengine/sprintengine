@@ -12,7 +12,7 @@ import {
   type StudioToolResult,
   type StudioToolsetListing,
   type StudioToolsetOffer,
-} from './protocol.js'
+} from '../protocol.js'
 import type { ConversationRef } from './conversations.js'
 
 // Client tools: give Studio's agents tools that run in this program.
