@@ -18,7 +18,7 @@ const {
   toolDetailChat,
   toolDetailSize,
   toolOutputView,
-} = require("../../../.mobile-test-build/src/features/conversations/toolOutput.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/toolOutput.js");
 
 const ESC = "\u001b";
 

@@ -6,8 +6,8 @@ const {
   attachedFileType,
   middleTruncateFileName,
   parseAttachedFiles,
-} = require("../../../.mobile-test-build/src/features/conversations/attachedFiles.js");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/attachedFiles.js");
+const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 
 const POSIX = "/Users/dev/Documents/Quarterly report.pdf";
 const DRIVE = "C:\\Users\\dev\\Documents\\Pairing plan.docx";

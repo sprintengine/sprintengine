@@ -7,7 +7,7 @@ const test = require("node:test");
 // when the answer is not the whole machine's, what a picture is asked for,
 // and where Continue in a new chat starts, in the desktop's own words.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   CANVAS_DELETED_PROJECT_LABEL,
   canvasBoardMeta,

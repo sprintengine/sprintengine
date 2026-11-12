@@ -3,7 +3,7 @@ const { test } = require("node:test");
 const {
   createTranscriptMemory,
   transcriptKey,
-} = require("../../.mobile-test-build/src/storage/transcriptMemory.js");
+} = require("../../.mobile-test-build/mobile/src/storage/transcriptMemory.js");
 
 const event = (seq, text = "hello") => ({
   id: `e-${seq}`,

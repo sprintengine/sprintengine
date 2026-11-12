@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { computeColumnWidths } = require(path.join(buildRoot, "src/components/document/tableLayout.js"));
 
 // `spacing.sm * 2`, the th/td horizontal padding MarkdownDocument passes in.

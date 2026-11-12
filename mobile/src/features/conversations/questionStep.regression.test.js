@@ -4,7 +4,7 @@ const {
   questionAnswer,
   questionAnswers,
   questionStep,
-} = require("../../../.mobile-test-build/src/features/conversations/questionStepLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/questionStepLogic.js");
 
 test("a part's answer is its picks in order, then the typed words, trimmed", () => {
   assert.equal(questionAnswer(["Red", "Blue"], "  teal  "), "Red, Blue, teal");

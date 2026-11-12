@@ -4,7 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 const MarkdownIt = require("markdown-it");
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { markdownRuns, RUNS_FROM_LENGTH } = require(path.join(buildRoot, "src/components/document/markdownRuns.js"));
 
 // The parser MarkdownDocument hands the library.

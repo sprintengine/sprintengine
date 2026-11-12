@@ -37,8 +37,8 @@ import {
 } from './checkoutChanges.js'
 
 // The server half of the full contract: what a desktop accepts from a client.
-// `parseConversationClientFrame` (index.ts) is the lane as it first shipped
-// and stays byte-for-byte what the phone carries; this reads the same frames
+// `parseConversationClientFrame` (index.ts) is the lane as it first shipped;
+// this reads the same frames
 // plus the extensions in commands.ts and handshake.ts, each of which a client
 // sends only to a desktop that advertised it.
 

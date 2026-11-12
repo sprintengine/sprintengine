@@ -23,7 +23,5 @@ failures (`classify`). The clock, timers and randomness are injectable, which is
 how the tests drive it.
 
 `src/connectionSupervisor.ts` is one file with no imports, so the desktop's main
-process, the renderer and the phone app all run the same source. The phone app
-cannot import this package and keeps a byte-for-byte copy in
-`mobile/src/shared/connection-supervisor/`; `test/mirror.test.ts` compares the
-two and fails while they differ. Change both together.
+process, the renderer and the phone app all run the same source; the phone
+imports it from this repository's `packages/` folder.

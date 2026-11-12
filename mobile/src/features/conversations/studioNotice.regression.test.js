@@ -4,14 +4,14 @@ const {
   STUDIO_NOTICE_PREFIX,
   readMessageOrigin,
   withoutStudioNoticePrefix,
-} = require("../../../.mobile-test-build/src/features/conversations/studioNotice.js");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/studioNotice.js");
+const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 const {
   chatOpenedSince,
   unreadDividerRowId,
   unreadDividerTurn,
-} = require("../../../.mobile-test-build/src/features/conversations/unreadDivider.js");
-const { chatSections } = require("../../../.mobile-test-build/src/features/conversations/conversationListLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/unreadDivider.js");
+const { chatSections } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationListLogic.js");
 
 let sequence = 0;
 function event(type, createdAt, payload = {}) {

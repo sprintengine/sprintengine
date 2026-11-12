@@ -4,7 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 const MarkdownIt = require("markdown-it");
 
-const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build/mobile");
 const { installReplyMarkup, fenceKind, replyBlockReady, MAX_DISPLAY_MATH, MAX_INLINE_MATH } = require(
   path.join(buildRoot, "src/components/document/rich/replyMarkup.js"),
 );

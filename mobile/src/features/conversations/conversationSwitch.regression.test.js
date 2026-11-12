@@ -12,7 +12,7 @@ const { createRequire } = require("node:module");
 const { test } = require("node:test");
 const compiled = path.resolve(
   __dirname,
-  "../../../.mobile-test-build/src/features/conversations/usePhoneConversation.js",
+  "../../../.mobile-test-build/mobile/src/features/conversations/usePhoneConversation.js",
 );
 const localRequire = createRequire(compiled);
 const { createConversationCacheStore } = localRequire("../../storage/conversationCacheModel.js");

@@ -10,7 +10,7 @@ const test = require("node:test");
 // the desktop's, and checks the baked keyframe tables the marks and characters
 // animate from against the CSS they were written from.
 
-const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build/src/components/glyphs/agentGlyph");
+const buildRoot = path.resolve(__dirname, "../../../../.mobile-test-build/mobile/src/components/glyphs/agentGlyph");
 const { stablePick } = require(path.join(buildRoot, "pick.js"));
 const { AGENT_CHARACTER_IDS, AGENT_SEASON_POOLS, pickAgentCharacter, seasonFor } = require(
   path.join(buildRoot, "seasons.js"),

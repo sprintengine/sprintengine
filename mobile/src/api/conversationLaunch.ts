@@ -1,4 +1,4 @@
-import { isConversationWirePermissionPreset } from "./conversation-protocol/index";
+import { isConversationWirePermissionPreset } from "../../../packages/conversation-protocol/src/public";
 import { plainLineBreaks, type ConversationPermissionPreset, type ConversationThread } from "./conversationWire";
 import { readPeerRefusal } from "./tailnetTransport";
 

@@ -31,7 +31,7 @@ const {
   pickableProjects,
   resolveChatLink,
   routesInPlaceOfTop,
-} = require("../../../.mobile-test-build/src/features/conversations/conversationListLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationListLogic.js");
 
 // A fixed Tuesday at noon, local time, so weekday readings do not depend on
 // the day the suite runs.
@@ -429,7 +429,7 @@ test("New lists each project once: every chat in a folder answers for the folder
 });
 
 test("a list read keeps each chat that has not moved as the row the list holds", () => {
-  const { keepUnchanged } = require("../../../.mobile-test-build/src/features/conversations/keepUnchanged.js");
+  const { keepUnchanged } = require("../../../.mobile-test-build/mobile/src/features/conversations/keepUnchanged.js");
   const key = (row) => JSON.stringify([row.deviceId, row.thread.workspaceId, row.thread.agentId]);
   // Every read parses the desktop's answer afresh.
   const read = (count, moved = -1) =>

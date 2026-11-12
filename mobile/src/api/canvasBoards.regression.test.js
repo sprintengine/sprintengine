@@ -6,7 +6,7 @@ const test = require("node:test");
 // A paired desktop's Canvas boards over the gateway: what the phone sends to
 // `canvas.list` and `canvas.screenshot`, and how it reads what comes back.
 
-const buildRoot = path.resolve(__dirname, "../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../.mobile-test-build/mobile");
 const {
   CANVAS_PICTURE_MAX_EDGE,
   buildCanvasScreenshotArgs,

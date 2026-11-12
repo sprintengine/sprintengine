@@ -1,6 +1,9 @@
 import type { ConversationEvent, ConversationThread } from "../../api/conversationWire";
-import { presentToolItem, type PresentableTool } from "../../api/conversation-protocol/presentation";
-import type { ConversationToolKind } from "../../api/conversation-protocol/tool-types";
+import {
+  presentToolItem,
+  type ConversationToolKind,
+  type PresentableTool,
+} from "../../../../packages/conversation-protocol/src/public";
 import type { MobileSession } from "../../api/types";
 import { declaresConversationModels, declaresPermissionModes } from "../../api/tailnetTransport";
 import {

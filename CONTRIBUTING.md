@@ -86,7 +86,9 @@ after the rest. The release-script tests under `scripts/release/` run as
 both are in `verify:app`.
 
 The phone companion under `mobile/` is a separate package, with its own
-`package.json`, lockfile and gate, and none of the commands above look at it. To
+`package.json`, lockfile and gate, and none of the commands above look at it.
+It imports the protocol packages from `packages/` as source, so a change there
+is the phone's too: run its gate as well. To
 work on it, run `npm ci` and `npm run ci` (typecheck, ESLint, its token lint and
 its tests) inside `mobile/`; CI runs the same as a job of its own.
 `mobile/README.md` covers building it onto a phone.

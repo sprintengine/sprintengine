@@ -3,7 +3,7 @@ const { test } = require("node:test");
 const {
   boundedConversationCache,
   createConversationCacheStore,
-} = require("../../.mobile-test-build/src/storage/conversationCacheModel.js");
+} = require("../../.mobile-test-build/mobile/src/storage/conversationCacheModel.js");
 const event = (
   seq,
   type = "user_message",

@@ -12,10 +12,10 @@ const {
   subscribeSentPhotos,
   sentImageShows,
   sentPhotoUri,
-} = require("../../../.mobile-test-build/src/features/conversations/sentPhotos.js");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
-const { conversationImageSource, conversationImageUrl } = require("../../../.mobile-test-build/src/api/conversationImages.js");
-const { declaresMessageImages } = require("../../../.mobile-test-build/src/api/tailnetTransport.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/sentPhotos.js");
+const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { conversationImageSource, conversationImageUrl } = require("../../../.mobile-test-build/mobile/src/api/conversationImages.js");
+const { declaresMessageImages } = require("../../../.mobile-test-build/mobile/src/api/tailnetTransport.js");
 
 // A ref in the shape the desktop's attachment store chooses: its folder for the
 // chat, a random file name, the picture's extension.

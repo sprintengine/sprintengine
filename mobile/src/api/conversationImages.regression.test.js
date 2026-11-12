@@ -11,7 +11,7 @@ const {
   conversationImageUrl,
   conversationUploadRefusal,
   readConversationImageProblem,
-} = require(path.resolve(__dirname, "../../.mobile-test-build/src/api/conversationImages.js"));
+} = require(path.resolve(__dirname, "../../.mobile-test-build/mobile/src/api/conversationImages.js"));
 
 const desktop = { baseUrl: "http://studio.tail1234.ts.net:8471", deviceToken: "mctn_token" };
 const ref = { workspaceId: "ws-1", agentId: "agent-1", toolUseId: "ig_1" };

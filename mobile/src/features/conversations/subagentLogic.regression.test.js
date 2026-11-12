@@ -13,7 +13,7 @@ const {
   subagentStartFacts,
   subagentThread,
   subagentsFooter,
-} = require("../../../.mobile-test-build/src/features/conversations/subagentLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/subagentLogic.js");
 
 const subagent = (over = {}) => ({
   workspaceId: "ws", agentId: "child", title: "Review the diff", providerId: "cursor-agent", modelId: "default",
@@ -88,7 +88,7 @@ test("a parent's link goes back to its screen under the top when it is there", (
 });
 
 test("a subagent the turn started stays in view, out of the turn's fold", () => {
-  const { foldTurns } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+  const { foldTurns } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
   const read = { id: "r", name: "Read", input: { path: "a.ts" }, status: "ok" };
   const start = { id: "s", name: "mcp__sprintengine-studio__subagent_start", serverName: "sprintengine-studio", input: {}, status: "ok" };
   const grep = { id: "g", name: "Grep", input: { pattern: "x" }, status: "ok" };

@@ -1,8 +1,5 @@
-/* global __dirname, Buffer */
+/* global Buffer */
 const assert = require("node:assert/strict");
-const { createHash } = require("node:crypto");
-const { readFileSync } = require("node:fs");
-const { join } = require("node:path");
 const { test } = require("node:test");
 const {
   CONVERSATION_MAX_CLIENT_FRAME_BYTES,
@@ -13,16 +10,7 @@ const {
   heldSendLanded,
   parseConversationFrame,
   plainLineBreaks,
-} = require("../../.mobile-test-build/src/api/conversationWire.js");
-
-test("portable source matches the jointly verified desktop digest", () => {
-  const hash = createHash("sha256");
-  for (const name of ["index.ts", "presentation.ts", "tool-types.ts", "toolKind.ts", "commandLabel.ts"]) {
-    hash.update(name); hash.update("\0");
-    hash.update(readFileSync(join(__dirname, "conversation-protocol", name)));
-  }
-  assert.equal(hash.digest("hex"), "a1313dd4c44024e14956b1fb461ca30d0d65851ec28162453ffa888af66c5c3c");
-});
+} = require("../../.mobile-test-build/mobile/src/api/conversationWire.js");
 
 function chunks(frameId, value, size = 48_000) {
   const json = JSON.stringify(value), total = Math.ceil(json.length / size);

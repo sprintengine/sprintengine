@@ -40,7 +40,7 @@ test("mobile protocol.ts stays byte-identical to the desktop wire schema (hash p
   );
 });
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   mobileControlProtocolVersion,
   validateMobileControlCommand,

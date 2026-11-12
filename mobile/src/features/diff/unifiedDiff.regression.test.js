@@ -9,7 +9,7 @@ const {
   readTurnDiff,
   splitPath,
   diffTotals,
-} = require("../../../.mobile-test-build/src/features/diff/unifiedDiff.js");
+} = require("../../../.mobile-test-build/mobile/src/features/diff/unifiedDiff.js");
 
 const modified = [
   "diff --git a/src/components/Toast.tsx b/src/components/Toast.tsx",

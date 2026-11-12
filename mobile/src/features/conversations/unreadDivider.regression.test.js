@@ -1,11 +1,11 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation } = require("../../../.mobile-test-build/src/features/conversations/conversationLogic.js");
+const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 const {
   chatOpenedSince,
   unreadDividerRowId,
   unreadDividerTurn,
-} = require("../../../.mobile-test-build/src/features/conversations/unreadDivider.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/unreadDivider.js");
 
 // Clocks in plain numbers: the events' `createdAt` is their second argument.
 let sequence = 0;

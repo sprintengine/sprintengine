@@ -1,4 +1,4 @@
-import { presentToolItem } from "../../api/conversation-protocol/presentation";
+import { presentToolItem } from "../../../../packages/conversation-protocol/src/public";
 import type { AgentLane } from "./agentLogic";
 import { toolPicture, type ToolPicture } from "./conversationImageLogic";
 import { recordValue, stringValue, type ConversationRow, type MobileTool } from "./conversationLogic";

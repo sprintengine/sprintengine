@@ -24,7 +24,7 @@ import {
   ConnectionSupervisor,
   connectionRetryDelayMs,
   type ConnectionAttempt,
-} from "../shared/connection-supervisor/connectionSupervisor";
+} from "../../../packages/connection-supervisor/src/connectionSupervisor";
 import { queuedSendStale, turnEndedSince } from "../features/conversations/queuedSends";
 import {
   conversationImageSource,

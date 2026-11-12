@@ -575,12 +575,11 @@ declares:
   module SDK does, and so does the Studio RPC on the owner socket
   (`@sprintengine/studio-protocol`, `conversation.create`).
 
-The package entry is `public.ts`. The phone carries `index.ts` and the four
-files it re-exports byte for byte under a shared SHA-256 pin
-(`src/main/automation/tailnet/conversation-protocol.test.ts`), so those five
-files change only in a change made on both sides at once; everything added
-since lives in files of its own, re-exported from the entry, and leaves the
-pin as it is. Building this branch does not publish the package.
+The package entry is `public.ts`. The phone imports it from this repository's
+source, as the desktop does, so both build against the same files; a phone
+already installed keeps the contract it was built with, which is what the
+capabilities above are for. Building this branch does not publish the
+package.
 
 Phase changes reach a client while its socket is open, and every paired
 device's change feed says when the conversation list moved — a conversation

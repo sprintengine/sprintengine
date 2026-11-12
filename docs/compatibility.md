@@ -342,8 +342,8 @@ characters, so a long question's answer was refused as `invalid_frame`. Since
 with the frame's total still the message limit. Only the validator widened:
 a client sends the same frame to either desktop, and an older one goes on
 refusing a long question as it always did. The first version's reader in
-`index.ts` is unchanged, since the phone carries it byte for byte; the wider
-rule is in `clientFrames.ts`, the server half.
+`index.ts` is unchanged, since phones built against it are still in use; the
+wider rule is in `clientFrames.ts`, the server half.
 
 The initial `0.1.0` contract requires the `conversations` capability. Additive
 optional fields preserve that contract. Model switching is one such addition: its own
@@ -923,13 +923,12 @@ a package version change. Presentation-only fixes use a package patch.
 Both ESM and CommonJS tarball consumers and Node16 declarations are checked by
 `npm run test:conversation-protocol:pack` as part of `verify:app`.
 
-Until a published version is adopted, the phone carries the same portable source
-files with a shared SHA-256 pin. A wire or presentation edit must update both
-copies and both pins in companion changes; passing one repo's local hash check
-alone does not prove the two peers agree. The pin covers `index.ts` and the four
-files it re-exports; the package's entry is `public.ts`, which re-exports those
-and the files added since, so an addition goes in a file of its own and leaves
-the pin alone. Publishing is a separate release step.
+The phone app imports this package from the repository's source, as the desktop
+does, so the two build against the same files and nothing is copied or pinned.
+What stays is the version skew between a phone and a desktop that update
+separately: a wire change still follows the capability and version-window rules
+above, since an installed phone keeps the contract it was built with.
+Publishing is a separate release step.
 
 ### The Studio protocol
 

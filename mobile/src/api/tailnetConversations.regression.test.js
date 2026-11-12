@@ -6,7 +6,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 const vm = require("node:vm");
 
-const compiled = path.resolve(__dirname, "../../.mobile-test-build/src/api/tailnetConversations.js");
+const compiled = path.resolve(__dirname, "../../.mobile-test-build/mobile/src/api/tailnetConversations.js");
 const compiledRequire = createRequire(compiled);
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 const ticketResponse = () => ({ ok: true, json: async () => ({ ticket: "test-ticket" }) });

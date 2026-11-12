@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { serverWords, usageMeta, usageSub, usageTone, usageWindow } = require("../../../.mobile-test-build/src/features/conversations/chatPanelLogic.js");
+const { serverWords, usageMeta, usageSub, usageTone, usageWindow } = require("../../../.mobile-test-build/mobile/src/features/conversations/chatPanelLogic.js");
 
 const window = (over = {}) => ({ id: "five_hour", label: "5-hour limit", usedPercent: 42, resetsAt: null, status: "allowed", observedAt: 1, ...over });
 

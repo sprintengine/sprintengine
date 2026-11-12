@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 const test = require("node:test");
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const { isPairingDeepLink, parsePairingPayload } = require(path.join(buildRoot, "src/features/pairing/pairingPayload.js"));
 const { resolveGateRoute, resolveRootRoute, shouldShowSignedInNavigation } = require(path.join(
   buildRoot,

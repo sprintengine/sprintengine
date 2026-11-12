@@ -1,4 +1,4 @@
-import { parseConversationClientFrame } from "../api/conversation-protocol/index";
+import { parseConversationClientFrame } from "../../../packages/conversation-protocol/src/public";
 import type {
   ConversationCommand,
   ConversationEvent,

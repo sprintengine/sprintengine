@@ -8,7 +8,7 @@ const {
   promptCacheLine,
   promptCacheReadingKey,
   formatTokenCount,
-} = require("../../../.mobile-test-build/src/features/conversations/promptCache.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/promptCache.js");
 
 const usage = (createdAt, promptCache) => ({ type: "usage_updated", createdAt, payload: { promptCache } });
 

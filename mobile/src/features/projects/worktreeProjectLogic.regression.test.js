@@ -7,7 +7,7 @@ const test = require("node:test");
 // desktop's sidebar files it: by the recorded root where the desktop sends
 // one, else by the container its worktrees are cut under.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   WORKTREE_CONTAINER_DIR,
   PROJECTLESS_CHATS_LABEL,

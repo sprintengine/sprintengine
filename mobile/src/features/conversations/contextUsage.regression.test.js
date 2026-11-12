@@ -8,7 +8,7 @@ const test = require("node:test");
 // latest report's input plus output, never a sum across turns. No window, no
 // ring.
 
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build");
+const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   CONTEXT_RING_WARN_PERCENTAGE,
   applyContextEvent,
