@@ -598,6 +598,16 @@ that every reader passes over (`conversation-command-receipts.ts`).
   answered with what that did, once the answer's receipt is written. If Studio
   stops first, what it did went with the process; a retry acts again on the
   chat as it is then.
+- **A scheduled agent's run** is written down before it makes anything: an
+  entry of `scheduled-agents.json`'s `runs`, keyed by the command id its first
+  message goes under, with that message, and the chat once it is made. The
+  chat is stamped with the same id (`launchCommandId`). The entry goes once
+  the first message is answered. A start that finds one left by a stop
+  finishes it: a run with a chat sends its first message again under its id
+  (the chat's receipt answers one that already went, so nothing runs twice);
+  a run that made no chat sent nothing, so a one-time schedule runs once now
+  and a repeating one is recorded as cut off and waits for its next time
+  (`scheduled-agents/run-recovery.ts`).
 - A send refused `busy`, or one the log could not take, records nothing, so
   the same id may be sent again. The same id for a different command (by its
   fingerprint) is refused `command_id_conflict`.

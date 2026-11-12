@@ -10,6 +10,8 @@ import { runScheduledAgent } from './runner'
 import { createScheduledRunOutcomes } from './run-outcomes'
 import { recoverScheduledRuns, RUN_CUT_OFF } from './run-recovery'
 import { createScheduledAgentsScheduler } from './scheduler'
+import { schedulerWithRunRecords } from './scheduled-runs.test-helper'
+import { createScheduledAgentsService } from './service'
 import { createScheduledAgentsStore, type ScheduledRunRecord } from './store'
 
 // A scheduled run cut off by a crash, at each point of its start, and what the
@@ -406,4 +408,27 @@ test('run records are plain entries keyed by command id; one this build would no
     { workspaceId: 'ws-9', commandId: 'scheduled-run:a', message: 'Look at the queue.', skills: [] },
   ])
   assert.deepEqual(runsOnDisk(file), {})
+})
+
+test('the images a run on its way names are kept, though its schedule is gone', async () => {
+  const file = tempFile()
+  const store = createScheduledAgentsStore({ filePath: file, now: () => NOW })
+  const id = (await store.create(draft({ prompt: 'Look at /data/scheduled-images/abc/shot.png' }))).id
+  await store.beginRun('scheduled-run:a', {
+    scheduledAgentId: id,
+    startedAt: NOW,
+    prompt: 'Look at /data/scheduled-images/abc/shot.png',
+  })
+  const pruned: string[][] = []
+  const service = createScheduledAgentsService({
+    store,
+    scheduler: schedulerWithRunRecords({
+      list: () => store.list(),
+      run: async () => ({ at: NOW, ok: true, workspaceId: 'w' }),
+      recordRun: async () => undefined,
+    }),
+    promptImages: { keep: async (prompt) => prompt, prune: async (prompts) => void pruned.push([...prompts]) },
+  })
+  assert.equal((await service.remove(id)).ok, true)
+  assert.deepEqual(pruned, [['Look at /data/scheduled-images/abc/shot.png']])
 })
