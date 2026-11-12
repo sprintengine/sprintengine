@@ -341,7 +341,7 @@ export type StudioDiscoveryAnswer<T> =
 
 /**
  * What a client reads before it starts a chat (`workspaces.*`,
- * `providers.runtimes`), answered by the same services as the gateway's tools
+ * `cliRuntimes.list`), answered by the same services as the gateway's tools
  * of the same purpose, so a client on the protocol and an agent on MCP read
  * one thing.
  */

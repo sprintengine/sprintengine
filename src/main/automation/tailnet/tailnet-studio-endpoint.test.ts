@@ -274,10 +274,10 @@ test('a device reads what New needs before it starts a chat: CLIs, a checkout, a
   const client = await deviceClient(r, phone.token)
   assert.equal(client.supports('workspaces'), true)
   assert.deepEqual(
-    (await client.rpc['providers.runtimes']({})).clis.map((cli) => cli.id),
+    (await client.rpc['cliRuntimes.list']({})).clis.map((cli) => cli.id),
     ['claude'],
   )
-  assert.equal(await refusal(client.rpc['providers.runtimes']({ cli: 'nope' })), 'not_found')
+  assert.equal(await refusal(client.rpc['cliRuntimes.list']({ cli: 'nope' })), 'not_found')
   assert.equal((await client.rpc['workspaces.checkout']({ workspaceId: 'ws-1' })).branch, 'main')
   assert.equal(await refusal(client.rpc['workspaces.checkout']({ workspaceId: 'ws-9' })), 'not_found')
   assert.deepEqual(
@@ -287,7 +287,7 @@ test('a device reads what New needs before it starts a chat: CLIs, a checkout, a
   // A device paired without the workspace scopes reads none of them.
   const chatsOnly = await deviceClient(r, r.pair(['conversation:operate'], 'build-box').token)
   for (const ask of [
-    () => chatsOnly.rpc['providers.runtimes']({}),
+    () => chatsOnly.rpc['cliRuntimes.list']({}),
     () => chatsOnly.rpc['workspaces.checkout']({ workspaceId: 'ws-1' }),
     () => chatsOnly.rpc['workspaces.extensions']({ workspaceId: 'ws-1' }),
   ])

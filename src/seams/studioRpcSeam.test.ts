@@ -381,7 +381,7 @@ test('every method the server serves has its call in the SDK, under the same sco
     'module.operate': 'request',
     // And what a client reads before it starts a chat.
     'workspaces.list': 'request',
-    'providers.runtimes': 'request',
+    'cliRuntimes.list': 'request',
     'workspaces.checkout': 'request',
     'workspaces.extensions': 'request',
     'terminal.list': 'request',

@@ -42,7 +42,7 @@ async function listed(rows) {
 test("New's reads go over the desktop's Studio: CLIs, a checkout, and a refusal in the phone's words", async () => {
   const desktop = fakeDesktopStudio({
     answer: (method, params) => {
-      if (method === "providers.runtimes")
+      if (method === "cliRuntimes.list")
         return { clis: [{ id: "claude-code", agentSelectable: true, displayName: "Claude Code" }, { id: "other" }] };
       if (method === "workspaces.checkout")
         return params.workspaceId === "ws-1"

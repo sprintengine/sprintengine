@@ -138,7 +138,7 @@ export type StudioRpcRouterOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
   localServers?: StudioLocalServers
-  /** What a client reads before it starts a chat; without it, `workspaces.*` and `providers.runtimes` are `unavailable`. */
+  /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
   discovery?: StudioDiscovery
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
   terminals?: StudioTerminals
@@ -1406,8 +1406,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       options.discovery
         ? { ok: true, result: { workspaces: voice.redact(await options.discovery.workspaces()) } }
         : unserved('workspaces.list'),
-    'providers.runtimes': async ({ cli }, { voice }) =>
-      options.discovery ? discovered(await options.discovery.runtimes(cli), voice) : unserved('providers.runtimes'),
+    'cliRuntimes.list': async ({ cli }, { voice }) =>
+      options.discovery ? discovered(await options.discovery.runtimes(cli), voice) : unserved('cliRuntimes.list'),
     'workspaces.checkout': async ({ workspaceId }, { voice }) =>
       options.discovery
         ? discovered(await options.discovery.checkout(workspaceId), voice)

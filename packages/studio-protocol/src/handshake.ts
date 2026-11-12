@@ -39,7 +39,7 @@ export const STUDIO_FILES_CAPABILITY = 'files-mention' as const
 /**
  * What a client reads before it starts a chat: the workspaces this Studio
  * holds, the CLIs a chat may run, a folder's checkout and a project's skills
- * (`workspaces.list`, `providers.runtimes`, `workspaces.checkout`,
+ * (`workspaces.list`, `cliRuntimes.list`, `workspaces.checkout`,
  * `workspaces.extensions`).
  */
 export const STUDIO_WORKSPACES_CAPABILITY = 'workspaces' as const

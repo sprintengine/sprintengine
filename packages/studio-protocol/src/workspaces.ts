@@ -94,7 +94,7 @@ export type StudioWorkspaceExtensions = {
 export type StudioWorkspacesMethodMap = {
   'workspaces.list': { params: Record<string, never>; result: { workspaces: StudioWorkspace[] } }
   /** The CLIs a chat may run, or the one named. */
-  'providers.runtimes': { params: { cli?: string }; result: { clis: StudioCliRuntime[] }; errors: 'not_found' }
+  'cliRuntimes.list': { params: { cli?: string }; result: { clis: StudioCliRuntime[] }; errors: 'not_found' }
   'workspaces.checkout': { params: { workspaceId: string }; result: StudioWorkspaceCheckout; errors: 'not_found' }
   'workspaces.extensions': {
     params: { workspaceId: string; cli?: string }
@@ -113,13 +113,13 @@ function id(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= 200
 }
 const WORKSPACE_ID = '"workspaceId" names a workspace from workspaces.list.'
-const CLI_ID = '"cli", when given, is a CLI id from providers.runtimes.'
+const CLI_ID = '"cli", when given, is a CLI id from cliRuntimes.list.'
 
 const read = { scope: 'workspaces:read', mutation: false, capability: STUDIO_WORKSPACES_CAPABILITY } as const
 
 export const STUDIO_WORKSPACES_METHODS: StudioMethodTable<StudioWorkspacesMethodMap> = {
   'workspaces.list': { ...read, params: studioNoParams },
-  'providers.runtimes': {
+  'cliRuntimes.list': {
     ...read,
     params: (value) => {
       if (value.cli !== undefined && !id(value.cli)) return refuse(CLI_ID)

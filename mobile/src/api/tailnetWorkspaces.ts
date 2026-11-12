@@ -8,7 +8,7 @@ import { comparablePath, lastPathSegment, workspaceProject } from "../features/p
 
 // The phone's reads of what a desktop holds, before and beside a chat: the
 // projects it has open (`workspaces.list`: the chat's project pill, and step
-// one of New), the CLIs and models New may offer (`providers.runtimes`), and a
+// one of New), the CLIs and models New may offer (`cliRuntimes.list`), and a
 // project's checkout (`workspaces.checkout`). Asked over the desktop's Studio
 // protocol (desktopStudio.ts), which answers them from the same services its
 // gateway tools do.
@@ -295,7 +295,7 @@ export function createTailnetWorkspacesApi(
 ): WorkspacesApi {
   return {
     listCliRuntimes: () =>
-      ask(options, async (client) => readCliRuntimes(await client.rpc["providers.runtimes"]({})), studio),
+      ask(options, async (client) => readCliRuntimes(await client.rpc["cliRuntimes.list"]({})), studio),
     listWorkspaces: () =>
       ask(options, async (client) => readDesktopWorkspaces((await client.rpc["workspaces.list"]({})).workspaces), studio),
     readCheckout: (workspace) =>
