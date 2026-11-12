@@ -8,6 +8,11 @@
   `StudioError`) lives in `@sprintengine/client-runtime`, a new dependency,
   and is re-exported here under the same names: an app that calls them has
   nothing to change.
+- `client.wake()` on an open client asks Studio whether the connection still
+  answers and makes it again if not, for an app that hears its machine woke.
+  Reconnects follow the client runtime's connection supervisor: a connection
+  that drops as soon as it opens backs off rather than retrying at the
+  shortest delay each time.
 
 ### Changed (contract)
 

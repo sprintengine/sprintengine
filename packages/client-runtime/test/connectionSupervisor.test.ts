@@ -490,6 +490,25 @@ test('after enough failures in a row it waits for a wake instead of a timer', as
   expect(supervisor.state()).toMatchObject({ phase: 'connecting', failures: 0 })
 })
 
+test('a failure the classifier says only a wake can fix (the device offline) waits for one at once', async () => {
+  const offline = new Error('offline')
+  const { supervisor, time, attempts, last } = harness({
+    classify: (error): ConnectionFailureVerdict =>
+      error === offline ? { kind: 'wait-for-wake' } : { kind: 'transient' },
+  })
+  supervisor.start()
+  last().resolve()
+  await time.advance()
+  last().attempt.lost(offline)
+  expect(supervisor.state()).toMatchObject({ phase: 'waiting-for-wake', reconnecting: true, lastError: offline })
+  expect(time.timers()).toBe(0)
+  await time.advance(3_600_000)
+  expect(attempts).toHaveLength(1)
+  supervisor.wake()
+  expect(attempts).toHaveLength(2)
+  expect(last().attempt.reconnecting).toBe(true)
+})
+
 test('a connection that opens and drops is not an absence: it backs off but never parks', async () => {
   const { supervisor, time, attempts, last, untilRetry } = harness({ parkAfterFailures: 3, stableAfterMs: 30_000 })
   supervisor.start()

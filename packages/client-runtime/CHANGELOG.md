@@ -19,3 +19,17 @@
   `update.start` (`update-session`). `@sprintengine/agent-sdk` re-exports it.
 - `createFrameQueue`, the queue a conversation stream's frames wait in, for
   adapters that turn callbacks into a stream.
+
+### Changed
+
+- The client reconnects through the connection supervisor rather than a loop
+  of its own, so it keeps the rules every client shares. A wake while open
+  (`wake()`, or the page coming back to the foreground) pings Studio and keeps
+  a connection that answers, making one that does not again at once; a wake
+  during a backoff tries at once, but never sooner than a delay Studio asked
+  for; a connection that drops as soon as it opens still backs off, since the
+  count of failures resets only once one has stayed up for thirty seconds.
+  Tickets are still asked for per connection, a refused credential still parks
+  the client, and offline still waits for the network.
+- `ConnectionFailureVerdict` gains `wait-for-wake`: worth another try, but
+  only after a wake (the device is offline), not on a timer.

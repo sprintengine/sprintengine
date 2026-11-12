@@ -42,6 +42,11 @@ import {
 } from '../protocol.js'
 import type { StudioTransport, StudioTransportFactory } from './transport.js'
 import { createClientTools, type StudioClientTools } from './tools.js'
+import {
+  ConnectionSupervisor,
+  type ConnectionAttempt,
+  type ConnectionFailureVerdict,
+} from '../connection/connectionSupervisor.js'
 
 // The Studio client: one connection, every request and stream multiplexed on
 // it, and the connection kept.
@@ -50,8 +55,11 @@ import { createClientTools, type StudioClientTools } from './tools.js'
 //
 // - Reconnects after any drop that reconnecting can fix, with exponential
 //   backoff and jitter, never sooner than a `retryAfterMs` Studio asked for.
-//   It stops for good on a refusal that a new connection would only repeat
-//   (an unknown or revoked credential, a version outside the window).
+//   The connection is kept by the runtime's `ConnectionSupervisor`, the one set
+//   of retry, wake and sign-in rules every client shares: each attempt is one
+//   `open` (a transport, a hello, a welcome); a wake while open pings the
+//   connection and keeps it if it answers; a refused credential parks the
+//   client, and a version outside the window or another Studio ends it.
 // - Resumes every open stream from its cursor on the new connection, so a
 //   consumer sees no gap and no repeat; a cursor Studio cannot vouch for comes
 //   back as a reset snapshot.
@@ -73,6 +81,7 @@ import { createClientTools, type StudioClientTools } from './tools.js'
  * refused (`unauthorized`, `revoked`) parks the client, since another try
  * would only be refused again, and so does being offline. A wake is `wake()`,
  * or in a browser the page coming back online or to the foreground.
+ * `reconnecting`: a connection was made once and is being made again.
  */
 export type StudioClientState = 'open' | 'reconnecting' | 'parked' | 'closed'
 
@@ -92,7 +101,12 @@ export type ConnectOptions = {
   auth?: StudioAuth
   /** Called once with the token a pairing code was exchanged for. Keep it: the code will not work again. */
   onToken?: (token: string) => void | Promise<void>
-  /** `false` to fail on the first drop instead of reconnecting. */
+  /**
+   * `false` to fail on the first drop instead of reconnecting. Otherwise the
+   * waits between attempts: full jitter under a ceiling that doubles from
+   * `initialDelayMs` to `maxDelayMs`. `maxAttempts` failed reconnects in a row
+   * end the client; a connection or a wake starts the count again.
+   */
   reconnect?: false | { initialDelayMs?: number; maxDelayMs?: number; maxAttempts?: number }
   onStateChange?: (state: StudioClientState, error?: StudioError) => void
   /** How long to wait for the welcome. */
@@ -112,7 +126,8 @@ export type ConnectOptions = {
    * After `intervalMs` with nothing heard from Studio, ask it for a ping; if
    * nothing is heard within `timeoutMs` more, the connection is dropped and
    * made again. A socket a sleeping machine left half-open never closes by
-   * itself; this is how it is found. `false` turns it off.
+   * itself; this is how it is found. `false` turns it off. `timeoutMs` is
+   * also how long a wake's ping may go unanswered.
    */
   heartbeat?: false | { intervalMs?: number; timeoutMs?: number }
   /**
@@ -122,8 +137,8 @@ export type ConnectOptions = {
    */
   readTimeoutMs?: number
   /**
-   * Wake a parked client, or cut a reconnect's wait short, when the page comes
-   * back online or to the foreground. Default on wherever those events exist.
+   * `wake()` when the page comes back online or to the foreground. Default on
+   * wherever those events exist.
    */
   wakeups?: boolean
   /**
@@ -194,7 +209,12 @@ export type StudioClient = AgentConversations & {
     params: StudioTopicParams<T>,
     listener: StudioPushListener<T>,
   ): () => void
-  /** Connect now: after being parked, or to cut a reconnect's wait short. Nothing while open or closed. */
+  /**
+   * Connect now: after being parked, or to cut a reconnect's wait short (never
+   * below a delay Studio asked for). While open, after a sleep say, it pings
+   * Studio and keeps the connection if it answers, making it again if not.
+   * Nothing once closed.
+   */
   wake(): void
   close(): void
   /** Settles when the client has closed for good; rejects with why, if it was not asked to. */
@@ -265,6 +285,13 @@ type Stream = {
   retry: ReturnType<typeof setTimeout> | null
 }
 
+/** Anything an attempt threw, in the protocol's words. */
+function asStudioError(error: unknown): StudioError {
+  return error instanceof StudioError
+    ? error
+    : new StudioError('disconnected', error instanceof Error ? error.message : String(error))
+}
+
 function randomId(): string {
   const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
   if (crypto?.randomUUID) return crypto.randomUUID()
@@ -298,9 +325,13 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
   let welcome: StudioWelcomeFrame | null = null
   let state: StudioClientState | 'connecting' = 'connecting'
   let sequence = 0
+  // Reconnects in a row that failed, toward `maxAttempts`; reset by a connection or a wake.
   let attempts = 0
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  let lastBye: { code: string; message: string; retryAfterMs?: number } | null = null
+  let givenUp: StudioError | null = null
+  // `connect`'s own answer: settled by the first welcome, or by the first attempt failing.
+  let first: { resolve(): void; reject(error: StudioError): void } | null = null
+  // A wake's pings waiting for anything to be heard on the open connection.
+  const hearers = new Set<() => void>()
   let paused = false
   // When anything was last heard on the open connection, and the timer that
   // asks for a ping after a quiet spell.
@@ -518,8 +549,6 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       )
   }
 
-  // ── The connection ────────────────────────────────────────────────────────
-
   // ── Liveness ──────────────────────────────────────────────────────────────
 
   function stopHeartbeat(): void {
@@ -558,6 +587,20 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     heartbeatTimer = quietly(setTimeout(check, heartbeat.intervalMs))
   }
 
+  /**
+   * A wake's question to the open connection: resolves on the next frame heard
+   * after a ping. One that never answers is replaced by the supervisor once
+   * its ping timeout is up. Reading paused for a slow consumer hears nothing
+   * either way, so the connection is trusted then, as the heartbeat does.
+   */
+  function pingOver(opened: StudioTransport): Promise<void> {
+    if (transport !== opened || paused) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      hearers.add(resolve)
+      send({ t: 'req', id: `ping${++sequence}`, method: 'server.ping', params: {} })
+    })
+  }
+
   // ── Parking ───────────────────────────────────────────────────────────────
 
   let parkedBy: StudioError | null = null
@@ -569,8 +612,6 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
    */
   function park(error: StudioError): void {
     if (state === 'closed') return
-    if (reconnectTimer) clearTimeout(reconnectTimer)
-    reconnectTimer = null
     stopHeartbeat()
     parkedBy = error
     if (error.code !== 'offline') {
@@ -593,32 +634,18 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     options.parkWhenOffline !== false &&
     (globalThis as { navigator?: { onLine?: boolean } }).navigator?.onLine === false
 
-  function attempt(): void {
-    reconnectTimer = null
-    establish().catch((error: unknown) => {
-      const failure =
-        error instanceof StudioError
-          ? error
-          : new StudioError('disconnected', error instanceof Error ? error.message : String(error))
-      if (PARKING_CODES.has(failure.code)) park(failure)
-      else if (isTerminalStudioCode(failure.code, failure.retryAfterMs)) fail(failure)
-      else schedule(failure.retryAfterMs)
-    })
-  }
-
+  /**
+   * Connect now. Parked by a refused credential, it asks again (a transport
+   * that brings its own credential has a fresh one for each connection);
+   * parked offline or waiting out a backoff, it tries at once, though never
+   * sooner than a delay Studio asked for; open, it asks Studio whether the
+   * connection still answers and makes it again if not.
+   */
   function wake(): void {
-    if (state === 'parked') {
-      parkedBy = null
-      attempts = 0
-      setState('reconnecting')
-      attempt()
-      return
-    }
-    // A wait out of a backoff, not out of a delay Studio asked for.
-    if (state === 'reconnecting' && reconnectTimer && !lastBye?.retryAfterMs) {
-      clearTimeout(reconnectTimer)
-      attempt()
-    }
+    if (state === 'closed') return
+    attempts = 0
+    if (supervisor.state().phase === 'needs-sign-in') supervisor.retryNow()
+    else supervisor.wake()
   }
 
   const wakeups: Array<() => void> = []
@@ -649,13 +676,14 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     for (const stop of wakeups.splice(0)) stop()
   }
 
+  /** End everything for good, with why. */
   function fail(error: StudioError): void {
     if (state === 'closed') return
     setState('closed', error)
     tools.close()
     unwatch()
     stopHeartbeat()
-    if (reconnectTimer) clearTimeout(reconnectTimer)
+    supervisor.stop(error.message)
     for (const pending of requests.values()) {
       stopTimers(pending)
       pending.reject(error)
@@ -667,15 +695,36 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     }
     streams.clear()
     for (const push of [...pushes.values()]) endPush(push, error)
-    transport?.close()
     transport = null
+    first?.reject(error)
+    first = null
     rejectClosed(error)
   }
 
-  async function open(): Promise<{ welcomed: StudioWelcomeFrame; opened: StudioTransport }> {
-    lastBye = null
+  // ── The connection ────────────────────────────────────────────────────────
+
+  /** The connection is gone: what belonged to it stops. Requests and streams wait for the next one. */
+  function disconnected(): void {
+    transport = null
+    hearers.clear()
+    stopHeartbeat()
+    tools.dropped()
+  }
+
+  /**
+   * One attempt at a connection: a transport, a hello, a welcome. The
+   * supervisor calls it for the first connection and every reconnect, and
+   * hears through the attempt when the connection it brought is lost.
+   */
+  async function open(
+    attempt: ConnectionAttempt<StudioTransport, undefined>,
+  ): Promise<{ welcomed: StudioWelcomeFrame; opened: StudioTransport; ended: () => boolean }> {
     paused = false
     const next = await options.transport()
+    if (!attempt.current() || state === 'closed') {
+      next.close()
+      throw new StudioError('disconnected', 'This connection is no longer wanted.')
+    }
     // Checked before anything waits on a hello that will never be sent.
     const credential = next.credential ?? auth
     if (!credential) {
@@ -683,11 +732,18 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       throw new StudioError('unauthorized', 'No credential: pass `auth`, or a transport that brings its own.')
     }
     const assembler = createStudioChunkAssembler()
+    let bye: { code: string; message: string; retryAfterMs?: number } | null = null
+    let ended = false
     let greeted: ((welcome: StudioWelcomeFrame) => void) | null = null
     let refused: ((error: StudioError) => void) | null = null
     const greeting = new Promise<StudioWelcomeFrame>((resolve, reject) => {
       greeted = resolve
       refused = reject
+    })
+    // Given up on (the client closed, a newer attempt replaced it): its socket goes too.
+    attempt.onAbandoned((reason) => {
+      refused?.(new StudioError('disconnected', reason))
+      next.close()
     })
     const timer = setTimeout(
       () => refused?.(new StudioError('hello_timeout', 'Studio did not answer the hello in time.')),
@@ -705,7 +761,7 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
           greeted?.(frame)
           return
         case 'bye':
-          lastBye = {
+          bye = {
             code: frame.code,
             message: frame.message,
             ...(frame.retryAfterMs === undefined ? {} : { retryAfterMs: frame.retryAfterMs }),
@@ -772,6 +828,12 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
         return
       }
       lastHeard = Date.now()
+      // Anything heard answers a wake's ping.
+      if (transport === next && hearers.size > 0) {
+        const heard = [...hearers]
+        hearers.clear()
+        for (const hear of heard) hear()
+      }
       const frame = parseStudioServerFrame(value)
       // A frame type this client does not know is a newer Studio's, and skipped;
       // a known one it cannot read would leave a cursor wrong, so the
@@ -785,13 +847,17 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     next.onMessage(receive)
     next.onClose((error) => {
       clearTimeout(timer)
-      refused?.(
-        new StudioError(
-          lastBye?.code ?? 'disconnected',
-          lastBye?.message ?? error?.message ?? 'The connection closed.',
-        ),
+      ended = true
+      const why = bye as { code: string; message: string; retryAfterMs?: number } | null
+      const failure = new StudioError(
+        why?.code ?? 'disconnected',
+        why?.message ?? error?.message ?? 'The connection to Studio closed.',
+        why?.retryAfterMs,
       )
-      if (transport === next) dropped()
+      refused?.(failure)
+      if (transport === next) disconnected()
+      // The supervisor decides what a loss means; one it has moved on from is ignored.
+      attempt.lost(failure)
     })
     next.send(
       JSON.stringify({
@@ -806,7 +872,7 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       const welcomed = await greeting
       const window = checkStudioProtocolVersion(welcomed.protocolVersion, welcomed.minProtocolVersion)
       if (!window.ok) throw new StudioError('unsupported_protocol_version', window.message)
-      return { welcomed, opened: next }
+      return { welcomed, opened: next, ended: () => ended }
     } catch (error) {
       next.close()
       throw error
@@ -817,12 +883,8 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
     }
   }
 
-  async function establish(): Promise<void> {
-    const { welcomed: frame, opened } = await open()
-    if (state === 'closed') {
-      opened.close()
-      return
-    }
+  async function establish(attempt: ConnectionAttempt<StudioTransport, undefined>): Promise<StudioTransport> {
+    const { welcomed: frame, opened, ended } = await open(attempt)
     // Checked before a stream resumes from its cursor or a request goes out again.
     if (environmentId !== null && frame.environment.id !== environmentId) {
       opened.close()
@@ -832,7 +894,6 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       )
     }
     environmentId = frame.environment.id
-    transport = opened
     welcome = frame
     if (frame.pairing) {
       try {
@@ -848,11 +909,18 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
         )
       }
       auth = { token: frame.pairing.token }
-      // The connection may have closed, or the client, while the token was kept.
-      if (transport !== opened) return
+    }
+    // Welcomed, and any token kept: `connect` has its client, open or not.
+    first?.resolve()
+    first = null
+    // The connection may have closed, or the client, while the token was kept.
+    if (ended() || !attempt.current() || state === 'closed') {
+      opened.close()
+      throw new StudioError('disconnected', 'The connection closed before it was open.')
     }
     attempts = 0
     parkedBy = null
+    transport = opened
     lastHeard = Date.now()
     const unanswered = [...requests.values()]
     setState('open')
@@ -883,57 +951,75 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       }
     // A consumer still behind from before the drop holds the new connection too.
     adjustReading()
+    attempt.connected(opened)
+    return opened
   }
 
-  function dropped(): void {
-    transport = null
-    stopHeartbeat()
-    tools.dropped()
-    if (state === 'closed') return
-    const bye = lastBye
-    if (bye && PARKING_CODES.has(bye.code) && reconnect) {
-      park(new StudioError(bye.code, bye.message))
-      return
-    }
-    if (bye && isTerminalStudioCode(bye.code, bye.retryAfterMs)) {
-      fail(new StudioError(bye.code, bye.message))
-      return
-    }
-    if (!reconnect) {
-      fail(new StudioError(bye?.code ?? 'disconnected', bye?.message ?? 'The connection to Studio closed.'))
-      return
-    }
-    setState('reconnecting')
-    schedule(bye?.retryAfterMs)
-  }
-
-  function schedule(retryAfterMs?: number): void {
-    if (state === 'closed') return
+  /** What a failed attempt or a lost connection means, for the supervisor. */
+  function verdict(failure: StudioError): ConnectionFailureVerdict {
+    // The first connection is the caller's to retry: `connect` rejects with why.
+    if (welcome === null || !reconnect) return { kind: 'fatal' }
+    // Asking again with what was refused would only be refused again.
+    if (PARKING_CODES.has(failure.code)) return { kind: 'needs-sign-in' }
+    if (isTerminalStudioCode(failure.code, failure.retryAfterMs)) return { kind: 'fatal' }
     // Offline, trying again only fails again: wait for the network to come back.
-    if (offline()) {
-      park(new StudioError('offline', 'This device is offline; Studio is reached again once it is back.'))
-      return
-    }
+    if (offline()) return { kind: 'wait-for-wake' }
     attempts++
     if (attempts > maxAttempts) {
-      fail(new StudioError('disconnected', `Studio could not be reached after ${maxAttempts} attempts.`))
-      return
+      givenUp = new StudioError('disconnected', `Studio could not be reached after ${maxAttempts} attempts.`)
+      return { kind: 'fatal' }
     }
-    // Full jitter: many clients dropped at once (Studio restarting) do not
-    // come back in step.
-    const backoff = Math.min(maxDelayMs, initialDelayMs * 2 ** (attempts - 1))
-    const delay = Math.max(retryAfterMs ?? 0, Math.round(Math.random() * backoff))
-    reconnectTimer = setTimeout(attempt, delay)
+    return { kind: 'transient', ...(failure.retryAfterMs === undefined ? {} : { retryAfterMs: failure.retryAfterMs }) }
   }
 
-  await establish().catch((error: unknown) => {
-    const failure =
-      error instanceof StudioError
-        ? error
-        : new StudioError('disconnected', error instanceof Error ? error.message : String(error))
-    fail(failure)
-    throw failure
+  const supervisor = new ConnectionSupervisor<StudioTransport>({
+    connect: (attempt) =>
+      establish(attempt).catch((error: unknown) => {
+        throw asStudioError(error)
+      }),
+    close: (opened) => {
+      if (transport === opened) disconnected()
+      opened.close()
+    },
+    ping: pingOver,
+    classify: (error) => verdict(asStudioError(error)),
+    // Full jitter: many clients dropped at once (Studio restarting) do not
+    // come back in step.
+    backoff: { baseMs: initialDelayMs, maxMs: maxDelayMs, jitter: 1 },
+    // Each step has its own deadline: the transport's own (a WebSocket's open
+    // timeout) and the hello's.
+    connectTimeoutMs: null,
+    pingTimeoutMs: heartbeat?.timeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS,
   })
+  supervisor.subscribe((connection) => {
+    if (state === 'closed') return
+    switch (connection.phase) {
+      case 'connecting':
+      case 'backoff':
+        // Before the first welcome the client is still connecting; after it, reconnecting.
+        if (welcome === null) return
+        parkedBy = null
+        setState('reconnecting')
+        return
+      case 'waiting-for-wake':
+        park(new StudioError('offline', 'This device is offline; Studio is reached again once it is back.'))
+        return
+      case 'needs-sign-in':
+        park(asStudioError(connection.lastError))
+        return
+      case 'failed':
+        fail(givenUp ?? asStudioError(connection.lastError))
+        return
+      default:
+        return
+    }
+  })
+
+  const opening = new Promise<void>((resolve, reject) => {
+    first = { resolve, reject }
+  })
+  supervisor.start()
+  await opening
 
   // ── The services ──────────────────────────────────────────────────────────
 
@@ -1067,8 +1153,8 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       tools.close()
       unwatch()
       stopHeartbeat()
-      if (reconnectTimer) clearTimeout(reconnectTimer)
       const error = new StudioError('closed', 'The client is closed.')
+      supervisor.stop(error.message)
       for (const pending of requests.values()) {
         stopTimers(pending)
         pending.reject(error)
@@ -1080,7 +1166,6 @@ export async function connect(options: ConnectOptions): Promise<StudioClient> {
       }
       streams.clear()
       for (const push of [...pushes.values()]) endPush(push)
-      transport?.close()
       transport = null
       resolveClosed()
     },
