@@ -67,12 +67,21 @@ test('a server outside the protocol window is incompatible whatever its socket d
   assert.match(newer.words, /update this app/u)
   assert.match(environmentStatus(entry({ state: 'offline' }, 'server-outdated'), NOW).words, /update it there/u)
   // An update under way says so; an owner's own words for why it is not answering win.
-  assert.equal(environmentStatus(entry({ state: 'connecting', detail: 'Updating…' }, 'server-outdated'), NOW).words, 'Updating…')
+  assert.equal(
+    environmentStatus(entry({ state: 'connecting', detail: 'Updating…' }, 'server-outdated'), NOW).words,
+    'Updating…',
+  )
   const fellBack = environmentStatus(
-    entry({ state: 'offline', detail: 'Updating the Studio server on build-box to 1.5.0 failed, so 1.4.0 runs again: x' }, 'server-outdated'),
+    entry(
+      { state: 'offline', detail: 'Updating the Studio server on build-box to 1.5.0 failed, so 1.4.0 runs again: x' },
+      'server-outdated',
+    ),
     NOW,
   )
-  assert.deepEqual([fellBack.kind, fellBack.words], ['incompatible', 'Updating the Studio server on build-box to 1.5.0 failed, so 1.4.0 runs again: x'])
+  assert.deepEqual(
+    [fellBack.kind, fellBack.words],
+    ['incompatible', 'Updating the Studio server on build-box to 1.5.0 failed, so 1.4.0 runs again: x'],
+  )
   // Compatible, or not known yet, leaves the connection to speak.
   assert.equal(environmentStatus(entry({ state: 'up' }, 'compatible'), NOW).kind, 'ready')
   assert.equal(environmentStatus(entry({ state: 'up' }, 'unknown'), NOW).kind, 'ready')

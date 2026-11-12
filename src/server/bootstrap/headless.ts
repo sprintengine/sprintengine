@@ -14,10 +14,7 @@ import type { FrontDoorPurpose } from '../wsl/front-door-proof'
 import { SERVER_EXIT, type FrontDoorReady, type ServerBootstrapEnvelope } from './envelope'
 import { runShutdownLegs, type ServerStart } from './serve'
 import { readHostId, writeServerRecord } from './server-record'
-import {
-  STUDIO_PROTOCOL_MIN_SUPPORTED,
-  STUDIO_PROTOCOL_VERSION,
-} from '../../../packages/studio-protocol/src/public'
+import { STUDIO_PROTOCOL_MIN_SUPPORTED, STUDIO_PROTOCOL_VERSION } from '../../../packages/studio-protocol/src/public'
 import type { Duplex } from 'node:stream'
 
 // A headless server's start from its envelope: the same core, gateway and

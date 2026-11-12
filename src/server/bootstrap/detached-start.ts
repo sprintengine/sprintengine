@@ -1,6 +1,16 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { hostname } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
@@ -292,7 +302,13 @@ export async function startDetached(options: DetachedStartOptions): Promise<numb
       return 0
     }
     if (!replaced || replaced === options.version) return fail('start', started.message)
-    return await fallBack(options, runDir, launch, { from: replaced, to: options.version, reason: started.message }, fail)
+    return await fallBack(
+      options,
+      runDir,
+      launch,
+      { from: replaced, to: options.version, reason: started.message },
+      fail,
+    )
   } catch (error) {
     return fail(
       error instanceof DetachedStartError ? error.code : 'start',

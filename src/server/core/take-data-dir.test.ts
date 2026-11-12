@@ -142,7 +142,8 @@ test('a server refuses data newer than it reads and lets the lock go; the deskto
   assert.throws(
     () => takeDataDir(platformAt(newer), 'server'),
     (error: unknown) =>
-      error instanceof StudioDataDirUnusableError && /written by Studio 9\.0\.0.*Update this server/u.test(error.message),
+      error instanceof StudioDataDirUnusableError &&
+      /written by Studio 9\.0\.0.*Update this server/u.test(error.message),
   )
   assert.equal(existsSync(join(newer, 'run', 'studio.lock')), false, 'the lock is let go on refusal')
   const logged: DiagnosticLogInput[] = []

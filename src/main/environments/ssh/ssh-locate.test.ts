@@ -71,13 +71,21 @@ test('compatibility is the protocol window, not equal versions', () => {
 
 test('the refusals say which side to update', () => {
   const newer = locateServer(probe(server('2.0.0', [5, 4])), APP, 'build-box')
-  assert.match(newer.action === 'blocked' ? newer.reason : '', /needs a newer Studio than this app \(1\.5\.0\)\. Update this app/u)
+  assert.match(
+    newer.action === 'blocked' ? newer.reason : '',
+    /needs a newer Studio than this app \(1\.5\.0\)\. Update this app/u,
+  )
   const external = locateServer(probe(server('1.0.0', [1, 1], { origin: 'cli' })), APP, 'build-box')
   assert.match(external.action === 'blocked' ? external.reason : '', /started outside this app.*Update it to connect/u)
 })
 
 test('a failed update to this version is not tried again on its own: the row says what failed and offers Retry', () => {
-  const failed = { from: '1.4.0', to: '1.5.0', at: 1_700_000_000_000, reason: 'The Studio server did not start. EADDRINUSE' }
+  const failed = {
+    from: '1.4.0',
+    to: '1.5.0',
+    at: 1_700_000_000_000,
+    reason: 'The Studio server did not start. EADDRINUSE',
+  }
   const fellBack = locateServer(probe(server('1.4.0', [2, 1]), { failed }), APP, 'build-box')
   assert.deepEqual(fellBack, {
     action: 'blocked',
@@ -102,8 +110,17 @@ test('a failed update to this version is not tried again on its own: the row say
 })
 
 test("a record's window reads only when both ends are whole versions", () => {
-  assert.deepEqual(recordWindow({ protocolVersion: 3, minProtocolVersion: 2 }), { protocolVersion: 3, minProtocolVersion: 2 })
-  for (const record of [null, {}, { protocolVersion: 3 }, { protocolVersion: '3', minProtocolVersion: 2 }, { protocolVersion: 0, minProtocolVersion: 0 }])
+  assert.deepEqual(recordWindow({ protocolVersion: 3, minProtocolVersion: 2 }), {
+    protocolVersion: 3,
+    minProtocolVersion: 2,
+  })
+  for (const record of [
+    null,
+    {},
+    { protocolVersion: 3 },
+    { protocolVersion: '3', minProtocolVersion: 2 },
+    { protocolVersion: 0, minProtocolVersion: 0 },
+  ])
     assert.equal(recordWindow(record), null)
   // A failed update's record that does not read is no record.
   assert.equal(probe(null, { failed: { to: '1.5.0' } }).updateFailed, null)

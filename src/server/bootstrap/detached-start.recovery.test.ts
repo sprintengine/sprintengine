@@ -84,9 +84,15 @@ test('a replace whose new server fails starts the previous tree again and record
   )
   assert.equal(result.code, 1)
   assert.deepEqual(result.launched, ['1.5.0:/server-1.5.0', '1.4.0:/server-1.4.0'])
-  assert.match(result.lines.at(-1) ?? '', /^@@SPRINTENGINE_FAIL update-failed Studio server 1\.5\.0 did not start, so 1\.4\.0 runs again\. .*EADDRINUSE/u)
+  assert.match(
+    result.lines.at(-1) ?? '',
+    /^@@SPRINTENGINE_FAIL update-failed Studio server 1\.5\.0 did not start, so 1\.4\.0 runs again\. .*EADDRINUSE/u,
+  )
   const record = failedRecord(at.runDir)
-  assert.deepEqual([record.from, record.to, record.reason], ['1.4.0', '1.5.0', 'The Studio server did not start. EADDRINUSE'])
+  assert.deepEqual(
+    [record.from, record.to, record.reason],
+    ['1.4.0', '1.5.0', 'The Studio server did not start. EADDRINUSE'],
+  )
   assert.equal(typeof record.at, 'number')
 })
 
@@ -104,7 +110,10 @@ test('when the previous tree does not start either, the failure says so and stay
 
 test('a start that succeeds removes the record; a first start that fails has nothing to fall back to', async () => {
   const at = machine(['1.4.0', '1.5.0'], null)
-  writeFileSync(join(at.runDir, FAILED_UPDATE_FILENAME), JSON.stringify({ from: '1.4.0', to: '1.5.0', at: 1, reason: 'x' }))
+  writeFileSync(
+    join(at.runDir, FAILED_UPDATE_FILENAME),
+    JSON.stringify({ from: '1.4.0', to: '1.5.0', at: 1, reason: 'x' }),
+  )
   const failed = await upgrade(at, '1.5.0', () => ({ ok: false, message: 'still no' }), false)
   assert.deepEqual(failed.launched, ['1.5.0:/server-1.5.0'])
   assert.match(failed.lines.at(-1) ?? '', /^@@SPRINTENGINE_FAIL start still no/u)

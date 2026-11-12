@@ -17,7 +17,10 @@ test('out of process, the server answers with the state the shell last sent, and
   for (const junk of [null, 'ready', { method: 'self', state: 'exploding' }, { method: 'relay', state: 'idle' }])
     mirrored.mirror(junk)
   assert.equal(mirrored.updates.status().state, 'ready')
-  assert.deepEqual(await mirrored.updates.start({ commandId: 'c1', targetVersion: '1.1.0' }), { ok: true, targetVersion: '1.1.0' })
+  assert.deepEqual(await mirrored.updates.start({ commandId: 'c1', targetVersion: '1.1.0' }), {
+    ok: true,
+    targetVersion: '1.1.0',
+  })
   assert.deepEqual(asked, [{ commandId: 'c1', targetVersion: '1.1.0' }], 'the command id reaches the shell')
 })
 

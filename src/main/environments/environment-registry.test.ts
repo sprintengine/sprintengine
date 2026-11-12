@@ -305,8 +305,16 @@ test("each machine's compatibility is read from the window its server last said,
   const offline = { state: 'offline' as const, detail: null, lastReachedAt: null }
   known.report('ssh', [
     // A server far past this build, and one far behind it, as their records said.
-    { route: { kind: 'ssh', machine: 'box' }, connection: offline, window: { protocolVersion: 99, minProtocolVersion: 98 } },
-    { route: { kind: 'ssh', machine: 'new' }, connection: offline, window: { protocolVersion: 0.5, minProtocolVersion: 1 } },
+    {
+      route: { kind: 'ssh', machine: 'box' },
+      connection: offline,
+      window: { protocolVersion: 99, minProtocolVersion: 98 },
+    },
+    {
+      route: { kind: 'ssh', machine: 'new' },
+      connection: offline,
+      window: { protocolVersion: 0.5, minProtocolVersion: 1 },
+    },
   ])
   known.learn({ kind: 'wsl', distro: 'Ubuntu' }, descriptor(UBUNTU, 'WSL: Ubuntu'))
   assert.deepEqual(compat(known.list()).slice(1), [
@@ -326,6 +334,8 @@ test("each machine's compatibility is read from the window its server last said,
   }
   assert.deepEqual(stored.environments[BOX], { window: { protocolVersion: 99, minProtocolVersion: 98 } })
   // The server updated: the next window heard is the one that counts.
-  again.report('ssh', [{ route: { kind: 'ssh', machine: 'box' }, connection: up, window: { protocolVersion: 1, minProtocolVersion: 1 } }])
+  again.report('ssh', [
+    { route: { kind: 'ssh', machine: 'box' }, connection: up, window: { protocolVersion: 1, minProtocolVersion: 1 } },
+  ])
   assert.equal(again.get(BOX)?.compatibility, 'compatible')
 })

@@ -669,7 +669,13 @@ export class SshEnvironment {
       // An update that did not start fell back to the previous server (or
       // could not): the row says so and offers Retry, as the next probe would.
       if (code === 'update-failed')
-        return new StepError('version-blocked', message || `Updating the Studio server on ${label} failed.`, undefined, true, true)
+        return new StepError(
+          'version-blocked',
+          message || `Updating the Studio server on ${label} failed.`,
+          undefined,
+          true,
+          true,
+        )
       return new StepError(
         code === 'other-host' ? 'version-blocked' : 'failed',
         message || `The Studio server on ${label} did not start.`,

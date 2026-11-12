@@ -162,9 +162,15 @@ test('start refuses, in words: up to date, a development build, an administrator
   })
   assert.deepEqual(current.steps, ['check'])
   const dev = updater('1.1.0', { packaged: false })
-  assert.deepEqual(await desktopStudioUpdates(dev).start({ commandId: 'c6' }), { ok: false, message: DEV_BUILD_UPDATE_WORDS })
+  assert.deepEqual(await desktopStudioUpdates(dev).start({ commandId: 'c6' }), {
+    ok: false,
+    message: DEV_BUILD_UPDATE_WORDS,
+  })
   const admin = updater('1.1.0', { installRequiresAdmin: true })
-  assert.deepEqual(await desktopStudioUpdates(admin).start({ commandId: 'c7' }), { ok: false, message: ADMIN_UPDATE_WORDS })
+  assert.deepEqual(await desktopStudioUpdates(admin).start({ commandId: 'c7' }), {
+    ok: false,
+    message: ADMIN_UPDATE_WORDS,
+  })
   for (const fake of [dev, admin]) assert.deepEqual(fake.steps, [])
   const other = updater('1.1.0')
   assert.deepEqual(await desktopStudioUpdates(other).start({ commandId: 'c8', targetVersion: '1.2.0' }), {
