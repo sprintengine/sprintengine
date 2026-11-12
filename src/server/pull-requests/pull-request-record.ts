@@ -79,6 +79,7 @@
 // workspace alone, and is worn by every conversation in it), the rows a branch
 // lookup found are dropped, and the old files are removed.
 
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -90,6 +91,7 @@ import {
   type PullRequestState,
 } from '../../shared/git/pull-request'
 import { isRecord } from '../../shared/records'
+import { createPullRequestUntoldWakes, type PullRequestWakeMessage } from './pull-request-untold'
 import { writeFileAtomically } from '../../main/config-file-write'
 import {
   readPullRequestState as readPullRequestStateDefault,
@@ -229,6 +231,22 @@ export type PullRequestRecordOptions = {
   logWarning?: (message: string, error: unknown) => void
 }
 
+/** What the wakes ask of the news the record keeps for chats that have not been told it. */
+export type PullRequestUntoldSource = {
+  /** Chats with news to be told, once the record has been read. */
+  chats(): Promise<PullRequestConversationKey[]>
+  /**
+   * The chat's next message, its command id stamped on what it carries and
+   * written before this answers, so a send repeated after a restart goes
+   * under the same id. Null when it has been told everything.
+   */
+  next(conversation: PullRequestConversationKey): Promise<PullRequestWakeMessage | null>
+  /** The chat answered the message sent under `commandId`. */
+  told(conversation: PullRequestConversationKey, commandId: string): void
+  /** The chat is gone, and its news with it. */
+  forget(conversation: PullRequestConversationKey): void
+}
+
 /** A watch's news, for the conversation whose agent asked for it. */
 export type PullRequestWatchNewsEvent = { conversation: PullRequestConversationKey; wake: PullRequestWake }
 
@@ -298,6 +316,12 @@ export type PullRequestRecord = {
   watches(): Array<{ conversation: PullRequestConversationKey; url: string }>
   /** URLs holding a live watch timer. Introspection for diagnostics and tests. */
   watchedUrls(): string[]
+  /**
+   * The news its watches found that a chat has not been told
+   * (`pull-request-untold.ts`), kept on the record in the same write as the
+   * watch state that saw it.
+   */
+  untoldWakes: PullRequestUntoldSource
   /** Settle every load, write and read in flight. The tests' synchronisation point, and the quit's. */
   flush(): Promise<void>
   dispose(): void
@@ -375,6 +399,8 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
   const rateLimitLookups = new Map<string, Promise<void>>()
   let load: Promise<void> | null = null
   let writes: Promise<unknown> = Promise.resolve()
+  // What chats have not been told, stored on the rows (pull-request-untold.ts).
+  const untold = createPullRequestUntoldWakes()
   let dirty = false
   let writeRetry: unknown = null
   let disposed = false
@@ -476,6 +502,7 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
     for (const entry of oldest.slice(0, entries.size - MAX_PULL_REQUESTS)) {
       unindex(entry)
       entries.delete(entry.url)
+      untold.drop(entry.url)
       watches.delete(entry.url)
       endedWatches.delete(entry.url)
       watch.disarm(entry.url)
@@ -526,7 +553,7 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
       if (unreadable) stored = []
       else if (raw === null) {
         const legacy = await readLegacyStores(options.userDataDir, warn)
-        stored = legacy.entries.map((entry) => ({ entry, watch: null }))
+        stored = legacy.entries.map((entry) => ({ entry, watch: null, untold: null }))
         migrated = legacy.files
       } else {
         stored = parseStoreFile(raw)
@@ -542,9 +569,10 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
       }
       if (disposed) return
       // Anything recorded while the file was being read is newer.
-      for (const { entry, watch: stillWatched } of stored) {
+      for (const { entry, watch: stillWatched, untold: untoldNews } of stored) {
         if (entries.has(entry.url)) continue
         put(entry)
+        untold.load(entry.url, untoldNews)
         // A watch on a pull request that has since landed, or that nobody owns, has nobody to wake.
         if (stillWatched && entry.state === 'open' && !entry.forge && ownerOf(entry))
           watches.set(entry.url, stillWatched)
@@ -574,7 +602,14 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
           version: STORE_VERSION,
           pullRequests: [...entries.values()].map((entry) => {
             const watched = watches.get(entry.url)
-            return watched ? { ...entry, watch: watched } : entry
+            const news = untold.of(entry.url)
+            return {
+              ...entry,
+              ...(watched ? { watch: watched } : {}),
+              // News its chat was not told yet, written with the watch state
+              // that saw it; an older build reads past it.
+              ...(news.length > 0 ? { untold: news } : {}),
+            }
           }),
         }
         try {
@@ -933,8 +968,15 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
     endedWatches.set(url, last)
   }
 
+  /**
+   * News for the chat watching. Kept as untold news first, in the record's
+   * next write, which is the same one that records the watch state the news
+   * came from; then the wakes are told there is news.
+   */
   function tellWatcher(conversation: PullRequestConversationKey, wake: PullRequestWake): void {
     if (!options.onWatchNews || disposed) return
+    untold.add(conversation, wake)
+    persist()
     try {
       options.onWatchNews({ conversation, wake })
     } catch (error) {
@@ -1124,6 +1166,28 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
     watchedUrls() {
       return watch.watchedKeys()
     },
+    untoldWakes: {
+      async chats() {
+        await whenLoaded()
+        return untold.chats()
+      },
+      async next(conversation) {
+        await whenLoaded()
+        const message = untold.next(conversation, () => `pull-request-watch:${randomUUID()}`)
+        if (!message) return null
+        if (message.stamped) {
+          persist()
+          await writes
+        }
+        return { commandId: message.commandId, wakes: message.wakes }
+      },
+      told(conversation, commandId) {
+        if (untold.told(conversation, commandId)) persist()
+      },
+      forget(conversation) {
+        if (untold.forget(conversation)) persist()
+      },
+    },
     async flush() {
       for (let pass = 0; pass < 8; pass += 1) {
         await Promise.allSettled([
@@ -1209,7 +1273,7 @@ function sameReading(a: BranchPullRequest, b: BranchPullRequest): boolean {
 }
 
 /** A stored row: the pull request, and the watch an agent asked for on it, if any. */
-type StoredRow = { entry: BranchPullRequest; watch: PullRequestWatchState | null }
+type StoredRow = { entry: BranchPullRequest; watch: PullRequestWatchState | null; untold: unknown }
 
 /** The record's file, or null when this build cannot read it. Malformed rows are dropped. */
 function parseStoreFile(raw: string): StoredRow[] | null {
@@ -1223,7 +1287,12 @@ function parseStoreFile(raw: string): StoredRow[] | null {
   const rows: StoredRow[] = []
   for (const row of parsed.pullRequests) {
     const entry = parseEntry(row, null)
-    if (entry) rows.push({ entry, watch: isRecord(row) ? parsePullRequestWatchState(row.watch) : null })
+    if (entry)
+      rows.push({
+        entry,
+        watch: isRecord(row) ? parsePullRequestWatchState(row.watch) : null,
+        untold: isRecord(row) ? row.untold : null,
+      })
   }
   return rows
 }
