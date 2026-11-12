@@ -104,9 +104,13 @@
   `environment:maintain`; seeding, attaching and detaching a bundle
   `files:write`. A plugin's install and uninstall, a bundle's lint and a card's
   Go are an owner's, each with its reason. Every folder a client that is not
-  an owner names is held to the folders the Studio knows, on the path it
-  resolves to, and a library listing shows it only those. The skill, design
-  system and card shapes move here from the desktop app.
+  an owner (or an owner's connection held to known folders) names is held to
+  the folders the Studio knows, on the path it resolves to, and so is the
+  folder an id stands for: a library entry's (`designSystem.attach`,
+  `.forget`) and a local source's (every method naming a `sourceId`). One
+  outside them is refused `not_found`. The design library and the source list
+  show such a client only those. The skill, design system and card shapes
+  move here from the desktop app.
 
 - **What a Studio's agents are set up with** (`src/agent-setup.ts`), under
   `agent-setup`: `memory.resolveRoot`, `.index`, `.readPreview`;
