@@ -654,13 +654,21 @@ async function render({ mermaid, purify }: Engine, source: string): Promise<Diag
       // own switch is the older spelling of the same setting, and some
       // diagrams still read it.
       htmlLabels: false,
-      flowchart: { htmlLabels: false },
+      // Mermaid 12 widens every short label to one width; a node here is as
+      // wide as its label, as it was before.
+      flowchart: { htmlLabels: false, minNodeWidth: 0 },
+      state: { minNodeWidth: 0 },
       // What Mermaid's own sanitizer keeps in the label text it still sets as
       // markup — before the page is out of reach of anything that loads.
       // A `style` attribute is CSS, and CSS can fetch.
       dompurifyConfig: { FORBID_TAGS: ['style', ...LOADING_TAGS], FORBID_ATTR: ['style', ...LOADING_ATTRIBUTES] },
       theme: 'base',
       themeVariables: themeVariables(),
+      // Mermaid 12 lays diagrams out with ELK and draws them in its `neo` look
+      // unless told otherwise; these keep the layout and strokes the theme
+      // variables above were chosen for. A diagram may still ask for either.
+      layout: 'dagre',
+      look: 'classic',
       // A diagram that does not parse is reported to the block, which shows
       // its source instead; Mermaid must not draw its own error graphic.
       suppressErrorRendering: true,

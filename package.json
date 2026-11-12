@@ -348,7 +348,7 @@
     "jsdom": "^30.1.3",
     "katex": "^0.19.1",
     "knip": "6.43.0",
-    "mermaid": "~11.13.0",
+    "mermaid": "~12.3.0",
     "monaco-editor": "^0.57.0",
     "nanoid": "^6.0.2",
     "oxlint": "1.90.0",
@@ -370,15 +370,16 @@
   },
   "overrides": {
     "@excalidraw/excalidraw": {
+      "@excalidraw/mermaid-to-excalidraw": "$@excalidraw/mermaid-to-excalidraw",
       "@radix-ui/react-tabs": "^1.1.21",
-      "nanoid": "^3.3.19"
-    },
-    "@excalidraw/mermaid-to-excalidraw": {
-      "@mermaid-js/parser": "^1.2.1",
-      "nanoid": "^5.1.16"
+      "nanoid@^3": "^3.3.19"
     },
     "@xmldom/xmldom": "^0.8.15",
+    "dompurify": "$dompurify",
     "lodash-es": "^4.18.1",
-    "mermaid": "~11.13.0"
+    "micromark-extension-math": {
+      "katex": "$katex"
+    },
+    "nanoid@^4": "^5.1.16"
   }
 }
