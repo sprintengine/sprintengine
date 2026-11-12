@@ -33,12 +33,7 @@
     }
   },
   "launch": {
-    "argv": [
-      "{{binary}}",
-      { "spreadIf": "permissionArgs" },
-      "--session",
-      "{{sessionId}}"
-    ],
+    "argv": ["{{binary}}", { "spreadIf": "permissionArgs" }, "--session", "{{sessionId}}"],
     "env": {
       "OPENCODE_PROVIDER": "{{provider}}",
       "OPENCODE_MODEL": "{{model}}"
@@ -46,13 +41,7 @@
   },
   "resume": {
     "supported": true,
-    "argv": [
-      "{{binary}}",
-      { "spreadIf": "permissionArgs" },
-      "--session",
-      "{{sessionId}}",
-      "--resume"
-    ]
+    "argv": ["{{binary}}", { "spreadIf": "permissionArgs" }, "--session", "{{sessionId}}", "--resume"]
   },
   "promptInjection": {
     "mode": "send-after-ready",

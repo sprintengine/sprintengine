@@ -81,6 +81,7 @@ import { DEFAULT_CHANGELIST_ID, normalizeChangelistPath } from '../../../../shar
 import { GitGraphView, type GitCommitActions, type GitGraphState, type GitMergeTarget } from './GitGraphView'
 import type { GitPanelView } from '../../types/workspace'
 import { openTerminal, writeTerminal } from '../../studio/terminals'
+import { filesApi } from '../../studio/files'
 
 type GitPanelMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -424,7 +425,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
       const worktreeScopes = await Promise.all(
         linked.map(async (worktree): Promise<GitScopeOption> => {
-          const missing = !(await window.api.pathExists(worktree.path).catch(() => false))
+          const missing = !(await filesApi.pathExists(worktree.path).catch(() => false))
           const scope: GitScopeOption = {
             id: scopeId('worktree', worktree.path),
             kind: 'worktree',
@@ -1409,7 +1410,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
     // Same rule as discard, and a stronger reason: this removes the FILE, and a
     // guest row's list owns some of its lines rather than the file.
     const { actionable: rows } = revertableRows(candidates)
-    if (rows.length === 0 || typeof window.api.deletePath !== 'function') return
+    if (rows.length === 0 || typeof filesApi.deletePath !== 'function') return
     const many = rows.length > 1
     const confirmed = await dialog.confirm({
       title: many ? `Delete ${rows.length} files?` : `Delete ${rows[0].relativePath}?`,
@@ -1430,7 +1431,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
         const failures: string[] = []
         for (const row of rows) {
           try {
-            await window.api.deletePath(row.path)
+            await filesApi.deletePath(row.path)
           } catch (error) {
             failures.push(`${row.relativePath}: ${error instanceof Error ? error.message : String(error)}`)
           }
@@ -2152,7 +2153,7 @@ export default function GitPanel({ workspaceId }: { workspaceId: string }) {
 
     if (!isImageFile(entry.path || name)) {
       try {
-        content = await window.api.readfile(entry.path)
+        content = await filesApi.readfile(entry.path)
       } catch {
         if (repoRoot && typeof window.api.getGitFileBase === 'function') {
           const result = await window.api.getGitFileBase(repoRoot, entry.path)

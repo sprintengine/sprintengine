@@ -5,6 +5,7 @@ import { SKILL_HARNESS_DIR } from '../../../../../shared/skill-harnesses'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { SkillReader } from '../../workspace/globalSurface/extensions/skills/SkillReader'
 import { agentSkillsApi } from '../../../studio/agentSkills'
+import { filesApi } from '../../../studio/files'
 
 type ReaderTarget = { source: SkillSource; skill: ScannedSkill; readFile?: (path: string) => Promise<string> }
 
@@ -20,12 +21,12 @@ export async function resolveComposerSkill(workspaceRoot: string | null, skill: 
       const directory = SKILL_HARNESS_DIR[harness]
       if (!directory) continue
       const root = `${workspaceRoot.replace(/[\\/]$/u, '')}/${directory}/skills/${skill.id}`
-      if (!(await window.api.pathExists(`${root}/SKILL.md`))) continue
+      if (!(await filesApi.pathExists(`${root}/SKILL.md`))) continue
       const files: ScannedSkill['files'] = []
       const pending = ['']
       while (pending.length) {
         const relative = pending.shift()!
-        const entries = await window.api.readdir(`${root}/${relative}`)
+        const entries = await filesApi.readdir(`${root}/${relative}`)
         for (const entry of entries) {
           if (!entry.name || entry.name === '.' || entry.name === '..' || /[\\/]/u.test(entry.name)) continue
           const path = relative ? `${relative}/${entry.name}` : entry.name
@@ -59,7 +60,7 @@ export async function resolveComposerSkill(workspaceRoot: string | null, skill: 
         },
         readFile: async (path) => {
           if (!allowed.has(path)) throw new Error('The requested file is not part of this skill.')
-          return window.api.readfile(`${root}/${path}`)
+          return filesApi.readfile(`${root}/${path}`)
         },
       }
     }

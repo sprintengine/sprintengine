@@ -157,6 +157,7 @@ import { getEffectiveKeybindings, platformKeybindingsFromApiPlatform } from '../
 import { renderKeybinding } from '../../../commands/keybindings'
 import { isImeKey } from '../../../utils/imeKey'
 import { preloadAgentPanelChunks } from '../../panels/agentPanelChunks'
+import { filesApi } from '../../../studio/files'
 
 export type NewAgentLaunch = AgentComposerConfirm & {
   /** The agent's startup prompt. Empty means "start with nothing typed". */
@@ -1156,7 +1157,7 @@ export default function NewAgentPanel({
         const attachment = await readImageAttachment(file, file.name)
         // The file a chat on this computer reads is the one dropped, or the
         // image as it came, saved; it is shrunk when that chat reads it.
-        const path = existingPath || (await window.api.saveDroppedImage(await readFileAsBase64(file)))
+        const path = existingPath || (await filesApi.saveDroppedImage(await readFileAsBase64(file)))
         // The slice holds the cap under overlapping batches (a paste landing
         // while a drop is still reading); the check above already said why.
         setImages((current) =>
@@ -2111,7 +2112,7 @@ export default function NewAgentPanel({
         restoredImages = await Promise.all(
           stashedImages.map(async (image) => ({
             ...image,
-            path: await window.api.saveDroppedImage({ mediaType: image.mediaType, dataBase64: image.dataBase64 }),
+            path: await filesApi.saveDroppedImage({ mediaType: image.mediaType, dataBase64: image.dataBase64 }),
           })),
         )
       } catch (error) {

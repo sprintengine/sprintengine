@@ -1,6 +1,5 @@
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
 import type { ConversationCommandsRequest } from '../../shared/ipc/conversation-commands'
-import type { FileSearchResult, FileSystemStat } from '../../shared/ipc/filesystem'
 import type { StudioChatBackend } from '../../server/rpc/studio-rpc-types'
 import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
 import { onConversationCommandsChanged } from '../conversation-commands/registry'
@@ -22,7 +21,6 @@ import {
 } from '../conversation-ipc-inputs'
 import type { ConversationService } from '../conversation-service'
 import { confineToRoots } from './studio-file-confinement'
-import { expandHomePath } from '../home-path'
 
 // The Studio RPC's chat surface in main: the conversation service behind the
 // input checks every client meets (conversation-ipc-inputs.ts, named for the
@@ -37,18 +35,9 @@ import { expandHomePath } from '../home-path'
 
 export type StudioChatBackendDeps = {
   conversation: ConversationService
-  /** File search and reads, as the filesystem IPC serves them; a slot stands where a window's id would. */
-  files: {
-    searchFiles(senderId: number, input: Parameters<StudioChatBackend['searchFiles']>[1]): Promise<FileSearchResult>
-    cancelActiveFileSearch(senderId: number, channel?: string): void
-    cancelAllFileSearches(senderId: number): void
-    statPath(path: string): Promise<FileSystemStat>
-    readImageDataUrl(path: string): Promise<string>
-  }
-  repoRoot(folderPath: string, hostId?: string): Promise<string | null>
   /**
-   * The folders a chat's files may be stat'd or read from: workspaces' and
-   * live chats' folders, and the app's stores of sent pictures and plans.
+   * The folders a chat can be about, for the router's known-folder check:
+   * workspaces' folders, and the app's stores of sent pictures and plans.
    */
   readableRoots(): string[] | Promise<string[]>
   /** Whether the runtime holds a receipt for a session's command id. */
@@ -93,17 +82,6 @@ function checked<I>(
 
 export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChatBackend {
   const handlers = deps.conversation
-  // A file the chat surface reads is one inside a folder a chat can be about.
-  const confined = async (path: string): Promise<string> => {
-    const checked = await confineToRoots(path, await deps.readableRoots())
-    if (!checked.ok) throw new Error(checked.message)
-    return checked.path
-  }
-  // Studio's own window reads a path anywhere on this disk, as it did over
-  // IPC (a picture an agent wrote to a temp folder); every other client only
-  // inside those folders.
-  const readable = async (path: string, reading?: { anyPath?: boolean }): Promise<string> =>
-    reading?.anyPath ? expandHomePath(path) : confined(expandHomePath(path))
   const onCommandsChanged = deps.onCommandsChanged ?? onConversationCommandsChanged
   // A connection's history searches, by its slot and request id.
   const historySearches = new Map<string, AbortController>()
@@ -253,13 +231,6 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
         return failed(error)
       }
     },
-    searchFiles: (slot, input) => deps.files.searchFiles(slot, input),
-    cancelFileSearch: (slot, channel) => deps.files.cancelActiveFileSearch(slot, channel),
-    releaseFileSearches: (slot) => deps.files.cancelAllFileSearches(slot),
-    // Expanded before the roots are checked, so a `~/` path is held to them as the file it names.
-    stat: async (path, reading) => deps.files.statPath(await readable(path, reading)),
-    readImage: async (path, reading) => deps.files.readImageDataUrl(await readable(path, reading)),
-    repoRoot: (folderPath, hostId) => deps.repoRoot(folderPath, hostId),
     isKnownFolder: async (path) => (await confineToRoots(path, await deps.readableRoots())).ok,
     async listSessions(input) {
       try {

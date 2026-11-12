@@ -52,3 +52,10 @@ afterEach(() => {
     throw new Error(`the test set process.exitCode = ${String(code)}; see its output above`)
   }
 })
+
+// The window's files (`src/renderer/src/studio/files.ts`) go over the Studio
+// protocol. Every suite gets their stand-in, which calls what the suite set on
+// `window.api` under the names the window's IPC once had (`readfile`,
+// `watchPath`, ...), else answers as an empty disk; the module's own suite
+// asks for the real one (`vi.importActual`).
+vi.mock('../src/renderer/src/studio/files', () => import('../src/renderer/src/studio/files.double'))

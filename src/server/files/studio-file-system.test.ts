@@ -1,0 +1,200 @@
+import assert from 'node:assert/strict'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+
+import { createStudioFileSystem } from './studio-file-system'
+
+// The core's files by path, on a real disk: what each change does, and the
+// words it refuses in. Who may name which path is the router's
+// (`rpc/studio-file-system.test.ts`).
+
+function files() {
+  return createStudioFileSystem({ readableRoots: () => [], writableRoots: () => [], trash: async () => undefined })
+}
+
+test('copies, renames, moves and dropped pictures', async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), 'sprintengine-fs-mutation-'))
+  const files = createStudioFileSystem({ readableRoots: () => [], writableRoots: () => [] })
+  try {
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00])
+
+    const savedPath = await files.saveDroppedImage({
+      mediaType: 'image/png',
+      dataBase64: pngBytes.toString('base64'),
+    })
+    try {
+      assert.ok(savedPath.endsWith('.png'), 'saved image wears the extension of its media type')
+      assert.deepEqual(await readFile(savedPath), pngBytes, 'saved image holds the decoded bytes')
+    } finally {
+      await rm(savedPath, { force: true })
+    }
+    await assert.rejects(
+      () => files.saveDroppedImage({ mediaType: 'image/svg+xml', dataBase64: pngBytes.toString('base64') }),
+      /Only PNG, JPEG, WebP, and GIF/,
+      'non-attachable media types are refused',
+    )
+    await assert.rejects(
+      () => files.saveDroppedImage({ mediaType: 'image/png', dataBase64: '' }),
+      /could not be read/,
+      'an empty payload is refused rather than written as a zero-byte file',
+    )
+
+    const sourceRoot = join(tempRoot, 'registry')
+    const sourceManifestsDir = join(sourceRoot, 'manifests')
+    const sourceSkillsDir = join(sourceRoot, 'skills')
+    const sourceSkillDir = join(sourceSkillsDir, 'growth-copywriter')
+    const destinationRoot = join(tempRoot, 'workspace', '.sprintengine')
+    const destinationManifestsDir = join(destinationRoot, 'manifests')
+    const destinationSkillsDir = join(destinationRoot, 'skills')
+    await mkdir(sourceManifestsDir, { recursive: true })
+    await mkdir(sourceSkillDir, { recursive: true })
+    await mkdir(destinationManifestsDir, { recursive: true })
+    await mkdir(destinationSkillsDir, { recursive: true })
+    await writeFile(
+      join(sourceManifestsDir, 'marketer.json'),
+      '{"id":"marketer","skills":["growth-copywriter"]}',
+      'utf-8',
+    )
+    await writeFile(join(sourceSkillDir, 'SKILL.md'), '# Growth Copywriter\n', 'utf-8')
+
+    const copiedManifestPath = await files.copy(
+      join(sourceManifestsDir, 'marketer.json'),
+      destinationManifestsDir,
+      'overwrite',
+    )
+    const copiedSkillPath = await files.copy(sourceSkillDir, destinationSkillsDir, 'overwrite')
+
+    assert.equal(
+      copiedManifestPath,
+      join(destinationManifestsDir, 'marketer.json'),
+      'manifests copy under their original file name',
+    )
+    assert.equal(
+      copiedSkillPath,
+      join(destinationSkillsDir, 'growth-copywriter'),
+      'skill folders copy under their original directory name',
+    )
+    assert.equal(
+      await readFile(join(destinationSkillsDir, 'growth-copywriter', 'SKILL.md'), 'utf-8'),
+      '# Growth Copywriter\n',
+      'skill content remains discoverable at skills/<skill-id>/SKILL.md',
+    )
+
+    await writeFile(join(sourceSkillDir, 'SKILL.md'), '# Growth Copywriter v2\n', 'utf-8')
+    await files.copy(sourceSkillDir, destinationSkillsDir, 'overwrite')
+    assert.equal(
+      await readFile(join(destinationSkillsDir, 'growth-copywriter', 'SKILL.md'), 'utf-8'),
+      '# Growth Copywriter v2\n',
+      'overwrite updates existing installed skill folders without copy suffixes',
+    )
+
+    const renameSource = join(tempRoot, 'plan.md')
+    await writeFile(renameSource, '# Plan\n', 'utf-8')
+    await assert.rejects(
+      () => files.rename(renameSource, 'CON.md'),
+      /reserved by Windows/,
+      'rename rejects Windows reserved names',
+    )
+    await assert.rejects(
+      () => files.rename(renameSource, 'bad:name.md'),
+      /cannot contain control characters/,
+      'rename rejects Windows-invalid filename characters',
+    )
+    await assert.rejects(
+      () => files.rename(renameSource, 'trailing-space.md '),
+      /cannot end with a period or space/,
+      'rename rejects trailing spaces before filesystem mutation',
+    )
+    assert.equal(
+      await readFile(renameSource, 'utf-8'),
+      '# Plan\n',
+      'invalid rename attempts leave source file in place',
+    )
+
+    const moveSourceDir = join(tempRoot, 'move-source')
+    const moveDestinationDir = join(tempRoot, 'move-destination')
+    await mkdir(moveSourceDir)
+    await mkdir(moveDestinationDir)
+    const moveSourceFile = join(moveSourceDir, 'notes.md')
+    await writeFile(moveSourceFile, '# Notes\n', 'utf-8')
+
+    const movedFilePath = await files.move(moveSourceFile, moveDestinationDir)
+    assert.equal(
+      movedFilePath,
+      join(moveDestinationDir, 'notes.md'),
+      'move returns the file path under the destination directory',
+    )
+    assert.equal(await readFile(movedFilePath, 'utf-8'), '# Notes\n', 'move carries file content to destination')
+    await assert.rejects(() => stat(moveSourceFile), /ENOENT/, 'move removes the original file path')
+
+    const collisionSource = join(moveSourceDir, 'notes.md')
+    await writeFile(collisionSource, '# Collision\n', 'utf-8')
+    await assert.rejects(
+      () => files.move(collisionSource, moveDestinationDir),
+      /already exists/,
+      'move rejects destination name collisions',
+    )
+    assert.equal(await readFile(collisionSource, 'utf-8'), '# Collision\n', 'collision leaves source file in place')
+
+    const moveParentDir = join(tempRoot, 'move-parent')
+    const nestedDestinationDir = join(moveParentDir, 'nested')
+    await mkdir(nestedDestinationDir, { recursive: true })
+    await assert.rejects(
+      () => files.move(moveParentDir, nestedDestinationDir),
+      /Cannot move a file or folder into itself\./,
+      'move rejects moving a folder into its own child',
+    )
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true })
+  }
+})
+
+test('a Studio with no Trash says so rather than removing the file', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sprintengine-fs-trash-'))
+  try {
+    await writeFile(join(root, 'keep.md'), 'keep')
+    await assert.rejects(
+      createStudioFileSystem({ readableRoots: () => [], writableRoots: () => [] }).trash(join(root, 'keep.md')),
+      /cannot reach a Trash/,
+    )
+    assert.equal(await readFile(join(root, 'keep.md'), 'utf8'), 'keep')
+  } finally {
+    await rm(root, { force: true, recursive: true })
+  }
+})
+
+describe('new files and folders are named, never placed by path', () => {
+  let root: string
+  let parent: string
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'sprintengine-fs-names-'))
+    parent = await files().createDirectory(root, 'project', 'keep')
+  })
+  afterEach(async () => {
+    await rm(root, { force: true, recursive: true })
+  })
+
+  const makers = {
+    createFile: (at: string, name: string) => files().createFile(at, name),
+    createDirectory: (at: string, name: string) => files().createDirectory(at, name),
+    'createDirectory (keep)': (at: string, name: string) => files().createDirectory(at, name, 'keep'),
+  }
+  for (const [kind, make] of Object.entries(makers)) {
+    test(`${kind} refuses a name that leaves its folder`, async () => {
+      for (const name of ['../escape', '..', '.', 'a/b', 'a\\b', '', 'trailing.']) {
+        await expect(make(parent, name)).rejects.toThrow()
+      }
+      expect(await readdir(root)).toEqual(['project'])
+      expect(await readdir(parent)).toEqual([])
+    })
+
+    test(`${kind} still makes an ordinary name`, async () => {
+      const made = await make(parent, 'notes.md')
+      expect(made).toBe(join(parent, 'notes.md'))
+      await expect(stat(made)).resolves.toBeTruthy()
+    })
+  }
+})

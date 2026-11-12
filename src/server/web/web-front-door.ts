@@ -2,8 +2,6 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { createFilesystemReadHandlers } from '../../main/filesystem-read'
-import { createFilesystemWatchSearchHandlers } from '../../main/filesystem-watch-search-handlers'
 import { GitHubTokenStore } from '../../main/github-token-store'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
 import { createWorkspaceBackupService } from '../../main/workspace-backup'
@@ -155,7 +153,6 @@ export async function startWebFrontDoor(input: {
     }),
     // No terminals on the web (ruling a): a chat is not handed to one.
     terminalHandoff: async () => ({ ok: false, message: 'Terminals are not available in a browser.' }),
-    files: { ...createFilesystemWatchSearchHandlers(), ...createFilesystemReadHandlers() },
     // The cookie checked at the upgrade is the check: only an owner's session reaches the tunnel.
     assertAppSender: () => undefined,
     // A server started for the web runs no module kernel: its Schedules are off.

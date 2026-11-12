@@ -191,6 +191,13 @@ export const STUDIO_AGENT_SKILLS_CAPABILITY = 'agent-skills' as const
 export const STUDIO_SCHEDULES_CAPABILITY = 'schedules' as const
 
 /**
+ * The files on the Studio's machine by absolute path (`file-system.ts`):
+ * `files.listDirectory`, `.readText`, `.writeText`, `.rename`, `.trash` and
+ * the rest, with the `files.watchPath` stream. Every Studio's core serves it.
+ */
+export const STUDIO_FILE_SYSTEM_CAPABILITY = 'file-system' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -231,6 +238,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_CHAT_STORES_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
+  STUDIO_FILE_SYSTEM_CAPABILITY,
 ] as const
 
 /**
@@ -245,7 +253,6 @@ export const STUDIO_CHAT_CAPABILITIES = [
   STUDIO_CHECKPOINTS_CAPABILITY,
   STUDIO_COMMANDS_CAPABILITY,
   STUDIO_PROVIDERS_CAPABILITY,
-  STUDIO_FILES_CAPABILITY,
   STUDIO_SESSION_FILES_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
   STUDIO_SESSION_CONTROLS_CAPABILITY,

@@ -22,11 +22,9 @@ import type { ConversationTranscriptInput } from '../shared/conversation-runtime
 import { registerConversationPeekIpc } from './ipc/conversation-peek-ipc'
 import { registerAgentCompactIpc } from './ipc/agent-compact-ipc'
 import { registerDiagnosticsIpc } from './ipc/diagnostics-ipc'
-import { registerFilesystemMutationIpc } from './ipc/filesystem-mutation-ipc'
 import { registerAttachedFilesIpc } from './ipc/attached-files-ipc'
 import { createAttachedFileRegistry, createAttachedFiles, createAttachedFileThumbnails } from './attached-files'
-import { registerFilesystemReadIpc } from './ipc/filesystem-read-ipc'
-import { registerFilesystemWatchSearchIpc } from './ipc/filesystem-watch-search-ipc'
+import { registerFilesystemShellIpc } from './ipc/filesystem-shell-ipc'
 import { registerGitRepoWatchIpc } from './ipc/git-repo-watch-ipc'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
 import { registerGitIpc } from './ipc/git-ipc'
@@ -69,10 +67,7 @@ import {
 } from './window-factory'
 import type { AppServices } from './app-services'
 import { registerServerDomainIpc } from '../server/desktop/server-ipc'
-import { createFilesystemMutationHandlers } from './filesystem-mutation-handlers'
 import { createFilesystemReadHandlers } from './filesystem-read'
-import { createProjectLogoIo } from './project-logo-io'
-import { createFilesystemWatchSearchHandlers } from './filesystem-watch-search-handlers'
 import { openDiagnosticsLogsFolder } from './diagnostics-folder'
 import { writeDiagnosticLog } from './diagnostics-service'
 
@@ -190,10 +185,10 @@ export function registerCoreIpc(
   registerPullRequestCreateIpc(ipcMain)
   registerAuthIpc(ipcMain, services.sprintengineAuth)
   registerStudioPluginIpc(ipcMain, services.studioPluginService)
-  const filesystemSearchHandlers = createFilesystemWatchSearchHandlers()
-  registerFilesystemWatchSearchIpc(machineIpc, filesystemSearchHandlers)
-  const filesystemReadHandlers = createFilesystemReadHandlers({ opener: shell, projectLogoIo: createProjectLogoIo() })
-  registerFilesystemReadIpc(machineIpc, filesystemReadHandlers)
+  // Revealing a file and opening one in another app stay this computer's
+  // (shell channels); reading and changing files is the Studio protocol's.
+  const filesystemReadHandlers = createFilesystemReadHandlers({ opener: shell })
+  registerFilesystemShellIpc(machineIpc, filesystemReadHandlers)
   // The file-manager target of the open-in-editor control is the same reveal the
   // rest of the app already uses, so it is handed the very same handler.
   // On plain `ipcMain`: a folder on an SSH machine is opened by an editor here
@@ -220,7 +215,6 @@ export function registerCoreIpc(
     listConversationRoots: () => services.conversations.listLiveConversationRoots(),
   })
   registerUpdateIpc(ipcMain, { updateService: services.updateService })
-  registerFilesystemMutationIpc(machineIpc, createFilesystemMutationHandlers())
   // A file attached to a message by path opens in its default app, and only
   // one the person attached here; on plain `ipcMain`, as it is this computer's.
   const attachedFileRegistry = createAttachedFileRegistry({ resolveUserDataDir: () => app.getPath('userData') })
@@ -293,7 +287,6 @@ export function registerCoreIpc(
           githubTokenStore: services.githubTokenStore,
           workspaceBackup: workspaceBackupService,
           terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
-          files: { ...filesystemSearchHandlers, ...filesystemReadHandlers },
           assertAppSender,
           scheduledAgents: () => services.scheduledAgents(),
         })

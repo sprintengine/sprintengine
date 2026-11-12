@@ -396,6 +396,18 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const localConversations = refuseMachinePaths(localConversationBackend(conversationRuntime))
   let conversations: ConversationBackend = localConversations
   const sshServers = options.sshServers ?? null
+  // A read the desktop's file and git panes ask about a workspace on an SSH
+  // machine, answered by that machine's server (shared/machine-channels.ts),
+  // connecting in the background when it must. Goes once those panes reach
+  // the machine's own server.
+  const sshMachineCall = sshServers
+    ? async (id: string, channel: string, args: unknown[]): Promise<unknown> => {
+        const key = `ssh:${id}`
+        const connection = sshServers.servers.current(key) ?? (await sshServers.servers.connect(key))
+        sshServers.servers.touch(key)
+        return connection.backend.machine(channel, args)
+      }
+    : null
   if (wslServers || sshServers) {
     if (wslServers) {
       wslServersForHosts = wslServers
@@ -1316,6 +1328,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     subagents,
     /** Windows: the WSL servers chats may run on, for Settings' status; null elsewhere. */
     wslServers,
+    /** An SSH machine's server, asked a machine channel; null where this core holds no SSH machines. */
+    sshMachineCall,
     approvalRules,
     conversationModelCatalog,
     conversationLaunchService,

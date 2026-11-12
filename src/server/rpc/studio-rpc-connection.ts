@@ -292,12 +292,11 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     for (const release of releases.splice(0)) release()
     try {
       const chat = options.chat?.()
-      chat?.releaseFileSearches(context.slot)
       chat?.releaseHistorySearches(context.slot)
     } catch {
       // Nothing of this connection's is left to end.
     }
-    options.router.connectionClosed(options.connectionId)
+    options.router.connectionClosed(options.connectionId, context.slot)
     options.onClosed(connection)
   }
 
@@ -956,6 +955,41 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       )
   }
 
+  /**
+   * Changes under one folder on this machine, until the client unsubscribes:
+   * the folder is held to what the grant may name when the stream opens, and
+   * each burst goes out while the grant still reaches the topic.
+   */
+  function subscribeWatchPath(id: string, params: StudioTopicParams<'files.watchPath'>): void {
+    const grant = liveGrant()
+    if (!grant) return
+    const subscription: Subscription = { id, topic: 'files.watchPath', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    void options.router
+      .watchPath(params, { grant, context }, (event) => {
+        if (current() && stillGranted('files.watchPath')) push('files.watchPath', id, event)
+      })
+      .then(
+        (watched) => {
+          if (!watched.ok) {
+            if (current()) {
+              subscriptions.delete(id)
+              subscriptionFailed(id, 'code' in watched ? watched.code : 'not_found', watched.message)
+            }
+            return
+          }
+          if (current()) subscription.handle = { dispose: () => watched.dispose() }
+          else watched.dispose()
+        },
+        () => {
+          if (!current()) return
+          subscriptions.delete(id)
+          subscriptionFailed(id, 'unavailable', 'Studio could not watch that folder.', SUBSCRIBE_RETRY_MS)
+        },
+      )
+  }
+
   /** What moved in the pull request record, as it moves: the client asks for the lists it shows. */
   function subscribePullRequests(id: string): void {
     const pullRequests = options.pullRequests
@@ -1283,6 +1317,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'conversation.changes': subscribeChanges,
     'tools.catalog': subscribeCatalog,
     'files.watch': subscribeWatch,
+    'files.watchPath': subscribeWatchPath,
     'pullRequests.changed': subscribePullRequests,
     'localServers.changed': subscribeLocalServers,
     'module.events': subscribeModuleEvents,

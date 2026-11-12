@@ -33,6 +33,8 @@ export * from './chat-stores.js'
 export * from './agent-skills.js'
 // A Studio's scheduled agents.
 export * from './schedules.js'
+// The files on its machine, by path.
+export * from './file-system.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.
 export * from './update.js'
 export * from './modules.js'

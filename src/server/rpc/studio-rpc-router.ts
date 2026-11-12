@@ -15,6 +15,7 @@ import {
   type StudioErrorBody,
   type StudioModuleBacklogAnswer,
   type StudioErrorCode,
+  type FileWatchEvent,
   type StudioGrant,
   type StudioHandlers,
   type StudioMethod,
@@ -48,6 +49,8 @@ import { createStudioAgentSkillsHandlers } from './studio-agent-skills'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
 import type { ModuleHostServices } from '../../main/module-host/main-host'
 import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
+import type { StudioFileSystem, StudioFileSystemWatch } from '../files/studio-file-system'
+import { createStudioFileSystemHandlers, type StudioMachineCall } from './studio-file-system'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -127,7 +130,13 @@ export type StudioRpcRouter = {
   /** How this Studio is updated and where an update stands: what `update.status` answers. */
   updateStatus(): StudioUpdateStatus
   /** A connection closed: what it staged and did not send waits a little for its reconnect. */
-  connectionClosed(connectionId: string): void
+  connectionClosed(connectionId: string, slot?: number): void
+  /** Follow a folder for `files.watchPath`, held to what the asker may name. */
+  watchPath(
+    params: { path: string; includeIgnored?: boolean },
+    asking: { grant: StudioGrant; context: StudioRequestContext },
+    listener: (event: FileWatchEvent) => void,
+  ): Promise<StudioFileSystemWatch | { ok: false; code: 'not_found' | 'unavailable'; message: string }>
   /** The RPC is stopping: timers stop and staged uploads go. */
   close(): void
 }
@@ -145,6 +154,10 @@ export type StudioRpcRouterOptions = {
   tools?: ClientToolRegistry
   /** Files under a workspace's roots; without it, `files.*` by root is answered `unavailable`. */
   files?: StudioFiles
+  /** The files on this machine by path; without it, `files.*` by path is answered `unavailable`. */
+  fileSystem?: StudioFileSystem
+  /** An SSH machine's server, for an owner's `ssh://` path, until those machines' panes reach their own servers. */
+  machine?: StudioMachineCall
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
@@ -745,6 +758,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
   /** A runtime id under the client's namespace, and the kept-answer id of one method's mutation. */
   const runtimeId = (grant: StudioGrant, id: string) => studioRuntimeCommandId(grant, id)
+  // The files on this machine by path, every server's: the router's one rule
+  // for them is who may name which path (`studio-file-system.ts`).
+  const fileSystem = createStudioFileSystemHandlers({
+    ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    ...(options.machine ? { machine: options.machine } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
   const keptId = (method: StudioMethod, grant: StudioGrant, id: string) => `${method}:${runtimeId(grant, id)}`
   // A session command's receipt keeps what it was, across a restart too.
   const stamp = (fingerprint: string | undefined) => (fingerprint ? { commandFingerprint: fingerprint } : {})
@@ -1222,41 +1243,25 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (isRefusal(chat)) return chat
       return { ok: true, result: voice.redact(await chat.secretStatus(input)) }
     },
-    'files.search': async (search, { context, grant, voice }) => {
-      const chat = chatOr('files.search')
-      if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, { context, grant }, search.rootPath))) return refuse('not_found', UNKNOWN_FOLDER)
-      return { ok: true, result: voice.redact(await chat.searchFiles(context.slot, search)) }
-    },
-    'files.cancelSearch': ({ channel }, { context }) => {
-      const chat = chatOr('files.cancelSearch')
-      if (isRefusal(chat)) return chat
-      chat.cancelFileSearch(context.slot, channel)
-      return { ok: true, result: {} }
-    },
-    'files.stat': async ({ path, root }, { context, grant, voice }) => {
-      // By root it is the files family's, served with or without a chat surface.
+    'files.search': (search, asking) => fileSystem.byPath.search(search, asking),
+    'files.cancelSearch': ({ channel }, { context }) => fileSystem.byPath.cancelSearch(channel, context),
+    'files.stat': async ({ path, root }, asking) => {
+      // By root it is the board files' family, served with or without a chat surface.
       if (root !== undefined) {
         if (!options.files) return refuse('unavailable', 'This Studio does not serve files by root.')
         const found = await options.files.stat(root, path)
         return found.ok ? { ok: true, result: { stat: found.stat } } : refused(found)
       }
-      const chat = chatOr('files.stat')
-      if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, { context, grant }, path))) return refuse('not_found', UNKNOWN_FOLDER)
-      return { ok: true, result: { stat: voice.redact(await chat.stat(path, readsAnyPath({ context, grant }))) } }
+      const read = await fileSystem.byPath.stat(path, asking)
+      return read.ok ? { ok: true, result: { stat: read.result } } : read
     },
-    'files.readImage': async ({ path }, { context, grant }) => {
-      const chat = chatOr('files.readImage')
-      if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, { context, grant }, path))) return refuse('not_found', UNKNOWN_FOLDER)
-      return { ok: true, result: { dataUrl: await chat.readImage(path, readsAnyPath({ context, grant })) } }
+    'files.readImage': async ({ path }, asking) => {
+      const read = await fileSystem.byPath.readImage(path, asking)
+      return read.ok ? { ok: true, result: { dataUrl: read.result } } : read
     },
-    'files.repoRoot': async ({ folderPath, hostId }, { context, grant, voice }) => {
-      const chat = chatOr('files.repoRoot')
-      if (isRefusal(chat)) return chat
-      if (!(await folderAllowed(chat, { context, grant }, folderPath))) return refuse('not_found', UNKNOWN_FOLDER)
-      return { ok: true, result: { repoRoot: voice.redact(await chat.repoRoot(folderPath, hostId)) } }
+    'files.repoRoot': async ({ folderPath, hostId }, asking) => {
+      const read = await fileSystem.byPath.repoRoot(folderPath, hostId, asking)
+      return read.ok ? { ok: true, result: { repoRoot: read.result } } : read
     },
     'session.list': async (input, { voice }) => {
       const chat = chatOr('session.list')
@@ -1584,6 +1589,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       mayName,
     }),
     ...createStudioAgentSetupHandlers({ ...(options.agentSetup ? { setup: options.agentSetup } : {}), mayName }),
+
+    // ── Files on this machine, by path ─────────────────────────────────────
+
+    ...fileSystem.handlers,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules
@@ -1709,7 +1718,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
   return {
     updateStatus,
-    connectionClosed: (connectionId) => uploads.release(connectionId),
+    connectionClosed: (connectionId, slot) => {
+      uploads.release(connectionId)
+      if (slot !== undefined) options.fileSystem?.releaseSlot(slot)
+    },
+    watchPath: (params, asking, listener) => fileSystem.watch(params, asking, listener),
     close: () => uploads.close(),
     async handle(grant, method, params, context = NO_CONTEXT) {
       const spec = STUDIO_METHODS[method]
@@ -1781,11 +1794,6 @@ type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
 /** Whether a connection names any path on this disk: an owner's, unless it is held to the folders Studio knows. */
 function namesAnyPath(asking: PathAsker): boolean {
   return asking.grant.owner && !asking.context.knownFoldersOnly
-}
-
-/** As `namesAnyPath`, for the chat backend's file reads, which confine every other connection to its roots. */
-function readsAnyPath(asking: PathAsker): { anyPath: boolean } {
-  return { anyPath: namesAnyPath(asking) }
 }
 
 /** Whether a connection may name this path: any, if `namesAnyPath`; otherwise only inside the folders Studio knows. */

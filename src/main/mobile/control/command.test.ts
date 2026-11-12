@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { workspaceStorePath } from '../../workspace-store'
-import { standIn } from '../../../../tests/stand-in'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { mobileControlProtocolVersion, MobileControlCommandService, type MobileControlCommand } from './command'
@@ -25,7 +24,6 @@ test('command', async () => {
     await assertBacklogCreateWritesFileAndRecord()
     await assertBacklogCreateRejectsEmptyTitle()
     await assertBacklogCreateKeepsGeneratedPathUnderBacklog()
-    await assertFilesystemMutationHandlersRoundTripOrdinaryPaths()
     await assertAutomationsControlIsRefusedAndNotAdvertised()
   }
 
@@ -436,155 +434,6 @@ test('command', async () => {
   // through, so its write/rename/copy/delete round trip is asserted end to end on
   // real paths rather than mocked: a handler that silently resolved a path
   // somewhere else would still return a plausible-looking string.
-  async function assertFilesystemMutationHandlersRoundTripOrdinaryPaths(): Promise<void> {
-    const handlers = await importMainProcessIpcHandlers()
-    const workspaceRoot = await mkdtemp(join(tmpdir(), 'sprintengine-fs-guard-'))
-
-    const safeDirectory = join(workspaceRoot, 'safe')
-    const safeCopyDestination = join(workspaceRoot, 'safe-copy')
-    await mkdir(safeDirectory)
-    await mkdir(safeCopyDestination)
-
-    const safeFilePath = join(safeDirectory, 'notes.txt')
-    await handlers.writeFile(safeFilePath, 'safe write\n')
-    assert.equal(await readFile(safeFilePath, 'utf8'), 'safe write\n')
-
-    const renamedSafeFilePath = await handlers.rename(safeFilePath, 'renamed.txt')
-    assert.equal(renamedSafeFilePath, join(safeDirectory, 'renamed.txt'))
-    assert.equal(await readFile(renamedSafeFilePath, 'utf8'), 'safe write\n')
-
-    const copiedSafeFilePath = await handlers.copy(renamedSafeFilePath, safeCopyDestination)
-    assert.equal(await readFile(copiedSafeFilePath, 'utf8'), 'safe write\n')
-
-    await handlers.delete(copiedSafeFilePath)
-    await assert.rejects(() => access(copiedSafeFilePath))
-
-    const safeNestedDirectory = join(workspaceRoot, 'safe-dir')
-    await mkdir(join(safeNestedDirectory, 'nested'), { recursive: true })
-    await writeFile(join(safeNestedDirectory, 'nested', 'notes.txt'), 'safe nested write\n', 'utf8')
-
-    const renamedSafeDirectoryPath = await handlers.rename(safeNestedDirectory, 'safe-dir-renamed')
-    assert.equal(await readFile(join(renamedSafeDirectoryPath, 'nested', 'notes.txt'), 'utf8'), 'safe nested write\n')
-
-    const copiedSafeDirectoryPath = await handlers.copy(renamedSafeDirectoryPath, safeCopyDestination)
-    assert.equal(await readFile(join(copiedSafeDirectoryPath, 'nested', 'notes.txt'), 'utf8'), 'safe nested write\n')
-
-    await handlers.delete(copiedSafeDirectoryPath)
-    await assert.rejects(() => access(copiedSafeDirectoryPath))
-    await handlers.delete(renamedSafeDirectoryPath)
-    await assert.rejects(() => access(renamedSafeDirectoryPath))
-  }
-
-  type FilesystemMutationHandlers = {
-    writeFile: (filePath: string, content: string) => Promise<void>
-    rename: (sourcePath: string, nextName: string) => Promise<string>
-    copy: (sourcePath: string, destinationDir: string) => Promise<string>
-    delete: (targetPath: string) => Promise<void>
-  }
-
-  async function importMainProcessIpcHandlers(): Promise<FilesystemMutationHandlers> {
-    const ipcHandlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
-    const restoreModules = standIn({
-      electron: {
-        app: {
-          defaultApp: false,
-          getAppPath: () => process.cwd(),
-          getPath: (name: string) => join(tmpdir(), `sprintengine-electron-${name}`),
-          getVersion: () => '0.0.0',
-          isPackaged: false,
-          on: () => undefined,
-          quit: () => undefined,
-          requestSingleInstanceLock: () => true,
-          setAppLogsPath: () => undefined,
-          setAppUserModelId: () => undefined,
-          setAsDefaultProtocolClient: () => true,
-          whenReady: () => new Promise(() => undefined),
-        },
-        BrowserWindow: class {
-          static getAllWindows(): unknown[] {
-            return []
-          }
-        },
-        dialog: {},
-        ipcMain: {
-          handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => {
-            ipcHandlers.set(channel, handler)
-          },
-          on: () => undefined,
-        },
-        Menu: {
-          buildFromTemplate: () => ({}),
-          setApplicationMenu: () => undefined,
-        },
-        protocol: {
-          registerSchemesAsPrivileged: () => undefined,
-        },
-        safeStorage: {
-          decryptString: () => '',
-          encryptString: (value: string) => Buffer.from(value),
-          isEncryptionAvailable: () => true,
-        },
-        shell: {
-          openExternal: async () => undefined,
-          openPath: async () => '',
-          showItemInFolder: () => undefined,
-          trashItem: async (targetPath: string) => {
-            await rm(targetPath, { force: true, recursive: true })
-          },
-        },
-      },
-      'electron-updater': { autoUpdater: { checkForUpdatesAndNotify: async () => undefined } },
-      'node-pty': {
-        spawn: () => {
-          throw new Error('node-pty should not be used in filesystem IPC tests')
-        },
-      },
-      '@vscode/ripgrep': { rgPath: 'rg' },
-      // The build stamp is minted by a Vite plugin at build time, so there is no
-      // module on disk for the test bundle's `require` to find. Stubbing it here
-      // keeps this test's existing interception the single place main's build-only
-      // dependencies are stood in for.
-      'virtual:sprintengine-build-stamp': {
-        buildStamp: {
-          commit: null,
-          source: 'unavailable' as const,
-          builtAt: '2026-01-01T00:00:00.000Z',
-          mode: 'development' as const,
-        },
-      },
-    })
-
-    try {
-      // The app proper, which is what registers the IPC handlers; the entry
-      // (index.ts) only installs the Electron platform (as `standIn` does over
-      // the stand-in), takes the single-instance lock and loads it.
-      await import('../../app-main')
-    } finally {
-      restoreModules()
-    }
-
-    const getHandler = (channel: string): ((...args: unknown[]) => Promise<unknown>) => {
-      const handler = ipcHandlers.get(channel)
-      assert.ok(handler, `${channel} handler should be registered`)
-      return async (...args) => handler(null, ...args) as Promise<unknown>
-    }
-
-    return {
-      writeFile: async (filePath, content) => {
-        await getHandler('fs:writefile')(filePath, content)
-      },
-      rename: async (sourcePath, nextName) => {
-        return (await getHandler('fs:rename')(sourcePath, nextName)) as string
-      },
-      copy: async (sourcePath, destinationDir) => {
-        return (await getHandler('fs:copy')(sourcePath, destinationDir)) as string
-      },
-      delete: async (targetPath) => {
-        await getHandler('fs:delete')(targetPath)
-      },
-    }
-  }
-
   function command(
     type: MobileControlCommand['type'],
     payload: MobileControlCommand['payload'],

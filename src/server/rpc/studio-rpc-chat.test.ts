@@ -19,6 +19,7 @@ import {
 } from './studio-frame-port'
 import { createStudioRpcRouter } from './studio-rpc-router'
 import { createStudioUploads } from './studio-uploads'
+import { createStudioFileSystem } from '../files/studio-file-system'
 import {
   OWNER_TOKEN,
   connectLineClient,
@@ -43,8 +44,6 @@ afterEach(async () => {
 type ChatCalls = {
   sends: ConversationSendTurnInput[]
   reverts: number
-  searchSlots: number[]
-  released: number[]
   commandListeners: Set<(catalog: ConversationCommandCatalog) => void>
   controls: string[]
   releasedHistory: number[]
@@ -55,8 +54,6 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
   const calls: ChatCalls = {
     sends: [],
     reverts: 0,
-    searchSlots: [],
-    released: [],
     commandListeners: new Set(),
     controls: [],
     releasedHistory: [],
@@ -102,15 +99,6 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
     providers: async () => ({ ok: true, providers: [] }),
     providerModels: async () => ({ ok: false, message: 'No catalog.' }),
     secretStatus: async () => ({ ok: false, message: 'No secret.' }),
-    searchFiles: async (slot) => {
-      calls.searchSlots.push(slot)
-      return { ok: true, results: [], truncated: false, engine: 'walker', elapsedMs: 0, resultCount: 0 }
-    },
-    cancelFileSearch: () => undefined,
-    releaseFileSearches: (slot) => void calls.released.push(slot),
-    stat: async () => ({ isFile: true, isDirectory: false, sizeBytes: 1, modifiedAt: '', modifiedAtMs: 1 }),
-    readImage: async () => 'data:image/png;base64,AAAA',
-    repoRoot: async () => '/Users/dev/app',
     listSessions: async () => ({ ok: true, sessions: [session] }),
     stopSession: async (input) => {
       calls.controls.push(`stop:${input.sessionId}:${input.commandId}`)
@@ -423,7 +411,6 @@ test('a paired grant reaches every chat control by its scopes; only a terminal h
     ['providers.setSecret', { commandId: 'c5', providerId: 'p', value: 'sk-test' }],
     ['conversation.revokeApprovalRule', { commandId: 'c6', ruleId: 'rule-1' }],
     ['conversation.approvalRules', {}],
-    ['files.search', { rootPath: '/Users/dev/app', query: 'a' }],
   ]
   for (const [method, params] of calls) assert.equal(code(await handle(paired, method, params)), 'ok', method)
   for (const [method, params] of [
@@ -450,13 +437,9 @@ test('a read-only grant follows chats and is refused every method that needs mor
   assert.equal(chat.calls.sends.length, 0)
 })
 
-test('what a client that is not an owner names on this disk is held to the folders Studio knows, and never a CLI’s program', async () => {
+test('what a client that is not an owner names for a chat is held to the folders Studio knows, and never a CLI’s program', async () => {
   const { owner, paired, handle, chat } = grantsRouter()
   for (const [method, params] of [
-    ['files.stat', { path: '/etc/passwd' }],
-    ['files.readImage', { path: '/Users/dev/secret.png' }],
-    ['files.search', { rootPath: '/Users/dev', query: 'a' }],
-    ['files.repoRoot', { folderPath: '/etc' }],
     // Asking for a folder's `/` list may run its CLI there.
     ['conversation.commands', { cli: 'claude-code', cwd: '/Users/dev/elsewhere' }],
     ['session.send', { commandId: 'c1', sessionId: 's1', message: 'read this', files: [{ path: '/etc/passwd' }] }],
@@ -473,7 +456,6 @@ test('what a client that is not an owner names on this disk is held to the folde
     assert.equal(code(await handle(owner, method, params)), 'ok', method)
   }
   assert.equal(chat.calls.sends.length, 3, 'only the owner’s sends reached the runtime')
-  assert.equal(code(await handle(paired, 'files.stat', { path: '/Users/dev/app/README.md' })), 'ok')
   assert.equal(code(await handle(paired, 'conversation.commands', { cli: 'claude-code', cwd: '/Users/dev/app' })), 'ok')
   // The agent's plan file is read only inside known folders; elsewhere Studio keeps its own copy.
   const plans: Array<string | undefined> = []
@@ -669,20 +651,22 @@ test('the command list is pushed to an owner as each is reported, and its stream
   for (const listener of chat!.calls.commandListeners) listener(catalog)
   const push = await window.next(isT('push'))
   assert.deepEqual(push.t === 'push' && push.payload, catalog)
-  const searched = await ask(window, 'f1', 'files.search', { rootPath: '/Users/dev/app', query: 'a' })
-  assert.ok(searched.ok)
   window.close()
   await window.closed
-  for (let tries = 0; chat!.calls.released.length === 0 && tries < 50; tries++)
+  for (let tries = 0; chat!.calls.commandListeners.size > 0 && tries < 50; tries++)
     await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(chat!.calls.commandListeners.size, 0)
-  assert.deepEqual(chat!.calls.released, chat!.calls.searchSlots, 'a closed connection’s searches are ended')
-  assert.ok(chat!.calls.searchSlots[0] >= 1_000_000_000, 'its slot is clear of any window’s webContents id')
 })
 
 test('a window is answered as its IPC was, never busy: a transcript checks every link it shows at once', async () => {
-  const { server } = await served()
-  const window = await windowClient(server)
+  const stat = { isFile: true, isDirectory: false, sizeBytes: 1, modifiedAt: '', modifiedAtMs: 1 }
+  const fileSystem = {
+    ...createStudioFileSystem({ readableRoots: () => [], writableRoots: () => [] }),
+    stat: async () => stat,
+  }
+  const started = await startTestServer({ chat: fakeChat(), fileSystem })
+  disposers.push(started.dispose)
+  const window = await windowClient(started.server)
   const answers = await Promise.all(
     Array.from({ length: 64 }, (_, index) =>
       ask(window, `stat-${index}`, 'files.stat', { path: `/Users/dev/app/${index}.ts` }),
@@ -745,75 +729,6 @@ test('an owner’s web tab is Studio’s own view, and its mutations are audited
   )
   assert.deepEqual(audited, ['session.send'])
   router.close()
-})
-
-test('a connection held to known folders searches and asks only about the folders Studio knows', async () => {
-  const chat: StudioChatBackend = {
-    ...fakeChat(),
-    isKnownFolder: async (path) => path === '/Users/dev/app' || path.startsWith('/Users/dev/app/'),
-  }
-  const uploads = createStudioUploads()
-  disposers.push(async () => uploads.close())
-  const router = createStudioRpcRouter({
-    backend: createFakeBackend(),
-    chat: () => chat,
-    info: () => ({}) as never,
-    uploads,
-  })
-  const grant = studioWindowGrant()
-  const tailnet = { connectionId: 'w1', slot: 1, ownWindow: false, knownFoldersOnly: true }
-  const loopback = { connectionId: 'w2', slot: 2, ownWindow: false }
-  const search = (rootPath: string, context: typeof loopback) =>
-    router.handle(grant, 'files.search', { rootPath, query: 'a' }, context)
-  const repoRoot = (folderPath: string, context: typeof loopback) =>
-    router.handle(grant, 'files.repoRoot', { folderPath }, context)
-
-  assert.ok((await search('/Users/dev/app', tailnet)).ok)
-  const elsewhere = await search('/Users/dev', tailnet)
-  assert.equal(!elsewhere.ok && elsewhere.error.code, 'not_found')
-  assert.ok((await repoRoot('/Users/dev/app/src', tailnet)).ok)
-  const other = await repoRoot('/etc', tailnet)
-  assert.equal(!other.ok && other.error.code, 'not_found')
-  // A browser on this machine names any folder, as before.
-  assert.ok((await search('/Users/dev', loopback)).ok)
-  assert.ok((await repoRoot('/etc', loopback)).ok)
-})
-
-test('a path is stat’d and a picture read anywhere only by an owner not held to known folders', async () => {
-  const reads: Array<{ path: string; anyPath: boolean | undefined }> = []
-  const chat: StudioChatBackend = {
-    ...fakeChat(),
-    isKnownFolder: async (path) => path.startsWith('/Users/dev/app/'),
-    stat: async (path, reading) => {
-      reads.push({ path, anyPath: reading?.anyPath })
-      return { isFile: true, isDirectory: false, sizeBytes: 1, modifiedAt: '', modifiedAtMs: 1 }
-    },
-    readImage: async (path, reading) => {
-      reads.push({ path, anyPath: reading?.anyPath })
-      return 'data:image/png;base64,AAAA'
-    },
-  }
-  const uploads = createStudioUploads()
-  disposers.push(async () => uploads.close())
-  const router = createStudioRpcRouter({
-    backend: createFakeBackend(),
-    chat: () => chat,
-    info: () => ({}) as never,
-    uploads,
-  })
-  const grant = studioWindowGrant()
-  const window = { connectionId: 'w1', slot: 1, ownWindow: true }
-  const tailnet = { connectionId: 'w2', slot: 2, ownWindow: false, knownFoldersOnly: true }
-  assert.ok((await router.handle(grant, 'files.stat', { path: '/tmp/shot.png' }, window)).ok)
-  assert.ok((await router.handle(grant, 'files.readImage', { path: '/tmp/shot.png' }, window)).ok)
-  // Held to known folders: refused outside them, and confined by the backend inside them.
-  assert.ok(!(await router.handle(grant, 'files.stat', { path: '/tmp/shot.png' }, tailnet)).ok)
-  assert.ok((await router.handle(grant, 'files.stat', { path: '/Users/dev/app/shot.png' }, tailnet)).ok)
-  assert.ok((await router.handle(grant, 'files.readImage', { path: '/Users/dev/app/shot.png' }, tailnet)).ok)
-  assert.deepEqual(
-    reads.map((read) => read.anyPath),
-    [true, true, false, false],
-  )
 })
 
 test('every operation a window’s chat makes is a method an owner calls on the socket', async () => {

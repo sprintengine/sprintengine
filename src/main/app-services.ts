@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage } from 'electron'
+import { desktopFileSystemShell } from './desktop-file-system-shell'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
 import { basename, dirname, join } from 'path'
@@ -1737,6 +1738,9 @@ export function createAppServices(
     ? createStudioRpc(core, automationService, {
         updates: desktopUpdates,
         modules: moduleHub,
+        // What this desktop's shell adds to the files on its disk: its Trash,
+        // its image codec for project logos, and where Documents is.
+        fileSystemShell: desktopFileSystemShell(),
       })
     : null
   // Where the person's attention is, for routing a call to the window in

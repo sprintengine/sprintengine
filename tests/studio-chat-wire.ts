@@ -51,14 +51,6 @@ export type StudioChatWire = {
 export function connectChatOverStudio(service: ConversationService): StudioChatWire {
   const chat = createStudioChatBackend({
     conversation: service,
-    files: {
-      searchFiles: notServed,
-      cancelActiveFileSearch: () => undefined,
-      cancelAllFileSearches: () => undefined,
-      statPath: notServed,
-      readImageDataUrl: async () => '',
-    },
-    repoRoot: async () => null,
     readableRoots: () => ['/'],
     hasReceipt: async () => false,
     commands: notServed,

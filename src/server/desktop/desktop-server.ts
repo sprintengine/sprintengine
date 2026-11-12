@@ -21,8 +21,6 @@ import { readChatExportSource } from '../../main/chat-export/chat-export-source'
 import { parseTranscriptInput } from '../../main/conversation-ipc-inputs'
 import { createConversationAttentionListener } from '../../main/conversation-attention'
 import { setDiagnosticsLogName, writeDiagnosticLog } from '../../main/diagnostics-service'
-import { createFilesystemReadHandlers } from '../../main/filesystem-read'
-import { createFilesystemWatchSearchHandlers } from '../../main/filesystem-watch-search-handlers'
 import { GitHubTokenStore } from '../../main/github-token-store'
 import { buildLauncherMcpServer, usableLocalLauncherRef } from '../../main/integrations/launcher'
 import { discoverAndBroadcastCliModels } from '../../main/model-discovery/discovery-pass'
@@ -433,13 +431,23 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       : { ok: false, message: 'The update could not be started.' }
   })
   rpc.on(SERVER_EVENTS.updateState, (payload) => desktopUpdates.mirror(payload))
-  const studioRpc = createStudioRpc(core, gateway, { updates: desktopUpdates.updates, modules: modules.hub })
+  const studioRpc = createStudioRpc(core, gateway, {
+    updates: desktopUpdates.updates,
+    modules: modules.hub,
+    // The files on this disk move to the Trash through the shell, which has
+    // one (`shell.trash`); a logo is served at its own bytes, as this process
+    // has no image codec.
+    fileSystemShell: {
+      trash: async (path) => {
+        await rpc.call(SHELL_METHODS.trash, { path })
+      },
+    },
+  })
   const workspaceBackup = createWorkspaceBackupService({
     resolveUserDataDir: () => envelope.dataDir,
     readRegistry: () => workspaceRegistry.getState(),
     minRegistryIntervalMs: 10_000,
   })
-  const files = { ...createFilesystemWatchSearchHandlers(), ...createFilesystemReadHandlers() }
   const domains = registerServerDomainIpc(tunnel.registry as unknown as Parameters<typeof registerServerDomainIpc>[0], {
     core,
     gateway,
@@ -449,7 +457,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     // Resume in terminal: the core's, launched here.
     terminalHandoff: (input) =>
       terminals ? terminals.handoff.handoff(input) : Promise.resolve({ ok: false, message: TERMINALS_UNAVAILABLE }),
-    files,
     // The window's port is the check: main brokers one only to an app window.
     assertAppSender: () => undefined,
     scheduledAgents: () => modules.scheduledAgents(),

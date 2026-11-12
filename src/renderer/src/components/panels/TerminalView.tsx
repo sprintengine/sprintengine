@@ -82,6 +82,7 @@ import {
   writeTerminal,
 } from '../../studio/terminals'
 import { agentSetupApi } from '../../studio/agentSetup'
+import { filesApi } from '../../studio/files'
 
 interface Props {
   workspaceId: string
@@ -469,7 +470,7 @@ function TerminalViewOnThisComputer({
     // fail. Shared by the OSC 8 handler and the heuristic provider below.
     const inspectPath = async (path: string): Promise<{ exists: boolean; isDirectory: boolean }> => {
       try {
-        const stat = await window.api.statPath(path)
+        const stat = await filesApi.statPath(path)
         return { exists: true, isDirectory: stat.isDirectory }
       } catch {
         return { exists: false, isDirectory: false }
@@ -1135,7 +1136,7 @@ function TerminalViewOnThisComputer({
       const workspaceWorktreeCwd =
         launchAgent.execution?.mode === 'worktree'
           ? { cwd: null, missing: false }
-          : await resolveWorkspaceTerminalCwd(workspaceWorktreeGitRoot, folderReadyPath, window.api.pathExists)
+          : await resolveWorkspaceTerminalCwd(workspaceWorktreeGitRoot, folderReadyPath, filesApi.pathExists)
       if (disposed) return
       let executionRoot = resolveAgentExecutionRoot(
         launchAgent.execution,
@@ -1177,7 +1178,7 @@ function TerminalViewOnThisComputer({
         executionRoot.mode,
         executionRoot.cwd,
         fallbackWorkspace ? (fallbackWorkspace.folderPath ?? null) : folderReadyPath,
-        window.api.pathExists,
+        filesApi.pathExists,
       )
       if (disposed) return
       if (worktreeFallback.fellBack) {

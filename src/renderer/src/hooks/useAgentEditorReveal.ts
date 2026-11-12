@@ -19,6 +19,7 @@ import { hasEditorBuffer } from '../utils/editorBuffers'
 import { openFileSurface } from '../utils/openFileSurface'
 import { openGitDiff } from '../utils/openGitDiff'
 import { isWindowVisible } from '../utils/windowActivity'
+import { filesApi } from '../studio/files'
 
 // The window's half of an agent's editor reveal (editor.open / open_diff).
 //
@@ -70,7 +71,7 @@ async function openRevealedFile(
   let content: string | undefined
   if (!isOpen() && !store.openFilesInExternalWindow) {
     try {
-      content = await window.api.readfile(file.path)
+      content = await filesApi.readfile(file.path)
     } catch {
       content = undefined
     }

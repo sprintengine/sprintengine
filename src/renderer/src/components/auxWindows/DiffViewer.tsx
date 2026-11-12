@@ -104,6 +104,7 @@ import {
   writeTreeColumnPrefs,
   type EditorTreePrefs,
 } from './editorTreePrefs'
+import { filesApi } from '../../studio/files'
 
 // The diff viewer: the changed-file list, a read-only Monaco DiffEditor, and
 // hunk navigation that flows across files. Two hosts render it — the
@@ -279,7 +280,7 @@ async function stageOwnedHunks(input: {
 // deletion) resolves to an empty modified pane.
 async function readWorktreeSide(path: string): Promise<{ content: string; binary: boolean }> {
   try {
-    const content = await window.api.readfile(path)
+    const content = await filesApi.readfile(path)
     return { content, binary: content.includes(NUL) }
   } catch {
     return { content: '', binary: false }
@@ -393,7 +394,7 @@ async function probeDiffItem(repoRoot: string, item: DiffFileItem): Promise<stri
   const branch = item.kind === 'branch' ? (item as BranchDiffItem) : null
   if (branch && branch.modifiedRev !== 'worktree') return 'revisions'
   const stamp = async (path: string) => {
-    const stat = await window.api.statPath(path)
+    const stat = await filesApi.statPath(path)
     return `${stat.sizeBytes}@${stat.modifiedAtMs}`
   }
   try {
