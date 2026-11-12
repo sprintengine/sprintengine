@@ -79,7 +79,11 @@ The client keeps its connection:
 
 - It **reconnects** after a drop that reconnecting can fix — Studio quitting
   or restarting, a socket that fell too far behind — with exponential backoff
-  and jitter, never sooner than Studio asked.
+  and jitter, never sooner than Studio asked. A connection that drops as soon
+  as it opens still backs off: the count resets once one stays up 30 s.
+- It **checks itself on a wake**. `client.wake()` on an open client (or the
+  page coming back to the foreground) pings Studio, keeps a connection that
+  answers and makes one that does not again at once.
 - It **waits to be woken** after a refusal a new connection would repeat. A
   refused credential (`unauthorized`, `revoked`) or being offline parks the
   client (`state: 'parked'`) until `client.wake()`, or in a browser the page
