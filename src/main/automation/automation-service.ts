@@ -26,6 +26,7 @@ import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tai
 import { createTailnetRemoteService, type TailnetRemoteService } from './tailnet/tailnet-service'
 import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
 import type { TailnetCanvasHost } from './tailnet/tailnet-canvas-stream'
+import type { TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
 import type { ConversationImageDownscaler } from '../conversation-image-downscale'
 
 // Owns the always-on Studio MCP gateway lifecycle, local socket endpoint, and
@@ -108,6 +109,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
   // whichever door it came through — the connection identity is what differs.
   let audit: GatewayAuditStore | null = null
   let tailnet: TailnetRemoteService | null = null
+  let studioHost: TailnetStudioHost | null = null
   // The outbound half. Independent of the listener above: driving
   // another machine does not require having opened your own door, and a build
   // with remote control off can still be a Mesh client.
@@ -201,6 +203,9 @@ export function createAutomationService(options: AutomationServiceOptions) {
       conversations: options.resolveConversationHost?.(),
       ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
       ...(options.canvas ? { canvas: options.canvas } : {}),
+      // Read when a device's Studio socket opens: the Studio server is built
+      // after this gateway, and links itself with `linkStudio`.
+      studio: () => studioHost,
       ...(options.tailnetBindAddress === undefined
         ? {}
         : { resolveBindAddress: () => options.tailnetBindAddress ?? null }),
@@ -429,6 +434,13 @@ export function createAutomationService(options: AutomationServiceOptions) {
   return {
     initialize,
     whenGatewayReady,
+    /**
+     * The Studio server a paired device's socket on `/tailnet/v1/studio` is
+     * served by: this machine's one, the one its windows use.
+     */
+    linkStudio: (host: TailnetStudioHost): void => {
+      studioHost = host
+    },
     /** The one mutation audit, shared with every other listener (the Studio RPC's owner socket). */
     gatewayAudit: (): GatewayAuditStore => auditStore(),
     getStatus,

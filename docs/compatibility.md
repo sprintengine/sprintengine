@@ -995,7 +995,17 @@ Publishing is a separate release step.
 `@sprintengine/studio-protocol` is what Studio serves on its owner socket (a
 Unix socket in `<userData>/run/`, or a named pipe on Windows) to the
 applications on this machine a person has paired with it, and is the protocol
-`@sprintengine/agent-sdk` speaks. It is a connection envelope — `hello` /
+`@sprintengine/agent-sdk` speaks. The tailnet listener serves the same
+protocol to a paired device at `/tailnet/v1/studio`: a WebSocket opened with a
+ticket from `POST /tailnet/v1/ws-ticket` (good once, for thirty seconds, for
+the device whose token bought it), whose `hello` presents that ticket. The
+device's grant is its pairing's scopes as they stand at each request
+(`conversation:operate` carries `conversation:create`, either `workspace`
+scope carries `workspaces:read`), never an owner's; a removed pairing closes
+the connection. The socket carries no `Origin`, except a desktop window's,
+which names its origin when it asks for the ticket and carries exactly that
+one. A ticket answer from a Studio that serves the endpoint says so with
+`studioPath`; a device that finds it missing is talking to an older Studio. It is a connection envelope — `hello` /
 `welcome`, requests answered by id, subscriptions keyed by id — around the
 conversation contract, which it depends on and re-exports rather than copies:
 a stream's frames are the conversation lane's own server frames, and a
@@ -1018,6 +1028,16 @@ stream, the server frames `call` and `cancel`, and the client frames `reply`
 and `progress`. A Studio sends `call` only to a connection that offered a
 toolset, and the SDK sends `reply` only to a Studio that advertised the
 capability, so neither end is handed a frame type it does not know.
+`workspaces` is what a client reads before it starts a chat:
+`workspaces.list`, `cliRuntimes.list`, `workspaces.checkout` and
+`workspaces.extensions`, answered by the gateway tools of the same purpose
+(`workspace.list`, `cli.runtime.list`, `workspace.checkout`,
+`workspace.extensions`), so the two read one thing; it is served beside the
+conversation contract, not only with the chat surface. `conversation.create`
+takes New chat's own options beside the contract's request (`newChat`,
+`worktree`, `worktreeName`, `inWorktree`, `effort`, and `noProject` in place of
+`workspaceId`), held to the same rules the gateway's tool holds them to; a
+Studio from before them refuses them as `invalid_params`.
 `conversation-handoff` (2026-10-21) adds the owner-only
 `conversation.handoff`, a chat handed off to a fresh session instead of
 compacted, answered with the path of the file its messages were saved to.

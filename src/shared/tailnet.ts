@@ -9,6 +9,7 @@ import {
   type StudioPermission,
   type StudioPrincipal,
 } from '../../packages/studio-protocol/src/permissions'
+import { STUDIO_SCOPES, type StudioScope } from '../../packages/studio-protocol/src/scopes'
 
 /**
  * Per-device scopes, mirroring the gateway's tool families.
@@ -99,6 +100,36 @@ export function tailnetDevicePrincipal(scopes: readonly unknown[]): StudioPrinci
     owner: false,
     permissions: normalizeTailnetScopes(scopes).flatMap((scope) => TAILNET_SCOPE_PERMISSIONS[scope]),
   })
+}
+
+/**
+ * The Studio scopes a paired device holds on `/tailnet/v1/studio`, from the
+ * scopes it was paired with, read as they stand at each request.
+ *
+ * - `conversation:operate` carries starting a chat as well as driving one:
+ *   the gateway's `conversation.create` tool has always been an operate call
+ *   for a device, and the protocol names it `conversation:create`.
+ * - Either `workspace` scope carries the workspace reads (`workspaces:read`):
+ *   the list, the CLIs a chat may run, a checkout, a project's skills.
+ * - The backlog scopes carry nothing here yet: no backlog method is served to
+ *   a device on this socket.
+ *
+ * No scope carries a terminal, the filesystem, settings, tools, modules or
+ * this machine's upkeep, and the grant is never an owner's.
+ */
+export const TAILNET_SCOPE_STUDIO_SCOPES: { readonly [S in TailnetScope]: readonly StudioScope[] } = {
+  'workspace:read': ['workspaces:read'],
+  'workspace:operate': ['workspaces:read'],
+  'backlog:read': [],
+  'backlog:operate': [],
+  'conversation:read': ['conversation:read'],
+  'conversation:operate': ['conversation:read', 'conversation:operate', 'conversation:create'],
+}
+
+/** A paired device's Studio scopes, deduplicated in the protocol's own order. */
+export function tailnetDeviceStudioScopes(scopes: readonly unknown[]): StudioScope[] {
+  const held = new Set(normalizeTailnetScopes(scopes).flatMap((scope) => TAILNET_SCOPE_STUDIO_SCOPES[scope]))
+  return STUDIO_SCOPES.filter((scope) => held.has(scope))
 }
 
 /**

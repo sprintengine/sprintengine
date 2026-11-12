@@ -56,7 +56,6 @@ function deps(overrides: Partial<StudioChatBackendDeps['conversation']> = {}) {
     readableRoots: () => [tmpdir()],
     commands: async (input) => ({ cli: input.cli, cwd: input.cwd, commands: [], fetchedAt: 0 }),
     onCommandsChanged: () => () => undefined,
-    workspaces: () => [],
   }
   return { value, sends }
 }

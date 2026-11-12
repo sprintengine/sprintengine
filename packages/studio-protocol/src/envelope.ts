@@ -280,6 +280,9 @@ export const STUDIO_ERROR_CODES = [
   'cli_not_conversational',
   'unknown_skill',
   'conversation_start_failed',
+  // New chat's: no worktree could be cut or found for the chat, or its CLI has no such effort.
+  'worktree_unavailable',
+  'unsupported_effort',
   // Asked on a connection kept for the update methods only (an `incompatible` one).
   'unsupported_protocol_version',
   // `update.start` on a Studio that does not update itself; the words say how to.

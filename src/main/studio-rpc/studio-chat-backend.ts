@@ -57,7 +57,6 @@ export type StudioChatBackendDeps = {
   /** The (CLI, folder) list main holds, probing when it is missing or old. */
   commands(input: ConversationCommandsRequest): Promise<ConversationCommandCatalog>
   onCommandsChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
-  workspaces(): ReturnType<StudioChatBackend['workspaces']>
 }
 
 const unavailable = (what: string): { ok: false; message: string } => ({
@@ -263,7 +262,6 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
     readImage: async (path, reading) => deps.files.readImageDataUrl(await readable(path, reading)),
     repoRoot: (folderPath, hostId) => deps.repoRoot(folderPath, hostId),
     isKnownFolder: async (path) => (await confineToRoots(path, await deps.readableRoots())).ok,
-    workspaces: () => deps.workspaces(),
     async listSessions(input) {
       try {
         return handlers.listSessions(input)

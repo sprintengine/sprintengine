@@ -161,13 +161,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
         join(dataDir(), CONVERSATION_TOOL_IMAGES_DIRECTORY),
       ],
       commands: (input) => conversationCommands.list(input),
-      workspaces: () =>
-        core.workspaceRegistry.getRecords().map((record) => ({
-          id: record.id,
-          name: record.name,
-          folderPath: record.folderPath ?? null,
-          ...(record.hostId ? { hostId: record.hostId } : {}),
-        })),
     }),
   )
   registerConversationImportIpc(ipc, core.conversationImport)

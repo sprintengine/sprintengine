@@ -11,7 +11,6 @@ import type {
   ConversationSubagent,
   ConversationUsageLimitsFrame,
   ConversationCommand,
-  ConversationCreateRequest,
   ConversationThread,
   ConversationWirePermissionPreset,
   StudioAuth,
@@ -20,7 +19,11 @@ import type {
   StudioGrant,
   StudioChatMethod,
   StudioMethodParams,
+  StudioCliRuntime,
+  StudioConversationCreate,
   StudioWorkspace,
+  StudioWorkspaceCheckout,
+  StudioWorkspaceExtensions,
 } from '../../../packages/studio-protocol/src/public'
 import type {
   ConversationApprovalRuleRevokeResult,
@@ -125,7 +128,7 @@ export type StudioConversationBackend = {
   findCreated(launchCommandId: string): StudioCreatedConversation | null
   /** Start a conversation. `request` has already been held to the client's ceiling. */
   create(
-    request: ConversationCreateRequest,
+    request: StudioConversationCreate,
     launchCommandId: string,
   ): Promise<{ ok: true; conversation: StudioCreatedConversation } | { ok: false; code: string; message: string }>
   /**
@@ -261,7 +264,6 @@ export type StudioChatBackend = {
   repoRoot(folderPath: string, hostId?: string): Promise<string | null>
   /** Whether a folder is inside one a chat can be about: a workspace's, or Studio's own stores. */
   isKnownFolder?(path: string): Promise<boolean>
-  workspaces(): StudioWorkspace[]
   listSessions(input: ChatInput<'session.list'>): Promise<ConversationListSessionsResult>
   /** Through the runtime's receipts, as the other session commands. */
   stopSession(input: SessionCommand<ChatInput<'session.stop'>>): Promise<ConversationSessionActionResult>
@@ -332,6 +334,23 @@ export type StudioRequestContext = {
 }
 
 export type StudioAuthOutcome = { ok: true; grant: StudioGrant; pairingToken?: string } | { ok: false; message: string }
+
+/** A discovery read's answer: the value, or why it has none. */
+export type StudioDiscoveryAnswer<T> =
+  { ok: true; value: T } | { ok: false; code: 'not_found' | 'unavailable'; message: string }
+
+/**
+ * What a client reads before it starts a chat (`workspaces.*`,
+ * `cliRuntimes.list`), answered by the same services as the gateway's tools
+ * of the same purpose, so a client on the protocol and an agent on MCP read
+ * one thing.
+ */
+export type StudioDiscovery = {
+  workspaces(): Promise<StudioWorkspace[]>
+  runtimes(cli?: string): Promise<StudioDiscoveryAnswer<{ clis: StudioCliRuntime[] }>>
+  checkout(workspaceId: string): Promise<StudioDiscoveryAnswer<StudioWorkspaceCheckout>>
+  extensions(workspaceId: string, cli?: string): Promise<StudioDiscoveryAnswer<StudioWorkspaceExtensions>>
+}
 
 /** Who may connect, and what each may do now. */
 export type StudioAuthenticator = {

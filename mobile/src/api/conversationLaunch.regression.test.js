@@ -4,9 +4,12 @@ const {
   buildConversationCreateArgs,
   createConversation,
   findLaunchedThread,
-  readConversationCreateAnswer,
+  readConversationCreateFailure,
   threadFromLaunch,
 } = require("../../.mobile-test-build/mobile/src/api/conversationLaunch.js");
+const { closeDesktopStudios } = require("../../.mobile-test-build/mobile/src/api/desktopStudio.js");
+const { fakeDesktopStudio } = require("../../.mobile-test-build/mobile/src/__verify__/fakeDesktopStudio.js");
+const { StudioError } = require("../../.mobile-test-build/packages/client-runtime/src/rpc/errors.js");
 
 const launched = {
   workspaceId: "workspace-1",
@@ -17,12 +20,6 @@ const launched = {
   modelId: "default",
   sessionId: "session-1",
 };
-const success = { jsonrpc: "2.0", id: "1", result: { structuredContent: { ok: true, conversation: launched } } };
-const toolError = (code, message) => ({
-  jsonrpc: "2.0",
-  id: "1",
-  result: { isError: true, structuredContent: { ok: false, error: { code, message } } },
-});
 
 test("the arguments carry only what was chosen, trimmed", () => {
   assert.deepEqual(buildConversationCreateArgs({ workspaceId: " workspace-1 " }), { workspaceId: "workspace-1" });
@@ -34,7 +31,7 @@ test("the arguments carry only what was chosen, trimmed", () => {
       cliModel: "opus",
       permissionPreset: "bypass",
     }),
-    { workspaceId: "workspace-1", prompt: "Tidy the toast store.", cli: "claude-code", cliModel: "opus", permissionPreset: "bypass" },
+    { workspaceId: "workspace-1", prompt: "Tidy the toast store.", cli: "claude-code", model: "opus", permissionPreset: "bypass" },
   );
   assert.deepEqual(
     buildConversationCreateArgs({ workspaceId: "workspace-1", prompt: "   ", cli: "", cliModel: " ", permissionPreset: "none" }),
@@ -43,7 +40,7 @@ test("the arguments carry only what was chosen, trimmed", () => {
   // Manual and Auto are presets of their own on a desktop that runs them.
   assert.deepEqual(buildConversationCreateArgs({ workspaceId: "w", permissionPreset: "auto" }), { workspaceId: "w", permissionPreset: "auto" });
   assert.deepEqual(buildConversationCreateArgs({ workspaceId: "w", permissionPreset: "manual" }), { workspaceId: "w", permissionPreset: "manual" });
-  // A preset the tool does not know is never sent; the desktop's own applies.
+  // A preset the desktop does not know is never sent; the desktop's own applies.
   assert.deepEqual(buildConversationCreateArgs({ workspaceId: "w", permissionPreset: "yolo" }), { workspaceId: "w" });
   // New asks for a chat of its own; the workspace only names the folder.
   assert.deepEqual(buildConversationCreateArgs({ workspaceId: "w", newChat: true }), { workspaceId: "w", newChat: true });
@@ -63,138 +60,112 @@ test("a worktree rides only with a new chat, and an effort only when one was pic
   assert.deepEqual(buildConversationCreateArgs({ workspaceId: "w", effort: "  " }), { workspaceId: "w" });
 });
 
-test("a launched chat is read from the tool's structured result", () => {
-  assert.deepEqual(readConversationCreateAnswer(200, success, "mac-mini"), { ok: true, conversation: launched });
+const machine = { deviceToken: "mctn_example", machineName: "mac-mini" };
+let desktops = 0;
+/** A paired desktop of its own for each case: the phone keeps one connection per desktop. */
+const target = () => ({ ...machine, baseUrl: `http://mac-mini-${++desktops}:4100` });
+
+test("a chat is started with conversation.create on the desktop's Studio, under one command id", async () => {
+  const desktop = fakeDesktopStudio({ answer: () => ({ conversation: launched }) });
+  const result = await createConversation(
+    target(),
+    { workspaceId: "workspace-1", prompt: "Go", cliModel: "opus", permissionPreset: "bypass", newChat: true, worktree: true },
+    { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket, commandId: "chat-1" },
+  );
+  assert.deepEqual(result, { ok: true, conversation: launched });
+  assert.deepEqual(desktop.requests, [
+    {
+      method: "conversation.create",
+      params: {
+        workspaceId: "workspace-1",
+        prompt: "Go",
+        model: "opus",
+        permissionPreset: "bypass",
+        newChat: true,
+        worktree: true,
+        commandId: "chat-1",
+      },
+    },
+  ]);
+  // The token buys a ticket and never rides the socket's URL; the socket names no origin.
+  assert.equal(desktop.ticketHeaders[0].authorization, "Bearer mctn_example");
+  assert.match(desktop.socketUrls[0], /^ws:\/\/mac-mini-\d+:4100\/tailnet\/v1\/studio\?ticket=mctk_1$/u);
+  assert.doesNotMatch(desktop.socketUrls[0], /mctn_/u);
+  closeDesktopStudios();
 });
 
-test("an older desktop without the tool reads as unsupported, and says to update Studio", () => {
-  const unknownTool = { jsonrpc: "2.0", id: "1", error: { code: -32602, message: 'Unknown tool "conversation.create".' } };
-  const expected = {
-    ok: false,
-    failure: "unsupported",
-    title: "build-box cannot start chat agents yet.",
-    message: "Update SprintEngine Studio there to start one from the phone.",
+test("the desktop's refusals become plain sentences a person can act on", async () => {
+  const read = async (code, message = "Studio's stable words.") => {
+    const desktop = fakeDesktopStudio({ answer: () => ({ error: { code, message } }) });
+    return createConversation(target(), { workspaceId: "w" }, { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket });
   };
-  assert.deepEqual(readConversationCreateAnswer(200, unknownTool, "build-box"), expected);
-  assert.deepEqual(readConversationCreateAnswer(200, { jsonrpc: "2.0", id: "1", error: { code: -32601, message: "Method not found" } }, "build-box"), expected);
-  // An answer with no conversation in it is not the tool this phone called.
-  assert.deepEqual(readConversationCreateAnswer(200, { jsonrpc: "2.0", id: "1", result: { content: [] } }, "build-box"), expected);
-  assert.deepEqual(readConversationCreateAnswer(200, { jsonrpc: "2.0", id: "1", result: { structuredContent: { ok: true } } }, "build-box"), expected);
-});
-
-test("the desktop's refusals become plain sentences a person can act on", () => {
-  const read = (code, message = "raw desktop words") => readConversationCreateAnswer(200, toolError(code, message), "mac-mini");
-  assert.deepEqual(read("tailnet_scope_required"), {
+  assert.deepEqual(await read("scope_required"), {
     ok: false,
     failure: "refused",
     title: "This phone may not start chats on mac-mini.",
     message: "Pair again with chat control to start one here.",
   });
-  assert.equal(read("unknown_workspace").title, "That project is no longer open on mac-mini.");
-  assert.equal(read("workspace_folder_missing").title, "That project has no folder on mac-mini, so there is nowhere to start the chat.");
-  assert.equal(read("no_cli_selected").message, "Pick one under Agent and model.");
-  assert.equal(read("cli_not_conversational").title, "That CLI cannot run as a chat on mac-mini.");
-  // Nothing was started, and the desktop's reason says which kind of folder
-  // it was; New reads the code to offer starting without a worktree.
-  assert.deepEqual(read("worktree_unavailable", "/srv/notes is not a git repository, so a worktree cannot be created. Start the chat without one."), {
+  assert.equal((await read("unknown_workspace")).title, "That project is no longer open on mac-mini.");
+  assert.equal((await read("workspace_folder_missing")).title, "That project has no folder on mac-mini, so there is nowhere to start the chat.");
+  assert.equal((await read("no_cli_selected")).message, "Pick one under Agent and model.");
+  assert.equal((await read("cli_not_conversational")).title, "That CLI cannot run as a chat on mac-mini.");
+  // Nothing was started; New reads the code to offer starting without a worktree.
+  assert.deepEqual(await read("worktree_unavailable", "No worktree could be made."), {
     ok: false,
     failure: "refused",
     title: "mac-mini could not make a worktree for the chat.",
-    message: "/srv/notes is not a git repository, so a worktree cannot be created. Start the chat without one.",
+    message: "No worktree could be made.",
     code: "worktree_unavailable",
   });
-  assert.equal(read("unsupported_effort").code, "unsupported_effort");
-  assert.equal(read("unsupported_effort", "").message, "Pick another under Agent and model.");
-  // Only the codes New acts on are carried.
-  assert.equal("code" in read("unknown_workspace"), false);
-  // A code this phone does not know keeps the desktop's own sentence.
-  assert.deepEqual(read("session_start_failed", "The CLI exited before the session was up."), {
+  assert.equal((await read("unsupported_effort")).code, "unsupported_effort");
+  assert.equal("code" in (await read("unknown_workspace")), false);
+  assert.deepEqual(await read("conversation_start_failed", "The conversation could not be started."), {
     ok: false,
     failure: "refused",
     title: "mac-mini could not start the chat.",
-    message: "The CLI exited before the session was up.",
+    message: "The conversation could not be started.",
   });
-  assert.equal(read("", "").message, undefined);
+  closeDesktopStudios();
 });
 
-test("transport answers: unpaired, a bad status, a conversation with no identity", () => {
-  assert.equal(readConversationCreateAnswer(401, null, "mac-mini").failure, "unpaired");
-  // The desktop holds a token to the tailnet node it was paired from. A
-  // moment when whois cannot place the phone is not an unpairing.
+test("an older desktop, an unpaired phone, and a desktop that does not answer", async () => {
+  const older = fakeDesktopStudio({ answer: () => ({}), outdated: true });
+  assert.deepEqual(await createConversation(target(), { workspaceId: "w" }, { fetchImpl: older.fetchImpl, WebSocket: older.WebSocket }), {
+    ok: false,
+    failure: "unsupported",
+    title: "mac-mini cannot start chat agents yet.",
+    message: "Update SprintEngine Studio there to start one from the phone.",
+  });
+  const unpaired = fakeDesktopStudio({ answer: () => ({}), ticketStatus: () => 401 });
   assert.equal(
-    readConversationCreateAnswer(401, { error: { code: "peer_unverified", message: "x" } }, "mac-mini").failure,
-    "unavailable",
+    (await createConversation(target(), { workspaceId: "w" }, { fetchImpl: unpaired.fetchImpl, WebSocket: unpaired.WebSocket })).failure,
+    "unpaired",
   );
-  assert.match(
-    readConversationCreateAnswer(401, { error: { code: "peer_mismatch", message: "x" } }, "mac-mini").title,
-    /different Tailscale device/u,
-  );
-  assert.deepEqual(readConversationCreateAnswer(502, null, "mac-mini"), {
-    ok: false,
-    failure: "unavailable",
-    title: "mac-mini could not start the chat.",
-    message: "It answered 502.",
-  });
-  const nameless = { result: { structuredContent: { ok: true, conversation: { name: "Juniper" } } } };
-  assert.equal(readConversationCreateAnswer(200, nameless, "mac-mini").title, "mac-mini started the chat but did not say which one it is.");
-  // A JSON-RPC error that is not about the tool keeps its own words.
-  assert.deepEqual(readConversationCreateAnswer(200, { error: { code: -32603, message: "Internal error: boom" } }, " "), {
-    ok: false,
-    failure: "refused",
-    title: "The desktop could not start the chat.",
-    message: "Internal error: boom",
-  });
-});
-
-test("the call posts the tool over the gateway and never throws", async () => {
-  const calls = [];
-  const fetchImpl = async (url, init) => {
-    calls.push({ url, init });
-    return { status: 200, json: async () => success };
-  };
-  const result = await createConversation(
-    { baseUrl: "http://mac-mini:4100", deviceToken: "mctn_example", machineName: "mac-mini" },
-    { workspaceId: "workspace-1", prompt: "Go", permissionPreset: "bypass" },
-    { fetchImpl, requestId: "chat-1" },
-  );
-  assert.deepEqual(result, { ok: true, conversation: launched });
-  assert.equal(calls[0].url, "http://mac-mini:4100/tailnet/v1/mcp");
-  assert.equal(calls[0].init.headers.authorization, "Bearer mctn_example");
-  assert.equal(calls[0].init.headers.origin, undefined, "the gateway refuses any Origin");
-  assert.deepEqual(JSON.parse(calls[0].init.body), {
-    jsonrpc: "2.0",
-    id: "chat-1",
-    method: "tools/call",
-    params: { name: "conversation.create", arguments: { workspaceId: "workspace-1", prompt: "Go", permissionPreset: "bypass" } },
-  });
-
-  const offline = await createConversation(
-    { baseUrl: "http://mac-mini:4100", deviceToken: "t", machineName: "mac-mini" },
-    { workspaceId: "w" },
-    { fetchImpl: async () => { throw new TypeError("Network request failed"); } },
-  );
-  assert.deepEqual(offline, { ok: false, failure: "unavailable", title: "mac-mini did not answer.", message: "Is Tailscale up on both devices?" });
-
-  const slow = await createConversation(
-    { baseUrl: "http://mac-mini:4100", deviceToken: "t", machineName: "mac-mini" },
-    { workspaceId: "w" },
-    {
-      timeoutMs: 5,
-      fetchImpl: (_url, init) =>
-        new Promise((_resolve, reject) => init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })))),
+  const offline = await createConversation(target(), { workspaceId: "w" }, {
+    fetchImpl: async () => {
+      throw new TypeError("Network request failed");
     },
+  });
+  assert.equal(offline.failure, "unavailable");
+  assert.equal(offline.title, "mac-mini did not answer.");
+  const slow = fakeDesktopStudio({ answer: () => new Promise(() => undefined) });
+  const late = await createConversation(target(), { workspaceId: "w" }, { fetchImpl: slow.fetchImpl, WebSocket: slow.WebSocket, timeoutMs: 20 });
+  assert.equal(late.title, "mac-mini took too long to start the chat.");
+  const nameless = fakeDesktopStudio({ answer: () => ({ conversation: { ...launched, agentId: "" } }) });
+  assert.equal(
+    (await createConversation(target(), { workspaceId: "w" }, { fetchImpl: nameless.fetchImpl, WebSocket: nameless.WebSocket })).title,
+    "mac-mini started the chat but did not say which one it is.",
   );
-  assert.equal(slow.title, "mac-mini took too long to start the chat.");
-
-  const garbled = await createConversation(
-    { baseUrl: "http://mac-mini:4100", deviceToken: "t", machineName: "mac-mini" },
-    { workspaceId: "w" },
-    { fetchImpl: async () => ({ status: 200, json: async () => { throw new SyntaxError("bad json"); } }) },
-  );
-  assert.equal(garbled.failure, "unavailable");
+  closeDesktopStudios();
 });
 
-test("the thread to open: the listed one when it is there, else what the tool said", () => {
+test("a failure is read from the runtime's error, whatever raised it", () => {
+  assert.equal(readConversationCreateFailure(new StudioError("revoked", "x"), "mac-mini").failure, "unpaired");
+  assert.equal(readConversationCreateFailure(new StudioError("peer_mismatch", "Paired as another device."), "mac-mini").title, "Paired as another device.");
+  assert.equal(readConversationCreateFailure(new Error("boom"), " ").title, "The desktop did not answer.");
+});
+
+test("the thread to open: the listed one when it is there, else what the desktop said", () => {
   const listed = { ...threadFromLaunch(launched, { now: 1 }), title: "Listed", phase: "running", lastSeq: 3 };
   assert.equal(findLaunchedThread([listed], launched), listed);
   assert.equal(findLaunchedThread([{ ...listed, agentId: "other" }], launched), null);

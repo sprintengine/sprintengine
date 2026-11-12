@@ -1,3 +1,5 @@
+import { rmdir } from 'node:fs/promises'
+
 import type {
   ConversationWirePermissionPreset,
   StudioCreatedConversation,
@@ -15,6 +17,7 @@ import type { StudioConversationBackend } from '../../server/rpc/studio-rpc-type
 import type { ConversationGatewayHost } from '../automation/tailnet/tailnet-conversation-host'
 import { redactConversationValue } from '../conversation-tool-details'
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../conversation-launch-service'
+import { createProjectlessChatFolder } from '../projectless-chat-folders'
 import type { ConversationLifecycle } from '../automation/conversation-lifecycle'
 
 // The conversations the Studio RPC serves, in main: the conversation host the
@@ -36,6 +39,8 @@ export type StudioConversationBackendDeps = {
    * owner's write as the gateway's, a paired client's as a paired device's.
    */
   lifecycle?: Pick<ConversationLifecycle, 'settle' | 'visit'>
+  /** The folder a chat under no project starts in; Studio's own "No project" folders unless a test gives one. */
+  makeProjectlessFolder?: (prompt: string | null) => Promise<string>
 }
 
 /**
@@ -116,8 +121,24 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
       return null
     },
     async create(request, launchCommandId) {
+      // Made last before the launch, so a create refused above leaves no empty folder.
+      let projectlessFolder: string | null = null
+      if (request.noProject) {
+        try {
+          projectlessFolder = await (deps.makeProjectlessFolder ?? createProjectlessChatFolder)(request.prompt ?? null)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return { ok: false, code: 'launch_failed', message: `The chat's folder could not be made: ${message}` }
+        }
+      }
       const launched = await deps.launch({
-        workspaceId: request.workspaceId,
+        ...(projectlessFolder
+          ? { newChatIn: { folderPath: projectlessFolder } }
+          : { workspaceId: request.workspaceId, ...(request.newChat ? { newChat: true } : {}) }),
+        ...(request.worktree ? { newWorktree: true } : {}),
+        ...(request.worktreeName ? { worktreeName: request.worktreeName } : {}),
+        ...(request.inWorktree ? { existingWorktreePath: request.inWorktree } : {}),
+        ...(request.effort ? { reasoningEffort: request.effort } : {}),
         ...(request.cli ? { cli: request.cli } : {}),
         ...(request.model ? { cliModel: request.model } : {}),
         ...(request.prompt ? { prompt: request.prompt } : {}),
@@ -128,7 +149,12 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
         ...(request.allowedTools?.length ? { allowedTools: request.allowedTools } : {}),
         launchCommandId,
       })
-      if (!launched.ok) return { ok: false, code: launched.code, message: launched.message }
+      if (!launched.ok) {
+        // A launch refused leaves no empty "No project" folder behind; one it
+        // already wrote into is kept (rmdir takes only an empty folder).
+        if (projectlessFolder) await rmdir(projectlessFolder).catch(() => undefined)
+        return { ok: false, code: launched.code, message: launched.message }
+      }
       const record = deps.getWorkspaceAgents().find((workspace) => workspace.id === launched.workspaceId)?.agents[
         launched.agentId
       ]

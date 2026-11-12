@@ -10,6 +10,10 @@ import { Feed, type GateEvent } from '../feed'
 // file (expo-file-system-node.ts). Node's global fetch and WebSocket stand in
 // for React Native's.
 //
+// It starts a chat over the desktop's Studio protocol (`/tailnet/v1/studio`,
+// through the shared client runtime), and follows and drives one over the
+// tailnet lane, until the phone's chats move onto the protocol as well.
+//
 // The types below are the gate's reading of the phone's API, which the phone's
 // typecheck does not see: a changed signature shows when the gate runs.
 
@@ -111,7 +115,7 @@ export async function phoneClient(input: {
   return {
     id: 'phone',
     label: 'Phone',
-    transport: 'tailnet lane (phone client)',
+    transport: 'Studio protocol on the tailnet (New chat); tailnet lane (a chat)',
     simulated: [
       "the phone's native file module: an upload reads the file and posts it with Node's fetch",
       "background and foreground: the gate cuts the phone's socket and calls the stream's foreground()",
@@ -151,7 +155,8 @@ export async function phoneClient(input: {
       return feed
     },
     async createChat(workspace, name) {
-      // The phone's New chat: by the CLI it picked. The fake provider has none (gaps.ts).
+      // The phone's New chat, over the desktop's Studio protocol: by the CLI
+      // it picked. The fake provider has none (gaps.ts).
       const created = await input.protocol.createConversation(
         { baseUrl, deviceToken, machineName: 'mac-mini' },
         { workspaceId: workspace.workspaceId, newChat: true, cli: 'mock-provider', prompt: name },

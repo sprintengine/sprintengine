@@ -587,6 +587,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       name: workspace.name,
       mode: workspace.mode,
       folderPath: workspace.folderPath,
+      // The machine the folder is on, for a workspace on an SSH machine.
+      ...(workspace.hostId ? { hostId: workspace.hostId } : {}),
       windowId: workspaceWindowId(workspace.id),
       detail: 'full',
       agentIds: Object.keys(workspace.agents),

@@ -4,7 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 // What a chat row's project line says, from what its desktop's
-// `workspace.list` says today: the project a pool slot or a nested worktree
+// `workspaces.list` says today: the project a pool slot or a nested worktree
 // belongs to, one colour per project, and "No project" for a chat started
 // without one, as the desktop's sidebar files the same chats.
 
@@ -18,23 +18,57 @@ const { buildChatRows, groupChatsByProject, pickableProjects } = require(
 
 const NOW = 1_800_000_000_000;
 
-/** `listWorkspaces` against a desktop answering `rows`, through a stubbed fetch. */
+const { fakeDesktopStudio } = require(path.join(buildRoot, "src/__verify__/fakeDesktopStudio.js"));
+const { closeDesktopStudios } = require(path.join(buildRoot, "src/api/desktopStudio.js"));
+
+let desktops = 0;
+/** `listWorkspaces` against a desktop whose Studio answers `workspaces.list` with `rows`. */
 async function listed(rows) {
-  const original = globalThis.fetch;
-  globalThis.fetch = async () =>
-    new Response(JSON.stringify({ jsonrpc: "2.0", id: "1", result: { structuredContent: { workspaces: rows } } }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+  const desktop = fakeDesktopStudio({ answer: () => ({ workspaces: rows }) });
   try {
-    const api = createTailnetWorkspacesApi({ baseUrl: "http://mac-mini.tail1234.ts.net:8471", deviceToken: "mctn_test" });
+    const api = createTailnetWorkspacesApi(
+      { baseUrl: `http://mac-mini-${++desktops}.tail1234.ts.net:8471`, deviceToken: "mctn_test" },
+      { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket },
+    );
     const answer = await api.listWorkspaces();
     assert.equal(answer.ok, true);
+    assert.deepEqual(desktop.requests.map((request) => request.method), ["workspaces.list"]);
     return answer.data;
   } finally {
-    globalThis.fetch = original;
+    closeDesktopStudios();
   }
 }
+
+test("New's reads go over the desktop's Studio: CLIs, a checkout, and a refusal in the phone's words", async () => {
+  const desktop = fakeDesktopStudio({
+    answer: (method, params) => {
+      if (method === "cliRuntimes.list")
+        return { clis: [{ id: "claude-code", agentSelectable: true, displayName: "Claude Code" }, { id: "other" }] };
+      if (method === "workspaces.checkout")
+        return params.workspaceId === "ws-1"
+          ? { workspaceId: "ws-1", git: true, branch: "main", worktrees: [{ path: "/Users/dev/app", isMain: true, branch: "main" }] }
+          : { error: { code: "scope_required", message: "This client's grant does not hold workspaces:read." } };
+      return { error: { code: "unknown_method", message: "?" } };
+    },
+  });
+  try {
+    const api = createTailnetWorkspacesApi(
+      { baseUrl: "http://build-box.tail1234.ts.net:8471", deviceToken: "mctn_test" },
+      { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket },
+    );
+    const runtimes = await api.listCliRuntimes();
+    assert.deepEqual(runtimes.ok && runtimes.data.map((cli) => cli.id), ["claude-code"]);
+    const checkout = await api.readCheckout({ workspaceId: "ws-1", folderPath: "/Users/dev/app" });
+    assert.deepEqual(checkout, { ok: true, data: { branch: "main", worktree: null, mainBranch: "main" } });
+    const refused = await api.readCheckout({ workspaceId: "ws-2", folderPath: null });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.errorCode, "unauthorized");
+    // One connection for every read, opened with one ticket.
+    assert.equal(desktop.socketUrls.length, 1);
+  } finally {
+    closeDesktopStudios();
+  }
+});
 
 test("a project with no remote wears its checkout's colour on every worktree, as the desktop's sidebar paints it", async () => {
   // The desktop hashes each workspace's hue from its own folder when there is

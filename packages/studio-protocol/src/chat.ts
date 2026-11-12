@@ -48,7 +48,6 @@ import {
   STUDIO_SESSION_CONTROLS_CAPABILITY,
   STUDIO_SESSIONS_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
-  STUDIO_WORKSPACES_CAPABILITY,
   type StudioCapability,
 } from './handshake.js'
 import { isStudioPath, parseStudioConversationKey, type StudioConversationKey } from './key.js'
@@ -221,8 +220,6 @@ export type StudioFileSearchResult =
     }
 
 /** A workspace as the chat surface lists it. */
-export type StudioWorkspace = { id: string; name: string; folderPath: string | null; hostId?: string }
-
 /** Which upload a send's refusal names: one not staged, not this client's, too large, or too many waiting. */
 type UploadRefusal = 'not_found'
 
@@ -333,7 +330,6 @@ export type StudioChatMethodMap = {
     result: { repoRoot: string | null }
     errors: 'not_found'
   }
-  'workspaces.list': { params: Record<string, never>; result: { workspaces: StudioWorkspace[] } }
   /** The live sessions of a workspace's chats, or of one chat, or of every chat. */
   'session.list': { params: { workspaceId?: string; agentId?: string }; result: ConversationListSessionsResult }
   /** End a session's process; the chat keeps its record and starts again on the next send. */
@@ -936,7 +932,6 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       })
     },
   },
-  'workspaces.list': { ...held('workspaces:read', STUDIO_WORKSPACES_CAPABILITY, false), params: studioNoParams },
   'session.list': {
     ...sessionReads,
     params: (value) => {

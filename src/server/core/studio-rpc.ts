@@ -12,6 +12,7 @@ import { canvasBoardStoreDir } from '../../main/canvas/canvas-board-store'
 import { workspaceStoreRoot } from '../../main/workspace-store'
 import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
+import { createStudioDiscovery } from './studio-discovery'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -116,6 +117,9 @@ export function createStudioRpc(
       launchSettings: core.agentLaunchSettings,
       textGenerationSettings: core.textGenerationSettings,
     }),
+    // What a client reads before it starts a chat: the gateway's own tools
+    // answer it, so the protocol and MCP read one thing.
+    discovery: createStudioDiscovery(() => gateway.ownTools()),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },
@@ -126,6 +130,9 @@ export function createStudioRpc(
     startedBy: (conversation) =>
       conversationStartedBy(core.workspaceSyncService.getSnapshot().state.workspaces, conversation),
   })
+  // A paired device's Studio socket on the tailnet listener is served here,
+  // by the same server the windows use: one contract, one set of receipts.
+  gateway.linkStudio({ attach: (stream, authenticator) => void service.connectDevice(stream, authenticator) })
   // Like the gateway, it binds only once a Studio server this desktop
   // displaced has gone: that server's listener still answers until then, and
   // this one would refuse to start beside it.

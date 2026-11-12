@@ -15,6 +15,7 @@ import {
   STUDIO_PULL_REQUEST_LINK_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_LOCAL_SERVERS_CAPABILITY,
+  STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_MODULES_CAPABILITY,
   STUDIO_TERMINALS_CAPABILITY,
   STUDIO_AGENT_RUNTIMES_CAPABILITY,
@@ -44,6 +45,7 @@ import type {
   StudioAuthenticator,
   StudioChatBackend,
   StudioConversationBackend,
+  StudioDiscovery,
   StudioFollowedBackend,
 } from './studio-rpc-types'
 
@@ -143,6 +145,8 @@ export type StudioRpcServerOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners. Advertised as `local-servers` only when given. */
   localServers?: StudioLocalServers
+  /** What a client reads before it starts a chat. Advertised as `workspaces` only when given. */
+  discovery?: StudioDiscovery
   /** The terminals on this machine. Advertised as `terminals` only when given: where the server holds a terminal runtime. */
   terminals?: StudioTerminals
   /** The CLIs on this machine. Advertised as `agent-runtimes` only when given: where the server holds their detection. */
@@ -212,6 +216,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
           options.pullRequests !== undefined) &&
         (capability !== STUDIO_PULL_REQUEST_WATCH_CAPABILITY || options.pullRequests?.unwatch !== undefined) &&
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
+        (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
         (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
         (capability !== STUDIO_TERMINALS_CAPABILITY || options.terminals !== undefined) &&
         (capability !== STUDIO_AGENT_RUNTIMES_CAPABILITY || options.runtimes !== undefined) &&
@@ -236,6 +241,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.files ? { files: options.files } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
+    ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.terminals ? { terminals: options.terminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),
     ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
