@@ -171,10 +171,19 @@ test.skipIf(!DOCKER_TESTS)(
         commandId: 'c-1',
       } as never)
       const approval = await asking
+      // The mock provider's turn stream ends at its approval request, so the
+      // send is answered there, a moment after the event: its message is
+      // committed and the turn waits on the person. Dropped before that
+      // answer is read, the send would fail with the wire instead; which one
+      // happens is timing, not behaviour (backend-wire.test.ts covers a turn
+      // in flight when the wire closes).
+      assert.equal(((await turn) as { ok: boolean }).ok, true, 'the send is answered once the turn waits on the person')
 
-      // The session drops mid-turn: the call in flight fails with the wire...
+      // The session drops mid-turn: the wire closes, and a call on it fails...
+      const closed = new Promise<void>((resolve) => connection.backend.onClose(() => resolve()))
       spawned.at(-1)!.child.kill()
-      await assert.rejects(Promise.resolve(turn))
+      await closed
+      await assert.rejects(connection.backend.refresh(), { code: 'unavailable' })
       assert.ok(await until(() => env.summary().state === 'reconnecting', 5_000))
       // ...the server keeps the turn, and the background reconnect (BatchMode,
       // no prompt possible) cannot unlock the key: it says so.
@@ -199,7 +208,7 @@ test.skipIf(!DOCKER_TESTS)(
       } as never)) as { ok: boolean }
       assert.ok(answered.ok)
       await done
-      assert.equal(((await retried) as { ok: boolean }).ok, true, 'the repeated command joined the one in flight')
+      assert.equal(((await retried) as { ok: boolean }).ok, true, 'the repeated command is answered from its receipt')
       const transcript = JSON.stringify(await again.backend.readTranscript({ ...key } as never))
       assert.equal(transcript.split('hello from the desktop').length - 1 >= 1, true)
       assert.equal(

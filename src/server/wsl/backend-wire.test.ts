@@ -211,7 +211,7 @@ test('a failure is the server’s own words, and a closed wire answers every cal
   await assert.rejects(remote.listThreads({ workspaceRoot: '/r', workspaceId: 'ws-1' }), /closed|ended/u)
 })
 
-test('a call a server never answers fails after its bound, while a turn is left to run', async () => {
+test('a call a server never answers fails after its bound, while a turn is left to run until the wire closes', async () => {
   const { server, client } = await pair()
   // A server that reads every call and answers none, as a hung one does.
   server.on('data', () => undefined)
@@ -224,8 +224,9 @@ test('a call a server never answers fails after its bound, while a turn is left 
   )
   await assert.rejects(remote.listThreads({ workspaceRoot: '/r', workspaceId: 'ws-1' }), /not answered within 100 ms/u)
   assert.equal(turnSettled, false)
+  // The session dropped under the turn: its caller learns it was not answered.
   client.destroy()
-  await turn.catch(() => undefined)
+  await assert.rejects(turn, { code: 'unavailable' })
 })
 
 async function waitFor(condition: () => boolean, ms = 3_000): Promise<void> {
