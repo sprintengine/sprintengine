@@ -399,6 +399,8 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
   const rateLimitLookups = new Map<string, Promise<void>>()
   let load: Promise<void> | null = null
   let writes: Promise<unknown> = Promise.resolve()
+  // Whether the last write reached the file: a wake's id must be on disk before its send.
+  let lastWriteOk = true
   // What chats have not been told, stored on the rows (pull-request-untold.ts).
   const untold = createPullRequestUntoldWakes()
   let dirty = false
@@ -572,7 +574,8 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
       for (const { entry, watch: stillWatched, untold: untoldNews } of stored) {
         if (entries.has(entry.url)) continue
         put(entry)
-        untold.load(entry.url, untoldNews)
+        // With nobody to wake, news is not kept for anyone.
+        if (options.onWatchNews) untold.load(entry.url, untoldNews)
         // A watch on a pull request that has since landed, or that nobody owns, has nobody to wake.
         if (stillWatched && entry.state === 'open' && !entry.forge && ownerOf(entry))
           watches.set(entry.url, stillWatched)
@@ -615,7 +618,9 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
         try {
           await mkdir(join(options.userDataDir, STORE_DIR), { recursive: true })
           await writeFileAtomically(pullRequestStorePath(options.userDataDir), `${JSON.stringify(snapshot, null, 2)}\n`)
+          lastWriteOk = true
         } catch (error) {
+          lastWriteOk = false
           warn('could not write the pull request record', error)
           // Still to write: tried again, or what changed is lost until something else does.
           dirty = true
@@ -1179,6 +1184,11 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
           persist()
           await writes
         }
+        // A send under an id the file does not hold could be made again
+        // under another after a restart, and the chat told twice. A record
+        // that could not be read keeps everything in memory, and sends.
+        if (disposed) return null
+        if (!unreadable && !lastWriteOk) throw new Error('The pull request record could not be written.')
         return { commandId: message.commandId, wakes: message.wakes }
       },
       told(conversation, commandId) {

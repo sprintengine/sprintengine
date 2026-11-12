@@ -326,6 +326,13 @@ export function createPullRequestDomain(options: PullRequestDomainOptions): Pull
         const found = chat(watched.conversation)
         if (!found || found.settled) record.unwatch(watched.conversation, watched.url)
       }
+      // News for a chat put away goes with it, watched or not.
+      void record.untoldWakes.chats().then((chats) => {
+        for (const key of chats) {
+          const found = chat(key)
+          if (!found || found.settled) record.untoldWakes.forget(key)
+        }
+      })
     },
     wakeWatches() {
       wakes?.wake()

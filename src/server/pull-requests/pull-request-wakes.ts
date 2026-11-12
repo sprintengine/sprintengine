@@ -174,12 +174,23 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
     let result: PullRequestWakeSendResult
     let message: Awaited<ReturnType<PullRequestUntoldSource['next']>> = null
     try {
-      // The message a send already went out under, as it was, or everything
-      // not told yet under a new id, written before it goes.
+      // The message a send already went out under, or everything not told
+      // yet under a new id, written before it goes.
       message = await deps.untold.next(entry.key)
-      result = message
-        ? await deps.send(entry.key, composePullRequestWake(message.wakes), message.commandId)
-        : { ok: true }
+    } catch (error) {
+      // Its id could not be written: nothing goes until it can be.
+      entry.sending = false
+      deps.log?.(
+        `A pull request wake waits for its record to be written: ${error instanceof Error ? error.message : error}`,
+      )
+      if (!disposed) lookAgainIn(entry, BUSY_RETRY_MS)
+      return
+    }
+    try {
+      result =
+        message && !disposed
+          ? await deps.send(entry.key, composePullRequestWake(message.wakes), message.commandId)
+          : { ok: true }
     } catch (error) {
       result = { ok: false, message: error instanceof Error ? error.message : String(error) }
     } finally {
@@ -207,7 +218,9 @@ export function createPullRequestWakes(deps: PullRequestWakesDeps): PullRequestW
   return {
     deliver: (event) => lookAt(event.conversation),
     async resume() {
-      for (const key of await deps.untold.chats()) lookAt(key)
+      // A chat the records do not name yet (they may still be loading) keeps
+      // its news for the next start, rather than being taken for deleted.
+      for (const key of await deps.untold.chats()) if (deps.chat(key)) lookAt(key)
     },
     wake() {
       for (const entry of waiting.values()) {

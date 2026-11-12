@@ -323,6 +323,18 @@ test('news its chat was not told is stored with the watch state that found it, a
   last.dispose()
 })
 
+test('a record closing while a message is stamped hands back nothing to send', async () => {
+  const { record, answer, probe } = await setUp()
+  await record.watch(CHAT, { url: PR })
+  await record.flush()
+  answer(watchRead({ checks: [check('Build', 'failed')] }))
+  await probe()
+  const asked = record.untoldWakes.next(CHAT)
+  // The quit: the stamp is never written, so nothing may go under it.
+  record.dispose()
+  assert.equal(await asked, null)
+})
+
 test('watching a pull request again does not repeat what the ended watch already told the chat', async () => {
   const { record, news, answer, probe, clock } = await setUp()
   answer(watchRead({ checks: [check('Build', 'passed')] }))

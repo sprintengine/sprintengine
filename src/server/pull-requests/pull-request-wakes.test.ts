@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 
+import { randomUUID } from 'node:crypto'
+
 import { test } from 'vitest'
 
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
@@ -39,13 +41,12 @@ const wake = (
   stop,
 })
 
-/** What the record keeps of untold news, in memory, its ids counted. */
+/** What the record keeps of untold news, in memory, under ids no two runs share. */
 function untoldSource(untold: PullRequestUntoldWakes): PullRequestWakesDeps['untold'] {
-  let ids = 0
   return {
     chats: async () => untold.chats(),
     next: async (key) => {
-      const message = untold.next(key, () => `pull-request-watch:${++ids}`)
+      const message = untold.next(key, () => `pull-request-watch:${randomUUID()}`)
       return message && { commandId: message.commandId, wakes: message.wakes }
     },
     told: (key, commandId) => void untold.told(key, commandId),
@@ -220,7 +221,7 @@ test('a send refused as busy goes again, as it was and under the same id, when t
   assert.notEqual(sent[2].commandId, sent[1].commandId, 'the news after it is a command of its own')
 })
 
-test('news the last run did not get to tell goes at the next start, a message already sent under its id', async () => {
+test('news the last run did not get to tell goes at the next start, a message already sent under its own id', async () => {
   const untold = createPullRequestUntoldWakes()
   // The first run sends, and stops before the chat answers.
   const first = setUp({ send: () => new Promise(() => undefined) }, untold)
@@ -238,5 +239,42 @@ test('news the last run did not get to tell goes at the next start, a message al
   assert.match(next.sent[0].text, /behind main/)
   assert.doesNotMatch(next.sent[0].text, /conflicts/, 'the message as the first run sent it, which its id names')
   assert.match(next.sent[1].text, /conflicts with main/)
+  assert.notEqual(next.sent[1].commandId, next.sent[0].commandId, 'the news after it is a command of its own')
   assert.deepEqual(untold.chats(), [])
+})
+
+test('a message whose id could not be written is not sent, and is tried again later', async () => {
+  const untold = createPullRequestUntoldWakes()
+  let writable = false
+  const source = untoldSource(untold)
+  const { tell, sent, advance } = setUp(
+    {
+      untold: {
+        ...source,
+        next: async (key) => {
+          if (!writable) throw new Error('disk full')
+          return source.next(key)
+        },
+      },
+    },
+    untold,
+  )
+  tell(wake(234, [{ kind: 'behind' }]))
+  await settle()
+  assert.deepEqual(sent, [], 'a send under an id the file does not hold could be told twice')
+  writable = true
+  await advance(60_000)
+  assert.equal(sent.length, 1)
+})
+
+test('at a start, a chat the records do not name yet keeps its news', async () => {
+  const untold = createPullRequestUntoldWakes()
+  untold.add(CHAT, wake(234, [{ kind: 'behind' }]))
+  const { wakes, sent, gone, setChat } = setUp({}, untold)
+  setChat(null)
+  await wakes.resume()
+  await settle()
+  assert.deepEqual(sent, [])
+  assert.deepEqual(gone, [], 'its watches are not stopped either')
+  assert.equal(untold.chats().length, 1)
 })
