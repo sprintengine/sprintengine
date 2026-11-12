@@ -258,8 +258,6 @@ import type {
   ConversationSuspendSessionInput,
   ConversationTerminalHandoffInput,
   ConversationTerminalHandoffResult,
-  ConversationTranscriptInput,
-  ConversationTranscriptResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
   ConversationAttachmentInput,
@@ -291,7 +289,6 @@ import type {
   ConversationThreadsResult,
   ConversationSearchInput,
   ConversationSearchResult,
-  ConversationRenameInput,
 } from './conversation-index'
 import type { ConversationSearchHit } from './conversation-index'
 import type { ModuleEventEnvelope } from './modules/events'
@@ -1624,7 +1621,6 @@ export type ElectronApi = {
     input: ConversationTerminalHandoffInput,
   ) => Promise<ConversationTerminalHandoffResult>
   conversationSessionsList: (input?: ConversationListSessionsInput) => Promise<ConversationListSessionsResult>
-  conversationTranscript: (input: ConversationTranscriptInput) => Promise<ConversationTranscriptResult>
   conversationToolDetail: (input: ConversationToolDetailInput) => Promise<ConversationToolDetailResult>
   // The bytes of an image a sent turn carried, by the store reference its
   // `user_message` recorded — for a bubble replayed after a restart.
@@ -1652,8 +1648,6 @@ export type ElectronApi = {
     callback: (batch: { requestId: string; hits: ConversationSearchHit[] }) => void,
   ) => () => void
   conversationCancelSearch: (input: { requestId: string }) => Promise<{ ok: boolean }>
-  conversationRename: (input: ConversationRenameInput) => Promise<{ ok: true } | { ok: false; message: string }>
-  conversationDelete: (input: ConversationTranscriptInput) => Promise<{ ok: true } | { ok: false; message: string }>
   conversationRevokeApprovalRule: (input: { ruleId: string }) => Promise<ConversationApprovalRuleRevokeResult>
   onConversationSession: (
     input: ConversationSubscribeInput,

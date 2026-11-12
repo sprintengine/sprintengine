@@ -5,7 +5,6 @@ import type {
   ConversationThreadsResult,
   ConversationSearchInput,
   ConversationSearchResult,
-  ConversationRenameInput,
 } from '../../shared/conversation-index'
 import type { ConversationSearchHit } from '../../shared/conversation-index'
 
@@ -49,8 +48,6 @@ import type {
   ConversationProvidersListInput,
   ConversationProviderSignInInput,
   ConversationProviderSignInResult,
-  ConversationTranscriptInput,
-  ConversationTranscriptResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
   ConversationAttachmentInput,
@@ -87,14 +84,6 @@ type ConversationIpcRenderer = {
   invoke(channel: 'conversation:threads', input: ConversationWorkspaceKey): Promise<ConversationThreadsResult>
   invoke(channel: 'conversation:search', input: ConversationSearchInput): Promise<ConversationSearchResult>
   invoke(channel: 'conversation:search:cancel', input: { requestId: string }): Promise<{ ok: boolean }>
-  invoke(
-    channel: 'conversation:rename',
-    input: ConversationRenameInput,
-  ): Promise<{ ok: true } | { ok: false; message: string }>
-  invoke(
-    channel: 'conversation:delete',
-    input: ConversationTranscriptInput,
-  ): Promise<{ ok: true } | { ok: false; message: string }>
   invoke(channel: 'conversation:approval-rules:list'): Promise<ConversationApprovalRulesResult>
   invoke(
     channel: 'conversation:approval-rules:revoke',
@@ -204,7 +193,6 @@ type ConversationIpcRenderer = {
     channel: 'conversation:sessions:list',
     input?: ConversationListSessionsInput,
   ): Promise<ConversationListSessionsResult>
-  invoke(channel: 'conversation:transcript', input: ConversationTranscriptInput): Promise<ConversationTranscriptResult>
   invoke(channel: 'conversation:tool-detail', input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
   invoke(channel: 'conversation:attachment', input: ConversationAttachmentInput): Promise<ConversationAttachmentResult>
   invoke(
@@ -246,8 +234,6 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
       return () => renderer.removeListener('conversation:search:batch', receive)
     },
     conversationCancelSearch: (input: { requestId: string }) => renderer.invoke('conversation:search:cancel', input),
-    conversationRename: (input: ConversationRenameInput) => renderer.invoke('conversation:rename', input),
-    conversationDelete: (input: ConversationTranscriptInput) => renderer.invoke('conversation:delete', input),
     conversationApprovalRules: (): Promise<ConversationApprovalRulesResult> =>
       renderer.invoke('conversation:approval-rules:list'),
     conversationRevokeApprovalRule: (input: { ruleId: string }): Promise<ConversationApprovalRuleRevokeResult> =>
@@ -315,8 +301,6 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
     ): Promise<ConversationTerminalHandoffResult> => renderer.invoke('conversation:sessions:terminal-handoff', input),
     conversationSessionsList: (input?: ConversationListSessionsInput): Promise<ConversationListSessionsResult> =>
       renderer.invoke('conversation:sessions:list', input),
-    conversationTranscript: (input: ConversationTranscriptInput): Promise<ConversationTranscriptResult> =>
-      renderer.invoke('conversation:transcript', input),
     conversationToolDetail: (input: ConversationToolDetailInput): Promise<ConversationToolDetailResult> =>
       renderer.invoke('conversation:tool-detail', input),
     conversationAttachment: (input: ConversationAttachmentInput): Promise<ConversationAttachmentResult> =>
@@ -386,8 +370,6 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
     | 'conversationSearch'
     | 'onConversationSearchBatch'
     | 'conversationCancelSearch'
-    | 'conversationRename'
-    | 'conversationDelete'
     | 'conversationProviderModels'
     | 'conversationProviderSignIn'
     | 'conversationSecretStatus'
@@ -409,7 +391,6 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
     | 'conversationSessionSuspend'
     | 'conversationSessionTerminalHandoff'
     | 'conversationSessionsList'
-    | 'conversationTranscript'
     | 'conversationToolDetail'
     | 'conversationAttachment'
     | 'conversationPlanDocument'

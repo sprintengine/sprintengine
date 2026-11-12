@@ -214,9 +214,10 @@ document, the command catalog, @-mention search, history — are still direct
   `flock`, digest marker, `mv -T`, pruning) and the helper protocol
   (`resources/wsl-helper/`, newline JSON over stdio, a `boot` line then
   `hello`) are the template for both the WSL server and the SSH bootstrap.
-- **`ConversationIpcHandlers`** (`ipc/conversation-ipc.ts`): a handler object
-  with no IPC in it, bound to `ipcMain` by a thin function. Every domain that
-  moves to the server gets this shape first.
+- **`ConversationService`** (`conversation-service.ts`): a service object
+  with no IPC in it, which the conversation IPC binds to `ipcMain` and the
+  Studio protocol's chat surface calls. Every domain that moves to the server
+  gets this shape first.
 
 There was no SSH host, no headless entry point and no Electron-free
 composition root when this was written. Phase 3 added the last two
@@ -282,7 +283,7 @@ standalone server).
 | `PowerEvents` (optional)                                                                                                                     | `powerMonitor`, `net.isOnline`                                                                                                                         | none; the shell forwards wake and online hints as client events                                                               |
 
 `IpcMain` disappears from server code entirely: every domain exposes a handler
-object (the `ConversationIpcHandlers` shape) and is registered on the RPC router
+object (the `ConversationService` shape) and is registered on the RPC router
 and, during the migration only, on `ipcMain` by the shell.
 
 A guard test (`src/server/electron-boundary.test.ts`) walks the import graph

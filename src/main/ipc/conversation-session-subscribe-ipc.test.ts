@@ -3,7 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
-import { registerConversationIpc, type ConversationIpcHandlers } from './conversation-ipc'
+import type { ConversationService } from '../conversation-service'
+import { registerConversationIpc } from './conversation-ipc'
 import { ConversationRuntime } from '../conversation-runtime'
 import { ConversationSessionApi } from '../conversation-session-api'
 import { createMockConversationProvider } from '../providers/mock-conversation-provider'
@@ -33,10 +34,9 @@ function harness(runtime: ConversationRuntime) {
       setPermission: unused,
       stopSession: unused,
       listSessions: () => ({ ok: true, sessions: [] }),
-      readTranscript: unused,
       onEvent: () => () => undefined,
       subscribe: (input, listener) => sessions.subscribe(input, listener),
-    } as ConversationIpcHandlers,
+    } as ConversationService,
   )
   const frames = new Map<string, ConversationSessionFrame[]>()
   const sender = {

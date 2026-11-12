@@ -18,7 +18,7 @@ const MAY_NAME_THE_RUNTIME: Record<string, string> = {
   'src/main/conversation-runtime.ts': 'the runtime itself',
   'src/server/core/conversation-backend.ts': 'picks the backend out of it',
   'src/server/core/studio-core.ts': 'constructs the one runtime and hands out its backend',
-  'src/main/ipc/conversation-ipc.ts': 'builds a stand-alone runtime only when it is handed none (its own tests)',
+  'src/main/conversation-service.ts': 'builds a stand-alone runtime only when it is handed none (its own tests)',
 }
 
 function sourceFiles(directory: string): string[] {

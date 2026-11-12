@@ -53,7 +53,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'conversation:approval-rules:list': { retry: 'once' },
   'conversation:approval-rules:revoke': {},
   'conversation:attachment': { retry: 'once' },
-  'conversation:delete': {},
   'conversation:events:subscribe': {
     subscription: { unsubscribe: 'conversation:events:unsubscribe', id: 'result' },
   },
@@ -63,7 +62,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'conversation:providers:list': { retry: 'once' },
   'conversation:providers:models': { retry: 'once' },
   'conversation:providers:sign-in': {},
-  'conversation:rename': {},
   'conversation:search': {},
   'conversation:search:cancel': {},
   'conversation:secrets:clear': {},
@@ -92,7 +90,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'conversation:sessions:terminal-handoff': {},
   'conversation:threads': { retry: 'once' },
   'conversation:tool-detail': { retry: 'once' },
-  'conversation:transcript': { retry: 'once' },
   'conversation:turn:diff': { retry: 'once' },
   'conversation:turn:fork': {},
   'conversation:turn:revert': {},

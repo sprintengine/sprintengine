@@ -3,9 +3,13 @@ import { test } from 'vitest'
 
 import {
   STUDIO_METHODS,
+  STUDIO_METHOD_ACCESS,
   STUDIO_TOPICS,
+  STUDIO_TOPIC_ACCESS,
   authorizeStudioMethod,
   authorizeStudioTopic,
+  studioGrantAllows,
+  studioGrantAllowsTopic,
   studioRefusedGrantName,
   studioSpecPermissions,
   type StudioMethod,
@@ -124,6 +128,29 @@ test('every grant reaches exactly the methods and topics it reached before permi
       }
     }
   assert.ok(compared > 256 * 2 * 50)
+})
+
+test('the access tables a client reads say what the server decides, for every grant', () => {
+  assert.deepEqual(Object.keys(STUDIO_METHOD_ACCESS).sort(), Object.keys(STUDIO_METHODS).sort())
+  assert.deepEqual(Object.keys(STUDIO_TOPIC_ACCESS).sort(), Object.keys(STUDIO_TOPICS).sort())
+  for (const scopes of scopeSubsets())
+    for (const owner of [false, true]) {
+      const grant = { owner, scopes }
+      const principal = studioGrantPrincipal(grant)
+      for (const method of Object.keys(STUDIO_METHODS) as StudioMethod[]) {
+        const decided = authorizeStudioMethod(grant, method).ok
+        assert.equal(studioGrantAllows(grant, method), decided, method)
+        assert.equal(authorizeStudioAccess(principal, STUDIO_METHOD_ACCESS[method]).ok, decided, method)
+      }
+      for (const topic of Object.keys(STUDIO_TOPICS) as StudioTopic[]) {
+        const decided = authorizeStudioTopic(grant, topic).ok
+        assert.equal(studioGrantAllowsTopic(grant, topic), decided, topic)
+        assert.equal(authorizeStudioAccess(principal, STUDIO_TOPIC_ACCESS[topic]).ok, decided, topic)
+      }
+    }
+  const owner = { owner: true, scopes: [...STUDIO_SCOPES] }
+  for (const name of ['conversation.compact', 'constructor', '__proto__', ''])
+    assert.equal(studioGrantAllows(owner, name), false, name)
 })
 
 test('an unknown method is refused, and so is a name only the prototype has', () => {
