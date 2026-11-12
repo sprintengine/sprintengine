@@ -187,7 +187,9 @@ them, and expire unsent after ten minutes (a minute once that connection has
 closed and no other has taken them up); `uploads.discard` gives back what will
 not be sent. `files.stat` and `files.readImage` read only inside a workspace's
 folder or Studio's own stores of sent pictures and plans, and refuse a path
-that is not the plain spelling of where it really is.
+that is not the plain spelling of where it really is; an owner's connection
+not held to known folders (Studio's own window) reads any path, as the
+window always could.
 
 `{ t: 'sub', id, topic: 'conversation.commands' }` hears every command list a
 CLI reports from then on, one `push` frame each, nothing replayed.

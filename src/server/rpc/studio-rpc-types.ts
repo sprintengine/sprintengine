@@ -170,8 +170,13 @@ export type StudioChatBackend = {
   searchFiles(slot: number, input: ChatInput<'files.search'>): Promise<FileSearchResult>
   cancelFileSearch(slot: number, channel?: string): void
   releaseFileSearches(slot: number): void
-  stat(path: string): Promise<FileSystemStat>
-  readImage(path: string): Promise<string>
+  /**
+   * A path's stat and a picture's bytes. Held to the folders a chat can read
+   * (`isKnownFolder`) unless `anyPath`: an owner's connection that is not held
+   * to known folders (Studio's own window) reads any path, as it always has.
+   */
+  stat(path: string, reading?: { anyPath?: boolean }): Promise<FileSystemStat>
+  readImage(path: string, reading?: { anyPath?: boolean }): Promise<string>
   repoRoot(folderPath: string, hostId?: string): Promise<string | null>
   /** Whether a folder is inside one a chat can be about: a workspace's, or Studio's own stores. */
   isKnownFolder?(path: string): Promise<boolean>

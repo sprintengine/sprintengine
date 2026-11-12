@@ -2,6 +2,7 @@ import { paneTerminalSessionId } from './pane/paneTerminals'
 import type { Workspace } from '../../types/workspace'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { workspaceIsWorking } from './sidebar/conversationLines'
+import { windowChatServices } from '../panels/agentChat/windowChat'
 
 type LayoutSessionNode = {
   component?: string
@@ -127,7 +128,7 @@ async function workspaceWorkingNow(workspace: Workspace): Promise<boolean> {
     const sessionIds = new Set(workspaceTerminalSessionIds(workspace))
     const [terminals, conversations] = await Promise.all([
       window.api.terminalList(),
-      window.api.conversationSessionsList(),
+      windowChatServices().sessions.list(),
     ])
     return workspaceIsWorking(
       'idle',
@@ -159,12 +160,16 @@ async function workspaceWorkingNow(workspace: Workspace): Promise<boolean> {
  */
 async function suspendWorkspaceConversations(workspace: Workspace): Promise<void> {
   try {
-    const listed = await window.api.conversationSessionsList()
+    const listed = await windowChatServices().sessions.list()
     if (!listed.ok) return
     await Promise.all(
       listed.sessions
         .filter((session) => session.status !== 'stopped' && session.workspaceId === workspace.id)
-        .map((session) => window.api.conversationSessionSuspend({ sessionId: session.sessionId }).catch(() => {})),
+        .map((session) =>
+          windowChatServices()
+            .sessions.suspend({ sessionId: session.sessionId })
+            .catch(() => {}),
+        ),
     )
   } catch {
     // Main unreachable: nothing to suspend through, and the gesture goes on.

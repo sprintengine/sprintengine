@@ -151,6 +151,10 @@ test('a file is stat’d or read only inside the folders a chat can read, and by
     await assert.rejects(chat.stat('/etc/hosts'), /outside the folders this chat can read/)
     await assert.rejects(chat.readImage(`${workspace}/../a.png`), /not written plainly/)
     assert.deepEqual(read, [join(workspace, 'a.png'), join(workspace, 'a.png')])
+    // Studio's own window (an owner not held to known folders) reads anywhere, as over IPC.
+    assert.equal((await chat.stat('/tmp/shot.png', { anyPath: true })).isFile, true)
+    assert.equal(await chat.readImage('/tmp/shot.png', { anyPath: true }), 'data:image/png;base64,cG5n')
+    assert.deepEqual(read.slice(2), ['/tmp/shot.png', '/tmp/shot.png'])
   } finally {
     await rm(workspace, { recursive: true, force: true })
   }

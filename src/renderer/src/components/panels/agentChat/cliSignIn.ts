@@ -1,5 +1,6 @@
 import type { ConversationCliRuntimeOverrides } from '../../../../../shared/conversation-runtime'
 import { LOCAL_HOST_ID, normalizeExecutionHostId } from '../../../../../shared/execution-host'
+import { windowChatServices } from './windowChat'
 import { focusOrAddTerminalTab } from '../../../utils/modelRegistry'
 
 /**
@@ -21,7 +22,7 @@ export async function openCliSignInTerminal(input: {
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   // A chat on an SSH machine signs in there, with no terminal here (phase 8).
   if (input.machineId) return window.api.sshSignIn(input.machineId, input.providerId)
-  const resolved = await window.api.conversationProviderSignIn({
+  const resolved = await windowChatServices().providers.signIn({
     providerId: input.providerId,
     ...(input.cliRuntimes ? { cliRuntimes: input.cliRuntimes } : {}),
   })

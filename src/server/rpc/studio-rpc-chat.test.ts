@@ -624,6 +624,40 @@ test('a connection held to known folders searches and asks only about the folder
   assert.ok((await repoRoot('/etc', loopback)).ok)
 })
 
+test('a path is stat’d and a picture read anywhere only by an owner not held to known folders', async () => {
+  const reads: Array<{ path: string; anyPath: boolean | undefined }> = []
+  const chat: StudioChatBackend = {
+    ...fakeChat(),
+    stat: async (path, reading) => {
+      reads.push({ path, anyPath: reading?.anyPath })
+      return { isFile: true, isDirectory: false, sizeBytes: 1, modifiedAt: '', modifiedAtMs: 1 }
+    },
+    readImage: async (path, reading) => {
+      reads.push({ path, anyPath: reading?.anyPath })
+      return 'data:image/png;base64,AAAA'
+    },
+  }
+  const uploads = createStudioUploads()
+  disposers.push(async () => uploads.close())
+  const router = createStudioRpcRouter({
+    backend: createFakeBackend(),
+    chat: () => chat,
+    info: () => ({}) as never,
+    uploads,
+  })
+  const grant = studioWindowGrant()
+  const window = { connectionId: 'w1', slot: 1, ownWindow: true }
+  const tailnet = { connectionId: 'w2', slot: 2, ownWindow: false, knownFoldersOnly: true }
+  assert.ok((await router.handle(grant, 'files.stat', { path: '/tmp/shot.png' }, window)).ok)
+  assert.ok((await router.handle(grant, 'files.readImage', { path: '/tmp/shot.png' }, window)).ok)
+  assert.ok((await router.handle(grant, 'files.stat', { path: '/tmp/shot.png' }, tailnet)).ok)
+  assert.ok((await router.handle(grant, 'files.readImage', { path: '/tmp/shot.png' }, tailnet)).ok)
+  assert.deepEqual(
+    reads.map((read) => read.anyPath),
+    [true, true, false, false],
+  )
+})
+
 test('every operation the window’s conversation IPC offers is a method an owner calls on the socket', async () => {
   const { server, chat } = await served()
   const window = await windowClient(server)

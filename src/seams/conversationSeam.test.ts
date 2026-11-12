@@ -261,7 +261,7 @@ test('conversationSeam', async () => {
       assert.equal(flushed.ok, true, 'and the same message is accepted')
       assert.equal(broadcast.filter((event) => event.type === 'user_message').length, 2)
 
-      await conversationApi.conversationSessionStop({ sessionId })
+      await runtime.stopSession({ sessionId })
       console.log('ok - a continuation turn reads as busy in the composer and in the runtime alike')
     })
   }

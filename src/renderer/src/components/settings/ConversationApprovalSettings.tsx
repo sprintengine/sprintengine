@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ConversationApprovalRule } from '../../../../shared/conversation/approvalRules'
 import type { MeshApprovalRulesResult } from '../../../../shared/tailnet-mesh'
 import { GhostButton, InlineNotice, SettingCard, SettingRow, Spinner } from '../ui'
+import { windowChatServices } from '../panels/agentChat/windowChat'
 import { SettingsSectionTitle } from './SettingsAtoms'
 
 export function ConversationApprovalSettings() {
@@ -11,7 +12,7 @@ export function ConversationApprovalSettings() {
   const load = useCallback(async () => {
     try {
       setError(undefined)
-      const result = await window.api.conversationApprovalRules()
+      const result = await windowChatServices().approvalRules.list()
       if (!result.ok) throw new Error(result.message)
       setRules(result.rules)
     } catch (failure) {
@@ -24,7 +25,7 @@ export function ConversationApprovalSettings() {
   async function revoke(rule: ConversationApprovalRule) {
     setBusy(rule.id)
     try {
-      const result = await window.api.conversationRevokeApprovalRule({ ruleId: rule.id })
+      const result = await windowChatServices().approvalRules.revoke(rule.id)
       if (!result.ok) throw new Error(result.message)
       await load()
     } catch (failure) {

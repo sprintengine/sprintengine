@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, test } from 'vitest'
 
 import type { LayoutTemplate } from '../../types/workspace'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 // One Files tree, three hosts. The editor window's column is the workspace's
 // Files tree with a different host around it, so right-clicking a file there
@@ -46,6 +47,8 @@ let sessions: unknown[] = []
     },
   },
 )
+// The sessions the tree marks are listed by the window's Studio, over the protocol.
+installStudioLoopback(window as never)
 
 const { default: FileExplorer } = await import('./FileExplorer')
 const { EditorFileTree } = await import('../auxWindows/EditorFileTree')

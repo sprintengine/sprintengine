@@ -52,8 +52,8 @@ function harness(initial: ConversationSessionSummary[] = [], visible = true) {
   let receive!: (event: ConversationEvent) => void
   const unsubscribe = vi.fn()
   const api: ConversationSessionsApi = {
-    conversationSessionsList: list,
-    onConversationEvent: (listener) => {
+    list,
+    onLifecycleEvent: (listener) => {
       receive = listener
       return unsubscribe
     },

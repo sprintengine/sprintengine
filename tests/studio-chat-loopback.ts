@@ -13,8 +13,14 @@ import { memoryWebSocketClass } from './memory-websocket'
 // script, as it always has; this puts a real Studio RPC between the view and
 // that stub: the window's client and transport, a socket, the connection and
 // router, and main's chat backend with its input checks, all answered in the
-// end by the same stubbed IPC members. A test that passes both ways shows the
+// end by the same stubbed members. A test that passes both ways shows the
 // protocol path changes nothing the view does.
+//
+// What the window reaches only over the protocol (its chat services: session
+// list, stop, suspend, history, approval rules, providers and keys, plans, the
+// `/` lists) is served here in every run. The stubs keep the names the IPC
+// members had (`conversationSessionsList`, `onConversationEvent`, ...), which
+// no preload has any more: they are this harness's names for the backend.
 //
 // The `chat-over-studio` Vitest project sets STUDIO_CHAT_TRANSPORT_UNDER_TEST;
 // in every other run this does nothing.
@@ -183,8 +189,11 @@ function chatOver(api: Api) {
       get listThreads() {
         return optional(api, 'conversationThreads')
       },
+      // The stub hears the search's abort signal, as the runtime does.
       get searchThreads() {
-        return has(api, 'conversationSearch') ? (input: unknown) => call(api, 'conversationSearch', input) : undefined
+        return has(api, 'conversationSearch')
+          ? (input: unknown, options: unknown) => call(api, 'conversationSearch', input, options)
+          : undefined
       },
       get listApprovalRules() {
         return has(api, 'conversationApprovalRules') ? () => call(api, 'conversationApprovalRules') : undefined
@@ -236,17 +245,15 @@ export type StudioLoopback = {
 }
 
 /**
- * Put a stubbed window's chat view on the Studio protocol, when this run is
- * the `chat-over-studio` one. Call it after `window.api` is stubbed; members
- * the test changes later are read when they are called.
+ * Put a stubbed window on a Studio over the protocol: its chat services in
+ * every run, as the window has no other way to them, and its chat view too
+ * when this run is the `chat-over-studio` one. Call it after `window.api` is
+ * stubbed; members the test changes later are read when they are called.
  */
 export function installStudioLoopback(
   win: { api?: Api },
   options: { environmentId?: string; pullRequests?: StudioPullRequests } = {},
-): StudioLoopback | null {
-  // Pull requests are served only over the protocol, so a test of them puts
-  // the window on it in every run.
-  if (!chatOverStudioUnderTest() && !options.pullRequests) return null
+): StudioLoopback {
   const api = (win.api ??= {})
   // One chat surface for the window's life, as main provides one: its receipts
   // outlive a dropped connection. Its members still read the stubs when called.
@@ -277,8 +284,10 @@ export function installStudioLoopback(
       return windowEnd
     }),
   })
+  // Pull requests are served only over the protocol, so a test of them puts
+  // the chat view on it in every run.
+  if (chatOverStudioUnderTest() || options.pullRequests) Object.assign(api, { studioChatTransport: 'studio' })
   Object.assign(api, {
-    studioChatTransport: 'studio',
     studioWindowTicket: async () => {
       const ticket = mintStudioTicket()
       return { url: `ws://127.0.0.1:1/ws?ticket=${encodeURIComponent(ticket)}`, token: ticket }

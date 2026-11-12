@@ -124,6 +124,7 @@ import { isClippedEvent, useConversationSession } from './agentChat/useConversat
 import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
 import { useConversationTransport } from './agentChat/conversationTransport'
+import { windowChatServices } from './agentChat/windowChat'
 import type { ChatCommandSource } from './agentChat/chatServices'
 import { openCliSignInTerminal } from './agentChat/cliSignIn'
 import { useLocalChatBinding, type ChatBinding } from './agentChat/chatBinding'
@@ -2975,10 +2976,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       })
       return
     }
-    const result = await window.api.conversationSessionSuspend({ sessionId }).catch((error: unknown) => ({
-      ok: false as const,
-      message: error instanceof Error ? error.message : String(error),
-    }))
+    const result = await windowChatServices()
+      .sessions.suspend({ sessionId })
+      .catch((error: unknown) => ({
+        ok: false as const,
+        message: error instanceof Error ? error.message : String(error),
+      }))
     if (!result.ok) {
       showToast({ tone: 'error', title: 'The session was not restarted', description: result.message })
       return

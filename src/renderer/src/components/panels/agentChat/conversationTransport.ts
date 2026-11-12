@@ -1,8 +1,7 @@
 import { createContext, useContext } from 'react'
 
-import { windowStudioClient } from '../../../studio/windowStudioClient'
-import { ipcChatServices, type ChatServices } from './chatServices'
-import { createStudioChatServices, createStudioConversationParts } from './studioChat'
+import type { ChatServices } from './chatServices'
+import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
 import { remotePullRequestHost, type PullRequestHost } from './pullRequestHost'
 import type {
   ConversationAttachmentInput,
@@ -499,21 +498,6 @@ const ipcConversationParts: Required<
   readContextBreakdown: (input) => window.api.conversationSessionContextBreakdown(input),
 }
 
-// One Studio implementation per window object, so its client and the
-// subscriptions keyed by transport are this window's.
-const studioImplementations = new WeakMap<object, { parts: LocalParts; services: ChatServices }>()
-
-function studioImplementation(): { parts: LocalParts; services: ChatServices } {
-  const api = window.api as object
-  let known = studioImplementations.get(api)
-  if (!known) {
-    const client = () => windowStudioClient(window.api)
-    known = { parts: createStudioConversationParts(client), services: createStudioChatServices(client) }
-    studioImplementations.set(api, known)
-  }
-  return known
-}
-
 /** Whether this window's chat view is on the Studio protocol. */
 export function chatOverStudioProtocol(): boolean {
   return typeof window !== 'undefined' && window.api?.studioChatTransport === 'studio'
@@ -522,12 +506,7 @@ export function chatOverStudioProtocol(): boolean {
 const localParts = (): typeof ipcConversationParts =>
   chatOverStudioProtocol() ? (studioImplementation().parts as typeof ipcConversationParts) : ipcConversationParts
 
-/** The window's services, by the same choice as its conversations. */
-export function windowChatServices(): ChatServices {
-  return chatOverStudioProtocol() ? studioImplementation().services : ipcChatServices
-}
-
-// Each call is answered by the implementation the window chose, read when it
+// Each call is answered by this window's Studio implementation, read when it
 // is made; the object itself never changes, so what is keyed by it (a shared
 // subscription, a picture cache) stays put.
 const windowServices: ChatServices = {
@@ -535,6 +514,9 @@ const windowServices: ChatServices = {
     list: (input) => windowChatServices().providers.list(input),
     models: (input) => windowChatServices().providers.models(input),
     secretStatus: (input) => windowChatServices().providers.secretStatus(input),
+    signIn: (input) => windowChatServices().providers.signIn(input),
+    setSecret: (input) => windowChatServices().providers.setSecret(input),
+    clearSecret: (input) => windowChatServices().providers.clearSecret(input),
   },
   files: {
     get canStat() {
@@ -554,6 +536,23 @@ const windowServices: ChatServices = {
     get onChanged() {
       return windowChatServices().commands.onChanged
     },
+  },
+  sessions: {
+    list: (input) => windowChatServices().sessions.list(input),
+    stop: (input) => windowChatServices().sessions.stop(input),
+    suspend: (input) => windowChatServices().sessions.suspend(input),
+    terminalHandoff: (input) => windowChatServices().sessions.terminalHandoff(input),
+    onLifecycleEvent: (listener, onReconnected) =>
+      windowChatServices().sessions.onLifecycleEvent(listener, onReconnected),
+  },
+  history: {
+    threads: (input) => windowChatServices().history.threads(input),
+    search: (input) => windowChatServices().history.search(input),
+    cancelSearch: (requestId) => windowChatServices().history.cancelSearch(requestId),
+  },
+  approvalRules: {
+    list: () => windowChatServices().approvalRules.list(),
+    revoke: (ruleId) => windowChatServices().approvalRules.revoke(ruleId),
   },
 }
 
@@ -576,9 +575,9 @@ export const localConversationTransport: ConversationTransport = {
   fork: (input) => localParts().fork(input),
   startSession: (input) => localParts().startSession(input),
   revert: (input) => localParts().revert(input),
-  // The IPC's, in a window on either implementation, as the composer's server
-  // rows have always asked it.
-  mcpServerAction: (input) => window.api.conversationSessionMcpAction(input),
+  // The protocol's, in a window on either implementation: the session is the
+  // one runtime's either way.
+  mcpServerAction: (input) => studioImplementation().parts.mcpServerAction(input),
   // Read off the implementation the window chose, so it is absent where that
   // one has no way to do it.
   get stopSubagent() {

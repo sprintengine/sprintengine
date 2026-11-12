@@ -17,6 +17,7 @@ import {
   loadCodeLanguage,
   normalizeCodeLanguage,
 } from '../../../../lib/highlight/codeHighlight'
+import { installStudioLoopback } from '../../../../../../../tests/studio-chat-loopback'
 
 function tool(values: Partial<TranscriptToolEntry>): TranscriptToolEntry {
   return { kind: 'tool', id: 'tool', turnId: 'turn', name: 'Bash', status: 'done', ...values }
@@ -866,6 +867,8 @@ test('a generated picture shows under its row unopened, opens in the system view
       showItemInFolder: async (path: string) => void revealed.push(path),
     },
   })
+  // A picture on this machine is read by the window's Studio, over the protocol.
+  installStudioLoopback(dom.window as never)
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const host = dom.window.document.createElement('div')
@@ -893,6 +896,9 @@ test('a generated picture shows under its row unopened, opens in the system view
         </ConversationLinkProvider>,
       ),
     )
+    // Read over the window's Studio, a round trip away.
+    for (let tries = 0; tries < 200 && !host.querySelector('[data-generated-image] img'); tries++)
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 5)))
     const image = host.querySelector<HTMLImageElement>('[data-generated-image] img')
     expect(image?.getAttribute('src')).toBe('data:image/png;base64,iVBORw0KGgo=')
     expect(image?.getAttribute('alt')).toBe('A flat orange circle')

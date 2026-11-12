@@ -879,7 +879,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       chat.cancelFileSearch(context.slot, channel)
       return { ok: true, result: {} }
     },
-    'files.stat': async ({ path, root }, { voice }) => {
+    'files.stat': async ({ path, root }, { context, grant, voice }) => {
       // By root it is the files family's, served with or without a chat surface.
       if (root !== undefined) {
         if (!options.files) return refuse('unavailable', 'This Studio does not serve files by root.')
@@ -888,12 +888,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       }
       const chat = chatOr('files.stat')
       if (isRefusal(chat)) return chat
-      return { ok: true, result: { stat: voice.redact(await chat.stat(path)) } }
+      return { ok: true, result: { stat: voice.redact(await chat.stat(path, readsAnyPath(grant, context))) } }
     },
-    'files.readImage': async ({ path }) => {
+    'files.readImage': async ({ path }, { context, grant }) => {
       const chat = chatOr('files.readImage')
       if (isRefusal(chat)) return chat
-      return { ok: true, result: { dataUrl: await chat.readImage(path) } }
+      return { ok: true, result: { dataUrl: await chat.readImage(path, readsAnyPath(grant, context)) } }
     },
     'files.repoRoot': async ({ folderPath, hostId }, { context, voice }) => {
       const chat = chatOr('files.repoRoot')
@@ -1244,6 +1244,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       return answer
     },
   }
+}
+
+/** Whether a connection reads a file anywhere on this disk: an owner's, unless it is held to the folders Studio knows. */
+function readsAnyPath(grant: { owner: boolean }, context: StudioRequestContext): { anyPath: boolean } {
+  return { anyPath: grant.owner && !context.knownFoldersOnly }
 }
 
 /** Whether a connection may name this folder: any, unless it is held to the folders Studio knows. */

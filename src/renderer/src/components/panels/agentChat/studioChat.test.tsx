@@ -294,3 +294,106 @@ test('a send’s files attached by path reach the runtime over the protocol, bes
     restore()
   }
 })
+
+test('the window’s chat services reach its Studio’s chats over the protocol, each by its method', async () => {
+  const asked: string[] = []
+  const status = { providerId: 'p', configured: true, source: 'settings', persistence: 'encrypted', label: 'Key' }
+  const { restore } = await setup({
+    conversationSessionsList: async () => {
+      asked.push('list')
+      return { ok: true, sessions: [] }
+    },
+    conversationSessionStop: async ({ sessionId }: { sessionId: string }) => {
+      asked.push(`stop:${sessionId}`)
+      return { ok: true }
+    },
+    conversationSessionSuspend: async ({ sessionId }: { sessionId: string }) => {
+      asked.push(`suspend:${sessionId}`)
+      return { ok: true }
+    },
+    conversationThreads: async ({ workspaceId }: { workspaceId: string }) => {
+      asked.push(`threads:${workspaceId}`)
+      return { ok: true, threads: [] }
+    },
+    conversationSearch: async ({ query }: { query: string }) => {
+      asked.push(`search:${query}`)
+      return { ok: true, hits: [] }
+    },
+    conversationApprovalRules: async () => {
+      asked.push('rules')
+      return { ok: true, rules: [] }
+    },
+    conversationRevokeApprovalRule: async ({ ruleId }: { ruleId: string }) => {
+      asked.push(`revoke:${ruleId}`)
+      return { ok: true }
+    },
+    conversationSecretSet: async ({ providerId, value }: { providerId: string; value: string }) => {
+      asked.push(`set:${providerId}:${value}`)
+      return { ok: true, status }
+    },
+    conversationSecretClear: async ({ providerId }: { providerId: string }) => {
+      asked.push(`clear:${providerId}`)
+      return { ok: true, status }
+    },
+  })
+  try {
+    const { windowChatServices } = await import('./windowChat')
+    const services = windowChatServices()
+    expect(await services.sessions.list()).toEqual({ ok: true, sessions: [] })
+    expect((await services.sessions.stop({ sessionId: 's1' })).ok).toBe(true)
+    expect((await services.sessions.suspend({ sessionId: 's1' })).ok).toBe(true)
+    expect((await services.history.threads({ workspaceId: 'ws', workspaceRoot: '/Users/dev/app' })).ok).toBe(true)
+    expect(
+      (await services.history.search({ workspaceId: 'ws', workspaceRoot: '/Users/dev/app', query: 'wave' })).ok,
+    ).toBe(true)
+    expect((await services.approvalRules.list()).ok).toBe(true)
+    expect((await services.approvalRules.revoke('rule-1')).ok).toBe(true)
+    expect((await services.providers.setSecret({ providerId: 'p', value: 'sk-test' })).ok).toBe(true)
+    expect((await services.providers.clearSecret({ providerId: 'p' })).ok).toBe(true)
+    expect(asked).toEqual([
+      'list',
+      'stop:s1',
+      'suspend:s1',
+      'threads:ws',
+      'search:wave',
+      'rules',
+      'revoke:rule-1',
+      'set:p:sk-test',
+      'clear:p',
+    ])
+  } finally {
+    restore()
+  }
+})
+
+test('every chat’s lifecycle is heard across a dropped connection, and the reader is told to read its list again', async () => {
+  const listeners = new Set<(event: ConversationEvent) => void>()
+  const { loopback, restore } = await setup({
+    onConversationEvent: (listener: (event: ConversationEvent) => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  })
+  try {
+    const { windowChatServices } = await import('./windowChat')
+    const heard: string[] = []
+    let reconnected = 0
+    const stop = windowChatServices().sessions.onLifecycleEvent(
+      (event) => heard.push(event.type),
+      () => reconnected++,
+    )
+    await until(() => listeners.size === 1, 'the stream to be followed')
+    for (const listener of listeners) listener(event(1, 'turn_started', {}))
+    await until(() => heard.length === 1, 'the first event')
+    const before = reconnected
+    // Studio restarts under the window: what happened meanwhile was never heard.
+    loopback.drop()
+    await until(() => loopback.connections() >= 2 && reconnected > before, 'the reconnect to be told')
+    await until(() => listeners.size >= 1, 'the stream to be followed again')
+    for (const listener of listeners) listener(event(2, 'turn_completed', {}))
+    await until(() => heard.includes('turn_completed'), 'the event after the reconnect')
+    stop()
+  } finally {
+    restore()
+  }
+})

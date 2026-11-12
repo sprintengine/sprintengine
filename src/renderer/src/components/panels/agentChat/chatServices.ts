@@ -1,35 +1,88 @@
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import type {
+  ConversationSearchInput,
+  ConversationSearchResult,
+  ConversationThreadsResult,
+  ConversationWorkspaceKey,
+} from '../../../../../shared/conversation-index'
+import type {
+  ConversationApprovalRuleRevokeResult,
+  ConversationApprovalRulesResult,
+  ConversationEvent,
+  ConversationListSessionsInput,
+  ConversationListSessionsResult,
   ConversationPlanDocumentInput,
   ConversationPlanDocumentResult,
+  ConversationProviderSignInInput,
+  ConversationProviderSignInResult,
   ConversationProvidersListInput,
+  ConversationSessionActionResult,
+  ConversationTerminalHandoffInput,
+  ConversationTerminalHandoffResult,
 } from '../../../../../shared/conversation-runtime'
 import type {
   ConversationProviderListResult,
   ConversationProviderModelsInput,
   ConversationProviderModelsResult,
+  ConversationSecretClearInput,
+  ConversationSecretSetInput,
   ConversationSecretStatusInput,
   ConversationSecretStatusResult,
-  FileSearchResult,
-  FileSystemStat,
-} from '../../../../../shared/electron-api'
+} from '../../../../../shared/ipc/conversations'
+import type { FileSearchResult, FileSystemStat } from '../../../../../shared/ipc/filesystem'
 import type { ConversationCommandsRequest } from '../../../../../shared/ipc/conversation-commands'
 
 // What a chat view asks of the Studio its window belongs to, whichever machine
 // the chat itself runs on: the providers and models it can pick, the files its
 // mentions, links and pictures name, a plan opened as a document, and the `/`
 // command lists its CLI reports. A chat followed from a paired machine still
-// reads these here, as it always has.
+// reads these here, as it always has. And what the rest of the window asks of
+// that Studio's chats: their live sessions (the sidebar, Stop, Suspend, Resume
+// in terminal), their history (the palette's search, a history link), the
+// approval rules, and a provider's sign-in and key (Settings).
 //
-// Two implementations answer the same calls: the window's IPC, and the Studio
-// protocol (`studioChat.ts`). Which one a window uses is decided once, by
-// `window.api.studioChatTransport`, and read at call time so a test's stub is
-// the one used.
+// Every window answers them over the Studio protocol (`studioChat.ts`), as a
+// paired desktop, the phone and a browser tab do: there is no IPC for them.
 
 export type ChatProviderSource = {
   list(input?: ConversationProvidersListInput): Promise<ConversationProviderListResult>
   models(input: ConversationProviderModelsInput): Promise<ConversationProviderModelsResult>
   secretStatus(input: ConversationSecretStatusInput): Promise<ConversationSecretStatusResult>
+  /** The line a terminal runs to sign the provider's CLI back in. */
+  signIn(input: ConversationProviderSignInInput): Promise<ConversationProviderSignInResult>
+  /** Keep a provider's key in the Studio's credential store; answered with its status, never the key. */
+  setSecret(input: ConversationSecretSetInput): Promise<ConversationSecretStatusResult>
+  clearSecret(input: ConversationSecretClearInput): Promise<ConversationSecretStatusResult>
+}
+
+/** The live sessions of the Studio's chats, by their ids. */
+export type ChatSessionSource = {
+  list(input?: ConversationListSessionsInput): Promise<ConversationListSessionsResult>
+  stop(input: { sessionId: string }): Promise<ConversationSessionActionResult>
+  /** End the session's process and keep its place: the next message resumes it. */
+  suspend(input: { sessionId: string }): Promise<ConversationSessionActionResult>
+  terminalHandoff(input: ConversationTerminalHandoffInput): Promise<ConversationTerminalHandoffResult>
+  /**
+   * Every chat's lifecycle events as they happen, each without its payload,
+   * followed across reconnects. Nothing is replayed, so what happened while
+   * the window was not connected is never heard: `onReconnected` is called
+   * each time it is connected again, for the reader to read `list` anew.
+   */
+  onLifecycleEvent(listener: (event: ConversationEvent) => void, onReconnected?: () => void): () => void
+}
+
+/** A workspace's history, and a search of it. */
+export type ChatHistorySource = {
+  threads(input: ConversationWorkspaceKey): Promise<ConversationThreadsResult>
+  /** Answered with every hit at once; a newer search under the same `requestId` ends this one. */
+  search(input: ConversationSearchInput): Promise<ConversationSearchResult>
+  cancelSearch(requestId: string): Promise<void>
+}
+
+/** The rules that answer an approval by themselves. */
+export type ChatApprovalRuleSource = {
+  list(): Promise<ConversationApprovalRulesResult>
+  revoke(ruleId: string): Promise<ConversationApprovalRuleRevokeResult>
 }
 
 export type ChatFileSearchOptions = {
@@ -62,54 +115,7 @@ export type ChatServices = {
   files: ChatFileSource
   planDocument(input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult>
   commands: ChatCommandSource
-}
-
-type CommandsApi = {
-  conversationCommands?: (input: ConversationCommandsRequest) => Promise<ConversationCommandCatalog>
-  onConversationCommandsChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
-}
-// A build whose preload does not expose the command list yet leaves the menu
-// with Studio's own commands rather than throwing.
-const commandsApi = (): CommandsApi =>
-  (typeof window === 'undefined' ? {} : (window.api as unknown as CommandsApi | undefined)) ?? {}
-
-/** The window's IPC, read off `window.api` at call time. */
-export const ipcChatServices: ChatServices = {
-  // A preload from before the providers were listed over IPC answers as the
-  // view has always worded it, rather than throwing.
-  providers: {
-    list: async (input) =>
-      typeof window.api.conversationProvidersList === 'function'
-        ? window.api.conversationProvidersList(input)
-        : { ok: false, message: 'Conversation providers need an app restart before this agent is available.' },
-    models: async (input) =>
-      typeof window.api.conversationProviderModels === 'function'
-        ? window.api.conversationProviderModels(input)
-        : { ok: false, message: 'Model lists need an app restart.' },
-    secretStatus: async (input) =>
-      typeof window.api.conversationSecretStatus === 'function'
-        ? window.api.conversationSecretStatus(input)
-        : { ok: false, message: 'Key status needs an app restart.' },
-  },
-  // Async throughout, so a member a preload lacks rejects like a failed call
-  // instead of throwing where the caller only handles a rejection.
-  files: {
-    get canStat() {
-      return typeof window !== 'undefined' && typeof window.api?.statPath === 'function'
-    },
-    search: async (rootPath, query, options) => window.api.searchFiles(rootPath, query, options),
-    cancelSearch: async (channel) => window.api.cancelFileSearch?.(channel),
-    stat: async (path) => window.api.statPath(path),
-    readImage: async (path) => window.api.readImageDataUrl(path),
-    repoRoot: async (folderPath, hostId) => window.api.getGitRepoRoot(folderPath, hostId),
-  },
-  planDocument: async (input) => window.api.conversationPlanDocument(input),
-  commands: {
-    get list() {
-      return commandsApi().conversationCommands
-    },
-    get onChanged() {
-      return commandsApi().onConversationCommandsChanged
-    },
-  },
+  sessions: ChatSessionSource
+  history: ChatHistorySource
+  approvalRules: ChatApprovalRuleSource
 }

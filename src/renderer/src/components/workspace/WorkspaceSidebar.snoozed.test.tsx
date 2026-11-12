@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import { JSDOM } from 'jsdom'
 import { test } from 'vitest'
+import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
 
 test('WorkspaceSidebar.snoozed', async () => {
   // Snoozed chats (2026-09-10). A sleeping row leaves the active list for its
@@ -94,6 +95,8 @@ test('WorkspaceSidebar.snoozed', async () => {
       return { ok: true }
     },
   }
+  // A chat's session is listed and suspended by the window's Studio, over the protocol.
+  installStudioLoopback(domWindow as never)
 
   async function main(): Promise<void> {
     const React = await import('react')

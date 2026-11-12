@@ -6,9 +6,11 @@ import {
 } from '../../../../../../packages/client-runtime/src/public'
 import {
   STUDIO_SESSION_FILES_CAPABILITY,
+  STUDIO_TERMINAL_HANDOFF_CAPABILITY,
   type StudioMethod,
   type StudioMethodParams,
   type StudioMethodResult,
+  type StudioTopicPayload,
 } from '../../../../../../packages/studio-protocol/src/public'
 import { mapWithLimit } from '../../../../../shared/concurrency'
 import { randomId as commandId } from '../../../../../shared/random-id'
@@ -64,9 +66,9 @@ const messageOf = (error: unknown): string =>
       ? error.message
       : String(error)
 
-// How long the commands stream waits before following a client that replaced
-// one that closed, or retrying one that could not connect.
-const COMMANDS_FOLLOW_RETRY_MS = 2_000
+// How long a push stream waits before following a client that replaced one
+// that closed, or retrying one that could not connect.
+const PUSH_FOLLOW_RETRY_MS = 2_000
 
 // Pictures go up a few at a time: each is several requests, and a send that
 // carries many must not crowd out the reads the rest of the window makes.
@@ -141,8 +143,72 @@ function sessionFrame(frame: ConversationFollowFrame | { type: 'error'; message:
   return frame
 }
 
-/** The window's services over the Studio protocol. */
-export function createStudioChatServices(client: ClientSource): ChatServices {
+/**
+ * Follow a push topic on this window's client for as long as the caller wants
+ * it. The client reconnects by itself and subscribes again; one that closed
+ * for good is replaced, and followed on its replacement. One parked (a refused
+ * ticket) is waited out without asking for it, which would wake it only to be
+ * refused again; a topic the Studio refuses for good is not asked for again.
+ */
+function followPush<T extends 'conversation.commands' | 'conversation.events'>(
+  client: ClientSource,
+  topic: T,
+  listener: (payload: StudioTopicPayload<T>) => void,
+): () => void {
+  let stop: (() => void) | null = null
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const later = (run: () => void): void => {
+    if (stopped) return
+    timer = setTimeout(() => {
+      timer = null
+      run()
+    }, PUSH_FOLLOW_RETRY_MS)
+  }
+  const follow = (): void =>
+    void client().then(
+      (connected) => {
+        if (stopped) return
+        const waitOut = (): void => {
+          if (connected.state === 'parked') later(waitOut)
+          else if (connected.state === 'closed' || connected.state === 'open') follow()
+          else later(waitOut)
+        }
+        stop = connected.subscribe(
+          topic,
+          {},
+          {
+            onPayload: (payload) => listener(payload as StudioTopicPayload<T>),
+            onEnd: () => {
+              stop = null
+              // Read once the client has said why: a park or a close ends its
+              // streams first and sets its state after.
+              queueMicrotask(() => {
+                if (connected.state === 'closed') later(follow)
+                else if (connected.state !== 'open') later(waitOut)
+              })
+            },
+          },
+        )
+      },
+      () => later(follow),
+    )
+  follow()
+  return () => {
+    stopped = true
+    if (timer) clearTimeout(timer)
+    stop?.()
+  }
+}
+
+/**
+ * The window's services over the Studio protocol. `watchOpen` hears each time
+ * the window's connection opens, a reconnect included.
+ */
+export function createStudioChatServices(
+  client: ClientSource,
+  watchOpen: (listener: () => void) => () => void = () => () => undefined,
+): ChatServices {
   return {
     providers: {
       list: (input) =>
@@ -163,6 +229,84 @@ export function createStudioChatServices(client: ClientSource): ChatServices {
               providerId: input.providerId,
             }),
         ),
+      signIn: (input) =>
+        outcome(() =>
+          ask(client, 'providers.signIn', {
+            providerId: input.providerId,
+            ...(input.cliRuntimes ? { cliRuntimes: input.cliRuntimes } : {}),
+          }),
+        ),
+      setSecret: (input) =>
+        outcome(() =>
+          ask(client, 'providers.setSecret', {
+            providerId: input.providerId,
+            value: input.value,
+            commandId: commandId(),
+          }),
+        ),
+      clearSecret: (input) =>
+        outcome(() => ask(client, 'providers.clearSecret', { providerId: input.providerId, commandId: commandId() })),
+    },
+    sessions: {
+      list: (input) =>
+        outcome(() =>
+          ask(client, 'session.list', {
+            ...(input?.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
+            ...(input?.agentId === undefined ? {} : { agentId: input.agentId }),
+          }),
+        ),
+      stop: (input) =>
+        outcome(() => ask(client, 'session.stop', { sessionId: input.sessionId, commandId: commandId() })),
+      suspend: (input) =>
+        outcome(() => ask(client, 'session.suspend', { sessionId: input.sessionId, commandId: commandId() })),
+      terminalHandoff: (input) =>
+        outcome(async () => {
+          // Only a Studio that opens terminals offers it.
+          if (!(await client()).supports(STUDIO_TERMINAL_HANDOFF_CAPABILITY))
+            return { ok: false as const, message: 'This Studio cannot open a terminal to resume the chat in.' }
+          return await ask(client, 'session.terminalHandoff', {
+            ...('sessionId' in input
+              ? { sessionId: input.sessionId }
+              : { workspaceId: input.workspaceId, agentId: input.agentId }),
+            commandId: commandId(),
+          })
+        }),
+      // A wire event is the runtime's event as it was stored, without its payload.
+      onLifecycleEvent: (listener, onReconnected) => {
+        const stopFollowing = followPush(client, 'conversation.events', (event) => listener(event as ConversationEvent))
+        // A first open the reader's own first read was waiting on reads once more, harmlessly.
+        const stopWatching = onReconnected ? watchOpen(onReconnected) : () => undefined
+        return () => {
+          stopWatching()
+          stopFollowing()
+        }
+      },
+    },
+    history: {
+      threads: (input) =>
+        outcome(() =>
+          ask(client, 'conversation.threads', {
+            workspaceId: input.workspaceId,
+            ...(input.workspaceRoot === undefined ? {} : { workspaceRoot: input.workspaceRoot }),
+          }),
+        ),
+      search: (input) =>
+        outcome(() =>
+          ask(client, 'conversation.search', {
+            workspaceId: input.workspaceId,
+            ...(input.workspaceRoot === undefined ? {} : { workspaceRoot: input.workspaceRoot }),
+            query: input.query,
+            ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
+          }),
+        ),
+      cancelSearch: async (requestId) => {
+        await ask(client, 'conversation.cancelSearch', { requestId })
+      },
+    },
+    approvalRules: {
+      list: () => outcome(() => ask(client, 'conversation.approvalRules', {})),
+      revoke: (ruleId) =>
+        outcome(() => ask(client, 'conversation.revokeApprovalRule', { ruleId, commandId: commandId() })),
     },
     files: {
       canStat: true,
@@ -199,62 +343,25 @@ export function createStudioChatServices(client: ClientSource): ChatServices {
       ),
     commands: {
       list: async (input) => (await ask(client, 'conversation.commands', input)).catalog,
-      onChanged: (listener) => {
-        let stop: (() => void) | null = null
-        let stopped = false
-        let timer: ReturnType<typeof setTimeout> | null = null
-        const later = (run: () => void): void => {
-          if (stopped) return
-          timer = setTimeout(() => {
-            timer = null
-            run()
-          }, COMMANDS_FOLLOW_RETRY_MS)
-        }
-        // The window's client reconnects by itself and subscribes again; one
-        // that closed for good is replaced, and followed on its replacement.
-        // One parked (a refused ticket) is waited out without asking for it,
-        // which would wake it only to be refused again; a topic the Studio
-        // refuses for good is not asked for again.
-        const follow = (): void =>
-          void client().then(
-            (connected) => {
-              if (stopped) return
-              const waitOut = (): void => {
-                if (connected.state === 'parked') later(waitOut)
-                else if (connected.state === 'closed' || connected.state === 'open') follow()
-                else later(waitOut)
-              }
-              stop = connected.subscribe(
-                'conversation.commands',
-                {},
-                {
-                  onPayload: (payload) => listener(payload),
-                  onEnd: () => {
-                    stop = null
-                    // Read once the client has said why: a park or a close
-                    // ends its streams first and sets its state after.
-                    queueMicrotask(() => {
-                      if (connected.state === 'closed') later(follow)
-                      else if (connected.state !== 'open') later(waitOut)
-                    })
-                  },
-                },
-              )
-            },
-            () => later(follow),
-          )
-        follow()
-        return () => {
-          stopped = true
-          if (timer) clearTimeout(timer)
-          stop?.()
-        }
-      },
+      onChanged: (listener) => followPush(client, 'conversation.commands', listener),
     },
   }
 }
 
-type StudioTransportParts = Omit<ConversationTransport, 'kind' | 'capabilities' | 'services'>
+// Every call the transport makes of a chat, its session's optional ones
+// included: a Studio of this build serves each of them.
+type StudioTransportParts = Omit<ConversationTransport, 'kind' | 'capabilities' | 'services'> &
+  Required<
+    Pick<
+      ConversationTransport,
+      | 'mcpServerAction'
+      | 'stopSubagent'
+      | 'messageSubagent'
+      | 'askSideQuestion'
+      | 'cancelSideQuestion'
+      | 'readContextBreakdown'
+    >
+  >
 
 /** A conversation on this window's Studio, over the protocol. */
 export function createStudioConversationParts(client: ClientSource): StudioTransportParts {
@@ -441,6 +548,53 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
           commandId: commandId(),
         }),
       ),
+    mcpServerAction: (input) =>
+      outcome(() =>
+        ask(client, 'session.mcpServerAction', {
+          sessionId: input.sessionId,
+          serverId: input.serverId,
+          action: input.action,
+          commandId: commandId(),
+        }),
+      ),
+    stopSubagent: (input) =>
+      outcome(() =>
+        ask(client, 'session.stopSubagent', {
+          sessionId: input.sessionId,
+          toolUseId: input.toolUseId,
+          commandId: commandId(),
+        }),
+      ),
+    messageSubagent: (input) =>
+      outcome(() =>
+        ask(client, 'session.messageSubagent', {
+          sessionId: input.sessionId,
+          toolUseId: input.toolUseId,
+          message: input.message,
+          commandId: commandId(),
+        }),
+      ),
+    askSideQuestion: (input) =>
+      outcome(() =>
+        ask(client, 'session.askSideQuestion', {
+          sessionId: input.sessionId,
+          requestId: input.requestId,
+          question: input.question,
+          ...(input.history === undefined ? {} : { history: input.history }),
+          commandId: commandId(),
+        }),
+      ),
+    cancelSideQuestion: (input) =>
+      outcome(() =>
+        ask(client, 'session.cancelSideQuestion', { sessionId: input.sessionId, requestId: input.requestId }),
+      ),
+    readContextBreakdown: async (input) => {
+      try {
+        return await ask(client, 'session.contextBreakdown', { sessionId: input.sessionId })
+      } catch (error) {
+        return { ok: false, reason: 'failed', message: messageOf(error) }
+      }
+    },
     revert: (input) =>
       outcome(() =>
         ask(client, 'conversation.revert', {

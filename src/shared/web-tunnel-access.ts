@@ -54,7 +54,6 @@ const DRIVE_CHAT = owner('conversation:read', 'conversation:operate')
 const ACCESS_ADMIN =
   'Who may reach this machine (paired apps, other machines, the tailnet) is administered in the desktop app.'
 const CREDENTIALS = 'A provider key or the GitHub token is set and cleared in the desktop app.'
-const TERMINAL = 'It opens a terminal, and there are none on the web.'
 const WINDOW_STATE = 'Only a desktop window can say it: a tab would report defaults and blanks.'
 const BEYOND = 'It acts beyond this server, on another machine or account.'
 const MODULES = 'A browser tab loads no module, so it has no module to speak for.'
@@ -83,33 +82,17 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'backlog:update-status': owner('backlog:operate'),
   'backlog:update-triage': owner('backlog:operate'),
   'cli-models:discover': owner('providers:read'),
-  'conversation-commands:list': owner('conversation:read'),
   'conversation-import:import': desktopOnly(DESKTOP),
   'conversation-import:scan': desktopOnly(DESKTOP),
-  'conversation:approval-rules:list': READ_CHAT,
-  'conversation:approval-rules:revoke': DRIVE_CHAT,
   'conversation:attachment': READ_CHAT,
-  'conversation:events:subscribe': READ_CHAT,
-  'conversation:events:unsubscribe': READ_CHAT,
   'conversation:handoff': DRIVE_CHAT,
-  'conversation:plan-document': READ_CHAT,
-  'conversation:providers:list': owner('providers:read'),
-  'conversation:providers:models': owner('providers:read'),
-  'conversation:providers:sign-in': desktopOnly(TERMINAL),
-  'conversation:search': READ_CHAT,
-  'conversation:search:cancel': READ_CHAT,
-  'conversation:secrets:clear': desktopOnly(CREDENTIALS),
-  'conversation:secrets:set': desktopOnly(CREDENTIALS),
-  'conversation:secrets:status': owner('providers:read'),
   'conversation:session:earlier': READ_CHAT,
   'conversation:session:subscribe': READ_CHAT,
   'conversation:session:unsubscribe': READ_CHAT,
   'conversation:sessions:interrupt': DRIVE_CHAT,
-  'conversation:sessions:list': READ_CHAT,
   'conversation:sessions:respond-to-request': DRIVE_CHAT,
   'conversation:sessions:send-turn': DRIVE_CHAT,
   'conversation:sessions:set-model': DRIVE_CHAT,
-  'conversation:sessions:mcp-action': DRIVE_CHAT,
   'conversation:sessions:stop-subagent': DRIVE_CHAT,
   'conversation:sessions:message-subagent': DRIVE_CHAT,
   'conversation:sessions:side-question': DRIVE_CHAT,
@@ -117,10 +100,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'conversation:sessions:context-breakdown': READ_CHAT,
   'conversation:sessions:set-permission': DRIVE_CHAT,
   'conversation:sessions:start': DRIVE_CHAT,
-  'conversation:sessions:stop': DRIVE_CHAT,
-  'conversation:sessions:suspend': DRIVE_CHAT,
-  'conversation:sessions:terminal-handoff': desktopOnly(TERMINAL),
-  'conversation:threads': READ_CHAT,
   'conversation:tool-detail': READ_CHAT,
   'conversation:event:read': READ_CHAT,
   'conversation:turn:diff': READ_CHAT,

@@ -10,6 +10,7 @@ import { useCodeFontFamily } from '../../utils/fonts'
 import { TRAFFIC_LIGHT_INSET } from '../workspace/AppTitleBar'
 import type { ToolDiffWindowInput } from './openCheckpointDiffWindow'
 import { deriveEditHunks, editPreviewSources } from '../../../../shared/conversation/editHunks'
+import { localConversationTransport } from '../panels/agentChat/conversationTransport'
 
 export function parseCheckpointDiffRequest(raw: string): ConversationTurnDiffInput | ToolDiffWindowInput | null {
   try {
@@ -29,8 +30,9 @@ export function parseCheckpointDiffRequest(raw: string): ConversationTurnDiffInp
 }
 
 async function loadDiff(input: ConversationTurnDiffInput | ToolDiffWindowInput): Promise<ConversationTurnDiffResult> {
-  if (!('toolUseId' in input)) return window.api.conversationTurnDiff(input)
-  const result = await window.api.conversationToolDetail({ ...input.key, toolUseId: input.toolUseId })
+  // The window's chats, over whichever way its chat views reach them.
+  if (!('toolUseId' in input)) return localConversationTransport.turnDiff(input)
+  const result = await localConversationTransport.toolDetail({ ...input.key, toolUseId: input.toolUseId })
   if (!result.ok) return result
   if (result.detail.clipped)
     return { ok: false, message: 'The stored tool input was clipped; the complete edit is unavailable.' }

@@ -231,15 +231,11 @@ import type {
   DesignSystemDetachResult,
 } from './design-system/attach'
 import type {
-  ConversationEvent,
   ConversationInterruptInput,
-  ConversationListSessionsInput,
-  ConversationListSessionsResult,
   ConversationRespondToRequestInput,
   ConversationSendTurnInput,
   ConversationSessionActionResult,
   ConversationSetModelInput,
-  ConversationMcpServerActionInput,
   ConversationMessageSubagentInput,
   ConversationStopSubagentInput,
   ConversationCancelSideQuestionInput,
@@ -248,17 +244,9 @@ import type {
   ConversationSideQuestionExchange,
   ConversationSideQuestionInput,
   ConversationSideQuestionResult,
-  ConversationMcpServerActionResult,
   ConversationSetPermissionInput,
-  ConversationProvidersListInput,
-  ConversationProviderSignInInput,
-  ConversationProviderSignInResult,
   ConversationStartSessionInput,
   ConversationStartSessionResult,
-  ConversationStopSessionInput,
-  ConversationSuspendSessionInput,
-  ConversationTerminalHandoffInput,
-  ConversationTerminalHandoffResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
   ConversationEventReadInput,
@@ -266,8 +254,6 @@ import type {
   ConversationAttachmentInput,
   ConversationAttachmentResult,
   ConversationImageAttachment,
-  ConversationPlanDocumentInput,
-  ConversationPlanDocumentResult,
   ConversationSubscribeInput,
   ConversationLoadEarlierInput,
   ConversationSessionFrame,
@@ -282,18 +268,9 @@ import type {
   ConversationHandoffResult,
   ConversationForkInput,
   ConversationForkResult,
-  ConversationApprovalRulesResult,
-  ConversationApprovalRuleRevokeResult,
 } from './conversation-runtime'
 import type { ModuleBridgeInvokeResult } from './modules/bridge'
 import type { ModuleHostServiceRequest } from './modules/host-service-bridge'
-import type {
-  ConversationWorkspaceKey,
-  ConversationThreadsResult,
-  ConversationSearchInput,
-  ConversationSearchResult,
-} from './conversation-index'
-import type { ConversationSearchHit } from './conversation-index'
 import type { ModuleEventEnvelope } from './modules/events'
 import type { ModuleNotificationDelivery } from './modules/notifications'
 import type {
@@ -322,8 +299,6 @@ export type {
 } from './version-control'
 import type { SprintEngineAuthState } from './ipc/account'
 import type { CliModelDiscoveryInput, CliModelDiscoveryResult } from './ipc/cli-model-discovery'
-import type { ConversationCommandsRequest } from './ipc/conversation-commands'
-import type { ConversationCommandCatalog } from './conversation/commands'
 import type { UsageLimitsState } from './usage-limits'
 import type { UsageReportRequest, UsageReportResult } from './usage-report'
 import type { UsageLimitResumeState, UsageLimitResumeUpdate } from './usage-limit-resume'
@@ -394,15 +369,6 @@ import type { CardRunInput, CardRunResult } from './ipc/cards'
 import type { CliVersionAdvisoriesInput, CliVersionAdvisoriesResult } from './ipc/cli-version'
 import type {
   AgentCli,
-  ConversationProviderListResult,
-  ConversationProviderModelsInput,
-  ConversationProviderModelsResult,
-  ConversationSecretClearInput,
-  ConversationSecretClearResult,
-  ConversationSecretSetInput,
-  ConversationSecretSetResult,
-  ConversationSecretStatusInput,
-  ConversationSecretStatusResult,
   CredentialSecretClearInput,
   CredentialSecretClearResult,
   CredentialSecretSetInput,
@@ -1576,14 +1542,6 @@ export type ElectronApi = {
   resolveGithubExtension: (input: GithubExtensionResolveInput) => Promise<GithubExtensionResolveResult>
   installGithubExtension: (input: GithubExtensionInstallInput) => Promise<MarketplacePluginRegistryInstallResult>
   checkGithubExtensionUpdate: (input: GithubExtensionCheckUpdateInput) => Promise<GithubExtensionCheckUpdateResult>
-  conversationProvidersList: (input?: ConversationProvidersListInput) => Promise<ConversationProviderListResult>
-  conversationProviderModels: (input: ConversationProviderModelsInput) => Promise<ConversationProviderModelsResult>
-  // The line a plain terminal on this machine runs to sign a chat's CLI back
-  // in, resolved to the executable the conversation provider runs.
-  conversationProviderSignIn: (input: ConversationProviderSignInInput) => Promise<ConversationProviderSignInResult>
-  conversationSecretStatus: (input: ConversationSecretStatusInput) => Promise<ConversationSecretStatusResult>
-  conversationSecretSet: (input: ConversationSecretSetInput) => Promise<ConversationSecretSetResult>
-  conversationSecretClear: (input: ConversationSecretClearInput) => Promise<ConversationSecretClearResult>
   credentialSecretStatus: (input: CredentialSecretStatusInput) => Promise<CredentialSecretStatusResult>
   credentialSecretSet: (input: CredentialSecretSetInput) => Promise<CredentialSecretSetResult>
   credentialSecretClear: (input: CredentialSecretClearInput) => Promise<CredentialSecretClearResult>
@@ -1599,8 +1557,6 @@ export type ElectronApi = {
   // Switch a running conversation to another model of its provider; applies
   // from the next turn.
   conversationSessionSetModel: (input: ConversationSetModelInput) => Promise<ConversationSessionActionResult>
-  /** Reconnect, switch or sign in to one of a live chat's MCP servers; a sign-in answers the URL to finish it at. */
-  conversationSessionMcpAction: (input: ConversationMcpServerActionInput) => Promise<ConversationMcpServerActionResult>
   /** Stop one agent a live chat spawned, by its lane, leaving the chat and its turn running. */
   conversationSessionStopSubagent: (input: ConversationStopSubagentInput) => Promise<ConversationSessionActionResult>
   conversationSessionMessageSubagent: (
@@ -1616,26 +1572,12 @@ export type ElectronApi = {
   conversationSessionContextBreakdown: (
     input: ConversationContextBreakdownInput,
   ) => Promise<ConversationContextBreakdownResult>
-  conversationSessionStop: (input: ConversationStopSessionInput) => Promise<ConversationSessionActionResult>
-  // Settle and Snooze: end the chat's child process, keeping the session so the
-  // next message respawns it.
-  conversationSessionSuspend: (input: ConversationSuspendSessionInput) => Promise<ConversationSessionActionResult>
-  // Resume in terminal: suspend the chat and open a terminal agent that
-  // resumes its CLI session (`claude --resume <id>`, `codex resume <id>`).
-  conversationSessionTerminalHandoff: (
-    input: ConversationTerminalHandoffInput,
-  ) => Promise<ConversationTerminalHandoffResult>
-  conversationSessionsList: (input?: ConversationListSessionsInput) => Promise<ConversationListSessionsResult>
   conversationToolDetail: (input: ConversationToolDetailInput) => Promise<ConversationToolDetailResult>
   // An event that crossed cut to fit (`wireClipped`), read whole.
   conversationEvent: (input: ConversationEventReadInput) => Promise<ConversationEventReadResult>
   // The bytes of an image a sent turn carried, by the store reference its
   // `user_message` recorded — for a bubble replayed after a restart.
   conversationAttachment: (input: ConversationAttachmentInput) => Promise<ConversationAttachmentResult>
-  // A plan the agent proposed, as a file the workspace pane can open: the
-  // agent's own plan file while it still holds that plan, otherwise a copy in
-  // app data.
-  conversationPlanDocument: (input: ConversationPlanDocumentInput) => Promise<ConversationPlanDocumentResult>
   conversationLoadEarlier: (input: ConversationLoadEarlierInput) => Promise<ConversationPageResult>
   conversationTurnDiff: (input: ConversationTurnDiffInput) => Promise<ConversationTurnDiffResult>
   conversationRevertToTurn: (input: ConversationRevertInput) => Promise<ConversationRevertResult>
@@ -1648,20 +1590,10 @@ export type ElectronApi = {
   // Start a new chat holding this one up to an earlier message ("Fork from
   // here"); gated on the provider's `fork` capability.
   conversationForkAtTurn: (input: ConversationForkInput) => Promise<ConversationForkResult>
-  conversationApprovalRules: () => Promise<ConversationApprovalRulesResult>
-  conversationThreads: (input: ConversationWorkspaceKey) => Promise<ConversationThreadsResult>
-  conversationSearch: (input: ConversationSearchInput) => Promise<ConversationSearchResult>
-  onConversationSearchBatch: (
-    callback: (batch: { requestId: string; hits: ConversationSearchHit[] }) => void,
-  ) => () => void
-  conversationCancelSearch: (input: { requestId: string }) => Promise<{ ok: boolean }>
-  conversationRevokeApprovalRule: (input: { ruleId: string }) => Promise<ConversationApprovalRuleRevokeResult>
   onConversationSession: (
     input: ConversationSubscribeInput,
     cb: (frame: ConversationSessionFrame) => void,
   ) => () => void
-  /** Every chat's lifecycle and step events, without their payloads: a sign that a chat moved. */
-  onConversationEvent: (cb: (event: ConversationEvent) => void) => () => void
   logDiagnostic: (input: DiagnosticLogInput) => Promise<DiagnosticLogEntry>
   openDiagnosticsLogsFolder: () => Promise<{ opened: true; path: string }>
   updateGetState: () => Promise<AppUpdateState>
@@ -2065,10 +1997,6 @@ export type ElectronApi = {
   // produced, whoever asked, and returns the unsubscribe.
   cliModelsDiscover: (input?: CliModelDiscoveryInput) => Promise<CliModelDiscoveryResult>
   onCliModelsChanged: (cb: (result: CliModelDiscoveryResult) => void) => () => void
-  // A chat composer's slash commands for one CLI in one folder, and every
-  // list main hears afterwards (src/main/conversation-commands).
-  conversationCommands: (input: ConversationCommandsRequest) => Promise<ConversationCommandCatalog>
-  onConversationCommandsChanged: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
   // The subscription usage limits (five-hour and weekly windows) the agents
   // reported, per provider, and every change main hears afterwards
   // (src/main/usage-limits).

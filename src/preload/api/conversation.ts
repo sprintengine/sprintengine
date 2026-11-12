@@ -1,35 +1,13 @@
 import type { IpcRendererEvent } from 'electron'
 import { ipc as ipcRenderer } from '../ipc-router'
-import type {
-  ConversationWorkspaceKey,
-  ConversationThreadsResult,
-  ConversationSearchInput,
-  ConversationSearchResult,
-} from '../../shared/conversation-index'
-import type { ConversationSearchHit } from '../../shared/conversation-index'
 
+import type { ElectronApi } from '../../shared/electron-api'
 import type {
-  ConversationProviderListResult,
-  ConversationProviderModelsInput,
-  ConversationProviderModelsResult,
-  ConversationSecretClearInput,
-  ConversationSecretClearResult,
-  ConversationSecretSetInput,
-  ConversationSecretSetResult,
-  ConversationSecretStatusInput,
-  ConversationSecretStatusResult,
-  ElectronApi,
-} from '../../shared/electron-api'
-import type {
-  ConversationEvent,
   ConversationInterruptInput,
-  ConversationListSessionsInput,
-  ConversationListSessionsResult,
   ConversationRespondToRequestInput,
   ConversationSendTurnInput,
   ConversationSessionActionResult,
   ConversationSetModelInput,
-  ConversationMcpServerActionInput,
   ConversationMessageSubagentInput,
   ConversationStopSubagentInput,
   ConversationCancelSideQuestionInput,
@@ -37,25 +15,15 @@ import type {
   ConversationContextBreakdownResult,
   ConversationSideQuestionInput,
   ConversationSideQuestionResult,
-  ConversationMcpServerActionResult,
   ConversationSetPermissionInput,
   ConversationStartSessionInput,
   ConversationStartSessionResult,
-  ConversationStopSessionInput,
-  ConversationSuspendSessionInput,
-  ConversationTerminalHandoffInput,
-  ConversationTerminalHandoffResult,
-  ConversationProvidersListInput,
-  ConversationProviderSignInInput,
-  ConversationProviderSignInResult,
   ConversationToolDetailInput,
   ConversationToolDetailResult,
   ConversationEventReadInput,
   ConversationEventReadResult,
   ConversationAttachmentInput,
   ConversationAttachmentResult,
-  ConversationPlanDocumentInput,
-  ConversationPlanDocumentResult,
   ConversationSubscribeInput,
   ConversationLoadEarlierInput,
   ConversationSessionFrame,
@@ -70,27 +38,9 @@ import type {
   ConversationHandoffResult,
   ConversationForkInput,
   ConversationForkResult,
-  ConversationApprovalRulesResult,
-  ConversationApprovalRuleRevokeResult,
 } from '../../shared/conversation-runtime'
 
 type ConversationIpcRenderer = {
-  on(
-    channel: 'conversation:search:batch',
-    listener: (event: IpcRendererEvent, batch: { requestId: string; hits: ConversationSearchHit[] }) => void,
-  ): void
-  removeListener(
-    channel: 'conversation:search:batch',
-    listener: (event: IpcRendererEvent, batch: { requestId: string; hits: ConversationSearchHit[] }) => void,
-  ): void
-  invoke(channel: 'conversation:threads', input: ConversationWorkspaceKey): Promise<ConversationThreadsResult>
-  invoke(channel: 'conversation:search', input: ConversationSearchInput): Promise<ConversationSearchResult>
-  invoke(channel: 'conversation:search:cancel', input: { requestId: string }): Promise<{ ok: boolean }>
-  invoke(channel: 'conversation:approval-rules:list'): Promise<ConversationApprovalRulesResult>
-  invoke(
-    channel: 'conversation:approval-rules:revoke',
-    input: { ruleId: string },
-  ): Promise<ConversationApprovalRuleRevokeResult>
   invoke(channel: 'conversation:turn:diff', input: ConversationTurnDiffInput): Promise<ConversationTurnDiffResult>
   invoke(channel: 'conversation:turn:revert', input: ConversationRevertInput): Promise<ConversationRevertResult>
   invoke(channel: 'conversation:turn:rewind', input: ConversationRewindInput): Promise<ConversationRewindResult>
@@ -110,27 +60,6 @@ type ConversationIpcRenderer = {
     channel: 'conversation:session-event',
     listener: (event: IpcRendererEvent, payload: { subscriptionId: string; frame: ConversationSessionFrame }) => void,
   ): void
-  invoke(
-    channel: 'conversation:providers:list',
-    input?: ConversationProvidersListInput,
-  ): Promise<ConversationProviderListResult>
-  invoke(
-    channel: 'conversation:providers:models',
-    input: ConversationProviderModelsInput,
-  ): Promise<ConversationProviderModelsResult>
-  invoke(
-    channel: 'conversation:providers:sign-in',
-    input: ConversationProviderSignInInput,
-  ): Promise<ConversationProviderSignInResult>
-  invoke(
-    channel: 'conversation:secrets:status',
-    input: ConversationSecretStatusInput,
-  ): Promise<ConversationSecretStatusResult>
-  invoke(channel: 'conversation:secrets:set', input: ConversationSecretSetInput): Promise<ConversationSecretSetResult>
-  invoke(
-    channel: 'conversation:secrets:clear',
-    input: ConversationSecretClearInput,
-  ): Promise<ConversationSecretClearResult>
   invoke(
     channel: 'conversation:sessions:start',
     input: ConversationStartSessionInput,
@@ -156,10 +85,6 @@ type ConversationIpcRenderer = {
     input: ConversationSetModelInput,
   ): Promise<ConversationSessionActionResult>
   invoke(
-    channel: 'conversation:sessions:mcp-action',
-    input: ConversationMcpServerActionInput,
-  ): Promise<ConversationMcpServerActionResult>
-  invoke(
     channel: 'conversation:sessions:stop-subagent',
     input: ConversationStopSubagentInput,
   ): Promise<ConversationSessionActionResult>
@@ -179,68 +104,14 @@ type ConversationIpcRenderer = {
     channel: 'conversation:sessions:context-breakdown',
     input: ConversationContextBreakdownInput,
   ): Promise<ConversationContextBreakdownResult>
-  invoke(
-    channel: 'conversation:sessions:stop',
-    input: ConversationStopSessionInput,
-  ): Promise<ConversationSessionActionResult>
-  invoke(
-    channel: 'conversation:sessions:suspend',
-    input: ConversationSuspendSessionInput,
-  ): Promise<ConversationSessionActionResult>
-  invoke(
-    channel: 'conversation:sessions:terminal-handoff',
-    input: ConversationTerminalHandoffInput,
-  ): Promise<ConversationTerminalHandoffResult>
-  invoke(
-    channel: 'conversation:sessions:list',
-    input?: ConversationListSessionsInput,
-  ): Promise<ConversationListSessionsResult>
   invoke(channel: 'conversation:tool-detail', input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
   invoke(channel: 'conversation:event:read', input: ConversationEventReadInput): Promise<ConversationEventReadResult>
   invoke(channel: 'conversation:attachment', input: ConversationAttachmentInput): Promise<ConversationAttachmentResult>
-  invoke(
-    channel: 'conversation:plan-document',
-    input: ConversationPlanDocumentInput,
-  ): Promise<ConversationPlanDocumentResult>
-  invoke(channel: 'conversation:events:subscribe'): Promise<{ ok: true; subscriptionId: string }>
-  invoke(
-    channel: 'conversation:events:unsubscribe',
-    input: { subscriptionId: string },
-  ): Promise<{ ok: true } | { ok: false; message: string }>
-  on(channel: 'conversation:event', listener: (event: IpcRendererEvent, payload: ConversationEvent) => void): void
-  removeListener(
-    channel: 'conversation:event',
-    listener: (event: IpcRendererEvent, payload: ConversationEvent) => void,
-  ): void
 }
 
 export function createConversationApi(renderer: ConversationIpcRenderer) {
-  const callbacks = new Set<(event: ConversationEvent) => void>()
-  let subscription: Promise<{ ok: true; subscriptionId: string }> | undefined
-  const listener = (_event: IpcRendererEvent, payload: ConversationEvent) => {
-    for (const callback of callbacks) {
-      try {
-        callback(payload)
-      } catch {
-        callbacks.delete(callback)
-      }
-    }
-  }
   let nextScopedId = 0
   return {
-    conversationThreads: (input: ConversationWorkspaceKey) => renderer.invoke('conversation:threads', input),
-    conversationSearch: (input: ConversationSearchInput) => renderer.invoke('conversation:search', input),
-    onConversationSearchBatch: (callback: (batch: { requestId: string; hits: ConversationSearchHit[] }) => void) => {
-      const receive = (_event: IpcRendererEvent, batch: { requestId: string; hits: ConversationSearchHit[] }) =>
-        callback(batch)
-      renderer.on('conversation:search:batch', receive)
-      return () => renderer.removeListener('conversation:search:batch', receive)
-    },
-    conversationCancelSearch: (input: { requestId: string }) => renderer.invoke('conversation:search:cancel', input),
-    conversationApprovalRules: (): Promise<ConversationApprovalRulesResult> =>
-      renderer.invoke('conversation:approval-rules:list'),
-    conversationRevokeApprovalRule: (input: { ruleId: string }): Promise<ConversationApprovalRuleRevokeResult> =>
-      renderer.invoke('conversation:approval-rules:revoke', input),
     conversationTurnDiff: (input: ConversationTurnDiffInput): Promise<ConversationTurnDiffResult> =>
       renderer.invoke('conversation:turn:diff', input),
     conversationRevertToTurn: (input: ConversationRevertInput): Promise<ConversationRevertResult> =>
@@ -251,18 +122,6 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
       renderer.invoke('conversation:handoff', input),
     conversationForkAtTurn: (input: ConversationForkInput): Promise<ConversationForkResult> =>
       renderer.invoke('conversation:turn:fork', input),
-    conversationProvidersList: (input?: ConversationProvidersListInput): Promise<ConversationProviderListResult> =>
-      renderer.invoke('conversation:providers:list', input),
-    conversationProviderModels: (input: ConversationProviderModelsInput): Promise<ConversationProviderModelsResult> =>
-      renderer.invoke('conversation:providers:models', input),
-    conversationProviderSignIn: (input: ConversationProviderSignInInput): Promise<ConversationProviderSignInResult> =>
-      renderer.invoke('conversation:providers:sign-in', input),
-    conversationSecretStatus: (input: ConversationSecretStatusInput): Promise<ConversationSecretStatusResult> =>
-      renderer.invoke('conversation:secrets:status', input),
-    conversationSecretSet: (input: ConversationSecretSetInput): Promise<ConversationSecretSetResult> =>
-      renderer.invoke('conversation:secrets:set', input),
-    conversationSecretClear: (input: ConversationSecretClearInput): Promise<ConversationSecretClearResult> =>
-      renderer.invoke('conversation:secrets:clear', input),
     conversationSessionStart: (input: ConversationStartSessionInput): Promise<ConversationStartSessionResult> =>
       renderer.invoke('conversation:sessions:start', input),
     conversationSessionSendTurn: (input: ConversationSendTurnInput): Promise<ConversationSessionActionResult> =>
@@ -277,9 +136,6 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
     ): Promise<ConversationSessionActionResult> => renderer.invoke('conversation:sessions:set-permission', input),
     conversationSessionSetModel: (input: ConversationSetModelInput): Promise<ConversationSessionActionResult> =>
       renderer.invoke('conversation:sessions:set-model', input),
-    conversationSessionMcpAction: (
-      input: ConversationMcpServerActionInput,
-    ): Promise<ConversationMcpServerActionResult> => renderer.invoke('conversation:sessions:mcp-action', input),
     conversationSessionStopSubagent: (input: ConversationStopSubagentInput): Promise<ConversationSessionActionResult> =>
       renderer.invoke('conversation:sessions:stop-subagent', input),
     conversationSessionMessageSubagent: (
@@ -295,23 +151,12 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
     conversationSessionContextBreakdown: (
       input: ConversationContextBreakdownInput,
     ): Promise<ConversationContextBreakdownResult> => renderer.invoke('conversation:sessions:context-breakdown', input),
-    conversationSessionStop: (input: ConversationStopSessionInput): Promise<ConversationSessionActionResult> =>
-      renderer.invoke('conversation:sessions:stop', input),
-    conversationSessionSuspend: (input: ConversationSuspendSessionInput): Promise<ConversationSessionActionResult> =>
-      renderer.invoke('conversation:sessions:suspend', input),
-    conversationSessionTerminalHandoff: (
-      input: ConversationTerminalHandoffInput,
-    ): Promise<ConversationTerminalHandoffResult> => renderer.invoke('conversation:sessions:terminal-handoff', input),
-    conversationSessionsList: (input?: ConversationListSessionsInput): Promise<ConversationListSessionsResult> =>
-      renderer.invoke('conversation:sessions:list', input),
     conversationToolDetail: (input: ConversationToolDetailInput): Promise<ConversationToolDetailResult> =>
       renderer.invoke('conversation:tool-detail', input),
     conversationEvent: (input: ConversationEventReadInput): Promise<ConversationEventReadResult> =>
       renderer.invoke('conversation:event:read', input),
     conversationAttachment: (input: ConversationAttachmentInput): Promise<ConversationAttachmentResult> =>
       renderer.invoke('conversation:attachment', input),
-    conversationPlanDocument: (input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult> =>
-      renderer.invoke('conversation:plan-document', input),
     conversationLoadEarlier: (input: ConversationLoadEarlierInput): Promise<ConversationPageResult> =>
       renderer.invoke('conversation:session:earlier', input),
     onConversationSession: (
@@ -345,71 +190,29 @@ export function createConversationApi(renderer: ConversationIpcRenderer) {
           .catch(() => undefined)
       }
     },
-    onConversationEvent: (cb: (event: ConversationEvent) => void): (() => void) => {
-      callbacks.add(cb)
-      if (!subscription) {
-        renderer.on('conversation:event', listener)
-        subscription = renderer.invoke('conversation:events:subscribe')
-        void subscription.catch(() => undefined)
-      }
-      let disposed = false
-      return () => {
-        if (disposed) return
-        disposed = true
-        callbacks.delete(cb)
-        if (callbacks.size > 0) return
-        renderer.removeListener('conversation:event', listener)
-        const pending = subscription
-        subscription = undefined
-        void pending
-          ?.then((result) => {
-            void renderer.invoke('conversation:events:unsubscribe', { subscriptionId: result.subscriptionId })
-          })
-          .catch(() => undefined)
-      }
-    },
   } satisfies Pick<
     ElectronApi,
-    | 'conversationProvidersList'
-    | 'conversationThreads'
-    | 'conversationSearch'
-    | 'onConversationSearchBatch'
-    | 'conversationCancelSearch'
-    | 'conversationProviderModels'
-    | 'conversationProviderSignIn'
-    | 'conversationSecretStatus'
-    | 'conversationSecretSet'
-    | 'conversationSecretClear'
     | 'conversationSessionStart'
     | 'conversationSessionSendTurn'
     | 'conversationSessionInterrupt'
     | 'conversationSessionRespondToRequest'
     | 'conversationSessionSetPermission'
     | 'conversationSessionSetModel'
-    | 'conversationSessionMcpAction'
     | 'conversationSessionStopSubagent'
     | 'conversationSessionMessageSubagent'
     | 'conversationSessionAskSideQuestion'
     | 'conversationSessionCancelSideQuestion'
     | 'conversationSessionContextBreakdown'
-    | 'conversationSessionStop'
-    | 'conversationSessionSuspend'
-    | 'conversationSessionTerminalHandoff'
-    | 'conversationSessionsList'
     | 'conversationToolDetail'
     | 'conversationEvent'
     | 'conversationAttachment'
-    | 'conversationPlanDocument'
     | 'conversationLoadEarlier'
     | 'conversationTurnDiff'
     | 'conversationRevertToTurn'
     | 'conversationRewindToTurn'
     | 'conversationHandoff'
     | 'conversationForkAtTurn'
-    | 'conversationApprovalRules'
-    | 'conversationRevokeApprovalRule'
     | 'onConversationSession'
-    | 'onConversationEvent'
   >
 }
 
