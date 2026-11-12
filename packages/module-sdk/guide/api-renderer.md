@@ -105,7 +105,8 @@ useEffect(() => host.subscribe('changed', () => void reload()), [])
   `code` is `unknown_channel`, `not_bridgeable` or `permission_missing`.
 - Events are signals, not state: nothing is replayed, so read the current
   state through a channel and let the event say "read again".
-- Payloads cross IPC: structured-cloneable values only.
+- Invoke payloads cross IPC: structured-cloneable values only. Event payloads
+  ride the Studio protocol's `module.events` stream: JSON values only.
 
 ## Drag and drop
 

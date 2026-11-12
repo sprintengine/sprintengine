@@ -25,6 +25,9 @@
 // `settings:write` changes this Studio's settings from a client: a provider's
 // key, an approval rule revoked. Like `environment:maintain`, an owner holds
 // it and a pairing only when it was given it.
+//
+// `modules:read` hears what this Studio's modules say: their events and the
+// bell rows they raise (`module.*`). It is not held to an owner's connection.
 
 /** Every scope this version of the protocol defines, narrowest first. */
 export const STUDIO_SCOPES = [
@@ -38,6 +41,7 @@ export const STUDIO_SCOPES = [
   'files:write',
   'environment:maintain',
   'settings:write',
+  'modules:read',
 ] as const
 
 export type StudioScope = (typeof STUDIO_SCOPES)[number]

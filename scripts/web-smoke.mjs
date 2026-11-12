@@ -88,9 +88,8 @@ const KNOWN_BOOT_REFUSALS = new Set([
   // none of its own to offer at first run.
   'conversation-import:scan',
   // Third-party modules run in the desktop app only (the module bridge is
-  // refused to a web tab too): the bell's backlog of module notifications and
-  // the push of module settings to main have nothing to serve in a browser.
-  'modules:notifications:recent',
+  // refused to a web tab too): the push of module settings to main has
+  // nothing to serve in a browser.
   'modules:set-app-state',
 ])
 

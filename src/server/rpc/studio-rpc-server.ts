@@ -15,6 +15,7 @@ import {
   STUDIO_PULL_REQUEST_LINK_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_LOCAL_SERVERS_CAPABILITY,
+  STUDIO_MODULES_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
@@ -29,6 +30,7 @@ import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioModules } from './studio-modules'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -129,6 +131,8 @@ export type StudioRpcServerOptions = {
   updates?: StudioUpdates
   /** The protocol window this Studio speaks: this build's unless given (a test standing in for an older or newer one). */
   protocol?: StudioProtocolWindow
+  /** What this Studio's modules say to clients. Advertised as `modules` only when given. */
+  modules?: StudioModules
   resyncRetryAfterMs?: (clientId: string) => number
   socketPath?: string
   helloTimeoutMs?: number
@@ -179,6 +183,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
           options.pullRequests !== undefined) &&
         (capability !== STUDIO_PULL_REQUEST_WATCH_CAPABILITY || options.pullRequests?.unwatch !== undefined) &&
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
+        (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined),
@@ -229,6 +234,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.files ? { files: options.files } : {}),
         ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
         ...(options.localServers ? { localServers: options.localServers } : {}),
+        ...(options.modules ? { modules: options.modules } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,
@@ -266,6 +272,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.files ? { files: options.files } : {}),
         ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
         ...(options.localServers ? { localServers: options.localServers } : {}),
+        ...(options.modules ? { modules: options.modules } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,

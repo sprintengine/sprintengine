@@ -92,6 +92,9 @@ The `welcome`'s `grant` is what the connection may do:
   new version, drain and restart into it.
 - `settings:write` — change this Studio's settings: set or clear a provider's
   key (`providers.setSecret`, `.clearSecret`), revoke an approval rule.
+- `modules:read` — hear what this Studio's modules say: the `module.events`
+  and `module.notifications` streams, under the `modules` capability. Not an
+  owner's only; a pairing holds it when it was given it.
 - `owner` — the connection is Studio's own, with every scope and no ceiling.
   Five methods are an owner's only, whatever scopes another grant holds, and
   are refused `owner_required`; each says why in `STUDIO_METHODS[m].owner`:

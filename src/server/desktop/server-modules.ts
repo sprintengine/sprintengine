@@ -19,8 +19,7 @@ import { readModuleTrustContextSync } from '../../main/modules/trust-context'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { activeForChannel } from '../../shared/modules/dev-only'
-import { MODULE_EVENTS_CHANNEL } from '../../shared/modules/events'
-import { MODULE_NOTIFICATIONS_CHANNEL } from '../../shared/modules/notifications'
+import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
 import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest } from '../../shared/modules/manifest'
 import { resolveModuleEnablement } from '../../shared/modules/resolve'
 import type { StudioCore } from '../core/studio-core'
@@ -30,8 +29,8 @@ import { installElectronRequireGuard } from './electron-require-guard'
 
 // The module kernel in the Studio server out of process (phase 6 spec, 12.2):
 // every module's server half, registered on the server's IPC tunnel, its MCP
-// tools on the server's gateway, its events to every window through the
-// tunnel. The same steps app-main.ts takes in process, over the server's own
+// tools on the server's gateway, its events and bell rows on the Studio RPC's
+// `module.*` streams. The same steps app-main.ts takes in process, over the server's own
 // services.
 //
 // Enablement and trust are written by the shell (Settings and the marketplace
@@ -40,6 +39,8 @@ import { installElectronRequireGuard } from './electron-require-guard'
 // written them.
 
 export type ServerModules = {
+  /** What the modules say to clients, for the Studio RPC. */
+  readonly hub: StudioModules
   /** Register every enabled module. Called once the gateway exists. */
   load(registry: Pick<IpcMain, 'handle' | 'removeHandler'> | unknown, gateway: StudioGateway): void
   mcpTools(): ReadonlyArray<McpToolContribution>
@@ -69,6 +70,8 @@ export function createServerModules(deps: {
     }
   }
   const enabled = new Set<string>()
+  const hub = createStudioModuleHub()
+  hub.readRecentFrom(() => load?.kernel.recentNotifications() ?? [])
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
   let manifests: CapabilityManifest[] = []
@@ -80,6 +83,7 @@ export function createServerModules(deps: {
   }
 
   return {
+    hub,
     load(registry, nextGateway) {
       gateway = nextGateway
       const overrides = readOverrides()
@@ -130,9 +134,8 @@ export function createServerModules(deps: {
         moduleVerifiedFiles: thirdParty.verifiedFiles,
         ineligible: thirdParty.ineligible,
         launchErrors: thirdParty.launchErrors,
-        deliverModuleEvent: (event) => platform.clients.publish(MODULE_EVENTS_CHANNEL, event),
-        deliverModuleNotification: (notification) =>
-          platform.clients.publish(MODULE_NOTIFICATIONS_CHANNEL, notification),
+        deliverModuleEvent: (event) => hub.deliverEvent(event),
+        deliverModuleNotification: (notification) => hub.deliverNotification(notification),
         electronMain: false,
         // A module tool that would shadow one of the gateway's own is refused
         // at registration, naming the tool it collides with.

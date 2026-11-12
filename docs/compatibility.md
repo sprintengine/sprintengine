@@ -1026,7 +1026,12 @@ terminals; `conversation.threads`, `conversation.search` (every hit at once,
 no partial batches) and `conversation.cancelSearch`;
 `conversation.approvalRules` and `conversation.revokeApprovalRule`; and
 `providers.signIn`, `providers.setSecret` and `providers.clearSecret`. A
-client calls each only on a Studio that advertises its capability. Explicit grants
+client calls each only on a Studio that advertises its capability. `modules`
+adds the `module.events` and `module.notifications` streams, what a Studio's
+modules say to clients, under the `modules:read` scope a grant holds
+explicitly (a pairing made before it never gains it); a module event's payload
+is JSON. A Studio without a module kernel leaves the capability out, and a
+client subscribes only where it is advertised. Explicit grants
 (2026-11-12) replace "owners only" on everything above and on the chat
 surface, the conversation commands, `files.*` by root, `tools.grant*`,
 `localServers.*` and `pullRequests.list/refresh/unwatch`: each reaches a client

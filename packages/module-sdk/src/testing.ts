@@ -33,6 +33,7 @@ import { registerHooks } from 'node:module'
 import { dirname, isAbsolute, resolve as resolvePath } from 'node:path'
 
 import { HOST_API_VERSION } from './host-api.js'
+import { jsonValueProblem } from './json-value.js'
 import type { HostCapability } from './host-api.js'
 import type {
   BacklogItemAction,
@@ -756,7 +757,12 @@ export function createFakeMainHost(options: FakeMainHostOptions): FakeMainHost {
     },
     emit(topic, payload) {
       const valid = validateTopic(moduleId, topic)
-      // The payload crosses IPC: one that cannot be cloned throws here as it would there.
+      // The payload crosses the Studio protocol: one that is not JSON throws here as it would there.
+      const problem = payload === undefined ? null : jsonValueProblem(payload)
+      if (problem)
+        throw new Error(
+          `Module "${moduleId}" emitted a "${valid}" payload that cannot be sent to a client: ${problem}.`,
+        )
       const cloned = payload === undefined ? undefined : structuredClone(payload)
       fake.emitted.push(cloned === undefined ? { topic: valid } : { topic: valid, payload: cloned })
       for (const listener of emitListeners) listener(valid, structuredClone(cloned))

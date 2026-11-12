@@ -25,6 +25,7 @@ import {
   type StudioClientInfo,
   type StudioErrorBody,
   type StudioGrant,
+  type StudioModuleNotification,
   type StudioRequestFrame,
   type StudioServerFrame,
   type StudioPushTopic,
@@ -47,6 +48,7 @@ import type { ClientToolConnection, ClientToolRegistry } from '../tools/client-t
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioModules } from './studio-modules'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -144,6 +146,8 @@ export type StudioRpcConnectionOptions = {
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started: the `localServers.changed` stream. */
   localServers?: StudioLocalServers
+  /** What this Studio's modules say: the `module.events` and `module.notifications` streams. */
+  modules?: StudioModules
   /** The welcome's server-wide members: who this Studio is and what it serves. */
   welcome: () => Omit<StudioWelcomeFrame, 't' | 'grant' | 'pairing'>
   /** The delay a client that fell behind is told to wait; it should grow with repeated resyncs. */
@@ -860,6 +864,53 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /** A module's events, or every module's, as the kernel delivers them: in each module's order, never replayed. */
+  function subscribeModuleEvents(id: string, params: StudioTopicParams<'module.events'>): void {
+    const modules = options.modules
+    if (!modules) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.events.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'module.events', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = modules.onEvent((event) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      if (params.moduleId !== undefined && event.sourceModuleId !== params.moduleId) return
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, 'module.events').ok) {
+        refreshGrant()
+        return
+      }
+      push('module.events', id, event)
+    })
+    subscription.handle = { dispose: stop }
+  }
+
+  /** The bell: the rows the kernel still keeps, oldest first, then each new one. */
+  function subscribeModuleNotifications(id: string): void {
+    const modules = options.modules
+    if (!modules) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve module.notifications.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'module.notifications', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const send = (notification: StudioModuleNotification): void => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, 'module.notifications').ok) {
+        refreshGrant()
+        return
+      }
+      push('module.notifications', id, notification)
+    }
+    // The backlog and the listener in one turn: nothing raised between them is lost or heard twice.
+    for (const notification of modules.recentNotifications()) send(notification)
+    subscription.handle = { dispose: modules.onNotification(send) }
+  }
+
   /** The client toolsets this client may see, whole, after each change; a burst of changes is one push. */
   function subscribeCatalog(id: string): void {
     const tools = options.tools
@@ -897,6 +948,8 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'files.watch': subscribeWatch,
     'pullRequests.changed': subscribePullRequests,
     'localServers.changed': subscribeLocalServers,
+    'module.events': subscribeModuleEvents,
+    'module.notifications': subscribeModuleNotifications,
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

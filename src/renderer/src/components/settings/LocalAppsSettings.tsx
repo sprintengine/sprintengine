@@ -66,6 +66,11 @@ const SCOPE_ROWS: Array<{ scope: StudioScope; title: string; description: string
     title: 'Change settings',
     description: 'Set or remove a provider’s API key, and revoke a rule that answers approvals by itself.',
   },
+  {
+    scope: 'modules:read',
+    title: 'Hear extensions',
+    description: 'Hear what this machine’s extensions say: their events and the notifications they raise.',
+  },
 ]
 
 const REACH_ITEMS: Array<{ value: StudioLocalAppToolReach; label: string }> = [

@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
 import type { IpcMain } from 'electron'
 
-import { MODULE_EVENTS_CHANNEL, type ModuleEventEnvelope } from '../../shared/modules/events'
+import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import { loadMainModules, type CapabilityModule } from './load-modules'
 import { createMainKernel } from './main-host'
 import { test } from 'vitest'
 
 test('module-events', async () => {
-  // The module-owned event channel: the main→renderer push a module gets
-  // through its scoped host, and the subscribe verb the request/response bridge
+  // A module's events: the push to its client half a module gets through its
+  // scoped host (the Studio's `module.events` stream), and the subscribe verb the request/response bridge
   // does not have. What is pinned here is the routing contract — identity is the
   // host's, topic and payload are the module's — plus the two decisions the item
   // asked for: no replay buffer, and no flood bound.
@@ -106,16 +106,6 @@ test('module-events', async () => {
     assert.equal(delivered.length, 100, 'every emit is delivered, identical repeats included')
   }
 
-  function testEventChannelNameIsReservedAgainstModules(): void {
-    const { ipcMain } = createFakeIpcMain()
-    const kernel = createMainKernel(ipcMain)
-    assert.throws(
-      () => kernel.hostFor('impostor').registerIpc(MODULE_EVENTS_CHANNEL, async () => null),
-      /already registered by module "@host"/,
-      'a module cannot claim the host-owned events channel and impersonate the fan-out',
-    )
-  }
-
   async function testEmitFlowsThroughALoadedModule(): Promise<void> {
     const delivered: ModuleEventEnvelope[] = []
     const { ipcMain } = createFakeIpcMain()
@@ -148,8 +138,21 @@ test('module-events', async () => {
     const host = createMainKernel(ipcMain, { deliverModuleEvent: (event) => delivered.push(event) }).hostFor('widgets')
     assert.throws(() => host.emit('run-status', { onDone: () => undefined }), /widgets.*run-status.*cannot be sent/)
     assert.equal(delivered.length, 0, 'nothing half-sent')
-    host.emit('run-status', { at: new Date(0), tags: new Set(['a']) })
-    assert.equal(delivered.length, 1, 'what structured clone carries is delivered')
+    assert.throws(() => host.emit('run-status', { at: new Date(0) }), /payload\.at is a Date, not a plain object/)
+    assert.throws(() => host.emit('run-status', { ratio: Number.NaN }), /payload\.ratio is NaN/)
+    const cycle: Record<string, unknown> = {}
+    cycle.self = cycle
+    assert.throws(() => host.emit('run-status', cycle), /refers back to itself/)
+    assert.equal(delivered.length, 0, 'nothing half-sent')
+    const shared = { phase: 'done' }
+    host.emit('run-status', {
+      at: '1970-01-01T00:00:00.000Z',
+      tags: ['a'],
+      first: shared,
+      second: shared,
+      skipped: undefined,
+    })
+    assert.equal(delivered.length, 1, 'a JSON value is delivered, a value seen twice (not a cycle) included')
   }
 
   testEmitStampsScopedIdentityAndTime()
@@ -158,7 +161,6 @@ test('module-events', async () => {
   testTopicIsTrimmedNotRewritten()
   testNothingIsBufferedForLateWindows()
   testEmitIsNotFloodBounded()
-  testEventChannelNameIsReservedAgainstModules()
   const suiteRun = testEmitFlowsThroughALoadedModule()
     .then(() => console.log('module-events tests passed'))
     .catch((error) => {

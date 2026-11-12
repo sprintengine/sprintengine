@@ -1,8 +1,6 @@
 import { app, ipcMain, protocol, session, shell } from 'electron'
 import { buildStamp as mainBuildStamp } from 'virtual:sprintengine-build-stamp'
 import { withoutDeepLinks } from '../shared/deep-link-scheme'
-import { MODULE_EVENTS_CHANNEL } from '../shared/modules/events'
-import { MODULE_NOTIFICATIONS_CHANNEL } from '../shared/modules/notifications'
 import { parseAuthCallbackFromArgv } from './auth-service'
 import { registerAppLifecycle } from './app-lifecycle'
 import { createAppServices } from './app-services'
@@ -215,18 +213,18 @@ const moduleLoad = loadMainModules({
   moduleVerifiedFiles: thirdPartyMainLoad.verifiedFiles,
   ineligible: thirdPartyMainLoad.ineligible,
   launchErrors: thirdPartyMainLoad.launchErrors,
-  // Module events fan out to every open window on the one host-owned channel;
-  // the renderer kernel routes each envelope to its own module's subscribers.
-  // Nothing is buffered for windows opened later — see shared/modules/events.ts.
-  deliverModuleEvent: (event) => studioPlatform().clients.publish(MODULE_EVENTS_CHANNEL, event),
-  // A module's notify is a bell row in every window, over the same client bus;
-  // the kernel keeps the recent ones for a window that opens later.
-  deliverModuleNotification: (notification) =>
-    studioPlatform().clients.publish(MODULE_NOTIFICATIONS_CHANNEL, notification),
+  // Module events reach every client following the Studio's `module.events`
+  // stream; each window routes them to its own module's subscribers. Nothing
+  // is buffered for a client that connects later (shared/modules/events.ts).
+  deliverModuleEvent: (event) => services.moduleHub.deliverEvent(event),
+  // A module's notify is a bell row on `module.notifications`; the kernel
+  // keeps the recent ones, which the stream sends a client first.
+  deliverModuleNotification: (notification) => services.moduleHub.deliverNotification(notification),
   // A module tool that would shadow one of the gateway's own is refused at
   // registration, naming the tool it collides with.
   coreMcpToolNames: () => services.automationService?.coreToolNames() ?? [],
 })
+services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
 // The manifest universe the enablement gate resolves against — every main module
 // present on this channel, so a module and its dependencies (scheduled agents,
 // agent-runtime) all resolve. Recompute mirrors the renderer's

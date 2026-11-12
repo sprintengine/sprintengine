@@ -37,6 +37,7 @@ import type { StudioFiles } from '../../server/rpc/studio-files'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../../server/local-servers/local-server-domain'
 import type { StudioUpdates } from '../../server/update/studio-updates'
+import type { StudioModules } from '../../server/rpc/studio-modules'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -152,6 +153,8 @@ export type StudioRpcServiceOptions = {
   localServers?: StudioLocalServers
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
+  /** What the modules beside this Studio say to clients: `module.events` and `module.notifications`. */
+  modules?: StudioModules
   /** Forget the saved approvals that allow a revoked app's tools. */
   forgetToolApprovals?: (toolsets: string[]) => Promise<unknown>
   log?: (message: string) => void
@@ -342,6 +345,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
+      ...(options.modules ? { modules: options.modules } : {}),
       resyncRetryAfterMs: createResyncBackoff(),
       onConnectionsChanged: () => announce(),
       ...(options.socketPath ? { socketPath: options.socketPath } : {}),

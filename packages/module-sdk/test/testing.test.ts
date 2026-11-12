@@ -337,7 +337,8 @@ describe('createFakeMainHost', () => {
     assert.deepEqual(fake.notifications, [{ severity: 'info', title: 'Saved' }])
     assert.throws(() => fake.host.notify({ severity: 'loud' as never, title: 'x' }), /severity/)
     assert.throws(() => fake.host.emit(''), /needs a topic/)
-    assert.throws(() => fake.host.emit('changed', { fn() {} }), /could not be cloned/)
+    assert.throws(() => fake.host.emit('changed', { fn() {} }), /payload\.fn is a function, which JSON cannot carry/)
+    assert.throws(() => fake.host.emit('changed', { at: new Date(0) }), /payload\.at is a Date/)
     fake.host.emit('changed', { id: 1 })
     assert.deepEqual(fake.emitted, [{ topic: 'changed', payload: { id: 1 } }])
     const order: string[] = []

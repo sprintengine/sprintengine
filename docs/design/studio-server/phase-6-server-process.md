@@ -1120,9 +1120,9 @@ member:
 | Member | In the server |
 | --- | --- |
 | `registerIpc(channel, handler)` | `ServerIpcRegistry.handle`. The first handler argument becomes a `ModuleCallContext` (`clientId`, `windowId`). The module SDK already types it `unknown`, so no SDK change. `modules:bridge:invoke` and its ownership and `ipc:invoke` checks are tunnelled unchanged. |
-| `emit(topic, payload)` | `ClientBus.publish('modules:events', …, 'all')`. Nothing is buffered, as today. |
+| `emit(topic, payload)` | The Studio RPC's `module.events` stream (a JSON payload). Nothing is buffered, as today. |
 | `registerMcpTools` | The server's gateway, unchanged. |
-| `notify` | Flood-bounded as today, then `ShellBridge.notify`. |
+| `notify` | Flood-bounded as today, then the Studio RPC's `module.notifications` stream, which sends the kept rows first. |
 | `provideService` / `getService` / `requireService` | Unchanged and still synchronous: every service a module can reach is in the server process. The two shell-side internal tokens (`core.terminal-runtime`, `core.agent-launch-service`) are provided as async proxies over `ShellBridge.terminals`. Neither token is on the third-party ACL, and no module consumes them today. |
 | `registerSkills`, `ensureSkillInstalled` | Unchanged, on the same disk. |
 | `registerSidecar` | Unchanged. Lifecycles start after `COMPOSING` and stop during `DRAINING`. |
