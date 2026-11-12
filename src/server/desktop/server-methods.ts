@@ -59,8 +59,6 @@ export const SERVER_METHODS = {
    * connection, with the shell role, over which it offers its toolsets (6.3).
    */
   shellConnect: 'studio.connect-shell',
-  /** `CliModelDiscoveryInput` → its result: the pass after an install, run where the catalog cache lives. */
-  discoverModels: 'models.discover',
   /** → `ServerInfo`. */
   info: 'server.info',
   /** `{ connectionId }` → nothing, once the check is done: ask a paired desktop now whether it answers (the mesh is this process's). */

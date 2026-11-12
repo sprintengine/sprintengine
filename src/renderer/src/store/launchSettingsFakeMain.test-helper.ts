@@ -1,7 +1,7 @@
 /**
- * A stand-in for main's launch-settings store and its IPC, for the renderer
- * suites. It applies patches with the same shared functions main does, and
- * clones everything that crosses it the way IPC would, so a test can never
+ * A stand-in for the Studio's launch-settings store and its protocol methods,
+ * for the renderer suites. It applies patches with the same shared functions
+ * the Studio does, and clones everything that crosses it the way the wire would, so a test can never
  * pass on a shared object reference.
  */
 import {
@@ -16,6 +16,7 @@ import {
   type AgentLaunchSettingsWriteAck,
 } from '../../../shared/launch-settings'
 import type { LaunchSettingsApi } from './launchSettingsClient'
+import { agentSettingsDouble } from '../studio/agentSettings.double'
 
 export type FakeLaunchSettingsMain = {
   api: LaunchSettingsApi
@@ -119,8 +120,13 @@ export async function settleIpc(): Promise<void> {
   for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-/** A Map-backed localStorage and the window the store module reads at import. */
+/**
+ * A Map-backed localStorage and the window the store module reads at import.
+ * The launch settings are the window's Studio's: a suite mocks
+ * `../studio/agentSettings` with its double, whose calls this points at `api`.
+ */
 export function installFakeWindow(api: object, seed: Record<string, string> = {}): Map<string, string> {
+  Object.assign(agentSettingsDouble, api)
   const stored = new Map(Object.entries(seed))
   const localStorage = {
     getItem: (key: string) => stored.get(key) ?? null,

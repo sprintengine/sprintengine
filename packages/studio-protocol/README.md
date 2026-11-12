@@ -89,9 +89,20 @@ The `welcome`'s `grant` is what the connection may do:
   and answering a request `conversation` (an allow rule for its kind) needs a
   ceiling of at least `auto`.
 - `environment:maintain` — update this Studio (`update.start`): download a
-  new version, drain and restart into it.
+  new version, drain and restart into it; install or update an agent CLI on
+  its machine (`cliRuntimes.install`, `.update`, `.updateAll`, and their
+  `cliRuntimes.output` and `cliRuntimes.updateAllProgress` streams).
 - `settings:write` — change this Studio's settings: set or clear a provider's
-  key (`providers.setSecret`, `.clearSecret`), revoke an approval rule.
+  key (`providers.setSecret`, `.clearSecret`), revoke an approval rule, turn
+  the CLI version check on or off (`cliVersions.setEnabled`), set the
+  model-written titles setting (`textGeneration.setSettings`).
+- `providers:read` also reads the agent CLIs: detect one, its install methods
+  and version advisories (`cliRuntimes.detect`, `.installMethods`,
+  `cliVersions.advisories` and its `cliVersions.changed` stream, under
+  `agent-runtimes`), and the models each reports (`cliModels.discover`,
+  `cliModels.changed`, under `agent-settings`). `conversation:operate` also
+  has the person's CLI write a chat's title or a commit message
+  (`textGeneration.chatTitle`, `commitMessage.draft` and `.cancel`).
 - `modules:read` — hear what this Studio's modules say: the `module.events`
   and `module.notifications` streams, under the `modules` capability. Not an
   owner's only; a pairing holds it when it was given it.
@@ -110,12 +121,15 @@ The `welcome`'s `grant` is what the connection may do:
   Studio's own screen), `pullRequests.noteWork`, `.noteToolCall` and `.link`
   (what Studio's own agents report), `terminal.takeUndeliveredPrompts` and the
   `terminal.promptUndelivered` topic (words a person wrote for an agent), and
-  `terminal.configure` (the machine's idle policy). Everything else reaches a
-  client by its scope.
+  `terminal.configure` (the machine's idle policy), and the launch settings
+  (`launchSettings.get`, `.update`, `.migrate` and the `launchSettings.changed`
+  topic: they name the program each CLI and MCP server runs on the machine and
+  hold the MCP servers' keys). Everything else reaches a client by its scope.
   A client that is not an owner never names a conversation's folder or a
-  CLI's `command`, and names files and folders (a stat, a picture, a search,
-  a file attached to a send, a `/` list's folder, an agent's plan file) only
-  inside the folders Studio knows. A
+  CLI's `command` (in `cliRuntimes` or a detection's or install's `runtime`),
+  and names files and folders (a stat, a picture, a search, a file attached to
+  a send, a `/` list's folder, an agent's plan file, a commit message's
+  checkout) only inside the folders Studio knows. A
   client asks whether its grant reaches a method with
   `studioGrantAllows(grant, method)` (`STUDIO_METHOD_ACCESS` holds the table)
   rather than reading `grant.owner`.

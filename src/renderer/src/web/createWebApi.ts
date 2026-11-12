@@ -116,8 +116,6 @@ const browserEmptyStates = {
   updateAppMenuAccelerators: async () => ({ ok: true as const }),
   authGetState: async () => SIGNED_OUT,
   listDesignSystemArrivals: async () => ({ bundles: [] }),
-  cliVersionChecksSetEnabled: async () => ({ enabled: false }),
-  cliVersionAdvisories: async () => ({ ok: false as const, message: 'Version checks run in the desktop app.' }),
   editorRevealClaim: async () => null,
   // The desktop's browser pane; a tab shows previews instead, and has no pane to note.
   browserNoteActive: async () => undefined,
@@ -125,10 +123,6 @@ const browserEmptyStates = {
   listFolderOpenTargets: async () => [],
   setBackgroundMode: async () => undefined,
   setTelemetryEnabled: async () => undefined,
-  // The titles setting the server titles chats by is the desktop window's to
-  // push: a tab's own settings start at the defaults, and its mount push would
-  // overwrite a choice the person made on the desktop.
-  setTextGenerationSettings: async () => undefined,
   // So are the Settled chats settings and the module run states main's rest
   // sweep reads: a tab's settings start at the defaults, and a tab loads no
   // third-party module, so its pushes would replace the desktop's choices and

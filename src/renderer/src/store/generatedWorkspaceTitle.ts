@@ -24,6 +24,7 @@ import { resolveTextGenerationEngine } from '../../../shared/text-generation/con
 import type { AgentCli, WorkspaceId } from '../types/workspace'
 import { useWorkspaceStore } from './workspaceStore'
 import { windowChatServices } from '../components/panels/agentChat/windowChat'
+import { agentSettingsApi } from '../studio/agentSettings'
 
 export type GeneratedTitleRequesterDeps = {
   /** The heuristic half. Returns the title it applied, or null. */
@@ -120,13 +121,7 @@ export function generatedWorkspaceTitleRequester(): GeneratedTitleRequester {
       },
       resolveEngine: resolveStoreTextGenerationEngine,
       cliRuntimes: () => useWorkspaceStore.getState().appSettings.cliRuntimes,
-      generate: (request) => {
-        const api = typeof window !== 'undefined' ? window.api : undefined
-        if (!api?.generateChatTitle) {
-          return Promise.resolve({ ok: false, code: 'unavailable', message: 'Text generation bridge is unavailable.' })
-        }
-        return api.generateChatTitle(request)
-      },
+      generate: (request) => agentSettingsApi.generateChatTitle(request),
     })
   }
   return defaultRequester
@@ -195,12 +190,7 @@ export function regenerateStoreWorkspaceTitle(id: WorkspaceId): Promise<Regenera
     },
     resolveEngine: resolveStoreTextGenerationEngine,
     cliRuntimes: () => useWorkspaceStore.getState().appSettings.cliRuntimes,
-    generate: (request) => {
-      const api = typeof window !== 'undefined' ? window.api : undefined
-      if (!api?.generateChatTitle)
-        return Promise.resolve({ ok: false, code: 'unavailable', message: 'Text generation bridge is unavailable.' })
-      return api.generateChatTitle(request)
-    },
+    generate: (request) => agentSettingsApi.generateChatTitle(request),
     rename: (workspaceId, name) => useWorkspaceStore.getState().renameWorkspace(workspaceId, name),
   })
 }

@@ -28,12 +28,17 @@ const REVOKED = { owner: false, scopes: [] as string[] }
 /**
  * What only an owner's connection may call, and why: what runs a program or
  * opens a terminal on this machine's screen, or records an agent's own work;
- * and of the terminals, the words a person wrote for an agent and the
- * machine-wide idle policy.
+ * of the terminals, the words a person wrote for an agent and the
+ * machine-wide idle policy; and the launch settings, which name the programs
+ * each CLI and MCP server runs here and hold the MCP servers' keys.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
 const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
+  'launchSettings.changed',
+  'launchSettings.get',
+  'launchSettings.migrate',
+  'launchSettings.update',
   'providers.signIn',
   'pullRequests.link',
   'pullRequests.noteWork',

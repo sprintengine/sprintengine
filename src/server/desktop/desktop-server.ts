@@ -17,7 +17,7 @@ import { buildLauncherMcpServer, usableLocalLauncherRef } from '../../main/integ
 import {
   discoverAndBroadcastCliModels,
   setCliModelDiscoveryRuntimesResolver,
-} from '../../main/ipc/cli-model-discovery-ipc'
+} from '../../main/model-discovery/discovery-pass'
 import { getPluginRegistry } from '../../main/plugin-registry-instance'
 import { powerActivity } from '../../main/power-activity'
 import { declaredPermissionPresets } from '../../main/plugin-render'
@@ -699,9 +699,6 @@ function serveShellRequests(deps: {
     if (!parsed.ok) return parsed
     return readChatExportSource(core.conversations, parsed.input)
   })
-  rpc.handle(SERVER_METHODS.discoverModels, (params) =>
-    discoverAndBroadcastCliModels((params ?? {}) as Parameters<typeof discoverAndBroadcastCliModels>[0]),
-  )
   rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
   // The shell's `agent.launch` cuts its worktree here, from this process's pool.
   serveAgentWorktrees(rpc, core.worktrees.installer)

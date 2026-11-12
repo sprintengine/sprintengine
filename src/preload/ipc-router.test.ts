@@ -9,8 +9,8 @@ import { createIpcRouter, ServerUnavailable, type RouterPort } from './ipc-route
 // everything to ipcRenderer in process.
 
 const TABLE = {
-  'launch-settings:get': { retry: 'once' as const },
-  'launch-settings:update': {},
+  'workspace-sync:get-snapshot': { retry: 'once' as const },
+  'workspace-sync:dispatch': {},
   'modules:registry-snapshot': {},
 }
 
@@ -91,10 +91,10 @@ afterEach(() => {
 test('in process, every channel goes to main exactly as before', async () => {
   const renderer = fakeRenderer()
   const router = createIpcRouter({ ipcRenderer: renderer, mode: 'in-process', table: TABLE })
-  assert.equal(await router.invoke('launch-settings:get'), 'main:launch-settings:get')
+  assert.equal(await router.invoke('workspace-sync:get-snapshot'), 'main:workspace-sync:get-snapshot')
   router.send('modules:registry-snapshot', { modules: [] })
   assert.deepEqual(renderer.calls, [
-    ['invoke', 'launch-settings:get', []],
+    ['invoke', 'workspace-sync:get-snapshot', []],
     ['send', 'modules:registry-snapshot', [{ modules: [] }]],
   ])
 })
@@ -105,13 +105,13 @@ test('out of process, a server channel goes over the port and a shell channel st
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
   assert.equal(port.started, true)
-  const fromServer = router.invoke('launch-settings:update', { lastSelectedCli: 'codex' })
+  const fromServer = router.invoke('workspace-sync:dispatch', { lastSelectedCli: 'codex' })
   const fromMain = router.invoke('window:close')
   const request = port.posted[0]
   assert.deepEqual(request, {
     t: 'ipc.invoke',
     id: request.id,
-    channel: 'launch-settings:update',
+    channel: 'workspace-sync:dispatch',
     args: [{ lastSelectedCli: 'codex' }],
   })
   port.deliver({ t: 'ipc.result', id: request.id, ok: true, value: { ok: true } })
@@ -125,7 +125,7 @@ test("a server's refusal reads as Electron's own wording for a failed invoke", a
   const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
-  const call = router.invoke('launch-settings:update', {})
+  const call = router.invoke('workspace-sync:dispatch', {})
   port.deliver({
     t: 'ipc.result',
     id: port.posted[0].id,
@@ -133,34 +133,34 @@ test("a server's refusal reads as Electron's own wording for a failed invoke", a
     error: { name: 'Error', message: 'The settings are not writable.' },
   })
   await assert.rejects(call, {
-    message: "Error invoking remote method 'launch-settings:update': Error: The settings are not writable.",
+    message: "Error invoking remote method 'workspace-sync:dispatch': Error: The settings are not writable.",
   })
 })
 
 test('before the port arrives, server calls wait, then go out in order', async () => {
   const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
-  const first = router.invoke('launch-settings:get')
-  const second = router.invoke('launch-settings:update', 1)
+  const first = router.invoke('workspace-sync:get-snapshot')
+  const second = router.invoke('workspace-sync:dispatch', 1)
   router.send('modules:registry-snapshot', 'early')
   await vi.advanceTimersByTimeAsync(5_000)
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
   assert.deepEqual(
     port.posted.map((frame) => frame.channel),
-    ['launch-settings:get', 'launch-settings:update', 'modules:registry-snapshot'],
+    ['workspace-sync:get-snapshot', 'workspace-sync:dispatch', 'modules:registry-snapshot'],
   )
   for (const frame of port.posted.filter((each) => each.t === 'ipc.invoke')) {
     port.deliver({ t: 'ipc.result', id: frame.id, ok: true, value: frame.channel })
   }
-  assert.equal(await first, 'launch-settings:get')
-  assert.equal(await second, 'launch-settings:update')
+  assert.equal(await first, 'workspace-sync:get-snapshot')
+  assert.equal(await second, 'workspace-sync:dispatch')
   // The queue's timers went with it.
   await vi.advanceTimersByTimeAsync(60_000)
 })
 
 test('a call that waits 30 s for a server fails with ServerUnavailable', async () => {
   const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
-  const call = router.invoke('launch-settings:get')
+  const call = router.invoke('workspace-sync:get-snapshot')
   const failed = assert.rejects(call, (error: unknown) => {
     assert.ok(error instanceof ServerUnavailable)
     assert.equal(error.restarting, false)
@@ -173,24 +173,24 @@ test('a call that waits 30 s for a server fails with ServerUnavailable', async (
 
 test('the queue holds 256 calls; the next is refused at once', async () => {
   const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE, queueLimit: 2 })
-  void router.invoke('launch-settings:get').catch(() => undefined)
-  void router.invoke('launch-settings:get').catch(() => undefined)
-  await assert.rejects(router.invoke('launch-settings:get'), /Too many requests/)
+  void router.invoke('workspace-sync:get-snapshot').catch(() => undefined)
+  void router.invoke('workspace-sync:get-snapshot').catch(() => undefined)
+  await assert.rejects(router.invoke('workspace-sync:get-snapshot'), /Too many requests/)
 })
 
 test('a restart fails what was in flight, except the reads marked to retry, which go out on the next port', async () => {
   const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
   const first = fakePort()
   router.attachPort(first as unknown as RouterPort)
-  const read = router.invoke('launch-settings:get')
-  const write = router.invoke('launch-settings:update', { x: 1 })
+  const read = router.invoke('workspace-sync:get-snapshot')
+  const write = router.invoke('workspace-sync:dispatch', { x: 1 })
   first.hangUp()
   await assert.rejects(write, (error: unknown) => error instanceof ServerUnavailable && error.restarting)
   const second = fakePort()
   router.attachPort(second as unknown as RouterPort)
   assert.deepEqual(
     second.posted.map((frame) => frame.channel),
-    ['launch-settings:get'],
+    ['workspace-sync:get-snapshot'],
   )
   second.deliver({ t: 'ipc.result', id: second.posted[0].id, ok: true, value: 'read again' })
   assert.equal(await read, 'read again')
@@ -200,8 +200,8 @@ test('a port that arrives before the old one says it closed settles what was in 
   const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
   const first = fakePort()
   router.attachPort(first as unknown as RouterPort)
-  const read = router.invoke('launch-settings:get')
-  const write = router.invoke('launch-settings:update', { x: 1 })
+  const read = router.invoke('workspace-sync:get-snapshot')
+  const write = router.invoke('workspace-sync:dispatch', { x: 1 })
   const second = fakePort()
   router.attachPort(second as unknown as RouterPort)
   assert.equal(first.closed, true)
@@ -210,7 +210,7 @@ test('a port that arrives before the old one says it closed settles what was in 
   await assert.rejects(write, (error: unknown) => error instanceof ServerUnavailable && error.restarting)
   assert.deepEqual(
     second.posted.map((frame) => frame.channel),
-    ['launch-settings:get'],
+    ['workspace-sync:get-snapshot'],
   )
   second.deliver({ t: 'ipc.result', id: second.posted[0].id, ok: true, value: 'read again' })
   assert.equal(await read, 'read again')
@@ -220,7 +220,7 @@ test('a read retried once is not retried twice', async () => {
   const router = createIpcRouter({ ipcRenderer: fakeRenderer(), mode: 'out-of-process', table: TABLE })
   const first = fakePort()
   router.attachPort(first as unknown as RouterPort)
-  const read = router.invoke('launch-settings:get')
+  const read = router.invoke('workspace-sync:get-snapshot')
   first.hangUp()
   const second = fakePort()
   router.attachPort(second as unknown as RouterPort)
@@ -235,12 +235,12 @@ test('listeners hear pushes from main and from the server, and stop when removed
   router.attachPort(port as unknown as RouterPort)
   const heard: unknown[] = []
   const listener = (event: unknown, payload: unknown) => heard.push([(event as { sender: unknown }).sender, payload])
-  router.on('launch-settings:changed', listener as never)
-  renderer.emit('launch-settings:changed', 'from main')
-  port.deliver({ t: 'ipc.push', channel: 'launch-settings:changed', args: ['from server'] })
-  router.removeListener('launch-settings:changed', listener as never)
-  renderer.emit('launch-settings:changed', 'after')
-  port.deliver({ t: 'ipc.push', channel: 'launch-settings:changed', args: ['after'] })
+  router.on('workspace-sync:changed', listener as never)
+  renderer.emit('workspace-sync:changed', 'from main')
+  port.deliver({ t: 'ipc.push', channel: 'workspace-sync:changed', args: ['from server'] })
+  router.removeListener('workspace-sync:changed', listener as never)
+  renderer.emit('workspace-sync:changed', 'after')
+  port.deliver({ t: 'ipc.push', channel: 'workspace-sync:changed', args: ['after'] })
   assert.deepEqual(heard, [
     ['main', 'from main'],
     [null, 'from server'],

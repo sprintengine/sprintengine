@@ -138,6 +138,19 @@ export const STUDIO_UPDATE_SESSION_CAPABILITY = 'update-session' as const
 export const STUDIO_MODULES_CAPABILITY = 'modules' as const
 
 /**
+ * The agent CLIs on the Studio's machine: `cliRuntimes.*` (detect, install,
+ * update) and `cliVersions.*` (whether each is behind its published version),
+ * with their streams. Offered where the Studio holds the CLIs' detection.
+ */
+export const STUDIO_AGENT_RUNTIMES_CAPABILITY = 'agent-runtimes' as const
+
+/**
+ * What every launch reads and what a CLI writes for Studio: `launchSettings.*`,
+ * `cliModels.*`, `textGeneration.*` and `commitMessage.*`, with their streams.
+ */
+export const STUDIO_AGENT_SETTINGS_CAPABILITY = 'agent-settings' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -171,6 +184,8 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_UPDATE_SESSION_CAPABILITY,
   STUDIO_MODULES_CAPABILITY,
   STUDIO_TERMINALS_CAPABILITY,
+  STUDIO_AGENT_RUNTIMES_CAPABILITY,
+  STUDIO_AGENT_SETTINGS_CAPABILITY,
 ] as const
 
 /**

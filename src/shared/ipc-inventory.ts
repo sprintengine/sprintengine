@@ -34,7 +34,6 @@ export type IpcServerArea =
   | 'worktree-pool'
   | 'files'
   | 'git'
-  | 'settings'
   | 'agent-setup'
   | 'web-tab'
 
@@ -90,8 +89,6 @@ const worktreePool = server('worktree-pool')
 const files = server('files')
 /** Moves to the protocol: a project's git and GitHub. */
 const git = server('git')
-/** Moves to the protocol: CLI runtimes and models, launch and text-generation settings. */
-const settings = server('settings')
 /** Moves to the protocol: skills, MCP servers, memory, design systems and the cards that install them. */
 const agentSetup = server('agent-setup')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
@@ -621,26 +618,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'github:token-status': git('invoke'),
   'version-control:probe-host-gh': git('invoke'),
   'version-control:probe-providers': git('invoke'),
-  'cli-models:changed': settings('push'),
-  'cli-models:discover': settings('invoke'),
-  'cli-runtime:detect': settings('invoke'),
-  'cli-runtime:install': settings('invoke'),
-  'cli-runtime:install-methods': settings('invoke'),
-  'cli-runtime:install-output:*': settings('push'),
-  'cli-runtime:update': settings('invoke'),
-  'cli-runtime:update-all': settings('invoke'),
-  'cli-runtime:update-all-progress': settings('push'),
-  'cli-version:advisories': settings('invoke'),
-  'cli-version:advisories-changed': settings('push'),
-  'cli-version:set-enabled': settings('invoke'),
-  'commit-message:draft': settings('invoke'),
-  'commit-message:draft-cancel': settings('invoke'),
-  'launch-settings:changed': settings('push'),
-  'launch-settings:get': settings('invoke'),
-  'launch-settings:migrate': settings('invoke'),
-  'launch-settings:update': settings('invoke'),
-  'text-generation:chat-title': settings('invoke'),
-  'text-generation:set-settings': settings('invoke'),
   'agent-config:adopt': agentSetup('invoke'),
   'agent-config:detect': agentSetup('invoke'),
   'builtin-skills:list': agentSetup('invoke'),

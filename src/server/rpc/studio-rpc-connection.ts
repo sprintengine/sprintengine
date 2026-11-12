@@ -53,6 +53,8 @@ import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioModules } from './studio-modules'
 import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -159,6 +161,10 @@ export type StudioRpcConnectionOptions = {
   modules?: StudioModules
   /** The terminals on this machine: the `terminal.*` streams. */
   terminals?: StudioTerminals
+  /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
+  runtimes?: CliRuntimes
+  /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
+  agentSettings?: StudioAgentSettings
   /** The window this connection is one of Studio's own for, as main names it. */
   windowKey?: string
   /** The welcome's server-wide members: who this Studio is and what it serves. */
@@ -999,6 +1005,36 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /**
+   * A push topic fed by a domain's listener: each payload goes out while the
+   * grant as it stands still reaches the topic, and a narrowed or revoked
+   * grant ends it. Never replayed: a client asks for what it shows after it
+   * subscribes.
+   */
+  function subscribeFeed<T extends StudioPushTopic>(
+    id: string,
+    topic: T,
+    listen: ((deliver: (payload: StudioTopicPayload<T>) => void) => () => void) | null,
+  ): void {
+    if (!listen) {
+      subscriptionFailed(id, 'unavailable', `This Studio does not serve ${topic}.`)
+      return
+    }
+    const subscription: Subscription = { id, topic, key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const stop = listen((payload) => {
+      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      const grant = liveGrant()
+      if (!grant) return
+      if (!authorizeStudioTopic(grant, topic).ok) {
+        refreshGrant()
+        return
+      }
+      push(topic, id, payload)
+    })
+    subscription.handle = { dispose: stop }
+  }
+
   /** Whether the grant as it stands still reaches a topic; a revoked or narrowed one ends what it no longer reaches. */
   function stillGranted(topic: StudioTopic): boolean {
     const grant = liveGrant()
@@ -1239,6 +1275,32 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'terminal.output': subscribeTerminalOutput,
     'terminal.sessions': subscribeTerminalSessions,
     'terminal.promptUndelivered': subscribePromptUndelivered,
+    'cliRuntimes.output': (id, { cli, hostId }) => {
+      const runtimes = options.runtimes
+      subscribeFeed(
+        id,
+        'cliRuntimes.output',
+        runtimes
+          ? (deliver) =>
+              runtimes.onOutput((ran, on, chunk) => {
+                if (ran === cli && on === (hostId ?? 'local')) deliver({ chunk })
+              })
+          : null,
+      )
+    },
+    'cliRuntimes.updateAllProgress': (id) => {
+      const runtimes = options.runtimes
+      subscribeFeed(
+        id,
+        'cliRuntimes.updateAllProgress',
+        runtimes ? (deliver) => runtimes.onUpdateAllProgress((items) => deliver({ items })) : null,
+      )
+    },
+    'cliVersions.changed': (id) =>
+      subscribeFeed(id, 'cliVersions.changed', options.runtimes?.onAdvisoriesChanged ?? null),
+    'cliModels.changed': (id) => subscribeFeed(id, 'cliModels.changed', options.agentSettings?.onModelsChanged ?? null),
+    'launchSettings.changed': (id) =>
+      subscribeFeed(id, 'launchSettings.changed', options.agentSettings?.onLaunchSettingsChanged ?? null),
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

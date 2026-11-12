@@ -17,6 +17,8 @@ import {
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_MODULES_CAPABILITY,
   STUDIO_TERMINALS_CAPABILITY,
+  STUDIO_AGENT_RUNTIMES_CAPABILITY,
+  STUDIO_AGENT_SETTINGS_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
@@ -33,6 +35,8 @@ import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioModules } from './studio-modules'
 import type { StudioTerminals } from '../terminals/studio-terminals'
+import type { CliRuntimes } from '../../main/cli-runtimes'
+import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -139,6 +143,10 @@ export type StudioRpcServerOptions = {
   localServers?: StudioLocalServers
   /** The terminals on this machine. Advertised as `terminals` only when given: where the server holds a terminal runtime. */
   terminals?: StudioTerminals
+  /** The CLIs on this machine. Advertised as `agent-runtimes` only when given: where the server holds their detection. */
+  runtimes?: CliRuntimes
+  /** The launch settings and the CLIs' texts. Advertised as `agent-settings` only when given. */
+  agentSettings?: StudioAgentSettings
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** The protocol window this Studio speaks: this build's unless given (a test standing in for an older or newer one). */
@@ -200,6 +208,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
         (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
         (capability !== STUDIO_TERMINALS_CAPABILITY || options.terminals !== undefined) &&
+        (capability !== STUDIO_AGENT_RUNTIMES_CAPABILITY || options.runtimes !== undefined) &&
+        (capability !== STUDIO_AGENT_SETTINGS_CAPABILITY || options.agentSettings !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined),
@@ -220,6 +230,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.terminals ? { terminals: options.terminals } : {}),
+    ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+    ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     log: options.log,
   })
@@ -253,6 +265,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.localServers ? { localServers: options.localServers } : {}),
         ...(options.modules ? { modules: options.modules } : {}),
         ...(options.terminals ? { terminals: options.terminals } : {}),
+        ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+        ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,
@@ -293,6 +307,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.localServers ? { localServers: options.localServers } : {}),
         ...(options.modules ? { modules: options.modules } : {}),
         ...(options.terminals ? { terminals: options.terminals } : {}),
+        ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+        ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,

@@ -41,6 +41,21 @@
   `conversation:read`; a side question, a settle and a visit
   `conversation:operate`, and so does a command list's `refresh`.
 
+- **Agent CLIs and launch settings on the protocol** (`src/agent-settings.ts`).
+  `agent-runtimes`: `cliRuntimes.detect`, `.installMethods`, `.install`,
+  `.update`, `.updateAll` with the `cliRuntimes.output` (per CLI and machine)
+  and `cliRuntimes.updateAllProgress` streams, and `cliVersions.advisories`,
+  `.setEnabled` with the `cliVersions.changed` stream. `agent-settings`:
+  `cliModels.discover` and `cliModels.changed`, `launchSettings.get`,
+  `.update`, `.migrate` and `launchSettings.changed` (an owner's: they name
+  the programs the machine runs and hold MCP keys), `textGeneration.setSettings`,
+  `textGeneration.chatTitle`, `commitMessage.draft` and `.cancel`. The shapes
+  (`CliDetectResult`, `AgentLaunchSettings`, `CliModelDiscoveryResult`,
+  `TextGenerationResult` and the rest) move here from the desktop app, which
+  re-exports them under the same names. A CLI's `command` stays an owner's to
+  name, now in a `runtime` member too; a commit message's checkout is held to
+  the folders the Studio knows for any other client.
+
 - **An incompatible client keeps a way to recover.** `update-session`: a
   client that lists it in its hello and authenticates with a token is sent an
   `incompatible` frame in place of the welcome when the two protocol windows

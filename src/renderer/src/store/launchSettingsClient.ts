@@ -34,9 +34,10 @@ import type {
   AgentLaunchSettingsPatch,
   AgentLaunchSettingsRecord,
 } from '../../../shared/launch-settings'
+import { agentSettingsApi, windowHasStudio, type AgentSettingsApi } from '../studio/agentSettings'
 
 export type LaunchSettingsApi = Pick<
-  Window['api'],
+  AgentSettingsApi,
   'launchSettingsGet' | 'launchSettingsUpdate' | 'launchSettingsMigrate' | 'onLaunchSettingsChanged'
 >
 
@@ -68,18 +69,9 @@ export type LaunchSettingsClient = {
   stop: () => void
 }
 
+/** The Studio's launch settings over the window's connection, for a page that has one. */
 export function launchSettingsApiFromWindow(): LaunchSettingsApi | null {
-  if (typeof window === 'undefined') return null
-  const api = window.api as Partial<LaunchSettingsApi> | undefined
-  if (
-    typeof api?.launchSettingsGet !== 'function' ||
-    typeof api.launchSettingsUpdate !== 'function' ||
-    typeof api.launchSettingsMigrate !== 'function' ||
-    typeof api.onLaunchSettingsChanged !== 'function'
-  ) {
-    return null
-  }
-  return api as LaunchSettingsApi
+  return windowHasStudio() ? agentSettingsApi : null
 }
 
 export function createLaunchSettingsClient(): LaunchSettingsClient {

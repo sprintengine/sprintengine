@@ -37,6 +37,8 @@ import type { StudioFiles } from '../../server/rpc/studio-files'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../../server/local-servers/local-server-domain'
 import type { StudioTerminals } from '../../server/terminals/studio-terminals'
+import type { CliRuntimes } from '../cli-runtimes'
+import type { StudioAgentSettings } from '../../server/agent-settings/agent-settings-domain'
 import type { StudioUpdates } from '../../server/update/studio-updates'
 import type { StudioModules } from '../../server/rpc/studio-modules'
 import type {
@@ -154,6 +156,10 @@ export type StudioRpcServiceOptions = {
   localServers?: StudioLocalServers
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
   terminals?: StudioTerminals
+  /** The CLIs on this machine (`agent-runtimes`): given only where this process holds their detection. */
+  runtimes?: CliRuntimes
+  /** The launch settings and the CLIs' texts (`agent-settings`). */
+  agentSettings?: StudioAgentSettings
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** What the modules beside this Studio say to clients: `module.events` and `module.notifications`. */
@@ -349,6 +355,8 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.terminals ? { terminals: options.terminals } : {}),
+      ...(options.runtimes ? { runtimes: options.runtimes } : {}),
+      ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
       ...(options.modules ? { modules: options.modules } : {}),
       resyncRetryAfterMs: createResyncBackoff(),

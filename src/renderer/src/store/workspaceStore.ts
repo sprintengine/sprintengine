@@ -144,6 +144,7 @@ import type {
 } from '../types/workspace'
 import { configureTerminals, listTerminals } from '../studio/terminals'
 import { watchWindowStudio, windowStudioState } from '../studio/windowStudioClient'
+import { agentSettingsApi } from '../studio/agentSettings'
 
 migrateLegacyWorkspaceStorageKey()
 
@@ -1931,7 +1932,7 @@ function migrateCliPermissionPresetsToMain(): void {
   void launchSettingsClient.ready.then(() =>
     migrateLegacyCliPermissionPresets({
       storage,
-      held: async () => (await window.api.launchSettingsGet()).settings.cliPermissionPresets ?? {},
+      held: async () => (await agentSettingsApi.launchSettingsGet()).settings.cliPermissionPresets ?? {},
       update: (patch) => launchSettingsClient.update(patch),
     }),
   )

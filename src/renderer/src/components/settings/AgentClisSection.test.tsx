@@ -15,6 +15,10 @@ vi.mock('../../store/workspaceStore', () => ({
   }),
 }))
 
+vi.mock('../../studio/agentSettings', () => import('../../studio/agentSettings.double'))
+const { agentSettingsDouble, resetAgentSettingsDouble } = await import('../../studio/agentSettings.double')
+/** The window's Studio, as this suite answers for it. */
+const studio = agentSettingsDouble as unknown as Record<string, unknown>
 const { AgentClisSection, AgentsMachineSwitcher, useAgentCliRuns } = await import('./AgentClisSection')
 
 // The panel holds the runs; so does this harness.
@@ -102,8 +106,9 @@ beforeEach(() => {
     forgetCliModels: () => {},
     setCliModelCatalog: () => {},
   }
-  ;(window as unknown as { api: Record<string, unknown> }).api = {
-    platform: 'win32',
+  ;(window as unknown as { api: Record<string, unknown> }).api = { platform: 'win32' }
+  resetAgentSettingsDouble()
+  Object.assign(studio, {
     cliDetect: async (...args: unknown[]) => {
       detectCalls.push(args)
       return { installed: false }
@@ -113,7 +118,7 @@ beforeEach(() => {
       updateCalls.push(args)
       return { ok: true, cli: args[0], installed: true, version: '0.41.0', resolvedPath: null, log: '', error: null }
     },
-  }
+  })
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -522,7 +527,7 @@ test('a removed model can be brought back from the list', async () => {
 test('a Refresh that fails says so over the list and points at typing, asking only that CLI', async () => {
   withModels()
   const calls: unknown[] = []
-  ;(window as unknown as { api: Record<string, unknown> }).api.cliModelsDiscover = async (input: unknown) => {
+  studio.cliModelsDiscover = async (input: unknown) => {
     calls.push(input)
     return {
       entries: [{ cli: 'codex', catalog: null, error: 'Codex listed no models.' }],
@@ -543,7 +548,7 @@ test('a Refresh that fails says so over the list and points at typing, asking on
 
 test('a Refresh that skipped the CLI says why, where it used to say nothing', async () => {
   withModels()
-  ;(window as unknown as { api: Record<string, unknown> }).api.cliModelsDiscover = async () => ({
+  studio.cliModelsDiscover = async () => ({
     entries: [{ cli: 'codex', catalog: null, skipped: 'not-installed' }],
     startedAt: '',
     finishedAt: '',

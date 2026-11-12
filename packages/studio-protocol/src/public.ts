@@ -23,6 +23,8 @@ export * from './local-servers.js'
 // The terminals on a Studio's machine, and the agent vocabulary their sessions are described in.
 export * from './agents.js'
 export * from './terminals.js'
+// How a Studio runs its agents' CLIs, and the settings every launch reads.
+export * from './agent-settings.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.
 export * from './update.js'
 export * from './modules.js'
