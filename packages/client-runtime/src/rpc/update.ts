@@ -3,6 +3,7 @@ import {
   STUDIO_PROTOCOL_VERSION,
   STUDIO_UPDATE_SESSION_CAPABILITY,
   createStudioChunkAssembler,
+  isKnownStudioServerFrameType,
   parseStudioServerFrame,
   parseStudioUpdateStatus,
   studioCompatibility,
@@ -62,7 +63,12 @@ export type StudioUpdateSession = {
 const DEFAULT_HELLO_TIMEOUT_MS = 15_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000
 
-/** Open a connection for the update methods alone. Rejects with a `StudioError` when Studio closes it. */
+/**
+ * Open a connection for the update methods alone. Rejects with a `StudioError`
+ * when Studio closes it: `unauthorized` for a credential it refuses, and
+ * `unsupported_protocol_version` from a Studio built before it kept such
+ * connections, whose words say which end to update.
+ */
 export async function openStudioUpdateSession(options: StudioUpdateSessionOptions): Promise<StudioUpdateSession> {
   const transport = await options.transport()
   const credential: StudioAuth | undefined = transport.credential ?? options.auth
@@ -134,6 +140,9 @@ export async function openStudioUpdateSession(options: StudioUpdateSessionOption
     }
     const frame = parseStudioServerFrame(value)
     if (frame) route(frame)
+    // A greeting this client cannot read is said at once, not left to the hello's deadline.
+    else if (isKnownStudioServerFrameType(value) && ['welcome', 'incompatible'].includes((value as { t: string }).t))
+      failAll(new StudioError('invalid_frame', 'Studio answered the hello in a shape this client cannot read.'))
   }
   transport.onMessage(receive)
   transport.onClose((error) =>
@@ -187,7 +196,8 @@ export async function openStudioUpdateSession(options: StudioUpdateSessionOption
       return status
     },
     async start(params = {}) {
-      // One id per update asked for: asked again under it, Studio answers the same.
+      // Names this request for the audit; another request under the same id is
+      // refused. Asking again is harmless: a Studio already updating accepts again.
       const commandId =
         params.commandId ?? `update-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
       const result = (await ask('update.start', { ...params, commandId })) as Record<string, unknown> | null

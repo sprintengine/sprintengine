@@ -9,6 +9,7 @@ import {
   STUDIO_TOPICS,
   STUDIO_UPDATE_SESSION_CAPABILITY,
   STUDIO_UPDATE_SESSION_METHODS,
+  checkStudioProtocolVersion,
   studioIncompatibility,
   isStudioMethod,
   isStudioTopic,
@@ -952,11 +953,17 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     // asked to keep a connection for the update methods and authenticates
     // with a token: a pairing code is never spent on a client that could not
     // use what it pairs.
+    // Before authentication, the refusal names the protocol numbers and not
+    // this Studio's version.
     if (
       incompatible &&
       !(frame.client.capabilities?.includes(STUDIO_UPDATE_SESSION_CAPABILITY) && 'token' in frame.auth)
     ) {
-      bye('unsupported_protocol_version', incompatible.message)
+      const refused = checkStudioProtocolVersion(
+        frame.protocolVersion,
+        frame.minProtocolVersion ?? frame.protocolVersion,
+      )
+      bye('unsupported_protocol_version', refused.ok ? incompatible.message : refused.message)
       return
     }
     const outcome = authenticator.authenticate(frame.auth, frame.client)

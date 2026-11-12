@@ -72,7 +72,7 @@ export type StudioIncompatibleFrame = {
   protocolVersion: number
   minProtocolVersion: number
   server: StudioServerIdentity
-  environment: StudioEnvironment
+  environment: StudioIncompatibleEnvironment
   /** From the client's side: `client-outdated` or `server-outdated`. */
   compatibility: Exclude<StudioCompatibility, 'compatible' | 'unknown'>
   /** Why, naming both versions and which side to update. */
@@ -80,8 +80,19 @@ export type StudioIncompatibleFrame = {
   update: StudioUpdateStatus
 }
 
-/** The most characters of words an update status carries in one member. */
+/**
+ * Which Studio sent an `incompatible` frame: the welcome's `environment`,
+ * read so that a later Studio's is never lost. A host kind this client does
+ * not know is `other`.
+ */
+export type StudioIncompatibleEnvironment = Omit<StudioEnvironment, 'hostKind'> & {
+  hostKind: StudioEnvironment['hostKind'] | 'other'
+}
+
+/** The most characters of words an update status carries in one member; longer is cut, not refused. */
 export const STUDIO_UPDATE_MAX_TEXT = 2_000
+/** The most characters of a version a status or frame carries; longer is cut. */
+export const STUDIO_UPDATE_MAX_VERSION = 64
 
 export type StudioUpdateMethodMap = {
   /** Who this Studio is, how it is updated, and where an update stands. Any authenticated client. */
@@ -137,11 +148,14 @@ function record(value: unknown): value is Record<string, unknown> {
 function version(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
 }
-function text(value: unknown, max = STUDIO_UPDATE_MAX_TEXT): value is string {
-  return typeof value === 'string' && value.length <= max
+// Lenient on purpose: these are read from a Studio of any later version, so a
+// member out of today's bounds is cut to them, and one of the wrong type is
+// dropped, rather than the whole status or frame refused.
+function words(value: unknown, max = STUDIO_UPDATE_MAX_TEXT): string | null {
+  return typeof value === 'string' && value.length > 0 ? value.slice(0, max) : null
 }
 function appVersion(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 64
+  return typeof value === 'string' && value.length > 0 && value.length <= STUDIO_UPDATE_MAX_VERSION
 }
 
 const METHODS: readonly StudioUpdateMethod[] = ['self', 'bootstrap', 'manual']
@@ -154,35 +168,87 @@ const STATES: readonly StudioUpdateState[] = [
   'installing',
   'failed',
 ]
+const HOST_KINDS: readonly string[] = ['local', 'wsl', 'ssh', 'tailnet']
 
 /**
  * An update status as a client reads it: unknown members dropped, a method or
- * state it does not know read as `manual` or `idle`. Null when it is not one.
+ * state it does not know read as `manual` or `idle`, words and versions cut to
+ * their bounds. Null when it is not one at all.
  */
 export function parseStudioUpdateStatus(value: unknown): StudioUpdateStatus | null {
-  if (!record(value) || !appVersion(value.serverVersion)) return null
-  if (!version(value.protocolVersion) || !version(value.minProtocolVersion)) return null
+  if (!record(value)) return null
+  const serverVersion = words(value.serverVersion, STUDIO_UPDATE_MAX_VERSION)
+  if (!serverVersion || !version(value.protocolVersion) || !version(value.minProtocolVersion)) return null
   const method = METHODS.includes(value.method as StudioUpdateMethod) ? (value.method as StudioUpdateMethod) : 'manual'
   const state = STATES.includes(value.state as StudioUpdateState) ? (value.state as StudioUpdateState) : 'idle'
-  const available = record(value.available) && appVersion(value.available.version) ? value.available.version : null
+  const available = record(value.available) ? words(value.available.version, STUDIO_UPDATE_MAX_VERSION) : null
   const failure = record(value.lastFailure) ? value.lastFailure : null
+  const failureWords = failure ? words(failure.message) : null
+  const failureVersion = failure ? words(failure.version, STUDIO_UPDATE_MAX_VERSION) : null
   const failed =
-    failure && text(failure.message) && typeof failure.at === 'number' && Number.isFinite(failure.at)
-      ? {
-          ...(appVersion(failure.version) ? { version: failure.version } : {}),
-          message: failure.message,
-          at: failure.at,
-        }
+    failure && failureWords && typeof failure.at === 'number' && Number.isFinite(failure.at)
+      ? { ...(failureVersion ? { version: failureVersion } : {}), message: failureWords, at: failure.at }
       : null
+  const manual = words(value.manual)
   return {
-    serverVersion: value.serverVersion,
+    serverVersion,
     protocolVersion: value.protocolVersion,
     minProtocolVersion: value.minProtocolVersion,
     method,
     state,
     ...(available ? { available: { version: available } } : {}),
     ...(failed ? { lastFailure: failed } : {}),
-    ...(text(value.manual) && value.manual ? { manual: value.manual } : {}),
+    ...(manual ? { manual } : {}),
+  }
+}
+
+/**
+ * An `incompatible` frame as a client reads it, as leniently as its status:
+ * only what a client cannot do without (the versions, the environment's id,
+ * the update status) is required. `compatibility` is the side behind this
+ * client's own `client` window, judged from the versions; only where they
+ * meet it (a frame sent to another client) does the Studio's word stand, and
+ * a word this client does not know is read as its own to update.
+ */
+export function parseStudioIncompatibleFrame(
+  value: unknown,
+  client: StudioProtocolWindow,
+): StudioIncompatibleFrame | null {
+  if (!record(value) || value.t !== 'incompatible') return null
+  if (!version(value.protocolVersion) || !version(value.minProtocolVersion)) return null
+  const update = parseStudioUpdateStatus(value.update)
+  const where = record(value.environment) ? value.environment : null
+  const environmentId = where && typeof where.id === 'string' && /^.{1,200}$/su.test(where.id) ? where.id : null
+  if (!update || !where || !environmentId) return null
+  const server = record(value.server) ? value.server : {}
+  const judged = studioCompatibility(
+    { protocolVersion: value.protocolVersion, minProtocolVersion: value.minProtocolVersion },
+    client,
+  )
+  return {
+    t: 'incompatible',
+    protocolVersion: value.protocolVersion,
+    minProtocolVersion: value.minProtocolVersion,
+    server: {
+      name: words(server.name, 120) ?? 'SprintEngine Studio',
+      version: words(server.version, STUDIO_UPDATE_MAX_VERSION) ?? update.serverVersion,
+    },
+    environment: {
+      id: environmentId,
+      hostKind: HOST_KINDS.includes(where.hostKind as string)
+        ? (where.hostKind as StudioEnvironment['hostKind'])
+        : 'other',
+      os: words(where.os, 64) ?? '',
+      arch: words(where.arch, 64) ?? '',
+    },
+    compatibility:
+      judged === 'server-outdated' || judged === 'client-outdated'
+        ? judged
+        : value.compatibility === 'server-outdated'
+          ? 'server-outdated'
+          : 'client-outdated',
+    message: words(value.message) ?? 'This app and this Studio do not speak a protocol version in common.',
+    update,
   }
 }
 

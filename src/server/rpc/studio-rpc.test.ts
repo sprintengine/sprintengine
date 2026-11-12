@@ -98,10 +98,9 @@ test('a client outside the version window is refused with both numbers named', a
   c.send(hello({ token }, { protocolVersion: 5, minProtocolVersion: 4 }))
   const bye = await c.next(isT('bye'))
   assert.equal(bye.t === 'bye' && bye.code, 'unsupported_protocol_version')
-  assert.match(
-    bye.t === 'bye' ? bye.message : '',
-    /speaks Studio protocol 1, and this app needs 4 or newer\. Update the Studio\./,
-  )
+  assert.match(bye.t === 'bye' ? bye.message : '', /4 or newer.*speaks 1/)
+  // Nothing about this Studio before it has authenticated: not its version.
+  assert.doesNotMatch(bye.t === 'bye' ? bye.message : '', /0\.0\.0-test/)
   await c.closed
 })
 

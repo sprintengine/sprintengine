@@ -1,3 +1,4 @@
+import { STUDIO_UPDATE_MAX_TEXT } from '../../../packages/studio-protocol/src/public'
 import type { AppUpdateCheckResult, AppUpdateState } from '../../shared/ipc/window'
 import type { StudioUpdates, StudioUpdateSide, StudioUpdateStart } from '../../server/update/studio-updates'
 
@@ -14,98 +15,150 @@ export type DesktopUpdater = {
   checkForUpdates(isManual?: boolean): Promise<AppUpdateCheckResult>
   downloadUpdate(): Promise<AppUpdateCheckResult>
   quitAndInstall(): Promise<AppUpdateCheckResult>
+  onStateChange?(listener: (state: AppUpdateState) => void): () => void
 }
 
 /** What a build that does not update itself says: one run from a source checkout. */
 export const DEV_BUILD_UPDATE_WORDS =
   'This Studio is a development build, which does not update itself. Update its checkout and build it again.'
 
-/** The updater's state, as `update.status` tells it. */
-export function desktopUpdateSide(state: AppUpdateState, now: () => number = Date.now): StudioUpdateSide {
+/** What an installation that needs an administrator says: the elevation is asked for at that PC. */
+export const ADMIN_UPDATE_WORDS =
+  'This Studio needs an administrator to install updates, which Windows asks for at that PC. Update it there, from Settings.'
+
+/**
+ * How long a client's `update.start` waits for the check before saying so: the
+ * answer has to reach the client inside the shell's own call deadline when
+ * the server runs out of process.
+ */
+export const UPDATE_CHECK_WAIT_MS = 20_000
+
+/** The last update that did not happen, as `update.status` keeps it. */
+export type DesktopUpdateFailure = NonNullable<StudioUpdateSide['lastFailure']>
+
+/** The updater's state, as `update.status` tells it, with the last failure kept beside it. */
+export function desktopUpdateSide(
+  state: AppUpdateState,
+  lastFailure: DesktopUpdateFailure | null = null,
+): StudioUpdateSide {
   if (!state.packaged) return { method: 'manual', state: 'idle', manual: DEV_BUILD_UPDATE_WORDS }
   const available = state.updateVersion ? { available: { version: state.updateVersion } } : {}
-  // The last update handed to an installer that left this version running.
-  const outcome = state.installOutcome?.kind === 'failed' ? state.installOutcome : null
-  const lastFailure =
-    state.status === 'error'
-      ? {
-          lastFailure: {
-            ...(state.updateVersion ? { version: state.updateVersion } : {}),
-            message: state.errorMessage ?? 'The update did not finish.',
-            at: state.lastCheckedAt ? Date.parse(state.lastCheckedAt) || now() : now(),
-          },
-        }
-      : outcome
-        ? {
-            lastFailure: {
-              version: outcome.version,
-              message: outcome.message ?? `The update to ${outcome.version} did not install.`,
-              at: now(),
-            },
-          }
-        : {}
+  const failure = lastFailure ? { lastFailure } : {}
   switch (state.status) {
     case 'checking':
-      return { method: 'self', state: 'checking', ...lastFailure }
+      return { method: 'self', state: 'checking', ...failure }
     case 'available':
-      return { method: 'self', state: 'available', ...available, ...lastFailure }
+      return { method: 'self', state: 'available', ...available, ...failure }
     case 'downloading':
-      return { method: 'self', state: 'downloading', ...available, ...lastFailure }
+      return { method: 'self', state: 'downloading', ...available, ...failure }
     case 'downloaded':
-      return { method: 'self', state: 'ready', ...available, ...lastFailure }
+      return { method: 'self', state: 'ready', ...available, ...failure }
     case 'installing':
       return { method: 'self', state: 'installing', ...available }
     case 'error':
-      return { method: 'self', state: 'failed', ...available, ...lastFailure }
+      return { method: 'self', state: 'failed', ...available, ...failure }
     default:
-      return { method: 'self', state: 'idle', ...lastFailure }
+      return { method: 'self', state: 'idle', ...failure }
   }
 }
 
 /**
+ * The failure a state says happened just now, if any: an updater error, or
+ * an update the last installer left undone (read once, at the start after
+ * it). Words cut to what a status carries.
+ */
+export function desktopUpdateFailureOf(state: AppUpdateState, at: number): DesktopUpdateFailure | null {
+  const cut = (text: string) => text.slice(0, STUDIO_UPDATE_MAX_TEXT)
+  if (state.status === 'error')
+    return {
+      ...(state.updateVersion ? { version: state.updateVersion } : {}),
+      message: cut(state.errorMessage ?? 'The update did not finish.'),
+      at,
+    }
+  if (state.installOutcome?.kind === 'failed')
+    return {
+      version: state.installOutcome.version,
+      message: cut(state.installOutcome.message ?? `The update to ${state.installOutcome.version} did not install.`),
+      at,
+    }
+  return null
+}
+
+function within<T>(promise: Promise<T>, ms: number): Promise<T | 'late'> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    promise,
+    new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => resolve('late'), ms)
+    }),
+  ]).finally(() => clearTimeout(timer))
+}
+
+/**
  * The desktop's updates. `start` checks first, so a Studio with nothing to
- * install says so instead of accepting; then the download and the restart
- * run on, and the answer goes out before the restart closes the connection.
- * A desktop installs the newest version its channel offers; a `targetVersion`
- * is not a way to pick another.
+ * install, or not the version asked for, says so instead of accepting; then
+ * the download (joined if one is under way) and the restart run on, and the
+ * answer goes out before the restart closes the connection.
  */
 export function desktopStudioUpdates(
   updater: DesktopUpdater,
-  options: { log?: (message: string) => void; now?: () => number } = {},
+  options: { log?: (message: string) => void; now?: () => number; checkWaitMs?: number } = {},
 ): StudioUpdates {
   const now = options.now ?? Date.now
+  // Kept when it happens, until an update succeeds (which restarts the app):
+  // the next hourly check clears the updater's error, not this.
+  let lastFailure: DesktopUpdateFailure | null = desktopUpdateFailureOf(updater.getState(), now())
+  updater.onStateChange?.((state) => {
+    // The same failure said again keeps the time it first happened.
+    const failure = desktopUpdateFailureOf(state, now())
+    if (failure && (failure.message !== lastFailure?.message || failure.version !== lastFailure?.version))
+      lastFailure = failure
+  })
   let running: Promise<void> | null = null
   const finish = async (): Promise<void> => {
     if (!updater.getState().downloaded) {
+      // Joins a download already under way, as electron-updater hands a second call the one running.
       const downloaded = await updater.downloadUpdate()
       if (!downloaded.ok) return
     }
     const installed = await updater.quitAndInstall()
     if (!installed.ok) options.log?.(`A client's update did not start: ${installed.message}`)
   }
+  const begin = (): void => {
+    running = finish()
+      .catch((error: unknown) =>
+        options.log?.(`A client's update failed: ${error instanceof Error ? error.message : String(error)}`),
+      )
+      .finally(() => {
+        running = null
+      })
+  }
   return {
-    status: () => desktopUpdateSide(updater.getState(), now),
-    async start(): Promise<StudioUpdateStart> {
+    status: () => desktopUpdateSide(updater.getState(), lastFailure),
+    async start(input): Promise<StudioUpdateStart> {
       const before = updater.getState()
       if (!before.packaged) return { ok: false, message: DEV_BUILD_UPDATE_WORDS }
       // Asked again while one runs: the same update, accepted again.
-      if (running || before.status === 'installing' || before.status === 'downloading')
-        return { ok: true, targetVersion: before.updateVersion }
-      if (!before.downloaded) {
-        const checked = await updater.checkForUpdates(true)
+      if (running || before.status === 'installing') return { ok: true, targetVersion: before.updateVersion }
+      // Windows would ask for an administrator at that PC, with nobody there to answer.
+      if (before.installRequiresAdmin) return { ok: false, message: ADMIN_UPDATE_WORDS }
+      if (!before.downloaded && before.status !== 'downloading') {
+        const checked = await within(updater.checkForUpdates(true), options.checkWaitMs ?? UPDATE_CHECK_WAIT_MS)
+        if (checked === 'late')
+          return { ok: false, message: 'Studio could not check for an update in time. Try again in a moment.' }
         if (!checked.ok) return { ok: false, message: checked.message }
         const after = updater.getState()
         if (!after.downloaded && after.status !== 'available' && after.status !== 'downloading')
           return { ok: false, message: `This Studio is up to date: it runs ${after.version}.` }
       }
       const target = updater.getState().updateVersion
-      running = finish()
-        .catch((error: unknown) =>
-          options.log?.(`A client's update failed: ${error instanceof Error ? error.message : String(error)}`),
-        )
-        .finally(() => {
-          running = null
-        })
+      // A desktop installs what its channel offers; another version is not a choice it has.
+      if (input.targetVersion !== undefined && input.targetVersion !== target)
+        return {
+          ok: false,
+          message: `This Studio's update channel offers ${target ?? 'no update'}, not ${input.targetVersion}.`,
+        }
+      begin()
       return { ok: true, targetVersion: target }
     },
   }

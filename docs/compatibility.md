@@ -1056,8 +1056,11 @@ started by hand. `manual` carries the words for the last two. `update.start`
 (a mutation with a `commandId`, scope `environment:maintain`) asks a `self`
 Studio to check, download, drain its running turns and restart into the new
 version; it is answered before the restart, and the client reads the outcome
-from the next welcome's version or `lastFailure`. A Studio that does not update
-itself refuses it `update_unavailable` with its words. Owners hold
+from the next welcome's version or `lastFailure`. A desktop installs what its
+update channel offers, so a `targetVersion` it does not offer is refused, and
+so is an installation that needs an administrator, which Windows asks for at
+that PC. A Studio that does not update itself refuses it `update_unavailable`
+with its words. Owners hold
 `environment:maintain`; a paired app only when Settings gave it; a browser on
 the tailnet never.
 
@@ -1065,7 +1068,9 @@ the tailnet never.
 results and codes never change shape**, since they are what two ends that
 disagree on everything else still speak; and neither does the `hello`. Members
 are only ever added, optional; a client reads an update `method` it does not
-know as `manual` and a `state` as `idle`. `packages/studio-protocol/test/update.test.ts`
+know as `manual`, a `state` as `idle` and an environment's `hostKind` as
+`other`, and cuts words and versions to their bounds instead of refusing the
+frame. `packages/studio-protocol/test/update.test.ts`
 pins them. The SDK's `openStudioUpdateSession` is the client side.
 
 The pack check (`npm run test:studio-packages:pack`) installs the packed

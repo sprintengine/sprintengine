@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import type { AppUpdateCheckResult, AppUpdateState } from '../../shared/ipc/window'
-import { DEV_BUILD_UPDATE_WORDS, desktopStudioUpdates, desktopUpdateSide, type DesktopUpdater } from './desktop-updates'
+import {
+  ADMIN_UPDATE_WORDS,
+  DEV_BUILD_UPDATE_WORDS,
+  desktopStudioUpdates,
+  desktopUpdateSide,
+  type DesktopUpdater,
+} from './desktop-updates'
 
 const base: AppUpdateState = {
   status: 'idle',
@@ -23,93 +29,127 @@ const base: AppUpdateState = {
   installOutcome: null,
 }
 
-/** An updater that finds `found` on a check, downloads it, and records each step. */
-function updater(found: string | null, state: Partial<AppUpdateState> = {}) {
+/**
+ * An updater that finds `found` on a check and downloads it, recording each
+ * step. Its install never returns, as a real one does not: the app quits.
+ */
+function updater(found: string | null, state: Partial<AppUpdateState> = {}, options: { checkHangs?: boolean } = {}) {
   let current: AppUpdateState = { ...base, ...state }
   const steps: string[] = []
-  const answer = (ok = true): AppUpdateCheckResult => ({ ok, state: current, message: ok ? 'ok' : 'failed' }) as never
-  const fake: DesktopUpdater & { steps: string[] } = {
+  const listeners = new Set<(state: AppUpdateState) => void>()
+  const set = (patch: Partial<AppUpdateState>) => {
+    current = { ...current, ...patch }
+    for (const listener of listeners) listener(current)
+  }
+  const answer = (): AppUpdateCheckResult => ({ ok: true, state: current, message: 'ok' })
+  const fake: DesktopUpdater & { steps: string[]; set: typeof set } = {
     steps,
+    set,
     getState: () => current,
+    onStateChange: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     checkForUpdates: async () => {
       steps.push('check')
-      current = found
-        ? { ...current, status: 'available', updateVersion: found }
-        : { ...current, status: 'not_available' }
+      if (options.checkHangs) return new Promise<AppUpdateCheckResult>(() => undefined)
+      set(found ? { status: 'available', updateVersion: found } : { status: 'not_available' })
       return answer()
     },
     downloadUpdate: async () => {
       steps.push('download')
-      current = { ...current, status: 'downloaded', downloaded: true }
+      set({ status: 'downloaded', downloaded: true })
       return answer()
     },
-    quitAndInstall: async () => {
+    quitAndInstall: () => {
       steps.push('install')
-      current = { ...current, status: 'installing' }
-      return answer()
+      set({ status: 'installing' })
+      return new Promise<AppUpdateCheckResult>(() => undefined)
     },
   }
   return fake
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+}
 
-test('the updater state reads as update.status: method self, a version waiting, and why the last one failed', () => {
-  const at = () => 1_000
+test('the updater state reads as update.status: method self, a version waiting, and the failure kept', () => {
   assert.deepEqual(desktopUpdateSide({ ...base, packaged: false }), {
     method: 'manual',
     state: 'idle',
     manual: DEV_BUILD_UPDATE_WORDS,
   })
-  assert.deepEqual(desktopUpdateSide(base, at), { method: 'self', state: 'idle' })
-  assert.deepEqual(desktopUpdateSide({ ...base, status: 'not_available' }, at), { method: 'self', state: 'idle' })
-  assert.deepEqual(desktopUpdateSide({ ...base, status: 'downloaded', updateVersion: '1.1.0' }, at), {
+  assert.deepEqual(desktopUpdateSide(base), { method: 'self', state: 'idle' })
+  assert.deepEqual(desktopUpdateSide({ ...base, status: 'not_available' }), { method: 'self', state: 'idle' })
+  assert.deepEqual(desktopUpdateSide({ ...base, status: 'downloaded', updateVersion: '1.1.0' }), {
     method: 'self',
     state: 'ready',
     available: { version: '1.1.0' },
   })
-  assert.deepEqual(
-    desktopUpdateSide(
-      { ...base, status: 'error', errorMessage: 'No network.', lastCheckedAt: '1970-01-01T00:00:02.000Z' },
-      at,
-    ),
-    { method: 'self', state: 'failed', lastFailure: { message: 'No network.', at: 2_000 } },
-  )
-  // An update that went to an installer and left this version running.
-  assert.deepEqual(
-    desktopUpdateSide(
-      {
-        ...base,
-        installOutcome: {
-          kind: 'failed',
-          version: '1.1.0',
-          fromVersion: '1.0.0',
-          message: 'The installer was cancelled.',
-        },
+  const failure = { message: 'No network.', at: 2_000 }
+  assert.deepEqual(desktopUpdateSide({ ...base, status: 'error' }, failure), {
+    method: 'self',
+    state: 'failed',
+    lastFailure: failure,
+  })
+})
+
+test('a failure is kept with the time it happened, past the next check clearing the updater’s error', () => {
+  let clock = 1_000
+  const fake = updater(null)
+  const updates = desktopStudioUpdates(fake, { now: () => clock })
+  fake.set({ status: 'error', errorMessage: `Bad gateway: ${'x'.repeat(3_000)}` })
+  clock = 5_000
+  // Said again, it keeps its first time.
+  fake.set({ status: 'error', errorMessage: `Bad gateway: ${'x'.repeat(3_000)}` })
+  fake.set({ status: 'not_available', errorMessage: null })
+  const kept = updates.status().lastFailure
+  assert.equal(kept?.at, 1_000)
+  assert.equal(kept?.message.length, 2_000)
+  assert.equal(updates.status().state, 'idle')
+  // The update an installer left undone, read at the start after it.
+  const after = desktopStudioUpdates(
+    updater(null, {
+      installOutcome: {
+        kind: 'failed',
+        version: '1.1.0',
+        fromVersion: '1.0.0',
+        message: 'The installer was cancelled.',
       },
-      at,
-    ),
-    {
-      method: 'self',
-      state: 'idle',
-      lastFailure: { version: '1.1.0', message: 'The installer was cancelled.', at: 1_000 },
-    },
+    }),
+    { now: () => 7 },
   )
+  assert.deepEqual(after.status().lastFailure, { version: '1.1.0', message: 'The installer was cancelled.', at: 7 })
 })
 
 test('start checks first, then downloads and restarts into the update, answering before the restart', async () => {
   const fake = updater('1.1.0')
   const updates = desktopStudioUpdates(fake)
+  // Answered although the install never returns: the answer goes out first.
   assert.deepEqual(await updates.start({}), { ok: true, targetVersion: '1.1.0' })
   // Asked again while it runs: the same update.
   assert.deepEqual(await updates.start({}), { ok: true, targetVersion: '1.1.0' })
-  await settle()
   await settle()
   assert.deepEqual(fake.steps, ['check', 'download', 'install'])
   assert.equal(updates.status().state, 'installing')
 })
 
-test('start refuses a Studio that is up to date, and a development build, in words', async () => {
+test('a download already under way is joined, and the restart follows it', async () => {
+  const fake = updater('1.1.0', { status: 'downloading', updateVersion: '1.1.0' })
+  assert.deepEqual(await desktopStudioUpdates(fake).start({}), { ok: true, targetVersion: '1.1.0' })
+  await settle()
+  assert.deepEqual(fake.steps, ['download', 'install'])
+})
+
+test('an update already downloaded goes straight to the restart', async () => {
+  const fake = updater('1.1.0', { status: 'downloaded', downloaded: true, updateVersion: '1.1.0' })
+  assert.deepEqual(await desktopStudioUpdates(fake).start({}), { ok: true, targetVersion: '1.1.0' })
+  await settle()
+  assert.deepEqual(fake.steps, ['install'])
+})
+
+test('start refuses, in words: up to date, a development build, an administrator needed, another version, a slow check', async () => {
   const current = updater(null)
   assert.deepEqual(await desktopStudioUpdates(current).start({}), {
     ok: false,
@@ -118,12 +158,19 @@ test('start refuses a Studio that is up to date, and a development build, in wor
   assert.deepEqual(current.steps, ['check'])
   const dev = updater('1.1.0', { packaged: false })
   assert.deepEqual(await desktopStudioUpdates(dev).start({}), { ok: false, message: DEV_BUILD_UPDATE_WORDS })
-  assert.deepEqual(dev.steps, [])
-})
-
-test('an update already downloaded goes straight to the restart', async () => {
-  const fake = updater('1.1.0', { status: 'downloaded', downloaded: true, updateVersion: '1.1.0' })
-  assert.deepEqual(await desktopStudioUpdates(fake).start({}), { ok: true, targetVersion: '1.1.0' })
+  const admin = updater('1.1.0', { installRequiresAdmin: true })
+  assert.deepEqual(await desktopStudioUpdates(admin).start({}), { ok: false, message: ADMIN_UPDATE_WORDS })
+  for (const fake of [dev, admin]) assert.deepEqual(fake.steps, [])
+  const other = updater('1.1.0')
+  assert.deepEqual(await desktopStudioUpdates(other).start({ targetVersion: '1.2.0' }), {
+    ok: false,
+    message: "This Studio's update channel offers 1.1.0, not 1.2.0.",
+  })
   await settle()
-  assert.deepEqual(fake.steps, ['install'])
+  assert.deepEqual(other.steps, ['check'])
+  const slow = updater('1.1.0', {}, { checkHangs: true })
+  const refused = await desktopStudioUpdates(slow, { checkWaitMs: 10 }).start({})
+  assert.equal(refused.ok, false)
+  await settle()
+  assert.deepEqual(slow.steps, ['check'])
 })

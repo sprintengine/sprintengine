@@ -23,8 +23,8 @@ import {
   type StudioProgressFrame,
   type StudioReplyFrame,
 } from './tools.js'
-import { studioCompatibility } from './handshake.js'
-import { parseStudioUpdateStatus, type StudioIncompatibleFrame } from './update.js'
+import { STUDIO_PROTOCOL_WINDOW } from './handshake.js'
+import { parseStudioIncompatibleFrame, type StudioIncompatibleFrame } from './update.js'
 
 // The connection envelope: one connection per client, carrying every
 // namespace. A request is answered under its id; a stream is keyed by the
@@ -520,37 +520,10 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
         ...(pairing === undefined ? {} : { pairing: { token: (pairing as { token: string }).token } }),
       }
     }
-    case 'incompatible': {
-      const server = frame.server
-      const where = environment(frame.environment)
-      const update = parseStudioUpdateStatus(frame.update)
-      if (!version(frame.protocolVersion) || !version(frame.minProtocolVersion)) return null
-      if (!record(server) || !text(server.name, 120) || !text(server.version, 64)) return null
-      if (!where || !update || !text(frame.message)) return null
-      // Judged again from the versions, against this client's own window: the
-      // side to update is the one that is behind it. Only a frame whose
-      // versions meet this client's (sent to another) falls back to its word.
-      const judged = studioCompatibility({
-        protocolVersion: frame.protocolVersion,
-        minProtocolVersion: frame.minProtocolVersion,
-      })
-      const compatibility =
-        judged === 'server-outdated' || judged === 'client-outdated'
-          ? judged
-          : frame.compatibility === 'server-outdated'
-            ? 'server-outdated'
-            : 'client-outdated'
-      return {
-        t: 'incompatible',
-        protocolVersion: frame.protocolVersion,
-        minProtocolVersion: frame.minProtocolVersion,
-        server: { name: server.name, version: server.version },
-        environment: where,
-        compatibility,
-        message: frame.message,
-        update,
-      }
-    }
+    case 'incompatible':
+      // Read leniently (`update.ts`): this frame is what a client from any
+      // release reads from a Studio of any later one.
+      return parseStudioIncompatibleFrame(frame, STUDIO_PROTOCOL_WINDOW)
     case 'res': {
       if (!id(frame.id) || typeof frame.ok !== 'boolean') return null
       if (frame.ok) return { t: 'res', id: frame.id, ok: true, result: frame.result }

@@ -621,3 +621,25 @@ test('a Studio this client cannot talk to is still reached for its updates, and 
   cleanups.push(() => reader.close())
   await assert.rejects(reader.start(), (error: StudioError) => error.code === 'scope_required')
 })
+
+test('an update session says at once when the greeting cannot be read, rather than waiting out the hello', async () => {
+  let listener: ((frame: string) => void) | null = null
+  const started = Date.now()
+  await assert.rejects(
+    openStudioUpdateSession({
+      transport: async () => ({
+        send: () => listener?.(JSON.stringify({ t: 'incompatible', protocolVersion: 'two' })),
+        close: () => undefined,
+        onMessage: (next) => {
+          listener = next
+        },
+        onClose: () => undefined,
+      }),
+      client: { name: 'sdk-test' },
+      auth: { token: 'sest_reader_0123456789abcdef' },
+      helloTimeoutMs: 10_000,
+    }),
+    (error: StudioError) => error.code === 'invalid_frame',
+  )
+  assert.ok(Date.now() - started < 5_000)
+})

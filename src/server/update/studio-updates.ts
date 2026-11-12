@@ -1,4 +1,8 @@
-import type { StudioProtocolWindow, StudioUpdateStatus } from '../../../packages/studio-protocol/src/public'
+import {
+  STUDIO_UPDATE_MAX_TEXT,
+  type StudioProtocolWindow,
+  type StudioUpdateStatus,
+} from '../../../packages/studio-protocol/src/public'
 
 // How this Studio is kept up to date, as the update methods tell a client
 // (`packages/studio-protocol/src/update.ts`). Each host says which way it is
@@ -47,8 +51,13 @@ export function studioUpdateStatus(
   updates: StudioUpdates,
   server: { version: string } & StudioProtocolWindow,
 ): StudioUpdateStatus {
+  const side = updates.status()
+  // Words are cut here to what a client reads, so none is dropped there.
+  const cut = (text: string) => text.slice(0, STUDIO_UPDATE_MAX_TEXT)
   return {
-    ...updates.status(),
+    ...side,
+    ...(side.manual ? { manual: cut(side.manual) } : {}),
+    ...(side.lastFailure ? { lastFailure: { ...side.lastFailure, message: cut(side.lastFailure.message) } } : {}),
     serverVersion: server.version,
     protocolVersion: server.protocolVersion,
     minProtocolVersion: server.minProtocolVersion,

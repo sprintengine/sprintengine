@@ -140,6 +140,24 @@ test('a status from a newer Studio reads: unknown members dropped, an unknown me
     assert.equal(parseStudioUpdateStatus(broken), null)
 })
 
+test('a frame from a later Studio still reads: a new host kind, long words, members this client does not know', () => {
+  const later = parseStudioServerFrame({
+    ...incompatible,
+    environment: { ...incompatible.environment, hostKind: 'something-new', region: 'x' },
+    server: { name: 'S'.repeat(500), version: '1.2.3', build: 'abc' },
+    message: 'm'.repeat(5_000),
+    update: { ...status, manual: 'w'.repeat(5_000), serverVersion: 'v'.repeat(100) },
+    hint: 'later',
+  })
+  assert.ok(later?.t === 'incompatible')
+  assert.deepEqual(later.environment, { id: 'env-1', hostKind: 'other', os: 'linux', arch: 'x64' })
+  assert.equal(later.server.name.length, 120)
+  assert.equal(later.message.length, 2_000)
+  assert.equal(later.update.manual?.length, 2_000)
+  assert.equal(later.update.serverVersion.length, 64)
+  assert.equal('hint' in later, false)
+})
+
 test('an incompatible frame names the side behind this client, judged from its versions where they decide', () => {
   const side = (frame: Record<string, unknown>) => {
     const parsed = parseStudioServerFrame({ ...incompatible, ...frame })
