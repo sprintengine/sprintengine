@@ -45,8 +45,6 @@ export const SERVER_METHODS = {
    * server and its WSL servers run, all of which a quit would stop.
    */
   quitStops: 'quit.stops',
-  /** `{ overrides }` → the module enablement result: the shell wrote the file, the server applies it live. */
-  applyModuleEnablement: 'modules.apply-enablement',
   /** → `ThirdPartyLaunchSessionWire`: which third-party main halves loaded here, and what they registered. */
   thirdPartyLaunchSession: 'modules.third-party-launch-session',
   /**
@@ -144,6 +142,8 @@ export const SERVER_EVENTS = {
   mirrorMeshReachability: 'mirror.mesh-reachability',
   /** Server → shell: a chat's or a terminal agent's phase moved; the dock badge, banners, keep-awake and tours follow it. */
   attentionPhase: 'attention.agent-phase',
+  /** Server → shell: what is installed or trusted changed (`module.install`, …); the windows load their extensions again. */
+  modulesChanged: 'modules.changed',
   /** Shell → server: the renderer's module registry, mirrored. */
   moduleRegistrySnapshot: 'modules.registry-snapshot',
   /** Shell → server: the idle threshold shared with terminals. */

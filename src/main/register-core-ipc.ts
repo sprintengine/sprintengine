@@ -36,7 +36,6 @@ import { registerMarketplacePluginIpc } from './ipc/marketplace-plugin-ipc'
 import { registerMarketplaceRegistryIpc } from './ipc/marketplace-registry-ipc'
 import { registerHostedSourcesFeedIpc } from './ipc/hosted-feed-ipc'
 import { registerHostedCardFeedIpc } from './ipc/card-feed-ipc'
-import { registerModuleEnablementIpc, type ModuleEnablementLiveApplier } from './ipc/module-enablement-ipc'
 import { registerModuleAppStateIpc } from './ipc/module-app-state-ipc'
 import { registerModuleRegistryIpc } from './ipc/module-registry-ipc'
 import { registerPluginIpc } from './ipc/plugins-ipc'
@@ -78,7 +77,6 @@ import { openDiagnosticsLogsFolder } from './diagnostics-folder'
 import { writeDiagnosticLog } from './diagnostics-service'
 
 export type CoreIpcOptions = {
-  applyModuleEnablementLive?: ModuleEnablementLiveApplier
   /** What this session's third-party main halves did, for Settings → Extensions. */
   readThirdPartyLaunchSession?: () => Promise<ThirdPartyLaunchSession>
   /**
@@ -260,7 +258,6 @@ export function registerCoreIpc(
   registerVersionControlIpc(machineIpc)
   registerMenuDialogIpc(ipcMain)
   registerProjectlessChatsIpc(ipcMain)
-  registerModuleEnablementIpc(ipcMain, { applyLive: options.applyModuleEnablementLive })
   // Module app state (Settings section values), mirrored for `entry.main`.
   registerModuleAppStateIpc(ipcMain)
   registerModuleRegistryIpc(ipcMain, services.moduleRegistryMirror)
@@ -302,7 +299,7 @@ export function registerCoreIpc(
         })
       : // The server registers them, and disposes its own command lists.
         { conversationCommands: { dispose: async () => undefined } }
-  registerThirdPartyModuleIpc(ipcMain, services, {
+  registerThirdPartyModuleIpc(ipcMain, {
     ...(options.readThirdPartyLaunchSession ? { readLaunchSession: options.readThirdPartyLaunchSession } : {}),
   })
 

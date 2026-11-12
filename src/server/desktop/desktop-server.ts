@@ -312,7 +312,13 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     show: (notice) => bridge.notify({ ...notice, activate: { kind: 'remote' } }),
   })
 
-  const modules = createServerModules({ platform, core, log })
+  const modules = createServerModules({
+    platform,
+    core,
+    log,
+    // The windows are the shell's: it tells them to load their extensions again.
+    modulesChanged: () => rpc.emit(SERVER_EVENTS.modulesChanged, null),
+  })
   gateway = createStudioGateway(core, {
     // An agent that starts a chat hears back from it, as one that launches a
     // terminal agent does.
@@ -840,9 +846,6 @@ function serveShellRequests(deps: {
       ...quitStopsOf(backgroundWorkOf(core), wsl),
     }
   })
-  rpc.handle(SERVER_METHODS.applyModuleEnablement, (params) =>
-    deps.modules.applyEnablement((params as { overrides?: Record<string, boolean> } | null)?.overrides ?? {}),
-  )
   rpc.handle(SERVER_METHODS.thirdPartyLaunchSession, () => deps.modules.thirdPartyLaunchSession())
   const takePort = (params: unknown): TunnelPort => {
     const clientId = (params as { clientId?: unknown } | null)?.clientId

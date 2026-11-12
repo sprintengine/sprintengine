@@ -8,7 +8,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import type { MarketplaceUpdateStatesResult, ThirdPartyModuleUninstallInput } from '../../../../shared/electron-api'
+import type { MarketplacePluginUninstallInput, MarketplaceUpdateStatesResult } from '../../../../shared/electron-api'
 import { HOST_API_VERSION } from '../../../../shared/modules/host-api'
 import type { CapabilityManifest, ThirdPartyModuleView } from '../../../../shared/modules/manifest'
 import { useWorkspaceStore } from '../../store/workspaceStore'
@@ -32,6 +32,24 @@ vi.mock('../../modules', async (importOriginal) => ({
   getRendererHost: () => registry,
   onThirdPartyRendererModulesLoaded: () => () => {},
   refreshThirdPartyRendererModules: async () => {},
+}))
+
+// What runs on the window's Studio is changed through it (`module.setTrust`,
+// `module.uninstall`); this stands in for the window's connection.
+vi.mock('../../studio/moduleLifecycle', () => ({
+  windowModuleLifecycle: () => ({
+    setEnabled: async () => ({ ok: true, module: null }),
+    install: async () => ({ ok: false, message: 'not here' }),
+    setTrust: async (id: string, trusted: boolean) => {
+      trustCalls.push([id, trusted])
+      return { ok: true }
+    },
+    uninstall: async (id: string) => {
+      uninstallCalls.push(id)
+      installed = installed.filter((candidate) => candidate.manifest.id !== id)
+      return { ok: true, removedModuleIds: [id] }
+    },
+  }),
 }))
 
 vi.mock('../../modules/third-party-loader', async (importOriginal) => ({
@@ -124,7 +142,8 @@ const UPDATES: MarketplaceUpdateStatesResult = {
 
 let installed: ThirdPartyModuleView[] = []
 const trustCalls: Array<[string, boolean]> = []
-const uninstallCalls: ThirdPartyModuleUninstallInput[] = []
+const uninstallCalls: string[] = []
+const pluginUninstallCalls: MarketplacePluginUninstallInput[] = []
 const restartApp = vi.fn(async () => ({ restarting: false }))
 let root: Root | null = null
 let host: HTMLElement | null = null
@@ -134,18 +153,23 @@ beforeEach(() => {
   installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, WEATHER, TAMPERED]
   trustCalls.length = 0
   uninstallCalls.length = 0
+  pluginUninstallCalls.length = 0
   restartApp.mockClear()
   ;(window as unknown as { api: unknown }).api = {
     listThirdPartyModules: async () => ({ modules: installed, rejected: [] }),
     readMarketplacePluginUpdateStates: async () => UPDATES,
-    setThirdPartyModuleTrust: async (id: string, trusted: boolean) => {
-      trustCalls.push([id, trusted])
-      return { ok: true }
-    },
-    uninstallThirdPartyModule: async (input: ThirdPartyModuleUninstallInput) => {
-      uninstallCalls.push(input)
-      installed = installed.filter((candidate) => candidate.manifest.id !== input.id)
-      return { ok: true, removedModuleIds: [input.id], mcpSettings: { syncEnabled: true, servers: {} } }
+    uninstallMarketplacePlugin: async (input: MarketplacePluginUninstallInput) => {
+      pluginUninstallCalls.push(input)
+      const removed = installed.filter(
+        (candidate) => candidate.origin?.kind !== 'folder' && candidate.origin?.pluginId === input.pluginId,
+      )
+      installed = installed.filter((candidate) => !removed.includes(candidate))
+      return {
+        ok: true,
+        id: input.pluginId,
+        removed: removed.map((candidate) => ({ kind: 'module', id: candidate.manifest.id })),
+        mcpSettings: { syncEnabled: true, servers: {} },
+      }
     },
     restartApp,
     clipboardWriteText: async () => undefined,
@@ -372,7 +396,7 @@ test('built-in modules are folded away until asked for', async () => {
   expect(list('Built in')!.textContent).toContain('Always on')
 })
 
-test('uninstall goes through the channel that handles any install, and forgets the module here', async () => {
+test('a module added from a folder is uninstalled by the Studio, and forgotten here', async () => {
   await mount()
   await click(button('More for Decision Log'))
   await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
@@ -382,12 +406,27 @@ test('uninstall goes through the channel that handles any install, and forgets t
   expect(document.body.textContent).toContain('Work it saved in your projects stays')
   await click(confirm)
 
-  expect(uninstallCalls).toHaveLength(1)
-  expect(uninstallCalls[0]?.id).toBe('decision-log')
-  expect(uninstallCalls[0]?.mcpSettings).toBeDefined()
+  expect(uninstallCalls).toEqual(['decision-log'])
+  expect(pluginUninstallCalls).toHaveLength(0)
   const settings = useWorkspaceStore.getState().appSettings
   expect(settings.modules).toEqual({ 'other-ext': false })
   expect(settings.moduleSettings?.['module:decision-log']).toBeUndefined()
   expect(rowOf('PR Radar')).toBeTruthy()
   expect(panel().textContent).not.toContain('Decision Log')
+})
+
+test('a module a plugin put in place is uninstalled with its plugin, carrying the MCP settings', async () => {
+  await mount()
+  await click(button('More for Weather Deck'))
+  await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === 'Uninstall'))
+  const confirm = buttons(document.querySelector('[role="alertdialog"], [role="dialog"]')!).find(
+    (candidate) => candidate.textContent?.trim() === 'Uninstall',
+  )
+  await click(confirm)
+
+  expect(uninstallCalls).toHaveLength(0)
+  expect(pluginUninstallCalls).toHaveLength(1)
+  expect(pluginUninstallCalls[0]?.pluginId).toBe('weather')
+  expect(pluginUninstallCalls[0]?.mcpSettings).toBeDefined()
+  expect(panel().textContent).not.toContain('Weather Deck')
 })

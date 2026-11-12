@@ -4,6 +4,7 @@ import { loadMainModules, type LoadMainModulesResult } from '../../main/module-h
 import type { McpToolContribution } from '../../main/module-host/main-host'
 import { ScheduledAgentsServiceToken } from '../../main/module-host/service-tokens'
 import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../../main/modules/agent-runtime-module'
+import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-lifecycle'
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
 import { applyHostApiGate } from '../../main/modules/host-api-gate'
 import {
@@ -17,7 +18,7 @@ import { readModuleTrustContextSync } from '../../main/modules/trust-context'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
-import { LIVE_ENABLED_MODULE_IDS, type CapabilityManifest } from '../../shared/modules/manifest'
+import type { CapabilityManifest, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import { resolveModuleEnablement } from '../../shared/modules/resolve'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
@@ -30,10 +31,11 @@ import { installElectronRequireGuard } from './electron-require-guard'
 // `module.*` streams. The same steps app-main.ts takes in process, over the server's own
 // services.
 //
-// Enablement and trust are written by the shell (Settings and the marketplace
-// live there in this phase) and read here: the overrides once at load, and
-// again live through `applyEnablement`, which the shell calls after it has
-// written them.
+// What runs here is changed through the Studio RPC (`module.setEnabled`,
+// `.install`, `.setTrust`, `.uninstall`, main/modules/module-lifecycle.ts):
+// enablement applies live where a module can load live; what is installed
+// and trusted is read at the next start. The marketplace's own installs are
+// still the shell's.
 
 export type ServerModules = {
   /** What the modules say to clients, for the Studio RPC. */
@@ -45,7 +47,6 @@ export type ServerModules = {
   thirdPartyLaunchSession(): ThirdPartyLaunchSessionWire
   isEnabled(moduleId: string): boolean
   scheduledAgents(): ScheduledAgentsService | null
-  applyEnablement(overrides: Record<string, boolean>): Promise<{ ok: true } | { ok: false; message: string }>
   startup(): void
   shutdownBegin(): Promise<void>
   shutdown(): Promise<void>
@@ -55,6 +56,8 @@ export function createServerModules(deps: {
   platform: StudioPlatform
   core: StudioCore
   log: (message: string) => void
+  /** What is installed or trusted here changed: the shell's windows load their extensions again. */
+  modulesChanged?: () => void
 }): ServerModules {
   const { platform, core } = deps
   const dataDir = platform.paths.dataDir()
@@ -86,6 +89,50 @@ export function createServerModules(deps: {
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
   let manifests: CapabilityManifest[] = []
+  let ineligible: Record<string, ModuleResolutionErrorCode> = {}
+  // The installed extensions, by id: each is switched on and off live.
+  let moduleRootsById: Record<string, string> = {}
+
+  // The overrides, already written, applied to the running kernel.
+  async function applyEnablement(
+    overrides: Record<string, boolean>,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (!load) return { ok: true }
+    const report = await load.applyEnablement(overrides, {
+      liveModuleIds: liveModuleIds(Object.keys(moduleRootsById), load.report.errors),
+    })
+    // The rest of the change was applied even when one module's half
+    // failed, so the gate follows it either way.
+    recompute(overrides)
+    // The gateway reads the registry and enablement per request; connected
+    // clients only need telling that their lists changed.
+    gateway?.notifyToolsListChanged()
+    const scheduledAgentsError = report.errors.find((error) => error.id === 'scheduled-agents')
+    if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
+    return { ok: true }
+  }
+  // What runs here, listed and changed over the Studio RPC (`module.*`).
+  hub.serveLifecycleFrom(
+    createModuleLifecycle({
+      dataDir,
+      moduleRoot: defaultUserModuleRoot,
+      applyEnablement,
+      changed: () => deps.modulesChanged?.(),
+      view: () => {
+        const current = load
+        if (!current) return null
+        const overrides = readOverrides()
+        return {
+          manifests: () => manifests,
+          enabled: (id) => overrides[id] ?? manifests.find((manifest) => manifest.id === id)?.defaultEnabled ?? false,
+          running: (id) => current.isRunning(id),
+          ineligible: (id) => ineligible[id],
+          loadError: (id) => current.report.errors.find((error) => error.id === id)?.message,
+          declaredMethods: (id) => current.kernel.declaredMethods(id),
+        }
+      },
+    }),
+  )
 
   const recompute = (overrides: Record<string, boolean>): void => {
     const { order } = resolveModuleEnablement(manifests, overrides)
@@ -107,6 +154,8 @@ export function createServerModules(deps: {
       )
       installElectronRequireGuard(() => Object.values(thirdParty.moduleRoots))
       applyHostApiGate(thirdParty.ineligible, thirdParty.modules)
+      ineligible = thirdParty.ineligible
+      moduleRootsById = thirdParty.moduleRoots
       // The schedules are the core's; the kernel holds them under the
       // person's Scheduled agents switch.
       const bundled = [
@@ -176,19 +225,6 @@ export function createServerModules(deps: {
       encodeThirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), load?.kernel.mcpToolRegistrations() ?? []),
     isEnabled: (moduleId) => enabled.has(moduleId),
     scheduledAgents: () => load?.kernel.hostFor('@host').getService(ScheduledAgentsServiceToken) ?? null,
-    async applyEnablement(overrides) {
-      if (!load) return { ok: true }
-      const report = await load.applyEnablement(overrides, { liveModuleIds: LIVE_ENABLED_MODULE_IDS })
-      // The rest of the change was applied even when one module's half
-      // failed, so the gate follows it either way.
-      recompute(overrides)
-      // The gateway reads the registry and enablement per request; connected
-      // clients only need telling that their lists changed.
-      gateway?.notifyToolsListChanged()
-      const scheduledAgentsError = report.errors.find((error) => error.id === 'scheduled-agents')
-      if (scheduledAgentsError) return { ok: false, message: scheduledAgentsError.message }
-      return { ok: true }
-    },
     startup() {
       const current = load
       if (current) void current.ready.then(() => current.kernel.runStartup())

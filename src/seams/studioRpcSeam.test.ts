@@ -383,6 +383,12 @@ test('every method the server serves has its call in the SDK, under the same sco
     // A module's declared methods, called by name: a window's renderer halves.
     'module.read': 'request',
     'module.operate': 'request',
+    // What runs on the Studio: listed, and changed from Settings, by name.
+    'module.list': 'request',
+    'module.setEnabled': 'request',
+    'module.install': 'request',
+    'module.setTrust': 'request',
+    'module.uninstall': 'request',
     // The host's services a renderer half calls, by name too.
     'moduleBacklog.location': 'request',
     'moduleBacklog.create': 'request',

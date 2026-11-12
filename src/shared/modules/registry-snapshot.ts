@@ -8,10 +8,9 @@
 // answer "what modules does this app have, and is one of them on?" must read
 // the renderer's answer, not re-derive a second one.
 //
-// This is the same mirror shape as module enablement (`modules:set-enablement`)
-// and the terminal idle policy: the renderer pushes on boot and on every change,
-// main caches the last push in memory, and a consumer that has not received one
-// yet says so rather than inventing an empty registry. Nothing here is
+// This is the same mirror shape as the terminal idle policy: the renderer
+// pushes on boot and on every change, main caches the last push in memory,
+// and a consumer that has not received one yet says so rather than inventing an empty registry. Nothing here is
 // persisted — it is a projection of live renderer state, valid only for the
 // running app session.
 //

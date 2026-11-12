@@ -1,13 +1,14 @@
 /**
- * Install extension from GitHub and uninstall, at the IPC boundary.
+ * Install extension from GitHub, and uninstall it however it arrived.
  *
- * What only these channels can be wrong about: that a GitHub install needs a
+ * What only these paths can be wrong about: that a GitHub install needs a
  * token a GitHub review issued (not a registry one, not a spent one), that
  * unsigned code needs the person's own "I trust this code", that an update
  * asks again only when the disclosure changed, and that uninstall removes a
- * module however it arrived — through its receipt when it has one, by its
- * folder (and only that folder) when it does not — and forgets its trust,
- * enablement choice and secrets with it.
+ * module however it arrived — through its plugin's own uninstall when a
+ * receipt owns it (the Studio's `module.uninstall` refuses it, naming the
+ * plugin), by its folder (and only that folder) when not — and forgets its
+ * trust, enablement choice and secrets with it.
  *
  * The handlers run for real against a scratch userData and module root; GitHub
  * is the recorded repository in marketplace/__fixtures__/github-extension-repo.ts.
@@ -25,7 +26,7 @@ import type {
   MarketplacePluginRegistryInstallResult,
   MarketplacePluginVerifyResult,
   MarketplaceRegistryReadResult,
-  ThirdPartyModuleUninstallResult,
+  MarketplacePluginUninstallResult,
 } from '../../shared/electron-api'
 import { PLUGIN_JSON, SHA, extensionRepo, github, type Served } from '../marketplace/__fixtures__/github-extension-repo'
 
@@ -50,7 +51,7 @@ test('extension install and uninstall IPC', async () => {
 
   try {
     const { registerMarketplacePluginIpc } = await import('./marketplace-plugin-ipc')
-    const { registerThirdPartyModuleIpc } = await import('./third-party-module-ipc')
+    const { createModuleLifecycle } = await import('../modules/module-lifecycle')
     const { readTrustedModulesSync, setModuleTrust } = await import('../modules/trust-store')
     const { readModuleOverridesSync, writeModuleOverrides } = await import('../module-host/enablement-store')
 
@@ -107,13 +108,19 @@ test('extension install and uninstall IPC', async () => {
       registryReader: { read: async () => registry },
       fetcher: (url, init) => repo.fetcher(url, init),
     })
-    registerThirdPartyModuleIpc(ipcMain, services)
+    const lifecycle = createModuleLifecycle({
+      dataDir: userData,
+      moduleRoot: () => moduleRoot,
+      view: () => null,
+      applyEnablement: async () => ({ ok: true }),
+      changed: () => undefined,
+    })
 
     for (const channel of [
       'extensions:github:resolve',
       'extensions:github:install',
       'extensions:github:check-update',
-      'modules:third-party:uninstall',
+      'marketplace:plugins:uninstall',
     ]) {
       assert.ok(handlers.has(channel), `${channel} is registered`)
     }
@@ -123,8 +130,8 @@ test('extension install and uninstall IPC', async () => {
       handlers.get('extensions:github:install')!(event, input) as Promise<MarketplacePluginRegistryInstallResult>
     const checkUpdate = (input: unknown) =>
       handlers.get('extensions:github:check-update')!(appEvent, input) as Promise<GithubExtensionCheckUpdateResult>
-    const uninstall = (event: unknown, input: unknown) =>
-      handlers.get('modules:third-party:uninstall')!(event, input) as Promise<ThirdPartyModuleUninstallResult>
+    const uninstallPlugin = (event: unknown, input: unknown) =>
+      handlers.get('marketplace:plugins:uninstall')!(event, input) as Promise<MarketplacePluginUninstallResult>
 
     // ── resolve: only the app window, only a GitHub URL ──────────────────────────
     const foreign = await resolve(subframeEvent, { url: 'https://github.com/acme/notes-ext' })
@@ -195,12 +202,19 @@ test('extension install and uninstall IPC', async () => {
     }
     assert.equal((await checkUpdate({ id: 'inline-mcp-plugin' })).ok, false, 'not a GitHub install')
 
-    // ── uninstall: a receipt-owned module goes out through its receipt ──────────
+    // ── uninstall: a receipt-owned module goes out through its plugin ──────────
     await writeModuleOverrides(userData, { 'notes-ext': true })
-    assert.equal((await uninstall(subframeEvent, { id: 'notes-ext' })).ok, false)
-    const removed = await uninstall(appEvent, { id: 'notes-ext' })
+    const owned = await lifecycle.uninstall('notes-ext')
+    assert.equal(owned.ok, false)
+    assert.equal(!owned.ok && owned.pluginId, 'notes-ext', 'the Studio names the plugin that owns it')
+    assert.ok(existsSync(join(moduleRoot, 'notes-ext')), 'and leaves it to that plugin')
+    assert.equal((await uninstallPlugin(subframeEvent, { pluginId: 'notes-ext' })).ok, false)
+    const removed = await uninstallPlugin(appEvent, { pluginId: 'notes-ext' })
     assert.equal(removed.ok, true, removed.ok ? '' : removed.message)
-    assert.deepEqual(removed.ok && removed.removedModuleIds, ['notes-ext'])
+    assert.deepEqual(
+      removed.ok && removed.removed.filter((component) => component.kind === 'module').map((component) => component.id),
+      ['notes-ext'],
+    )
     assert.equal(existsSync(join(moduleRoot, 'notes-ext')), false)
     assert.equal(readTrustedModulesSync(userData).has('notes-ext'), false)
     assert.equal('notes-ext' in readModuleOverridesSync(userData), false)
@@ -233,13 +247,13 @@ test('extension install and uninstall IPC', async () => {
     mkdirSync(outside, { recursive: true })
 
     for (const id of ['', '..', '../outside', 'a/b']) {
-      const refused = await uninstall(appEvent, { id })
+      const refused = await lifecycle.uninstall(id)
       assert.equal(refused.ok, false, `"${id}" is not a module id`)
     }
-    const unknown = await uninstall(appEvent, { id: 'never-installed' })
+    const unknown = await lifecycle.uninstall('never-installed')
     assert.match(unknown.ok ? '' : unknown.message, /is not installed/)
 
-    const folderRemoved = await uninstall(appEvent, { id: 'folder-mod' })
+    const folderRemoved = await lifecycle.uninstall('folder-mod')
     assert.equal(folderRemoved.ok, true, folderRemoved.ok ? '' : folderRemoved.message)
     assert.equal(existsSync(folder), false)
     assert.ok(existsSync(outside))
