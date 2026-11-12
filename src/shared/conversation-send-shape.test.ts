@@ -17,8 +17,7 @@ import type { StudioMethodParams } from '../../packages/studio-protocol/src/meth
 // fails `npm run typecheck:tests` the moment one drifts.
 
 type Flat<T> = { [K in keyof T]: T[K] }
-type IsExact<A, B> =
-  (<T>() => T extends Flat<A> ? 1 : 2) extends <T>() => T extends Flat<B> ? 1 : 2 ? true : false
+type IsExact<A, B> = (<T>() => T extends Flat<A> ? 1 : 2) extends <T>() => T extends Flat<B> ? 1 : 2 ? true : false
 function expectExact<A, B>(exact: IsExact<A, B>): void {
   assert.equal(exact, true)
 }
@@ -39,9 +38,10 @@ test("the runtime's input is the request with the session and what only Studio's
 })
 
 test("a paired desktop's send is the request, addressed to the chat, less what the lane says its own way", () => {
-  expectExact<MeshConversationSendInput, { key: MeshConversationKey } & Omit<Request, 'localTurnId' | 'reasoningEffort'>>(
-    true,
-  )
+  expectExact<
+    MeshConversationSendInput,
+    { key: MeshConversationKey } & Omit<Request, 'localTurnId' | 'reasoningEffort'>
+  >(true)
   expectExact<Parameters<ElectronApi['meshConversationSend']>[0], MeshConversationSendInput>(true)
 })
 

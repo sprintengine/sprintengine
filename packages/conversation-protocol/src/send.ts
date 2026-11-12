@@ -91,9 +91,9 @@ const LANE_CARRIAGE = {
   'as-is' | 'uploaded' | 'by-id' | 'when-set' | 'unless-default' | 'not-carried'
 >
 
-type Carried<How> = { [K in keyof typeof LANE_CARRIAGE]: (typeof LANE_CARRIAGE)[K] extends How ? K : never }[
-  keyof typeof LANE_CARRIAGE
-]
+type Carried<How> = {
+  [K in keyof typeof LANE_CARRIAGE]: (typeof LANE_CARRIAGE)[K] extends How ? K : never
+}[keyof typeof LANE_CARRIAGE]
 
 /** The parts of a request the lane says its own way, which a sender to a paired machine does not set. */
 export type ConversationLaneNotCarried = Carried<'not-carried'>

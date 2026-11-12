@@ -3368,7 +3368,11 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         input.composedAt !== undefined &&
         !(typeof input.composedAt === 'number' && Number.isSafeInteger(input.composedAt) && input.composedAt >= 0)
       )
-        return { ok: false, code: 'invalid_arguments', message: '"composedAt" is when the message was written, in epoch ms.' }
+        return {
+          ok: false,
+          code: 'invalid_arguments',
+          message: '"composedAt" is when the message was written, in epoch ms.',
+        }
       if (input.confirmedStale !== undefined && typeof input.confirmedStale !== 'boolean')
         return { ok: false, code: 'invalid_arguments', message: '"confirmedStale" is a boolean.' }
       // When it was written rides as the lane carries it; a machine from

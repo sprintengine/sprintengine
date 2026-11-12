@@ -22,8 +22,7 @@ import type { StudioMethodParams } from '../src/methods'
 // `npm run typecheck:tests` the moment a copy drifts from the contract.
 
 type Flat<T> = { [K in keyof T]: T[K] }
-type IsExact<A, B> =
-  (<T>() => T extends Flat<A> ? 1 : 2) extends <T>() => T extends Flat<B> ? 1 : 2 ? true : false
+type IsExact<A, B> = (<T>() => T extends Flat<A> ? 1 : 2) extends <T>() => T extends Flat<B> ? 1 : 2 ? true : false
 function expectExact<A, B>(exact: IsExact<A, B>): void {
   assert.equal(exact, true)
 }
@@ -39,9 +38,10 @@ test("the lane's send and the protocol's send are the same type", () => {
     Omit<StudioMethodParams<'conversation.send'>, 'key' | 'commandId'>,
     Omit<ConversationLaneSend, 'uploadIds'>
   >(true)
-  expectExact<Pick<StudioMethodParams<'conversation.send'>, 'key' | 'commandId'>, { key: StudioConversationKey; commandId: string }>(
-    true,
-  )
+  expectExact<
+    Pick<StudioMethodParams<'conversation.send'>, 'key' | 'commandId'>,
+    { key: StudioConversationKey; commandId: string }
+  >(true)
   // The first version's send is the lane's words and uploads.
   expectExact<
     Omit<Extract<ConversationWireCommand, { kind: 'send' }>, 'kind'>,
@@ -55,9 +55,10 @@ test("the lane's send and the protocol's send are the same type", () => {
 })
 
 test('the lane says how it carries every part of the request', () => {
-  expectExact<keyof ConversationLaneSend, 'message' | 'mentions' | 'composedAt' | 'uploadIds' | 'skills' | 'steer' | 'queue' | 'confirmedStale' | 'mode'>(
-    true,
-  )
+  expectExact<
+    keyof ConversationLaneSend,
+    'message' | 'mentions' | 'composedAt' | 'uploadIds' | 'skills' | 'steer' | 'queue' | 'confirmedStale' | 'mode'
+  >(true)
   // A part the request types one way is never carried as another.
   expectExact<ConversationLaneSend['mentions'], ConversationSendRequest['mentions']>(true)
   expectExact<ConversationLaneSend['skills'], string[] | undefined>(true)
@@ -72,10 +73,9 @@ test('one approval union: every decision, the lane splitting off the one only a 
   expectExact<ConversationRequestDecision | ConversationPermanentRequestDecision, ConversationApprovalDecision>(true)
   expectExact<ConversationPermanentRequestDecision, 'always'>(true)
   expectExact<Extract<ConversationCommand, { kind: 'resolveApproval' }>['decision'], ConversationApprovalDecision>(true)
-  expectExact<
-    Extract<ConversationWireCommand, { kind: 'resolveApproval' }>['decision'],
-    ConversationRequestDecision
-  >(true)
+  expectExact<Extract<ConversationWireCommand, { kind: 'resolveApproval' }>['decision'], ConversationRequestDecision>(
+    true,
+  )
   expectExact<NonNullable<StudioMethodParams<'session.respond'>['decision']>, ConversationApprovalDecision>(true)
   expectExact<StudioMethodParams<'conversation.resolveApproval'>['decision'], ConversationApprovalDecision>(true)
   assert.deepEqual([...CONVERSATION_APPROVAL_DECISIONS], ['once', 'conversation', 'always', 'deny'])
@@ -98,7 +98,13 @@ test('session.send carries when a message was written, and refuses a queue it wo
   })
   assert.deepEqual(sent, {
     ok: true,
-    params: { commandId: 'c1', sessionId: 's1', message: 'run it', composedAt: 1_700_000_000_000, confirmedStale: true },
+    params: {
+      commandId: 'c1',
+      sessionId: 's1',
+      message: 'run it',
+      composedAt: 1_700_000_000_000,
+      confirmedStale: true,
+    },
   })
   assert.equal(sessionSend({ commandId: 'c1', sessionId: 's1', message: 'x', composedAt: -1 }).ok, false)
   assert.equal(sessionSend({ commandId: 'c1', sessionId: 's1', message: 'x', confirmedStale: 'yes' }).ok, false)
@@ -112,7 +118,10 @@ test('every decision the union names is taken where an answer is given, and noth
       true,
       decision,
     )
-  assert.equal(respond({ commandId: 'c1', sessionId: 's1', requestId: 'r1', approved: true, decision: 'forever' }).ok, false)
+  assert.equal(
+    respond({ commandId: 'c1', sessionId: 's1', requestId: 'r1', approved: true, decision: 'forever' }).ok,
+    false,
+  )
   // The lane takes every decision too, `always` behind its capability.
   for (const decision of CONVERSATION_APPROVAL_DECISIONS)
     assert.ok(
