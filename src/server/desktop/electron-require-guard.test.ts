@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, test } from 'vitest'
 
-import { createFakeIpcMain } from '../../main/module-host/ipc-main-fake.test-helper'
 import { loadMainModules } from '../../main/module-host/load-modules'
 import { computeModuleFileDigestsSync } from '../../main/modules/module-signature'
 import {
@@ -84,9 +83,7 @@ test('an undeclared require during registerMain is reported as needing electron-
   const plan = planThirdPartyMainModules({ modules: [undeclared], rejected: [] }, { electronMain: false })
   const undo = installElectronRequireGuard(() => Object.values(plan.moduleRoots))
   try {
-    const fake = createFakeIpcMain()
     const loaded = loadMainModules({
-      ipcMain: fake.ipcMain,
       modules: plan.modules,
       moduleRoots: plan.moduleRoots,
       electronMain: false,
@@ -107,7 +104,6 @@ test("the server's host says it cannot provide electron-main; the desktop's says
   ] as const) {
     let answer: boolean | null = null
     loadMainModules({
-      ipcMain: createFakeIpcMain().ipcMain,
       modules: [
         {
           manifest: { id: 'probe', displayName: 'Probe', version: 1, defaultEnabled: true },

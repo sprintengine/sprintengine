@@ -56,7 +56,6 @@ const ACCESS_ADMIN =
 const CREDENTIALS = 'A provider key or the GitHub token is set and cleared in the desktop app.'
 const WINDOW_STATE = 'Only a desktop window can say it: a tab would report defaults and blanks.'
 const BEYOND = 'It acts beyond this server, on another machine or account.'
-const MODULES = 'A browser tab loads no module, so it has no module to speak for.'
 const DESKTOP = 'It is served to the desktop app only.'
 
 export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunnelChannelName]: StudioAccess } = {
@@ -142,7 +141,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'mesh:workspace-extensions': desktopOnly(BEYOND),
   'mesh:canvas-boards': desktopOnly(BEYOND),
   'mesh:canvas-screenshot': desktopOnly(BEYOND),
-  'modules:host-service:invoke': desktopOnly(MODULES),
   'scheduled-agents:create': desktopOnly(DESKTOP),
   'scheduled-agents:list': owner('workspace:read'),
   'scheduled-agents:mark-seen': owner('workspace:operate'),

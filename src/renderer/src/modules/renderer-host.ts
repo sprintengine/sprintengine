@@ -41,7 +41,7 @@ import type {
   ModuleBacklogTriageInput,
 } from '../../../shared/modules/backlog-service'
 import type { UsageQuery, UsageQueryResult } from '../../../shared/modules/activity-service'
-import type { ModuleHostServiceName } from '../../../shared/modules/host-service-bridge'
+import type { StudioModuleServicesMethodMap } from '../../../../packages/studio-protocol/src/public'
 import { publishSurfaceView } from '../components/workspace/surfaceView'
 
 // Renderer-side host kernel. Mirrors the main-process MainHost: capability
@@ -825,6 +825,42 @@ export type ModuleMethodCall = {
 // every refusal, the host's or the module's, is an answer.
 export type ModuleMethodCaller = (call: ModuleMethodCall) => Promise<ModuleCallAnswer<ModuleMethodContract>>
 
+/** A host service a module's renderer half calls on its server: `moduleBacklog.*`, `moduleUsage.query`. */
+export type ModuleServiceMethod = keyof StudioModuleServicesMethodMap
+/** What a host-service call takes: the protocol's params, less the command id the caller makes. */
+export type ModuleServiceParams<M extends ModuleServiceMethod> = Omit<
+  StudioModuleServicesMethodMap[M]['params'],
+  'commandId'
+>
+/** What it answers: the service's own result, its refusals included. */
+export type ModuleServiceAnswer<M extends ModuleServiceMethod> = StudioModuleServicesMethodMap[M]['result']
+
+// Caller of the host's services: modules/index.ts wires it over the window's
+// Studio client. It never throws: a refusal the protocol or the connection
+// gave comes back in the service's own vocabulary (`moduleServiceRefusal`).
+export type ModuleServiceCaller = <M extends ModuleServiceMethod>(
+  method: M,
+  params: ModuleServiceParams<M>,
+) => Promise<ModuleServiceAnswer<M>>
+
+/**
+ * A refusal of a host-service call in the service's words: params the
+ * protocol refused are the service's `invalid_input`, anything else its
+ * "unavailable" code (`backlog_unavailable` for the Backlog).
+ */
+export function moduleServiceRefusal<M extends ModuleServiceMethod>(
+  method: M,
+  code: string,
+  message: string,
+): ModuleServiceAnswer<M> {
+  const unavailable = method.startsWith('moduleBacklog.') ? 'backlog_unavailable' : 'unavailable'
+  return {
+    ok: false,
+    code: code === 'invalid_params' || code === 'too_large' ? 'invalid_input' : unavailable,
+    message,
+  } as ModuleServiceAnswer<M>
+}
+
 // ── Shell feedback, links and context for module code ──────────────────────
 
 /** A toast's tone: the toast region's own vocabulary (components/ui/tokens `Tone`). */
@@ -972,8 +1008,8 @@ export type RendererHost = {
    * watch stays open. Requires `backlog.read`.
    */
   watchBacklogItems(workspaceId: string, cb: (items: BacklogItem[]) => void, options?: BacklogWatchOptions): () => void
-  // ── Backlog writes and usage, through main's moduleId-first registries ──
-  // (shared/modules/host-service-bridge.ts). Result-shaped, never a throw.
+  // ── Backlog writes and usage: the protocol's `moduleBacklog.*` and ──
+  // `moduleUsage.query` on the module's server. Result-shaped, never a throw.
   getBacklogLocation(workspaceId: string): Promise<ModuleBacklogResult<{ location: ModuleBacklogLocation }>>
   createBacklogItem(
     workspaceId: string,
@@ -1334,6 +1370,12 @@ export type RendererKernel = {
    */
   setModuleMethodCaller(caller: ModuleMethodCaller): void
   /**
+   * Caller for the Backlog writes and `queryUsage`. Wired once at boot by
+   * modules/index.ts over the window's Studio client; absent, a call is
+   * answered with the service's "unavailable" refusal.
+   */
+  setModuleServiceCaller(caller: ModuleServiceCaller): void
+  /**
    * Working-root source for `RendererHost.getWorkingRoot`. Wired once at boot
    * by modules/index.ts (store + worktree resolution); absent (early boot,
    * tests) every lookup resolves to null.
@@ -1485,6 +1527,7 @@ export function createRendererHost(): RendererKernel {
   const moduleEventSubscribers = new Set<ModuleEventSubscriber>()
   let detachModuleEventSource: (() => void) | null = null
   let moduleMethodCaller: ModuleMethodCaller | null = null
+  let moduleServiceCaller: ModuleServiceCaller | null = null
   type ModuleAppStateWatcher = {
     moduleId: string
     cb: (values: Readonly<Record<string, unknown>>) => void
@@ -1563,40 +1606,29 @@ export function createRendererHost(): RendererKernel {
       `Module "${moduleId}" does not declare the "backlog.read" permission, so it cannot read the Backlog.`,
     )
   }
-  // A call into one of main's moduleId-first registries. Main checks the
-  // permission; a refusal or a missing door comes back as data.
-  const callHostService = async <T>(
-    moduleId: string,
-    service: ModuleHostServiceName,
-    method: string,
-    args: unknown[],
-    unavailableCode: string,
-  ): Promise<T> => {
-    const invoke = typeof window === 'undefined' ? undefined : window.api?.moduleHostServiceInvoke
-    if (!invoke) {
-      return { ok: false, code: unavailableCode, message: `The ${service} service is not available here.` } as T
-    }
-    try {
-      return (await invoke({ moduleId, service, method, args })) as T
-    } catch (error) {
-      return {
-        ok: false,
-        code: unavailableCode,
-        message: error instanceof Error ? error.message : String(error),
-      } as T
-    }
-  }
+  // A call into one of the host's services on the module's server, which
+  // checks the module's permission. A refusal comes back as data.
+  const callModuleService = <M extends ModuleServiceMethod>(
+    method: M,
+    params: ModuleServiceParams<M>,
+  ): Promise<ModuleServiceAnswer<M>> =>
+    moduleServiceCaller
+      ? moduleServiceCaller(method, params)
+      : Promise.resolve(moduleServiceRefusal(method, 'unavailable', 'The host services are not available here.'))
   // The Backlog writes follow the Backlog module's enablement like its reads:
   // switched off, the Backlog is off for modules too.
-  const callBacklog = <T extends object = object>(
-    moduleId: string,
-    method: string,
-    args: unknown[],
-  ): Promise<ModuleBacklogResult<T>> => {
+  const callBacklog = <M extends Exclude<ModuleServiceMethod, 'moduleUsage.query'>>(
+    method: M,
+    params: ModuleServiceParams<M>,
+  ): Promise<ModuleServiceAnswer<M>> => {
     if (backlogReader && moduleEnabledResolver && !moduleEnabledResolver(backlogReader.moduleId)) {
-      return Promise.resolve({ ok: false, code: 'backlog_unavailable', message: 'The Backlog module is disabled.' })
+      return Promise.resolve({
+        ok: false,
+        code: 'backlog_unavailable',
+        message: 'The Backlog module is disabled.',
+      } as ModuleServiceAnswer<M>)
     }
-    return callHostService<ModuleBacklogResult<T>>(moduleId, 'backlog', method, args, 'backlog_unavailable')
+    return callModuleService(method, params)
   }
   const enabledModuleCommands = (moduleEnabled?: (moduleId: string) => boolean): RegisteredModuleCommand[] =>
     [...moduleCommands.values()]
@@ -1945,25 +1977,30 @@ export function createRendererHost(): RendererKernel {
           )
         },
         getBacklogLocation(workspaceId) {
-          return callBacklog(moduleId, 'getLocation', [workspaceId])
+          return callBacklog('moduleBacklog.location', { moduleId, workspaceId })
         },
         createBacklogItem(workspaceId, input) {
-          return callBacklog(moduleId, 'create', [workspaceId, input])
+          return callBacklog('moduleBacklog.create', { moduleId, workspaceId, input })
         },
         updateBacklogStatus(workspaceId, itemId, status) {
-          return callBacklog(moduleId, 'updateStatus', [workspaceId, itemId, status])
+          return callBacklog('moduleBacklog.updateStatus', { moduleId, workspaceId, itemId, status })
         },
         updateBacklogTriage(workspaceId, itemId, triage) {
-          return callBacklog(moduleId, 'updateTriage', [workspaceId, itemId, triage])
+          return callBacklog('moduleBacklog.updateTriage', { moduleId, workspaceId, itemId, triage })
         },
         addBacklogLink(workspaceId, itemId, link) {
-          return callBacklog(moduleId, 'addLink', [workspaceId, itemId, link])
+          return callBacklog('moduleBacklog.addLink', { moduleId, workspaceId, itemId, link })
         },
         updateBacklogModuleMetadata(workspaceId, itemId, value) {
-          return callBacklog(moduleId, 'updateModuleMetadata', [workspaceId, itemId, value])
+          return callBacklog('moduleBacklog.updateModuleMetadata', {
+            moduleId,
+            workspaceId,
+            itemId,
+            ...(value === undefined ? {} : { value }),
+          })
         },
         queryUsage(query) {
-          return callHostService<UsageQueryResult>(moduleId, 'usage', 'query', [query], 'unavailable')
+          return callModuleService('moduleUsage.query', { moduleId, query })
         },
         getAssetUrl(relativePath) {
           if (moduleEnabledResolver && !moduleEnabledResolver(moduleId)) throw new Error('Module is disabled.')
@@ -2359,6 +2396,9 @@ export function createRendererHost(): RendererKernel {
     },
     setModuleMethodCaller(caller) {
       moduleMethodCaller = caller
+    },
+    setModuleServiceCaller(caller) {
+      moduleServiceCaller = caller
     },
     setModuleEventSource(source) {
       // One listener on the source, whoever subscribed and whenever. Re-wiring

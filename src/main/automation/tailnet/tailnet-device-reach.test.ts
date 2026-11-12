@@ -273,8 +273,20 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['tools.offer', 'tools.withdraw', 'tools.focus'],
       ],
       [
-        'modules (modules:read, modules:operate)',
-        ['module.read', 'module.operate', 'module.events', 'module.notifications'],
+        'modules and the host services they call (modules:read, modules:operate)',
+        [
+          'module.read',
+          'module.operate',
+          'module.events',
+          'module.notifications',
+          'moduleBacklog.location',
+          'moduleBacklog.create',
+          'moduleBacklog.updateStatus',
+          'moduleBacklog.updateTriage',
+          'moduleBacklog.addLink',
+          'moduleBacklog.updateModuleMetadata',
+          'moduleUsage.query',
+        ],
       ],
       [
         'what Studio’s own agents report, and importing chats from disk: an owner’s',

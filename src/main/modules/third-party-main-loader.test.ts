@@ -5,7 +5,6 @@ import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
 
-import { createFakeIpcMain } from '../module-host/ipc-main-fake.test-helper'
 import { loadMainModules } from '../module-host/load-modules'
 import { computeModuleFileDigestsSync, manifestFingerprint } from './module-signature'
 import { planThirdPartyMainModules } from './third-party-main-loader'
@@ -57,8 +56,7 @@ function grantFor(root: string, id: string): ReadonlyMap<string, string> {
 test('a trusted module whose files are unchanged loads', () => {
   const { root } = writeModule('steady')
   const planned = planThirdPartyMainModules(discoverUserModulesSync(root, { trustedModules: grantFor(root, 'steady') }))
-  const { ipcMain } = createFakeIpcMain()
-  const { report, kernel } = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+  const { report, kernel } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
   assert.deepEqual(report.loaded, ['steady'])
   assert.deepEqual(kernel.declaredMethods('steady'), [{ name: 'ping', access: 'read' }])
 })
@@ -74,8 +72,7 @@ test('an entry swapped between discovery and load is refused, not run', () => {
     "exports.registerMain = (host) => host.registerMethods({ ping: { access: 'read', params: (v) => ({ ok: true, params: v }), handler: () => ({ ok: true, result: 'pwned' }) } })\n",
   )
 
-  const { ipcMain } = createFakeIpcMain()
-  const { report, kernel } = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+  const { report, kernel } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
   assert.deepEqual(report.loaded, [])
   assert.deepEqual(kernel.declaredMethods('swapped'), [])
   assert.equal(report.errors[0]?.id, 'swapped')
@@ -88,8 +85,7 @@ test('a file added beside the entry between discovery and load is refused too', 
   const planned = planThirdPartyMainModules(discoverUserModulesSync(root, { trustedModules: grantFor(root, 'added') }))
   writeFileSync(join(moduleRoot, 'dist', 'chunk.cjs'), 'module.exports = 1\n')
 
-  const { ipcMain } = createFakeIpcMain()
-  const { report } = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+  const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
   assert.deepEqual(report.loaded, [])
   assert.match(report.errors[0]?.message ?? '', /files\.dist\/chunk\.cjs: is not listed/)
 })
@@ -99,8 +95,7 @@ test('a user-trusted module whose manifest lists no files does not load', () => 
   const planned = planThirdPartyMainModules(
     discoverUserModulesSync(root, { trustedModules: grantFor(root, 'undigested') }),
   )
-  const { ipcMain } = createFakeIpcMain()
-  const { report, kernel } = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+  const { report, kernel } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
   assert.deepEqual(report.loaded, [])
   assert.deepEqual(kernel.declaredMethods('undigested'), [])
   assert.equal(planned.ineligible.undigested, 'untrusted')
@@ -113,8 +108,7 @@ test("an async registerMain's rejection reaches the loader, which drops the modu
   const planned = planThirdPartyMainModules(
     discoverUserModulesSync(root, { trustedModules: grantFor(root, 'async-fails') }),
   )
-  const { ipcMain } = createFakeIpcMain()
-  const loaded = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+  const loaded = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
   await loaded.ready
   assert.equal(loaded.report.loaded.includes('async-fails'), false)
   assert.match(loaded.report.errors.find((error) => error.id === 'async-fails')?.message ?? '', /boot failed/)

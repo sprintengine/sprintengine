@@ -1,5 +1,3 @@
-import type { IpcMain } from 'electron'
-
 import { GitHubTokenStore } from '../../main/github-token-store'
 import { readModuleOverridesSync } from '../../main/module-host/enablement-store'
 import { loadMainModules, type LoadMainModulesResult } from '../../main/module-host/load-modules'
@@ -41,7 +39,7 @@ export type ServerModules = {
   /** What the modules say to clients, for the Studio RPC. */
   readonly hub: StudioModules
   /** Register every enabled module. Called once the gateway exists. */
-  load(registry: Pick<IpcMain, 'handle' | 'removeHandler'> | unknown, gateway: StudioGateway): void
+  load(gateway: StudioGateway): void
   mcpTools(): ReadonlyArray<McpToolContribution>
   /** Which third-party main halves loaded here, and their tools; the shell's Settings asks for it. */
   thirdPartyLaunchSession(): ThirdPartyLaunchSessionWire
@@ -80,6 +78,11 @@ export function createServerModules(deps: {
           message: `Module "${request.moduleId}" is not running on this Studio.`,
         },
   )
+  hub.serveHostServicesFrom((moduleId) =>
+    load
+      ? load.kernel.hostServicesFor(moduleId)
+      : { ok: false, code: 'module_unavailable', message: `Module "${moduleId}" is not running on this Studio.` },
+  )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
   let manifests: CapabilityManifest[] = []
@@ -92,7 +95,7 @@ export function createServerModules(deps: {
 
   return {
     hub,
-    load(registry, nextGateway) {
+    load(nextGateway) {
       gateway = nextGateway
       const overrides = readOverrides()
       // Main halves run here without Electron: a module that declares it needs
@@ -136,7 +139,6 @@ export function createServerModules(deps: {
         },
       )
       load = loadMainModules({
-        ipcMain: registry as IpcMain,
         modules: [agentRuntime, ...bundled, ...thirdParty.modules],
         overrides,
         moduleRoots: thirdParty.moduleRoots,

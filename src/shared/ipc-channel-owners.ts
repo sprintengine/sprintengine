@@ -110,9 +110,8 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'mesh:workspace-extensions': {},
   'mesh:canvas-boards': {},
   'mesh:canvas-screenshot': {},
-  // The module kernel's own channel, and the Schedules window's (registered
-  // with the server's domains, refused while scheduled agents is off).
-  'modules:host-service:invoke': {},
+  // The Schedules window's (registered with the server's domains, refused
+  // while scheduled agents is off).
   'scheduled-agents:create': {},
   'scheduled-agents:list': { retry: 'once' },
   'scheduled-agents:mark-seen': {},

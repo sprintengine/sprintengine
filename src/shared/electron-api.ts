@@ -209,7 +209,6 @@ import type {
   ConversationPageResult,
   ConversationTurnDiffResult,
 } from './conversation-runtime'
-import type { ModuleHostServiceRequest } from './modules/host-service-bridge'
 import type {
   ThirdPartyModuleInstallResult,
   ThirdPartyModuleListResult,
@@ -1701,8 +1700,6 @@ export type ElectronApi = {
   listThirdPartyRendererEntries: () => Promise<ThirdPartyRendererEntriesResult>
   /** Install/trust changed; renderer-only modules may now be available. */
   onThirdPartyModulesChanged: (cb: () => void) => () => void
-  /** A module renderer's call into a host service its main half reaches through the SDK (Backlog writes, usage). Answers are result-shaped. */
-  moduleHostServiceInvoke: (request: ModuleHostServiceRequest) => Promise<unknown>
   // The conversation peek: what has been said in a chat the person is hovering
   // rather than looking at — the first message and everything since, from the
   // prompts this app captured. `source` says whether there is an answer, a

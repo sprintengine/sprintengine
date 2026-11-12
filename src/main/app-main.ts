@@ -198,7 +198,6 @@ const agentRuntimeModule = createAgentRuntimeModule(services, {
 // (src/server/desktop/server-modules.ts); the shell loads none and keeps an
 // empty kernel for the renderer-entry channel, which is the shell's.
 const moduleLoad = loadMainModules({
-  ipcMain,
   modules: serverHost ? [] : [agentRuntimeModule, ...activeMainModules, ...thirdPartyMainLoad.modules],
   overrides: moduleOverrides,
   // Skill directories a third-party module registers are resolved against —
@@ -222,6 +221,8 @@ const moduleLoad = loadMainModules({
 services.moduleHub.readRecentFrom(() => moduleLoad.kernel.recentNotifications())
 // A module's declared methods, called over the Studio RPC's `module.read` and `module.operate`.
 services.moduleHub.serveCallsFrom((request) => moduleLoad.kernel.callModuleMethod(request))
+// The host's services a module's window half calls: `moduleBacklog.*` and `moduleUsage.query`.
+services.moduleHub.serveHostServicesFrom((moduleId) => moduleLoad.kernel.hostServicesFor(moduleId))
 // The manifest universe the enablement gate resolves against — every main module
 // present on this channel, so a module and its dependencies (scheduled agents,
 // agent-runtime) all resolve. Recompute mirrors the renderer's

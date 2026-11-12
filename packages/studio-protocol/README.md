@@ -116,11 +116,16 @@ The `welcome`'s `grant` is what the connection may do:
   Go (`cards.run`) are an owner's.
 - `modules:read` — hear what this Studio's modules say: the `module.events`
   and `module.notifications` streams, and call the methods they declare
-  `read` (`module.read`), under the `modules` capability. Not an owner's only;
-  a pairing holds it when it was given it.
+  `read` (`module.read`), under the `modules` capability. It also reads the
+  host's services as a module's window half does, naming the module
+  (`moduleBacklog.location`, `moduleUsage.query`). Not an owner's only; a
+  pairing holds it when it was given it.
 - `modules:operate` — call the methods modules declare `operate`
-  (`module.operate`, once per `commandId`); carries `modules:read`. A browser
-  session never holds it.
+  (`module.operate`, once per `commandId`), and write the Backlog as a module
+  (`moduleBacklog.create`, `.updateStatus`, `.updateTriage`, `.addLink`,
+  `.updateModuleMetadata`); carries `modules:read`. The module's own manifest
+  permissions (`backlog.write`, `usage:read`) are checked on every call. A
+  browser session never holds it.
 - No scope reaches the terminals (`terminal.*`, under the `terminals`
   capability). A terminal is a shell on this machine, so every terminal
   method and stream is an owner's: the app's own windows and the owner's

@@ -7,7 +7,7 @@ import { toModuleWorkspaceView, type ModuleWorkspaceView } from '../../../shared
 import { STUDIO_MODULES_CAPABILITY } from '../../../../packages/studio-protocol/src/public'
 import { isModuleEvent } from '../../../shared/modules/events'
 import { followWindowStudioPush } from '../studio/windowStudioPush'
-import { windowModuleMethodCaller } from '../studio/moduleMethods'
+import { windowModuleMethodCaller, windowModuleServiceCaller } from '../studio/moduleMethods'
 import { markStartup } from '../utils/startupTimeline'
 import { agentRuntimeRendererModule } from './agent-runtime-module'
 import { backlogRendererModule } from './backlog-module'
@@ -330,6 +330,8 @@ if (typeof window !== 'undefined') {
         // A module's renderer half calls its own declared methods over the
         // same client: `module.read` and `module.operate`.
         rendererHost.setModuleMethodCaller(windowModuleMethodCaller())
+        // And the host's services (the Backlog's writes, the usage query).
+        rendererHost.setModuleServiceCaller(windowModuleServiceCaller())
         rendererHost.setModuleEventSource((cb) =>
           followWindowStudioPush({
             topic: 'module.events',

@@ -4,11 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
-import { MODULE_HOST_SERVICE_CHANNEL } from '../../shared/modules/host-service-bridge'
 import { computeModuleFileDigestsSync } from '../modules/module-signature'
 import { planThirdPartyMainModules } from '../modules/third-party-main-loader'
 import type { InstalledModule } from '../modules/user-module-registry'
-import { createFakeIpcMain } from './ipc-main-fake.test-helper'
 import { loadMainModules, type CapabilityModule } from './load-modules'
 import { createServiceToken } from './main-host'
 import { test } from 'vitest'
@@ -66,8 +64,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: [feature, runtime] })
+    const { report } = loadMainModules({ modules: [feature, runtime] })
 
     assert.deepEqual(order, ['runtime', 'feature'])
     assert.deepEqual(report.loaded, ['runtime', 'feature'])
@@ -83,8 +80,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: [off] })
+    const { report } = loadMainModules({ modules: [off] })
 
     assert.equal(registered, false, 'disabled module must not register')
     assert.deepEqual(report.loaded, [])
@@ -102,9 +98,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
     const { report } = loadMainModules({
-      ipcMain,
       modules: [consumer],
       provideServices: (host) => host.provideService(token, () => ({ name: 'seeded' })),
     })
@@ -136,8 +130,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: [consumer, provider] })
+    const { report } = loadMainModules({ modules: [consumer, provider] })
 
     assert.deepEqual(report.errors, [])
     assert.deepEqual(received, { value: 42 })
@@ -154,14 +147,11 @@ test('load-modules', async () => {
       manifest: { id: 'good', displayName: 'Good', version: 1, defaultEnabled: true },
       registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
     }
-
-    const { ipcMain, handled } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: [bad, good] })
+    const { report } = loadMainModules({ modules: [bad, good] })
 
     assert.deepEqual(report.loaded, ['good'], 'a throwing module must not abort the others')
     assert.equal(report.errors.length, 1)
     assert.equal(report.errors[0].id, 'bad')
-    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
   }
 
   function testDuplicateMethodIsReportedNotFatal(): void {
@@ -182,8 +172,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { report, kernel } = loadMainModules({ ipcMain, modules: [first, second, twice] })
+    const { report, kernel } = loadMainModules({ modules: [first, second, twice] })
 
     assert.deepEqual(report.loaded, ['first', 'second'])
     assert.equal(report.errors.length, 1)
@@ -202,8 +191,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { kernel, report } = loadMainModules({ ipcMain, modules: [mod] })
+    const { kernel, report } = loadMainModules({ modules: [mod] })
 
     assert.equal(kernel.startupHooks().length, 1)
     assert.equal(kernel.shutdownHooks().length, 1)
@@ -221,8 +209,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { kernel, report, ready } = loadMainModules({ ipcMain, modules: [mod] })
+    const { kernel, report, ready } = loadMainModules({ modules: [mod] })
     assert.equal(kernel.startupHooks().length, 0, 'nothing has registered before the await')
     await ready
     assert.deepEqual(report.loaded, ['svc'])
@@ -252,8 +239,7 @@ test('load-modules', async () => {
       registerMain: (host) => host.registerMethods({ ping: answering('pong') }),
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { kernel, report, ready } = loadMainModules({ ipcMain, modules: [mod, other] })
+    const { kernel, report, ready } = loadMainModules({ modules: [mod, other] })
     assert.equal(kernel.declaredMethods('flaky').length, 1, 'sync registrations land before the await')
     await ready
     assert.deepEqual(report.loaded, ['steady'])
@@ -278,8 +264,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { kernel, report, ready } = loadMainModules({ ipcMain, modules: [mod], registerTimeoutMs: 5 })
+    const { kernel, report, ready } = loadMainModules({ modules: [mod], registerTimeoutMs: 5 })
     await ready
     assert.deepEqual(report.loaded, [])
     assert.equal(report.errors.length, 1)
@@ -307,8 +292,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { kernel, applyEnablement } = loadMainModules({ ipcMain, modules: [good, bad] })
+    const { kernel, applyEnablement } = loadMainModules({ modules: [good, bad] })
     const live = await applyEnablement(
       { 'live-good': true, 'live-bad': true },
       { liveModuleIds: ['live-good', 'live-bad'] },
@@ -336,8 +320,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { kernel } = loadMainModules({ ipcMain, modules: [mod] })
+    const { kernel } = loadMainModules({ modules: [mod] })
 
     await kernel.runStartup()
     await kernel.runShutdown()
@@ -367,8 +350,7 @@ test('load-modules', async () => {
       },
     }
 
-    const { ipcMain } = createFakeIpcMain()
-    const { kernel } = loadMainModules({ ipcMain, modules: [mod] })
+    const { kernel } = loadMainModules({ modules: [mod] })
 
     await kernel.runShutdownBegin()
 
@@ -391,14 +373,11 @@ test('load-modules', async () => {
       modules: [installedThirdPartyModule({ id: 'trusted', moduleRoot, trust: 'trusted', main: 'main.cjs' })],
       rejected: [],
     })
-
-    const { ipcMain, handled } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+    const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
 
     assert.deepEqual(report.loaded, ['trusted'])
     assert.deepEqual(report.manifestOnly, [])
     assert.deepEqual(report.errors, [])
-    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
   }
 
   async function testUntrustedAndInvalidThirdPartyMainNeverImports(): Promise<void> {
@@ -419,8 +398,7 @@ test('load-modules', async () => {
       rejected: [],
     })
 
-    const { ipcMain } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+    const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
 
     assert.deepEqual(report.loaded, [])
     assert.deepEqual(report.manifestOnly, [])
@@ -459,17 +437,13 @@ test('load-modules', async () => {
       ],
       rejected: [],
     })
-
-    const { ipcMain, handled } = createFakeIpcMain()
     const { report } = loadMainModules({
-      ipcMain,
       modules: [...planned.modules, good],
       ineligible: planned.ineligible,
     })
 
     assert.deepEqual(report.loaded, ['good'])
     assert.deepEqual(report.manifestOnly, ['manifest-only'])
-    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
     assert.equal(report.errors.length, 3)
     assert.equal(
       report.errors.find((error) => error.id === 'escaped')?.message,
@@ -493,9 +467,7 @@ test('load-modules', async () => {
       ],
     })
 
-    const { ipcMain } = createFakeIpcMain()
     const { report } = loadMainModules({
-      ipcMain,
       modules: planned.modules,
       launchErrors: planned.launchErrors,
     })
@@ -521,12 +493,9 @@ test('load-modules', async () => {
       modules: [installedThirdPartyModule({ id: 'bad', moduleRoot: badRoot, trust: 'trusted', main: 'main.cjs' })],
       rejected: [],
     })
-
-    const { ipcMain, handled } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: [...planned.modules, good] })
+    const { report } = loadMainModules({ modules: [...planned.modules, good] })
 
     assert.deepEqual(report.loaded, ['good'])
-    assert.deepEqual(handled, [MODULE_HOST_SERVICE_CHANNEL])
     assert.equal(report.errors.length, 1)
     assert.equal(report.errors[0].id, 'bad')
     assert.equal(report.errors[0].message, 'boom')
@@ -556,8 +525,7 @@ test('load-modules', async () => {
       rejected: [],
     })
 
-    const { ipcMain } = createFakeIpcMain()
-    const { report } = loadMainModules({ ipcMain, modules: planned.modules, ineligible: planned.ineligible })
+    const { report } = loadMainModules({ modules: planned.modules, ineligible: planned.ineligible })
 
     assert.deepEqual(report.loaded, [])
     assert.deepEqual(

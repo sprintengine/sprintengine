@@ -176,7 +176,7 @@ import { attachStartupTimeline } from './startup-timeline'
 const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   conversations: 6,
   terminals: 3,
-  modules: 2,
+  modules: 1,
   extensions: 33,
   'paired-machines': 52,
   access: 45,
@@ -358,7 +358,6 @@ test('what main and the server register, and what the preload uses, is the inven
   const domains = registerServerDomainIpc(server, serverDomainStubs(scratch))
   const installed = installExtension('weather-deck')
   const modules = loadMainModules({
-    ipcMain: server,
     modules: [
       {
         manifest: AGENT_RUNTIME_MANIFEST,

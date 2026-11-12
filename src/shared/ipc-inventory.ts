@@ -287,7 +287,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),
-  'modules:host-service:invoke': modules('invoke'),
   'modules:set-enablement': modules('invoke'),
   'artifacts:get-settings': extensions('invoke'),
   'artifacts:set-up': extensions('invoke'),

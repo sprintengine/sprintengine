@@ -17,7 +17,6 @@ import { launchPermissionCeiling } from '../main/automation/launch-permission-ca
 import { createStudioGatewayTools } from '../main/automation/studio-gateway-tools'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
 import { ConversationRuntime } from '../main/conversation-runtime'
-import { createFakeIpcMain } from '../main/module-host/ipc-main-fake.test-helper'
 import { loadMainModules } from '../main/module-host/load-modules'
 import { createAgentRuntimeModule } from '../main/modules/agent-runtime-module'
 import { createWorkspaceRegistryService } from '../main/workspace-registry-service'
@@ -164,7 +163,6 @@ test('moduleConversationSeam', async () => {
     },
   })
   const load = loadMainModules({
-    ipcMain: createFakeIpcMain().ipcMain,
     modules: [
       agentRuntime,
       {

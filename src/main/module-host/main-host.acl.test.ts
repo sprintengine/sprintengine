@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
-import { createFakeIpcMain } from './ipc-main-fake.test-helper'
 import { createMainKernel, createServiceToken, THIRD_PARTY_SERVICE_KEYS } from './main-host'
 import * as serviceTokens from './service-tokens'
 import { test } from 'vitest'
@@ -29,7 +28,7 @@ const otherThirdParty: CapabilityManifest = {
 
 function kernelWith(...manifests: CapabilityManifest[]) {
   const byId = new Map(manifests.map((manifest) => [manifest.id, manifest]))
-  return createMainKernel(createFakeIpcMain().ipcMain, { resolveModuleManifest: (id) => byId.get(id) })
+  return createMainKernel({ resolveModuleManifest: (id) => byId.get(id) })
 }
 
 function tool(name: string, extra: Partial<McpToolRegistration> = {}): McpToolRegistration {

@@ -4,7 +4,6 @@ import { test } from 'vitest'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import { coreMcpToolConflict, mcpToolWireName, type McpToolRegistration } from '../../shared/modules/mcp-tools'
 import { createStudioGatewayTools } from '../automation/studio-gateway-tools'
-import { createFakeIpcMain } from './ipc-main-fake.test-helper'
 import { createMainKernel } from './main-host'
 
 // Module MCP tool names against the gateway's own. A collision with a core
@@ -39,7 +38,7 @@ function tool(name: string, answer = name): McpToolRegistration {
 }
 
 function kernel() {
-  return createMainKernel(createFakeIpcMain().ipcMain, {
+  return createMainKernel({
     resolveModuleManifest: (id) => manifest(id),
     coreMcpToolNames: () => CORE,
   })

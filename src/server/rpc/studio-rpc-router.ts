@@ -13,6 +13,7 @@ import {
   type StudioConversationKey,
   type StudioCreatedConversation,
   type StudioErrorBody,
+  type StudioModuleBacklogAnswer,
   type StudioErrorCode,
   type StudioGrant,
   type StudioHandlers,
@@ -45,6 +46,7 @@ import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import { createStudioAgentSkillsHandlers } from './studio-agent-skills'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
+import type { ModuleHostServices } from '../../main/module-host/main-host'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -633,6 +635,52 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   const moduleRefusedBefore = (settled: { ok: boolean; error?: StudioErrorBody }) =>
     !settled.ok &&
     ['unavailable', 'module_unavailable', 'module_method_unknown', 'invalid_params'].includes(settled.error?.code ?? '')
+  /**
+   * A call into one of the host's services a module's window half reaches,
+   * under the calling module's id: `module_unavailable` for a module not
+   * running here; the service's own answer otherwise, a service this Studio
+   * does not provide answered in its own vocabulary.
+   */
+  function moduleService<K extends keyof ModuleHostServices, A extends { ok: boolean }>(
+    method: StudioMethod,
+    moduleId: string,
+    service: K,
+    missing: A,
+    work: (served: NonNullable<ModuleHostServices[K]>) => Promise<A>,
+  ): Promise<{ ok: true; result: A } | Refused<'unavailable' | 'module_unavailable'>> | Refused<'unavailable'> {
+    const modules = options.modules
+    if (!modules) return unserved(method)
+    const found = modules.hostServices(moduleId)
+    if (!found.ok) return Promise.resolve(refuse(found.code, found.message))
+    const served = found.services[service]
+    if (!served) return Promise.resolve({ ok: true as const, result: missing })
+    return work(served as NonNullable<ModuleHostServices[K]>).then((result) => ({ ok: true as const, result }))
+  }
+  const BACKLOG_MISSING = {
+    ok: false,
+    code: 'backlog_unavailable',
+    message: 'This Studio has no Backlog service for modules.',
+  } as const
+  const USAGE_MISSING = {
+    ok: false,
+    code: 'unavailable',
+    message: 'This Studio has no usage service for modules.',
+  } as const
+  /** A Backlog write, carried out once under its id: a retry is answered with the first answer. */
+  function backlogWrite<M extends StudioMethod, T extends object>(
+    method: M,
+    params: { moduleId: string; commandId: string },
+    context: Asking,
+    work: (backlog: NonNullable<ModuleHostServices['backlog']>) => Promise<StudioModuleBacklogAnswer<T>>,
+  ) {
+    return once(
+      keptId(method, context.grant, params.commandId),
+      () => Promise.resolve(moduleService(method, params.moduleId, 'backlog', BACKLOG_MISSING, work)),
+      context.voice,
+      method,
+      moduleRefusedBefore,
+    )
+  }
   const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
 
   /** The chat surface, or why this Studio does not serve one now. */
@@ -1555,6 +1603,36 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           method,
         ),
     }),
+
+    // The host's services a module's window half calls, under its own id;
+    // the service checks the module's permission. A write is carried out
+    // once per command id.
+    'moduleBacklog.location': ({ moduleId, workspaceId }) =>
+      moduleService('moduleBacklog.location', moduleId, 'backlog', BACKLOG_MISSING, (backlog) =>
+        backlog.getLocation(moduleId, workspaceId),
+      ),
+    'moduleBacklog.create': (params, context) =>
+      backlogWrite('moduleBacklog.create', params, context, (backlog) =>
+        backlog.create(params.moduleId, params.workspaceId, params.input),
+      ),
+    'moduleBacklog.updateStatus': (params, context) =>
+      backlogWrite('moduleBacklog.updateStatus', params, context, (backlog) =>
+        backlog.updateStatus(params.moduleId, params.workspaceId, params.itemId, params.status),
+      ),
+    'moduleBacklog.updateTriage': (params, context) =>
+      backlogWrite('moduleBacklog.updateTriage', params, context, (backlog) =>
+        backlog.updateTriage(params.moduleId, params.workspaceId, params.itemId, params.triage),
+      ),
+    'moduleBacklog.addLink': (params, context) =>
+      backlogWrite('moduleBacklog.addLink', params, context, (backlog) =>
+        backlog.addLink(params.moduleId, params.workspaceId, params.itemId, params.link),
+      ),
+    'moduleBacklog.updateModuleMetadata': (params, context) =>
+      backlogWrite('moduleBacklog.updateModuleMetadata', params, context, (backlog) =>
+        backlog.updateModuleMetadata(params.moduleId, params.workspaceId, params.itemId, params.value),
+      ),
+    'moduleUsage.query': ({ moduleId, query }) =>
+      moduleService('moduleUsage.query', moduleId, 'usage', USAGE_MISSING, (usage) => usage.query(moduleId, query)),
 
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an

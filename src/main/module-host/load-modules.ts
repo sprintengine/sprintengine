@@ -1,5 +1,3 @@
-import type { IpcMain } from 'electron'
-
 import type { ModuleEventEnvelope } from '../../shared/modules/events'
 import type {
   CapabilityManifest,
@@ -104,7 +102,6 @@ async function settleRegistration(id: string, pending: PromiseLike<unknown>, tim
 // services — terminal runtime, token stores — are available for modules to
 // requireService before any module registers.
 export function loadMainModules(options: {
-  ipcMain: IpcMain
   modules: CapabilityModule[]
   overrides?: ModuleEnablementOverrides
   provideServices?: (host: MainHost) => void
@@ -141,7 +138,7 @@ export function loadMainModules(options: {
   /** Verified file digests per third-party module id, for `MainHost.getAssetPath`. */
   moduleVerifiedFiles?: Record<string, ModuleFileDigests>
 }): LoadMainModulesResult {
-  const { ipcMain, modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
+  const { modules, overrides = {}, provideServices, ineligible, launchErrors = [] } = options
   const registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_MAIN_TIMEOUT_MS
   const byId = new Map(modules.map((module) => [module.manifest.id, module]))
   const resolution = resolveModuleEnablement(
@@ -150,7 +147,7 @@ export function loadMainModules(options: {
     { ineligible },
   )
 
-  const kernel = createMainKernel(ipcMain, {
+  const kernel = createMainKernel({
     ...(options.electronMain === undefined ? {} : { electronMain: options.electronMain }),
     deliverModuleEvent: options.deliverModuleEvent,
     ...(options.deliverModuleNotification ? { deliverModuleNotification: options.deliverModuleNotification } : {}),
@@ -158,6 +155,8 @@ export function loadMainModules(options: {
     resolveModuleManifest: (moduleId) => byId.get(moduleId)?.manifest,
     // A module that runs and declares no such method is told apart from one not running.
     isModuleActive: (moduleId) => activeMainModules.has(moduleId),
+    // A module with only a window half still calls the host's services.
+    isModulePresent: (moduleId) => activeMainModules.has(moduleId) || activeManifestOnlyModules.has(moduleId),
     resolveModuleRoot: (moduleId) => options.moduleRoots?.[moduleId],
     ...(options.skillRegistry ? { skillRegistry: options.skillRegistry } : {}),
     ...(options.coreMcpToolNames ? { coreMcpToolNames: options.coreMcpToolNames } : {}),
