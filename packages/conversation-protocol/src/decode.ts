@@ -56,9 +56,11 @@ export function conversationUtf8Length(value: string): number {
 
 /** One frame as the desktop sent it, its JSON text: decoded, marked unknown, or null when it is broken. */
 export function decodeConversationServerFrame(raw: string): ConversationDecodedFrame | null {
+  // At most three bytes a UTF-16 unit: a frame that short cannot be over, and is not counted.
   if (
     raw.length > CONVERSATION_MAX_JOINED_FRAME_BYTES ||
-    conversationUtf8Length(raw) > CONVERSATION_MAX_JOINED_FRAME_BYTES
+    (raw.length * 3 > CONVERSATION_MAX_JOINED_FRAME_BYTES &&
+      conversationUtf8Length(raw) > CONVERSATION_MAX_JOINED_FRAME_BYTES)
   )
     return null
   let value: unknown

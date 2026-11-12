@@ -11,16 +11,23 @@
   broken; an event of an unknown type is an event, so its sequence still moves
   the cursor. With `createConversationChunkAssembler` and
   `createConversationSnapshotAssembler`, moved from the phone app, and
-  `CONVERSATION_MAX_JOINED_FRAME_BYTES`.
+  `CONVERSATION_MAX_JOINED_FRAME_BYTES`, `CONVERSATION_MAX_SNAPSHOT_PARTS` and
+  `conversationUtf8Length`.
+
+### Changed (breaking for an exhaustive switch on phase)
+
 - **A listed chat in a phase this build does not know is listed**, with the
-  phase `unknown` (`ConversationListedThread`, what `sessions` frames now
-  carry), where it was dropped; `readableConversationPhase` reads it as idle.
+  phase `unknown`, where it was dropped: a `sessions` frame now carries
+  `ConversationListedThread[]`, whose `phase` may be `unknown`, so a consumer
+  that switches on it exhaustively must handle it. `readableConversationPhase`
+  reads it as idle.
 
 ### Changed (the phone's rules, adopted)
 
 - A listed chat's `chatTitle` is trimmed; a `host` with a blank label is left
   out; a pull request's `url` must be a web page with no credentials before its
-  host, and one whose title cannot be read is kept with an empty title.
+  host, and is kept trimmed; one whose title cannot be read is kept with an
+  empty title.
 
 ### Added (session shapes)
 
