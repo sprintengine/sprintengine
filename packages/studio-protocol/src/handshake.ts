@@ -125,6 +125,12 @@ export const STUDIO_PROVIDER_SETTINGS_CAPABILITY = 'provider-settings' as const
 export const STUDIO_UPDATE_SESSION_CAPABILITY = 'update-session' as const
 
 /**
+ * This Studio's modules speak to clients: the `module.events` and
+ * `module.notifications` streams. Offered where the Studio runs a module kernel.
+ */
+export const STUDIO_MODULES_CAPABILITY = 'modules' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -156,6 +162,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_PROVIDER_SETTINGS_CAPABILITY,
   STUDIO_UPDATE_SESSION_CAPABILITY,
+  STUDIO_MODULES_CAPABILITY,
 ] as const
 
 /**

@@ -6,13 +6,16 @@ import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
 import { noteModuleIpcChannel } from '../ipc/ipc-registration-rule'
 import { MODULE_BRIDGE_INVOKE_CHANNEL, type ModuleBridgeInvokeResult } from '../../shared/modules/bridge'
-import { MODULE_EVENTS_CHANNEL, validateModuleEventTopic, type ModuleEventEnvelope } from '../../shared/modules/events'
+import {
+  moduleEventPayloadProblem,
+  validateModuleEventTopic,
+  type ModuleEventEnvelope,
+} from '../../shared/modules/events'
 import type { CapabilityManifest, ModuleFileDigests } from '../../shared/modules/manifest'
 import type { ModuleWorkspaceGitInfoResult } from '../../shared/modules/workspace-view'
 import { coreMcpToolConflict, mcpToolWireName, type McpToolRegistration } from '../../shared/modules/mcp-tools'
 import type { ModuleChatRuntimeOption } from '../../shared/modules/conversation-service'
 import {
-  MODULE_NOTIFICATIONS_RECENT_CHANNEL,
   validateModuleNotifyInput,
   type ModuleNotification,
   type ModuleNotificationDelivery,
@@ -300,10 +303,10 @@ export type MainHost = {
    * Push an event to this module's renderer half — the subscribe verb the
    * request/response bridge does not have. The source module id is stamped
    * from this host's scope, so only this module's `RendererHost.subscribe`
-   * receives it; an empty or over-long topic throws. Fan-out reaches every open
-   * window, ordering is FIFO per module, and nothing is replayed to a window
-   * opened later: see the delivery contract in shared/modules/events.ts.
-   * The payload crosses IPC and must be structured-cloneable.
+   * receives it; an empty or over-long topic throws. It rides the Studio's
+   * `module.events` stream: fan-out reaches every client following it,
+   * ordering is FIFO per module, and nothing is replayed to a client that
+   * connects later (shared/modules/events.ts). The payload must be JSON.
    */
   emit(topic: string, payload?: unknown): void
 }
@@ -345,7 +348,7 @@ export type MainKernel = {
    */
   emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void
   /** Recent notifications (bounded), newest last. The kernel's diagnostics record. */
-  recentNotifications(): ReadonlyArray<ModuleNotification>
+  recentNotifications(): ReadonlyArray<ModuleNotificationDelivery>
   /**
    * Infrastructure-only event entry, the twin of `emitNotification`: stamps
    * `sourceModuleId` and `emittedAt`, then delivers. Module code never sees the
@@ -362,7 +365,7 @@ export type MainKernelOptions = {
    * server out of process. What `host.supports('electron-main')` answers.
    */
   electronMain?: boolean
-  /** Sends one module event to every open renderer window. Absent in tests. */
+  /** Sends one module event to every client following `module.events`. Absent in tests. */
   deliverModuleEvent?: (event: ModuleEventEnvelope) => void
   /**
    * Sends one bell row to every attached client (shared/modules/notifications.ts).
@@ -455,9 +458,8 @@ type ModuleAppStateReader = {
 
 // One record per registered channel: ownership for collision reports and
 // teardown, plus the handler itself — ipcMain cannot be invoked in-process,
-// and the bridge dispatcher needs to call owned handlers directly. Reserved
-// event channels (owner '@host', no invoke handler) have no `handler`.
-type ChannelEntry = { owner: string; handler?: IpcInvokeHandler }
+// and the bridge dispatcher needs to call owned handlers directly.
+type ChannelEntry = { owner: string; handler: IpcInvokeHandler }
 
 export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = {}): MainKernel {
   const channels = new Map<string, ChannelEntry>()
@@ -491,10 +493,6 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
   const floodStateByModule = new Map<string, ModuleNotificationFloodState>()
   let started = false
 
-  // The module-events channel belongs to the host kernel; reserving it here
-  // makes a module's attempt to claim it a registration error.
-  channels.set(MODULE_EVENTS_CHANNEL, { owner: '@host' })
-
   // The renderer→module-main bridge dispatcher. Routes an invoke to a channel
   // a module registered via registerIpc, applying the bridgeability rules
   // (owner prefix + `module:bridge` or `ipc:invoke`); every refusal is structured
@@ -510,7 +508,7 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
         : ''
     const payload = (request as { payload?: unknown } | undefined)?.payload
     const entry = channels.get(channel)
-    if (!entry?.handler) {
+    if (!entry) {
       return {
         ok: false,
         code: 'unknown_channel',
@@ -550,11 +548,6 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
     MODULE_HOST_SERVICE_CHANNEL,
     createModuleHostServiceDispatcher((key) => services.get(key)?.value),
   )
-  // The bell's backlog for a window that boots after a notification was sent
-  // (a launch failure, an onStartup notify). Copies, oldest first.
-  hostFor('@host').registerIpc(MODULE_NOTIFICATIONS_RECENT_CHANNEL, () =>
-    recent.map((notification) => ({ ...notification })),
-  )
 
   function emitNotification(sourceModuleId: string, input: ModuleNotifyInput): void {
     const validated = validateModuleNotifyInput(input)
@@ -590,17 +583,14 @@ export function createMainKernel(ipcMain: IpcMain, options: MainKernelOptions = 
       throw new Error(`Module "${sourceModuleId}" ${validated.message}`)
     }
     // A payload no client could receive is the module's mistake, and it hears
-    // about it here, from its own `emit`, as it did when the send to a window
-    // threw. Checked once, whether or not any client is attached, because the
-    // delivery that follows is best effort per client and swallows a failed send.
+    // about it here, from its own `emit`. Checked once, whether or not any
+    // client is following, because the delivery that follows is best effort
+    // per client and swallows a failed send.
     if (payload !== undefined) {
-      try {
-        structuredClone(payload)
-      } catch (error) {
+      const problem = moduleEventPayloadProblem(payload)
+      if (problem) {
         throw new Error(
-          `Module "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Module "${sourceModuleId}" emitted a "${validated.topic}" payload that cannot be sent to a client: ${problem}.`,
         )
       }
     }

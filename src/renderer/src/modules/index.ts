@@ -4,6 +4,9 @@ import type { MarketplacePluginRegistryInstallResult } from '../../../shared/ele
 import { activeForChannel } from '../../../shared/modules/dev-only'
 import { resolveModuleEnablement } from '../../../shared/modules/resolve'
 import { toModuleWorkspaceView, type ModuleWorkspaceView } from '../../../shared/modules/workspace-view'
+import { STUDIO_MODULES_CAPABILITY } from '../../../../packages/studio-protocol/src/public'
+import { isModuleEvent } from '../../../shared/modules/events'
+import { followWindowStudioPush } from '../studio/windowStudioPush'
 import { markStartup } from '../utils/startupTimeline'
 import { agentRuntimeRendererModule } from './agent-runtime-module'
 import { backlogRendererModule } from './backlog-module'
@@ -320,11 +323,19 @@ if (typeof window !== 'undefined') {
             })
           },
         })
-        // One preload listener backs every module's subscriptions; the kernel
-        // filters each envelope down to the module and topic that asked for it.
-        if (typeof window.api?.onModuleEvent === 'function') {
-          rendererHost.setModuleEventSource((cb) => window.api.onModuleEvent(cb))
-        }
+        // One `module.events` stream of the window's Studio backs every
+        // module's subscriptions; the kernel filters each event down to the
+        // module and topic that asked for it.
+        rendererHost.setModuleEventSource((cb) =>
+          followWindowStudioPush({
+            topic: 'module.events',
+            params: {},
+            capability: STUDIO_MODULES_CAPABILITY,
+            onPayload: (payload) => {
+              if (isModuleEvent(payload)) cb(payload)
+            },
+          }),
+        )
         // Effective working root: the worktree for worktree-backed
         // workspaces, the primary checkout otherwise. Every live-runtime surface
         // below resolves workspace-relative paths against this, never against

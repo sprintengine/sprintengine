@@ -6,11 +6,11 @@ import type { DiagnosticLevel, DiagnosticLogEntry } from '../types/workspace'
 // the ports it is handed, so the mapping and the once-only filing are testable
 // without a store or a preload.
 //
-// Two ways a row reaches a window: live, on the kernel's push channel, and from
-// the kernel's recent backlog, read once as the window boots — a module's
-// launch failure or an `onStartup` notify is sent before any window listens.
-// The delivery id makes the second a no-op for anything the first already
-// filed (and for anything the person cleared since).
+// A row reaches a window on its Studio's `module.notifications` stream, which
+// sends the rows the server still keeps (a module's launch failure or an
+// `onStartup` notify is raised before any window listens) and then each new
+// one. A reconnect sends the kept rows again; the delivery id makes that a
+// no-op for anything already filed (and for anything the person cleared since).
 
 const LEVEL: Readonly<Record<ModuleNotificationDelivery['severity'], DiagnosticLevel>> = {
   info: 'info',
@@ -43,10 +43,8 @@ export function moduleNotificationEntry(notification: ModuleNotificationDelivery
 }
 
 export type ModuleNotificationIngestPorts = {
-  /** The live push channel; returns its unsubscriber. */
-  subscribe(cb: (notification: ModuleNotificationDelivery) => void): () => void
-  /** The kernel's recent deliveries, oldest first. Optional: a client without it hears live rows only. */
-  listRecent?: () => Promise<ModuleNotificationDelivery[]>
+  /** The stream: the kept rows, then each new one; returns its unsubscriber. Payloads are checked here. */
+  subscribe(cb: (notification: unknown) => void): () => void
   /** File one row once; false when its delivery id was filed before. */
   file(deliveryId: string, entry: DiagnosticLogEntry): boolean
 }
@@ -72,18 +70,6 @@ export function startModuleNotificationIngest(ports: ModuleNotificationIngestPor
     ports.file(notification.id, moduleNotificationEntry(notification))
   }
   const unsubscribe = ports.subscribe(file)
-  if (ports.listRecent) {
-    ports
-      .listRecent()
-      .then((recent) => {
-        if (!Array.isArray(recent)) return
-        for (const notification of recent) file(notification)
-      })
-      .catch(() => {
-        // A client that cannot read the backlog (a web tab, a server that is
-        // restarting) still hears every row sent from now on.
-      })
-  }
   return () => {
     stopped = true
     unsubscribe()

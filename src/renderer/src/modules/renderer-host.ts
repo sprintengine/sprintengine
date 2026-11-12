@@ -798,9 +798,9 @@ export type ModuleAppStateStore = {
 }
 
 // Source of main→renderer module events. The kernel owns only the
-// seam: modules/index.ts wires it over `window.api.onModuleEvent`, and the
+// seam: modules/index.ts wires it over the window's `module.events` stream, and the
 // scoped host's `subscribe` filters the stream to the calling module's own
-// events. One preload listener backs every module's subscriptions.
+// events. One stream subscription backs every module's subscriptions.
 export type ModuleEventSource = (cb: (envelope: ModuleEventEnvelope) => void) => () => void
 
 // ── Shell feedback, links and context for module code ──────────────────────
@@ -1297,7 +1297,7 @@ export type RendererKernel = {
   setModuleAppStateStore(store: ModuleAppStateStore): void
   /**
    * Source for `RendererHost.subscribe`. Wired once at boot by modules/index.ts
-   * over `window.api.onModuleEvent`. The kernel owns the subscriber set, so ONE
+   * over the window's `module.events` stream. The kernel owns the subscriber set, so ONE
    * listener on this source backs every module's subscriptions and a subscribe
    * made before the source lands still receives once it does — module code
    * never has to guard the wiring window. Absent (tests, windowless bundles)

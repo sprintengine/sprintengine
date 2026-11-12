@@ -17,6 +17,7 @@ import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioCore } from './studio-core'
 import type { StudioGateway } from './studio-gateway'
+import type { StudioModules } from '../rpc/studio-modules'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
 // applications follow, drive and start chats through. It serves the same
@@ -29,13 +30,19 @@ import type { StudioGateway } from './studio-gateway'
 export function createStudioRpc(
   core: StudioCore,
   gateway: StudioGateway,
-  options: { hostKind?: StudioRpcServiceOptions['hostKind']; updates?: StudioUpdates } = {},
+  options: {
+    hostKind?: StudioRpcServiceOptions['hostKind']
+    updates?: StudioUpdates
+    /** What the modules of the kernel beside it say; a Studio without one leaves `module.*` unserved. */
+    modules?: StudioModules
+  } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
     // How this Studio is updated: the host says (a desktop itself, a WSL or
     // SSH server by the desktop that manages it, a hand-started one by hand).
     ...(options.updates ? { updates: options.updates } : {}),
+    ...(options.modules ? { modules: options.modules } : {}),
     paths: core.platform.paths,
     identity: core.platform.identity,
     clients: core.platform.clients,

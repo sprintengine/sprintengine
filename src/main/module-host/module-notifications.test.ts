@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict'
 import type { IpcMain } from 'electron'
 
-import { MODULE_EVENTS_CHANNEL } from '../../shared/modules/events'
-import {
-  MODULE_NOTIFICATIONS_RECENT_CHANNEL,
-  type ModuleNotificationDelivery,
-} from '../../shared/modules/notifications'
+import type { ModuleNotificationDelivery } from '../../shared/modules/notifications'
+import { createStudioModuleHub } from '../../server/rpc/studio-modules'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import { loadMainModules, type CapabilityModule } from './load-modules'
 import { createMainKernel } from './main-host'
@@ -119,20 +116,6 @@ test('module-notifications', async () => {
     assert.equal(delivered[0].sourceModuleId, 'emitter')
   }
 
-  function testEventChannelNameIsReservedAgainstModules(): void {
-    const claimer: CapabilityModule = {
-      manifest: { id: 'claimer', displayName: 'Claimer', version: 1, defaultEnabled: true },
-      registerMain: (host) => host.registerIpc(MODULE_EVENTS_CHANNEL, () => null),
-    }
-
-    const { ipcMain } = createFakeIpcMain()
-    const { report, kernel } = loadMainModules({ ipcMain, modules: [claimer] })
-
-    assert.deepEqual(report.loaded, [])
-    assert.match(report.errors[0]?.message ?? '', /already registered by module "@host"/)
-    assert.equal(kernel.ownedChannels().get(MODULE_EVENTS_CHANNEL), '@host')
-  }
-
   function thirdPartyManifestOnly(id: string): CapabilityModule {
     const manifest: CapabilityManifest = {
       id,
@@ -199,7 +182,6 @@ test('module-notifications', async () => {
   testIdenticalRepeatIsDroppedAndDistinctPasses()
   testRateCapBoundsAModuleButNotOthers()
   testNotificationsFlowThroughLoadedModuleAndRecentBuffer()
-  testEventChannelNameIsReservedAgainstModules()
   testThirdPartyLoadErrorsBecomeNotificationsBundledStayLogOnly()
   console.log('module-notifications tests passed')
 })
@@ -259,20 +241,16 @@ test('supports("notifications") is true only where delivery is wired', () => {
   assert.equal(wired.hostFor('acme.radar').supports('notifications'), true)
 })
 
-test('a window that boots late reads the backlog through the host channel', async () => {
-  const { ipcMain, handlers } = fakeIpcMain()
-  const kernel = createMainKernel(ipcMain, { deliverModuleNotification: () => undefined })
+test('the kernel keeps the recent rows for a client that subscribes late, and hands out copies', () => {
+  const kernel = createMainKernel(fakeIpcMain().ipcMain, { deliverModuleNotification: () => undefined })
   kernel.hostFor('acme.board').notify({ severity: 'info', title: 'Standup ready' })
-  assert.equal(kernel.ownedChannels().get(MODULE_NOTIFICATIONS_RECENT_CHANNEL), '@host')
-  const recent = (await handlers.get(MODULE_NOTIFICATIONS_RECENT_CHANNEL)?.({})) as ModuleNotificationDelivery[]
+  const hub = createStudioModuleHub()
+  hub.readRecentFrom(() => kernel.recentNotifications())
+  const recent = hub.recentNotifications()
   assert.equal(recent.length, 1)
   assert.equal(recent[0]?.title, 'Standup ready')
-  recent[0]!.title = 'mutated'
+  ;(recent[0] as { title: string }).title = 'mutated'
   assert.equal(kernel.recentNotifications()[0]?.title, 'Standup ready', 'the backlog hands out copies')
-  assert.throws(
-    () => kernel.hostFor('impostor').registerIpc(MODULE_NOTIFICATIONS_RECENT_CHANNEL, () => []),
-    /already registered by module "@host"/,
-  )
 })
 
 test('a malformed target throws; the same words about another door are not a repeat', () => {

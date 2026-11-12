@@ -705,8 +705,8 @@ in one world; trust gating is the boundary.
 `RendererHost.subscribe(topic, cb)`. Only your module's subscribers receive
 it; one emit reaches every open window, in order per module. **Nothing is
 replayed**: keep the durable answer readable through an IPC channel and let
-the event say "read it again". Payloads must be structured-cloneable; delivery
-pauses while your module is off.
+the event say "read it again". Payloads must be JSON (they ride the Studio
+protocol's `module.events` stream); delivery pauses while your module is off.
 
 ## Module storage
 

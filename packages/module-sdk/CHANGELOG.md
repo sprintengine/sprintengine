@@ -9,6 +9,14 @@ services, the shell's notifications and window context, main-host plumbing,
 `module:bridge`, the testing kit, and companion tools, turn replies and
 scheduled-agent runs, all additive under host API 1.
 
+### Changed: module events are JSON
+
+- `MainHost.emit` payloads cross the Studio protocol's `module.events` stream,
+  so a payload must be a JSON value (plain objects, arrays, strings, finite
+  numbers, booleans, null). Anything else (a `Date`, a `Map`, a class
+  instance, `NaN`, a cycle) throws from `emit`, naming where it is, in the app
+  and in the test host alike. The delivery contract is otherwise unchanged.
+
 ### Changed: the extension guide replaces the extension-builder skill
 
 - The `sprintengine-extension-builder` skill is gone from the package

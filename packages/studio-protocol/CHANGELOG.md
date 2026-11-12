@@ -36,6 +36,16 @@
   desktop app so the desktop and the phone import one definition. Not part of
   the package entry: imported by path.
 
+- **Modules speak on the protocol.** The `module.events` push topic carries
+  what a Studio's modules emit (`StudioModuleEvent`: the stamped
+  `sourceModuleId`, the module's `topic`, a JSON `payload`, `emittedAt`), all
+  modules' or one's (`{ moduleId }`); `module.notifications` carries their bell
+  rows (`StudioModuleNotification`), the rows the server keeps first, then each
+  new one. Both need the new `modules:read` scope (permission `module:read`),
+  which is not held to an owner's connection, and are offered under the
+  `modules` capability. They replace the desktop's `modules:events`,
+  `modules:notifications` and `modules:notifications:recent` IPC channels.
+
 ### Changed (contract)
 
 - **One table builds both ends.** `contract.ts` defines a method as a contract

@@ -36,6 +36,8 @@ export const STUDIO_PERMISSIONS = [
   'filesystem:write',
   // Give Studio's agents tools of the client's own.
   'tools:offer',
+  // Hear this machine's modules: their events and the bell rows they raise.
+  'module:read',
   // Change this machine's settings.
   'settings:write',
   // Open a preview of a server an agent runs here.
@@ -136,6 +138,7 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'files:write': ['filesystem:write'],
   'environment:maintain': ['environment:maintain'],
   'settings:write': ['settings:write'],
+  'modules:read': ['module:read'],
 }
 
 /** The permission each Studio scope is the grant name for. */
@@ -150,6 +153,7 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'files:write': 'filesystem:write',
   'environment:maintain': 'environment:maintain',
   'settings:write': 'settings:write',
+  'modules:read': 'module:read',
 }
 
 /**

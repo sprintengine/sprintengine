@@ -21,6 +21,7 @@ import { createStudioRpcServer, type StudioRpcServer } from './studio-rpc-server
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioModules } from './studio-modules'
 import type { StudioFiles } from './studio-files'
 import type { StudioUpdates } from '../update/studio-updates'
 import type {
@@ -356,6 +357,7 @@ export async function startTestServer(
     localServers?: StudioLocalServers
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
+    modules?: StudioModules
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
 ): Promise<{
@@ -388,6 +390,7 @@ export async function startTestServer(
     ...(input.localServers ? { localServers: input.localServers } : {}),
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
+    ...(input.modules ? { modules: input.modules } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),
     resyncRetryAfterMs: () => 1_500,

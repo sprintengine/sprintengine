@@ -216,6 +216,7 @@ import { installWorkspaceStoreMigration } from './workspace-store-migration'
 import { createStudioGateway } from '../server/core/studio-gateway'
 import { desktopStudioUpdates } from './studio-rpc/desktop-updates'
 import { createStudioRpc } from '../server/core/studio-rpc'
+import { createStudioModuleHub } from '../server/rpc/studio-modules'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../server/desktop/gateway-backends'
 import {
@@ -2079,7 +2080,12 @@ export function createAppServices(
   const desktopUpdates = desktopStudioUpdates(updateService, {
     log: (message) => void writeDiagnosticLog({ level: 'warning', source: 'update', title: 'Client update', message }),
   })
-  const studioRpc = automationService ? createStudioRpc(core, automationService, { updates: desktopUpdates }) : null
+  // What this process's modules say to clients (`module.events`,
+  // `module.notifications`): app-main's kernel delivers into it.
+  const moduleHub = createStudioModuleHub()
+  const studioRpc = automationService
+    ? createStudioRpc(core, automationService, { updates: desktopUpdates, modules: moduleHub })
+    : null
   // Where the person's attention is, for routing a call to the window in
   // front of them when more than one desktop offers a toolset.
   const desktopFocus = {
@@ -2520,6 +2526,7 @@ export function createAppServices(
     artifactsSetupConsent,
     automationService,
     studioRpcService,
+    moduleHub,
     backgroundModeStore,
     quitConfirmationStore,
     quitConfirmation,

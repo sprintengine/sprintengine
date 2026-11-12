@@ -400,7 +400,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       : { ok: false, message: 'The update could not be started.' }
   })
   rpc.on(SERVER_EVENTS.updateState, (payload) => desktopUpdates.mirror(payload))
-  const studioRpc = createStudioRpc(core, gateway, { updates: desktopUpdates.updates })
+  const studioRpc = createStudioRpc(core, gateway, { updates: desktopUpdates.updates, modules: modules.hub })
   const githubTokenStore = new GitHubTokenStore()
   const workspaceBackup = createWorkspaceBackupService({
     resolveUserDataDir: () => envelope.dataDir,

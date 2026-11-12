@@ -60,6 +60,7 @@ import {
   type StudioLocalServersMethodMap,
   type StudioLocalServersTopicMap,
 } from './local-servers.js'
+import { STUDIO_MODULES_TOPICS, type StudioModulesTopicMap } from './modules.js'
 import {
   STUDIO_TOOLS_METHODS,
   STUDIO_TOOLS_TOPICS,
@@ -552,7 +553,8 @@ export type StudioTopicMap = {
   StudioToolsTopicMap &
   StudioFilesTopicMap &
   StudioPullRequestsTopicMap &
-  StudioLocalServersTopicMap
+  StudioLocalServersTopicMap &
+  StudioModulesTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
 export type StudioTopicParams<T extends StudioTopic> = StudioTopicMap[T]['params']
@@ -585,6 +587,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_FILES_TOPICS,
   ...STUDIO_PULL_REQUESTS_TOPICS,
   ...STUDIO_LOCAL_SERVERS_TOPICS,
+  ...STUDIO_MODULES_TOPICS,
 }
 
 /** Whether a string names a topic this version of the protocol defines. */

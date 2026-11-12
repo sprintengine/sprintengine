@@ -311,9 +311,9 @@ offers.
 | `MainHost` member today                    | On the server                                                                                                          |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
 | `registerIpc(channel, handler)`            | a protocol method `module.invoke { moduleId, channel, payload }`, routed by the same ownership and `ipc:invoke` checks |
-| `emit(topic, payload)`                     | the `module.events` stream, per module, nothing replayed (as today)                                                    |
+| `emit(topic, payload)`                     | the `module.events` stream (`modules:read`), per module, a JSON payload, nothing replayed (built)                      |
 | `registerMcpTools`                         | the server's gateway, unchanged                                                                                        |
-| `notify`                                   | the server's `Notifier`                                                                                                |
+| `notify`                                   | the `module.notifications` stream (`modules:read`): the kept rows first, then each new one (built)                     |
 | `provideService` / `getService`            | unchanged, in the server process                                                                                       |
 | `registerSkills` / `ensureSkillInstalled`  | unchanged, on the server host's disk                                                                                   |
 | `registerSidecar`                          | unchanged, spawned on the server host                                                                                  |

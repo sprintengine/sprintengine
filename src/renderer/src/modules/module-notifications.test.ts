@@ -38,9 +38,9 @@ test('a delivery becomes a bell row under the stamped module identity', () => {
   assert.equal(bare.extensionsRow, undefined, 'an untargeted row names no drawer row itself')
 })
 
-test('live rows and the backlog are filed once each; junk is ignored', async () => {
+test('kept rows and live rows from the stream are filed once each, across a resend; junk is ignored', () => {
   const filed = new Map<string, DiagnosticLogEntry>()
-  let push: ((notification: ModuleNotificationDelivery) => void) | null = null
+  let push: ((notification: unknown) => void) | null = null
   let unsubscribed = false
   const stop = startModuleNotificationIngest({
     subscribe: (cb) => {
@@ -49,38 +49,21 @@ test('live rows and the backlog are filed once each; junk is ignored', async () 
         unsubscribed = true
       }
     },
-    listRecent: async () => [delivery({ id: 'k1-0', title: 'Failed to load' }), delivery()],
     file: (id, entry) => {
       if (filed.has(id)) return false
       filed.set(id, entry)
       return true
     },
   })
+  // The kept rows first, then a live one, then the kept rows again (a reconnect).
+  push!(delivery({ id: 'k1-0', title: 'Failed to load' }))
   push!(delivery())
-  push!({ nonsense: true } as never)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.deepEqual([...filed.keys()], ['k1-1', 'k1-0'], 'the live row first; the backlog adds only what was missed')
+  push!({ nonsense: true })
+  push!(delivery({ id: 'k1-0', title: 'Failed to load' }))
+  push!(delivery())
+  assert.deepEqual([...filed.keys()], ['k1-0', 'k1-1'], 'each row once, in the order the stream sent them')
   stop()
   assert.equal(unsubscribed, true)
   push!(delivery({ id: 'k1-2' }))
   assert.equal(filed.has('k1-2'), false, 'nothing is filed after stopping')
-})
-
-test('a client that cannot read the backlog still files live rows', async () => {
-  const filed: string[] = []
-  let push: ((notification: ModuleNotificationDelivery) => void) | null = null
-  startModuleNotificationIngest({
-    subscribe: (cb) => {
-      push = cb
-      return () => undefined
-    },
-    listRecent: () => Promise.reject(new Error('desktop only')),
-    file: (id) => {
-      filed.push(id)
-      return true
-    },
-  })
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  push!(delivery())
-  assert.deepEqual(filed, ['k1-1'])
 })

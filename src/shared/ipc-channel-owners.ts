@@ -146,7 +146,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   // The module kernel's own channel and the bundled modules' (scheduled agents).
   'modules:bridge:invoke': {},
   'modules:host-service:invoke': {},
-  'modules:notifications:recent': { retry: 'once' },
   'scheduled-agents:create': {},
   'scheduled-agents:list': { retry: 'once' },
   'scheduled-agents:mark-seen': {},

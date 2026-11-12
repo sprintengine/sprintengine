@@ -37,7 +37,8 @@
     "packages/module-sdk/src/brokers.ts",
     "packages/module-sdk/src/backlog.ts",
     "packages/module-sdk/src/activity.ts",
-    "packages/module-sdk/src/services.ts"
+    "packages/module-sdk/src/services.ts",
+    "packages/module-sdk/src/json-value.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {

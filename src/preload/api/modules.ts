@@ -11,10 +11,6 @@ import type { ModuleBridgeInvokeRequest, ModuleBridgeInvokeResult } from '../../
 import { MODULE_BRIDGE_INVOKE_CHANNEL } from '../../shared/modules/bridge'
 import type { ModuleHostServiceRequest } from '../../shared/modules/host-service-bridge'
 import { MODULE_HOST_SERVICE_CHANNEL } from '../../shared/modules/host-service-bridge'
-import type { ModuleEventEnvelope } from '../../shared/modules/events'
-import { MODULE_EVENTS_CHANNEL } from '../../shared/modules/events'
-import type { ModuleNotificationDelivery } from '../../shared/modules/notifications'
-import { MODULE_NOTIFICATIONS_CHANNEL, MODULE_NOTIFICATIONS_RECENT_CHANNEL } from '../../shared/modules/notifications'
 import type {
   ThirdPartyModuleInstallResult,
   ThirdPartyModuleListResult,
@@ -49,23 +45,8 @@ type ModulesIpcRenderer = {
     request: ModuleBridgeInvokeRequest,
   ): Promise<ModuleBridgeInvokeResult>
   invoke(channel: typeof MODULE_HOST_SERVICE_CHANNEL, request: ModuleHostServiceRequest): Promise<unknown>
-  invoke(channel: typeof MODULE_NOTIFICATIONS_RECENT_CHANNEL): Promise<ModuleNotificationDelivery[]>
-  on(
-    channel: typeof MODULE_NOTIFICATIONS_CHANNEL,
-    listener: (event: IpcRendererEvent, notification: ModuleNotificationDelivery) => void,
-  ): unknown
-  removeListener(
-    channel: typeof MODULE_NOTIFICATIONS_CHANNEL,
-    listener: (event: IpcRendererEvent, notification: ModuleNotificationDelivery) => void,
-  ): unknown
-  on(
-    channel: typeof MODULE_EVENTS_CHANNEL | 'modules:third-party:changed',
-    listener: (event: IpcRendererEvent, envelope: ModuleEventEnvelope) => void,
-  ): unknown
-  removeListener(
-    channel: typeof MODULE_EVENTS_CHANNEL | 'modules:third-party:changed',
-    listener: (event: IpcRendererEvent, envelope: ModuleEventEnvelope) => void,
-  ): unknown
+  on(channel: 'modules:third-party:changed', listener: (event: IpcRendererEvent) => void): unknown
+  removeListener(channel: 'modules:third-party:changed', listener: (event: IpcRendererEvent) => void): unknown
 }
 
 export function createModulesApi(renderer: ModulesIpcRenderer) {
@@ -96,24 +77,6 @@ export function createModulesApi(renderer: ModulesIpcRenderer) {
       renderer.invoke(MODULE_BRIDGE_INVOKE_CHANNEL, { channel, payload }),
     moduleHostServiceInvoke: (request: ModuleHostServiceRequest): Promise<unknown> =>
       renderer.invoke(MODULE_HOST_SERVICE_CHANNEL, request),
-    // Every module's events ride this one channel; the renderer kernel fans
-    // them out to the owning module's subscribers. The preload stays neutral —
-    // it never inspects `sourceModuleId`, exactly as it never inspects a
-    // notification's.
-    onModuleEvent: (cb: (envelope: ModuleEventEnvelope) => void) => {
-      const handler = (_: IpcRendererEvent, envelope: ModuleEventEnvelope) => cb(envelope)
-      renderer.on(MODULE_EVENTS_CHANNEL, handler)
-      return () => renderer.removeListener(MODULE_EVENTS_CHANNEL, handler)
-    },
-    // Bell rows from every module, the notification twin of the event channel
-    // above: the renderer files them, the preload never reads them.
-    onModuleNotification: (cb: (notification: ModuleNotificationDelivery) => void) => {
-      const handler = (_: IpcRendererEvent, notification: ModuleNotificationDelivery) => cb(notification)
-      renderer.on(MODULE_NOTIFICATIONS_CHANNEL, handler)
-      return () => renderer.removeListener(MODULE_NOTIFICATIONS_CHANNEL, handler)
-    },
-    listRecentModuleNotifications: (): Promise<ModuleNotificationDelivery[]> =>
-      renderer.invoke(MODULE_NOTIFICATIONS_RECENT_CHANNEL),
   } satisfies Pick<
     ElectronApi,
     | 'setModuleEnablement'
@@ -128,9 +91,6 @@ export function createModulesApi(renderer: ModulesIpcRenderer) {
     | 'onThirdPartyModulesChanged'
     | 'moduleBridgeInvoke'
     | 'moduleHostServiceInvoke'
-    | 'onModuleEvent'
-    | 'onModuleNotification'
-    | 'listRecentModuleNotifications'
   >
 }
 
