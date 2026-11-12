@@ -158,6 +158,8 @@ export async function startWebFrontDoor(input: {
     files: { ...createFilesystemWatchSearchHandlers(), ...createFilesystemReadHandlers() },
     // The cookie checked at the upgrade is the check: only an owner's session reaches the tunnel.
     assertAppSender: () => undefined,
+    // A server started for the web runs no module kernel: its Schedules are off.
+    scheduledAgents: () => null,
   })
 
   // The web tab's own channels, beside the domains every window reaches.

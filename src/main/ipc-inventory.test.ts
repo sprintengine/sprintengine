@@ -269,6 +269,7 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
     terminalHandoff: anything(),
     files: anything(),
     assertAppSender: () => undefined,
+    scheduledAgents: () => null,
   }
 }
 
@@ -373,10 +374,8 @@ test('what main and the server register, and what the preload uses, is the inven
   })
   assert.deepEqual(modules.report.errors, [])
   assert.ok(modules.report.loaded.includes('weather-deck'), 'the installed extension loads')
-  // Main keeps a kernel of its own for the renderer-entry channel, which is
-  // the shell's, with the server's modules loaded in the server.
-  const shellKernel = loadMainModules({ ipcMain: shell, modules: [] })
-  registerThirdPartyRendererEntryIpc(shellKernel.kernel.hostFor('@host'), anything())
+  // The renderer-entry channel is the shell's own, with the server's modules loaded in the server.
+  registerThirdPartyRendererEntryIpc(shell, anything())
 
   // ── The preload: every member, with stand-ins ──
   const usedBy = new Map<string, Set<string>>()
@@ -446,10 +445,8 @@ test('what main and the server register, and what the preload uses, is the inven
     assert.ok(row && 'server' in row, `"${channel}" runs on the server but its row is not a server row`)
   }
   void domains.conversationCommands.dispose()
-  for (const kernel of [modules.kernel, shellKernel.kernel]) {
-    await kernel.runShutdownBegin()
-    await kernel.runShutdown()
-  }
+  await modules.kernel.runShutdownBegin()
+  await modules.kernel.runShutdown()
 
   // ── The preload against the inventory ──
   const listened = new Set<string>()

@@ -8,7 +8,7 @@ import {
   type ThirdPartyRendererEntryView,
 } from '../../shared/modules/manifest'
 import { checkHostApiCompatibility } from '../../shared/modules/host-api'
-import type { MainHost } from '../module-host/main-host'
+import type { IpcMain } from 'electron'
 import { resolveContainedEntry, sanitizeEntryMessage } from './entry-containment'
 import { isLoadEligible, isTrustedByPublisher, type ModuleTrustContext } from './module-signature'
 import type { InstalledModule, UserModuleListResult } from './user-module-registry'
@@ -124,19 +124,19 @@ export async function collectThirdPartyRendererEntries(
   return result
 }
 
-// Registers the serving channel through the module-host kernel so channel
-// ownership/collisions are tracked like every other module surface. Discovery
-// is injected because the module root and trust store live with the caller
-// (and tests provide fixtures without electron).
+// Registers the serving channel on the shell's own `ipcMain`, once: it is the
+// shell's (it serves the window the bundles it loads), not a module's, so no
+// module kernel registers it. Discovery is injected because the module root
+// and trust store live with the caller (and tests provide fixtures without electron).
 export function registerThirdPartyRendererEntryIpc(
-  host: MainHost,
+  ipc: Pick<IpcMain, 'handle'>,
   options: {
     discoverModules: () => Promise<UserModuleListResult>
     trustContext?: () => ModuleTrustContext
     assetOrigin?: (moduleId: string) => string
   },
 ): void {
-  host.registerIpc(THIRD_PARTY_RENDERER_ENTRIES_CHANNEL, async (): Promise<ThirdPartyRendererEntriesResult> => {
+  ipc.handle(THIRD_PARTY_RENDERER_ENTRIES_CHANNEL, async (): Promise<ThirdPartyRendererEntriesResult> => {
     const { modules } = await options.discoverModules()
     return collectThirdPartyRendererEntries(modules, options.trustContext?.(), options.assetOrigin)
   })

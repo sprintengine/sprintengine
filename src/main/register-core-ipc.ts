@@ -344,6 +344,7 @@ export function registerCoreIpc(
           terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
           files: { ...filesystemSearchHandlers, ...filesystemReadHandlers },
           assertAppSender,
+          scheduledAgents: () => services.scheduledAgents(),
         })
       : // The server registers them, and disposes its own command lists.
         { conversationCommands: { dispose: async () => undefined } }

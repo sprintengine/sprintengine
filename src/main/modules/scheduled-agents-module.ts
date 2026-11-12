@@ -25,12 +25,10 @@ import { createScheduledAgentsStore, scheduledAgentsFilePath } from '../schedule
 import type { ExecutionHostId } from '../../shared/execution-host'
 import {
   SCHEDULED_AGENTS_CHANGED_CHANNEL,
-  SCHEDULED_AGENTS_IPC,
   SCHEDULED_AGENTS_PAUSE_CHANGED_CHANNEL,
   scheduledAgentTitle,
   type ScheduledAgentView,
 } from '../../shared/scheduled-agents'
-import { isRecord } from '../../shared/records'
 import type { StudioPlatform } from '../../server/platform/platform'
 
 // The machine whose git answers for a folder: the run's own machine, so its
@@ -180,43 +178,8 @@ export function createScheduledAgentsModule(
       const unsubscribe = scheduledAgents.onChanged((agents) => broadcastScheduledAgents(agents, scheduledAgents))
       host.onShutdown(unsubscribe)
 
-      const idOf = (input: unknown): string => (isRecord(input) && typeof input.id === 'string' ? input.id : '')
-      // The window's channels are up before the scheduler's sidecar reads the
-      // file; each waits for that read (the store's own), so an early write
-      // does not replace the file with only its own entry.
-      host.registerIpc(SCHEDULED_AGENTS_IPC.list, async () => {
-        await store.load()
-        return scheduledAgents.list()
-      })
-      host.registerIpc(SCHEDULED_AGENTS_IPC.create, async (_event, input: unknown) =>
-        scheduledAgents.create(isRecord(input) ? input.draft : undefined),
-      )
-      host.registerIpc(SCHEDULED_AGENTS_IPC.update, async (_event, input: unknown) =>
-        scheduledAgents.update(idOf(input), isRecord(input) ? input.draft : undefined),
-      )
-      host.registerIpc(SCHEDULED_AGENTS_IPC.remove, async (_event, input: unknown) =>
-        scheduledAgents.remove(idOf(input)),
-      )
-      host.registerIpc(SCHEDULED_AGENTS_IPC.runNow, async (_event, input: unknown) =>
-        scheduledAgents.runNow(idOf(input)),
-      )
-      host.registerIpc(SCHEDULED_AGENTS_IPC.markSeen, async (_event, input: unknown) => {
-        await scheduledAgents.markFailureSeen(idOf(input))
-        return { ok: true }
-      })
-      host.registerIpc(SCHEDULED_AGENTS_IPC.pause, async (_event, input: unknown) => scheduledAgents.pause(idOf(input)))
-      host.registerIpc(SCHEDULED_AGENTS_IPC.resume, async (_event, input: unknown) =>
-        scheduledAgents.resume(idOf(input)),
-      )
-      host.registerIpc(SCHEDULED_AGENTS_IPC.pauseState, async () => {
-        await store.load()
-        return scheduledAgents.pausedAll()
-      })
-      host.registerIpc(SCHEDULED_AGENTS_IPC.pauseAll, async (_event, input: unknown) =>
-        // Checked by the service: a time to come, or null for until resumed.
-        scheduledAgents.pauseAll((isRecord(input) ? (input.until ?? null) : null) as number | null),
-      )
-      host.registerIpc(SCHEDULED_AGENTS_IPC.resumeAll, async () => scheduledAgents.resumeAll())
+      // The Schedules window's channels are the server domains' (scheduled-agents-ipc.ts),
+      // which reach this service while the module is on.
 
       let releaseWakeOnResume: (() => void) | null = null
       host.registerSidecar(
