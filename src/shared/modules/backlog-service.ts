@@ -24,11 +24,12 @@ export type ModuleBacklogLocation = StudioModuleBacklogLocation
 export type ModuleBacklogTriageInput = StudioModuleBacklogTriageInput
 export type ModuleBacklogCreateInput = StudioModuleBacklogCreateInput
 export type ModuleBacklogCreated = StudioModuleBacklogCreated
-export type ModuleBacklogLinkInput = StudioModuleBacklogLinkInput
-
-// The protocol's link is the scan's link the caller owns: the two may not drift apart.
+// A link is the scan's link the caller owns, in the form the SDK mirrors
+// exactly; the protocol carries the same shape written out, and the two may
+// not drift apart.
+export type ModuleBacklogLinkInput = Omit<BacklogItemLink, 'moduleId'> & { moduleId?: string }
 type SameShape<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
-const linkShape: SameShape<ModuleBacklogLinkInput, Omit<BacklogItemLink, 'moduleId'> & { moduleId?: string }> = true
+const linkShape: SameShape<ModuleBacklogLinkInput, StudioModuleBacklogLinkInput> = true
 void linkShape
 
 // `list` hands out the scan's own items, which carry more than the SDK's
