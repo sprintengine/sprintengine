@@ -282,7 +282,7 @@ recordThirdPartyMainLaunchReport(
 const moduleAssetOrigin = createModuleAssetOriginResolver(app.getPath('userData'))
 // Trusted third-party entry.renderer bundles are served on demand (the trust
 // store is re-read per request, so revoking trust takes effect immediately).
-registerThirdPartyRendererEntryIpc(moduleLoad.kernel.hostFor('@host'), {
+registerThirdPartyRendererEntryIpc(ipcMain, {
   discoverModules: () => discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext()),
   trustContext: readModuleTrustContext,
   assetOrigin: moduleAssetOrigin,

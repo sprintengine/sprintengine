@@ -26,6 +26,8 @@ import type { ScheduledAgentsStore } from './store'
 type CapPreset = (preset: CliPermissionPreset | null) => CliPermissionPreset | null
 
 export type ScheduledAgentsService = {
+  /** Settles once the schedule file has been read: a list asked before then would be empty. */
+  loaded(): Promise<void>
   list(options?: { ownerModuleId?: string }): ScheduledAgentView[]
   get(id: string): ScheduledAgentView | null
   create(
@@ -128,6 +130,7 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
   })
 
   return {
+    loaded: () => deps.store.load(),
     list(options) {
       const owner = options?.ownerModuleId
       return listViews().filter((agent) => owner === undefined || agent.ownerModuleId === owner)

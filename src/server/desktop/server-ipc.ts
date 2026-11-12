@@ -29,6 +29,8 @@ import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
 import { registerStudioLocalAppsIpc } from '../../main/ipc/studio-local-apps-ipc'
 import { registerUsageLimitResumeIpc } from '../../main/ipc/usage-limit-resume-ipc'
 import { registerScheduledMessagesIpc } from '../../main/ipc/scheduled-messages-ipc'
+import { registerScheduledAgentsIpc } from '../../main/scheduled-agents/scheduled-agents-ipc'
+import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { registerSettledChatsIpc } from '../../main/ipc/settled-chats-ipc'
 import { registerTextGenerationSettingsIpc } from '../../main/ipc/text-generation-settings-ipc'
 import { registerUsageLimitsIpc } from '../../main/ipc/usage-limits-ipc'
@@ -93,6 +95,8 @@ export type ServerDomainIpcDeps = {
   files: ReturnType<typeof createFilesystemReadHandlers> & ReturnType<typeof createFilesystemWatchSearchHandlers>
   /** Only an app window may pair a local app: `assertAppSender` in main; the port is the check in the server. */
   assertAppSender: (event: IpcMainInvokeEvent) => void
+  /** The scheduled-agents module's service, or null while it is off; asked on every call. */
+  scheduledAgents: () => ScheduledAgentsService | null
 }
 
 export type ServerDomainIpcHandles = {
@@ -132,6 +136,8 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   })
   // The messages a person scheduled into a chat, sent when their time comes.
   registerScheduledMessagesIpc(ipc, core.scheduledMessages)
+  // The Schedules window's: always registered, refused while the module is off.
+  registerScheduledAgentsIpc(ipc, { service: deps.scheduledAgents })
   registerLaunchSettingsIpc(ipc, { launchSettings: core.agentLaunchSettings })
   // The titles setting each window pushes; the chats are titled where they run.
   registerTextGenerationSettingsIpc(ipc, core.textGenerationSettings)

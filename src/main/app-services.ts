@@ -2541,6 +2541,8 @@ export function createAppServices(
     telemetryConsentStore,
     analytics,
     readBackgroundStatus,
+    /** The scheduled-agents module's service, or null while it is off (or before modules load). */
+    scheduledAgents: (): ScheduledAgentsService | null => resolveScheduledAgents(),
     setScheduledAgentsResolver(resolver: () => ScheduledAgentsService | null): void {
       resolveScheduledAgents = resolver
     },

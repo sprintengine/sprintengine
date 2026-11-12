@@ -1102,7 +1102,7 @@ decision O4 and is not part of phase 6.
 | Module | Wiring today | Electron use in its main half | Server half | Client half | Phase |
 | --- | --- | --- | --- | --- | --- |
 | agent-runtime | kernel module (`agent-runtime-module.ts`) | `app.getPath`, `safeStorage` | conversation, workspace, storage, secrets, GitHub and companion services | — | 6 |
-| scheduled-agents | kernel module; six `scheduled-agents:*` channels registered directly | broadcast loop, `app.getPath` | store, scheduler, runner, gateway `schedule.*` tools, the six channels (tunnelled) | panel | 6 |
+| scheduled-agents | kernel module; its `scheduled-agents:*` channels are registered with the server's domains (`registerScheduledAgentsIpc`), refused while the module is off | broadcast loop, `app.getPath` | store, scheduler, runner, gateway `schedule.*` tools, the eleven channels (tunnelled) | panel | 6 |
 | third-party | kernel, `createRequire` in main, no sandbox | anything | `entry.main` unless it needs `electron-main` (12.4) | `entry.renderer`, `studio-module://` assets (shell) | 6 |
 | canvas | static (`registerCanvasIpc`, `canvas-service.ts`) | hidden worker window, `WebContents` subscribers, export dialog | **none** (2026-10-02): the board files, through `files.*` (phase 5) | everything else: the service, merge, worker window, `canvas.*` tools as the shell's `canvas` toolset, the editor, the export dialog | 5 |
 | backlog | static (`registerBacklogIpc`, 17 handlers) | none | backlog service, `backlog.*` tools, mobile control | panel | 6 (the gateway needs it) |

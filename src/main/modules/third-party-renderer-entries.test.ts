@@ -8,7 +8,6 @@ import { join } from 'path'
 import type { CapabilityManifest, ThirdPartyRendererEntriesResult } from '../../shared/modules/manifest'
 import { THIRD_PARTY_RENDERER_ENTRIES_CHANNEL } from '../../shared/modules/manifest'
 import { canonicalManifestPayload } from '../../shared/modules/third-party-manifest'
-import { createMainKernel } from '../module-host/main-host'
 import { manifestFingerprint, type ModuleTrustContext } from './module-signature'
 import {
   collectThirdPartyRendererEntries,
@@ -258,12 +257,10 @@ test('third-party-renderer-entries', async () => {
           handlers.set(channel, handler)
         },
       } as unknown as IpcMain
-      const kernel = createMainKernel(ipcMain)
-      registerThirdPartyRendererEntryIpc(kernel.hostFor('@host'), {
+      registerThirdPartyRendererEntryIpc(ipcMain, {
         discoverModules: () => discoverUserModules(root, trust),
       })
 
-      assert.equal(kernel.ownedChannels().get(THIRD_PARTY_RENDERER_ENTRIES_CHANNEL), '@host')
       const handler = handlers.get(THIRD_PARTY_RENDERER_ENTRIES_CHANNEL)
       assert.ok(handler, 'channel handler is registered on ipcMain')
       const result = (await handler({} as IpcMainInvokeEvent)) as ThirdPartyRendererEntriesResult

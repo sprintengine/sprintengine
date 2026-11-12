@@ -436,6 +436,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     files,
     // The window's port is the check: main brokers one only to an app window.
     assertAppSender: () => undefined,
+    scheduledAgents: () => modules.scheduledAgents(),
   })
   modules.load(tunnel.registry, gateway)
 
