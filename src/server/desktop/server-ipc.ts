@@ -19,7 +19,8 @@ import { registerBacklogIpc } from '../../main/ipc/backlog-ipc'
 import { registerCliModelDiscoveryIpc } from '../../main/ipc/cli-model-discovery-ipc'
 import { registerConversationCommandsIpc } from '../../main/ipc/conversation-commands-ipc'
 import { registerConversationImportIpc } from '../../main/ipc/conversation-import-ipc'
-import { createConversationIpcHandlers, registerConversationIpc } from '../../main/ipc/conversation-ipc'
+import { registerConversationIpc } from '../../main/ipc/conversation-ipc'
+import { createConversationService } from '../../main/conversation-service'
 import { registerCredentialIpc } from '../../main/ipc/credential-ipc'
 import { registerGitHubReposIpc } from '../../main/ipc/github-repos-ipc'
 import { registerGitHubTokenIpc } from '../../main/ipc/github-token-ipc'
@@ -139,14 +140,17 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerBacklogIpc(ipc)
   registerGitHubTokenIpc(ipc, deps.githubTokenStore)
   registerGitHubReposIpc(ipc, deps.githubTokenStore)
-  // Over the core's chats, as every in-process consumer reaches them.
-  const conversationHandlers = createConversationIpcHandlers(core.conversations)
-  registerConversationIpc(ipc, { ...conversationHandlers, terminalHandoff: deps.terminalHandoff })
-  // The Studio RPC's chat surface is these same handlers, so a chat view on
-  // the protocol and one on IPC reach one chat by the same rules.
+  // One conversation service over the core's chats: the windows' IPC and the
+  // Studio RPC's chat surface both serve it, so a chat view on the protocol
+  // and one on IPC reach one chat by the same rules.
+  const conversationService = {
+    ...createConversationService(core.conversations),
+    terminalHandoff: deps.terminalHandoff,
+  }
+  registerConversationIpc(ipc, conversationService)
   deps.studioRpc.provideChat(
     createStudioChatBackend({
-      conversation: conversationHandlers,
+      conversation: conversationService,
       files: deps.files,
       repoRoot: gitRepoRootFor,
       hasReceipt: (sessionId, commandId) => core.conversations.hasCommandReceipt(sessionId, commandId),

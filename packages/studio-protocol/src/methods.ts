@@ -610,6 +610,46 @@ export function authorizeStudioTopic(
 }
 
 /**
+ * What each method asks of its caller, derived from the table: the permissions
+ * it needs and whether it is an owner's only. A client reads what a grant
+ * reaches here (`studioGrantAllows`), never off `grant.owner`.
+ */
+export const STUDIO_METHOD_ACCESS = Object.freeze(
+  Object.fromEntries(
+    (Object.keys(STUDIO_METHODS) as StudioMethod[]).map((method) => [
+      method,
+      studioSpecAccess(STUDIO_METHODS, method) as StudioAccess,
+    ]),
+  ),
+) as { readonly [M in StudioMethod]: StudioAccess }
+
+/** The same for each topic. */
+export const STUDIO_TOPIC_ACCESS = Object.freeze(
+  Object.fromEntries(
+    (Object.keys(STUDIO_TOPICS) as StudioTopic[]).map((topic) => [
+      topic,
+      studioSpecAccess(STUDIO_TOPICS, topic) as StudioAccess,
+    ]),
+  ),
+) as { readonly [T in StudioTopic]: StudioAccess }
+
+/**
+ * Whether a grant as it stands reaches a method: the server's grant check
+ * (`authorizeStudioMethod`), for a client deciding whether to offer a control.
+ * Unknown methods are not reached. A request it allows can still be refused
+ * by a rule on its params (a folder only an owner may name, a file's bytes
+ * staged for `files.write`) or for a capability the Studio does not advertise.
+ */
+export function studioGrantAllows(grant: { owner: boolean; scopes: readonly string[] }, method: string): boolean {
+  return authorizeStudioMethod(grant, method).ok
+}
+
+/** The same for subscribing to a topic. */
+export function studioGrantAllowsTopic(grant: { owner: boolean; scopes: readonly string[] }, topic: string): boolean {
+  return authorizeStudioTopic(grant, topic).ok
+}
+
+/**
  * What a `scope_required` refusal names: the method's scope when that is what
  * is missing, as a client asks to be granted it, else the permission itself.
  */

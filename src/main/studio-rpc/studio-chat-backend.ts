@@ -14,12 +14,12 @@ import {
   parseSetPermissionInput,
   parseStartSessionInput,
 } from '../conversation-ipc-inputs'
-import type { ConversationIpcHandlers } from '../ipc/conversation-ipc'
+import type { ConversationService } from '../conversation-service'
 import { confineToRoots } from './studio-file-confinement'
 import { expandHomePath } from '../home-path'
 
-// The Studio RPC's chat surface in main: the very handlers the conversation
-// IPC serves Studio's windows with, behind the same input checks
+// The Studio RPC's chat surface in main: the conversation service the
+// conversation IPC serves Studio's windows from, behind the same input checks
 // (conversation-ipc-inputs.ts) and the same fallbacks, so a chat view reaching
 // them over a port is answered exactly as one reaching them over IPC. Nothing
 // here is new behaviour; where an IPC handler wraps a throw into
@@ -31,7 +31,7 @@ import { expandHomePath } from '../home-path'
 // dropped connection with its first result.
 
 type ChatHandlers = Pick<
-  ConversationIpcHandlers,
+  ConversationService,
   | 'startSession'
   | 'sendTurn'
   | 'interrupt'

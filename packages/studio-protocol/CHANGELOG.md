@@ -48,6 +48,13 @@
 
 ### Added
 
+- **What a grant reaches, from the table** (`methods.ts`):
+  `STUDIO_METHOD_ACCESS` and `STUDIO_TOPIC_ACCESS` (each method's and topic's
+  permissions, and whether it is an owner's only), and `studioGrantAllows` /
+  `studioGrantAllowsTopic`, the server's grant check for a client deciding
+  whether to offer a control, so no client reads `grant.owner`. A request can
+  still be refused by a rule on its params (a folder only an owner may name, a
+  file's bytes) or for a capability the Studio does not advertise.
 - **Environments** (`environment.ts`): one way to name a Studio and a chat in
   it. `EnvironmentDescriptor` (a `welcome` under the client's name for the
   machine, `environmentDescriptorOf`); `EnvironmentRoute` (`local`,

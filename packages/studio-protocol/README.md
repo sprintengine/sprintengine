@@ -90,7 +90,9 @@ The `welcome`'s `grant` is what the connection may do:
   ceiling of at least `auto`.
 - `owner` — the connection is Studio's own, with every scope and no ceiling.
   Some methods are an owner's only (`STUDIO_METHODS[m].owner`), whatever
-  scopes another grant holds, and are refused `owner_required`.
+  scopes another grant holds, and are refused `owner_required`. A client asks
+  whether its grant reaches a method with `studioGrantAllows(grant, method)`
+  (`STUDIO_METHOD_ACCESS` holds the table) rather than reading `grant.owner`.
 
 ## Methods
 

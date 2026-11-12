@@ -60,6 +60,8 @@ const SERVER_BOUND: readonly string[] = [
   'src/main/model-discovery/service.ts',
   // Launch.
   'src/main/conversation-launch-service.ts',
+  // The conversation service the IPC and the Studio protocol both serve.
+  'src/main/conversation-service.ts',
   'src/main/agent-launch-service.ts',
   'src/main/terminal-launch.ts',
   'src/main/managed-runtime.ts',

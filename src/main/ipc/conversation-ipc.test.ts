@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 
-import { createHarnessCliCheck, registerConversationIpc, type HarnessCliCheckDeps } from './conversation-ipc'
+import { createHarnessCliCheck, type ConversationService, type HarnessCliCheckDeps } from '../conversation-service'
+import { registerConversationIpc } from './conversation-ipc'
 import {
   ATTACHABLE_IMAGE_TYPES,
   MAX_ATTACHMENTS_PER_TURN,
   MAX_ATTACHMENT_BYTES,
 } from '../../shared/conversation-attachments'
-import type { ConversationIpcHandlers } from './conversation-ipc'
 import type {
   CliAvailability,
   CliDetectResult,
@@ -180,7 +180,6 @@ test('conversation-ipc', async () => {
         calls.push(`permission:${input.sessionId}:${input.permissionPreset}`)
         return actionResult
       },
-      readTranscript: async () => ({ ok: false, message: 'unused' }),
       stopSession: async (input) => {
         calls.push(`stop:${input.sessionId}`)
         return actionResult
@@ -562,7 +561,7 @@ test('conversation-ipc', async () => {
   }
 
   function runtimeHandlerStubs(): Pick<
-    ConversationIpcHandlers,
+    ConversationService,
     | 'listProviderModels'
     | 'startSession'
     | 'sendTurn'
@@ -571,7 +570,6 @@ test('conversation-ipc', async () => {
     | 'setPermission'
     | 'stopSession'
     | 'listSessions'
-    | 'readTranscript'
     | 'onEvent'
   > {
     return {
@@ -583,7 +581,6 @@ test('conversation-ipc', async () => {
       setPermission: async () => ({ ok: false, message: 'unused' }),
       stopSession: async () => ({ ok: false, message: 'unused' }),
       listSessions: () => ({ ok: true, sessions: [] }),
-      readTranscript: async () => ({ ok: false, message: 'unused' }),
       onEvent: () => () => undefined,
     }
   }
@@ -598,7 +595,7 @@ test('conversation-ipc', async () => {
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown
 
-function registerWithRuntimeListeners(extra: Partial<ConversationIpcHandlers> = {}) {
+function registerWithRuntimeListeners(extra: Partial<ConversationService> = {}) {
   const handlers = new Map<string, Handler>()
   const listeners = new Set<(event: ConversationEvent) => void>()
   const scoped = new Set<(frame: ConversationSessionFrame) => void>()
@@ -619,7 +616,6 @@ function registerWithRuntimeListeners(extra: Partial<ConversationIpcHandlers> = 
       setPermission: async () => ({ ok: false, message: 'unused' }),
       stopSession: async () => ({ ok: false, message: 'unused' }),
       listSessions: () => ({ ok: true, sessions: [] }),
-      readTranscript: async () => ({ ok: false, message: 'unused' }),
       onEvent: (listener) => {
         listeners.add(listener)
         return () => listeners.delete(listener)

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { expect, test } from 'vitest'
-import { registerConversationIpc, type ConversationIpcHandlers } from './conversation-ipc'
+import type { ConversationService } from '../conversation-service'
+import { registerConversationIpc } from './conversation-ipc'
 
 test('history search batches, cancellation and cleanup are scoped to the requesting renderer', async () => {
   const routes = new Map<string, (event: { sender: Sender }, input: unknown) => unknown>()
@@ -27,13 +28,13 @@ test('history search batches, cancellation and cleanup are scoped to the request
       emitBatch()
       return { ok: false, message: 'cancelled' }
     },
-  } satisfies Partial<ConversationIpcHandlers>
+  } satisfies Partial<ConversationService>
   registerConversationIpc(
     {
       handle: (channel: string, handler: (event: { sender: Sender }, input: unknown) => unknown) =>
         routes.set(channel, handler),
     } as never,
-    handlers as ConversationIpcHandlers,
+    handlers as ConversationService,
   )
   const owner = new Sender(1),
     other = new Sender(2)

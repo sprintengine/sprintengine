@@ -89,7 +89,7 @@ Three facts from that reading shape this phase:
    `module-host/module-conversation-service.ts`,
    `automation/tailnet/tailnet-conversation-host.ts`,
    `modules/scheduled-agents-module.ts`, `modules/agent-runtime-module.ts`,
-   `ipc/conversation-ipc.ts`. If WSL chats moved out without a seam under all
+   `conversation-service.ts` (then `ipc/conversation-ipc.ts`). If WSL chats moved out without a seam under all
    of them, the phone, scheduled agents and gateway tools would lose WSL chats
    that work today. Section 5 is that seam.
 3. **WSL chats had no Studio gateway.** A launch's MCP channel token was

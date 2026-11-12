@@ -16,7 +16,7 @@ import type {
   MockAdapterSessionInput,
   MockAdapterTurnInput,
 } from '../main/providers/mock-conversation-provider'
-import type { ConversationIpcHandlers } from '../main/ipc/conversation-ipc'
+import type { ConversationService } from '../main/conversation-service'
 import { test, vi } from 'vitest'
 
 // The IPC wire between the real preload and the real main handlers.
@@ -25,7 +25,7 @@ vi.mock('electron', () => import('../../tests/stubs/electron'))
 test('conversationSeam', async () => {
   // The input each stubbed IPC handler is handed, read off the real handler
   // surface so a stub cannot drift from the channel it stands in for.
-  type HandlerInput<K extends keyof ConversationIpcHandlers> = Parameters<NonNullable<ConversationIpcHandlers[K]>>[0]
+  type HandlerInput<K extends keyof ConversationService> = Parameters<NonNullable<ConversationService[K]>>[0]
 
   // ── Seam: the conversation composer and its runtime (T4 → T5, items 1798/1809/1810)
   //
@@ -124,7 +124,6 @@ test('conversationSeam', async () => {
       getSecretStatus: refuse,
       setSecret: refuse,
       clearSecret: refuse,
-      readTranscript: refuse,
     }
   }
 
