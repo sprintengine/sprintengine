@@ -139,7 +139,8 @@ Each fact was measured or read in this tree (section 13 has the numbers):
   depends on it: the MCP stdio bridge, the `studio-run` launcher, hook scripts
   and the managed npm shims all run `process.execPath` with
   `ELECTRON_RUN_AS_NODE=1`.
-- **`utilityProcess` is already used**, by `design-system/utility-process-fork.ts`.
+- **`utilityProcess` was already used**, by the design-system bundle scripts (they
+  now run in a child process of the Studio server, `design-system/bundle-script-process.ts`).
   - It cannot be forked before `ready`.
   - Its `process.execPath` is the **Helper** binary, not the app binary.
   - `require('electron')` inside it returns only `{ net, systemPreferences }`.
