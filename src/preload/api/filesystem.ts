@@ -120,7 +120,6 @@ export const filesystemApi = {
   openDir: (options?: { defaultPath?: string }) => ipcRenderer.invoke('fs:dialog:opendir', options),
   openProjectIconFile: (options?: { defaultPath?: string }) =>
     ipcRenderer.invoke('fs:dialog:open-project-icon', options),
-  ensureDefaultUserSkillsDir: () => ipcRenderer.invoke('skills:ensure-default-user-dir'),
   defaultWorkspaceParentDir: () => ipcRenderer.invoke('app:default-workspace-parent'),
   projectlessChatsRoot: () => ipcRenderer.invoke('chats:projectless-root'),
   createProjectlessChatFolder: (prompt?: string) => ipcRenderer.invoke('chats:projectless-folder:create', prompt),
@@ -169,7 +168,6 @@ export const filesystemApi = {
   | 'watchPath'
   | 'openDir'
   | 'openProjectIconFile'
-  | 'ensureDefaultUserSkillsDir'
   | 'defaultWorkspaceParentDir'
   | 'projectlessChatsRoot'
   | 'createProjectlessChatFolder'

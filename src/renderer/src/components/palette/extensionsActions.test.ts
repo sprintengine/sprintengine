@@ -21,6 +21,7 @@ import type { ExtensionPluginRow, ExtensionSkillRow } from './extensionsProvider
 import { AGENT_NO_LONGER_RUNNING_MESSAGE, type LiveAgentSession } from '../../utils/useSkillInAgent'
 import { test, vi } from 'vitest'
 import { terminalsDouble } from '../../studio/terminals.double'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 

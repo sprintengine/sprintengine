@@ -110,6 +110,7 @@ export function createStudioRpc(
     // core's, in every mode.
     runtimes: core.agents.runtimes,
     agentSetup: core.agents.setup,
+    agentSkills: core.agents.skills,
     // What every launch here reads, and what the CLIs write for it, served
     // where the launch settings and the model catalog cache are.
     agentSettings: createStudioAgentSettings({

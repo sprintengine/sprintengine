@@ -34,6 +34,7 @@ import { skillSourceMonogram, type SkillSource } from '../../../../../../../shar
 import { GhostButton, InlineNotice, SettingCard, Spinner } from '../../../../ui'
 import { ConnectorRow, ConnectorSectionHeading } from '../../../../panels/ConnectorsPanel/ConnectorRow'
 import { SourceMonogram } from '../skills/SourceMonogram'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
 
 /** What a recommendation's `kind` is called on the row. */
 const KIND_LABEL: Record<HostedSource['kind'], string> = {
@@ -101,7 +102,7 @@ export function RecommendedSources({
 
   const add = useCallback(
     async (source: HostedSource): Promise<void> => {
-      if (typeof window.api.skillsAddSource !== 'function' || busyRepo) return
+      if (typeof agentSkillsApi.skillsAddSource !== 'function' || busyRepo) return
       setBusyRepo(source.repo)
       setFailure(null)
       try {
@@ -109,7 +110,7 @@ export function RecommendedSources({
         // shape. `replace` stays false: a repository already in the list is a
         // recommendation that should not have been offered, and silently
         // re-adding it would hide that rather than report it.
-        const result = await window.api.skillsAddSource({ repo: source.repo })
+        const result = await agentSkillsApi.skillsAddSource({ repo: source.repo })
         if (!result.ok) {
           setFailure({ repo: source.repo, message: result.message })
           return

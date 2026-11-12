@@ -10,6 +10,7 @@ import { extensionIconProps, pluginArtwork } from '../../../workspace/globalSurf
 import { summarizePluginInstall } from '../../../workspace/globalSurface/extensions/plugins/pluginsSurfaceModel'
 import { describeServer, initialSelection, PRESELECT_SKILLS_UP_TO, pluginReadWhole } from './pluginOfferModel'
 import { agentSetupApi } from '../../../../studio/agentSetup'
+import { agentSkillsApi } from '../../../../studio/agentSkills'
 
 // The one step between an agent's offer and anything landing on disk: what
 // the plugin is, where it comes from, and the servers and skills it would
@@ -57,7 +58,7 @@ export function PluginInstallDialog({
   useEffect(() => {
     if (plugin) return
     let cancelled = false
-    window.api
+    agentSkillsApi
       .skillsScanLinkedPlugin({ sourceId: source.id, pluginId: offered.id })
       .then((read) => {
         if (cancelled) return
@@ -89,7 +90,7 @@ export function PluginInstallDialog({
     try {
       // Both lists, always, even empty: a chosen install is the one that never
       // brings a plugin's hooks along.
-      const result = await window.api.skillsInstallPlugin({
+      const result = await agentSkillsApi.skillsInstallPlugin({
         sourceId: source.id,
         pluginId: plugin.id,
         workspaceRoot,

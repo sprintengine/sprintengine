@@ -66,6 +66,7 @@ import {
   summarizeSyncRun,
   type SkillListItem,
 } from './skillsSurfaceModel'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
 
 const MISSING_API_MESSAGE = 'Skills need an app restart before they are available.'
 
@@ -222,14 +223,14 @@ export function SkillsCatalogue({
     // project; `workspace` installs into the open folder only.
     async (source: SkillSource, skillId: string, scope: SkillInstallScope = 'global'): Promise<boolean> => {
       if (scope === 'workspace' && !workspaceRoot) return false
-      if (typeof window.api.skillsInstall !== 'function') {
+      if (typeof agentSkillsApi.skillsInstall !== 'function') {
         setReport({ sourceId: source.id, outcome: null, error: MISSING_API_MESSAGE })
         return false
       }
       setInstalling(skillId)
       setReport(null)
       try {
-        const result = await window.api.skillsInstall({ sourceId: source.id, skillId, workspaceRoot, scope })
+        const result = await agentSkillsApi.skillsInstall({ sourceId: source.id, skillId, workspaceRoot, scope })
         setReport(
           result.ok
             ? { sourceId: source.id, outcome: summarizeInstallRun(1, []), error: null }
@@ -262,7 +263,7 @@ export function SkillsCatalogue({
     async (dirName: string): Promise<void> => {
       setSkillMessage(null)
       try {
-        const result = await window.api.skillsUninstall({ workspaceRoot, dirName })
+        const result = await agentSkillsApi.skillsUninstall({ workspaceRoot, dirName })
         setSkillMessage(result.ok ? `${dirName} removed.` : result.message)
         if (result.ok) {
           setInventoryNonce((count) => count + 1)

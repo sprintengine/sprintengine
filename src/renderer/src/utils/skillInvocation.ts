@@ -5,6 +5,7 @@ import {
   renderSkillInvocationTemplate,
   resolveSkillInvocation,
 } from '../../../shared/skill-invocation'
+import { agentSkillsApi } from '../studio/agentSkills'
 
 // Re-exported from the node-free shared module (its home now that the automation
 // backlog.work handoff composes invocations in main); existing renderer callers
@@ -148,7 +149,7 @@ export async function ensureSkillForAgent(input: {
 }): Promise<{ ok: true; targets: AgentSkillTarget[] } | { ok: false; message: string }> {
   const { workspaceRoot, skill } = input
   try {
-    const result = await window.api.agentSkillAttach({ workspaceRoot, skillId: skill.id })
+    const result = await agentSkillsApi.agentSkillAttach({ workspaceRoot, skillId: skill.id })
     if (!result.ok) return { ok: false, message: result.message }
     const usable = result.targets.filter((target) => target.status !== 'failed')
     if (usable.length > 0) return { ok: true, targets: result.targets }

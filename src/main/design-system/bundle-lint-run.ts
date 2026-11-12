@@ -11,9 +11,9 @@ export interface BundleScriptExit {
 }
 
 /**
- * Runs one bundle script. Production passes the Electron utilityProcess
- * binding (utility-process-fork.ts), so bundle scripts never run in the main
- * process; tests inject a plain child_process fork.
+ * Runs one bundle script. The Studio passes a child process of its own
+ * (bundle-script-process.ts), so bundle scripts never run in the Studio's
+ * process; tests inject their own.
  */
 export type BundleScriptFork = (
   scriptPath: string,

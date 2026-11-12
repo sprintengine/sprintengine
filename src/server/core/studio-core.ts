@@ -108,6 +108,7 @@ import { createSettledChatsSettingsStore } from '../../main/settled-chats-settin
 import { createStudioSettlement } from './studio-settlement'
 import { createStudioWorktreePool, WORKTREE_QUIT_WAIT_MS } from './studio-worktree-pool'
 import { createStudioAgents, type StudioAgentServices } from './studio-agent-services'
+import type { StudioAgentSkillsDeps } from './studio-agent-skills'
 import {
   createStudioAgentTerminals,
   type StudioAgentTerminals,
@@ -165,6 +166,8 @@ export type StudioCoreOptions = {
    * core builds its own (studio-agent-services.ts).
    */
   agentServices?: StudioAgentServices
+  /** What the desktop's shell adds to the agents' skills and cards: its Trash, its marketplace, its window focus. */
+  agentSkills?: Omit<StudioAgentSkillsDeps, 'mcpConfig'>
   /**
    * Who turns the scheduler on. A process with a module kernel (the desktop,
    * in process and out) turns it on and off with the person's Scheduled
@@ -266,6 +269,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   const agents = createStudioAgents(platform, {
     agentLaunchSettings,
     ...(options.agentServices ? { services: options.agentServices } : {}),
+    ...(options.agentSkills ? { skills: options.agentSkills } : {}),
   })
 
   // The authoritative workspace registry. Routing lives in the record, so no

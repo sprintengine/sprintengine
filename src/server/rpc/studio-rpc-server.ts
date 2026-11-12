@@ -23,6 +23,7 @@ import {
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
+  STUDIO_AGENT_SKILLS_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
@@ -44,6 +45,7 @@ import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
+import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type {
   StudioAuditEntry,
   StudioAuthenticator,
@@ -161,6 +163,8 @@ export type StudioRpcServerOptions = {
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats. Advertised as `chat-stores` only when given. */
   chatStores?: StudioChatStores
+  /** The skills, design systems and cards the agents are given. Advertised as `agent-skills` only when given; every Studio's core gives them. */
+  agentSkills?: StudioAgentSkills
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** The protocol window this Studio speaks: this build's unless given (a test standing in for an older or newer one). */
@@ -232,6 +236,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_AGENT_SETTINGS_CAPABILITY || options.agentSettings !== undefined) &&
         (capability !== STUDIO_AGENT_SETUP_CAPABILITY || options.agentSetup !== undefined) &&
         (capability !== STUDIO_CHAT_STORES_CAPABILITY || options.chatStores !== undefined) &&
+        (capability !== STUDIO_AGENT_SKILLS_CAPABILITY || options.agentSkills !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined),
@@ -258,6 +263,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
     ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
     ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+    ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.modules ? { modules: options.modules } : {}),
     log: options.log,
@@ -296,6 +302,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
         ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
         ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+        ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,
@@ -341,6 +348,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
         ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
         ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+        ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,

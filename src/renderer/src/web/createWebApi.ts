@@ -115,7 +115,6 @@ const browserEmptyStates = {
   getWindowPlacement: async () => null,
   updateAppMenuAccelerators: async () => ({ ok: true as const }),
   authGetState: async () => SIGNED_OUT,
-  listDesignSystemArrivals: async () => ({ bundles: [] }),
   editorRevealClaim: async () => null,
   // The desktop's browser pane; a tab shows previews instead, and has no pane to note.
   browserNoteActive: async () => undefined,

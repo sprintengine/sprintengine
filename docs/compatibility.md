@@ -1169,7 +1169,20 @@ is not an owner, and one on an SSH machine is refused in words for now.
 `mcp.sync`, `agentConfig.adopt` and the activity hook's install and uninstall
 are an owner's: they write what the agent CLIs run. Every Studio advertises
 `agent-setup` too, about its own machine; the first builds with it did so only
-in process.
+in process. `agent-skills` (2026-11-12) adds the skills, design systems and
+cards a Studio's agents are given: `skillSources.*` with
+`skillSources.updated`, `skills.*`, `skillPlugins.*`, `workspaceSkills.list`,
+`installedSkills.*`, `agentCapabilities.resolve`, `agentSkills.attach`,
+`designSystem.*` and `cards.run`. Every folder a client that is not an owner
+names (a workspace, a local source, a bundle, a library entry's registered
+folder) is held to the folders the Studio knows, on the path it resolves to,
+and a design library listing shows such a client only those. A plugin's
+install and uninstall, a bundle's lint (it runs the bundle's own script) and a
+card's Go are an owner's. A Studio without the desktop's shell beside it (on a
+WSL or SSH machine) answers a card's `install.module` and an installed skill's
+removal to the Trash in words. A window that meets a Studio without
+`agent-skills` says the Studio is older. The desktop's own windows reach all
+of them only this way: their window IPC is gone.
 `environment-readiness` (2026-11-12) adds `environment.readiness`, under
 `providers:read`: what the Studio's machine has and lacks for the work it
 runs on its own (its CLIs, installed and signed in where it can tell, `gh`, MCP

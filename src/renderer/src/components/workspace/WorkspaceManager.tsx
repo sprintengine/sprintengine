@@ -320,6 +320,7 @@ import {
 import { windowChatServices } from '../panels/agentChat/windowChat'
 import { agentSettingsApi, windowHasStudio } from '../../studio/agentSettings'
 import { agentSetupApi } from '../../studio/agentSetup'
+import { agentSkillsApi } from '../../studio/agentSkills'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -1672,8 +1673,8 @@ export default function WorkspaceManager() {
   // already marked stays marked on its rail row and is not announced again.
   // Button-free, like every toast but the CLI update; Sync lives on the source.
   useEffect(() => {
-    if (typeof window.api?.onSkillSourcesUpdated !== 'function') return
-    return window.api.onSkillSourcesUpdated((check) => {
+    if (typeof agentSkillsApi.onSkillSourcesUpdated !== 'function') return
+    return agentSkillsApi.onSkillSourcesUpdated((check) => {
       const notice = sourceUpdatesNotice(check)
       if (!notice) return
       showToast({ tone: 'accent', title: notice.title, description: notice.description })
@@ -3263,11 +3264,11 @@ export default function WorkspaceManager() {
    */
   const runCardGo = useCallback(
     async (card: HostedCard, launch: CardLaunchChoice): Promise<void> => {
-      if (typeof window.api?.cardsRun !== 'function') return
+      if (typeof agentSkillsApi.cardsRun !== 'function') return
       const state = useWorkspaceStore.getState()
       const workspaceRoot =
         state.workspaces.find((workspace) => workspace.id === windowActiveWorkspaceId)?.folderPath ?? null
-      const result = await window.api
+      const result = await agentSkillsApi
         .cardsRun({
           slug: card.slug,
           actions: card.go,
@@ -3377,8 +3378,8 @@ export default function WorkspaceManager() {
       // for itself, and dropping the whole chat over a stale name would throw
       // away the run that succeeded.
       const skills =
-        chatRoot && chat.skills.length > 0 && typeof window.api.workspaceSkillsList === 'function'
-          ? await window.api
+        chatRoot && chat.skills.length > 0 && typeof agentSkillsApi.workspaceSkillsList === 'function'
+          ? await agentSkillsApi
               .workspaceSkillsList({ workspaceRoot: chatRoot })
               .then((listed) => (listed.ok ? listed.skills.filter((skill) => chat.skills.includes(skill.id)) : []))
               .catch(() => [] as WorkspaceSkill[])

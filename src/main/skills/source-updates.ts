@@ -39,8 +39,6 @@ import { parseSkillRepoRef, resolveSkillRepoCommit, skillRepoName, type SkillGit
 import type { SkillRepoReader, SkillRepoTransport } from './repo-reader'
 import type { SkillSourceStore } from './source-store'
 
-export const SKILL_SOURCES_UPDATED_CHANNEL = 'skills:sources-updated'
-
 export type SourceUpdateCheckerDeps = {
   store: SkillSourceStore
   resolveToken: () => Promise<string>

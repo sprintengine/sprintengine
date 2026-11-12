@@ -87,6 +87,8 @@ export const SERVER_METHODS = {
   cliDetect: 'cli.detect',
   /** → the advisories: the hourly comparison of the installed CLI versions against the registry. */
   cliVersionsRefresh: 'cli-versions.refresh',
+  /** → the check's result: the hourly check of the skill sources, which the shell times and the server runs. */
+  skillSourcesCheck: 'skill-sources.check',
 } as const
 
 /** Server → shell requests: the shell's own caches the gateway's tools read. */
@@ -112,6 +114,12 @@ export const SHELL_METHODS = {
    * update itself (`update.start`); the app updater is the shell's.
    */
   updateStart: 'shell.update.start',
+  /** → the marketplace install receipts: a card's Go installs a module once. */
+  marketplaceReceipts: 'shell.marketplace.receipts',
+  /** `MarketplacePluginLifecycleInstallInput` → its result: a card's `install.module`, through the shell's lifecycle. */
+  marketplaceInstall: 'shell.marketplace.install',
+  /** `{ path }` → nothing once moved: a removed skill's folder to this computer's Trash. */
+  trash: 'shell.trash',
 } as const
 
 /** One-way, either direction. */

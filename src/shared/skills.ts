@@ -10,14 +10,43 @@
 // Renderer-safe on purpose (no node imports): the Extensions surface, the
 // reader, and the main-process scanner all speak these types.
 
-// `builtin` is gone: the app's own catalogue used to be a folder on disk, and
-// since the studio-marketplace ruling (2026-09-06) it is the repository we
-// publish, read like any other (STUDIO_SKILL_SOURCE_ID below). `connectors`
-// went the same way in the frozen-snapshots retirement (2026-09-06): it was a
-// folder scan of a snapshot of `anthropics/claude-plugins-official`, which is
-// now an always-present source read live.
-type SkillSourceKind = 'github' | 'local'
-
+import type {
+  ScanResult,
+  ScannedMcpServer,
+  ScannedPlugin,
+  ScannedPluginComponents,
+  SkillRepoTransport,
+  SkillSource,
+  SourceShape,
+} from '../../packages/studio-protocol/src/public'
+export type {
+  AgentCapabilitiesInput,
+  AgentCapabilitiesResult,
+  AgentMcpServer,
+  AgentMcpServerStatus,
+  AgentSkill,
+  AgentSkillSource,
+  CapabilityDiagnostic,
+  PluginReadState,
+  ScanResult,
+  ScannedLspServer,
+  ScannedMcpServer,
+  ScannedPlugin,
+  ScannedPluginComponents,
+  ScannedPluginHook,
+  ScannedPluginOrigin,
+  ScannedSkill,
+  SkillDiscoveryCondition,
+  SkillDiscoveryResult,
+  SkillFileRef,
+  SkillGroupingSignal,
+  SkillRateLimit,
+  SkillRepoHit,
+  SkillRepoTransport,
+  SkillSearchHit,
+  SkillSource,
+  SourceShape,
+} from '../../packages/studio-protocol/src/public'
 /**
  * An agent CLI that reads workspace skills. Which directory each one reads is
  * `SKILL_HARNESS_DIR` in src/shared/skill-harnesses.ts; this is the identity
@@ -37,18 +66,6 @@ export const INSTALL_SKILL_LABEL = 'Install skill'
 /** Which agent harness a skill targets, as the Studio protocol names it. */
 export type { SkillHarness } from '../../packages/studio-protocol/src/public'
 
-/**
- * How this machine reads repositories: over git's own protocol, or over
- * GitHub's REST API (git-transport ruling, owner 2026-09-08).
- *
- * It lives here rather than beside the reader interface because the copy is
- * what most needs it — a cadence line and a shortfall clause both change
- * wording with the transport, and neither Settings nor the Extensions door can
- * import main. `src/main/skills/repo-reader.ts` re-exports it, so the reader
- * contract stays one file.
- */
-export type SkillRepoTransport = 'git' | 'api'
-
 // Where a repository source lives — its host, path and transport — is its own
 // module; these are re-exported so the one import every caller already has
 // keeps working.
@@ -64,117 +81,9 @@ export {
   type SkillRepoLocation,
 } from './skill-repo'
 
-/** A place skills come from. `repo` is where its repository lives (`./skill-repo.ts`), '' for any other kind. */
-export type SkillSource = {
-  id: string
-  kind: SkillSourceKind
-  name: string
-  repo: string
-  /**
-   * Absolute folder path for a `local` source, '' for every other kind. A
-   * folder on this machine is a source you can point at (the source-tabs
-   * ruling, 2026-09-05: the plus offers "Add from folder…" beside "Add from
-   * GitHub…"), and the path is the only identity it has — there is no
-   * repository to name it by.
-   */
-  path?: string
-  /** 1-2 character badge shown in the source rail. */
-  monogram: string
-  blurb: string
-  /** Commit the cached scan was taken at; '' for sources with no git identity. */
-  commitSha: string
-  /** ISO timestamp of the cached scan; '' when never scanned. */
-  scannedAt: string
-  /**
-   * The repository's head the last update check resolved, when it ran. A head
-   * that differs from `commitSha` is an update the person can apply with Sync
-   * (backlog/2026-09-05-plugin-sources.md, "Update notifications").
-   */
-  headSha?: string
-  headCheckedAt?: string
-}
-
 /** True when a check has seen the source's repository move past the scanned commit. */
 export function sourceHasUpdate(source: Pick<SkillSource, 'commitSha' | 'headSha'>): boolean {
   return Boolean(source.headSha) && source.commitSha !== '' && source.headSha !== source.commitSha
-}
-
-/**
- * One file inside a skill. `path` is skill-relative with forward slashes, so
- * `agents/openai.yaml` keeps its shape when installed. `blobSha` is the git
- * blob id from the tree listing, and is '' for sources with no git identity.
- */
-export type SkillFileRef = {
-  path: string
-  size: number
-  blobSha: string
-  isEntry: boolean
-}
-
-export type ScannedSkill = {
-  /** Source-relative directory path — the skill's identity within its source. */
-  id: string
-  name: string
-  description: string
-  /** Group name, or '' when the source carries no grouping signal. */
-  group: string
-  files: SkillFileRef[]
-  allowedTools: string[]
-  hasExecutables: boolean
-  /**
-   * The optional Agent Skills fields, read from the entry document alongside
-   * the description (https://agentskills.io/specification, fetched
-   * 2026-09-06). Optional on the type because a scan cached before 2026-09-06
-   * carries none, and because most skills declare none.
-   */
-  license?: string
-  compatibility?: string
-  metadata?: Record<string, string>
-}
-
-export type SkillGroupingSignal = 'manifest' | 'folders' | 'none'
-
-export type ScanResult = {
-  skills: ScannedSkill[]
-  groups: string[]
-  groupingSignal: SkillGroupingSignal
-  fileCount: number
-  commitSha: string
-  /**
-   * Entry documents that were read and declared no `description`, and so are
-   * not skills at all (https://agentskills.io/specification, fetched
-   * 2026-09-06). They are dropped from `skills`, and counted here so the
-   * surface can say a source held something it did not list. Absent on scans
-   * cached before this was counted, which is not the same as zero.
-   */
-  skippedNoDescription?: number
-  /**
-   * What the repository turned out to be, and the plugins and MCP servers it
-   * declares (backlog/2026-09-05-plugin-sources.md). Optional because scans
-   * cached before plugins existed carry none; read them through
-   * `scanPlugins()` / `scanMcpServers()` / `scanShape()`, never directly.
-   */
-  shape?: SourceShape
-  /** The `name` a `.claude-plugin/marketplace.json` gives itself; '' without one. */
-  marketplaceName?: string
-  plugins?: ScannedPlugin[]
-  mcpServers?: ScannedMcpServer[]
-  /**
-   * The marketplace's top-level `renames`: old plugin name → the name it is
-   * listed under now. Read through `scanPluginRenames()`, never directly.
-   */
-  pluginRenames?: Record<string, string>
-  /**
-   * True when this scan is the copy that SHIPPED WITH THE APP rather than a
-   * read of the repository — the seed our own marketplace falls back to when
-   * the network is not there (studio-marketplace ruling, 2026-09-06), the same
-   * bundled-or-remote distinction `registry-client.ts` draws for the signed
-   * index. The surface says so, because "12 skills" read from a repository and
-   * "12 skills" read from the build are different claims about how current the
-   * list is. Never persisted: a seed cached as though it were a scan would
-   * stop the next launch from going and getting the real one.
-   */
-  bundled?: boolean
 }
 
 // Plugins and MCP servers: the other two kinds a source can hold.
@@ -185,8 +94,6 @@ export type ScanResult = {
 // from its `.claude-plugin/marketplace.json` when it has one (a marketplace),
 // else from every plugin manifest in its tree.
 
-export type SourceShape = 'claude-marketplace' | 'claude-plugin' | 'mcp-server' | 'skills' | 'mixed' | 'empty'
-
 export const SOURCE_SHAPE_LABEL: Record<SourceShape, string> = {
   'claude-marketplace': 'Claude Code plugin marketplace',
   'claude-plugin': 'Claude Code plugin',
@@ -194,146 +101,6 @@ export const SOURCE_SHAPE_LABEL: Record<SourceShape, string> = {
   skills: 'Skills',
   mixed: 'Skills and MCP servers',
   empty: 'Nothing installable',
-}
-
-/** Where a plugin's bytes live, which is also where its skills are read from. */
-export type ScannedPluginOrigin =
-  /** A directory in the source's own tree, '' for the root. */
-  | { kind: 'in-tree'; path: string }
-  /**
-   * A marketplace entry pointing at another repository. `sha` is the commit
-   * the marketplace pinned ('' when it pinned none), `path` the directory
-   * inside that repository ('' for the root). Its components are unknown until
-   * the plugin is opened and that repository is read.
-   */
-  | { kind: 'linked'; repo: string; ref: string; sha: string; path: string; url: string }
-  /** A marketplace-registry entry (the studio source). */
-  | { kind: 'registry'; entryId: string; sourceUrl: string }
-
-export type ScannedPluginHook = {
-  /** `PreToolUse`, `Stop`, … — the event as the plugin names it. */
-  event: string
-  /** The tool matcher, '' when the hook fires on every tool. */
-  matcher: string
-  /** The shell command, verbatim. This is what the trust prompt shows. */
-  command: string
-}
-
-/**
- * An MCP server a source declares, in the shape `McpServerConfig` takes once
- * installed. `declaredIn` is the repo-relative path of the file that declared
- * it; `declaredBy` the plugin id when a plugin ships it, '' otherwise.
- */
-export type ScannedMcpServer = {
-  id: string
-  name: string
-  description: string
-  transport: 'stdio' | 'http' | 'sse'
-  command: string
-  args: string[]
-  url: string
-  env: Record<string, string>
-  envVarNames: string[]
-  headers: Record<string, string>
-  declaredIn: string
-  declaredBy: string
-}
-
-/**
- * A language server a plugin declares. Claude Code starts it for the file
- * extensions the manifest maps, so those are what the surface can honestly say
- * the plugin covers — the twelve `*-lsp` plugins in
- * `anthropics/claude-plugins-official` are nothing BUT this declaration, their
- * directories holding a LICENSE and a README and no manifest at all.
- * `startupTimeout` is milliseconds and 0 when the manifest states none.
- */
-export type ScannedLspServer = {
-  /** The key the declaration is filed under: `clangd`, `rust-analyzer`, … */
-  id: string
-  command: string
-  args: string[]
-  /** `.ts` → `typescript`, verbatim from the manifest. */
-  extensionToLanguage: Record<string, string>
-  startupTimeout: number
-  /** Repo-relative path of the file that declared it. */
-  declaredIn: string
-  /** The plugin id, '' when nothing named one. */
-  declaredBy: string
-}
-
-export type ScannedPluginComponents = {
-  /** The plugin's skills, whole: read from wherever the plugin's bytes live. */
-  skills: ScannedSkill[]
-  /** Command names (`commands/<name>.md`). */
-  commands: string[]
-  /** Agent names (`agents/<name>.md`). */
-  agents: string[]
-  hooks: ScannedPluginHook[]
-  mcpServers: ScannedMcpServer[]
-  /**
-   * Language servers, a component kind of its own rather than a footnote on the
-   * MCP servers: an LSP server is started per file extension by the editor
-   * integration and is not an MCP endpoint at all, and a plugin can consist of
-   * nothing else.
-   */
-  lspServers: ScannedLspServer[]
-  /** Skills the entry names but that shipped with no readable directory. */
-  missingSkills: string[]
-}
-
-export type ScannedPlugin = {
-  /** The marketplace name, or the manifest name, or the directory name. */
-  id: string
-  name: string
-  description: string
-  version: string
-  category: string
-  author: string
-  homepage: string
-  origin: ScannedPluginOrigin
-  /**
-   * Whether the marketplace requires this entry to validate strictly. Absent in
-   * a manifest means true, which is the marketplace schema's own default, so
-   * only `strict: false` is ever written — and it is written by fourteen of the
-   * official marketplace's entries, which is why dropping it made those look
-   * like every other entry.
-   */
-  strict: boolean
-  /** Curation labels the marketplace applies, e.g. `community-managed`. */
-  tags: string[]
-  /** Search words the entry gives itself; distinct from `tags`, which curate. */
-  keywords: string[]
-  /**
-   * False for a linked plugin whose repository has not been read yet: its
-   * components are unknown, not empty, and the surface must say so.
-   */
-  componentsKnown: boolean
-  components: ScannedPluginComponents
-  /**
-   * How completely this plugin has been read, and why not when it has not been
-   * (linked-plugins ruling, 2026-09-06). Absent on a scan cached before the
-   * scan followed anything — which is why `componentsKnown` stays the
-   * authority on whether the components are known and this only ever explains
-   * it.
-   */
-  readState?: PluginReadState
-  /**
-   * The commit a read of a LINKED plugin actually used. Distinct from
-   * `origin.sha`, which is what the marketplace pinned and is '' when it
-   * pinned nothing: writing a resolved commit back into `origin.sha` made an
-   * entry the publisher deliberately left floating look pinned, and quietly
-   * moved installs onto whatever commit a scan happened to see (linked-plugins
-   * review, 2026-09-06).
-   */
-  readCommit?: string
-  /**
-   * The glyph the entry gives itself — an emoji, or one or two characters of
-   * text. Optional twice over: most entries declare none, and every scan
-   * cached before this was read carries none either.
-   */
-  icon?: string
-  /** An https image URL the entry gives itself. Same two absences as `icon`. */
-  logo?: string
 }
 
 /**
@@ -417,45 +184,6 @@ export function pluginLogoUrl(value: unknown): string {
     return ''
   }
 }
-
-/**
- * How completely a plugin has been read.
- *
- * A scan follows linked plugins within a budget (`MAX_LINKED_REPOSITORY_READS`
- * in src/main/skills/scan-plugins.ts), so "not read" is several very different
- * facts: one a later scan fixes by itself, one opening the plugin fixes, and
- * one no amount of either will. Saying which is the whole point — 238 rows
- * reading "Read when opened" told a person nothing about whether opening one
- * would work.
- */
-export type PluginReadState =
-  /** Components read, and every skill's entry document read with them. */
-  | { status: 'read' }
-  /**
-   * Components read from the repository's tree, but the skills' entry
-   * documents were not: the follow proves what a plugin ships without spending
-   * a request per skill across 238 repositories. Opening the plugin reads
-   * them. `componentsKnown` is true — the components really are known.
-   */
-  | { status: 'listed' }
-  /**
-   * Files the tree listed could not be fetched, so what was read is not the
-   * whole plugin. `componentsKnown` is FALSE for this: a hooks file lost to
-   * throttling would otherwise be cached as a plugin with no hooks, and the
-   * install gate would wave through the very commands it exists to disclose.
-   */
-  | { status: 'partial'; unread: string[] }
-  /**
-   * Nothing was fetched for it, for a reason about this moment rather than
-   * about the plugin: the pass's budget ran out, GitHub's rate limit did, or
-   * the network was not there. The next scan resumes where this one stopped,
-   * because every plugin already read is cached against its pinned sha and
-   * costs nothing. `blocked` marks the one repository whose reply stopped the
-   * pass, so the next pass can put it last instead of halting on it again.
-   */
-  | { status: 'pending'; reason: 'budget' | 'rate-limited' | 'offline'; blocked?: true }
-  /** Reading it was refused or failed in a way a retry will not change. */
-  | { status: 'unreadable'; message: string }
 
 /** How much of a source's linked population is read, for the head line. */
 export type LinkedPluginSummary = {
@@ -898,62 +626,6 @@ export function localSourceFolderName(path: string): string {
 // not skill collections at all. Discover produces candidates; scanning one is
 // the existing add-a-source path.
 
-/**
- * Why a Discover query could not answer in full. Always stated: an empty list
- * with no condition means "GitHub has no match", and nothing else may borrow
- * that meaning.
- */
-export type SkillDiscoveryCondition = {
-  reason: 'needs_token' | 'rate_limited' | 'query_too_short' | 'unavailable'
-  message: string
-  /** Seconds until the limit resets; 0 when GitHub did not say, or not a limit. */
-  retryAfterSeconds: number
-}
-
-/** What GitHub reported about the budget the query spent from. */
-export type SkillRateLimit = {
-  limit: number
-  remaining: number
-  /** ISO timestamp the window resets at; '' when GitHub did not say. */
-  resetAt: string
-}
-
-/** One skill found inside a repository — a candidate to scan, not a source. */
-export type SkillSearchHit = {
-  /** `owner/name`. */
-  repo: string
-  /** Repo-relative path of the matched SKILL.md. */
-  path: string
-  /** Directory holding the skill — its id once the repo is scanned; '' at the root. */
-  skillId: string
-  /** From the matched frontmatter, falling back to the directory name. */
-  name: string
-  /** From the matched frontmatter; '' when the fragment carried none. */
-  description: string
-  htmlUrl: string
-}
-
-/**
- * A repository Discover offers to scan. It carries no skill count on purpose:
- * the count is unknown until the repo is scanned, and stars do not predict it —
- * one 52k-star repo holds a single skill while a 4.9k-star one holds 103.
- */
-export type SkillRepoHit = {
-  repo: string
-  description: string
-  /** null when the result did not come with a star count — never shown as 0. */
-  stars: number | null
-  htmlUrl: string
-  /** Carries `.claude-plugin/marketplace.json`: someone curated the contents. */
-  curated: boolean
-}
-
-export type SkillDiscoveryResult<T> = {
-  results: T[]
-  rateLimit: SkillRateLimit | null
-  degraded: SkillDiscoveryCondition | null
-}
-
 /** Shortest query code search is asked to run; below it GitHub matches everything. */
 export const MIN_SKILL_SEARCH_QUERY_LENGTH = 3
 
@@ -963,86 +635,6 @@ export const MIN_SKILL_SEARCH_QUERY_LENGTH = 3
 // from a record of what we intended to install — someone who hand-edits
 // `.claude/skills` or `.mcp.json` sees the result here. One query answers the
 // whole question so no surface joins several calls and drifts from the next.
-
-/** Where an installed skill directory came from, read from its provenance marker. */
-export type AgentSkillSource = 'builtin' | 'source' | 'local'
-
-export type AgentSkill = {
-  /** Directory name, which is the skill's identity to every CLI that reads it. */
-  id: string
-  name: string
-  /** '' when the SKILL.md carries no description; never invented copy. */
-  description: string
-  /** How to invoke it in this CLI, rendered from the plugin's own template. */
-  invocation: string
-  source: AgentSkillSource
-  /** The skill source it was installed from, when a source installed it. */
-  sourceId?: string
-  /**
-   * Every CLI bound to this harness. The skill lives in one directory, and each
-   * of these can read it — this is the attribution that stops a shared skill
-   * being counted once per CLI.
-   */
-  pluginIds: string[]
-}
-
-/**
- * An MCP server a CLI is configured with, read from that CLI's own config file
- * by the format adapter its manifest declares. Configured, not necessarily
- * loaded: a config that marks a server disabled still declares it, and both
- * CLIs that express that state list it as disabled rather than omitting it, so
- * dropping it here would hide something the user wrote.
- */
-/** A server's connection as the running CLI last reported it. */
-export type AgentMcpServerStatus = 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled'
-
-export type AgentMcpServer = {
-  id: string
-  transport: string
-  /** Absent unless the config states it — a count is never guessed. */
-  toolCount?: number
-  /**
-   * Which of the CLI's two declared config files this entry won from, or
-   * `session` for a server only a running CLI reported (one from its own user
-   * settings, a plugin, or its account), which has no file of ours to name.
-   */
-  scope: 'workspace' | 'user' | 'session'
-  /** Absent for a `session` server. */
-  configPath?: string
-  /** Absent until a chat on this CLI in this folder has reported it. */
-  status?: AgentMcpServerStatus
-  /** Why it failed, in the CLI's words, when it did. */
-  error?: string
-}
-
-/**
- * Why one path could not be read, or could not be kept true. A union, not a
- * boolean: `malformed` (a file that opened but could not be parsed) is a
- * different fault from one that could not be opened at all, and the likeliest
- * real-world one for a config file. `watch_unavailable` is not a read failure
- * at all — the answer is correct as of the read and may go stale.
- */
-type CapabilityDiagnosticReason = 'unreadable' | 'malformed' | 'watch_unavailable'
-
-/**
- * Which half of the answer a fault belongs to, or `freshness` for one that
- * belongs to neither: a path that could not be watched leaves both halves
- * readable but possibly stale, which a surface must say differently from a
- * half that failed to read.
- */
-type CapabilityKind = 'skills' | 'servers' | 'freshness'
-
-export type CapabilityDiagnostic = {
-  /**
-   * A surface that renders one half must not be blanked by the other half's
-   * fault: an unparseable `.mcp.json` is not a reason to stop listing skills.
-   */
-  capability: CapabilityKind
-  reason: CapabilityDiagnosticReason
-  /** The path that failed, so the surface can name it. */
-  path: string
-  message: string
-}
 
 /**
  * Whether installing a bundled skill would actually put it where this harness
@@ -1065,35 +657,6 @@ export function builtinInstallsIntoHarness(
   if (skill.targetPolicy === 'all-native') return true
   return (skill.harnesses ?? []).some((harness) => harness === harnessId)
 }
-
-export type AgentCapabilitiesInput = {
-  /** Null asks only about what the CLI reads from the home folder (needs `includeGlobal`). */
-  workspaceRoot: string | null
-  pluginId: string
-  /**
-   * Also list the skills in this CLI's home-folder skills directory — what it
-   * reads in every project. Servers are still the workspace's alone.
-   */
-  includeGlobal?: boolean
-}
-
-/**
- * `ok: false` is reserved for a question that could not be asked (no workspace).
- * A CLI with no skill support, and a harness directory that was never created,
- * are both `ok: true` with a stated `support` — an unavailable capability is a
- * result, never an empty list.
- */
-export type AgentCapabilitiesResult =
-  | {
-      ok: true
-      support: 'native' | 'prompt-shim' | 'unsupported'
-      /** '' when the plugin declares no skill integration at all. */
-      harnessId: string
-      skills: AgentSkill[]
-      servers: AgentMcpServer[]
-      diagnostics: CapabilityDiagnostic[]
-    }
-  | { ok: false; message: string }
 
 /**
  * "Ask again" — never the new answer. One per `(workspaceRoot, harnessId)`

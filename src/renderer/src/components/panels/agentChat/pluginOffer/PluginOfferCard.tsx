@@ -23,6 +23,7 @@ import {
   serverNeedingSignIn,
   type PluginOfferIds,
 } from './pluginOfferModel'
+import { agentSkillsApi } from '../../../../studio/agentSkills'
 
 // The plugin an agent offered with Studio's `plugin.offer`: its icon, its
 // name, one line, and one button (owner ruling 2026-11-02). Install opens the
@@ -58,18 +59,18 @@ type Loaded =
     }
 
 async function readOffer(ids: PluginOfferIds, workspaceRoot: string, cli: string | null): Promise<Loaded> {
-  const scan = await window.api.skillsGetScan({ sourceId: ids.sourceId })
+  const scan = await agentSkillsApi.skillsGetScan({ sourceId: ids.sourceId })
   if (!scan.ok) return { status: 'missing', message: scan.message }
   const plugin = scanPlugins(scan.scan).find((candidate) => candidate.id === ids.pluginId)
   if (!plugin) return { status: 'missing', message: `No longer in ${scan.source.name}` }
   const installed = workspaceRoot
-    ? await window.api.skillsListInstalledPlugins({ workspaceRoot }).catch(() => null)
+    ? await agentSkillsApi.skillsListInstalledPlugins({ workspaceRoot }).catch(() => null)
     : null
   const record = installed?.ok ? installedRecord(installed.plugins, ids) : null
   // How the servers it added are doing, as chats here last reported them.
   const capabilities =
     record && record.mcpServerIds.length > 0 && cli
-      ? await window.api.agentCapabilities({ workspaceRoot, pluginId: cli }).catch(() => null)
+      ? await agentSkillsApi.agentCapabilities({ workspaceRoot, pluginId: cli }).catch(() => null)
       : null
   const servers = capabilities?.ok ? (capabilities.servers ?? []) : []
   return { status: 'ready', source: scan.source, plugin, record, servers }

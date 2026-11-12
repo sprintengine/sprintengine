@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom'
 import { standInImageDecoding } from '../../../../../../tests/image-decoding'
 import { composerDisabled, composerField, composerText, typeIntoComposer } from '../../../../../../tests/composer-field'
 import { test, vi } from 'vitest'
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 // The "+" menu as the panel renders it, counted: a pass-through behind the
 // same memo, so a count that moves is a prop that changed identity.

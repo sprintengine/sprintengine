@@ -4,6 +4,7 @@ import type { ScannedSkill, SkillSource } from '../../../../../shared/skills'
 import { SKILL_HARNESS_DIR } from '../../../../../shared/skill-harnesses'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { SkillReader } from '../../workspace/globalSurface/extensions/skills/SkillReader'
+import { agentSkillsApi } from '../../../studio/agentSkills'
 
 type ReaderTarget = { source: SkillSource; skill: ScannedSkill; readFile?: (path: string) => Promise<string> }
 
@@ -63,10 +64,10 @@ export async function resolveComposerSkill(workspaceRoot: string | null, skill: 
       }
     }
   }
-  const sources = await window.api.skillsListSources()
+  const sources = await agentSkillsApi.skillsListSources()
   if (!sources.ok) throw new Error(sources.message)
   for (const source of sources.sources) {
-    const result = await window.api.skillsGetScan({ sourceId: source.id })
+    const result = await agentSkillsApi.skillsGetScan({ sourceId: source.id })
     if (!result.ok) continue
     const scanned = result.scan.skills.find(
       (candidate) => candidate.id === skill.id || candidate.id.split('/').at(-1) === skill.id,

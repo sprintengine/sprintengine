@@ -6,6 +6,7 @@ import type { InstalledSkill, InstalledSkillsResult } from '../../../../shared/i
 import type { TerminalSessionSnapshot } from '../../../../shared/electron-api'
 import { InstalledSkillsPanel, pickSkillsCli, type InstalledSkillsPanelHandle } from './InstalledSkillsPanel'
 import { terminalsDouble } from '../../studio/terminals.double'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 vi.mock('../../studio/terminals', () => import('../../studio/terminals.double'))
 

@@ -72,11 +72,8 @@ import {
 import { SprintEngineAuthBridge } from './auth-service'
 import { createMainDiagnostics } from './main-diagnostics'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from './workspace-roots'
-import { createAgentSkillInstaller } from './agent-skill-installer'
-import { createCapabilityWatcher } from './capability-watcher'
-import { createSkillsService } from './skills'
+import { createSkillsService, type SkillsService } from './skills'
 import { createWorkspaceExtensionsReader } from './workspace-extensions'
-import { sweepGitRepoCache } from './skills/git-repo-reader'
 import {
   getBundledAgentStateReporterPath,
   getBundledAgentStateReporterTemplatePath,
@@ -87,14 +84,9 @@ import {
 import { createGitTransportProbe } from './git-transport-probe'
 import { sharedGhRunner } from './github/gh'
 import { createGhHostTokenResolver } from './github/host-token'
-import { SKILL_SOURCES_UPDATED_CHANNEL } from './skills/source-updates'
-import {
-  createAgentCapabilityService,
-  createFsSkillDirectoryReader,
-  createWorkspaceSkillsService,
-} from './workspace-skills-service'
 import type { HostAgentIntegration } from './hosts/execution-host'
 import { hostRegistry } from './hosts/host-registry'
+import { createShellCardMarketplace, shellTrash } from './cards/shell-marketplace'
 import { createStudioAgentServices } from '../server/core/studio-agent-services'
 import { createBackgroundModeStore } from './background-mode-store'
 import { createQuitConfirmationStore } from './quit-confirmation-store'
@@ -114,8 +106,6 @@ import { createTelemetryConsentStore } from './telemetry/consent-store'
 import { readInstallId } from './telemetry/install-id'
 import type { BackgroundStatus } from '../shared/background-mode'
 import { isTelemetryEventName, type TelemetryProperties } from '../shared/telemetry'
-import { getPluginManifest, listPluginRegistryEntries } from './plugin-registry-instance'
-import { createMcpServerResolver } from './mcp-config-readers/resolve-servers'
 import { syncStudioMcpConfig } from './studio-mcp-sync'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
 import { excludeMcpConfigFromWorktree } from './git'
@@ -225,10 +215,6 @@ import {
   INTEGRATION_LEDGER_FILE,
 } from './integrations/ledger'
 
-// How long a cloned skill repository may go unread before the start-up sweep
-// removes it (skills/git-repo-reader.ts `sweepGitRepoCache`).
-const SKILL_REPO_CACHE_IDLE_MS = 60 * 24 * 60 * 60 * 1000
-
 export function createAppServices(
   diagnosticsEnabled: boolean,
   /**
@@ -305,29 +291,6 @@ export function createAppServices(
   })
   installIntegrationLedger(integrationLedgerStore)
   const resolveStudioMcpBridgeScriptPath = () => studioBridgeScriptPath(platform.paths)
-  const workspaceSkillsService = createWorkspaceSkillsService()
-  // The watcher is built first because the capability answer has to state
-  // whether it can be kept true: a workspace whose paths could not be watched
-  // is stale-but-correct, and the surface says so from `diagnostics`.
-  const capabilityWatcher = createCapabilityWatcher({
-    listPlugins: () => listPluginRegistryEntries(),
-    lookupManifest: (pluginId) => getPluginManifest(pluginId),
-    onWorkspaceFocus: (listener) => {
-      app.on('browser-window-focus', listener)
-      return () => app.off('browser-window-focus', listener)
-    },
-  })
-  const agentCapabilityService = createAgentCapabilityService({
-    reader: createFsSkillDirectoryReader(),
-    listPlugins: () => listPluginRegistryEntries(),
-    lookupManifest: (pluginId) => getPluginManifest(pluginId),
-    mcpResolver: createMcpServerResolver(),
-    freshness: capabilityWatcher,
-  })
-  const agentSkillInstaller = createAgentSkillInstaller({
-    listPlugins: () => listPluginRegistryEntries(),
-    invalidate: (workspaceRoot, harnessId) => capabilityWatcher.invalidate(workspaceRoot, harnessId),
-  })
 
   // The skill installer a launch's skill-at-spawn uses (terminalLaunchPreparation).
   // Reads loaded CLI plugins to compute native targets.
@@ -928,6 +891,19 @@ export function createAppServices(
             }),
         },
         agentServices,
+        // What the shell adds to the agents' skills and cards: the token its
+        // store keeps, git once the window is up, its window focus, its Trash
+        // and the marketplace a card's `install.module` goes through.
+        agentSkills: {
+          resolveGitHubToken: () => githubTokenStore.resolveToken(),
+          whenGitMayRun: Promise.all([app.whenReady(), bootJobsGate]),
+          onWorkspaceFocus: (listener) => {
+            app.on('browser-window-focus', listener)
+            return () => app.off('browser-window-focus', listener)
+          },
+          trash: shellTrash,
+          marketplace: createShellCardMarketplace(mcpConfigService),
+        },
         ...(ssh
           ? {
               sshServers: {
@@ -1216,55 +1192,40 @@ export function createAppServices(
         // inside the interval is written when it ends.
         minRegistryIntervalMs: 10_000,
       })
-  // Built after workspace sync because adopting the retired skill packs needs to
-  // know which projects are open — that is where a previously installed pack's
-  // directory would be.
-  // Repositories are read over git, not the GitHub API (git-transport ruling,
-  // owner 2026-09-08): the API's anonymous limit is what capped a Sync at
-  // twenty linked repositories, and git's protocol is not counted by it. The
-  // probe runs after the app is ready — not in this constructor, which runs at
-  // module load, and not synchronously: on a Mac without the command line
-  // tools `git --version` raises Apple's install dialog, which must never be
-  // the first thing a person sees. A machine without a usable git keeps the
-  // API reader and its cap, and the door says to install git rather than to
-  // add a token; the deps are getters, so the service sees the probe's answer
-  // the moment it lands and again if git turns up later.
-  const skillRepoCacheDir = join(app.getPath('userData'), 'skill-repos')
-  const gitTransport = createGitTransportProbe({
-    cacheDir: skillRepoCacheDir,
-    resolveToken: () => githubTokenStore.resolveToken(),
-    // A source on a company's self-hosted GitHub reads with the GitHub CLI's
-    // sign-in for that host; the stored token above only ever goes to github.com.
-    resolveHostToken: createGhHostTokenResolver(sharedGhRunner()),
-  })
-  void Promise.all([app.whenReady(), bootJobsGate]).then(async () => {
-    await gitTransport.refresh()
-    // Objects fetched into a promisor clone are never repacked away, so a
-    // repository that keeps moving grows its clone for as long as it is read.
-    // A clone nobody has read in sixty days is not worth the disk, and the
-    // reader rebuilds it from the network on the next read (review,
-    // 2026-09-09).
-    await sweepGitRepoCache(skillRepoCacheDir, SKILL_REPO_CACHE_IDLE_MS).catch(() => undefined)
-  })
-  const skillsService = createSkillsService(app.getPath('userData'), {
-    resolveToken: () => githubTokenStore.resolveToken(),
-    get repoReader() {
-      return gitTransport.reader
-    },
-    get repoTransport() {
-      return gitTransport.reader ? ('git' as const) : ('api' as const)
-    },
-    get gitInstalled() {
-      return gitTransport.installed
-    },
-    refreshTransport: () => gitTransport.refresh(),
-    // The same bundled tree the plugin installer materialises, read here as the
-    // offline seed of our marketplace tab (studio-marketplace ruling,
-    // 2026-09-06). One resolver, so a build that ships the plugin can never
-    // fail to seed the catalogue that lists it.
-    studioMarketplaceSeedRoot: getBundledStudioPluginRoot,
-    broadcastSourceUpdates: (check) => broadcastToAllWindows(SKILL_SOURCES_UPDATED_CHANNEL, check),
-  })
+  // The skill sources, their scans and installs are the core's
+  // (studio-agent-skills.ts): in process this one's, out of process the
+  // server's. There the shell keeps a reader of its own over the same files,
+  // for its `plugin` toolset, which lists the sources and reads their scans.
+  const skillsService = server ? shellSkillsReader() : core.agents.skills.skills
+  function shellSkillsReader(): SkillsService {
+    // Repositories are read over git, not the GitHub API: the API's anonymous
+    // limit capped a Sync at twenty linked repositories. The probe waits for
+    // the window: on a Mac without the command line tools `git --version`
+    // raises Apple's install dialog, which must never be the first thing a
+    // person sees.
+    const skillRepoCacheDir = join(app.getPath('userData'), 'skill-repos')
+    const gitTransport = createGitTransportProbe({
+      cacheDir: skillRepoCacheDir,
+      resolveToken: () => githubTokenStore.resolveToken(),
+      // A self-hosted GitHub's source reads with the GitHub CLI's sign-in for that host.
+      resolveHostToken: createGhHostTokenResolver(sharedGhRunner()),
+    })
+    void Promise.all([app.whenReady(), bootJobsGate]).then(() => gitTransport.refresh())
+    return createSkillsService(app.getPath('userData'), {
+      resolveToken: () => githubTokenStore.resolveToken(),
+      get repoReader() {
+        return gitTransport.reader
+      },
+      get repoTransport() {
+        return gitTransport.reader ? ('git' as const) : ('api' as const)
+      },
+      get gitInstalled() {
+        return gitTransport.installed
+      },
+      refreshTransport: () => gitTransport.refresh(),
+      studioMarketplaceSeedRoot: getBundledStudioPluginRoot,
+    })
+  }
   // The `tailnet.*` tools configure the service that (transitively) owns them,
   // so the tool set cannot capture it at construction. Assigned immediately
   // below; until then those tools answer that they are not wired up yet.
@@ -1652,8 +1613,8 @@ export function createAppServices(
               readMarketplaceRegistry: (input) => marketplaceRegistryReader.read(input),
               // What a paired machine's composer offers a chat here.
               readWorkspaceExtensions: createWorkspaceExtensionsReader({
-                listWorkspaceSkills: (input) => workspaceSkillsService.listWorkspaceSkills(input),
-                agentCapabilities: (input) => agentCapabilityService.resolve(input),
+                listWorkspaceSkills: (input) => core.agents.skills.workspaceSkills.listWorkspaceSkills(input),
+                agentCapabilities: (input) => core.agents.skills.agentCapabilities.resolve(input),
                 listSources: () => skillsService.listSources(),
               }),
             }),
@@ -2287,10 +2248,6 @@ export function createAppServices(
     updateService,
     withIpcDiagnostics,
     workspaceBackupService,
-    workspaceSkillsService,
-    agentCapabilityService,
-    agentSkillInstaller,
-    capabilityWatcher,
     workspaceSyncService,
     workspaceRegistry,
   }

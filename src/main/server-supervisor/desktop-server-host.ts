@@ -56,7 +56,13 @@ export type DesktopServerHost = {
   /** Answer the server's requests of the shell: the bridge, and the shell's own caches. */
   serveShell(
     bridge: ShellBridge,
-    caches: { marketplaceRead(input: unknown): unknown; thirdPartyModules(): unknown },
+    caches: {
+      marketplaceRead(input: unknown): unknown
+      thirdPartyModules(): unknown
+      marketplaceReceipts(): unknown
+      marketplaceInstall(input: unknown): unknown
+      trash(path: string): Promise<void>
+    },
   ): void
   /** Tickets for the windows' connections to the server's window listener, once it is serving. */
   windowTickets: StudioWindowTicketIssuer
@@ -206,6 +212,13 @@ export function createDesktopServerHost(options: {
       serveShellBridge(supervisor.rpc, bridge)
       supervisor.rpc.handle(SHELL_METHODS.marketplaceRead, (input) => caches.marketplaceRead(input))
       supervisor.rpc.handle(SHELL_METHODS.thirdPartyModules, () => caches.thirdPartyModules())
+      supervisor.rpc.handle(SHELL_METHODS.marketplaceReceipts, () => caches.marketplaceReceipts())
+      supervisor.rpc.handle(SHELL_METHODS.marketplaceInstall, (input) => caches.marketplaceInstall(input))
+      supervisor.rpc.handle(SHELL_METHODS.trash, async (params) => {
+        const path = (params as { path?: unknown } | null)?.path
+        if (typeof path !== 'string' || path.length === 0) throw new Error('No folder to move to the Trash.')
+        await caches.trash(path)
+      })
     },
     windowTickets: {
       async windowTicket(request) {

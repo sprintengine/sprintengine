@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InstalledPluginRecord } from '../../../../../../../shared/electron-api'
 import type { ScanResult, SkillRepoTransport, SkillSource } from '../../../../../../../shared/skills'
 import type { SkillScanLoad, SkillSourcesLoad } from './skillsSurfaceModel'
+import { agentSkillsApi } from '../../../../../studio/agentSkills'
 
 const MISSING_API_MESSAGE = 'Skills need an app restart before they are available.'
 
@@ -83,10 +84,10 @@ export function useSkillSources(workspaceRoot: string | null): SkillSourcesState
   }, [])
 
   const loadScan = useCallback((sourceId: string): Promise<void> => {
-    if (typeof window.api.skillsGetScan !== 'function') return Promise.resolve()
+    if (typeof agentSkillsApi.skillsGetScan !== 'function') return Promise.resolve()
     requestedScans.current.add(sourceId)
     setScans((current) => ({ ...current, [sourceId]: { status: 'loading' } }))
-    return window.api
+    return agentSkillsApi
       .skillsGetScan({ sourceId })
       .then((result) => {
         if (!mounted.current) return
@@ -130,12 +131,12 @@ export function useSkillSources(workspaceRoot: string | null): SkillSourcesState
   )
 
   useEffect(() => {
-    if (typeof window.api.skillsListSources !== 'function') {
+    if (typeof agentSkillsApi.skillsListSources !== 'function') {
       setSourcesLoad({ status: 'error', message: MISSING_API_MESSAGE })
       return
     }
     let cancelled = false
-    void window.api
+    void agentSkillsApi
       .skillsListSources()
       .then((result) => {
         if (cancelled) return
@@ -176,13 +177,13 @@ export function useSkillSources(workspaceRoot: string | null): SkillSourcesState
       setInstalledPluginsRead({ status: 'unavailable' })
       return
     }
-    if (typeof window.api.skillsListInstalledPlugins !== 'function') {
+    if (typeof agentSkillsApi.skillsListInstalledPlugins !== 'function') {
       setInstalledPluginsRead({ status: 'error', message: MISSING_API_MESSAGE })
       return
     }
     let cancelled = false
     setInstalledPluginsRead({ status: 'loading' })
-    void window.api
+    void agentSkillsApi
       .skillsListInstalledPlugins({ workspaceRoot })
       .then((result) => {
         if (cancelled) return
@@ -203,13 +204,13 @@ export function useSkillSources(workspaceRoot: string | null): SkillSourcesState
   }, [workspaceRoot, installedNonce])
 
   useEffect(() => {
-    if (typeof window.api.workspaceSkillsList !== 'function') {
+    if (typeof agentSkillsApi.workspaceSkillsList !== 'function') {
       setInstalledRead({ status: 'error', message: MISSING_API_MESSAGE })
       return
     }
     let cancelled = false
     setInstalledRead({ status: 'loading' })
-    void window.api
+    void agentSkillsApi
       // Installs land in the home folder by default, so a skill installed for
       // every project is installed here too — with or without a folder open.
       .workspaceSkillsList({ workspaceRoot, includeGlobal: true })
@@ -243,11 +244,11 @@ export function useSkillSources(workspaceRoot: string | null): SkillSourcesState
   // The scans it already holds are kept (requestedScans), so this never blanks
   // a canvas to arrive at bytes already in hand.
   useEffect(() => {
-    if (typeof window.api.onSkillSourcesUpdated !== 'function') return
-    return window.api.onSkillSourcesUpdated((check) => {
+    if (typeof agentSkillsApi.onSkillSourcesUpdated !== 'function') return
+    return agentSkillsApi.onSkillSourcesUpdated((check) => {
       if (!mounted.current || check.sources.length === 0) return
-      if (typeof window.api.skillsListSources !== 'function') return
-      void window.api
+      if (typeof agentSkillsApi.skillsListSources !== 'function') return
+      void agentSkillsApi
         .skillsListSources()
         .then((result) => {
           if (!mounted.current || !result.ok) return

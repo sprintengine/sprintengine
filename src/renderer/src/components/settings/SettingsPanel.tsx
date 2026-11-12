@@ -119,6 +119,7 @@ import { sourceUpdateCadenceLine, type SkillRepoTransport } from '../../../../sh
 import { clientSupports, hostPlatform } from '../../clientCapabilities'
 import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
+import { agentSkillsApi } from '../../studio/agentSkills'
 
 interface Props {
   onClose: () => void
@@ -980,9 +981,9 @@ export default function SettingsPanel({
   }, [])
 
   useEffect(() => {
-    if (typeof window.api.skillsListSources !== 'function') return
+    if (typeof agentSkillsApi.skillsListSources !== 'function') return
     let cancelled = false
-    void window.api
+    void agentSkillsApi
       .skillsListSources()
       .then((result) => {
         if (!cancelled && result.ok) setSkillRepoTransport(result.transport ?? 'api')

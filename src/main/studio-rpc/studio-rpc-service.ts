@@ -45,6 +45,7 @@ import type { CliRuntimes } from '../cli-runtimes'
 import type { StudioAgentSettings } from '../../server/agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../../server/agent-setup/agent-setup-domain'
 import type { StudioChatStores } from '../../server/chat-stores/chat-stores-domain'
+import type { StudioAgentSkills } from '../../server/core/studio-agent-skills'
 import type { StudioUpdates } from '../../server/update/studio-updates'
 import type { StudioModules } from '../../server/rpc/studio-modules'
 import type {
@@ -183,6 +184,8 @@ export type StudioRpcServiceOptions = {
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats (`chat-stores`). */
   chatStores?: StudioChatStores
+  /** The skills, design systems and cards the agents are given (`agent-skills`): the core's, which every Studio gives. */
+  agentSkills?: StudioAgentSkills
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** What the modules beside this Studio say to clients: `module.events` and `module.notifications`. */
@@ -386,6 +389,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
       ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
       ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+      ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
       ...(options.modules ? { modules: options.modules } : {}),
       resyncRetryAfterMs: createResyncBackoff(),

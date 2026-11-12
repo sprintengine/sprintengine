@@ -1,35 +1,9 @@
 import { isRecord } from '../records'
+import type { DesignSystemManifest } from '../../../packages/studio-protocol/src/public'
+export type { DesignSystemManifest, DesignSystemProvenance } from '../../../packages/studio-protocol/src/public'
 
 export const DESIGN_SYSTEM_MANIFEST_FILENAME = 'design-system.json'
 export const DESIGN_SYSTEM_SCHEMA_VERSION = 1
-
-interface DesignSystemContents extends Record<string, unknown> {
-  foundations: string[]
-  components: string[]
-  patterns: string[]
-  glyphs: string[]
-  assets: string[]
-}
-
-export interface DesignSystemProvenance extends Record<string, unknown> {
-  authoredBy?: string | null
-  sourceLibraryId?: string | null
-  sourceLibraryVersion?: string | null
-  releasedAt?: string | null
-  attachedAt?: string | null
-}
-
-export interface DesignSystemManifest extends Record<string, unknown> {
-  schemaVersion: number
-  name: string
-  version: string
-  summary: string
-  modes: string[]
-  namingGrammar: Record<string, string>
-  contents: DesignSystemContents
-  derived: Record<string, string>
-  provenance: DesignSystemProvenance
-}
 
 // Exported for callers that compose filesystem paths from renderer-supplied
 // name/version strings (the library registry): both patterns exclude path

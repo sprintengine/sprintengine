@@ -5,7 +5,8 @@ import { JSDOM } from 'jsdom'
 // Type-only: erased at runtime, so it cannot load a renderer module before the
 // DOM below exists.
 import type { ExtensionsSurfaceTarget } from './extensions/extensionsSurfaceTarget'
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
+vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 test('globalDoorsIntegration', async () => {
   // Epic 1760's integration review (item T10): the pieces T1–T9 built, exercised

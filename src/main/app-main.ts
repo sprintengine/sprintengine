@@ -1,4 +1,5 @@
 import { app, ipcMain, protocol, session, shell } from 'electron'
+import { createShellCardMarketplace, shellTrash } from './cards/shell-marketplace'
 import { buildStamp as mainBuildStamp } from 'virtual:sprintengine-build-stamp'
 import { withoutDeepLinks } from '../shared/deep-link-scheme'
 import { parseAuthCallbackFromArgv } from './auth-service'
@@ -427,8 +428,13 @@ if (serverHost) {
   })
   // What the server asks of the shell: the keychain, notices, terminal
   // launches, the integrations gate, and the two caches only the shell keeps.
+  const cardMarketplace = createShellCardMarketplace(services.mcpConfigService)
   serverHost.serveShell(services.shellBridge, {
     marketplaceRead: (input) => createDefaultMarketplaceRegistryClient().read(input as never),
+    // A card's `install.module` and a removed skill's Trash, which the server asks of the shell.
+    marketplaceReceipts: () => cardMarketplace.listMarketplaceReceipts(),
+    marketplaceInstall: (input) => cardMarketplace.installMarketplaceEntry(input as never),
+    trash: (path) => shellTrash(path),
     thirdPartyModules: async () => {
       const { modules, rejected } = await discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext())
       return { modules: modules.map((module) => toThirdPartyModuleView(module)), rejected }
@@ -471,7 +477,12 @@ registerAppLifecycle({
   // Out of process the server runs every module's startup and shutdown hooks.
   ...(serverHost ? {} : { moduleKernel: moduleLoad.kernel }),
   updateService: services.updateService,
-  checkPluginSourceUpdates: () => services.skillsService.checkSourceUpdates(),
+  // The skill sources are the server's out of process: their hourly check runs there.
+  checkPluginSourceUpdates: serverHost
+    ? async () => {
+        if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.skillSourcesCheck)
+      }
+    : () => services.skillsService.checkSourceUpdates(),
   startDeferredBootJobs: services.startDeferredBootJobs,
   // Out of process the workspaces to prepare arrive with the server's first
   // snapshot; the pass waits for it, inside the same boot budget.

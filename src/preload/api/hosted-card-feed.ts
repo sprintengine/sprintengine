@@ -1,17 +1,9 @@
 import type { IpcRendererEvent } from 'electron'
 import { ipc as ipcRenderer } from '../ipc-router'
-import type {
-  CardRunInput,
-  CardRunResult,
-  ElectronApi,
-  HostedCardFeedReadInput,
-  HostedCardFeedReadResult,
-} from '../../shared/electron-api'
+import type { ElectronApi, HostedCardFeedReadInput, HostedCardFeedReadResult } from '../../shared/electron-api'
 
-// The card feed's get, refresh and changed channels — plus
-// `cards:run`, which is the one that does something rather than reads
-// something. It rides here rather than in a file of its own because Go is the
-// card's own verb and the feed is where the card came from (item 2469).
+// The card feed's get, refresh and changed channels. A card's Go is the
+// Studio protocol's `cards.run` (studio/agentSkills.ts).
 // `onHostedCardFeedChanged` returns the unsubscribe rather than relying on the
 // caller to remember the handler: the home page mounts and unmounts with the
 // Extensions door, and a listener left behind on every open would push a feed
@@ -36,5 +28,4 @@ export const hostedCardFeedApi = {
     ipcRenderer.on(ch, handler)
     return () => ipcRenderer.removeListener(ch, handler)
   },
-  cardsRun: (input: CardRunInput): Promise<CardRunResult> => ipcRenderer.invoke('cards:run', input),
-} satisfies Pick<ElectronApi, 'hostedCardFeedGet' | 'hostedCardFeedRefresh' | 'onHostedCardFeedChanged' | 'cardsRun'>
+} satisfies Pick<ElectronApi, 'hostedCardFeedGet' | 'hostedCardFeedRefresh' | 'onHostedCardFeedChanged'>

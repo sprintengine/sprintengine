@@ -47,6 +47,7 @@ vi.mock('../workspace/useConversationPullRequests', () => ({
 
 import CommandPalette from './CommandPalette'
 import { installStudioLoopback } from '../../../../../tests/studio-chat-loopback'
+vi.mock('../../studio/agentSkills', () => import('../../studio/agentSkills.double'))
 
 const chatAgent = {
   agent: { id: 'agent', name: 'Art Shea', runtimeKind: 'conversation', conversation: { providerId: 'claude-agent' } },
