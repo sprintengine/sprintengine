@@ -2,7 +2,7 @@ import { connect, type Socket } from 'node:net'
 import { createInterface } from 'node:readline'
 
 import { createStudioConversationParts } from '../../../src/renderer/src/components/panels/agentChat/studioChat'
-import type { StudioClient } from '../../../packages/agent-sdk/src/index'
+import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import { windowStudioClient } from '../../../src/renderer/src/studio/windowStudioClient'
 import { conversationNewChatSeed } from '../../../src/renderer/src/components/workspace/conversationSpawnOptions'
 import type { AgentState } from '../../../src/shared/agent-state'
