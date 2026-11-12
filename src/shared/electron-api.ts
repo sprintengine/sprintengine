@@ -138,7 +138,7 @@ import type {
   StudioLocalAppToolReach,
   StudioLocalAppsStatus,
 } from './studio-local-apps'
-import type { StudioChatTransportMode, StudioWindowTicket } from './studio-connection'
+import type { StudioWindowTicket } from './studio-connection'
 import type {
   TailnetApprovePairRequestView,
   TailnetLiveState,
@@ -217,43 +217,14 @@ import type {
   DesignSystemDetachResult,
 } from './design-system/attach'
 import type {
-  ConversationInterruptInput,
-  ConversationRespondToRequestInput,
-  ConversationSendTurnInput,
-  ConversationSessionActionResult,
-  ConversationSetModelInput,
-  ConversationMessageSubagentInput,
-  ConversationStopSubagentInput,
-  ConversationCancelSideQuestionInput,
-  ConversationContextBreakdownInput,
   ConversationContextBreakdownResult,
   ConversationSideQuestionExchange,
-  ConversationSideQuestionInput,
   ConversationSideQuestionResult,
-  ConversationSetPermissionInput,
-  ConversationStartSessionInput,
-  ConversationStartSessionResult,
-  ConversationToolDetailInput,
   ConversationToolDetailResult,
-  ConversationEventReadInput,
   ConversationEventReadResult,
-  ConversationAttachmentInput,
-  ConversationAttachmentResult,
   ConversationImageAttachment,
-  ConversationSubscribeInput,
-  ConversationLoadEarlierInput,
-  ConversationSessionFrame,
   ConversationPageResult,
-  ConversationTurnDiffInput,
   ConversationTurnDiffResult,
-  ConversationRevertInput,
-  ConversationRevertResult,
-  ConversationRewindInput,
-  ConversationRewindResult,
-  ConversationHandoffInput,
-  ConversationHandoffResult,
-  ConversationForkInput,
-  ConversationForkResult,
 } from './conversation-runtime'
 import type { ModuleHostServiceRequest } from './modules/host-service-bridge'
 import type {
@@ -843,8 +814,6 @@ export type ElectronApi = {
   /** Change which agents a paired app's tools reach: the chats it starts, or every agent here. */
   studioLocalAppsSetReach: (id: string, reach: StudioLocalAppToolReach) => Promise<StudioLocalAppsStatus>
   onStudioLocalAppsChanged: (cb: (status: StudioLocalAppsStatus) => void) => () => void
-  /** How this window's chat view reaches conversations: the protocol, or the conversation IPC. */
-  studioChatTransport: StudioChatTransportMode
   /**
    * Where this window's next connection to its Studio goes, and the ticket
    * its socket and hello present: good once, within thirty seconds. Asked
@@ -1416,55 +1385,6 @@ export type ElectronApi = {
   resolveGithubExtension: (input: GithubExtensionResolveInput) => Promise<GithubExtensionResolveResult>
   installGithubExtension: (input: GithubExtensionInstallInput) => Promise<MarketplacePluginRegistryInstallResult>
   checkGithubExtensionUpdate: (input: GithubExtensionCheckUpdateInput) => Promise<GithubExtensionCheckUpdateResult>
-  conversationSessionStart: (input: ConversationStartSessionInput) => Promise<ConversationStartSessionResult>
-  conversationSessionSendTurn: (input: ConversationSendTurnInput) => Promise<ConversationSessionActionResult>
-  conversationSessionInterrupt: (input: ConversationInterruptInput) => Promise<ConversationSessionActionResult>
-  conversationSessionRespondToRequest: (
-    input: ConversationRespondToRequestInput,
-  ) => Promise<ConversationSessionActionResult>
-  // Live tool-permission switch on a running conversation session (takes effect
-  // on the agent's next tool call).
-  conversationSessionSetPermission: (input: ConversationSetPermissionInput) => Promise<ConversationSessionActionResult>
-  // Switch a running conversation to another model of its provider; applies
-  // from the next turn.
-  conversationSessionSetModel: (input: ConversationSetModelInput) => Promise<ConversationSessionActionResult>
-  /** Stop one agent a live chat spawned, by its lane, leaving the chat and its turn running. */
-  conversationSessionStopSubagent: (input: ConversationStopSubagentInput) => Promise<ConversationSessionActionResult>
-  conversationSessionMessageSubagent: (
-    input: ConversationMessageSubagentInput,
-  ) => Promise<ConversationSessionActionResult>
-  /** Ask a side question about a live chat, answered from its context and added to nothing. */
-  conversationSessionAskSideQuestion: (input: ConversationSideQuestionInput) => Promise<ConversationSideQuestionResult>
-  /** Call off a side question still being answered, by the id it was asked under. */
-  conversationSessionCancelSideQuestion: (
-    input: ConversationCancelSideQuestionInput,
-  ) => Promise<{ ok: true } | { ok: false; message: string }>
-  /** What fills a live chat's context window, as its agent measures it; read when the ring's breakdown opens. */
-  conversationSessionContextBreakdown: (
-    input: ConversationContextBreakdownInput,
-  ) => Promise<ConversationContextBreakdownResult>
-  conversationToolDetail: (input: ConversationToolDetailInput) => Promise<ConversationToolDetailResult>
-  // An event that crossed cut to fit (`wireClipped`), read whole.
-  conversationEvent: (input: ConversationEventReadInput) => Promise<ConversationEventReadResult>
-  // The bytes of an image a sent turn carried, by the store reference its
-  // `user_message` recorded — for a bubble replayed after a restart.
-  conversationAttachment: (input: ConversationAttachmentInput) => Promise<ConversationAttachmentResult>
-  conversationLoadEarlier: (input: ConversationLoadEarlierInput) => Promise<ConversationPageResult>
-  conversationTurnDiff: (input: ConversationTurnDiffInput) => Promise<ConversationTurnDiffResult>
-  conversationRevertToTurn: (input: ConversationRevertInput) => Promise<ConversationRevertResult>
-  // Take the conversation back to before one of its user messages ("Edit from
-  // here"); gated on the provider's `rewind` capability.
-  conversationRewindToTurn: (input: ConversationRewindInput) => Promise<ConversationRewindResult>
-  // Hand the chat off to a fresh session pointed at a file of its messages,
-  // instead of compacting it; gated on the provider's `handoff` capability.
-  conversationHandoff: (input: ConversationHandoffInput) => Promise<ConversationHandoffResult>
-  // Start a new chat holding this one up to an earlier message ("Fork from
-  // here"); gated on the provider's `fork` capability.
-  conversationForkAtTurn: (input: ConversationForkInput) => Promise<ConversationForkResult>
-  onConversationSession: (
-    input: ConversationSubscribeInput,
-    cb: (frame: ConversationSessionFrame) => void,
-  ) => () => void
   logDiagnostic: (input: DiagnosticLogInput) => Promise<DiagnosticLogEntry>
   openDiagnosticsLogsFolder: () => Promise<{ opened: true; path: string }>
   updateGetState: () => Promise<AppUpdateState>

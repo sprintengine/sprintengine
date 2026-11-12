@@ -1,6 +1,6 @@
 // AgentChatView — the chat runtime surface for conversation-backed standard
 // agents (T6). It renders canonical ConversationEvents from the main runtime
-// over the typed conversation IPC/preload path, and drives the session
+// over the window's Studio protocol client, and drives the session
 // lifecycle: start, send a turn, stream assistant output, approve/deny tool
 // requests, interrupt, stop, and retry. It deliberately has no terminal
 // emulator dependency and no landing/hero — the first screen is the usable
@@ -516,7 +516,7 @@ function LocalSubagentChat({
 
 /**
  * The chat view itself, over whichever transport the tree provides: the
- * conversation IPC here, or a paired machine's conversation over the Mesh.
+ * Studio protocol here, or a paired machine's conversation over the Mesh.
  * `binding` is the agent it is for — a record in the store, or the fields a
  * remote pane keeps — and the transport's capabilities decide which controls
  * it offers.
@@ -755,7 +755,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // it in the transcript, so a page of older replies loaded above is not news.
   const replySeenRef = useRef<{ turnId: string | null } | null>(null)
 
-  // Resolve provider/model/key readiness from the conversation IPC.
+  // Resolve provider/model/key readiness from the window's Studio.
   useEffect(() => {
     let cancelled = false
     if (!conversation || overridingReadiness) return

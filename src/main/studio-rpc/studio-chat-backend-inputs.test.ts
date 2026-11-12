@@ -6,7 +6,7 @@ import {
   type ConversationService,
   type HarnessCliCheckDeps,
 } from '../conversation-service'
-import { registerConversationIpc } from './conversation-ipc'
+import { createStudioChatBackend } from './studio-chat-backend'
 import {
   ATTACHABLE_IMAGE_TYPES,
   MAX_ATTACHMENTS_PER_TURN,
@@ -22,7 +22,43 @@ import type {
 } from '../../shared/conversation-runtime'
 import { test } from 'vitest'
 
-test('conversation-ipc', async () => {
+// The window's chat calls reach the conversation service through the Studio
+// RPC's chat backend, behind the input checks every client meets. These
+// tests drive the backend by the calls' old channel names, so each reads as
+// the boundary it checks.
+type ChannelHandler = (event: unknown, input?: unknown) => unknown
+function registerConversationIpc(
+  registry: { handle(channel: string, handler: ChannelHandler): void },
+  service: ConversationService,
+): void {
+  const backend = createStudioChatBackend({
+    conversation: service,
+    files: {
+      searchFiles: async () => ({ ok: true, results: [] }) as never,
+      cancelActiveFileSearch: () => undefined,
+      cancelAllFileSearches: () => undefined,
+      statPath: async () => ({ ok: false }) as never,
+      readImageDataUrl: async () => '',
+    },
+    repoRoot: async () => null,
+    readableRoots: () => ['/'],
+    hasReceipt: async () => false,
+    commands: async () => ({}) as never,
+  })
+  const serve = (channel: string, call: (input: never) => unknown) =>
+    registry.handle(channel, (_event, input) => call(input as never))
+  serve('conversation:sessions:start', (input) => backend.startSession(input))
+  serve('conversation:sessions:send-turn', (input) => backend.sendTurn(input))
+  serve('conversation:sessions:interrupt', (input) => backend.interrupt(input))
+  serve('conversation:sessions:respond-to-request', (input) => backend.respond(input))
+  serve('conversation:sessions:set-permission', (input) => backend.setPermission(input))
+  serve('conversation:sessions:stop-subagent', (input) => backend.stopSubagent(input))
+  serve('conversation:sessions:message-subagent', (input) => backend.messageSubagent(input))
+  serve('conversation:sessions:side-question', (input) => backend.askSideQuestion(input))
+  serve('conversation:sessions:cancel-side-question', (input) => backend.cancelSideQuestion(input))
+}
+
+test('the chat backend’s session calls', async () => {
   type Handler = (event: unknown, ...args: unknown[]) => unknown
 
   function createIpcMain(): { handle(channel: string, handler: Handler): void; handlers: Map<string, Handler> } {
@@ -41,8 +77,6 @@ test('conversation-ipc', async () => {
     await testAttachmentLimitsAreTheSharedOnes()
     await testSendTurnCarriesASteer()
     await testSetPermissionValidatesThePreset()
-
-    console.log('conversation-ipc tests passed')
   }
 
   async function testRegistersSessionChannels(): Promise<void> {
@@ -506,24 +540,6 @@ test('every chat’s lifecycle stream carries lifecycle events and never the tok
   assert.equal(received[3]?.payload, undefined)
 })
 
-test('a reload ends the subscriptions the page it replaced held', async () => {
-  const ipc = registerWithRuntimeListeners()
-  const key = { workspaceRoot: '/workspace', workspaceId: 'workspace', agentId: 'agent' }
-  await ipc.handlers.get('conversation:session:subscribe')!({ sender: ipc.sender }, { subscriptionId: 'pane', key })
-  await ipc.handlers.get('conversation:session:subscribe')!({ sender: ipc.sender }, { subscriptionId: 'other', key })
-  assert.equal(ipc.scoped.size, 2)
-  // One navigation listener per webContents, however many subscriptions it holds.
-  assert.equal(ipc.navigationListeners(), 1)
-
-  ipc.navigate()
-  assert.equal(ipc.scoped.size, 0)
-
-  // The reloaded page subscribes afresh and is served once.
-  await ipc.handlers.get('conversation:session:subscribe')!({ sender: ipc.sender }, { subscriptionId: 'pane', key })
-  assert.equal(ipc.scoped.size, 1)
-  assert.equal(ipc.navigationListeners(), 1)
-})
-
 test('what the sessions list reads off every chat’s lifecycle stream all arrives, with its workspace', () => {
   const { publish, received } = lifecycleStream()
   const needed: Array<[ConversationEvent['type'], Record<string, unknown>?]> = [
@@ -648,7 +664,7 @@ test('a backend that cannot stop one agent says so', async () => {
   const ipc = registerWithRuntimeListeners()
   assert.deepEqual(
     await ipc.handlers.get('conversation:sessions:stop-subagent')!(null, { sessionId: 'conv_1', toolUseId: 'toolu_a' }),
-    { ok: false, message: 'Stopping one agent is unavailable.' },
+    { ok: false, message: 'Stopping an agent a chat spawned is unavailable here.' },
   )
 })
 
@@ -714,6 +730,6 @@ test('a side question is called off by its id, and a backend without side questi
       requestId: 'side-1',
       question: 'Q',
     }),
-    { ok: false, message: 'Side questions are unavailable.' },
+    { ok: false, message: 'Asking a side question is unavailable here.' },
   )
 })

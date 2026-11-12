@@ -3,25 +3,21 @@
 // this row in the composer tray says, in words, that the connection is being
 // made again, so a quiet chat never reads as a stuck one. A short blip says
 // nothing: the row waits a moment before it appears.
-//
-// A window on the conversation IPC has no such connection, and this is never
-// drawn there.
 
 import React, { useEffect, useState, useSyncExternalStore } from 'react'
 
 import { Spinner } from '../../ui'
 import { watchWindowStudio, windowStudioState, type WindowStudioState } from '../../../studio/windowStudioClient'
 import { ComposerTrayRow } from './composerTray'
-import { chatOverStudioProtocol } from './conversationTransport'
 
 /** How long a dropped connection goes unmentioned, so a blip does not flicker a row. */
 export const STUDIO_RECONNECT_GRACE_MS = 1_500
 
 const noWatch = () => () => undefined
 
-/** The window's connection to Studio, or null for a window on the conversation IPC. */
+/** The window's connection to Studio, or null for a page with no window api (a test). */
 export function useWindowStudioConnection(): WindowStudioState | null {
-  const api = chatOverStudioProtocol() ? (window.api as object) : null
+  const api = typeof window === 'undefined' ? null : ((window.api as object | undefined) ?? null)
   return useSyncExternalStore(
     api ? (listener) => watchWindowStudio(api, listener) : noWatch,
     () => (api ? windowStudioState(api) : null),

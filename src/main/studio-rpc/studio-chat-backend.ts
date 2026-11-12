@@ -24,12 +24,11 @@ import type { ConversationService } from '../conversation-service'
 import { confineToRoots } from './studio-file-confinement'
 import { expandHomePath } from '../home-path'
 
-// The Studio RPC's chat surface in main: the conversation service the
-// conversation IPC serves Studio's windows from, behind the same input checks
-// (conversation-ipc-inputs.ts) and the same fallbacks, so a chat view reaching
-// them over a port is answered exactly as one reaching them over IPC. Nothing
-// here is new behaviour; where an IPC handler wraps a throw into
-// `{ ok: false, message }`, so does this.
+// The Studio RPC's chat surface in main: the conversation service behind the
+// input checks every client meets (conversation-ipc-inputs.ts, named for the
+// window IPC they were first written for), with a throw answered as
+// `{ ok: false, message }`. It is the only way any client, the app's own
+// windows included, reaches a chat's session.
 //
 // One difference is the command id. A window's IPC sends none; the RPC's
 // session commands carry the client's, namespaced (`owner:<id>`), and it is
@@ -318,7 +317,7 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
       const parsed = parseSideQuestionInput(input)
       if (!parsed.ok) return parsed
       try {
-        return (await handlers.askSideQuestion?.(parsed.input)) ?? unavailable('Side questions')
+        return (await handlers.askSideQuestion?.(parsed.input)) ?? unavailable('Asking a side question')
       } catch (error) {
         return failed(error)
       }
@@ -327,7 +326,7 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
       const parsed = parseCancelSideQuestionInput(input)
       if (!parsed.ok) return parsed
       try {
-        return (await handlers.cancelSideQuestion?.(parsed.input)) ?? unavailable('Side questions')
+        return (await handlers.cancelSideQuestion?.(parsed.input)) ?? unavailable('Asking a side question')
       } catch (error) {
         return failed(error)
       }

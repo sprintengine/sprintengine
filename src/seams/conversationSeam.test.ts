@@ -19,7 +19,9 @@ import type {
 import type { ConversationService } from '../main/conversation-service'
 import { test, vi } from 'vitest'
 
-// The IPC wire between the real preload and the real main handlers.
+// The wire between the window's real chat calls and main's real handlers: the
+// window's Studio client and protocol parts, the Studio RPC router, and the
+// chat backend with its input checks (tests/studio-chat-wire.ts).
 vi.mock('electron', () => import('../../tests/stubs/electron'))
 
 test('conversationSeam', async () => {
@@ -140,10 +142,8 @@ test('conversationSeam', async () => {
 
   async function testContinuationTurnIsBusyOnBothSidesOfTheBoundary(): Promise<void> {
     await withWorkspaceRoot('sprintengine-seam-conversation-busy-', async (workspaceRoot) => {
-      const { ipcMain } = await import('electron')
       const { ConversationRuntime } = await import('../main/conversation-runtime')
-      const { registerConversationIpc } = await import('../main/ipc/conversation-ipc')
-      const { conversationApi } = await import('../preload/api/conversation')
+      const { connectChatOverStudio } = await import('../../tests/studio-chat-wire')
       const { projectConversation, isConversationBusy } =
         await import('../renderer/src/components/panels/AgentChatView')
 
@@ -163,7 +163,7 @@ test('conversationSeam', async () => {
       const broadcast: ConversationEvent[] = []
       runtime.onEvent((event) => broadcast.push(event))
 
-      registerConversationIpc(ipcMain, {
+      const wire = connectChatOverStudio({
         ...refusingHandlerStubs(),
         startSession: (input: HandlerInput<'startSession'>) => runtime.startSession(input),
         sendTurn: (input: HandlerInput<'sendTurn'>) => runtime.sendTurn(input),
@@ -173,7 +173,11 @@ test('conversationSeam', async () => {
         stopSession: (input: HandlerInput<'stopSession'>) => runtime.stopSession(input),
         listSessions: (input: HandlerInput<'listSessions'>) => runtime.listSessions(input),
         onEvent: (listener: HandlerInput<'onEvent'>) => runtime.onEvent(listener),
-      } as unknown as Parameters<typeof registerConversationIpc>[1])
+      } as unknown as ConversationService)
+      const conversationApi = {
+        conversationSessionStart: (input: HandlerInput<'startSession'>) => wire.parts.startSession!(input),
+        conversationSessionSendTurn: (input: ConversationSendTurnInput) => wire.parts.send(input),
+      }
 
       const started = await conversationApi.conversationSessionStart({
         workspaceRoot,
@@ -336,9 +340,7 @@ test('conversationSeam', async () => {
   // --- 1810: one accepted attachment set, not two that agree today ------------
 
   async function testComposerAndBoundaryAcceptTheSameAttachments(): Promise<void> {
-    const { ipcMain } = await import('electron')
-    const { registerConversationIpc } = await import('../main/ipc/conversation-ipc')
-    const { conversationApi } = await import('../preload/api/conversation')
+    const { connectChatOverStudio } = await import('../../tests/studio-chat-wire')
     const {
       ATTACHABLE_IMAGE_TYPES,
       MAX_ATTACHMENTS_PER_TURN,
@@ -361,7 +363,7 @@ test('conversationSeam', async () => {
         updatedAt: 0,
       } as ConversationSessionSummary,
     }
-    registerConversationIpc(ipcMain, {
+    const wire = connectChatOverStudio({
       ...refusingHandlerStubs(),
       startSession: async () => ({ ok: false, message: 'unused' }),
       sendTurn: async (input: ConversationSendTurnInput) => {
@@ -374,7 +376,11 @@ test('conversationSeam', async () => {
       stopSession: async () => accepted,
       listSessions: () => ({ ok: true, sessions: [] }),
       onEvent: () => () => {},
-    } as unknown as Parameters<typeof registerConversationIpc>[1])
+    } as unknown as ConversationService)
+    const conversationApi = {
+      conversationSessionSendTurn: async (input: ConversationSendTurnInput) =>
+        (await wire.parts.send(input)) as ConversationSessionActionResult,
+    }
 
     const send = async (attachments: unknown): Promise<ConversationSessionActionResult> =>
       conversationApi.conversationSessionSendTurn({

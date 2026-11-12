@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import { installStudioLoopback, type StudioLoopback } from '../../../../tests/studio-chat-loopback'
 import { configureWindowStudio, windowStudioClient } from './windowStudioClient'
@@ -7,7 +7,6 @@ import { configureWindowStudio, windowStudioClient } from './windowStudioClient'
 // reconnecting, and forgotten once it has closed for good, so the next use
 // starts a fresh one rather than holding a dead client for the window's life.
 
-beforeEach(() => vi.stubEnv('STUDIO_CHAT_TRANSPORT_UNDER_TEST', 'studio'))
 afterEach(() => vi.unstubAllEnvs())
 
 type Ticket = () => Promise<{ url: string; token: string }>

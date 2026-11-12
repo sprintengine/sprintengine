@@ -14,7 +14,6 @@ import { builtinSkillsApi } from './api/builtinSkills'
 import { textGenerationApi } from './api/text-generation'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
-import { conversationApi } from './api/conversation'
 import { conversationPeekApi } from './api/conversation-peek'
 import { agentCompactApi } from './api/agent-compact'
 import { pullRequestApi } from './api/pull-request'
@@ -96,7 +95,6 @@ export const apiModules = {
   ...marketplaceApi,
   ...modulesApi,
   ...pluginsApi,
-  ...conversationApi,
   ...conversationPeekApi,
   ...agentCompactApi,
   ...pullRequestApi,

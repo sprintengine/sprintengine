@@ -8,28 +8,16 @@ import { configureWindowStudio } from '../src/renderer/src/studio/windowStudioCl
 import { createMemoryChannel, type MemoryChannelEnd } from './memory-channel'
 import { memoryWebSocketClass } from './memory-websocket'
 
-// The chat view's own tests, run a second time with the window on the Studio
-// protocol. A test stubs `window.api` with the conversation IPC it means to
-// script, as it always has; this puts a real Studio RPC between the view and
-// that stub: the window's client and transport, a socket, the connection and
-// router, and main's chat backend with its input checks, all answered in the
-// end by the same stubbed members. A test that passes both ways shows the
-// protocol path changes nothing the view does.
-//
-// What the window reaches only over the protocol (its chat services: session
-// list, stop, suspend, history, approval rules, providers and keys, plans, the
-// `/` lists) is served here in every run. The stubs keep the names the IPC
-// members had (`conversationSessionsList`, `onConversationEvent`, ...), which
-// no preload has any more: they are this harness's names for the backend.
-//
-// The `chat-over-studio` Vitest project sets STUDIO_CHAT_TRANSPORT_UNDER_TEST;
-// in every other run this does nothing.
+// The chat view's tests on the Studio protocol, which is the only way the
+// window reaches its chats. The window's client and transport, a socket, the
+// real connection and router, and main's chat backend with its input checks
+// run between the view and a fake conversation service. A test writes that
+// fake's members on `window.api` under the names the window's IPC once had
+// (`conversationSessionStart`, `onConversationSession`, ...): no preload has
+// them, and nothing in the window calls them; they are this harness's names
+// for the service the router reaches.
 
 type Api = Record<string, unknown>
-
-export function chatOverStudioUnderTest(): boolean {
-  return process.env.STUDIO_CHAT_TRANSPORT_UNDER_TEST === 'studio'
-}
 
 /** A stubbed IPC member, read when it is called so a test may swap it mid-way. */
 function call(api: Api, name: string, ...args: unknown[]): Promise<never> {
@@ -244,10 +232,9 @@ export type StudioLoopback = {
 }
 
 /**
- * Put a stubbed window on a Studio over the protocol: its chat services in
- * every run, as the window has no other way to them, and its chat view too
- * when this run is the `chat-over-studio` one. Call it after `window.api` is
- * stubbed; members the test changes later are read when they are called.
+ * Put a stubbed window on a Studio over the protocol: its chat view and its
+ * chat services. Call it after `window.api` is stubbed; members the test
+ * changes later are read when they are called.
  */
 export function installStudioLoopback(
   win: { api?: Api },
@@ -283,9 +270,6 @@ export function installStudioLoopback(
       return windowEnd
     }),
   })
-  // Pull requests are served only over the protocol, so a test of them puts
-  // the chat view on it in every run.
-  if (chatOverStudioUnderTest() || options.pullRequests) Object.assign(api, { studioChatTransport: 'studio' })
   Object.assign(api, {
     studioWindowTicket: async () => {
       const ticket = mintStudioTicket()
@@ -299,4 +283,15 @@ export function installStudioLoopback(
     },
     connections: () => opened,
   }
+}
+
+/**
+ * Let a call the view just made cross the loopback and its answer come back
+ * and be drawn: a protocol call takes a few turns of the event loop where the
+ * window's IPC took one.
+ */
+export async function settleStudio(act: (work: () => Promise<void>) => Promise<void>): Promise<void> {
+  await act(async () => {
+    for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setTimeout(resolve, 0))
+  })
 }

@@ -25,7 +25,7 @@ function fakePort() {
 }
 
 test('a web tab reaches the domains it draws, and not the ones that act beyond this server', () => {
-  for (const channel of ['workspace-sync:dispatch', 'workspace-sync:lifecycle', 'conversation:sessions:send-turn'])
+  for (const channel of ['workspace-sync:dispatch', 'workspace-sync:lifecycle', 'backlog:create-epic'])
     expect(webTunnelAllows(channel), channel).toBe(true)
   for (const channel of [
     'studio-local-apps:offer',
@@ -173,7 +173,7 @@ test('a browser that is not the owner reaches no tunnel channel, whatever it sen
   })
   guarded.on('message', (event) => heard.push(event.data))
   inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'workspace-sync:get-snapshot', args: [] })
-  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'conversation:sessions:send-turn', args: [{}] })
+  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'backlog:create-epic', args: [{}] })
   inner.deliver({ t: 'ipc.send', channel: 'workspace-sync:dispatch', args: [{}] })
   expect(heard).toEqual([])
   expect(inner.posted).toMatchObject([

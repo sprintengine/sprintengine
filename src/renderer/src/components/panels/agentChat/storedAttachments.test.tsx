@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest'
 import { JSDOM } from 'jsdom'
 import type { ConversationStoredImageAttachment } from '../../../../../shared/conversation-runtime'
+import { installStudioLoopback, settleStudio } from '../../../../../../tests/studio-chat-loopback'
 
 test('a replayed bubble reads its images back by reference, and says so when one is gone', async () => {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost', pretendToBeVisual: true })
@@ -32,6 +33,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
       },
     },
   })
+  installStudioLoopback(dom.window as never)
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { StoredAttachmentThumbnail } = await import('./storedAttachments')
@@ -56,6 +58,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
         </>,
       )
     })
+    await settleStudio(act)
     expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,Zm9v')
     expect(host.querySelector('img')?.getAttribute('alt')).toBe('cat.png')
     expect(host.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Attached image, not available')
@@ -63,6 +66,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
     await act(async () => {
       root.render(<StoredAttachmentThumbnail attachment={kept} className="h-16 w-16" />)
     })
+    await settleStudio(act)
     expect(reads.filter((ref) => ref === kept.ref)).toHaveLength(1)
 
     // A conversation on another machine keeps its images there, and they are
@@ -79,6 +83,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
         </ConversationTransportProvider>,
       )
     })
+    await settleStudio(act)
     expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,YmF6')
     expect(reads).toContain('remote:f/remote-kept.png')
     expect(reads).not.toContain('f/remote-kept.png')
@@ -90,6 +95,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
         </ConversationTransportProvider>,
       )
     })
+    await settleStudio(act)
     expect(host.querySelector('img')).toBeNull()
     expect(host.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('cat.png, not available')
   } finally {

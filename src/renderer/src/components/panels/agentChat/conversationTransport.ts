@@ -63,7 +63,7 @@ import type {
 // Where a chat view's conversation lives. The view — its transcript, pending
 // dock, composer — is the same whether the conversation runs on this machine
 // or on a paired one; only the calls behind it differ. The local transport is
-// the conversation IPC; a remote one is the Mesh's, which follows the
+// the window's Studio protocol client; a remote one is the Mesh's, which follows the
 // conversation over the tailnet from main.
 //
 // What a transport cannot do is said by its capabilities, not inferred from a
@@ -72,11 +72,8 @@ import type {
 // that machine does it, and has none of this machine's skills, files or
 // history index to offer.
 //
-// A conversation on this machine is reached one of two ways, chosen once per
-// window (`window.api.studioChatTransport`): the conversation IPC, or the
-// Studio protocol over the window's Studio client. Both answer every call
-// with the same shapes, and the chat view cannot tell them apart. The IPC is
-// the default while the protocol path has its release beside it.
+// A conversation on this machine is reached over the Studio protocol, through
+// the window's Studio client, as every other client reaches it.
 
 export type ConversationTransportCapabilities = {
   /** Send, stop, answer approvals and questions, change the preset. */
@@ -385,8 +382,8 @@ export type ConversationTransport = {
   messageSubagent?(input: ConversationMessageSubagentInput): Promise<ConversationTransportResult>
   /**
    * Restart the chat's agent on the machine it runs on, as Restart agent
-   * session does for a chat here (which suspends its session through the
-   * conversation IPC itself): answered with a `notice` where it had none
+   * session does for a chat here (which suspends its session through
+   * `session.suspend`): answered with a `notice` where it had none
    * running, and nothing was done. A paired machine's chat has it, refused in
    * words for a machine that does not take the command
    * (`conversation-restart-session`).
@@ -465,46 +462,13 @@ const LOCAL_CAPABILITIES: ConversationTransportCapabilities = {
   agentMessages: true,
 }
 
-type LocalParts = Omit<ConversationTransport, 'kind' | 'capabilities' | 'services'>
+type LocalParts = Omit<ConversationTransport, 'kind' | 'capabilities' | 'services'> &
+  Required<
+    Pick<ConversationTransport, 'setModel' | 'attachment' | 'rewind' | 'handoff' | 'fork' | 'startSession' | 'revert'>
+  >
 
-/** The conversation IPC, read off `window.api` at call time so a test's stub is the one used. */
-const ipcConversationParts: Required<
-  Pick<LocalParts, 'setModel' | 'attachment' | 'rewind' | 'handoff' | 'fork' | 'startSession' | 'revert'>
-> &
-  LocalParts = {
-  subscribe: (input, cb) => window.api.onConversationSession(input, cb),
-  loadEarlier: (input) => window.api.conversationLoadEarlier(input),
-  toolDetail: (input) => window.api.conversationToolDetail(input),
-  readEvent: (input) => window.api.conversationEvent(input),
-  turnDiff: (input) => window.api.conversationTurnDiff(input),
-  send: (input) => window.api.conversationSessionSendTurn(input),
-  interrupt: (input) => window.api.conversationSessionInterrupt(input),
-  respond: (input) => window.api.conversationSessionRespondToRequest(input),
-  setPermissionPreset: async (input) =>
-    typeof window.api.conversationSessionSetPermission === 'function'
-      ? window.api.conversationSessionSetPermission(input)
-      : { ok: false, message: 'Changing tool permissions mid-conversation needs an app restart.' },
-  setModel: (input) => window.api.conversationSessionSetModel(input),
-  attachment: (input) => window.api.conversationAttachment(input),
-  rewind: (input) => window.api.conversationRewindToTurn(input),
-  handoff: (input) => window.api.conversationHandoff(input),
-  fork: (input) => window.api.conversationForkAtTurn(input),
-  startSession: (input) => window.api.conversationSessionStart(input),
-  revert: (input) => window.api.conversationRevertToTurn(input),
-  stopSubagent: (input) => window.api.conversationSessionStopSubagent(input),
-  messageSubagent: (input) => window.api.conversationSessionMessageSubagent(input),
-  askSideQuestion: (input) => window.api.conversationSessionAskSideQuestion(input),
-  cancelSideQuestion: (input) => window.api.conversationSessionCancelSideQuestion(input),
-  readContextBreakdown: (input) => window.api.conversationSessionContextBreakdown(input),
-}
-
-/** Whether this window's chat view is on the Studio protocol. */
-export function chatOverStudioProtocol(): boolean {
-  return typeof window !== 'undefined' && window.api?.studioChatTransport === 'studio'
-}
-
-const localParts = (): typeof ipcConversationParts =>
-  chatOverStudioProtocol() ? (studioImplementation().parts as typeof ipcConversationParts) : ipcConversationParts
+/** This window's Studio implementation's parts, read at call time so a replaced client is the one used. */
+const localParts = (): LocalParts => studioImplementation().parts as LocalParts
 
 // Each call is answered by this window's Studio implementation, read when it
 // is made; the object itself never changes, so what is keyed by it (a shared
@@ -575,26 +539,12 @@ export const localConversationTransport: ConversationTransport = {
   fork: (input) => localParts().fork(input),
   startSession: (input) => localParts().startSession(input),
   revert: (input) => localParts().revert(input),
-  // The protocol's, in a window on either implementation: the session is the
-  // one runtime's either way.
   mcpServerAction: (input) => studioImplementation().parts.mcpServerAction(input),
-  // Read off the implementation the window chose, so it is absent where that
-  // one has no way to do it.
-  get stopSubagent() {
-    return localParts().stopSubagent
-  },
-  get messageSubagent() {
-    return localParts().messageSubagent
-  },
-  get askSideQuestion() {
-    return localParts().askSideQuestion
-  },
-  get cancelSideQuestion() {
-    return localParts().cancelSideQuestion
-  },
-  get readContextBreakdown() {
-    return localParts().readContextBreakdown
-  },
+  stopSubagent: (input) => localParts().stopSubagent!(input),
+  messageSubagent: (input) => localParts().messageSubagent!(input),
+  askSideQuestion: (input) => localParts().askSideQuestion!(input),
+  cancelSideQuestion: (input) => localParts().cancelSideQuestion!(input),
+  readContextBreakdown: (input) => localParts().readContextBreakdown!(input),
   services: windowServices,
 }
 

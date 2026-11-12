@@ -816,7 +816,7 @@ test('a path is stat’d and a picture read anywhere only by an owner not held t
   )
 })
 
-test('every operation the window’s conversation IPC offers is a method an owner calls on the socket', async () => {
+test('every operation a window’s chat makes is a method an owner calls on the socket', async () => {
   const { server, chat } = await served()
   const window = await windowClient(server)
   const answers = {

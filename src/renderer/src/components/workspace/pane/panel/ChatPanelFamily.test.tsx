@@ -10,6 +10,7 @@ import type { ConversationSessionEntry } from '../../../../hooks/conversationSes
 import type { ConversationTransport } from '../../../panels/agentChat/conversationTransport'
 import { latestSessionOf } from '../../../panels/agentChat/chatSubagents'
 import { panelFacts } from './panelFactsFixture'
+import { installStudioLoopback, settleStudio } from '../../../../../../../tests/studio-chat-loopback'
 
 // The panel beside a chat's tab, following the agent in view: the real host and
 // the real panel, joined only by the stores that join them in the window, for a
@@ -147,6 +148,7 @@ async function mountPanel({
       canvasListBoards: async () => ({ ok: true, value: [] }),
     },
   })
+  installStudioLoopback(dom.window as never)
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useWorkspaceStore } = await import('../../../../store/workspaceStore')
@@ -205,6 +207,7 @@ async function mountPanel({
       }),
     )
   await act(async () => root.render(tree()))
+  await settleStudio(act)
   const panel = () => host.querySelector<HTMLElement>('[data-chat-panel]')!
   return {
     host,
@@ -222,12 +225,14 @@ async function mountPanel({
         frames.at(-1)?.({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } })
         frames.at(-1)?.({ type: 'synchronized', seq: events.at(-1)?.seq ?? 0 })
       })
+      await settleStudio(act)
     },
     async page(events: ConversationEvent[]) {
       await act(async () => {
         frames.at(-1)?.({ type: 'snapshot', page: { events, hasMore: true, beforeCursor: 1 } })
         frames.at(-1)?.({ type: 'synchronized', seq: events.at(-1)?.seq ?? 0 })
       })
+      await settleStudio(act)
     },
     followed,
     resolved,
