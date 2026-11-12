@@ -3,7 +3,7 @@ import type {
   MobileControlBacklogItemCriticality,
   MobileControlBacklogItemDifficulty,
   MobileControlBacklogItemType,
-} from "../../shared/mobile-control";
+} from "../../../../packages/studio-protocol/src/mobile-control";
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 

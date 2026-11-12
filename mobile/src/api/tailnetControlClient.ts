@@ -4,12 +4,12 @@ import {
   type ApiResult,
   type DesktopMachineMark,
   type MobileControlCommand,
-  type MobileControlErrorCode,
+  type ApiErrorCode,
   type MobileControlSnapshot,
   type MobileSession,
   type MobileSnapshotCollection,
 } from "./types";
-import { pullRequestReadCommandTypes } from "../shared/mobile-control/protocol";
+import { mobileControlReadCommandTypes } from "../../../packages/studio-protocol/src/mobile-control";
 
 // The desktop gateway's tailnet surface: plain fetch + JSON-RPC, no account
 // and no server in between. Prior art is the desktop's own
@@ -19,7 +19,8 @@ import { pullRequestReadCommandTypes } from "../shared/mobile-control/protocol";
 // Native's native fetch sends none).
 //
 // The snapshot and the commands speak the mobile-control protocol
-// (src/shared/mobile-control), which is why its validators are used here.
+// (packages/studio-protocol/src/mobile-control.ts, shared with the desktop),
+// which is why its validators are used here.
 
 const TAILNET_MCP_PATH = "/tailnet/v1/mcp";
 const TAILNET_PAIR_PATH = "/tailnet/v1/pair";
@@ -72,8 +73,8 @@ export interface MobileControlCommandInput {
 
 /** A command the desktop refused, carrying the wire's error code for the caller to branch on. */
 export class DesktopCommandError extends Error {
-  readonly code?: MobileControlErrorCode;
-  constructor(message: string, code?: MobileControlErrorCode) {
+  readonly code?: ApiErrorCode;
+  constructor(message: string, code?: ApiErrorCode) {
     super(message);
     this.name = "DesktopCommandError";
     this.code = code;
@@ -82,7 +83,6 @@ export class DesktopCommandError extends Error {
 
 export const knownCommandTypes = [
   "snapshot.request",
-  "device.revoke",
   "backlog.update",
   "backlog.create",
   "pullRequest.read",
@@ -117,7 +117,7 @@ void _knownCommandsComplete;
  */
 export const POLLED_SNAPSHOT_COLLECTIONS: readonly MobileSnapshotCollection[] = ["backlog"];
 
-const knownApiErrorCodes: readonly MobileControlErrorCode[] = [
+const knownApiErrorCodes: readonly ApiErrorCode[] = [
   "unsupported_protocol_version",
   "invalid_payload",
   "unauthenticated",
@@ -359,7 +359,7 @@ export class TailnetControlClient {
       },
       // A read that times out did nothing, and says so in a read's words;
       // its gh calls on the desktop can take as long as a mutation does.
-      { timeoutMs: MUTATION_TIMEOUT_MS, mutation: !(pullRequestReadCommandTypes as readonly string[]).includes(command.type) }
+      { timeoutMs: MUTATION_TIMEOUT_MS, mutation: !(mobileControlReadCommandTypes as readonly string[]).includes(command.type) }
     );
     if (!result.ok) {
       return { ok: false, errorCode: result.errorCode, message: result.message };
@@ -517,7 +517,7 @@ export function validateSnapshotResult(data: unknown): ApiResult<SnapshotRead> {
 
 /** A code the app's vocabulary knows keeps its identity; anything else becomes `fallback`. */
 export function readApiErrorCode(input: unknown, fallback: ApiResult<never>["errorCode"]): ApiResult<never>["errorCode"] {
-  return typeof input === "string" && knownApiErrorCodes.includes(input as MobileControlErrorCode)
-    ? (input as MobileControlErrorCode)
+  return typeof input === "string" && knownApiErrorCodes.includes(input as ApiErrorCode)
+    ? (input as ApiErrorCode)
     : fallback;
 }

@@ -237,9 +237,9 @@ packages, imported from the repository's `packages/` folder as source:
 a frame, event or listed chat this build does not know is passed over or listed
 as unknown rather than refused. Metro
 watches that folder (`metro.config.js`), and the test build compiles it beside
-the app (`tsconfig.test.json`). `src/shared/mobile-control/protocol.ts` still
-carries its own copy of the mobile-control types, hash-pinned by a test. The
-policy for wire changes is `docs/compatibility.md` at the repository root.
+the app (`tsconfig.test.json`). The mobile-control wire is imported the same
+way, from `packages/studio-protocol/src/mobile-control.ts`. The policy for wire
+changes is `docs/compatibility.md` at the repository root.
 
 `docs/conversations.md` describes how the chat list and a chat behave in
 detail, and `docs/canvases.md` how the phone lists a desktop's Canvas boards

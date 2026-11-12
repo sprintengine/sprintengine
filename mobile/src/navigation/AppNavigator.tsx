@@ -115,7 +115,6 @@ export function AppNavigator() {
     selectSession,
     removeSession,
     renameSession,
-    revokeOnDesktop,
   } = useSessionData();
   const { chats, openedAt } = useChats();
   const notices = useNotices();
@@ -430,7 +429,6 @@ export function AppNavigator() {
                   navigation.goBack();
                 }}
                 onRename={(name) => renameSession(route.params.deviceId, name)}
-                onRevokeOnDesktop={route.params.deviceId === activeDeviceId ? revokeOnDesktop : null}
                 onSelect={() => selectSession(route.params.deviceId)}
                 onStartPairing={() => navigation.navigate("Pairing")}
                 session={sessions.find((candidate) => candidate.deviceId === route.params.deviceId) ?? null}

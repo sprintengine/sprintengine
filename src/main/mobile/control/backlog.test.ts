@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { readMobileBacklogWorkspaceSnapshot } from './backlog'
-import type { MobileControlBacklogItemSnapshot } from './protocol'
+import type { MobileControlBacklogItemSnapshot } from '../../../../packages/studio-protocol/src/mobile-control'
 import { test } from 'vitest'
 
 test('backlog', async () => {

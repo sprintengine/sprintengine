@@ -20,7 +20,7 @@ import {
   type MobileControlPullRequestDetail,
   type MobileControlPullRequestDiffPage,
   type MobileControlPullRequestRemark,
-} from './protocol'
+} from '../../../../packages/studio-protocol/src/mobile-control'
 
 /** Where the reads come from: `gh`, in the app; a fake in the tests. */
 export type MobileControlPullRequestReader = {

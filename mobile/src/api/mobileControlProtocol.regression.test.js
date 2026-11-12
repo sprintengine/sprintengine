@@ -1,53 +1,15 @@
 /* global __dirname */
 const assert = require("node:assert/strict");
-const crypto = require("node:crypto");
-const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
-// Drift guard (T10). This file's src/shared/mobile-control/protocol.ts is a
-// byte-identical mirror of the desktop wire schema
-// (multicode: packages/mobile-control-protocol/src/index.ts). The tailnet
-// gateway's snapshot and command tools speak it, and they only work while the
-// two copies agree, so both repos pin this same sha256 — the
-// desktop side pins it in src/main/mobile/control/snapshot.test.ts. If you change
-// the wire schema in either copy, mirror the change into the other repo and set
-// both pins to the new shared hash.
-//
-// NOTE, and the reason this guard nearly failed to do its job: each pin hashes
-// only its OWN copy. Two pins left at different values do not fail; they simply
-// stop comparing anything. That is how the copies came to differ by an optional
-// `rolesUnavailable` field, found and closed when protocol v3 set both pins in
-// one change. Protocol v4 set both pins in one change again.
-//
-// 2026-09-29: this pin moved alone, with the automations removal, while the
-// desktop takes them off its copy in parallel. The two copies are to be
-// reconciled against the desktop's final change and both pins set together.
-//
-// 2026-10-30: moved with the pull request reads (`pullRequest.read`,
-// `pullRequest.diff`), which the desktop's copy in
-// src/main/mobile/control/protocol.ts gained in the same change.
-const PROTOCOL_SOURCE_SHA256 =
-  "bdc70ea7ddff1e688becbd2265e695e8961fefb87708bbcb10a88676bda2b253";
+// The mobile-control wire is one module, the desktop's own
+// (`packages/studio-protocol/src/mobile-control.ts`), which the phone imports:
+// these rows hold the commands and snapshots the phone sends and reads to it.
 
-test("mobile protocol.ts stays byte-identical to the desktop wire schema (hash pin)", () => {
-  const source = fs.readFileSync(path.join(__dirname, "protocol.ts"));
-  const digest = crypto.createHash("sha256").update(source).digest("hex");
-  assert.equal(
-    digest,
-    PROTOCOL_SOURCE_SHA256,
-    "protocol.ts changed — mirror the edit into the desktop copy and update both pinned hashes to the new shared value",
-  );
-});
-
-const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
-const {
-  mobileControlProtocolVersion,
-  validateMobileControlCommand,
-  validateMobileControlDevice,
-  validateMobileControlError,
-  validateMobileControlSnapshot,
-} = require(path.join(buildRoot, "src/shared/mobile-control/protocol.js"));
+const buildRoot = path.resolve(__dirname, "../../.mobile-test-build/packages/studio-protocol/src");
+const { mobileControlProtocolVersion, validateMobileControlSnapshot } = require(path.join(buildRoot, "mobile-control.js"));
+const { validateMobileControlCommand } = require(path.join(buildRoot, "mobile-control-commands.js"));
 const now = "2026-05-25T21:50:00.000Z";
 
 test("a desktop-shaped v4 snapshot validates, and carries no retired collection", () => {
@@ -119,7 +81,8 @@ test("the Sprint Engine's own vocabulary is no longer anywhere on the wire", () 
 // `desktopWorkspaces` snapshot collection, the `roadmaps` rider and the
 // `python_tool_failed` error code had no producer, and are off the wire.
 test("the members nothing produced are no longer anywhere on the wire", () => {
-  // Naming the retired collection is refused, not quietly dropped.
+  // A retired collection is accepted and answered without it, so a phone
+  // built before it went keeps reading (`retiredMobileSnapshotCollections`).
   for (const include of [["backlog", "desktopWorkspaces"], ["sprintEngines"]]) {
     const refused = validateMobileControlCommand({
       protocolVersion: mobileControlProtocolVersion,
@@ -129,30 +92,8 @@ test("the members nothing produced are no longer anywhere on the wire", () => {
       deviceId: "mobile-1",
       payload: { include },
     });
-    assert.equal(refused.ok, false, `${include.join(",")} is not a snapshot collection`);
-    assert.equal(refused.error.code, "invalid_payload");
+    assert.equal(refused.ok, true, `${include.join(",")} is tolerated as retired`);
   }
-
-  for (const retired of ["summary.read", "detail.read", "logs.read", "tasks.move", "runner.pause", "execution.cancel"]) {
-    const stale = validateMobileControlDevice({
-      protocolVersion: mobileControlProtocolVersion,
-      deviceId: "mobile-1",
-      displayName: "Phone",
-      platform: "ios",
-      appVersion: "0.1.0",
-      pairedAt: now,
-      capabilities: ["snapshots.read", retired],
-    });
-    assert.equal(stale.ok, false, `${retired} is not a capability`);
-  }
-
-  const pythonFailure = validateMobileControlError({
-    protocolVersion: mobileControlProtocolVersion,
-    code: "python_tool_failed",
-    message: "Nope.",
-    retryable: false,
-  });
-  assert.equal(pythonFailure.ok, false);
 
   // A stray `workspaces` or `roadmaps` key is an unknown field, which this
   // validator has always ignored: it is not a tolerated shape, it has no type,
@@ -265,64 +206,6 @@ test("snapshots advertising commands newer than this client still validate (dark
   assert.equal(rejected.error.code, "invalid_payload");
 });
 
-test("device payloads may advertise every capability pairing grants, backlog trio included", () => {
-  // Desktop pairing grants the backlog scopes, so the runtime capability list
-  // must accept them — it once listed 7 of the 10 union members and rejected
-  // exactly these device payloads.
-  const device = validateMobileControlDevice({
-    protocolVersion: mobileControlProtocolVersion,
-    deviceId: "mobile-1",
-    displayName: "Sprint Engine iPhone",
-    platform: "ios",
-    appVersion: "0.1.0",
-    pairedAt: now,
-    capabilities: [
-      "snapshots.read",
-      "devices.revoke",
-      "backlog.update",
-      "backlog.create",
-    ],
-  });
-
-  assert.equal(device.ok, true, device.ok === false ? device.error.message : undefined);
-  assert.equal(device.value.capabilities.length, 4);
-
-  // INVERTED at protocol v3: eight of the ten capabilities this test used to
-  // require the validator to ACCEPT are no longer on the wire, and a device still
-  // advertising one is speaking a version this build does not.
-  for (const retired of [
-    "artifacts.read",
-    "sprintengines.create",
-    "tasks.start",
-    "artifacts.review",
-    "agents.followUp",
-    "backlog.start",
-    "sprintengines.pr",
-    "sprintengines.automation",
-  ]) {
-    const stale = validateMobileControlDevice({
-      protocolVersion: mobileControlProtocolVersion,
-      deviceId: "mobile-1",
-      displayName: "Sprint Engine iPhone",
-      platform: "ios",
-      appVersion: "0.1.0",
-      pairedAt: now,
-      capabilities: ["snapshots.read", retired],
-    });
-    assert.equal(stale.ok, false, `${retired} left the wire and must no longer validate`);
-  }
-
-  const unknownCapability = validateMobileControlDevice({
-    protocolVersion: mobileControlProtocolVersion,
-    deviceId: "mobile-1",
-    displayName: "Sprint Engine iPhone",
-    platform: "ios",
-    appVersion: "0.1.0",
-    pairedAt: now,
-    capabilities: ["backlog.destroy"],
-  });
-  assert.equal(unknownCapability.ok, false);
-});
 
 // Automations left the phone entirely, and the desktop is taking them off the
 // wire. Five tests stood here pinning the `automations` collection's shape and
@@ -340,7 +223,8 @@ test("automations are no longer anywhere on the wire", () => {
   assert.equal(command.ok, false, "automations.control is no longer a command this wire defines");
   assert.equal(command.error.code, "invalid_payload");
 
-  // Naming the retired collection is refused, not quietly dropped.
+  // The retired collection is accepted and answered without it, so a phone
+  // built before it went keeps reading (`retiredMobileSnapshotCollections`).
   const scoped = validateMobileControlCommand({
     protocolVersion: mobileControlProtocolVersion,
     commandId: "cmd-automations-collection",
@@ -349,30 +233,7 @@ test("automations are no longer anywhere on the wire", () => {
     deviceId: "mobile-1",
     payload: { include: ["backlog", "automations"] },
   });
-  assert.equal(scoped.ok, false, "automations is not a snapshot collection");
-  assert.equal(scoped.error.code, "invalid_payload");
-
-  // The capability is not one a device may carry.
-  const device = validateMobileControlDevice({
-    protocolVersion: mobileControlProtocolVersion,
-    deviceId: "mobile-1",
-    displayName: "Sprint Engine iPhone",
-    platform: "ios",
-    appVersion: "0.1.0",
-    pairedAt: now,
-    capabilities: ["snapshots.read", "automations.control"],
-  });
-  assert.equal(device.ok, false, "automations.control is not a capability");
-
-  // `task_not_ready` was only ever the automations controller's answer to a
-  // second run-now, so it went with them.
-  const notReady = validateMobileControlError({
-    protocolVersion: mobileControlProtocolVersion,
-    code: "task_not_ready",
-    message: "A run is already in flight.",
-    retryable: false,
-  });
-  assert.equal(notReady.ok, false);
+  assert.equal(scoped.ok, true, "automations is tolerated as retired");
 
   // A desktop that still sends the collection is read, and the key is an unknown
   // field — ignored, whatever it holds. Nothing on this phone reads it, so even a

@@ -5,13 +5,13 @@ import {
   rememberCommandResult,
   requestHashFor,
 } from './command-cache'
-import { validateMobileControlCommand } from './command-validation'
+import { validateMobileControlCommand } from '../../../../packages/studio-protocol/src/mobile-control-commands'
 import { uniqueResolved } from './path-utils'
 import { getMobileControlCommandErrorMessage, MobileControlCommandError } from './command-error'
 import { MobileControlCommandResultRecorder } from './command-results'
 import { validateMobileWorkspacePath } from './workspace'
 import { assertBacklogRelativePath } from './backlog'
-import { mobileControlReadCommandTypes } from './protocol'
+import { mobileControlReadCommandTypes } from '../../../../packages/studio-protocol/src/mobile-control'
 import {
   ghPullRequestReader,
   readMobilePullRequest,
@@ -33,9 +33,9 @@ export { MobileControlCommandError } from './command-error'
 // The wire schema is owned by ./protocol. Import the command types from there
 // and re-export them so this module stays the public surface for consumers,
 // without re-declaring (and risking drift from) the protocol.
-export { mobileControlProtocolVersion } from './protocol'
+export { mobileControlProtocolVersion } from '../../../../packages/studio-protocol/src/mobile-control'
 
-import type { MobileControlCommand, MobileControlCommandType, MobileControlError } from './protocol'
+import type { MobileControlCommand, MobileControlCommandType, MobileControlError } from '../../../../packages/studio-protocol/src/mobile-control'
 
 export type { MobileControlCommand, MobileControlCommandType, MobileControlError }
 

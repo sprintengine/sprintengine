@@ -3,7 +3,7 @@ import type { ApiResult, MobileControlCommand } from "./types";
 // A pull request as the phone's viewer shows it, read from the desktop that
 // lists it: `pullRequest.read` for its detail and `pullRequest.diff` for a
 // page of one file's diff, two mobile-control commands that only read
-// (`shared/mobile-control/protocol.ts`). The desktop asks GitHub through its
+// (`packages/studio-protocol/src/mobile-control.ts`). The desktop asks GitHub through its
 // own `gh` and cuts every list down before it sends it, so an answer is a
 // screen of a pull request, not the whole of it.
 //

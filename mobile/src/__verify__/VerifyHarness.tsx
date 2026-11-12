@@ -380,7 +380,6 @@ function VerifyShell() {
       backlogCapabilities: { canUpdate: true },
       sendBacklogUpdate: asyncNoop,
       sendBacklogCreate: async () => ({ ok: true } as never),
-      revokeOnDesktop: asyncNoop,
       selectSession: noop,
       removeSession: noop,
       renameSession: noop,

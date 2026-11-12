@@ -4,7 +4,7 @@ import {
   MobileControlBacklogItemSnapshot,
   MobileControlBacklogItemStatus,
   MobileControlBacklogItemType,
-} from "../../shared/mobile-control";
+} from "../../../../packages/studio-protocol/src/mobile-control";
 
 export interface BacklogRowItem extends MobileControlBacklogItemSnapshot {
   workspacePath: string;

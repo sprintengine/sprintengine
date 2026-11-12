@@ -3,9 +3,9 @@ import { test } from 'vitest'
 import { parseFilesView } from '../../github/pull-request-detail-read'
 import type { PullRequestWatchRead } from '../../github/pull-request-watch-read'
 import { MobileControlCommandService, mobileControlProtocolVersion, type MobileControlCommand } from './command'
-import { validateMobileControlCommand } from './command-validation'
+import { validateMobileControlCommand } from '../../../../packages/studio-protocol/src/mobile-control-commands'
 import { buildPullRequestDetail, fileDiffSection, pageFileDiff, type MobileControlPullRequestReader } from './pull-request'
-import { mobilePullRequestLimits } from './protocol'
+import { mobilePullRequestLimits } from '../../../../packages/studio-protocol/src/mobile-control'
 
 const URL = 'https://github.com/acme/app/pull/42'
 const now = new Date('2026-10-30T12:00:00.000Z')

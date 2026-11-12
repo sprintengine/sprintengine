@@ -22,7 +22,7 @@ import {
   type BacklogEpicMeta,
   type BacklogRowItem,
 } from "./backlogLogic";
-import type { MobileControlBacklogItemStatus } from "../../shared/mobile-control";
+import type { MobileControlBacklogItemStatus } from "../../../../packages/studio-protocol/src/mobile-control";
 
 // Backlog readiness maps onto the shared lifecycle vocabulary: `completed`
 // becomes the `done` check, the rest are named identically.

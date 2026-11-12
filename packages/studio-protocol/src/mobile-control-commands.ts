@@ -1,11 +1,14 @@
-// Straight from the protocol module rather than through `./command`, which
-// re-exports it: this is a value import, and `./command` imports this file back.
+// How a mobile-control command is read: the desktop's validator, beside the
+// wire it reads (`mobile-control.ts`), so the phone's tests hold the commands
+// it sends to the same rules.
 import {
   isSupportedMobileControlProtocolVersion,
   mobileControlProtocolVersion,
   unsupportedMobileControlProtocolVersion,
-} from './protocol'
-import type { MobileControlCommand, MobileControlCommandType, MobileControlError } from './command'
+  type MobileControlCommand,
+  type MobileControlCommandType,
+  type MobileControlError,
+} from './mobile-control.js'
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: MobileControlError }
 

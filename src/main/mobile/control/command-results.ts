@@ -5,7 +5,7 @@ import type {
   MobileControlCommandAuditEntry,
   MobileControlCommandResult,
 } from './command'
-import { buildError } from './command-validation'
+import { buildError } from '../../../../packages/studio-protocol/src/mobile-control-commands'
 
 type MobileControlCommandAuditStatus = 'accepted' | 'rejected'
 

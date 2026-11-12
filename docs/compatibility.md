@@ -14,7 +14,7 @@ a private data structure, and changing one is not a local edit.**
 | Wire                                                                                  | Version                                  | Window                                               | Declared in                                     |
 | ------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
 | Tailnet transport — Studio driving another Studio                                     | `TAILNET_TRANSPORT_VERSION` (integer)    | `TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION` .. current | `src/main/automation/tailnet/tailnet-routes.ts` |
-| Mobile control — the phone reading and driving a desktop over the tailnet gateway     | `mobileControlProtocolVersion` (integer) | `mobileControlSupportedProtocolVersions`             | `src/main/mobile/control/protocol.ts`           |
+| Mobile control — the phone reading and driving a desktop over the tailnet gateway     | `mobileControlProtocolVersion` (integer) | `mobileControlSupportedProtocolVersions`             | `packages/studio-protocol/src/mobile-control.ts` |
 | MCP                                                                                   | dated strings, newest first              | every entry in the list                              | `src/shared/mcp/protocol.ts`                    |
 | Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)             | `HOST_API_MIN_SUPPORTED` .. current                  | `src/shared/modules/host-api.ts`                |
 | Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)      | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current           | `packages/studio-protocol/src/handshake.ts`     |
@@ -106,7 +106,8 @@ that says both what was seen and what is supported.
   is reported unreachable with the reason, and shown as such in the Remote panel.
 - Mobile: `isSupportedMobileControlProtocolVersion`, and the
   `unsupported_protocol_version` error code. Enforced on inbound commands
-  (`command-validation.ts`, behind `workspace.mobile_command`). The snapshot the
+  (`packages/studio-protocol/src/mobile-control-commands.ts`, behind
+  `workspace.mobile_command`). The snapshot the
   desktop sends is stamped with the current version, and the phone reads it at
   that version only. The phone pairs through the tailnet gateway's own pairing,
   which is versioned by the tailnet transport, not by this integer.
@@ -286,18 +287,20 @@ HOST_API_VERSION`. `checkHostApiCompatibility` is the one check; it is
 ## The mobile wire lives in this tree
 
 The mobile-control shapes — the snapshot the phone reads and the commands it
-sends — are declared in `src/main/mobile/control/protocol.ts`, next to the
-snapshot builder and command service that are their only producers here. They
+sends — are declared once, in `packages/studio-protocol/src/mobile-control.ts`
+(the command validator beside it in `mobile-control-commands.ts`), which the
+desktop's snapshot builder and command service and the phone app all import. They
 used to ship as the `@sprintengine/mobile-control-protocol` package, when the
 same wire also ran through a hosted relay; the relay was removed on 2026-09-27
 (owner ruling) and the package with it. Its published `4.x` versions stay on
 npm, and wire version 4 is what this tree still speaks, unchanged.
 
-The phone app keeps its own copy of these types, in
-`mobile/src/shared/mobile-control/protocol.ts`. Nothing compares the two
-automatically any more, so a change that crosses the wire is made on both sides
-in the same coordinated change, and the version integer is still the only thing
-a peer sees.
+The phone app imports that module from this repository's source, so there is
+no second copy to keep in step. An installed phone still runs the version it
+was built with, so a change that crosses the wire still follows this policy,
+and the version integer is still the only thing a peer sees. The relay-era
+members the phone's old copy kept (devices, capabilities, events and
+`device.revoke`) had no producer and went with it.
 
 Two commands that only read joined the wire on 2026-10-30, without a bump:
 `pullRequest.read` (a pull request's state, checks, reviews, latest comments
@@ -1122,10 +1125,11 @@ If your change alters anything that crosses either wire, do all of this:
    `src/main/automation/tailnet-mesh-reachability.test.ts`,
    `src/main/mobile/control/command-validation.test.ts` and
    `src/main/mobile/control/protocol.test.ts`.
-5. **Make the same edit on the phone.** The phone carries its own copy of the
-   mobile-control types (see "The mobile wire lives in this tree" above), so a
-   desktop-only change to a shape the phone parses is half a change. The window
-   is the grace period a bump needs, not permission to skip the other side.
+5. **Update the phone's use of it in the same change.** The phone imports the
+   mobile-control module itself (see "The mobile wire lives in this tree"
+   above), so a shape change reaches its typecheck; what it does with a new
+   member is still yours to write. The window is the grace period a bump needs,
+   not permission to skip the other side.
 6. **Update this file**, if what you changed is the policy rather than an
    instance of it.
 

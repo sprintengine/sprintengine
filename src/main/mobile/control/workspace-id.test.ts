@@ -5,7 +5,7 @@ import { join, resolve } from 'path'
 import { deriveWorkspaceId, isWorkspaceIdToken, resolveWorkspaceIdToRoot } from './workspace-id'
 import { sanitizeMobileSnapshotForTransport, type MobileControlSnapshot } from './snapshot'
 import { validateMobileWorkspacePath } from './workspace'
-import { mobileControlProtocolVersion, validateMobileControlSnapshot } from './protocol'
+import { mobileControlProtocolVersion, validateMobileControlSnapshot } from '../../../../packages/studio-protocol/src/mobile-control'
 import { test } from 'vitest'
 
 test('workspace-id', async () => {
