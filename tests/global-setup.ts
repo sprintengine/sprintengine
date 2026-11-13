@@ -3,7 +3,7 @@
 // Suites make their scratch folders with `mkdtemp(join(tmpdir(), ...))`, and
 // most never removed them: the OS temp folder of a machine that runs the suite
 // often grew by hundreds of thousands of folders. So the run gets one folder
-// of its own under the OS temp folder, and every worker and every process the
+// of its own in a temp folder, and every worker and every process the
 // suites spawn see it as their temp folder (TMPDIR, TMP and TEMP are inherited).
 // tests/setup.ts gives each test file a folder inside it and removes that once
 // the file is done; this removes the run's folder at the end.
@@ -19,8 +19,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { RUN_TEMP_ENV, TEMP_FOLDER_LOG, TEMP_REMOVAL } from './temp-folders'
 
+// A POSIX socket's path holds about a hundred bytes, and suites listen on
+// sockets a few folders deep in their temp folder. The run's folder and the
+// file's add 22 bytes, so they go in `/tmp` when the OS temp folder is long
+// (macOS's per-user one is 48 bytes): a deeper base pushed hundreds of sockets
+// past the limit.
+const LONGEST_TEMP_BASE = 26
+
+function tempBase(): string {
+  const base = tmpdir()
+  return process.platform !== 'win32' && base.length > LONGEST_TEMP_BASE ? '/tmp' : base
+}
+
 export default function setup(): () => Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), 'se-test-run-'))
+  const root = mkdtempSync(join(tempBase(), 'se-'))
   process.env[RUN_TEMP_ENV] = root
   // A run that starts outside every test file (a worker before its first file)
   // already writes in the run's folder.
