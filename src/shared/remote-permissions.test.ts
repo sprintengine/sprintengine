@@ -3,11 +3,7 @@ import { test } from 'vitest'
 
 import { STUDIO_METHODS, STUDIO_TOPICS, studioSpecPermissions } from '../../packages/studio-protocol/src/methods'
 import { STUDIO_PERMISSIONS, type StudioAccess } from '../../packages/studio-protocol/src/permissions'
-import {
-  CONVERSATION_LANE_ACCESS,
-  TAILNET_ROUTE_ACCESS,
-  tailnetToolAccess,
-} from '../main/automation/tailnet/tailnet-scopes'
+import { TAILNET_ROUTE_ACCESS, tailnetToolAccess } from '../main/automation/tailnet/tailnet-scopes'
 import { WEB_HTTP_ACCESS, WEB_TUNNEL_ACCESS } from './web-tunnel-access'
 
 // The permission set across every way into a Studio: each permission is one
@@ -20,7 +16,6 @@ test('every permission is needed by some remote method', () => {
       permissions: studioSpecPermissions(spec),
     })),
     ...Object.values(TAILNET_ROUTE_ACCESS),
-    ...Object.values(CONVERSATION_LANE_ACCESS),
     ...Object.values(WEB_TUNNEL_ACCESS),
     ...Object.values(WEB_HTTP_ACCESS),
     // The tool rule's families, read and operate.

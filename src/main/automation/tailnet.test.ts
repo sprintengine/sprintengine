@@ -12,7 +12,6 @@ import { createTailnetDeviceStore, TAILNET_DEVICES_FILENAME, type TailnetDeviceS
 import { hashSecret } from './tailnet/secret-hash'
 import {
   createTailnetGatewayServer,
-  TAILNET_CAPABILITIES,
   TAILNET_HEALTH_PATH,
   TAILNET_IDENTITY_PATH,
   TAILNET_MCP_PATH,
@@ -22,7 +21,6 @@ import {
   TAILNET_WS_TICKET_PATH,
   type TailnetGatewayServer,
 } from './tailnet/tailnet-gateway-server'
-import { TAILNET_EVENTS_PATH, TAILNET_UPLOAD_PATH } from './tailnet/tailnet-routes'
 import { isAllowedTailnetBindAddress, isTailnetAddress, resolveTailnetInterface } from './tailnet/tailnet-interface'
 import {
   createTailnetPeerResolver,
@@ -45,10 +43,8 @@ import {
 import { SUPPORTED_MCP_PROTOCOL_VERSIONS } from '../../shared/mcp/protocol'
 import { STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
 import { TAILNET_SCOPES, type TailnetRemoteStatus, type TailnetScope } from '../../shared/tailnet'
-import type { ConversationGatewayHost } from '../../server/core/conversation-host'
-import { TAILNET_CONVERSATION_PATH } from './tailnet/tailnet-routes'
 import { toolSuccess, type McpToolRegistration, type McpToolResult } from '../../shared/modules/mcp-tools'
-import { test, vi } from 'vitest'
+import { test } from 'vitest'
 
 test('tailnet', async () => {
   // The tailnet listener. Every test here drives the REAL server over a
@@ -92,9 +88,6 @@ test('tailnet', async () => {
       peerNode?: string | null
       /** Serve a real tool set instead of the named stubs (the whole-flow case). */
       tools?: McpToolRegistration[]
-      /** The change feed's push floor; the feed test shortens it. */
-      changePushIntervalMs?: number
-      conversations?: ConversationGatewayHost
       resolvePeer?: () => Promise<string | null>
     } = {},
   ): Promise<Harness> {
@@ -110,7 +103,6 @@ test('tailnet', async () => {
       resolveTools: () => options.tools ?? testTools(calls),
       isMutation,
       devices,
-      conversations: options.conversations,
       // whois is injected: the tests must not depend on a Tailscale install.
       // A named peer is one node, so the device paired here is bound to it and
       // every later call comes from the same place.
@@ -124,7 +116,6 @@ test('tailnet', async () => {
         if (!isMutation(tool)) return
         audit.record({ connection: context.metadata, tool, args, durationMs, result, error })
       },
-      ...(options.changePushIntervalMs !== undefined ? { changePushIntervalMs: options.changePushIntervalMs } : {}),
     })
     await server.start()
     const address = server.address()
@@ -195,76 +186,6 @@ test('tailnet', async () => {
       if (payload) request.write(payload)
       request.end()
     })
-  }
-
-  /**
-   * A raw-body POST, which the upload route needs and `call` cannot express:
-   * `call` JSON-encodes whatever it is given, and the upload's whole point is
-   * that the body is the file's own bytes.
-   */
-  function callRaw(
-    port: number,
-    path: string,
-    options: { token?: string; body: Buffer; chunked?: boolean; headers?: Record<string, string> },
-  ): Promise<HttpAnswer> {
-    return new Promise((resolve, reject) => {
-      let answered = false
-      const request = httpRequest(
-        {
-          host: '127.0.0.1',
-          port,
-          method: 'POST',
-          path,
-          agent: false,
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            // Chunked is the case that matters for the ceiling: a client controls
-            // `content-length` and can simply omit it, so the server counts.
-            ...(options.chunked ? { 'Transfer-Encoding': 'chunked' } : { 'Content-Length': options.body.length }),
-            ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-            ...options.headers,
-          },
-        },
-        (response) => {
-          const chunks: Buffer[] = []
-          answered = true
-          const settle = () => {
-            const text = Buffer.concat(chunks).toString('utf8')
-            let body: unknown = text
-            try {
-              body = text ? JSON.parse(text) : null
-            } catch {
-              // Left as text; a test asserting on shape will fail loudly.
-            }
-            resolve({ status: response.statusCode ?? 0, headers: response.headers, body })
-          }
-          response.on('data', (chunk: Buffer) => chunks.push(chunk))
-          response.on('end', settle)
-          // The refusal hangs up, which can close the socket before `end`. The
-          // answer is already whole by then, so this settles rather than hangs.
-          response.on('close', settle)
-          response.on('aborted', settle)
-        },
-      )
-      // The server answers an oversized body before reading all of it and then
-      // hangs up, so the write legitimately fails under us. A reset AFTER the
-      // answer arrived is the refusal working; a reset BEFORE it must fail loudly
-      // rather than hang.
-      request.on('error', (error: NodeJS.ErrnoException) => {
-        if (answered) return
-        if (error.code === 'ECONNRESET' || error.code === 'EPIPE') {
-          reject(new Error(`the connection was cut before any answer arrived: ${error.code}`))
-          return
-        }
-        reject(error)
-      })
-      request.write(options.body)
-      request.end()
-    })
-  }
-
-  function uploadPath(sessionId: string, name: string): string {
-    return `${TAILNET_UPLOAD_PATH}?sessionId=${encodeURIComponent(sessionId)}&name=${encodeURIComponent(name)}`
   }
 
   async function pairDevice(
@@ -770,57 +691,7 @@ test('tailnet', async () => {
       // long ago and is asking again on a Studio that may since have moved on.
       const identityBody = identity.body as Record<string, unknown>
       assert.equal(identityBody.transportVersion, TAILNET_TRANSPORT_VERSION)
-      assert.deepEqual(identityBody.capabilities, [
-        'events',
-        'upload',
-        'conversations',
-        'conversation-models',
-        'conversation-images',
-        'conversation-permission-modes',
-        'conversation-hello',
-        'conversation-plans',
-        'conversation-cli-permission-modes',
-        'conversation-lifecycle',
-        'conversation-queued-sends',
-        'conversation-send-skills',
-        'conversation-steer-sends',
-        'conversation-message-images',
-        'conversation-message-files',
-        'conversation-stop-subagent',
-        'conversation-agent-message',
-        'conversation-handoff',
-        'conversation-rewind',
-        'conversation-checkpoint-revert',
-        'conversation-fork',
-        'conversation-side-questions',
-        'conversation-side-question-records',
-        'conversation-context-breakdown',
-        'conversation-send-mentions',
-        'conversation-file-search',
-        'conversation-commands',
-        'conversation-send-mode',
-        'conversation-reasoning-effort',
-        'conversation-mcp-server-actions',
-        'conversation-restart-session',
-        'conversation-scheduled-sends',
-        'conversation-usage-limits',
-        'conversation-queued-attachments',
-        'conversation-permanent-approvals',
-        'conversation-quote-tokens',
-        'conversation-subagents',
-        'conversation-changes',
-        'new-chat-worktree',
-        'new-chat-effort',
-        'cli-runtime-catalog',
-        'new-chat-worktree-name',
-        'new-chat-in-worktree',
-        'new-chat-no-project',
-        'workspace-extensions',
-        'new-chat-skills',
-        'chat-create-pull-request',
-        'mcp-oauth',
-        'relayed-environments',
-      ])
+      assert.equal('capabilities' in identityBody, false, 'what a device may do is the Studio welcome’s to say')
 
       // The pairing code is one-time: replaying it does not mint a second device.
       const replayed = await call(harness.port, 'POST', TAILNET_PAIR_PATH, {
@@ -891,71 +762,13 @@ test('tailnet', async () => {
       const answer = await call(harness.port, 'GET', TAILNET_HEALTH_PATH)
       assert.equal(answer.status, 200)
       const body = answer.body as Record<string, unknown>
-      assert.deepEqual(Object.keys(body).sort(), ['capabilities', 'product', 'protocolVersions', 'transportVersion'])
+      assert.deepEqual(Object.keys(body).sort(), ['product', 'protocolVersions', 'transportVersion'])
       assert.equal(body.product, STUDIO_MCP_SERVER_NAME)
       assert.deepEqual(body.protocolVersions, [...SUPPORTED_MCP_PROTOCOL_VERSIONS])
       // What the wire speaks IS a prospective client's business: it is the whole
-      // reason the route is unauthenticated. Version 2 and the feature list say
-      // it outright, so a phone need not probe for the change feed.
+      // reason the route is unauthenticated.
       assert.equal(body.transportVersion, 2)
       assert.equal(TAILNET_TRANSPORT_VERSION, 2)
-      assert.deepEqual(body.capabilities, [
-        'events',
-        'upload',
-        'conversations',
-        'conversation-models',
-        'conversation-images',
-        'conversation-permission-modes',
-        'conversation-hello',
-        'conversation-plans',
-        'conversation-cli-permission-modes',
-        'conversation-lifecycle',
-        'conversation-queued-sends',
-        'conversation-send-skills',
-        'conversation-steer-sends',
-        'conversation-message-images',
-        'conversation-message-files',
-        'conversation-stop-subagent',
-        'conversation-agent-message',
-        'conversation-handoff',
-        'conversation-rewind',
-        'conversation-checkpoint-revert',
-        'conversation-fork',
-        'conversation-side-questions',
-        'conversation-side-question-records',
-        'conversation-context-breakdown',
-        'conversation-send-mentions',
-        'conversation-file-search',
-        'conversation-commands',
-        'conversation-send-mode',
-        'conversation-reasoning-effort',
-        'conversation-mcp-server-actions',
-        'conversation-restart-session',
-        'conversation-scheduled-sends',
-        'conversation-usage-limits',
-        'conversation-queued-attachments',
-        'conversation-permanent-approvals',
-        'conversation-quote-tokens',
-        'conversation-subagents',
-        'conversation-changes',
-        'new-chat-worktree',
-        'new-chat-effort',
-        'cli-runtime-catalog',
-        'new-chat-worktree-name',
-        'new-chat-in-worktree',
-        'new-chat-no-project',
-        'workspace-extensions',
-        'new-chat-skills',
-        'chat-create-pull-request',
-        'mcp-oauth',
-        'relayed-environments',
-      ])
-      // Every one the wire defines but shrinking an upload, which only a
-      // machine with an image codec advertises; this harness has none.
-      assert.deepEqual(
-        TAILNET_CAPABILITIES.filter((capability) => capability !== 'conversation-image-downscale'),
-        body.capabilities,
-      )
       // Nothing about this machine, its user, its workspaces, or its devices.
       assert.equal(JSON.stringify(body).includes('a-device-nobody-should-learn-about'), false)
     } finally {
@@ -1380,95 +1193,6 @@ test('tailnet', async () => {
       assert.match((declared.body as { error: { message: string } }).error.message, /WebSocket/u)
     } finally {
       await harness.close()
-    }
-  }
-
-  // The change feed (2026-09-05): a paired device opens the events route and
-  // hears "changed" once per burst, never per change; a watcher is not a
-  // connection; a revocation reaches the feed like every other socket.
-  async function testTheChangeFeedPushesOncePerBurstAndFollowsRevocation(): Promise<void> {
-    const harness = await startHarness({ changePushIntervalMs: 80 })
-    try {
-      const device = await pairDevice(harness, { name: 'watcher', scopes: ['workspace:read'] })
-      const ticket = (await call(harness.port, 'POST', TAILNET_WS_TICKET_PATH, { token: device.deviceToken })).body as {
-        ticket: string
-      }
-      const feed = await openWebSocket(harness.port, ticket.ticket, { path: TAILNET_EVENTS_PATH })
-      assert.ok(
-        feed.handshake.startsWith('HTTP/1.1 101'),
-        `the events route upgrades: ${feed.handshake.split('\r\n')[0]}`,
-      )
-      const hello = await feed.nextMessage()
-      assert.equal(hello.type, 'hello')
-      assert.deepEqual(hello.revisions, { workspaces: 0, conversations: 0 })
-      assert.equal(harness.server.eventStreamCount(), 1)
-      assert.equal(harness.server.streamCount(), 0, 'a watcher is not an RPC connection')
-
-      harness.server.notifyWorkspacesChanged()
-      assert.deepEqual(await feed.nextMessage(), { type: 'changed', what: 'workspaces', revision: 1 })
-
-      // A burst inside the floor is one push per kind, carrying the last revision.
-      harness.server.notifyWorkspacesChanged()
-      harness.server.notifyWorkspacesChanged()
-      // A conversation starting, finishing or waiting on a person is its own kind.
-      harness.server.notifyConversationsChanged()
-      const pushed = [await feed.nextMessage(), await feed.nextMessage()]
-      assert.deepEqual(pushed.map((frame) => `${frame.what}:${frame.revision}`).sort(), [
-        'conversations:1',
-        'workspaces:3',
-      ])
-
-      assert.equal(harness.devices.revokeDevice(device.deviceId), true)
-      assert.equal(await feed.closed, 4401, 'a revocation closes the feed with the revoked code')
-      assert.equal(harness.server.eventStreamCount(), 0)
-    } finally {
-      await harness.close()
-    }
-  }
-
-  // A machine nobody watches bumps the revision a later `hello` reports and
-  // arms nothing: every turn of every chat used to set a timer for a push
-  // with no one to receive it. And stopping clears every kind's pending
-  // push, the conversation one included.
-  async function testTheChangeFeedArmsNothingUnwatchedAndStopClearsEveryPush(): Promise<void> {
-    const harness = await startHarness({ changePushIntervalMs: 60_000 })
-    let stopped = false
-    try {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-      try {
-        harness.server.notifyConversationsChanged()
-        harness.server.notifyConversationsChanged()
-        harness.server.notifyWorkspacesChanged()
-        assert.equal(vi.getTimerCount(), 0, 'no watcher, no timer')
-      } finally {
-        vi.useRealTimers()
-      }
-      const device = await pairDevice(harness, { name: 'watcher', scopes: ['workspace:read'] })
-      const ticket = (await call(harness.port, 'POST', TAILNET_WS_TICKET_PATH, { token: device.deviceToken })).body as {
-        ticket: string
-      }
-      const feed = await openWebSocket(harness.port, ticket.ticket, { path: TAILNET_EVENTS_PATH })
-      const hello = await feed.nextMessage()
-      assert.deepEqual(
-        hello.revisions,
-        { workspaces: 1, conversations: 2 },
-        'the revisions still moved, so a watcher that arrives later sees it',
-      )
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-      try {
-        harness.server.notifyConversationsChanged()
-        assert.deepEqual(await feed.nextMessage(), { type: 'changed', what: 'conversations', revision: 3 })
-        harness.server.notifyConversationsChanged()
-        assert.equal(vi.getTimerCount(), 1, 'a push inside the floor waits on a timer')
-        await harness.server.stop()
-        stopped = true
-        assert.equal(vi.getTimerCount(), 0, 'stopping clears the conversation push too')
-      } finally {
-        vi.useRealTimers()
-      }
-    } finally {
-      if (!stopped) await harness.server.stop()
-      rmSync(harness.userDataDir, { recursive: true, force: true })
     }
   }
 
@@ -1926,213 +1650,6 @@ test('tailnet', async () => {
     }
   }
 
-  // ── The upload route ─────────────────────────────────────────────────────────
-  async function testConversationRouteScopesRevocationAndOpaqueImages(): Promise<void> {
-    const projectDir = mkdtempSync(join(tmpdir(), 'conversation-route-'))
-    let registered: Parameters<NonNullable<ConversationGatewayHost['registerUpload']>>[0] | undefined
-    let disposed = 0
-    const conversations: ConversationGatewayHost = {
-      list: async () => [
-        {
-          workspaceId: 'workspace',
-          agentId: 'agent',
-          sessionId: 'conversation',
-          title: 'Example',
-          phase: 'idle',
-          createdAt: 1,
-          updatedAt: 1,
-          providerId: 'mock',
-          modelId: 'mock',
-          turnCount: 0,
-          lastSeq: 0,
-          capabilities: {
-            images: true,
-            approvals: true,
-            questions: true,
-            planMode: true,
-            interrupt: true,
-            checkpoints: false,
-          },
-        },
-      ],
-      resolveKey: (workspaceId, agentId) => ({ workspaceRoot: projectDir, workspaceId, agentId }),
-      subscribe: (_key, _cursor, receive) => {
-        receive({ type: 'synchronized', seq: 0 })
-        return {
-          ready: Promise.resolve(),
-          dispose: () => {
-            disposed++
-          },
-        }
-      },
-      loadEarlier: async () => ({ ok: false, message: 'Unavailable.' }),
-      getToolDetail: async () => ({ ok: false, code: 'not_found', message: 'Unavailable.' }),
-      getEvent: async () => ({ ok: false, code: 'not_found', message: 'Unavailable.' }),
-      getTurnDiff: async () => ({ ok: false, message: 'Unavailable.' }),
-      command: async () => ({ ok: true }),
-      registerUpload: (input) => {
-        registered = input
-        return 'opaque-upload'
-      },
-    }
-    let pauseLookup = false
-    let releaseLookup!: () => void
-    let enteredLookup!: () => void
-    const lookupGate = new Promise<void>((resolve) => {
-      releaseLookup = resolve
-    })
-    const lookupStarted = new Promise<void>((resolve) => {
-      enteredLookup = resolve
-    })
-    const harness = await startHarness({
-      conversations,
-      resolvePeer: async () => {
-        if (pauseLookup) {
-          enteredLookup()
-          await lookupGate
-        }
-        return null
-      },
-    })
-    try {
-      const operator = await pairDevice(harness, { scopes: ['conversation:operate'], name: 'phone' })
-      const reader = await pairDevice(harness, { scopes: ['conversation:read'], name: 'tablet' })
-      const route = `${uploadPath('conversation', '../../image.png')}&kind=conversation`
-      const payload = { body: Buffer.from('image'), headers: { 'Content-Type': 'image/png' } }
-      const refused = await callRaw(harness.port, route, { ...payload, token: reader.deviceToken })
-      assert.equal(refused.status, 403)
-      const badMedia = await callRaw(harness.port, route, { body: Buffer.from('image'), token: operator.deviceToken })
-      assert.equal(badMedia.status, 415)
-      const tooLarge = await callRaw(harness.port, route, {
-        ...payload,
-        body: Buffer.alloc(5 * 1024 * 1024 + 1),
-        token: operator.deviceToken,
-      })
-      assert.equal(tooLarge.status, 413)
-      const tooLargeError = (tooLarge.body as { error: { code: string; message: string } }).error
-      assert.equal(tooLargeError.code, 'too_large')
-      assert.match(tooLargeError.message, /5MB/u, 'the phone can only say the real reason if the server names it')
-      const unknown = await callRaw(harness.port, uploadPath('conversation_missing', 'image.png'), {
-        ...payload,
-        token: operator.deviceToken,
-      })
-      assert.equal(unknown.status, 404)
-      assert.equal((unknown.body as { error: { code: string } }).error.code, 'unknown_conversation')
-      // A staging directory that could not be created is tried again on the next upload.
-      const savedTmpdir = process.env.TMPDIR
-      process.env.TMPDIR = join(projectDir, 'missing', 'tmp')
-      try {
-        const unstaged = await callRaw(harness.port, route, { ...payload, token: operator.deviceToken })
-        assert.equal(unstaged.status, 500)
-      } finally {
-        if (savedTmpdir === undefined) delete process.env.TMPDIR
-        else process.env.TMPDIR = savedTmpdir
-      }
-      const uploaded = await callRaw(harness.port, route, { ...payload, token: operator.deviceToken })
-      assert.equal(uploaded.status, 200)
-      assert.deepEqual(uploaded.body, { uploadId: 'opaque-upload', bytes: 5 })
-      // `kind` is what older phones send; a conversation image is the only kind there is.
-      const withoutKind = await callRaw(harness.port, uploadPath('conversation', 'image.png'), {
-        ...payload,
-        token: operator.deviceToken,
-      })
-      assert.deepEqual(withoutKind.body, { uploadId: 'opaque-upload', bytes: 5 })
-      assert.ok(registered)
-      assert.equal(registered.deviceId, operator.deviceId)
-      assert.equal(registered.sessionId, 'conversation')
-      assert.equal(readFileSync(registered.path, 'utf8'), 'image')
-      assert.equal(
-        registered.path.startsWith(projectDir),
-        false,
-        'opaque image staging does not trust workspace parents',
-      )
-      assert.equal(existsSync(join(projectDir, '.sprintengine')), false)
-      const ticket = await call(harness.port, 'POST', TAILNET_WS_TICKET_PATH, { token: reader.deviceToken })
-      const socket = await openWebSocket(harness.port, (ticket.body as { ticket: string }).ticket, {
-        path: TAILNET_CONVERSATION_PATH,
-      })
-      assert.ok(socket.handshake.startsWith('HTTP/1.1 101'))
-      socket.send({ type: 'subscribe', key: { workspaceId: 'workspace', agentId: 'agent' } })
-      assert.deepEqual(await socket.nextMessage(), {
-        type: 'synchronized',
-        seq: 0,
-        key: { workspaceId: 'workspace', agentId: 'agent' },
-      })
-      socket.send({ type: 'command', commandId: 'deny-read-mutation', command: { kind: 'interrupt' } })
-      assert.equal((await socket.nextMessage()).code, 'conversation_operate_required')
-      const operatorTicket = await call(harness.port, 'POST', TAILNET_WS_TICKET_PATH, { token: operator.deviceToken })
-      const operatorSocket = await openWebSocket(harness.port, (operatorTicket.body as { ticket: string }).ticket, {
-        path: TAILNET_CONVERSATION_PATH,
-      })
-      operatorSocket.send({ type: 'subscribe', key: { workspaceId: 'workspace', agentId: 'agent' } })
-      assert.deepEqual(await operatorSocket.nextMessage(), {
-        type: 'synchronized',
-        seq: 0,
-        key: { workspaceId: 'workspace', agentId: 'agent' },
-      })
-      operatorSocket.send({
-        type: 'command',
-        commandId: 'remote-send',
-        command: { kind: 'send', message: 'words only the conversation may keep' },
-      })
-      assert.deepEqual(await operatorSocket.nextMessage(), {
-        type: 'commandResult',
-        commandId: 'remote-send',
-        ok: true,
-      })
-      // Every remote command is audited with the device, the conversation and
-      // its kind — the refused one too — and never with what was typed.
-      const audited = (await harness.auditRecords()).filter((record) => record.tool.startsWith('conversation.'))
-      assert.deepEqual(
-        audited.map((record) => [record.tool, record.connection.deviceId, record.outcome, record.errorCode ?? null]),
-        [
-          ['conversation.interrupt', reader.deviceId, 'failure', 'conversation_operate_required'],
-          ['conversation.send', operator.deviceId, 'success', null],
-        ],
-      )
-      assert.deepEqual(audited[1].targets, { workspaceId: 'workspace', agentId: 'agent', id: 'remote-send' })
-      assert.equal(JSON.stringify(audited).includes('words only'), false)
-      // A grant narrowed in Settings reaches the socket that is already open.
-      harness.devices.updateDeviceScopes(operator.deviceId, ['conversation:read'])
-      operatorSocket.send({ type: 'command', commandId: 'after-narrowing', command: { kind: 'interrupt' } })
-      assert.deepEqual(await operatorSocket.nextMessage(), {
-        type: 'commandResult',
-        commandId: 'after-narrowing',
-        ok: false,
-        code: 'conversation_operate_required',
-      })
-      harness.devices.updateDeviceScopes(operator.deviceId, ['workspace:read'])
-      assert.equal((await operatorSocket.nextMessage()).code, 'conversation_scope_required')
-      assert.equal(await operatorSocket.closed, 4403)
-      harness.devices.revokeDevice(reader.deviceId)
-      assert.equal(await socket.closed, WEBSOCKET_CLOSE_REVOKED)
-      assert.equal(disposed, 2, 'the narrowed socket and the revoked one each ended their subscription')
-      operatorSocket.socket.destroy()
-      const revokedDuringLookup = await pairDevice(harness, { scopes: ['conversation:read'], name: 'tablet' })
-      const staleTicket = await call(harness.port, 'POST', TAILNET_WS_TICKET_PATH, {
-        token: revokedDuringLookup.deviceToken,
-      })
-      pauseLookup = true
-      const joining = openWebSocket(harness.port, (staleTicket.body as { ticket: string }).ticket, {
-        path: TAILNET_CONVERSATION_PATH,
-      })
-      await lookupStarted
-      harness.devices.revokeDevice(revokedDuringLookup.deviceId)
-      releaseLookup()
-      const refusedJoin = await joining
-      assert.ok(
-        refusedJoin.handshake.startsWith('HTTP/1.1 401'),
-        'revocation during discovery refuses the late upgrade',
-      )
-    } finally {
-      releaseLookup()
-      await harness.close()
-      if (registered)
-        assert.equal(existsSync(registered.path), false, 'server shutdown removes only its private staging directory')
-      rmSync(projectDir, { recursive: true, force: true })
-    }
-  }
-
   /**
    * Widening a pairing from this keyboard (remote-settings-rebuild).
    *
@@ -2244,13 +1761,10 @@ test('tailnet', async () => {
     testTailnetToolsRefuseRatherThanMintACodeThatPointsAtNothing,
     testRemoteMutationsAreAuditedWithDeviceAndPeerIdentity,
     testADeclaredIdentityCannotOverwriteTheProvenDeviceIdentity,
-    testTheChangeFeedPushesOncePerBurstAndFollowsRevocation,
-    testTheChangeFeedArmsNothingUnwatchedAndStopClearsEveryPush,
     testPeerIdentityIsNullRatherThanInventedWhenWhoisIsUnavailable,
     testWebSocketTicketsAreSingleUseAndTokensNeverRideTheUrl,
     testRevocationLandsOnTheNextRequestAndKillsLiveStreams,
     testWebSocketCodecRefusesWhatItDoesNotImplement,
-    testConversationRouteScopesRevocationAndOpaqueImages,
     testEndpointAndPairingUrlFormatting,
     testWideningADevicesScopesPersistsAndAnUnknownIdThrows,
     testAStoredDeviceLoadsWithoutItsRetiredTerminalScopes,

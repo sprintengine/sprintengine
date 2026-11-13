@@ -60,7 +60,7 @@ type GatewayToolsOptions = Parameters<typeof createStudioGatewayTools>[0]
 
 export type StudioGatewayOptions = Pick<
   Parameters<typeof createAutomationService>[0],
-  'onTailnetEvent' | 'onMeshEvent' | 'hasWindow' | 'downscaleUpload' | 'tailnetBindAddress'
+  'onTailnetEvent' | 'onMeshEvent' | 'hasWindow' | 'tailnetBindAddress'
 > & {
   /**
    * The gateway's app tools, given the core's own: the desktop places them
@@ -261,11 +261,9 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     ...(options.onTailnetEvent ? { onTailnetEvent: options.onTailnetEvent } : {}),
     ...(options.onMeshEvent ? { onMeshEvent: options.onMeshEvent } : {}),
     ...(options.hasWindow ? { hasWindow: options.hasWindow } : {}),
-    ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
     ...(options.tailnetBindAddress === undefined ? {} : { tailnetBindAddress: options.tailnetBindAddress }),
-    // The tailnet lane advertises `conversation-lifecycle`, so its list is
-    // the one that keeps the capability's promise.
-    resolveConversationHost: () => core.createConversationHost({ lifecycleList: true }),
+    // How a paired device draws this machine, on the tailnet's `identity`.
+    selfMachine: () => core.selfMachine(),
     // The run lock's holder removes a stale socket; nobody else does. A desktop
     // that could not take the lock still may, as builds before it did: its
     // single-instance lock already rules out a second app on this profile.
@@ -284,23 +282,15 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     },
   })
 
-  // The change feed (2026-09-05): paired devices used to poll workspace.list
-  // every thirty seconds; now the registry's accepted events become one small
-  // push, throttled in the listener so a burst here is one push there, and a
-  // device re-reads only when told to. A patch of the clocks alone, which
-  // `workspace.list` does not carry (a visit stamped every few seconds while
-  // a chat is on screen), tells it nothing (`movesWorkspaceList`).
-  // Every client on the protocol hears the same as one small push
-  // (`conversations.changed`), folded to one per list per moment.
+  // The change feed: the registry's accepted events become one small push
+  // to every client on the protocol (`conversations.changed`), folded to one
+  // per list per moment, and a client re-reads only when told to. A patch of
+  // the clocks alone, which the workspace list does not carry (a visit stamped
+  // every few seconds while a chat is on screen), tells it nothing
+  // (`movesWorkspaceList`).
   const listChanges = createListChangePush()
-  const workspacesChanged = (): void => {
-    automationService.notifyWorkspacesChanged()
-    listChanges.tell('workspaces')
-  }
-  const conversationsChanged = (): void => {
-    automationService.notifyConversationsChanged()
-    listChanges.tell('conversations')
-  }
+  const workspacesChanged = (): void => listChanges.tell('workspaces')
+  const conversationsChanged = (): void => listChanges.tell('conversations')
   workspaceSyncService.subscribeEvents((event) => {
     if (movesWorkspaceList(event)) workspacesChanged()
   })

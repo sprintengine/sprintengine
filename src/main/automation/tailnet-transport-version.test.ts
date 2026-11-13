@@ -5,8 +5,6 @@ import { once } from 'node:events'
 import { readRemoteIdentity } from './tailnet/tailnet-remote-client'
 import {
   checkTailnetTransportVersion,
-  tailnetPeerSupports,
-  TAILNET_CAPABILITIES,
   TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION,
   TAILNET_TRANSPORT_VERSION,
 } from './tailnet/tailnet-routes'
@@ -24,9 +22,6 @@ test('tailnet-transport-version', async () => {
   // What is pinned here is the shape of that refusal as much as the fact of it: a
   // person with two Studios has to be able to tell from the message which of the
   // two to update, and that is only possible if it names both versions.
-  //
-  // The other half is capabilities. A feature question is answered from the list
-  // the peer published, never from version arithmetic — see docs/compatibility.md.
 
   let failures = 0
   // One at a time: several of these bind a real socket, and interleaving them
@@ -89,17 +84,6 @@ test('tailnet-transport-version', async () => {
     }
   })
 
-  // ── Capabilities, which are not the version ──────────────────────────────────
-
-  check('a feature is read from the capability list, and an absent list promises nothing', () => {
-    assert.equal(tailnetPeerSupports([...TAILNET_CAPABILITIES], 'events'), true)
-    assert.equal(tailnetPeerSupports(['upload'], 'events'), false)
-    // A peer from before the field shipped has no capabilities, not all of them —
-    // the opposite reading would have this build call routes that are not there.
-    assert.equal(tailnetPeerSupports(undefined, 'upload'), false)
-    assert.equal(tailnetPeerSupports([], 'upload'), false)
-  })
-
   // ── The handshake ────────────────────────────────────────────────────────────
 
   /** A listener that answers `identity` with exactly the body given. */
@@ -131,7 +115,6 @@ test('tailnet-transport-version', async () => {
       deviceName: 'mac-mini',
       scopes: ['workspace:read'],
       transportVersion: TAILNET_TRANSPORT_VERSION,
-      capabilities: [...TAILNET_CAPABILITIES],
       ...overrides,
     }
   }
@@ -165,22 +148,6 @@ test('tailnet-transport-version', async () => {
     await withIdentity(body, async (port) => {
       const identity = await readRemoteIdentity({ endpoint: { host: '127.0.0.1', port }, token: 'tok' })
       assert.equal(identity.ok === false && identity.code, 'unsupported_transport_version')
-    })
-  })
-
-  check('the capability list crosses the handshake, and a malformed one does not throw', async () => {
-    await withIdentity(identityBody({ capabilities: ['events', 7, null, 'upload'] }), async (port) => {
-      const identity = await readRemoteIdentity({ endpoint: { host: '127.0.0.1', port }, token: 'tok' })
-      // A peer is free to publish names this build has never heard of, so the
-      // list is not filtered against ours — only the non-strings are dropped.
-      assert.deepEqual(identity.ok && identity.value.capabilities, ['events', 'upload'])
-    })
-    await withIdentity(identityBody({ capabilities: 'events' }), async (port) => {
-      const identity = await readRemoteIdentity({ endpoint: { host: '127.0.0.1', port }, token: 'tok' })
-      // Not a list at all is null — "this peer named nothing" — which is a
-      // different fact from an empty list and must not be an exception thrown at
-      // a reachability probe either.
-      assert.equal(identity.ok && identity.value.capabilities, null)
     })
   })
 

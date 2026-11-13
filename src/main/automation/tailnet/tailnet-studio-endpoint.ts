@@ -90,7 +90,7 @@ export function relayedDeviceScopes(device: TailnetDevice): StudioRelayedDeviceS
 }
 
 /** A device's client id on the Studio protocol: its own, kept apart from apps and browsers. */
-function tailnetStudioClientId(deviceId: string): string {
+export function tailnetStudioClientId(deviceId: string): string {
   return `tailnet:${deviceId}`
 }
 

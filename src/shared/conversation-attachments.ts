@@ -42,12 +42,6 @@ export const ATTACHMENT_JPEG_QUALITY = 0.82
 // canvas's own default, which is what the composer has always encoded at.
 export const ATTACHMENT_JPEG_SOURCE_QUALITY = 0.92
 
-// What a paired device may upload where the desktop shrinks each picture on
-// receipt (the `conversation-image-downscale` capability): a phone's camera
-// photo is often over the per-image ceiling before it is resized, and under
-// it after. What reaches the model is still held to MAX_ATTACHMENT_BYTES.
-export const MAX_DOWNSCALED_UPLOAD_BYTES = 20 * 1024 * 1024
-
 // Longest-edge-constrained target size, aspect ratio preserved. An image that
 // already fits comes back untouched so small images are never resampled (which
 // would re-encode them for no gain).

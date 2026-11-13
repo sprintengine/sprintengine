@@ -1,11 +1,10 @@
-import type { ConversationClientMessage } from '../../../../packages/conversation-protocol/src/public'
 import type { StudioAccess } from '../../../../packages/studio-protocol/src/permissions'
 import type { TailnetScope } from '../../../shared/tailnet'
 
 // What everything a paired device can ask of this machine requires, in the
 // permissions every remote method declares
-// (packages/studio-protocol/src/permissions.ts): the gateway's tools, its
-// authenticated routes, and the frames of the conversation lane. A device's
+// (packages/studio-protocol/src/permissions.ts): the gateway's tools and its
+// authenticated routes. A device's
 // scopes are translated to permissions where it asks
 // (`tailnetDevicePrincipal`, src/shared/tailnet.ts), and the gateway judges
 // every one of these with the same `authorizeStudioAccess`.
@@ -19,26 +18,13 @@ import type { TailnetScope } from '../../../shared/tailnet'
 /**
  * Every route a paired device's token opens, and what it needs. Pairing and
  * health come before a token and are not here; a path not listed is not
- * found. `mcp` and `stream` carry tools, each judged by `tailnetToolAccess`;
- * `events` says only that something changed, and what a device may then read
- * is decided by what it reads with.
+ * found. `mcp` and `stream` carry tools, each judged by `tailnetToolAccess`.
  */
 export const TAILNET_ROUTE_ACCESS = {
   identity: { permissions: [] },
   'ws-ticket': { permissions: [] },
   mcp: { permissions: [] },
   stream: { permissions: [] },
-  events: { permissions: [] },
-  // Following a chat: the lane's frames are judged one by one below.
-  conversation: { permissions: ['conversation:read'] },
-  'conversation-image': { permissions: ['conversation:read'] },
-  // The composer's reads, in the chat's own folder.
-  'conversation-files': { permissions: ['conversation:read'] },
-  'conversation-commands': { permissions: ['conversation:read'] },
-  // Asking again starts the chat's CLI, which is driving it.
-  'conversation-commands:refresh': { permissions: ['conversation:read', 'conversation:operate'] },
-  // A picture or file staged for a message the device will send.
-  upload: { permissions: ['conversation:read', 'conversation:operate'] },
   // The Studio protocol: opening it needs only the pairing; every method and
   // topic it carries is judged by the Studio router against the device's
   // grant as it stands at that request (`tailnetDeviceStudioScopes`).
@@ -51,41 +37,8 @@ export const TAILNET_ROUTE_ACCESS = {
 
 export type TailnetDeviceRoute = keyof typeof TAILNET_ROUTE_ACCESS
 /** The routes a ticket opens as a WebSocket upgrade; every other route is an HTTP request. */
-export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'events' | 'conversation' | 'studio' | 'relay'>
+export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'studio' | 'relay'>
 export type TailnetHttpRoute = Exclude<TailnetDeviceRoute, TailnetUpgradeRoute>
-
-const FOLLOW: StudioAccess = { permissions: ['conversation:read'] }
-const DRIVE: StudioAccess = { permissions: ['conversation:read', 'conversation:operate'] }
-
-/**
- * Every frame a device sends on the conversation lane, and what it needs:
- * reading what a chat shows is following it; a command, and a side question
- * (which runs the chat's agent as a send does), drive it. Typed over the
- * lane's frames, so a frame added to the contract does not compile here
- * until it says what it needs.
- */
-export const CONVERSATION_LANE_ACCESS: { readonly [T in ConversationClientMessage['type']]: StudioAccess } = {
-  hello: FOLLOW,
-  list: FOLLOW,
-  subscribe: FOLLOW,
-  loadEarlier: FOLLOW,
-  getToolDetail: FOLLOW,
-  getEvent: FOLLOW,
-  getTurnDiff: FOLLOW,
-  getContextBreakdown: FOLLOW,
-  watchQueued: FOLLOW,
-  watchScheduled: FOLLOW,
-  watchUsageLimits: FOLLOW,
-  watchSubagents: FOLLOW,
-  // A chat's changes, as its Diff tab reads them: only the files a step lists.
-  watchChanges: FOLLOW,
-  getChangesDiff: FOLLOW,
-  getChangedFile: FOLLOW,
-  // A device cancels only a question it asked itself.
-  cancelSideQuestion: FOLLOW,
-  askSideQuestion: DRIVE,
-  command: DRIVE,
-}
 
 /** What a tool call over the tailnet needs: nothing a grant can give for a local-only tool, else its family's permission. */
 export function tailnetToolAccess(toolName: string, isMutation: boolean): StudioAccess {

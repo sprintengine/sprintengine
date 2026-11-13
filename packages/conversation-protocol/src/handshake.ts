@@ -330,18 +330,6 @@ export const CONVERSATION_CAPABILITIES = [
 
 export type ConversationCapability = (typeof CONVERSATION_CAPABILITIES)[number]
 
-/**
- * Whether a peer serves a capability. `null` — a peer that published no list
- * — is unknown, which is not the same as a list without the name; both answer
- * false here, and a caller that must tell them apart checks for null first.
- */
-export function conversationPeerSupports(
-  capabilities: readonly string[] | null | undefined,
-  capability: ConversationCapability,
-): boolean {
-  return Array.isArray(capabilities) && capabilities.includes(capability)
-}
-
 /** The most capability names one `hello` may carry; a longer list is cut here. */
 const MAX_CLIENT_CAPABILITIES = 64
 
@@ -397,26 +385,4 @@ export function parseConversationHelloAnswer(value: unknown): ConversationHelloA
       (name): name is string => typeof name === 'string' && CAPABILITY_NAME.test(name),
     ),
   }
-}
-
-/**
- * Whether two ends can talk: each must serve the other's version. The
- * refusal names both numbers and which side to update, so it is a fix and not
- * a support thread.
- */
-export function checkConversationProtocolVersion(
-  peerVersion: number,
-  peerMinVersion: number = peerVersion,
-): { ok: true } | { ok: false; message: string } {
-  if (peerVersion < CONVERSATION_PROTOCOL_MIN_SUPPORTED)
-    return {
-      ok: false,
-      message: `The other end speaks conversation protocol ${peerVersion}, and this one needs ${CONVERSATION_PROTOCOL_MIN_SUPPORTED} or newer. Update the other end.`,
-    }
-  if (peerMinVersion > CONVERSATION_PROTOCOL_VERSION)
-    return {
-      ok: false,
-      message: `The other end needs conversation protocol ${peerMinVersion} or newer, and this one speaks ${CONVERSATION_PROTOCOL_VERSION}. Update this end.`,
-    }
-  return { ok: true }
 }

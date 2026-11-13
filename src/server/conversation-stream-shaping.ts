@@ -230,13 +230,6 @@ export function projectConversationEvent(event: ConversationEvent): Conversation
   return projected
 }
 
-/**
- * The text one `chunk` frame carries. A chunk's text is re-escaped inside its
- * envelope; at 3 bytes per UTF-16 unit at worst this stays well under the
- * frame cap.
- */
-export const CONVERSATION_CHUNK_CHARS = 48_000
-
 // What each event measures as JSON, by the event itself: every subscriber's
 // snapshot of a chat holds the same events, and measuring them is a
 // stringify each. A merged delta run grows in place, and its seq moves with

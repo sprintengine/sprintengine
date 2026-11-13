@@ -25,7 +25,6 @@ import {
 } from '../../../shared/tailnet-mesh'
 import { createTailnetMeshStore, type StoredMeshConnection, type TailnetMeshStore } from './tailnet-mesh-store'
 import type { TailnetPeerIdentity } from './tailnet-peer-identity'
-import { tailnetPeerSupports } from './tailnet-routes'
 import { createPeerStudios, peerRefusal, peerStudioTicket, type PeerStudioTarget } from './tailnet-peer-studio'
 import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
 import { STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY } from '../../../../packages/studio-protocol/src/handshake'
@@ -725,8 +724,9 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         // wait on this probe's relayed read. Otherwise a machine that went
         // away during that read would still be called reachable.
         settle()
-        // Only a desktop that says it relays devices is asked which machines.
-        if (tailnetPeerSupports(identity.value.capabilities, 'relayed-environments')) await readRelayed(stored)
+        // Which machines it relays this pairing to: its Studio's welcome says
+        // whether it serves the list at all (`readRelayed`).
+        await readRelayed(stored)
         return
       }
       recordReachability(connection, {
