@@ -14,7 +14,7 @@ import {
   createAgentPermissionResolver,
   type AgentPermissionResolver,
 } from '../../main/automation/launch-permission-cap'
-import { createConversationGatewayHost } from '../../main/automation/tailnet/tailnet-conversation-host'
+import { createConversationGatewayHost } from './conversation-host'
 import {
   CONVERSATION_COMMANDS_CACHE_FILE,
   createConversationCommandsDiskCache,

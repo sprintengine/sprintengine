@@ -4,11 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, vi } from 'vitest'
 
-import type { ConversationCommandCatalog } from '../../../shared/conversation/commands'
-import type { FileSearchResult } from '../../../shared/ipc/filesystem'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost, type ConversationRegistryLink } from './tailnet-conversation-host'
+import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
+import type { FileSearchResult } from '../../shared/ipc/filesystem'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import { createConversationGatewayHost, type ConversationRegistryLink } from './conversation-host'
 
 // A paired desktop's composer reaching a chat's folder here: what its @
 // searches (`conversation-file-search`), the mentions its send names

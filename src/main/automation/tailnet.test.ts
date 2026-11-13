@@ -45,7 +45,7 @@ import {
 import { SUPPORTED_MCP_PROTOCOL_VERSIONS } from '../../shared/mcp/protocol'
 import { STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
 import { TAILNET_SCOPES, type TailnetRemoteStatus, type TailnetScope } from '../../shared/tailnet'
-import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
+import type { ConversationGatewayHost } from '../../server/core/conversation-host'
 import { TAILNET_CONVERSATION_PATH } from './tailnet/tailnet-routes'
 import { toolSuccess, type McpToolRegistration, type McpToolResult } from '../../shared/modules/mcp-tools'
 import { test, vi } from 'vitest'

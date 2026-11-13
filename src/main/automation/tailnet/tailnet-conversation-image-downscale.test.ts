@@ -7,7 +7,7 @@ import { afterAll, beforeAll, test } from 'vitest'
 
 import { MAX_ATTACHMENT_BYTES, MAX_DOWNSCALED_UPLOAD_BYTES } from '../../../shared/conversation-attachments'
 import type { ConversationImageDownscaler } from '../../conversation-image-downscale'
-import type { ConversationGatewayHost } from './tailnet-conversation-host'
+import type { ConversationGatewayHost } from '../../../server/core/conversation-host'
 import { createTailnetDeviceStore } from './tailnet-devices'
 import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet-gateway-server'
 import { createTailnetPeerResolver } from './tailnet-peer-identity'

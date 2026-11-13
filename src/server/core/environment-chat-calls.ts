@@ -5,7 +5,7 @@ import { STUDIO_COMMAND_METHODS, type StudioCommandMethod } from '../../../packa
 import type { ConversationCommand } from '../../../packages/conversation-protocol/src/public'
 import type { ConversationEvent, ConversationKey } from '../../shared/conversation-runtime'
 import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
-import type { ConversationGatewayCommandResult } from '../../main/automation/tailnet/tailnet-conversation-host'
+import type { ConversationGatewayCommandResult } from './conversation-host'
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../../main/conversation-launch-service'
 
 // A chat another environment holds, acted on from this desktop's own callers

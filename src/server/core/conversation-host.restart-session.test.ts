@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, vi } from 'vitest'
 
-import type { ConversationSessionSummary } from '../../../shared/conversation-runtime'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
+import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import { createConversationGatewayHost } from './conversation-host'
 
 // A paired device's Restart agent session (`conversation-restart-session`):
 // the agent's process ends as this machine's own Restart ends it, suspended,

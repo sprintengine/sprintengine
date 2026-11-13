@@ -10,7 +10,7 @@ import { TAILNET_SCOPES, type TailnetScope } from '../../../shared/tailnet'
 import { ConversationRuntime } from '../../conversation-runtime'
 import type { ConversationProviderAdapter } from '../../providers/conversation-provider-adapter'
 import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
+import { createConversationGatewayHost } from '../../../server/core/conversation-host'
 import {
   CONVERSATION_IMAGE_MAX_BYTES,
   conversationImageFileOf,

@@ -11,7 +11,7 @@ import { isSettledWorkspace } from '../../shared/workspace-lifecycle'
 import type {
   ConversationGatewayHost,
   ConversationUsageLimits,
-} from '../../main/automation/tailnet/tailnet-conversation-host'
+} from './conversation-host'
 import {
   createUsageLimitResumer,
   USAGE_LIMIT_RESUMES_FILE,

@@ -22,7 +22,7 @@ import type {
   StudioStagedUpload,
 } from '../../server/rpc/studio-rpc-types'
 import { ATTACHABLE_IMAGE_TYPES, MAX_ATTACHMENT_BYTES } from '../../shared/conversation-attachments'
-import type { ConversationGatewayHost } from '../automation/tailnet/tailnet-conversation-host'
+import type { ConversationGatewayHost } from '../../server/core/conversation-host'
 import { openConversationImage } from '../automation/tailnet/tailnet-conversation-images'
 import type { TailnetFileUploads } from '../automation/tailnet/tailnet-file-uploads'
 import { redactConversationValue } from '../conversation-tool-details'

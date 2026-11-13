@@ -18,7 +18,7 @@ import {
   type ConversationPhase,
 } from '../../shared/conversation/phase'
 import type { ConversationCommand } from '../../../packages/conversation-protocol/src/public'
-import type { ConversationGatewayCommandResult } from './tailnet/tailnet-conversation-host'
+import type { ConversationGatewayCommandResult } from '../../server/core/conversation-host'
 import { launchPermissionCeiling, refuseDrivingLooserChat, type AgentPermissionResolver } from './launch-permission-cap'
 
 // One chat's agent driving another chat on this machine: sending it a message,
@@ -27,7 +27,7 @@ import { launchPermissionCeiling, refuseDrivingLooserChat, type AgentPermissionR
 // pieces of work needs it without a person in between.
 //
 // A send goes through the chat's normal send path, the one a paired device's
-// send takes (tailnet-conversation-host.ts): it resumes a chat at rest, holds
+// send takes (src/server/core/conversation-host.ts): it resumes a chat at rest, holds
 // a queued message here until the chat's turn ends (so it outlives a restart,
 // as a paired machine's queued message does), and takes a steer into the
 // running turn where the chat's CLI can, holding it for the turn's end where

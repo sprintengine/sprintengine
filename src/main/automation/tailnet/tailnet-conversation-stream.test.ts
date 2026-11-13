@@ -10,7 +10,7 @@ import type { TailnetScope } from '../../../shared/tailnet'
 import { ConversationRuntime } from '../../conversation-runtime'
 import type { ConversationProviderAdapter } from '../../providers/conversation-provider-adapter'
 import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost, type ConversationGatewayHost } from './tailnet-conversation-host'
+import { createConversationGatewayHost, type ConversationGatewayHost } from '../../../server/core/conversation-host'
 import {
   createResyncBackoff,
   createTailnetConversationStream,

@@ -39,7 +39,7 @@ import {
   conversationWireFrame,
   type ConversationSnapshotFrame,
 } from '../../../server/conversation-stream-shaping'
-import type { ConversationGatewayHost } from './tailnet-conversation-host'
+import type { ConversationGatewayHost } from '../../../server/core/conversation-host'
 import { redactConversationValue } from '../../conversation-tool-details'
 import { mapQuoteWords, mayHoldQuotes, quotesToPlainText } from '../../../shared/chat-quotes'
 import {

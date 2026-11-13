@@ -75,7 +75,7 @@ import {
   createTailnetConversationStream,
   type TailnetConversationStream,
 } from './tailnet-conversation-stream'
-import type { ConversationGatewayHost } from './tailnet-conversation-host'
+import type { ConversationGatewayHost } from '../../../server/core/conversation-host'
 import type { TailnetCollectOutcome, TailnetDeviceStore, TailnetPeerCheck } from './tailnet-devices'
 import type { TailnetPeerResolver } from './tailnet-peer-identity'
 import { acceptWebSocket, webSocketStream, type WebSocketPeer } from '../../../server/web/web-socket'

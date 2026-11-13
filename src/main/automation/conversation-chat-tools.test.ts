@@ -6,7 +6,7 @@ import type { ConversationCommand } from '../../../packages/conversation-protoco
 import type { ConversationPermissionPreset, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import type { McpConnectionContext, McpToolResult } from '../../shared/modules/mcp-tools'
-import type { ConversationGatewayCommandResult } from './tailnet/tailnet-conversation-host'
+import type { ConversationGatewayCommandResult } from '../../server/core/conversation-host'
 import { localOnlyGatewayToolReason } from './tailnet/tailnet-scopes'
 import {
   CHAT_WAIT_DEFAULT_MS,

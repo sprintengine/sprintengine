@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import type { ConversationProviderAdapter } from '../../providers/conversation-provider-adapter'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import type { ConversationProviderAdapter } from '../../main/providers/conversation-provider-adapter'
+import { createConversationGatewayHost } from './conversation-host'
 
 // A paired device's send runs at the effort the chat's agent record keeps, as
 // a window's chat view sends every turn with it, so a chat started at an effort

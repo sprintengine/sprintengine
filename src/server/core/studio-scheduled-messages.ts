@@ -12,7 +12,7 @@ import type {
   ConversationHeldMessages,
   ConversationHeldSend,
   ConversationScheduledSends,
-} from '../../main/automation/tailnet/tailnet-conversation-host'
+} from './conversation-host'
 import {
   createScheduledMessages,
   SCHEDULED_MESSAGES_FILE,

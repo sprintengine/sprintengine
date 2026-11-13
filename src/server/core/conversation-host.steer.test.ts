@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, vi } from 'vitest'
 
-import type { ConversationSessionSummary } from '../../../shared/conversation-runtime'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
+import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
 import {
   createConversationGatewayHost,
   type ConversationHeldAttachments,
   type ConversationHeldMessages,
-} from './tailnet-conversation-host'
+} from './conversation-host'
 
 // A paired device's send that says `steer` (`conversation-steer-sends`): into
 // the running turn where the chat's provider takes one, and otherwise held for

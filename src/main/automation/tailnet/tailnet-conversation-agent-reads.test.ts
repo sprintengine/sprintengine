@@ -8,7 +8,7 @@ import { test, vi } from 'vitest'
 import type { ConversationContextBreakdown } from '../../../shared/conversation-runtime'
 import { ConversationRuntime } from '../../conversation-runtime'
 import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
+import { createConversationGatewayHost } from '../../../server/core/conversation-host'
 import { createTailnetConversationStream } from './tailnet-conversation-stream'
 import { createWebSocketFrameDecoder, encodeMaskedTextFrame } from './websocket-frames'
 

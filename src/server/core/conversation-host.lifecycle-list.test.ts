@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { parseConversationServerFrame } from '../../../../packages/conversation-protocol/src/public'
-import type { ConversationEvent, ConversationSessionSummary } from '../../../shared/conversation-runtime'
-import type { ConversationThread as IndexedThread } from '../../../shared/conversation-index'
-import type { ConversationBackend } from '../../../server/core/conversation-backend'
+import { parseConversationServerFrame } from '../../../packages/conversation-protocol/src/public'
+import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
+import type { ConversationThread as IndexedThread } from '../../shared/conversation-index'
+import type { ConversationBackend } from './conversation-backend'
 import {
   createConversationGatewayHost,
   type ConversationListWorkspace,
   type ConversationRegistryLink,
-} from './tailnet-conversation-host'
+} from './conversation-host'
 
 // The list a paired phone or desktop reads, as the desktop that owns each
 // chat's rest and read state answers it (`conversation-lifecycle`).

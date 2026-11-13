@@ -4,11 +4,11 @@ import { test } from 'vitest'
 import {
   parseConversationBackgroundWork,
   parseConversationServerFrame,
-} from '../../../../packages/conversation-protocol/src/public'
-import type { ConversationSessionSummary } from '../../../shared/conversation-runtime'
-import type { ConversationThread as IndexedThread } from '../../../shared/conversation-index'
-import type { ConversationBackend } from '../../../server/core/conversation-backend'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
+} from '../../../packages/conversation-protocol/src/public'
+import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
+import type { ConversationThread as IndexedThread } from '../../shared/conversation-index'
+import type { ConversationBackend } from './conversation-backend'
+import { createConversationGatewayHost } from './conversation-host'
 
 // What a paired device reads about a chat whose turn is over but which still
 // has work going: background agents, and monitors that will wake its agent.

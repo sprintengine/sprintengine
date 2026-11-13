@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import { studioConversationUsageLimits } from '../../../server/core/studio-usage-limit-resumes'
-import type { UsageLimitResumeState, UsageLimitResumeUpdate } from '../../../shared/usage-limit-resume'
-import type { UsageLimitsState } from '../../../shared/usage-limits'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import type { UsageLimitResumer } from '../../usage-limits/resume'
-import { createConversationGatewayHost, type ConversationUsageLimitsState } from './tailnet-conversation-host'
+import { studioConversationUsageLimits } from './studio-usage-limit-resumes'
+import type { UsageLimitResumeState, UsageLimitResumeUpdate } from '../../shared/usage-limit-resume'
+import type { UsageLimitsState } from '../../shared/usage-limits'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import type { UsageLimitResumer } from '../../main/usage-limits/resume'
+import { createConversationGatewayHost, type ConversationUsageLimitsState } from './conversation-host'
 
 // A paired device following a chat here hears what this machine's agents
 // reported of their plans' limits, and the notice a limit left on the chat's

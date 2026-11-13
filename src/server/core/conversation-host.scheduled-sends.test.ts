@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import type { ConversationScheduledMessage } from '../../../../packages/conversation-protocol/src/public'
-import { studioHeldMessages, studioScheduledSends } from '../../../server/core/studio-scheduled-messages'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createScheduledMessages } from '../../scheduled-messages/scheduled-messages'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
+import type { ConversationScheduledMessage } from '../../../packages/conversation-protocol/src/public'
+import { studioHeldMessages, studioScheduledSends } from './studio-scheduled-messages'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import { createScheduledMessages } from '../../main/scheduled-messages/scheduled-messages'
+import { createConversationGatewayHost } from './conversation-host'
 
 // A paired device's Schedule on a chat here (`conversation-scheduled-sends`):
 // the message is kept among this machine's scheduled messages, named to the

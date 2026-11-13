@@ -30,7 +30,7 @@ import { isInsideWsl, resolveTailnetInterface, TAILNET_IN_WSL_ENV } from './tail
 import { createTailnetPeerResolver, type TailnetPeerIdentity, type TailnetPeerResolver } from './tailnet-peer-identity'
 import { createTailnetPeerScanner, type TailnetPeerScanner } from './tailnet-peers'
 import { readTailnetSettings, writeTailnetSettings, type TailnetSettings } from './tailnet-settings'
-import type { ConversationGatewayHost } from './tailnet-conversation-host'
+import type { ConversationGatewayHost } from '../../../server/core/conversation-host'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from './tailnet-file-uploads'
 import type { McpToolCallEvent } from '../mcp-dispatch'
 import { createTailnetOAuthStore, type TailnetOAuthStore } from './tailnet-oauth'

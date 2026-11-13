@@ -7,7 +7,7 @@ import type { ConversationBackend } from '../core/conversation-backend'
 import {
   createConversationGatewayHost,
   type ConversationListWorkspace,
-} from '../../main/automation/tailnet/tailnet-conversation-host'
+} from '../core/conversation-host'
 import { studioRpcConversationCapabilities } from './studio-rpc-server'
 import { connectLineClient, createFakeBackend, hello, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 

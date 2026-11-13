@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import type { ConversationProviderAdapter } from '../../providers/conversation-provider-adapter'
-import { createConversationGatewayHost } from './tailnet-conversation-host'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import type { ConversationProviderAdapter } from '../../main/providers/conversation-provider-adapter'
+import { createConversationGatewayHost } from './conversation-host'
 
 // A paired machine's send that names skills runs them here, resolved against
 // this machine's folder as a chip in its own composer is.

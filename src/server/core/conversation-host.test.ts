@@ -4,20 +4,20 @@ import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, vi } from 'vitest'
-import { ConversationRuntime } from '../../conversation-runtime'
-import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import type { ConversationProviderAdapter } from '../../providers/conversation-provider-adapter'
-import type { ConversationPermissionPreset } from '../../../shared/conversation-runtime'
+import { ConversationRuntime } from '../../main/conversation-runtime'
+import { createMockConversationProvider } from '../../main/providers/mock-conversation-provider'
+import type { ConversationProviderAdapter } from '../../main/providers/conversation-provider-adapter'
+import type { ConversationPermissionPreset } from '../../shared/conversation-runtime'
 import {
   createConversationGatewayHost,
   readBoundedConversationUpload,
   type AgentChoicePatch,
   type ConversationHeldMessages,
-} from './tailnet-conversation-host'
-import { MAX_ATTACHMENTS_PER_TURN, MAX_ATTACHMENT_BYTES } from '../../../shared/conversation-attachments'
-import { CONVERSATION_MAX_IMAGES } from '../../../../packages/conversation-protocol/src'
-import type { ConversationQueuedMessage } from '../../../../packages/conversation-protocol/src/public'
-import type { ConversationModelCatalog } from '../../conversation-model-catalog'
+} from './conversation-host'
+import { MAX_ATTACHMENTS_PER_TURN, MAX_ATTACHMENT_BYTES } from '../../shared/conversation-attachments'
+import { CONVERSATION_MAX_IMAGES } from '../../../packages/conversation-protocol/src'
+import type { ConversationQueuedMessage } from '../../../packages/conversation-protocol/src/public'
+import type { ConversationModelCatalog } from '../../main/conversation-model-catalog'
 
 type Preset = ConversationPermissionPreset
 

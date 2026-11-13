@@ -13,7 +13,7 @@ import type { StudioPullRequest } from '../../../../packages/studio-protocol/src
 import { defaultMachineColour } from '../../../shared/machine-identity'
 import { ConversationRuntime } from '../../conversation-runtime'
 import { createMockConversationProvider } from '../../providers/mock-conversation-provider'
-import { createConversationGatewayHost, type ConversationListMarks } from './tailnet-conversation-host'
+import { createConversationGatewayHost, type ConversationListMarks } from '../../../server/core/conversation-host'
 import {
   conversationBranchesOf,
   conversationHostOf,
