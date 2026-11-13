@@ -1,12 +1,13 @@
-import type { StudioClient } from '../../../../packages/client-runtime/src/public'
-import { machinePathsIn, machinePathsOut } from '../../../shared/machine-path-edge'
+import type { StudioClient } from '../../packages/client-runtime/src/public'
+import { machinePathsIn, machinePathsOut } from './machine-path-edge'
 
-// This window's client of one SSH machine's Studio, as the window's callers
-// read it: the same client, with the machine's paths respelled at its edge
-// (`machine-path-edge.ts`). A chat there keeps its folder as this computer
-// spells it, `ssh://<id>/…`, in the window's records and keys; the machine is
-// handed the plain path, and the folders and files it names come back spelled
-// for this computer again. This is the one place the window respells them.
+// A client of one SSH machine's Studio as this computer's callers read it
+// (the window, and main for the gateway's tools and modules): the same client,
+// with the machine's paths respelled at its edge (`machine-path-edge.ts`). A
+// chat there keeps its folder as this computer spells it, `ssh://<id>/…`, in
+// this computer's records and keys; the machine is handed the plain path, and
+// the folders and files it names come back spelled for this computer again.
+// This is the one place either respells them.
 
 /** The members of one answer that name a file there beside the folders every answer's do. */
 const ANSWER_PATHS: Partial<Record<string, ReadonlySet<string>>> = {

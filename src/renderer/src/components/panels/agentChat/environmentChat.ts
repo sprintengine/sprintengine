@@ -7,7 +7,7 @@ import {
 } from '../../../../../../packages/studio-protocol/src/environment'
 import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../studio/environmentChats'
 import type { EnvironmentTarget } from '../../../studio/environmentStudio'
-import { machineStudioClient } from '../../../studio/machineStudioClient'
+import { machineStudioClient } from '../../../../../shared/machine-studio-client'
 import type { WorkspaceEnvironmentRef } from '../../../types/workspace'
 import { studioConversationTransport, type ConversationTransport } from './conversationTransport'
 import { createStudioChatServices, createStudioConversationParts } from './studioChat'
