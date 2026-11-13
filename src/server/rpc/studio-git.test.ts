@@ -166,6 +166,13 @@ test('a paired app names only repositories really inside the folders Studio know
   // A resolved conflict is written where the file really is: never through a link out of the repository.
   const through = { commandId: cid(), repoRoot: workspace, path: 'nested/out/a.txt', content: 'planted' }
   assert.equal(codeOf(await app.request('git.resolveConflict', through)), 'not_found')
+  // Nor is a file read through one: the conflict view reads the working file itself.
+  const peek = await app.request('git.conflictFile', { repoRoot: workspace, path: 'nested/out/a.txt' })
+  assert.equal(codeOf(peek), 'not_found', JSON.stringify(peek))
+  const own = resultOf<{ file: { result: string } | null }>(
+    await app.request('git.conflictFile', { repoRoot: workspace, path: 'a.txt' }),
+  )
+  assert.equal(own.file?.result, 'alpha\n')
   const hunk = { repoRoot: outside, filePath: 'a.txt', scope: 'unstaged', index: 0, fingerprint: 'x' }
   assert.equal(codeOf(await app.request('git.stageHunk', { commandId: cid(), ref: hunk })), 'not_found')
   // What moves a branch, rewrites history, discards work, reaches a remote or holds the GitHub account is an owner's.

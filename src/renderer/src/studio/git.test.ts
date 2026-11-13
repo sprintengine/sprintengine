@@ -12,6 +12,8 @@ const fake = vi.hoisted(() => ({
   requests: [] as Array<{ method: string; params: Record<string, unknown> }>,
   subscriptions: [] as Array<{ topic: string; params: unknown; listener: Listener; stopped: boolean }>,
   answer: {} as unknown,
+  state: 'open' as string,
+  watchers: new Set<() => void>(),
 }))
 
 vi.mock('./windowStudioClient', () => {
@@ -31,8 +33,11 @@ vi.mock('./windowStudioClient', () => {
   }
   return {
     windowStudioClient: async () => client,
-    windowStudioState: () => 'open',
-    watchWindowStudio: () => () => undefined,
+    windowStudioState: () => fake.state,
+    watchWindowStudio: (_api: unknown, listener: () => void) => {
+      fake.watchers.add(listener)
+      return () => fake.watchers.delete(listener)
+    },
     windowHasStudio: () => true,
   }
 })
@@ -46,7 +51,14 @@ beforeEach(() => {
   host.window.api = { studioWindowTicket: async () => ({}) }
   fake.requests.length = 0
   fake.subscriptions.length = 0
+  fake.state = 'open'
 })
+
+/** The window's connection moving to `state`, as its watchers hear it. */
+function connection(state: string) {
+  fake.state = state
+  for (const watcher of [...fake.watchers]) watcher()
+}
 
 test('each member is the method it names, and a write carries a command id of its own', async () => {
   fake.answer = { paths: ['dist'] }
@@ -87,4 +99,20 @@ test('a checkout is one stream however many views follow it, ended when the last
   assert.equal(fake.subscriptions[0]!.stopped, false)
   stopB()
   assert.equal(fake.subscriptions[0]!.stopped, true)
+})
+
+test('back from a dropped connection, a followed checkout is read again: nothing changed meanwhile is replayed', async () => {
+  const heard: unknown[] = []
+  const stop = gitApi.watchGitCheckout('/Users/dev/app', (change) => heard.push(change))
+  await settle()
+  connection('open')
+  assert.deepEqual(heard, [], 'nothing while it stays up')
+  connection('reconnecting')
+  connection('open')
+  assert.deepEqual(heard, [{ checkoutKey: '/Users/dev/app', kinds: ['worktree', 'refs'], reason: 'fallback' }])
+  stop()
+  connection('reconnecting')
+  connection('open')
+  assert.equal(heard.length, 1, 'not after the last view stops')
+  assert.equal(fake.watchers.size, 0)
 })

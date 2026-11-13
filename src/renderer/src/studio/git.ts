@@ -44,7 +44,7 @@ import {
   type WorkspaceChangeSummary,
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush } from './windowStudioPush'
-import { windowStudioClient } from './windowStudioClient'
+import { watchWindowStudio, windowStudioClient, windowStudioState } from './windowStudioClient'
 
 // The window's way to git on its Studio's machine: the Studio protocol's
 // `git.*`, `github.*` and `versionControl.*` and their streams, over the
@@ -186,7 +186,34 @@ export const gitApi: GitApi = {
           }
         },
       })
-      follow = { listeners, stop }
+      // The stream replays nothing: what changed in the checkout while the
+      // window's connection was down is never heard. Back up, its views are
+      // told to read everything again, as the slow sweep tells them.
+      const api = typeof window === 'undefined' ? undefined : window.api
+      let down = false
+      const unwatch = api
+        ? watchWindowStudio(api, () => {
+            if (windowStudioState(api) !== 'open') down = true
+            else if (down) {
+              down = false
+              const change: GitCheckoutChange = { checkoutKey: key, kinds: ['worktree', 'refs'], reason: 'fallback' }
+              for (const listener of [...listeners]) {
+                try {
+                  listener(change)
+                } catch (error) {
+                  console.warn('[git] checkout change listener threw', error)
+                }
+              }
+            }
+          })
+        : () => undefined
+      follow = {
+        listeners,
+        stop: () => {
+          unwatch()
+          stop()
+        },
+      }
       checkoutFollows.set(key, follow)
     }
     follow.listeners.add(cb)

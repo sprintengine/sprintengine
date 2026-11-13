@@ -127,6 +127,12 @@ const ON_MACHINE: Partial<
   'git.commit': { channel: 'git:commit', args: (p) => [p.repoRoot, p.message] },
 }
 
+/** The methods that read or write a repository's file on disk themselves, not through git. */
+const WORKING_FILE: Partial<Record<StudioGitMethod, 'read' | 'write'>> = {
+  'git.conflictFile': 'read',
+  'git.resolveConflict': 'write',
+}
+
 const ok = <T>(result: T): { ok: true; result: T } => ({ ok: true, result })
 const refuse = <C extends string>(code: C, message: string): Refused<C> => ({ ok: false, error: { code, message } })
 
@@ -154,16 +160,19 @@ export function createStudioGitHandlers(options: StudioGitHandlerOptions) {
         params = write(params, field, at.path)
       }
     }
-    // A resolved conflict is written to its file before git adds it: for a
-    // client held to known folders that file is held as any write is, by
-    // where it really is, so a link in the repository cannot carry it out.
-    if (method === 'git.resolveConflict' && !machine && !namesAnyPath(asking) && options.fileSystem) {
+    // A conflicted file is read from the working tree (`git.conflictFile`),
+    // and a resolved one written there before git adds it: not through git,
+    // which would take a link as a link. For a client held to known folders
+    // that file is held as any read or write by path is, by where it really
+    // is, so a link in the repository cannot carry either out of it.
+    const workingFile = WORKING_FILE[method]
+    if (workingFile && !machine && !namesAnyPath(asking) && options.fileSystem) {
       const file = String(params.path)
       const at = await placePath(
         options.fileSystem,
         isAbsolute(file) ? file : join(String(params.repoRoot), file),
         asking,
-        'write',
+        workingFile,
       )
       if (!at.ok || at.machine) return refuse('not_found', UNKNOWN_PATH)
       params = { ...params, path: at.path }
