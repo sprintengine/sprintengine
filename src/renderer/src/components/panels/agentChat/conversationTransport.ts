@@ -85,13 +85,7 @@ import type {
 // A conversation on this machine is reached over the Studio protocol, through
 // the window's Studio client, as every other client reaches it.
 
-export type ConversationTransportCapabilities = ChatCapabilities & {
-  /**
-   * Paths in the transcript name files on this computer's disk. A question of
-   * this shell's reach rather than of the chat's server.
-   */
-  localFiles: boolean
-}
+export type ConversationTransportCapabilities = ChatCapabilities
 
 /** What an action answers: the local session API's result, or a remote command's. */
 type ConversationTransportResult =
@@ -113,6 +107,13 @@ export type ConversationTransport = {
   /** Where a remote chat's Create PR does its work, used where `capabilities.hostPullRequests` is. */
   pullRequestHost?: PullRequestHost
   capabilities: ConversationTransportCapabilities
+  /**
+   * The environment the chat runs in, by its Studio's id
+   * (`welcome.environment.id`); null where its server has not said one (a
+   * paired desktop over the lane, or before a welcome). What the window and
+   * its shell reach of the chat's disk is asked of this (`useShellReach`).
+   */
+  readonly environmentId: string | null
   subscribe(input: ConversationSubscribeInput, cb: (frame: ConversationSessionFrame) => void): () => void
   loadEarlier(input: ConversationLoadEarlierInput): Promise<ConversationPageResult>
   toolDetail(input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
@@ -370,7 +371,7 @@ const windowServices: ChatServices = {
  * that changes.
  */
 export function studioConversationTransport(
-  welcome: () => Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant'> | null,
+  welcome: () => Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant' | 'environment'> | null,
 ): ConversationTransport {
   let said: { welcome: object | null; capabilities: ConversationTransportCapabilities } | null = null
   return {
@@ -378,20 +379,16 @@ export function studioConversationTransport(
     get capabilities() {
       const now = welcome()
       if (said?.welcome !== now)
-        said = {
-          welcome: now,
-          capabilities: {
-            ...negotiateChatCapabilities(now ? { via: 'studio', welcome: now } : null),
-            // The window's Studio runs on this computer.
-            localFiles: true,
-          },
-        }
+        said = { welcome: now, capabilities: negotiateChatCapabilities(now ? { via: 'studio', welcome: now } : null) }
       return said.capabilities
+    },
+    get environmentId() {
+      return welcome()?.environment.id ?? null
     },
   }
 }
 
-const windowConversationCalls: Omit<ConversationTransport, 'capabilities'> = {
+const windowConversationCalls: Omit<ConversationTransport, 'capabilities' | 'environmentId'> = {
   kind: 'local',
   subscribe: (input, cb) => localParts().subscribe(input, cb),
   loadEarlier: (input) => localParts().loadEarlier(input),
@@ -510,10 +507,11 @@ export function createRemoteConversationTransport(input: {
     // pane hears its list again on a grant change or a reconnect.
     get capabilities() {
       const offer = input.offer?.() ?? null
-      if (said?.offer !== offer)
-        said = { offer, capabilities: { ...negotiateChatCapabilities(offer), localFiles: false } }
+      if (said?.offer !== offer) said = { offer, capabilities: negotiateChatCapabilities(offer) }
       return said.capabilities
     },
+    // A paired desktop over the lane says no environment id.
+    environmentId: null,
     remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId },
     commandsFolder: remoteCommandsFolder(key),
     pullRequestHost: remotePullRequestHost(key, () => input.onPullRequestRecorded?.()),

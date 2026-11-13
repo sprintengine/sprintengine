@@ -15,6 +15,7 @@ import { resolveWorkspaceWorktree } from '../../../utils/workspaceWorktree'
 import { useCheckoutChanges } from '../../workspace/checkoutChanges'
 import { changedFileMarks, changedFilesPhrase } from '../../workspace/terminalLines'
 import type { ConversationTransport } from './conversationTransport'
+import { useShellReach } from './shellReach'
 import type { ChatPanelBranch, ChatPanelChanges, ChatPanelMachine } from './chatPanelStore'
 
 // Where a conversation's agent works, read off the chat's binding and
@@ -84,7 +85,8 @@ export function useConversationStripFacts({
   // Only a folder this computer can read: the working root is the agent's
   // worktree when it runs in one (`conversationWorkingRoot`), else the
   // workspace's own checkout.
-  const checkout = transport.capabilities.localFiles ? workspaceRoot : null
+  // Only a folder the window's Studio reads: the chat's own environment's.
+  const checkout = useShellReach().openDocument ? workspaceRoot : null
   const gitBranch = useGitBranch(checkout)
   const workspaceWorktree = workspace ? resolveWorkspaceWorktree(workspace) : null
   // Its own field, not the agent record: an agent is rewritten on every turn.

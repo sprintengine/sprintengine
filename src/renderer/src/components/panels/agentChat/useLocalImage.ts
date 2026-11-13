@@ -8,6 +8,7 @@ import {
   type ConversationToolImageResult,
   type ConversationTransport,
 } from './conversationTransport'
+import { useShellReach } from './shellReach'
 
 // The image formats main will hand back as a data URL (filesystem-image.ts).
 const PREVIEWABLE_IMAGE = /\.(apng|avif|bmp|gif|ico|jpe?g|png|svg|webp)$/iu
@@ -71,13 +72,14 @@ export function isHomePath(path: string): boolean {
 export function useLocalImage(path: string | null | undefined, options: { home?: boolean } = {}): LocalImage {
   const context = useConversationLinkContext()
   const transport = useConversationTransport()
-  const localFiles = transport.capabilities.localFiles
+  // A path is read where the window's Studio is the chat's: its services read it.
+  const localFiles = useShellReach().openDocument
   const files = transport.services.files
   const inWsl = Boolean(distroOfUncPath(context?.cwd || context?.workspaceRoot || ''))
   const resolved =
     !path || !localFiles
       ? null
-      : options.home && isHomePath(path) && transport.kind === 'local' && !inWsl
+      : options.home && isHomePath(path) && !inWsl
         ? path
         : resolveTerminalFileReferencePath(path, { executionRoot: context?.cwd, workspaceRoot: context?.workspaceRoot })
   const [image, setImage] = useState<{ path: string; src?: string; failed?: boolean }>()
@@ -172,7 +174,8 @@ export function fetchToolImage(
 export function useToolImage(toolUseId: string, path: string | null | undefined): LocalImage & { remote?: boolean } {
   const local = useLocalImage(path)
   const transport = useConversationTransport()
-  const remote = Boolean(path) && !transport.capabilities.localFiles && transport.toolImage !== undefined
+  const reach = useShellReach()
+  const remote = Boolean(path) && !reach.openDocument && transport.toolImage !== undefined
   const [image, setImage] = useState<{ id: string; answer: ConversationToolImageResult }>()
   useEffect(() => {
     if (!remote || !transport.toolImage) return

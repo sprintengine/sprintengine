@@ -33,6 +33,7 @@ import { formatMessageDateTime, formatMessageTime, LiveElapsed } from '../liveEl
 import { useClockFormat } from '../../../../utils/clockFormat'
 import { formatStepDuration } from '../stepDuration'
 import { useConversationTransport } from '../conversationTransport'
+import { useShellReach } from '../shellReach'
 import { isPreviewableImagePath, useToolImage } from '../useLocalImage'
 import { treeRelativePath } from '../../../../utils/fileTreeEntries'
 import { revealLabel } from '../../../../utils/revealLabel'
@@ -338,9 +339,9 @@ export function ToolBody({ tool, detail }: { tool: TranscriptToolEntry; detail?:
 // device names files over there, which nothing serves by name, so it says
 // how many there are instead.
 function ToolImages({ images, toolUseId }: { images: readonly string[] | undefined; toolUseId: string }) {
-  const transport = useConversationTransport()
+  const { openDocument } = useShellReach()
   if (!images?.length) return null
-  if (!transport.capabilities.localFiles)
+  if (!openDocument)
     return (
       <p className="mt-2 text-[color:var(--text-muted)]">
         {images.length === 1 ? 'This step returned a picture' : `This step returned ${images.length} pictures`}, on the
@@ -452,8 +453,8 @@ function EditBody({
   subject: string
 }) {
   const context = useConversationLinkContext()
-  // The diff window reads this machine's checkpoints; a remote edit has none here.
-  const openable = useConversationTransport().capabilities.localFiles
+  // The diff window reads the window's Studio's checkpoints; another machine's edit has none there.
+  const openable = useShellReach().openDocument
   const edits = useMemo(() => deriveEditHunks(input).map(withoutNoNewlineMarkers), [input])
   return (
     <>

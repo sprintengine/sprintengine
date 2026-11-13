@@ -14,7 +14,7 @@ import { STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES } from '../src/server/rpc
 // (`studioConversationTransport`) rather than naming capabilities itself, so a
 // chat part is drawn as the window draws it once its Studio has welcomed it.
 
-export type ChatWelcome = Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant'>
+export type ChatWelcome = Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant' | 'environment'>
 
 /** The grants a chat's controls are tried under. */
 export const CHAT_GRANTS = {
@@ -41,6 +41,7 @@ export function chatWelcome(
     ? { ...studioWindowGrant(), scopes: [...scopes] }
     : { clientId: 'paired-client', name: 'build-box', owner, scopes: [...scopes], ceiling: 'auto' }
   return {
+    environment: { id: 'studio-fixture', hostKind: 'local', os: 'darwin', arch: 'arm64' },
     capabilities: STUDIO_CAPABILITIES.filter((name) => !without.has(name)),
     conversation: {
       protocolVersion: 1,

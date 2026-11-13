@@ -151,6 +151,7 @@ import { UsageLimitsComposerButton } from './agentChat/usageLimits'
 import { HostUsageLimitNoticeRow } from './agentChat/usageLimitResume'
 import { HostScheduledMessageRows, type ScheduledMessageView } from './agentChat/scheduledMessages'
 import { WINDOW_STUDIO_NAME } from './agentChat/chatServerHeld'
+import { useShellReach } from './agentChat/shellReach'
 import { SendTimeTag, type SendAtLimitReset } from '../workspace/agentComposer/schedule/SendTimeEditor'
 import { defaultSendAt } from '../workspace/agentComposer/schedule/sendTime'
 import { selectUsageLimitSnapshot, usageLimitProviderOf } from '../../store/usageLimitsStore'
@@ -539,6 +540,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const label = agent.name ?? agentId
   const workspaceRoot = binding.workspaceRoot
   const { operate } = transport.capabilities
+  // What this window and its shell reach of the chat's disk.
+  const shellReach = useShellReach()
   // The chat as its server's queue, schedule and resume calls name it.
   const chatKey = useMemo(
     () => ({ workspaceRoot: binding.sessionRoot ?? workspaceRoot ?? '', workspaceId, agentId }),
@@ -3217,10 +3220,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Anywhere else a file is typed as its path.
   const filesEnabled =
     ready &&
-    clientSupports('drag-paths') &&
-    (transport.kind === 'local'
-      ? transport.capabilities.localFiles && workspaceRunsHere(binding.workspace)
-      : transport.capabilities.attachFiles)
+    ((shellReach.dragPaths && workspaceRunsHere(binding.workspace)) ||
+      (clientSupports('drag-paths') && transport.capabilities.attachFiles))
 
   // The inventory is the window's own Studio's, except for a chat whose
   // transport names the machine that lists its skills.
@@ -3577,11 +3578,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       ? forkFromHere
       : undefined
   // The Files and Folders setting is this Mac's, so only a chat that runs on
-  // it, in a window that can reach System Settings, offers to open it.
+  // its disk, in a shell that can reach System Settings, offers to open it.
   const onOpenPrivacySettings =
-    transport.kind === 'local' && !machineId && hostPlatform() === 'darwin' && clientSupports('reveal-in-folder')
-      ? openMacosPrivacySettings
-      : undefined
+    shellReach.revealInFolder && !machineId && hostPlatform() === 'darwin' ? openMacosPrivacySettings : undefined
   // A side question is offered once the chat has a reply to ask about, and
   // carried on in a chat of its own where the chat can be forked here: from
   // its newest reply, once no turn runs, as Fork from here is.
@@ -4105,7 +4104,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // (owner ruling 2026-10-18). A chat on WSL or an SSH machine routed through
   // this desktop (the strip names its machine) has no checkout here.
   const createsPullRequestOnStudio =
-    transport.kind !== 'remote' && transport.capabilities.localFiles && !stripFacts.machine && Boolean(workspaceRoot)
+    transport.kind !== 'remote' && shellReach.sameDisk && !stripFacts.machine && Boolean(workspaceRoot)
   const remotePullRequestHost =
     transport.kind === 'remote' && transport.capabilities.hostPullRequests && operate
       ? (transport.pullRequestHost ?? null)
@@ -4802,7 +4801,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                     const text = event.clipboardData?.getData('text/plain') ?? ''
                     const paths = pastedImagePaths(
                       text,
-                      transport.capabilities.localFiles && workspaceRoot ? [workspaceRoot] : [],
+                      shellReach.openDocument && workspaceRoot ? [workspaceRoot] : [],
                     )
                     if (!paths) return
                     event.preventDefault()

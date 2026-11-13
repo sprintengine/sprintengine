@@ -38,13 +38,10 @@ const NO_FOLDER = 'embed'
  */
 function readOnlyCapabilities(client: StudioClient): ConversationTransportCapabilities {
   const { welcome } = client
-  return {
-    ...negotiateChatCapabilities({
-      via: 'studio',
-      welcome: { ...welcome, grant: { ...welcome.grant, owner: false, scopes: ['conversation:read'] } },
-    }),
-    localFiles: false,
-  }
+  return negotiateChatCapabilities({
+    via: 'studio',
+    welcome: { ...welcome, grant: { ...welcome.grant, owner: false, scopes: ['conversation:read'] } },
+  })
 }
 
 const refused = async () => ({ ok: false as const, message: 'This view is read-only.' })
@@ -66,6 +63,9 @@ function embedTransport(client: StudioClient): ConversationTransport {
       if (said?.welcome !== client.welcome)
         said = { welcome: client.welcome, capabilities: readOnlyCapabilities(client) }
       return said.capabilities
+    },
+    get environmentId() {
+      return client.welcome.environment.id
     },
     subscribe: (input, cb) => parts.subscribe(keyed(input), cb),
     loadEarlier: (input) => parts.loadEarlier(keyed(input)),

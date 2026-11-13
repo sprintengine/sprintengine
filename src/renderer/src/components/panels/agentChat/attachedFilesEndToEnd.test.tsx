@@ -84,7 +84,7 @@ const folders: string[] = []
 let root: Root | null = null
 let host: HTMLElement | null = null
 
-beforeEach(() => {
+beforeEach(async () => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   resetAttachedFilePreviewsForTests()
   ;(window as unknown as { api: unknown }).api = {
@@ -95,7 +95,7 @@ beforeEach(() => {
     // A path a message names is a file on the window's Studio's disk.
     statPath: async () => ({ isFile: true, isDirectory: false, size: 1, mtimeMs: 1 }),
   }
-  installStudioLoopback(window as never)
+  await installStudioLoopback(window as never).welcomed()
 })
 
 afterEach(async () => {
