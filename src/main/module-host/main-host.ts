@@ -165,6 +165,15 @@ export const THIRD_PARTY_SERVICE_KEYS: ReadonlySet<string> = new Set([
   'text-generation.module-service',
 ])
 
+// Those of them whose every method takes the calling module's id first (the
+// SDK's get*Service helpers close over `host.moduleId`). A third-party module
+// is handed each as itself: a call naming another module's id is refused, so
+// one extension cannot act with another's permissions, chats, secrets or
+// storage. `core.workspace` and `core.workspace-context` name no module.
+const MODULE_ID_FIRST_SERVICE_KEYS: ReadonlySet<string> = new Set(
+  [...THIRD_PARTY_SERVICE_KEYS].filter((key) => key !== 'core.workspace' && key !== 'core.workspace-context'),
+)
+
 // The declarations that let a third-party module serve methods to clients:
 // its own scope, and the broad legacy one it was split out of.
 const METHOD_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
@@ -859,6 +868,51 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     throw new Error(`Service "${key}" is not available to third-party modules.`)
   }
 
+  // Each service a third-party module was handed as itself, by the service
+  // and the module: one view per pair, so a module sees the same object each time.
+  const callerViews = new WeakMap<object, Map<string, unknown>>()
+
+  /**
+   * The service as `moduleId` reaches it: as is for a first-party module or a
+   * service that names no module; otherwise a view whose methods refuse a
+   * call naming any module but this one, and which cannot be written to.
+   */
+  function asCaller<T>(moduleId: string, key: string, value: T): T {
+    if (!isThirdParty(moduleId) || !MODULE_ID_FIRST_SERVICE_KEYS.has(key)) return value
+    if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
+    const target = value as object
+    let views = callerViews.get(target)
+    if (!views) {
+      views = new Map()
+      callerViews.set(target, views)
+    }
+    const known = views.get(moduleId)
+    if (known !== undefined) return known as T
+    const readOnly = (): never => {
+      throw new Error(`Module "${moduleId}" cannot change service "${key}".`)
+    }
+    const view = new Proxy(target, {
+      get(service, property) {
+        const member: unknown = Reflect.get(service, property, service)
+        if (typeof member !== 'function') return member
+        return (...args: unknown[]) => {
+          if (args[0] !== moduleId) {
+            throw new Error(
+              `Module "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
+            )
+          }
+          return (member as (...given: unknown[]) => unknown).apply(service, args)
+        }
+      },
+      set: readOnly,
+      defineProperty: readOnly,
+      deleteProperty: readOnly,
+      setPrototypeOf: readOnly,
+    })
+    views.set(moduleId, view)
+    return view as T
+  }
+
   // A module asset by path: the same refusals `moduleAssetUrl` makes, then
   // only a verified file, held to the bytes it was verified with.
   function resolveAssetPath(moduleId: string, relativePath: string): string {
@@ -1070,14 +1124,15 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       },
       getService<T>(token: ServiceToken<T>): T | undefined {
         assertServiceVisible(moduleId, token.key)
-        return services.get(token.key)?.value as T | undefined
+        const value = services.get(token.key)?.value as T | undefined
+        return value === undefined ? undefined : asCaller(moduleId, token.key, value)
       },
       requireService<T>(token: ServiceToken<T>): T {
         assertServiceVisible(moduleId, token.key)
         if (!services.has(token.key)) {
           throw new Error(`Module "${moduleId}" requires service "${token.key}", which no enabled module provides.`)
         }
-        return services.get(token.key)!.value as T
+        return asCaller(moduleId, token.key, services.get(token.key)!.value as T)
       },
       onStartup(hook) {
         startupHooks.push({ moduleId, hook })

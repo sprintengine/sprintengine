@@ -64,6 +64,33 @@ test('a third-party module resolves only the published service keys', () => {
   assert.ok(kernel.hostFor('bundled').getService(serviceTokens.TerminalRuntimeToken))
 })
 
+test('a third-party module reaches a service that names a module only as itself', () => {
+  const kernel = kernelWith(bundled, thirdParty, otherThirdParty)
+  const calls: string[] = []
+  const storage = {
+    get: (moduleId: string, key: string) => {
+      calls.push(`${moduleId}:${key}`)
+      return key
+    },
+  }
+  kernel.hostFor('@host').provideService(serviceTokens.ModuleStorageToken, () => storage as never)
+  kernel.hostFor('@host').provideService(serviceTokens.WorkspaceServiceToken, () => storage as never)
+
+  const deck = kernel.hostFor('acme-deck').requireService(serviceTokens.ModuleStorageToken) as unknown as typeof storage
+  assert.equal(deck.get('acme-deck', 'mine'), 'mine')
+  assert.throws(() => deck.get('acme-other', 'theirs'), /called service "core.module-storage" as module "acme-other"/)
+  assert.throws(() => deck.get('bundled', 'theirs'), /only as itself/)
+  // The same view each time, and one it cannot change for anyone else.
+  assert.equal(kernel.hostFor('acme-deck').getService(serviceTokens.ModuleStorageToken), deck)
+  assert.throws(() => {
+    ;(deck as { get: unknown }).get = () => 'replaced'
+  }, /cannot change service/)
+  assert.deepEqual(calls, ['acme-deck:mine'])
+  // A service that names no module, and a first-party module, are handed it as is.
+  assert.equal(kernel.hostFor('acme-deck').requireService(serviceTokens.WorkspaceServiceToken), storage)
+  assert.equal(kernel.hostFor('bundled').requireService(serviceTokens.ModuleStorageToken), storage)
+})
+
 test('third-party modules may share services with each other', () => {
   const kernel = kernelWith(thirdParty, otherThirdParty)
   const token = createServiceToken<{ ping(): string }>('acme.shared')

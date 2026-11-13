@@ -653,6 +653,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   const moduleRefusedBefore = (settled: { ok: boolean; error?: StudioErrorBody }) =>
     !settled.ok &&
     ['unavailable', 'module_unavailable', 'module_method_unknown', 'invalid_params'].includes(settled.error?.code ?? '')
+  // As `moduleRefusedBefore`, for a module's own method: `unavailable` there is
+  // a handler that threw (or answered what no client can read), after it may
+  // have sent to a chat, so only a Studio with no modules at all is tried again.
+  const operateRefusedBefore = (settled: { ok: boolean; error?: StudioErrorBody }) =>
+    moduleRefusedBefore(settled) && (settled.error?.code !== 'unavailable' || !options.modules)
   /**
    * A call into one of the host's services a module's window half reaches,
    * under the calling module's id: `module_unavailable` for a module not
@@ -1619,7 +1624,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         () => moduleCall('module.operate', params, grant, runtimeId(grant, commandId)),
         voice,
         'module.operate',
-        moduleRefusedBefore,
+        operateRefusedBefore,
       ),
 
     // ── What the Studio keeps beside its chats ───────────────────────────────

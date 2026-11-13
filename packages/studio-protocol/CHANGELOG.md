@@ -208,6 +208,11 @@ message }`); new error codes `module_unavailable` (the module does not run
   module's own params validator answers `invalid_params`. Method names follow
   `isStudioModuleMethodName`. Both are offered under `modules`, and replace the
   desktop's `modules:bridge:invoke` IPC channel (host API 2 of the module SDK).
+  A retry is carried out again only when the first call was refused before
+  the module's handler took it; a handler that failed is answered as it
+  failed, since it may already have sent to a chat. The handler is handed the
+  id namespaced by the client, to pass on to a chat, whose receipt answers a
+  retry after the server restarts.
 
 ### Changed (contract)
 
