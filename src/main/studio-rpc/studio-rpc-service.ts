@@ -7,6 +7,7 @@ import type {
   StudioLocalAppToolReach,
   StudioLocalAppsStatus,
 } from '../../shared/studio-local-apps'
+import type { StudioWebDevicesDomain } from '../../server/rpc/studio-web-devices'
 import type { AppIdentity } from '../../server/platform/app-identity'
 import type { StudioAccessDomain } from '../../server/rpc/studio-access'
 import { studioPlatform } from '../../server/platform/platform'
@@ -152,6 +153,8 @@ export type StudioRpcService = {
   connectDevice(stream: Duplex, authenticator: StudioAuthenticator): { connectionId: string }
   /** The chat surface, from the handlers the app's own IPC serves its windows with. */
   provideChat(chat: StudioChatBackend): void
+  /** The web listener's paired browsers, from the front door once it starts (`web-devices`). */
+  provideWebDevices(domain: StudioWebDevicesDomain): void
   /** Which agents a paired app's tools reach. */
   toolReachOf(clientId: string): StudioLocalAppToolReach
   /**
@@ -264,6 +267,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
   // for the run: its router holds the receipts and uploads every way in shares.
   let server: StudioRpcServer | null = null
   let chat: StudioChatBackend | null = null
+  let webDevices: StudioWebDevicesDomain | null = null
   let lastError: string | null = null
   let starting: Promise<void> | null = null
   let windows: StudioWindowListener | null = null
@@ -476,6 +480,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.hostKind ? { hostKind: options.hostKind } : {}),
       backend: options.backend(),
       chat: () => chat,
+      webDevices: () => webDevices,
       authenticator: authenticator(appStore()),
       audit,
       ...(options.tools ? { tools: options.tools } : {}),
@@ -660,6 +665,9 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
     },
     provideChat(next) {
       chat = next
+    },
+    provideWebDevices(next) {
+      webDevices = next
     },
     toolReachOf: (clientId) => appStore().toolReachOf(clientId),
     shellTransport() {

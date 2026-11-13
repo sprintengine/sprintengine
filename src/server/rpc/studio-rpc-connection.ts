@@ -61,6 +61,7 @@ import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
+import type { StudioWebDevicesDomain } from './studio-web-devices'
 import type { StudioModules } from './studio-modules'
 import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
@@ -185,6 +186,8 @@ export type StudioRpcConnectionOptions = {
   artifacts?: StudioArtifacts
   /** Who may reach the agents from this machine: the `localApps.changed` stream. */
   access?: StudioAccessDomain
+  /** The web listener's paired browsers: the `webDevices.changed` stream. */
+  webDevices?: () => StudioWebDevicesDomain | null
   /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
@@ -1497,6 +1500,25 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
           ? (deliver) => {
               deliver(access.localApps.status())
               return access.localApps.onChanged(deliver)
+            }
+          : null,
+      )
+    },
+    // The status whole, then again on every change, as this client is shown
+    // it (its own browser marked current).
+    'webDevices.changed': (id) => {
+      const domain = options.webDevices?.() ?? null
+      subscribeFeed(
+        id,
+        'webDevices.changed',
+        domain
+          ? (deliver) => {
+              const shown = () => {
+                const clientId = liveGrant()?.clientId
+                if (clientId) deliver(domain.status(clientId))
+              }
+              shown()
+              return domain.onChanged(shown)
             }
           : null,
       )

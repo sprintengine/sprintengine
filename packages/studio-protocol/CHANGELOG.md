@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Removed (permissions no method needs)
+
+- **`access:read` and `access:write`** leave `STUDIO_PERMISSIONS`: who may
+  reach a Studio (`gateway.*`, `mcpHttp.*`, `localApps.*`, `webDevices.*`) is
+  an owner's by method, and the tunnel rows that named them are gone. A
+  permission is never sent on the wire, so no peer reads the change.
+
 ### Changed (what starts a schedule is held to what the asker may reach)
 
 - **`schedules.resume`, `.runNow` and `.resumeAll` start no schedule in a
@@ -33,6 +40,14 @@
 - **`window`** on a method or topic spec: served only to Studio's own desktop
   windows, with the reason, always beside `owner`. `mcpHttp.create` and all of
   `localApps.*` say it.
+
+### Added (the browsers paired with a web listener)
+
+- **`webDevices.status`, `.revoke`, `.approve`, `.decline` and the
+  `webDevices.changed` stream** (`web-devices.ts`, capability `web-devices`):
+  Settings ▸ Browsers in a web tab. Each is an owner's; the mutations carry a
+  `commandId`. The shapes (`WebDevice`, `WebPairRequest`, `WebDevicesStatus`)
+  move into the package. No method answers a pairing link.
 
 ### Changed (an unreadable extension folder is named, not placed)
 

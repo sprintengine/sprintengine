@@ -27,6 +27,7 @@ import {
   STUDIO_EXTENSIONS_METHODS,
   STUDIO_ARTIFACTS_METHODS,
   STUDIO_ACCESS_METHODS,
+  STUDIO_WEB_DEVICES_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -46,6 +47,7 @@ import {
   type StudioExtensionsMethodMap,
   type StudioArtifactsMethodMap,
   type StudioAccessMethodMap,
+  type StudioWebDevicesMethodMap,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -547,6 +549,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // And who may reach its agents from its machine, which its Settings uses, by name.
     ...(Object.fromEntries(Object.keys(STUDIO_ACCESS_METHODS).map((method) => [method, 'request'])) as Record<
       keyof StudioAccessMethodMap,
+      string
+    >),
+    // And the browsers paired with its web listener, which a web tab's Settings uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_WEB_DEVICES_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioWebDevicesMethodMap,
       string
     >),
   }

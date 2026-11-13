@@ -138,11 +138,11 @@ test('every Studio scope a grant can hold carries only permissions from the clos
     assert.ok(STUDIO_SCOPE_PERMISSIONS[scope].length > 0, scope)
     for (const permission of STUDIO_SCOPE_PERMISSIONS[scope]) assert.equal(isStudioPermission(permission), true, scope)
   }
-  // Nothing a grant made today holds reaches who may reach this machine, nor
-  // its terminals (an owner's only, by no scope); this machine's upkeep
-  // (updating it) and its settings only through the scope that names each.
+  // Nothing a grant made today holds reaches this machine's terminals (an
+  // owner's only, by no scope); who may reach this machine is an owner's by
+  // method, with no permission of its own; this machine's upkeep (updating it)
+  // and its settings only through the scope that names each.
   const carried = new Set<string>(STUDIO_SCOPES.flatMap((scope) => STUDIO_SCOPE_PERMISSIONS[scope]))
-  assert.equal(carried.has('access:write'), false, 'access:write')
   for (const permission of carried) assert.equal(permission.startsWith('terminal:'), false, permission)
   assert.equal(isStudioPermission('terminal:read'), false)
   assert.equal(isStudioPermission('terminal:operate'), false)

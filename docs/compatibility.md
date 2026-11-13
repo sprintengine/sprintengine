@@ -1413,6 +1413,18 @@ app cannot mint the next way in. A web tab still lists and revokes the HTTP
 clients; before, its tunnel could also mint a token, and now Settings there
 says a new one is made in the desktop app. Same build on both ends: the
 window's 4 `automation:*` and 6 `studio-local-apps:*` IPC channels are gone.
+
+`web-devices` (2026-11-13) is the browsers paired with a Studio's web listener,
+offered only by a Studio that runs one, once its front door has started:
+`webDevices.status`, `.revoke`, `.approve` (with the six digits the asking
+browser shows), `.decline`, and the `webDevices.changed` stream, whole at
+subscribing and on each change, the asking browser's own row marked `current`.
+Each is an owner's, an owner's web tab included. Nothing answers a credential:
+there is no method for a pairing link, so a tab no longer makes one; another
+browser is paired by approval, or with `studio-server pair` on the machine.
+Same build on both ends: a web tab's 7 `web:devices:*` tunnel channels are gone,
+and so are its 3 `web:embeds:*` channels, which nothing called (embeds are made
+with `studio-server embed`).
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

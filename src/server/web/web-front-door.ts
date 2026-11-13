@@ -12,17 +12,7 @@ import type { LocalClientBus } from '../platform/client-bus'
 import type { StudioAuthenticator } from '../rpc/studio-rpc-types'
 import {
   WEB_BROWSE_FOLDERS_CHANNEL,
-  WEB_DEVICES_APPROVE_CHANNEL,
-  WEB_DEVICES_CHANGED_CHANNEL,
-  WEB_DEVICES_DECLINE_CHANNEL,
-  WEB_DEVICES_LINK_CHANNEL,
-  WEB_DEVICES_RENAME_CHANNEL,
-  WEB_DEVICES_REVOKE_CHANNEL,
-  WEB_DEVICES_STATUS_CHANNEL,
   type WebDevicesStatus,
-  WEB_EMBEDS_CREATE_CHANNEL,
-  WEB_EMBEDS_LIST_CHANNEL,
-  WEB_EMBEDS_REVOKE_CHANNEL,
   WEB_PREVIEWS_CHANGED_CHANNEL,
   WEB_PREVIEWS_CLOSE_CHANNEL,
   WEB_PREVIEWS_LIST_CHANNEL,
@@ -38,7 +28,7 @@ import { createWebListener, type WebListener } from './web-listener'
 import { createWebSessionStore, type WebSessionStore } from './web-sessions'
 import { openWebStaticRoot, type WebStaticRoot } from './web-static'
 import { createEmbedRoutes } from './embed-routes'
-import { createEmbedStore, gateEmbedFrames, type EmbedCreateInput, type EmbedStore } from './embeds'
+import { createEmbedStore, gateEmbedFrames, type EmbedStore } from './embeds'
 import { WEB_RUN_FILENAME, readWebRunFile, type WebRunFile } from './web-run-file'
 import { serveWebOnTailnet, type WebTailscaleServe } from './web-tailscale-serve'
 import { createWebUploads } from './web-uploads'
@@ -205,8 +195,7 @@ export async function startWebFrontDoor(input: {
 
   // Devices: the browsers paired here, and the ones asking by approval.
   const pairRequests = createPairRequests({ sessions })
-  const devicesStatus = (clientId?: string): WebDevicesStatus => {
-    const current = clientId ? sessionOfClient.get(clientId) : undefined
+  const devicesStatus = (current?: string): WebDevicesStatus => {
     return {
       devices: sessions.list().map((session) => ({
         id: session.id,
@@ -221,56 +210,33 @@ export async function startWebFrontDoor(input: {
       origins: listener.origins(),
     }
   }
+  // Settings ▸ Browsers, over the Studio protocol (`webDevices.*`): every
+  // owner connection follows its changes; a browser's own row is marked by
+  // its grant (`web:<session id>`). A pairing link, a credential in the
+  // answer, is not served to a tab: a new browser asks by approval, or is
+  // paired with `studio-server pair` on this machine.
+  const devicesChanged = new Set<() => void>()
   const announceDevices = () => {
-    for (const clientId of sessionOfClient.keys())
-      tunnel.publish(WEB_DEVICES_CHANGED_CHANNEL, devicesStatus(clientId), { clientId })
+    for (const listener of [...devicesChanged]) listener()
   }
   const stopRequestPushes = pairRequests.onChanged(announceDevices)
   const stopRevokePushes = sessions.onChanged(announceDevices)
-  tunnel.registry.handle(WEB_DEVICES_STATUS_CHANNEL, (event) => devicesStatus(event.caller.clientId))
-  tunnel.registry.handle(WEB_DEVICES_REVOKE_CHANNEL, (_event, request: { id?: unknown } | null) =>
-    typeof request?.id === 'string' ? sessions.revoke(request.id) : false,
-  )
-  tunnel.registry.handle(WEB_DEVICES_RENAME_CHANNEL, (_event, request: { id?: unknown; name?: unknown } | null) => {
-    return (
-      typeof request?.id === 'string' && typeof request.name === 'string' && sessions.rename(request.id, request.name)
-    )
+  rpc.provideWebDevices({
+    status: (clientId) => devicesStatus(clientId.startsWith('web:') ? clientId.slice('web:'.length) : undefined),
+    revoke: (id) => sessions.revoke(id),
+    approve: (requestId, code) => pairRequests.approve(requestId, code),
+    decline: (requestId) => pairRequests.decline(requestId),
+    onChanged(listener) {
+      devicesChanged.add(listener)
+      return () => {
+        devicesChanged.delete(listener)
+      }
+    },
   })
-  // A pairing link for another browser, on one of this server's own origins.
-  tunnel.registry.handle(WEB_DEVICES_LINK_CHANNEL, (_event, request: { origin?: unknown } | null) => {
-    const origin =
-      typeof request?.origin === 'string' && listener.origins().includes(request.origin) ? request.origin : undefined
-    return listener.pairingUrl(origin)
-  })
-  tunnel.registry.handle(
-    WEB_DEVICES_APPROVE_CHANNEL,
-    (_event, request: { requestId?: unknown; code?: unknown } | null) =>
-      typeof request?.requestId === 'string' && typeof request.code === 'string'
-        ? pairRequests.approve(request.requestId, request.code)
-        : { ok: false, message: 'Name the request and the code it shows.' },
-  )
-  tunnel.registry.handle(WEB_DEVICES_DECLINE_CHANNEL, (_event, request: { requestId?: unknown } | null) =>
-    typeof request?.requestId === 'string' ? pairRequests.decline(request.requestId) : false,
-  )
 
-  // Embeds: one conversation, read-only, framed by the pages their owner named.
+  // Embeds: one conversation, read-only, framed by the pages their owner
+  // named. Made, listed and revoked by `studio-server embed` (`embed-routes.ts`).
   const embeds = createEmbedStore({ dataDir, log: input.log })
-  tunnel.registry.handle(WEB_EMBEDS_CREATE_CHANNEL, (_event, request: EmbedCreateInput & { origin?: unknown }) => {
-    const created = embeds.create(request ?? { conversation: {} })
-    if (!created.ok) return created
-    const base =
-      typeof request?.origin === 'string' && listener.origins().includes(request.origin) ? request.origin : null
-    return {
-      ok: true,
-      embed: created.embed,
-      token: created.token,
-      url: `${base ?? listener.origins()[0]}/embed/conversation/${created.embed.embedId}#token=${created.token}`,
-    }
-  })
-  tunnel.registry.handle(WEB_EMBEDS_LIST_CHANNEL, () => embeds.list())
-  tunnel.registry.handle(WEB_EMBEDS_REVOKE_CHANNEL, (_event, request: { embedId?: unknown } | null) =>
-    typeof request?.embedId === 'string' ? embeds.revoke(request.embedId) : false,
-  )
   const stopEmbedRevocations = embeds.onRevoked((embedId) => listener.closeEmbedSockets(embedId))
   // A session or an embed that runs out is pruned when its store is next
   // read, and the prune is what closes its sockets with 4401. A tab's tunnel

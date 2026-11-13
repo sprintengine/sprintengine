@@ -324,6 +324,13 @@ export const STUDIO_ARTIFACTS_CAPABILITY = 'artifacts' as const
 export const STUDIO_ACCESS_CAPABILITY = 'access' as const
 
 /**
+ * The browsers paired with this Studio's web listener (`web-devices.ts`):
+ * the list and its stream, removing one, and answering one that asks by
+ * approval. Offered by a Studio that runs the web listener.
+ */
+export const STUDIO_WEB_DEVICES_CAPABILITY = 'web-devices' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -382,6 +389,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_ARTIFACTS_CAPABILITY,
   STUDIO_ACCESS_CAPABILITY,
   STUDIO_WORKSPACE_SYNC_CAPABILITY,
+  STUDIO_WEB_DEVICES_CAPABILITY,
 ] as const
 
 /**

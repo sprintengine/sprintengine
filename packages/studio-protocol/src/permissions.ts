@@ -44,9 +44,6 @@ export const STUDIO_PERMISSIONS = [
   'settings:write',
   // Open a preview of a server an agent runs here.
   'preview:operate',
-  // See and change who may reach this machine: paired browsers, embeds, endpoints.
-  'access:read',
-  'access:write',
   // Keep this machine's Studio itself: update it, which drains and restarts it.
   'environment:maintain',
 ] as const

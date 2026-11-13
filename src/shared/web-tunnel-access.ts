@@ -9,15 +9,6 @@ import {
 import type { ServerIpcChannelName } from './ipc-channel-owners'
 import {
   WEB_BROWSE_FOLDERS_CHANNEL,
-  WEB_DEVICES_APPROVE_CHANNEL,
-  WEB_DEVICES_DECLINE_CHANNEL,
-  WEB_DEVICES_LINK_CHANNEL,
-  WEB_DEVICES_RENAME_CHANNEL,
-  WEB_DEVICES_REVOKE_CHANNEL,
-  WEB_DEVICES_STATUS_CHANNEL,
-  WEB_EMBEDS_CREATE_CHANNEL,
-  WEB_EMBEDS_LIST_CHANNEL,
-  WEB_EMBEDS_REVOKE_CHANNEL,
   WEB_PREVIEWS_CLOSE_CHANNEL,
   WEB_PREVIEWS_LIST_CHANNEL,
   WEB_PREVIEWS_OPEN_CHANNEL,
@@ -32,10 +23,10 @@ import {
 // domains the web client draws, and nothing that acts beyond this server.
 // Pairing other machines, the tailnet's administration, and setting or
 // clearing provider keys or the GitHub token stay with the desktop app; their
-// reads that the web client shows (whether a key is set) do not. The browsers
-// and embeds an owner's tab pairs (`web:devices:*`, `web:embeds:*`) are under
-// `access:write`. The agents' gateway, its HTTP tokens and the paired local
-// apps are the Studio protocol's (`access.ts`), which says who reaches them.
+// reads that the web client shows (whether a key is set) do not. Who may reach
+// this Studio otherwise is the Studio protocol's, which says who reaches each:
+// the agents' gateway, its HTTP tokens and the paired local apps (`access.ts`),
+// and the browsers paired with the web listener (`web-devices.ts`).
 //
 // Typed over every channel the server owns and the front door's own, so a
 // channel added to either does not compile until it says here what it needs
@@ -109,15 +100,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   [WEB_PREVIEWS_OPEN_CHANNEL]: owner('preview:operate'),
   [WEB_PREVIEWS_CLOSE_CHANNEL]: owner('preview:operate'),
   // An embed lets another page frame a conversation: it is access to this machine.
-  [WEB_EMBEDS_CREATE_CHANNEL]: owner('access:write'),
-  [WEB_EMBEDS_LIST_CHANNEL]: owner('access:read'),
-  [WEB_EMBEDS_REVOKE_CHANNEL]: owner('access:write'),
-  [WEB_DEVICES_STATUS_CHANNEL]: owner('access:read'),
-  [WEB_DEVICES_REVOKE_CHANNEL]: owner('access:write'),
-  [WEB_DEVICES_RENAME_CHANNEL]: owner('access:write'),
-  [WEB_DEVICES_LINK_CHANNEL]: owner('access:write'),
-  [WEB_DEVICES_APPROVE_CHANNEL]: owner('access:write'),
-  [WEB_DEVICES_DECLINE_CHANNEL]: owner('access:write'),
 }
 
 /**
@@ -142,8 +124,6 @@ export const WEB_OWNER_TUNNEL_PERMISSIONS: readonly StudioPermission[] = [
   'workspace:read',
   'filesystem:read',
   'preview:operate',
-  'access:read',
-  'access:write',
 ]
 
 /** The principal a browser is on its tunnel: an owner's holds the list above; anyone else's, nothing. */

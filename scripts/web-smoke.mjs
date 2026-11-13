@@ -86,6 +86,40 @@ const KNOWN_BOOT_REFUSALS = new Set([
   'environments:list',
 ])
 
+// One Studio protocol call from a page, over a socket of its own on `/ws`
+// with the tab's session cookie (the way the web client's connection is
+// admitted): hello, the one request, its result. Passed to the page as text.
+const ASK_STUDIO = `async (method, params) => {
+  const url = new URL('ws', location.href)
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  const socket = new WebSocket(url)
+  const frames = []
+  const waiting = []
+  socket.onmessage = (event) => {
+    const frame = JSON.parse(event.data)
+    frames.push(frame)
+    for (const wait of waiting.splice(0)) wait()
+  }
+  const next = async (match) => {
+    for (;;) {
+      const found = frames.find(match)
+      if (found) return found
+      await new Promise((resolve) => waiting.push(resolve))
+    }
+  }
+  await new Promise((resolve, reject) => {
+    socket.onopen = resolve
+    socket.onerror = reject
+  })
+  socket.send(JSON.stringify({ t: 'hello', protocolVersion: 1, client: { name: 'web-smoke' }, auth: { token: 'web-session-cookie' } }))
+  await next((frame) => frame.t === 'welcome')
+  socket.send(JSON.stringify({ t: 'req', id: 'q1', method, params }))
+  const answer = await next((frame) => frame.t === 'res' && frame.id === 'q1')
+  socket.close()
+  if (!answer.ok) throw new Error(answer.error?.message ?? method + ' was refused')
+  return answer.result
+}`
+
 // A server run with no inherited Studio settings: nothing of this machine's own Studio is read.
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('SPRINTENGINE_')))
 
@@ -244,15 +278,20 @@ try {
     const digits = (await guest.locator('#pair-digits').textContent()).replace(/\s/gu, '')
     assert.match(digits, /^\d{6}$/u)
     const answer = await owner.evaluate(
-      async ({ name, code }) => {
-        const { requests } = await window.api.webDevicesStatus()
+      async ({ name, code, ask }) => {
+        const studio = new Function(`return (${ask})`)()
+        const { requests } = await studio('webDevices.status', {})
         const request = requests.find((each) => each.name === name)
         if (!request) return { ok: false, message: 'no request' }
-        const wrong = await window.api.webDevicesApprove(request.requestId, code === '000000' ? '111111' : '000000')
+        const wrong = await studio('webDevices.approve', {
+          commandId: 'smoke-wrong',
+          requestId: request.requestId,
+          code: code === '000000' ? '111111' : '000000',
+        })
         if (wrong.ok) return { ok: false, message: 'a wrong code was accepted' }
-        return window.api.webDevicesApprove(request.requestId, code)
+        return studio('webDevices.approve', { commandId: 'smoke-right', requestId: request.requestId, code })
       },
-      { name: guestName, code: digits },
+      { name: guestName, code: digits, ask: ASK_STUDIO },
     )
     assert.equal(answer.ok, true, answer.message)
     await guest.waitForURL(`${origin}/`, { timeout: 15_000 })
@@ -260,11 +299,15 @@ try {
 
   await step('removing a browser sends its tab back to pairing at once', async () => {
     assert.ok(guest, 'the guest paired')
-    await owner.evaluate(async (name) => {
-      const { devices } = await window.api.webDevicesStatus()
-      const device = devices.find((each) => each.name === name && !each.current)
-      await window.api.webDevicesRevoke(device.id)
-    }, guestName)
+    await owner.evaluate(
+      async ({ name, ask }) => {
+        const studio = new Function(`return (${ask})`)()
+        const { devices } = await studio('webDevices.status', {})
+        const device = devices.find((each) => each.name === name && !each.current)
+        await studio('webDevices.revoke', { commandId: 'smoke-revoke', id: device.id })
+      },
+      { name: guestName, ask: ASK_STUDIO },
+    )
     await guest.waitForURL(/\/pair/u, { timeout: 15_000 })
     const status = await guest.evaluate(async () => (await fetch('./api/session')).status)
     assert.equal(status, 401)
