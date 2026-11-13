@@ -8,10 +8,7 @@ import type {
 import { usageLimitKindOf } from '../../shared/usage-limit-resume'
 import type { UsageLimitHit, UsageLimitProvider, UsageLimitsState } from '../../shared/usage-limits'
 import { isSettledWorkspace } from '../../shared/workspace-lifecycle'
-import type {
-  ConversationGatewayHost,
-  ConversationUsageLimits,
-} from './conversation-host'
+import type { ConversationGatewayHost, ConversationUsageLimits } from './conversation-host'
 import {
   createUsageLimitResumer,
   USAGE_LIMIT_RESUMES_FILE,
