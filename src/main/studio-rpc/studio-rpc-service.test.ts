@@ -23,7 +23,6 @@ async function harness(nested = '') {
   const service = createStudioRpcService({
     paths: { dataDir: () => dir },
     identity: { version: () => '0.0.0-test' },
-    clients: { publish: () => undefined },
     backend: () => createFakeBackend(),
     audit: () =>
       ({
@@ -94,7 +93,6 @@ test('a Studio whose socket is not the live one neither pairs nor revokes', asyn
   const second = createStudioRpcService({
     paths: { dataDir: () => dir },
     identity: { version: () => '0.0.0-second' },
-    clients: { publish: () => undefined },
     backend: () => createFakeBackend(),
     audit: () => ({ record: () => undefined }) as never,
   })
@@ -113,7 +111,6 @@ test('revoking an app that gave agents tools releases its names and forgets the 
   const service = createStudioRpcService({
     paths: { dataDir: () => root },
     identity: { version: () => '0.0.0-test' },
-    clients: { publish: () => undefined },
     backend: () => createFakeBackend(),
     audit: () => ({ record: () => undefined }) as never,
     tools: registry,

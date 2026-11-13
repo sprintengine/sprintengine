@@ -50,6 +50,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * this machine's checkouts, which the pool hands out, resets and removes.
  * A project's backlog by its folder (the desktop's own Backlog panel): it
  * names a folder on this machine and writes the files there.
+ * Who may reach this machine's agents (`access.ts`): the gateway's socket, the
+ * HTTP endpoint's clients and tokens, and the apps paired with the owner socket.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -177,6 +179,17 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'backlog.ensureIds',
   'backlog.edit',
   'backlog.createEpic',
+  // Who may reach this machine's agents: the gateway, its HTTP tokens, the paired local apps.
+  'gateway.status',
+  'mcpHttp.status',
+  'mcpHttp.create',
+  'mcpHttp.revoke',
+  'localApps.status',
+  'localApps.offer',
+  'localApps.cancelOffer',
+  'localApps.revoke',
+  'localApps.setReach',
+  'localApps.changed',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [
@@ -249,6 +262,28 @@ test('a provider’s key is Settings, written only under settings:write; an appr
     studioGrantAllows({ owner: false, scopes: ['conversation:read'] }, 'conversation.revokeApprovalRule'),
     false,
   )
+})
+
+test('what only Studio’s own desktop windows may call is an owner’s too, and says why', () => {
+  const windowOnly = [
+    ...(Object.keys(STUDIO_METHODS) as StudioMethod[]).filter((name) => STUDIO_METHODS[name].window),
+    ...(Object.keys(STUDIO_TOPICS) as StudioTopic[]).filter((name) => STUDIO_TOPICS[name].window),
+  ]
+  assert.deepEqual(windowOnly.sort(), [
+    'localApps.cancelOffer',
+    'localApps.changed',
+    'localApps.offer',
+    'localApps.revoke',
+    'localApps.setReach',
+    'localApps.status',
+    'mcpHttp.create',
+  ])
+  for (const name of windowOnly) {
+    const spec: { owner?: string; window?: string } =
+      name in STUDIO_METHODS ? STUDIO_METHODS[name as StudioMethod] : STUDIO_TOPICS[name as StudioTopic]
+    assert.ok((spec.window ?? '').length > 20, `${name} says why it is the windows'`)
+    assert.ok(spec.owner, `${name} is an owner's`)
+  }
 })
 
 test('what only the desktop’s own shell may call is an owner’s too, so every other refusal reads it', () => {

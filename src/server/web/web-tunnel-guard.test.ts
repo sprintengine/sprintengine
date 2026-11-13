@@ -25,10 +25,10 @@ function fakePort() {
 }
 
 test('a web tab reaches the domains it draws, and not the ones that act beyond this server', () => {
-  for (const channel of ['workspace-sync:dispatch', 'workspace-sync:lifecycle', 'automation:mcp-http-create'])
+  for (const channel of ['workspace-sync:dispatch', 'workspace-sync:lifecycle', 'web:devices:revoke'])
     expect(webTunnelAllows(channel), channel).toBe(true)
   for (const channel of [
-    'studio-local-apps:offer',
+    'tailnet:offer-pairing',
     'tailnet:set-enabled',
     'tailnet:approve-pair-request',
     'mesh:pair',
@@ -50,7 +50,7 @@ test('a channel the tab may not use is answered DesktopOnly and never reaches a 
     audit: () => undefined,
   })
   guarded.on('message', (event) => heard.push(event.data))
-  inner.deliver({ t: 'ipc.invoke', id: 7, channel: 'studio-local-apps:offer', args: [{ name: 'x' }] })
+  inner.deliver({ t: 'ipc.invoke', id: 7, channel: 'tailnet:offer-pairing', args: [['conversation:read']] })
   inner.deliver({ t: 'ipc.send', channel: 'tailnet:set-enabled', args: [true] })
   expect(heard).toEqual([])
   expect(inner.posted).toEqual([
@@ -58,7 +58,7 @@ test('a channel the tab may not use is answered DesktopOnly and never reaches a 
       t: 'ipc.result',
       id: 7,
       ok: false,
-      error: { name: 'DesktopOnly', message: 'studio-local-apps:offer is available in the desktop app only.' },
+      error: { name: 'DesktopOnly', message: 'tailnet:offer-pairing is available in the desktop app only.' },
     },
   ])
 })
@@ -78,7 +78,7 @@ test('a call that changes something is audited with its outcome; a read is not',
   expect(audit.map(({ channel, ok, workspaceId }) => ({ channel, ok, workspaceId }))).toEqual([
     { channel: 'workspace-sync:dispatch', ok: true, workspaceId: 'ws-1' },
   ])
-  expect(webTunnelAudited('automation:mcp-http-revoke')).toBe(true)
+  expect(webTunnelAudited('web:devices:revoke')).toBe(true)
   expect(webTunnelAudited('conversation:threads')).toBe(false)
 })
 
@@ -173,7 +173,7 @@ test('a browser that is not the owner reaches no tunnel channel, whatever it sen
   })
   guarded.on('message', (event) => heard.push(event.data))
   inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'workspace-sync:get-snapshot', args: [] })
-  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'automation:mcp-http-create', args: [{}] })
+  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'web:devices:revoke', args: [{ id: 'x' }] })
   inner.deliver({ t: 'ipc.send', channel: 'workspace-sync:dispatch', args: [{}] })
   expect(heard).toEqual([])
   expect(inner.posted).toMatchObject([

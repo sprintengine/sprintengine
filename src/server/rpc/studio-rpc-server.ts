@@ -17,6 +17,7 @@ import {
   STUDIO_WORKTREES_CAPABILITY,
   STUDIO_EXTENSIONS_CAPABILITY,
   STUDIO_ARTIFACTS_CAPABILITY,
+  STUDIO_ACCESS_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   STUDIO_PULL_REQUESTS_CAPABILITY,
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
@@ -57,6 +58,7 @@ import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
+import type { StudioAccessDomain } from './studio-access'
 import type { StudioMachineCall } from './studio-file-system'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { StudioGit } from '../git/studio-git-types'
@@ -184,6 +186,8 @@ export type StudioRpcServerOptions = {
   extensions?: StudioExtensions
   /** Where the Studio publishes its agents' pages. Advertised as `artifacts` only when given. */
   artifacts?: StudioArtifacts
+  /** Who may reach the agents from this machine. Advertised as `access` only when given. */
+  access?: StudioAccessDomain
   /** The pull requests the conversations opened, for owners. Advertised as `pull-requests` and `pull-request-tool-calls` only when given. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`), for owners. */
@@ -305,6 +309,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_CANVAS_BOARDS_CAPABILITY || options.canvas !== undefined) &&
         (capability !== STUDIO_EXTENSIONS_CAPABILITY || options.extensions !== undefined) &&
         (capability !== STUDIO_ARTIFACTS_CAPABILITY || options.artifacts !== undefined) &&
+        (capability !== STUDIO_ACCESS_CAPABILITY || options.access !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined) &&
@@ -330,6 +335,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.worktrees ? { worktrees: options.worktrees } : {}),
     ...(options.extensions ? { extensions: options.extensions } : {}),
     ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+    ...(options.access ? { access: options.access } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
@@ -392,6 +398,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.canvas ? { canvas: options.canvas } : {}),
         ...(options.extensions ? { extensions: options.extensions } : {}),
         ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+        ...(options.access ? { access: options.access } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,
@@ -444,6 +451,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.canvas ? { canvas: options.canvas } : {}),
         ...(options.extensions ? { extensions: options.extensions } : {}),
         ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+        ...(options.access ? { access: options.access } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,

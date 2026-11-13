@@ -10,7 +10,6 @@ import { registerAgentBrowserToolsIpc } from './ipc/agent-browser-tools-ipc'
 import { registerKeepAwakeIpc } from './ipc/keep-awake-ipc'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerStudioWindowTicketIpc, type StudioWindowTicketIssuer } from './ipc/studio-window-ticket-ipc'
-import { assertAppSender } from './ipc/ipc-sender'
 import { registerAppMenuIpc } from './app-menu'
 import { registerClipboardIpc } from './ipc/clipboard-ipc'
 import { registerChatExportIpc } from './ipc/chat-export-ipc'
@@ -224,7 +223,6 @@ export function registerCoreIpc(
           studioRpc: studioRpcService,
           workspaceBackup: workspaceBackupService,
           terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
-          assertAppSender,
         })
       : // The server registers them, and disposes its own command lists.
         { conversationCommands: { dispose: async () => undefined } }

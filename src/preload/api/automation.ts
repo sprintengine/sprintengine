@@ -1,13 +1,5 @@
 import type { IpcRendererEvent } from 'electron'
 import { ipc as ipcRenderer } from '../ipc-router'
-import { AUTOMATION_GET_STATUS_CHANNEL, type AutomationServerStatus } from '../../shared/automation'
-import {
-  MCP_HTTP_CREATE_CHANNEL,
-  MCP_HTTP_REVOKE_CHANNEL,
-  MCP_HTTP_STATUS_CHANNEL,
-  type McpHttpCreateResult,
-  type McpHttpStatus,
-} from '../../shared/mcp-http'
 import {
   TAILNET_CANCEL_PAIRING_CHANNEL,
   TAILNET_EVENT_CHANNEL,
@@ -40,22 +32,11 @@ import {
 import { TAILNET_FORGET_MACHINE_CHANNEL, type TailnetForgetMachineResult } from '../../shared/tailnet-mesh'
 import type { ElectronApi } from '../../shared/electron-api'
 
-// Status only for the always-on gateway. Its mutations are main services, so
-// nothing asks a window to perform one and there is no request/respond pair
-// here.
-//
-// The tailnet half is the Remote panel's whole data path:
+// The Remote panel's whole data path:
 // configuration for the opt-in listener — enable it, mint or cancel a one-time
 // pairing code, revoke a device — plus the discovery sweep that finds the other
 // machines on this tailnet.
 export const automationApi = {
-  automationGetStatus: (): Promise<AutomationServerStatus> =>
-    ipcRenderer.invoke(AUTOMATION_GET_STATUS_CHANNEL) as Promise<AutomationServerStatus>,
-  mcpHttpStatus: (): Promise<McpHttpStatus> => ipcRenderer.invoke(MCP_HTTP_STATUS_CHANNEL) as Promise<McpHttpStatus>,
-  mcpHttpCreate: (name: string): Promise<McpHttpCreateResult> =>
-    ipcRenderer.invoke(MCP_HTTP_CREATE_CHANNEL, name) as Promise<McpHttpCreateResult>,
-  mcpHttpRevoke: (id: string): Promise<McpHttpStatus> =>
-    ipcRenderer.invoke(MCP_HTTP_REVOKE_CHANNEL, id) as Promise<McpHttpStatus>,
   tailnetGetStatus: (): Promise<TailnetRemoteStatus> =>
     ipcRenderer.invoke(TAILNET_GET_STATUS_CHANNEL) as Promise<TailnetRemoteStatus>,
   tailnetSetEnabled: (enabled: boolean): Promise<TailnetRemoteStatus> =>
@@ -112,10 +93,6 @@ export const automationApi = {
   },
 } satisfies Pick<
   ElectronApi,
-  | 'automationGetStatus'
-  | 'mcpHttpStatus'
-  | 'mcpHttpCreate'
-  | 'mcpHttpRevoke'
   | 'tailnetGetStatus'
   | 'tailnetSetEnabled'
   | 'tailnetOfferPairing'

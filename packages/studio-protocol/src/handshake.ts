@@ -299,6 +299,15 @@ export const STUDIO_EXTENSIONS_CAPABILITY = 'extensions' as const
 export const STUDIO_ARTIFACTS_CAPABILITY = 'artifacts' as const
 
 /**
+ * Who may reach this Studio's agents from this machine (`access.ts`): the
+ * agents' gateway as it stands (`gateway.status`), the tokens its loopback
+ * HTTP endpoint admits (`mcpHttp.*`), and the apps paired with its owner
+ * socket (`localApps.*`, with the `localApps.changed` stream). Offered where
+ * the Studio runs them, which every Studio does.
+ */
+export const STUDIO_ACCESS_CAPABILITY = 'access' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -354,6 +363,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_CHAT_EXPORT_CAPABILITY,
   STUDIO_EXTENSIONS_CAPABILITY,
   STUDIO_ARTIFACTS_CAPABILITY,
+  STUDIO_ACCESS_CAPABILITY,
 ] as const
 
 /**

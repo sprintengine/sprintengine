@@ -39,7 +39,7 @@ import { sanitizeEntryMessage } from '../../shared/modules/entry-messages'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
 import type { ConversationEvent, ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
-import { BROWSER_NO_TERMINALS, refusedToBrowser } from './studio-browser-reach'
+import { BROWSER_NO_TERMINALS, refusedOutsideWindow, refusedToBrowser, WINDOW_ONLY } from './studio-browser-reach'
 import { boundConversationPage } from '../conversation-stream-shaping'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
@@ -70,6 +70,7 @@ import type { StudioExtensions } from '../extensions/extensions-domain'
 import { createStudioExtensionsHandlers } from './studio-extensions'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import { createStudioArtifactsHandlers } from './studio-artifacts'
+import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -204,6 +205,8 @@ export type StudioRpcRouterOptions = {
   extensions?: StudioExtensions
   /** Where the Studio publishes its agents' pages; without it, `artifacts.*` is answered `unavailable`. */
   artifacts?: StudioArtifacts
+  /** Who may reach the agents from this machine; without it, `gateway.status`, `mcpHttp.*` and `localApps.*` are answered `unavailable`. */
+  access?: StudioAccessDomain
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
@@ -965,6 +968,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   })
   const artifactsRouting = createStudioArtifactsHandlers({
     ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const accessRouting = createStudioAccessHandlers({
+    ...(options.access ? { access: options.access } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -2007,6 +2015,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── Where the Studio publishes its agents' pages ───────────────────────
 
     ...artifactsRouting,
+
+    // ── Who may reach the agents from this machine ─────────────────────────
+
+    ...accessRouting,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules
@@ -2270,6 +2282,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         answer = refuse('owner_required', BROWSER_NO_TERMINALS)
       // The shell's own: an owner's other clients are refused too.
       else if (decision.ok && spec.shell && context.shell !== true) answer = refuse('owner_required', SHELL_ONLY)
+      // Studio's own desktop windows': an owner's web tab and app are refused too.
+      else if (decision.ok && refusedOutsideWindow(spec, context)) answer = refuse('owner_required', WINDOW_ONLY)
       else if (!decision.ok) {
         answer =
           decision.reason === 'permission_required'

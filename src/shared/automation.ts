@@ -1,33 +1,10 @@
-// SprintEngine Studio app-automation surface: shared contracts between the
-// main-process MCP server and the preload bridge.
+// SprintEngine Studio app-automation surface. The automation server
+// (src/main/automation/) is a local-only MCP endpoint every Studio-launched
+// agent is given. Reads answer from the server's authoritative stores (the
+// workspace registry and the terminal runtime), and so do mutations: there is
+// one lane, and no window is involved in any of them.
 //
-// The automation server (src/main/automation/) is a local-only MCP endpoint
-// owned by the app's main process. Reads answer from main's authoritative
-// stores (the workspace registry + terminal runtime), and so do mutations:
-// there is one lane, and no window is involved in any of them.
-//
-// There used to be a second lane — a request/respond IPC pair that asked the
-// primary window's renderer to run the same store actions the UI used. Every
-// kind it carried is now a main service: agent launch and disposal
-// (`src/main/agent-launch-service.ts`) and workspace creation (main
-// owns the registry). The lane was deleted
-// itself, and with it the whole error class that made every one of those
-// operations fail when no window happened to be open.
+// A window reads its status over the Studio protocol (`gateway.status`,
+// packages/studio-protocol/src/access.ts), where the shape is defined.
 
-export type AutomationServerStatus = {
-  /** Compatibility field; the Studio gateway is always enabled. */
-  enabled: boolean
-  running: boolean
-  /** Unix socket path (POSIX) or named pipe (Windows) while running. */
-  socketPath: string | null
-  /** Last start/stop failure, surfaced instead of silently staying off. */
-  lastError: string | null
-  /**
-   * Absolute path of the repo/app-shipped stdio bridge script stock MCP
-   * clients launch to reach the socket (`node <bridgeScriptPath>`). Static
-   * app knowledge, present whether or not the server is running.
-   */
-  bridgeScriptPath: string | null
-}
-
-export const AUTOMATION_GET_STATUS_CHANNEL = 'automation:get-status'
+export type { AutomationServerStatus } from '../../packages/studio-protocol/src/public'

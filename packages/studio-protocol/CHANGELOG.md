@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added (who may reach a Studio's agents from its machine)
+
+- **`gateway.status`, `mcpHttp.status`, `.create`, `.revoke`, `localApps.status`,
+  `.offer`, `.cancelOffer`, `.revoke`, `.setReach` and the `localApps.changed`
+  stream** (`access.ts`, capability `access`). Each is an owner's; the
+  mutations carry a `commandId`. The shapes move into the package
+  (`access-types.ts`).
+- **`window`** on a method or topic spec: served only to Studio's own desktop
+  windows, with the reason, always beside `owner`. `mcpHttp.create` and all of
+  `localApps.*` say it.
+
 ### Changed (an unreadable extension folder is named, not placed)
 
 - **`module.installed` tells a folder's place on disk only to a connection

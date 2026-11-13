@@ -2,14 +2,13 @@ import type { Duplex } from 'node:stream'
 import type { ConversationPullRequests } from '../automation/conversation-pull-request-tools'
 
 import { toolError, toolSuccess } from '../../shared/modules/mcp-tools'
-import {
-  STUDIO_LOCAL_APPS_CHANGED_CHANNEL,
-  type StudioLocalAppOfferView,
-  type StudioLocalAppToolReach,
-  type StudioLocalAppsStatus,
+import type {
+  StudioLocalAppOfferView,
+  StudioLocalAppToolReach,
+  StudioLocalAppsStatus,
 } from '../../shared/studio-local-apps'
 import type { AppIdentity } from '../../server/platform/app-identity'
-import type { ClientBus } from '../../server/platform/client-bus'
+import type { StudioAccessDomain } from '../../server/rpc/studio-access'
 import { studioPlatform } from '../../server/platform/platform'
 import { readStudioEnvironmentId } from '../../server/environment/environment-id'
 import type { StudioPaths } from '../../server/platform/studio-paths'
@@ -172,10 +171,11 @@ export type StudioRpcServiceOptions = {
   /** Defaults to the installed platform's: the version a welcome and the discovery file name. */
   identity?: AppIdentity
   /**
-   * Defaults to the installed platform's. Every change to the paired apps is
-   * published on `STUDIO_LOCAL_APPS_CHANGED_CHANNEL` with fresh status.
+   * The agents' gateway, for the access family (`gateway.status`, `mcpHttp.*`);
+   * with the paired apps this service keeps, it is served as `access`. Absent,
+   * the family is not offered.
    */
-  clients?: ClientBus
+  gatewayAccess?: Pick<StudioAccessDomain, 'gatewayStatus' | 'mcpHttpStatus' | 'createMcpHttp' | 'revokeMcpHttp'>
   /** Where this Studio runs, as its welcome says: `local` unless its server was started in WSL or over SSH. */
   hostKind?: StudioRpcServerOptions['hostKind']
   /** Built on first start: the conversation host it wraps is constructed late in the app's composition. */
@@ -250,7 +250,8 @@ function shellGrant(): StudioGrant {
 export function createStudioRpcService(options: StudioRpcServiceOptions): StudioRpcService {
   const dataDir = () => (options.paths ?? studioPlatform().paths).dataDir()
   const version = () => (options.identity ?? studioPlatform().identity).version()
-  const clients = () => options.clients ?? studioPlatform().clients
+  // Every change to the paired apps, with fresh status: the `localApps.changed` stream.
+  const appListeners = new Set<(status: StudioLocalAppsStatus) => void>()
   const now = options.now ?? Date.now
   let store: StudioLocalAppStore | null = null
   // Built on first need (a window connecting, or the socket starting) and kept
@@ -331,10 +332,20 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
     })
   }
   function announce(): void {
+    if (appListeners.size === 0) return
+    let current: StudioLocalAppsStatus
     try {
-      clients().publish(STUDIO_LOCAL_APPS_CHANGED_CHANNEL, status())
+      current = status()
     } catch (error) {
       options.log?.(`Local apps push failed: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    for (const listener of [...appListeners]) {
+      try {
+        listener(current)
+      } catch (error) {
+        options.log?.(`Local apps push failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
   }
 
@@ -425,6 +436,30 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       throw new Error('This Studio is not serving the local app socket, so it cannot pair or revoke apps.')
   }
 
+  // The access family: the gateway's half as the caller gives it, and the
+  // paired apps, which this service keeps.
+  function accessDomain(gateway: NonNullable<StudioRpcServiceOptions['gatewayAccess']>): StudioAccessDomain {
+    return {
+      gatewayStatus: () => gateway.gatewayStatus(),
+      mcpHttpStatus: () => gateway.mcpHttpStatus(),
+      createMcpHttp: (name) => gateway.createMcpHttp(name),
+      revokeMcpHttp: (id) => gateway.revokeMcpHttp(id),
+      localApps: {
+        status,
+        offer: (input) => api.offer(input),
+        cancelOffer: (id) => api.cancelOffer(id),
+        revoke: (id) => api.revoke(id),
+        setReach: (id, reach) => api.setToolReach(id, reach),
+        onChanged(listener) {
+          appListeners.add(listener)
+          return () => {
+            appListeners.delete(listener)
+          }
+        },
+      },
+    }
+  }
+
   function hub(): StudioRpcServer {
     if (server) return server
     const directory = dataDir()
@@ -477,6 +512,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.canvas ? { canvas: options.canvas } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
       ...(options.modules ? { modules: options.modules } : {}),
+      ...(options.gatewayAccess ? { access: accessDomain(options.gatewayAccess) } : {}),
       resyncRetryAfterMs: createResyncBackoff(),
       onConnectionsChanged: () => announce(),
       ...(options.socketPath ? { socketPath: options.socketPath } : {}),
@@ -496,7 +532,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
     announce()
   }
 
-  return {
+  const api: StudioRpcService = {
     start() {
       if (server?.isRunning()) return Promise.resolve()
       starting ??= startNow().finally(() => {
@@ -634,4 +670,5 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       }
     },
   }
+  return api
 }

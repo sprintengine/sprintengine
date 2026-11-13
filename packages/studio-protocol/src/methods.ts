@@ -163,6 +163,12 @@ import {
   type StudioArtifactsMethodMap,
   type StudioArtifactsTopicMap,
 } from './artifacts.js'
+import {
+  STUDIO_ACCESS_METHODS,
+  STUDIO_ACCESS_TOPICS,
+  type StudioAccessMethodMap,
+  type StudioAccessTopicMap,
+} from './access.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -293,7 +299,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioChatLifecycleMethodMap &
   StudioCanvasMethodMap &
   StudioExtensionsMethodMap &
-  StudioArtifactsMethodMap
+  StudioArtifactsMethodMap &
+  StudioAccessMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -739,6 +746,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_CANVAS_METHODS,
   ...STUDIO_EXTENSIONS_METHODS,
   ...STUDIO_ARTIFACTS_METHODS,
+  ...STUDIO_ACCESS_METHODS,
 }
 
 /** Whether a string names a method this version of the protocol defines. */
@@ -789,7 +797,8 @@ export type StudioTopicMap = {
   StudioWorktreesTopicMap &
   StudioCanvasTopicMap &
   StudioExtensionsTopicMap &
-  StudioArtifactsTopicMap
+  StudioArtifactsTopicMap &
+  StudioAccessTopicMap
 
 export type StudioTopic = keyof StudioTopicMap
 export type StudioTopicParams<T extends StudioTopic> = StudioTopicMap[T]['params']
@@ -837,6 +846,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_CANVAS_TOPICS,
   ...STUDIO_EXTENSIONS_TOPICS,
   ...STUDIO_ARTIFACTS_TOPICS,
+  ...STUDIO_ACCESS_TOPICS,
 }
 
 /** Whether a string names a topic this version of the protocol defines. */

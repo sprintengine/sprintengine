@@ -26,10 +26,6 @@ export type ServerIpcSubscription = { unsubscribe: string; id: 'argument' | 'res
 export type ServerIpcChannel = { retry?: 'once'; subscription?: ServerIpcSubscription }
 
 const SERVER_IPC_CHANNEL_TABLE = {
-  'automation:get-status': { retry: 'once' },
-  'automation:mcp-http-create': {},
-  'automation:mcp-http-revoke': {},
-  'automation:mcp-http-status': { retry: 'once' },
   'hosts:home': { retry: 'once' },
   'hosts:list': { retry: 'once' },
   'mesh:cancel-pairing': {},
@@ -64,11 +60,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'mesh:request-pairing': {},
   // The Schedules window's (registered with the server's domains, refused
   // while scheduled agents is off).
-  'studio-local-apps:cancel-offer': {},
-  'studio-local-apps:offer': {},
-  'studio-local-apps:revoke': {},
-  'studio-local-apps:set-reach': {},
-  'studio-local-apps:status': { retry: 'once' },
   'tailnet:approve-pair-request': {},
   'tailnet:cancel-pairing': {},
   'tailnet:deny-pair-request': {},

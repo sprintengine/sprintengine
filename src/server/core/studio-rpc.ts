@@ -49,7 +49,7 @@ import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspa
 // launch service, and audits into the gateway's one log, which is why it is
 // composed from both. The desktop and the standalone server build it here, so
 // it is wired once; each starts it beside its gateway and stops it first. Its
-// paths, version and the push to Settings are the core's platform's.
+// paths and version are the core's platform's.
 
 export function createStudioRpc(
   core: StudioCore,
@@ -83,7 +83,14 @@ export function createStudioRpc(
     ...(options.signIns ? { signIns: options.signIns } : {}),
     paths: core.platform.paths,
     identity: core.platform.identity,
-    clients: core.platform.clients,
+    // Who may reach the agents from this machine (`access`): the gateway's
+    // status and its HTTP endpoint's tokens, beside the apps this RPC pairs.
+    gatewayAccess: {
+      gatewayStatus: () => gateway.getStatus(),
+      mcpHttpStatus: () => gateway.getMcpHttpStatus(),
+      createMcpHttp: (name) => gateway.createMcpHttpClient(name),
+      revokeMcpHttp: (id) => gateway.revokeMcpHttpClient(id),
+    },
     backend: () =>
       createStudioConversationBackend({
         // Listed as `conversation-lifecycle` promises, which this socket
