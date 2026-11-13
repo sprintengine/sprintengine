@@ -37,7 +37,11 @@ test('every step names the chat, never a folder; a push and a creation carry a c
   const pin = { branch: 'feature/marks', headSha: 'abc1234def' }
   const { asked, client } = studio(true, {
     'pullRequests.createState': { state: { branch: 'feature/marks' } },
-    'pullRequests.draft': { ok: false, code: 'text_generation_off', message: 'Text generation is off on this machine.' },
+    'pullRequests.draft': {
+      ok: false,
+      code: 'text_generation_off',
+      message: 'Text generation is off on this machine.',
+    },
     'pullRequests.push': { ok: true, pushed: true },
     'pullRequests.create': {
       ok: true,

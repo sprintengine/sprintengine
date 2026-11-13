@@ -75,9 +75,7 @@ async function studioHost() {
           return { state: (await api().createPullRequestState?.('/Users/dev/app')) ?? null }
         case 'pullRequests.draft': {
           const drafted = (await api().draftPullRequestText?.({})) as
-            | { ok: true; value: { title: string; body: string } }
-            | { ok: false; message: string }
-            | undefined
+            { ok: true; value: { title: string; body: string } } | { ok: false; message: string } | undefined
           if (!drafted) return new Promise(() => {})
           return drafted.ok
             ? { ok: true, title: drafted.value.title, body: drafted.value.body }

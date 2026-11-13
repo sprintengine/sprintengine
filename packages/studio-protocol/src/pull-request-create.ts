@@ -1,6 +1,10 @@
 import { studioParams, studioParamsRefused as refuse, type StudioMethodTable } from './contract.js'
 import { STUDIO_PULL_REQUEST_CREATE_CAPABILITY } from './handshake.js'
-import { parseStudioPullRequestOwner, type StudioPullRequestForge, type StudioPullRequestOwner } from './pull-requests.js'
+import {
+  parseStudioPullRequestOwner,
+  type StudioPullRequestForge,
+  type StudioPullRequestOwner,
+} from './pull-requests.js'
 
 // Opening a pull request from a chat, on the Studio that holds the chat: the
 // chat's "Create PR" (owner ruling 2026-10-04). The checkout, git, the

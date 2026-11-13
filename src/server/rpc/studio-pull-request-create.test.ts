@@ -55,7 +55,9 @@ function fakeCreation(options: { engine?: boolean; recorded?: boolean } = {}) {
       },
     },
     draftEngine: () =>
-      options.engine === false ? null : { engine: { cli: 'claude-code', model: '' }, writingStyle: 'repository' as never },
+      options.engine === false
+        ? null
+        : { engine: { cli: 'claude-code', model: '' }, writingStyle: 'repository' as never },
     generate: async () => ({ ok: true, value: { title: 'feat: marks', body: 'Body' }, ms: 1 }),
     link: async (input) => {
       calls.push(`link:${input.conversation.agentId}:${input.url}`)
