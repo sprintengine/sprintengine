@@ -163,7 +163,7 @@ function rawUpgrade(port: number, path: string, headers: Record<string, string> 
         'Upgrade: websocket',
         'Connection: Upgrade',
         'Sec-WebSocket-Version: 13',
-        'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+        ...('Sec-WebSocket-Key' in headers ? [] : ['Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==']),
         ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
         '',
         '',
@@ -402,6 +402,13 @@ test('a desktop window’s socket says exactly the origin its ticket names, and 
   const once = (await ticketFor(r.port(), desktop.token)).body.ticket!
   assert.match(await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${once}`), / 101 /u)
   assert.match(await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${once}`), / 401 /u)
+  // A key that is not sixteen bytes in base64 opens nothing, before its ticket is spent.
+  const keyed = (await ticketFor(r.port(), desktop.token)).body.ticket!
+  assert.match(
+    await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${keyed}`, { 'Sec-WebSocket-Key': 'not a key' }),
+    / 400 /u,
+  )
+  assert.match(await rawUpgrade(r.port(), `${TAILNET_STUDIO_PATH}?ticket=${keyed}`), / 101 /u)
 })
 
 test('the phone’s socket says an empty Origin, which is none; a ticket is good for thirty seconds', async () => {
