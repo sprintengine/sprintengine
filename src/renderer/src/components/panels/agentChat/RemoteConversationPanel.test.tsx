@@ -1,14 +1,17 @@
 import { JSDOM } from 'jsdom'
 import { forwardRef, Fragment, useImperativeHandle, useRef, type ReactNode } from 'react'
 import { expect, test, vi } from 'vitest'
+import { StudioError, type ConversationFollowFrame } from '../../../../../../packages/client-runtime/src/public'
+import type {
+  StudioMethod,
+  StudioMethodResult,
+  StudioScope,
+} from '../../../../../../packages/studio-protocol/src/public'
 import { quoteToken } from '../../../../../shared/chat-quotes'
 import type { ConversationEvent, ConversationEventType } from '../../../../../shared/conversation-runtime'
-import type {
-  MeshConversation,
-  MeshConversationFrame,
-  MeshConversationKey,
-  MeshConversationLink,
-} from '../../../../../shared/tailnet-mesh'
+import type { MeshConversation, MeshConversationKey } from '../../../../../shared/tailnet-mesh'
+import type { ConversationThread } from '../../../../../../packages/conversation-protocol/src/public'
+import type { PairedStudiosDouble } from '../../../studio/environmentStudio.double'
 
 // The virtual list measures a real viewport, which jsdom does not have; this
 // stand-in renders every row.
@@ -58,11 +61,14 @@ vi.mock('./imageAttachments', async (importOriginal) => ({
   }),
 }))
 
+/** How the pane names the chat: the pairing, and the chat's ids on that machine. */
 const key: MeshConversationKey = {
   connectionId: 'connection',
   workspaceId: 'remote-workspace',
   agentId: 'remote-agent',
 }
+/** How every call to that machine's Studio names it: by its ids there. */
+const ref = { workspaceId: key.workspaceId, agentId: key.agentId }
 
 let seq = 0
 function event(type: ConversationEventType, payload: Record<string, unknown>): ConversationEvent {
@@ -96,8 +102,17 @@ const thread: MeshConversation = {
   capabilities: { images: true, approvals: true, questions: true, planMode: true, interrupt: true, checkpoints: true },
 }
 
-// Mounts the remote pane against a scripted Mesh API. The local
-// conversation API is absent altogether: nothing in this view may reach it.
+/** What a frame of that machine's chat, or of one of its push topics, says: as the test plays it. */
+type PlayedFrame =
+  | ConversationFollowFrame
+  | { type: 'queued'; messages: unknown[] }
+  | { type: 'scheduled'; messages: unknown[] }
+  | { type: 'subagents'; subagents: unknown[] }
+  | ({ type: 'usageLimits' } & Record<string, unknown>)
+
+// The pane is mounted against that machine's Studio, as this window's own
+// client of it reaches it (`fakePairedStudios`). The local conversation API is
+// absent altogether: nothing in this view may reach it.
 // The right-hand panel, beside the chat as the window has it. It reads the chat
 // only through what the chat publishes, so a paired machine's facts reach it
 // the way a local chat's do. Its reading of a local checkout is not in play.
@@ -115,6 +130,140 @@ const panelProps = (workspaceId: string) => ({
   addControl: null,
   onClose: () => undefined,
 })
+
+/**
+ * What a call to that machine's Studio was asked, its command id left out (a
+ * fresh one per call): what each method's double below is called with.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Asked = Record<string, any>
+
+/** One method of that machine's Studio, answering as the protocol says it does. */
+const typed = <M extends StudioMethod>(_method: M, answer: (asked: Asked) => StudioMethodResult<M>) =>
+  vi.fn<(asked: Asked) => StudioMethodResult<M> | Promise<StudioMethodResult<M>>>(answer)
+
+/** The methods of that machine's Studio a chat over there is driven and read by, each answering as it would. */
+function farMethods(listed: () => MeshConversation, recordPullRequest: () => void) {
+  let uploads = 0
+  const far = {
+    // As the machine lists the chat: its row's phase is one this build knows.
+    'conversation.list': typed('conversation.list', () => ({ conversations: [listed() as ConversationThread] })),
+    // No live session listed: the chat's row says what it can do, as one a send there wakes.
+    'session.list': typed('session.list', () => ({ ok: true, sessions: [] })),
+    // A turn's changed files are listed as soon as its card is drawn.
+    'conversation.turnDiff': typed('conversation.turnDiff', () => ({
+      diff: {
+        files: [{ path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false }],
+        submodulesExcluded: true,
+      },
+    })),
+    'conversation.send': typed('conversation.send', () => ({})),
+    'conversation.cancelQueued': typed('conversation.cancelQueued', () => ({})),
+    'conversation.resolveApproval': typed('conversation.resolveApproval', () => ({})),
+    'conversation.answerQuestion': typed('conversation.answerQuestion', () => ({})),
+    'conversation.interrupt': typed('conversation.interrupt', () => ({})),
+    'conversation.handoff': typed('conversation.handoff', () => ({ ok: true, path: '/Users/dev/handoff.md' })),
+    'conversation.messageSubagent': typed('conversation.messageSubagent', () => ({})),
+    'conversation.stopSubagent': typed('conversation.stopSubagent', () => ({})),
+    'conversation.rewind': typed('conversation.rewind', () => ({ ok: true })),
+    // What the machine's checkout would put back, and then puts back.
+    'conversation.revert': typed('conversation.revert', (asked) => ({
+      ok: true,
+      files: [{ path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false }],
+      reverted: asked.confirmed === true,
+    })),
+    'conversation.fork': typed('conversation.fork', (asked) => ({
+      ok: true,
+      address: { environmentId: 'env-connection', chatId: key.workspaceId, agentId: asked.newAgentId },
+      name: 'Fork of Fix the flaky upload test',
+    })),
+    'conversation.askSideQuestion': typed('conversation.askSideQuestion', () => ({ ok: true, answer: 'In src/upload.test.ts.' })),
+    'conversation.cancelSideQuestion': typed('conversation.cancelSideQuestion', () => ({ ok: true })),
+    'conversation.contextBreakdown': typed('conversation.contextBreakdown', () => ({
+      ok: true,
+      breakdown: {
+        model: 'opus',
+        usedTokens: 76_000,
+        windowTokens: 200_000,
+        categories: [
+          { name: 'MCP tools', tokens: 20_000, kind: 'used' },
+          { name: 'Messages', tokens: 56_000, kind: 'used' },
+          { name: 'Free space', tokens: 124_000, kind: 'free' },
+        ],
+        mcpServers: [{ name: 'linear', tokens: 20_000, tools: [] }],
+        skills: [],
+        memoryFiles: [],
+        agents: [],
+        autoCompactAt: null,
+        estimated: true,
+        measuredAt: 0,
+      },
+    })),
+    'conversation.scheduleSend': typed('conversation.scheduleSend', () => ({})),
+    'conversation.sendScheduledNow': typed('conversation.sendScheduledNow', () => ({})),
+    'conversation.cancelScheduled': typed('conversation.cancelScheduled', () => ({})),
+    'conversation.usageLimitResume': typed('conversation.usageLimitResume', () => ({})),
+    'conversation.setPermissionPreset': typed('conversation.setPermissionPreset', (asked) => ({
+      permissionPreset: asked.preset,
+      ...(asked.permissionMode ? { permissionMode: asked.permissionMode } : {}),
+    })),
+    'conversation.restartSession': typed('conversation.restartSession', () => ({})),
+    'conversation.mcpServerAction': typed('conversation.mcpServerAction', () => ({})),
+    'conversation.setReasoningEffort': typed('conversation.setReasoningEffort', () => ({
+      notice: 'Reasoning effort applies from the next turn.',
+    })),
+    'conversation.setModel': typed('conversation.setModel', (asked) => ({
+      modelId: asked.modelId,
+      notice: 'The new model starts with your next message.',
+    })),
+    // The composer's reads of the chat's folder over there, by the chat's key.
+    'conversation.searchFiles': typed('conversation.searchFiles', () => ({
+      entries: [{ path: 'docs/release-notes.md', kind: 'file' }],
+      truncated: false,
+    })),
+    'conversation.listCommands': typed('conversation.listCommands', () => ({
+      cli: 'claude-code',
+      fetchedAt: 1_700_000_000_000,
+      commands: [{ name: 'review-pr', description: 'Review a pull request over there', source: 'custom' }],
+    })),
+    // What a send carries beside its words goes up first, on the same connection.
+    'uploads.begin': typed('uploads.begin', () => ({ uploadId: `upload-${++uploads}`, chunkBytes: 65_536 })),
+    'uploads.append': typed('uploads.append', (asked) => ({ received: asked.offset + 8 })),
+    'uploads.discard': typed('uploads.discard', (asked) => ({ discarded: asked.uploadIds.length })),
+    // Create PR on the machine the chat runs on: each step answers as that
+    // machine would, and a creation records the pull request there.
+    'pullRequests.createState': typed('pullRequests.createState', () => ({
+      state: {
+        readiness: { ready: true },
+        gitRoot: null,
+        branch: 'agent/remote-pr',
+        headSha: 'abc1234def',
+        uncommittedChanges: 2,
+        base: 'main',
+        forge: 'github',
+      },
+    })),
+    'pullRequests.draft': typed('pullRequests.draft', () => ({
+      ok: true,
+      title: 'feat: create a pull request from a paired machine',
+      body: 'Drafted over there.',
+    })),
+    'pullRequests.draftCancel': typed('pullRequests.draftCancel', () => ({})),
+    'pullRequests.push': typed('pullRequests.push', () => ({ ok: true, pushed: true })),
+    'pullRequests.create': typed('pullRequests.create', () => {
+      recordPullRequest()
+      return { ok: true, kind: 'created', url: 'https://github.com/acme/studio/pull/290', recorded: true }
+    }),
+  }
+  return far
+}
+
+type Far = ReturnType<typeof farMethods>
+
+/** A refusal from that machine's Studio, in its own words. */
+const refused = (code: string, message: string) => {
+  throw new StudioError(code, message)
+}
 
 async function mountRemote({
   access,
@@ -154,12 +303,12 @@ async function mountRemote({
   createPullRequest = false,
   sendSkills = false,
   mentions = false,
-  commands = false,
   messageFiles = false,
   scheduledSends = false,
   usageLimits = false,
   restartSession = false,
 }: {
+  /** What the pairing's grant there reaches: driving the chat, or following it only. */
   access: 'read' | 'operate'
   permissionPreset?: MeshConversation['permissionPreset']
   models?: MeshConversation['models']
@@ -181,7 +330,7 @@ async function mountRemote({
   handoff?: boolean
   /** The machine takes a chat back to before one of its messages (`conversation-rewind`). */
   rewind?: boolean
-  /** The machine puts a turn's files back from its checkpoint (`conversation-checkpoint-revert`). */
+  /** The machine's Studio puts a turn's files back from its checkpoint (`conversation-checkpoints`). */
   checkpointRevert?: boolean
   /**
    * The machine forks its chats, answers side questions about them and says
@@ -204,14 +353,12 @@ async function mountRemote({
       'branch' | 'pullRequests' | 'changes' | 'worktree' | 'permissionMode' | 'reasoningEffort' | 'localServers'
     >
   >
-  /** The machine opens pull requests for its chats (`chat-create-pull-request`). */
+  /** The machine's Studio opens pull requests for its chats (`pull-request-create`). */
   createPullRequest?: boolean
   /** The machine takes its skills with a message and lists them (`conversation-send-skills`). */
   sendSkills?: boolean
-  /** The machine searches a chat's folder and takes mentions (`conversation-file-search`, `conversation-send-mentions`). */
+  /** The machine takes mentions of its chats' files (`conversation-send-mentions`). */
   mentions?: boolean
-  /** The machine lists a chat CLI's slash commands (`conversation-commands`). */
-  commands?: boolean
   /** The machine takes files with a message (`conversation-message-files`). */
   messageFiles?: boolean
   /** The machine keeps messages scheduled into its chats for a time (`conversation-scheduled-sends`). */
@@ -241,30 +388,84 @@ async function mountRemote({
   // Nor does it scroll: the type-ahead keeps its highlighted row in view.
   dom.window.HTMLElement.prototype.scrollIntoView = () => undefined
   Object.assign(globalThis, globals)
-  const receivers: Array<(frame: MeshConversationFrame) => void> = []
-  const followed: MeshConversationKey[] = []
   // The model the machine says the chat is on: what an accepted switch moves.
   let listedModel = thread.modelId
   // What the machine lists once a Create PR there has recorded one as the chat's.
   let recordedPullRequests: NonNullable<MeshConversation['pullRequests']> | null = null
-  const api = {
-    platform: 'darwin',
-    meshConversationList: vi.fn(async () => ({
-      ok: true,
-      conversations: [
+  const far: Far = farMethods(
+    () => ({
+      ...thread,
+      ...(capabilities ? { capabilities } : { capabilities: undefined, sessionId: undefined }),
+      modelId: listedModel,
+      ...(permissionPreset ? { permissionPreset } : {}),
+      ...(models ? { models } : {}),
+      ...listed,
+      ...(recordedPullRequests ? { pullRequests: recordedPullRequests } : {}),
+    }),
+    () => {
+      recordedPullRequests = [
         {
-          ...thread,
-          ...(capabilities ? { capabilities } : { capabilities: undefined, sessionId: undefined }),
-          modelId: listedModel,
-          ...(permissionPreset ? { permissionPreset } : {}),
-          ...(models ? { models } : {}),
-          ...listed,
-          ...(recordedPullRequests ? { pullRequests: recordedPullRequests } : {}),
+          number: 290,
+          state: 'open',
+          url: 'https://github.com/acme/studio/pull/290',
+          title: 'feat: create a pull request from a paired machine',
         },
-      ],
-      access,
-      // What the machine publishes, as each option says it advertises.
-      capabilities: Object.entries({
+      ]
+    },
+  )
+  far['conversation.setModel'].mockImplementation((asked) => {
+    listedModel = asked.modelId
+    return { modelId: asked.modelId, notice: 'The new model starts with your next message.' }
+  })
+  // The bytes of a file this window attaches, read by its shell (`attached-files:read`).
+  const readAttachedFile = vi.fn(async (path: string) => ({
+    ok: true as const,
+    name: path.split('/').at(-1)!,
+    dataBase64: 'JVBERi0=',
+  }))
+  const api = { platform: 'darwin', readAttachedFile }
+  Object.assign(dom.window, {
+    matchMedia: () => ({ matches: true, addEventListener: () => undefined, removeEventListener: () => undefined }),
+    api,
+  })
+  // That machine's Studio, as this window's own client of it reaches it: the
+  // chat's project's skills and its CLI's servers there.
+  const workspaceExtensions = vi.fn((_params: Record<string, unknown>, _connectionId: string) => ({
+    workspaceId: key.workspaceId,
+    ...extensions,
+  }))
+  const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
+  // Every method is asked without its command id, which is fresh for each call.
+  const answers = Object.fromEntries(
+    Object.entries(far).map(([method, answer]) => [
+      method,
+      ({ commandId: _commandId, ...asked }: Record<string, unknown>) => answer(asked),
+    ]),
+  )
+  // What that machine's Studio serves, as each option says: the Studio-wide
+  // capabilities a method needs, and the conversation capabilities its chats
+  // are served with. Everything else a current Studio serves is served.
+  const served = (flags: Record<string, boolean>) =>
+    Object.entries(flags)
+      .filter(([, on]) => on)
+      .map(([name]) => name)
+  const studio: PairedStudiosDouble = fakePairedStudios(
+    api,
+    { ...answers, 'workspaces.extensions': workspaceExtensions },
+    {
+      capabilities: served({
+        conversations: true,
+        'conversation-sessions': true,
+        'session-controls': true,
+        workspaces: true,
+        'chat-lifecycle': true,
+        'approval-rules': true,
+        schedules: true,
+        'pull-request-watch': true,
+        'conversation-checkpoints': checkpointRevert,
+        'pull-request-create': createPullRequest,
+      }),
+      conversationCapabilities: served({
         'conversation-models': modelSwitch,
         'conversation-permission-modes': permissionModes,
         'conversation-cli-permission-modes': cliPermissionModes,
@@ -277,222 +478,29 @@ async function mountRemote({
         'conversation-agent-message': messageSubagents,
         'conversation-handoff': handoff,
         'conversation-rewind': rewind,
-        'conversation-checkpoint-revert': checkpointRevert,
         'conversation-fork': agentReads.fork === true,
         'conversation-side-questions': agentReads.sideQuestions === true,
         'conversation-context-breakdown': agentReads.contextBreakdown === true,
         'conversation-reasoning-effort': reasoningEffort,
         'conversation-mcp-server-actions': mcpServerActions,
-        'chat-create-pull-request': createPullRequest,
         'conversation-send-skills': sendSkills,
-        'workspace-extensions': sendSkills,
-        'conversation-file-search': mentions,
         'conversation-send-mentions': mentions,
-        'conversation-commands': commands,
         'conversation-message-files': messageFiles,
-        upload: messageFiles,
         'conversation-scheduled-sends': scheduledSends,
         'conversation-usage-limits': usageLimits,
         'conversation-restart-session': restartSession,
-      })
-        .filter(([, advertised]) => advertised)
-        .map(([name]) => name),
-    })),
-    // The composer's reads of the chat's folder over there.
-    meshConversationSearchFiles: vi.fn(async (_input: { key: MeshConversationKey; query: string }) => ({
-      ok: true,
-      entries: [{ path: 'docs/release-notes.md', kind: 'file' }],
-      truncated: false,
-    })),
-    meshConversationCommands: vi.fn(async (_input: { key: MeshConversationKey; refresh?: boolean }) => ({
-      ok: true,
-      cli: 'claude-code',
-      fetchedAt: 1_700_000_000_000,
-      commands: [{ name: 'review-pr', description: 'Review a pull request over there', source: 'custom' }],
-    })),
-    // Create PR on the machine the chat runs on: each step answers as that
-    // machine would, and a creation records the pull request there.
-    meshConversationPullRequestState: vi.fn(async (_input: { key: MeshConversationKey }) => ({
-      ok: true,
-      state: {
-        readiness: { ready: true },
-        gitRoot: null,
-        branch: 'agent/remote-pr',
-        headSha: 'abc1234def',
-        uncommittedChanges: 2,
-        base: 'main',
-        forge: 'github',
-      },
-    })),
-    meshConversationPullRequestDraft: vi.fn(async (_input: { key: MeshConversationKey; draftId?: string }) => ({
-      ok: true,
-      title: 'feat: create a pull request from a paired machine',
-      body: 'Drafted over there.',
-    })),
-    meshConversationPullRequestDraftCancel: vi.fn(async () => ({ ok: true })),
-    meshConversationPullRequestPush: vi.fn(async (_input: { key: MeshConversationKey; pin?: unknown }) => ({
-      ok: true,
-      pushed: true,
-    })),
-    meshConversationPullRequestCreate: vi.fn(
-      async (_input: { key: MeshConversationKey; title: string; body: string; pin?: unknown }) => {
-        recordedPullRequests = [
-          {
-            number: 290,
-            state: 'open',
-            url: 'https://github.com/acme/studio/pull/290',
-            title: 'feat: create a pull request from a paired machine',
-          },
-        ]
-        return {
-          ok: true,
-          kind: 'created',
-          url: 'https://github.com/acme/studio/pull/290',
-          recorded: { ok: true },
-        }
-      },
-    ),
-    onMeshConversationSession: vi.fn(
-      (input: { key: MeshConversationKey }, receive: (frame: MeshConversationFrame) => void) => {
-        followed.push(input.key)
-        receivers.push(receive)
-        return () => undefined
-      },
-    ),
-    // A turn's changed files are listed as soon as its card is drawn.
-    meshConversationTurnDiff: vi.fn(async () => ({
-      ok: true,
-      diff: {
-        files: [{ path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false }],
-        submodulesExcluded: true,
-      },
-    })),
-    meshConversationSend: vi.fn(
-      async (_input: {
-        key: MeshConversationKey
-        message: string
-        attachments?: unknown[]
-        queue?: boolean
-        steer?: boolean
-      }): Promise<{ ok: true } | { ok: false; code: string; message: string }> => ({ ok: true }),
-    ),
-    meshConversationCancelQueued: vi.fn(async (_input: { key: MeshConversationKey; queuedId: string }) => ({
-      ok: true,
-    })),
-    meshConversationResolveApproval: vi.fn(async () => ({ ok: true })),
-    meshConversationInterrupt: vi.fn(async () => ({ ok: true })),
-    meshConversationHandoff: vi.fn(async (_input: { key: MeshConversationKey }) => ({ ok: true as const })),
-    meshConversationMessageSubagent: vi.fn(
-      async (_input: { key: MeshConversationKey; toolUseId: string; message: string }) => ({ ok: true }),
-    ),
-    meshConversationStopSubagent: vi.fn(async (_input: { key: MeshConversationKey; toolUseId: string }) => ({
-      ok: true,
-    })),
-    meshConversationRewind: vi.fn(async (_input: { key: MeshConversationKey; turnSeq: number }) => ({ ok: true })),
-    // What the machine's checkout would put back, and then puts back.
-    meshConversationRevert: vi.fn(
-      async (input: {
-        key: MeshConversationKey
-        turnSeq: number
-        undo?: boolean
-        confirmed?: boolean
-        files?: string[]
-      }): Promise<
-        | { ok: true; data?: Record<string, unknown> }
-        | { ok: false; code: string; message: string; data?: Record<string, unknown> }
-      > => ({
-        ok: true,
-        data: {
-          files: [{ path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false }],
-          reverted: input.confirmed === true,
-        },
       }),
-    ),
-    meshConversationFork: vi.fn(
-      async (_input: { key: MeshConversationKey; fork: Record<string, unknown> }): Promise<{ ok: true }> => ({
-        ok: true,
-      }),
-    ),
-    meshConversationSideQuestion: vi.fn(
-      async (_input: { key: MeshConversationKey; requestId: string; question: string }) => ({
-        ok: true,
-        answer: 'In src/upload.test.ts.',
-      }),
-    ),
-    meshConversationCancelSideQuestion: vi.fn(async () => ({ ok: true })),
-    meshConversationContextBreakdown: vi.fn(async (_input: { key: MeshConversationKey }) => ({
-      ok: true,
-      breakdown: {
-        model: 'opus',
-        usedTokens: 76_000,
-        windowTokens: 200_000,
-        categories: [
-          { name: 'MCP tools', tokens: 20_000, kind: 'used' },
-          { name: 'Messages', tokens: 56_000, kind: 'used' },
-          { name: 'Free space', tokens: 124_000, kind: 'free' },
-        ],
-        mcpServers: [{ name: 'linear', tokens: 20_000, tools: [] }],
-        skills: [],
-        memoryFiles: [],
-        agents: [],
-        autoCompactAt: null,
-        estimated: true,
-        measuredAt: 0,
-      },
-    })),
-    meshConversationScheduleSend: vi.fn(
-      async (_input: {
-        key: MeshConversationKey
-        message: string
-        sendAt: number
-      }): Promise<{ ok: true } | { ok: false; code: string; message: string }> => ({ ok: true }),
-    ),
-    meshConversationSendScheduledNow: vi.fn(async (_input: { key: MeshConversationKey; scheduledId: string }) => ({
-      ok: true,
-    })),
-    meshConversationCancelScheduled: vi.fn(async (_input: { key: MeshConversationKey; scheduledId: string }) => ({
-      ok: true,
-    })),
-    meshConversationUsageLimitResume: vi.fn(
-      async (_input: {
-        key: MeshConversationKey
-        action: string
-        always?: boolean
-      }): Promise<{ ok: true } | { ok: false; code: string; message: string }> => ({ ok: true }),
-    ),
-    meshConversationSetPermissionPreset: vi.fn(async () => ({ ok: true })),
-    meshConversationRestartSession: vi.fn(
-      async (_input: {
-        key: MeshConversationKey
-      }): Promise<{ ok: true; notice?: string } | { ok: false; code: string; message: string }> => ({ ok: true }),
-    ),
-    meshConversationMcpServerAction: vi.fn(
-      async (_input: { key: MeshConversationKey; serverId: string; action: string }) => ({ ok: true }),
-    ),
-    meshConversationSetReasoningEffort: vi.fn(async (_input: { key: MeshConversationKey; effort?: string }) => ({
-      ok: true,
-      notice: 'Reasoning effort applies from the next turn.',
-    })),
-    meshConversationSetModel: vi.fn(async (input: { key: MeshConversationKey; modelId: string }) => {
-      listedModel = input.modelId
-      return { ok: true, notice: 'The new model starts with your next message.' }
-    }),
-  }
-  Object.assign(dom.window, {
-    matchMedia: () => ({ matches: true, addEventListener: () => undefined, removeEventListener: () => undefined }),
-    api,
-  })
-  // That machine's Studio, as this window's own client of it reaches it: the
-  // chat's project's skills and its CLI's servers there.
-  const workspaceExtensions = vi.fn((_params: Record<string, unknown>, _connectionId: string) => ({
-    workspaceId: key.workspaceId,
-    ...extensions,
-  }))
-  const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
-  fakePairedStudios(api, { 'workspaces.extensions': workspaceExtensions })
+      scopes: (access === 'operate'
+        ? ['workspaces:read', 'workspaces:operate', 'conversation:read', 'conversation:operate', 'conversation:create']
+        : ['workspaces:read', 'conversation:read']) satisfies StudioScope[],
+    },
+  )
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { default: RemoteConversationPanel } = await import('./RemoteConversationPanel')
+  // A chat's `/` list is kept for the window under the chat; each test's chat asks afresh.
+  const { resetConversationCommandsCache } = await import('./useConversationCommands')
+  resetConversationCommandsCache()
   // Edit from here and Revert ask before they act, as the app's own root lets them.
   const { ConfirmDialogProvider } = await import('../../ui/ConfirmDialog')
   const { ChatPanel } = await import('../../workspace/pane/panel/ChatPanel')
@@ -538,27 +546,42 @@ async function mountRemote({
       input: { command: 'npm test' },
     }),
   ]
-  const link: MeshConversationLink = { type: 'link', state: 'live', detail: 'Following on mac-mini.', access }
+  // The reads the pane starts as it opens (the machine's list, its sessions) land first.
+  const settleReads = async () => {
+    for (let i = 0; i < 4; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+  }
+  await settleReads()
   await act(async () => {
-    const receive = receivers.at(-1)!
-    receive({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null }, generation: 'g' })
-    receive({ type: 'synchronized', seq: events.at(-1)!.seq!, generation: 'g' })
-    receive(link)
+    studio.frame({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null }, generation: 'g' })
+    studio.frame({ type: 'synchronized', seq: events.at(-1)!.seq!, generation: 'g' })
   })
   // The composer is an editor: its editable element takes the keys, and the
   // draft is the editor's document.
   const composer = () => host.querySelector<HTMLElement>('.cm-content')!
   const editor = () => EditorView.findFromDOM(host.querySelector<HTMLElement>('.cm-editor')!)!
+  /** A frame of the chat, or of one of its push topics there, as that machine sends it. */
+  const emit = (frame: PlayedFrame, agentId?: string) => {
+    if (frame.type === 'snapshot' || frame.type === 'event' || frame.type === 'synchronized')
+      studio.frame(frame, agentId)
+    else studio.push(`conversation.${frame.type}`, frame, { ...ref, ...(agentId ? { agentId } : {}) })
+  }
   return {
     host,
     document: dom.window.document,
     act,
     api,
+    far,
+    studio,
     workspaceExtensions,
-    followed,
-    emit: (frame: MeshConversationFrame) => receivers.at(-1)!(frame),
+    readAttachedFile,
+    settleReads,
+    /** Each chat followed there, as the pane names it. */
+    get followed() {
+      return studio.follows.map((follow) => ({ connectionId: follow.connectionId, ...follow.ref }))
+    },
+    emit,
     /** To the chat's own follow, when a sub-agent has been followed since. */
-    emitToChat: (frame: MeshConversationFrame) => receivers[0]!(frame),
+    emitToChat: (frame: PlayedFrame) => emit(frame, key.agentId),
     button: (label: string) =>
       Array.from(host.querySelectorAll('button')).find((item) => item.textContent?.trim() === label),
     type: (value: string) => {
@@ -639,7 +662,7 @@ test('the strip under a paired machine’s chat names its branch, its changed fi
   }
 })
 
-test('a conversation on a paired machine renders in the chat view and is driven over the mesh', async () => {
+test('a conversation on a paired machine renders in the chat view and is driven from here', async () => {
   const chat = await mountRemote({ access: 'operate' })
   try {
     expect(chat.followed).toEqual([key])
@@ -649,12 +672,12 @@ test('a conversation on a paired machine renders in the chat view and is driven 
     // the tab and the panel say them (owner, 2026-10-08).
     expect(chat.host.textContent).not.toContain('· On mac-mini')
 
-    // An approval is answered over the mesh, and no rule that would outlive
+    // An approval is answered there, and no rule that would outlive
     // the conversation is offered.
     expect(chat.host.textContent).not.toMatch(/always/i)
     await chat.act(async () => chat.button('Allow once')!.click())
-    expect(chat.api.meshConversationResolveApproval).toHaveBeenCalledWith({
-      key,
+    expect(chat.far['conversation.resolveApproval']).toHaveBeenCalledWith({
+      key: ref,
       requestId: 'approval-1',
       decision: 'once',
     })
@@ -712,8 +735,8 @@ test('an approval over there can be allowed for the rest of the conversation, ne
     const rows = Array.from(chat.document.querySelectorAll<HTMLElement>('[data-menu-item="true"]'))
     expect(rows.map((row) => row.textContent?.trim())).toEqual(['Allow "git status …" for this conversation'])
     await chat.act(async () => rows[0]!.click())
-    expect(chat.api.meshConversationResolveApproval).toHaveBeenCalledWith({
-      key,
+    expect(chat.far['conversation.resolveApproval']).toHaveBeenCalledWith({
+      key: ref,
       requestId: 'approval-2',
       decision: 'conversation',
     })
@@ -722,7 +745,7 @@ test('an approval over there can be allowed for the rest of the conversation, ne
   }
 })
 
-test('a machine that saves the rule offers "always allow" in its workspace, and the rule goes over the mesh', async () => {
+test('a machine that saves the rule offers "always allow" in its workspace, and the rule is saved there', async () => {
   const chat = await mountRemote({ access: 'operate', permanentApprovals: true })
   try {
     await chat.act(async () => {
@@ -746,8 +769,8 @@ test('a machine that saves the rule offers "always allow" in its workspace, and 
     expect(rows).toHaveLength(2)
     expect(rows[1]!.textContent).toContain('workspace')
     await chat.act(async () => rows[1]!.click())
-    expect(chat.api.meshConversationResolveApproval).toHaveBeenCalledWith({
-      key,
+    expect(chat.far['conversation.resolveApproval']).toHaveBeenCalledWith({
+      key: ref,
       requestId: 'approval-2',
       decision: 'always',
     })
@@ -765,23 +788,33 @@ test('a send goes to the machine that holds the conversation, with no session st
     await chat.act(async () => chat.enter())
     expect(chat.host.textContent).toContain('Queued')
     await chat.act(async () => chat.button('Deny')!.click())
-    expect(chat.api.meshConversationResolveApproval).toHaveBeenCalledWith({
-      key,
+    expect(chat.far['conversation.resolveApproval']).toHaveBeenCalledWith({
+      key: ref,
       requestId: 'approval-1',
       decision: 'deny',
     })
-    expect(chat.api.meshConversationSend).not.toHaveBeenCalled()
+    expect(chat.far['conversation.send']).not.toHaveBeenCalled()
     await chat.act(async () => {
       chat.emit({ type: 'event', event: event('approval_resolved', { requestId: 'approval-1', approved: false }) })
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'a' }) })
     })
-    expect(chat.api.meshConversationSend).toHaveBeenCalledExactlyOnceWith({ key, message: 'Try it with --runInBand' })
-    // No optimistic bubble: the machine's own `user_message` is the one shown.
-    expect(chat.host.textContent?.match(/Try it with --runInBand/g) ?? []).toHaveLength(0)
+    expect(chat.far['conversation.send']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
+      message: 'Try it with --runInBand',
+      localTurnId: expect.any(String),
+    })
+    // Its bubble shows at once, under the id the send carried, as a local chat's does.
+    const { localTurnId } = chat.far['conversation.send'].mock.calls[0]![0]
+    expect(chat.host.textContent?.match(/Try it with --runInBand/g) ?? []).toHaveLength(1)
+    // The machine's own `user_message` echoes that id and takes the bubble's place: one message, not two.
     await chat.act(async () =>
-      chat.emit({ type: 'event', event: event('user_message', { turnId: 'b', text: 'Try it with --runInBand' }) }),
+      chat.emit({
+        type: 'event',
+        event: event('user_message', { turnId: 'b', text: 'Try it with --runInBand', localTurnId }),
+      }),
     )
     expect(chat.host.textContent?.match(/Try it with --runInBand/g) ?? []).toHaveLength(1)
+    expect(chat.studio.calls.map((call) => call.method)).not.toContain('session.start')
   } finally {
     await chat.unmount()
   }
@@ -793,8 +826,8 @@ test('a message queued for a machine that holds its own queue is handed to it at
     await chat.act(async () => chat.type('Try it with --runInBand'))
     await chat.act(async () => chat.enter())
     // Handed over now, mid-turn, so it goes even if this machine sleeps.
-    expect(chat.api.meshConversationSend).toHaveBeenCalledExactlyOnceWith({
-      key,
+    expect(chat.far['conversation.send']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
       message: 'Try it with --runInBand',
       queue: true,
     })
@@ -813,10 +846,10 @@ test('a message queued for a machine that holds its own queue is handed to it at
       chat.emit({ type: 'event', event: event('approval_resolved', { requestId: 'approval-1', approved: false }) })
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'a' }) })
     })
-    expect(chat.api.meshConversationSend).toHaveBeenCalledTimes(1)
+    expect(chat.far['conversation.send']).toHaveBeenCalledTimes(1)
     // Edit takes it back from there into this composer.
     await chat.act(async () => chat.button('Edit')!.click())
-    expect(chat.api.meshConversationCancelQueued).toHaveBeenCalledExactlyOnceWith({ key, queuedId: 'sm-1' })
+    expect(chat.far['conversation.cancelQueued']).toHaveBeenCalledExactlyOnceWith({ key: ref, queuedId: 'sm-1' })
     expect(chat.draft()).toBe('Try it with --runInBand')
     await chat.act(async () => chat.emit({ type: 'queued', messages: [] }))
     expect(chat.host.querySelector('[aria-label="Queued message"]')).toBeNull()
@@ -838,8 +871,8 @@ async function holdingMessage(options: { steerSends: boolean }) {
   )
   await chat.act(async () => chat.type('Keep the print styles square'))
   await chat.act(async () => chat.enter())
-  expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({
-    key,
+  expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+    key: ref,
     message: 'Keep the print styles square',
     queue: true,
   })
@@ -856,13 +889,14 @@ test('Send now on a message the machine holds takes it back and steers it in, an
   const chat = await holdingMessage({ steerSends: true })
   try {
     await chat.act(async () => chat.button('Send now')!.click())
-    expect(chat.api.meshConversationCancelQueued).toHaveBeenCalledExactlyOnceWith({ key, queuedId: 'sm-1' })
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({
-      key,
+    expect(chat.far['conversation.cancelQueued']).toHaveBeenCalledExactlyOnceWith({ key: ref, queuedId: 'sm-1' })
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
       message: 'Keep the print styles square',
       steer: true,
+      localTurnId: expect.any(String),
     })
-    expect(chat.api.meshConversationInterrupt).not.toHaveBeenCalled()
+    expect(chat.far['conversation.interrupt']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
   }
@@ -881,13 +915,14 @@ test('Primary+Enter with nothing typed steers in the message the machine holds',
         }),
       ),
     )
-    expect(chat.api.meshConversationCancelQueued).toHaveBeenCalledExactlyOnceWith({ key, queuedId: 'sm-1' })
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({
-      key,
+    expect(chat.far['conversation.cancelQueued']).toHaveBeenCalledExactlyOnceWith({ key: ref, queuedId: 'sm-1' })
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
       message: 'Keep the print styles square',
       steer: true,
+      localTurnId: expect.any(String),
     })
-    expect(chat.api.meshConversationInterrupt).not.toHaveBeenCalled()
+    expect(chat.far['conversation.interrupt']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
   }
@@ -895,14 +930,13 @@ test('Primary+Enter with nothing typed steers in the message the machine holds',
 
 test('a held message that could not be taken back is left to that machine, and the turn is not stopped', async () => {
   const chat = await holdingMessage({ steerSends: true })
-  chat.api.meshConversationCancelQueued.mockImplementationOnce(async () => ({
-    ok: false,
-    message: 'That message is already on its way into the chat.',
-  }))
+  chat.far['conversation.cancelQueued'].mockImplementationOnce(() =>
+    refused('conflict', 'That message is already on its way into the chat.'),
+  )
   try {
     await chat.act(async () => chat.button('Send now')!.click())
-    expect(chat.api.meshConversationSend).toHaveBeenCalledTimes(1)
-    expect(chat.api.meshConversationInterrupt).not.toHaveBeenCalled()
+    expect(chat.far['conversation.send']).toHaveBeenCalledTimes(1)
+    expect(chat.far['conversation.interrupt']).not.toHaveBeenCalled()
     expect(chat.host.textContent).toContain('That message is already on its way into the chat.')
   } finally {
     await chat.unmount()
@@ -914,8 +948,8 @@ test('a machine that takes no steer offers Stop and send for the message it hold
   try {
     expect(chat.button('Send now')).toBeUndefined()
     await chat.act(async () => chat.button('Stop and send')!.click())
-    expect(chat.api.meshConversationInterrupt).toHaveBeenCalledOnce()
-    expect(chat.api.meshConversationCancelQueued).not.toHaveBeenCalled()
+    expect(chat.far['conversation.interrupt']).toHaveBeenCalledOnce()
+    expect(chat.far['conversation.cancelQueued']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
   }
@@ -950,8 +984,8 @@ test('an agent in a chat over there has a Stop of its own, which stops that agen
     await startAgent(chat)
     expect(agentStops(chat)).toHaveLength(1)
     await chat.act(async () => agentStops(chat)[0]!.click())
-    expect(chat.api.meshConversationStopSubagent).toHaveBeenCalledExactlyOnceWith({ key, toolUseId: 'toolu_agent' })
-    expect(chat.api.meshConversationInterrupt).not.toHaveBeenCalled()
+    expect(chat.far['conversation.stopSubagent']).toHaveBeenCalledExactlyOnceWith({ key: ref, toolUseId: 'toolu_agent' })
+    expect(chat.far['conversation.interrupt']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
   }
@@ -991,7 +1025,7 @@ async function openFinishedAgent(options: Parameters<typeof mountRemote>[0]) {
   return chat
 }
 
-test('an agent in a chat over there opens in the chat’s place, and its box goes over the mesh', async () => {
+test('an agent in a chat over there opens in the chat’s place, and its box goes to that machine', async () => {
   const { resetSubagentViews } = await import('./subagentViewStack')
   const chat = await openFinishedAgent({
     access: 'operate',
@@ -1096,7 +1130,7 @@ test('a cold chat over there offers Handoff, which that machine carries out', as
     const button = handoffButton(chat)
     expect(button, 'the cache notice leads with Handoff').toBeDefined()
     await chat.act(async () => button!.click())
-    expect(chat.api.meshConversationHandoff).toHaveBeenCalledExactlyOnceWith({ key })
+    expect(chat.far['conversation.handoff']).toHaveBeenCalledExactlyOnceWith({ key: ref })
   } finally {
     await chat.unmount()
   }
@@ -1114,11 +1148,10 @@ test('Fork from here on a chat over there forks it there, by its ids there', asy
     )
     expect(forks.length, 'offered on the replies and the messages').toBeGreaterThan(0)
     await chat.act(async () => forks.at(-1)!.click())
-    expect(chat.api.meshConversationFork).toHaveBeenCalledOnce()
-    const [asked] = chat.api.meshConversationFork.mock.calls[0]!
-    expect(asked.key).toEqual(key)
-    expect(asked.fork).toMatchObject({ kind: 'fork', side: 'assistant', turnId: 'a' })
-    expect(String(asked.fork.newAgentId)).toMatch(/^conversation-claude-agent-/)
+    expect(chat.far['conversation.fork']).toHaveBeenCalledOnce()
+    const [asked] = chat.far['conversation.fork'].mock.calls[0]!
+    expect(asked).toEqual({ key: ref, side: 'assistant', turnId: 'a', newAgentId: expect.any(String) })
+    expect(String(asked.newAgentId)).toMatch(/^conversation-claude-agent-/)
   } finally {
     await chat.unmount()
   }
@@ -1147,12 +1180,12 @@ test('/btw in a chat over there is asked of its agent there, and the chat is sen
     await chat.act(async () => chat.type('/btw which file flakes?'))
     await chat.act(async () => chat.enter())
     await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
-    expect(chat.api.meshConversationSideQuestion).toHaveBeenCalledOnce()
-    expect(chat.api.meshConversationSideQuestion.mock.calls[0]![0]).toMatchObject({
-      key,
+    expect(chat.far['conversation.askSideQuestion']).toHaveBeenCalledOnce()
+    expect(chat.far['conversation.askSideQuestion'].mock.calls[0]![0]).toMatchObject({
+      key: ref,
       question: 'which file flakes?',
     })
-    expect(chat.api.meshConversationSend).not.toHaveBeenCalled()
+    expect(chat.far['conversation.send']).not.toHaveBeenCalled()
     expect(chat.document.body.textContent).toContain('In src/upload.test.ts.')
   } finally {
     await chat.unmount()
@@ -1168,7 +1201,7 @@ test("the ring of a chat over there opens what fills its window, read from that 
     const ring = () => chat.host.querySelector<HTMLButtonElement>('[data-composer-context]')!
     await chat.act(async () => ring().click())
     await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
-    expect(chat.api.meshConversationContextBreakdown).toHaveBeenCalledExactlyOnceWith({ key })
+    expect(chat.far['conversation.contextBreakdown']).toHaveBeenCalledExactlyOnceWith({ key: ref })
     const panel = chat.document.querySelector('[data-context-breakdown]')
     expect(panel?.querySelector('[data-context-heaviest="mcp"]')?.textContent).toContain('linear')
   } finally {
@@ -1189,10 +1222,10 @@ test('none of the three where the machine does not take them, or lists its chat 
         chat.emit({ type: 'event', event: event('usage_updated', { contextWindow: 200_000, contextUsed: 76_000 }) }),
       )
       await chat.act(async () => chat.host.querySelector<HTMLButtonElement>('[data-composer-context]')?.click())
-      expect(chat.api.meshConversationContextBreakdown).not.toHaveBeenCalled()
+      expect(chat.far['conversation.contextBreakdown']).not.toHaveBeenCalled()
       await chat.act(async () => chat.type('/btw which file flakes?'))
       await chat.act(async () => chat.enter())
-      expect(chat.api.meshConversationSideQuestion).not.toHaveBeenCalled()
+      expect(chat.far['conversation.askSideQuestion']).not.toHaveBeenCalled()
     } finally {
       await chat.unmount()
     }
@@ -1232,17 +1265,17 @@ test('Edit from here on a chat over there takes it back over there, and restores
     await chat.act(async () => buttons(chat, 'Edit from here')[0]!.click())
     await settle(chat)
     // The files a restore would put back are listed by that machine first.
-    const preview = chat.api.meshConversationRevert.mock.calls[0]![0]
-    expect(preview).toEqual({ key, turnSeq: expect.any(Number) })
+    const preview = chat.far['conversation.revert'].mock.calls[0]![0]
+    expect(preview).toEqual({ key: ref, turnSeq: expect.any(Number) })
     const restore = dialog(chat)!.querySelector<HTMLElement>('[role="checkbox"], input[type="checkbox"]')!
     expect(dialog(chat)!.textContent).toContain('Also restore 1 file to before this message')
     await chat.act(async () => restore.click())
     expect(dialog(chat)!.textContent).toContain('src/upload.ts')
     await chat.act(async () => dialogButton(chat, 'Edit from here')!.click())
     await settle(chat)
-    expect(chat.api.meshConversationRewind).toHaveBeenCalledExactlyOnceWith({ key, turnSeq: preview.turnSeq })
-    expect(chat.api.meshConversationRevert).toHaveBeenLastCalledWith({
-      key,
+    expect(chat.far['conversation.rewind']).toHaveBeenCalledExactlyOnceWith({ key: ref, turnSeq: preview.turnSeq })
+    expect(chat.far['conversation.revert']).toHaveBeenLastCalledWith({
+      key: ref,
       turnSeq: preview.turnSeq,
       confirmed: true,
       files: ['src/upload.ts'],
@@ -1264,12 +1297,12 @@ test('Edit from here over there leaves the files alone where that machine does n
     await settleTurn(chat)
     await chat.act(async () => buttons(chat, 'Edit from here')[0]!.click())
     await settle(chat)
-    expect(chat.api.meshConversationRevert).not.toHaveBeenCalled()
+    expect(chat.far['conversation.revert']).not.toHaveBeenCalled()
     expect(dialog(chat)!.textContent).toContain('Files are left as they are.')
     await chat.act(async () => dialogButton(chat, 'Edit from here')!.click())
     await settle(chat)
-    expect(chat.api.meshConversationRewind).toHaveBeenCalledOnce()
-    expect(chat.api.meshConversationRevert).not.toHaveBeenCalled()
+    expect(chat.far['conversation.rewind']).toHaveBeenCalledOnce()
+    expect(chat.far['conversation.revert']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
   }
@@ -1297,29 +1330,24 @@ test('a turn over there is reverted by that machine, and files that moved are sh
   const chat = await mountRemote({ access: 'operate', checkpointRevert: true })
   try {
     await settleTurn(chat)
-    chat.api.meshConversationRevert
-      .mockImplementationOnce(async () => ({
+    chat.far['conversation.revert']
+      .mockImplementationOnce(() => ({
         ok: true,
-        data: {
-          files: [{ path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false }],
-          reverted: false,
-        },
+        files: [{ path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false }],
+        reverted: false,
       }))
-      .mockImplementationOnce(async () => ({
+      .mockImplementationOnce(() => ({
         ok: false,
-        code: 'unavailable',
         message: 'The files to restore changed since they were shown. Review the new list and confirm again.',
-        data: { changed: true },
+        changed: true,
       }))
-      .mockImplementationOnce(async () => ({
+      .mockImplementationOnce(() => ({
         ok: true,
-        data: {
-          files: [
-            { path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false },
-            { path: 'src/retry.ts', status: 'added', addedLines: 4, removedLines: 0, binary: false },
-          ],
-          reverted: false,
-        },
+        files: [
+          { path: 'src/upload.ts', status: 'modified', addedLines: 1, removedLines: 1, binary: false },
+          { path: 'src/retry.ts', status: 'added', addedLines: 4, removedLines: 0, binary: false },
+        ],
+        reverted: false,
       }))
     const revert = buttons(chat, 'Revert to before this turn')
     expect(revert.length).toBeGreaterThan(0)
@@ -1333,12 +1361,12 @@ test('a turn over there is reverted by that machine, and files that moved are sh
     expect(dialog(chat)!.textContent).toContain('src/retry.ts')
     await chat.act(async () => dialogButton(chat, 'Revert files')!.click())
     await settle(chat)
-    const turnSeq = chat.api.meshConversationRevert.mock.calls[0]![0].turnSeq
-    expect(chat.api.meshConversationRevert.mock.calls.map(([input]) => input)).toEqual([
-      { key, turnSeq },
-      { key, turnSeq, confirmed: true, files: ['src/upload.ts'] },
-      { key, turnSeq },
-      { key, turnSeq, confirmed: true, files: ['src/upload.ts', 'src/retry.ts'] },
+    const turnSeq = chat.far['conversation.revert'].mock.calls[0]![0].turnSeq
+    expect(chat.far['conversation.revert'].mock.calls.map(([input]) => input)).toEqual([
+      { key: ref, turnSeq },
+      { key: ref, turnSeq, confirmed: true, files: ['src/upload.ts'] },
+      { key: ref, turnSeq },
+      { key: ref, turnSeq, confirmed: true, files: ['src/upload.ts', 'src/retry.ts'] },
     ])
     expect(dialog(chat)).toBeNull()
   } finally {
@@ -1381,7 +1409,7 @@ function dropFiles(
   return drop
 }
 
-test('an image dropped on a chat over there that takes images is attached, and goes with the message over the mesh', async () => {
+test('an image dropped on a chat over there that takes images is attached, and goes up with the message', async () => {
   const chat = await mountRemote({ access: 'operate' })
   try {
     await settleTurn(chat)
@@ -1394,10 +1422,22 @@ test('an image dropped on a chat over there that takes images is attached, and g
     expect(chat.host.querySelector('[aria-label="Remove shot.png"]'), 'the image waits in the composer').not.toBeNull()
     await chat.act(async () => chat.type('What is wrong here?'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenCalledExactlyOnceWith({
-      key,
+    // The picture goes up first, on the same connection, and the send names it.
+    expect(chat.far['uploads.begin']).toHaveBeenCalledExactlyOnceWith({
+      mediaType: 'image/png',
+      byteLength: 8,
+      name: 'shot.png',
+    })
+    expect(chat.far['uploads.append']).toHaveBeenCalledExactlyOnceWith({
+      uploadId: 'upload-1',
+      offset: 0,
+      dataBase64: 'iVBORw0KGgo=',
+    })
+    expect(chat.far['conversation.send']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
       message: 'What is wrong here?',
-      attachments: [expect.objectContaining({ mediaType: 'image/png', name: 'shot.png', dataBase64: 'iVBORw0KGgo=' })],
+      uploadIds: ['upload-1'],
+      localTurnId: expect.any(String),
     })
   } finally {
     await chat.unmount()
@@ -1412,11 +1452,16 @@ test('a message with a picture queued for a machine that holds it whole goes ove
     })
     await chat.act(async () => chat.type('And this one'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenCalledExactlyOnceWith({
-      key,
+    expect(chat.far['uploads.begin']).toHaveBeenCalledExactlyOnceWith({
+      mediaType: 'image/png',
+      byteLength: 8,
+      name: 'shot.png',
+    })
+    expect(chat.far['conversation.send']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
       message: 'And this one',
       queue: true,
-      attachments: [expect.objectContaining({ mediaType: 'image/png', name: 'shot.png' })],
+      uploadIds: ['upload-1'],
     })
     expect(chat.draft()).toBe('')
     expect(chat.host.querySelector('[aria-label="Remove shot.png"]'), 'the picture left the composer').toBeNull()
@@ -1435,10 +1480,10 @@ test('a message with a picture queued for a machine that holds it whole goes ove
       chat.emit({ type: 'event', event: event('approval_resolved', { requestId: 'approval-1', approved: false }) })
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'a' }) })
     })
-    expect(chat.api.meshConversationSend).toHaveBeenCalledTimes(1)
+    expect(chat.far['conversation.send']).toHaveBeenCalledTimes(1)
     // Edit brings back the words and the skill, and says the picture did not come.
     await chat.act(async () => chat.button('Edit')!.click())
-    expect(chat.api.meshConversationCancelQueued).toHaveBeenCalledExactlyOnceWith({ key, queuedId: 'sm-1' })
+    expect(chat.far['conversation.cancelQueued']).toHaveBeenCalledExactlyOnceWith({ key: ref, queuedId: 'sm-1' })
     expect(chat.draft()).toBe('And this one')
     expect(chat.host.textContent).toContain('Its 1 picture did not come back from mac-mini')
   } finally {
@@ -1454,7 +1499,7 @@ test('a message with a picture waits here for a machine that holds words only', 
     })
     await chat.act(async () => chat.type('And this one'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).not.toHaveBeenCalled()
+    expect(chat.far['conversation.send']).not.toHaveBeenCalled()
     expect(chat.host.querySelector('[aria-label="Queued message"]')?.textContent).toContain('And this one')
   } finally {
     await chat.unmount()
@@ -1480,8 +1525,8 @@ test('Send now on a held message carrying a picture stops the turn there, rather
       }),
     )
     await chat.act(async () => chat.button('Send now')!.click())
-    expect(chat.api.meshConversationCancelQueued).not.toHaveBeenCalled()
-    expect(chat.api.meshConversationInterrupt).toHaveBeenCalledOnce()
+    expect(chat.far['conversation.cancelQueued']).not.toHaveBeenCalled()
+    expect(chat.far['conversation.interrupt']).toHaveBeenCalledOnce()
   } finally {
     await chat.unmount()
   }
@@ -1490,11 +1535,9 @@ test('Send now on a held message carrying a picture stops the turn there, rather
 test('a message the machine could not hold waits here, and goes from here when the turn ends', async () => {
   const chat = await mountRemote({ access: 'operate', queuedSends: true })
   try {
-    chat.api.meshConversationSend.mockResolvedValueOnce({
-      ok: false,
-      code: 'unavailable',
-      message: 'This chat already holds as many queued messages as it can.',
-    })
+    chat.far['conversation.send'].mockImplementationOnce(() =>
+      refused('unavailable', 'This chat already holds as many queued messages as it can.'),
+    )
     await chat.act(async () => chat.type('Try it with --runInBand'))
     await chat.act(async () => chat.enter())
     expect(chat.host.querySelector('[aria-label="Queued message"]')?.textContent).toContain('Try it with --runInBand')
@@ -1503,7 +1546,11 @@ test('a message the machine could not hold waits here, and goes from here when t
       chat.emit({ type: 'event', event: event('approval_resolved', { requestId: 'approval-1', approved: false }) })
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'a' }) })
     })
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({ key, message: 'Try it with --runInBand' })
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
+      message: 'Try it with --runInBand',
+      localTurnId: expect.any(String),
+    })
   } finally {
     await chat.unmount()
   }
@@ -1533,11 +1580,15 @@ test('a chat at rest over there is read again once its first message is answered
       chat.host.querySelector('[data-composer-options]'),
       'a chat listed without a session offers no images',
     ).toBeNull()
-    const reads = chat.api.meshConversationList.mock.calls.length
+    const reads = chat.far['conversation.list'].mock.calls.length
     await chat.act(async () => chat.type('Wake up'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenCalledExactlyOnceWith({ key, message: 'Wake up' })
-    expect(chat.api.meshConversationList.mock.calls.length).toBe(reads + 1)
+    expect(chat.far['conversation.send']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
+      message: 'Wake up',
+      localTurnId: expect.any(String),
+    })
+    expect(chat.far['conversation.list'].mock.calls.length).toBe(reads + 1)
   } finally {
     await chat.unmount()
   }
@@ -1568,7 +1619,7 @@ const permissionsChip = async (chat: Awaited<ReturnType<typeof mountRemote>>) =>
   return find()
 }
 
-test('a chat on a machine that runs only two presets dims the other two, and a pick goes over the mesh', async () => {
+test('a chat on a machine that runs only two presets dims the other two, and a pick goes to that machine', async () => {
   const chat = await mountRemote({ access: 'operate', permissionPreset: 'bypass' })
   try {
     // Bypass is a safeguard off: the engine chip says so while the picker
@@ -1586,14 +1637,14 @@ test('a chat on a machine that runs only two presets dims the other two, and a p
     expect(rows.map((row) => row.disabled)).toEqual([true, true, false, false])
     expect(rows[0]!.textContent).toContain('mac-mini needs a newer Studio for this.')
     await chat.act(async () => rows[3]!.click())
-    expect(chat.api.meshConversationSetPermissionPreset).toHaveBeenCalledExactlyOnceWith({ key, preset: 'none' })
+    expect(chat.far['conversation.setPermissionPreset']).toHaveBeenCalledExactlyOnceWith({ key: ref, preset: 'none' })
     expect((await permissionsChip(chat))?.getAttribute('aria-label')).toBe('Permissions: No flag')
   } finally {
     await chat.unmount()
   }
 })
 
-test('a chat on a machine that runs all four presets offers them, and Auto goes over the mesh', async () => {
+test('a chat on a machine that runs all four presets offers them, and Auto goes to that machine', async () => {
   const chat = await mountRemote({ access: 'operate', permissionPreset: 'none', permissionModes: true })
   try {
     const chip = await permissionsChip(chat)
@@ -1601,24 +1652,24 @@ test('a chat on a machine that runs all four presets offers them, and Auto goes 
     const rows = Array.from(chat.document.querySelectorAll<HTMLButtonElement>('[data-preset-option="true"]'))
     expect(rows.map((row) => row.disabled)).toEqual([false, false, false, false])
     await chat.act(async () => rows[1]!.click())
-    expect(chat.api.meshConversationSetPermissionPreset).toHaveBeenCalledExactlyOnceWith({ key, preset: 'auto' })
+    expect(chat.far['conversation.setPermissionPreset']).toHaveBeenCalledExactlyOnceWith({ key: ref, preset: 'auto' })
     expect((await permissionsChip(chat))?.getAttribute('aria-label')).toBe('Permissions: Auto')
   } finally {
     await chat.unmount()
   }
 })
 
-test("a permission card's Allow and switch allows that request first, then moves the chat over the mesh", async () => {
+test("a permission card's Allow and switch allows that request first, then moves the chat there", async () => {
   const chat = await mountRemote({ access: 'operate', permissionPreset: 'none', permissionModes: true })
   try {
     const order: string[] = []
-    chat.api.meshConversationResolveApproval.mockImplementation(async () => {
+    chat.far['conversation.resolveApproval'].mockImplementation(() => {
       order.push('allow')
-      return { ok: true }
+      return {}
     })
-    chat.api.meshConversationSetPermissionPreset.mockImplementation(async () => {
+    chat.far['conversation.setPermissionPreset'].mockImplementation((asked) => {
       order.push('switch')
-      return { ok: true }
+      return { permissionPreset: asked.preset }
     })
     const menu = Array.from(chat.host.querySelectorAll('button')).find(
       (item) => item.getAttribute('aria-label') === 'More ways to allow',
@@ -1630,12 +1681,12 @@ test("a permission card's Allow and switch allows that request first, then moves
     // Looser than No flag, and runnable there: Auto and Bypass.
     expect(row('Allow and switch to Auto')).toBeDefined()
     await chat.act(async () => row('Allow and switch to Bypass permissions')!.click())
-    expect(chat.api.meshConversationResolveApproval).toHaveBeenCalledExactlyOnceWith({
-      key,
+    expect(chat.far['conversation.resolveApproval']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
       requestId: 'approval-1',
       decision: 'once',
     })
-    expect(chat.api.meshConversationSetPermissionPreset).toHaveBeenCalledExactlyOnceWith({ key, preset: 'bypass' })
+    expect(chat.far['conversation.setPermissionPreset']).toHaveBeenCalledExactlyOnceWith({ key: ref, preset: 'bypass' })
     expect(order).toEqual(['allow', 'switch'])
     expect((await permissionsChip(chat))?.getAttribute('aria-label')).toBe('Permissions: Bypass permissions')
   } finally {
@@ -1646,11 +1697,9 @@ test("a permission card's Allow and switch allows that request first, then moves
 test('a refused allow leaves the chat on the mode it was on', async () => {
   const chat = await mountRemote({ access: 'operate', permissionPreset: 'none', permissionModes: true })
   try {
-    chat.api.meshConversationResolveApproval.mockImplementation(async () => ({
-      ok: false,
-      code: 'invalid',
-      message: 'This request has already been answered.',
-    }))
+    chat.far['conversation.resolveApproval'].mockImplementation(() =>
+      refused('conflict', 'This request has already been answered.'),
+    )
     const menu = Array.from(chat.host.querySelectorAll('button')).find(
       (item) => item.getAttribute('aria-label') === 'More ways to allow',
     )
@@ -1659,7 +1708,7 @@ test('a refused allow leaves the chat on the mode it was on', async () => {
       (item) => item.textContent?.trim() === 'Allow and switch to Auto',
     )
     await chat.act(async () => row!.click())
-    expect(chat.api.meshConversationSetPermissionPreset).not.toHaveBeenCalled()
+    expect(chat.far['conversation.setPermissionPreset']).not.toHaveBeenCalled()
     expect(chat.host.textContent).toContain('This request has already been answered.')
     expect((await permissionsChip(chat))?.getAttribute('aria-label')).toBe('Permissions: No flag')
   } finally {
@@ -1716,7 +1765,7 @@ test('a chat over there that takes that machine\'s skills lists them in the "+" 
 // A server the machine lists for the chat's CLI there, failed when its chat last said.
 const failedServer = { id: 'tracker', transport: 'http', scope: 'user', status: 'failed', error: 'timed out' }
 
-test('a server that failed over there is reconnected from its row, over the mesh, and read again', async () => {
+test('a server that failed over there is reconnected from its row, there, and read again', async () => {
   const chat = await mountRemote({
     access: 'operate',
     sendSkills: true,
@@ -1732,8 +1781,8 @@ test('a server that failed over there is reconnected from its row, over the mesh
     )
     expect(reconnect).toBeDefined()
     await chat.act(async () => reconnect!.click())
-    expect(chat.api.meshConversationMcpServerAction).toHaveBeenCalledExactlyOnceWith({
-      key,
+    expect(chat.far['conversation.mcpServerAction']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
       serverId: 'tracker',
       action: 'reconnect',
     })
@@ -1786,11 +1835,11 @@ test('Restart agent session on a chat over there is carried out by that machine 
     useToastStore.setState({ toasts: [] })
     // The turn still waits on its approval: refused here, as a local chat's is.
     await restartSession(chat)
-    expect(chat.api.meshConversationRestartSession).not.toHaveBeenCalled()
+    expect(chat.far['conversation.restartSession']).not.toHaveBeenCalled()
     expect(await toastTitles()).toContain('The agent is still working')
     await settleTurn(chat)
     await restartSession(chat)
-    expect(chat.api.meshConversationRestartSession).toHaveBeenCalledExactlyOnceWith({ key })
+    expect(chat.far['conversation.restartSession']).toHaveBeenCalledExactlyOnceWith({ key: ref })
     expect(await toastTitles()).toContain('Agent session restarted')
     expect(await toastTitles()).not.toContain('This chat runs on another machine')
   } finally {
@@ -1804,18 +1853,15 @@ test('a machine that had no agent running, or cannot restart one from here, says
   try {
     await settleTurn(chat)
     useToastStore.setState({ toasts: [] })
-    chat.api.meshConversationRestartSession.mockResolvedValueOnce({
-      ok: true,
+    chat.far['conversation.restartSession'].mockReturnValueOnce({
       notice: 'This chat has no agent running. Your next message starts one.',
     })
     await restartSession(chat)
     expect(await toastTitles()).toEqual(['No agent session to restart'])
     useToastStore.setState({ toasts: [] })
-    chat.api.meshConversationRestartSession.mockResolvedValueOnce({
-      ok: false,
-      code: 'unsupported_command',
-      message: "mac-mini cannot restart a chat's agent from here yet.",
-    })
+    chat.far['conversation.restartSession'].mockImplementationOnce(() =>
+      refused('unsupported_command', "mac-mini cannot restart a chat's agent from here yet."),
+    )
     await restartSession(chat)
     expect(useToastStore.getState().toasts.map((toast) => [toast.title, toast.description])).toEqual([
       ['The session was not restarted', "mac-mini cannot restart a chat's agent from here yet."],
@@ -1832,7 +1878,7 @@ test('a machine that does not restart sessions is not asked, and the toast says 
     await settleTurn(chat)
     useToastStore.setState({ toasts: [] })
     await restartSession(chat)
-    expect(chat.api.meshConversationRestartSession).not.toHaveBeenCalled()
+    expect(chat.far['conversation.restartSession']).not.toHaveBeenCalled()
     expect(useToastStore.getState().toasts.map((toast) => [toast.title, toast.description])).toEqual([
       [
         'This chat cannot be restarted from here',
@@ -1864,7 +1910,7 @@ async function withClaudeModes(run: () => Promise<void>) {
   }
 }
 
-test("a chat on a machine that runs its CLI's own modes offers them, and Accept edits goes over the mesh", () =>
+test("a chat on a machine that runs its CLI's own modes offers them, and Accept edits goes to that machine", () =>
   withClaudeModes(async () => {
     const chat = await mountRemote({
       access: 'operate',
@@ -1881,8 +1927,8 @@ test("a chat on a machine that runs its CLI's own modes offers them, and Accept 
       )
       expect(row).toBeDefined()
       await chat.act(async () => row!.click())
-      expect(chat.api.meshConversationSetPermissionPreset).toHaveBeenCalledExactlyOnceWith({
-        key,
+      expect(chat.far['conversation.setPermissionPreset']).toHaveBeenCalledExactlyOnceWith({
+        key: ref,
         preset: 'auto',
         permissionMode: 'acceptEdits',
       })
@@ -1926,7 +1972,7 @@ test('a chat listed on a mode of its CLI shows that mode, and a machine that run
     }
   }))
 
-test('a chat over there runs at the effort it lists, and /effort sets another over the mesh, not as a message', async () => {
+test('a chat over there runs at the effort it lists, and /effort sets another there, not as a message', async () => {
   const chat = await mountRemote({
     access: 'operate',
     reasoningEffort: true,
@@ -1937,8 +1983,8 @@ test('a chat over there runs at the effort it lists, and /effort sets another ov
     await settleTurn(chat)
     await chat.act(async () => chat.type('/effort high'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSetReasoningEffort).toHaveBeenCalledExactlyOnceWith({ key, effort: 'high' })
-    expect(chat.api.meshConversationSend).not.toHaveBeenCalled()
+    expect(chat.far['conversation.setReasoningEffort']).toHaveBeenCalledExactlyOnceWith({ key: ref, effort: 'high' })
+    expect(chat.far['conversation.send']).not.toHaveBeenCalled()
     expect(chat.host.textContent).toContain('Reasoning effort applies from the next turn.')
   } finally {
     await chat.unmount()
@@ -1956,7 +2002,7 @@ test('/effort alone steps on from the effort the machine lists the chat at', asy
     await settleTurn(chat)
     await chat.act(async () => chat.type('/effort'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSetReasoningEffort).toHaveBeenCalledExactlyOnceWith({ key, effort: 'high' })
+    expect(chat.far['conversation.setReasoningEffort']).toHaveBeenCalledExactlyOnceWith({ key: ref, effort: 'high' })
   } finally {
     await chat.unmount()
   }
@@ -1972,7 +2018,7 @@ test('a machine that keeps no effort a change can reach is never asked to change
     await settleTurn(chat)
     await chat.act(async () => chat.type('/effort high'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSetReasoningEffort).not.toHaveBeenCalled()
+    expect(chat.far['conversation.setReasoningEffort']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
   }
@@ -1994,24 +2040,24 @@ const remoteModels: NonNullable<MeshConversation['models']> = {
 const engineChip = (host: HTMLElement) =>
   Array.from(host.querySelectorAll('button')).find((item) => item.getAttribute('aria-label')?.startsWith('Engine:'))
 
-test("a chat on a machine that offers model switching lists that machine's models, and a pick goes over the mesh", async () => {
+test("a chat on a machine that offers model switching lists that machine's models, and a pick goes to that machine", async () => {
   const chat = await mountRemote({ access: 'operate', models: remoteModels, modelSwitch: true })
   try {
     expect(engineChip(chat.host)?.textContent).toContain('Opus')
     await chat.act(async () => engineChip(chat.host)!.click())
     const rows = () => Array.from(chat.document.querySelectorAll<HTMLElement>('[data-model-row="true"]'))
     expect(rows().some((row) => row.textContent?.includes('Sonnet'))).toBe(true)
-    const listReads = chat.api.meshConversationList.mock.calls.length
+    const listReads = chat.far['conversation.list'].mock.calls.length
     await chat.act(async () =>
       rows()
         .find((row) => row.textContent?.includes('Sonnet'))!
         .click(),
     )
-    expect(chat.api.meshConversationSetModel).toHaveBeenCalledExactlyOnceWith({ key, modelId: 'sonnet' })
+    expect(chat.far['conversation.setModel']).toHaveBeenCalledExactlyOnceWith({ key: ref, modelId: 'sonnet' })
     // The chip names the model the machine accepted, the machine is asked
     // again, and its word that the switch waits for the next turn is shown.
     expect(engineChip(chat.host)?.textContent).toContain('Sonnet')
-    expect(chat.api.meshConversationList.mock.calls.length).toBeGreaterThan(listReads)
+    expect(chat.far['conversation.list'].mock.calls.length).toBeGreaterThan(listReads)
     expect(chat.host.textContent).toContain('The new model starts with your next message.')
   } finally {
     await chat.unmount()
@@ -2024,7 +2070,7 @@ test('a machine that does not offer model switching keeps the chat on its model,
     await chat.act(async () => engineChip(chat.host)!.click())
     const rows = Array.from(chat.document.querySelectorAll<HTMLElement>('[data-model-row="true"]'))
     expect(rows.some((row) => row.textContent?.includes('Sonnet'))).toBe(false)
-    expect(chat.api.meshConversationSetModel).not.toHaveBeenCalled()
+    expect(chat.far['conversation.setModel']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
   }
@@ -2033,19 +2079,19 @@ test('a machine that does not offer model switching keeps the chat on its model,
 test('a link that drops does not list the machine; one that comes back live does', async () => {
   const chat = await mountRemote({ access: 'operate' })
   try {
-    const reads = () => chat.api.meshConversationList.mock.calls.length
+    const reads = () => chat.far['conversation.list'].mock.calls.length
     const before = reads()
-    await chat.act(async () =>
-      chat.emit({ type: 'link', state: 'reconnecting', detail: 'Reconnecting to mac-mini.', access: 'operate' }),
-    )
-    await chat.act(async () =>
-      chat.emit({ type: 'link', state: 'offline', detail: 'mac-mini is not answering.', access: 'operate' }),
-    )
+    // This window's connection to that machine drops, then parks with the machine away.
+    await chat.act(async () => chat.studio.setState(key.connectionId, 'reconnecting'))
+    await chat.act(async () => chat.studio.setState(key.connectionId, 'parked'))
     expect(reads()).toBe(before)
-    await chat.act(async () =>
-      chat.emit({ type: 'link', state: 'live', detail: 'Following on mac-mini.', access: 'operate' }),
-    )
+    // What it last said stays on screen, and says so.
+    expect(chat.host.textContent).toContain('mac-mini is not answering. This shows what it last said.')
+    expect(chat.host.textContent).toContain('Let me run it.')
+    await chat.act(async () => chat.studio.setState(key.connectionId, 'open'))
+    await chat.settleReads()
     expect(reads()).toBe(before + 1)
+    expect(chat.host.textContent).not.toContain('mac-mini is not answering.')
   } finally {
     await chat.unmount()
   }
@@ -2059,9 +2105,9 @@ test('a steer to a chat over there clears once its message is in, and a failure 
     steerSends: true,
     capabilities: { ...thread.capabilities!, steer: true },
   })
-  let settleFirst: (result: { ok: false; code: string; message: string }) => void = () => undefined
-  chat.api.meshConversationSend.mockImplementationOnce(
-    () => new Promise((resolve) => (settleFirst = resolve as typeof settleFirst)),
+  let failFirst: (error: StudioError) => void = () => undefined
+  chat.far['conversation.send'].mockImplementationOnce(
+    () => new Promise((_resolve, reject) => (failFirst = reject)),
   )
   try {
     // The card is answered: the turn runs on, and can take a message.
@@ -2070,19 +2116,33 @@ test('a steer to a chat over there clears once its message is in, and a failure 
     )
     await chat.act(async () => chat.type('Keep it to one file'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({ key, message: 'Keep it to one file', steer: true })
-    // Its message arrives over there, with no id of this window's on it.
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
+      message: 'Keep it to one file',
+      steer: true,
+      localTurnId: expect.any(String),
+    })
+    const { localTurnId } = chat.far['conversation.send'].mock.lastCall![0]
+    // Its message arrives over there, under the id this window's send carried.
     await chat.act(async () => {
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'a', steered: true }) })
-      chat.emit({ type: 'event', event: event('user_message', { turnId: 'b', text: 'Keep it to one file' }) })
+      chat.emit({
+        type: 'event',
+        event: event('user_message', { turnId: 'b', text: 'Keep it to one file', localTurnId }),
+      })
       chat.emit({ type: 'event', event: event('turn_started', { turnId: 'b' }) })
     })
     // Delivered, so the next message may steer too rather than wait behind it.
     await chat.act(async () => chat.type('And the docs'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({ key, message: 'And the docs', steer: true })
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
+      message: 'And the docs',
+      steer: true,
+      localTurnId: expect.any(String),
+    })
     // The turn it opened fails: the words are in the chat, not back in the composer.
-    await chat.act(async () => settleFirst({ ok: false, code: 'unavailable', message: 'The turn failed.' }))
+    await chat.act(async () => failFirst(new StudioError('unavailable', 'The turn failed.')))
     expect(chat.draft()).toBe('')
   } finally {
     useWorkspaceStore.getState().setFollowUpBehavior('queue')
@@ -2096,12 +2156,12 @@ test('a paired machine that opens pull requests offers Create PR, and every step
     const createButton = () =>
       Array.from(chat.host.querySelectorAll('button')).find((item) => item.textContent?.includes('Create PR'))
     // The machine is asked whether the chat's checkout is ready, by the chat's key.
-    expect(chat.api.meshConversationPullRequestState).toHaveBeenCalledWith({ key })
+    expect(chat.far['pullRequests.createState']).toHaveBeenCalledWith({ conversation: ref })
     expect(createButton()?.getAttribute('aria-label')).toBe('Create a pull request from this branch')
 
     await chat.act(async () => createButton()!.click())
     // The draft is written over there, with that machine's settings.
-    expect(chat.api.meshConversationPullRequestDraft).toHaveBeenCalledWith(expect.objectContaining({ key }))
+    expect(chat.far['pullRequests.draft']).toHaveBeenCalledWith({ conversation: ref, draftId: expect.any(String) })
     const title = chat.document.querySelector<HTMLInputElement>('input[maxlength="300"]')!
     expect(title.value).toBe('feat: create a pull request from a paired machine')
     // What the checkout over there leaves out is said as it is for a local chat.
@@ -2109,19 +2169,19 @@ test('a paired machine that opens pull requests offers Create PR, and every step
       '2 uncommitted changes',
     )
 
-    const listReads = chat.api.meshConversationList.mock.calls.length
+    const listReads = chat.far['conversation.list'].mock.calls.length
     const create = Array.from(chat.document.querySelectorAll('button')).find((item) => item.textContent === 'Create')
     await chat.act(async () => create!.click())
     const pin = { branch: 'agent/remote-pr', headSha: 'abc1234def' }
-    expect(chat.api.meshConversationPullRequestPush).toHaveBeenCalledWith({ key, pin })
-    expect(chat.api.meshConversationPullRequestCreate).toHaveBeenCalledWith({
-      key,
+    expect(chat.far['pullRequests.push']).toHaveBeenCalledWith({ conversation: ref, pin })
+    expect(chat.far['pullRequests.create']).toHaveBeenCalledWith({
+      conversation: ref,
       title: 'feat: create a pull request from a paired machine',
       body: 'Drafted over there.',
       pin,
     })
     // The machine recorded it; the list is read again and the slot is that pull request's.
-    expect(chat.api.meshConversationList.mock.calls.length).toBeGreaterThan(listReads)
+    expect(chat.far['conversation.list'].mock.calls.length).toBeGreaterThan(listReads)
     expect(chat.host.querySelector('[data-create-pull-request-error]')).toBeNull()
     expect(chat.host.querySelector('[data-panel-pull-request-slot]')?.textContent).toContain('290')
   } finally {
@@ -2136,7 +2196,7 @@ test('no Create PR for a machine that does not open pull requests, or a pairing 
   ]) {
     const chat = await mountRemote({ ...options, listed: { branch: 'agent/remote-pr' } })
     try {
-      expect(chat.api.meshConversationPullRequestState).not.toHaveBeenCalled()
+      expect(chat.far['pullRequests.createState']).not.toHaveBeenCalled()
       expect(
         Array.from(chat.host.querySelectorAll('button')).some((item) => item.textContent?.includes('Create PR')),
       ).toBe(false)
@@ -2161,7 +2221,7 @@ test("an @ in a chat over there searches the chat's folder there, and the send n
     await settleTurn(chat)
     await chat.act(async () => chat.type('@release'))
     await settleSearch(chat)
-    expect(chat.api.meshConversationSearchFiles).toHaveBeenLastCalledWith({ key, query: 'release' })
+    expect(chat.far['conversation.searchFiles']).toHaveBeenLastCalledWith({ key: ref, query: 'release', limit: 50 })
     const option = Array.from(chat.document.querySelectorAll('[role="option"]')).find((row) =>
       row.textContent?.includes('docs/release-notes.md'),
     )
@@ -2170,10 +2230,11 @@ test("an @ in a chat over there searches the chat's folder there, and the send n
     expect(chat.host.querySelector('[aria-label="Remove docs/release-notes.md"]'), 'it waits as a chip').not.toBeNull()
     await chat.act(async () => chat.type('Summarise this'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({
-      key,
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
       message: 'Summarise this',
       mentions: [{ path: 'docs/release-notes.md', kind: 'file' }],
+      localTurnId: expect.any(String),
     })
   } finally {
     await chat.unmount()
@@ -2194,10 +2255,10 @@ test('the "+" schedules a message on a machine that keeps them: it goes there, a
     await chat.act(async () => chat.enter())
     await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
     // Kept and sent over there, not sent now, and nothing is kept here.
-    expect(chat.api.meshConversationSend).not.toHaveBeenCalled()
-    expect(chat.api.meshConversationScheduleSend).toHaveBeenCalledOnce()
-    const asked = chat.api.meshConversationScheduleSend.mock.calls[0]![0]
-    expect(asked).toMatchObject({ key, message: 'Start the migration.' })
+    expect(chat.far['conversation.send']).not.toHaveBeenCalled()
+    expect(chat.far['conversation.scheduleSend']).toHaveBeenCalledOnce()
+    const asked = chat.far['conversation.scheduleSend'].mock.calls[0]![0]
+    expect(asked).toMatchObject({ key: ref, message: 'Start the migration.' })
     expect(asked.sendAt).toBeGreaterThan(Date.now())
     expect(chat.draft()).toBe('')
 
@@ -2213,13 +2274,13 @@ test('the "+" schedules a message on a machine that keeps them: it goes there, a
     const inTray = (label: string) =>
       Array.from(tray()!.querySelectorAll('button')).find((item) => item.textContent?.trim() === label)!
     await chat.act(async () => inTray('Send now').click())
-    expect(chat.api.meshConversationSendScheduledNow).toHaveBeenCalledExactlyOnceWith({ key, scheduledId: 'sm-1' })
+    expect(chat.far['conversation.sendScheduledNow']).toHaveBeenCalledExactlyOnceWith({ key: ref, scheduledId: 'sm-1' })
     await chat.act(async () => inTray('Delete').click())
-    expect(chat.api.meshConversationCancelScheduled).toHaveBeenCalledExactlyOnceWith({ key, scheduledId: 'sm-1' })
+    expect(chat.far['conversation.cancelScheduled']).toHaveBeenCalledExactlyOnceWith({ key: ref, scheduledId: 'sm-1' })
     // Edit takes it back from there, into this composer still set for its time.
     await chat.act(async () => inTray('Edit').click())
     await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
-    expect(chat.api.meshConversationCancelScheduled).toHaveBeenCalledTimes(2)
+    expect(chat.far['conversation.cancelScheduled']).toHaveBeenCalledTimes(2)
     expect(chat.draft()).toBe('Start the migration.')
     expect(chat.host.querySelector('[data-send-time-tag="true"]'), 'still set for its time').not.toBeNull()
     await chat.act(async () => chat.emit({ type: 'scheduled', messages: [] }))
@@ -2232,11 +2293,9 @@ test('the "+" schedules a message on a machine that keeps them: it goes there, a
 test('a scheduled message the machine could not keep stays in the composer, and the refusal is in its words', async () => {
   const chat = await mountRemote({ access: 'operate', scheduledSends: true })
   try {
-    chat.api.meshConversationScheduleSend.mockResolvedValueOnce({
-      ok: false,
-      code: 'unavailable',
-      message: 'The chat is not on this machine any more.',
-    })
+    chat.far['conversation.scheduleSend'].mockImplementationOnce(() =>
+      refused('not_found', 'The chat is not on this machine any more.'),
+    )
     await chat.act(async () => chat.host.querySelector<HTMLButtonElement>('[data-composer-options]')!.click())
     await chat.act(async () =>
       chat.document
@@ -2305,11 +2364,12 @@ test('the sub-agents a machine names reach the panel, each read and answered as 
       { key: { workspaceRoot: '', workspaceId: '', agentId: '' }, turnLimit: 10 },
       () => undefined,
     )
+    await chat.settleReads()
     expect(chat.followed.at(-1)).toEqual({ ...key, agentId: 'remote-child' })
     stop()
     await transport.respond({ sessionId: 'remote:remote-child', requestId: 'approval-9', approved: true })
-    expect(chat.api.meshConversationResolveApproval).toHaveBeenLastCalledWith({
-      key: { ...key, agentId: 'remote-child' },
+    expect(chat.far['conversation.resolveApproval']).toHaveBeenLastCalledWith({
+      key: { ...ref, agentId: 'remote-child' },
       requestId: 'approval-9',
       decision: 'once',
     })
@@ -2359,9 +2419,8 @@ test('a sub-agent over there opens from the panel as a chat of its own: its tran
         childEvent('content_delta', { turnId: 'c1', text: 'The week view overflows.' }),
         childEvent('turn_completed', { turnId: 'c1' }),
       ]
-      chat.emit({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } } as MeshConversationFrame)
-      chat.emit({ type: 'synchronized', seq: events.at(-1)!.seq } as MeshConversationFrame)
-      chat.emit({ type: 'link', state: 'live', detail: 'Following on mac-mini.', access: 'operate' })
+      chat.emit({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } })
+      chat.emit({ type: 'synchronized', seq: events.at(-1)!.seq! })
     })
     expect(chat.host.textContent).toContain('Review the calendar screen, closely')
     expect(chat.host.textContent).toContain('The week view overflows.')
@@ -2376,9 +2435,10 @@ test('a sub-agent over there opens from the panel as a chat of its own: its tran
     // A chat of its own takes a message directly, as `subagent.start`'s do.
     expect(chat.host.querySelector('[data-subagent-blocked]')).toBeNull()
     await chat.sendInTopBox('Check 320px too')
-    expect(chat.api.meshConversationSend).toHaveBeenCalledExactlyOnceWith({
-      key: { ...key, agentId: 'remote-child' },
+    expect(chat.far['conversation.send']).toHaveBeenCalledExactlyOnceWith({
+      key: { ...ref, agentId: 'remote-child' },
       message: 'Check 320px too',
+      localTurnId: expect.any(String),
     })
 
     await chat.act(async () => panel.querySelector<HTMLElement>('[data-panel-parent] button')!.click())
@@ -2402,16 +2462,16 @@ test('what a sub-agent over there asks is answered above its parent’s box, thr
         childEvent('turn_started', { turnId: 'c1' }),
         childEvent('approval_requested', { turnId: 'c1', requestId: 'child-ask', action: 'Bash', summary: 'npm test' }),
       ]
-      chat.emit({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } } as MeshConversationFrame)
-      chat.emit({ type: 'synchronized', seq: events.at(-1)!.seq } as MeshConversationFrame)
+      chat.emit({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } })
+      chat.emit({ type: 'synchronized', seq: events.at(-1)!.seq! })
     })
     const asks = chat.host.querySelector<HTMLElement>('[data-subagent-request="remote-child"]')!
     expect(asks.textContent).toContain('Reviewer is asking')
     expect(asks.textContent).toContain('npm test')
     const allow = [...asks.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Allow once')!
     await chat.act(async () => allow.click())
-    expect(chat.api.meshConversationResolveApproval).toHaveBeenLastCalledWith({
-      key: { ...key, agentId: 'remote-child' },
+    expect(chat.far['conversation.resolveApproval']).toHaveBeenLastCalledWith({
+      key: { ...ref, agentId: 'remote-child' },
       requestId: 'child-ask',
       decision: 'once',
     })
@@ -2448,7 +2508,7 @@ test('a sub-agent read from a pairing that may only read cannot be answered from
 })
 
 /** What a machine says of its usage limits while the chat's session limit is used up. */
-function sessionLimitReached(resumeAt: number | null = null): MeshConversationFrame {
+function sessionLimitReached(resumeAt: number | null = null): PlayedFrame {
   const resetsAt = Date.now() + 2 * 60 * 60_000
   return {
     type: 'usageLimits',
@@ -2483,10 +2543,10 @@ test('a chat over there that a usage limit stopped says so in the tray, and its 
     const mark = chat.host.querySelector<HTMLElement>('[data-composer-usage-limits="claude"]')
     expect(mark?.getAttribute('aria-label')).toContain('on mac-mini')
     await chat.act(async () => chat.button('Resume at reset')!.click())
-    expect(chat.api.meshConversationUsageLimitResume).toHaveBeenCalledExactlyOnceWith({ key, action: 'schedule' })
+    expect(chat.far['conversation.usageLimitResume']).toHaveBeenCalledExactlyOnceWith({ key: ref, action: 'schedule' })
     await chat.act(async () => chat.button('Always resume at reset')!.click())
-    expect(chat.api.meshConversationUsageLimitResume).toHaveBeenLastCalledWith({
-      key,
+    expect(chat.far['conversation.usageLimitResume']).toHaveBeenLastCalledWith({
+      key: ref,
       action: 'schedule',
       always: true,
     })
@@ -2494,7 +2554,7 @@ test('a chat over there that a usage limit stopped says so in the tray, and its 
     await chat.act(async () => chat.emit(sessionLimitReached(Date.now() + 2 * 60 * 60_000)))
     expect(chat.host.textContent).toContain('Resumes at')
     await chat.act(async () => chat.button('Cancel')!.click())
-    expect(chat.api.meshConversationUsageLimitResume).toHaveBeenLastCalledWith({ key, action: 'cancel' })
+    expect(chat.far['conversation.usageLimitResume']).toHaveBeenLastCalledWith({ key: ref, action: 'cancel' })
   } finally {
     await chat.unmount()
   }
@@ -2506,7 +2566,7 @@ test('a machine that does not search its chats offers no @, and nothing is asked
     await settleTurn(chat)
     await chat.act(async () => chat.type('@release'))
     await settleSearch(chat)
-    expect(chat.api.meshConversationSearchFiles).not.toHaveBeenCalled()
+    expect(chat.far['conversation.searchFiles']).not.toHaveBeenCalled()
     expect(chat.document.querySelector('[aria-label="Mention a workspace file"]')).toBeNull()
   } finally {
     await chat.unmount()
@@ -2514,13 +2574,14 @@ test('a machine that does not search its chats offers no @, and nothing is asked
 })
 
 test('the `/` menu of a chat over there lists what its CLI runs there, asked once the menu opens', async () => {
-  const chat = await mountRemote({ access: 'operate', commands: true })
+  // Every Studio that serves its chats lists a chat CLI's commands by the chat's key.
+  const chat = await mountRemote({ access: 'operate' })
   try {
     await settleTurn(chat)
-    expect(chat.api.meshConversationCommands, 'nothing is asked as the chat opens').not.toHaveBeenCalled()
+    expect(chat.far['conversation.listCommands'], 'nothing is asked as the chat opens').not.toHaveBeenCalled()
     await chat.act(async () => chat.type('/rev'))
     await settleSearch(chat)
-    expect(chat.api.meshConversationCommands).toHaveBeenCalledWith({ key })
+    expect(chat.far['conversation.listCommands']).toHaveBeenCalledWith({ key: ref })
     expect(chat.document.body.textContent).toContain('review-pr')
   } finally {
     await chat.unmount()
@@ -2538,11 +2599,12 @@ test("a $ in a chat over there lists that machine's skills, and the send carries
     await chat.act(async () => chat.enter())
     await chat.act(async () => chat.type('Why does it flake?'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({
-      key,
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
       message: 'Why does it flake?',
-      // As the request names it; main sends that machine its id.
-      skills: [{ id: 'systematic-debugging' }],
+      // By its id there, which that machine resolves against its own folder.
+      skills: ['systematic-debugging'],
+      localTurnId: expect.any(String),
     })
   } finally {
     await chat.unmount()
@@ -2559,11 +2621,22 @@ test('a file dropped on a chat over there that takes files waits as a card, and 
     expect(chat.composer().textContent, 'the path is not typed into the message').not.toContain('/Users/dev')
     await chat.act(async () => chat.type('Read the brief'))
     await chat.act(async () => chat.enter())
-    expect(chat.api.meshConversationSend).toHaveBeenLastCalledWith({
-      key,
-      message: 'Read the brief',
-      files: [{ path: '/Users/dev/Desktop/brief.pdf' }],
+    // Its bytes are read here by the shell, from the path this window attached,
+    // and go up on the connection; that machine never sees a path of this disk.
+    expect(chat.readAttachedFile).toHaveBeenCalledExactlyOnceWith('/Users/dev/Desktop/brief.pdf')
+    expect(chat.far['uploads.begin']).toHaveBeenCalledExactlyOnceWith({
+      mediaType: 'application/octet-stream',
+      byteLength: 5,
+      name: 'brief.pdf',
+      purpose: 'attachment',
     })
+    expect(chat.far['conversation.send']).toHaveBeenLastCalledWith({
+      key: ref,
+      message: 'Read the brief',
+      uploadIds: ['upload-1'],
+      localTurnId: expect.any(String),
+    })
+    expect(JSON.stringify(chat.studio.calls)).not.toContain('/Users/dev')
   } finally {
     await chat.unmount()
   }

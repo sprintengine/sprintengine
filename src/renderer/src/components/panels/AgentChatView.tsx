@@ -3608,9 +3608,13 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Whether this chat's permission preset can be changed from its picker: the
   // same gate the separate pill used to have. A preset the provider cannot run
   // stays listed, dimmed, with the reason.
+  // A chat whose server lists its session (one not started here) shows the
+  // preset that listing names, and none where it names none: a picker
+  // showing a guess would be worse than none.
   const permissionsEditable =
     operate &&
     !isSubagent &&
+    (hostSession === undefined || session?.permissionPreset !== undefined) &&
     Boolean(capabilities?.approvals || capabilities?.permissionPresets?.length)
   const presetRefusals = chatPermissionRefusals({
     cli: chatCli,

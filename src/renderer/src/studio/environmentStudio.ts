@@ -100,8 +100,11 @@ const registries = new WeakMap<object, Registry>()
 type EnvironmentStudioSetup = {
   /** A WebSocket other than the global one. */
   WebSocket?: StudioWebSocketConstructor
-  /** A client of its own for each route, in place of a connection (a test's double). */
-  connect?: (route: string) => Promise<StudioClient>
+  /**
+   * A client of its own for each route, in place of a connection (a test's
+   * double), told how to say its state moved as a connection's would.
+   */
+  connect?: (route: string, onState: (state: StudioClientState) => void) => Promise<StudioClient>
 }
 
 const setups = new WeakMap<object, EnvironmentStudioSetup>()
@@ -185,8 +188,11 @@ function open(api: EnvironmentApi, route: string): Held {
   const setup = setups.get(api) ?? {}
   const states = new Set<(state: StudioClientState) => void>()
   const WebSocket = setup.WebSocket
+  const tell = (state: StudioClientState): void => {
+    for (const listener of [...states]) listener(state)
+  }
   const opening = setup.connect
-    ? setup.connect(route)
+    ? setup.connect(route, tell)
     : connect({
         client: { name: 'Studio window' },
         transport: webSocketTransport({
@@ -202,7 +208,7 @@ function open(api: EnvironmentApi, route: string): Held {
         // Another machine: this one being offline does say it cannot be reached.
         parkWhenOffline: true,
         onStateChange: (state, error) => {
-          for (const listener of [...states]) listener(state)
+          tell(state)
           // Parked on its credential: the route is gone there. Nothing to wait for.
           if (state === 'parked' && error && error.code !== 'offline' && registry.held.get(route) === entry)
             close(api, route)
