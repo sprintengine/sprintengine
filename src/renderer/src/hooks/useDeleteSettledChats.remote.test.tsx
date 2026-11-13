@@ -192,7 +192,7 @@ test('an SSH machine’s settled chat is planned and deleted by that machine’s
   })
   await settle()
   const confirm = [...document.body.querySelectorAll('button')].find((button) =>
-    /^Delete/u.test(button.textContent ?? ''),
+    (button.textContent ?? '').startsWith('Delete'),
   )
   await act(async () => confirm!.click())
   const deleted = await done!
