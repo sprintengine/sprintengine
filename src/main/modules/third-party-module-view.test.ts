@@ -161,34 +161,56 @@ test('third-party-module-view', async () => {
     )
   }
 
+  // However a loader or a module words its error, a place on this disk is not
+  // passed on: quoted, in a stack frame, after a colon, as a file URL, with
+  // either Windows separator, or a UNC share. Words without one pass as written.
   function testLaunchErrorsAreSanitized(): void {
-    recordThirdPartyMainLaunchReport(['broken-main'], {
-      loaded: [],
-      manifestOnly: [],
-      disabled: [],
-      sidecars: [],
-      errors: [
+    const leaking = [
+      "Cannot find module '/Users/example/.sprintengine/modules/broken-main/main.cjs'",
+      'boom\n    at registerMain (/Users/example/modules/broken-main/main.cjs:3:9)',
+      'config missing at:/Users/example/.config/broken.json',
+      'Failed to load file:///Users/example/modules/broken-main/main.mjs',
+      'Cannot read C:/Users/example/modules/broken-main/main.cjs',
+      'Cannot read C:\\Users\\example\\modules\\broken-main\\main.cjs',
+      'Cannot read \\\\build-box\\share\\main.cjs',
+    ]
+    for (const message of leaking) {
+      recordThirdPartyMainLaunchReport(['broken-main'], {
+        loaded: [],
+        manifestOnly: [],
+        disabled: [],
+        sidecars: [],
+        errors: [{ id: 'broken-main', message }],
+      })
+      assert.deepEqual(
+        toThirdPartyModuleView(
+          installedModule({ id: 'broken-main', trust: 'trusted', main: 'main.cjs' }),
+          readThirdPartyMainLaunchSnapshot(),
+        ).launch,
         {
-          id: 'broken-main',
-          message: "Cannot find module '/Users/example/.sprintengine/modules/broken-main/main.cjs'",
+          status: 'launch_error',
+          hasMainEntry: true,
+          expectedToLoad: false,
+          mainLoaded: false,
+          rendererEntry: { availability: 'none' },
+          message: 'Module main entry failed during startup.',
         },
-      ],
-    })
-
-    assert.deepEqual(
-      toThirdPartyModuleView(
-        installedModule({ id: 'broken-main', trust: 'trusted', main: 'main.cjs' }),
-        readThirdPartyMainLaunchSnapshot(),
-      ).launch,
-      {
-        status: 'launch_error',
-        hasMainEntry: true,
-        expectedToLoad: false,
-        mainLoaded: false,
-        rendererEntry: { availability: 'none' },
-        message: 'Module main entry failed during startup.',
-      },
-    )
+        message,
+      )
+    }
+    for (const message of [
+      'entry.main must export a callable registerMain(host).',
+      'and/or 1/2 failed: see https://example.com/help',
+    ]) {
+      recordThirdPartyMainLaunchReport(['broken-main'], {
+        loaded: [],
+        manifestOnly: [],
+        disabled: [],
+        sidecars: [],
+        errors: [{ id: 'broken-main', message }],
+      })
+      assert.equal(readThirdPartyMainLaunchSnapshot().errors.get('broken-main'), message)
+    }
   }
 
   // A module built for a host API this app does not provide loads neither

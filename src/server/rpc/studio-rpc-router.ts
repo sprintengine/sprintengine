@@ -36,6 +36,7 @@ import { cliForConversationProvider } from '../../shared/conversation-harness'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
+import { sanitizeEntryMessage } from '../../shared/modules/entry-messages'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
 import type { ConversationEvent, ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
@@ -2264,14 +2265,32 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
 type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
 
-/** The installed extensions with each unreadable folder named by its last segment, not its place on this disk. */
+/**
+ * The installed extensions with each unreadable folder named, not placed: its
+ * `path` (the folder, or the `manifest.json` in it) becomes the folder's name,
+ * and an issue's words that still name a place on this disk (a read error's
+ * `open '/…/manifest.json'`) say the folder's name in its stead, or a plain
+ * sentence when some other path remains.
+ */
 function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyModuleListResult {
   return {
     ...installed,
-    rejected: installed.rejected.map((entry) => ({
-      ...entry,
-      path: entry.path.split(/[\\/]/u).filter(Boolean).at(-1) ?? '',
-    })),
+    rejected: installed.rejected.map((entry) => {
+      const segments = entry.path.split(/[\\/]/u).filter(Boolean)
+      if (segments.length > 1 && segments.at(-1) === 'manifest.json') segments.pop()
+      const name = segments.at(-1) ?? ''
+      const folder = name ? entry.path.slice(0, entry.path.lastIndexOf(name) + name.length) : ''
+      return {
+        path: name,
+        issues: entry.issues.map((issue) => ({
+          ...issue,
+          message: sanitizeEntryMessage(
+            folder ? issue.message.replaceAll(folder, name) : issue.message,
+            'Studio could not read this folder.',
+          ),
+        })),
+      }
+    }),
   }
 }
 
