@@ -1345,7 +1345,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!chat.exportSource) return unserved('conversation.exportPage')
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      const held = `${grant.clientId}\u0000${exportId}`
+      // Held for this client and this chat: an export id names nothing of another's.
+      const held = [grant.clientId, key.workspaceId, key.agentId, exportId].join('\u0000')
       const clock = now()
       for (const [id, kept] of exportsHeld) if (clock - kept.at > EXPORT_HELD_MS) exportsHeld.delete(id)
       let kept = exportsHeld.get(held)
