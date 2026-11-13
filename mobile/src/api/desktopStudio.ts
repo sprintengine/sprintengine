@@ -88,6 +88,12 @@ async function mintTicket(target: DesktopTarget, fetchImpl: typeof fetch): Promi
 }
 
 const clients = new Map<string, Promise<StudioClient>>();
+/** Who wants to hear that a desktop's connection is back after a drop, by desktop and pairing. */
+const backListeners = new Map<string, Set<() => void>>();
+
+function clientKey(target: DesktopTarget): string {
+  return `${target.baseUrl}\n${target.deviceToken}`;
+}
 
 /**
  * The desktop's Studio client, connecting on the first ask. Shared per desktop
@@ -95,12 +101,24 @@ const clients = new Map<string, Promise<StudioClient>>();
  * the next ask connects again.
  */
 export function desktopStudio(target: DesktopTarget, options: DesktopStudioOptions = {}): Promise<StudioClient> {
-  const key = `${target.baseUrl}\n${target.deviceToken}`;
+  const key = clientKey(target);
   const held = clients.get(key);
   if (held) return held;
   const fetchImpl = options.fetchImpl ?? fetch;
+  // A push stream replays nothing of what was said while the socket was down,
+  // so whoever follows one is told when it is back, to read again.
+  let down = false;
   const opening = connect({
     client: { name: "SprintEngine Studio phone" },
+    onStateChange: (state) => {
+      if (state !== "open") {
+        down = true;
+        return;
+      }
+      if (!down) return;
+      down = false;
+      for (const listener of [...(backListeners.get(key) ?? [])]) listener();
+    },
     transport: webSocketTransport({
       ticket: () => mintTicket(target, fetchImpl),
       WebSocket: options.WebSocket ?? noOriginWebSocket,
@@ -119,6 +137,22 @@ export function desktopStudio(target: DesktopTarget, options: DesktopStudioOptio
     },
   );
   return opening;
+}
+
+/**
+ * Hear each time this desktop's connection is back after a drop, while the
+ * returned stop is not called. Nothing said on a push topic while it was down
+ * is replayed, so a follower reads again here.
+ */
+export function onDesktopStudioBack(target: DesktopTarget, listener: () => void): () => void {
+  const key = clientKey(target);
+  const listeners = backListeners.get(key) ?? new Set<() => void>();
+  backListeners.set(key, listeners);
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && backListeners.get(key) === listeners) backListeners.delete(key);
+  };
 }
 
 /** Close every desktop's connection: the phone unpaired, or a test is done. */

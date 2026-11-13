@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -131,4 +131,30 @@ test('a narrowed pairing is refused at its next request, and a removed one is cl
   assert.equal(await refusalOf(phone.rpc['backlog.list']({})), 'scope_required')
   r.devices.revokeDevice(paired.id)
   await until(() => phone.state !== 'open', 'the revoked connection to close')
+})
+
+// A read-only file refuses a write only where permissions bind: not on Windows, nor for root.
+const permissionsBind = process.platform !== 'win32' && process.getuid?.() !== 0
+
+test.skipIf(!permissionsBind)('a change the filesystem refuses is said without the folder it failed in', async () => {
+  const root = await project()
+  const reads = createStudioPhoneReads({ roots: () => [root], pullRequests: reader })
+  const [listed] = await reads.backlog.list()
+  assert.ok(listed)
+  // The item and its folder cannot be written: the write fails with the file's path in its words.
+  const folder = join(root, 'backlog')
+  await chmod(join(folder, 'fix-login.md'), 0o444)
+  await chmod(folder, 0o555)
+  cleanups.push(async () => {
+    await chmod(folder, 0o755)
+    await chmod(join(folder, 'fix-login.md'), 0o644)
+  })
+  const refused = await reads.backlog.update({
+    workspaceId: listed.workspaceId,
+    relativePath: 'backlog/fix-login.md',
+    status: 'ready',
+  })
+  assert.equal(refused.ok, false)
+  assert.ok(!refused.ok && !refused.message.includes(root), refused.ok ? '' : refused.message)
+  assert.ok(!refused.ok && !refused.message.includes(tmpdir()), refused.ok ? '' : refused.message)
 })

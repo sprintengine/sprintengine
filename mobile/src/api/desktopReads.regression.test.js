@@ -112,3 +112,24 @@ test("the desktop says when a backlog moved, while the phone listens, and not af
   assert.equal(desktop.subscriptions.size, 0, "let go of");
   closeDesktopStudios();
 });
+
+test("back from a dropped connection, the phone reads the backlog again: nothing said while it was down is replayed", async () => {
+  const desktop = desktopWith(["backlog:read"]);
+  const options = { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket };
+  const where = target();
+  let heard = 0;
+  const stop = watchDesktopBacklog(where, () => (heard += 1), options);
+  for (let tries = 0; tries < 50 && desktop.subscriptions.size === 0; tries++) await tick();
+  const sockets = desktop.socketUrls.length;
+  desktop.cut();
+  for (let tries = 0; tries < 400 && heard === 0; tries++) await tick();
+  assert.ok(desktop.socketUrls.length > sockets, "connected again");
+  assert.equal(heard, 1, "told to read again once the connection is back");
+  stop();
+  desktop.cut();
+  await tick();
+  for (let tries = 0; tries < 100 && desktop.socketUrls.length === sockets + 1; tries++) await tick();
+  await tick();
+  assert.equal(heard, 1, "not after it is let go of");
+  closeDesktopStudios();
+});

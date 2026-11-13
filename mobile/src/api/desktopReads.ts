@@ -8,7 +8,7 @@ import {
   type StudioPullRequestDiffPage,
   type StudioShare,
 } from "../../../packages/studio-protocol/src/public";
-import { desktopStudio, studioFailure, type DesktopStudioOptions, type DesktopTarget } from "./desktopStudio";
+import { desktopStudio, onDesktopStudioBack, studioFailure, type DesktopStudioOptions, type DesktopTarget } from "./desktopStudio";
 import type { ApiResult } from "./types";
 
 // What the phone reads of a paired desktop beside its chats, on the desktop's
@@ -102,8 +102,10 @@ export function updateDesktopBacklogItem(
 
 /**
  * Hear the desktop say its backlogs moved, while the returned stop is not
- * called. The subscription comes back with the connection by itself; a
- * pairing that may not read the backlog hears nothing.
+ * called. The subscription comes back with the connection by itself, and
+ * nothing said while the socket was down is replayed, so a connection back
+ * after a drop is heard as a change too. A pairing that may not read the
+ * backlog hears nothing.
  */
 export function watchDesktopBacklog(
   target: DesktopTarget,
@@ -112,16 +114,21 @@ export function watchDesktopBacklog(
 ): () => void {
   let stopped = false;
   let unsubscribe: (() => void) | null = null;
+  let stopBack: (() => void) | null = null;
   void desktopStudio(target, options).then(
     (client) => {
       if (stopped || !may(client, "backlog", "backlog.list")) return;
       unsubscribe = client.subscribe("backlog.changed", {}, { onPayload: () => onChanged() });
+      stopBack = onDesktopStudioBack(target, () => {
+        if (!stopped) onChanged();
+      });
     },
     () => undefined,
   );
   return () => {
     stopped = true;
     unsubscribe?.();
+    stopBack?.();
   };
 }
 

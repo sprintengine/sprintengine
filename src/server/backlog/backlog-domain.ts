@@ -89,13 +89,18 @@ function tokenized(workspace: StudioBacklogWorkspace): StudioBacklogWorkspace {
   })
 }
 
+/** A refusal as it crosses: a message from the filesystem names the file it failed on, so its paths are redacted. */
+function refusal(code: Refusal['code'], message: string): Refusal {
+  return { ok: false, code, message: deepRedactLocalPaths(message) }
+}
+
 function refusalOf(error: unknown): Refusal {
   if (error instanceof MobileControlCommandError) {
-    if (error.code === 'path_not_allowed') return { ok: false, code: 'not_found', message: error.message }
-    if (error.code === 'invalid_payload') return { ok: false, code: 'invalid_params', message: error.message }
-    return { ok: false, code: 'unavailable', message: error.message }
+    if (error.code === 'path_not_allowed') return refusal('not_found', error.message)
+    if (error.code === 'invalid_payload') return refusal('invalid_params', error.message)
+    return refusal('unavailable', error.message)
   }
-  return { ok: false, code: 'unavailable', message: error instanceof Error ? error.message : String(error) }
+  return refusal('unavailable', error instanceof Error ? error.message : String(error))
 }
 
 export function createStudioPhoneReads(deps: StudioPhoneReadsDeps): StudioPhoneReads {
@@ -149,7 +154,7 @@ export function createStudioPhoneReads(deps: StudioPhoneReadsDeps): StudioPhoneR
       )
     for (const mutation of mutations) {
       const result = await mutation()
-      if (!result.ok) return { ok: false, code: 'invalid_params', message: result.message }
+      if (!result.ok) return refusal('invalid_params', result.message)
     }
     const after = await readOne(root)
     const item = after?.items.find((entry) => entry.relativePath.toLowerCase() === relativePath.toLowerCase()) ?? null
