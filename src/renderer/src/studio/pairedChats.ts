@@ -3,6 +3,8 @@ import { isConversationHighlightColor } from '../../../../packages/conversation-
 import {
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CONVERSATIONS_CAPABILITY,
+  studioGrantAllows,
   STUDIO_CHAT_SEARCH_MAX_CHARS,
   STUDIO_CHAT_SEARCH_MIN_CHARS,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
@@ -13,6 +15,7 @@ import type {
   MeshChangeConversationResult,
   MeshConversationChange,
   MeshConversationDeletePlanResult,
+  MeshConversationListResult,
   MeshConversationSearchResult,
   MeshRevokeApprovalRuleResult,
   MeshSettleConversationResult,
@@ -32,6 +35,31 @@ const lifecycleUnsupported = (doing: string) => (machineName: string) => ({
   code: 'lifecycle_unsupported',
   message: `${machineName} cannot ${doing} from here yet. Update SprintEngine Studio there to do it from here.`,
 })
+
+/**
+ * The machine's chats, as its Studio lists them (`conversation.list`), and
+ * what this pairing may do with them there: drive them where its grant
+ * reaches a send, else follow them. Asked on the window's one connection to
+ * that machine, the one its chat source follows.
+ */
+export async function listPairedChats(machine: PairedMachine): Promise<MeshConversationListResult> {
+  const answer = await askEnvironment(
+    pairedTarget(machine),
+    STUDIO_CONVERSATIONS_CAPABILITY,
+    (machineName) => ({
+      code: 'conversations_unsupported',
+      message: `${machineName} cannot list its chats here yet. Update SprintEngine Studio there to see them from here.`,
+    }),
+    async (client) => ({ listed: await client.request('conversation.list', {}), grant: client.welcome?.grant ?? null }),
+  )
+  if (!answer.ok) return answer
+  const { listed, grant } = answer.value
+  return {
+    ok: true,
+    conversations: listed.conversations,
+    access: grant && studioGrantAllows(grant, 'conversation.send') ? 'operate' : 'read',
+  }
+}
 
 /** Settle a chat there, or bring it back with `settled: false`. */
 export async function settlePairedChat(

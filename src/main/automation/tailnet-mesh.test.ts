@@ -225,39 +225,6 @@ test('tailnet-mesh', async () => {
     }
   })
 
-  // The change feed (2026-09-05): pairing opens a watch on the machine, and the
-  // machine saying "workspaces changed" or "conversations changed" lands here as
-  // a mesh event a surface re-reads on — no timer, no browse in between.
-  // Forgetting the machine closes the watch, so a forgotten machine cannot keep
-  // pushing.
-  test("a paired machine's change feed lands as remote-changed events, and forgetting closes it", async () => {
-    const harness = await startHarness()
-    try {
-      const connectionId = await harness.pair(['workspace:read', 'conversation:read'])
-      for (let i = 0; i < 100 && harness.server.eventStreamCount() === 0; i += 1) await delay(20)
-      assert.equal(harness.server.eventStreamCount(), 1, 'pairing opened one watch on the machine')
-
-      const changes = () => harness.events.flatMap((event) => (event.kind === 'remote-changed' ? [event] : []))
-      harness.server.notifyWorkspacesChanged()
-      harness.server.notifyConversationsChanged()
-      for (let i = 0; i < 100 && changes().length < 2; i += 1) await delay(20)
-      assert.deepEqual(
-        changes().map((event) => [event.connectionId, event.what]),
-        [
-          [connectionId, 'workspaces'],
-          [connectionId, 'conversations'],
-        ],
-        'each push became a mesh event',
-      )
-
-      harness.mesh.forget(connectionId)
-      for (let i = 0; i < 100 && harness.server.eventStreamCount() > 0; i += 1) await delay(20)
-      assert.equal(harness.server.eventStreamCount(), 0, 'forgetting the machine closed its watch')
-    } finally {
-      await harness.close()
-    }
-  })
-
   // The endpoint parser is the boundary where a stored string becomes an address
   // this machine dials, so what it will and will not read is worth pinning.
   test('endpoints are read exactly, or refused', async () => {
@@ -270,10 +237,6 @@ test('tailnet-mesh', async () => {
     assert.equal(parseTailnetEndpoint('100.64.0.5:notaport'), null)
     assert.equal(parseTailnetEndpoint('100.64.0.5:70000'), null)
   })
-
-  function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
-  }
 
   // The whole-app broadcast (remote-sessions-ux / tailnet-live-state-push):
   // machine paired and forgotten, and a snapshot read that agrees with the

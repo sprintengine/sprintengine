@@ -40,7 +40,7 @@ import type { ConversationTransport } from './conversationTransport'
 // - A picture goes ahead of the send that carries it, in pieces a frame can
 //   hold (`uploads.*`); the send names the uploads.
 
-type ClientSource = () => Promise<StudioClient>
+export type ClientSource = () => Promise<StudioClient>
 
 // Refusals about the connection rather than the request: the window's client
 // reconnects by itself, so they are told as one calm sentence instead of the
@@ -70,15 +70,25 @@ const messageOf = (error: unknown): string =>
       ? error.message
       : String(error)
 
-// How long a push stream waits before following a client that replaced one
-// that closed, or retrying one that could not connect.
+// How long a push stream first waits before following a client that replaced
+// one that closed, or retrying one that could not connect. Each failure in a
+// row doubles the wait, up to a minute: a connection refused or closed again
+// and again (a machine away, a socket evicted) is not asked every moment.
 const PUSH_FOLLOW_RETRY_MS = 2_000
+const PUSH_FOLLOW_MAX_MS = 60_000
+// How long it waits at once where the Studio is older than the protocol (a
+// paired desktop not yet updated), whether the connect said so or the stream
+// ended with it: what reads it says so in words (`environmentStudioOutdated`).
+const PUSH_FOLLOW_OUTDATED_MS = 60_000
+// A stream that stayed up this long ended for a reason of its own, not as one
+// more failure in a row: the next one waits the first wait again.
+const PUSH_FOLLOW_STEADY_MS = 30_000
 
 // Pictures go up a few at a time: each is several requests, and a send that
 // carries many must not crowd out the reads the rest of the window makes.
 const UPLOADS_AT_ONCE = 3
 
-async function ask<M extends StudioMethod>(
+export async function ask<M extends StudioMethod>(
   client: ClientSource,
   method: M,
   params: StudioMethodParams<M>,
@@ -101,7 +111,7 @@ const HOLD_REPLAYS = 3
 const HOLD_REPLAY_MS = 500
 
 /** `ask`, asked again under the same params (its command id among them) while the answer is lost with the connection. */
-async function askUntilAnswered<M extends StudioMethod>(
+export async function askUntilAnswered<M extends StudioMethod>(
   client: ClientSource,
   method: M,
   params: StudioMethodParams<M>,
@@ -119,7 +129,7 @@ async function askUntilAnswered<M extends StudioMethod>(
 }
 
 /** A call whose answer has an `ok` of its own: a refused request reads as that call failing. */
-async function outcome<T>(work: () => Promise<T>): Promise<T | { ok: false; message: string }> {
+export async function outcome<T>(work: () => Promise<T>): Promise<T | { ok: false; message: string }> {
   try {
     return await work()
   } catch (error) {
@@ -127,14 +137,14 @@ async function outcome<T>(work: () => Promise<T>): Promise<T | { ok: false; mess
   }
 }
 
-const refOf = (key: ConversationKey): ConversationRef => ({
+const keyRef = (key: ConversationKey): ConversationRef => ({
   workspaceId: key.workspaceId,
   agentId: key.agentId,
   workspaceRoot: key.workspaceRoot,
 })
 
 /** A command's answer as a transport says it: accepted (with its notice), or why not. */
-const commanded = (work: () => Promise<{ notice?: string }>) =>
+export const commanded = (work: () => Promise<{ notice?: string }>) =>
   outcome(async () => {
     const answer = await work()
     return { ok: true as const, ...(answer.notice ? { notice: answer.notice } : {}) }
@@ -147,15 +157,21 @@ function base64Bytes(base64: string): number {
 }
 
 /**
- * Stage a picture in pieces and answer its upload id. Pieces are cut on
- * whole base64 quanta, so each is base64 on its own and none is decoded here.
+ * Stage a picture (or, `purpose: 'attachment'`, a file a keyed send carries)
+ * in pieces and answer its upload id. Pieces are cut on whole base64 quanta,
+ * so each is base64 on its own and none is decoded here.
  */
-async function upload(client: ClientSource, attachment: ConversationImageAttachment): Promise<string> {
+export async function upload(
+  client: ClientSource,
+  attachment: Pick<ConversationImageAttachment, 'mediaType' | 'dataBase64' | 'name'>,
+  purpose?: 'attachment',
+): Promise<string> {
   const byteLength = base64Bytes(attachment.dataBase64)
   const begun = await ask(client, 'uploads.begin', {
     mediaType: attachment.mediaType,
     byteLength,
     ...(attachment.name === undefined ? {} : { name: attachment.name }),
+    ...(purpose ? { purpose } : {}),
   })
   const quanta = Math.max(1, Math.floor(begun.chunkBytes / 3))
   const step = quanta * 4
@@ -197,40 +213,57 @@ function followPush<T extends 'conversation.commands' | 'conversation.events'>(
   let stop: (() => void) | null = null
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | null = null
-  const later = (run: () => void): void => {
+  // Failures in a row: a connect refused, or a stream that ended soon after it began.
+  let failures = 0
+  const later = (run: () => void, error?: unknown): void => {
     if (stopped) return
+    failures += 1
+    const after =
+      error instanceof StudioError && error.code === 'outdated'
+        ? PUSH_FOLLOW_OUTDATED_MS
+        : Math.min(PUSH_FOLLOW_RETRY_MS * 2 ** (failures - 1), PUSH_FOLLOW_MAX_MS)
     timer = setTimeout(() => {
       timer = null
       run()
-    }, PUSH_FOLLOW_RETRY_MS)
+    }, after)
   }
   const follow = (): void =>
     void client().then(
       (connected) => {
         if (stopped) return
         const waitOut = (): void => {
-          if (connected.state === 'parked') later(waitOut)
-          else if (connected.state === 'closed' || connected.state === 'open') follow()
-          else later(waitOut)
+          // A parked client (a refused ticket) is waited out without asking
+          // for it, which would wake it only to be refused again.
+          if (connected.state === 'parked' || (connected.state !== 'closed' && connected.state !== 'open'))
+            timer = setTimeout(() => {
+              timer = null
+              if (!stopped) waitOut()
+            }, PUSH_FOLLOW_RETRY_MS)
+          else follow()
         }
+        const since = Date.now()
         stop = connected.subscribe(
           topic,
           {},
           {
-            onPayload: (payload) => listener(payload as StudioTopicPayload<T>),
-            onEnd: () => {
+            onPayload: (payload) => {
+              failures = 0
+              listener(payload as StudioTopicPayload<T>)
+            },
+            onEnd: (error) => {
               stop = null
+              if (Date.now() - since >= PUSH_FOLLOW_STEADY_MS) failures = 0
               // Read once the client has said why: a park or a close ends its
               // streams first and sets its state after.
               queueMicrotask(() => {
-                if (connected.state === 'closed') later(follow)
-                else if (connected.state !== 'open') later(waitOut)
+                if (connected.state === 'closed') later(follow, error)
+                else if (connected.state !== 'open') waitOut()
               })
             },
           },
         )
       },
-      () => later(follow),
+      (error: unknown) => later(follow, error),
     )
   follow()
   return () => {
@@ -395,7 +428,7 @@ export function createStudioChatServices(
     planDocument: (input) =>
       outcome(() =>
         ask(client, 'conversation.planDocument', {
-          key: refOf(input),
+          key: keyRef(input),
           plan: input.plan,
           ...(input.title === undefined ? {} : { title: input.title }),
           ...(input.planFilePath === undefined ? {} : { planFilePath: input.planFilePath }),
@@ -439,7 +472,18 @@ export type StudioTransportParts = Omit<ConversationTransport, 'capabilities' | 
   >
 
 /** A conversation on this window's Studio, over the protocol. */
-export function createStudioConversationParts(client: ClientSource): StudioTransportParts {
+export function createStudioConversationParts(
+  client: ClientSource,
+  options: {
+    /**
+     * The chat a view's key names on that Studio, where it is not the key
+     * itself: a paired desktop's chat is drawn in a pane of a workspace here,
+     * and is that machine's chat by its own ids.
+     */
+    chatRef?: (key: ConversationKey) => ConversationRef
+  } = {},
+): StudioTransportParts {
+  const refOf = options.chatRef ?? keyRef
   const send = async (input: ConversationSendTurnInput) => {
     const { attachments, commandId: given, ...rest } = input
     // A Studio that does not read `files` would drop them without a word and

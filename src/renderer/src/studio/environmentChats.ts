@@ -3,7 +3,13 @@ import type { StudioWelcomeFrame } from '../../../../packages/studio-protocol/sr
 import { formatChatAddress, isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
 import type { ConversationEvent, ConversationSessionSummary } from '../../../shared/conversation-runtime'
 import { createStudioChatServices } from '../components/panels/agentChat/studioChat'
-import { holdEnvironmentStudio, type EnvironmentHold, type EnvironmentTarget } from './environmentStudio'
+import {
+  environmentRefusal,
+  holdEnvironmentStudio,
+  type EnvironmentHold,
+  type EnvironmentRefusal,
+  type EnvironmentTarget,
+} from './environmentStudio'
 
 // The chats one environment holds, as this window follows them: one source per
 // route the window shows chats of, fed by that environment's own Studio over
@@ -30,6 +36,12 @@ export type EnvironmentChatsSnapshot = {
   byAddress: ReadonlyMap<string, readonly ConversationSessionSummary[]>
   /** True until the first list lands, and while the client is away: the list is the last one read. */
   stale: boolean
+  /**
+   * Why the window's last connection to it was refused, until one opens: a
+   * Studio from before the protocol (a paired desktop not yet updated) is
+   * `outdated`, and says to update it there.
+   */
+  refusal?: EnvironmentRefusal
 }
 
 export type EnvironmentChatSource = {
@@ -113,6 +125,10 @@ export function createEnvironmentChatSource(
       (client) => {
         if (hold !== taken) return
         current = client
+        if (snapshot.refusal) {
+          const { refusal: _cleared, ...rest } = snapshot
+          publish(rest)
+        }
         if (client.state === 'open') {
           state = 'open'
           for (const listener of [...openListeners]) listener()
@@ -124,10 +140,12 @@ export function createEnvironmentChatSource(
         }
         client.closed.then(letGo, letGo)
       },
-      () => {
+      (error: unknown) => {
         if (hold !== taken) return
         release()
-        markStale()
+        const refusal = environmentRefusal(target, error)
+        if (closed) return
+        if (snapshot.refusal?.code !== refusal.code || !snapshot.stale) publish({ ...snapshot, stale: true, refusal })
       },
     )
     return taken

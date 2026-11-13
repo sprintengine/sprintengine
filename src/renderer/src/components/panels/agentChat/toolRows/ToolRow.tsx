@@ -691,10 +691,9 @@ export const ToolRow = memo(function ToolRow({ tool }: { tool: TranscriptToolEnt
   const context = useConversationLinkContext()
   const transport = useConversationTransport()
   const key = `${context?.workspaceId ?? ''}:${context?.agentId ?? ''}`
-  // Kept per environment: two Studios' chats may share ids, and a paired
-  // build that names no environment is kept under its pairing.
+  // Kept per environment: two Studios' chats may share ids.
   const { environment } = transport
-  const detailKey = `${environment.id ?? (environment.lane ? `lane:${environment.lane.connectionId}` : '')}:${key}:${tool.id}`
+  const detailKey = `${environment.id ?? environment.route ?? ''}:${key}:${tool.id}`
   const [open, setOpen] = useConversationDisclosure(key, `tool:${tool.id}`, false)
   const [detail, setDetail] = useState<ConversationToolDetail | undefined>(() => cachedDetail(detailKey))
   // Output fetched while the tool was still running is a snapshot of a moving

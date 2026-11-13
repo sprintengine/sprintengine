@@ -30,27 +30,6 @@ export type TailnetPresence = {
   meshRequests: readonly MeshPairRequestView[]
   /** connectionId → main's last reachability answer for that machine (phase 4). */
   meshReachability: ReadonlyMap<string, MeshMachineReachability>
-  /**
-   * connectionId → the last change that machine pushed (the change feed,
-   * 2026-09-05). A surface showing that machine re-reads when this moves;
-   * `revision` is the mesh's own stamp, so a consumer can tell a new push
-   * from a re-render.
-   */
-  meshRemoteChanges: ReadonlyMap<string, MeshRemoteChange>
-}
-
-type MeshChangeKind = 'workspaces' | 'conversations'
-type MeshRemoteChange = {
-  /** The kind the latest push named. */
-  what: MeshChangeKind
-  revision: number
-  at: number
-  /**
-   * The mesh revision of the latest push of each kind. Pushes of both kinds
-   * can land between two renders; a reader that re-reads by kind compares
-   * these rather than `what`, so neither is lost.
-   */
-  revisions: Partial<Record<MeshChangeKind, number>>
 }
 
 const EMPTY_LIVE_STATE: TailnetLiveState = { revision: 0, devices: [] }
@@ -67,7 +46,6 @@ const INITIAL_PRESENCE: TailnetPresence = {
   mesh: [],
   meshRequests: [],
   meshReachability: new Map(),
-  meshRemoteChanges: new Map(),
 }
 
 let presence: TailnetPresence = INITIAL_PRESENCE
@@ -172,13 +150,9 @@ function startPresence(): (() => void) | null {
         updatePresence((current) => {
           const meshReachability = new Map(current.meshReachability)
           meshReachability.delete(event.connectionId)
-          const meshRemoteChanges = new Map(current.meshRemoteChanges)
-          meshRemoteChanges.delete(event.connectionId)
           return {
             meshReachability:
               meshReachability.size === current.meshReachability.size ? current.meshReachability : meshReachability,
-            meshRemoteChanges:
-              meshRemoteChanges.size === current.meshRemoteChanges.size ? current.meshRemoteChanges : meshRemoteChanges,
           }
         })
       }
@@ -209,21 +183,7 @@ function startPresence(): (() => void) | null {
         meshReachability.set(entry.connectionId, entry)
         return { meshReachability }
       })
-      return
     }
-    // A machine saying which Studio it is changes nothing this presence shows.
-    if (event.kind !== 'remote-changed') return
-    updatePresence((current) => {
-      const meshRemoteChanges = new Map(current.meshRemoteChanges)
-      const previous = current.meshRemoteChanges.get(event.connectionId)
-      meshRemoteChanges.set(event.connectionId, {
-        what: event.what,
-        revision: event.revision,
-        at: Date.now(),
-        revisions: { ...previous?.revisions, [event.what]: event.revision },
-      })
-      return { meshRemoteChanges }
-    })
   })
   return () => {
     cancelled = true

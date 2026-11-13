@@ -282,6 +282,7 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
       hasReceipt: (sessionId, commandId) => core.conversations.hasCommandReceipt(sessionId, commandId),
       readableRoots: () => knownFolders(core.workspaceRegistry, options.dataDir),
       commands: (input) => conversationCommands.list(input),
+      onListChanged: (listener) => started.onListChanged(listener),
     }),
   )
   let status: Awaited<ReturnType<StudioGateway['initialize']>>

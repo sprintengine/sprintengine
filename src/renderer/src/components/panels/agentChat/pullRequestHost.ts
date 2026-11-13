@@ -4,7 +4,6 @@ import type {
   PullRequestCheckoutPin,
   PushForPullRequestOutcome,
 } from '../../../../../shared/git/pull-request-create'
-import type { MeshConversationKey } from '../../../../../shared/tailnet-mesh'
 import type { StudioClient } from '../../../../../../packages/client-runtime/src/public'
 import { STUDIO_PULL_REQUEST_CREATE_CAPABILITY } from '../../../../../../packages/studio-protocol/src/public'
 import { randomId } from '../../../../../shared/random-id'
@@ -14,9 +13,8 @@ import { windowStudioClient } from '../../../studio/windowStudioClient'
 // sentences on the strip are the same for every chat (owner ruling
 // 2026-10-18: apart from the machine's mark, a remote chat looks and behaves
 // as a local one); what differs is which machine reads the checkout, writes
-// the draft, pushes and opens the pull request. A chat on this window's
-// Studio asks that Studio over the protocol; a chat followed over a paired
-// machine's lane asks that machine. Each works in the chat's own checkout,
+// the draft, pushes and opens the pull request: the Studio that holds the
+// chat, over the protocol, this window's own or a paired machine's. Each works in the chat's own checkout,
 // with its own text generation settings. Opening the forge's page
 // and the clipboard stay on this computer, in front of the person, whichever
 // machine did the work.
@@ -117,49 +115,6 @@ export function studioPullRequestHost(
     link: async (url) => {
       const outcome = recorded.get(url) ?? { ok: true }
       recorded.delete(url)
-      return outcome
-    },
-  }
-}
-
-/**
- * A chat on a paired machine, every step asked of that machine
- * (`chat-create-pull-request`). It records a pull request it creates as the
- * chat's itself, so `link` here only says how that went and asks for the
- * machine's list again, which flips the slot to "Open PR #N".
- */
-export function remotePullRequestHost(key: MeshConversationKey, onRecorded: () => void): PullRequestHost {
-  const recorded = new Map<string, { ok: true } | { ok: false; message: string }>()
-  return {
-    state: async () => {
-      const result = await window.api.meshConversationPullRequestState({ key })
-      return result.ok ? result.state : null
-    },
-    draft: (draftId) => ({
-      written: window.api.meshConversationPullRequestDraft({ key, draftId }).then((result) =>
-        result.ok
-          ? { ok: true as const, title: result.title, body: result.body }
-          : // That machine's text generation being off is said as it is, not as a failure.
-            {
-              ok: false as const,
-              message: result.code === 'text_generation_off' ? result.message : draftFailed(result.message),
-            },
-      ),
-    }),
-    cancelDraft: async (draftId) => {
-      await window.api.meshConversationPullRequestDraftCancel({ key, draftId })
-    },
-    push: (pin) => window.api.meshConversationPullRequestPush({ key, ...(pin ? { pin } : {}) }),
-    create: async (text, pin) => {
-      const created = await window.api.meshConversationPullRequestCreate({ key, ...text, ...(pin ? { pin } : {}) })
-      if (!created.ok || created.kind !== 'created') return created
-      recorded.set(created.url, created.recorded)
-      return { ok: true, kind: 'created', url: created.url }
-    },
-    link: async (url) => {
-      const outcome = recorded.get(url) ?? { ok: true }
-      recorded.delete(url)
-      onRecorded()
       return outcome
     },
   }

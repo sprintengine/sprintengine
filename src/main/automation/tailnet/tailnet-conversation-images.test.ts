@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync, mkdirSync } from 'node:fs'
-import { createServer, request as httpRequest, type Server } from 'node:http'
+import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test, vi } from 'vitest'
@@ -19,9 +19,6 @@ import {
 } from './tailnet-conversation-images'
 import { createTailnetDeviceStore } from './tailnet-devices'
 import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet-gateway-server'
-import { createTailnetMeshService, type TailnetMeshService } from './tailnet-mesh-service'
-import { fetchRemoteConversationImage } from './tailnet-remote-client'
-import { pairingUrl } from './tailnet-service'
 import { createTailnetPeerResolver } from './tailnet-peer-identity'
 import {
   TAILNET_CAPABILITIES,
@@ -101,9 +98,6 @@ let port: number
 let reader: string
 let noConversations: string
 let elsewhere: string
-let meshDir: string
-let mesh: TailnetMeshService
-let connectionId: string
 
 beforeAll(async () => {
   workspaceRoot = mkdtempSync(join(tmpdir(), 'conversation-images-workspace-'))
@@ -228,25 +222,12 @@ beforeAll(async () => {
   }
   reader = await pair(['conversation:read'])
   noConversations = await pair(TAILNET_SCOPES.filter((scope) => !scope.startsWith('conversation:')))
-
-  // A second desktop, paired with this one, following its chats.
-  meshDir = mkdtempSync(join(tmpdir(), 'conversation-images-mesh-'))
-  mesh = createTailnetMeshService({
-    resolveUserDataDir: () => meshDir,
-    resolveDeviceName: () => 'dev-macbook-air',
-    resolvePeerName: async () => null,
-  })
-  const offer = devices.offerPairing({ scopes: ['conversation:read'] })
-  const paired = await mesh.pair({ pairingUrl: pairingUrl('127.0.0.1', port, offer.token) })
-  assert.ok(paired.ok, paired.ok ? '' : paired.message)
-  connectionId = paired.connection.id
 })
 
 afterAll(async () => {
-  mesh?.shutdown()
   await server?.stop()
   await runtime?.shutdown()
-  for (const dir of [workspaceRoot, devicesDir, files, meshDir, elsewhere])
+  for (const dir of [workspaceRoot, devicesDir, files, elsewhere])
     if (dir) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -439,19 +420,6 @@ test('only a generated picture or a read of a picture names a file', () => {
 
 // ── A paired desktop showing a remote chat's pictures ───────────────────────
 
-test('a paired desktop fetches a step’s picture over the same route, as a data URL', async () => {
-  const key = { connectionId, workspaceId, agentId }
-  const generated = await mesh.conversationToolImage({ key, toolUseId: 'generate' })
-  assert.deepEqual(generated, { ok: true, dataUrl: `data:image/png;base64,${PNG.toString('base64')}` })
-  const read = await mesh.conversationToolImage({ key, toolUseId: 'read-image' })
-  assert.deepEqual(read, { ok: true, dataUrl: `data:image/jpeg;base64,${JPEG.toString('base64')}` })
-  const missing = await mesh.conversationToolImage({ key, toolUseId: 'read-missing' })
-  assert.equal(missing.ok, false)
-  assert.equal(!missing.ok && missing.code, 'unknown_image')
-  const invalid = await mesh.conversationToolImage({ key, toolUseId: '' })
-  assert.equal(!invalid.ok && invalid.code, 'invalid_arguments')
-})
-
 test('a picture asked for again is found without scanning the transcript again', async () => {
   const lookups = vi.spyOn(runtime, 'findToolCall')
   try {
@@ -467,160 +435,6 @@ test('a picture asked for again is found without scanning the transcript again',
     assert.equal(lookups.mock.calls.length, scans, 'the step was found once')
   } finally {
     lookups.mockRestore()
-  }
-})
-
-test('windows asking a paired machine for the same picture share one fetch, and keep it', async () => {
-  let fetches = 0
-  const device = {
-    deviceId: 'device-1',
-    deviceName: 'dev-macbook-air',
-    scopes: ['conversation:read'],
-    transportVersion: 2,
-    capabilities: ['events', 'conversations', 'conversation-images'],
-  }
-  const peer: Server = createServer((request, response) => {
-    const path = new URL(request.url ?? '/', 'http://peer.invalid').pathname
-    request.resume()
-    if (path === TAILNET_CONVERSATION_IMAGE_PATH) {
-      fetches++
-      response.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': PNG.length })
-      response.end(PNG)
-      return
-    }
-    const body = path === TAILNET_PAIR_PATH ? { ...device, deviceToken: 'device-token' } : device
-    response.writeHead(path === TAILNET_PAIR_PATH || path === TAILNET_IDENTITY_PATH ? 200 : 404, {
-      'Content-Type': 'application/json',
-    })
-    response.end(JSON.stringify(body))
-  })
-  await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
-  const peerPort = (peer.address() as { port: number }).port
-  const dir = mkdtempSync(join(tmpdir(), 'conversation-images-shared-'))
-  const follower = createTailnetMeshService({
-    resolveUserDataDir: () => dir,
-    resolveDeviceName: () => 'dev-macbook-air',
-    resolvePeerName: async () => null,
-  })
-  try {
-    const paired = await follower.pair({ pairingUrl: pairingUrl('127.0.0.1', peerPort, 'pairing-token') })
-    assert.ok(paired.ok, paired.ok ? '' : paired.message)
-    const key = { connectionId: paired.connection.id, workspaceId, agentId }
-    const [a, b] = await Promise.all([
-      follower.conversationToolImage({ key, toolUseId: 'generate' }),
-      follower.conversationToolImage({ key, toolUseId: 'generate' }),
-    ])
-    const later = await follower.conversationToolImage({ key, toolUseId: 'generate' })
-    const expected = { ok: true, dataUrl: `data:image/png;base64,${PNG.toString('base64')}` }
-    assert.deepEqual([a, b, later], [expected, expected, expected])
-    assert.equal(fetches, 1, 'one fetch across the wire')
-    await follower.conversationToolImage({ key, toolUseId: 'another-step' })
-    assert.equal(fetches, 2, 'another step is its own picture')
-  } finally {
-    follower.shutdown()
-    await new Promise<void>((resolve) => peer.close(() => resolve()))
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-/** A machine that speaks the transport but predates the route: it answers pairing and identity, and 404s the rest. */
-async function olderMachine(capabilities: string[] | undefined) {
-  let imageRequests = 0
-  const device = {
-    deviceId: 'device-1',
-    deviceName: 'dev-macbook-air',
-    scopes: ['conversation:read'],
-    transportVersion: 2,
-    ...(capabilities ? { capabilities } : {}),
-  }
-  const peer: Server = createServer((request, response) => {
-    const path = new URL(request.url ?? '/', 'http://peer.invalid').pathname
-    const json = (status: number, body: unknown) => {
-      response.writeHead(status, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify(body))
-    }
-    request.resume()
-    if (path === TAILNET_PAIR_PATH) return json(200, { ...device, deviceToken: 'device-token' })
-    if (path === TAILNET_IDENTITY_PATH) return json(200, device)
-    if (path === TAILNET_CONVERSATION_IMAGE_PATH) imageRequests++
-    return json(404, { error: { code: 'not_found', message: `No tailnet gateway route for ${path}.` } })
-  })
-  await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
-  const peerPort = (peer.address() as { port: number }).port
-  const dir = mkdtempSync(join(tmpdir(), 'conversation-images-older-'))
-  const follower = createTailnetMeshService({
-    resolveUserDataDir: () => dir,
-    resolveDeviceName: () => 'dev-macbook-air',
-    resolvePeerName: async () => null,
-  })
-  const paired = await follower.pair({ pairingUrl: pairingUrl('127.0.0.1', peerPort, 'pairing-token') })
-  assert.ok(paired.ok, paired.ok ? '' : paired.message)
-  return {
-    mesh: follower,
-    key: { connectionId: paired.connection.id, workspaceId, agentId },
-    imageRequests: () => imageRequests,
-    async close() {
-      follower.shutdown()
-      await new Promise<void>((resolve) => peer.close(() => resolve()))
-      rmSync(dir, { recursive: true, force: true })
-    },
-  }
-}
-
-test('a machine whose handshake leaves the capability out is not asked, and its picture stays over there', async () => {
-  const older = await olderMachine(['events', 'upload', 'conversations'])
-  try {
-    await older.mesh.checkReachability(older.key.connectionId)
-    const answer = await older.mesh.conversationToolImage({ key: older.key, toolUseId: 'generate' })
-    assert.equal(!answer.ok && answer.code, 'images_unsupported')
-    assert.equal(older.imageRequests(), 0)
-  } finally {
-    await older.close()
-  }
-})
-
-test('a machine that has not said what it can do is asked, and a route it does not have reads as unsupported', async () => {
-  const older = await olderMachine(undefined)
-  try {
-    const answer = await older.mesh.conversationToolImage({ key: older.key, toolUseId: 'generate' })
-    assert.equal(!answer.ok && answer.code, 'images_unsupported')
-    assert.equal(older.imageRequests(), 1)
-  } finally {
-    await older.close()
-  }
-})
-
-test('the fetch is bounded by the ceiling and re-reads the type off the bytes', async () => {
-  let body = Buffer.alloc(0)
-  let declare = true
-  const peer = createServer((request, response) => {
-    request.resume()
-    response.writeHead(200, {
-      'Content-Type': 'image/png',
-      ...(declare ? { 'Content-Length': body.length } : {}),
-    })
-    response.end(body)
-  })
-  await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
-  const endpoint = { host: '127.0.0.1', port: (peer.address() as { port: number }).port }
-  const fetch = (maxBytes: number) =>
-    fetchRemoteConversationImage({ endpoint, token: 'token', workspaceId, agentId, toolUseId: 'step', maxBytes })
-  try {
-    body = Buffer.concat([PNG, Buffer.alloc(64)])
-    const declared = await fetch(32)
-    assert.equal(!declared.ok && declared.code, 'image_too_large')
-    declare = false
-    const streamed = await fetch(32)
-    assert.equal(!streamed.ok && streamed.code, 'image_too_large', 'a body with no length is counted as it arrives')
-    body = Buffer.from('not a picture at all')
-    const words = await fetch(1024)
-    assert.equal(!words.ok && words.code, 'not_an_image', 'the header said image/png; the bytes did not')
-    body = WEBP
-    const webp = await fetch(1024)
-    assert.ok(webp.ok)
-    assert.equal(webp.value.mediaType, 'image/webp')
-  } finally {
-    await new Promise<void>((resolve) => peer.close(() => resolve()))
   }
 })
 

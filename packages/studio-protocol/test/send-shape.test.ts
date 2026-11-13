@@ -55,7 +55,16 @@ test("the lane's send and the protocol's send are the same type", () => {
 test('the lane says how it carries every part of the request', () => {
   expectExact<
     keyof ConversationLaneSend,
-    'message' | 'mentions' | 'composedAt' | 'uploadIds' | 'skills' | 'steer' | 'queue' | 'confirmedStale' | 'mode'
+    | 'message'
+    | 'localTurnId'
+    | 'mentions'
+    | 'composedAt'
+    | 'uploadIds'
+    | 'skills'
+    | 'steer'
+    | 'queue'
+    | 'confirmedStale'
+    | 'mode'
   >(true)
   // A part the request types one way is never carried as another.
   expectExact<ConversationLaneSend['mentions'], ConversationSendRequest['mentions']>(true)

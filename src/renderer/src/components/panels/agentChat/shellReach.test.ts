@@ -60,7 +60,7 @@ test("the window's transport names its Studio's environment, unnamed: the chat i
   await welcomedWindow()
   const { localConversationTransport } = await import('./conversationTransport')
   const environment = localConversationTransport.environment
-  expect(environment).toEqual({ id: 'studio-here', label: null, lane: null })
+  expect(environment).toEqual({ id: 'studio-here', label: null, route: null })
   expect(localConversationTransport.environment).toBe(environment)
   expect(shellReachOf(environment.id, window.api as object)).toMatchObject({ openDocument: true, sameDisk: true })
 })

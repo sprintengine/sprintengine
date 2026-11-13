@@ -579,7 +579,7 @@ test('fetched output is kept per environment: the same ids in another Studio are
   await withToolDetailDom(
     (id) => ({ output: `full output of ${id}` }),
     async ({ calls, show, hide, click, expand }) => {
-      const other = { id: 'another-studio', label: 'mac-mini', lane: null }
+      const other = { id: 'another-studio', label: 'mac-mini', route: null }
       await show(truncatedCommand('shared'))
       await expand()
       await click('Show full output')
@@ -1009,23 +1009,28 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
     api: {
       platform: 'darwin',
       readImageDataUrl: async (path: string) => void local.push(path),
-      meshConversationToolImage: async (input: { key: unknown; toolUseId: string }) => {
-        asked.push(input)
-        return input.toolUseId === 'old-machine'
-          ? { ok: false, code: 'images_unsupported', message: 'This picture is on mac-mini.' }
-          : { ok: true, dataUrl: `data:image/png;base64,${input.toolUseId}` }
-      },
     },
   })
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
-  const { ConversationTransportProvider, createRemoteConversationTransport } = await import('../conversationTransport')
-  const key = { connectionId: 'mac-mini', workspaceId: 'remote-workspace', agentId: 'agent' }
-  const transport = createRemoteConversationTransport({
-    key,
-    machineName: 'mac-mini',
-    offer: () => ({ via: 'paired-lane', capabilities: [], access: 'read', modelCatalog: false }),
-  })
+  const { ConversationTransportProvider, localConversationTransport } = await import('../conversationTransport')
+  // A paired machine's chat's transport, as far as a step's picture goes: by
+  // the step's id, asked of that machine (`conversation.picture`).
+  const transport = Object.defineProperties(
+    {
+      ...localConversationTransport,
+      toolImage: async (input: { toolUseId: string }) => {
+        asked.push(input)
+        return input.toolUseId === 'old-machine'
+          ? { ok: false as const, unsupported: true, message: 'This picture is on mac-mini.' }
+          : { ok: true as const, src: `data:image/png;base64,${input.toolUseId}` }
+      },
+    },
+    {
+      capabilities: { get: () => localConversationTransport.capabilities },
+      environment: { get: () => ({ id: null, label: 'mac-mini', route: 'tailnet:mac-mini' }) },
+    },
+  )
   const host = dom.window.document.createElement('div')
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)
@@ -1052,7 +1057,7 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
     )
     expect(host.querySelector('[data-generated-image] img')?.getAttribute('src')).toBe('data:image/png;base64,ig_2')
     expect(host.textContent).not.toContain('Reveal in Finder')
-    expect(asked).toEqual([{ key, toolUseId: 'ig_2' }])
+    expect(asked).toEqual([{ toolUseId: 'ig_2' }])
     // A read of a picture, opened, shows it; a machine that does not share
     // pictures leaves it there, and says so.
     const openRead = async (id: string) => {
@@ -1064,11 +1069,7 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
     expect(host.querySelector('[data-tool-step-body] img')?.getAttribute('src')).toBe('data:image/png;base64,read-shot')
     await openRead('old-machine')
     expect(host.textContent).toContain('This image is on another machine.')
-    expect(asked).toEqual([
-      { key, toolUseId: 'ig_2' },
-      { key, toolUseId: 'read-shot' },
-      { key, toolUseId: 'old-machine' },
-    ])
+    expect(asked).toEqual([{ toolUseId: 'ig_2' }, { toolUseId: 'read-shot' }, { toolUseId: 'old-machine' }])
     expect(local, 'a remote path is never read off this disk').toEqual([])
   } finally {
     await act(async () => root.unmount())

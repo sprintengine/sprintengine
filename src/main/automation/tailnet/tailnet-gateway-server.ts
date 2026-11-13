@@ -325,8 +325,15 @@ type EventStream = { socket: Duplex; deviceId: string }
 /** A device's Studio protocol socket, for revocation, shutdown and the connected state. */
 type StudioSocket = { peer: WebSocketPeer; deviceId: string }
 
-/** Studio sockets one device may hold at once: a phone and a desktop window reconnecting. Past this the oldest goes. */
-const MAX_STUDIO_SOCKETS_PER_DEVICE = 8
+/**
+ * Studio sockets one device may hold at once. A paired desktop holds one per
+ * window that reads this machine (each window has its own client: the band,
+ * its open chats, a diff window), and its server one more; a window lets its
+ * socket go after five idle minutes. Past this the oldest goes, for a client
+ * that leaks them or a phone's half-open socket. At eight, a ninth window
+ * evicted the first, whose reconnect evicted the next, round and round.
+ */
+export const MAX_STUDIO_SOCKETS_PER_DEVICE = 32
 
 type ChangeKind = 'workspaces' | 'conversations'
 

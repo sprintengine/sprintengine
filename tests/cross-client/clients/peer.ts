@@ -1,32 +1,33 @@
 import { randomBytes } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 
-import {
-  createTailnetMeshService,
-  type TailnetMeshService,
-} from '../../../src/main/automation/tailnet/tailnet-mesh-service'
+import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../packages/studio-protocol/src/public'
+import { createTailnetMeshService } from '../../../src/main/automation/tailnet/tailnet-mesh-service'
 import { createTailnetMeshStore } from '../../../src/main/automation/tailnet/tailnet-mesh-store'
 import { pairingUrl } from '../../../src/main/automation/tailnet/tailnet-service'
 import { createDataKeySecretCipher } from '../../../src/server/platform/secret-cipher'
-import type { MeshConversationFrame, MeshConversationKey } from '../../../src/shared/tailnet-mesh'
+import type { ConversationSessionFrame } from '../../../src/shared/conversation-runtime'
+import type { MeshConversationKey } from '../../../src/shared/tailnet-mesh'
 import type { Attachment, ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'
 import { openPairedWindow } from '../../paired-window'
 import { createPairedChat } from '../../../src/renderer/src/studio/pairedDiscovery'
+import { createPairedChatTransport } from '../../../src/renderer/src/components/panels/agentChat/pairedChat'
+import type { ConversationTransport } from '../../../src/renderer/src/components/panels/agentChat/conversationTransport'
 import { Feed } from '../feed'
 
-// A second desktop, paired with the server's machine: the mesh service a
-// desktop follows another machine's chats with (tailnet-mesh-service.ts), over
-// the tailnet lane, and its window's own client of that machine's Studio
-// (`src/renderer/src/studio/environmentStudio.ts`), which starts a chat there. It
-// pairs with a code the server offers, as a person does from Settings; its own
-// data directory is a fresh one.
+// A second desktop, paired with the server's machine: its window's own client
+// of that machine's Studio (`src/renderer/src/studio/environmentStudio.ts`),
+// its tickets bought by the mesh with the pairing's device token, and the chat
+// view's transport for a paired machine's chat over it (`pairedChat.ts`). It
+// pairs with a code the server offers, as a person does from Settings; its
+// own data directory is a fresh one.
 
 export async function peerClient(input: {
   cutter: Cutter
   dataDir: string
   pairingToken: () => Promise<string>
-}): Promise<GateClient & { mesh: TailnetMeshService }> {
+}): Promise<GateClient> {
   // The pairing is sealed with the server platform's data-key cipher rather
   // than a keychain, which a CI runner has none of.
   const cipher = createDataKeySecretCipher(randomBytes(32))
@@ -36,7 +37,6 @@ export async function peerClient(input: {
     createStore: (options) => createTailnetMeshStore({ ...options, cipher }),
     resolveDeviceName: () => 'dev-macbook-air',
     resolvePeerName: async () => null,
-    conversations: { retry: { baseMs: 100, maxMs: 1_000 }, requestTimeoutMs: 15_000 },
   })
   const address = input.cutter.address
   if (!('port' in address)) throw new Error('The paired desktop reaches the server by a port.')
@@ -46,49 +46,81 @@ export async function peerClient(input: {
   // The window's own client of that machine's Studio, its tickets bought by the mesh.
   const closeWindow = openPairedWindow(mesh, connectionId)
   const machine = { id: connectionId, machineName: paired.connection.machineName }
-  const keyOf = (chat: ChatRef): MeshConversationKey => ({
-    connectionId,
-    workspaceId: chat.workspaceId,
-    agentId: chat.agentId,
-  })
-  const command = async (chat: ChatRef, what: string, body: Record<string, unknown>) => {
-    const result = await mesh.conversationCommand({ key: keyOf(chat), command: body })
-    if (!result.ok) throw new Error(`peer: ${what}: ${result.code}: ${result.message}`)
+  // One transport per chat, as the chat's pane makes it.
+  const transports = new Map<string, ConversationTransport>()
+  const transportOf = (chat: ChatRef): ConversationTransport => {
+    const id = `${chat.workspaceId}/${chat.agentId}`
+    let made = transports.get(id)
+    if (!made) {
+      const key: MeshConversationKey = { connectionId, workspaceId: chat.workspaceId, agentId: chat.agentId }
+      made = createPairedChatTransport({ key, machineName: machine.machineName })
+      transports.set(id, made)
+    }
+    return made
   }
-  let follows = 0
-  const followIds: string[] = []
+  // The pane's key: a workspace here holds it; the transport names the chat there.
+  const viewKey = (chat: ChatRef) => ({ workspaceRoot: '', workspaceId: 'pane-here', agentId: chat.agentId })
+  const done = (result: { ok: boolean; message?: string }, what: string) => {
+    if (!result.ok) throw new Error(`peer: ${what}: ${result.message ?? 'refused'}`)
+  }
+  const stops: Array<() => void> = []
 
   return {
     id: 'peer',
     label: 'Paired desktop',
-    transport: 'tailnet lane (mesh service); create on the window’s client of /tailnet/v1/studio',
+    transport: "the window's client of /tailnet/v1/studio (Studio protocol), keyed commands",
     simulated: [
       'the tailnet: the listener is bound to loopback and no Tailscale whois names the peer',
       "the peer's keychain: its pairing is sealed with the server platform's data-key cipher",
+      "the chat view's resubscribe if a stream ends (a React hook): the gate subscribes again from its cursor",
     ],
-    mesh,
     async follow(chat) {
       const feed = new Feed('peer')
-      const followId = `gate-${++follows}`
-      followIds.push(followId)
-      const following = await mesh.followConversation({
-        followId,
-        key: keyOf(chat),
-        turnLimit: 50,
-        emit: (frame: MeshConversationFrame) => {
-          if (frame.type === 'snapshot')
-            feed.snapshot(frame.page.events, {
-              ...(frame.reset ? { reset: true } : {}),
-              ...(frame.generation ? { generation: frame.generation } : {}),
-            })
-          else if (frame.type === 'event') feed.event(frame.event)
-          else if (frame.type === 'link') feed.side({ live: frame.state === 'live', lastError: frame.detail })
-          else if (frame.type === 'scheduled')
-            feed.side({ scheduled: frame.messages.map((message) => ({ id: message.id, text: message.text })) })
-          else if (frame.type === 'error') feed.side({ lastError: frame.message })
-        },
+      const transport = transportOf(chat)
+      let stopped = false
+      let stop: (() => void) | null = null
+      // The chat's tray, on its own push topic there, as the pane follows it.
+      const stopScheduled =
+        transport.services.followPush?.({
+          topic: 'conversation.scheduled',
+          params: { key: { workspaceId: chat.workspaceId, agentId: chat.agentId } },
+          capability: STUDIO_CONVERSATIONS_CAPABILITY,
+          onPayload: (frame) =>
+            feed.side({ scheduled: frame.messages.map((message) => ({ id: message.id, text: message.text })) }),
+        }) ?? (() => undefined)
+      const subscribe = () => {
+        if (stopped) return
+        stop = transport.subscribe(
+          {
+            key: viewKey(chat),
+            turnLimit: 50,
+            ...(feed.cursor === undefined ? {} : { afterSeq: feed.cursor }),
+            ...(feed.generation === undefined ? {} : { generation: feed.generation }),
+          },
+          (frame: ConversationSessionFrame) => {
+            if (frame.type === 'snapshot') {
+              feed.snapshot(frame.page.events, {
+                ...(frame.reset ? { reset: true } : {}),
+                ...(frame.generation ? { generation: frame.generation } : {}),
+              })
+              feed.side({ live: true })
+            } else if (frame.type === 'event') {
+              feed.event(frame.event)
+              feed.side({ live: true })
+            } else if (frame.type === 'error') {
+              feed.side({ live: false, lastError: frame.message })
+              stop?.()
+              setTimeout(subscribe, 250)
+            }
+          },
+        )
+      }
+      subscribe()
+      stops.push(() => {
+        stopped = true
+        stop?.()
+        stopScheduled()
       })
-      if (!following.ok) throw new Error(`peer: follow: ${following.message}`)
       return feed
     },
     async createChat(workspace, name) {
@@ -102,10 +134,10 @@ export async function peerClient(input: {
       if (!created.ok) throw new Error(`peer: create: ${created.message}`)
       return { workspaceId: created.workspaceId, agentId: created.agentId, workspaceRoot: workspace.workspaceRoot }
     },
-    send: (chat, text) => command(chat, 'send', { kind: 'send', message: text }),
+    send: async (chat, text) => done(await transportOf(chat).send({ sessionId: '', message: text }), 'send'),
     async sendWithAttachment(chat, text, attachment: Attachment) {
-      const result = await mesh.conversationSend({
-        key: keyOf(chat),
+      const sent = await transportOf(chat).send({
+        sessionId: '',
         message: text,
         attachments: [
           {
@@ -115,21 +147,27 @@ export async function peerClient(input: {
             dataBase64: attachment.bytes.toString('base64'),
           },
         ],
-      })
-      if (!result.ok) throw new Error(`peer: send with a picture: ${result.code}: ${result.message}`)
+      } as never)
+      done(sent, 'send with a picture')
     },
-    answerApproval: (chat, requestId, approve) =>
-      command(chat, 'answer an approval', { kind: 'resolveApproval', requestId, decision: approve ? 'once' : 'deny' }),
-    messageSubagent: (chat, toolUseId, text) =>
-      command(chat, 'message a sub-agent', { kind: 'messageSubagent', toolUseId, message: text }),
-    scheduleSend: (chat, text, sendAt) =>
-      command(chat, 'schedule a send', { kind: 'scheduleSend', message: text, sendAt }),
-    sendScheduledNow: (chat, scheduledId) =>
-      command(chat, 'send a scheduled message now', { kind: 'sendScheduledNow', scheduledId }),
+    answerApproval: async (chat, requestId, approve) =>
+      done(await transportOf(chat).respond({ sessionId: '', requestId, approved: approve }), 'answer an approval'),
+    messageSubagent: async (chat, toolUseId, text) =>
+      done(
+        await transportOf(chat).messageSubagent!({ sessionId: '', toolUseId, message: text }),
+        'message a sub-agent',
+      ),
+    scheduleSend: async (chat, text, sendAt) =>
+      done(await transportOf(chat).scheduleSend!({ key: viewKey(chat), message: text, sendAt }), 'schedule a send'),
+    sendScheduledNow: async (chat, scheduledId) =>
+      done(
+        await transportOf(chat).sendScheduledNow!({ key: viewKey(chat), scheduledId }),
+        'send a scheduled message now',
+      ),
     cut: () => input.cutter.cut(),
     heal: () => input.cutter.heal(),
     async close() {
-      for (const followId of followIds) mesh.unfollowConversation(followId)
+      for (const stop of stops.splice(0)) stop()
       closeWindow()
       mesh.shutdown()
     },

@@ -7,8 +7,10 @@ import { test } from 'vitest'
 
 import { useRemoteSessions, type RemoteSessions } from './useRemoteSessions'
 
-// What a change push costs the band: a push re-reads only what it names, and
-// a window nobody can see re-reads nothing until it is shown, then once.
+// What a change push costs the band: a push from the machine
+// (`conversations.changed`) re-reads only what it names, a window nobody can
+// see re-reads nothing until it is shown, then once, and the machine reached
+// again after a drop is read whole.
 
 test('useRemoteSessions re-reads what a push names, and holds pushes while the window is hidden', async () => {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -34,16 +36,10 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     pairedVia: 'link',
   }
   const calls = { browse: 0, list: 0 }
-  let meshListener: ((event: unknown) => void) | null = null
   let hiddenListener: ((hidden: boolean) => void) | null = null
   ;(dom.window as unknown as { api: unknown }).api = {
     onTailnetEvent: () => () => {},
-    onMeshEvent: (listener: (event: unknown) => void) => {
-      meshListener = listener
-      return () => {
-        meshListener = null
-      }
-    },
+    onMeshEvent: () => () => {},
     onWindowHiddenChanged: (listener: (hidden: boolean) => void) => {
       hiddenListener = listener
       return () => {
@@ -54,18 +50,20 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, attachments: [], requests: [], reachability: [] }),
-    meshConversationList: async () => {
-      calls.list += 1
-      return { ok: true, conversations: [], access: 'read', capabilities: [] }
-    },
   }
-  // That machine's Studio, as this window's own client of it reaches it: a browse is its project list.
+  // That machine's Studio, as this window's own client of it reaches it: a
+  // browse is its project list, and its chats are its `conversation.list`.
   const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
-  fakePairedStudios((dom.window as unknown as { api: object }).api, {
+  const studio = fakePairedStudios((dom.window as unknown as { api: object }).api, {
     'workspaces.list': () => {
       calls.browse += 1
       return { workspaces: [] }
     },
+    'conversation.list': () => {
+      calls.list += 1
+      return { conversations: [] }
+    },
+    'session.list': () => ({ ok: true, sessions: [] }),
   })
 
   let latest: RemoteSessions | null = null
@@ -78,10 +76,10 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
       await new Promise((resolve) => dom.window.setTimeout(resolve, ms))
     })
   }
-  let revision = 10
+  // What that machine says moved, on its push topic.
   const push = async (what: 'workspaces' | 'conversations') => {
     await act(async () => {
-      meshListener!({ kind: 'remote-changed', revision: ++revision, connectionId: 'c1', machineName: 'mac-mini', what })
+      studio.push('conversations.changed', { what })
     })
   }
 
@@ -120,6 +118,14 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     })
     await settle()
     assert.deepEqual(calls, { browse: 3, list: 3 }, 'shown again, it reads what changed, once')
+
+    // The window's connection to it drops and comes back: it may have missed a push, so both are read.
+    await act(async () => studio.setState('c1', 'reconnecting'))
+    await settle()
+    assert.deepEqual(calls, { browse: 3, list: 3 }, 'nothing is asked of a machine while it is away')
+    await act(async () => studio.setState('c1', 'open'))
+    await settle()
+    assert.deepEqual(calls, { browse: 4, list: 4 }, 'reached again, it is read whole, once')
   } finally {
     act(() => root.unmount())
   }

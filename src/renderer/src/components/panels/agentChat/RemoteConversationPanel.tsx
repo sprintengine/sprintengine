@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { ConversationSessionSummary } from '../../../../../shared/conversation-runtime'
 import { meshConversationSessionId } from '../../../../../shared/tailnet-mesh'
@@ -16,20 +16,16 @@ import {
   CONVERSATION_SEND_SKILLS_CAPABILITY,
   CONVERSATION_SIDE_QUESTIONS_CAPABILITY,
   CONVERSATION_STOP_SUBAGENT_CAPABILITY,
+  STUDIO_CONVERSATIONS_CAPABILITY,
+  STUDIO_WORKSPACES_CAPABILITY,
   type StudioLocalServer,
+  type StudioWelcomeFrame,
 } from '../../../../../../packages/studio-protocol/src/public'
-import { negotiateChatCapabilities } from '../../../../../../packages/client-runtime/src/public'
-import { environmentOfRoute } from '../../../../../shared/environments'
-import { environmentRouteOfMeshConnection } from '../../../../../shared/environment-keys'
-import { useEnvironments } from '../../../hooks/useEnvironments'
+import { formatChatAddress, isEnvironmentId } from '../../../../../../packages/studio-protocol/src/environment'
 import type {
   MeshConversation,
   MeshConversationAccess,
   MeshConversationKey,
-  MeshConversationLink,
-  MeshQueuedMessage,
-  MeshScheduledMessage,
-  MeshConversationUsageLimits,
   MeshSubagent,
 } from '../../../../../shared/tailnet-mesh'
 import type { CliRuntimeOption } from '../../ui/CliModelPicker'
@@ -39,8 +35,11 @@ import {
 } from '../../workspace/remoteBand/remoteConversationFacts'
 import { ConversationChatBody } from '../AgentChatView'
 import { remoteFileCountsOf } from '../../workspace/terminalLines'
+import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../studio/environmentChats'
+import { pairedTarget, type EnvironmentRefusal } from '../../../studio/environmentStudio'
+import { listPairedChats } from '../../../studio/pairedChats'
 import { ChatViewErrorBoundary } from './ChatViewErrorBoundary'
-import { hostUsageLimitsOf } from './hostUsageLimits'
+import { useStudioChatHeld } from './chatServerHeld'
 import { publishRemoteChat } from './remoteChatRegistry'
 import { cliForConversationProvider } from '../../../../../shared/conversation-harness'
 import { studioSubagentsOf, SubagentStatusWords } from './chatSubagents'
@@ -53,27 +52,27 @@ import {
 } from './SubagentChatHost'
 import type { ChatBinding, ChatAgentFields } from './chatBinding'
 import type { ChatReadiness } from './chatStates'
-import {
-  ConversationTransportProvider,
-  createRemoteConversationTransport,
-  type ConversationTransport,
-} from './conversationTransport'
+import { ConversationTransportProvider, type ConversationTransport } from './conversationTransport'
+import { createPairedChatTransport, pairedCommandsKey } from './pairedChat'
 
 // A conversation on a paired machine, in the regular chat view.
 //
 // The transcript, pending requests and composer are the chat view's own; what
-// this pane adds is the transport (main follows the conversation over the
-// tailnet and keeps its tail, so a reconnect or a restart resumes rather than
-// replays) and the agent fields a local chat keeps in its record. The machine
-// is named above the transcript and on the tab, so a keystroke here is never
-// mistaken for one on this machine.
+// this pane adds is the transport (this window's own client of that
+// machine's Studio, `pairedChat.ts`, which follows the conversation by its
+// cursor, so a reconnect resumes rather than replays) and the agent fields a
+// local chat keeps in its record. The machine is named on the tab and on the
+// strip under the composer, so a keystroke here is never mistaken for one on
+// this machine.
 //
-// Readiness is the link's: live and allowed to operate is ready; live and
-// read-only shows the conversation with the composer closed and says why; a
-// link that is reconnecting keeps the transcript on screen and says so.
+// Readiness is the connection's and the grant's: connected and allowed to
+// operate is ready; connected and read-only shows the conversation with the
+// composer closed and says why; a machine that is away keeps the transcript
+// on screen and says so.
 
 const NO_PULL_REQUESTS: readonly BranchPullRequest[] = []
 const NO_LOCAL_SERVERS: readonly StudioLocalServer[] = []
+const NO_SUBAGENTS: MeshSubagent[] = []
 
 type Props = {
   /** The workspace here that holds this pane. */
@@ -104,19 +103,59 @@ function threadOfSubagent(row: MeshSubagent): MeshConversation {
   return { ...listed, createdAt: startedAt, updatedAt: endedAt ?? startedAt } as MeshConversation
 }
 
+/** Whether the window is reaching that machine now: not yet, yes, or away with what it last said. */
+type PairedLink = 'connecting' | 'live' | 'away'
+
 function remoteConversationReadiness(
-  link: MeshConversationLink | null,
+  link: PairedLink,
   access: MeshConversationAccess | null,
   machineName: string,
+  refusal: EnvironmentRefusal | undefined,
 ): ChatReadiness {
-  if (!link) return { kind: 'error', message: `Connecting to ${machineName}.` }
-  if (link.state !== 'live') return { kind: 'error', message: link.detail }
+  // A machine whose Studio is from before the protocol (it speaks only the
+  // older paired lane) cannot be followed from here until it is updated, and
+  // a pairing it no longer admits cannot be either: said in their words, not
+  // as a connection that never comes.
+  if (link !== 'live' && refusal && (refusal.kind === 'outdated' || refusal.kind === 'unauthorized'))
+    return {
+      kind: 'error',
+      message:
+        refusal.kind === 'outdated'
+          ? `Update SprintEngine Studio on ${machineName} to follow and drive its chats from here.`
+          : refusal.message,
+    }
+  if (link === 'connecting') return { kind: 'error', message: `Connecting to ${machineName}.` }
+  if (link === 'away')
+    return { kind: 'error', message: `${machineName} is not answering. This shows what it last said.` }
   if (access !== 'operate')
     return {
       kind: 'error',
       message: `This pairing may follow this conversation on ${machineName} but not drive it.`,
     }
   return { kind: 'ready' }
+}
+
+/** The machine's welcome, its chat source's snapshot, and how the window reaches it: read as they change. */
+function usePairedSource(source: EnvironmentChatSource): {
+  welcome: StudioWelcomeFrame | null
+  link: PairedLink
+  refusal: EnvironmentRefusal | undefined
+} {
+  const welcome = useSyncExternalStore(
+    (listener) => source.watchOpen(listener),
+    () => source.welcome(),
+    () => source.welcome(),
+  )
+  const snapshot = useSyncExternalStore(
+    (listener) => source.subscribe(listener),
+    () => source.snapshot(),
+    () => source.snapshot(),
+  )
+  return {
+    welcome,
+    link: !welcome ? 'connecting' : snapshot.stale ? 'away' : 'live',
+    refusal: snapshot.refusal,
+  }
 }
 
 /**
@@ -138,12 +177,7 @@ function remoteConversationEngine(thread: MeshConversation | null, modelSwitch: 
 /** What the machine says it does for its chats beyond the turn: forks, side questions, the window's breakdown. */
 type RemoteAgentReads = { fork: boolean; sideQuestions: boolean; contextBreakdown: boolean }
 
-const NO_CAPABILITIES: readonly string[] = []
-
-const sameNames = (a: readonly string[], b: readonly string[]) =>
-  a.length === b.length && a.every((name, index) => name === b[index])
-
-/** What the machine a chat runs on said it takes, each read from its list. */
+/** What the machine a chat runs on said it takes, each read from its welcome. */
 type RemoteSessionFeatures = {
   modelSwitch: boolean
   stopSubagents: boolean
@@ -159,17 +193,21 @@ type RemoteSessionFeatures = {
 }
 
 /**
- * What the machine takes for its chats' sessions, from the capabilities it
- * publishes: each still needs the chat's provider to be able, which its row says.
+ * What the machine takes for its chats' sessions, from what its Studio's
+ * welcome serves: each still needs the chat's provider to be able, which its
+ * row says.
  */
-function remoteSessionFeatures(capabilities: readonly string[]): Omit<RemoteSessionFeatures, 'modelSwitch'> {
-  const has = (name: string) => capabilities.includes(name)
+function remoteSessionFeatures(welcome: StudioWelcomeFrame | null): Omit<RemoteSessionFeatures, 'modelSwitch'> {
+  const conversation = welcome?.conversation.capabilities ?? []
+  const has = (name: string) => conversation.includes(name)
   return {
     stopSubagents: has(CONVERSATION_STOP_SUBAGENT_CAPABILITY),
     messageSubagents: has(CONVERSATION_AGENT_MESSAGE_CAPABILITY),
     handoff: has(CONVERSATION_HANDOFF_CAPABILITY),
-    // Its skills are listed by its extensions, and a send carries them.
-    sendSkills: has(CONVERSATION_SEND_SKILLS_CAPABILITY) && has('workspace-extensions'),
+    // Its skills are listed by its workspaces' extensions, and a send carries them.
+    sendSkills:
+      has(CONVERSATION_SEND_SKILLS_CAPABILITY) &&
+      (welcome?.capabilities.includes(STUDIO_WORKSPACES_CAPABILITY) ?? false),
     rewind: has(CONVERSATION_REWIND_CAPABILITY),
     agentReads: {
       fork: has(CONVERSATION_FORK_CAPABILITY),
@@ -304,64 +342,26 @@ export default function RemoteConversationPanel({
     () => ({ connectionId, workspaceId: remoteWorkspaceId, agentId: remoteAgentId }),
     [connectionId, remoteWorkspaceId, remoteAgentId],
   )
-  const [link, setLink] = useState<MeshConversationLink | null>(null)
+  // This window's client of that machine, shared with the list of its chats.
+  const source = useMemo(
+    () => environmentChatSourceFor(pairedTarget({ id: connectionId, machineName })),
+    [connectionId, machineName],
+  )
+  const { welcome, link, refusal } = usePairedSource(source)
   const seedThread = useMemo(() => (subagent ? threadOfSubagent(subagent.row) : null), [subagent])
   const [listedThread, setThread] = useState<MeshConversation | null>(null)
   const thread = listedThread ?? seedThread
-  // What the machine last said of itself in its list: the capabilities it
-  // publishes, and what this pairing may do there.
-  const [said, setSaid] = useState<{ access: MeshConversationAccess; capabilities: readonly string[] } | null>(null)
-  const [hostQueued, setHostQueued] = useState<MeshQueuedMessage[]>([])
-  const [hostScheduled, setHostScheduled] = useState<MeshScheduledMessage[]>([])
-  const [hostUsage, setHostUsage] = useState<MeshConversationUsageLimits | null>(null)
-  // The chat's sub-agents, as the machine last said. It says only where it
-  // advertises `conversation-subagents`; the panel reads them from here.
-  const [hostSubagents, setHostSubagents] = useState<MeshSubagent[]>([])
   // Bumped after an accepted model switch, so the list is read again and the
   // chip names what the machine says the chat is now on.
   const [listVersion, setListVersion] = useState(0)
-  // The link's word on access is the latest (a refused command narrows it);
-  // the list's is what was granted when this pane last read the machine.
-  const access = link?.access ?? said?.access ?? null
-  // What every transport of this pane reads its capabilities off
-  // (`negotiateChatCapabilities`), as a window reads its Studio's welcome.
-  const offer = useMemo(
-    () => ({
-      via: 'paired-lane' as const,
-      capabilities: said?.capabilities ?? NO_CAPABILITIES,
-      access,
-      modelCatalog: Boolean(thread?.models),
-    }),
-    [said, access, thread?.models],
-  )
-  const capabilities = useMemo(() => negotiateChatCapabilities(offer), [offer])
-  const features = useMemo(() => remoteSessionFeatures(said?.capabilities ?? NO_CAPABILITIES), [said])
-  const modelSwitch = capabilities.modelSwitch
+  const features = useMemo(() => remoteSessionFeatures(welcome), [welcome])
 
   // One transport per conversation, never rebuilt on a grant change: a new
-  // transport is a new subscription, and the follow in main would be dropped
-  // and dialled again. Its capabilities read the offer as it is now.
-  const offerRef = useRef(offer)
-  offerRef.current = offer
-  // The id that machine's Studio said it is, as this desktop keeps its
-  // environments: what the chat's environment is named by once it has.
-  const environments = useEnvironments()
-  const environmentIdRef = useRef<string | null>(null)
-  environmentIdRef.current =
-    environmentOfRoute(environments, environmentRouteOfMeshConnection(connectionId))?.environmentId ?? null
-  const threadRef = useRef(thread)
-  threadRef.current = thread
+  // transport is a new subscription. Its capabilities read the welcome as it is now.
   const transport = useMemo(() => {
-    const base = createRemoteConversationTransport({
+    const base = createPairedChatTransport({
       key,
       machineName,
-      environmentId: () => environmentIdRef.current,
-      offer: () => offerRef.current,
-      onLink: setLink,
-      onQueued: setHostQueued,
-      onScheduled: setHostScheduled,
-      onUsageLimits: setHostUsage,
-      onSubagents: setHostSubagents,
       // A pull request Create PR opened there is in the machine's list now:
       // read it again, so the strip says "Open PR #N" without waiting for the
       // sidebar's next read.
@@ -378,11 +378,10 @@ export default function RemoteConversationPanel({
         ...base,
         // A chat at rest over there is listed without a session, and so without
         // what it can do: its first message wakes one, and the list is read
-        // again once that message is answered, so the composer learns whether
-        // the chat takes images without waiting for the link to drop.
+        // again once that message is answered.
         send: async (turn: Parameters<typeof send>[0]) => {
           const result = await send(turn)
-          if (result.ok && !threadRef.current?.capabilities) setListVersion((version) => version + 1)
+          if (result.ok) setListVersion((version) => version + 1)
           return result
         },
         // A watch ended there is off its list: read it again, so the strip
@@ -423,62 +422,79 @@ export default function RemoteConversationPanel({
       },
     ) as ConversationTransport
   }, [key, machineName])
+  const capabilities = transport.capabilities
+  // What this pairing may do there: its grant, as the machine's welcome says it.
+  const access: MeshConversationAccess | null = welcome ? (capabilities.operate ? 'operate' : 'read') : null
+  const modelSwitch = capabilities.modelSwitch && Boolean(thread?.models)
 
   // A sub-agent is a chat of its own over there, followed by its own ids: what
-  // the panel reads of one, and the answer to what it asks, go through
-  // this. Made once for each, as the pane's own is, and reading the pane's
-  // offer: the same machine, the same pairing.
+  // the panel reads of one, and the answer to what it asks, go through this.
   const subagentTransport = useMemo(() => {
     const made = new Map<string, ConversationTransport>()
     return (agentId: string): ConversationTransport => {
       const existing = made.get(agentId)
       if (existing) return existing
-      const transport = createRemoteConversationTransport({
-        key: { ...key, agentId },
-        machineName,
-        environmentId: () => environmentIdRef.current,
-        offer: () => offerRef.current,
-      })
+      const transport = createPairedChatTransport({ key: { ...key, agentId }, machineName })
       made.set(agentId, transport)
       return transport
     }
   }, [key, machineName])
 
   // The machine's list names the conversation's title, model and what its
-  // provider can do. Read on open and whenever the link comes back live.
-  // Not when the link drops: a machine the follow cannot reach will not
-  // answer a list either, and the read would only wait out its timeout.
-  // Main shares one list per machine across the panes and the band that ask
-  // at once, and the protocol has no read for a single conversation, so the
-  // whole list is still what is asked for.
-  const live = link?.state === 'live'
-  const linkRef = useRef(link)
-  linkRef.current = link
+  // provider can do. Read on open, whenever the window reaches the machine
+  // again, and whenever its chats move there (the source's list is read
+  // again then too). Not while it is away: it would only wait out its timeout.
+  const listedAt = useSyncExternalStore(
+    (listener) => source.subscribe(listener),
+    () => source.snapshot(),
+    () => source.snapshot(),
+  )
   useEffect(() => {
-    if (!live && linkRef.current !== null) return
+    if (link !== 'live') return
     let cancelled = false
-    void window.api
-      .meshConversationList(connectionId)
-      .then((result) => {
-        if (cancelled || !result.ok) return
-        // The pane's tab reads its mark, model and clock off this list too.
-        publishRemoteConversationList(connectionId, result.conversations)
-        setSaid((current) =>
-          current?.access === result.access && sameNames(current.capabilities, result.capabilities)
-            ? current
-            : { access: result.access, capabilities: result.capabilities },
-        )
-        setThread(
-          result.conversations.find(
-            (entry) => entry.workspaceId === remoteWorkspaceId && entry.agentId === remoteAgentId,
-          ) ?? null,
-        )
-      })
-      .catch(() => undefined)
+    void listPairedChats({ id: connectionId, machineName }).then((result) => {
+      if (cancelled || !result.ok) return
+      // The pane's tab reads its mark, model and clock off this list too.
+      publishRemoteConversationList(connectionId, result.conversations)
+      setThread(
+        result.conversations.find(
+          (entry) => entry.workspaceId === remoteWorkspaceId && entry.agentId === remoteAgentId,
+        ) ?? null,
+      )
+    })
     return () => {
       cancelled = true
     }
-  }, [connectionId, remoteWorkspaceId, remoteAgentId, live, listVersion])
+  }, [connectionId, machineName, remoteWorkspaceId, remoteAgentId, link, listVersion, listedAt])
+
+  // The chat's live session there, as that machine's sessions list it: what it
+  // can do now, from its own Studio. A chat at rest has none listed.
+  const liveSession = useMemo(() => {
+    const environmentId = listedAt.environmentId
+    if (!environmentId || !isEnvironmentId(environmentId)) return null
+    const sessions = listedAt.byAddress.get(formatChatAddress({ environmentId, chatId: remoteWorkspaceId })) ?? []
+    return sessions.find((candidate) => candidate.agentId === remoteAgentId) ?? null
+  }, [listedAt, remoteWorkspaceId, remoteAgentId])
+
+  // What the machine holds for the chat beside its turn, and its sub-agents,
+  // on the chat's own push topics there.
+  const heldKey = useMemo(
+    () => ({ workspaceId: remoteWorkspaceId, agentId: remoteAgentId }),
+    [remoteWorkspaceId, remoteAgentId],
+  )
+  const held = useStudioChatHeld(heldKey, transport.services.followPush, machineName)
+  const [hostSubagents, setHostSubagents] = useState<MeshSubagent[]>(NO_SUBAGENTS)
+  useEffect(() => {
+    setHostSubagents(NO_SUBAGENTS)
+    const follow = transport.services.followPush
+    if (!follow) return
+    return follow({
+      topic: 'conversation.subagents',
+      params: { key: heldKey },
+      capability: STUDIO_CONVERSATIONS_CAPABILITY,
+      onPayload: (frame) => setHostSubagents(frame.subagents),
+    })
+  }, [transport, heldKey])
 
   const [fields, setFields] = useState<Omit<ChatAgentFields, 'conversation' | 'name'>>({})
   const update = useCallback((patch: Partial<ChatAgentFields>) => {
@@ -515,17 +531,18 @@ export default function RemoteConversationPanel({
       localServers: facts?.localServers ?? NO_LOCAL_SERVERS,
     }
   }, [facts])
-  const hostUsageLimits = useMemo(
-    () => (capabilities.hostUsageLimits && hostUsage ? hostUsageLimitsOf(machineName, hostUsage) : null),
-    [capabilities.hostUsageLimits, hostUsage, machineName],
-  )
   const displayTitle = thread?.title || title || 'Conversation'
+  // Its live session as that machine lists it, where it has one; else what
+  // its list row says it can do, as a session a send there wakes.
   const session = useMemo(
-    () => remoteConversationSession(thread, key, { ...features, modelSwitch }),
-    [thread, key, features, modelSwitch],
+    () => liveSession ?? remoteConversationSession(thread, key, { ...features, modelSwitch }),
+    [liveSession, thread, key, features, modelSwitch],
   )
   const engine = useMemo(() => remoteConversationEngine(thread, modelSwitch), [thread, modelSwitch])
-  const readiness = useMemo(() => remoteConversationReadiness(link, access, machineName), [link, access, machineName])
+  const readiness = useMemo(
+    () => remoteConversationReadiness(link, access, machineName, refusal),
+    [link, access, machineName, refusal],
+  )
   const binding = useMemo<ChatBinding>(
     () => ({
       agent: {
@@ -538,16 +555,17 @@ export default function RemoteConversationPanel({
       update,
       workspace: null,
       workspaceRoot: null,
-      sessionRoot: `mesh:${connectionId}`,
+      // No folder of this disk: the chat itself, which its `/` list is kept under here.
+      sessionRoot: pairedCommandsKey(key),
       readiness,
       session,
       // No header of its own (owner, 2026-10-08): the tab names the agent and
       // wears the machine's mark, and the strip under the composer marks the
       // machine again; a third line saying both was the same fact once more.
       ...(engine ? { engine } : {}),
-      hostQueue: { machineName, messages: hostQueued },
-      ...(capabilities.hostSchedule ? { hostSchedule: { machineName, messages: hostScheduled } } : {}),
-      ...(hostUsageLimits ? { hostUsageLimits } : {}),
+      hostQueue: held.hostQueue,
+      ...(capabilities.hostSchedule ? { hostSchedule: held.hostSchedule } : {}),
+      ...(capabilities.hostUsageLimits && held.hostUsageLimits ? { hostUsageLimits: held.hostUsageLimits } : {}),
       listed,
       ...(subagent
         ? {
@@ -569,15 +587,14 @@ export default function RemoteConversationPanel({
       displayTitle,
       thread,
       update,
-      connectionId,
+      key,
       readiness,
       session,
       engine,
       machineName,
-      hostQueued,
+      held,
       capabilities.hostSchedule,
-      hostScheduled,
-      hostUsageLimits,
+      capabilities.hostUsageLimits,
       listed,
     ],
   )

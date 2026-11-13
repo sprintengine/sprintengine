@@ -81,8 +81,11 @@ test('WorkspaceSidebar.remoteOpening', async () => {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshConversationList: async () => ({
-      ok: true,
+  }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
+  fakePairedStudios(domWindow.api as object, {
+    'conversation.list': () => ({
       conversations: [
         {
           workspaceId: 'rw4',
@@ -100,13 +103,7 @@ test('WorkspaceSidebar.remoteOpening', async () => {
           lastVisitedAt: visitedThere,
         },
       ],
-      access: 'operate',
-      capabilities: [],
     }),
-  }
-  // That machine's Studio, as this window's own client of it reaches it.
-  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
-  fakePairedStudios(domWindow.api as object, {
     'workspaces.list': () => ({
       workspaces: [{ id: 'rw4', name: 'parser', mode: 'standard', folderPath: '/Users/dev/parser', repository: null }],
     }),

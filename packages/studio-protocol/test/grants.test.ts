@@ -44,8 +44,7 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * work, what reaches a remote with this machine's credentials, removing or
  * unlocking agents' worktrees, and the GitHub account Studio holds. Where
  * this machine publishes agents' pages: the setting and the token it holds,
- * a set-up that signs in to the host, and the person's set-up question. A chat's
- * Create PR (`pull-request-create`): its forge, its push, its drafting CLI. The
+ * a set-up that signs in to the host, and the person's set-up question. The
  * worktree pool and the agents' worktrees (`worktrees.*`, with its streams):
  * this machine's checkouts, which the pool hands out, resets and removes.
  * A project's backlog by its folder (the desktop's own Backlog panel): it
@@ -115,12 +114,6 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'pullRequests.link',
   'pullRequests.noteWork',
   'pullRequests.noteToolCall',
-  // A chat's Create PR: the forge, the remote and the drafting CLI with this machine's credentials.
-  'pullRequests.createState',
-  'pullRequests.draft',
-  'pullRequests.draftCancel',
-  'pullRequests.push',
-  'pullRequests.create',
   'session.terminalHandoff',
   // Every terminal method and stream: a terminal is a shell on this machine.
   ...(Object.keys(STUDIO_TERMINALS_METHODS) as StudioMethod[]),

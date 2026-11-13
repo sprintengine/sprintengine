@@ -123,16 +123,11 @@ test('WorkspaceSidebar.remoteRow', async () => {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations: listed,
-      access: 'operate',
-      capabilities: [],
-    }),
   }
   // That machine's Studio, as this window's own client of it reaches it.
   const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
   fakePairedStudios(domWindow.api as object, {
+    'conversation.list': () => ({ conversations: listed }),
     'workspaces.list': () => ({
       workspaces: [
         { id: 'rw1', name: 'home-compute', mode: 'standard', folderPath: '/Users/dev/home-compute', repository: null },

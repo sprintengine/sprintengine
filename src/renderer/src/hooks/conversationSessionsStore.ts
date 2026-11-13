@@ -30,7 +30,9 @@ import type {
 import { conversationPhaseWorking, conversationSummaryPhase } from '../../../shared/conversation/phase'
 import { onWindowVisibilityChange, windowActivity, type WindowActivity } from '../utils/windowActivity'
 import { windowChatServices } from '../components/panels/agentChat/windowChat'
+import { environmentTargetOf } from '../components/panels/agentChat/environmentChat'
 import { followedEnvironmentChats, onFollowedEnvironmentChats } from '../studio/environmentChats'
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 /**
  * A summary as the renderer holds it: main's fields, plus when the work now
@@ -51,24 +53,45 @@ export type ConversationSessionsApi = {
   onLifecycleEvent?: (listener: (event: ConversationEvent) => void, onReconnected?: () => void) => () => void
 }
 
+/** Whether this window holds a chat's record on that route: a workspace here whose environment it reaches it by. */
+function heldOnRoute(route: string, workspaceId: string): boolean {
+  return useWorkspaceStore
+    .getState()
+    .workspaces.some(
+      (workspace) => workspace.id === workspaceId && environmentTargetOf(workspace.environment)?.route === route,
+    )
+}
+
 const windowSessions = (): ConversationSessionsApi =>
   typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
-    ? withEnvironmentSessions(windowChatServices().sessions)
+    ? withEnvironmentSessions(windowChatServices().sessions, heldOnRoute)
     : {}
 
 /**
  * The window's own Studio's sessions, joined by those of every environment
- * the window follows chats on (`environmentChats.ts`): one list, so a row,
- * the chat view's session and its subagents read a chat's session the same
- * way wherever it runs. An environment's list is its last one read, kept while
- * that machine is away; a new list from any of them is read as a change.
+ * the window follows chats on (`environmentChats.ts`) whose chats it holds a
+ * record of (`holds`, by the route and the chat's workspace): one list, so a
+ * row, the chat view's session and its subagents read a chat's session the
+ * same way wherever it runs. An environment's list is its last one read, kept
+ * while that machine is away; a new list from any of them is read as a change.
+ *
+ * Only held chats join. Everything that reads this list keys it by workspace
+ * and may act on it: the sessions menu lists a session no workspace here
+ * claims as one to stop, and stops it on this window's own Studio. A paired
+ * desktop's chats are that machine's, under its own workspace ids, and are
+ * read from its source by the views that show them, never from here.
  */
-export function withEnvironmentSessions(local: Required<ConversationSessionsApi>): ConversationSessionsApi {
+export function withEnvironmentSessions(
+  local: Required<ConversationSessionsApi>,
+  holds: (route: string, workspaceId: string) => boolean,
+): ConversationSessionsApi {
   return {
     list: async () => {
       const here = await local.list()
       if (!here.ok) return here
-      const there = followedEnvironmentChats().flatMap((source) => source.snapshot().sessions)
+      const there = followedEnvironmentChats().flatMap((source) =>
+        source.snapshot().sessions.filter((session) => holds(source.route, session.workspaceId)),
+      )
       return there.length === 0 ? here : { ok: true, sessions: [...here.sessions, ...there] }
     },
     onLifecycleEvent: (listener, onReconnected) => {

@@ -1,9 +1,6 @@
 import {
   CONVERSATION_AGENT_MESSAGE_CAPABILITY,
   CONVERSATION_CHANGES_CAPABILITY,
-  CONVERSATION_CHECKPOINT_REVERT_CAPABILITY,
-  CONVERSATION_COMMANDS_CAPABILITY,
-  CONVERSATION_FILE_SEARCH_CAPABILITY,
   CONVERSATION_MESSAGE_FILES_CAPABILITY,
   CONVERSATION_MODELS_CAPABILITY,
   CONVERSATION_PERMANENT_APPROVALS_CAPABILITY,
@@ -55,10 +52,6 @@ export type ChatCapabilities = {
   attachFiles: boolean
   /** The `/` menu lists what the chat's CLI runs in the chat's folder. */
   commandList: boolean
-  /** The server echoes an optimistic turn's id back on its `user_message`. */
-  optimisticTurns: boolean
-  /** The chat's permission preset is known before a session reports it. */
-  reportsPreset: boolean
   /** The chat takes all four permission presets, Manual and Auto among them. */
   permissionModes: boolean
   /** Hand a message to a turn that is running (a steer), where the provider takes one. */
@@ -90,25 +83,14 @@ export type ChatCapabilities = {
 }
 
 /**
- * What a chat's server said of itself.
- *
- * - `studio`: a Studio's welcome, as every client on the Studio protocol has
- *   one. Its own capabilities and the conversation contract's, and the grant
- *   this client holds there.
- * - `paired-lane`: a paired machine's chat followed over the tailnet lane, the
- *   capabilities it published and the access its pairing holds. Read only
- *   until the paired desktop is on the Studio protocol too, when it has a
- *   welcome of its own; nothing else may offer this.
+ * What a chat's server said of itself: a Studio's welcome, as every client on
+ * the Studio protocol has one. Its own capabilities and the conversation
+ * contract's, and the grant this client holds there.
  */
-export type ChatServerOffer =
-  | { via: 'studio'; welcome: Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant'> }
-  | {
-      via: 'paired-lane'
-      capabilities: readonly string[]
-      access: 'operate' | 'read' | null
-      /** The lane lists the chat's model catalog; without one there is nothing to switch to. */
-      modelCatalog: boolean
-    }
+export type ChatServerOffer = {
+  via: 'studio'
+  welcome: Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant'>
+}
 
 /** Whether a Studio serves a method (its capability, where it names one) and the grant reaches it. */
 export function studioOffers(
@@ -128,7 +110,6 @@ const SAID_NOTHING: Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | '
 
 /** A chat's capabilities from what its server said; nothing before it has said anything. */
 export function negotiateChatCapabilities(offer: ChatServerOffer | null): ChatCapabilities {
-  if (offer?.via === 'paired-lane') return pairedLaneCapabilities(offer)
   const welcome = offer?.welcome ?? SAID_NOTHING
   const serves = (name: string) => welcome.conversation.capabilities.includes(name)
   const offers = (method: StudioMethod) => studioOffers(welcome, method)
@@ -142,20 +123,23 @@ export function negotiateChatCapabilities(offer: ChatServerOffer | null): ChatCa
     quotes: sends && serves(CONVERSATION_QUOTE_TOKENS_CAPABILITY),
     checkpointRevert: offers('conversation.revert'),
     modelSwitch: offers('session.setModel') && serves(CONVERSATION_MODELS_CAPABILITY),
-    // An @ is a search of the chat's folder (`files.search`) and a name the send carries.
-    mentions: sends && offers('files.search') && serves(CONVERSATION_SEND_MENTIONS_CAPABILITY),
+    // An @ is a search of the chat's folder and a name the send carries: a
+    // search of the folder by path where the grant reads files there
+    // (`files.search`), else of the chat's own folder by its key
+    // (`conversation.searchFiles`, a paired device's).
+    mentions:
+      sends &&
+      (offers('files.search') || offers('conversation.searchFiles')) &&
+      serves(CONVERSATION_SEND_MENTIONS_CAPABILITY),
     attachFiles: sends && serves(CONVERSATION_MESSAGE_FILES_CAPABILITY),
-    commandList: offers('conversation.commands'),
-    // A send on the Studio protocol carries its bubble's id, which the
-    // `user_message` echoes, and a chat's session reports its preset.
-    optimisticTurns: sends,
-    reportsPreset: sends,
+    // By the chat's folder (`conversation.commands`), or by its key (`conversation.listCommands`).
+    commandList: offers('conversation.commands') || offers('conversation.listCommands'),
     permissionModes: serves(CONVERSATION_PERMISSION_MODES_CAPABILITY),
     steer: sends && serves(CONVERSATION_STEER_SENDS_CAPABILITY),
     hostQueue: queues,
     hostQueueAttachments: queues && serves(CONVERSATION_QUEUED_ATTACHMENTS_CAPABILITY),
     skills: sends && serves(CONVERSATION_SEND_SKILLS_CAPABILITY),
-    // Create PR, every step in the chat's checkout on its Studio (owner-only there).
+    // Create PR, every step in the chat's checkout on its Studio.
     hostPullRequests: sends && offers('pullRequests.create'),
     hostSchedule: serves(CONVERSATION_SCHEDULED_SENDS_CAPABILITY),
     hostUsageLimits: serves(CONVERSATION_USAGE_LIMITS_CAPABILITY),
@@ -166,50 +150,5 @@ export function negotiateChatCapabilities(offer: ChatServerOffer | null): ChatCa
     providerSignIn: offers('providers.signIn') && offers('terminal.open'),
     resumeInTerminal: offers('session.terminalHandoff') && offers('terminal.open'),
     transcriptExport: offers('conversation.exportPage'),
-  }
-}
-
-/**
- * A paired machine's chat over the tailnet lane: what the pairing's access
- * lets it do, and what the machine publishes it does beyond the turn. The lane
- * carries no bubble id, names a preset only from a desktop that keeps one, and
- * starts no session from here (a send there resumes one).
- */
-function pairedLaneCapabilities(offer: Extract<ChatServerOffer, { via: 'paired-lane' }>): ChatCapabilities {
-  const has = (name: string) => offer.capabilities.includes(name)
-  const operate = offer.access === 'operate'
-  const queues = operate && has(CONVERSATION_QUEUED_SENDS_CAPABILITY)
-  return {
-    operate,
-    keepsSideQuestions: has(CONVERSATION_SIDE_QUESTION_RECORDS_CAPABILITY),
-    startSession: false,
-    permanentApprovals: operate && has(CONVERSATION_PERMANENT_APPROVALS_CAPABILITY),
-    quotes: operate && has(CONVERSATION_QUOTE_TOKENS_CAPABILITY),
-    checkpointRevert: operate && has(CONVERSATION_CHECKPOINT_REVERT_CAPABILITY),
-    modelSwitch: operate && has(CONVERSATION_MODELS_CAPABILITY) && offer.modelCatalog,
-    // An @ is a search there and a name the send carries back, so both or neither.
-    mentions: operate && has(CONVERSATION_FILE_SEARCH_CAPABILITY) && has(CONVERSATION_SEND_MENTIONS_CAPABILITY),
-    // A file goes up through the machine's upload route.
-    attachFiles: operate && has(CONVERSATION_MESSAGE_FILES_CAPABILITY) && has('upload'),
-    commandList: operate && has(CONVERSATION_COMMANDS_CAPABILITY),
-    optimisticTurns: false,
-    reportsPreset: false,
-    permissionModes: has(CONVERSATION_PERMISSION_MODES_CAPABILITY),
-    steer: operate && has(CONVERSATION_STEER_SENDS_CAPABILITY),
-    hostQueue: queues,
-    hostQueueAttachments: queues && has(CONVERSATION_QUEUED_ATTACHMENTS_CAPABILITY),
-    // Its skills are listed by the machine's extensions.
-    skills: operate && has(CONVERSATION_SEND_SKILLS_CAPABILITY) && has('workspace-extensions'),
-    hostPullRequests: operate && has('chat-create-pull-request'),
-    hostSchedule: has(CONVERSATION_SCHEDULED_SENDS_CAPABILITY),
-    hostUsageLimits: has(CONVERSATION_USAGE_LIMITS_CAPABILITY),
-    hostChanges: has(CONVERSATION_CHANGES_CAPABILITY),
-    agentMessages: operate && has(CONVERSATION_AGENT_MESSAGE_CAPABILITY),
-    restartSession: operate && has(CONVERSATION_RESTART_SESSION_CAPABILITY),
-    // No terminal of a paired machine is reached from here (owner ruling), and
-    // the lane pages out no export: the view exports what it holds.
-    providerSignIn: false,
-    resumeInTerminal: false,
-    transcriptExport: false,
   }
 }

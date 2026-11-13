@@ -4,7 +4,6 @@ import type { createConversationTerminalHandoff } from '../../main/conversation-
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { createConversationService } from '../../main/conversation-service'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
-import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
 import type { AgentLaunchSettingsStore } from '../../main/launch-settings-store'
 import { createStudioChatBackend } from '../../main/studio-rpc/studio-chat-backend'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
@@ -57,7 +56,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   const ipc = registry as IpcMain
   const { core } = deps
   const dataDir = () => core.platform.paths.dataDir()
-  registerMeshIpc(ipc, deps.gateway)
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.
   const conversationCommands = core.conversationCommands()
   registerHostsIpc(ipc, { hosts: core.hosts })
@@ -73,6 +71,7 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
       hasReceipt: (sessionId, commandId) => core.conversations.hasCommandReceipt(sessionId, commandId),
       readableRoots: () => knownFolders(core.workspaceRegistry, dataDir()),
       commands: (input) => conversationCommands.list(input),
+      onListChanged: (listener) => deps.gateway.onListChanged(listener),
       // Export chat: the chat as its record says, its transcript and its
       // pictures, read here where they are kept, for any client to write out.
       exportSource: async (chat) => {

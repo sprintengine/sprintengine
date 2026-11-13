@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { authorizeStudioAccess, isStudioPermission } from '../../packages/studio-protocol/src/permissions'
+import { isStudioPermission } from '../../packages/studio-protocol/src/permissions'
 import { SERVER_IPC_CHANNELS } from './ipc-channel-owners'
 import { WEB_TUNNEL_CHANNELS } from './web-client'
 import {
@@ -66,12 +66,7 @@ test('an owner’s tab reaches exactly the channels it reached before permission
   // The exclusions a tab must keep. What main's rest sweep reads that only a
   // desktop window can say is the protocol's now, which takes it from no
   // browser (`studio-workspace-sync.ts`).
-  for (const channel of [
-    'conversation:sessions:terminal-handoff',
-    'conversation:secrets:set',
-    'mesh:conversation-send',
-    'mesh:conversation-follow',
-  ])
+  for (const channel of ['conversation:sessions:terminal-handoff', 'conversation:secrets:set'])
     assert.equal(webTunnelAllows(channel), false, channel)
 })
 
@@ -97,10 +92,4 @@ test('an owner’s tab holds only the permissions some channel it reaches needs,
   assert.deepEqual([...WEB_OWNER_TUNNEL_PERMISSIONS].sort(), [...needed].sort())
   for (const permission of ['environment:maintain', 'tools:offer'])
     assert.equal(WEB_OWNER_TUNNEL_PERMISSIONS.includes(permission as never), false, permission)
-  // And the owner principal is refused where a channel is the desktop's, whatever it holds.
-  const decision = authorizeStudioAccess(
-    webTunnelPrincipal({ owner: true }),
-    WEB_TUNNEL_ACCESS['mesh:conversation-send'],
-  )
-  assert.equal(!decision.ok && decision.reason, 'local_only')
 })

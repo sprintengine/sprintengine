@@ -69,7 +69,7 @@ function setup(answer: Answer = 'studio') {
   registerModel(WS, model)
   const forks: ChatForkInput[] = []
   const transport = {
-    environment: { id: 'env-studio', label: null, lane: null },
+    environment: { id: 'env-studio', label: null, route: null },
     fork: async (input: ChatForkInput): Promise<ChatForkResult> => {
       forks.push(input)
       if (answer !== 'studio') return answer
@@ -224,8 +224,9 @@ test('a refused fork opens nothing', async () => {
 test('a fork answered without where it is opens nothing, rather than a tab onto a chat that may not be here', async () => {
   // A Studio from before the answer said where: `{ ok: true }` alone.
   for (const answer of [
-    { ok: true as const },
     { ok: true as const, address: { environmentId: 'env-studio', chatId: 'another-chat', agentId: 'x' }, name: 'X' },
+    // A fork is made beside its chat: an address on another machine is not it.
+    { ok: true as const, address: { environmentId: 'env-elsewhere', chatId: 'ws', agentId: 'x' }, name: 'X' },
   ]) {
     const t = setup(answer)
     await expect(
@@ -314,30 +315,20 @@ function remoteSetup(options: { mounted?: boolean; listedTitle?: string } = {}) 
     },
   })
   if (options.mounted !== false) registerModel(REMOTE_WS, model)
-  const listed = vi.fn(async (_connectionId: string) => ({
-    ok: true,
-    conversations: [
-      {
-        workspaceId: 'remote-workspace',
-        agentId: forks.at(-1)?.newAgentId,
-        title: options.listedTitle ?? 'Atlas (fork 2)',
-      },
-    ],
-  }))
-  Object.assign(globalThis.window as object, { api: { meshConversationList: listed } })
   const forks: ChatForkInput[] = []
   const transport = {
-    environment: {
-      id: null,
-      label: 'mac-mini',
-      lane: { connectionId: 'connection', workspaceId: 'remote-workspace', commandsKey: 'mesh:connection' },
-    },
+    environment: { id: 'env-mini', label: 'mac-mini', route: 'tailnet:connection' },
+    // That machine makes the fork beside the chat, in its workspace there, and says where.
     fork: async (input: ChatForkInput) => {
       forks.push(input)
-      return { ok: true as const }
+      return {
+        ok: true as const,
+        address: { environmentId: 'env-mini', chatId: 'remote-workspace', agentId: input.newAgentId },
+        name: options.listedTitle ?? 'Atlas (fork 2)',
+      }
     },
   }
-  return { ...t, model, forks, transport, listed }
+  return { ...t, model, forks, transport }
 }
 
 const meshTabsOf = (model: Model) => {
@@ -376,7 +367,6 @@ test('a chat on a paired machine forks over there, and the fork opens here in th
     })
     expect(asked).not.toHaveProperty('title')
     expect(asked.newAgentId).toMatch(/^conversation-claude-agent-/)
-    expect(t.listed).toHaveBeenCalledWith('connection')
 
     const tabs = meshTabsOf(t.model)
     expect(tabs.agents).toEqual(['remote-agent', asked.newAgentId, 'remote-other'])

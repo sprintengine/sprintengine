@@ -135,6 +135,15 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.fork': CHAT_OPERATE,
   // Stopping an agent's watch on a pull request it opened.
   'pullRequests.unwatch': CHAT_OPERATE,
+  // A chat's Create PR, in its own checkout there: what a paired desktop's
+  // window offers on the chats it follows (the lane's tools did the same).
+  // Whether the button shows is a read; drafting, pushing and opening drive
+  // the chat. Never a path on that disk (`gitRoot` is left out).
+  'pullRequests.createState': CHAT_READ,
+  'pullRequests.draft': CHAT_OPERATE,
+  'pullRequests.draftCancel': CHAT_OPERATE,
+  'pullRequests.push': CHAT_OPERATE,
+  'pullRequests.create': CHAT_OPERATE,
 
   // Every chat's limit resumes at once: the per-chat watches and commands
   // above, read and changed for all chats.
@@ -194,6 +203,9 @@ const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.changes': CHAT_READ,
   'conversation.commands': CHAT_READ,
   'conversation.events': CHAT_READ,
+  // The chat or workspace list may read differently: what the lane's `/events`
+  // told a paired desktop, and the chat list is a chat read.
+  'conversations.changed': CHAT_READ,
   'usageLimitResumes.changed': CHAT_READ,
   'pullRequests.changed': WORKSPACE,
   'schedules.changed': WORKSPACE,
@@ -218,13 +230,6 @@ const REFUSED_TO_DEVICES: Readonly<Record<string, string>> = {
   'textGeneration.chatTitle': 'runs an agent CLI here outside any chat, for the window’s own boxes',
   'commitMessage.draft': 'the same, over a checkout on this disk',
   'commitMessage.cancel': 'the same',
-  // A chat's Create PR on the Studio: an owner's, as git's push and the GitHub
-  // account are. A paired desktop's Create PR goes over its lane's tools.
-  'pullRequests.createState': 'asks the forge about the chat’s branch with this machine’s credentials',
-  'pullRequests.draft': 'runs an agent CLI here over the chat’s branch',
-  'pullRequests.draftCancel': 'the same',
-  'pullRequests.push': 'reaches the remote with this machine’s git credentials',
-  'pullRequests.create': 'opens a pull request with this machine’s forge credentials',
 }
 
 /**

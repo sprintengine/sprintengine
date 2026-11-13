@@ -509,3 +509,53 @@ test('a queued message whose answer was lost with the connection is asked again 
   expect(refused.ok).toBe(false)
   expect(asked).toHaveLength(1)
 }, 20_000)
+
+test('a push stream that cannot be followed waits longer each time, and a minute at once for an older Studio, however it failed', async () => {
+  vi.useFakeTimers()
+  try {
+    const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+    const { createStudioChatServices } = await import('./studioChat')
+    // When each attempt to follow was made, ms from the start, and how it ends.
+    const attempts: number[] = []
+    let fail: 'refused' | 'outdated' | 'closes' | 'closes-outdated' = 'refused'
+    const start = Date.now()
+    const client = async () => {
+      attempts.push(Date.now() - start)
+      if (fail === 'refused') throw new StudioError('unavailable', 'The machine did not answer.')
+      if (fail === 'outdated') throw new StudioError('outdated', 'That Studio is older than the protocol.')
+      // A client that opens, and whose connection then closes for good under the stream.
+      const connected = {
+        state: 'open',
+        subscribe: (_topic: string, _params: unknown, handlers: { onEnd?: (error?: unknown) => void }) => {
+          connected.state = 'closed'
+          handlers.onEnd?.(
+            fail === 'closes-outdated'
+              ? new StudioError('outdated', 'That Studio is older than the protocol.')
+              : new StudioError('closed', 'The client is closed.'),
+          )
+          return () => undefined
+        },
+      }
+      return connected as never
+    }
+    const run = async (mode: typeof fail, ms: number) => {
+      fail = mode
+      attempts.length = 0
+      const startedAt = Date.now()
+      const stop = createStudioChatServices(client).sessions.onLifecycleEvent(() => undefined)
+      await vi.advanceTimersByTimeAsync(ms)
+      stop()
+      return attempts.map((at) => at - (startedAt - start))
+    }
+    // A connect refused: 2 s, then 4, 8, 16, 32, then a minute between tries.
+    expect(await run('refused', 200_000)).toEqual([0, 2_000, 6_000, 14_000, 30_000, 62_000, 122_000, 182_000])
+    // A connection closed under the stream backs off the same way, rather than every 2 s.
+    expect(await run('closes', 70_000)).toEqual([0, 2_000, 6_000, 14_000, 30_000, 62_000])
+    // A Studio older than the protocol is asked again after a minute, whether its connect
+    // said so or the stream ended with it.
+    expect(await run('outdated', 130_000)).toEqual([0, 60_000, 120_000])
+    expect(await run('closes-outdated', 130_000)).toEqual([0, 60_000, 120_000])
+  } finally {
+    vi.useRealTimers()
+  }
+})

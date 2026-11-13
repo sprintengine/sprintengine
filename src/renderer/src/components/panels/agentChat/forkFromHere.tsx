@@ -14,14 +14,14 @@ import { GhostButton, Tooltip } from '../../ui'
 import { showToast } from '../../../store/toastStore'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { placeSpawnedAgentTab } from '../../workspace/manager/layoutTabActions'
-import { forkName } from '../../../../../shared/conversation/fork'
+import { pairedConnectionOf } from '../../../studio/environmentStudio'
 import { SOLO_CHAT_TEMPLATE_ID } from '../../../../../shared/layouts/templates'
 import { meshConversationSessionId, type MeshConversationPaneSpec } from '../../../../../shared/tailnet-mesh'
 import { LAYOUT_TEMPLATES } from '../../../layouts/templates'
 import { addMeshConversationTabAfter } from '../../../utils/modelRegistry'
 import { composerDraftStore, type ComposerDraft } from './draftStore'
 import type { TranscriptEntry } from './conversationProjection'
-import { useConversationTransport, type ChatEnvironment, type ConversationTransport } from './conversationTransport'
+import { useConversationTransport, type ConversationTransport } from './conversationTransport'
 import { editFromHereDraft } from './editFromHere'
 import { attachedFilePaths } from '../../../utils/attachedFiles'
 
@@ -199,9 +199,9 @@ function ForkFromHereButton({
  * working folder), named after it beside its workspace's other chats, and
  * answers where it is and what it called it: it opens by that address, in the
  * tab after this one's once its record has arrived, with a message forked
- * before in its composer. A paired desktop over the tailnet lane answers no
- * address; its fork opens as a pane onto that machine (`openPairedFork`)
- * until that lane is the protocol.
+ * before in its composer. A paired desktop's fork opens as a pane onto that
+ * machine (`openPairedFork`), as its chats do here. The address must be on
+ * the chat's own machine: a fork is made beside the chat it came from.
  */
 export async function forkChat(input: {
   transport: Pick<ConversationTransport, 'fork' | 'environment'>
@@ -224,26 +224,26 @@ export async function forkChat(input: {
       : { side: 'assistant' as const, turnId: target.turnId }),
   })
   if (!forked.ok) throw new Error(forked.message)
-  if (forked.address) {
-    if (!forked.name || forked.address.chatId !== key.workspaceId)
-      throw new Error('Studio made the fork but did not say where it is. Reload the window to find it.')
-    await openFork(forked.address, forked.name, key.agentId, target)
-    return
-  }
   const { environment } = input.transport
-  if (environment.lane) {
+  const lost = 'Studio made the fork but did not say where it is. Reload the window to find it.'
+  if (!forked.name || (environment.id !== null && forked.address.environmentId !== environment.id))
+    throw new Error(lost)
+  const connectionId = pairedConnectionOf(environment.route)
+  if (connectionId) {
     await openPairedFork({
-      lane: environment.lane,
+      connectionId,
       machineName: environment.label,
       workspaceId: key.workspaceId,
+      remoteWorkspaceId: forked.address.chatId,
       agentId: key.agentId,
-      newAgentId,
-      name: input.name ?? 'Chat',
+      newAgentId: forked.address.agentId,
+      name: forked.name,
       target,
     })
     return
   }
-  throw new Error('Studio made the fork but did not say where it is. Reload the window to find it.')
+  if (forked.address.chatId !== key.workspaceId) throw new Error(lost)
+  await openFork(forked.address, forked.name, key.agentId, target)
 }
 
 /** How long a fork's record is waited for here before its tab opens all the same. */
@@ -295,9 +295,8 @@ async function openFork(
 }
 
 /**
- * Open a fork a paired machine made over the tailnet lane: beside the chat in
- * its workspace there, named after it beside that workspace's other chats, in
- * the same files. Here it opens as a pane onto that machine in the tab after
+ * Open a fork a paired machine made: beside the chat in its workspace there,
+ * named after it beside that workspace's other chats, in the same files. Here it opens as a pane onto that machine in the tab after
  * this chat's, as a fork by address opens after its chat, or, where this
  * chat's layout is not mounted, as a chat of its own, the way a chat started
  * over there from New chat opens. A message forked before goes into its
@@ -305,32 +304,26 @@ async function openFork(
  * on that machine's disk.
  */
 async function openPairedFork(input: {
-  /** How the paired machine is reached over the lane, and what it is called. */
-  lane: NonNullable<ChatEnvironment['lane']>
+  /** The pairing the machine is reached by, and what it is called. */
+  connectionId: string
   machineName: string | null
   /** The workspace here whose pane follows the chat. */
   workspaceId: string
+  /** The chat's workspace over there, which the fork shares. */
+  remoteWorkspaceId: string
   /** The chat's id over there, and the fork's. */
   agentId: string
   newAgentId: string
-  /** The chat's name, for the fork's until the machine says what it called it. */
+  /** What the machine called the fork. */
   name: string
   target: ForkFromHereTarget
 }): Promise<void> {
-  const { target, newAgentId: agentId } = input
-  const remote = input.lane
+  const { target, newAgentId: agentId, name } = input
+  const remote = { connectionId: input.connectionId, workspaceId: input.remoteWorkspaceId }
   const origin = useWorkspaceStore
     .getState()
     .workspaces.find((candidate) => candidate.id === input.workspaceId)?.remoteOrigin
   const machineName = input.machineName ?? origin?.machineName ?? 'the other machine'
-  // What the machine called it, beside the chats of its workspace there.
-  const listed = await window.api.meshConversationList(remote.connectionId).catch(() => null)
-  const named = listed?.ok
-    ? listed.conversations.find(
-        (conversation) => conversation.workspaceId === remote.workspaceId && conversation.agentId === agentId,
-      )?.title
-    : undefined
-  const name = named || forkName(input.name || 'Chat', [])
   const pane: MeshConversationPaneSpec = {
     connectionId: remote.connectionId,
     machineName,

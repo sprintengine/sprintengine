@@ -125,7 +125,11 @@ test("the window's one session list joins every followed environment's to its ow
     list: async () => ({ ok: true as const, sessions: [session('w-here')] }),
     onLifecycleEvent: () => () => undefined,
   }
-  const merged = withEnvironmentSessions(local)
+  // The window holds the SSH machine's chat's record, under that route.
+  const merged = withEnvironmentSessions(
+    local,
+    (route, workspaceId) => route === 'ssh:box' && workspaceId.startsWith('w-ssh'),
+  )
   let changes = 0
   const stop = merged.onLifecycleEvent!(
     () => undefined,
@@ -144,6 +148,41 @@ test("the window's one session list joins every followed environment's to its ow
   followEnvironmentChats([])
   assert.deepEqual(followedEnvironmentChats(), [])
   assert.equal(machine.released(), 1, 'a route no longer followed lets its connection go')
+})
+
+test("a paired desktop's sessions, under its own workspace ids, never join the window's list", async () => {
+  // A chat this window holds on an SSH machine, and a paired desktop whose chats are its own.
+  const box = fakeEnvironment('env-box', [session('w-ssh')])
+  const desktop = fakeEnvironment('env-mini', [session('far-1'), session('w-ssh', 's-far-twin')])
+  followEnvironmentChats(
+    [
+      { route: 'ssh:box', name: 'build-box' },
+      { route: 'tailnet:c1', name: 'mac-mini' },
+    ],
+    (target) =>
+      createEnvironmentChatSource(target, {
+        hold: () => (target.route === 'ssh:box' ? box.hold : desktop.hold),
+        settleMs: 1,
+      }),
+  )
+  await settle()
+  assert.equal(followedEnvironmentChats().length, 2, 'both are followed: the band and its views read the desktop')
+  const records = [{ id: 'w-here' }, { id: 'w-ssh', route: 'ssh:box' }]
+  const merged = withEnvironmentSessions(
+    {
+      list: async () => ({ ok: true as const, sessions: [session('w-here')] }),
+      onLifecycleEvent: () => () => undefined,
+    },
+    (route, workspaceId) => records.some((record) => record.id === workspaceId && record.route === route),
+  )
+  const listed = await merged.list!()
+  assert.ok(listed.ok)
+  // Its chat whose id happens to be one this window holds is still that machine's, not this one's.
+  assert.deepEqual(
+    listed.sessions.map((entry) => entry.sessionId).sort(),
+    ['s-w-here', 's-w-ssh'],
+    'the window lists its own and its SSH chat; nothing of the desktop',
+  )
 })
 
 test('a source closed is not read again', async () => {

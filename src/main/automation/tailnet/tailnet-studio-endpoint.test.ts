@@ -19,7 +19,11 @@ import { createFakeBackend, startTestServer } from '../../../server/rpc/studio-r
 import type { StudioDiscovery } from '../../../server/rpc/studio-rpc-types'
 import type { TailnetScope } from '../../../shared/tailnet'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
-import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet-gateway-server'
+import {
+  createTailnetGatewayServer,
+  MAX_STUDIO_SOCKETS_PER_DEVICE,
+  type TailnetGatewayServer,
+} from './tailnet-gateway-server'
 import { TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
 import {
   combineEnvironmentRelays,
@@ -354,6 +358,25 @@ test('a narrowed pairing applies to the next request, and a removed one closes t
   // Its token mints no ticket any more, so nothing opens again.
   assert.equal((await ticketFor(r.port(), phone.token)).status, 401)
   assert.ok(!states.slice(-1).includes('open'))
+})
+
+test('every window of a paired desktop keeps a socket of its own; past the cap the oldest goes, not the newest', async () => {
+  const r = await rig()
+  const desktop = r.pair(['workspace:read', 'conversation:read'], 'mac-mini')
+  // A desktop with many windows, each reading this machine, and its server's own client beside them.
+  const windows: Array<{ client: StudioClient; states: StudioClientState[] }> = []
+  for (let index = 0; index < MAX_STUDIO_SOCKETS_PER_DEVICE; index++) {
+    const states: StudioClientState[] = []
+    windows.push({ client: await deviceClient(r, desktop.token, { origin: 'file://', states }), states })
+  }
+  // Every one of them is answered: none was let go to make room for another.
+  for (const { client } of windows) assert.ok(await client.rpc['workspaces.list']({}))
+  assert.ok(windows.every(({ states }) => !states.includes('reconnecting')))
+  // One more than the cap: the oldest is closed, and the newest works.
+  const extra = await deviceClient(r, desktop.token, { origin: 'file://' })
+  assert.ok(await extra.rpc['workspaces.list']({}))
+  await until(() => windows[0]!.states.includes('reconnecting'), 'the oldest socket to be let go')
+  assert.ok(windows.slice(1).every(({ states }) => !states.includes('reconnecting')))
 })
 
 test('a dropped device socket comes back and resumes its chat by cursor: no gap, no repeat', async () => {

@@ -29,8 +29,8 @@ import { windowStudioClient } from './windowStudioClient'
 // with, and every step of pairing with another machine are served to Studio's
 // own desktop windows only: a web tab asks and is refused. Reading the
 // listener and narrowing it (withdraw, decline, revoke, forget, unshare) are
-// an owner's tab's too. The chats on a paired machine are still the window's
-// IPC (`window.api.meshConversation*`).
+// an owner's tab's too. The chats on a paired machine are that machine's
+// Studio's, read over the window's own client of it (`environmentStudio.ts`).
 
 export type TailnetApi = {
   /** The listener: on or off, its address, paired devices, the offer (never its code) and requests waiting. */

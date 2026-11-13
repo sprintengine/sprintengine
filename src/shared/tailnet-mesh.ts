@@ -447,19 +447,6 @@ export function meshListChanged(event: MeshEvent): boolean {
   return event.kind === 'machine-paired' || event.kind === 'machine-forgotten' || event.kind === 'machine-identified'
 }
 
-/** Start a chat agent on a paired machine, over its `conversation.create`. */
-/** Settle a chat on a paired machine, or bring it back, over its `conversation.settle`. */
-/** Say a chat on a paired machine is on screen here, over its `conversation.visit`. */
-/** A row menu change to a chat on a paired machine (`MeshConversationChange`). */
-/** One remote workspace's checkout facts (branch, branches, worktrees) over `workspace.checkout`. */
-/** A paired machine's Canvas boards and a picture of one, over the `canvas.*` tools there. */
-/** A remote chat's Create PR, one channel per step (`chat-create-pull-request`). */
-export const MESH_CONVERSATION_PULL_REQUEST_STATE_CHANNEL = 'mesh:conversation-pull-request-state'
-export const MESH_CONVERSATION_PULL_REQUEST_DRAFT_CHANNEL = 'mesh:conversation-pull-request-draft'
-export const MESH_CONVERSATION_PULL_REQUEST_DRAFT_CANCEL_CHANNEL = 'mesh:conversation-pull-request-draft-cancel'
-export const MESH_CONVERSATION_PULL_REQUEST_PUSH_CHANNEL = 'mesh:conversation-pull-request-push'
-export const MESH_CONVERSATION_PULL_REQUEST_CREATE_CHANNEL = 'mesh:conversation-pull-request-create'
-
 // ── Conversations on a paired machine ───────────────────────────────────────
 //
 // Main follows a conversation over that machine's conversation socket, keeps
@@ -585,7 +572,6 @@ export type MeshConversationListResult =
       ok: true
       conversations: MeshConversation[]
       access: MeshConversationAccess
-      capabilities: string[]
     }
   | { ok: false; code: string; message: string }
 
@@ -748,29 +734,4 @@ export function meshConversationTab(
   }
 }
 
-/** The channel one followed conversation's frames arrive on. The renderer picks the id and subscribes first. */
-export function meshConversationFrameChannel(followId: string): string {
-  return `mesh:conversation:${followId}`
-}
-
-export const MESH_CONVERSATION_LIST_CHANNEL = 'mesh:conversation-list'
-export const MESH_CONVERSATION_FOLLOW_CHANNEL = 'mesh:conversation-follow'
-export const MESH_CONVERSATION_UNFOLLOW_CHANNEL = 'mesh:conversation-unfollow'
-export const MESH_CONVERSATION_EARLIER_CHANNEL = 'mesh:conversation-earlier'
-export const MESH_CONVERSATION_COMMAND_CHANNEL = 'mesh:conversation-command'
-export const MESH_CONVERSATION_SEND_CHANNEL = 'mesh:conversation-send'
-export const MESH_CONVERSATION_TOOL_DETAIL_CHANNEL = 'mesh:conversation-tool-detail'
-export const MESH_CONVERSATION_EVENT_CHANNEL = 'mesh:conversation-event'
-export const MESH_CONVERSATION_TURN_DIFF_CHANNEL = 'mesh:conversation-turn-diff'
-/** A paired machine's chat's changes, as its Diff tab reads them (`conversation-changes`). */
-export const MESH_CONVERSATION_WATCH_CHANGES_CHANNEL = 'mesh:conversation-watch-changes'
-export const MESH_CONVERSATION_CHANGES_DIFF_CHANNEL = 'mesh:conversation-changes-diff'
-export const MESH_CONVERSATION_CHANGED_FILE_CHANNEL = 'mesh:conversation-changed-file'
-export const MESH_CONVERSATION_SIDE_QUESTION_CHANNEL = 'mesh:conversation-side-question'
-export const MESH_CONVERSATION_CANCEL_SIDE_QUESTION_CHANNEL = 'mesh:conversation-cancel-side-question'
-export const MESH_CONVERSATION_CONTEXT_BREAKDOWN_CHANNEL = 'mesh:conversation-context-breakdown'
-export const MESH_CONVERSATION_TOOL_IMAGE_CHANNEL = 'mesh:conversation-tool-image'
-export const MESH_CONVERSATION_ATTACHMENT_CHANNEL = 'mesh:conversation-attachment'
 /** A paired machine's chat folder searched for a mention, and its CLI's `/` list. */
-export const MESH_CONVERSATION_FILE_SEARCH_CHANNEL = 'mesh:conversation-file-search'
-export const MESH_CONVERSATION_COMMANDS_CHANNEL = 'mesh:conversation-commands'

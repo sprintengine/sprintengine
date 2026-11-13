@@ -1851,14 +1851,20 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!options.pullRequests?.unwatch) return unserved('pullRequests.unwatch')
       return { ok: true, result: await options.pullRequests.unwatch(unwatch) }
     },
-    // A chat's "Create PR", every step in its checkout here (an owner's, by
-    // the table). A chat with no checkout here has no state to show; a step
-    // asked of one anyway is refused in the core's words.
-    'pullRequests.createState': async ({ conversation }, { voice }) => {
+    // A chat's "Create PR", every step in its checkout here, for a client that
+    // may drive the chat (a paired desktop's window among them). A chat with
+    // no checkout here has no state to show; a step asked of one anyway is
+    // refused in the core's words. Only an owner is told where the checkout
+    // is on this disk.
+    'pullRequests.createState': async ({ conversation }, { grant, voice }) => {
       const creation = options.pullRequestCreation
       if (!creation) return unserved('pullRequests.createState')
       const read = await creation.state(conversation)
-      if (!isChatPullRequestRefusal(read)) return { ok: true, result: { state: read.state } }
+      if (!isChatPullRequestRefusal(read))
+        return {
+          ok: true,
+          result: { state: read.state && !grant.owner ? { ...read.state, gitRoot: null } : read.state },
+        }
       return refusedChat(read, voice, 'pullRequests.createState') ?? { ok: true, result: { state: null } }
     },
     'pullRequests.draft': async ({ conversation, draftId }, { grant, voice }) => {
