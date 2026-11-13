@@ -35,8 +35,7 @@ export const verifySession: MobileSession = {
   // `conversation-queued-sends`, and one steered into it with
   // `conversation-steer-sends`. The "+" offers a file beside photos with
   // `conversation-message-files`, and a running agent its own Stop with
-  // `conversation-stop-subagent`. Canvases lists every board there in one
-  // answer with `canvas-machine-boards`, and Continue in a new chat starts a
+  // `conversation-stop-subagent`. Continue in a new chat on a board starts a
   // removed project's board under no project with `new-chat-no-project`.
   tailnetCapabilities: [
     "conversations",
@@ -53,7 +52,6 @@ export const verifySession: MobileSession = {
     "conversation-message-files",
     "conversation-stop-subagent",
     "conversation-agent-message",
-    "canvas-machine-boards",
     "new-chat-no-project",
     // Subagents named, quotes as chips (said in a hello), and the plan's usage.
     "conversation-hello",

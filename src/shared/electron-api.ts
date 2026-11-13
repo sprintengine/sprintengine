@@ -553,7 +553,7 @@ export type ElectronApi = {
   onCanvasPresence: (cb: (presence: CanvasBoardRef & CanvasPresence) => void) => () => void
   /** An agent asked for a board in this workspace's pane (canvas.open); the tab opens docked. */
   onCanvasOpenRequest: (cb: (ref: CanvasBoardRef) => void) => () => void
-  // A paired chat's boards, on the machine it runs on (`canvas-live-boards`).
+  // A paired chat's boards, on the machine it runs on (`canvas-boards` on its Studio).
   // Each is its `canvas*` twin with the machine named beside the board; the
   // scene and presence pushes are the same `onCanvasScene` and
   // `onCanvasPresence`, under the pane's own ref.
@@ -891,7 +891,7 @@ export type ElectronApi = {
     workspaceId: string
     cli?: string
   }) => Promise<MeshWorkspaceExtensionsResult>
-  /** A paired machine's Canvas boards: this chat's project there, or every board on it (`canvas-machine-boards`). */
+  /** A paired machine's Canvas boards: this chat's project there, or every board on it (`canvas.list` there). */
   meshCanvasBoards: (input: {
     connectionId: string
     workspaceId: string

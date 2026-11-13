@@ -817,7 +817,6 @@ test('tailnet', async () => {
         'new-chat-no-project',
         'workspace-extensions',
         'new-chat-skills',
-        'canvas-machine-boards',
         'chat-create-pull-request',
         'chat-unwatch-pull-request',
         'mcp-oauth',
@@ -947,18 +946,14 @@ test('tailnet', async () => {
         'new-chat-no-project',
         'workspace-extensions',
         'new-chat-skills',
-        'canvas-machine-boards',
         'chat-create-pull-request',
         'chat-unwatch-pull-request',
         'mcp-oauth',
       ])
       // Every one the wire defines but shrinking an upload, which only a
-      // machine with an image codec advertises, and editing boards, which only
-      // one running a canvas service does; this harness has neither.
+      // machine with an image codec advertises; this harness has none.
       assert.deepEqual(
-        TAILNET_CAPABILITIES.filter(
-          (capability) => capability !== 'conversation-image-downscale' && capability !== 'canvas-live-boards',
-        ),
+        TAILNET_CAPABILITIES.filter((capability) => capability !== 'conversation-image-downscale'),
         body.capabilities,
       )
       // Nothing about this machine, its user, its workspaces, or its devices.
@@ -1058,8 +1053,9 @@ test('tailnet', async () => {
     // The tools that start an agent in a terminal stay local too: a paired
     // device could not see the terminal it started. What it starts is a chat.
     const launchers = ['agent.launch', 'backlog.work']
-    // A paired device reaches the scheduled agents through the Studio (`schedules.*`).
-    for (const name of [...launchers, 'tailnet.status', 'schedule.run', 'schedule.list']) {
+    // A paired device reaches the scheduled agents and the boards through the
+    // Studio (`schedules.*`, `canvas.*`).
+    for (const name of [...launchers, 'tailnet.status', 'schedule.run', 'schedule.list', 'canvas.list', 'canvas.edit']) {
       assert.notEqual(localOnlyGatewayToolReason(name), null, `${name} is local-only`)
     }
     for (const name of ['conversation.create', 'workspace.list', 'backlog.list']) {

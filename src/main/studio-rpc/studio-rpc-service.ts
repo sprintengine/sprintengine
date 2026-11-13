@@ -51,6 +51,7 @@ import type { StudioAgentSetup } from '../../server/agent-setup/agent-setup-doma
 import type { StudioSchedulesDomain } from '../../server/schedules/schedules-domain'
 import type { StudioPhoneReads } from '../../server/backlog/backlog-domain'
 import type { StudioChatLifecycleDomain } from '../../server/chat-lifecycle/chat-lifecycle-domain'
+import type { StudioCanvasDomain } from '../../server/canvas/canvas-domain'
 import type { StudioChatStores } from '../../server/chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../../server/core/studio-agent-skills'
 import type { StudioUpdates } from '../../server/update/studio-updates'
@@ -207,6 +208,8 @@ export type StudioRpcServiceOptions = {
   schedules?: StudioSchedulesDomain
   /** The chats' records beyond their rest (`chat-lifecycle`). */
   chatLifecycle?: StudioChatLifecycleDomain
+  /** The machine's boards, for another device (`canvas-boards`): where the canvas service runs in this process. */
+  canvas?: StudioCanvasDomain
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** What the modules beside this Studio say to clients: `module.events` and `module.notifications`. */
@@ -418,6 +421,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
       ...(options.schedules ? { schedules: options.schedules } : {}),
       ...(options.chatLifecycle ? { chatLifecycle: options.chatLifecycle } : {}),
+      ...(options.canvas ? { canvas: options.canvas } : {}),
       ...(options.updates ? { updates: options.updates } : {}),
       ...(options.modules ? { modules: options.modules } : {}),
       resyncRetryAfterMs: createResyncBackoff(),

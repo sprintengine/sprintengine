@@ -99,7 +99,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   // one a paired chat runs on: one code path for both (canvasBoardSource.ts).
   const client = useMemo(() => canvasBoardClient(source), [source])
   // Whether the paired machine's boards open in the editor here: a machine
-  // whose Studio predates `canvas-live-boards` shows them as pictures, and says so.
+  // whose Studio does not serve `canvas-boards` shows them as pictures, and says so.
   const [access, setAccess] = useState<AccessState>(() =>
     far ? { kind: 'loading' } : { ok: true, live: true, canEdit: true },
   )

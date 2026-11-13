@@ -1335,7 +1335,7 @@ export function createAppServices(
   })
 
   const canvasSubscribers = createCanvasSubscriberRegistry()
-  // A board a paired desktop holds over the canvas lane is a subscriber too
+  // A board another device holds over the Studio protocol is a subscriber too
   // (canvas-remote-subscribers.ts): it hears every write a window here would.
   const canvasRemoteSubscribers = createCanvasRemoteSubscribers()
   const canvasStoreCatalogue = createCanvasStoreCatalogue({
@@ -1526,9 +1526,6 @@ export function createAppServices(
         // A picture a paired device uploads is sized for the model on receipt,
         // with this process's own image codec.
         downscaleUpload: (bytes, mediaType) => shellBridge.images.downscale(bytes, mediaType),
-        // A paired desktop's Canvas pane on the boards here, through the same
-        // canvas service this machine's windows and agents use.
-        canvas: canvasRemoteSubscribers.host(canvasService),
         // The live-state push (remote-sessions-ux): every window hears listener,
         // pairing, and connection changes the moment main does — the fix for pair
         // requests that could expire while only Settings, if open, would show them.
@@ -1743,6 +1740,10 @@ export function createAppServices(
         fileSystemShell: desktopFileSystemShell(),
         // The GitHub account this desktop keeps, for `github.*`.
         githubTokens: githubTokenStore,
+        // Another device's boards (a paired desktop's Canvas pane, the phone's
+        // list and pictures), through the same canvas service this machine's
+        // windows and agents use, and the same tools that list and draw them.
+        canvas: canvasRemoteSubscribers.host(canvasService, () => canvasTools),
       })
     : null
   // Where the person's attention is, for routing a call to the window in

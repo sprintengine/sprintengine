@@ -40,9 +40,6 @@ export const TAILNET_ROUTE_ACCESS = {
   'conversation-commands:refresh': { permissions: ['conversation:read', 'conversation:operate'] },
   // A picture or file staged for a message the device will send.
   upload: { permissions: ['conversation:read', 'conversation:operate'] },
-  // A paired desktop's Canvas pane on this machine's boards (`canvas-live-boards`):
-  // looking at one is a read; its messages are judged one by one below.
-  canvas: { permissions: ['workspace:read'] },
   // The Studio protocol: opening it needs only the pairing; every method and
   // topic it carries is judged by the Studio router against the device's
   // grant as it stands at that request (`tailnetDeviceStudioScopes`).
@@ -53,7 +50,7 @@ export type TailnetDeviceRoute = keyof typeof TAILNET_ROUTE_ACCESS
 /** The routes a ticket opens as a WebSocket upgrade; every other route is an HTTP request. */
 export type TailnetUpgradeRoute = Extract<
   TailnetDeviceRoute,
-  'stream' | 'events' | 'conversation' | 'canvas' | 'studio'
+  'stream' | 'events' | 'conversation' | 'studio'
 >
 export type TailnetHttpRoute = Exclude<TailnetDeviceRoute, TailnetUpgradeRoute>
 
@@ -88,27 +85,6 @@ export const CONVERSATION_LANE_ACCESS: { readonly [T in ConversationClientMessag
   cancelSideQuestion: FOLLOW,
   askSideQuestion: DRIVE,
   command: DRIVE,
-}
-
-const LOOK: StudioAccess = { permissions: ['workspace:read'] }
-const DRAW: StudioAccess = { permissions: ['workspace:read', 'workspace:operate'] }
-
-/** Every message a device sends on the canvas lane (`tailnet-canvas-stream.ts`). */
-export type CanvasLaneMessageType = 'open' | 'close' | 'watch' | 'file' | 'commit' | 'human'
-
-/**
- * What each message on the canvas lane needs. Opening, closing and following a
- * chat's `canvas.open` are looking at boards; a scene, a picture sent for one
- * and taking the pen change one. Opening a board that is not there yet makes
- * it, which the lane allows only to a device that may change boards.
- */
-export const CANVAS_LANE_ACCESS: { readonly [T in CanvasLaneMessageType]: StudioAccess } = {
-  open: LOOK,
-  close: LOOK,
-  watch: LOOK,
-  file: DRAW,
-  commit: DRAW,
-  human: DRAW,
 }
 
 /** What a tool call over the tailnet needs: nothing a grant can give for a local-only tool, else its family's permission. */
@@ -248,6 +224,9 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
   }
   if (toolName.startsWith('schedule.')) {
     return `"${toolName}" is an agent's way to this machine's scheduled agents. A paired device lists and changes them through this machine's Studio (\`schedules.*\`) instead.`
+  }
+  if (toolName.startsWith('canvas.')) {
+    return `"${toolName}" is an agent's way to this machine's boards. A paired device lists, shows and draws on them through this machine's Studio (\`canvas.*\`) instead.`
   }
   if (toolName.startsWith('terminal.')) {
     return `"${toolName}" reads the terminals on this machine, and terminals are not served over the tailnet. A paired device follows this machine's chats instead; run it from an agent on that machine.`

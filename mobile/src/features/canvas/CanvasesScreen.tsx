@@ -72,10 +72,8 @@ export function CanvasesScreen({
         session,
         read: await readCanvasDesktop({
           machine: session.desktopName,
-          session,
           chat: asking && asking.deviceId === session.deviceId ? asking : null,
           boards: source.boards(session),
-          workspaces: source.workspaces(session),
         }),
       })),
     );

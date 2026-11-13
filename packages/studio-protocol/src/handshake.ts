@@ -210,6 +210,13 @@ export const STUDIO_SCHEDULES_CAPABILITY = 'schedules' as const
 export const STUDIO_FILE_SYSTEM_CAPABILITY = 'file-system' as const
 
 /**
+ * A machine's Canvas boards for another client (`canvas.ts`): `canvas.*` and
+ * the `canvas.board` and `canvas.openRequests` streams. Offered where the
+ * Studio is given the machine's one canvas service.
+ */
+export const STUDIO_CANVAS_BOARDS_CAPABILITY = 'canvas-boards' as const
+
+/**
  * Git on the Studio's machine (`git.ts`): `git.*`, `github.*` and
  * `versionControl.*`, with the checkout, changelist and clone streams. Every
  * Studio's core serves it.
@@ -282,6 +289,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_GIT_CAPABILITY,
   STUDIO_WORKTREES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CANVAS_BOARDS_CAPABILITY,
 ] as const
 
 /**

@@ -183,42 +183,25 @@ another `version` counts nothing from it and says the same. The desktop
 asking prices the rows itself, so two machines on different price lists
 still agree.
 
-`canvas-machine-boards` (2026-11-07) lets a paired desktop's Canvas pane see this
-machine's boards. `canvas.list` takes `scope: machine` and answers every board
-here with its `project` (null for a removed project), `here`, `workspaceId` and
-`id`, and `board` on the other canvas tools takes that `id`. A desktop that sees
-the capability asks for all of them. On a machine that lacks it, it calls
-`canvas.list` for the one workspace, with no `scope`, which an older machine has
-always answered, and the pane says in words that the list is that project's
-alone. Such a row has no `id`, so its picture and its new chat name the board by
-path, from that project. Neither end needs a version bump: every new member is
-optional. A machine offering no canvas tools (a server with no desktop open)
-answers "Unknown tool", and the desktop says to open Studio there. Every board
-name on a machine, removed projects included, is now readable on
-`workspace:read`: there is no per-project scope. The phone reads the same
-tools on the same grant and by the same rule: every board on a machine with the
-capability, one project at a time on one without, said in words, and a
-picture of a board by its `id`, or by path from its project
-(`mobile/src/api/canvasBoards.ts`). Its Continue in a new chat starts a removed
-project's board under no project only where the machine advertises
-`new-chat-no-project`.
-
-`canvas-live-boards` (2026-11-07) lets a paired desktop's Canvas pane edit this
-machine's boards in its own editor. It names a new WebSocket, `canvas`, upgraded
-with a ticket as the conversation socket is, on `workspace:read`; a scene, a
-picture sent for one, taking the pen and making a board need `workspace:operate`,
-and the grant is read again on every message. A board is the ref this machine's
-own pane uses (a store board, or a `.excalidraw` file inside a project, under the
-same path rules), opened as a subscriber of this machine's canvas service, so
-every write goes through its one merge. Pictures travel as their own messages,
-once each way, and any message over the 1 MiB cap goes in `part` messages put
-back together at the other end, up to 32 MB. A desktop that does not see the
-capability shows a board as a picture through `canvas.screenshot`, as it did, and
-says why; a machine without it answers the socket 404, and one that runs no
-canvas service (a server with no desktop, or a Studio running its server out of
-process) does not advertise it and answers 503. An older desktop never opens the
-socket and loses nothing. No version bump: the route and the capability are new,
-and nothing that was there changed.
+A machine's Canvas boards reach another device on the Studio protocol
+(`canvas.*`, capability `canvas-boards`, 2026-11-13); the `canvas` socket and the
+`canvas-machine-boards` and `canvas-live-boards` tailnet capabilities it replaced
+are gone, and the agents' `canvas.*` tools are no longer served to a device token.
+`canvas.list` answers every board on the machine with its project, `here`,
+`workspaceId` and `id`; `canvas.picture` draws one by its id or path. A board is
+opened by following `canvas.board`, which opens it as a subscriber of the
+machine's one canvas service and pushes only notices (opened, a revision, who
+holds the pen); the scene is read with `canvas.read` and its pictures by id with
+`canvas.files`, so each picture crosses once. A change goes inline up to 768 KB
+and otherwise in `canvas.stage` parts first, then `canvas.commit` under a command
+id. `canvas.openRequests` tells a device an agent's `canvas.open` in the
+workspaces it follows. Looking needs `workspaces:read` (a device's
+`workspace:read`); `canvas.commit`, `canvas.stage` and `canvas.takePen` need
+`workspaces:operate` (`workspace:operate`). Only a Studio given the machine's
+canvas service advertises `canvas-boards` (today the desktop with its server in
+process); a client of one that does not says to update or open Studio there.
+There is no fallback to the old socket or tools: a machine on an older build
+shows its boards to a current desktop or phone once it is updated.
 
 Bump the version instead when the change is not additive: a field that changes
 meaning or type, a field that is removed, a response whose shape a peer is

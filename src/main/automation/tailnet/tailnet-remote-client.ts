@@ -16,7 +16,6 @@ import {
   TAILNET_PAIR_COLLECT_PATH,
   TAILNET_PAIR_REQUEST_PATH,
   TAILNET_CONVERSATION_PATH,
-  TAILNET_CANVAS_PATH,
   TAILNET_CONVERSATION_IMAGE_PATH,
   TAILNET_CONVERSATION_FILES_PATH,
   TAILNET_CONVERSATION_COMMANDS_PATH,
@@ -774,12 +773,6 @@ export type RemoteEventsSocket = RemoteJsonSocket & {
   ping(): Promise<void>
 }
 
-/** The canvas lane's socket, which also sends a message already written as JSON: the lane measures and cuts its own. */
-export type RemoteCanvasSocket = RemoteJsonSocket & {
-  /** No-op once closed. */
-  sendText(text: string): void
-}
-
 export type RemoteJsonSocketHandlers = {
   /** One decoded server frame, as a plain object. */
   onFrame(frame: Record<string, unknown>): void
@@ -837,33 +830,6 @@ export async function openRemoteConversationSocket(input: {
     value: driveJsonSocket(upgraded.value.socket, upgraded.value.leftover, input.handlers, {
       livenessTimeoutMs: input.livenessTimeoutMs ?? CONVERSATION_LIVENESS_TIMEOUT_MS,
       unreadable: 'That machine sent a conversation frame this build could not read.',
-    }),
-  }
-}
-
-/**
- * A paired machine's canvas lane (`canvas-live-boards`, tailnet-canvas-stream.ts):
- * the boards this desktop's Canvas pane edits there. Frames arrive whole, as
- * the far end wrote them; a message sent in parts is put back together by the
- * caller (tailnet-canvas-wire.ts), which also cuts its own. The far end pings
- * as the conversation socket's does, and a socket silent past the window is
- * ended so the caller dials again.
- */
-export async function openRemoteCanvasSocket(input: {
-  endpoint: TailnetEndpoint
-  token: string
-  handlers: RemoteJsonSocketHandlers
-  livenessTimeoutMs?: number
-}): Promise<RemoteCallOutcome<RemoteCanvasSocket>> {
-  const ticket = await requestSocketTicket(input.endpoint, input.token, 'its boards')
-  if (!ticket.ok) return ticket
-  const upgraded = await upgradeSocket(input.endpoint, ticket.value, TAILNET_CANVAS_PATH)
-  if (!upgraded.ok) return upgraded
-  return {
-    ok: true,
-    value: driveJsonSocket(upgraded.value.socket, upgraded.value.leftover, input.handlers, {
-      livenessTimeoutMs: input.livenessTimeoutMs ?? CONVERSATION_LIVENESS_TIMEOUT_MS,
-      unreadable: 'That machine sent a canvas message this build could not read.',
     }),
   }
 }
@@ -993,7 +959,7 @@ function driveJsonSocket(
   leftover: Buffer,
   handlers: RemoteJsonSocketHandlers,
   options: { livenessTimeoutMs?: number; unreadable?: string } = {},
-): RemoteEventsSocket & RemoteCanvasSocket {
+): RemoteEventsSocket {
   const decoder = createWebSocketFrameDecoder(MAX_WEBSOCKET_MESSAGE_BYTES, 'client')
   let closed = false
   let closeCode: number | null = null
@@ -1102,10 +1068,6 @@ function driveJsonSocket(
       if (closed || socket.destroyed) return
       socket.write(encodeMaskedTextFrame(JSON.stringify(frame)))
     },
-    sendText(text): void {
-      if (closed || socket.destroyed) return
-      socket.write(encodeMaskedTextFrame(text))
-    },
     close(reason): void {
       if (closed) return
       closeReason = reason
@@ -1137,8 +1099,6 @@ function refusalMessage(code: string, status: number): string {
     return 'This pairing may not read conversations on that machine. Pair again with conversation access.'
   }
   if (code === 'conversation_streaming_unavailable') return 'That machine is not serving conversations right now.'
-  if (code === 'workspace_scope_required') return 'This pairing may not look at boards on that machine.'
-  if (code === 'canvas_unavailable') return 'That machine is not serving its boards right now.'
   if (code === 'unauthorized') return UNAUTHORIZED_MESSAGE
   return `That machine refused the stream (HTTP ${status}, ${code}).`
 }

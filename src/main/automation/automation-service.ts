@@ -25,7 +25,6 @@ import { isStudioGatewayMutation } from './studio-gateway-tools'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
 import { createTailnetRemoteService, type TailnetRemoteService } from './tailnet/tailnet-service'
 import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
-import type { TailnetCanvasHost } from './tailnet/tailnet-canvas-stream'
 import type { TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
 import type { ConversationImageDownscaler } from '../conversation-image-downscale'
 
@@ -66,11 +65,6 @@ type AutomationServiceOptions = {
    * came and `conversation-image-downscale` is not advertised.
    */
   downscaleUpload?: ConversationImageDownscaler
-  /**
-   * This machine's canvas service, for a paired desktop's Canvas pane
-   * (`canvas-live-boards`). Only the process that runs the service has one.
-   */
-  canvas?: TailnetCanvasHost
   /**
    * Bind the tailnet listener here instead of this machine's Tailscale
    * interface. Only a library caller sets it, to drive the real listener on
@@ -202,7 +196,6 @@ export function createAutomationService(options: AutomationServiceOptions) {
       isMutation: (tool) => isStudioGatewayMutation(tool, options.resolveGatewayTools),
       conversations: options.resolveConversationHost?.(),
       ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
-      ...(options.canvas ? { canvas: options.canvas } : {}),
       // Read when a device's Studio socket opens: the Studio server is built
       // after this gateway, and links itself with `linkStudio`.
       studio: () => studioHost,

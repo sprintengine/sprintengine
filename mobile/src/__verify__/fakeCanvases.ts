@@ -2,43 +2,36 @@ import type { CanvasBoardsApi } from "../api/canvasBoards";
 import { readCanvasBoards } from "../api/canvasBoards";
 import type { MobileSession } from "../api/types";
 import type { CanvasSource } from "../features/canvas/CanvasSourceContext";
-import { fakeWorkspacesApi } from "./fakeWorkspaces";
 import { verifyConversation } from "./fakeConversations";
 
-// A fake of the gateway's canvas tools for the screenshot harness, in the
-// shapes `canvas.list` and `canvas.screenshot` answer, read through the app's
-// own parse. Never bundled into the app (see index.js / App.tsx).
+// A fake of a desktop's `canvas.list` and `canvas.picture` for the screenshot
+// harness, in the shapes the Studio answers, read through the app's own parse.
+// Never bundled into the app (see index.js / App.tsx).
 //
-// The harness desktop advertises `canvas-machine-boards`, so it lists every
-// board there in one answer: two projects' boards, one of them a pooled
-// worktree's, and a board whose project was removed ("Deleted project"). The
-// Mac mini is an older Studio: it is asked one project at a time and says so.
-// Its third project answers with a refusal, to photograph the words for one.
-// A board's picture is a small drawn diagram in each theme.
+// The harness desktop lists every board there in one answer: two projects'
+// boards, one of them a pooled worktree's, and a board whose project was
+// removed ("Deleted project"). The Mac mini answers with a refusal, to
+// photograph the words for one. A board's picture is a small drawn diagram in
+// each theme.
 //
 //   sprintengine://verify/canvases
 //   sprintengine://verify/canvas/dev_verify/export-flow?path=export-flow.excalidraw&project=mobile&id=canvas%3A%2F%2Fws_aaaaaaaaaaaaaaaaaaaaaaaa%2Fexport-flow.excalidraw&workspaceId=ws-mobile
 //   sprintengine://verify/canvas/dev_verify/old-sketch?path=old-sketch.excalidraw&id=canvas%3A%2F%2Fws_cccccccccccccccccccccccc%2Fold-sketch.excalidraw
 //   sprintengine://verify/canvas/dev_verify/missing?path=missing.excalidraw&workspaceId=ws-mobile   (refused)
 
-const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+const minutesAgo = (minutes: number) => Date.now() - minutes * 60_000;
 const STORE_MOBILE = "ws_aaaaaaaaaaaaaaaaaaaaaaaa";
 const STORE_STUDIO = "ws_bbbbbbbbbbbbbbbbbbbbbbbb";
 const STORE_GONE = "ws_cccccccccccccccccccccccc";
 
 const MACHINE_ANSWER = {
-  scope: "machine",
+  note: null,
   boards: [
     { id: `canvas://${STORE_MOBILE}/export-flow.excalidraw`, path: "export-flow.excalidraw", name: "export-flow", project: "mobile", here: false, workspaceId: "ws-mobile", elementCount: 14, modifiedAt: minutesAgo(12) },
     { id: `canvas://${STORE_STUDIO}/pairing.excalidraw`, path: "pairing.excalidraw", name: "pairing", project: "multicode", here: false, workspaceId: "ws-studio", elementCount: 31, modifiedAt: minutesAgo(60 * 5) },
     { id: `canvas://${STORE_STUDIO}/diagrams/architecture.excalidraw`, path: "diagrams/architecture.excalidraw", name: "architecture", project: "multicode", here: false, workspaceId: "ws-studio", elementCount: 52, modifiedAt: minutesAgo(60 * 30) },
     { id: `canvas://${STORE_GONE}/old-sketch.excalidraw`, path: "old-sketch.excalidraw", name: "old-sketch", project: null, here: false, workspaceId: null, elementCount: 0, modifiedAt: minutesAgo(60 * 24 * 9) },
   ],
-};
-
-const MINI_PROJECTS: Record<string, { boards: unknown[] } | null> = {
-  "ws-mobile": { boards: [{ path: "onboarding.excalidraw", name: "onboarding", elementCount: 8, modifiedAt: minutesAgo(60 * 3) }] },
-  "ws-studio": null,
 };
 
 const PICTURE_LIGHT =
@@ -101,16 +94,12 @@ const PICTURE_DARK =
   "MAAAAABJRU5ErkJggg==";
 
 function boardsOf(session: MobileSession): CanvasBoardsApi {
-  const older = !(session.tailnetCapabilities ?? []).includes("canvas-machine-boards");
+  const mini = session.deviceId === "dev_mini";
   return {
-    async listMachine() {
-      return { ok: true, data: readCanvasBoards(MACHINE_ANSWER, null) };
-    },
-    async listProject(project) {
-      const answer = older ? MINI_PROJECTS[project.workspaceId] : { boards: MACHINE_ANSWER.boards.filter((board) => board.workspaceId === project.workspaceId) };
-      return answer
-        ? { ok: true, data: readCanvasBoards(answer, project) }
-        : { ok: false, message: "The Canvas module is disabled. Enable it in Settings → Modules to use canvas tools.", code: "canvas_module_disabled", errorCode: "invalid_payload" };
+    async list() {
+      return mini
+        ? { ok: false, message: "The Canvas module is disabled. Enable it in Settings → Modules to use canvas tools.", code: "unavailable", errorCode: "desktop_unavailable" }
+        : { ok: true, data: readCanvasBoards(MACHINE_ANSWER) };
     },
     async picture(input) {
       if (/missing/u.test(input.board)) {
@@ -129,7 +118,6 @@ function boardsOf(session: MobileSession): CanvasBoardsApi {
 
 export const fakeCanvasSource: CanvasSource = {
   boards: boardsOf,
-  workspaces: () => fakeWorkspacesApi,
   // Continue in a new chat opens the harness's own chat, as a started one would.
   async startChat() {
     return {

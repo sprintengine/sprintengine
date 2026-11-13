@@ -22,6 +22,7 @@ import {
   STUDIO_GIT_METHODS,
   STUDIO_WORKTREES_METHODS,
   STUDIO_CHAT_LIFECYCLE_METHODS,
+  STUDIO_CANVAS_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -30,6 +31,7 @@ import {
   type StudioAgentSettingsMethod,
   type StudioSchedulesMethod,
   type StudioChatLifecycleMethod,
+  type StudioCanvasMethod,
   type StudioAgentSetupMethod,
   type StudioChatStoresMethod,
   type StudioAgentSkillsMethod,
@@ -484,6 +486,12 @@ test('every method the server serves has its call in the SDK, under the same sco
     // write (`chat-lifecycle.ts`), called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CHAT_LIFECYCLE_METHODS).map((method) => [method, 'request'])) as Record<
       StudioChatLifecycleMethod,
+      string
+    >),
+    // A machine's boards, which the phone and a paired desktop read and draw
+    // on (`canvas.ts`), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_CANVAS_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioCanvasMethod,
       string
     >),
   }

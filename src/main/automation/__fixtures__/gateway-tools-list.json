@@ -905,22 +905,6 @@
       "sha256": "3ff7c18802e38936a43e2eaee1f2fd087559858b1fcd0a40b5cb631dc7a5504b"
     },
     {
-      "name": "canvas.list",
-      "sha256": "685f6313230c5227d254906454a7addaefa3bf65d87b715b220400a127c2d79e"
-    },
-    {
-      "name": "canvas.describe",
-      "sha256": "eed7a0182a4b985c9f4f6d8a655cf6703c7d4848343fb9283fb5e8524d510230"
-    },
-    {
-      "name": "canvas.find",
-      "sha256": "62816da14e423483de7464bad7f0557759655e1f94dc64b67b7e6dc790b14bf6"
-    },
-    {
-      "name": "canvas.screenshot",
-      "sha256": "e781853a246fcd3259ca3f359259842838308dd9ece387315a663576d5882e1f"
-    },
-    {
       "name": "editor.state",
       "sha256": "d45577bee391a7224b0bbd0619855cc1dc67ec54e111185e6459bc925572761b"
     },

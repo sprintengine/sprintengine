@@ -112,7 +112,6 @@ import type { StudioScheduleDraft, StudioSchedules } from '../../../../packages/
 import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
 import {
   callRemoteTool,
-  callRemoteToolResult,
   fetchRemoteConversationImage,
   formatTailnetEndpoint,
   openRemoteEventsSocket,
@@ -145,11 +144,7 @@ import { asRecord, isRecord } from '../../../shared/records'
 import { mayHoldQuotes, quotesToPlainText } from '../../../shared/chat-quotes'
 import { parseCliPermissionPreset } from '../../../shared/cli-permission-preset'
 import { powerActivity, type PowerActivity } from '../../power-activity'
-import {
-  createTailnetRemoteCanvas,
-  type TailnetRemoteCanvas,
-  type TailnetRemoteCanvasDeps,
-} from './tailnet-remote-canvas'
+import { createPeerCanvas, type PeerCanvas, type PeerCanvasDeps } from './tailnet-peer-canvas'
 
 // The Mesh: this Studio driving other machines.
 //
@@ -510,13 +505,9 @@ export type TailnetMeshService = {
     workspaceId: unknown
     cli?: unknown
   }): Promise<MeshWorkspaceExtensionsResult>
-  /**
-   * A paired machine's Canvas boards: this chat's project there, or, from a
-   * machine with `canvas-machine-boards`, every board on it. One that lacks it
-   * answers for the project, with a note saying so.
-   */
+  /** A paired machine's Canvas boards (`canvas.list` there): this chat's project's, or every board on it. */
   canvasBoards(input: { connectionId: unknown; workspaceId: unknown; scope?: unknown }): Promise<MeshCanvasBoardsResult>
-  /** A picture of one of them, named by its id or, on an older machine, its path. */
+  /** A picture of one of them, named by its id (`canvas.picture` there). */
   canvasScreenshot(input: {
     connectionId: unknown
     workspaceId: unknown
@@ -607,10 +598,10 @@ export type TailnetMeshService = {
   conversationAttachment(input: { key: unknown; ref: unknown }): Promise<MeshConversationImageResult>
   /**
    * A paired chat's Canvas pane editing that machine's boards
-   * (`canvas-live-boards`, tailnet-remote-canvas.ts): the same calls the pane
-   * makes of this machine's canvas service, carried to that one's.
+   * (tailnet-peer-canvas.ts): the same calls the pane makes of this machine's
+   * canvas service, carried to that one's Studio.
    */
-  remoteCanvas: TailnetRemoteCanvas
+  remoteCanvas: PeerCanvas
   shutdown(): void
 }
 
@@ -689,7 +680,7 @@ export type TailnetMeshServiceOptions = {
     'retry' | 'requestTimeoutMs' | 'commandTimeoutMs' | 'listTimeoutMs' | 'livenessTimeoutMs' | 'saveDelayMs'
   >
   /** Timing for a paired chat's boards; tests shorten it. */
-  canvas?: Pick<TailnetRemoteCanvasDeps, 'retry' | 'lingerMs' | 'requestTimeoutMs'>
+  canvas?: Pick<PeerCanvasDeps, 'lingerMs' | 'requestTimeoutMs'>
   log?: (message: string) => void
 }
 
@@ -1770,6 +1761,21 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     return peerCapabilities.get(connection.id)
   }
 
+  /** A failed ask of a paired machine's boards, in the words the pane shows. */
+  function canvasRefused(connection: StoredMeshConnection, error: unknown): { ok: false; code: string; message: string } {
+    const refused = peerRefusal(connection, error)
+    return {
+      ok: false,
+      code: refused.code,
+      message:
+        refused.kind === 'outdated'
+          ? `${connection.machineName} runs a Studio that does not serve its boards here. Update SprintEngine Studio there.`
+          : refused.code === 'unavailable' && /does not serve canvas/u.test(refused.message)
+            ? `${connection.machineName} is not offering its boards right now. Open SprintEngine Studio there and try again.`
+            : refused.message,
+    }
+  }
+
   async function canvasBoards(input: {
     connectionId: unknown
     workspaceId: unknown
@@ -1779,22 +1785,27 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
     if (typeof input.workspaceId !== 'string' || !input.workspaceId)
       return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose boards to list.' }
-    const wantsAll = input.scope === 'machine'
-    const canListAll = tailnetPeerSupports(await knownCapabilities(connection), 'canvas-machine-boards')
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'canvas.list',
-      args: { workspaceId: input.workspaceId, ...(wantsAll && canListAll ? { scope: 'machine' } : {}) },
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: canvasRefusal(connection, answer) }
-    const allBoards = wantsAll && canListAll
-    const note = typeof answer.value.note === 'string' ? answer.value.note : null
-    return {
-      ok: true,
-      boards: readMeshCanvasBoards(answer.value, input.workspaceId, allBoards),
-      allBoards,
-      note: wantsAll && !canListAll ? canvasListAllUnsupported(connection) : note,
+    const workspaceId = input.workspaceId
+    const allBoards = input.scope === 'machine'
+    try {
+      const listed = await peerStudios.ask(peerTarget(connection), (client) =>
+        client.request('canvas.list', { workspaceId }),
+      )
+      const boards: MeshCanvasBoard[] = listed.boards
+        .filter((board) => allBoards || board.here)
+        .map((board) => ({
+          id: board.id,
+          path: board.path,
+          name: board.name,
+          project: board.project,
+          workspaceId: allBoards ? board.workspaceId : workspaceId,
+          modifiedAt: board.modifiedAt,
+          elementCount: board.elementCount,
+          here: board.here,
+        }))
+      return { ok: true, boards, allBoards, note: listed.note }
+    } catch (error) {
+      return canvasRefused(connection, error)
     }
   }
 
@@ -1808,26 +1819,23 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
     if (typeof input.workspaceId !== 'string' || !input.workspaceId || typeof input.board !== 'string' || !input.board)
       return { ok: false, code: 'invalid_arguments', message: 'Name the board to show.' }
-    const answer = await callRemoteToolResult({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'canvas.screenshot',
-      args: { workspaceId: input.workspaceId, board: input.board, maxEdge: 1600, dark: input.dark === true },
-      // Drawn in a hidden window over there; the tool's own wait, not a mesh read's.
-      timeoutMs: 45_000,
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: canvasRefusal(connection, answer) }
-    const image = answer.value.content.map(asRecord).find((block) => block?.type === 'image')
-    const { width, height } = answer.value.structured
-    if (typeof image?.data !== 'string' || typeof image.mimeType !== 'string' || !image.mimeType.startsWith('image/')) {
-      return { ok: false, code: 'unreadable_result', message: `${connection.machineName} answered without a picture.` }
-    }
-    return {
-      ok: true,
-      mimeType: image.mimeType,
-      data: image.data,
-      width: typeof width === 'number' ? width : 0,
-      height: typeof height === 'number' ? height : 0,
+    const params = { workspaceId: input.workspaceId, board: input.board, dark: input.dark === true }
+    try {
+      const picture = await peerStudios.ask(
+        peerTarget(connection),
+        (client) => client.request('canvas.picture', params),
+        // Drawn in a hidden window over there; the picture's own wait, not a read's.
+        45_000,
+      )
+      return {
+        ok: true,
+        mimeType: picture.mimeType,
+        data: picture.dataBase64,
+        width: picture.width,
+        height: picture.height,
+      }
+    } catch (error) {
+      return canvasRefused(connection, error)
     }
   }
 
@@ -3215,22 +3223,12 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     machineName: connection.machineName,
   })
 
-  const remoteCanvas = createTailnetRemoteCanvas({
-    connection: (connectionId) => {
+  const remoteCanvas = createPeerCanvas({
+    target: (connectionId) => {
       const connection = connectionFor(connectionId)
-      return connection
-        ? { endpoint: endpointOf(connection), token: connection.deviceToken, machineName: connection.machineName }
-        : null
+      return connection ? peerTarget(connection) : null
     },
-    identity: async (connectionId) => {
-      const connection = connectionFor(connectionId)
-      if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-      const identity = await readRemoteIdentity({ endpoint: endpointOf(connection), token: connection.deviceToken })
-      if (!identity.ok) return identity
-      rememberIdentity(connection.id, identity.value)
-      return { ok: true, value: { scopes: identity.value.scopes, capabilities: identity.value.capabilities } }
-    },
-    knownCapabilities: (connectionId) => peerCapabilities.get(connectionId),
+    studios: peerStudios,
     ...(options.canvas ? options.canvas : {}),
     log: options.log,
   })
@@ -3759,46 +3757,6 @@ function parseSkillRefIds(value: unknown): { ok: true; ids: string[] } | { ok: f
   )
     return { ok: false, message: `Skills are a list of at most ${MAX_SKILLS} skills, each by its id.` }
   return parseSkillIds(value.map((skill: Record<string, unknown>) => skill.id))
-}
-
-/** A machine that keeps no canvas tools running: a server with no desktop open offers none. */
-function canvasRefusal(connection: { machineName: string }, answer: { code: string; message: string }): string {
-  return answer.code === 'rpc_error' && /Unknown tool/u.test(answer.message)
-    ? `${connection.machineName} is not offering its boards right now. Open SprintEngine Studio there and try again.`
-    : answer.message
-}
-
-function canvasListAllUnsupported(connection: { machineName: string }): string {
-  return `${connection.machineName} lists only this project's boards. Update SprintEngine Studio there to see all of them.`
-}
-
-/** `canvas.list`'s answer, read member by member: another machine's words are not trusted to be the shape they claim. */
-function readMeshCanvasBoards(
-  value: Record<string, unknown>,
-  workspaceId: string,
-  allBoards: boolean,
-): MeshCanvasBoard[] {
-  return (Array.isArray(value.boards) ? value.boards : []).flatMap((entry): MeshCanvasBoard[] => {
-    const record = asRecord(entry)
-    if (!record || typeof record.path !== 'string' || !record.path) return []
-    const modifiedAt = typeof record.modifiedAt === 'string' ? Date.parse(record.modifiedAt) : Number.NaN
-    return [
-      {
-        id: typeof record.id === 'string' && record.id ? record.id : null,
-        path: record.path,
-        name: typeof record.name === 'string' && record.name ? record.name : record.path,
-        project: typeof record.project === 'string' && record.project ? record.project : null,
-        workspaceId: allBoards
-          ? typeof record.workspaceId === 'string' && record.workspaceId
-            ? record.workspaceId
-            : null
-          : workspaceId,
-        modifiedAt: Number.isFinite(modifiedAt) ? modifiedAt : 0,
-        elementCount: typeof record.elementCount === 'number' ? record.elementCount : -1,
-        here: allBoards ? record.here === true : true,
-      },
-    ]
-  })
 }
 
 function skillsUnsupported(connection: { machineName: string }): string {
