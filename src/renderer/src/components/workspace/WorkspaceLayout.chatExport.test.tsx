@@ -12,6 +12,9 @@ vi.mock('../../studio/windowStudioClient', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   windowStudioClient: async () => ({
     supports: () => true,
+    state: 'open',
+    // The strip's chats and terminals follow their topics; none of them sends anything.
+    subscribe: () => () => {},
     // Everything else the strip asks of its Studio stays pending.
     request: async (method: string, params: { key: unknown; offset: number }) => {
       if (method !== 'conversation.exportPage') return new Promise(() => {})
