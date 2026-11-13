@@ -21,6 +21,7 @@ import {
   type StudioMethod,
   type StudioMethodAnswer,
   type StudioMethodParams,
+  type StudioMethodResult,
   type StudioRuntimeRefusalCode,
   type StudioServerInfo,
   type StudioUpdateStatus,
@@ -314,6 +315,32 @@ export function studioRuntimeCommandId(grant: StudioGrant, commandId: string): s
 /** The strictest ceiling under which an app may answer a request for the rest of a conversation. */
 const CONVERSATION_RULE_FLOOR = 'auto' as const
 const MAX_REMEMBERED_STOPS = 1024
+
+/**
+ * The always-allow rules as a client that is not an owner reads them: each
+ * rule's folder named by the project's name, never by its path, wherever the
+ * rule spells it (its folder, a file rule's prefix, its label).
+ */
+function approvalRulesByProject(
+  listed: Extract<StudioMethodResult<'conversation.approvalRules'>, { ok: true }>,
+): Extract<StudioMethodResult<'conversation.approvalRules'>, { ok: true }> {
+  return {
+    ...listed,
+    rules: listed.rules.map((rule) => {
+      const project = rule.workspaceRoot.split(/[\\/]/u).filter(Boolean).at(-1) ?? ''
+      const spellings = [rule.workspaceRoot, ...(rule.matcher.type === 'path' ? [rule.matcher.prefix] : [])]
+        .filter((spelling) => spelling.length > 0)
+        .sort((left, right) => right.length - left.length)
+      const label = spellings.reduce((text, spelling) => text.split(spelling).join(project), rule.label)
+      return {
+        ...rule,
+        workspaceRoot: project,
+        matcher: rule.matcher.type === 'path' ? { type: 'path' as const, prefix: project } : rule.matcher,
+        label,
+      }
+    }),
+  }
+}
 
 function refuse<C extends StudioErrorCode>(code: C, message: string): Refused<C> {
   return { ok: false, error: { code, message } }
@@ -1360,10 +1387,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       chat.cancelHistorySearch(context.slot, requestId)
       return { ok: true, result: { ok: true } }
     },
-    'conversation.approvalRules': async (_params, { voice }) => {
+    'conversation.approvalRules': async (_params, { grant, voice }) => {
       const chat = chatOr('conversation.approvalRules')
       if (isRefusal(chat)) return chat
-      return { ok: true, result: voice.redact(await chat.approvalRules()) }
+      const listed = voice.redact(await chat.approvalRules())
+      return { ok: true, result: grant.owner || !listed.ok ? listed : approvalRulesByProject(listed) }
     },
     'conversation.revokeApprovalRule': ({ commandId, ruleId }, { grant, voice }) =>
       sessionOnce('conversation.revokeApprovalRule', grant, commandId, voice, (chat) =>
@@ -1736,6 +1764,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
     ...createStudioPhoneReadsHandlers({
       ...(options.phoneReads ? { reads: options.phoneReads } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+    }),
+
     // ── A chat's record beyond its rest ────────────────────────────────────
     // By its workspace, as a settle; each change once per command id.
 

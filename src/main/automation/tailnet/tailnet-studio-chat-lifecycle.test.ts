@@ -204,3 +204,25 @@ test('a read-only pairing searches and reads a plan, and is refused every change
   await until(() => phone.state !== 'open', 'the revoked device to be cut off')
   assert.ok(r.records.has('ws-rest'))
 })
+
+test('a delete the filesystem refuses is said without the folder it failed in', async () => {
+  const history = '/Users/dev/.sprintengine/conversations/ws-rest'
+  const domain = createStudioChatLifecycleDomain({
+    lifecycle: {} as never,
+    deletion: () => ({
+      plan: async () => [],
+      delete: async (ids) =>
+        ids.map((workspaceId) => ({
+          workspaceId,
+          ok: false as const,
+          message: `Its history folder was not deleted: EACCES: permission denied, rmdir '${history}'`,
+        })),
+    }),
+    hasChat: () => true,
+    searchChats: async () => ({ chats: [], truncated: false }),
+  })
+  const refused = await domain.delete('ws-rest', false)
+  assert.equal(refused.ok, false)
+  assert.ok(!refused.ok && refused.code === 'conflict')
+  assert.ok(!refused.ok && !refused.message.includes('/Users/dev'), refused.ok ? '' : refused.message)
+})

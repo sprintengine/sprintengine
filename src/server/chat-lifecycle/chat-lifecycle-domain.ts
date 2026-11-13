@@ -5,6 +5,7 @@ import type {
   StudioChatSearchAnswer,
 } from '../../../packages/studio-protocol/src/public'
 import type { ConversationLifecycle, ConversationLifecycleFailure } from '../../main/automation/conversation-lifecycle'
+import { deepRedactLocalPaths } from '../../main/mobile/control/path-safety'
 import type { WorkspaceRegistryActor } from '../../shared/workspace-registry'
 import type {
   SettledChatDeletionOutcome,
@@ -76,20 +77,29 @@ export type StudioChatLifecycleDeps = {
 }
 
 /** A lifecycle refusal in the protocol's words: a chat at work, settled or with nothing finished is a conflict. */
+/**
+ * A refusal as it crosses to another device: a message from the filesystem
+ * (a record or history that could not be written or removed) names the path it
+ * failed on, so its paths are redacted.
+ */
+function refused<C extends Code>(code: C, message: string): StudioChatLifecycleRefusal & { code: C } {
+  return { ok: false, code, message: deepRedactLocalPaths(message) }
+}
+
 function refusal(failure: ConversationLifecycleFailure): StudioChatLifecycleRefusal {
   switch (failure.code) {
     case 'unknown_workspace':
-      return { ok: false, code: 'not_found', message: failure.message }
+      return refused('not_found', failure.message)
     case 'working':
     case 'settled':
     case 'nothing_finished':
     case 'stale':
     case 'not_applicable':
-      return { ok: false, code: 'conflict', message: failure.message }
+      return refused('conflict', failure.message)
     case 'invalid_arguments':
-      return { ok: false, code: 'invalid_params', message: failure.message }
+      return refused('invalid_params', failure.message)
     case 'write_failed':
-      return { ok: false, code: 'unavailable', message: failure.message }
+      return refused('unavailable', failure.message)
   }
 }
 
@@ -156,11 +166,11 @@ export function createStudioChatLifecycleDomain(deps: StudioChatLifecycleDeps): 
           ok: true,
           value: {
             worktrees: (plan?.worktrees ?? []).map(plannedWorktree),
-            ...(plan?.refused ? { refused: plan.refused } : {}),
+            ...(plan?.refused ? { refused: deepRedactLocalPaths(plan.refused) } : {}),
           },
         }
       } catch (error) {
-        return { ok: false, code: 'unavailable', message: error instanceof Error ? error.message : String(error) }
+        return refused('unavailable', error instanceof Error ? error.message : String(error))
       }
     },
     async delete(workspaceId, byOwner) {
@@ -170,9 +180,9 @@ export function createStudioChatLifecycleDomain(deps: StudioChatLifecycleDeps): 
       try {
         ;[outcome] = await deletion(byOwner).delete([workspaceId])
       } catch (error) {
-        return { ok: false, code: 'unavailable', message: error instanceof Error ? error.message : String(error) }
+        return refused('unavailable', error instanceof Error ? error.message : String(error))
       }
-      if (!outcome?.ok) return { ok: false, code: 'conflict', message: outcome?.message ?? 'The chat was not deleted.' }
+      if (!outcome?.ok) return refused('conflict', outcome?.message ?? 'The chat was not deleted.')
       return {
         ok: true,
         value: { worktrees: outcome.worktrees.map(({ path: _path, ...told }) => told) },

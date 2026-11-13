@@ -478,6 +478,8 @@ test('every method the server serves has its call in the SDK, under the same sco
     // windows' Settings ▸ Worktrees and Delete drive, called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_WORKTREES_METHODS).map((method) => [method, 'request'])) as Record<
       StudioWorktreesMethod,
+      string
+    >),
     // A chat's record beyond its rest, which the phone and a paired desktop
     // write (`chat-lifecycle.ts`), called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CHAT_LIFECYCLE_METHODS).map((method) => [method, 'request'])) as Record<
