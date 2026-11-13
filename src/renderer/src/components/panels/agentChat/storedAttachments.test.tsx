@@ -74,7 +74,7 @@ test('a replayed bubble reads its images back by reference, and says so when one
     const remote = createRemoteConversationTransport({
       key: { connectionId: 'mac-mini', workspaceId: 'w', agentId: 'a' },
       machineName: 'mac-mini',
-      access: 'read',
+      offer: () => ({ via: 'paired-lane', capabilities: [], access: 'read', modelCatalog: false }),
     })
     await act(async () => {
       root.render(

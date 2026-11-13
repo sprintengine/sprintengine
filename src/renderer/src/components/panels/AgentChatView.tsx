@@ -1927,8 +1927,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // The files New chat attached by path go with it as this chat's own send
   // would carry them: beside the words, drawn as cards in its first bubble.
   const startupFiles = agent?.chatStartupFiles
-  const startupTakesImages =
-    readiness.kind === 'ready' && capabilities?.images === true && transport.capabilities.imageAttachments
+  const startupTakesImages = readiness.kind === 'ready' && capabilities?.images === true
   const startupHandledRef = useRef(false)
   // A New chat still waiting on its worktree holds the message (it has no
   // root, so no history to hydrate); one whose worktree could not be made
@@ -3249,10 +3248,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     [hasContextReading, breakdownDeclared, readContextBreakdown, sessionId, assistantName, contextRefreshKey],
   )
   // Image attach is offered only where a provider actually reads the turn's
-  // attachments, the transport carries them there, and the session can take a
-  // turn — a control that stages images no one will receive is worse than no
-  // control.
-  const imagesEnabled = ready && capabilities?.images === true && transport.capabilities.imageAttachments
+  // attachments and the session can take a turn: every transport carries
+  // them to the chat's server. A control that stages images no one will
+  // receive is worse than no control.
+  const imagesEnabled = ready && capabilities?.images === true
   // Files attached by path are cards only where the agent can read them by
   // that path and the card can open them: a chat on this computer (not an
   // SSH machine's or a WSL distribution's), in a window that reads a file's
@@ -3266,11 +3265,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       ? transport.capabilities.localFiles && workspaceRunsHere(binding.workspace)
       : transport.capabilities.attachFiles)
 
-  const skillInventory = useWorkspaceSkills(
-    workspaceRoot,
-    null,
-    supportsSkills && transport.capabilities.composerContext,
-  )
+  // The inventory is the window's own Studio's, except for a chat whose
+  // transport names the machine that lists its skills.
+  const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !transport.remoteExtensions)
   // Held from render to render, as the "+" menu that takes them is memoized:
   // a list rebuilt each render redrew the menu on every keystroke and token.
   const attachedSkills = useMemo(
@@ -3369,8 +3366,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // that machine lists its CLI's commands, the menu asks it for the chat's
   // folder there; elsewhere it holds Studio's commands, and the CLI's only
   // once a list for it has reached this machine.
-  const localCommands = transport.capabilities.composerContext
-  const listCommandsThere = !localCommands && transport.capabilities.commandList ? transport.listCommands : undefined
+  const listCommandsThere = transport.capabilities.commandList ? transport.listCommands : undefined
+  // The window's own Studio lists them for the chat's folder where the
+  // transport has no list of its own.
+  const localCommands = transport.capabilities.commandList && !transport.listCommands
   const commandSource = useMemo<ChatCommandSource | undefined>(
     () =>
       listCommandsThere
@@ -3420,8 +3419,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     caret: composerCaret,
     // The type-ahead reads this machine's inventory, and a remote chat's that
     // machine's, as its "+" does.
-    skillsEnabled: supportsSkills && (transport.capabilities.composerContext || Boolean(transport.remoteExtensions)),
-    remoteSkills: transport.capabilities.composerContext ? null : (transport.remoteExtensions ?? null),
+    skillsEnabled: supportsSkills,
+    remoteSkills: transport.remoteExtensions ?? null,
     // A file mention names a file in the chat's folder: on this machine's
     // disk, or, for a remote chat, in its folder over there, searched there.
     mentionsEnabled: transport.capabilities.mentions,

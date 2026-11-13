@@ -963,7 +963,11 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
   const { createRoot } = await import('react-dom/client')
   const { ConversationTransportProvider, createRemoteConversationTransport } = await import('../conversationTransport')
   const key = { connectionId: 'mac-mini', workspaceId: 'remote-workspace', agentId: 'agent' }
-  const transport = createRemoteConversationTransport({ key, machineName: 'mac-mini', access: 'read' })
+  const transport = createRemoteConversationTransport({
+    key,
+    machineName: 'mac-mini',
+    offer: () => ({ via: 'paired-lane', capabilities: [], access: 'read', modelCatalog: false }),
+  })
   const host = dom.window.document.createElement('div')
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)

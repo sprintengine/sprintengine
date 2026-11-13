@@ -2699,55 +2699,15 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         message: `${connection.machineName} does not serve conversations. Update Studio there to follow them from here.`,
       }
     }
-    // Model switching is a capability of its own: a machine that does not
-    // name it lists no catalog and refuses the command, so its chats keep
-    // the model they have and the picker says so.
+    // What the machine publishes of itself goes to the window whole: a chat
+    // pane reads what it may offer off it (`negotiateChatCapabilities`), as a
+    // window reads its own Studio's welcome.
     const listed = await remoteConversations.list(connection.id)
     return listed.ok
       ? {
           ...listed,
-          modelSwitch: tailnetPeerSupports(identity.value.capabilities, 'conversation-models'),
-          permissionModes: tailnetPeerSupports(identity.value.capabilities, 'conversation-permission-modes'),
-          cliPermissionModes: tailnetPeerSupports(identity.value.capabilities, 'conversation-cli-permission-modes'),
+          capabilities: [...(identity.value.capabilities ?? [])],
           lifecycle: tailnetPeerSupports(identity.value.capabilities, 'conversation-lifecycle'),
-          queuedSends: tailnetPeerSupports(identity.value.capabilities, 'conversation-queued-sends'),
-          sendSkills:
-            tailnetPeerSupports(identity.value.capabilities, 'conversation-send-skills') &&
-            tailnetPeerSupports(identity.value.capabilities, 'workspace-extensions'),
-          steerSends: tailnetPeerSupports(identity.value.capabilities, 'conversation-steer-sends'),
-          stopSubagents: tailnetPeerSupports(identity.value.capabilities, 'conversation-stop-subagent'),
-          messageSubagents: tailnetPeerSupports(identity.value.capabilities, 'conversation-agent-message'),
-          handoff: tailnetPeerSupports(identity.value.capabilities, 'conversation-handoff'),
-          rewind: tailnetPeerSupports(identity.value.capabilities, 'conversation-rewind'),
-          checkpointRevert: tailnetPeerSupports(identity.value.capabilities, 'conversation-checkpoint-revert'),
-          fork: tailnetPeerSupports(identity.value.capabilities, 'conversation-fork'),
-          sideQuestions: tailnetPeerSupports(identity.value.capabilities, 'conversation-side-questions'),
-          sideQuestionRecords: tailnetPeerSupports(identity.value.capabilities, 'conversation-side-question-records'),
-          contextBreakdown: tailnetPeerSupports(identity.value.capabilities, 'conversation-context-breakdown'),
-          // The composer's reach into a chat's folder over there: an @ is a
-          // search there and a name the send carries back, so both or neither.
-          mentions:
-            tailnetPeerSupports(identity.value.capabilities, 'conversation-file-search') &&
-            tailnetPeerSupports(identity.value.capabilities, 'conversation-send-mentions'),
-          commands: tailnetPeerSupports(identity.value.capabilities, 'conversation-commands'),
-          messageFiles:
-            tailnetPeerSupports(identity.value.capabilities, 'conversation-message-files') &&
-            tailnetPeerSupports(identity.value.capabilities, 'upload'),
-          sendMode: tailnetPeerSupports(identity.value.capabilities, 'conversation-send-mode'),
-          reasoningEffort: tailnetPeerSupports(identity.value.capabilities, 'conversation-reasoning-effort'),
-          mcpServerActions: tailnetPeerSupports(identity.value.capabilities, 'conversation-mcp-server-actions'),
-          scheduledSends: tailnetPeerSupports(identity.value.capabilities, 'conversation-scheduled-sends'),
-          usageLimits: tailnetPeerSupports(identity.value.capabilities, 'conversation-usage-limits'),
-          // A queued message there holds its pictures, files, skills and mentions.
-          queuedAttachments:
-            tailnetPeerSupports(identity.value.capabilities, 'conversation-queued-sends') &&
-            tailnetPeerSupports(identity.value.capabilities, 'conversation-queued-attachments'),
-          // An approval may be answered there with an "always allow" rule.
-          permanentApprovals: tailnetPeerSupports(identity.value.capabilities, 'conversation-permanent-approvals'),
-          quotes: tailnetPeerSupports(identity.value.capabilities, 'conversation-quote-tokens'),
-          // A chat's Changes opens its changes here, read from its checkout there.
-          changes: tailnetPeerSupports(identity.value.capabilities, 'conversation-changes'),
-          createPullRequest: tailnetPeerSupports(identity.value.capabilities, 'chat-create-pull-request'),
           rowMenu: tailnetPeerSupports(identity.value.capabilities, 'chat-row-menu'),
           markUnread: tailnetPeerSupports(identity.value.capabilities, 'chat-mark-unread'),
           manage: chatManageOf(identity.value.capabilities),

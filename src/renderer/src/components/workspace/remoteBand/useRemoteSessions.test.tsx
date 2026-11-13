@@ -68,7 +68,7 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     },
     meshConversationList: async () => {
       calls.list += 1
-      return { ok: true, conversations: [], access: 'read', modelSwitch: false }
+      return { ok: true, conversations: [], access: 'read', capabilities: [] }
     },
   }
 

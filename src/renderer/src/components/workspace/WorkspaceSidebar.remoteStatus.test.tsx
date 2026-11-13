@@ -155,7 +155,7 @@ test('a chat opened here from a paired machine wears the marks its machine lists
         listed('rw5', 'Followed from a rename', 'completed', 50),
       ],
       access: 'operate',
-      modelSwitch: false,
+      capabilities: [],
       lifecycle: true,
       rowMenu: true,
       markUnread: true,

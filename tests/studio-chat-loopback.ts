@@ -5,7 +5,7 @@ import type { StudioPullRequests } from '../src/server/pull-requests/pull-reques
 import type { StudioConversationBackend } from '../src/server/rpc/studio-rpc-types'
 import type { StudioFileSystem } from '../src/server/files/studio-file-system'
 import type { ConversationSessionFrame } from '../src/shared/conversation-runtime'
-import { configureWindowStudio } from '../src/renderer/src/studio/windowStudioClient'
+import { configureWindowStudio, windowStudioClient } from '../src/renderer/src/studio/windowStudioClient'
 import { createMemoryChannel, type MemoryChannelEnd } from './memory-channel'
 import { memoryWebSocketClass } from './memory-websocket'
 
@@ -213,6 +213,12 @@ export type StudioLoopback = {
   drop(): void
   /** How many connections the window has opened so far. */
   connections(): number
+  /**
+   * Connect the window now, and resolve once its Studio has welcomed it: what
+   * a chat here may do is read off that welcome, as the app's window has it
+   * before it draws a chat.
+   */
+  welcomed(): Promise<void>
 }
 
 /**
@@ -319,6 +325,9 @@ export function installStudioLoopback(
       for (const end of [...windowEnds.values()]) end.close()
     },
     connections: () => opened,
+    welcomed: async () => {
+      await windowStudioClient(api as Parameters<typeof windowStudioClient>[0])
+    },
   }
 }
 

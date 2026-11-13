@@ -122,7 +122,7 @@ test('WorkspaceSidebar.remoteLink', async () => {
       ok: true,
       conversations: [remoteChat],
       access: 'read',
-      modelSwitch: false,
+      capabilities: [],
     }),
   }
 

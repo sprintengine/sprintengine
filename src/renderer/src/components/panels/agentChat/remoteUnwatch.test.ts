@@ -22,7 +22,7 @@ test('Stop watching asks the machine the chat runs on', async () => {
   const transport = createRemoteConversationTransport({
     key: { connectionId: 'c1', workspaceId: 'rw1', agentId: 'agent-there' },
     machineName: 'mac-mini',
-    access: 'operate',
+    offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
   })
   const url = 'https://github.com/acme/app/pull/7'
   expect(await transport.unwatchPullRequest!({ url })).toEqual({ ok: true })

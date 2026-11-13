@@ -12,7 +12,9 @@ import {
   type ScannedSkill,
   type SkillSource,
 } from '../../../../../../shared/skills'
+import { chatWelcome } from '../../../../../../../tests/chat-welcome'
 import { ConversationLinkProvider } from '../conversationLinks'
+import { ConversationTransportProvider, studioConversationTransport } from '../conversationTransport'
 import type { TranscriptToolEntry } from '../conversationProjection'
 import { PluginOfferCard, PluginOfferChatProvider, type PluginOfferChat } from './PluginOfferCard'
 import { PRESELECT_SKILLS_UP_TO } from './pluginOfferModel'
@@ -143,11 +145,13 @@ afterEach(() => {
 async function render(chat: PluginOfferChat = { cli: 'claude', signIn: null }): Promise<void> {
   await act(async () =>
     root.render(
-      <ConversationLinkProvider workspaceId="ws" cwd="/Users/dev/app" workspaceRoot="/Users/dev/app">
-        <PluginOfferChatProvider value={chat}>
-          <PluginOfferCard tool={TOOL} fallback={<div>tool row</div>} />
-        </PluginOfferChatProvider>
-      </ConversationLinkProvider>,
+      <ConversationTransportProvider value={studioConversationTransport(() => chatWelcome())}>
+        <ConversationLinkProvider workspaceId="ws" cwd="/Users/dev/app" workspaceRoot="/Users/dev/app">
+          <PluginOfferChatProvider value={chat}>
+            <PluginOfferCard tool={TOOL} fallback={<div>tool row</div>} />
+          </PluginOfferChatProvider>
+        </ConversationLinkProvider>
+      </ConversationTransportProvider>,
     ),
   )
 }

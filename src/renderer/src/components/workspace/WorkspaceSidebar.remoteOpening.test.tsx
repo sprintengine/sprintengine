@@ -110,7 +110,7 @@ test('WorkspaceSidebar.remoteOpening', async () => {
         },
       ],
       access: 'operate',
-      modelSwitch: false,
+      capabilities: [],
       lifecycle: true,
       rowMenu: true,
       markUnread: true,

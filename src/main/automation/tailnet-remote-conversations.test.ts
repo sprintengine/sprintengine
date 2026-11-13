@@ -478,7 +478,7 @@ test("a paired desktop switches a chat's model within its CLI, and the host's se
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const listed = await h.mesh.listConversations(connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.equal(listed.modelSwitch, true, 'the host advertises model switching')
+    assert.ok(listed.capabilities.includes('conversation-models'), 'the host advertises model switching')
     assert.deepEqual(
       listed.conversations[0]?.models,
       {
@@ -1368,9 +1368,12 @@ test('a message queued while the turn runs over there is held there, and goes wh
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const listed = await h.mesh.listConversations(connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.equal(listed.queuedSends, true, 'the machine says it holds queued messages')
-    assert.equal(listed.queuedAttachments, true, 'whole, with what they carry')
-    assert.equal(listed.permanentApprovals, true, 'and saves an "always allow" rule chosen here')
+    assert.ok(listed.capabilities.includes('conversation-queued-sends'), 'the machine says it holds queued messages')
+    assert.ok(listed.capabilities.includes('conversation-queued-attachments'), 'whole, with what they carry')
+    assert.ok(
+      listed.capabilities.includes('conversation-permanent-approvals'),
+      'and saves an "always allow" rule chosen here',
+    )
     const key = { connectionId, workspaceId, agentId }
     const pane = follower(h.mesh, key)
     await waitFor(pane.live, 'the follow goes live')
@@ -1456,7 +1459,10 @@ test('a message scheduled from here is kept there, and goes at its time with thi
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const listed = await h.mesh.listConversations(connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.equal(listed.scheduledSends, true, 'the machine says it keeps scheduled messages')
+    assert.ok(
+      listed.capabilities.includes('conversation-scheduled-sends'),
+      'the machine says it keeps scheduled messages',
+    )
     const key = { connectionId, workspaceId, agentId }
     const pane = follower(h.mesh, key)
     await waitFor(pane.live, 'the follow goes live')
@@ -1574,7 +1580,7 @@ test("a paired desktop hears a chat's usage limits from the machine it runs on, 
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const listed = await h.mesh.listConversations(connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.equal(listed.usageLimits, true, 'the machine says it tells its usage limits')
+    assert.ok(listed.capabilities.includes('conversation-usage-limits'), 'the machine says it tells its usage limits')
     const key = { connectionId, workspaceId, agentId }
     const pane = follower(h.mesh, key)
     await waitFor(pane.live, 'the follow goes live')
@@ -1850,7 +1856,7 @@ test('a message steered from here into a turn its chat cannot take is held there
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const listed = await h.mesh.listConversations(connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.equal(listed.steerSends, true, 'the machine says it takes a steer')
+    assert.ok(listed.capabilities.includes('conversation-steer-sends'), 'the machine says it takes a steer')
     assert.equal(listed.conversations[0]?.capabilities?.steer, false, 'and that this chat’s provider cannot')
     const key = { connectionId, workspaceId, agentId }
     const pane = follower(h.mesh, key)
@@ -1886,7 +1892,12 @@ test("a side question and the window's breakdown are asked of the chat over ther
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const listed = await h.mesh.listConversations(connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.deepEqual([listed.fork, listed.sideQuestions, listed.contextBreakdown], [true, true, true])
+    assert.deepEqual(
+      ['conversation-fork', 'conversation-side-questions', 'conversation-context-breakdown'].map((name) =>
+        listed.capabilities.includes(name),
+      ),
+      [true, true, true],
+    )
     const key = { connectionId, workspaceId, agentId }
     const pane = follower(h.mesh, key)
     assert.deepEqual(await pane.following, { ok: true })
@@ -1971,7 +1982,7 @@ test('a quote made on a paired desktop reaches the agent expanded and comes back
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const listed = await h.mesh.listConversations(connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.equal(listed.quotes, true, 'the machine says it expands a quote')
+    assert.ok(listed.capabilities.includes('conversation-quote-tokens'), 'the machine says it expands a quote')
     const key = { connectionId, workspaceId, agentId }
     const pane = follower(h.mesh, key)
     await waitFor(pane.live, 'the follow goes live')
@@ -2131,7 +2142,7 @@ describe('a chat’s changes on a paired desktop', () => {
       const connectionId = await h.pair(['conversation:read'])
       const listed = await h.mesh.listConversations(connectionId)
       assert.ok(listed.ok, listed.ok ? '' : listed.message)
-      assert.equal(listed.changes, true, 'the list says the machine reads them')
+      assert.ok(listed.capabilities.includes('conversation-changes'), 'the list says the machine reads them')
       assert.equal(listed.access, 'read')
 
       const key = { connectionId, workspaceId, agentId }
@@ -2230,7 +2241,7 @@ describe('a chat’s changes on a paired desktop', () => {
       const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
       const listed = await h.mesh.listConversations(connectionId)
       assert.ok(listed.ok)
-      assert.equal(listed.changes, false)
+      assert.equal(listed.capabilities.includes('conversation-changes'), false)
       const key = { connectionId, workspaceId, agentId }
       const pane = follower(h.mesh, key)
       await waitFor(pane.live, 'the follow goes live')

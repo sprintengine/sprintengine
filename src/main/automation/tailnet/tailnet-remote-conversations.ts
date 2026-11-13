@@ -1058,7 +1058,7 @@ export function createRemoteConversations(options: RemoteConversationsOptions): 
           onFrame: (raw) => {
             const frame = isKnownConversationServerFrameType(raw) ? parseConversationServerFrame(raw) : null
             if (frame?.type === 'sessions' && frame.requestId === 'list')
-              settle({ ok: true, conversations: frame.sessions, access, modelSwitch: false })
+              settle({ ok: true, conversations: frame.sessions, access, capabilities: [] })
             else if (frame?.type === 'result' && frame.requestId === 'list' && !frame.ok)
               settle({
                 ok: false,
