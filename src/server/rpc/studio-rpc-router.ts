@@ -386,6 +386,13 @@ function approvalRulesByProject(
 
 /** How long a chat's export read for its first page is held for the pages after it, from its last read. */
 const EXPORT_HELD_MS = 5 * 60_000
+/**
+ * How long an export is still held once the connection that last read it
+ * closed: a client sends every unanswered request again on the connection it
+ * reconnects with, so a dropped export's next page is asked for there. Past
+ * this, nobody is coming back for it.
+ */
+const EXPORT_HELD_AFTER_CLOSE_MS = 60_000
 /** The exports one client may have held at once; a newer one lets go of the oldest. */
 const EXPORTS_HELD_PER_CLIENT = 2
 /** About as much of an export as one page carries, measured as its JSON. */
@@ -503,11 +510,22 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   const stopsDone = new Set<string>()
   // A chat's export, read once for its first page and cut into the rest: by
   // client and export id, each with the time it was last read and the
-  // connection that last read it, whose close lets it go.
+  // connection that last read it; once that one closes, when it closed.
   const exportsHeld = new Map<
     string,
-    { read: Extract<StudioChatExportRead, { ok: true }>; at: number; connectionId: string }
+    { read: Extract<StudioChatExportRead, { ok: true }>; at: number; connectionId: string; closedAt?: number }
   >()
+  const letGoOfStaleExports = (clock: number) => {
+    for (const [id, kept] of exportsHeld)
+      if (
+        clock - kept.at > EXPORT_HELD_MS ||
+        (kept.closedAt !== undefined && clock - kept.closedAt >= EXPORT_HELD_AFTER_CLOSE_MS)
+      )
+        exportsHeld.delete(id)
+  }
+  // The one sweep a close arms, so a dropped export is let go of though no
+  // other export is asked for.
+  let exportSweep: ReturnType<typeof setTimeout> | null = null
   const exportPage = (
     read: Extract<StudioChatExportRead, { ok: true }>,
     offset: number,
@@ -1518,7 +1536,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       // Held for this client and this chat: an export id names nothing of another's.
       const held = [grant.clientId, key.workspaceId, key.agentId, exportId].join('\u0000')
       const clock = now()
-      for (const [id, kept] of exportsHeld) if (clock - kept.at > EXPORT_HELD_MS) exportsHeld.delete(id)
+      letGoOfStaleExports(clock)
       let kept = exportsHeld.get(held)
       if (offset === 0) {
         const read = await chat.exportSource({ workspaceId: key.workspaceId, agentId: key.agentId })
@@ -1535,6 +1553,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!kept) return refuse('not_found', 'That export is no longer held. Start it again.')
       kept.at = clock
       kept.connectionId = context.connectionId
+      delete kept.closedAt
       const page = exportPage(kept.read, offset)
       if (page.nextOffset === null) exportsHeld.delete(held)
       return { ok: true, result: page }
@@ -2189,8 +2208,22 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     updateStatus,
     connectionClosed: (connectionId, slot) => {
       uploads.release(connectionId)
-      // An export is read page by page on one connection; with it gone, its pages go too.
-      for (const [id, held] of exportsHeld) if (held.connectionId === connectionId) exportsHeld.delete(id)
+      // An export is read page by page on one connection. With it gone, its
+      // pages wait only for the reconnect that asks for the next one again.
+      let orphaned = false
+      for (const held of exportsHeld.values())
+        if (held.connectionId === connectionId && held.closedAt === undefined) {
+          held.closedAt = now()
+          orphaned = true
+        }
+      if (orphaned) {
+        if (exportSweep) clearTimeout(exportSweep)
+        exportSweep = setTimeout(() => {
+          exportSweep = null
+          letGoOfStaleExports(now())
+        }, EXPORT_HELD_AFTER_CLOSE_MS)
+        exportSweep.unref?.()
+      }
       if (slot !== undefined) options.fileSystem?.releaseSlot(slot)
       options.canvas?.connectionClosed(connectionId)
     },
@@ -2200,6 +2233,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     git: options.git ?? null,
     worktrees: options.worktrees ?? null,
     close: () => {
+      if (exportSweep) clearTimeout(exportSweep)
+      exportSweep = null
+      exportsHeld.clear()
       uploads.close()
       options.canvas?.close()
     },
