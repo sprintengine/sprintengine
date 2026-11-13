@@ -36,8 +36,6 @@ import type {
   ConversationProviderSignInResult,
   ConversationSideQuestionResult,
   ConversationTerminalHandoffResult,
-  ConversationForkInput,
-  ConversationForkResult,
   ConversationKey,
   ConversationPageResult,
   ConversationPlanDocumentInput,
@@ -76,6 +74,8 @@ export type StudioCommandOutcome = {
   /** With `busy`: when trying again can succeed. */
   retryAfterMs?: number
   notice?: string
+  /** What a command that answers more than yes or no says: a fork's `name`. */
+  data?: Record<string, unknown>
 }
 
 /**
@@ -237,7 +237,6 @@ export type StudioChatBackend = {
   revert(input: ConversationRevertInput): Promise<ConversationRevertResult>
   rewind(input: ConversationRewindInput): Promise<ConversationRewindResult>
   handoff(input: ConversationHandoffInput): Promise<ConversationHandoffResult>
-  fork(input: ConversationForkInput): Promise<ConversationForkResult>
   attachment(ref: string): Promise<ConversationAttachmentResult>
   planDocument(input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult>
   commands(input: ChatInput<'conversation.commands'>): Promise<ConversationCommandCatalog>

@@ -9,11 +9,12 @@ import { useState } from 'react'
 import { newAgentIdSuffix } from '../../../../../shared/agent-ids'
 
 import type { ConversationImageAttachment, ConversationKey } from '../../../../../shared/conversation-runtime'
+import type { ConversationAddress } from '../../../../../../packages/studio-protocol/src/public'
 import { GhostButton, Tooltip } from '../../ui'
 import { showToast } from '../../../store/toastStore'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { placeSpawnedAgentTab } from '../../workspace/manager/layoutTabActions'
-import { forkedAgentPatch, forkName } from '../../../../../shared/conversation/fork'
+import { forkName } from '../../../../../shared/conversation/fork'
 import { SOLO_CHAT_TEMPLATE_ID } from '../../../../../shared/layouts/templates'
 import { meshConversationSessionId, type MeshConversationPaneSpec } from '../../../../../shared/tailnet-mesh'
 import { LAYOUT_TEMPLATES } from '../../../layouts/templates'
@@ -193,45 +194,80 @@ function ForkFromHereButton({
 }
 
 /**
- * Make the fork and open it: the runtime writes its conversation, then the
- * new chat joins the workspace as this one's twin (its CLI, model, effort,
- * permission mode, skills and working folder), named after it, in the tab
- * after this one's. A message forked before goes into its composer.
+ * Make the fork and open it. The chat's Studio writes the fork's conversation
+ * and joins it to the workspace as this one's twin (its CLI, model, effort,
+ * permission mode, skills and working folder), named after it beside the
+ * workspace's other chats, and answers where it is and what it called it.
+ * Here it opens in the tab after this one's once its record has arrived, and
+ * a message forked before goes into its composer.
  */
 export async function forkChat(input: {
   transport: Pick<ConversationTransport, 'fork'>
   key: ConversationKey
+  /** The chat's provider, which names the fork's id as every chat's is named. */
+  providerId: string
   target: ForkFromHereTarget
 }): Promise<void> {
   const { key, target } = input
-  const workspace = useWorkspaceStore.getState().workspaces.find((candidate) => candidate.id === key.workspaceId)
-  const parent = workspace?.agents[key.agentId]
-  if (!input.transport.fork || !parent?.conversation) throw new Error('This chat cannot be forked here.')
-  const agentId = `conversation-${parent.conversation.providerId}-${newAgentIdSuffix()}`
-  const name = forkName(
-    parent.name || 'Chat',
-    Object.values(workspace?.agents ?? {}).map((agent) => agent.name),
-  )
+  if (!input.transport.fork) throw new Error('This chat cannot be forked here.')
   const forked = await input.transport.fork({
     key,
-    newAgentId: agentId,
-    title: name,
+    newAgentId: `conversation-${input.providerId}-${newAgentIdSuffix()}`,
     ...(target.side === 'user'
       ? { side: 'user' as const, turnSeq: target.turnSeq }
       : { side: 'assistant' as const, turnId: target.turnId }),
   })
   if (!forked.ok) throw new Error(forked.message)
-  useWorkspaceStore.getState().updateAgent(key.workspaceId, agentId, forkedAgentPatch(parent, name))
+  if (!forked.address || !forked.name || forked.address.chatId !== key.workspaceId)
+    throw new Error('Studio made the fork but did not say where it is. Reload the window to find it.')
+  await openFork(forked.address, forked.name, key.agentId, target)
+}
+
+/** How long a fork's record is waited for here before its tab opens all the same. */
+const FORK_RECORD_WAIT_MS = 5_000
+
+function untilAgentRecord(workspaceId: string, agentId: string): Promise<void> {
+  const has = () =>
+    Boolean(useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.agents[agentId])
+  if (has()) return Promise.resolve()
+  return new Promise((resolve) => {
+    let stop = () => {}
+    const timer = setTimeout(() => {
+      stop()
+      resolve()
+    }, FORK_RECORD_WAIT_MS)
+    stop = useWorkspaceStore.subscribe(() => {
+      if (!has()) return
+      clearTimeout(timer)
+      stop()
+      resolve()
+    })
+  })
+}
+
+/**
+ * Open a fork this window's Studio made, by its address: the workspace's
+ * record arrives from the Studio, then its tab opens after the chat it came
+ * from, with the message forked before in its composer.
+ */
+async function openFork(
+  address: ConversationAddress,
+  name: string,
+  afterAgentId: string,
+  target: ForkFromHereTarget,
+): Promise<void> {
+  const { chatId: workspaceId, agentId } = address
+  await untilAgentRecord(workspaceId, agentId)
   if (target.side === 'user') {
-    composerDraftStore().getState().put(key.workspaceId, agentId, target.draft)
-    if (target.attachments?.length) holdForkedAttachments(key.workspaceId, agentId, target.attachments)
+    composerDraftStore().getState().put(workspaceId, agentId, target.draft)
+    if (target.attachments?.length) holdForkedAttachments(workspaceId, agentId, target.attachments)
   } else if (target.draft?.text.trim())
-    composerDraftStore().getState().put(key.workspaceId, agentId, {
+    composerDraftStore().getState().put(workspaceId, agentId, {
       text: target.draft.text,
       skillIds: [],
       mentions: [],
     })
-  placeSpawnedAgentTab(key.workspaceId, agentId, name, { afterAgentId: key.agentId })
+  placeSpawnedAgentTab(workspaceId, agentId, name, { afterAgentId })
   showToast({ tone: 'neutral', title: `Forked into ${name}. Both chats work in the same files.` })
 }
 

@@ -395,3 +395,40 @@ test('every chat’s lifecycle is heard across a dropped connection, and the rea
     restore()
   }
 })
+
+test('a fork is asked only of a Studio that says where its forks are, and an answer that does not say is not read as made', async () => {
+  const { createStudioConversationParts } = await import('./studioChat')
+  const asked: string[] = []
+  const studio = (capabilities: string[], answer: unknown) => async () =>
+    ({
+      welcome: { conversation: { capabilities } },
+      request: async (method: string) => {
+        asked.push(method)
+        return answer
+      },
+    }) as never
+  const fork = {
+    key: { workspaceRoot: '/Users/dev/app', workspaceId: 'ws', agentId: 'agent' },
+    newAgentId: 'agent-2',
+    side: 'assistant' as const,
+    turnId: 'turn-1',
+  }
+  // A Studio from before: its fork would leave a transcript no window lists.
+  const older = await createStudioConversationParts(studio([], { ok: true })).fork!(fork)
+  expect(older).toEqual({ ok: false, message: expect.stringContaining('older than this window') })
+  expect(asked).toEqual([])
+  // One that forked but did not say where, or said another fork.
+  for (const answer of [
+    { ok: true },
+    { ok: true, address: { environmentId: 'env', chatId: 'ws', agentId: 'another' }, name: 'Atlas (fork)' },
+  ]) {
+    const unsaid = await createStudioConversationParts(studio(['conversation-fork'], answer)).fork!(fork)
+    expect(unsaid).toEqual({ ok: false, message: expect.stringContaining('did not say where it is') })
+  }
+  const address = { environmentId: 'env', chatId: 'ws', agentId: 'agent-2' }
+  const made = await createStudioConversationParts(
+    studio(['conversation-fork'], { ok: true, address, name: 'Atlas (fork)' }),
+  ).fork!(fork)
+  expect(made).toEqual({ ok: true, address, name: 'Atlas (fork)' })
+  expect(asked).toEqual(['conversation.fork', 'conversation.fork', 'conversation.fork'])
+})

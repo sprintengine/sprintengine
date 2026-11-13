@@ -97,19 +97,17 @@ import type {
  *   a keyed send, held or not. `conversation.send` refuses `uploadIds` until
  *   the one upload path every client uses (a streamed PUT to a URL from
  *   `uploads.begin`) carries them.
- * - `conversation-fork`: the lane's fork joins the new chat to the desktop's
- *   records; this socket's `conversation.fork` leaves the record to the
- *   window that asked.
  *
  * Every other one is served by a method or topic of the protocol over the
  * same conversation host the lane uses (`followed.ts`): the per-chat topics,
  * side questions and their records, context breakdown, the composer's file
  * search and command list, settle and visit (with the list in the sidebar's
- * order, settled chats left out), and `always` approvals. So is
- * `conversation-quote-tokens`: a send's quote token is expanded for the agent
- * where the chat runs, whichever way the send came, and this socket sends
- * every client a chat as it is kept, tokens included (the lane alone turns
- * them to words for a client that did not say it reads them).
+ * order, settled chats left out), `always` approvals, and a fork joined to
+ * the chat's records (`conversation.fork`, answered with the fork's address).
+ * So is `conversation-quote-tokens`: a send's quote token is expanded for the
+ * agent where the chat runs, whichever way the send came, and this socket
+ * sends every client a chat as it is kept, tokens included (the lane alone
+ * turns them to words for a client that did not say it reads them).
  */
 export const STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES: ReadonlySet<string> = new Set([
   'conversation-hello',
@@ -118,7 +116,6 @@ export const STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES: ReadonlySet<string> 
   'conversation-message-images',
   'conversation-message-files',
   'conversation-queued-attachments',
-  'conversation-fork',
 ])
 
 /**

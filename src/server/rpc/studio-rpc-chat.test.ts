@@ -88,7 +88,6 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
     },
     rewind: async () => ({ ok: true }),
     handoff: async () => ({ ok: true, path: '/Users/dev/handoff.md' }),
-    fork: async () => ({ ok: true }),
     attachment: async () => ({ ok: false, message: 'No such picture.' }),
     planDocument: async () => ({ ok: true, path: '/Users/dev/plan.md' }),
     commands: async (input) => ({ cli: input.cli, cwd: input.cwd, commands: [], fetchedAt: 1 }),
@@ -681,7 +680,7 @@ test('a send resent long after its pictures went is answered from its receipt, n
   router.close()
 })
 
-test('a revert, rewind or fork is carried out once per command id, and its answer given to every retry', async () => {
+test('a revert or rewind is carried out once per command id, and its answer given to every retry', async () => {
   const { server, chat } = await served()
   const window = await windowClient(server)
   const key = { workspaceId: 'ws-1', agentId: 'agent-1', workspaceRoot: '/Users/dev/app' }

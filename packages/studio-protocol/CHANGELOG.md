@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed (a fork answers where it is)
+
+- **`conversation.fork` is the conversation host's fork**, as the tailnet
+  lane's: the fork joins the chat's workspace as its twin under the name the
+  Studio gives it, and the answer is `{ ok: true, address, name }`, its
+  `ConversationAddress` and that name (`StudioForkResult`). It moves from the
+  chat surface to the keyed methods (`followed.ts`, capability
+  `conversations`, scope `conversation:create`); `title` is no longer read.
+  The socket now serves `conversation-fork`. A refusal is a response error in
+  the runtime's words for the Studio's own window and stable words for anyone
+  else.
+
 ### Added (the phone's reads)
 
 - **Backlogs, shares and pull request reads are protocol methods.**

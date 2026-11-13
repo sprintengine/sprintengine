@@ -15,7 +15,6 @@ import type {
   ConversationAttachmentInput,
   ConversationAttachmentResult,
   ConversationForkInput,
-  ConversationForkResult,
   ConversationInterruptInput,
   ConversationLoadEarlierInput,
   ConversationPageResult,
@@ -57,6 +56,7 @@ import {
   parseConversationRevertAnswer,
 } from '../../../../../../packages/conversation-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
+import type { ConversationAddress } from '../../../../../../packages/studio-protocol/src/public'
 import type { ConversationFileSearchEntry } from '../../../../../../packages/conversation-protocol/src/public'
 import type {
   MeshConversationCommandResult,
@@ -218,9 +218,10 @@ export type ConversationTransport = {
    * session declares `fork` only where that machine takes the command
    * (`conversation-fork`). The key a remote fork is handed is not the one it
    * forks: it names the chat by its ids over there. Offered only where the
-   * session declares `fork` as well.
+   * session declares `fork` as well. The chat's Studio names the fork beside
+   * the workspace's other chats and answers where it is (`conversation.fork`).
    */
-  fork?(input: ConversationForkInput): Promise<ConversationForkResult>
+  fork?(input: ChatForkInput): Promise<ChatForkResult>
   /**
    * A step's picture as a data URL, asked of the machine the conversation runs
    * on by the step's id. Absent for a local chat, which reads it off this disk.
@@ -406,6 +407,20 @@ const windowConversationCalls: Omit<ConversationTransport, 'capabilities'> = {
 }
 
 export const localConversationTransport: ConversationTransport = studioConversationTransport(() => readWelcome())
+
+/** Where to fork a chat, and the new chat's id; the Studio that holds it names it. */
+export type ChatForkInput = ConversationForkInput extends infer Fork
+  ? Fork extends unknown
+    ? Omit<Fork, 'title'>
+    : never
+  : never
+
+/**
+ * A fork made: where it is and what it was called, as a Studio answers
+ * `conversation.fork`. A paired machine's lane says neither, so a fork made
+ * there is found by its id in that machine's list (`forkRemoteChat`).
+ */
+export type ChatForkResult = { ok: true; address?: ConversationAddress; name?: string } | { ok: false; message: string }
 
 const ConversationTransportContext = createContext<ConversationTransport>(localConversationTransport)
 

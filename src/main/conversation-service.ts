@@ -70,8 +70,6 @@ import type {
   ConversationRewindResult,
   ConversationHandoffInput,
   ConversationHandoffResult,
-  ConversationForkInput,
-  ConversationForkResult,
   ConversationApprovalRulesResult,
   ConversationApprovalRuleRevokeResult,
   ConversationContextBreakdownInput,
@@ -140,7 +138,6 @@ export type ConversationService = {
   revertToTurn?(input: ConversationRevertInput): Promise<ConversationRevertResult>
   rewindToTurn?(input: ConversationRewindInput): Promise<ConversationRewindResult>
   handoffConversation?(input: ConversationHandoffInput): Promise<ConversationHandoffResult>
-  forkAtTurn?(input: ConversationForkInput): Promise<ConversationForkResult>
   listApprovalRules?(): Promise<ConversationApprovalRulesResult>
   revokeApprovalRule?(ruleId: string): Promise<ConversationApprovalRuleRevokeResult>
   onEvent(listener: (event: ConversationEvent) => void): () => void
@@ -425,9 +422,6 @@ export function createConversationService(
     },
     handoffConversation(input) {
       return sessions.handoffConversation(input)
-    },
-    forkAtTurn(input) {
-      return sessions.forkAtTurn(input)
     },
     onEvent(listener: (event: ConversationEvent) => void): () => void {
       return runtime.onEvent(listener)

@@ -659,9 +659,16 @@ Studio RPC advertises the last two (2026-11-12): `conversation.askSideQuestion`
 (`key`, `commandId`, the client's `questionId`, `question`, optional
 `history`; `conversation:operate`, answered once per command id),
 `conversation.cancelSideQuestion` (`questionId`, the asker's own only) and
-`conversation.contextBreakdown` (`key`, `conversation:read`). It does not
-advertise `conversation-fork`: it forks by its own `conversation.fork`, whose
-new chat's record is the asking window's to write.
+`conversation.contextBreakdown` (`key`, `conversation:read`). It advertises
+`conversation-fork` too (2026-11-13): `conversation.fork` (`key`, `commandId`,
+`newAgentId`, the point; `conversation:create`) is the same host's fork,
+joined to the chat's records, and answers `{ ok: true, address, name }`, the
+fork's `ConversationAddress` and the name the desktop gave it. A Studio from
+before withheld `conversation-fork` and answered `{ ok: true }`, leaving the
+record to the window that asked; a newer client does not ask it to fork, and
+refuses an answer without an address rather than open a fork that may not be
+there. An older client's `title` is not read, and the record it writes after
+the answer is the one the desktop wrote already.
 An answered side question is kept in the chat's transcript as a
 `side_question` event (2026-11-11; `ConversationSideQuestionPayload`:
 `question`, `answer`, `requestId`, and `truncated` where the answer was cut at

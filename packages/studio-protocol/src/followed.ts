@@ -27,8 +27,10 @@ import {
   type ConversationSubagentsFrame,
   type ConversationUsageLimitsFrame,
 } from './conversation.js'
+import type { ConversationAddress } from './environment.js'
 import { STUDIO_CONVERSATIONS_CAPABILITY } from './handshake.js'
 import { parseStudioConversationKey, type StudioConversationKey } from './key.js'
+import type { StudioRuntimeRefusalCode } from './methods.js'
 
 // What a follower of one chat reads and does beside its stream, by the chat's
 // key: what the tailnet lane served a paired device on its socket and its
@@ -40,7 +42,8 @@ import { parseStudioConversationKey, type StudioConversationKey } from './key.js
 // lists in its welcome's `conversation.capabilities`, and is held by the
 // Studio capability every keyed conversation method is (`conversations`).
 // Reading needs `conversation:read`; what runs the chat's agent or writes the
-// chat's record needs `conversation:operate`. Asking whether a grant reaches
+// chat's record needs `conversation:operate`, and a fork, a new chat beside
+// it, `conversation:create`. Asking whether a grant reaches
 // one is `studioGrantAllows`, as for any method.
 //
 // The per-chat topics push the lane's own frames, whole each time, `key`
@@ -49,7 +52,37 @@ import { parseStudioConversationKey, type StudioConversationKey } from './key.js
 
 type Keyed = { key: StudioConversationKey }
 
+/**
+ * Where to fork a chat, and the new chat's id there (the client's, so it can
+ * follow the fork once answered). The Studio names the fork itself, beside
+ * the workspace's other chats; a `title` an older client sends is not read.
+ */
+export type StudioForkParams = Keyed & {
+  commandId: string
+  newAgentId: string
+} & ({ side: 'assistant'; turnId: string } | { side: 'user'; turnSeq: number })
+
+/**
+ * A fork made and joined to the chat's records: where it is (the Studio that
+ * holds it, the chat, the new agent) and what the Studio called it. `ok` is
+ * there for a client from before the address, which read `{ ok: true }`.
+ */
+export type StudioForkResult = { ok: true; address: ConversationAddress; name: string }
+
 export type StudioFollowedMethodMap = {
+  /**
+   * Fork the chat at a reply or before one of the person's messages
+   * (`conversation-fork`): the fork is written beside it and joins its
+   * workspace as its twin, so every client lists it and opens it by the
+   * address answered. A repeat under the same command id is the same fork.
+   * Refused as the runtime refuses it (a turn still running, an id the
+   * workspace holds). A new chat: `conversation:create`.
+   */
+  'conversation.fork': {
+    params: StudioForkParams
+    result: StudioForkResult
+    errors: StudioRuntimeRefusalCode
+  }
   /**
    * A side question about the chat, asked of its agent under the client's own
    * `questionId` and added to nothing (`conversation-side-questions`); a chat
@@ -166,6 +199,7 @@ export type StudioFollowedTopic = keyof StudioFollowedTopicMap
 type Held = Pick<StudioMethodDefinition<never>, 'scope' | 'mutation' | 'capability' | 'extraPermissions'>
 const reading: Held = { scope: 'conversation:read', mutation: false, capability: STUDIO_CONVERSATIONS_CAPABILITY }
 const operating: Held = { scope: 'conversation:operate', mutation: true, capability: STUDIO_CONVERSATIONS_CAPABILITY }
+const creating: Held = { scope: 'conversation:create', mutation: true, capability: STUDIO_CONVERSATIONS_CAPABILITY }
 
 const KEY = '"key" names the conversation: { workspaceId, agentId, workspaceRoot? }.'
 const COMMAND_ID = '"commandId" must be a string of 1 to 200 characters.'
@@ -195,6 +229,25 @@ function selected(value: Record<string, unknown>): StudioParsed<Keyed & { select
 }
 
 export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap> = {
+  'conversation.fork': {
+    ...creating,
+    params: (value) => {
+      const at = keyed(value)
+      if (!at.ok) return at
+      if (!id(value.commandId)) return refuse(COMMAND_ID)
+      if (!(id(value.newAgentId) && value.newAgentId.trim())) return refuse('"newAgentId" names the new chat.')
+      const common = { ...at.params, commandId: value.commandId, newAgentId: value.newAgentId }
+      if (value.side === 'user') {
+        const turnSeq = value.turnSeq
+        if (!(typeof turnSeq === 'number' && Number.isSafeInteger(turnSeq) && turnSeq >= 1))
+          return refuse('"turnSeq" is the message to fork before.')
+        return studioParams({ ...common, side: 'user' as const, turnSeq })
+      }
+      if (value.side === 'assistant' && id(value.turnId))
+        return studioParams({ ...common, side: 'assistant' as const, turnId: value.turnId })
+      return refuse('A fork is { side: "assistant", turnId } or { side: "user", turnSeq }.')
+    },
+  },
   // It runs the chat's agent, as a send does, and a retry under its command
   // id is answered with the first answer.
   'conversation.askSideQuestion': {

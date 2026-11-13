@@ -1295,7 +1295,10 @@ export function createConversationGatewayHost(
           : { side: 'assistant' as const, turnId: command.turnId }),
       })
       if (!forked.ok) return { ok: false, message: forked.message }
-      return records.add(chat, command.newAgentId, named.name)
+      const added = records.add(chat, command.newAgentId, named.name)
+      // What it was called beside the workspace's others, for a client that
+      // opens it by that name (`conversation.fork` on the Studio protocol).
+      return added.ok ? { ok: true, data: { name: named.name } } : added
     })().catch((error: unknown): ConversationGatewayCommandResult => ({
       ok: false,
       message: error instanceof Error ? error.message : 'The conversation could not be forked.',

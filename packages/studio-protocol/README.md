@@ -207,12 +207,23 @@ method `createStudioRpcClient` builds from the same table.
 | `conversation.cancelScheduled`     | operate  | `key`, `commandId`, `scheduledId`               | `{}`                                             |
 | `conversation.usageLimitResume`    | operate  | `key`, `commandId`, `action`, `always?`         | `{}`                                             |
 | `conversation.stop`                | operate  | `key`, `commandId`                              | `{}`                                             |
+| `conversation.fork`                | create   | `key`, `commandId`, `newAgentId`, the point     | `{ ok: true, address, name }`                    |
 | `conversation.loadEarlier`         | read     | `key`, `beforeCursor`, `turnLimit?`             | `{ page }`                                       |
 | `conversation.toolDetail`          | read     | `key`, `toolUseId`                              | `{ detail }`                                     |
 | `conversation.event`               | read     | `key`, `seq`, `id`                              | `{ event }`                                      |
 | `conversation.turnDiff`            | read     | `key`, `turnSeq`, `path?`                       | `{ diff, patch?, … }`                            |
 | `update.status`                    | any      | —                                               | `StudioUpdateStatus`: how it is updated          |
 | `update.start`                     | maintain | `commandId`, `targetVersion?`                   | `{ accepted, method: 'self', targetVersion }`    |
+
+`conversation.fork` (`conversation-fork`) forks a chat at a reply
+(`side: 'assistant'`, `turnId`) or before one of the person's messages
+(`side: 'user'`, `turnSeq`), as the tailnet lane's `fork` does: the fork joins
+the chat's workspace as its twin, named by the Studio beside the workspace's
+other chats, and is answered with where it is (`address`, a
+`ConversationAddress`: this Studio's environment id, the chat, `newAgentId`)
+and its `name`. A client opens it by that address. A Studio that withholds
+`conversation-fork` is one from before the answer said where; a client does
+not ask it to fork.
 
 A key is `{ workspaceId, agentId }`. An owner may add `workspaceRoot`, the
 folder the conversation is kept in when that is not its workspace's (a chat
@@ -237,16 +248,16 @@ What a chat view needs beside the conversation lane, so any client can show
 and drive a chat as Studio's own windows do (`chat.ts`). Each reaches a client
 by its scope; `session.terminalHandoff` and `providers.signIn` are an owner's.
 
-| Method                                                                  | Scope                  | What                                                                                    |
-| ----------------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------- |
-| `session.start`                                                         | operate                | start a provider session for a chat                                                     |
-| `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel` | operate                | drive a live session by its id, with all a composer sends; answered with its outcome    |
-| `uploads.begin`, `.append`, `.discard`                                  | operate                | stage a picture in pieces of `STUDIO_UPLOAD_CHUNK_BYTES`; a send names it by `uploadId` |
-| `conversation.revert`, `.rewind`, `.fork`                               | operate (fork: create) | a turn's files from its checkpoint; back to an earlier message; a new chat from one     |
-| `conversation.attachment`, `.planDocument`, `.commands`                 | read                   | a sent picture; a proposed plan as a file; the `/` command list a CLI reports           |
-| `providers.list`, `.models`, `.secretStatus`                            | `providers:read`       | the providers a chat can run, their models, whether each has its key                    |
-| `files.search`, `.cancelSearch`, `.stat`, `.readImage`, `.repoRoot`     | `files:read`           | @-mention search and the file facts a chat's links and pictures need                    |
-| `workspaces.list`                                                       | `workspaces:read`      | the workspaces this Studio holds                                                        |
+| Method                                                                  | Scope             | What                                                                                    |
+| ----------------------------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `session.start`                                                         | operate           | start a provider session for a chat                                                     |
+| `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel` | operate           | drive a live session by its id, with all a composer sends; answered with its outcome    |
+| `uploads.begin`, `.append`, `.discard`                                  | operate           | stage a picture in pieces of `STUDIO_UPLOAD_CHUNK_BYTES`; a send names it by `uploadId` |
+| `conversation.revert`, `.rewind`                                        | operate           | a turn's files from its checkpoint; back to an earlier message                          |
+| `conversation.attachment`, `.planDocument`, `.commands`                 | read              | a sent picture; a proposed plan as a file; the `/` command list a CLI reports           |
+| `providers.list`, `.models`, `.secretStatus`                            | `providers:read`  | the providers a chat can run, their models, whether each has its key                    |
+| `files.search`, `.cancelSearch`, `.stat`, `.readImage`, `.repoRoot`     | `files:read`      | @-mention search and the file facts a chat's links and pictures need                    |
+| `workspaces.list`                                                       | `workspaces:read` | the workspaces this Studio holds                                                        |
 
 A session method's result is the runtime's own outcome, a refusal by the
 runtime included: `{ ok: true, session, notice? } | { ok: false, message,

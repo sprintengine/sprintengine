@@ -13,7 +13,6 @@ import type {
   ConversationRevertInput,
   ConversationRewindInput,
   ConversationHandoffInput,
-  ConversationForkInput,
   ConversationListSessionsInput,
   ConversationToolDetailInput,
   ConversationEventReadInput,
@@ -56,9 +55,6 @@ export class ConversationSessionApi {
   }
   handoffConversation(input: ConversationHandoffInput) {
     return this.runtime.handoffConversation(input)
-  }
-  forkAtTurn(input: ConversationForkInput) {
-    return this.runtime.forkAtTurn(input)
   }
 
   subscribe(

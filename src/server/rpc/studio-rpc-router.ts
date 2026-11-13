@@ -1252,17 +1252,32 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         'conversation.handoff',
       )
     },
-    'conversation.fork': ({ commandId, key: wire, ...input }, { grant, voice }) => {
-      const chat = chatOr('conversation.fork')
-      if (isRefusal(chat)) return chat
+    // The fork is the conversation host's, as the tailnet lane's is: written
+    // beside the chat, joined to its workspace's records under the name the
+    // host gives it, and held under the client's command id. The answer is
+    // where it is, so any client opens it as it opens any chat.
+    'conversation.fork': async ({ commandId, key: wire, ...point }, { grant, voice, fingerprint }) => {
       const key = resolve(wire, grant)
       if (!key) return notFound(wire)
-      return once(
-        keptId('conversation.fork', grant, commandId),
-        async () => ({ ok: true as const, result: voice.redact(await chat.fork({ ...input, key })) }),
-        voice,
-        'conversation.fork',
+      const done = await backend.command(
+        key,
+        grant.clientId,
+        studioRuntimeCommandId(grant, commandId),
+        { kind: 'fork', ...point },
+        fingerprint,
       )
+      if (!done.ok) return voice.failedFrom(done.code, done.message, 'conversation.fork', done.retryAfterMs)
+      const name = done.data?.name
+      if (typeof name !== 'string' || !name)
+        return voice.failed('unavailable', 'The fork was made but not named.', 'conversation.fork')
+      return {
+        ok: true,
+        result: {
+          ok: true,
+          address: { environmentId: options.info().environment.id, chatId: key.workspaceId, agentId: point.newAgentId },
+          name,
+        },
+      }
     },
     'conversation.attachment': async ({ ref }, { voice }) => {
       const chat = chatOr('conversation.attachment')

@@ -4,7 +4,9 @@ import {
   type ConversationRef,
   type StudioClient,
 } from '../../../../../../packages/client-runtime/src/public'
+import { CONVERSATION_FORK_CAPABILITY } from '../../../../../../packages/conversation-protocol/src/public'
 import {
+  isChatAddress,
   STUDIO_SESSION_FILES_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
   type StudioMethod,
@@ -57,6 +59,8 @@ const CONNECTION_CODES = new Set([
   'unauthorized',
   'busy',
 ])
+const FORK_NEEDS_NEWER_STUDIO =
+  'This Studio is older than this window and cannot fork a chat. Update it, then try again.'
 const CONNECTION_LOST = 'This window lost its connection to Studio. It reconnects by itself; try again in a moment.'
 
 const messageOf = (error: unknown): string =>
@@ -529,18 +533,29 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
       ),
     handoff: (input) =>
       outcome(() => ask(client, 'conversation.handoff', { key: refOf(input.key), commandId: commandId() })),
+    // A Studio from before the fork joined the chat's records (and said
+    // where it is) withholds `conversation-fork`: asking it would leave a
+    // transcript no window lists, so it is not asked.
     fork: (input) =>
-      outcome(() =>
-        ask(client, 'conversation.fork', {
+      outcome(async () => {
+        if (!(await client()).welcome.conversation.capabilities.includes(CONVERSATION_FORK_CAPABILITY))
+          return { ok: false as const, message: FORK_NEEDS_NEWER_STUDIO }
+        const forked = await ask(client, 'conversation.fork', {
           key: refOf(input.key),
           newAgentId: input.newAgentId,
-          ...(input.title === undefined ? {} : { title: input.title }),
           ...(input.side === 'user'
             ? { side: 'user' as const, turnSeq: input.turnSeq }
             : { side: 'assistant' as const, turnId: input.turnId }),
           commandId: commandId(),
-        }),
-      ),
+        })
+        // Never read as made somewhere it was not.
+        if (!isChatAddress(forked.address) || forked.address.agentId !== input.newAgentId || !forked.name)
+          return {
+            ok: false as const,
+            message: 'Studio made the fork but did not say where it is. Reload the window to find it.',
+          }
+        return { ok: true as const, address: forked.address, name: forked.name }
+      }),
     startSession: (input) =>
       outcome(() =>
         ask(client, 'session.start', {
