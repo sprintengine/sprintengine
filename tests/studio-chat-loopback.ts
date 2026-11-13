@@ -53,13 +53,36 @@ function conversationsOver(api: Api): StudioConversationBackend {
     toolDetail: (key, toolUseId) => call(api, 'conversationToolDetail', { ...key, toolUseId }),
     event: (key, seq, id) => call(api, 'conversationEvent', { ...key, seq, id }),
     turnDiff: (key, turnSeq, path) => call(api, 'conversationTurnDiff', { key, turnSeq, path }),
-    command: async () => ({ ok: false, code: 'unavailable', message: 'A window drives a chat by its session.' }),
+    // A keyed command (a held or scheduled message, a resume) reaches the
+    // test's `conversationCommand` where it stubs one.
+    command: async (key, _clientId, commandId, command) =>
+      has(api, 'conversationCommand')
+        ? call(api, 'conversationCommand', { key, commandId, command })
+        : { ok: false, code: 'unavailable', message: 'A window drives a chat by its session.' },
     stop: async () => ({ ok: true }),
     permissionOf: () => 'bypass',
     findCreated: () => null,
     create: async () => ({ ok: false, code: 'unavailable', message: 'A window starts a chat by its session.' }),
     redact: (value) => value,
+    // What the Studio holds and keeps for a chat, where the test stubs it:
+    // `onConversationQueued` and `onConversationScheduled` hear the chat and
+    // a listener, and say the list whole.
+    ...(has(api, 'onConversationQueued') || has(api, 'onConversationScheduled')
+      ? {
+          followed: {
+            watchQueued: (chat, listener) => watchFor(api, 'onConversationQueued', chat, listener),
+            watchScheduled: (chat, listener) => watchFor(api, 'onConversationScheduled', chat, listener),
+          },
+        }
+      : {}),
   }
+}
+
+/** A stubbed per-chat watch, or one that hears nothing where the test stubs none. */
+function watchFor<T>(api: Api, name: string, chat: unknown, listener: (value: T) => void): () => void {
+  const watch = api[name] as ((chat: unknown, cb: (value: T) => void) => unknown) | undefined
+  const stop = typeof watch === 'function' ? watch(chat, listener) : undefined
+  return () => (typeof stop === 'function' ? stop() : undefined)
 }
 
 type Commanded = { sessionId: string; commandId?: string; commandFingerprint?: string }

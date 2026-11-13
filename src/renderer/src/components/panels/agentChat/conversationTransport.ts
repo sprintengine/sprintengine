@@ -25,6 +25,7 @@ import type {
   ConversationHandoffInput,
   ConversationHandoffResult,
   ConversationImageAttachment,
+  ConversationKey,
   ConversationMcpServerActionInput,
   ConversationMcpServerActionResult,
   ConversationRewindResult,
@@ -57,6 +58,7 @@ import {
 } from '../../../../../../packages/conversation-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import type { ConversationAddress } from '../../../../../../packages/studio-protocol/src/public'
+import type { UsageLimitProvider } from '../../../../../shared/usage-limits'
 import type { ConversationFileSearchEntry } from '../../../../../../packages/conversation-protocol/src/public'
 import type {
   MeshConversationCommandResult,
@@ -132,20 +134,23 @@ export type ConversationTransport = {
    * (`conversation-reasoning-effort`).
    */
   setReasoningEffort?(input: { sessionId: string; effort?: string }): Promise<ConversationTransportResult>
+  // The chat's server holds its queue, keeps its scheduled messages and sends
+  // the resume after a usage limit. Each call names the chat (`key`), as the
+  // view keys every call; a paired machine's transport names it by its own key.
   /**
-   * Hand a message to the machine the chat runs on, to hold until the turn
+   * Hand a message to the server the chat runs on, to hold until the turn
    * ends and send then; answered once it holds it. Used where
    * `capabilities.hostQueue` is, with what it carries beside its words only
    * where `capabilities.hostQueueAttachments` is.
    */
   queue?(
-    input: Pick<
+    input: { key: ConversationKey } & Pick<
       ConversationSendRequest<ConversationImageAttachment>,
       'message' | 'attachments' | 'skills' | 'mentions' | 'files'
     >,
   ): Promise<ConversationTransportResult>
-  /** Take back a message that machine holds, by its id there. */
-  cancelQueued?(input: { queuedId: string }): Promise<ConversationTransportResult>
+  /** Take back a message that server holds, by its id there. */
+  cancelQueued?(input: { key: ConversationKey; queuedId: string }): Promise<ConversationTransportResult>
   /**
    * Stop the machine the chat runs on watching one of its pull requests
    * (`chat-unwatch-pull-request`). Absent here, where the window's own Studio
@@ -154,14 +159,20 @@ export type ConversationTransport = {
    */
   unwatchPullRequest?(input: { url: string }): Promise<ConversationTransportResult>
   /**
-   * Have the machine the chat runs on keep a message and send it at `sendAt`
-   * (epoch ms); answered once it keeps it. Used where `capabilities.hostSchedule` is.
+   * Have the server the chat runs on keep a message and send it at `sendAt`
+   * (epoch ms), or when `untilLimitReset`'s usage limit resets; answered once
+   * it keeps it. Used where `capabilities.hostSchedule` is.
    */
-  scheduleSend?(input: { message: string; sendAt: number }): Promise<ConversationTransportResult>
-  /** Send a message that machine keeps now (a refused one again), by its id there. */
-  sendScheduledNow?(input: { scheduledId: string }): Promise<ConversationTransportResult>
-  /** Delete a message that machine keeps, by its id there: Delete, and Edit's taking it back. */
-  cancelScheduled?(input: { scheduledId: string }): Promise<ConversationTransportResult>
+  scheduleSend?(input: {
+    key: ConversationKey
+    message: string
+    sendAt: number
+    untilLimitReset?: UsageLimitProvider
+  }): Promise<ConversationTransportResult>
+  /** Send a message that server keeps now (a refused one again), by its id there. */
+  sendScheduledNow?(input: { key: ConversationKey; scheduledId: string }): Promise<ConversationTransportResult>
+  /** Delete a message that server keeps, by its id there: Delete, and Edit's taking it back. */
+  cancelScheduled?(input: { key: ConversationKey; scheduledId: string }): Promise<ConversationTransportResult>
   /**
    * Act on the notice a usage limit left on the chat's turn, on the machine
    * that sends its resume: schedule it (`always`: for every chat a limit
@@ -169,6 +180,7 @@ export type ConversationTransport = {
    * `capabilities.hostUsageLimits` is.
    */
   usageLimitResume?(input: {
+    key: ConversationKey
     action: MeshUsageLimitResumeAction
     always?: boolean
   }): Promise<ConversationTransportResult>
@@ -403,6 +415,12 @@ const windowConversationCalls: Omit<ConversationTransport, 'capabilities'> = {
   askSideQuestion: (input) => localParts().askSideQuestion(input),
   cancelSideQuestion: (input) => localParts().cancelSideQuestion(input),
   readContextBreakdown: (input) => localParts().readContextBreakdown(input),
+  queue: (input) => localParts().queue(input),
+  cancelQueued: (input) => localParts().cancelQueued(input),
+  scheduleSend: (input) => localParts().scheduleSend(input),
+  sendScheduledNow: (input) => localParts().sendScheduledNow(input),
+  cancelScheduled: (input) => localParts().cancelScheduled(input),
+  usageLimitResume: (input) => localParts().usageLimitResume(input),
   services: windowServices,
 }
 
@@ -535,7 +553,7 @@ export function createRemoteConversationTransport(input: {
     },
     // What it carries goes up first, as a send's does, and the machine keeps
     // it with the message; main refuses it in words for one that would not.
-    queue: async (turn) =>
+    queue: async ({ key: _viewKey, ...turn }) =>
       commandResult(
         await window.api.meshConversationSend({ key, ...conciseConversationSendRequest(turn), queue: true }),
       ),
@@ -560,7 +578,12 @@ export function createRemoteConversationTransport(input: {
     },
     scheduleSend: async (scheduled) =>
       commandResult(
-        await window.api.meshConversationScheduleSend({ key, message: scheduled.message, sendAt: scheduled.sendAt }),
+        await window.api.meshConversationScheduleSend({
+          key,
+          message: scheduled.message,
+          sendAt: scheduled.sendAt,
+          ...(scheduled.untilLimitReset ? { untilLimitReset: scheduled.untilLimitReset } : {}),
+        }),
       ),
     sendScheduledNow: async (scheduled) =>
       commandResult(await window.api.meshConversationSendScheduledNow({ key, scheduledId: scheduled.scheduledId })),

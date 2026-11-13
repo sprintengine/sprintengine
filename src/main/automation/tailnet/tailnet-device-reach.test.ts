@@ -129,12 +129,9 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   // Stopping an agent's watch on a pull request it opened.
   'pullRequests.unwatch': CHAT_OPERATE,
 
-  // Every chat's held and scheduled messages and limit resumes at once: the
-  // per-chat watches and commands above, read and changed for all chats.
-  'scheduledMessages.get': CHAT_READ,
+  // Every chat's limit resumes at once: the per-chat watches and commands
+  // above, read and changed for all chats.
   'usageLimitResumes.get': CHAT_READ,
-  'scheduledMessages.update': CHAT_OPERATE,
-  'scheduledMessages.hold': CHAT_OPERATE,
   'usageLimitResumes.update': CHAT_OPERATE,
 
   // Discovery, and the pull requests a workspace's chats opened.
@@ -184,7 +181,6 @@ const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.changes': CHAT_READ,
   'conversation.commands': CHAT_READ,
   'conversation.events': CHAT_READ,
-  'scheduledMessages.changed': CHAT_READ,
   'usageLimitResumes.changed': CHAT_READ,
   'pullRequests.changed': WORKSPACE,
   'schedules.changed': WORKSPACE,

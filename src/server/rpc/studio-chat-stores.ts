@@ -57,15 +57,6 @@ export function createStudioChatStoresHandlers<A extends Asking>(
             stores.updateUsageLimitResume({ kind: 'auto', enabled }),
           )
         : unserved('usageLimitResumes.setAuto'),
-    'scheduledMessages.get': () => (stores ? ok(stores.scheduledMessages()) : unserved('scheduledMessages.get')),
-    'scheduledMessages.update': ({ commandId, update }, asking) =>
-      stores
-        ? options.kept('scheduledMessages.update', asking, commandId, async () => stores.updateScheduledMessage(update))
-        : unserved('scheduledMessages.update'),
-    'scheduledMessages.hold': ({ commandId, text, ...chat }, { grant }) =>
-      stores
-        ? ok(stores.holdScheduledMessage(chat, text, options.commandIdOf(grant, commandId)))
-        : unserved('scheduledMessages.hold'),
     'usage.report': async (request) => (stores ? ok(await stores.usageReport(request)) : unserved('usage.report')),
     'usage.rows': async (args) => (stores ? ok(await stores.usageRows(args)) : unserved('usage.rows')),
     'conversationImport.scan': async () =>

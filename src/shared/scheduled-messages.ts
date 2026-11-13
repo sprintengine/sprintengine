@@ -23,8 +23,6 @@ export type {
   ScheduledMessage,
   ScheduledMessageCarries,
   ScheduledMessageChat,
-  ScheduledMessageHoldAnswer,
-  ScheduledMessageHoldRequest,
   ScheduledMessagesState,
   ScheduledMessageUpdate,
 } from '../../packages/studio-protocol/src/public'

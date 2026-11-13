@@ -13,8 +13,7 @@ import { STUDIO_CHAT_STORES_CAPABILITY } from './handshake.js'
 
 // What a Studio keeps beside its chats, for every chat at once: the usage
 // limits its agents reported (`usageLimits.*`), the chats a limit stopped and
-// the resume each can have (`usageLimitResumes.*`), the messages a person
-// scheduled or queued into a chat (`scheduledMessages.*`), the priced usage
+// the resume each can have (`usageLimitResumes.*`), the priced usage
 // report (`usage.report`) and this machine's rows for another desktop's
 // (`usage.rows`), and the sessions an agent CLI saved on the
 // machine, to bring in as chats (`conversationImport.*`).
@@ -22,11 +21,12 @@ import { STUDIO_CHAT_STORES_CAPABILITY } from './handshake.js'
 // The conversation lane's per-chat frames (`conversation.scheduled`,
 // `conversation.usageLimits`) are one chat's projection of the same stores
 // for a client following that chat; these are the stores whole, as the
-// desktop's own windows draw them: every chat's tray from one answer, the
-// Settings switch, the usage dashboard.
+// desktop's own windows draw them: the Settings switch, the usage dashboard.
+// A chat's held and scheduled messages are read and changed only per chat,
+// on the conversation methods (`conversation.scheduled`, `.scheduleSend`).
 //
-// Grants. Reading a chat's held and scheduled messages and its limit notice is
-// `conversation:read`; changing them drives the chat, `conversation:operate`.
+// Grants. Reading a chat's limit notice is `conversation:read`; changing it
+// drives the chat, `conversation:operate`.
 // The limits themselves are the plan's, `providers:read`. Switching the
 // resume for every chat is a setting, `settings:write`. The usage report and
 // the import are an owner's: one reads every agent's logs on this machine and
@@ -192,11 +192,6 @@ export type ScheduledMessageUpdate =
   | { kind: 'reschedule'; id: string; sendAt: number }
   | { kind: 'send-now'; id: string }
   | { kind: 'delete'; id: string }
-
-/** A message a chat's composer queued while its turn ran, for the Studio to hold and send when the turn ends. */
-export type ScheduledMessageHoldRequest = ScheduledMessageChat & { text: string }
-
-export type ScheduledMessageHoldAnswer = { ok: true; id: string } | { ok: false; reason: string }
 
 /** A message is a turn a person typed; this keeps a pasted novel out of a small file. */
 export const MAX_SCHEDULED_MESSAGE_LENGTH = 100_000
@@ -482,16 +477,6 @@ export type StudioChatStoresMethodMap = {
   }
   /** The setting that schedules the resume for every chat a limit stops. */
   'usageLimitResumes.setAuto': { params: Commanded<{ enabled: boolean }>; result: UsageLimitResumeState }
-  /** Every chat's scheduled and held messages; `scheduledMessages.changed` tells every change after. */
-  'scheduledMessages.get': { params: Record<string, never>; result: ScheduledMessagesState }
-  /** Schedule, move, send now or delete one. Answered with the state after it. */
-  'scheduledMessages.update': { params: Commanded<{ update: ScheduledMessageUpdate }>; result: ScheduledMessagesState }
-  /**
-   * Hold a message the chat's composer queued while its turn ran, and send it
-   * when the turn ends: a window's queue is gone with a reload, the Studio's
-   * file is not. Held once per command id, so a retried ask holds it once.
-   */
-  'scheduledMessages.hold': { params: Commanded<ScheduledMessageHoldRequest>; result: ScheduledMessageHoldAnswer }
   /** Every agent's token use and its price, on this machine and on the machines paired with it. */
   'usage.report': { params: UsageReportRequest; result: UsageReportResult }
   /** This machine's own usage rows over a window, for a paired desktop's dashboard to count with its own. */
@@ -509,8 +494,6 @@ export type StudioChatStoresTopicMap = {
   'usageLimits.changed': { params: Record<string, never>; payload: UsageLimitsState; stream: 'push' }
   /** The resumes, whole, each time one moves. Nothing is replayed: ask `usageLimitResumes.get`. */
   'usageLimitResumes.changed': { params: Record<string, never>; payload: UsageLimitResumeState; stream: 'push' }
-  /** The scheduled and held messages, whole, each time one moves. Nothing is replayed: ask `scheduledMessages.get`. */
-  'scheduledMessages.changed': { params: Record<string, never>; payload: ScheduledMessagesState; stream: 'push' }
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────
@@ -665,29 +648,6 @@ export const STUDIO_CHAT_STORES_METHODS: StudioMethodTable<StudioChatStoresMetho
         : refuse('"enabled" is true or false.'),
     ),
   },
-  'scheduledMessages.get': { ...held('conversation:read', false), params: studioNoParams },
-  'scheduledMessages.update': {
-    ...held('conversation:operate', true),
-    params: commanded((value) => {
-      const update = parseScheduledMessageUpdate(value.update)
-      return update
-        ? studioParams({ update })
-        : refuse(
-            '"update" is { kind: "schedule", workspaceId, agentId, text, sendAt, untilLimitReset? }, or { kind: "reschedule", id, sendAt }, { kind: "send-now", id } or { kind: "delete", id }.',
-          )
-    }),
-  },
-  'scheduledMessages.hold': {
-    ...held('conversation:operate', true),
-    params: commanded((value) => {
-      const at = chat(value)
-      if (!at.ok) return at
-      const text = words(value.text)
-      return text
-        ? studioParams({ ...at.params, text })
-        : refuse(`"text" is the message, 1 to ${MAX_SCHEDULED_MESSAGE_LENGTH} characters.`)
-    }),
-  },
   'usage.report': { ...held('providers:read', false), owner: USAGE_REPORT_OWNER, params: usageReport },
   // This machine's counts alone, by hashed session, for the person's other
   // desktop: reading what one of their machines spent is reading it, as any
@@ -714,12 +674,6 @@ export const STUDIO_CHAT_STORES_TOPICS: StudioTopicTable<StudioChatStoresTopicMa
     params: studioNoParams,
   },
   'usageLimitResumes.changed': {
-    scope: 'conversation:read',
-    capability: STUDIO_CHAT_STORES_CAPABILITY,
-    push: true,
-    params: studioNoParams,
-  },
-  'scheduledMessages.changed': {
     scope: 'conversation:read',
     capability: STUDIO_CHAT_STORES_CAPABILITY,
     push: true,

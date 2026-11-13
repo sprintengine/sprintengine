@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added (a message scheduled for a limit's reset)
+
+- **`scheduleSend.untilLimitReset`**: the provider whose usage limit the
+  message waits on. `sendAt` is when the client read it would reset; the
+  desktop asks the limit again when the time comes and moves the message to a
+  later reset if one stands. A scheduled message says it back in its
+  `scheduled` frame. Optional: an older desktop schedules it for `sendAt`.
+
 ### Added (one send shape and one approval union)
 
 - **`ConversationSendRequest`** (`send.ts`): one message a person sends a

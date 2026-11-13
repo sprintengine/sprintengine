@@ -56,9 +56,11 @@ test('a send hands main the request, saying only what it means, and keeps here w
   ])
 })
 
-test('a queued message goes as the same request, held there', async () => {
+test('a queued message goes as the same request, held there, under the chat key there', async () => {
   const meshConversationSend = vi.fn(async () => ({ ok: true as const }))
   const transport = transportWith({ meshConversationSend })
-  await transport.queue?.({ message: 'next', skills: [{ id: 'review' }] })
+  // The view's key names this machine's folder, which means nothing over there.
+  const viewKey = { workspaceRoot: '/Users/dev/app', workspaceId: 'here', agentId: 'here-agent' }
+  await transport.queue?.({ key: viewKey, message: 'next', skills: [{ id: 'review' }] })
   expect(meshConversationSend.mock.calls).toEqual([[{ key, message: 'next', skills: [{ id: 'review' }], queue: true }]])
 })

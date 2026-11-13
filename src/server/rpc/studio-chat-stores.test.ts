@@ -5,7 +5,6 @@ import { afterEach, test } from 'vitest'
 import {
   STUDIO_CHAT_STORES_METHODS,
   STUDIO_METHOD_ACCESS,
-  type ScheduledMessagesState,
   type StudioChatStoresMethod,
   type StudioScope,
   type UsageLimitResumeState,
@@ -15,8 +14,7 @@ import {
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
-// `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`,
-// `usage.report` and `conversationImport.*` over the owner socket, under every
+// `usageLimits.*`, `usageLimitResumes.*`, `usage.report` and `conversationImport.*` over the owner socket, under every
 // kind of grant: an owner's, a pairing given the scopes, one that may only
 // read chats, and one revoked. The stores behind them are stubs; what they
 // decide is their own tests'.
@@ -30,7 +28,6 @@ function stubs() {
   const asked: Array<[string, unknown]> = []
   const limits = new Set<(state: UsageLimitsState) => void>()
   const resumes = new Set<(state: UsageLimitResumeState) => void>()
-  const scheduled = new Set<(state: ScheduledMessagesState) => void>()
   const listen =
     <T>(set: Set<(value: T) => void>) =>
     (listener: (value: T) => void) => {
@@ -47,16 +44,6 @@ function stubs() {
       return resumeState
     },
     onUsageLimitResumesChanged: listen(resumes),
-    scheduledMessages: () => ({ messages: [] }),
-    updateScheduledMessage: (update) => {
-      asked.push(['schedule', update])
-      return { messages: [] }
-    },
-    holdScheduledMessage: (chat, text, source) => {
-      asked.push(['hold', { ...chat, text, source }])
-      return { ok: true, id: 'held-1' }
-    },
-    onScheduledMessagesChanged: listen(scheduled),
     usageReport: async (request) => {
       asked.push(['report', request])
       return { ok: false, message: 'no logs' }
@@ -84,7 +71,6 @@ function stubs() {
   const emit = {
     limits: (state: UsageLimitsState) => limits.forEach((listener) => listener(state)),
     resumes: (state: UsageLimitResumeState) => resumes.forEach((listener) => listener(state)),
-    scheduled: (state: ScheduledMessagesState) => scheduled.forEach((listener) => listener(state)),
   }
   return { stores, asked, emit }
 }
@@ -129,9 +115,6 @@ const CALLS: Record<StudioChatStoresMethod, Record<string, unknown>> = {
   'usageLimitResumes.get': {},
   'usageLimitResumes.update': { commandId: 'c-resume', workspaceId: 'w', agentId: 'a', action: 'schedule' },
   'usageLimitResumes.setAuto': { commandId: 'c-auto', enabled: true },
-  'scheduledMessages.get': {},
-  'scheduledMessages.update': { commandId: 'c-update', update: { kind: 'delete', id: 'm1' } },
-  'scheduledMessages.hold': { commandId: 'c-hold', workspaceId: 'w', agentId: 'a', text: 'after this turn' },
   'usage.report': { from: 1, to: 2 },
   'usage.rows': { from: 1, to: 2 },
   'conversationImport.scan': {},
@@ -149,34 +132,26 @@ test('a Studio with the stores advertises them; one without refuses every call a
   const bare = await serve(false)
   const other = await client(bare.started.path, OWNER_TOKEN)
   assert.equal(other.welcome.t === 'welcome' && other.welcome.capabilities.includes('chat-stores'), false)
-  assert.equal(codeOf(await other.request('scheduledMessages.get', {})), 'unavailable')
-  const refused = await other.subscribe('scheduledMessages.changed')
+  assert.equal(codeOf(await other.request('usageLimitResumes.get', {})), 'unavailable')
+  const refused = await other.subscribe('usageLimitResumes.changed')
   const failed = await other.line.next((frame) => frame.t === 'subFailed' && frame.sub === refused)
   assert.equal(failed.t === 'subFailed' && failed.code, 'unavailable')
 })
 
-test('an owner reaches every method; a change is carried out once per command id, and a hold is kept under it', async () => {
+test('an owner reaches every method, and a change is carried out once per command id', async () => {
   const { started, asked } = await serve()
   const owner = await client(started.path, OWNER_TOKEN)
   for (const [method, params] of Object.entries(CALLS))
     assert.deepEqual([method, codeOf(await owner.request(method, params))], [method, null])
   // The same command again (a retry after a dropped connection) is answered, not done twice.
-  await owner.request('scheduledMessages.update', CALLS['scheduledMessages.update'])
+  await owner.request('usageLimitResumes.update', CALLS['usageLimitResumes.update'])
   await owner.request('usageLimitResumes.setAuto', CALLS['usageLimitResumes.setAuto'])
-  assert.deepEqual(
-    asked.filter(([kind]) => kind === 'schedule'),
-    [['schedule', { kind: 'delete', id: 'm1' }]],
-  )
   assert.deepEqual(
     asked.filter(([kind]) => kind === 'resume'),
     [
       ['resume', { kind: 'schedule', workspaceId: 'w', agentId: 'a' }],
       ['resume', { kind: 'auto', enabled: true }],
     ],
-  )
-  assert.deepEqual(
-    asked.find(([kind]) => kind === 'hold'),
-    ['hold', { workspaceId: 'w', agentId: 'a', text: 'after this turn', source: 'owner:c-hold' }],
   )
   assert.deepEqual(resultOf(await owner.request('usage.report', { from: 1, to: 2 })), { ok: false, message: 'no logs' })
 })
@@ -186,17 +161,12 @@ test('an owner follows every stream, each push the store’s state whole', async
   const owner = await client(started.path, OWNER_TOKEN)
   const limits = await owner.subscribe('usageLimits.changed')
   const resumes = await owner.subscribe('usageLimitResumes.changed')
-  const scheduled = await owner.subscribe('scheduledMessages.changed')
   await new Promise((resolve) => setTimeout(resolve, 20))
   emit.limits({ snapshots: [] })
   await owner.line.next((frame) => frame.t === 'push' && frame.sub === limits)
   emit.resumes({ autoResume: true, notices: [] })
   const resumed = await owner.line.next((frame) => frame.t === 'push' && frame.sub === resumes)
   assert.deepEqual(resumed.t === 'push' && resumed.payload, { autoResume: true, notices: [] })
-  const message = { id: 'm', workspaceId: 'w', agentId: 'a', text: 'hi', sendAt: 5, createdAt: 1 }
-  emit.scheduled({ messages: [message] })
-  const pushed = await owner.line.next((frame) => frame.t === 'push' && frame.sub === scheduled)
-  assert.deepEqual(pushed.t === 'push' && pushed.payload, { messages: [message] })
 })
 
 test('a paired app reaches what its scopes name, never the report or the import; a reader only reads', async () => {
@@ -220,13 +190,10 @@ test('a paired app reaches what its scopes name, never the report or the import;
     asked.some(([kind]) => kind === 'report' || kind === 'import'),
     false,
   )
-  const hold = asked.find(([kind]) => kind === 'hold')
-  assert.equal((hold?.[1] as { source: string }).source, 'client:app:c-hold', 'a client’s hold is kept apart')
 
   const reader = await client(started.path, pairFakeClient(started.auth, 'reader', ['conversation:read']))
-  assert.equal(codeOf(await reader.request('scheduledMessages.get', {})), null)
   assert.equal(codeOf(await reader.request('usageLimitResumes.get', {})), null)
-  for (const method of ['scheduledMessages.update', 'scheduledMessages.hold', 'usageLimitResumes.setAuto'] as const)
+  for (const method of ['usageLimitResumes.update', 'usageLimitResumes.setAuto'] as const)
     assert.notEqual(codeOf(await reader.request(method, { ...CALLS[method], commandId: `r-${method}` })), null, method)
   assert.notEqual(codeOf(await reader.request('usageLimits.get', {})), null, 'the limits are the plan’s')
   assert.equal(
@@ -239,12 +206,13 @@ test('a paired app reaches what its scopes name, never the report or the import;
 test('a revoked app is ended at its next frame, and hears nothing after', async () => {
   const { started, emit } = await serve()
   const app = await client(started.path, pairFakeClient(started.auth, 'app', ['conversation:read']))
-  assert.ok(resultOf(await app.request('scheduledMessages.get', {})))
-  await app.subscribe('scheduledMessages.changed')
+  assert.ok(resultOf(await app.request('usageLimitResumes.get', {})))
+  await app.subscribe('usageLimitResumes.changed')
   await new Promise((resolve) => setTimeout(resolve, 20))
   started.auth.grants.delete('app')
-  emit.scheduled({
-    messages: [{ id: 'gone', workspaceId: 'w', agentId: 'a', text: 'after the revoke', sendAt: 5, createdAt: 1 }],
+  emit.resumes({
+    autoResume: false,
+    notices: [{ workspaceId: 'w', agentId: 'a', text: 'after the revoke' } as never],
   })
   const bye = await app.line.next((frame) => frame.t === 'bye')
   assert.equal(bye.t === 'bye' && bye.code, 'revoked')

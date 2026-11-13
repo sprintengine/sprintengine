@@ -46,6 +46,17 @@
   under the client's `exportId` from `offset` 0. Advertised only where the
   chat surface reads exports.
 
+### Removed (a chat's queue is its server's)
+
+- **`scheduledMessages.hold`, `.get`, `.update` and `scheduledMessages.changed`**.
+  A window hands a message queued mid-turn to its Studio as every client
+  does: `conversation.send` with `queue`, followed on `conversation.queued`.
+  It schedules, sends now and deletes one chat's messages with
+  `conversation.scheduleSend`, `.sendScheduledNow` and `.cancelScheduled`,
+  followed on `conversation.scheduled`; nothing reads or changes every chat's
+  at once. `conversation.scheduleSend` carries `untilLimitReset` from the
+  conversation contract.
+
 ### Added (the phone's reads)
 
 - **Backlogs, shares and pull request reads are protocol methods.**

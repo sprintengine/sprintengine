@@ -1211,6 +1211,7 @@ export function parseConversationServerFrame(value: unknown): ConversationParsed
           ...(clock(entry.waitingSince) ? { waitingSince: entry.waitingSince } : {}),
           ...(entry.sending === true ? { sending: true as const } : {}),
           ...(typeof entry.failure === 'string' && entry.failure.length <= 2_000 ? { failure: entry.failure } : {}),
+          ...(id(entry.untilLimitReset) ? { untilLimitReset: entry.untilLimitReset } : {}),
         })
       }
       return { type: 'scheduled', key: { workspaceId: key.workspaceId, agentId: key.agentId }, messages }

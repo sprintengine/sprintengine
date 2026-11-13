@@ -19,6 +19,8 @@ import {
 } from '../../../utils/newChatWorktree'
 import type { CliRuntimeOption } from '../../ui/CliModelPicker'
 import type { ChatReadiness } from './chatStates'
+import { useStudioChatHeld } from './chatServerHeld'
+import { useWorkspaceMachineRef } from '../../../hooks/useMachineIdentity'
 
 // What a chat view is bound to besides its transport: the agent fields it reads
 // (name, model, preset, mode, skills, the one-shot startup prompt) and where it writes
@@ -82,21 +84,18 @@ export type ChatBinding = {
    */
   engine?: CliRuntimeOption
   /**
-   * The messages the machine running the chat holds for its turn to end, as
-   * that machine last said, for a chat on another machine whose transport
-   * hands its queue over (`capabilities.hostQueue`).
+   * The messages the chat's server holds for its turn to end, as it last
+   * said (`capabilities.hostQueue`).
    */
   hostQueue?: { machineName: string; messages: MeshQueuedMessage[] }
   /**
-   * The messages the machine running the chat keeps for it until a time, as
-   * that machine last said, for a chat on another machine that schedules them
-   * there (`capabilities.hostSchedule`).
+   * The messages the chat's server keeps for it until a time, as it last said
+   * (`capabilities.hostSchedule`).
    */
   hostSchedule?: { machineName: string; messages: MeshScheduledMessage[] }
   /**
-   * What the machine running the chat knows of its agents' usage limits, and
-   * the notice a limit left on the chat's turn there, as that machine last
-   * said, for a chat on another machine that says so
+   * What the chat's server knows of its agents' usage limits, and the notice
+   * a limit left on the chat's turn, as it last said
    * (`capabilities.hostUsageLimits`).
    */
   hostUsageLimits?: HostUsageLimits
@@ -182,6 +181,20 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
       },
     }
   }, [pendingWorktree, attemptRunning, workspaceId])
+  // What the window's Studio holds and keeps for the chat, and what it knows
+  // of its usage limits: the chat's server's, as a paired chat's are its
+  // machine's. Not for a chat whose workspace runs on another machine
+  // through this one (WSL, SSH): its agent and its readings are over there,
+  // and this Studio's scheduler does not reach it (design-wsl-ssh-direct).
+  const machineRef = useWorkspaceMachineRef(workspace)
+  const runsHere = machineRef === null || machineRef.kind === 'local'
+  const workingRoot =
+    agent?.conversation && !pendingGate && runsHere ? conversationWorkingRoot(agent, workspace?.folderPath) : null
+  const heldKey = useMemo(
+    () => (workingRoot ? { workspaceId, agentId, workspaceRoot: workingRoot } : null),
+    [workspaceId, agentId, workingRoot],
+  )
+  const held = useStudioChatHeld(heldKey)
   return useMemo(
     () =>
       agent?.conversation
@@ -194,9 +207,10 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
             workspaceRoot: pendingGate ? null : conversationWorkingRoot(agent, workspace?.folderPath),
             recordUserMessage,
             rememberModel,
+            ...held,
             ...pendingGate,
           }
         : null,
-    [agent, update, workspace, recordUserMessage, rememberModel, pendingGate],
+    [agent, update, workspace, recordUserMessage, rememberModel, held, pendingGate],
   )
 }

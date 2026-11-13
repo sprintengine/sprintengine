@@ -256,7 +256,18 @@ export type ConversationCommand =
   | { kind: 'setReasoningEffort'; effort?: string }
   | { kind: 'mcpServerAction'; serverId: string; action: ConversationWireMcpServerAction }
   | { kind: 'restartSession' }
-  | { kind: 'scheduleSend'; message: string; sendAt: number }
+  | {
+      kind: 'scheduleSend'
+      message: string
+      sendAt: number
+      /**
+       * Send it when this provider's usage limit resets: `sendAt` is when the
+       * client read that it would, and the Studio asks the limit again when
+       * the time comes, moving the message to a later reset if one stands.
+       * A provider the Studio does not meter is read as a plain time.
+       */
+      untilLimitReset?: string
+    }
   | { kind: 'sendScheduledNow'; scheduledId: string }
   | { kind: 'cancelScheduled'; scheduledId: string }
   | { kind: 'usageLimitResume'; action: ConversationUsageLimitResumeAction; always?: true }
@@ -442,6 +453,8 @@ export type ConversationScheduledMessage = {
    * saying so, until it is sent again or deleted.
    */
   failure?: string
+  /** It goes when this provider's usage limit resets (`scheduleSend`'s `untilLimitReset`). */
+  untilLimitReset?: string
 }
 
 /** The most scheduled messages a `scheduled` frame names for one chat. */

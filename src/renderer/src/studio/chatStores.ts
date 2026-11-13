@@ -3,10 +3,6 @@ import {
   type ConversationImportInput,
   type ConversationImportResult,
   type ConversationImportScanResult,
-  type ScheduledMessageHoldAnswer,
-  type ScheduledMessageHoldRequest,
-  type ScheduledMessagesState,
-  type ScheduledMessageUpdate,
   type StudioMethod,
   type StudioMethodParams,
   type StudioMethodResult,
@@ -22,8 +18,7 @@ import { followWindowStudioPush } from './windowStudioPush'
 import { watchWindowStudio, windowStudioClient, windowStudioState } from './windowStudioClient'
 
 // The window's way to what its Studio keeps beside its chats: the Studio
-// protocol's `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`,
-// `usage.report` and `conversationImport.*`, over the window's own
+// protocol's `usageLimits.*`, `usageLimitResumes.*`, `usage.report` and `conversationImport.*`, over the window's own
 // connection, as every other client reaches them. The members keep the names
 // the window has always called them by.
 //
@@ -38,11 +33,6 @@ export type ChatStoresApi = {
   /** One chat's action, or the setting (`kind: 'auto'`). Answered with the state after it. */
   updateUsageLimitResume(update: UsageLimitResumeUpdate): Promise<UsageLimitResumeState>
   onUsageLimitResumesChanged(listener: (state: UsageLimitResumeState) => void): () => void
-  scheduledMessages(): Promise<ScheduledMessagesState>
-  updateScheduledMessage(update: ScheduledMessageUpdate): Promise<ScheduledMessagesState>
-  /** Hold a message this window's chat queued, to go when the chat's turn ends. Never rejects. */
-  holdQueuedMessage(request: ScheduledMessageHoldRequest): Promise<ScheduledMessageHoldAnswer>
-  onScheduledMessagesChanged(listener: (state: ScheduledMessagesState) => void): () => void
   /** The usage dashboard's report. Never rejects: a failure is `{ ok: false, message }`. */
   usageReport(request: UsageReportRequest): Promise<UsageReportResult>
   /** Never rejects. */
@@ -51,7 +41,7 @@ export type ChatStoresApi = {
   importConversations(input: ConversationImportInput): Promise<ConversationImportResult>
 }
 
-const UNSERVED = 'This Studio does not keep usage limits, scheduled messages or imports.'
+const UNSERVED = 'This Studio does not keep usage limits, usage reports or imports.'
 
 function randomId(): string {
   const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
@@ -119,22 +109,6 @@ export const chatStoresApi: ChatStoresApi = {
         }),
   onUsageLimitResumesChanged: (listener) =>
     followState('usageLimitResumes.changed', () => call('usageLimitResumes.get', {}), listener),
-  scheduledMessages: () => call('scheduledMessages.get', {}),
-  updateScheduledMessage: (update) => call('scheduledMessages.update', { commandId: randomId(), update }),
-  holdQueuedMessage: async (request) => {
-    try {
-      return await call('scheduledMessages.hold', {
-        commandId: randomId(),
-        workspaceId: request.workspaceId,
-        agentId: request.agentId,
-        text: request.text,
-      })
-    } catch (error) {
-      return { ok: false, reason: words(error) }
-    }
-  },
-  onScheduledMessagesChanged: (listener) =>
-    followState('scheduledMessages.changed', () => call('scheduledMessages.get', {}), listener),
   usageReport: async (request) => {
     try {
       return await call('usage.report', request)

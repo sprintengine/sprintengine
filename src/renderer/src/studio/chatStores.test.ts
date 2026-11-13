@@ -57,11 +57,11 @@ beforeEach(() => {
 
 test('a follow hears pushes, and reads the state again only when the connection comes back', async () => {
   const heard: unknown[] = []
-  const stop = chatStoresApi.onScheduledMessagesChanged((state) => heard.push(state))
+  const stop = chatStoresApi.onUsageLimitResumesChanged((state) => heard.push(state))
   await settle()
   assert.deepEqual(
     fake.subscriptions.map((subscription) => subscription.topic),
-    ['scheduledMessages.changed'],
+    ['usageLimitResumes.changed'],
   )
 
   fake.subscriptions[0]!.listener.onPayload({ pushed: 1 })
@@ -77,7 +77,7 @@ test('a follow hears pushes, and reads the state again only when the connection 
   await becomes('open')
   assert.deepEqual(
     fake.requests.map((request) => request.method),
-    ['scheduledMessages.get'],
+    ['usageLimitResumes.get'],
   )
   assert.deepEqual(heard, [{ pushed: 1 }, { reading: 2 }])
 
@@ -90,8 +90,8 @@ test('a follow hears pushes, and reads the state again only when the connection 
 })
 
 test('each change carries a command id of its own, kept on the request a resend repeats', async () => {
-  await chatStoresApi.updateScheduledMessage({ kind: 'delete', id: 's1' })
-  await chatStoresApi.updateScheduledMessage({ kind: 'delete', id: 's1' })
+  await chatStoresApi.updateUsageLimitResume({ kind: 'dismiss', workspaceId: 'w1', agentId: 'a1' })
+  await chatStoresApi.updateUsageLimitResume({ kind: 'dismiss', workspaceId: 'w1', agentId: 'a1' })
   const ids = fake.requests.map((request) => (request.params as { commandId: string }).commandId)
   assert.equal(ids.length, 2)
   assert.ok(ids.every((id) => typeof id === 'string' && id.length > 0))

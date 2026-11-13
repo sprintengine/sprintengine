@@ -815,7 +815,14 @@ export type ConversationHeldSend = {
  */
 export type ConversationScheduledSends = {
   /** Keep `text` for the chat until `sendAt`. `source` names the command it came in on: the same one twice is kept once. */
-  schedule(chat: ChatOf, text: string, sendAt: number, source: string): { ok: true } | { ok: false; message: string }
+  schedule(
+    chat: ChatOf,
+    text: string,
+    sendAt: number,
+    source: string,
+    /** Send it when this provider's usage limit resets (`scheduleSend`'s `untilLimitReset`). */
+    untilLimitReset?: string,
+  ): { ok: true } | { ok: false; message: string }
   /** Send one at once, a refused one again; refused once it is no longer scheduled. */
   sendNow(chat: ChatOf, id: string): { ok: true } | { ok: false; message: string }
   /** Delete one; refused once it is on its way into the chat, or no longer scheduled. */
@@ -1344,7 +1351,8 @@ export function createConversationGatewayHost(
     // Kept under the device's own command, so a repeat after a dropped
     // connection, or after a restart, schedules it once.
     const source = JSON.stringify([deviceId, commandId])
-    if (command.kind === 'scheduleSend') return scheduled.schedule(chat, command.message, command.sendAt, source)
+    if (command.kind === 'scheduleSend')
+      return scheduled.schedule(chat, command.message, command.sendAt, source, command.untilLimitReset)
     return once(deviceId, commandId, () =>
       command.kind === 'sendScheduledNow'
         ? scheduled.sendNow(chat, command.scheduledId)
