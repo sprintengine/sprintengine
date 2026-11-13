@@ -1029,6 +1029,58 @@ test('a chat’s export is read once where it is kept and paged to the client, p
   assert.equal(!missing.ok && missing.error.code, 'not_found')
 })
 
+test('a held export outlives its connection only for the reconnect that asks for its next page again', async () => {
+  let clock = 1_000_000
+  const { chat, reads } = exportingChat(12, 1024 * 1024)
+  const router = createStudioRpcRouter({
+    backend: createFakeBackend(),
+    chat: () => chat,
+    info: () => ({}) as never,
+    now: () => clock,
+  })
+  disposers.push(async () => router.close())
+  // A client sends again on its new connection what was unanswered; a minute is the wait.
+  const heldAfterClose = 60_000
+  const grant = {
+    clientId: 'reader',
+    name: 'reader',
+    owner: false,
+    scopes: ['conversation:read'],
+    ceiling: 'auto',
+  } as never
+  const key = { workspaceId: 'ws-1', agentId: 'agent-1' }
+  const page = async (connectionId: string, exportId: string, offset: number) => {
+    const answer = await router.handle(
+      grant,
+      'conversation.exportPage',
+      { key, exportId, offset },
+      {
+        connectionId,
+        slot: 1,
+        ownWindow: false,
+      },
+    )
+    return answer.ok ? (answer.result as { nextOffset: number | null }).nextOffset : answer.error.code
+  }
+  // Each connection part way through an export of its own.
+  const resumed = await page('c1', 'resumed', 0)
+  const kept = await page('c2', 'kept', 0)
+  assert.ok(typeof resumed === 'number' && typeof kept === 'number', 'each has pages left')
+  // c1 drops; the client's reconnect asks for the same page again, which is still held.
+  router.connectionClosed('c1')
+  clock += heldAfterClose - 1
+  const before = reads.length
+  assert.equal(typeof (await page('c3', 'resumed', resumed)), 'number')
+  assert.equal(reads.length, before, 'the chat is not read again')
+  // c3 drops and nobody comes back: past the wait, its export is let go of.
+  router.connectionClosed('c3')
+  clock += heldAfterClose
+  assert.equal(await page('c4', 'resumed', resumed), 'not_found')
+  // c2 is still open, so its export is held as long as before.
+  assert.equal(typeof (await page('c2', 'kept', kept)), 'number')
+  assert.equal(reads.length, before)
+})
+
 test('a Studio says it serves exports only where its chat surface reads them', async () => {
   const unread = fakeChat()
   delete unread.exportSource
