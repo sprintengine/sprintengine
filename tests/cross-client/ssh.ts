@@ -393,7 +393,8 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       env!.disconnect()
       await until(() => false, 8_000)
       cutOff = false
-      await machine().connect({ interactive: false })
+      // Connected again by the person, as Settings › Machines does after a Disconnect.
+      await machine().connect({ interactive: true })
       const client = await windowStudio()
       const read = ok<{ page: { events: GateEvent[] } }>(
         await client.conversations.loadEarlier(key, Number.MAX_SAFE_INTEGER, 1_000),
@@ -438,7 +439,7 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       const after = serverPid()
       if (!(after > 0 && after !== pid)) throw new Error('ssh: the server was not started again')
       sessionId = ok<{ session: { sessionId: string } }>(
-        await second.startSession({ ...key, ...MOCK_PROVIDER }),
+        await second.startSession({ ...key, workspaceRoot: '/home/dev/repo', ...MOCK_PROVIDER }),
         'start again',
       ).session.sessionId
       void second.sendTurn({ sessionId, message: away, commandId: 'ssh-away' }).catch(() => undefined)

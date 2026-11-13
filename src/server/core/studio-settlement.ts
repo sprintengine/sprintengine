@@ -1,3 +1,4 @@
+import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import type { ConversationEvent, ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { conversationSessionWorking } from '../../shared/conversation/phase'
 import type { BranchPullRequest } from '../../shared/git/pull-request'
@@ -125,8 +126,13 @@ export function createStudioSettlement(deps: StudioSettlementDeps) {
   }
 
   const sweep = createWorkspaceSettlementSweep({
-    records: () => deps.registry.getRecords(),
-    record: (workspaceId) => deps.registry.getRecord(workspaceId),
+    // A copy of another environment's chat comes to rest there, by that
+    // Studio's own sweep; this one rests only the chats this core holds.
+    records: () => deps.registry.getRecords().filter((record) => !environmentRouteOfRecord(record)),
+    record: (workspaceId) => {
+      const record = deps.registry.getRecord(workspaceId)
+      return record && !environmentRouteOfRecord(record) ? record : null
+    },
     onScreen: () => {
       const state = deps.registry.getState()
       const ids = new Set<string>()

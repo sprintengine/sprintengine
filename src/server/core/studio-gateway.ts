@@ -152,7 +152,8 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
         session: localSessionOf(core),
         agentsOf: (workspaceId) => {
           const record = core.workspaceRegistry.getRecord(workspaceId)
-          return record && !record.remoteOrigin ? record.agents : null
+          // A sub-agent runs beside a chat this core holds; never a copy's.
+          return record && !record.remoteOrigin && !record.environment ? record.agents : null
         },
       },
     }),

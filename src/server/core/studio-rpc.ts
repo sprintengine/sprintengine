@@ -24,6 +24,8 @@ import { createStudioWorktrees } from '../worktrees/studio-worktrees'
 import { createStudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
+import type { StudioDiscovery } from '../rpc/studio-rpc-types'
+import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -211,7 +213,10 @@ export function createStudioRpc(
     }),
     // What a client reads before it starts a chat: the gateway's own tools
     // answer it, so the protocol and MCP read one thing.
-    discovery: createStudioDiscovery(() => gateway.ownTools()),
+    discovery: withoutCopies(
+      createStudioDiscovery(() => gateway.ownTools()),
+      (workspaceId) => Boolean(environmentRouteOfRecord(core.workspaceRegistry.getRecord(workspaceId))),
+    ),
     // What this machine lacks for its schedules and watches, which every
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),
@@ -256,7 +261,11 @@ export function createStudioRpc(
           chats: () =>
             core.workspaceRegistry
               .getRecords()
-              .filter((record) => record.folderPath && !record.remoteOrigin && !isSettledWorkspace(record))
+              // A copy of another environment's chat is searched there, not here.
+              .filter(
+                (record) =>
+                  record.folderPath && !record.remoteOrigin && !record.environment && !isSettledWorkspace(record),
+              )
               .sort((a, b) => workspaceLastUserMessageAt(b) - workspaceLastUserMessageAt(a))
               .map((record) => ({ workspaceId: record.id, workspaceRoot: record.folderPath!, chatTitle: record.name })),
           search: (input) => core.conversations.searchThreads(input),
@@ -284,6 +293,19 @@ export function createStudioRpc(
       await core.whenDataDirFree
       return service.start()
     },
+  }
+}
+
+/**
+ * The workspaces this Studio serves its clients, without its copies of
+ * another environment's chats (design-wsl-ssh-direct PR 1d, decision 7): a
+ * device reaches those through that environment's own route, never twice and
+ * never through this desktop.
+ */
+function withoutCopies(discovery: StudioDiscovery, isCopy: (workspaceId: string) => boolean): StudioDiscovery {
+  return {
+    ...discovery,
+    workspaces: async () => (await discovery.workspaces()).filter((workspace) => !isCopy(workspace.id)),
   }
 }
 

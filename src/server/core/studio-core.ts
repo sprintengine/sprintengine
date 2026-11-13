@@ -512,8 +512,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     return workspaceRoot ? { ...chat, workspaceRoot } : null
   }
   const subagents = createSubagentLifecycle({
-    agentsOf: (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.agents ?? null,
-    workspaceIds: () => workspaceRegistry.getRecords().map((record) => record.id),
+    // This core's chats only: a copy of another environment's chat has its
+    // sub-agents there, and their ends are that Studio's to record.
+    agentsOf: (workspaceId) => {
+      const record = workspaceRegistry.getRecord(workspaceId)
+      return record && !environmentRouteOfRecord(record) ? record.agents : null
+    },
+    workspaceIds: () =>
+      workspaceRegistry
+        .getRecords()
+        .filter((record) => !environmentRouteOfRecord(record))
+        .map((record) => record.id),
     writeEnd: ({ workspaceId, agentId }, subagentEnd) => {
       workspaceSyncService.updateWorkspaceAgent(workspaceId, agentId, { subagentEnd }, 'system')
     },
