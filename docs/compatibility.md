@@ -1271,6 +1271,15 @@ as pending, so one repeated after a crash between a store's write and the ledger
 not reported as already here. A held message that carries pictures or files is reported,
 not kept: those are not handed over yet. Served by a WSL distribution's or an SSH machine's
 Studio, which a desktop reaches over its front door.
+On 2026-11-13 the same capability gained two kinds, after `workspace`: `chat` (a chat the
+desktop ran itself in that machine's folders, a WSL distribution's through `wsl.exe`:
+`{ workspaceId, agentId, workspaceRoot, files }`, each file `{ place, path, sha256, bytes,
+parts }`, written where that Studio's runtime reads it, a file already there with other bytes
+kept as it is and reported) and `approval-rule` (a saved approval, kept as given). A chat's
+files go in parts of at most 4 MB (`MAX_ADOPTED_PART_BYTES`): a call may name no records when
+it stages parts, which are kept under `environment-adoptions/parts/<migrationId>/` for the
+records that follow. No capability was added: only a WSL distribution is handed chats, and its
+Studio is always the desktop's own build.
 `provider-sign-in-flow` (2026-11-13) adds `providers.signInStart`, `.signInPaste`,
 `.signInWait` and `.signInCancel`, each under a `commandId`: a CLI's own login on
 that machine with no terminal (decision R34), named by provider, never by a

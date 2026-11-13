@@ -123,6 +123,8 @@ export function relayedEnvironmentsOf(value: unknown): Array<Omit<StudioRelayedE
  */
 export const STUDIO_ADOPTED_RECORD_KINDS = [
   'workspace',
+  'chat',
+  'approval-rule',
   'schedule',
   'scheduled-message',
   'usage-limit-resume',
@@ -140,6 +142,16 @@ export type StudioAdoptedRecordKind = (typeof STUDIO_ADOPTED_RECORD_KINDS)[numbe
  * scheduled; `{ workspaceId, agentId, url, title?, watched?, untold? }` for
  * a pull request a chat opened, `untold` being the news its watch found that
  * the chat has not been told yet.
+ *
+ * A chat the desktop ran itself (`chat`, id `<workspaceId>:<agentId>`) is
+ * `{ workspaceId, agentId, workspaceRoot, files }`: each file the chat keeps,
+ * `{ place, path, sha256, bytes, parts }`. `place` is `store` (a path under
+ * the chat's workspace store's `conversations/<workspaceId>/`: its
+ * transcript, its tools' details, its handoffs) or `attachments`, `images`
+ * or `plans` (`<folder>/<file>` in that store of the data directory); `parts`
+ * are the sha-256s of its pieces, in order, each staged through `uploads.*`
+ * (`MAX_ADOPTED_PART_BYTES`). A saved approval (`approval-rule`, id the
+ * rule's) is the rule as the desktop keeps it.
  *
  * A held message's pictures and files travel beside the records
  * (`StudioAdoptedFile`): its body names each in `carried.images` and
@@ -167,6 +179,13 @@ export const MAX_ADOPTED_RECORDS = 500
 
 /** The most files one hand-over call stages beside its records: as many as a client may stage at once. */
 export const MAX_ADOPTED_FILES = 16
+
+/**
+ * The largest piece of a chat's file one upload carries. A call that stages
+ * files and names no record keeps them for the records that follow under the
+ * same migration, so a transcript of any size goes in parts.
+ */
+export const MAX_ADOPTED_PART_BYTES = 4 * 1024 * 1024
 
 /**
  * What a Studio is doing that stopping it would end: a chat working (starting,
@@ -347,8 +366,12 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
       if (!(typeof value.migrationId === 'string' && /^[A-Za-z0-9_-]{1,128}$/u.test(value.migrationId)))
         return studioParamsRefused('"migrationId" names the hand-over: 1 to 128 of [A-Za-z0-9_-].')
       const given = value.records
-      if (!Array.isArray(given) || given.length === 0 || given.length > MAX_ADOPTED_RECORDS)
-        return studioParamsRefused(`"records" holds 1 to ${MAX_ADOPTED_RECORDS} records.`)
+      // None, only when it stages parts for the records that follow.
+      const least = Array.isArray(value.files) && value.files.length > 0 ? 0 : 1
+      if (!Array.isArray(given) || given.length < least || given.length > MAX_ADOPTED_RECORDS)
+        return studioParamsRefused(
+          `"records" holds 1 to ${MAX_ADOPTED_RECORDS} records, or none when "files" stages parts for the records that follow.`,
+        )
       const kinds: readonly string[] = STUDIO_ADOPTED_RECORD_KINDS
       const records: StudioAdoptedRecord[] = []
       for (const entry of given) {
