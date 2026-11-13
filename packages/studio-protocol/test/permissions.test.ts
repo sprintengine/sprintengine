@@ -33,6 +33,8 @@ import { STUDIO_SCOPES, type StudioScope } from '../src/scopes'
 function legacyStudioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
   if (needed === 'modules:read') return scopes.includes('modules:operate')
+  // `workspaces:operate` (the scheduled agents) carries its read, as the others do.
+  if (needed === 'workspaces:read') return scopes.includes('workspaces:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }
 /** The scope whose grant name a permission is, for a method that needs more than its own scope. */

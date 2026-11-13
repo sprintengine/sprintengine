@@ -13,6 +13,8 @@ import type {
   UsageLimitsState,
   UsageReportRequest,
   UsageReportResult,
+  UsageWireAnswer,
+  UsageWireArgs,
 } from '../../../packages/studio-protocol/src/public'
 import {
   resolveLocalMachineIdentity,
@@ -23,8 +25,8 @@ import {
 import type { TailnetMeshService } from '../../main/automation/tailnet/tailnet-mesh-service'
 import type { ConversationImportService } from '../../main/conversation-import/conversation-import-service'
 import type { ScheduledMessages } from '../../main/scheduled-messages/scheduled-messages'
-import { createUsageFleet, type UsageFleet } from '../../main/usage/usage-mesh'
-import { appUsageService, type UsageServiceWorkspace } from '../../main/usage/usage-service'
+import { createUsageFleet, encodeUsageAnswer, fleetRowsOf, type UsageFleet } from '../../main/usage/usage-mesh'
+import { appUsageService, type UsageService, type UsageServiceWorkspace } from '../../main/usage/usage-service'
 import { createUsageLimitsDiskCache, USAGE_LIMITS_CACHE_FILE } from '../../main/usage-limits/disk-cache'
 import type { UsageLimitResumer } from '../../main/usage-limits/resume'
 import { usageLimitsStore, type UsageLimitsStore } from '../../main/usage-limits/store'
@@ -50,6 +52,8 @@ export type StudioChatStores = {
   onScheduledMessagesChanged(listener: (state: ScheduledMessagesState) => void): () => void
   /** Never rejects: a failure is `{ ok: false, message }`. */
   usageReport(request: UsageReportRequest): Promise<UsageReportResult>
+  /** This machine's own rows over a window, for a paired desktop's dashboard (`usage.rows`). */
+  usageRows(args: UsageWireArgs): Promise<UsageWireAnswer>
   scanImports(): Promise<ConversationImportScanResult>
   importConversations(input: ConversationImportInput): Promise<ConversationImportResult>
   /** Stop following the limits and let the cache's last write land. */
@@ -72,6 +76,7 @@ export type StudioChatStoresDeps = {
   /** Overrides (tests): the limits' store, and the report. */
   limits?: UsageLimitsStore
   usage?: Pick<UsageFleet, 'report'>
+  rows?: Pick<UsageService, 'peerRows'>
   /** Whether to keep the limits in their cache file; tests turn it off. */
   cacheLimits?: boolean
 }
@@ -134,6 +139,17 @@ export function createStudioChatStores(deps: StudioChatStoresDeps): StudioChatSt
       } catch (error) {
         return { ok: false, message: words(error) }
       }
+    },
+    usageRows: async (args) => {
+      const read = await (
+        deps.rows ?? appUsageService({ dataDir: deps.dataDir, getWorkspaces: deps.getWorkspaces })
+      ).peerRows({ from: args.from, to: args.to, refresh: args.refresh === true, wait: args.wait === true })
+      return encodeUsageAnswer({
+        rows: fleetRowsOf(read.rows),
+        scannedAt: read.scannedAt,
+        scanning: read.scanning,
+        sources: read.sources,
+      })
     },
     scanImports: async () => {
       try {

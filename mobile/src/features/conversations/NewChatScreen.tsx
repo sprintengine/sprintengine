@@ -16,7 +16,6 @@ import {
   declaresNewChatEffort,
   declaresNewChatWorktree,
   declaresPermissionModes,
-  declaresScheduledAgents,
 } from "../../api/tailnetTransport";
 import type { WorkspaceCheckout } from "../../api/tailnetWorkspaces";
 import type { MobileSession } from "../../api/types";
@@ -163,7 +162,8 @@ export function NewChatScreen({
   const availability = chatLaunchAvailability(session, { machineName: target.desktopName });
   const scheduleOffered = !!onScheduled && !!session && canOperateSchedules(session);
   // A one-time run is `schedule.create`'s `once`, which an older desktop refuses.
-  const onceOffered = !!session && declaresScheduledAgents(session);
+  // Every desktop that takes a schedule from the phone takes a one-time one.
+  const onceOffered = scheduleOffered;
 
   const [prompt, setPrompt] = useState("");
   // The prompt is a draft until Start, so dictation can fill it; the words are

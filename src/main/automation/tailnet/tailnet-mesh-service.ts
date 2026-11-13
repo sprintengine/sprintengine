@@ -99,6 +99,10 @@ import {
 import { createTailnetMeshStore, type StoredMeshConnection, type TailnetMeshStore } from './tailnet-mesh-store'
 import type { TailnetPeerIdentity } from './tailnet-peer-identity'
 import { tailnetPeerSupports } from './tailnet-routes'
+import { createPeerStudios, peerRefusal, type PeerStudioTarget } from './tailnet-peer-studio'
+import { StudioError, type StudioClient } from '../../../../packages/client-runtime/src/public'
+import type { StudioScheduleDraft, StudioSchedules } from '../../../../packages/studio-protocol/src/schedules'
+import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
 import {
   callRemoteTool,
   callRemoteToolResult,
@@ -1842,30 +1846,33 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     store.markConnected(connection.id)
     rememberIdentity(connection.id, identity.value)
     recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
-    if (!tailnetPeerSupports(identity.value.capabilities, 'usage-report'))
-      return {
-        ok: false,
-        status: 'unsupported',
-        message: `Update Studio on ${connection.machineName} to include its usage.`,
-      }
     if (!tailnetScopeGrantsAccess(new Set(identity.value.scopes), 'workspace:read'))
       return {
         ok: false,
         status: 'unauthorized',
         message: `This pairing may not read ${connection.machineName}'s workspaces, and so not its usage.`,
       }
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'usage.report',
-      args: input.args,
-      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-    })
-    if (answer.ok) return answer
-    if (answer.code === 'unauthorized' || answer.code === 'tailnet_scope_required')
-      return { ok: false, status: 'unauthorized', message: answer.message }
-    if (answer.code === 'unreachable') return { ok: false, status: 'offline', message: answer.message }
-    return { ok: false, status: 'error', message: answer.message }
+    const args = input.args as UsageWireArgs
+    try {
+      const value = await peerStudios.ask(
+        peerTarget(connection),
+        (client) => client.rpc['usage.rows'](args),
+        input.timeoutMs,
+      )
+      return { ok: true, value: value as unknown as Record<string, unknown> }
+    } catch (error) {
+      const refused = peerRefusal(connection, error)
+      // A machine from before the protocol, or without the method: one to update.
+      if (refused.kind === 'outdated')
+        return {
+          ok: false,
+          status: 'unsupported',
+          message: `Update Studio on ${connection.machineName} to include its usage.`,
+        }
+      if (refused.kind === 'unauthorized') return { ok: false, status: 'unauthorized', message: refused.message }
+      if (refused.kind === 'unavailable') return { ok: false, status: 'offline', message: refused.message }
+      return { ok: false, status: 'error', message: refused.message }
+    }
   }
 
   // ── A remote chat's Create PR ───────────────────────────────────────────
@@ -2527,24 +2534,43 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     return answer.ok ? { ok: true, ruleId: input.ruleId } : answer
   }
 
-  // A paired machine's scheduled agents, on the `schedule.*` tools it always
-  // served to paired devices: listed and controlled from any build that
-  // answers them, scheduled from here only where it says `scheduled-agents`.
-  async function scheduledAgents(input: { connectionId: unknown }): Promise<MeshScheduledAgentsResult> {
-    const connection = connectionFor(input.connectionId)
+  // A paired machine's scheduled agents, on its Studio's `schedules.*`
+  // (tailnet-peer-studio.ts): listed on `workspace:read`, made, changed, run,
+  // paused, resumed and closed on `workspace:operate`, each change once per
+  // command id, so a retried Run now starts one chat there.
+  async function askSchedules<T>(
+    connectionId: unknown,
+    work: (client: StudioClient) => Promise<T>,
+    timeoutMs?: number,
+  ): Promise<{ ok: true; value: T } | { ok: false; code: string; message: string }> {
+    const connection = connectionFor(connectionId)
     if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'schedule.list',
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
-    const capabilities = peerCapabilities.get(connection.id)
-    return {
-      ...scheduledAgentsOf(answer.value),
-      canCreate: tailnetPeerSupports(capabilities, 'scheduled-agents'),
-      canEdit: tailnetPeerSupports(capabilities, 'scheduled-agents-edit'),
+    try {
+      const value = await peerStudios.ask(
+        peerTarget(connection),
+        async (client) => {
+          if (!client.supports('schedules')) throw new StudioError('outdated', '')
+          return work(client)
+        },
+        timeoutMs,
+      )
+      return { ok: true, value }
+    } catch (error) {
+      const refused = peerRefusal(connection, error)
+      return refused.kind === 'outdated'
+        ? {
+            ok: false,
+            code: 'scheduled_agents_unsupported',
+            message: `${connection.machineName} cannot take schedules from here yet. Update SprintEngine Studio there to use its schedules from here.`,
+          }
+        : { ok: false, code: refused.code, message: refused.message }
     }
+  }
+
+  async function scheduledAgents(input: { connectionId: unknown }): Promise<MeshScheduledAgentsResult> {
+    const answer = await askSchedules(input.connectionId, (client) => client.rpc['schedules.list']({}))
+    if (!answer.ok) return answer
+    return { ...scheduledAgentsOf(answer.value), canCreate: true, canEdit: true }
   }
 
   async function scheduledAgentAction(input: {
@@ -2552,40 +2578,34 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     id?: unknown
     action?: unknown
   }): Promise<MeshScheduledAgentActionResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
     if (typeof input.id !== 'string' || !input.id) {
       return { ok: false, code: 'invalid_arguments', message: 'Name the scheduled agent.' }
     }
+    const id = input.id
     const action = SCHEDULED_AGENT_ACTIONS.has(input.action as MeshScheduledAgentAction)
       ? (input.action as MeshScheduledAgentAction)
       : null
     if (!action) return { ok: false, code: 'invalid_arguments', message: 'Run, pause, resume or delete it.' }
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: `schedule.${action}`,
-      args: { id: input.id },
+    const commandId = randomBytes(12).toString('base64url')
+    const answer = await askSchedules<unknown>(
+      input.connectionId,
+      (client) =>
+        action === 'run'
+          ? client.rpc['schedules.runNow']({ id, commandId })
+          : action === 'pause'
+            ? client.rpc['schedules.pause']({ id, commandId })
+            : action === 'resume'
+              ? client.rpc['schedules.resume']({ id, commandId })
+              : client.rpc['schedules.delete']({ id, commandId }),
       // A run waits on the chat starting over there, a CLI and all.
-      ...(action === 'run' ? { timeoutMs: 60_000 } : {}),
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
-    return { ok: true, id: input.id, action }
+      action === 'run' ? 60_000 : undefined,
+    )
+    return answer.ok ? { ok: true, id, action } : answer
   }
 
   async function createScheduledAgent(
     input: Partial<MeshCreateScheduledAgentInput>,
   ): Promise<MeshCreateScheduledAgentResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, 'scheduled-agents')) {
-      return {
-        ok: false,
-        code: 'scheduled_agents_unsupported',
-        message: `${connection.machineName} cannot take a schedule from here yet. Update SprintEngine Studio there to schedule agents on it.`,
-      }
-    }
     const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
     const workspaceId = text(input.workspaceId)
     const prompt = text(input.prompt)
@@ -2598,14 +2618,13 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         message: 'A schedule needs a project, a prompt, a time and a CLI.',
       }
     }
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'schedule.create',
-      args: { workspaceId, ...scheduleToolArgs(input, { prompt, cron, cli }) },
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
-    const agent = scheduledAgentViewOf(answer.value.scheduledAgent)
+    const draft = { workspaceId, ...scheduleDraftOf(input, { prompt, cron, cli }) }
+    const commandId = randomBytes(12).toString('base64url')
+    const answer = await askSchedules(input.connectionId, (client) =>
+      client.rpc['schedules.create']({ ...draft, commandId }),
+    )
+    if (!answer.ok) return answer
+    const agent = scheduledAgentViewOf(answer.value.schedule)
     return agent
       ? { ok: true, agent }
       : {
@@ -2618,16 +2637,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
   async function updateScheduledAgent(
     input: Partial<MeshUpdateScheduledAgentInput>,
   ): Promise<MeshUpdateScheduledAgentResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, 'scheduled-agents-edit')) {
-      return {
-        ok: false,
-        code: 'scheduled_agents_edit_unsupported',
-        message: `${connection.machineName} cannot take a change to a schedule from here yet. Update SprintEngine Studio there to edit its schedules.`,
-      }
-    }
     const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
     const id = text(input.id)
     const prompt = text(input.prompt)
@@ -2637,24 +2646,23 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       return { ok: false, code: 'invalid_arguments', message: 'A schedule needs a prompt, a time and a CLI.' }
     }
     const workspaceId = text(input.workspaceId)
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'schedule.update',
-      args: {
-        id,
-        ...(workspaceId ? { workspaceId } : {}),
-        ...scheduleToolArgs(input, { prompt, cron, cli }),
-        // What the editor shows is the whole of it: a model, a worktree, a
-        // skill or a server taken off there is taken off, not kept.
-        model: text(input.model) ?? '',
-        ...(input.worktreeName === null || input.worktreeName === undefined ? { worktree: false } : {}),
-        skills: scheduleIds(input.skills),
-        mcpServers: scheduleIds(input.mcpServers),
-      },
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
-    const agent = scheduledAgentViewOf(answer.value.scheduledAgent)
+    const change = {
+      id,
+      ...(workspaceId ? { workspaceId } : {}),
+      ...scheduleDraftOf(input, { prompt, cron, cli }),
+      // What the editor shows is the whole of it: a model, a worktree, a
+      // skill or a server taken off there is taken off, not kept.
+      model: text(input.model) ?? '',
+      ...(input.worktreeName === null || input.worktreeName === undefined ? { worktree: false } : {}),
+      skills: scheduleIds(input.skills),
+      mcpServers: scheduleIds(input.mcpServers),
+    }
+    const commandId = randomBytes(12).toString('base64url')
+    const answer = await askSchedules(input.connectionId, (client) =>
+      client.rpc['schedules.update']({ ...change, commandId }),
+    )
+    if (!answer.ok) return answer
+    const agent = scheduledAgentViewOf(answer.value.schedule)
     return agent
       ? { ok: true, agent }
       : { ok: false, code: 'unreadable_result', message: 'That machine saved it, in a shape this build cannot read.' }
@@ -3213,6 +3221,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     // transcript from a machine no longer paired is not this machine's to keep.
     void remoteConversations.forgetConnection(connectionId, 'This machine was removed from your mesh.')
     remoteCanvas.forget(connectionId)
+    peerStudios.forget(connectionId)
     store.forget(connectionId)
     syncReachabilityTimer()
     if (forgotten) broadcast({ kind: 'machine-forgotten', connectionId, machineName: forgotten.machineName })
@@ -3220,6 +3229,16 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     // above this line is allowed to hold one.
     return forgotten ? { id: forgotten.id, machineName: forgotten.machineName } : null
   }
+
+  // This Studio's client of each paired machine's Studio, on its
+  // `/tailnet/v1/studio` (tailnet-peer-studio.ts).
+  const peerStudios = createPeerStudios()
+  const peerTarget = (connection: StoredMeshConnection): PeerStudioTarget => ({
+    id: connection.id,
+    endpoint: endpointOf(connection),
+    deviceToken: connection.deviceToken,
+    machineName: connection.machineName,
+  })
 
   const remoteCanvas = createTailnetRemoteCanvas({
     connection: (connectionId) => {
@@ -3665,6 +3684,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
 
     shutdown(): void {
       releaseFocus()
+      peerStudios.closeAll()
       pictures.clear()
       pictureChars = 0
       for (const connectionId of [...awayMachines.keys()]) forgetAway(connectionId)
@@ -4135,24 +4155,26 @@ function scheduleIds(value: unknown): string[] {
 }
 
 /**
- * What `schedule.create` and `schedule.update` both take of a schedule saved
+ * What `schedules.create` and `schedules.update` both take of a schedule saved
  * from here, besides its project: the prompt, the time, the engine and what
  * each run is started with.
  */
-function scheduleToolArgs(
+function scheduleDraftOf(
   input: Partial<MeshCreateScheduledAgentInput | MeshUpdateScheduledAgentInput>,
   required: { prompt: string; cron: string; cli: string },
-): Record<string, unknown> {
+): Omit<StudioScheduleDraft, 'workspaceId'> {
   const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
   const preset = input.permissionPreset ? parseCliPermissionPreset(input.permissionPreset) : null
-  const once = typeof input.once === 'number' && Number.isFinite(input.once) ? input.once : null
+  const once = typeof input.once === 'number' && Number.isSafeInteger(input.once) && input.once >= 0 ? input.once : null
+  const timezone = text(input.timezone)
+  const model = text(input.model)
   return {
     prompt: required.prompt,
     cron: required.cron,
-    ...(text(input.timezone) ? { timezone: text(input.timezone) } : {}),
-    ...(once !== null ? { once: new Date(once).toISOString() } : {}),
+    ...(timezone ? { timezone } : {}),
+    ...(once !== null ? { once } : {}),
     cli: required.cli,
-    ...(text(input.model) ? { model: text(input.model) } : {}),
+    ...(model ? { model } : {}),
     ...(preset ? { permissionPreset: preset } : {}),
     ...(typeof input.worktreeName === 'string'
       ? input.worktreeName.trim()
@@ -4165,9 +4187,10 @@ function scheduleToolArgs(
 }
 
 /**
- * One scheduled agent as a paired machine's `schedule.list` serves it, back in
- * the shape this machine's own list has: its instants were sent as ISO
- * strings. Null for one without what a row needs — an id, a prompt, a cron.
+ * One scheduled agent as a paired machine's `schedules.list` serves it, read
+ * member by member into the shape this machine's own list has: what another
+ * machine sends is read, not trusted. Null for one without what a row needs —
+ * an id, a prompt, a cron.
  */
 export function scheduledAgentViewOf(value: unknown): ScheduledAgentView | null {
   if (!value || typeof value !== 'object') return null
@@ -4227,20 +4250,22 @@ export function scheduledAgentViewOf(value: unknown): ScheduledAgentView | null 
     lastFailureSeenAt: instantOf(agent.lastFailureSeenAt),
     ...(pausedAt !== null ? { pausedAt } : {}),
     nextRunAt: instantOf(agent.nextRunAt),
+    // Why that machine cannot run it now, in its words: a time that passes
+    // there without a run is not a failure.
+    ...(typeof agent.waiting === 'string' && agent.waiting ? { waiting: agent.waiting.slice(0, 500) } : {}),
   }
 }
 
-/** A paired machine's `schedule.list` answer, kept to the rows this build can read. */
-export function scheduledAgentsOf(value: Record<string, unknown>): {
+/** A paired machine's `schedules.list` answer, kept to the rows this build can read. */
+export function scheduledAgentsOf(value: StudioSchedules | Record<string, unknown>): {
   ok: true
   agents: ScheduledAgentView[]
   pausedAll: ScheduledAgentsPause | null
 } {
-  const agents = (Array.isArray(value.scheduledAgents) ? value.scheduledAgents : [])
-    .slice(0, 500)
-    .flatMap((entry) => scheduledAgentViewOf(entry) ?? [])
-  const pause =
-    value.pausedAll && typeof value.pausedAll === 'object' ? (value.pausedAll as Record<string, unknown>) : null
+  const rows: unknown = (value as Record<string, unknown>).schedules
+  const agents = (Array.isArray(rows) ? rows : []).slice(0, 500).flatMap((entry) => scheduledAgentViewOf(entry) ?? [])
+  const paused: unknown = (value as Record<string, unknown>).pausedAll
+  const pause = paused && typeof paused === 'object' ? (paused as Record<string, unknown>) : null
   const since = instantOf(pause?.since)
   return { ok: true, agents, pausedAll: pause && since !== null ? { since, until: instantOf(pause.until) } : null }
 }

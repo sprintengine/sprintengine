@@ -61,6 +61,19 @@ function stubs() {
       asked.push(['report', request])
       return { ok: false, message: 'no logs' }
     },
+    usageRows: async (args) => {
+      asked.push(['rows', args])
+      return {
+        ok: true,
+        version: 1,
+        scannedAt: null,
+        scanning: false,
+        sources: [],
+        sessions: [],
+        rows: [],
+        nextFrom: null,
+      }
+    },
     scanImports: async () => ({ ok: true, folders: [], sources: [] }),
     importConversations: async (input) => {
       asked.push(['import', input])
@@ -120,6 +133,7 @@ const CALLS: Record<StudioChatStoresMethod, Record<string, unknown>> = {
   'scheduledMessages.update': { commandId: 'c-update', update: { kind: 'delete', id: 'm1' } },
   'scheduledMessages.hold': { commandId: 'c-hold', workspaceId: 'w', agentId: 'a', text: 'after this turn' },
   'usage.report': { from: 1, to: 2 },
+  'usage.rows': { from: 1, to: 2 },
   'conversationImport.scan': {},
   'conversationImport.import': { commandId: 'c-import', sessions: [{ source: 'codex', sessionId: 's1' }] },
 }
@@ -193,6 +207,8 @@ test('a paired app reaches what its scopes name, never the report or the import;
     'conversation:read',
     'conversation:operate',
     'conversation:create',
+    // A paired desktop's dashboard reads this machine's rows on its workspace read.
+    'workspaces:read',
   ]
   const app = await client(started.path, pairFakeClient(started.auth, 'app', scopes))
   for (const [method, params] of Object.entries(CALLS)) {
@@ -213,6 +229,11 @@ test('a paired app reaches what its scopes name, never the report or the import;
   for (const method of ['scheduledMessages.update', 'scheduledMessages.hold', 'usageLimitResumes.setAuto'] as const)
     assert.notEqual(codeOf(await reader.request(method, { ...CALLS[method], commandId: `r-${method}` })), null, method)
   assert.notEqual(codeOf(await reader.request('usageLimits.get', {})), null, 'the limits are the plan’s')
+  assert.equal(
+    codeOf(await reader.request('usage.rows', CALLS['usage.rows'])),
+    'scope_required',
+    'the rows are a workspace read',
+  )
 })
 
 test('a revoked app is ended at its next frame, and hears nothing after', async () => {

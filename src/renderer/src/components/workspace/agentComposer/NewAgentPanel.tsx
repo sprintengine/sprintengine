@@ -1589,14 +1589,6 @@ export default function NewAgentPanel({
       })
       return
     }
-    if (target.capabilities && !target.capabilities.includes('scheduled-agents')) {
-      showToast({
-        tone: 'warn',
-        title: 'Not scheduled',
-        description: `${target.connection.machineName} cannot take a schedule from here yet. Update SprintEngine Studio there to schedule agents on it.`,
-      })
-      return
-    }
     // Pictures and files staged here are files on this computer, which a run
     // over there could not open.
     if (images.length > 0 || files.length > 0) {
@@ -1661,14 +1653,6 @@ export default function NewAgentPanel({
   // the machine it runs on. Its project there stays unless another is picked.
   const saveRemoteEdit = async (text: string, agent: ScheduledAgentView, on: NonNullable<typeof editingRemote>) => {
     const machineName = on.machineName
-    if (remoteTarget?.capabilities && !remoteTarget.capabilities.includes('scheduled-agents-edit')) {
-      showToast({
-        tone: 'warn',
-        title: 'Not saved',
-        description: `${machineName} cannot take a change to a schedule from here yet. Update SprintEngine Studio there to edit its schedules.`,
-      })
-      return
-    }
     if (images.length > 0 || files.length > 0) {
       showToast({
         tone: 'warn',

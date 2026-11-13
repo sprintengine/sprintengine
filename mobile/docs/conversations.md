@@ -156,8 +156,8 @@ and Cron, with the days, typed times ("+ Time"), a readout of the next runs,
 and Once's quick times with a day stepper and a time. Its cron reader
 (`src/shared/cron/cron.ts`) and its tab model (`scheduleEditor.ts`) are the
 desktop's own files, mirrored and held to them by the regression suite. Once
-is `schedule.create`'s `once`, offered only where the desktop advertises
-`scheduled-agents`, since an older handler refuses the argument. Sending makes
+is `schedules.create`'s `once`, on the desktop's Studio protocol; a desktop
+from before it is told to update. Sending makes
 the schedule with New's own choices: the machine and project, the agent and
 model, the access and the Worktree switch; a schedule's runs start from words
 alone, so nothing can be attached while it is on. New then leaves and the

@@ -17,12 +17,14 @@ import {
   STUDIO_AGENT_SETUP_METHODS,
   STUDIO_CHAT_STORES_METHODS,
   STUDIO_AGENT_SKILLS_METHODS,
+  STUDIO_SCHEDULES_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
   STUDIO_METHOD_ACCESS,
   studioGrantAllows,
   type StudioAgentSettingsMethod,
+  type StudioSchedulesMethod,
   type StudioAgentSetupMethod,
   type StudioChatStoresMethod,
   type StudioAgentSkillsMethod,
@@ -440,6 +442,12 @@ test('every method the server serves has its call in the SDK, under the same sco
     // And the skills, design systems and cards they are given.
     ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SKILLS_METHODS).map((method) => [method, 'request'])) as Record<
       StudioAgentSkillsMethod,
+      string
+    >),
+    // A Studio's scheduled agents, which the phone and a paired desktop
+    // drive (`schedules.ts`), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_SCHEDULES_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioSchedulesMethod,
       string
     >),
   }

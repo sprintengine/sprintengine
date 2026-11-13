@@ -251,15 +251,12 @@ test('tailnet-pairing-roundtrip', async () => {
         'canvas-machine-boards',
         'chat-create-pull-request',
         'chat-row-menu',
-        'usage-report',
         'chat-rename',
         'chat-auto-compact',
         'chat-unwatch-pull-request',
         'chat-delete',
         'chat-search',
         'approval-rules',
-        'scheduled-agents',
-        'scheduled-agents-edit',
         'mcp-oauth',
       ])
 
@@ -451,15 +448,12 @@ test('tailnet-pairing-roundtrip', async () => {
         'canvas-machine-boards',
         'chat-create-pull-request',
         'chat-row-menu',
-        'usage-report',
         'chat-rename',
         'chat-auto-compact',
         'chat-unwatch-pull-request',
         'chat-delete',
         'chat-search',
         'approval-rules',
-        'scheduled-agents',
-        'scheduled-agents-edit',
         'mcp-oauth',
       ])
 

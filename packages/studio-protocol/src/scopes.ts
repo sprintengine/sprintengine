@@ -33,6 +33,11 @@
 // (`module.*`). `modules:operate` calls the ones they declare `operate` too,
 // and carries `modules:read`. Neither is held to an owner's connection.
 //
+// `workspaces:operate` changes what a Studio keeps beside its workspaces and
+// runs on its own: its scheduled agents (`schedules.*`). It carries
+// `workspaces:read`, as an operate scope carries its read. A paired device
+// holds it with its `workspace:operate` pairing.
+//
 // No scope reaches the terminals: a terminal is a shell on the machine, so
 // only an owner's own connections reach them, never a grant (`terminals.ts`).
 
@@ -50,6 +55,7 @@ export const STUDIO_SCOPES = [
   'settings:write',
   'modules:read',
   'modules:operate',
+  'workspaces:operate',
 ] as const
 
 export type StudioScope = (typeof STUDIO_SCOPES)[number]
@@ -74,5 +80,6 @@ export function normalizeStudioScopes(value: unknown): StudioScope[] {
 export function studioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
   if (needed === 'modules:read') return scopes.includes('modules:operate')
+  if (needed === 'workspaces:read') return scopes.includes('workspaces:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')
 }

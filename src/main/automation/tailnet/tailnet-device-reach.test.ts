@@ -31,6 +31,7 @@ const ANY = TAILNET_SCOPES
 const CHAT_READ = ['conversation:read', 'conversation:operate'] as const
 const CHAT_OPERATE = ['conversation:operate'] as const
 const WORKSPACE = ['workspace:read', 'workspace:operate'] as const
+const WORKSPACE_OPERATE = ['workspace:operate'] as const
 
 const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   // The connection itself, and whether this Studio needs updating: any authenticated grant.
@@ -122,6 +123,17 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'cliRuntimes.list': WORKSPACE,
   'pullRequests.list': WORKSPACE,
   'pullRequests.refresh': WORKSPACE,
+
+  // The machine's scheduled agents: listed on a workspace read, driven on
+  // `workspace:operate`; and its own usage rows, for another desktop's dashboard.
+  'schedules.list': WORKSPACE,
+  'schedules.create': WORKSPACE_OPERATE,
+  'schedules.update': WORKSPACE_OPERATE,
+  'schedules.pause': WORKSPACE_OPERATE,
+  'schedules.resume': WORKSPACE_OPERATE,
+  'schedules.runNow': WORKSPACE_OPERATE,
+  'schedules.delete': WORKSPACE_OPERATE,
+  'usage.rows': WORKSPACE,
 }
 
 const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
@@ -136,6 +148,7 @@ const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'scheduledMessages.changed': CHAT_READ,
   'usageLimitResumes.changed': CHAT_READ,
   'pullRequests.changed': WORKSPACE,
+  'schedules.changed': WORKSPACE,
 }
 
 /**
@@ -431,7 +444,14 @@ test('a read-only device follows chats and reads workspaces, and drives, starts 
   const readOnly: TailnetScope[] = ['workspace:read', 'backlog:read', 'conversation:read']
   const reach = reachOf(grantOf(readOnly))
   assert.deepEqual(reach, expectedReach(readOnly))
-  for (const method of ['conversation.send', 'conversation.create', 'pullRequests.unwatch', 'uploads.begin'])
+  for (const method of [
+    'conversation.send',
+    'conversation.create',
+    'pullRequests.unwatch',
+    'uploads.begin',
+    'schedules.create',
+    'schedules.runNow',
+  ])
     assert.ok(!reach.methods.includes(method), method)
   assert.ok(reach.methods.includes('conversation.list'))
   assert.ok(reach.methods.includes('workspaces.list'))

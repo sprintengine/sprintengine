@@ -28,8 +28,6 @@ import {
 } from '../../main/automation/conversation-lifecycle'
 import { launchPermissionCeiling } from '../../main/automation/launch-permission-cap'
 import { gatewayToolsForCaller } from '../../main/automation/tailnet/tailnet-scopes'
-import { createUsageTools } from '../../main/usage/usage-tools'
-import { appUsageService } from '../../main/usage/usage-service'
 import { createStudioGatewayTools } from '../../main/automation/studio-gateway-tools'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { toolSuccess, toolError } from '../../shared/modules/mcp-tools'
@@ -248,14 +246,6 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       isSignedInGitHubHost: async (host) => Boolean(await gitHubHostToken(host)),
     }),
     ...createLocalServerTools({ link: (key, input) => core.localServers.linkForAgent(key, input) }),
-    // A paired desktop's usage dashboard counts what this machine spent.
-    ...createUsageTools({
-      usage: () =>
-        appUsageService({
-          dataDir: () => platform.paths.dataDir(),
-          getWorkspaces: () => workspaceSyncService.getSnapshot().state.workspaces,
-        }),
-    }),
     // `worktree.lease` and `worktree.release`: a worktree of the agent's own
     // from this core's pool, beside the chats that work in it.
     ...core.worktrees.tools,

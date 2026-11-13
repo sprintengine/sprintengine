@@ -174,18 +174,17 @@ A desktop's New chat offers "No project" on a machine advertising
 as there is no checkout to cut one from. An older machine refuses a call with no
 workspace, so a desktop leaves the row off and refuses the launch in words.
 
-`usage-report` (2026-10-21) names a gateway tool of its own: `usage.report`
-answers a window of this machine's token usage for a paired desktop's Usage
-dashboard, on `workspace:read`, and is listed only to paired devices. Its
-structured answer carries a `version` of its own (1), which moves only for a
-change an older reader would misread, beside rows of
-`[hour, agent, sessionIndex, model, input, output, cacheRead, cacheWrite,
-requests, reportedCostUsd, speed?]` and the hashed session ids they point
-into; a member added later is optional, and a reader skips a row it cannot
-read rather than the answer. A window too large for one answer ends on an
-hour and names `nextFrom`, where the next call starts, so no answer runs into
-the client's 4 MB. A desktop that does not see the capability asks nothing
-and says that machine's Studio needs updating; one that sees an answer of
+A paired machine's usage, for a desktop's Usage dashboard, is that machine's
+Studio's `usage.rows` (2026-11-12, `chat-stores`, `workspaces:read`) on its
+`/tailnet/v1/studio`; the `usage.report` gateway tool and the `usage-report`
+tailnet capability it replaced are gone. The answer carries a `version` of
+its own (1), which moves only for a change an older reader would misread,
+beside rows of `[hour, agent, sessionIndex, model, input, output, cacheRead,
+cacheWrite, requests, reportedCostUsd, speed?]` and the hashed session ids
+they point into; a member added later is optional, and a reader skips a row
+it cannot read rather than the answer. A window too large for one answer ends
+on an hour and names `nextFrom`, where the next call starts. A machine whose
+Studio does not serve it is one to update; one that sends an answer of
 another `version` counts nothing from it and says the same. The desktop
 asking prices the rows itself, so two machines on different price lists
 still agree.
@@ -960,23 +959,6 @@ desktop's window reads names which a machine takes as `manage`
 from before it ignores. All of it is additive: a client offers each item for a
 machine's chats only where it is advertised, and an older machine answers the
 tools "Unknown tool". The Studio RPC does not advertise them.
-A paired device's Scheduled section (2026-10-29) is `scheduled-agents`. The
-`schedule.*` gateway tools were already served on `workspace:read` and
-`workspace:operate`; the capability names `schedule.create` taking `name`,
-`once` (an ISO 8601 instant for a one-time schedule) and `worktreeName`. A
-client lists a machine's schedules and runs, pauses, resumes and closes them
-wherever `schedule.list` answers, and schedules a new one there only where
-the capability is advertised: the gateway refuses arguments a tool does not
-declare, so an older machine refuses the create rather than making a
-different schedule. It is additive, and the Studio RPC does not advertise it.
-A paired device's schedule editor (2026-11-02) is `scheduled-agents-edit`:
-`schedule.update` (`workspace:operate`) changes one of the machine's schedules
-in place, taking its `id` and any of `schedule.create`'s fields, plus
-`workspaceId` to move it to another project there; anything left out stays as
-it was, and `cron` without `once` makes a one-time schedule repeat. A client
-opens a machine's schedule in its own editor and saves it there only where the
-capability is advertised; an older machine answers "Unknown tool". It is
-additive, and the Studio RPC does not advertise it.
 Breaking frame changes require a new
 negotiated capability or the tailnet version-window process above, not merely
 a package version change. Presentation-only fixes use a package patch.
@@ -1203,13 +1185,27 @@ chat at once: `usageLimits.get` with `usageLimits.changed`,
 `usageLimitResumes.get`, `.update` (one chat's notice) and `.setAuto` (the
 setting) with `usageLimitResumes.changed`, `scheduledMessages.get`, `.update`
 and `.hold` (a composer's queued message, held once per command id) with
-`scheduledMessages.changed`, `usage.report`, and `conversationImport.scan` and
-`.import`. Each stream pushes its store whole and replays nothing: a client
+`scheduledMessages.changed`, `usage.report`, `usage.rows` (a machine's own
+rows for a paired desktop's dashboard, `workspaces:read`), and
+`conversationImport.scan` and `.import`. Each stream pushes its store whole and replays nothing: a client
 reads the state when it subscribes and again when its connection returns. The
 limits are `providers:read`; reading the held and scheduled messages and the
 resumes is `conversation:read`, changing them `conversation:operate`, and the
 resume setting `settings:write`. The usage report and the import are an
 owner's (they read the agents' own logs and session files on the machine).
+`schedules` (2026-11-12) is a Studio's scheduled agents, which every server
+runs in its own store: `schedules.list` and the `schedules.changed` stream
+(the list whole, nothing replayed) on `workspaces:read`, and
+`schedules.create`, `.update`, `.pause`, `.resume`, `.runNow` and `.delete` on
+`workspaces:operate`, a new scope that carries `workspaces:read` and that a
+paired device holds with its `workspace:operate` pairing. Each change carries
+a `commandId` and is answered from its receipt on a retry. A row is the
+schedule's record with `nextRunAt`, `waiting` (why the machine cannot run it
+now, in words) and `scheduleWords`; a create takes `once` as epoch ms. The
+phone and a paired desktop reach a machine's schedules only this way: the
+`scheduled-agents` and `scheduled-agents-edit` tailnet capabilities, and the
+devices' use of the `schedule.*` gateway tools, are gone (agents keep the
+tools, which follow the same rules).
 A CLI's API key is a provider's key under the CLI's manifest id, read and set
 with `providers.secretStatus`, `.setSecret` and `.clearSecret`. The desktop's
 windows reach all of these only this way: their window IPC is gone.

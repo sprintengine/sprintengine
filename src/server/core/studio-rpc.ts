@@ -23,6 +23,8 @@ import type { StudioGateway } from './studio-gateway'
 import type { StudioModules } from '../rpc/studio-modules'
 import { createStudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import { createStudioChatStores } from '../chat-stores/chat-stores-domain'
+import { createStudioSchedulesDomain } from '../schedules/schedules-domain'
+import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
 // applications follow, drive and start chats through. It serves the same
@@ -135,6 +137,15 @@ export function createStudioRpc(
       mesh: () => gateway.mesh(),
       hostName: () => hostname(),
       machineMarks: () => core.agentLaunchSettings.get().machineMarks,
+    }),
+    // The scheduled agents this server runs, every server its own: made and
+    // changed by the rules the gateway's `schedule.*` tools follow.
+    schedules: createStudioSchedulesDomain({
+      service: core.scheduledAgents.service,
+      findWorkspace: (workspaceId) =>
+        core.workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId) ??
+        null,
+      defaultCli: () => effectiveAgentLaunchSettings(core.agentLaunchSettings.get()).lastSelectedCli ?? null,
     }),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })

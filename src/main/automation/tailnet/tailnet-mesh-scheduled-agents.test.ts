@@ -1,83 +1,22 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'vitest'
 
+import type { StudioSchedule } from '../../../../packages/studio-protocol/src/public'
+import type { StudioSchedulesDomain } from '../../../server/schedules/schedules-domain'
+import type { TailnetScope } from '../../../shared/tailnet'
 import { createTailnetMeshService, scheduledAgentViewOf } from './tailnet-mesh-service'
 import { pairingUrl } from './tailnet-service'
-import { TAILNET_IDENTITY_PATH, TAILNET_MCP_PATH, TAILNET_PAIR_PATH } from './tailnet-routes'
+import { deviceRig } from './tailnet-studio.test-helper'
 
-// A paired machine's scheduled agents, driven from here: listed on its
-// `schedule.list`, run, paused, resumed and closed on the tool of each name,
-// and made there on `schedule.create` only where it says `scheduled-agents`.
+// A paired machine's scheduled agents, driven from here over its Studio's
+// `schedules.*`: listed, run, paused, resumed and closed, made there with
+// what this door would have scheduled here, and saved from this editor whole.
+// A machine whose Studio does not serve them is told to update.
 
-type ToolCall = { name: string; arguments: Record<string, unknown> }
-
-async function pairedMachine(
-  capabilities: string[] | undefined,
-  answer: (call: ToolCall) => Record<string, unknown>,
-  scopes: string[] = ['workspace:read', 'workspace:operate'],
-) {
-  const toolCalls: ToolCall[] = []
-  const device = {
-    deviceId: 'device-1',
-    deviceName: 'dev-macbook-air',
-    scopes,
-    transportVersion: 2,
-    ...(capabilities ? { capabilities } : {}),
-  }
-  const peer: Server = createServer((request, response) => {
-    const path = new URL(request.url ?? '/', 'http://peer.invalid').pathname
-    const json = (status: number, body: unknown) => {
-      response.writeHead(status, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify(body))
-    }
-    const chunks: Buffer[] = []
-    request.on('data', (chunk: Buffer) => chunks.push(chunk))
-    request.on('end', () => {
-      if (path === TAILNET_PAIR_PATH) return json(200, { ...device, deviceToken: 'device-token' })
-      if (path === TAILNET_IDENTITY_PATH) return json(200, device)
-      if (path === TAILNET_MCP_PATH) {
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          id: string
-          params: { name: string; arguments: Record<string, unknown> }
-        }
-        toolCalls.push({ name: body.params.name, arguments: body.params.arguments })
-        return json(200, { jsonrpc: '2.0', id: body.id, ...answer(body.params) })
-      }
-      return json(404, { error: { code: 'not_found', message: `No route for ${path}.` } })
-    })
-  })
-  await new Promise<void>((resolve) => peer.listen(0, '127.0.0.1', resolve))
-  const port = (peer.address() as { port: number }).port
-  const dir = mkdtempSync(join(tmpdir(), 'tailnet-mesh-scheduled-'))
-  const mesh = createTailnetMeshService({
-    resolveUserDataDir: () => dir,
-    resolveDeviceName: () => 'dev-macbook-air',
-    resolvePeerName: async () => null,
-  })
-  const paired = await mesh.pair({ pairingUrl: pairingUrl('127.0.0.1', port, 'pairing-token') })
-  assert.ok(paired.ok, paired.ok ? '' : paired.message)
-  await mesh.checkReachability(paired.connection.id)
-  return {
-    mesh,
-    connectionId: paired.connection.id,
-    toolCalls,
-    async close() {
-      mesh.shutdown()
-      await new Promise<void>((resolve) => peer.close(() => resolve()))
-      rmSync(dir, { recursive: true, force: true })
-    },
-  }
-}
-
-const success = (structured: Record<string, unknown>) => ({
-  result: { content: [{ type: 'text', text: '' }], structuredContent: structured },
-})
-
-const listed = {
+const listed: StudioSchedule = {
   id: 'sa-1',
   name: 'Morning triage',
   prompt: 'Triage new issues',
@@ -95,19 +34,70 @@ const listed = {
   updatedAt: 2_000,
   lastRun: { at: 3_000, ok: false, message: 'The CLI is not installed.' },
   lastFailureSeenAt: null,
-  scheduleWords: 'Every weekday at 9:00 AM',
-  paused: true,
-  pausedAt: '2026-10-05T08:00:00.000Z',
+  pausedAt: Date.parse('2026-10-05T08:00:00.000Z'),
   nextRunAt: null,
+  waiting: 'Codex is not signed in on build-box',
+  scheduleWords: 'Weekdays at 9:00 AM',
+}
+
+type Call = { method: string; params: unknown }
+
+/** What the machine's Studio is asked, and its answers: the list above, and that row for every change. */
+function fakeSchedules(calls: Call[]): StudioSchedulesDomain {
+  const one = async (method: string, params: unknown) => {
+    calls.push({ method, params })
+    return { ok: true as const, value: listed }
+  }
+  return {
+    list: () => {
+      calls.push({ method: 'list', params: {} })
+      return { schedules: [listed, { id: 'broken' } as unknown as StudioSchedule], pausedAll: null }
+    },
+    create: (draft) => one('create', draft),
+    update: (change) => one('update', change),
+    pause: (id) => one('pause', id),
+    resume: (id) => one('resume', id),
+    runNow: async (id) => {
+      calls.push({ method: 'runNow', params: id })
+      return { ok: true, value: { workspaceId: 'ws-run' } }
+    },
+    remove: async (id) => {
+      calls.push({ method: 'remove', params: id })
+      return { ok: true, value: { removed: id } }
+    },
+    onChanged: () => () => undefined,
+  }
+}
+
+async function pairedMachine(options: { serves?: boolean; scopes?: TailnetScope[] } = {}) {
+  const calls: Call[] = []
+  const peer = await deviceRig(options.serves === false ? {} : { schedules: fakeSchedules(calls) })
+  const offer = peer.devices.offerPairing({ scopes: options.scopes ?? ['workspace:read', 'workspace:operate'] })
+  const dir = mkdtempSync(join(tmpdir(), 'tailnet-mesh-scheduled-'))
+  const mesh = createTailnetMeshService({
+    resolveUserDataDir: () => dir,
+    resolveDeviceName: () => 'dev-macbook-air',
+    resolvePeerName: async () => null,
+  })
+  const paired = await mesh.pair({ pairingUrl: pairingUrl('127.0.0.1', peer.port(), offer.token) })
+  assert.ok(paired.ok, paired.ok ? '' : paired.message)
+  return {
+    mesh,
+    connectionId: paired.connection.id,
+    calls,
+    async close() {
+      mesh.shutdown()
+      await peer.dispose()
+      rmSync(dir, { recursive: true, force: true })
+    },
+  }
 }
 
 test('A paired machine’s schedules read back as this machine’s own list does', async () => {
-  const machine = await pairedMachine(['conversations', 'scheduled-agents'], () =>
-    success({ scheduledAgents: [listed, { id: 'broken' }], pausedAll: null }),
-  )
+  const machine = await pairedMachine()
   try {
     const answer = await machine.mesh.scheduledAgents({ connectionId: machine.connectionId })
-    assert.ok(answer.ok)
+    assert.ok(answer.ok, answer.ok ? '' : answer.message)
     assert.equal(answer.canCreate, true)
     assert.equal(answer.pausedAll, null)
     assert.equal(answer.agents.length, 1, 'a row it cannot read is left out')
@@ -115,26 +105,24 @@ test('A paired machine’s schedules read back as this machine’s own list does
     assert.equal(agent!.name, 'Morning triage')
     assert.equal(agent!.pausedAt, Date.parse('2026-10-05T08:00:00.000Z'))
     assert.equal(agent!.nextRunAt, null)
+    assert.equal(agent!.waiting, 'Codex is not signed in on build-box', 'why it waits, in that machine’s words')
     assert.equal(agent!.hostId, null, 'a machine there names nothing here')
     assert.deepEqual(agent!.lastRun, { at: 3_000, ok: false, message: 'The CLI is not installed.' })
-    assert.deepEqual(machine.toolCalls, [{ name: 'schedule.list', arguments: {} }])
   } finally {
     await machine.close()
   }
 })
 
-test('Run, pause, resume and close are the machine’s own schedule tools', async () => {
-  const machine = await pairedMachine(['conversations', 'scheduled-agents'], (call) =>
-    success(call.name === 'schedule.run' ? { workspaceId: 'ws-run' } : { scheduledAgent: listed }),
-  )
+test('Run, pause, resume and close are the machine’s own schedule methods', async () => {
+  const machine = await pairedMachine()
   try {
     for (const action of ['run', 'pause', 'resume', 'delete'] as const) {
       const answer = await machine.mesh.scheduledAgentAction({ connectionId: machine.connectionId, id: 'sa-1', action })
       assert.deepEqual(answer, { ok: true, id: 'sa-1', action })
     }
     assert.deepEqual(
-      machine.toolCalls.map((call) => call.name),
-      ['schedule.run', 'schedule.pause', 'schedule.resume', 'schedule.delete'],
+      machine.calls.map((call) => call.method),
+      ['runNow', 'pause', 'resume', 'remove'],
     )
     const unknown = await machine.mesh.scheduledAgentAction({
       connectionId: machine.connectionId,
@@ -148,12 +136,7 @@ test('Run, pause, resume and close are the machine’s own schedule tools', asyn
 })
 
 test('A schedule is made there with what this door would have scheduled here', async () => {
-  const machine = await pairedMachine(['conversations', 'scheduled-agents'], () => success({ scheduledAgent: listed }))
-  // An older machine lists its schedules, and is never asked to make one.
-  const older = await pairedMachine(['conversations'], (call) => {
-    assert.equal(call.name, 'schedule.list')
-    return success({ scheduledAgents: [listed], pausedAll: null })
-  })
+  const machine = await pairedMachine()
   try {
     const once = Date.parse('2026-11-02T15:30:00.000Z')
     const answer = await machine.mesh.createScheduledAgent({
@@ -170,17 +153,17 @@ test('A schedule is made there with what this door would have scheduled here', a
       skills: ['gh-triage'],
       mcpServers: [],
     })
-    assert.ok(answer.ok)
+    assert.ok(answer.ok, answer.ok ? '' : answer.message)
     assert.equal(answer.agent.id, 'sa-1')
-    assert.deepEqual(machine.toolCalls, [
+    assert.deepEqual(machine.calls, [
       {
-        name: 'schedule.create',
-        arguments: {
+        method: 'create',
+        params: {
           workspaceId: 'ws-seat',
           prompt: 'Check the deploy',
           cron: '30 15 2 11 *',
           timezone: 'UTC',
-          once: '2026-11-02T15:30:00.000Z',
+          once,
           cli: 'claude-code',
           permissionPreset: 'auto',
           worktree: true,
@@ -188,41 +171,14 @@ test('A schedule is made there with what this door would have scheduled here', a
         },
       },
     ])
-    const refused = await older.mesh.createScheduledAgent({
-      connectionId: older.connectionId,
-      workspaceId: 'ws-seat',
-      prompt: 'x',
-      cron: '0 9 * * *',
-      timezone: 'UTC',
-      cli: 'claude-code',
-    })
-    assert.equal(!refused.ok && refused.code, 'scheduled_agents_unsupported')
-    const listedThere = await older.mesh.scheduledAgents({ connectionId: older.connectionId })
-    assert.ok(listedThere.ok)
-    assert.equal(listedThere.canCreate, false)
-    assert.equal(listedThere.agents.length, 1)
   } finally {
     await machine.close()
-    await older.close()
   }
 })
 
-test('A schedule there is saved from this editor on its `schedule.update`, whole', async () => {
-  const machine = await pairedMachine(['conversations', 'scheduled-agents', 'scheduled-agents-edit'], () =>
-    success({ scheduledAgent: { ...listed, prompt: 'Triage new issues, then label them' } }),
-  )
-  // A machine from before the editor reached it lists, runs and pauses its
-  // schedules, and is never asked to change one.
-  const older = await pairedMachine(['conversations', 'scheduled-agents'], (call) => {
-    assert.equal(call.name, 'schedule.list')
-    return success({ scheduledAgents: [listed], pausedAll: null })
-  })
+test('A schedule there is saved from this editor on its `schedules.update`, whole', async () => {
+  const machine = await pairedMachine()
   try {
-    const listedHere = await machine.mesh.scheduledAgents({ connectionId: machine.connectionId })
-    assert.ok(listedHere.ok)
-    assert.equal(listedHere.canEdit, true)
-    machine.toolCalls.length = 0
-
     const answer = await machine.mesh.updateScheduledAgent({
       connectionId: machine.connectionId,
       id: 'sa-1',
@@ -236,12 +192,11 @@ test('A schedule there is saved from this editor on its `schedule.update`, whole
       skills: [],
       mcpServers: [],
     })
-    assert.ok(answer.ok)
-    assert.equal(answer.agent.prompt, 'Triage new issues, then label them')
-    assert.deepEqual(machine.toolCalls, [
+    assert.ok(answer.ok, answer.ok ? '' : answer.message)
+    assert.deepEqual(machine.calls, [
       {
-        name: 'schedule.update',
-        arguments: {
+        method: 'update',
+        params: {
           id: 'sa-1',
           prompt: 'Triage new issues, then label them',
           cron: '0 9 * * 1-5',
@@ -256,51 +211,37 @@ test('A schedule there is saved from this editor on its `schedule.update`, whole
         },
       },
     ])
+  } finally {
+    await machine.close()
+  }
+})
 
-    // Another project there, by one of its chats.
-    machine.toolCalls.length = 0
-    await machine.mesh.updateScheduledAgent({
-      connectionId: machine.connectionId,
-      id: 'sa-1',
-      workspaceId: 'ws-other',
-      prompt: 'Triage',
-      cron: '0 9 * * 1-5',
-      timezone: 'UTC',
-      once: Date.parse('2026-11-03T09:00:00.000Z'),
-      cli: 'claude-code',
-      model: 'opus',
-      worktreeName: 'triage',
-      skills: ['gh-triage'],
-    })
-    assert.deepEqual(machine.toolCalls[0]?.arguments, {
-      id: 'sa-1',
-      workspaceId: 'ws-other',
-      prompt: 'Triage',
-      cron: '0 9 * * 1-5',
-      timezone: 'UTC',
-      once: '2026-11-03T09:00:00.000Z',
-      cli: 'claude-code',
-      model: 'opus',
-      worktreeName: 'triage',
-      skills: ['gh-triage'],
-      mcpServers: [],
-    })
-
+test('A machine whose Studio does not serve schedules is told to update, and a read-only pairing changes none', async () => {
+  const older = await pairedMachine({ serves: false })
+  const reader = await pairedMachine({ scopes: ['workspace:read'] })
+  try {
     const listedThere = await older.mesh.scheduledAgents({ connectionId: older.connectionId })
-    assert.ok(listedThere.ok)
-    assert.equal(listedThere.canEdit, false)
-    const refused = await older.mesh.updateScheduledAgent({
+    assert.equal(!listedThere.ok && listedThere.code, 'scheduled_agents_unsupported')
+    const refused = await older.mesh.createScheduledAgent({
       connectionId: older.connectionId,
-      id: 'sa-1',
+      workspaceId: 'ws-seat',
       prompt: 'x',
       cron: '0 9 * * *',
       timezone: 'UTC',
       cli: 'claude-code',
     })
-    assert.equal(!refused.ok && refused.code, 'scheduled_agents_edit_unsupported')
+    assert.equal(!refused.ok && refused.code, 'scheduled_agents_unsupported')
+
+    assert.ok((await reader.mesh.scheduledAgents({ connectionId: reader.connectionId })).ok)
+    const run = await reader.mesh.scheduledAgentAction({ connectionId: reader.connectionId, id: 'sa-1', action: 'run' })
+    assert.equal(!run.ok && run.code, 'scope_required')
+    assert.deepEqual(
+      reader.calls.map((call) => call.method),
+      ['list'],
+    )
   } finally {
-    await machine.close()
     await older.close()
+    await reader.close()
   }
 })
 

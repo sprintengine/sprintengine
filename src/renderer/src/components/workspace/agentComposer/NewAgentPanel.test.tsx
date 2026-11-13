@@ -1617,7 +1617,7 @@ test('NewAgentPanel', async () => {
           unreachableReason: null,
           unauthorized: false,
           scopes: [],
-          capabilities: ['conversations', 'scheduled-agents', 'scheduled-agents-edit'],
+          capabilities: ['conversations'],
           workspaces: [workspace('w1', 'alpha'), workspace('w2', 'beta')],
           gaps: [],
         })

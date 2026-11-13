@@ -123,7 +123,8 @@ export function studioPrincipal(input: { owner: boolean; permissions: Iterable<S
 /**
  * What each Studio scope a grant holds carries. `conversation:operate` carries
  * `conversation:read`, as it always has: a client that drives a chat can see
- * what it is driving; `modules:operate` carries `module:read` the same way.
+ * what it is driving; `modules:operate` carries `module:read` and
+ * `workspaces:operate` carries `workspace:read` the same way.
  * Every other scope carries the one permission it names.
  */
 export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly StudioPermission[] } = {
@@ -139,6 +140,7 @@ export const STUDIO_SCOPE_PERMISSIONS: { readonly [S in StudioScope]: readonly S
   'settings:write': ['settings:write'],
   'modules:read': ['module:read'],
   'modules:operate': ['module:read', 'module:operate'],
+  'workspaces:operate': ['workspace:read', 'workspace:operate'],
 }
 
 /** The permission each Studio scope is the grant name for. */
@@ -155,6 +157,7 @@ const STUDIO_SCOPE_NAMES: { readonly [S in StudioScope]: StudioPermission } = {
   'settings:write': 'settings:write',
   'modules:read': 'module:read',
   'modules:operate': 'module:operate',
+  'workspaces:operate': 'workspace:operate',
 }
 
 /**

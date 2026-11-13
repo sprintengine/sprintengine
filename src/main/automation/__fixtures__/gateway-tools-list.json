@@ -961,10 +961,6 @@
       "sha256": "20562a3eed934ba0ab6e00318653579bad222cb6d0f556abfb22da4754145959"
     },
     {
-      "name": "usage.report",
-      "sha256": "d305a31b01c9e1ab4b1bc0090bff07ffb11e033b8410bd7a017e8cc6c1a015a4"
-    },
-    {
       "name": "workspace.checkout",
       "sha256": "0afb536c6142df85c46b0e126675982fd5df43b7a286db59085bc20688572006"
     },
@@ -1011,10 +1007,6 @@
     {
       "name": "marketplace.list",
       "sha256": "92cb04063b0099c17b578cb4b8ee61c93959d08bd124778d91b78386b501cf8c"
-    },
-    {
-      "name": "schedule.list",
-      "sha256": "0878d048bf14aa87f6104246c0a755806478b15bb979a76980f9be39e0575797"
     },
     {
       "name": "artifacts.list",
