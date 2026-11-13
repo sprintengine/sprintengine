@@ -14,11 +14,13 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { isMachinePath } from '../../../shared/machine-paths'
 import { followWindowStudioPush } from './windowStudioPush'
-import { watchWindowStudio, windowStudioClient, windowStudioState } from './windowStudioClient'
+import { askStudioOfPaths } from './paneStudio'
+import { watchWindowStudio, windowStudioState } from './windowStudioClient'
 
 // The window's way to the files on its Studio's machine: the Studio protocol's
 // `files.*` methods by path and the `files.watchPath` stream, over the
-// window's own connection, as every other client reaches them. The Files
+// window's own connection, as every other client reaches them. A path on an
+// SSH machine is asked of that machine's own Studio (`paneStudio.ts`). The Files
 // pane, the editor, the diff view, the previews, the palette, the aux windows
 // and a new project's checks call these. The members keep the names the
 // window has always called them by, so a caller changes only where it
@@ -76,14 +78,13 @@ function randomId(): string {
   return crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-async function call<M extends StudioMethod>(
+/** Ask the Studio on the machine the path is on: the window's own, or an SSH machine's (`paneStudio.ts`). */
+function call<M extends StudioMethod>(
   method: M,
   params: StudioMethodParams<M>,
   capability: StudioCapability = STUDIO_FILE_SYSTEM_CAPABILITY,
 ): Promise<StudioMethodResult<M>> {
-  const client = await windowStudioClient()
-  if (!client.supports(capability)) throw new Error(UNSERVED)
-  return client.request(method, params)
+  return askStudioOfPaths(method, params, capability, UNSERVED)
 }
 
 const mention = STUDIO_FILES_CAPABILITY

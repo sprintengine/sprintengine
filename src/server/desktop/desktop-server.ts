@@ -71,9 +71,8 @@ import {
 import { createServerModules } from './server-modules'
 import { serveAgentWorktrees } from './agent-worktree-rpc'
 import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
-import { relayShellToolsets, SSH_RELAYED_TOOLSETS } from '../wsl/wsl-tool-relay'
+import { relayShellToolsets, sshRelayTarget } from '../wsl/wsl-tool-relay'
 import { portDuplex } from '../ipc/port-duplex'
-import { createShellSshServers } from './shell-ssh-servers'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
 
@@ -165,15 +164,15 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // SSH machines (phase 8), when the preview is on: main holds their sessions
   // and hands this process a port per relay stream it needs.
   const sshPorts = new Map<string, TunnelPort>()
-  const shellSsh = envelope.flags.sshMachines
-    ? createShellSshServers({
+  const shellEnvironments = envelope.flags.sshMachines
+    ? createShellEnvironmentClients({
         // Main may connect, install and start the machine's server first:
         // as long as a first install takes, not the control channel's default.
-        open: (key, purpose) =>
+        open: (route) =>
           rpc
             .call<{ clientId: string; label: string }>(
               SHELL_METHODS.sshOpen,
-              { key, purpose },
+              { key: route, purpose: 'studio' },
               { timeoutMs: SSH_OPEN_TIMEOUT_MS },
             )
             .catch((error: unknown) => {
@@ -191,31 +190,10 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         },
       })
     : null
-  const shellEnvironments = envelope.flags.sshMachines
-    ? createShellEnvironmentClients({
-        open: (route) =>
-          rpc.call<{ clientId: string; label: string }>(
-            SHELL_METHODS.sshOpen,
-            { key: route, purpose: 'studio' },
-            { timeoutMs: SSH_OPEN_TIMEOUT_MS },
-          ),
-        takePort: (clientId) => {
-          const port = sshPorts.get(clientId) ?? null
-          sshPorts.delete(clientId)
-          return port
-        },
-        log: (message) => {
-          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
-        },
-      })
-    : null
-  if (shellSsh)
+  if (shellEnvironments)
     rpc.on(SERVER_EVENTS.sshConnected, (payload) => {
       const key = (payload as { key?: unknown } | null)?.key
-      if (typeof key === 'string' && /^ssh:[A-Za-z0-9_-]+$/u.test(key)) {
-        shellSsh.machineConnected(key)
-        shellEnvironments?.machineConnected(key)
-      }
+      if (typeof key === 'string' && /^ssh:[A-Za-z0-9_-]+$/u.test(key)) shellEnvironments.machineConnected(key)
     })
 
   // The terminal agents' pull request marks (below), bound once the Studio
@@ -255,7 +233,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ...shellArtifactsOverControl(rpc, () => workspaceWindowVisible),
         resolveGitHubToken: () => githubTokenStore.resolveToken(),
       },
-      ...(shellSsh ? { sshServers: { servers: shellSsh.servers } } : {}),
       // A chat an SSH machine holds is acted on there, on this process's own
       // client of that machine's Studio, over a stream main opens on its door.
       ...(shellEnvironments ? { environmentClients: shellEnvironments } : {}),
@@ -437,7 +414,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // A paired device reaches the SSH machines main holds through this
   // process's tailnet listener: main mints each device's ticket on the
   // machine and opens each socket's stream, handed here as a port.
-  if (shellSsh)
+  if (shellEnvironments)
     gateway.linkEnvironments({
       ticket: (environmentId, device) =>
         rpc.call<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>(
@@ -477,20 +454,28 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'WSL server', message })
       },
     })
-  // An SSH machine's agents get the desktop's browser and canvas (phase 8).
-  if (shellSsh)
+  // An SSH machine's agents get the desktop's browser and canvas (phase 8),
+  // offered while this process's owner connection to that machine's server
+  // lasts, each time main says it connected.
+  if (shellEnvironments)
     relayShellToolsets({
       onConnected: (listener) =>
-        shellSsh.onConnected((connection) =>
-          listener({
-            key: connection.key,
-            name: connection.label,
-            backend: connection.backend,
-            open: (purpose: 'studio') => connection.open(purpose),
-            toolsets: SSH_RELAYED_TOOLSETS,
-            args: (_toolset, args) => args,
-          }),
-        ),
+        void shellEnvironments.onConnected((route) => {
+          shellEnvironments.owner(route).then(
+            ({ client, label }) =>
+              listener(
+                sshRelayTarget({ route, name: label, owner: client, open: () => shellEnvironments.openStudio(route) }),
+              ),
+            (error: unknown) => {
+              void writeDiagnosticLog({
+                level: 'info',
+                source: 'workspace',
+                title: 'SSH machine',
+                message: `The desktop's tools could not be offered to ${route}: ${error instanceof Error ? error.message : String(error)}`,
+              })
+            },
+          )
+        }),
       registry: gateway.clientTools,
       log: (message) => {
         void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
@@ -659,7 +644,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         // nobody takes (its call gave up, or no SSH machines this session) is
         // closed, so the machine's stream does not stay open behind it.
         const sshPort = port as TunnelPort
-        if (!shellSsh) {
+        if (!shellEnvironments) {
           sshPort.close()
           return
         }

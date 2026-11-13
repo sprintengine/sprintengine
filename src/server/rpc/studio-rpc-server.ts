@@ -65,7 +65,6 @@ import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioAccessDomain } from './studio-access'
 import type { StudioWebDevicesDomain } from './studio-web-devices'
 import type { StudioTailnetDomain } from './studio-tailnet'
-import type { StudioMachineCall } from './studio-file-system'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import type { StudioGit } from '../git/studio-git-types'
@@ -184,8 +183,6 @@ export type StudioRpcServerOptions = {
   files?: StudioFiles
   /** The files on this machine by path. Advertised as `file-system` and `files-mention` only when given; every Studio's core gives them. */
   fileSystem?: StudioFileSystem
-  /** An SSH machine's server, for an owner's `ssh://` path. */
-  machine?: StudioMachineCall
   /** Git on this machine. Advertised as `git` only when given; every Studio's core gives it. */
   git?: StudioGit
   /** The worktrees its agents run in, and settled chats. Advertised as `worktrees` only when given; every Studio's core gives it. */
@@ -350,7 +347,6 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.tools ? { tools: options.tools } : {}),
     ...(options.files ? { files: options.files } : {}),
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
-    ...(options.machine ? { machine: options.machine } : {}),
     ...(options.git ? { git: options.git } : {}),
     ...(options.worktrees ? { worktrees: options.worktrees } : {}),
     ...(options.workspaceSync ? { workspaceSync: options.workspaceSync } : {}),

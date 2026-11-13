@@ -30,7 +30,6 @@ import {
 } from './studio-rpc.test-helper'
 import { studioWindowGrant } from './studio-frame-port'
 import { createStudioRpcRouter } from './studio-rpc-router'
-import type { StudioMachineCall } from './studio-file-system'
 
 // The files on this machine by path (`file-system`, and the search, stat,
 // picture and repository-root reads `chat.ts` declares) over the owner
@@ -59,9 +58,7 @@ function disk() {
   return { base, workspace, store, outside }
 }
 
-async function serve(
-  options: { trash?: (path: string) => Promise<void>; machine?: StudioMachineCall; files?: boolean } = {},
-) {
+async function serve(options: { trash?: (path: string) => Promise<void>; files?: boolean } = {}) {
   const at = disk()
   const trashed: string[] = []
   const started = await startTestServer({
@@ -79,7 +76,6 @@ async function serve(
               }),
           }),
         }),
-    ...(options.machine ? { machine: options.machine } : {}),
   })
   cleanups.push(() => started.dispose())
   return { started, trashed, ...at }
@@ -318,48 +314,28 @@ test('an owner hears what changes in a folder it watches', async () => {
   assert.equal(failed.t === 'subFailed', true)
 })
 
-test('an owner’s path on an SSH machine goes to that machine’s server, plain, and comes back spelled', async () => {
-  const asked: Array<[string, string, unknown[]]> = []
-  const machine: StudioMachineCall = async (id, channel, args) => {
-    asked.push([id, channel, args])
-    if (channel === 'fs:readdir') return [{ name: 'src', isDir: true }]
-    if (channel === 'fs:search-files')
-      return {
-        ok: true,
-        results: [{ name: 'a', path: '/home/dev/app/a', parentPath: '/home/dev/app', isDir: false }],
-        truncated: false,
-        engine: 'walker',
-        elapsedMs: 1,
-        resultCount: 1,
-      }
-    if (channel === 'fs:readfile') return 'remote text'
-    return null
-  }
-  const { started } = await serve({ machine })
+test('an owner’s path on an SSH machine is refused in words, never read on this disk', async () => {
+  const { started, workspace } = await serve()
   const owner = await client(started.path, OWNER_TOKEN)
-  const app = 'ssh://build-box/home/dev/app'
-  assert.deepEqual(resultOf(await owner.request('files.listDirectory', { path: app })), {
-    entries: [{ name: 'src', isDir: true }],
-  })
-  assert.deepEqual(resultOf(await owner.request('files.readText', { path: `${app}/a` })), { text: 'remote text' })
-  const found = resultOf<{ results: Array<{ path: string }> }>(
-    await owner.request('files.search', { rootPath: app, query: 'a' }),
-  )
-  assert.equal(found.results[0]!.path, `${app}/a`)
-  assert.deepEqual(
-    asked.map(([id, channel, args]) => [id, channel, args[0]]),
-    [
-      ['build-box', 'fs:readdir', '/home/dev/app'],
-      ['build-box', 'fs:readfile', '/home/dev/app/a'],
-      ['build-box', 'fs:search-files', { rootPath: '/home/dev/app', query: 'a' }],
-    ],
-  )
-  // What that machine's server does not answer is refused in words, never tried here.
-  assert.equal(
-    codeOf(await owner.request('files.createFile', { commandId: cid(), parentPath: app, name: 'x' })),
-    'unavailable',
-  )
-  assert.equal(codeOf(await owner.request('files.searchContent', { rootPath: app, query: 'x' })), 'unavailable')
+  // That machine's own Studio answers for it: the window asks it there. The
+  // same plain path here (this workspace) is never what answers.
+  const app = `ssh://build-box${workspace}`
+  for (const [method, params] of [
+    ['files.listDirectory', { path: app }],
+    ['files.readText', { path: `${app}/a.txt` }],
+    ['files.stat', { path: app }],
+    ['files.search', { rootPath: app, query: 'a' }],
+    ['files.repoRoot', { folderPath: app }],
+    ['files.createFile', { commandId: cid(), parentPath: app, name: 'x' }],
+  ] as const) {
+    const frame = await owner.request(method, params)
+    assert.deepEqual([method, codeOf(frame)], [method, 'unavailable'])
+    assert.match(frame.t === 'res' && !frame.ok ? (frame.error?.message ?? '') : '', /SSH machine/)
+  }
+  assert.deepEqual(resultOf(await owner.request('files.exists', { path: app })), { exists: false })
+  const watched = await owner.subscribe('files.watchPath', { path: app })
+  const failed = await owner.line.next((frame) => frame.t === 'subFailed' && frame.sub === watched)
+  assert.equal(failed.t === 'subFailed' && failed.code, 'unavailable')
 })
 
 test('a paired app’s ~/ path is the file in the home folder, held to the same folders', async () => {

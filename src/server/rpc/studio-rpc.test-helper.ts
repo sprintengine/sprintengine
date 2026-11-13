@@ -36,7 +36,6 @@ import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
-import type { StudioMachineCall } from './studio-file-system'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import type { StudioExtensions } from '../extensions/extensions-domain'
@@ -382,7 +381,6 @@ export async function startTestServer(
     tools?: ClientToolRegistry
     files?: StudioFiles
     fileSystem?: StudioFileSystem
-    machine?: StudioMachineCall
     git?: StudioGit
     worktrees?: StudioWorktrees
     workspaceSync?: StudioWorkspaceSync
@@ -441,7 +439,6 @@ export async function startTestServer(
     ...(input.tools ? { tools: input.tools } : {}),
     ...(input.files ? { files: input.files } : {}),
     ...(input.fileSystem ? { fileSystem: input.fileSystem } : {}),
-    ...(input.machine ? { machine: input.machine } : {}),
     ...(input.git ? { git: input.git } : {}),
     ...(input.worktrees ? { worktrees: input.worktrees } : {}),
     ...(input.workspaceSync ? { workspaceSync: input.workspaceSync } : {}),

@@ -7,7 +7,6 @@ import {
   type StudioWorktreesMethodMap,
 } from '../../../packages/studio-protocol/src/public'
 import { isMachinePath } from '../../shared/machine-paths'
-import { notOnMachineYet } from '../../shared/machine-channels'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 
 // The router's answers to `worktrees.*` and `settledChats.*`. The method
@@ -69,7 +68,8 @@ export function createStudioWorktreesHandlers(options: StudioWorktreesHandlerOpt
     if (!worktrees) return refuse('unavailable', `This Studio does not serve ${method}.`)
     const { commandId: _commandId, ...asked } = raw
     let params: Record<string, unknown> = asked
-    if (STEPS.has(method) && namesMachine(params)) return refuse('unavailable', notOnMachineYet(method))
+    if (STEPS.has(method) && namesMachine(params))
+      return refuse('unavailable', `Not available for SSH machines yet (Studio's ${method}).`)
     if (method === 'worktrees.inventory')
       params = { ...params, repoRoots: (params.repoRoots as string[]).filter((root) => !isMachinePath(root)) }
     const run = worktrees.run[method] as (

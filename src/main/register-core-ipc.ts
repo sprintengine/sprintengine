@@ -1,4 +1,3 @@
-import { machineAwareIpc } from './environments/ssh/machine-ipc'
 import { app, BrowserWindow, nativeImage, shell, webContents } from 'electron'
 import type { IpcMain } from 'electron'
 import { registerAppearanceIpc } from './ipc/appearance-ipc'
@@ -75,14 +74,6 @@ export function registerCoreIpc(
   diagnosticsEnabled: boolean,
   options: CoreIpcOptions = {},
 ): CoreIpcHandles {
-  // The file, git, terminal and folder channels never touch this computer for
-  // a workspace on an SSH machine: its paths are spelled `ssh://…`, and these
-  // registrations send them to that machine's server or refuse them in words
-  // (phase 8).
-  const machineIpc = machineAwareIpc(
-    ipcMain,
-    services.ssh ? { call: (id, channel, args) => services.ssh!.environments.machineCall(id, channel, args) } : null,
-  )
   registerWindowIpc(ipcMain, {
     createWorkspaceWindow: ({ windowId, bounds, isMaximized }) => {
       createMainWindow({ diagnosticsEnabled, windowId, bounds, isMaximized })
@@ -151,7 +142,7 @@ export function registerCoreIpc(
   // Revealing a file and opening one in another app stay this computer's
   // (shell channels); reading and changing files is the Studio protocol's.
   const filesystemReadHandlers = createFilesystemReadHandlers({ opener: shell })
-  registerFilesystemShellIpc(machineIpc, filesystemReadHandlers)
+  registerFilesystemShellIpc(ipcMain, filesystemReadHandlers)
   // The file-manager target of the open-in-editor control is the same reveal the
   // rest of the app already uses, so it is handed the very same handler.
   // On plain `ipcMain`: a folder on an SSH machine is opened by an editor here
@@ -248,7 +239,7 @@ export function registerCoreIpc(
   // Same reason: a terminal agent's pull request marks follow its session, so
   // the hover's refresh registers beside the runtime that owns the session.
   // The lists themselves are the Studio server's, read over the protocol.
-  registerPullRequestIpc(machineIpc, {
+  registerPullRequestIpc(ipcMain, {
     refreshPullRequestsForSession: (sessionId) => services.refreshPullRequestsForSession(sessionId),
   })
   return { conversationCommands }

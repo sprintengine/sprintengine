@@ -1340,29 +1340,27 @@ Files and git for a workspace on an SSH machine (the owner's ruling: the
 server holds raw access to its machine, clients build the views). Such a
 workspace keeps its folder spelled `ssh://<saved id>/home/dev/repo`
 (`shared/machine-paths.ts`), so nothing on this computer can mistake it for
-one of its own folders. The desktop's file, git, terminal and folder IPC
-registrations go through `machineAwareIpc` (`src/main/environments/ssh/
-machine-ipc.ts`): an invoke that names a machine path is never handed to this
-computer's file system or git. The machine channels
-(`shared/machine-channels.ts`: reading directories and files, image data,
-stat, the folder check, @-mention search; git's repository root, status,
-ignore checks, file bases and revisions, hunks, change summaries, branch
-steps, branches, history and identity; staging, unstaging and committing) go
-to that machine's server on the backend wire (`backend.machine`, wire version
-2), which answers with the same modules the desktop answers its own folders
-with (`src/server/machine/machine-channels.ts`), and the paths in the answer
-are spelled again (fields named for paths, and path-keyed maps; never file
-contents). A watch is answered that there is none; every other channel is
-refused with "Not available for SSH machines yet (<channel>)". So the
-explorer, the editor's and previews' reads, @-mentions, git status and diffs
-in the Git pane, and staging and committing work, read and run on the
-machine. A chat's paths are respelled at the edge of this computer's client
-of the machine (`src/shared/machine-studio-client.ts`): `ssh://<id>/abs`
-there and back. This process's own runtime refuses a
-chat whose folder is spelled for a machine, in words, and local root scans
-drop such folders, so turning the preview off never makes this computer
-read or write a folder named after one (`machine-files.test.ts` against the
-real relay, with a decoy local folder of the same plain path).
+one of its own folders. Since design-wsl-ssh-direct PR 2 the window's Files
+and Git panes, the editor, the diff view, the previews and @-mentions ask the
+machine's own Studio for them, with the same `files.*` and `git.*` methods
+every Studio serves for its own disk, on the window's client of that machine
+(`src/renderer/src/studio/paneStudio.ts` over `environmentStudio.ts`, the
+client the chat view uses) and with the window's own grant there. The paths
+are respelled at that edge (`machinePanePathsIn` / `machinePanePathsOut` in
+`src/shared/machine-path-edge.ts`): plain going there, `ssh://<id>/abs`
+coming back in the members that name a file or folder and in path-keyed maps,
+never in file contents or a person's text (a file saved, a commit message, a
+search). One ask naming two machines, or a machine and this computer, is
+refused in words. A machine's folders and checkouts are not watched: the
+views refresh by asking again. This desktop's own Studio refuses a path
+spelled for a machine in words ("That path is on an SSH machine: its own
+Studio answers for it."), as do the shell's reveal and open channels, and
+this process's own runtime refuses a chat whose folder is spelled for a
+machine, so turning the preview off never makes this computer read or write
+a folder named after one (`machine-files.test.ts` against the real relay and
+window route). A chat's paths are respelled at the edge of this computer's
+client of the machine (`src/shared/machine-studio-client.ts`): `ssh://<id>/abs`
+there and back.
 
 Signing a chat's CLI in on an SSH machine, with no terminal (decision R34,
 `src/server/machine/machine-sign-in.ts`): the chat's Sign in runs the CLI's
@@ -1384,11 +1382,11 @@ desktop's server asks main for each relay stream it needs
 (`shell.ssh.open { key, purpose }`); main opens it on the machine's session
 and hands the server a message port spliced onto it (an `ssh-stream`
 attach), over which the server opens its owner client of the machine's
-Studio (`src/server/desktop/shell-environment-clients.ts`) and, until
-design-wsl-ssh-direct PR 2, the backend wire the Files and Git panes' machine
-channels and the relayed browser and canvas toolsets use
-(`src/server/desktop/shell-ssh-servers.ts`). Main tells the server when a
-machine connects or reconnects (`ssh.connected`).
+Studio (`src/server/desktop/shell-environment-clients.ts`). The desktop's
+browser and canvas toolsets are offered to the machine's agents on a `studio`
+stream of their own while that owner connection lasts (`sshRelayTarget` in
+`src/server/wsl/wsl-tool-relay.ts`; in process, on main's owner connection).
+Main tells the server when a machine connects or reconnects (`ssh.connected`).
 
 **The machine's own chats** (design-wsl-ssh-direct PR 1d). The machine's
 Studio owns its chats' records and runs their background work. The desktop
@@ -1455,10 +1453,10 @@ Not built yet:
   with the preview on in both server modes (`smoke-server-mode.mjs`), but was
   not driven through them.
 - **Files**: no watch on a machine's folder (the views refresh when asked
-  again), no file writes from the editor, and from the Git pane only staging
-  and committing: push, pull, branches, stashes, worktrees, changelists,
-  conflict resolution and patches answer "Not available for SSH machines
-  yet". Terminals and agent launches in a terminal answer the same.
+  again). Since design-wsl-ssh-direct PR 2 the Files and Git panes ask the
+  machine's own Studio with the full `files.*` and `git.*` methods; worktrees,
+  agent skills and agent setup on a machine still answer "Not available for
+  SSH machines yet", and terminals are not reached from another computer.
 - `auth.sessions.list` for SSH sessions, `server.logs.tail` in Diagnostics
   (they show the bootstrap's steps, the probe and ssh's words), `ssh -W` as a
   diagnostic, the Windows job

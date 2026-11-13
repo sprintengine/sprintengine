@@ -62,7 +62,7 @@ import { createStudioAgentSetupHandlers } from './studio-agent-setup'
 import type { ModuleHostServices } from '../../main/module-host/main-host'
 import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 import type { StudioFileSystem, StudioFileSystemWatch } from '../files/studio-file-system'
-import { createStudioFileSystemHandlers, type StudioMachineCall } from './studio-file-system'
+import { createStudioFileSystemHandlers } from './studio-file-system'
 import type { StudioGit } from '../git/studio-git-types'
 import { createStudioGitHandlers } from './studio-git'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
@@ -202,8 +202,6 @@ export type StudioRpcRouterOptions = {
   files?: StudioFiles
   /** The files on this machine by path; without it, `files.*` by path is answered `unavailable`. */
   fileSystem?: StudioFileSystem
-  /** An SSH machine's server, for an owner's `ssh://` path, until those machines' panes reach their own servers. */
-  machine?: StudioMachineCall
   /** Git on this machine; without it, `git.*`, `github.*` and `versionControl.*` are answered `unavailable`. */
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats; without it, `worktrees.*` and `settledChats.*` are answered `unavailable`. */
@@ -941,14 +939,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // for them is who may name which path (`studio-file-system.ts`).
   const fileSystem = createStudioFileSystemHandlers({
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
-    ...(options.machine ? { machine: options.machine } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
   const gitRouting = createStudioGitHandlers({
     ...(options.git ? { git: options.git } : {}),
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
-    ...(options.machine ? { machine: options.machine } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })

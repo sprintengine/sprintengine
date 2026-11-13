@@ -28,7 +28,7 @@ import { isMachinePath } from '../shared/machine-paths'
 import { workspaceProjectRootOf } from '../shared/worktree-paths'
 import type { WorkspaceEnvironmentRef } from '../renderer/src/types/workspace'
 import { sessionSshPreview } from './environments/ssh/ssh-preview'
-import { relayShellToolsets, SSH_RELAYED_TOOLSETS } from '../server/wsl/wsl-tool-relay'
+import { relayShellToolsets, sshRelayTarget } from '../server/wsl/wsl-tool-relay'
 import { cliTakesLaunchPlugins } from './agent-launch-render'
 import { resolveSocketPath as resolveAutomationSocketPath } from './automation/automation-service'
 import { invalidateCliAvailabilityOnHost } from './cli-availability'
@@ -934,20 +934,17 @@ export function createAppServices(
         // A chat an SSH machine holds is acted on there, on main's own
         // client of that machine's Studio.
         ...(ssh ? { environmentClients: createEnvironmentClients({ ssh: ssh.environments }) } : {}),
+        // The host and port every device keys an SSH machine's mark by, as
+        // Settings › Machines does (`sshMachineRef`): what its SSH config
+        // resolves to, else what was typed.
         ...(ssh
           ? {
-              sshServers: {
-                servers: ssh.environments.routed,
-                // The host and port every device keys the machine's mark by,
-                // as Settings › Machines does (`sshMachineRef`): what its SSH
-                // config resolves to, else what was typed.
-                machineOf: (savedId: string) => {
-                  const machine = ssh.environments.list().find((entry) => entry.id === savedId)
-                  if (!machine) return null
-                  return machine.resolved
-                    ? { host: machine.resolved.hostname, port: machine.resolved.port }
-                    : { host: machine.destination }
-                },
+              sshMachineOf: (savedId: string) => {
+                const machine = ssh.environments.list().find((entry) => entry.id === savedId)
+                if (!machine) return null
+                return machine.resolved
+                  ? { host: machine.resolved.hostname, port: machine.resolved.port }
+                  : { host: machine.destination }
               },
             }
           : {}),
@@ -1679,14 +1676,14 @@ export function createAppServices(
     relayShellToolsets({
       onConnected: (listener) =>
         ssh.environments.onConnected((connection) =>
-          listener({
-            key: connection.key,
-            name: connection.label,
-            backend: connection.backend,
-            open: (purpose: 'studio') => connection.open(purpose),
-            toolsets: SSH_RELAYED_TOOLSETS,
-            args: (_toolset, args) => args,
-          }),
+          listener(
+            sshRelayTarget({
+              route: connection.key,
+              name: connection.label,
+              owner: connection.owner,
+              open: () => connection.open('studio'),
+            }),
+          ),
         ),
       registry: automationService.clientTools,
       log: (message) => {

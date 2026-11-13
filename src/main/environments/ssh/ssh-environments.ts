@@ -8,7 +8,6 @@ import type { Duplex } from 'node:stream'
 
 import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { wslServerTreeDir } from '../../../server/wsl/desktop-wsl-servers'
-import type { SshMachineBackend, SshMachineBackends } from '../../../server/core/ssh-machine-backends'
 import {
   DEFAULT_SSH_ENVIRONMENT_SETTINGS,
   SSH_ENV_CHANNELS,
@@ -179,16 +178,6 @@ export class SshEnvironments {
     this.path = join(deps.userDataDir, STORE_FILE)
     this.saved = readStore(this.path)
     this.log = deps.log ?? (() => undefined)
-  }
-
-  // ── The backend wires (the Files and Git panes' machine channels until PR 2) ──
-
-  readonly routed: SshMachineBackends = {
-    connect: async (key) => {
-      const machine = this.machineFor(key)
-      return machine.connect({ interactive: false })
-    },
-    current: (key): SshMachineBackend | null => this.machines.get(key.slice('ssh:'.length))?.current() ?? null,
   }
 
   onConnected(listener: (connection: SshServerConnection) => void): void {
@@ -505,25 +494,10 @@ export class SshEnvironments {
    * (`purpose` as the front door names it), connecting in the background
    * first when it must.
    */
-  async openStream(key: string, purpose: 'backend' | 'studio'): Promise<{ stream: Duplex; label: string }> {
+  async openStream(key: string, purpose: 'studio'): Promise<{ stream: Duplex; label: string }> {
     const machine = this.machineFor(key)
     const connection = await machine.connect({ interactive: false })
     return { stream: await connection.open(purpose), label: connection.label }
-  }
-
-  /**
-   * A machine channel (shared/machine-channels.ts) answered by that machine's
-   * server, for a workspace on it. Connects in the background (never a
-   * prompt) when it must; says in words when it cannot.
-   */
-  async machineCall(id: string, channel: string, args: unknown[]): Promise<unknown> {
-    const saved = this.get(id)
-    if (!saved) throw new Error('That SSH machine is no longer saved in Settings › Machines.')
-    if (!this.connection(id) && !(await this.connectQuietly(id, 20_000)))
-      throw new Error(`${saved.label} is not connected. Connect it in Settings › Machines.`)
-    const connection = this.connection(id)
-    if (!connection) throw new Error(`${saved.label} is not connected. Connect it in Settings › Machines.`)
-    return connection.backend.machine(channel, args)
   }
 
   /**

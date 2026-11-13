@@ -44,13 +44,17 @@ import {
   type WorkspaceChangeSummary,
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush } from './windowStudioPush'
-import { watchWindowStudio, windowStudioClient, windowStudioState } from './windowStudioClient'
+import { isMachinePath } from '../../../shared/machine-paths'
+import { askStudioOfPaths } from './paneStudio'
+import { watchWindowStudio, windowStudioState } from './windowStudioClient'
 
 // The window's way to git on its Studio's machine: the Studio protocol's
 // `git.*`, `github.*` and `versionControl.*` and their streams, over the
-// window's own connection, as every other client reaches them. The Git pane,
-// the diff view, the editor's gutter, the commit window, the sidebar, the
-// clone and new-project dialogs and Settings › Version control call these.
+// window's own connection, as every other client reaches them. A repository
+// on an SSH machine is asked of that machine's own Studio (`paneStudio.ts`).
+// The Git pane, the diff view, the editor's gutter, the commit window, the
+// sidebar, the clone and new-project dialogs and Settings › Version control
+// call these.
 // The members keep the names the window has always called them by, so a
 // caller changes only where it imports them from.
 //
@@ -143,14 +147,13 @@ function randomId(): string {
   return crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-async function call<M extends StudioMethod>(
+/** Ask the Studio on the machine the folder is on: the window's own, or an SSH machine's (`paneStudio.ts`). */
+function call<M extends StudioMethod>(
   method: M,
   params: StudioMethodParams<M>,
   capability: StudioCapability = STUDIO_GIT_CAPABILITY,
 ): Promise<StudioMethodResult<M>> {
-  const client = await windowStudioClient()
-  if (!client.supports(capability)) throw new Error(UNSERVED)
-  return client.request(method, params)
+  return askStudioOfPaths(method, params, capability, UNSERVED)
 }
 
 /** A write, under a command id of its own. */
@@ -168,6 +171,8 @@ export { windowHasStudio } from './windowStudioClient'
 
 export const gitApi: GitApi = {
   watchGitCheckout(checkoutPath, cb) {
+    // A checkout on an SSH machine is not followed: its views refresh by asking again.
+    if (isMachinePath(checkoutPath)) return () => undefined
     const key = gitCheckoutKey(checkoutPath)
     let follow = checkoutFollows.get(key)
     if (!follow) {

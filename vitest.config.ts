@@ -28,7 +28,6 @@ const SERIAL = [
   'src/main/environments/ssh/ssh-connect.test.ts',
   'src/main/environments/ssh/ssh-environment.test.ts',
   'src/main/environments/ssh/ssh-environment.docker.test.ts',
-  'src/server/desktop/shell-ssh-servers.test.ts',
   'src/main/environments/ssh/ssh-resume.test.ts',
   'src/main/environments/ssh/machine-files.test.ts',
   'src/main/environments/ssh/ssh-variants.docker.test.ts',

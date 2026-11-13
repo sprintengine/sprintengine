@@ -96,7 +96,6 @@ import { createEnvironmentReplicas } from '../environment/environment-replicas'
 import { createEnvironmentMigration } from '../environment/environment-migration'
 import { studioMigrationStores } from '../environment/environment-migration-stores'
 import { createRoutedConversationBackend } from './routed-conversation-backend'
-import type { SshMachineBackends } from './ssh-machine-backends'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
@@ -203,30 +202,17 @@ export type StudioCoreOptions = {
    */
   wslServers?: (deps: { readHostSettings: () => Partial<Record<ExecutionHostId, ExecutionHostSettings>> }) => WslServers
   /**
-   * The desktop's SSH machines (phase 8), held by Electron main, which shows
-   * their prompts. Given, a workspace recorded on one runs its chats there.
-   * In process only: out of process, main's sessions are not this core's.
-   */
-  /**
    * Other environments' Studios (an SSH machine's), as the desktop's own
    * callers reach a chat one holds: the gateway's tools and modules act on it
    * there, as a client of that machine (design-wsl-ssh-direct PR 1d).
    */
   environmentClients?: EnvironmentClients | null
   /**
-   * SSH machines' backend wires, for the Files and Git panes' machine channels
-   * alone (`sshMachineCall`, gone with design-wsl-ssh-direct PR 2). A
-   * machine's chats are its Studio's, reached by `environmentClients`.
+   * A saved SSH machine's host, as its SSH config resolves it (else as it was
+   * typed), and its resolved port: what its kind and colour are keyed by.
+   * Without it a paired phone is not told which SSH machine a chat runs on.
    */
-  sshServers?: {
-    servers: SshMachineBackends
-    /**
-     * A saved SSH machine's host, as its SSH config resolves it (else as it
-     * was typed), and its resolved port: what its kind and colour are keyed
-     * by. Without it a paired phone is not told which SSH machine a chat runs on.
-     */
-    machineOf?(savedId: string): { host: string; port?: number | null } | null
-  }
+  sshMachineOf?(savedId: string): { host: string; port?: number | null } | null
 }
 
 export { StudioDataDirBusyError, StudioDataDirUnusableError } from './take-data-dir'
@@ -467,18 +453,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   // A chat whose folder is on an SSH machine never runs in this process.
   const localConversations = refuseMachinePaths(localConversationBackend(conversationRuntime))
   let conversations: ConversationBackend = localConversations
-  const sshServers = options.sshServers ?? null
-  // A read the desktop's file and git panes ask about a workspace on an SSH
-  // machine, answered by that machine's server (shared/machine-channels.ts),
-  // connecting in the background when it must. Goes once those panes reach
-  // the machine's own server.
-  const sshMachineCall = sshServers
-    ? async (id: string, channel: string, args: unknown[]): Promise<unknown> => {
-        const key = `ssh:${id}`
-        const connection = sshServers.servers.current(key) ?? (await sshServers.servers.connect(key))
-        return connection.backend.machine(channel, args)
-      }
-    : null
   if (wslServers) {
     wslServersForHosts = wslServers
     // Settings › Machines reads the server's state with the machine list.
@@ -797,7 +771,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     hostName: readHostName(),
     platform: process.platform,
     marks: agentLaunchSettings.get().machineMarks,
-    ...(sshServers?.machineOf ? { sshMachineOf: (id: string) => sshServers.machineOf?.(id) ?? null } : {}),
+    ...(options.sshMachineOf ? { sshMachineOf: (id: string) => options.sshMachineOf?.(id) ?? null } : {}),
   })
   const listMarks = {
     // What a paired desktop's management of each chat reads: whether it
@@ -1451,8 +1425,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     subagents,
     /** Windows: the WSL servers chats may run on, for Settings' status; null elsewhere. */
     wslServers,
-    /** An SSH machine's server, asked a machine channel; null where this core holds no SSH machines. */
-    sshMachineCall,
     approvalRules,
     conversationModelCatalog,
     conversationLaunchService,

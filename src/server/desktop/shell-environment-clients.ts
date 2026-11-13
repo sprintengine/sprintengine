@@ -17,6 +17,10 @@ import { lineTransport, readTicket } from '../wsl/studio-door'
 // its own: the gateway's tools and modules act on a chat there with the same
 // protocol method a window sends. Its paths are respelled at the edge
 // (`machine-studio-client.ts`), as everywhere on this computer.
+//
+// The same owner connection says whether the machine's server is up, which the
+// desktop's toolsets offered to that machine's agents follow
+// (`wsl-tool-relay.ts`, on a `studio` stream of their own).
 
 export type ShellEnvironmentClientsDeps = {
   /** Ask main for a stream on the machine's `studio` door; its port arrives on the control channel as `clientId`. */
@@ -30,9 +34,15 @@ const PORT_WAIT_MS = 5_000
 const HELLO_MS = 15_000
 const PING_MS = 10_000
 
-export function createShellEnvironmentClients(
-  deps: ShellEnvironmentClientsDeps,
-): EnvironmentClients & { machineConnected(route: string): void } {
+export type ShellEnvironmentClients = EnvironmentClients & {
+  machineConnected(route: string): void
+  /** The machine's owner client as it is (paths not respelled), for its liveness, and the machine's name. */
+  owner(route: string): Promise<{ client: StudioClient; label: string }>
+  /** A fresh stream on the machine's `studio` door. */
+  openStudio(route: string): Promise<Duplex>
+}
+
+export function createShellEnvironmentClients(deps: ShellEnvironmentClientsDeps): ShellEnvironmentClients {
   const live = new Map<string, { client: Promise<StudioClient>; label: string }>()
   const listeners = new Set<(route: string) => void>()
 
@@ -81,6 +91,8 @@ export function createShellEnvironmentClients(
   }
 
   return {
+    owner: (route) => ownerOf(route),
+    openStudio: async (route) => (await stream(route)).stream,
     /** Main said the machine's server connected anew (`SERVER_EVENTS.sshConnected`): an old client of it is spent. */
     machineConnected(route) {
       for (const listener of listeners) listener(route)

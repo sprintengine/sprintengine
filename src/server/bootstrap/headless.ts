@@ -99,13 +99,6 @@ const signInsLoaded = (): Promise<SignIns> =>
     ({ createSignIns, resolveOnPath }) => (signInTable ??= createSignIns({ resolve: resolveOnPath })),
   )
 
-// Made once, on first use: a server whose clients never ask reads nothing.
-let machineTable: Promise<(channel: string, args: unknown[]) => Promise<unknown>> | null = null
-const machineChannels = (channel: string, args: unknown[]): Promise<unknown> =>
-  (machineTable ??= import('../machine/machine-channels').then(({ createMachineChannels }) =>
-    createMachineChannels(),
-  )).then((answer) => answer(channel, args))
-
 /** Hand an admitted front-door connection to what it asked for. */
 export function serveFrontDoorPurpose(
   server: Pick<StudioServer, 'core' | 'rpc'>,
@@ -117,11 +110,12 @@ export function serveFrontDoorPurpose(
     serveConversationBackend(server.core.conversations, stream, {
       log,
       // Whether this server has work of its own, which the Windows side asks
-      // before stopping a WSL server for being idle; else a machine channel.
-      machine: (channel, args) =>
+      // before stopping a WSL server for being idle. A window's files and git
+      // on this machine are the Studio protocol's `files.*` and `git.*`.
+      machine: (channel) =>
         channel === BACKGROUND_WORK_MACHINE_CHANNEL
           ? Promise.resolve(backgroundWorkOf(server.core))
-          : machineChannels(channel, args),
+          : Promise.reject(new Error(`This server does not answer ${channel}.`)),
     })
     return
   }

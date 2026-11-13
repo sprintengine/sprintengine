@@ -119,7 +119,7 @@ function serveSshToServer(server: ShellServerLink, environments: SshEnvironments
   server.rpc.handle(SHELL_METHODS.sshOpen, async (params) => {
     const { key, purpose } = (params ?? {}) as { key?: unknown; purpose?: unknown }
     if (typeof key !== 'string' || !/^ssh:[A-Za-z0-9_-]+$/u.test(key)) throw new Error('That is not an SSH machine.')
-    if (purpose !== 'backend' && purpose !== 'studio') throw new Error('That is not a stream the server opens.')
+    if (purpose !== 'studio') throw new Error('That is not a stream the server opens.')
     const { stream, label } = await environments.openStream(key, purpose)
     const { port1, port2 } = new MessageChannelMain()
     const clientId = prefixedId('ssh', 6)

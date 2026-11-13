@@ -7,19 +7,11 @@ import {
   type StudioGrant,
   type StudioHandlerOf,
 } from '../../../packages/studio-protocol/src/public'
-import { spelledResult } from '../../main/environments/ssh/machine-ipc'
-import { notOnMachineYet } from '../../shared/machine-channels'
 import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioGit } from '../git/studio-git-types'
 import { isAbsolute, join } from 'node:path'
 
-import {
-  namesAnyPath,
-  placePath,
-  UNKNOWN_PATH,
-  type StudioFileSystemAsking,
-  type StudioMachineCall,
-} from './studio-file-system'
+import { namesAnyPath, placePath, unplaced, UNKNOWN_PATH, type StudioFileSystemAsking } from './studio-file-system'
 import type { StudioRequestContext } from './studio-rpc-types'
 
 // The router's answers to `git.*`, `github.*` and `versionControl.*`. The
@@ -32,10 +24,9 @@ import type { StudioRequestContext } from './studio-rpc-types'
 // inside the folders Studio knows, the work done on that real path. Writes
 // are held to the workspaces' own folders.
 //
-// An owner's repository on an SSH machine (`ssh://…`) is answered there for
-// the reads and stages that machine's server answers (`machine-channels.ts`),
-// and refused in words for the rest, until those machines' panes reach their
-// own servers.
+// A repository on an SSH machine (`ssh://…`) is that machine's own Studio's:
+// the window asks it there (design-wsl-ssh-direct PR 2), and here it is
+// refused as any path on another machine is.
 
 type Asking = StudioFileSystemAsking
 
@@ -55,7 +46,6 @@ export type StudioGitHandlerOptions = {
   git?: StudioGit
   /** Where the known folders come from: the files by path. */
   fileSystem?: StudioFileSystem
-  machine?: StudioMachineCall
   once: Kept
   runtimeId(grant: StudioGrant, commandId: string): string
 }
@@ -87,46 +77,6 @@ function write(params: Record<string, unknown>, field: FolderField, value: strin
     : { ...params, [outer]: value }
 }
 
-/**
- * What an SSH machine's server answers, as the window's IPC sent it there
- * (`machine-channels.ts`): its channel and arguments, with the folder made
- * plain, and how its answer reads as this method's result.
- */
-const ON_MACHINE: Partial<
-  Record<
-    StudioGitMethod,
-    { channel: string; args(p: Record<string, unknown>): unknown[]; result?(value: unknown): unknown }
-  >
-> = {
-  'git.status': { channel: 'git:get-status', args: (p) => [p.repoRoot] },
-  'git.checkIgnored': {
-    channel: 'git:check-ignored',
-    args: (p) => [p.repoRoot, p.paths],
-    result: (value) => ({ paths: value }),
-  },
-  'git.fileBase': { channel: 'git:get-file-base', args: (p) => [p.repoRoot, p.path] },
-  'git.fileAtStage': { channel: 'git:get-file-at-stage', args: (p) => [p.repoRoot, p.path, p.stage] },
-  'git.fileAtRev': { channel: 'git:get-file-at-rev', args: (p) => [p.repoRoot, p.rev, p.path] },
-  'git.fileHunks': { channel: 'git:get-file-hunks', args: (p) => [p.repoRoot, p.path, p.scope] },
-  'git.changeSummary': { channel: 'git:get-workspace-change-summary', args: (p) => [p.checkoutPath] },
-  'git.branchSteps': { channel: 'git:get-branch-steps', args: (p) => [p.checkoutPath] },
-  'git.branchStepDiff': { channel: 'git:get-branch-step-diff', args: (p) => [p.checkoutPath, p.selection] },
-  'git.branches': { channel: 'git:get-branches', args: (p) => [p.repoRoot] },
-  'git.commitGraph': {
-    channel: 'git:get-commit-graph',
-    args: (p) => [
-      p.repoRoot,
-      { ...(p.limit === undefined ? {} : { limit: p.limit }), ...(p.skip === undefined ? {} : { skip: p.skip }) },
-    ],
-  },
-  'git.repositoryIdentity': { channel: 'git:get-repository-identity', args: (p) => [p.folderPath] },
-  'git.stage': { channel: 'git:stage', args: (p) => [p.repoRoot, p.paths] },
-  'git.unstage': { channel: 'git:unstage', args: (p) => [p.repoRoot, p.paths] },
-  'git.stageHunk': { channel: 'git:stage-hunk', args: (p) => [p.ref] },
-  'git.unstageHunk': { channel: 'git:unstage-hunk', args: (p) => [p.ref] },
-  'git.commit': { channel: 'git:commit', args: (p) => [p.repoRoot, p.message] },
-}
-
 /** The methods that read or write a repository's file on disk themselves, not through git. */
 const WORKING_FILE: Partial<Record<StudioGitMethod, 'read' | 'write'>> = {
   'git.conflictFile': 'read',
@@ -143,22 +93,14 @@ export function createStudioGitHandlers(options: StudioGitHandlerOptions) {
     if (!git) return refuse('unavailable', `This Studio does not serve ${method}.`)
     if (method.startsWith('github.') && method !== 'github.clone' && method !== 'github.listOwners' && !git.hasGitHub)
       return refuse('unavailable', 'This Studio holds no GitHub account.')
-    const { commandId: _commandId, ...unplaced } = raw
-    let params: Record<string, unknown> = unplaced
-    let machine: { id: string } | null = null
+    const { commandId: _commandId, ...asked } = raw
+    let params: Record<string, unknown> = asked
     const purpose = STUDIO_METHODS[method].mutation ? 'write' : 'read'
     for (const field of foldersOf(method)) {
       if (!options.fileSystem) return refuse('unavailable', `This Studio does not serve ${method}.`)
       const at = await placePath(options.fileSystem, read(params, field), asking, purpose)
-      if (!at.ok) return refuse('not_found', UNKNOWN_PATH)
-      if (at.machine) {
-        if (machine && machine.id !== at.machine.id) return refuse('not_found', UNKNOWN_PATH)
-        machine = { id: at.machine.id }
-        params = write(params, field, at.machine.path)
-      } else {
-        if (machine) return refuse('not_found', UNKNOWN_PATH)
-        params = write(params, field, at.path)
-      }
+      if (!at.ok) return unplaced(at)
+      params = write(params, field, at.path)
     }
     // A conflicted file is read from the working tree (`git.conflictFile`),
     // and a resolved one written there before git adds it: not through git,
@@ -166,7 +108,7 @@ export function createStudioGitHandlers(options: StudioGitHandlerOptions) {
     // that file is held as any read or write by path is, by where it really
     // is, so a link in the repository cannot carry either out of it.
     const workingFile = WORKING_FILE[method]
-    if (workingFile && !machine && !namesAnyPath(asking) && options.fileSystem) {
+    if (workingFile && !namesAnyPath(asking) && options.fileSystem) {
       const file = String(params.path)
       const at = await placePath(
         options.fileSystem,
@@ -174,15 +116,8 @@ export function createStudioGitHandlers(options: StudioGitHandlerOptions) {
         asking,
         workingFile,
       )
-      if (!at.ok || at.machine) return refuse('not_found', UNKNOWN_PATH)
+      if (!at.ok) return refuse('not_found', UNKNOWN_PATH)
       params = { ...params, path: at.path }
-    }
-    if (machine) {
-      const route = ON_MACHINE[method]
-      if (!route || !options.machine) return refuse('unavailable', notOnMachineYet(method))
-      const value = await options.machine(machine.id, route.channel, route.args(params))
-      const spelled = spelledResult(machine.id, route.channel, value)
-      return ok(route.result ? route.result(spelled) : spelled)
     }
     const run = git.run[method] as (params: Record<string, unknown>) => Promise<unknown>
     return ok(await run(params))
@@ -214,9 +149,7 @@ export function createStudioGitHandlers(options: StudioGitHandlerOptions) {
     if (!git || !options.fileSystem)
       return { ok: false, code: 'unavailable', message: 'This Studio does not serve git.checkoutChanged.' }
     const at = await placePath(options.fileSystem, checkoutPath, asking, 'read')
-    if (!at.ok) return { ok: false, code: 'not_found', message: UNKNOWN_PATH }
-    // A checkout on an SSH machine is not watched here: its views refresh by asking again.
-    if (at.machine) return { ok: false, code: 'unavailable', message: notOnMachineYet('git.checkoutChanged') }
+    if (!at.ok) return { ok: false, ...unplaced(at).error }
     return { ok: true, dispose: git.followCheckout(at.path, listener) }
   }
 
