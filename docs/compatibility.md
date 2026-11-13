@@ -1411,7 +1411,10 @@ holding the owner's credential and the shell included. Minting an HTTP token
 and all of local app pairing say it, so a stolen browser session or a paired
 app cannot mint the next way in. A web tab still lists and revokes the HTTP
 clients; before, its tunnel could also mint a token, and now Settings there
-says a new one is made in the desktop app. Same build on both ends: the
+says a new one is made in the desktop app, or on the server's machine with
+`studio-server mcp-token --name <client>` (which posts the run file's key to
+the web listener's `/mcp-http/mint`, as `studio-server pair` does to
+`/pair/mint`; same build on both ends). Same build on both ends: the
 window's 4 `automation:*` and 6 `studio-local-apps:*` IPC channels are gone.
 
 `web-devices` (2026-11-13) is the browsers paired with a Studio's web listener,

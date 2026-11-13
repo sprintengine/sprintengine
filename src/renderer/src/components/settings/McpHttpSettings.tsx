@@ -124,7 +124,10 @@ export function McpHttpSettings() {
         ) : null}
       </SettingCard>
       {name === null && !mints ? (
-        <p className="text-meta text-[color:var(--text-muted)]">A new MCP URL is made in the desktop app.</p>
+        <p className="text-meta text-[color:var(--text-muted)]">
+          A new MCP URL is made in the desktop app, or on this server’s machine with{' '}
+          <code>studio-server mcp-token --name &lt;client&gt;</code>.
+        </p>
       ) : null}
       {name === null && mints ? (
         <OutlineButton

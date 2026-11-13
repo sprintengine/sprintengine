@@ -15,6 +15,9 @@ import { keepStderrInLogsDir, stdioChannel } from './bootstrap/stdio'
 import { startDetached } from './bootstrap/detached-start'
 import type { ServerBoot } from './bootstrap/envelope'
 import { readWebRunFile } from './web/web-run-file'
+import { runningDataDirHolder, type DataDirHolder } from './core/data-dir'
+import { mcpHttpClientConfig } from '../shared/mcp-http'
+import { STUDIO_MCP_SERVER_ID } from '../shared/product-identity'
 import { runTriage, TRIAGE_AGENTS, type TriageAgent } from './triage'
 import { normalizeOrigin } from './web/web-origins'
 import { checkTailscaleServePort, DEFAULT_TAILSCALE_SERVE_PORT } from './web/web-tailscale-serve'
@@ -40,13 +43,16 @@ import {
 //   node out/server/server.cjs serve --web [--web-port <n>] [--public-origin <url>]…
 //        [--tailscale-serve [--tailscale-serve-port <n>]]
 //   node out/server/server.cjs pair [--data-dir <dir>] [--origin <url>]
+//   node out/server/server.cjs mcp-token --name <client> [--data-dir <dir>]
 //   node out/server/server.cjs embed --workspace <id> --agent <id> [--frame-origin <url>]… [--ttl-hours <n>]
 //   node out/server/server.cjs embed --list | --revoke <embed id>
 //   node out/server/server.cjs triage [--agent claude|codex] [--logs-dir <dir>] [--print]
 //
 // `--web` turns on the web client's listener on a loopback port (phase 9),
 // off by default. `pair` asks the server running on a data directory for a
-// one-time link that pairs a browser, and prints it.
+// one-time link that pairs a browser, and prints it. `mcp-token` asks it for a
+// token to its agents' loopback MCP endpoint, which only a desktop window may
+// otherwise make, and prints it once.
 //
 // Once its gateway is listening it prints one JSON line on stdout,
 // `{"ready":{…}}`, and keeps stdout for such lines; everything said to a person
@@ -100,7 +106,16 @@ const USAGE = `Usage: studio-server [serve] [options]
 Usage: studio-server pair [--data-dir <dir>] [--origin <url>]
 
   Print a one-time link that pairs a browser with the server running on the data
-  directory. The link works once, within five minutes.
+  directory. The link works once, within five minutes. It asks the server's web
+  listener, so the server must run with --web.
+
+Usage: studio-server mcp-token --name <client> [--data-dir <dir>]
+
+  Make a token for an MCP client on this machine to reach the agents of the
+  server running on the data directory over its loopback HTTP endpoint, and
+  print the client's configuration with the token in it. It asks the server's
+  web listener, so the server must run with --web. The token is shown this
+  once; revoke it in Settings > MCPs, from a desktop window or a web tab.
 
 Usage: studio-server embed --workspace <id> --agent <id> [--frame-origin <url>]... [--ttl-hours <n>]
        studio-server embed --list
@@ -158,6 +173,7 @@ type Command =
   | { kind: 'version' }
   | { kind: 'help' }
   | { kind: 'pair'; dataDir: string; origin: string | null }
+  | { kind: 'mcp-token'; dataDir: string; name: string }
   | { kind: 'embed-list'; dataDir: string }
   | { kind: 'embed-revoke'; dataDir: string; embedId: string }
   | {
@@ -203,6 +219,7 @@ export function parseServerArgs(argv: string[], env = process.env): Command {
     strict: true,
     options: {
       'data-dir': { type: 'string' },
+      name: { type: 'string' },
       'logs-dir': { type: 'string' },
       'app-root': { type: 'string' },
       'resources-dir': { type: 'string' },
@@ -251,7 +268,7 @@ export function parseServerArgs(argv: string[], env = process.env): Command {
   }
   if (command === 'triage' && rest.length === 0) return parseTriage(values, env)
   if (values.print !== undefined) throw new Error('--print goes with triage.')
-  if ((command !== 'serve' && command !== 'pair' && command !== 'embed') || rest.length > 0)
+  if ((command !== 'serve' && command !== 'pair' && command !== 'embed' && command !== 'mcp-token') || rest.length > 0)
     throw new Error(`Unknown command: ${positionals.join(' ')}`)
   if (values.packaged && !values['resources-dir']) throw new Error('--packaged needs --resources-dir.')
 
@@ -263,6 +280,10 @@ export function parseServerArgs(argv: string[], env = process.env): Command {
   // locations logs where XDG puts state.
   const dataDir = resolve(chosenDataDir ?? defaults.dataDir)
   if (command === 'pair') return { kind: 'pair', dataDir, origin: values.origin ?? null }
+  if (command === 'mcp-token') {
+    if (!values.name?.trim()) throw new Error('mcp-token needs --name: what the client is called.')
+    return { kind: 'mcp-token', dataDir, name: values.name.trim() }
+  }
   if (command === 'embed') {
     if (values.list === true) return { kind: 'embed-list', dataDir }
     if (values.revoke !== undefined) return { kind: 'embed-revoke', dataDir, embedId: values.revoke }
@@ -423,11 +444,61 @@ async function manageEmbeds(
   }
 }
 
+/**
+ * `studio-server mcp-token`: a token to the agents' loopback MCP endpoint of
+ * the server running on a data directory, printed once as a client's
+ * configuration. A desktop window makes one in Settings; a server with no
+ * desktop has no window, and a web tab may not (`mcpHttp.create` is a
+ * window's), so this is that server's way, on the machine.
+ */
+async function mintMcpToken(dataDir: string, name: string): Promise<number> {
+  const run = readWebRunFile(dataDir)
+  if (!run) {
+    say(noWebListener('mcp-token', dataDir, runningDataDirHolder(dataDir)))
+    return EXIT_FAILED
+  }
+  try {
+    const response = await fetch(`${run.url}/mcp-http/mint`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${run.mintKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const body = (await response.json()) as { ok?: boolean; url?: string; token?: string; message?: string }
+    if (!response.ok || !body.ok || typeof body.url !== 'string' || typeof body.token !== 'string') {
+      say(body.message ?? `The server refused (${response.status}).`)
+      return EXIT_FAILED
+    }
+    process.stdout.write(`${mcpHttpClientConfig(STUDIO_MCP_SERVER_ID, body.url, body.token)}\n`)
+    say(`The token for ${name} is shown this once. It works only on this machine, at ${body.url}.`)
+    return 0
+  } catch (error) {
+    say(`The server on ${run.url} did not answer: ${error instanceof Error ? error.message : String(error)}`)
+    return EXIT_FAILED
+  }
+}
+
+/**
+ * Why `pair` or `mcp-token` cannot reach a server on the data directory: both
+ * ask its web listener, which a server runs only when started with `--web`.
+ * A server running there without it, and Studio's desktop app holding the
+ * directory, are each named, so the person is not told to start a second one.
+ */
+export function noWebListener(command: 'pair' | 'mcp-token', dataDir: string, holder: DataDirHolder | null): string {
+  const needs = `studio-server ${command} asks the server's web listener`
+  if (holder?.role === 'server')
+    return `The Studio server running on ${dataDir} (pid ${holder.pid}) was started without --web, and ${needs}. Stop it and start it again with: studio-server serve --web`
+  if (holder?.role === 'desktop') {
+    const instead = command === 'mcp-token' ? ' Make the token in the app, in Settings > MCPs.' : ''
+    return `Studio's desktop app has ${dataDir} open without a web listener, and ${needs}.${instead}`
+  }
+  return `No Studio server is running on ${dataDir}, and ${needs}. Start one with: studio-server serve --web`
+}
+
 /** `studio-server pair`: a one-time pairing link from the server running on a data directory. */
 async function pairBrowser(dataDir: string, origin: string | null): Promise<number> {
   const run = readWebRunFile(dataDir)
   if (!run) {
-    say(`No Studio server with its web listener on is running on ${dataDir}. Start one with: studio-server serve --web`)
+    say(noWebListener('pair', dataDir, runningDataDirHolder(dataDir)))
     return EXIT_FAILED
   }
   const target = origin ? normalizeOrigin(origin) : null
@@ -532,6 +603,7 @@ async function main(argv: string[]): Promise<number> {
       write: (text) => process.stdout.write(text),
     })
   if (command.kind === 'pair') return pairBrowser(command.dataDir, command.origin)
+  if (command.kind === 'mcp-token') return mintMcpToken(command.dataDir, command.name)
   if (command.kind === 'embed') return mintEmbed(command)
   if (command.kind === 'embed-list' || command.kind === 'embed-revoke') return manageEmbeds(command)
   if (command.kind === 'start-detached')
