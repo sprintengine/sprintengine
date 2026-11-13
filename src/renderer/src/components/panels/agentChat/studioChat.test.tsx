@@ -433,6 +433,34 @@ test('a fork is asked only of a Studio that says where its forks are, and an ans
   expect(asked).toEqual(['conversation.fork', 'conversation.fork', 'conversation.fork'])
 })
 
+test('a scheduled message whose answer was lost with the connection is asked again under its command id, and kept once', async () => {
+  const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+  const { createStudioConversationParts } = await import('./studioChat')
+  // A Studio that keeps a scheduled message once per command id, as its store
+  // does, and a window client that gives up the first answer.
+  const kept = new Map<string, string>()
+  const asked: string[] = []
+  let lose = 1
+  const client = {
+    request: async (method: string, params: { commandId: string; message: string }) => {
+      expect(method).toBe('conversation.scheduleSend')
+      asked.push(params.commandId)
+      if (!kept.has(params.commandId)) kept.set(params.commandId, params.message)
+      if (lose > 0) {
+        lose--
+        throw new StudioError('closed', 'The client is closed.')
+      }
+      return {}
+    },
+  }
+  const parts = createStudioConversationParts(async () => client as never)
+  const key = { workspaceId: 'workspace', agentId: 'agent', workspaceRoot: '/Users/dev/app' }
+  expect(await parts.scheduleSend!({ key, message: 'Morning check.', sendAt: 1_900_000_000_000 })).toEqual({ ok: true })
+  expect(asked).toHaveLength(2)
+  expect(asked[1]).toBe(asked[0])
+  expect([...kept.values()]).toEqual(['Morning check.'])
+}, 20_000)
+
 test('a queued message whose answer was lost with the connection is asked again under its command id, and held once', async () => {
   const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
   const { createStudioConversationParts } = await import('./studioChat')
