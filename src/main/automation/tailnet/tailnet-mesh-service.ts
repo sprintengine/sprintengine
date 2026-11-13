@@ -101,6 +101,13 @@ import type { TailnetPeerIdentity } from './tailnet-peer-identity'
 import { tailnetPeerSupports } from './tailnet-routes'
 import { createPeerStudios, peerRefusal, type PeerStudioTarget } from './tailnet-peer-studio'
 import { StudioError, type StudioClient } from '../../../../packages/client-runtime/src/public'
+import {
+  STUDIO_APPROVAL_RULES_CAPABILITY,
+  STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CHAT_SEARCH_MAX_CHARS,
+  STUDIO_CHAT_SEARCH_MIN_CHARS,
+  type StudioCapability,
+} from '../../../../packages/studio-protocol/src/public'
 import type { StudioScheduleDraft, StudioSchedules } from '../../../../packages/studio-protocol/src/schedules'
 import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
 import {
@@ -375,12 +382,12 @@ export type TailnetMeshService = {
     workspaceId?: unknown
     change?: unknown
   }): Promise<MeshChangeConversationResult>
-  /** What deleting a settled chat on a paired machine would do, as it plans it (`chat-delete`). */
+  /** What deleting a settled chat on a paired machine would do, as it plans it (`chat-lifecycle`). */
   conversationDeletePlan(input: {
     connectionId: unknown
     workspaceId?: unknown
   }): Promise<MeshConversationDeletePlanResult>
-  /** What was said in a paired machine's chats, as its own palette finds it (`chat-search`). */
+  /** What was said in a paired machine's chats, as its own palette finds it (`chat-lifecycle`). */
   conversationSearch(input: { connectionId: unknown; query?: unknown }): Promise<MeshConversationSearchResult>
   /** The "always allow" rules a paired machine's chats run with (`approval-rules`). */
   approvalRules(input: { connectionId: unknown }): Promise<MeshApprovalRulesResult>
@@ -688,6 +695,9 @@ export type TailnetMeshServiceOptions = {
 
 /** A mesh event before the service stamps its revision — distributed over the union, member by member. */
 type MeshEventBody = MeshEvent extends infer E ? (E extends MeshEvent ? Omit<E, 'revision'> : never) : never
+
+/** How long a list waits on a paired machine's Studio to say what of its chats' records it keeps. */
+const PEER_WELCOME_TIMEOUT_MS = 5_000
 
 export function createTailnetMeshService(options: TailnetMeshServiceOptions): TailnetMeshService {
   const store = (options.createStore ?? createTailnetMeshStore)({
@@ -2310,115 +2320,144 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     return outcome
   }
 
-  // ── A remote chat's rest and visit clock ────────────────────────────────
+  // ── What a paired machine's Studio is asked ─────────────────────────────
   //
-  // Both are that machine's to keep (`conversation-lifecycle`). A machine
-  // that has said it does not serve them is not asked; one that has not said
-  // anything yet is, and a build from before the tools answers "Unknown tool",
-  // which reads the same as a list without the capability.
-  type LifecycleCall =
-    | { ok: true; connection: StoredMeshConnection; value: Record<string, unknown> }
-    | { ok: false; code: string; message: string }
-  async function callLifecycleTool(
+  // One ask of a paired machine's Studio (tailnet-peer-studio.ts), held to a
+  // capability its welcome must name: a machine whose Studio does not serve
+  // it, or that has no Studio yet, is told to update, in words about what was
+  // asked. Any other refusal comes back with that machine's code and words.
+  type PeerAnswer<T> =
+    { ok: true; connection: StoredMeshConnection; value: T } | { ok: false; code: string; message: string }
+  async function askPeer<T>(
     connectionId: unknown,
-    workspaceId: unknown,
-    tool: 'conversation.settle' | 'conversation.visit',
-    args: Record<string, unknown>,
-  ): Promise<LifecycleCall> {
+    capability: StudioCapability,
+    unsupported: (machineName: string) => { code: string; message: string },
+    work: (client: StudioClient) => Promise<T>,
+    timeoutMs?: number,
+  ): Promise<PeerAnswer<T>> {
     const connection = connectionFor(connectionId)
     if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    if (typeof workspaceId !== 'string' || !workspaceId) {
-      return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
+    try {
+      const value = await peerStudios.ask(
+        peerTarget(connection),
+        async (client) => {
+          if (!client.supports(capability)) throw new StudioError('outdated', '')
+          return work(client)
+        },
+        timeoutMs,
+      )
+      return { ok: true, connection, value }
+    } catch (error) {
+      const refused = peerRefusal(connection, error)
+      return refused.kind === 'outdated'
+        ? { ok: false, ...unsupported(connection.machineName) }
+        : { ok: false, code: refused.code, message: refused.message }
     }
-    const unsupported = {
-      ok: false as const,
-      code: 'lifecycle_unsupported',
-      message:
-        tool === 'conversation.settle'
-          ? `${connection.machineName} cannot settle its chats from here yet. Update SprintEngine Studio there to settle one from here.`
-          : `${connection.machineName} does not keep its chats' read state yet. Update SprintEngine Studio there for a chat read here to read as seen there.`,
-    }
-    const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, 'conversation-lifecycle')) return unsupported
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool,
-      args: { workspaceId, ...args },
-    })
-    if (!answer.ok) {
-      if (answer.code === 'rpc_error' && /Unknown tool/u.test(answer.message)) return unsupported
-      return { ok: false, code: answer.code, message: answer.message }
-    }
-    return { ok: true, connection, value: answer.value }
   }
+
+  /** A command id for one change asked of a paired machine: a retry of the ask is the same change there. */
+  const commandId = () => randomBytes(12).toString('base64url')
+
+  // ── A remote chat's rest and visit clock ────────────────────────────────
+  //
+  // Both are that machine's to keep, on its Studio (`conversation.settle`,
+  // `conversation.visit`), by the chat's workspace there. A settle carries a
+  // command id; a visit, which only moves forward, none.
+  const lifecycleUnsupported = (doing: string) => (machineName: string) => ({
+    code: 'lifecycle_unsupported',
+    message: `${machineName} cannot ${doing} from here yet. Update SprintEngine Studio there to do it from here.`,
+  })
 
   async function settleConversation(input: {
     connectionId: unknown
     workspaceId?: unknown
     settled?: unknown
   }): Promise<MeshSettleConversationResult> {
+    const workspaceId = input.workspaceId
+    if (typeof workspaceId !== 'string' || !workspaceId)
+      return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
     const settled = input.settled !== false
-    const answer = await callLifecycleTool(input.connectionId, input.workspaceId, 'conversation.settle', {
-      settled,
-    })
-    if (!answer.ok) return answer
-    const settledAt = answer.value.settledAt
-    return {
-      ok: true,
-      workspaceId: input.workspaceId as string,
-      settledAt: typeof settledAt === 'number' && Number.isFinite(settledAt) ? settledAt : null,
-    }
+    const answer = await askPeer(
+      input.connectionId,
+      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+      lifecycleUnsupported(settled ? 'settle its chats' : 'bring its chats back'),
+      (client) =>
+        client.rpc['conversation.settle']({
+          workspaceId,
+          commandId: commandId(),
+          ...(settled ? {} : { settled: false }),
+        }),
+    )
+    return answer.ok ? { ok: true, workspaceId, settledAt: answer.value.settledAt } : answer
   }
 
   async function visitConversation(input: {
     connectionId: unknown
     workspaceId?: unknown
   }): Promise<MeshVisitConversationResult> {
+    const workspaceId = input.workspaceId
+    if (typeof workspaceId !== 'string' || !workspaceId)
+      return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
     // No time is sent: the visit is now, and the far end stamps it with its
     // own clock. One read here could run behind that machine's, and a visit
     // stamped earlier than a finish there would never clear it.
-    const answer = await callLifecycleTool(input.connectionId, input.workspaceId, 'conversation.visit', {})
-    if (!answer.ok) return answer
-    const lastVisitedAt = answer.value.lastVisitedAt
-    return {
-      ok: true,
-      workspaceId: input.workspaceId as string,
-      lastVisitedAt: typeof lastVisitedAt === 'number' && Number.isFinite(lastVisitedAt) ? lastVisitedAt : Date.now(),
-    }
+    const answer = await askPeer(
+      input.connectionId,
+      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+      lifecycleUnsupported('keep its chats’ read state for a chat read here'),
+      (client) => client.rpc['conversation.visit']({ workspaceId }),
+    )
+    return answer.ok ? { ok: true, workspaceId, lastVisitedAt: answer.value.lastVisitedAt } : answer
   }
 
-  // ── A remote chat's row menu ───────────────────────────────────────────
+  // ── A remote chat's row menu and management ─────────────────────────────
   //
-  // Star, Highlight color, Snooze and Auto-settle are that machine's record
-  // of the chat (`chat-row-menu`), and Mark unread its read state
-  // (`chat-mark-unread`). Asked as the rest and visit clock are: a machine
-  // that has said it lacks the tool is not, and one from before it answers
-  // "Unknown tool", which reads the same.
+  // Star, Highlight color, Snooze, Auto-settle, Mark unread, Rename, Auto
+  // compact and Delete are that machine's record of the chat, each its own
+  // method there under a command id. Stop watching is still that machine's
+  // gateway tool (a pull request's, not the record's).
   async function changeConversation(input: {
     connectionId: unknown
     workspaceId?: unknown
     change?: unknown
   }): Promise<MeshChangeConversationResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
     const workspaceId = input.workspaceId
-    if (typeof workspaceId !== 'string' || !workspaceId) {
+    if (typeof workspaceId !== 'string' || !workspaceId)
       return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-    }
-    const call = rowMenuCallOf(input.change)
+    const unwatch = unwatchCallOf(input.change)
+    if (unwatch) return unwatchPullRequest(input.connectionId, workspaceId, unwatch)
+    const call = chatChangeOf(input.change)
     if (!call) return { ok: false, code: 'invalid_arguments', message: 'That is not a change a chat takes.' }
+    const answer = await askPeer(
+      input.connectionId,
+      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+      (machineName) => ({
+        code: 'row_menu_unsupported',
+        message: `${machineName} cannot ${call.ask} from here yet. Update SprintEngine Studio there to do it from here.`,
+      }),
+      (client) => call.send(client, { workspaceId, commandId: commandId() }),
+    )
+    return answer.ok ? { ok: true, workspaceId } : answer
+  }
+
+  async function unwatchPullRequest(
+    connectionId: unknown,
+    workspaceId: string,
+    call: { args: Record<string, unknown> },
+  ): Promise<MeshChangeConversationResult> {
+    const connection = connectionFor(connectionId)
+    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
     const unsupported = {
       ok: false as const,
       code: 'row_menu_unsupported',
-      message: `${connection.machineName} cannot ${call.ask} from here yet. Update SprintEngine Studio there to do it from here.`,
+      message: `${connection.machineName} cannot stop watching its chats' pull requests from here yet. Update SprintEngine Studio there to do it from here.`,
     }
     const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, call.capability)) return unsupported
+    if (capabilities && !tailnetPeerSupports(capabilities, 'chat-unwatch-pull-request')) return unsupported
     const answer = await callRemoteTool({
       endpoint: endpointOf(connection),
       token: connection.deviceToken,
-      tool: call.tool,
+      tool: 'conversation.pull_request_unwatch',
       args: { workspaceId, ...call.args },
     })
     if (!answer.ok) {
@@ -2428,143 +2467,97 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     return { ok: true, workspaceId }
   }
 
-  // ── A paired desktop's chat management: what a menu reads first ───────
-  //
-  // Asked as a change is: a machine that has said it lacks the capability is
-  // not, and one from before the tool answers "Unknown tool", read the same.
+  const deleteUnsupported = (machineName: string) => ({
+    code: 'delete_unsupported',
+    message: `${machineName} cannot delete its chats from here yet. Update SprintEngine Studio there to do it from here.`,
+  })
+
   async function conversationDeletePlan(input: {
     connectionId: unknown
     workspaceId?: unknown
   }): Promise<MeshConversationDeletePlanResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
     const workspaceId = input.workspaceId
-    if (typeof workspaceId !== 'string' || !workspaceId) {
+    if (typeof workspaceId !== 'string' || !workspaceId)
       return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-    }
-    const unsupported = {
-      ok: false as const,
-      code: 'delete_unsupported',
-      message: `${connection.machineName} cannot delete its chats from here yet. Update SprintEngine Studio there to do it from here.`,
-    }
-    const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, 'chat-delete')) return unsupported
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'conversation.delete_plan',
-      args: { workspaceId },
-    })
-    if (!answer.ok) {
-      if (answer.code === 'rpc_error' && /Unknown tool/u.test(answer.message)) return unsupported
-      return { ok: false, code: answer.code, message: answer.message }
-    }
-    return deletePlanOf(workspaceId, answer.value)
+    const answer = await askPeer(input.connectionId, STUDIO_CHAT_LIFECYCLE_CAPABILITY, deleteUnsupported, (client) =>
+      client.rpc['conversation.deletePlan']({ workspaceId }),
+    )
+    return answer.ok ? deletePlanOf(workspaceId, answer.value as unknown as Record<string, unknown>) : answer
   }
 
   async function conversationSearch(input: {
     connectionId: unknown
     query?: unknown
   }): Promise<MeshConversationSearchResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
     const query = typeof input.query === 'string' ? input.query.trim() : ''
-    if (query.length < 2 || query.length > 200) {
-      return { ok: false, code: 'invalid_arguments', message: 'Search for 2 to 200 characters.' }
+    if (query.length < STUDIO_CHAT_SEARCH_MIN_CHARS || query.length > STUDIO_CHAT_SEARCH_MAX_CHARS) {
+      return {
+        ok: false,
+        code: 'invalid_arguments',
+        message: `Search for ${STUDIO_CHAT_SEARCH_MIN_CHARS} to ${STUDIO_CHAT_SEARCH_MAX_CHARS} characters.`,
+      }
     }
-    const unsupported = {
-      ok: false as const,
-      code: 'search_unsupported',
-      message: `${connection.machineName} cannot search its chats from here yet. Update SprintEngine Studio there to do it from here.`,
-    }
-    const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, 'chat-search')) return unsupported
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'conversation.search',
-      args: { query },
-    })
-    if (!answer.ok) {
-      if (answer.code === 'rpc_error' && /Unknown tool/u.test(answer.message)) return unsupported
-      return { ok: false, code: answer.code, message: answer.message }
-    }
-    return searchAnswerOf(answer.value)
+    const answer = await askPeer(
+      input.connectionId,
+      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+      (machineName) => ({
+        code: 'search_unsupported',
+        message: `${machineName} cannot search its chats from here yet. Update SprintEngine Studio there to do it from here.`,
+      }),
+      (client) => client.rpc['conversation.searchChats']({ query }),
+    )
+    return answer.ok ? searchAnswerOf(answer.value as unknown as Record<string, unknown>) : answer
   }
 
   // A paired machine's "always allow" rules, which its Settings lists and
-  // revokes, asked as the rest of its chats' management is.
-  async function callApprovalRulesTool(
-    connectionId: unknown,
-    tool: 'conversation.approval_rules' | 'conversation.approval_rule_revoke',
-    args: Record<string, unknown>,
-  ): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; code: string; message: string }> {
-    const connection = connectionFor(connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    const unsupported = {
-      ok: false as const,
-      code: 'approval_rules_unsupported',
-      message: `${connection.machineName} does not share its chat permissions yet. Update SprintEngine Studio there to see them from here.`,
-    }
-    const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, 'approval-rules')) return unsupported
-    const answer = await callRemoteTool({ endpoint: endpointOf(connection), token: connection.deviceToken, tool, args })
-    if (!answer.ok) {
-      if (answer.code === 'rpc_error' && /Unknown tool/u.test(answer.message)) return unsupported
-      return { ok: false, code: answer.code, message: answer.message }
-    }
-    return { ok: true, value: answer.value }
-  }
+  // revokes, on its Studio (`approval-rules`).
+  const rulesUnsupported = (machineName: string) => ({
+    code: 'approval_rules_unsupported',
+    message: `${machineName} does not share its chat permissions yet. Update SprintEngine Studio there to see them from here.`,
+  })
 
   async function approvalRules(input: { connectionId: unknown }): Promise<MeshApprovalRulesResult> {
-    const answer = await callApprovalRulesTool(input.connectionId, 'conversation.approval_rules', {})
-    return answer.ok ? approvalRulesOf(answer.value) : answer
+    const answer = await askPeer(input.connectionId, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
+      client.rpc['conversation.approvalRules']({}),
+    )
+    if (!answer.ok) return answer
+    if (!answer.value.ok) return { ok: false, code: 'unavailable', message: answer.value.message }
+    return approvalRulesOf(answer.value.rules)
   }
 
   async function revokeApprovalRule(input: {
     connectionId: unknown
     ruleId?: unknown
   }): Promise<MeshRevokeApprovalRuleResult> {
-    if (typeof input.ruleId !== 'string' || !input.ruleId) {
+    const ruleId = input.ruleId
+    if (typeof ruleId !== 'string' || !ruleId)
       return { ok: false, code: 'invalid_arguments', message: 'Name the rule.' }
-    }
-    const answer = await callApprovalRulesTool(input.connectionId, 'conversation.approval_rule_revoke', {
-      ruleId: input.ruleId,
-    })
-    return answer.ok ? { ok: true, ruleId: input.ruleId } : answer
+    const answer = await askPeer(input.connectionId, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
+      client.rpc['conversation.revokeApprovalRule']({ commandId: commandId(), ruleId }),
+    )
+    if (!answer.ok) return answer
+    return answer.value.ok ? { ok: true, ruleId } : { ok: false, code: 'unavailable', message: answer.value.message }
   }
 
-  // A paired machine's scheduled agents, on its Studio's `schedules.*`
-  // (tailnet-peer-studio.ts): listed on `workspace:read`, made, changed, run,
-  // paused, resumed and closed on `workspace:operate`, each change once per
-  // command id, so a retried Run now starts one chat there.
+  // A paired machine's scheduled agents, on its Studio's `schedules.*`:
+  // listed on `workspace:read`, made, changed, run, paused, resumed and
+  // closed on `workspace:operate`, each change once per command id, so a
+  // retried Run now starts one chat there.
   async function askSchedules<T>(
     connectionId: unknown,
     work: (client: StudioClient) => Promise<T>,
     timeoutMs?: number,
   ): Promise<{ ok: true; value: T } | { ok: false; code: string; message: string }> {
-    const connection = connectionFor(connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    try {
-      const value = await peerStudios.ask(
-        peerTarget(connection),
-        async (client) => {
-          if (!client.supports('schedules')) throw new StudioError('outdated', '')
-          return work(client)
-        },
-        timeoutMs,
-      )
-      return { ok: true, value }
-    } catch (error) {
-      const refused = peerRefusal(connection, error)
-      return refused.kind === 'outdated'
-        ? {
-            ok: false,
-            code: 'scheduled_agents_unsupported',
-            message: `${connection.machineName} cannot take schedules from here yet. Update SprintEngine Studio there to use its schedules from here.`,
-          }
-        : { ok: false, code: refused.code, message: refused.message }
-    }
+    return askPeer(
+      connectionId,
+      'schedules',
+      (machineName) => ({
+        code: 'scheduled_agents_unsupported',
+        message: `${machineName} cannot take schedules from here yet. Update SprintEngine Studio there to use its schedules from here.`,
+      }),
+      work,
+      timeoutMs,
+    )
   }
 
   async function scheduledAgents(input: { connectionId: unknown }): Promise<MeshScheduledAgentsResult> {
@@ -2676,6 +2669,23 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     }
   }
 
+  /**
+   * Whether a paired machine's Studio keeps its chats' records for this one
+   * (`chat-lifecycle`): read off its welcome, on the connection kept to it.
+   * A machine with no Studio yet, or one that does not answer soon, does not.
+   */
+  async function servesChatLifecycle(connection: StoredMeshConnection): Promise<boolean> {
+    try {
+      return await peerStudios.ask(
+        peerTarget(connection),
+        async (client) => client.supports(STUDIO_CHAT_LIFECYCLE_CAPABILITY),
+        PEER_WELCOME_TIMEOUT_MS,
+      )
+    } catch {
+      return false
+    }
+  }
+
   async function listConversationsNow(connection: StoredMeshConnection): Promise<MeshConversationListResult> {
     const identity = await readRemoteIdentity({ endpoint: endpointOf(connection), token: connection.deviceToken })
     if (!identity.ok) {
@@ -2699,18 +2709,23 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         message: `${connection.machineName} does not serve conversations. Update Studio there to follow them from here.`,
       }
     }
+    // A chat's record (its marks, name, Auto compact, delete and a search of
+    // them all) is that machine's Studio's: asked beside the list, whether it
+    // keeps them for this one, so its menus offer them where it does.
+    const keepsRecord = servesChatLifecycle(connection)
     // What the machine publishes of itself goes to the window whole: a chat
     // pane reads what it may offer off it (`negotiateChatCapabilities`), as a
     // window reads its own Studio's welcome.
     const listed = await remoteConversations.list(connection.id)
+    const serves = await keepsRecord
     return listed.ok
       ? {
           ...listed,
           capabilities: [...(identity.value.capabilities ?? [])],
           lifecycle: tailnetPeerSupports(identity.value.capabilities, 'conversation-lifecycle'),
-          rowMenu: tailnetPeerSupports(identity.value.capabilities, 'chat-row-menu'),
-          markUnread: tailnetPeerSupports(identity.value.capabilities, 'chat-mark-unread'),
-          manage: chatManageOf(identity.value.capabilities),
+          rowMenu: serves,
+          markUnread: serves,
+          manage: chatManageOf(serves, identity.value.capabilities),
         }
       : listed
   }
@@ -3963,75 +3978,99 @@ function readCreatePullRequestOutcome(value: Record<string, unknown>): MeshPullR
   }
 }
 
-/**
- * The gateway tool a row menu change is, with its arguments and the
- * capability that names it there; null for anything that is not one.
- */
-export function rowMenuCallOf(change: unknown): {
-  tool: string
-  args: Record<string, unknown>
-  capability: 'chat-row-menu' | 'chat-mark-unread' | ChatManageCapability
+/** A change to a chat's record there: the method it is on that machine's Studio, and what it asks, in words. */
+export type ChatChange = {
+  send(client: StudioClient, chat: { workspaceId: string; commandId: string }): Promise<unknown>
   /** What is asked, for a machine that cannot be: "snooze its chats". */
   ask: string
-} | null {
+}
+
+/**
+ * The Studio method a row menu or management change is on the chat's
+ * machine, with what it carries; null for anything that is not one, and for
+ * Stop watching, which is that machine's gateway tool (`unwatchCallOf`).
+ */
+export function chatChangeOf(change: unknown): ChatChange | null {
   if (!change || typeof change !== 'object') return null
   const value = change as Record<string, unknown>
   switch (value.kind) {
-    case 'snooze':
+    case 'snooze': {
       if (value.until !== null && !(typeof value.until === 'number' && Number.isFinite(value.until))) return null
+      const until = value.until === null ? null : Math.trunc(value.until as number)
       return {
-        tool: 'conversation.snooze',
-        args: { until: value.until },
-        capability: 'chat-row-menu',
-        ask: value.until === null ? 'wake its chats' : 'snooze its chats',
+        send: (client, chat) => client.rpc['conversation.snooze']({ ...chat, until }),
+        ask: until === null ? 'wake its chats' : 'snooze its chats',
       }
+    }
     case 'highlight': {
       const starred = typeof value.starred === 'boolean' ? value.starred : undefined
       const color = value.color === null || isConversationHighlightColor(value.color) ? value.color : undefined
       if (starred === undefined && color === undefined) return null
       return {
-        tool: 'conversation.highlight',
-        args: { ...(starred !== undefined ? { starred } : {}), ...(color !== undefined ? { color } : {}) },
-        capability: 'chat-row-menu',
+        send: (client, chat) =>
+          client.rpc['conversation.highlight']({
+            ...chat,
+            ...(starred !== undefined ? { starred } : {}),
+            ...(color !== undefined ? { color } : {}),
+          }),
         ask: starred !== undefined && color === undefined ? 'star its chats' : 'highlight its chats',
       }
     }
-    case 'auto-settle':
-      if (typeof value.enabled !== 'boolean') return null
+    case 'auto-settle': {
+      const enabled = value.enabled
+      if (typeof enabled !== 'boolean') return null
       return {
-        tool: 'conversation.auto_settle',
-        args: { enabled: value.enabled },
-        capability: 'chat-row-menu',
+        send: (client, chat) => client.rpc['conversation.setAutoSettle']({ ...chat, enabled }),
         ask: 'switch Auto-settle on its chats',
       }
+    }
     case 'mark-unread':
+      return { send: (client, chat) => client.rpc['conversation.markUnread'](chat), ask: 'mark its chats unread' }
+    case 'rename': {
+      const name = typeof value.name === 'string' ? value.name.trim() : ''
+      if (!name) return null
+      return { send: (client, chat) => client.rpc['conversation.rename']({ ...chat, name }), ask: 'rename its chats' }
+    }
+    case 'auto-compact': {
+      const enabled = value.enabled
+      if (typeof enabled !== 'boolean') return null
       return {
-        tool: 'conversation.mark_unread',
-        args: {},
-        capability: 'chat-mark-unread',
-        ask: 'mark its chats unread',
+        send: (client, chat) => client.rpc['conversation.setAutoCompact']({ ...chat, enabled }),
+        ask: 'switch Auto compact on its chats',
       }
+    }
+    case 'delete':
+      return { send: (client, chat) => client.rpc['conversation.delete'](chat), ask: 'delete its chats' }
     default:
-      return chatManageCallOf(value)
+      return null
   }
 }
 
-// ── A paired desktop's chat management ─────────────────────────────────
-//
-// The changes a chat's menus ask of the machine it runs on beyond its marks,
-// each over a gateway tool of its own capability, asked as the row menu's are.
+/** Stop watching a chat's pull request there, as that machine's gateway tool takes it; null for any other change. */
+export function unwatchCallOf(change: unknown): { args: Record<string, unknown> } | null {
+  if (!change || typeof change !== 'object') return null
+  const value = change as Record<string, unknown>
+  if (value.kind !== 'unwatch-pull-request') return null
+  if (typeof value.agentId !== 'string' || !value.agentId) return null
+  if (value.url !== undefined && (typeof value.url !== 'string' || !value.url)) return null
+  return { args: { agentId: value.agentId, ...(typeof value.url === 'string' ? { url: value.url } : {}) } }
+}
 
-type ChatManageCapability =
-  'chat-rename' | 'chat-auto-compact' | 'chat-unwatch-pull-request' | 'chat-delete' | 'chat-search'
-
-/** Whether a machine serves each of the chat management changes, as a listed chat's menus read it. */
-export function chatManageOf(capabilities: readonly string[] | null | undefined): MeshConversationManage {
+/**
+ * What of a chat's management a paired machine takes from here: all of its
+ * record where its Studio serves `chat-lifecycle`; Stop watching where it
+ * advertises its tool.
+ */
+export function chatManageOf(
+  serves: boolean,
+  capabilities: readonly string[] | null | undefined,
+): MeshConversationManage {
   return {
-    rename: tailnetPeerSupports(capabilities, 'chat-rename'),
-    autoCompact: tailnetPeerSupports(capabilities, 'chat-auto-compact'),
+    rename: serves,
+    autoCompact: serves,
     unwatchPullRequest: tailnetPeerSupports(capabilities, 'chat-unwatch-pull-request'),
-    deleteSettled: tailnetPeerSupports(capabilities, 'chat-delete'),
-    search: tailnetPeerSupports(capabilities, 'chat-search'),
+    deleteSettled: serves,
+    search: serves,
   }
 }
 
@@ -4069,21 +4108,25 @@ export function deletePlanOf(workspaceId: string, value: Record<string, unknown>
   }
 }
 
-/** A machine's rules as it listed them, kept to the ones this build can read. */
-export function approvalRulesOf(value: Record<string, unknown>): MeshApprovalRulesResult {
+/**
+ * A machine's rules as it listed them, kept to the ones this build can read:
+ * each project by its folder's name, never the path on that machine.
+ */
+export function approvalRulesOf(listed: unknown): MeshApprovalRulesResult {
   const text = (entry: unknown): entry is string =>
     typeof entry === 'string' && entry.length > 0 && entry.length <= 2_000
-  const rules = (Array.isArray(value.rules) ? value.rules : []).slice(0, 2_000).flatMap((entry) => {
+  const rules = (Array.isArray(listed) ? listed : []).slice(0, 2_000).flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return []
     const rule = entry as Record<string, unknown>
     if (!text(rule.id) || !text(rule.label)) return []
+    const root = typeof rule.workspaceRoot === 'string' ? rule.workspaceRoot : ''
     return [
       {
         id: rule.id,
         label: rule.label,
         toolName: text(rule.toolName) ? rule.toolName : '',
         toolKind: text(rule.toolKind) ? rule.toolKind : 'other',
-        project: text(rule.project) ? rule.project : '',
+        project: root.split(/[\\/]/u).filter(Boolean).at(-1) ?? '',
         createdAt: typeof rule.createdAt === 'number' && Number.isFinite(rule.createdAt) ? rule.createdAt : 0,
       },
     ]
@@ -4265,38 +4308,4 @@ export function searchAnswerOf(value: Record<string, unknown>): MeshConversation
     ]
   })
   return { ok: true, chats, truncated: value.truncated === true }
-}
-
-function chatManageCallOf(value: Record<string, unknown>): ReturnType<typeof rowMenuCallOf> {
-  switch (value.kind) {
-    case 'rename':
-      if (typeof value.name !== 'string' || !value.name.trim()) return null
-      return {
-        tool: 'conversation.rename',
-        args: { name: value.name.trim() },
-        capability: 'chat-rename',
-        ask: 'rename its chats',
-      }
-    case 'auto-compact':
-      if (typeof value.enabled !== 'boolean') return null
-      return {
-        tool: 'conversation.auto_compact',
-        args: { enabled: value.enabled },
-        capability: 'chat-auto-compact',
-        ask: 'switch Auto compact on its chats',
-      }
-    case 'unwatch-pull-request':
-      if (typeof value.agentId !== 'string' || !value.agentId) return null
-      if (value.url !== undefined && (typeof value.url !== 'string' || !value.url)) return null
-      return {
-        tool: 'conversation.pull_request_unwatch',
-        args: { agentId: value.agentId, ...(typeof value.url === 'string' ? { url: value.url } : {}) },
-        capability: 'chat-unwatch-pull-request',
-        ask: "stop watching its chats' pull requests",
-      }
-    case 'delete':
-      return { tool: 'conversation.delete', args: {}, capability: 'chat-delete', ask: 'delete its chats' }
-    default:
-      return null
-  }
 }

@@ -199,10 +199,10 @@ export type StudioFollowedBackend = {
     limit?: number,
   ): Promise<StudioComposerRead<ConversationFileSearchAnswer>>
   listCommands?(key: ConversationKey, refresh: boolean): Promise<StudioComposerRead<ConversationCommandsAnswer>>
-  /** The chat's rest, written to Studio's own record of it as its row menu writes it; `byOwner` says whose write it is. */
-  settle?(chat: StudioChatRef, settled: boolean, byOwner: boolean): StudioLifecycleOutcome<{ settledAt: number | null }>
+  /** The chat's rest, written to its workspace's record as its row menu writes it; `byOwner` says whose write it is. */
+  settle?(workspaceId: string, settled: boolean, byOwner: boolean): StudioLifecycleOutcome<{ settledAt: number | null }>
   visit?(
-    chat: StudioChatRef,
+    workspaceId: string,
     visitedAt: number | undefined,
     byOwner: boolean,
   ): StudioLifecycleOutcome<{ lastVisitedAt: number }>

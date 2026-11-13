@@ -194,9 +194,15 @@ test('a revoked client reaches only what needs no grant at all', () => {
   assert.equal(studioGrantAllows(REVOKED, 'conversation.list'), false)
 })
 
-test('a provider’s key and an approval rule are Settings: written only under settings:write', () => {
-  for (const method of ['providers.setSecret', 'providers.clearSecret', 'conversation.revokeApprovalRule'] as const)
+test('a provider’s key is Settings, written only under settings:write; an approval rule is revoked by whoever drives the chats', () => {
+  for (const method of ['providers.setSecret', 'providers.clearSecret'] as const)
     assert.deepEqual(STUDIO_METHOD_ACCESS[method], { permissions: ['settings:write'] }, method)
   assert.equal(studioGrantAllows({ owner: false, scopes: ['conversation:operate'] }, 'providers.setSecret'), false)
   assert.equal(studioGrantAllows({ owner: false, scopes: ['settings:write'] }, 'providers.setSecret'), true)
+  // Revoking only makes the chats ask again, so it needs no more than driving them.
+  assert.deepEqual(STUDIO_METHOD_ACCESS['conversation.revokeApprovalRule'], { permissions: ['conversation:operate'] })
+  assert.equal(
+    studioGrantAllows({ owner: false, scopes: ['conversation:read'] }, 'conversation.revokeApprovalRule'),
+    false,
+  )
 })

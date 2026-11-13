@@ -9,8 +9,8 @@ test('WorkspaceSidebar.remoteMenu', async () => {
   // A chat on a paired machine that no window here has open offers the menu
   // a local chat does (owner report 2026-10-21: "There should effectively be
   // no difference"), each item asking the machine that keeps the chat: Star,
-  // Highlight color, Snooze and Auto-settle over its `chat-row-menu`, Mark
-  // unread over `chat-mark-unread`, Settle over `conversation-lifecycle`.
+  // Highlight color, Snooze and Auto-settle over its `chat-lifecycle`, Mark
+  // unread over `chat-lifecycle`, Settle over `conversation-lifecycle`.
   // Only what is about a workspace here, which the row does not have until it
   // is opened, is left out: Rename, New chat in project, Reveal folder (the
   // folder is on the other machine), and Close workspace.

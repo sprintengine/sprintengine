@@ -62,6 +62,8 @@ import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
 import { createStudioSchedulesHandlers } from './studio-schedules'
 import type { StudioPhoneReads } from '../backlog/backlog-domain'
 import { createStudioPhoneReadsHandlers } from './studio-phone-reads'
+import type { StudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
+import { createStudioChatLifecycleHandlers } from './studio-chat-lifecycle'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -199,6 +201,8 @@ export type StudioRpcRouterOptions = {
   schedules?: StudioSchedulesDomain
   /** The projects' backlogs, the machine's shares and the pull request reads; without them, `backlog.*`, `shares.list` and `pullRequests.detail`/`.diff` are answered `unavailable`. */
   phoneReads?: StudioPhoneReads
+  /** The chats' records beyond their rest; without them, `chat-lifecycle`'s methods are answered `unavailable`. */
+  chatLifecycle?: StudioChatLifecycleDomain
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -436,6 +440,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       return { workspaceRoot: key.workspaceRoot, workspaceId: key.workspaceId, agentId: key.agentId }
     return backend.resolveKey(key.workspaceId, key.agentId)
   }
+  const noChat = (workspaceId: string) => refuse('not_found', `No chat in workspace "${workspaceId}" here.`)
   const notFound = (key: { workspaceId: string; agentId: string }) =>
     refuse('not_found', `No conversation "${key.agentId}" in workspace "${key.workspaceId}" here.`)
 
@@ -856,11 +861,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
    */
   function settleRefusal(
     done: { code: string; message: string },
-    wire: StudioConversationKey,
+    workspaceId: string,
     voice: Voice,
     method: StudioMethod,
   ): Refused<'not_found' | 'conflict' | 'unavailable'> {
-    if (done.code === 'unknown_workspace') return notFound(wire)
+    if (done.code === 'unknown_workspace') return noChat(workspaceId)
     if (done.code === 'working') return refuse('conflict', done.message)
     return voice.failed('unavailable', done.message, method)
   }
@@ -1028,33 +1033,29 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!key) return notFound(wire)
       return composerAnswer(await list(key, refresh === true), wire, voice, 'conversation.listCommands')
     },
-    'conversation.settle': async ({ key: wire, commandId, settled }, { grant, voice }) => {
+    'conversation.settle': async ({ workspaceId, commandId, settled }, { grant, voice }) => {
       const settle = followed.settle
       if (!settle) return unserved('conversation.settle')
-      const key = resolve(wire, grant)
-      if (!key) return notFound(wire)
       // A retry under its command id is answered with the first answer, not
       // written again over an un-settle that came in between.
       return once(
         keptId('conversation.settle', grant, commandId),
         async () => {
-          const done = settle(ids(key), settled !== false, grant.owner)
+          const done = settle(workspaceId, settled !== false, grant.owner)
           if (done.ok) return { ok: true as const, result: { settledAt: done.settledAt } }
-          return settleRefusal(done, wire, voice, 'conversation.settle')
+          return settleRefusal(done, workspaceId, voice, 'conversation.settle')
         },
         voice,
         'conversation.settle',
       )
     },
-    'conversation.visit': async ({ key: wire, visitedAt }, { grant, voice }) => {
+    'conversation.visit': async ({ workspaceId, visitedAt }, { grant, voice }) => {
       const visit = followed.visit
       if (!visit) return unserved('conversation.visit')
-      const key = resolve(wire, grant)
-      if (!key) return notFound(wire)
-      const done = visit(ids(key), visitedAt, grant.owner)
+      const done = visit(workspaceId, visitedAt, grant.owner)
       if (done.ok) return { ok: true, result: { lastVisitedAt: done.lastVisitedAt } }
       return done.code === 'unknown_workspace'
-        ? notFound(wire)
+        ? noChat(workspaceId)
         : voice.failed('unavailable', done.message, 'conversation.visit')
     },
     'conversation.changesDiff': async ({ key: wire, selection }, { grant, voice }) => {
@@ -1735,6 +1736,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
     ...createStudioPhoneReadsHandlers({
       ...(options.phoneReads ? { reads: options.phoneReads } : {}),
+    // ── A chat's record beyond its rest ────────────────────────────────────
+    // By its workspace, as a settle; each change once per command id.
+
+    ...createStudioChatLifecycleHandlers({
+      ...(options.chatLifecycle ? { lifecycle: options.chatLifecycle } : {}),
       kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
     }),
 

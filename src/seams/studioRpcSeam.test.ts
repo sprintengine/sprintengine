@@ -21,6 +21,7 @@ import {
   STUDIO_FILE_SYSTEM_METHODS,
   STUDIO_GIT_METHODS,
   STUDIO_WORKTREES_METHODS,
+  STUDIO_CHAT_LIFECYCLE_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -28,6 +29,7 @@ import {
   studioGrantAllows,
   type StudioAgentSettingsMethod,
   type StudioSchedulesMethod,
+  type StudioChatLifecycleMethod,
   type StudioAgentSetupMethod,
   type StudioChatStoresMethod,
   type StudioAgentSkillsMethod,
@@ -476,6 +478,10 @@ test('every method the server serves has its call in the SDK, under the same sco
     // windows' Settings ▸ Worktrees and Delete drive, called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_WORKTREES_METHODS).map((method) => [method, 'request'])) as Record<
       StudioWorktreesMethod,
+    // A chat's record beyond its rest, which the phone and a paired desktop
+    // write (`chat-lifecycle.ts`), called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_CHAT_LIFECYCLE_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioChatLifecycleMethod,
       string
     >),
   }

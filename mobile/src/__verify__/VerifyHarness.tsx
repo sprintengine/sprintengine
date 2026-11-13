@@ -99,7 +99,7 @@ const linking: LinkingOptions<VerifyRootParamList> = {
       //   sprintengine://verify/chat-twins/ws-docs      (two desktops: pick one)
       //   sprintengine://verify/chat/ws-notices         (Studio's own messages)
       //   sprintengine://verify/chat/ws-files           (files attached by path)
-      // Mark unread (the fixture desktop advertises `chat-mark-unread`): open
+      // Mark unread (the fixture desktop keeps its chats' rest): open
       // the green chat, then its More menu's Mark unread closes it back to a
       // green row, and opening it again lands on "New" above its second turn.
       // Long-press a read row on `…/home` for the same from the list.

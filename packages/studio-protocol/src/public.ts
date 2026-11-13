@@ -41,6 +41,7 @@ export * from './file-system.js'
 export * from './git.js'
 // The worktrees Studio's agents run in, and deleting settled chats.
 export * from './worktrees.js'
+export * from './chat-lifecycle.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.
 export * from './update.js'
 export * from './modules.js'

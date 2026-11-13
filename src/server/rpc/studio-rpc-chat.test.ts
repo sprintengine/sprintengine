@@ -422,6 +422,25 @@ test('a paired grant reaches every chat control by its scopes; only a terminal h
   }
 })
 
+test('whoever may drive the chats may revoke an always-allow rule: it only makes them ask again', async () => {
+  const { handle } = grantsRouter()
+  const driver: StudioGrant = {
+    clientId: 'phone',
+    name: 'Phone',
+    owner: false,
+    scopes: ['conversation:operate'],
+    ceiling: 'bypass',
+  }
+  assert.equal(
+    code(await handle(driver, 'conversation.revokeApprovalRule', { commandId: 'r1', ruleId: 'rule-1' })),
+    'ok',
+  )
+  assert.equal(
+    code(await handle(driver, 'providers.setSecret', { commandId: 'r2', providerId: 'p', value: 'sk' })),
+    'scope_required',
+  )
+})
+
 test('a read-only grant follows chats and is refused every method that needs more', async () => {
   const { readOnly, handle, chat } = grantsRouter()
   assert.equal(code(await handle(readOnly, 'session.list', {})), 'ok')
@@ -432,6 +451,7 @@ test('a read-only grant follows chats and is refused every method that needs mor
     ['providers.setSecret', { commandId: 'c3', providerId: 'p', value: 'sk-test' }],
     ['providers.list', {}],
     ['files.search', { rootPath: '/Users/dev/app', query: 'a' }],
+    ['conversation.revokeApprovalRule', { commandId: 'c4', ruleId: 'rule-1' }],
   ] as const)
     assert.equal(code(await handle(readOnly, method, params)), 'scope_required', method)
   assert.equal(chat.calls.sends.length, 0)

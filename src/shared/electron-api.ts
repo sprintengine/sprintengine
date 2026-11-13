@@ -852,20 +852,20 @@ export type ElectronApi = {
   meshVisitConversation: (input: { connectionId: string; workspaceId: string }) => Promise<MeshVisitConversationResult>
   /**
    * A row menu change to a chat on a paired machine: Star, Highlight color,
-   * Snooze, Auto-settle (`chat-row-menu` there) or Mark unread
-   * (`chat-mark-unread` there), written to that machine's record of it.
+   * Snooze, Auto-settle (`chat-lifecycle` there) or Mark unread
+   * (`chat-lifecycle` there), written to that machine's record of it.
    */
   meshChangeConversation: (input: {
     connectionId: string
     workspaceId: string
     change: MeshConversationChange
   }) => Promise<MeshChangeConversationResult>
-  /** What deleting a settled chat on a paired machine would do, as that machine plans it (`chat-delete` there). */
+  /** What deleting a settled chat on a paired machine would do, as that machine plans it (`chat-lifecycle` there). */
   meshConversationDeletePlan: (input: {
     connectionId: string
     workspaceId: string
   }) => Promise<MeshConversationDeletePlanResult>
-  /** What was said in a paired machine's chats, as its own palette finds it (`chat-search` there). */
+  /** What was said in a paired machine's chats, as its own palette finds it (`chat-lifecycle` there). */
   meshConversationSearch: (input: { connectionId: string; query: string }) => Promise<MeshConversationSearchResult>
   /** The "always allow" rules a paired machine's chats run with (`approval-rules` there). */
   meshApprovalRules: (input: { connectionId: string }) => Promise<MeshApprovalRulesResult>

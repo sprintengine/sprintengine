@@ -63,7 +63,7 @@ green read `updatedAt`, which also moves on a rename, a session starting or
 stopping and a usage report, and the phone cannot settle or stamp visits.
 
 While a chat is open, the phone tells its desktop so with
-`conversation.visit`: on opening, at most every ten seconds while it stays on
+`conversation.visit` on the desktop's Studio (`api/chatLifecycle.ts`): on opening, at most every ten seconds while it stays on
 screen with the app in front, at once when a turn ends in view or the chat has
 a turn nobody has seen, and on leaving. A stamp that fails is logged and
 nothing else; this phone still keeps when it last opened each chat itself.
@@ -107,7 +107,8 @@ rules for those have nothing to change here. A failed chat says Failed on its
 row and nothing on the bell, as before.
 
 Long-press a row, or use the chat header's More button, and choose Settle to
-settle the chat on its desktop (`conversation.settle`), which moves it to the
+settle the chat on its desktop (`conversation.settle` on its Studio, under a
+command id, so a retried settle settles once), which moves it to the
 desktop's Settled shelf. A screen reader finds Settle among the row's actions.
 The row leaves the list at once, and the chat closes back to the list; if the
 desktop refuses, the row comes back and a toast says why. Settle is offered
@@ -115,12 +116,12 @@ only where the desktop advertises `conversation-lifecycle` and the pairing
 operates its chats.
 
 The same menus offer Mark unread where the desktop advertises
-`chat-mark-unread` (2026-10-07), the pairing operates its chats, and the
+`conversation-lifecycle` (2026-10-07), the pairing operates its chats, and the
 chat's agent has finished something, unless the row is already green. It
-calls `conversation.mark_unread`, which moves the chat's `lastVisitedAt` back
+calls the desktop's `conversation.markUnread`, which moves the chat's `lastVisitedAt` back
 to just before its latest finish, so the finish reads as unseen on every
 device. The row goes green the moment the desktop answers; a refusal (one with
-nothing finished is refused as `nothing_finished`) leaves it as it was, and a
+nothing finished is refused as a `conflict`, in the desktop's words) leaves it as it was, and a
 toast says why. Marked from the chat's own More menu, the chat closes back to
 the list, since looking at it is what reads it: nothing on this phone stamps
 it seen again until it is next opened.
@@ -131,8 +132,8 @@ clock a visit it stamped answered with. A mark unread now wins over every
 such reading taken before it (`chatLifecycleLogic.ts`, `visitRewindApplies`),
 and a reading taken after it, the person opening the chat again, wins over
 the mark. The phone learns of a mark from its own call, from a desktop that
-lists `visitRewoundAt` beside the clock, or, from a desktop that advertises
-`chat-mark-unread` and lists no such stamp (as of 2026-10-07 none does), from
+lists `visitRewoundAt` beside the clock, or, from a desktop that keeps its
+chats' rest and lists no such stamp (as of 2026-10-07 none does), from
 a listed clock earlier than the last it heard from the desktop: its previous
 read of the list, or a visit answered before the read set out. The
 readings it resets are reset in its device notes too, so the mark stays up

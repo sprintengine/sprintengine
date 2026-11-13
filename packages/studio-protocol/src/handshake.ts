@@ -227,6 +227,14 @@ export const STUDIO_GIT_CAPABILITY = 'git' as const
 export const STUDIO_WORKTREES_CAPABILITY = 'worktrees' as const
 
 /**
+ * A chat's record beyond its rest and visit clock (`chat-lifecycle.ts`):
+ * `conversation.markUnread`, `.snooze`, `.highlight`, `.setAutoSettle`,
+ * `.setAutoCompact`, `.rename`, `.deletePlan`, `.delete` and
+ * `.searchChats`. Offered where the Studio keeps its chats' records.
+ */
+export const STUDIO_CHAT_LIFECYCLE_CAPABILITY = 'chat-lifecycle' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -273,6 +281,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_PULL_REQUEST_READS_CAPABILITY,
   STUDIO_GIT_CAPABILITY,
   STUDIO_WORKTREES_CAPABILITY,
+  STUDIO_CHAT_LIFECYCLE_CAPABILITY,
 ] as const
 
 /**

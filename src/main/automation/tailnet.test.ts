@@ -812,7 +812,6 @@ test('tailnet', async () => {
         'new-chat-worktree',
         'new-chat-effort',
         'cli-runtime-catalog',
-        'chat-mark-unread',
         'new-chat-worktree-name',
         'new-chat-in-worktree',
         'new-chat-no-project',
@@ -820,13 +819,7 @@ test('tailnet', async () => {
         'new-chat-skills',
         'canvas-machine-boards',
         'chat-create-pull-request',
-        'chat-row-menu',
-        'chat-rename',
-        'chat-auto-compact',
         'chat-unwatch-pull-request',
-        'chat-delete',
-        'chat-search',
-        'approval-rules',
         'mcp-oauth',
       ])
 
@@ -949,7 +942,6 @@ test('tailnet', async () => {
         'new-chat-worktree',
         'new-chat-effort',
         'cli-runtime-catalog',
-        'chat-mark-unread',
         'new-chat-worktree-name',
         'new-chat-in-worktree',
         'new-chat-no-project',
@@ -957,13 +949,7 @@ test('tailnet', async () => {
         'new-chat-skills',
         'canvas-machine-boards',
         'chat-create-pull-request',
-        'chat-row-menu',
-        'chat-rename',
-        'chat-auto-compact',
         'chat-unwatch-pull-request',
-        'chat-delete',
-        'chat-search',
-        'approval-rules',
         'mcp-oauth',
       ])
       // Every one the wire defines but shrinking an upload, which only a

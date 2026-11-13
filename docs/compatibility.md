@@ -509,23 +509,27 @@ kept, tokens included, so a client on it makes one where the welcome lists it.
 A chat's rest and read state are the `conversation-lifecycle` capability: a
 desktop that advertises it leaves the chats it has settled out of the list, sends it in its sidebar's order, names
 each chat's `chatTitle`, `lastUserMessageAt`, `lastTurnEndedAt` and
-`lastVisitedAt`, and serves the `conversation.settle` and `conversation.visit`
-gateway tools; `workspace.list` items carry `settledAt` beside it, with no
-capability of their own. The members are optional and the tools new, so no
-peer is refused over any of it: a client offers no Settle for a desktop that
-does not advertise it, and an older one answers either tool "Unknown tool"
-(`docs/conversations.md`, "Rest, order and read state in the list").
+`lastVisitedAt`; `workspace.list` items carry `settledAt` beside it, with no
+capability of their own. The members are optional, so no peer is refused over
+any of it: a client offers no Settle for a desktop that does not advertise it
+(`docs/conversations.md`, "Rest, order and read state in the list"). Settling
+and visiting were the `conversation.settle` and `conversation.visit` gateway
+tools on a device token; since 2026-11-13 a device reaches them only on the
+Studio protocol (below), and the tools are an agent's.
 The leaving out and the order are the capability's promise, so they hold only
 where it is advertised. The Studio RPC advertises it (2026-11-12): its
 `conversation.list` leaves settled chats out in the sidebar's order, as the
 lane's does, and `conversation.settle` (`settled: false` brings a chat back;
 `conflict` while an agent in it works) and `conversation.visit` (no command
-id, not audited) write the same record, on `conversation:operate`. Before
+id, not audited) write the same record, on `conversation:operate`, each by
+the chat's `workspaceId` (2026-11-13; before that by a conversation key,
+whose `agentId` a device's call never used). Before
 that it did not advertise it, and listed every chat most recently moved
 first.
-Mark unread (2026-10-07) is a gateway tool beside them,
-`conversation.mark_unread`, advertised as `chat-mark-unread` (no
-`conversation-` prefix: it names a tool, not the conversation lane). It
+Mark unread (2026-10-07) was a gateway tool beside them,
+`conversation.mark_unread`, advertised as `chat-mark-unread`; since 2026-11-13
+a device marks a chat unread with the Studio's `conversation.markUnread`
+(`chat-lifecycle`), the capability is gone, and the tool is an agent's. It
 deliberately amends one rule: `lastVisitedAt` had only ever moved forward, and
 this tool moves it back, to just before the chat's latest finish. That is not
 a bump, because nothing a peer parses changed: the member keeps its type, may
@@ -535,14 +539,12 @@ visit time and nothing else; the phone of that date takes the later of the
 listed clock and its own readings, so at worst it keeps showing the chat as
 read. On the desktop the rewind travels as `lastVisitedAt` with a newer
 `visitRewoundAt`, the only patch that may lower the clock, so a lagging
-window's visit still cannot. A phone that adds Mark unread checks for
-`chat-mark-unread`, and must stop keeping its own later visit readings over
+window's visit still cannot. A phone that offers Mark unread must stop keeping its own later visit readings over
 an earlier listed one. Each listed chat names that stamp as `visitRewoundAt`
 beside `lastVisitedAt`, an optional member with no capability of its own: a
 phone drops only the readings it took before the stamp, so a chat marked
 unread while the phone was closed reads unread there, and an older phone
-ignores the member. The Studio
-RPC does not advertise it, having no method for the tool.
+ignores the member.
 A queued message is the `conversation-queued-sends` capability (2026-10-08):
 a `send` that says `queue` is held by the desktop and sent when the chat's
 turn ends, `cancelQueued` takes one back, and a client that asks with a
@@ -821,7 +823,7 @@ An approval answered with a rule that outlives the conversation is the
 takes `decision: 'always'` from a device with `conversation:operate`, and the
 desktop saves the rule for the chat's workspace among its own, as its own
 "Always allow … in this workspace" does, where its Settings (and a paired
-desktop's, through `approval-rules`) list and revoke it. It is additive: the
+desktop's, through its Studio's `approval-rules`) list and revoke it. It is additive: the
 first version's validator, and so every desktop without the capability and
 the phone's pinned copy, refuses the decision as `unsafe_remote_decision`, as
 it always did, and a client offers the rule only where it is advertised. The
@@ -910,8 +912,7 @@ restarted) is answered as held and never held or sent a second time
 (`scheduled-messages.json` keeps `sources` on a message and a top-level
 `heldSources`; a file without them reads as before).
 Create PR on a paired machine's chat is `chat-create-pull-request`
-(2026-10-18), gateway tools beside `conversation.mark_unread` and, like it,
-without the `conversation-` prefix: `conversation.pull_request_state`
+(2026-10-18), gateway tools without the `conversation-` prefix: `conversation.pull_request_state`
 (`conversation:read`) and `conversation.pull_request_draft`, `_draft_cancel`,
 `_push` and `_create` (`conversation:operate`). Each names the chat by
 `workspaceId` and `agentId`, never a folder; the machine reads the chat's
@@ -920,40 +921,30 @@ and records a pull request it creates as the chat's, so its next list carries
 it. All of it is additive: a client offers Create PR under a machine's chats
 only where it is advertised, and an older machine answers the tools "Unknown
 tool". The Studio RPC does not advertise it, having no method for them.
-A paired desktop's row menu on a machine's chat is `chat-row-menu`
-(2026-10-21), gateway tools beside `conversation.mark_unread` and, like it,
-without the `conversation-` prefix: `conversation.highlight` (Star and
-Highlight color), `conversation.snooze` (Snooze, and Wake now with `until:
-null`) and `conversation.auto_settle`, each on `conversation:operate` and
-audited. Each listed chat names what they write as two new optional members
-of `ConversationThread`, `highlight` (`{ starred, color? }`, the colour one
-of `CONVERSATION_HIGHLIGHT_COLORS`) and `autoSettle: true`, with no
-capability of their own; `parseConversationServerFrame` keeps a `highlight`
-it can read, a known colour and a boolean star, and `autoSettle` only when it
-is `true`. All of it is additive: a client offers Star, Highlight color,
-Snooze and Auto-settle for a machine's chats only where it is advertised, an
-older machine answers the tools "Unknown tool", and an older client ignores
-the members. The pinned phone files are unchanged. The Studio RPC does not
-advertise it, having no method for them.
-A paired desktop's chat management beyond the marks (2026-10-25) is a
-capability per part, each naming gateway tools listed to paired devices only,
-without the `conversation-` prefix: `chat-rename` (`conversation.rename`),
-`chat-auto-compact` (`conversation.auto_compact`),
-`chat-unwatch-pull-request` (`conversation.pull_request_unwatch`) and
-`chat-delete` (`conversation.delete_plan`, a read, and `conversation.delete`)
-`chat-search` (`conversation.search`, a read) and `approval-rules`
-(`conversation.approval_rules`, a read, and
-`conversation.approval_rule_revoke`), each on `conversation:operate` but the
-reads. A listed chat says whether it compacts by itself as
-`autoCompact`, an optional boolean of `ConversationThread` that
-`parseConversationServerFrame` keeps when it is one, and a listed pull
-request says while it is watched as `watch`, an optional member of
-`ConversationWirePullRequest` kept when it can be read. The list result a
-desktop's window reads names which a machine takes as `manage`
-(`{ rename, autoCompact, unwatchPullRequest, deleteSettled, search }`), an optional member a window
-from before it ignores. All of it is additive: a client offers each item for a
-machine's chats only where it is advertised, and an older machine answers the
-tools "Unknown tool". The Studio RPC does not advertise them.
+A paired desktop's row menu on a machine's chat (2026-10-21) writes Star,
+Highlight color, Snooze and Wake now, and Auto-settle to that machine's
+record of the chat. Each listed chat names what they write as two optional
+members of `ConversationThread`, `highlight` (`{ starred, color? }`, the
+colour one of `CONVERSATION_HIGHLIGHT_COLORS`) and `autoSettle: true`, with
+no capability of their own; `parseConversationServerFrame` keeps a
+`highlight` it can read, a known colour and a boolean star, and `autoSettle`
+only when it is `true`, and an older client ignores them. A listed chat says
+whether it compacts by itself as `autoCompact`, an optional boolean, and a
+listed pull request says while it is watched as `watch`, an optional member
+of `ConversationWirePullRequest` kept when it can be read. The writes were
+gateway tools listed to paired devices under the `chat-row-menu`,
+`chat-rename`, `chat-auto-compact`, `chat-delete`, `chat-search` and
+`approval-rules` tailnet capabilities; since 2026-11-13 they are the Studio's
+`chat-lifecycle` methods (below) and its `approval-rules`, those six tailnet
+capabilities are gone, and so are the tools a device alone used
+(`conversation.rename`, `.auto_compact`, `.delete_plan`, `.delete`,
+`.search`, `.approval_rules` and `.approval_rule_revoke`). Stop watching is
+still `chat-unwatch-pull-request` (`conversation.pull_request_unwatch`). The
+list result a desktop's window reads names which of them a machine takes as
+`rowMenu`, `markUnread` and `manage`
+(`{ rename, autoCompact, unwatchPullRequest, deleteSettled, search }`), read
+off that machine's Studio welcome: a machine on an older build offers none of
+them, and is asked to update.
 Breaking frame changes require a new
 negotiated capability or the tailnet version-window process above, not merely
 a package version change. Presentation-only fixes use a package patch.
@@ -1206,6 +1197,20 @@ phone and a paired desktop reach a machine's schedules only this way: the
 `scheduled-agents` and `scheduled-agents-edit` tailnet capabilities, and the
 devices' use of the `schedule.*` gateway tools, are gone (agents keep the
 tools, which follow the same rules).
+`chat-lifecycle` (2026-11-13) is a chat's record beyond its rest, by the
+chat's `workspaceId`: `conversation.markUnread`, `.snooze` (`until`, or null
+to wake), `.highlight` (`starred`, `color`), `.setAutoSettle`,
+`.setAutoCompact`, `.rename` and `.delete` on `conversation:operate`, each
+with a `commandId` and answered once per id; `conversation.deletePlan` and
+`conversation.searchChats` (`{ query }`, 2 to 200 characters, the machine's
+palette search) on `conversation:read`. A chat at work, a settled chat
+snoozed, a chat with nothing finished marked unread and a delete the plan
+refuses are `conflict`; a chat the Studio has no record of is `not_found`.
+`conversation.revokeApprovalRule` moved from `settings:write` to
+`conversation:operate` the same day: revoking only makes the chats ask again.
+The phone and a paired desktop reach these only this way; a device token is
+refused the agents' `conversation.settle`, `.visit`, `.mark_unread`,
+`.snooze`, `.highlight` and `.auto_settle` gateway tools.
 A CLI's API key is a provider's key under the CLI's manifest id, read and set
 with `providers.secretStatus`, `.setSecret` and `.clearSecret`. The desktop's
 windows reach all of these only this way: their window IPC is gone.

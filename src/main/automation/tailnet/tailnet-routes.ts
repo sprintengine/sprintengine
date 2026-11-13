@@ -377,14 +377,6 @@ export const TAILNET_CAPABILITIES = [
   'new-chat-worktree',
   'new-chat-effort',
   'cli-runtime-catalog',
-  // Mark unread from any device (2026-10-07), a gateway tool beside
-  // `conversation.visit`: `conversation.mark_unread` moves a chat's
-  // `lastVisitedAt` back to just before its latest finish, the one write
-  // that moves it back. A client offers no Mark unread for a machine that
-  // does not advertise it; an older one answers the tool "Unknown tool".
-  // The list names each chat's `visitRewoundAt` beside `lastVisitedAt`, when
-  // it was last marked unread, so a client closed at the time can tell.
-  'chat-mark-unread',
   // A paired desktop's New chat picks its worktree as this machine's own door
   // does (2026-10-09): `conversation.create` takes `worktreeName` (what a
   // `worktree` and its branch are named from, typed into the Worktree field) and `inWorktree`
@@ -433,48 +425,14 @@ export const TAILNET_CAPABILITIES = [
   // They name the chat, never a folder. A client that does not see it draws
   // no Create PR under this machine's chats, as before.
   'chat-create-pull-request',
-  // A paired desktop's row menu on a chat here (2026-10-21): Star, Highlight
-  // color, Snooze and Wake now, and Auto-settle, written to this machine's
-  // record of the chat by `conversation.highlight`, `conversation.snooze` and
-  // `conversation.auto_settle`, so every device that lists the chat draws the
-  // same marks. The list names each chat's `highlight` and `autoSettle` beside
-  // the `snoozedUntil` it already carried. A client that does not see it
-  // offers none of the four for this machine's chats; an older machine
-  // answers the tools "Unknown tool".
-  'chat-row-menu',
-  // ── A paired desktop's chat management (2026-10-25) ──
-  // What a paired desktop's menus ask of a chat here beyond its marks. Each
-  // names gateway tools served to paired devices only; a client that does not
-  // see one offers the item for this machine's chats on that computer alone,
-  // or not at all, and an older machine answers the tool "Unknown tool".
-  //
-  // Rename: `conversation.rename` names the chat on this machine, so every
-  // device lists it by the new name (the list's `chatTitle`).
-  'chat-rename',
-  // Auto compact: `conversation.auto_compact` switches it for a chat here,
-  // and a listed chat says whether it compacts by itself (`autoCompact`, by
-  // its own switch or this machine's default), so a paired desktop's menu
-  // shows this machine's rule for its own chat.
-  'chat-auto-compact',
-  // Stop watching: `conversation.pull_request_unwatch` ends this machine's
-  // watch of a chat's pull request, and each listed pull request says while
-  // it is watched (`watch`), so a paired desktop offers Stop watching where
-  // this machine's own menu and strip do.
+  // A paired desktop's Stop watching on a chat here (2026-10-25): the
+  // `conversation.pull_request_unwatch` tool, served to paired devices only,
+  // ends this machine's watch of a chat's pull request, and each listed pull
+  // request says while it is watched (`watch`), so a paired desktop offers
+  // Stop watching where this machine's own menu and strip do. A chat's marks,
+  // name, Auto compact, delete, search and always-allow rules are this
+  // machine's Studio's (`chat-lifecycle`, `approval-rules` in its welcome).
   'chat-unwatch-pull-request',
-  // Delete: `conversation.delete_plan` says what deleting a settled chat here
-  // would do (its worktrees by name and branch, never a path), and
-  // `conversation.delete` deletes it as this machine's own Delete does. A
-  // paired desktop's Delete on a settled chat it opened from here asks both.
-  'chat-delete',
-  // Search: `conversation.search` finds what was said in the chats here, as
-  // this machine's own palette does, so a paired desktop's palette lists them
-  // beside its own and opens a match at its message.
-  'chat-search',
-  // Permissions: `conversation.approval_rules` lists the "always allow" rules
-  // this machine's chats run with (each project by its folder's name, never
-  // a path), and `conversation.approval_rule_revoke` revokes one, so a paired
-  // desktop's Settings lists them beside its own.
-  'approval-rules',
   // An outside MCP client may sign in with OAuth (the MCP authorization spec)
   // instead of pairing: discovery from the MCP endpoint's 401.
   'mcp-oauth',

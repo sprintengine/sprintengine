@@ -101,7 +101,7 @@ export type ChatMarkAction =
   | 'wake'
   | 'clear-color'
 
-/** A change to a chat's marks or sleep, as opposed to its rest: what a paired machine's `chat-row-menu` takes. */
+/** A change to a chat's marks or sleep, as opposed to its rest: what a paired machine's `chat-lifecycle` takes. */
 export type ChatMarkChange = Exclude<ChatMarkAction, 'toggle-settle'>
 
 export function isChatMarkChange(action: string): action is ChatMarkChange {
@@ -339,7 +339,7 @@ export function WorkspaceContextMenu({
   now: number
   /**
    * A row born on a paired machine whose machine takes the row menu's marks
-   * (`chat-row-menu`): its Star, Highlight color, Snooze and Auto-settle are
+   * (`chat-lifecycle`): its Star, Highlight color, Snooze and Auto-settle are
    * that machine's, and `workspace` carries them as that machine lists them.
    */
   remoteMarks?: boolean
@@ -374,7 +374,7 @@ export function WorkspaceContextMenu({
   canDelete?: boolean
   /**
    * A paired machine's settled chat, whose machine deletes its chats from
-   * here (`chat-delete`): Delete deletes it there, then this computer's record.
+   * here (`chat-lifecycle`): Delete deletes it there, then this computer's record.
    */
   remoteDelete?: boolean
   onClose: () => void
@@ -564,12 +564,12 @@ export type RemoteConversationMenuAction =
 
 // A chat on a paired machine that no window here holds: the same menu a
 // local row has, each item asking that machine, which keeps the chat. Its rest
-// (`conversation-lifecycle`), its marks and sleep (`chat-row-menu`) and its read
-// state (`chat-mark-unread`) are offered where the machine takes them; an
+// (`conversation-lifecycle`), its marks and sleep (`chat-lifecycle`) and its read
+// state (`chat-lifecycle`) are offered where the machine takes them; an
 // older machine's chat offers what it can, as a local menu hides what does
 // not apply. Reveal folder is shown off, saying why: the folder is on the
 // other machine's disk. Rename is offered where the machine keeps the name
-// (`chat-rename`), and New chat in project where this pairing may start a
+// (`chat-lifecycle`), and New chat in project where this pairing may start a
 // chat there, opening New chat on that machine and project. Left out because
 // they are about a workspace here, which this row does not have until it is
 // opened: the workspace type's own actions, and Close workspace.
@@ -603,7 +603,7 @@ export function RemoteConversationContextMenu({
   machineName: string
   /** The machine keeps its chats' rest, so it can be asked to settle this one. */
   canSettle: boolean
-  /** The machine takes the row menu's Star, Highlight color, Snooze and Auto-settle (`chat-row-menu`). */
+  /** The machine takes the row menu's Star, Highlight color, Snooze and Auto-settle (`chat-lifecycle`). */
   marks: boolean
   /** What of the chat's management the machine takes from here; none when absent. */
   manage?: MeshConversationManage

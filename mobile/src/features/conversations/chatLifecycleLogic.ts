@@ -8,7 +8,7 @@ import { chatHasUnseenTurn, chatWorkspaceKey } from "./conversationListLogic";
 // the desktop moved back is read against this phone's own readings.
 // Kept free of React Native so the regression suite runs the same rules the
 // chat list and the chat run. The calls themselves are
-// `api/conversationLifecycle.ts`'s.
+// `api/chatLifecycle.ts`'s.
 
 /** While a chat is on screen, a visit is stamped at most this often, unless a turn ended unseen. */
 export const VISIT_STAMP_INTERVAL_MS = 10_000;
@@ -138,8 +138,8 @@ export interface VisitRewind {
  * A desktop that lists `visitRewoundAt` says so outright. One that does not
  * (as of 2026-10-07 none does) shows it only as its visit clock gone back
  * from the last this phone heard of it (its previous read of the list, or a
- * visit answered before this read set out), which on a desktop that
- * advertises `chat-mark-unread` nothing else does; on any other desktop the
+ * visit answered before this read set out), which on a desktop that keeps
+ * its chats' rest nothing but a mark unread does; on any other desktop the
  * clock is read as only ever moving forward, as it always was. A clock the
  * phone has not listed before says nothing either way, so a chat marked
  * unread on the desktop while the app was closed still reads as the phone last
@@ -151,7 +151,7 @@ export function listedVisitRewind(input: {
   previousVisitedAt: number | null;
   /** When the read that listed `thread` set out, on the phone's clock. */
   readStartedAt: number;
-  /** Whether the chat's desktop advertises `chat-mark-unread`. */
+  /** Whether the chat's desktop keeps its chats' rest, and so takes Mark unread. */
   markUnread: boolean;
 }): VisitRewind | null {
   const { lastVisitedAt, visitRewoundAt } = input.thread;

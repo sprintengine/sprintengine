@@ -380,7 +380,7 @@ type WorkspaceSidebarProps = {
   onDeleteSettledChat?: (workspaceId: string) => void
   /**
    * Delete a paired machine's settled chat there, after asking, and then this
-   * computer's record of it (`chat-delete` there). Absent, such a chat's menu
+   * computer's record of it (`chat-lifecycle` there). Absent, such a chat's menu
    * offers no Delete.
    */
   onDeleteSettledChatThere?: (workspaceId: string) => void
@@ -1020,7 +1020,7 @@ function WorkspaceSidebar({
   // The menu of a chat on a paired machine that no window here holds, by its row's key.
   const [remoteMenu, setRemoteMenu] = useState<{ key: string; x: number; y: number } | null>(null)
   // A paired machine's chat no window here holds, being renamed in its row
-  // (`chat-rename`): its key there, and what has been typed.
+  // (`chat-lifecycle`): its key there, and what has been typed.
   const [renamingRemote, setRenamingRemote] = useState<{ key: string; value: string } | null>(null)
   const remoteRenameInputRef = useRef<HTMLInputElement>(null)
   const [folderMenu, setFolderMenu] = useState<{ folderKey: string; x: number; y: number } | null>(null)
@@ -1711,7 +1711,7 @@ function WorkspaceSidebar({
 
   // The row menu on a paired machine's chat, open here or not: its star,
   // colour, sleep and Auto-settle are that machine's record of the chat
-  // (`chat-row-menu`), and Mark unread its read state (`chat-mark-unread`).
+  // (`chat-lifecycle`), and Mark unread its read state (`chat-lifecycle`).
   // The marks are drawn at once and held until its list says them; a refusal
   // puts the row back as it was, with the machine's own words.
   const changeRemoteChat = useCallback(
@@ -1903,7 +1903,7 @@ function WorkspaceSidebar({
   // there, so it is not offered for one.
   //
   // A chat followed from a paired machine keeps its read state there, so it
-  // is marked there, where the machine takes it (`chat-mark-unread`); the
+  // is marked there, where the machine takes it (`chat-lifecycle`); the
   // chat in front is not offered, since its visit is stamped there every few
   // seconds while it is on screen.
   const canMarkWorkspaceUnread = (workspace: Workspace): boolean => {
@@ -1934,7 +1934,7 @@ function WorkspaceSidebar({
   }
 
   // Rename on a paired machine's chat, open here or not, where that machine
-  // keeps its chats' names for every device (`chat-rename`): the name is
+  // keeps its chats' names for every device (`chat-lifecycle`): the name is
   // asked of it, drawn at once and held until its list says it, and a
   // refusal puts the old name back with the machine's own words. A row
   // opened here takes the name too, once the machine has it, so the rest of
@@ -1984,7 +1984,7 @@ function WorkspaceSidebar({
   }
 
   // Auto compact on a paired machine's chat is that machine's rule for its
-  // own chat (`chat-auto-compact`): switched there, drawn at once, and held
+  // own chat (`chat-lifecycle`): switched there, drawn at once, and held
   // until its list says it, as a mark is.
   const toggleRemoteAutoCompact = (
     target: { connectionId: string; workspaceId: string; title: string },

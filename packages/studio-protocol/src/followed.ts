@@ -109,10 +109,11 @@ export type StudioFollowedMethodMap = {
    * Settle the chat, as its row menu's Settle does (`conversation-lifecycle`):
    * it leaves the list, its agents' processes end, and the next message
    * resumes it. `settled: false` brings it back. Refused `conflict` while an
-   * agent in it works. Settling a settled chat changes nothing.
+   * agent in it works. Settling a settled chat changes nothing. Addressed by
+   * the chat's workspace, whose record its rest is (`chat-lifecycle.ts`).
    */
   'conversation.settle': {
-    params: Keyed & { commandId: string; settled?: boolean }
+    params: { workspaceId: string; commandId: string; settled?: boolean }
     result: { settledAt: number | null }
     errors: 'not_found' | 'conflict'
   }
@@ -121,9 +122,10 @@ export type StudioFollowedMethodMap = {
    * every device (`conversation-lifecycle`). Moves its `lastVisitedAt`
    * forward to `visitedAt` (now when absent, never past now); an earlier time
    * changes nothing, so it carries no command id and is safe to send again.
+   * Addressed by the chat's workspace, as a settle is.
    */
   'conversation.visit': {
-    params: Keyed & { visitedAt?: number }
+    params: { workspaceId: string; visitedAt?: number }
     result: { lastVisitedAt: number }
     errors: 'not_found'
   }
@@ -167,11 +169,17 @@ const operating: Held = { scope: 'conversation:operate', mutation: true, capabil
 
 const KEY = '"key" names the conversation: { workspaceId, agentId, workspaceRoot? }.'
 const COMMAND_ID = '"commandId" must be a string of 1 to 200 characters.'
+const WORKSPACE_ID = '"workspaceId" names the chat\'s workspace, as the conversation list gives it.'
 const QUESTION_ID = '"questionId" must be a string of 1 to 200 characters.'
 const SELECTION = '"selection" is { kind: "span" }, { kind: "uncommitted" } or { kind: "commit", hash }.'
 
 function id(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 200
+}
+
+/** A chat by its workspace, whose record its rest and visit clock are. */
+function workspace(value: Record<string, unknown>): StudioParsed<{ workspaceId: string }> {
+  return id(value.workspaceId) ? studioParams({ workspaceId: value.workspaceId }) : refuse(WORKSPACE_ID)
 }
 
 function keyed(value: Record<string, unknown>): StudioParsed<Keyed> {
@@ -262,7 +270,7 @@ export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap>
   'conversation.settle': {
     ...operating,
     params: (value) => {
-      const at = keyed(value)
+      const at = workspace(value)
       if (!at.ok) return at
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       if (value.settled !== undefined && typeof value.settled !== 'boolean')
@@ -280,7 +288,7 @@ export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap>
     ...operating,
     mutation: false,
     params: (value) => {
-      const at = keyed(value)
+      const at = workspace(value)
       if (!at.ok) return at
       const { visitedAt } = value
       if (visitedAt === undefined) return at

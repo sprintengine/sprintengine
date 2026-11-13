@@ -247,7 +247,7 @@ test("until the first read for the stored pairings answers, the list is still lo
 const MIN = 60_000;
 const markUnreadDesktop = () => ({
   ...desktop("one"),
-  tailnetCapabilities: ["conversations", "conversation-lifecycle", "chat-mark-unread"],
+  tailnetCapabilities: ["conversations", "conversation-lifecycle"],
 });
 const finishedChat = (now, overrides = {}) => ({
   workspaceId: "w",
@@ -347,10 +347,10 @@ test("a refused mark unread leaves the row as it was and says why in a toast", a
   assert.equal(rowState(h, Date.now()), "idle");
 });
 
-test("a desktop without chat-mark-unread offers none, and its clock going back is not read as a mark", async () => {
+test("a desktop that keeps no rest offers no Mark unread, and its clock going back is not read as a mark", async () => {
   const now = Date.now();
   const h = harness({ threads: [finishedChat(now)] });
-  const session = { ...desktop("one"), tailnetCapabilities: ["conversations", "conversation-lifecycle"] };
+  const session = { ...desktop("one"), tailnetCapabilities: ["conversations"] };
   h.render({ sessions: [session], activeDeviceId: "one", lifecycleApiOverride: { markUnread: async () => assert.fail("not offered") } });
   await settle(h);
   assert.equal(h.value().chats[0].canMarkUnread, false);
@@ -422,7 +422,7 @@ test("a mark unread made on the desktop after this phone's own visit wins, thoug
 // Settle and Snooze from the list, with the Undo their toasts offer.
 const rowMenuDesktop = () => ({
   ...desktop("one"),
-  tailnetCapabilities: ["conversations", "conversation-lifecycle", "chat-row-menu"],
+  tailnetCapabilities: ["conversations", "conversation-lifecycle"],
 });
 async function lifecycleHarness(now = Date.now()) {
   const h = harness({ threads: [finishedChat(now)] });
@@ -490,10 +490,10 @@ test("a snooze moves the row to the shelf at once, and Undo wakes it; a refusal 
   assert.equal(h.toasts.at(-1).message, lifecycle.refuse);
 });
 
-test("a desktop without chat-row-menu offers no Snooze", async () => {
+test("a desktop that keeps no rest offers no Snooze", async () => {
   const h = harness({ threads: [finishedChat(Date.now())] });
   h.render({
-    sessions: [{ ...desktop("one"), tailnetCapabilities: ["conversations", "conversation-lifecycle"] }],
+    sessions: [{ ...desktop("one"), tailnetCapabilities: ["conversations"] }],
     activeDeviceId: "one",
   });
   await settle(h);

@@ -61,6 +61,14 @@ const LEGACY_CHAT_TO_CHAT_TOOLS = new Set([
   'subagent.status',
   'subagent.cancel',
 ])
+const LEGACY_CHAT_LIFECYCLE_TOOLS = new Set([
+  'conversation.settle',
+  'conversation.visit',
+  'conversation.mark_unread',
+  'conversation.snooze',
+  'conversation.highlight',
+  'conversation.auto_settle',
+])
 function legacyLocalOnly(toolName: string): boolean {
   return (
     toolName.startsWith('tailnet.') ||
@@ -78,6 +86,8 @@ function legacyLocalOnly(toolName: string): boolean {
     toolName.startsWith('visual.') ||
     // Since `schedules.*` on the protocol: a device's way to the schedules.
     toolName.startsWith('schedule.') ||
+    // Since `conversation.settle` and `chat-lifecycle` on the protocol: a device's way to a chat's record.
+    LEGACY_CHAT_LIFECYCLE_TOOLS.has(toolName) ||
     toolName.startsWith('terminal.')
   )
 }

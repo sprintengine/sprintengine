@@ -93,14 +93,15 @@ function fakeFollowed(calls: Calls): Required<StudioFollowedBackend> & { tell(ki
       calls.push(['listCommands', key.agentId, refresh])
       return { ok: true, answer: { cli: 'claude-code', commands: [], fetchedAt: 1 } }
     },
-    settle(chat, settled, byOwner) {
-      calls.push(['settle', chat, settled, byOwner])
-      if (chat.agentId === 'busy')
+    settle(workspaceId, settled, byOwner) {
+      calls.push(['settle', workspaceId, settled, byOwner])
+      if (workspaceId === 'ws-busy')
         return { ok: false, code: 'working', message: 'An agent in this chat is working. Settle it once it stops.' }
+      if (workspaceId === 'ws-gone') return { ok: false, code: 'unknown_workspace', message: 'No such chat.' }
       return { ok: true, settledAt: settled ? 1_000 : null }
     },
-    visit(chat, visitedAt, byOwner) {
-      calls.push(['visit', chat, visitedAt, byOwner])
+    visit(workspaceId, visitedAt, byOwner) {
+      calls.push(['visit', workspaceId, visitedAt, byOwner])
       return { ok: true, lastVisitedAt: visitedAt ?? 2_000 }
     },
   }
@@ -142,8 +143,8 @@ const CALLS: Record<keyof typeof STUDIO_FOLLOWED_METHODS, Record<string, unknown
   'conversation.contextBreakdown': { key: KEY },
   'conversation.searchFiles': { key: KEY, query: 'app' },
   'conversation.listCommands': { key: KEY },
-  'conversation.settle': { key: KEY, commandId: 'c-settle' },
-  'conversation.visit': { key: KEY },
+  'conversation.settle': { workspaceId: KEY.workspaceId, commandId: 'c-settle' },
+  'conversation.visit': { workspaceId: KEY.workspaceId },
   'conversation.changesDiff': { key: KEY, selection: { kind: 'span' } },
   'conversation.changedFile': { key: KEY, selection: { kind: 'uncommitted' }, path: 'src/app.ts' },
 }
@@ -343,15 +344,19 @@ test('settle says when an agent is working; visit is not audited and carries no 
     started.path,
     pairFakeClient(started.auth, 'tablet', ['conversation:read', 'conversation:operate']),
   )
-  const busy = await ask(tablet, 'conversation.settle', { key: { ...KEY, agentId: 'busy' }, commandId: 's1' })
+  const busy = await ask(tablet, 'conversation.settle', { workspaceId: 'ws-busy', commandId: 's1' })
   assert.equal(errorOf(busy), 'conflict')
   assert.match(busy.t === 'res' && !busy.ok ? busy.error.message : '', /working/u)
-  const back = await ask(tablet, 'conversation.settle', { key: KEY, commandId: 's2', settled: false })
+  const back = await ask(tablet, 'conversation.settle', {
+    workspaceId: KEY.workspaceId,
+    commandId: 's2',
+    settled: false,
+  })
   assert.deepEqual(resultOf(back), { settledAt: null })
-  const gone = await ask(tablet, 'conversation.settle', { key: { ...KEY, agentId: 'nobody' }, commandId: 's3' })
+  const gone = await ask(tablet, 'conversation.settle', { workspaceId: 'ws-gone', commandId: 's3' })
   assert.equal(errorOf(gone), 'not_found')
 
-  const visited = await ask(tablet, 'conversation.visit', { key: KEY, visitedAt: 1_500.7 })
+  const visited = await ask(tablet, 'conversation.visit', { workspaceId: KEY.workspaceId, visitedAt: 1_500.7 })
   assert.deepEqual(resultOf(visited), { lastVisitedAt: 1_500 })
   assert.equal(started.audit.filter((entry) => entry.tool === 'conversation.visit').length, 0)
   assert.equal(started.audit.filter((entry) => entry.tool === 'conversation.settle').length, 3)

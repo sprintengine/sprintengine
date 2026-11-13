@@ -10,7 +10,7 @@ import type { PaletteCommand, PaletteResultProvider } from './paletteProvider'
 
 // What was said in the paired machines' chats, beside this computer's
 // (`conversationHistoryProvider.ts`): each machine that takes a search from
-// here (`chat-search`) is asked once for the question, and answers as its own
+// here (`chat-lifecycle`) is asked once for the question, and answers as its own
 // palette would, one row per chat. A row opens the chat here, following it,
 // at the matching message.
 

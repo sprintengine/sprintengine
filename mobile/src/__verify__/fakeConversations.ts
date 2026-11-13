@@ -1,4 +1,4 @@
-import type { ConversationLifecycleApi } from "../api/conversationLifecycle";
+import type { ChatLifecycleApi } from "../api/chatLifecycle";
 import type { ConversationApi, ConversationStreamHandlers } from "../api/tailnetConversations";
 import type {
   ConversationEvent,
@@ -65,8 +65,8 @@ import { chatOpenedKey } from "../features/conversations/conversationListLogic";
 // A fifth chat's workspace is settled. The fake lists it anyway, as a desktop
 // mid-update might, so it is the phone's own drop that keeps it off the list.
 // Settle on any row takes it off every later list; a visit moves the chat's
-// `lastVisitedAt`, and Mark unread (the fake desktop advertises
-// `chat-mark-unread`) moves it back to just before the chat's latest finish,
+// `lastVisitedAt`, and Mark unread (the fake desktop keeps its
+// chats' rest) moves it back to just before the chat's latest finish,
 // as the desktop does. Opened and left, the green row's chat can be marked
 // unread from its row's long press or its More menu, and opened again on the
 // "New" divider above its second turn.
@@ -321,7 +321,7 @@ const visitedAt = new Map<string, number>();
 const snoozedUntil = new Map<string, number>();
 
 /** `conversation.settle`, `conversation.visit`, `conversation.mark_unread` and `conversation.snooze` on the fake desktop. */
-export const fakeLifecycleApi: ConversationLifecycleApi = {
+export const fakeLifecycleApi: ChatLifecycleApi = {
   async settle(workspaceId, settled = true) {
     const settledAt = settled ? Date.now() : null;
     if (settledAt === null) verifySettledAt.delete(workspaceId);

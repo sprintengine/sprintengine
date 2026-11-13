@@ -88,7 +88,7 @@ export function useDeleteSettledChats(): {
   )
 
   // A settled chat opened here from a paired machine that deletes its chats
-  // from here (`chat-delete`): deleted there, for every device that follows
+  // from here (`chat-lifecycle`): deleted there, for every device that follows
   // it, as that machine plans it, and then this computer's record of it. The
   // confirmation says what goes there; there is no undo on either machine.
   const deleteThere = useCallback(
