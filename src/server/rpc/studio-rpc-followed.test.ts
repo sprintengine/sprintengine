@@ -168,6 +168,7 @@ test('the socket withholds no conversation capability but its handshake, its upl
     'conversation-file-search',
     'conversation-commands',
     'conversation-permanent-approvals',
+    'conversation-quote-tokens',
   ])
     assert.ok(info.conversation.capabilities.includes(capability), capability)
   for (const capability of STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES)

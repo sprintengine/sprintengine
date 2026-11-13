@@ -9,7 +9,11 @@ const key = { connectionId: 'connection', workspaceId: 'remote-workspace', agent
 
 function transportWith(api: Record<string, unknown>) {
   vi.stubGlobal('window', { api })
-  return createRemoteConversationTransport({ key, machineName: 'mac-mini', access: 'operate' })
+  return createRemoteConversationTransport({
+    key,
+    machineName: 'mac-mini',
+    offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
+  })
 }
 
 afterEach(() => {

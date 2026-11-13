@@ -3,7 +3,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConversationSessionSummary } from '../../../../../shared/conversation-runtime'
 import { meshConversationSessionId } from '../../../../../shared/tailnet-mesh'
 import type { BranchPullRequest } from '../../../../../shared/git/pull-request'
-import type { StudioLocalServer } from '../../../../../../packages/studio-protocol/src/public'
+import {
+  CONVERSATION_AGENT_MESSAGE_CAPABILITY,
+  CONVERSATION_CLI_PERMISSION_MODES_CAPABILITY,
+  CONVERSATION_CONTEXT_BREAKDOWN_CAPABILITY,
+  CONVERSATION_FORK_CAPABILITY,
+  CONVERSATION_HANDOFF_CAPABILITY,
+  CONVERSATION_MCP_SERVER_ACTIONS_CAPABILITY,
+  CONVERSATION_REASONING_EFFORT_CAPABILITY,
+  CONVERSATION_REWIND_CAPABILITY,
+  CONVERSATION_SEND_MODE_CAPABILITY,
+  CONVERSATION_SEND_SKILLS_CAPABILITY,
+  CONVERSATION_SIDE_QUESTIONS_CAPABILITY,
+  CONVERSATION_STOP_SUBAGENT_CAPABILITY,
+  type StudioLocalServer,
+} from '../../../../../../packages/studio-protocol/src/public'
+import { negotiateChatCapabilities } from '../../../../../../packages/client-runtime/src/public'
 import type {
   MeshConversation,
   MeshConversationAccess,
@@ -39,7 +54,6 @@ import {
   ConversationTransportProvider,
   createRemoteConversationTransport,
   type ConversationTransport,
-  type ConversationTransportCapabilities,
 } from './conversationTransport'
 
 // A conversation on a paired machine, in the regular chat view.
@@ -120,7 +134,11 @@ function remoteConversationEngine(thread: MeshConversation | null, modelSwitch: 
 
 /** What the machine says it does for its chats beyond the turn: forks, side questions, the window's breakdown. */
 type RemoteAgentReads = { fork: boolean; sideQuestions: boolean; contextBreakdown: boolean }
-const NO_AGENT_READS: RemoteAgentReads = { fork: false, sideQuestions: false, contextBreakdown: false }
+
+const NO_CAPABILITIES: readonly string[] = []
+
+const sameNames = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((name, index) => name === b[index])
 
 /** What the machine a chat runs on said it takes, each read from its list. */
 type RemoteSessionFeatures = {
@@ -135,6 +153,31 @@ type RemoteSessionFeatures = {
   sendMode: boolean
   reasoningEffort: boolean
   mcpServerActions: boolean
+}
+
+/**
+ * What the machine takes for its chats' sessions, from the capabilities it
+ * publishes: each still needs the chat's provider to be able, which its row says.
+ */
+function remoteSessionFeatures(capabilities: readonly string[]): Omit<RemoteSessionFeatures, 'modelSwitch'> {
+  const has = (name: string) => capabilities.includes(name)
+  return {
+    stopSubagents: has(CONVERSATION_STOP_SUBAGENT_CAPABILITY),
+    messageSubagents: has(CONVERSATION_AGENT_MESSAGE_CAPABILITY),
+    handoff: has(CONVERSATION_HANDOFF_CAPABILITY),
+    // Its skills are listed by its extensions, and a send carries them.
+    sendSkills: has(CONVERSATION_SEND_SKILLS_CAPABILITY) && has('workspace-extensions'),
+    rewind: has(CONVERSATION_REWIND_CAPABILITY),
+    agentReads: {
+      fork: has(CONVERSATION_FORK_CAPABILITY),
+      sideQuestions: has(CONVERSATION_SIDE_QUESTIONS_CAPABILITY),
+      contextBreakdown: has(CONVERSATION_CONTEXT_BREAKDOWN_CAPABILITY),
+    },
+    cliPermissionModes: has(CONVERSATION_CLI_PERMISSION_MODES_CAPABILITY),
+    sendMode: has(CONVERSATION_SEND_MODE_CAPABILITY),
+    reasoningEffort: has(CONVERSATION_REASONING_EFFORT_CAPABILITY),
+    mcpServerActions: has(CONVERSATION_MCP_SERVER_ACTIONS_CAPABILITY),
+  }
 }
 
 /** The session a remote row stands for, as the chat view reads one: what that machine said it can do. */
@@ -262,123 +305,48 @@ export default function RemoteConversationPanel({
   const seedThread = useMemo(() => (subagent ? threadOfSubagent(subagent.row) : null), [subagent])
   const [listedThread, setThread] = useState<MeshConversation | null>(null)
   const thread = listedThread ?? seedThread
-  const [listedAccess, setListedAccess] = useState<MeshConversationAccess | null>(null)
-  // The machine advertises model switching and lists this chat's catalog.
-  const [listedModelSwitch, setListedModelSwitch] = useState(false)
-  // The machine runs chats on Manual and Auto as well as Bypass and No flag.
-  const [permissionModes, setPermissionModes] = useState(false)
-  // The machine runs chats on their CLI's own modes beside the presets.
-  const [cliPermissionModes, setCliPermissionModes] = useState(false)
-  // The machine holds a message queued here mid-turn and sends it when the
-  // turn ends, so this machine may sleep or close meanwhile; and what it
-  // holds for this chat, as it last said.
-  const [queuedSends, setQueuedSends] = useState(false)
-  // It holds a queued message's images, files, skills and mentions too.
-  const [queuedAttachments, setQueuedAttachments] = useState(false)
-  // It saves an "always allow" rule an approval here chose, for its own workspace.
-  const [permanentApprovals, setPermanentApprovals] = useState(false)
-  const [quotes, setQuotes] = useState(false)
-  // The machine reads the chat's changes for this window's Diff tab.
-  const [hostChanges, setHostChanges] = useState(false)
-  // The machine keeps an answered side question in the chat's transcript.
-  const [keepsSideQuestions, setKeepsSideQuestions] = useState(false)
-  const [sendSkills, setSendSkills] = useState(false)
-  // The machine opens a pull request for one of its chats (Create PR).
-  const [hostPullRequests, setHostPullRequests] = useState(false)
-  // The machine takes a message into a turn one of its chats is running.
-  const [steerSends, setSteerSends] = useState(false)
-  // The machine stops one agent of one of its chats by itself.
-  const [stopSubagents, setStopSubagents] = useState(false)
-  // The machine passes the person's words to one agent of one of its chats.
-  const [messageSubagents, setMessageSubagents] = useState(false)
-  // The machine hands one of its chats off to a fresh session.
-  const [handoff, setHandoff] = useState(false)
-  // The machine takes one of its chats back to before a message, and puts a
-  // turn's files back from its checkpoint, in its own checkout.
-  const [rewind, setRewind] = useState(false)
-  const [checkpointRevert, setCheckpointRevert] = useState(false)
-  // The machine forks its chats, answers a side question about one, and says
-  // what fills one's window.
-  const [agentReads, setAgentReads] = useState<RemoteAgentReads>(NO_AGENT_READS)
-  // The machine searches a chat's folder for an @ and takes what is
-  // mentioned; takes files with a message; lists a chat CLI's commands.
-  const [composerMentions, setComposerMentions] = useState(false)
-  const [messageFiles, setMessageFiles] = useState(false)
-  const [commandList, setCommandList] = useState(false)
-  // The machine runs a turn in the mode its message says.
-  const [sendMode, setSendMode] = useState(false)
-  // The machine lists its chats' reasoning effort and takes a change of it.
-  const [reasoningEffort, setReasoningEffort] = useState(false)
-  // The machine reconnects and switches a live chat's MCP servers.
-  const [mcpServerActions, setMcpServerActions] = useState(false)
+  // What the machine last said of itself in its list: the capabilities it
+  // publishes, and what this pairing may do there.
+  const [said, setSaid] = useState<{ access: MeshConversationAccess; capabilities: readonly string[] } | null>(null)
   const [hostQueued, setHostQueued] = useState<MeshQueuedMessage[]>([])
-  // The machine keeps a message scheduled here for a time and sends it then;
-  // and what it keeps for this chat, as it last said.
-  const [scheduledSends, setScheduledSends] = useState(false)
   const [hostScheduled, setHostScheduled] = useState<MeshScheduledMessage[]>([])
-  // The machine says what it knows of its agents' usage limits, and what it
-  // last said of them for this chat.
-  const [usageLimits, setUsageLimits] = useState(false)
   const [hostUsage, setHostUsage] = useState<MeshConversationUsageLimits | null>(null)
   // The chat's sub-agents, as the machine last said. It says only where it
   // advertises `conversation-subagents`; the panel reads them from here.
   const [hostSubagents, setHostSubagents] = useState<MeshSubagent[]>([])
-  const modelSwitch = listedModelSwitch && Boolean(thread?.models)
   // Bumped after an accepted model switch, so the list is read again and the
   // chip names what the machine says the chat is now on.
   const [listVersion, setListVersion] = useState(0)
   // The link's word on access is the latest (a refused command narrows it);
   // the list's is what was granted when this pane last read the machine.
-  const access = link?.access ?? listedAccess
+  const access = link?.access ?? said?.access ?? null
+  // What every transport of this pane reads its capabilities off
+  // (`negotiateChatCapabilities`), as a window reads its Studio's welcome.
+  const offer = useMemo(
+    () => ({
+      via: 'paired-lane' as const,
+      capabilities: said?.capabilities ?? NO_CAPABILITIES,
+      access,
+      modelCatalog: Boolean(thread?.models),
+    }),
+    [said, access, thread?.models],
+  )
+  const capabilities = useMemo(() => negotiateChatCapabilities(offer), [offer])
+  const features = useMemo(() => remoteSessionFeatures(said?.capabilities ?? NO_CAPABILITIES), [said])
+  const modelSwitch = capabilities.modelSwitch
 
   // One transport per conversation, never rebuilt on a grant change: a new
   // transport is a new subscription, and the follow in main would be dropped
-  // and dialled again. Its capabilities read the access as it is now.
-  const accessRef = useRef(access)
-  accessRef.current = access
-  const modelSwitchRef = useRef(modelSwitch)
-  modelSwitchRef.current = modelSwitch
-  const permissionModesRef = useRef(permissionModes)
-  permissionModesRef.current = permissionModes
-  const queuedSendsRef = useRef(queuedSends)
-  queuedSendsRef.current = queuedSends
-  const queuedAttachmentsRef = useRef(queuedAttachments)
-  queuedAttachmentsRef.current = queuedAttachments
-  const permanentApprovalsRef = useRef(permanentApprovals)
-  permanentApprovalsRef.current = permanentApprovals
-  const quotesRef = useRef(quotes)
-  quotesRef.current = quotes
-  const hostChangesRef = useRef(hostChanges)
-  hostChangesRef.current = hostChanges
-  const keepsSideQuestionsRef = useRef(keepsSideQuestions)
-  keepsSideQuestionsRef.current = keepsSideQuestions
-  const sendSkillsRef = useRef(sendSkills)
-  sendSkillsRef.current = sendSkills
-  const hostPullRequestsRef = useRef(hostPullRequests)
-  hostPullRequestsRef.current = hostPullRequests
-  const steerSendsRef = useRef(steerSends)
-  steerSendsRef.current = steerSends
-  const checkpointRevertRef = useRef(checkpointRevert)
-  checkpointRevertRef.current = checkpointRevert
-  const composerMentionsRef = useRef(composerMentions)
-  composerMentionsRef.current = composerMentions
-  const messageFilesRef = useRef(messageFiles)
-  messageFilesRef.current = messageFiles
-  const commandListRef = useRef(commandList)
-  commandListRef.current = commandList
-  const scheduledSendsRef = useRef(scheduledSends)
-  scheduledSendsRef.current = scheduledSends
-  const usageLimitsRef = useRef(usageLimits)
-  usageLimitsRef.current = usageLimits
-  const messageSubagentsRef = useRef(messageSubagents)
-  messageSubagentsRef.current = messageSubagents
+  // and dialled again. Its capabilities read the offer as it is now.
+  const offerRef = useRef(offer)
+  offerRef.current = offer
   const threadRef = useRef(thread)
   threadRef.current = thread
   const transport = useMemo(() => {
     const base = createRemoteConversationTransport({
       key,
       machineName,
-      access: null,
+      offer: () => offerRef.current,
       onLink: setLink,
       onQueued: setHostQueued,
       onScheduled: setHostScheduled,
@@ -389,102 +357,74 @@ export default function RemoteConversationPanel({
       // sidebar's next read.
       onPullRequestRecorded: () => setListVersion((version) => version + 1),
     })
-    const capabilities = base.capabilities
     const setModel = base.setModel
     const setEffort = base.setReasoningEffort
     const send = base.send
     const unwatchPullRequest = base.unwatchPullRequest
-    return {
-      ...base,
-      // A chat at rest over there is listed without a session, and so without
-      // what it can do: its first message wakes one, and the list is read
-      // again once that message is answered, so the composer learns whether
-      // the chat takes images without waiting for the link to drop.
-      send: async (turn: Parameters<typeof send>[0]) => {
-        const result = await send(turn)
-        if (result.ok && !threadRef.current?.capabilities) setListVersion((version) => version + 1)
-        return result
+    // Spread with its own getter kept: `...base` would copy the capabilities
+    // as they are now.
+    return Object.defineProperties(
+      {
+        ...base,
+        // A chat at rest over there is listed without a session, and so without
+        // what it can do: its first message wakes one, and the list is read
+        // again once that message is answered, so the composer learns whether
+        // the chat takes images without waiting for the link to drop.
+        send: async (turn: Parameters<typeof send>[0]) => {
+          const result = await send(turn)
+          if (result.ok && !threadRef.current?.capabilities) setListVersion((version) => version + 1)
+          return result
+        },
+        // A watch ended there is off its list: read it again, so the strip
+        // stops saying it is watched without waiting for the sidebar's read.
+        ...(unwatchPullRequest
+          ? {
+              unwatchPullRequest: async (input: { url: string }) => {
+                const result = await unwatchPullRequest(input)
+                if (result.ok) setListVersion((version) => version + 1)
+                return result
+              },
+            }
+          : {}),
+        ...(setModel
+          ? {
+              setModel: async (change: Parameters<typeof setModel>[0]) => {
+                const result = await setModel(change)
+                if (result.ok) setListVersion((version) => version + 1)
+                return result
+              },
+            }
+          : {}),
+        // Read again once accepted, as a model switch is, so the control names
+        // the level the machine says the chat now runs at.
+        ...(setEffort
+          ? {
+              setReasoningEffort: async (change: Parameters<typeof setEffort>[0]) => {
+                const result = await setEffort(change)
+                if (result.ok) setListVersion((version) => version + 1)
+                return result
+              },
+            }
+          : {}),
       },
-      get capabilities(): ConversationTransportCapabilities {
-        return {
-          ...capabilities,
-          operate: accessRef.current === 'operate',
-          modelSwitch: modelSwitchRef.current,
-          permissionModes: permissionModesRef.current,
-          hostQueue: queuedSendsRef.current,
-          hostQueueAttachments: queuedSendsRef.current && queuedAttachmentsRef.current,
-          permanentApprovals: permanentApprovalsRef.current,
-          quotes: quotesRef.current,
-          hostChanges: hostChangesRef.current,
-          keepsSideQuestions: keepsSideQuestionsRef.current,
-          skills: sendSkillsRef.current,
-          steer: steerSendsRef.current,
-          hostPullRequests: hostPullRequestsRef.current,
-          checkpointRevert: checkpointRevertRef.current,
-          mentions: composerMentionsRef.current,
-          attachFiles: messageFilesRef.current,
-          commandList: commandListRef.current,
-          hostSchedule: scheduledSendsRef.current,
-          hostUsageLimits: usageLimitsRef.current,
-          agentMessages: messageSubagentsRef.current,
-        }
-      },
-      // A watch ended there is off its list: read it again, so the strip
-      // stops saying it is watched without waiting for the sidebar's read.
-      ...(unwatchPullRequest
-        ? {
-            unwatchPullRequest: async (input: { url: string }) => {
-              const result = await unwatchPullRequest(input)
-              if (result.ok) setListVersion((version) => version + 1)
-              return result
-            },
-          }
-        : {}),
-      ...(setModel
-        ? {
-            setModel: async (change: Parameters<typeof setModel>[0]) => {
-              const result = await setModel(change)
-              if (result.ok) setListVersion((version) => version + 1)
-              return result
-            },
-          }
-        : {}),
-      // Read again once accepted, as a model switch is, so the control names
-      // the level the machine says the chat now runs at.
-      ...(setEffort
-        ? {
-            setReasoningEffort: async (change: Parameters<typeof setEffort>[0]) => {
-              const result = await setEffort(change)
-              if (result.ok) setListVersion((version) => version + 1)
-              return result
-            },
-          }
-        : {}),
-    }
+      { capabilities: Object.getOwnPropertyDescriptor(base, 'capabilities')! },
+    ) as ConversationTransport
   }, [key, machineName])
 
   // A sub-agent is a chat of its own over there, followed by its own ids: what
   // the panel reads of one, and the answer to what it asks, go through
-  // this. Made once for each, as the pane's own is, and with the pane's word on
-  // what this pairing may do.
+  // this. Made once for each, as the pane's own is, and reading the pane's
+  // offer: the same machine, the same pairing.
   const subagentTransport = useMemo(() => {
     const made = new Map<string, ConversationTransport>()
     return (agentId: string): ConversationTransport => {
       const existing = made.get(agentId)
       if (existing) return existing
-      const base = createRemoteConversationTransport({ key: { ...key, agentId }, machineName, access: null })
-      const capabilities = base.capabilities
-      const transport: ConversationTransport = {
-        ...base,
-        get capabilities(): ConversationTransportCapabilities {
-          return {
-            ...capabilities,
-            operate: accessRef.current === 'operate',
-            permanentApprovals: permanentApprovalsRef.current,
-            agentMessages: messageSubagentsRef.current,
-          }
-        },
-      }
+      const transport = createRemoteConversationTransport({
+        key: { ...key, agentId },
+        machineName,
+        offer: () => offerRef.current,
+      })
       made.set(agentId, transport)
       return transport
     }
@@ -509,44 +449,11 @@ export default function RemoteConversationPanel({
         if (cancelled || !result.ok) return
         // The pane's tab reads its mark, model and clock off this list too.
         publishRemoteConversationList(connectionId, result.conversations)
-        setListedAccess(result.access)
-        setListedModelSwitch(result.modelSwitch === true)
-        setPermissionModes(result.permissionModes === true)
-        setCliPermissionModes(result.cliPermissionModes === true)
-        setQueuedSends(result.queuedSends === true)
-        setQueuedAttachments(result.queuedAttachments === true)
-        setPermanentApprovals(result.permanentApprovals === true)
-        setQuotes(result.quotes === true)
-        setHostChanges(result.changes === true)
-        setKeepsSideQuestions(result.sideQuestionRecords === true)
-        setSendSkills(result.sendSkills === true)
-        setHostPullRequests(result.createPullRequest === true)
-        setSteerSends(result.steerSends === true)
-        setStopSubagents(result.stopSubagents === true)
-        setMessageSubagents(result.messageSubagents === true)
-        setHandoff(result.handoff === true)
-        setRewind(result.rewind === true)
-        setCheckpointRevert(result.checkpointRevert === true)
-        setAgentReads((current) => {
-          const next = {
-            fork: result.fork === true,
-            sideQuestions: result.sideQuestions === true,
-            contextBreakdown: result.contextBreakdown === true,
-          }
-          return current.fork === next.fork &&
-            current.sideQuestions === next.sideQuestions &&
-            current.contextBreakdown === next.contextBreakdown
+        setSaid((current) =>
+          current?.access === result.access && sameNames(current.capabilities, result.capabilities)
             ? current
-            : next
-        })
-        setComposerMentions(result.mentions === true)
-        setMessageFiles(result.messageFiles === true)
-        setCommandList(result.commands === true)
-        setSendMode(result.sendMode === true)
-        setReasoningEffort(result.reasoningEffort === true)
-        setMcpServerActions(result.mcpServerActions === true)
-        setScheduledSends(result.scheduledSends === true)
-        setUsageLimits(result.usageLimits === true)
+            : { access: result.access, capabilities: result.capabilities },
+        )
         setThread(
           result.conversations.find(
             (entry) => entry.workspaceId === remoteWorkspaceId && entry.agentId === remoteAgentId,
@@ -595,40 +502,13 @@ export default function RemoteConversationPanel({
     }
   }, [facts])
   const hostUsageLimits = useMemo(
-    () => (usageLimits && hostUsage ? hostUsageLimitsOf(machineName, hostUsage) : null),
-    [usageLimits, hostUsage, machineName],
+    () => (capabilities.hostUsageLimits && hostUsage ? hostUsageLimitsOf(machineName, hostUsage) : null),
+    [capabilities.hostUsageLimits, hostUsage, machineName],
   )
   const displayTitle = thread?.title || title || 'Conversation'
   const session = useMemo(
-    () =>
-      remoteConversationSession(thread, key, {
-        modelSwitch,
-        stopSubagents,
-        messageSubagents,
-        handoff,
-        sendSkills,
-        rewind,
-        agentReads,
-        cliPermissionModes,
-        sendMode,
-        reasoningEffort,
-        mcpServerActions,
-      }),
-    [
-      thread,
-      key,
-      modelSwitch,
-      stopSubagents,
-      messageSubagents,
-      handoff,
-      sendSkills,
-      rewind,
-      agentReads,
-      cliPermissionModes,
-      sendMode,
-      reasoningEffort,
-      mcpServerActions,
-    ],
+    () => remoteConversationSession(thread, key, { ...features, modelSwitch }),
+    [thread, key, features, modelSwitch],
   )
   const engine = useMemo(() => remoteConversationEngine(thread, modelSwitch), [thread, modelSwitch])
   const readiness = useMemo(() => remoteConversationReadiness(link, access, machineName), [link, access, machineName])
@@ -652,7 +532,7 @@ export default function RemoteConversationPanel({
       // machine again; a third line saying both was the same fact once more.
       ...(engine ? { engine } : {}),
       hostQueue: { machineName, messages: hostQueued },
-      ...(scheduledSends ? { hostSchedule: { machineName, messages: hostScheduled } } : {}),
+      ...(capabilities.hostSchedule ? { hostSchedule: { machineName, messages: hostScheduled } } : {}),
       ...(hostUsageLimits ? { hostUsageLimits } : {}),
       listed,
       ...(subagent
@@ -681,7 +561,7 @@ export default function RemoteConversationPanel({
       engine,
       machineName,
       hostQueued,
-      scheduledSends,
+      capabilities.hostSchedule,
       hostScheduled,
       hostUsageLimits,
       listed,
@@ -698,7 +578,7 @@ export default function RemoteConversationPanel({
         ...(subagentOf ? { subagentOf } : {}),
         key,
         machineName,
-        hostChanges,
+        hostChanges: capabilities.hostChanges,
         transport,
         binding,
         subagents: hostSubagents,
@@ -710,7 +590,7 @@ export default function RemoteConversationPanel({
       subagentOf,
       key,
       machineName,
-      hostChanges,
+      capabilities.hostChanges,
       transport,
       binding,
       hostSubagents,

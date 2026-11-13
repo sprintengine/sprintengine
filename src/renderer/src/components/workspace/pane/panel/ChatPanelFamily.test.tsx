@@ -517,7 +517,7 @@ async function openRemoteChat(tab: Awaited<ReturnType<typeof mountPanel>>) {
   const transport = createRemoteConversationTransport({
     key: chatOnMachine,
     machineName: 'mac-mini',
-    access: 'operate',
+    offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
   })
   const transports = new Map<string, ConversationTransport>()
   const subagentTransport = (agentId: string) => {
@@ -526,7 +526,7 @@ async function openRemoteChat(tab: Awaited<ReturnType<typeof mountPanel>>) {
       createRemoteConversationTransport({
         key: { ...chatOnMachine, agentId },
         machineName: 'mac-mini',
-        access: 'operate',
+        offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
       })
     transports.set(agentId, made)
     return made

@@ -5,6 +5,7 @@ import {
   type StudioTransportFactory,
   type StudioWebSocketConstructor,
 } from '../../../../packages/client-runtime/src/public'
+import type { StudioWelcomeFrame } from '../../../../packages/studio-protocol/src/public'
 import type { ElectronApi } from '../../../shared/electron-api'
 
 // This window's client of the Studio RPC: the same `@sprintengine/agent-sdk`
@@ -85,6 +86,33 @@ export function watchWindowStudio(api: object, listener: () => void): () => void
   return () => set.delete(listener)
 }
 
+const welcomes = new WeakMap<object, StudioWelcomeFrame>()
+const welcomeWatchers = new WeakMap<object, Set<() => void>>()
+
+/**
+ * The latest welcome this window's Studio gave it: what it serves and what
+ * this window may do there. Null before the first. A reconnect's welcome
+ * replaces it (a grant may have changed meanwhile).
+ */
+export function windowStudioWelcome(api: object = window.api): StudioWelcomeFrame | null {
+  return welcomes.get(api) ?? null
+}
+
+/** Hear the window's welcome change. Returns the unsubscriber. */
+export function watchWindowStudioWelcome(api: object, listener: () => void): () => void {
+  let set = welcomeWatchers.get(api)
+  if (!set) welcomeWatchers.set(api, (set = new Set()))
+  set.add(listener)
+  return () => set.delete(listener)
+}
+
+function noteWelcome(api: object, client: StudioClient | undefined): void {
+  const welcome = client?.welcome
+  if (!welcome || welcomes.get(api) === welcome) return
+  welcomes.set(api, welcome)
+  for (const watcher of welcomeWatchers.get(api) ?? []) watcher()
+}
+
 const clients = new WeakMap<object, Promise<StudioClient>>()
 // The client each window's promise settled to, so one that has closed is
 // known at once rather than a turn later.
@@ -127,6 +155,8 @@ export function windowStudioClient(api: TicketApi = window.api): Promise<StudioC
     onStateChange: (state) => {
       if (clients.get(api) !== connecting) return
       setWindowState(api, state === 'closed' ? 'unavailable' : state)
+      // A reconnect is welcomed again before it opens.
+      if (state === 'open') noteWelcome(api, settled.get(api))
     },
   })
   clients.set(api, connecting)
@@ -136,7 +166,10 @@ export function windowStudioClient(api: TicketApi = window.api): Promise<StudioC
     setWindowState(api, 'unavailable')
   }
   void connecting.then((connected) => {
-    if (clients.get(api) === connecting) settled.set(api, connected)
+    if (clients.get(api) === connecting) {
+      settled.set(api, connected)
+      noteWelcome(api, connected)
+    }
     if (!environments.has(api)) environments.set(api, connected.welcome.environment.id)
     connected.closed.then(forget, forget)
   }, forget)

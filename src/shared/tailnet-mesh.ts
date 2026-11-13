@@ -765,188 +765,29 @@ export type MeshConversationFrame =
   | MeshConversationChanges
 
 /**
- * `modelSwitch`: the machine advertises `conversation-models` — its list names
- * each chat's model catalog and it takes `setModel`. False for a machine that
- * does not, whose chats keep the model they have.
- *
- * `permissionModes`: the machine advertises `conversation-permission-modes` —
- * its chats run on `manual` and `auto` too. False for a machine that reads
- * those as `none`, where only `none` and `bypass` are offered.
- *
- * `cliPermissionModes`: the machine advertises
- * `conversation-cli-permission-modes` — its list names the CLI's own mode a
- * chat runs at its preset (Claude Code's Accept edits) and the modes its
- * provider runs, and a preset switch may name one. False for a machine that
- * does not, where each preset runs its own mode.
+ * `capabilities`: what the machine publishes of itself, as it said it. A chat
+ * pane reads what it may offer off them and `access`
+ * (`negotiateChatCapabilities`, `@sprintengine/client-runtime`); an empty list
+ * is a machine that published none, which offers nothing beyond following.
  *
  * `lifecycle`: the machine advertises `conversation-lifecycle` — its list
  * leaves out settled chats and names their titles and clocks, and it takes
  * `conversation.settle` and `conversation.visit`. False for a machine that
  * does not, whose chats offer no Settle here.
  *
- * `queuedSends`: the machine advertises `conversation-queued-sends` — a
- * message queued in one of its chats mid-turn is handed to it at once, and it
- * sends it when the turn ends. False for a machine that does not, where the
- * message waits here and goes when the turn ends only if this machine is
- * awake to send it.
- *
- * `sendSkills`: the machine advertises `conversation-send-skills` and
- * `workspace-extensions` — a message to one of its chats may carry its skills,
- * listed for the composer by `meshWorkspaceExtensions`.
- *
- * `steerSends`: the machine advertises `conversation-steer-sends` — a message
- * may go into the turn one of its chats is running, where that chat's provider
- * takes one (its listed `capabilities.steer`). False for a machine that does
- * not, where a message sent mid-turn waits for the turn to end.
- *
- * `stopSubagents`: the machine advertises `conversation-stop-subagent` — one
- * agent a chat of its own spawned may be stopped by itself from here, where
- * that chat's provider can (its listed `capabilities.stopSubagent`). False for
- * a machine that does not, where an agent's lane offers no Stop.
- *
- * `messageSubagents`: the machine advertises `conversation-agent-message` — the
- * person's words may be passed to one agent a chat of its own spawned, where
- * that chat's provider can (its listed `capabilities.messageSubagent`). False
- * for a machine that does not, where that agent's chat draws no box.
- *
- * `handoff`: the machine advertises `conversation-handoff` — a chat of its own
- * may be handed off to a fresh session from here, where that chat's provider
- * can (its listed `capabilities.handoff`). False for a machine that does not,
- * where the cache notice offers Compact alone.
- *
- * `rewind`: the machine advertises `conversation-rewind` — a chat of its own
- * may be taken back to before one of its messages from here (Edit from here),
- * where that chat's provider can (its listed `capabilities.rewind`). False for
- * a machine that does not, where a message offers no Edit from here.
- *
- * `checkpointRevert`: the machine advertises `conversation-checkpoint-revert`
- * — a turn's files in one of its chats may be put back from the turn's
- * checkpoint from here, in that machine's checkout, where the chat keeps
- * checkpoints (its listed `capabilities.checkpoints`). False for a machine
- * that does not, where a turn offers no Revert.
- *
- * `fork`, `sideQuestions`, `contextBreakdown`: the machine advertises
- * `conversation-fork`, `conversation-side-questions` and
- * `conversation-context-breakdown` — a chat of its own may be forked from
- * here (the fork opens here as its own pane onto that machine), asked a side
- * question, and asked what fills its context window, each where that chat's
- * provider can (its listed `capabilities.fork`, `.sideQuestion`,
- * `.contextBreakdown`). False for a machine that does not, where none is
- * offered and the ring shows how full the window is alone.
- *
- * `sideQuestionRecords`: the machine advertises
- * `conversation-side-question-records` — it keeps an answered side question
- * in the chat's transcript, where this window draws a marker that opens it
- * again. False for a machine that does not, where the drawer says the
- * question is not kept.
- *
- * `mentions`: the machine advertises `conversation-file-search` and
- * `conversation-send-mentions` — the composer's @ searches one of its chats'
- * folder there (`meshConversationSearchFiles`), and a message names what it
- * picked by its path in that folder. False for a machine that does not, where
- * the composer offers no @.
- *
- * `commands`: the machine advertises `conversation-commands` — the composer's
- * `/` menu lists the commands a chat's CLI runs over there
- * (`meshConversationCommands`). False for a machine that does not, where the
- * menu holds this app's own commands.
- *
- * `messageFiles`: the machine advertises `conversation-message-files` and
- * `upload` — a file of any type attached here goes up to it with the message,
- * and the agent reads it there by its path. False for a machine that does not,
- * where a file is typed as its path.
- *
- * `sendMode`: the machine advertises `conversation-send-mode` — a message to
- * one of its chats may say the mode its turn runs in, `ask`, or `plan` where
- * that chat's provider plans (its listed `capabilities.planMode`). False for a
- * machine that does not, where every turn runs in the default mode.
- *
- * `reasoningEffort`: the machine advertises `conversation-reasoning-effort` —
- * its list names the effort levels each chat's provider runs and the one the
- * chat runs at, and it takes `setReasoningEffort`. False for a machine that
- * does not, whose chats run at the effort kept for them there, unchangeable
- * from here.
- *
- * `mcpServerActions`: the machine advertises `conversation-mcp-server-actions`
- * — a live chat's MCP servers may be reconnected and switched on or off from
- * here, where its listed `capabilities.mcpServerActions` names the action. A
- * sign-in is that machine's to finish, and is never among them.
- *
- * `scheduledSends`: the machine advertises `conversation-scheduled-sends` — a
- * message may be scheduled into one of its chats for a time, kept and sent
- * over there, and its chats' scheduled messages are drawn, sent early and
- * deleted from here. False for a machine that does not, whose chats offer no
- * Schedule here.
- *
- * `usageLimits`: the machine advertises `conversation-usage-limits` — its
- * chats' strip draws its plans' usage limits here, and their tray its notice
- * for a chat a limit stopped, with the resume it sends. False for a machine
- * that does not, whose chats draw neither here.
- *
- * `createPullRequest`: the machine advertises `chat-create-pull-request` — a
- * chat of its own offers Create PR here, every step run over there.
- *
  * `rowMenu`: the machine advertises `chat-row-menu` — its chats' Star,
  * Highlight color, Snooze and Auto-settle are offered here, and written there.
  *
  * `markUnread`: the machine advertises `chat-mark-unread` — its chats offer
  * Mark unread here.
- *
- * `queuedAttachments`: the machine holds a queued message's images, files,
- * skills and mentions as well as its words (`conversation-queued-sends` and
- * `conversation-queued-attachments`), so a message with any of them queued
- * here mid-turn is handed over whole. False for one that holds words only,
- * where such a message waits here.
- *
- * `permanentApprovals`: the machine advertises
- * `conversation-permanent-approvals` — an approval in its chats may be
- * answered here with "Always allow … in this workspace", the rule saved there.
- *
- * `quotes`: the machine advertises `conversation-quote-tokens` — a quote made
- * in its chats here may ride as a token, which it expands for its agent. False
- * for a machine that would hand its agent the address, where Quote writes a
- * blockquote.
- *
- * `changes`: the machine advertises `conversation-changes` — a chat's Changes
- * opens its changes here in the Diff tab, read from that machine's checkout
- * (`meshConversationWatchChanges`, `meshConversationChangesDiff`,
- * `meshConversationChangedFile`). False for a machine that does not, where the
- * Changes row is that machine's counts and opens nothing.
  */
 export type MeshConversationListResult =
   | {
       ok: true
       conversations: MeshConversation[]
       access: MeshConversationAccess
-      modelSwitch: boolean
-      permissionModes?: boolean
-      cliPermissionModes?: boolean
+      capabilities: string[]
       lifecycle?: boolean
-      queuedSends?: boolean
-      sendSkills?: boolean
-      steerSends?: boolean
-      stopSubagents?: boolean
-      messageSubagents?: boolean
-      handoff?: boolean
-      rewind?: boolean
-      checkpointRevert?: boolean
-      fork?: boolean
-      sideQuestions?: boolean
-      sideQuestionRecords?: boolean
-      contextBreakdown?: boolean
-      mentions?: boolean
-      commands?: boolean
-      messageFiles?: boolean
-      sendMode?: boolean
-      reasoningEffort?: boolean
-      mcpServerActions?: boolean
-      scheduledSends?: boolean
-      usageLimits?: boolean
-      queuedAttachments?: boolean
-      permanentApprovals?: boolean
-      quotes?: boolean
-      changes?: boolean
-      createPullRequest?: boolean
       rowMenu?: boolean
       markUnread?: boolean
       /** What of its chats' management the machine takes from here; absent from a build before it. */

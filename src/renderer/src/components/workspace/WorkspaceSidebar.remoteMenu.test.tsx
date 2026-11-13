@@ -134,7 +134,7 @@ test('WorkspaceSidebar.remoteMenu', async () => {
       ok: true,
       conversations: listed,
       access: 'operate',
-      modelSwitch: false,
+      capabilities: [],
       lifecycle: true,
       rowMenu: true,
       markUnread: true,

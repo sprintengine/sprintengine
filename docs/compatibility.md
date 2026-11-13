@@ -502,7 +502,10 @@ capability in a `hello` ahead of each subscription only where the desktop lists
 both it and `conversation-hello`, writes tokens only there, and writes the
 blockquote and comment everywhere else. A paired Studio's copy of a
 chat keeps the words it was first sent, so a quote from before this reads as a
-blockquote. No version moves.
+blockquote. No version moves. The Studio protocol's socket lists
+`conversation-quote-tokens` in `welcome.conversation` (2026-11-13): it expands a
+token on every send as the lane does, and sends every client a chat as it is
+kept, tokens included, so a client on it makes one where the welcome lists it.
 A chat's rest and read state are the `conversation-lifecycle` capability: a
 desktop that advertises it leaves the chats it has settled out of the list, sends it in its sidebar's order, names
 each chat's `chatTitle`, `lastUserMessageAt`, `lastTurnEndedAt` and
@@ -994,7 +997,12 @@ be kept, with an `incompatible` frame and the update methods (below). Features a
 (`conversations`, `conversation-create`, `local-pairing`, and the chat
 surface's in `STUDIO_CHAT_CAPABILITIES`) advertised in the `welcome`, a Studio
 leaving out any it does not serve; the conversation contract's own `protocolVersion` and capabilities
-travel inside it, in `welcome.conversation`, unchanged. A new method or topic
+travel inside it, in `welcome.conversation`, unchanged. A client reads what a
+chat may offer off the welcome alone (`negotiateChatCapabilities` in
+`@sprintengine/client-runtime`): a control is offered where the Studio serves
+the method behind it and the grant reaches that method, never by
+`grant.owner`, and a chat on the client's own machine is read the same way as
+any other. A new method or topic
 is a capability, not a bump; so is a new server frame type (`push` was one),
 since a client skips a frame type it does not know. Client tools are one such
 capability within version 1: `client-tools` adds the `tools.*` methods and

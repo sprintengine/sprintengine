@@ -139,7 +139,7 @@ test('WorkspaceSidebar.remoteRow', async () => {
       ok: true,
       conversations: listed,
       access: 'operate',
-      modelSwitch: false,
+      capabilities: [],
       lifecycle: true,
     }),
     meshSettleConversation: async (input: unknown) => {

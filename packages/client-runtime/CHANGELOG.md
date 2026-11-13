@@ -4,6 +4,12 @@
 
 ### Added
 
+- `negotiateChatCapabilities(offer)`: what a chat may offer, read from what its
+  server said (a Studio's welcome, or a paired desktop's lane until it is on
+  the Studio protocol). A control is offered where the Studio serves the
+  method behind it and the grant reaches it (`studioOffers`); `grant.owner` is
+  never read. Studio's own windows, a paired machine's chat and the embedded
+  view all read their chats' capabilities through it.
 - The package. The Studio protocol's client (`connect`, the conversation
   service and handles, client tools, `StudioError`) moved here from
   `@sprintengine/agent-sdk`, which re-exports it, and the connection

@@ -149,9 +149,14 @@ test('the list says the machine searches, takes mentions and files, and lists co
   try {
     const listed = await h.mesh.listConversations(h.key.connectionId)
     assert.ok(listed.ok, listed.ok ? '' : listed.message)
-    assert.equal(listed.mentions, true)
-    assert.equal(listed.commands, true)
-    assert.equal(listed.messageFiles, true)
+    for (const capability of [
+      'conversation-file-search',
+      'conversation-send-mentions',
+      'conversation-commands',
+      'conversation-message-files',
+      'upload',
+    ])
+      assert.ok(listed.capabilities.includes(capability), capability)
   } finally {
     await h.close()
   }

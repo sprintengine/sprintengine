@@ -1,4 +1,12 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useSyncExternalStore } from 'react'
+
+import {
+  negotiateChatCapabilities,
+  type ChatCapabilities,
+  type ChatServerOffer,
+} from '../../../../../../packages/client-runtime/src/public'
+import { watchWindowStudioWelcome, windowStudioWelcome } from '../../../studio/windowStudioClient'
+import type { StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
 
 import type { ChatServices } from './chatServices'
 import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
@@ -51,7 +59,6 @@ import {
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import type { ConversationFileSearchEntry } from '../../../../../../packages/conversation-protocol/src/public'
 import type {
-  MeshConversationAccess,
   MeshConversationCommandResult,
   MeshConversationKey,
   MeshConversationLink,
@@ -68,159 +75,20 @@ import type {
 // the window's Studio protocol client; a remote one is the Mesh's, which follows the
 // conversation over the tailnet from main.
 //
-// What a transport cannot do is said by its capabilities, not inferred from a
-// provider id: a remote device chooses a permanent approval rule only where
-// the machine saves one for it, may not choose a bypass preset, reverts a checkpoint on the other machine's disk only where
-// that machine does it, and has none of this machine's skills, files or
-// history index to offer.
+// What a transport can do is said by its capabilities, which every transport
+// reads from what the chat's server said (`negotiateChatCapabilities`): a
+// window's own Studio's welcome, a paired machine's lane, an embed's welcome.
+// None is a constant, and none is inferred from where the chat runs.
 //
 // A conversation on this machine is reached over the Studio protocol, through
 // the window's Studio client, as every other client reaches it.
 
-export type ConversationTransportCapabilities = {
-  /** Send, stop, answer approvals and questions, change the preset. */
-  operate: boolean
+export type ConversationTransportCapabilities = ChatCapabilities & {
   /**
-   * An answered side question is kept in the chat's transcript, where a
-   * marker opens it again. Here, always; on a paired machine, where it
-   * advertises keeping them (`conversation-side-question-records`).
+   * Paths in the transcript name files on this computer's disk. A question of
+   * this shell's reach rather than of the chat's server.
    */
-  keepsSideQuestions: boolean
-  /** Start a provider session here before the first send. A remote send resumes one over there. */
-  startSession: boolean
-  /**
-   * Offer "always allow" rules, which outlive the conversation. A paired
-   * machine's chat does where that machine saves one for its own workspace
-   * (`conversation-permanent-approvals`).
-   */
-  permanentApprovals: boolean
-  /**
-   * Make a quote as a token: a chip in the composer, marked in the reply, and
-   * expanded for the agent where the chat runs. A paired machine's chat does
-   * where that machine expands one (`conversation-quote-tokens`); any other
-   * quotes as a blockquote, whose words it can read.
-   */
-  quotes: boolean
-  /**
-   * Revert a turn's files from its checkpoint. A paired machine's chat does,
-   * in that machine's checkout, where it advertises doing so
-   * (`conversation-checkpoint-revert`).
-   */
-  checkpointRevert: boolean
-  /**
-   * Pick another model of the chat's CLI: before the first turn, and — where
-   * the provider declares `liveModelSwitch` — mid-conversation too.
-   */
-  modelSwitch: boolean
-  /** Attach skills and mention files from this machine. */
-  composerContext: boolean
-  /**
-   * Mention files and folders of the chat's folder (@). Here, this machine's,
-   * searched on this disk; on a paired machine, that machine's, searched there
-   * through `searchMentions`, where it advertises the search and takes the
-   * mentions (`conversation-file-search`, `conversation-send-mentions`).
-   */
-  mentions: boolean
-  /**
-   * Attach files of any type by their path on this computer. Here the agent
-   * reads each where it is; for a paired machine each goes up to it with the
-   * message, where it advertises taking files (`conversation-message-files`).
-   */
-  attachFiles: boolean
-  /**
-   * The `/` menu lists what the chat's CLI runs in the chat's folder. Here,
-   * asked of this machine; on a paired machine, of that machine through
-   * `listCommands`, where it advertises the list (`conversation-commands`).
-   */
-  commandList: boolean
-  /**
-   * Carry the images a message attaches to wherever the chat runs. Offered
-   * only where the session says its provider reads them (`capabilities.images`).
-   * A paired machine's chat carries them too: main puts each in that
-   * machine's upload store, as the phone does, and the send names them.
-   */
-  imageAttachments: boolean
-  /** The local history index: the editable title, cost, search. */
-  localHistory: boolean
-  /** Paths in the transcript name files on this machine's disk. */
   localFiles: boolean
-  /** The runtime echoes an optimistic turn's id back on its `user_message`. */
-  optimisticTurns: boolean
-  /**
-   * The session's permission preset is known before a session reports it. A
-   * remote one is known only once the machine's list names it — a desktop
-   * built before the list carried it never does — and a picker showing a guess
-   * would be worse than none.
-   */
-  reportsPreset: boolean
-  /**
-   * The chat takes all four permission presets. A paired machine built before
-   * Manual and Auto came back reads either as No flag, so there only Bypass
-   * and No flag are offered.
-   */
-  permissionModes: boolean
-  /**
-   * Hand a message to a turn that is running (a steer), where the provider
-   * takes one. Without it, sending a queued message now stops the turn first.
-   */
-  steer: boolean
-  /**
-   * A message queued while the turn runs is handed at once to the machine the
-   * chat runs on (`queue`), which holds it and sends it when the turn ends,
-   * and which says what it holds. Without it the queue is this view's own,
-   * sent from here when the turn ends — so only while this machine is awake.
-   */
-  hostQueue: boolean
-  /**
-   * The machine that holds the queue holds a message whole: its images,
-   * files, skills and mentions go to it with its words (`queue`), and it
-   * sends them with the message when the turn ends
-   * (`conversation-queued-attachments`). Without it only a message of words
-   * alone is handed over, and one carrying more waits in this view.
-   */
-  hostQueueAttachments: boolean
-  /**
-   * Attach skills to a message. Here, the workspace's own; on a paired
-   * machine, that machine's, listed through `remoteExtensions`, where it
-   * advertises taking them (`conversation-send-skills`).
-   */
-  skills: boolean
-  /**
-   * The machine the chat runs on opens a pull request for it: Create PR asks
-   * it through `pullRequestHost`, where it advertises that
-   * (`chat-create-pull-request`). False here, where the chat's checkout is
-   * this computer's and Create PR asks this computer's shell.
-   */
-  hostPullRequests: boolean
-  /**
-   * The machine the chat runs on keeps and sends the messages scheduled into
-   * it for a time, and says which it keeps: the "+"'s Schedule and the tray's
-   * rows ask it through `scheduleSend`, `sendScheduledNow` and
-   * `cancelScheduled`, where it advertises that (`conversation-scheduled-sends`).
-   * False here, where this computer's main keeps a local chat's.
-   */
-  hostSchedule: boolean
-  /**
-   * The machine the chat runs on says what it knows of its agents' usage
-   * limits, and sends the resume after one: the strip draws its plans'
-   * windows and the tray its notice, whose buttons ask it through
-   * `usageLimitResume`, where it advertises that (`conversation-usage-limits`).
-   * False here, where this computer's main reads a local chat's.
-   */
-  hostUsageLimits: boolean
-  /**
-   * The machine the chat runs on reads its changes for this window, as its own
-   * Diff tab reads them: Changes opens them here in the Diff tab, where it
-   * advertises that (`conversation-changes`). False here, where the Diff tab
-   * reads a local chat's checkout itself.
-   */
-  hostChanges: boolean
-  /**
-   * The person's words can be passed to one agent of a chat here. Always for a
-   * chat on this machine; a paired machine's says so where it advertises
-   * `conversation-agent-message`.
-   */
-  agentMessages: boolean
 }
 
 /** What an action answers: the local session API's result, or a remote command's. */
@@ -430,39 +298,6 @@ export type ConversationTransport = {
 export type ConversationToolImageResult =
   { ok: true; src: string } | { ok: false; unsupported: boolean; message: string }
 
-const LOCAL_CAPABILITIES: ConversationTransportCapabilities = {
-  operate: true,
-  keepsSideQuestions: true,
-  startSession: true,
-  permanentApprovals: true,
-  quotes: true,
-  checkpointRevert: true,
-  modelSwitch: true,
-  composerContext: true,
-  mentions: true,
-  attachFiles: true,
-  commandList: true,
-  imageAttachments: true,
-  localHistory: true,
-  localFiles: true,
-  optimisticTurns: true,
-  reportsPreset: true,
-  permissionModes: true,
-  steer: true,
-  // The chat runs here: its queue is on the machine that sends it already.
-  hostQueue: false,
-  hostQueueAttachments: false,
-  skills: true,
-  hostPullRequests: false,
-  // Main keeps and sends a local chat's scheduled messages itself.
-  hostSchedule: false,
-  // And reads a local chat's usage limits, and sends its resume, itself.
-  hostUsageLimits: false,
-  // Its Diff tab reads a local chat's checkout itself.
-  hostChanges: false,
-  agentMessages: true,
-}
-
 /** This window's Studio implementation's parts, read at call time so a replaced client is the one used. */
 const localParts = () => studioImplementation().parts
 
@@ -516,9 +351,35 @@ const windowServices: ChatServices = {
   },
 }
 
-export const localConversationTransport: ConversationTransport = {
+/**
+ * A chat on this window's Studio, whose capabilities are read off the welcome
+ * `welcome` answers when asked (the window's latest): read again only when
+ * that changes.
+ */
+export function studioConversationTransport(
+  welcome: () => Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant'> | null,
+): ConversationTransport {
+  let said: { welcome: object | null; capabilities: ConversationTransportCapabilities } | null = null
+  return {
+    ...windowConversationCalls,
+    get capabilities() {
+      const now = welcome()
+      if (said?.welcome !== now)
+        said = {
+          welcome: now,
+          capabilities: {
+            ...negotiateChatCapabilities(now ? { via: 'studio', welcome: now } : null),
+            // The window's Studio runs on this computer.
+            localFiles: true,
+          },
+        }
+      return said.capabilities
+    },
+  }
+}
+
+const windowConversationCalls: Omit<ConversationTransport, 'capabilities'> = {
   kind: 'local',
-  capabilities: LOCAL_CAPABILITIES,
   subscribe: (input, cb) => localParts().subscribe(input, cb),
   loadEarlier: (input) => localParts().loadEarlier(input),
   toolDetail: (input) => localParts().toolDetail(input),
@@ -544,11 +405,29 @@ export const localConversationTransport: ConversationTransport = {
   services: windowServices,
 }
 
+export const localConversationTransport: ConversationTransport = studioConversationTransport(() => readWelcome())
+
 const ConversationTransportContext = createContext<ConversationTransport>(localConversationTransport)
 
 export const ConversationTransportProvider = ConversationTransportContext.Provider
 
+const windowApi = (): object | null =>
+  typeof window === 'undefined' ? null : ((window.api as object | undefined) ?? null)
+const watchWelcome = (listener: () => void) => {
+  const api = windowApi()
+  return api ? watchWindowStudioWelcome(api, listener) : () => undefined
+}
+const readWelcome = () => {
+  const api = windowApi()
+  return api ? windowStudioWelcome(api) : null
+}
+
+/**
+ * The chat's transport, and a render whenever the window's Studio welcomes it
+ * again: what a chat here may do is read off that welcome.
+ */
 export function useConversationTransport(): ConversationTransport {
+  useSyncExternalStore(watchWelcome, readWelcome, readWelcome)
   return useContext(ConversationTransportContext)
 }
 
@@ -576,7 +455,11 @@ const commandResult = (result: MeshConversationCommandResult): ConversationTrans
 export function createRemoteConversationTransport(input: {
   key: MeshConversationKey
   machineName: string
-  access: MeshConversationAccess | null
+  /**
+   * What the machine last said of itself and what this pairing may do there,
+   * read whenever the capabilities are; null before it has said anything.
+   */
+  offer?: () => Extract<ChatServerOffer, { via: 'paired-lane' }> | null
   onLink?: (link: MeshConversationLink) => void
   onQueued?: (messages: MeshQueuedMessage[]) => void
   onScheduled?: (messages: MeshScheduledMessage[]) => void
@@ -586,60 +469,17 @@ export function createRemoteConversationTransport(input: {
   onPullRequestRecorded?: () => void
 }): ConversationTransport {
   const { key } = input
+  let said: { offer: ChatServerOffer | null; capabilities: ConversationTransportCapabilities } | null = null
   return {
     kind: 'remote',
     machineName: input.machineName,
-    capabilities: {
-      operate: input.access === 'operate',
-      // Turned on from the machine's list, when it keeps an answered side
-      // question in the chat (`conversation-side-question-records`).
-      keepsSideQuestions: false,
-      startSession: false,
-      // Turned on from the machine's list, when it saves an "always allow"
-      // rule a device chose (`conversation-permanent-approvals`).
-      permanentApprovals: false,
-      // Turned on from the machine's list, when it expands a quote's token for
-      // its agent (`conversation-quote-tokens`).
-      quotes: false,
-      // Turned on from the machine's list, when it reverts a turn's files
-      // itself (`conversation-checkpoint-revert`): the checkpoint is on its disk.
-      checkpointRevert: false,
-      modelSwitch: false,
-      composerContext: false,
-      // Turned on from the machine's list, when it searches a chat's folder
-      // and takes what is mentioned of it; when it takes files; and when it
-      // lists the slash commands a chat's CLI runs there.
-      mentions: false,
-      attachFiles: false,
-      commandList: false,
-      // Whether this chat takes them is the machine's list's to say, through
-      // the session the pane builds from it.
-      imageAttachments: true,
-      localHistory: false,
-      localFiles: false,
-      optimisticTurns: false,
-      reportsPreset: false,
-      // Turned on from the machine's list, when it advertises the four modes.
-      permissionModes: false,
-      // Turned on from the machine's list, when it takes a message into a
-      // running turn (`conversation-steer-sends`). Without it a remote Send
-      // now stops the turn and sends after.
-      steer: false,
-      // Turned on from the machine's list, when it advertises queued sends,
-      // and when it holds what a queued message carries too.
-      hostQueue: false,
-      hostQueueAttachments: false,
-      // Turned on from the machine's list, when it takes skills with a message.
-      skills: false,
-      // Turned on from the machine's list, when it opens pull requests for its chats.
-      hostPullRequests: false,
-      // Turned on from the machine's list, when it keeps messages scheduled for a time.
-      hostSchedule: false,
-      // Turned on from the machine's list, when it says what it knows of its usage limits.
-      hostUsageLimits: false,
-      // Turned on from the machine's list, when it reads a chat's changes for this window.
-      hostChanges: false,
-      agentMessages: false,
+    // Read off what the machine last said of itself, each time asked: the
+    // pane hears its list again on a grant change or a reconnect.
+    get capabilities() {
+      const offer = input.offer?.() ?? null
+      if (said?.offer !== offer)
+        said = { offer, capabilities: { ...negotiateChatCapabilities(offer), localFiles: false } }
+      return said.capabilities
     },
     remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId },
     commandsFolder: remoteCommandsFolder(key),

@@ -136,7 +136,7 @@ async function createHarness() {
       ok: true,
       conversations,
       access: 'operate',
-      modelSwitch: false,
+      capabilities: [],
       lifecycle: true,
       rowMenu: true,
       markUnread: true,

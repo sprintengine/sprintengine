@@ -13,6 +13,8 @@ import {
 } from './pendingDock'
 import type { TranscriptEntry } from './conversationProjection'
 import { ConversationLinkProvider } from './conversationLinks'
+import { ConversationTransportProvider, studioConversationTransport } from './conversationTransport'
+import { chatWelcome } from '../../../../../../tests/chat-welcome'
 
 type Approval = Extract<TranscriptEntry, { kind: 'approval' }>
 const request = (requestId: string, extra: Partial<Approval> = {}): Approval => ({
@@ -103,6 +105,9 @@ test('pending requests keep FIFO within kind and show truthful origin/path warni
   expect(blocked).toContain('Allow once')
 })
 
+// The window's own Studio, welcomed with the owner's grant.
+const ownerTransport = studioConversationTransport(() => chatWelcome())
+
 test('queue navigation preserves question answers, resolves selected ids, and defaults unsafe Enter to Deny', async () => {
   const dom = new JSDOM('<!doctype html><body><div id="root"></div></body>', {
     url: 'http://localhost',
@@ -155,12 +160,14 @@ test('queue navigation preserves question answers, resolves selected ids, and de
   try {
     await act(async () =>
       root.render(
-        <ConversationPendingDock
-          pendingApprovals={entries}
-          workspaceRoot="/Users/dev/project"
-          onApprove={onApprove}
-          busy={false}
-        />,
+        <ConversationTransportProvider value={ownerTransport}>
+          <ConversationPendingDock
+            pendingApprovals={entries}
+            workspaceRoot="/Users/dev/project"
+            onApprove={onApprove}
+            busy={false}
+          />
+        </ConversationTransportProvider>,
       ),
     )
     expect(document.querySelector('[role="status"]')?.textContent).toBe('1/3')
@@ -203,12 +210,14 @@ test('queue navigation preserves question answers, resolves selected ids, and de
     expect(onApprove).toHaveBeenLastCalledWith('question', true, { 'Choose a mode': 'Fast' })
     await act(async () =>
       root.render(
-        <ConversationPendingDock
-          pendingApprovals={[entries[0]]}
-          workspaceRoot="/Users/dev/project"
-          onApprove={onApprove}
-          busy={false}
-        />,
+        <ConversationTransportProvider value={ownerTransport}>
+          <ConversationPendingDock
+            pendingApprovals={[entries[0]]}
+            workspaceRoot="/Users/dev/project"
+            onApprove={onApprove}
+            busy={false}
+          />
+        </ConversationTransportProvider>,
       ),
     )
     await act(async () => button('Allow once').click())
