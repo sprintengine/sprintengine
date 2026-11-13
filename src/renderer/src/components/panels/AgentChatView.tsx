@@ -2872,14 +2872,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (!transcript || composerInputDisabled) return false
     return quoteSelectionInto(transcript, document.getSelection(), quoteIntoComposer, citeIntoComposer)
   }
-  // Restart agent session (`chat.restartSession`): end the agent's process the
-  // way Settle and the idle sweep do — suspended, so the session keeps its
-  // resume cursor and the next message starts it again on the same
-  // conversation (sessionRecovery.ts covers a session the runtime no longer
-  // holds) — then list the slash commands again, so a skill or plugin
-  // installed since shows up. Refused while the agent works: a suspend
-  // interrupts the turn and ends the agents it sent off. A chat on another
-  // machine is restarted by that machine, the same way.
+  // Restart agent session (`chat.restartSession`): the chat's server ends the
+  // agent's session (`conversation.restartSession`), keeping the conversation,
+  // so the next message starts it again — then list the slash commands again,
+  // so a skill or plugin installed since shows up. Refused while the agent
+  // works: ending it interrupts the turn and the agents it sent off. Offered
+  // where the chat's server restarts sessions for this window.
   const restartSessionRef = useRef<() => Promise<void>>(async () => undefined)
   restartSessionRef.current = async () => {
     const restart = transport.capabilities.restartSession ? transport.restartSession : undefined
@@ -3524,7 +3522,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // is not started for nothing. The chat's Studio answers where the fork is,
   // and it opens there. A paired machine's chat followed over the tailnet lane
   // is forked over there, never started here, and the fork opens as a pane
-  // onto that machine (`forkRemoteChat`), until that lane is the protocol.
+  // onto that machine (`openPairedFork`), until that lane is the protocol.
   const forkRef = useRef<(target: ForkFromHereTarget) => Promise<void>>(async () => undefined)
   forkRef.current = async (target) => {
     if (

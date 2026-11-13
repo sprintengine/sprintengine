@@ -231,7 +231,7 @@ export type ConversationTransport = {
    * Start a new chat beside this one holding it up to an earlier message
    * ("Fork from here"). Absent where the transport cannot. A paired machine's
    * chat has it: the fork is made over there, beside the chat, and opens
-   * here as a pane of its own onto that machine (`forkRemoteChat`); its
+   * here as a pane of its own onto that machine (`openPairedFork`); its
    * session declares `fork` only where that machine takes the command
    * (`conversation-fork`). The key a remote fork is handed is not the one it
    * forks: it names the chat by its ids over there. Offered only where the
@@ -442,7 +442,7 @@ export type ChatForkInput = ConversationForkInput extends infer Fork
 /**
  * A fork made: where it is and what it was called, as a Studio answers
  * `conversation.fork`. A paired machine's lane says neither, so a fork made
- * there is found by its id in that machine's list (`forkRemoteChat`).
+ * there is found by its id in that machine's list (`openPairedFork`).
  */
 export type ChatForkResult = { ok: true; address?: ConversationAddress; name?: string } | { ok: false; message: string }
 
