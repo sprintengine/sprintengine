@@ -522,6 +522,12 @@ type ServiceEntry = {
   value: unknown
 }
 
+/** One load of a module: the host it was handed, and whether switching it off has retired that host. */
+type ModuleLoad = { generation: number; retired: () => boolean }
+
+const switchedOff = (moduleId: string, what: string): string =>
+  `Module "${moduleId}" was switched off; the host it was given ${what}.`
+
 // The key the storage service is provided under (service-tokens.ts'
 // ModuleStorageToken, and the SDK's private token behind getModuleStorage).
 // Spelled out here because service-tokens.ts imports this file.
@@ -868,25 +874,30 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     throw new Error(`Service "${key}" is not available to third-party modules.`)
   }
 
-  // Each service a third-party module was handed as itself, by the service
-  // and the module: one view per pair, so a module sees the same object each time.
+  // Each service a third-party module was handed, by the object, its key, the
+  // module and the load: one view per load, so a module sees the same object each
+  // time, and the view one load kept stops when that load is switched off
+  // while the next load's works.
   const callerViews = new WeakMap<object, Map<string, unknown>>()
 
   /**
-   * The service as `moduleId` reaches it: as is for a first-party module or a
-   * service that names no module; otherwise a view whose methods refuse a
-   * call naming any module but this one, and which cannot be written to.
+   * The service as one load of `moduleId` reaches it: as is for a first-party
+   * module; for a third-party one, a view that cannot be written to, whose
+   * methods refuse every call once that load is switched off, and, for a
+   * service that names a module, a call naming any module but this one.
    */
-  function asCaller<T>(moduleId: string, key: string, value: T): T {
-    if (!isThirdParty(moduleId) || !MODULE_ID_FIRST_SERVICE_KEYS.has(key)) return value
+  function asCaller<T>(moduleId: string, key: string, value: T, load: ModuleLoad): T {
+    if (!isThirdParty(moduleId)) return value
     if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
+    const pinned = MODULE_ID_FIRST_SERVICE_KEYS.has(key)
     const target = value as object
     let views = callerViews.get(target)
     if (!views) {
       views = new Map()
       callerViews.set(target, views)
     }
-    const known = views.get(moduleId)
+    const viewKey = `${key}\u0000${moduleId}\u0000${load.generation}`
+    const known = views.get(viewKey)
     if (known !== undefined) return known as T
     const readOnly = (): never => {
       throw new Error(`Module "${moduleId}" cannot change service "${key}".`)
@@ -896,7 +907,8 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         const member: unknown = Reflect.get(service, property, service)
         if (typeof member !== 'function') return member
         return (...args: unknown[]) => {
-          if (args[0] !== moduleId) {
+          if (load.retired()) throw new Error(switchedOff(moduleId, `no longer reaches service "${key}"`))
+          if (pinned && args[0] !== moduleId) {
             throw new Error(
               `Module "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
             )
@@ -909,7 +921,7 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       deleteProperty: readOnly,
       setPrototypeOf: readOnly,
     })
-    views.set(moduleId, view)
+    views.set(viewKey, view)
     return view as T
   }
 
@@ -952,18 +964,48 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
   // host past its shutdown hooks (a timer, a watcher, a promise still
   // settling) then says nothing more to clients and registers nothing more,
   // so a module switched off is off; switched on again, it gets a new host.
+  // A retired host's every call to the host's services is refused too, and so
+  // is every call through a service it was handed before (`asCaller`).
   const loadGenerations = new Map<string, number>()
 
   function hostFor(moduleId: string): MainHost {
     const generation = loadGenerations.get(moduleId) ?? 0
     const retired = (): boolean => (loadGenerations.get(moduleId) ?? 0) !== generation
-    const live = scopedHostFor(moduleId)
+    const live = scopedHostFor(moduleId, { generation, retired })
     const refuseRetired = (): void => {
-      if (retired())
-        throw new Error(`Module "${moduleId}" was switched off; the host it was given no longer takes registrations.`)
+      if (retired()) throw new Error(switchedOff(moduleId, 'no longer takes registrations'))
     }
-    return {
+    const refuseUse = (): void => {
+      if (retired()) throw new Error(switchedOff(moduleId, "no longer reaches the host's services"))
+    }
+    const host: MainHost = {
       ...live,
+      listChatRuntimes: async () => (refuseUse(), live.listChatRuntimes()),
+      ensureSkillInstalled: async (root, skillId) => (refuseUse(), live.ensureSkillInstalled(root, skillId)),
+      getSkillStatus: async (root, skillId) => (refuseUse(), live.getSkillStatus(root, skillId)),
+      getModuleDataDir: () => (refuseUse(), live.getModuleDataDir()),
+      getAssetPath: (relativePath) => (refuseUse(), live.getAssetPath(relativePath)),
+      getModuleAppState<T = unknown>(key: string): T | undefined {
+        refuseUse()
+        return live.getModuleAppState<T>(key)
+      },
+      getWorkspaceGitInfo: async (workspaceId) =>
+        retired()
+          ? { ok: false, code: 'unavailable', message: switchedOff(moduleId, "no longer reads a workspace's git") }
+          : live.getWorkspaceGitInfo(workspaceId),
+      // The factory is handed this host, as it always was: the guarded one.
+      provideService<T>(token: ServiceToken<T>, factory: (host: MainHost) => T): T {
+        refuseRetired()
+        return live.provideService.call(host, token, factory) as T
+      },
+      getService<T>(token: ServiceToken<T>): T | undefined {
+        refuseUse()
+        return live.getService(token)
+      },
+      requireService<T>(token: ServiceToken<T>): T {
+        refuseUse()
+        return live.requireService(token)
+      },
       registerMethods: (batch) => (refuseRetired(), live.registerMethods(batch)),
       registerMcpTools: (tools) => (refuseRetired(), live.registerMcpTools(tools)),
       registerSkills: (skills) => (refuseRetired(), live.registerSkills(skills)),
@@ -979,9 +1021,10 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
         if (!retired()) live.emit(topic, payload)
       },
     }
+    return host
   }
 
-  function scopedHostFor(moduleId: string): MainHost {
+  function scopedHostFor(moduleId: string, load: ModuleLoad): MainHost {
     return {
       moduleId,
       hostApiVersion: HOST_API_VERSION,
@@ -1125,14 +1168,14 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
       getService<T>(token: ServiceToken<T>): T | undefined {
         assertServiceVisible(moduleId, token.key)
         const value = services.get(token.key)?.value as T | undefined
-        return value === undefined ? undefined : asCaller(moduleId, token.key, value)
+        return value === undefined ? undefined : asCaller(moduleId, token.key, value, load)
       },
       requireService<T>(token: ServiceToken<T>): T {
         assertServiceVisible(moduleId, token.key)
         if (!services.has(token.key)) {
           throw new Error(`Module "${moduleId}" requires service "${token.key}", which no enabled module provides.`)
         }
-        return asCaller(moduleId, token.key, services.get(token.key)!.value as T)
+        return asCaller(moduleId, token.key, services.get(token.key)!.value as T, load)
       },
       onStartup(hook) {
         startupHooks.push({ moduleId, hook })
