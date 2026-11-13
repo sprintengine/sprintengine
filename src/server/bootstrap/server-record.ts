@@ -28,8 +28,6 @@ export type DetachedServerRecord = {
    */
   protocolVersion: number
   minProtocolVersion: number
-  /** The backend wire the server speaks (`BACKEND_WIRE_VERSION`). */
-  backendWire: number
   dataDir: string
 }
 

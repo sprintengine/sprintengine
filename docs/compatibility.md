@@ -56,7 +56,7 @@ chat handed off to a fresh session, and `sendTurn`'s `origin` the reason
 `auto-compact` (2026-10-21), and to 7 when it gained `messageSubagent`, and
 `sendTurn` `subagentMessage` and the `origin` reason `agent-message` (2026-11-07),
 and to 8 when `backend.sign-in` left it for the Studio protocol's `providers.signIn*`
-(2026-11-13). The front door gained a third purpose, `ws` (2026-11-13): a window's
+(2026-11-13), and to 9 when `backend.machine` left it for `environment.work` (2026-11-13). The front door gained a third purpose, `ws` (2026-11-13): a window's
 socket, which main's loopback route for that machine carries to the server's own
 window listener. The proof says only that the stream came through the front door;
 the listener admits it by the ticket it minted, as it admits a local window. An
@@ -1248,6 +1248,12 @@ on the desktop's tailnet listener with a ticket from `ws-ticket` naming the
 `relay:<pairing>.<environmentId>`, ranked last (after `ssh`: a relay admits the client
 as a device, so a machine this desktop also holds over SSH is reached as its owner). A
 desktop without it relays nothing, and a client lists no relayed machines.
+`environment-work` (2026-11-13) adds `environment.work` (`{}` → `{ working, schedules,
+watches, messages, resumes }`, the shell's): whether a chat works on this Studio and what it
+does on its own, which a desktop asks over its owner connection to a WSL distribution's
+server before stopping it for being idle and for its quit question. It replaced the backend
+wire's `backend.machine`, which went with `BACKEND_WIRE_VERSION` 9. A server without it is
+read as having nothing to say. Served by a WSL distribution's or an SSH machine's Studio.
 `environment-adopt` (2026-11-13) adds `environment.adopt` (`{ commandId, migrationId,
 records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's): the records a
 desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are

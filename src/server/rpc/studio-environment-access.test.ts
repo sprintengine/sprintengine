@@ -283,6 +283,30 @@ test('a window is revoked and a device ticket minted only for the shell, a devic
   assert.equal(devices.length, 1)
 })
 
+test('what stopping the Studio would end is told to the shell that holds it, and to nobody else', async () => {
+  const work = {
+    working: true,
+    schedules: [{ id: 'sa-1', title: 'Triage', nextRunAt: 5 }],
+    watches: [],
+    messages: 1,
+    resumes: 0,
+  }
+  const started = await startTestServer({ work: () => work })
+  cleanups.push(() => started.dispose())
+  const shell = await shellOf(started.server)
+  assert.ok((shell.welcome.capabilities as string[]).includes('environment-work'))
+  assert.deepEqual((await shell.request('environment.work', {})).result, work)
+  // An owner's own client, not the shell: refused, as every shell method is.
+  const owner = await lineClient(started.path, OWNER_TOKEN)
+  assert.equal(errorCode(await owner.request('environment.work', {})), 'owner_required')
+
+  // A Studio no desktop holds does not offer it.
+  const plain = await startTestServer()
+  cleanups.push(() => plain.dispose())
+  const plainShell = await shellOf(plain.server)
+  assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-work'), false)
+})
+
 test('a hand-over is the shell’s alone, answered once per command id', async () => {
   const handed: unknown[] = []
   const started = await startTestServer({

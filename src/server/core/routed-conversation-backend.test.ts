@@ -100,6 +100,7 @@ function setup(options: { platform?: NodeJS.Platform; chatServer?: boolean; reac
   let connected: WslServerConnection | null = null
   const connection: WslServerConnection = {
     distro: 'Ubuntu',
+    owner: {} as WslServerConnection['owner'],
     backend: remote.backend as unknown as WslServerConnection['backend'],
     driveMountRoot: '/mnt/',
     environmentId: 'env',

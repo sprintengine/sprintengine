@@ -173,6 +173,7 @@ function manager(options: {
   now?: () => number
   idleMs?: number
   pingMs?: number
+  ownerPingMs?: number
   orphanOnKill?: boolean
   skipKills?: number
 }) {
@@ -204,6 +205,7 @@ function manager(options: {
     ...(options.now ? { now: options.now } : {}),
     ...(options.idleMs ? { idleMs: options.idleMs } : {}),
     ...(options.pingMs ? { pingMs: options.pingMs } : {}),
+    ...(options.ownerPingMs ? { ownerPingMs: options.ownerPingMs } : {}),
   })
   cleanups.push(() => created.shutdown({ budgetMs: 5_000 }))
   return { manager: created, runner }
@@ -383,6 +385,50 @@ test('a lost wire is reconnected once, and a call meanwhile waits for it instead
   assert.ok(threads.ok)
 })
 
+test("the desktop's owner connection is the server's Studio, and its end is the server lost, reconnected once", async () => {
+  const home = fakeHome('owner')
+  const connections: WslServerConnection[] = []
+  const { manager: wsl } = manager({ homes: { Ubuntu: home }, connected: (connection) => connections.push(connection) })
+  const first = await wsl.connect('Ubuntu')
+  const pid = readServerPid(home)
+  assert.ok(first.owner.supports('environment-work'), 'the owner connection reaches the Studio a desktop holds')
+  const work = await first.owner.request('environment.work', {})
+  assert.deepEqual(work, { working: false, schedules: [], watches: [], messages: 0, resumes: 0 })
+  first.owner.close()
+  const second = await wsl.connect('Ubuntu')
+  assert.notEqual(second, first)
+  assert.equal(second.owner.state === 'closed', false)
+  assert.equal(first.backend.isOpen(), false, 'the wire went with it: one connection, never half of one')
+  assert.equal(connections.length, 2)
+  assert.equal(readServerPid(home), pid, 'the same server')
+})
+
+test('a server that leaves its owner connection’s pings unanswered is lost, and reconnected once it answers again', async () => {
+  const home = fakeHome('owner-ping')
+  const connections: WslServerConnection[] = []
+  const { manager: wsl } = manager({
+    homes: { Ubuntu: home },
+    ownerPingMs: 300,
+    connected: (connection) => connections.push(connection),
+  })
+  const first = await wsl.connect('Ubuntu')
+  const pid = readServerPid(home)
+  // The socket stays open; only the answers stop.
+  process.kill(pid, 'SIGSTOP')
+  try {
+    for (let waited = 0; first.owner.state !== 'closed' && waited < 5_000; waited += 100)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.equal(first.owner.state, 'closed', 'two pings unanswered end the owner connection')
+    assert.equal(wsl.current('Ubuntu'), null, 'the server is not handed out while it does not answer')
+  } finally {
+    process.kill(pid, 'SIGCONT')
+  }
+  const second = await wsl.connect('Ubuntu')
+  assert.notEqual(second, first)
+  assert.equal(readServerPid(home), pid, 'the same server, not one started in its place')
+  assert.equal(connections.length, 2)
+}, 30_000)
+
 test('a lost wire to a server too busy to answer at once is reconnected when it does, not taken for hung', async () => {
   const home = fakeHome('busy')
   const connections: WslServerConnection[] = []
@@ -483,6 +529,12 @@ test('a server with a schedule of its own to run is not stopped for being idle',
   const pid = readServerPid(home)
   await new Promise((resolve) => setTimeout(resolve, 3_000))
   assert.equal(wsl.status('Ubuntu').state, 'ready')
+  // The quit question names it.
+  const asked = await wsl.backgroundWork()
+  assert.deepEqual(
+    asked.map(({ distro, work }) => [distro, work.schedules.map((schedule) => schedule.id)]),
+    [['Ubuntu', ['sa-1']]],
+  )
   assert.equal(readServerPid(home), pid)
   assert.equal(
     statuses.some((status) => status.state === 'stopped'),

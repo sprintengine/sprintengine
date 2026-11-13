@@ -338,6 +338,13 @@ Unix socket, `MessagePort`, arbitrary duplex), not a URL only (12.3).
   lets the VM idle. This is the same reason the helper idles out after 120 s.
   The cost of starting again is a cold distro boot plus a Node start: a few
   seconds, shown as "Starting WSL: Ubuntu…" on the first send.
+- **As built (design-wsl-ssh-direct PR 3):** the front door holds one owner
+  connection to each server, on its `studio` door, as it does to an SSH
+  machine's. It pings the server when quiet for ten seconds and is lost after
+  ten more with no answer; its end, like the wire's, is the server lost (one
+  reconnect if the lease still answers, else stopped as hung). The idle stop
+  and the quit question ask it `environment.work`: whether a chat works there,
+  and the schedules, watches, kept messages and resumes it runs on its own.
 - **Distro idle shutdown.** WSL stops an instance some seconds after its last
   `wsl.exe` session ends, and stops the VM after `vmIdleTimeout` (default
   60 s). Whether a `setsid` background process alone keeps the instance alive

@@ -28,6 +28,8 @@ import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
 import type { StudioDiscovery } from '../rpc/studio-rpc-types'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
+import { backgroundWorkOf } from './background-work'
+import { chatsAreWorking } from './chats-working'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -103,6 +105,11 @@ export function createStudioRpc(
     // A Studio a desktop holds over its front door keeps what that desktop
     // kept for its chats, once the desktop hands it over.
     ...(options.hostKind === 'wsl' || options.hostKind === 'ssh' ? { adoption: environmentAdoptionOf(core) } : {}),
+    // And says what stopping it would end, which that desktop asks before it
+    // stops a WSL server for being idle and for its quit question.
+    ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'
+      ? { work: () => ({ working: chatsAreWorking(core.conversations), ...backgroundWorkOf(core) }) }
+      : {}),
     paths: core.platform.paths,
     identity: core.platform.identity,
     // Who may reach the agents from this machine (`access`): the gateway's

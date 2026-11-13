@@ -31,6 +31,7 @@ import { inProcessStudioTransport } from '../../server/rpc/studio-in-process-por
 import {
   STUDIO_SCOPES,
   type StudioEnvironmentReadiness,
+  type StudioEnvironmentWork,
   type StudioRelayedEnvironment,
   type StudioGrant,
 } from '../../../packages/studio-protocol/src/public'
@@ -222,6 +223,8 @@ export type StudioRpcServiceOptions = {
   signIns?: () => Promise<SignIns>
   /** Records the desktop that holds this Studio hands over (`environment-adopt`): a server a desktop reaches over its front door. */
   adoption?: EnvironmentAdoption
+  /** What stopping this Studio would end (`environment-work`): a server a desktop reaches over its front door. */
+  work?: () => StudioEnvironmentWork
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
   terminals?: StudioTerminals
   /** The CLIs on this machine (`agent-runtimes`): the core's, which every Studio gives (studio-rpc.ts). */
@@ -502,6 +505,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.relayedEnvironments ? { relayedEnvironments: options.relayedEnvironments } : {}),
       ...(options.signIns ? { signIns: options.signIns } : {}),
       ...(options.adoption ? { adoption: options.adoption } : {}),
+      ...(options.work ? { work: options.work } : {}),
       // The desktop that holds a WSL or SSH machine's Studio connects its
       // windows to this one's listener through its front door (`ws`), asking
       // for each connection's ticket here, over its own shell connection.

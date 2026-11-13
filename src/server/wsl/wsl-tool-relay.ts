@@ -79,7 +79,7 @@ export type RelayTarget = {
   key: string
   /** For the log: "WSL: Ubuntu", "build-box". */
   name: string
-  /** The server's own liveness: its backend wire for WSL, main's owner connection for SSH. The offers end with it. */
+  /** The server's own liveness: the desktop's owner connection to it. The offers end with it. */
   alive: RelayLiveness
   open(purpose: 'studio'): Promise<Duplex>
   toolsets: readonly string[]
@@ -107,22 +107,26 @@ export function sshRelayTarget(input: {
   owner: Pick<StudioClient, 'state' | 'closed'>
   open(): Promise<Duplex>
 }): RelayTarget {
-  const { owner } = input
   return {
     key: input.route,
     name: input.name,
-    alive: {
-      isOpen: () => owner.state !== 'closed',
-      onClose: (listener) => {
-        void owner.closed.then(
-          () => listener('closed'),
-          (error: unknown) => listener(error instanceof Error ? error.message : String(error)),
-        )
-      },
-    },
+    alive: ownerLiveness(input.owner),
     open: () => input.open(),
     toolsets: SSH_RELAYED_TOOLSETS,
     args: (_toolset, args) => args,
+  }
+}
+
+/** A server is up while the desktop's owner connection to it is (design-wsl-ssh-direct PR 1a and PR 3). */
+function ownerLiveness(owner: Pick<StudioClient, 'state' | 'closed'>): RelayLiveness {
+  return {
+    isOpen: () => owner.state !== 'closed',
+    onClose: (listener) => {
+      void owner.closed.then(
+        () => listener('closed'),
+        (error: unknown) => listener(error instanceof Error ? error.message : String(error)),
+      )
+    },
   }
 }
 
@@ -131,7 +135,7 @@ export function wslRelayTarget(connection: WslServerConnection): RelayTarget {
   return {
     key: `wsl:${connection.distro}`,
     name: `WSL: ${connection.distro}`,
-    alive: connection.backend,
+    alive: ownerLiveness(connection.owner),
     open: (purpose) => connection.open(purpose),
     toolsets: [...RELAYED_TOOLSETS, ...WINDOWS_SIDE_TOOLSETS],
     moduleTools: true,

@@ -61,7 +61,7 @@ test('compatibility is the protocol window, not equal versions', () => {
     // This build's own server, read without its window, is not replaced by itself.
     ['the same build with no window', server('1.5.0', null), 'attach'],
     ['a server whose version does not read', server('?', null), 'blocked'],
-    // The private backend wire is no input: the protocol window decides.
+    // A record an older server wrote may name the backend wire it spoke: no input, the protocol window decides.
     ['the same build on another backend wire', server('1.5.0', [3, 2], { backendWire: 99 }), 'attach'],
     ['a newer server on another backend wire that speaks ours', server('1.6.0', [3, 2], { backendWire: 1 }), 'attach'],
   ]

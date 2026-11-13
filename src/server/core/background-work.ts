@@ -1,3 +1,4 @@
+import type { StudioEnvironmentWork } from '../../../packages/studio-protocol/src/environment-access'
 import { scheduledAgentTitle } from '../../shared/scheduled-agents'
 import type { StudioCore } from './studio-core'
 
@@ -10,22 +11,8 @@ import type { StudioCore } from './studio-core'
 // desktop's quit question names (app-lifecycle.ts), so stopping them is never
 // silent.
 
-/**
- * The backend wire's machine channel a WSL server answers with what it does
- * on its own (`BackgroundWork`): the Windows side asks before it stops the
- * server for being idle, and for the quit question (wsl-environment-manager.ts).
- * A server of an older build refuses the channel, which is read as none.
- */
-export const BACKGROUND_WORK_MACHINE_CHANNEL = 'studio:background-work'
-
-export type BackgroundWork = {
-  schedules: Array<{ id: string; title: string; nextRunAt: number }>
-  watches: Array<{ url: string; title: string }>
-  /** Messages kept to send into a chat later (scheduled, or held for a turn's end). */
-  messages: number
-  /** Chats a usage limit stopped, with a resume set for when it resets. */
-  resumes: number
-}
+/** What a Studio does on its own; the protocol's `environment.work` answers it with whether a chat works. */
+export type BackgroundWork = Omit<StudioEnvironmentWork, 'working'>
 
 type BackgroundWorkCore = Pick<
   StudioCore,
@@ -53,7 +40,7 @@ export function hasBackgroundWork(work: BackgroundWork): boolean {
   return work.schedules.length > 0 || work.watches.length > 0 || work.messages > 0 || work.resumes > 0
 }
 
-/** A background work summary as another process sends it; null when it is not one (an older build's refusal). */
+/** A background work summary as another process sends it (`environment.work`); null when it is not one. */
 export function parseBackgroundWork(value: unknown): BackgroundWork | null {
   if (!value || typeof value !== 'object') return null
   const raw = value as Record<string, unknown>
