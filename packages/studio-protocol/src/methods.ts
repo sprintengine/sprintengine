@@ -108,9 +108,11 @@ import {
   type StudioChatStoresTopicMap,
 } from './chat-stores.js'
 import {
+  STUDIO_BACKLOG_FOLDER_METHODS,
   STUDIO_BACKLOG_METHODS,
   STUDIO_BACKLOG_TOPICS,
   STUDIO_SHARES_METHODS,
+  type StudioBacklogFolderMethodMap,
   type StudioBacklogMethodMap,
   type StudioBacklogTopicMap,
   type StudioSharesMethodMap,
@@ -282,6 +284,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioSchedulesMethodMap &
   StudioFileSystemMethodMap &
   StudioBacklogMethodMap &
+  StudioBacklogFolderMethodMap &
   StudioSharesMethodMap &
   StudioPullRequestReadsMethodMap &
   StudioPullRequestCreateMethodMap &
@@ -726,6 +729,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_SCHEDULES_METHODS,
   ...STUDIO_FILE_SYSTEM_METHODS,
   ...STUDIO_BACKLOG_METHODS,
+  ...STUDIO_BACKLOG_FOLDER_METHODS,
   ...STUDIO_SHARES_METHODS,
   ...STUDIO_PULL_REQUEST_READS_METHODS,
   ...STUDIO_PULL_REQUEST_CREATE_METHODS,

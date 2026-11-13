@@ -151,6 +151,7 @@ import type {
 } from '../../modules/renderer-host'
 import { listTerminals } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
+import { backlogApi } from '../../studio/backlog'
 
 // Backlog panel: capture / browse / triage / start surface for the lightweight
 // items (rough ideas, notes, feature sketches, imported markdown, mockups)
@@ -341,7 +342,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       setBacklogLocationInfo(null)
       return
     }
-    const resolved = await window.api.resolveBacklogLocation(folderPath).catch(() => null)
+    const resolved = await backlogApi.resolveBacklogLocation(folderPath).catch(() => null)
     setBacklogLocationInfo(resolved?.ok ? resolved.location : null)
   }, [folderPath])
   useEffect(() => {
@@ -919,7 +920,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     (nextRoot: string | null) =>
       runAction(async () => {
         if (!folderPath) return
-        const result = await window.api.setBacklogRoot({ workspaceRoot: folderPath, root: nextRoot })
+        const result = await backlogApi.setBacklogRoot({ workspaceRoot: folderPath, root: nextRoot })
         if (!result.ok) throw new Error(result.message)
         forgetBacklogLocation(folderPath)
         await refreshBacklogLocation()
@@ -970,7 +971,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         objectId: stableBacklogObjectId(relativePath),
         status: 'idea',
       } as BacklogItem
-      const triage = await window.api.updateBacklogTriage({
+      const triage = await backlogApi.updateBacklogTriage({
         workspaceRoot: folderPath,
         relativePath: itemRef.relativePath,
         difficulty: draft.difficulty === 'unset' ? null : draft.difficulty,
@@ -1031,7 +1032,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         }
         const dir = item.relativePath.slice(0, item.relativePath.lastIndexOf('/') + 1)
         const nextRelativePath = normalizeRelativePath(`${dir}${next}`)
-        const moved = await window.api.moveBacklogObjectSource({
+        const moved = await backlogApi.moveBacklogObjectSource({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           nextRelativePath,
@@ -1073,7 +1074,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         remapOpenFiles(workspaceId, item.path, newPath)
         remapFileTabsForPath(workspaceId, item.path, newPath)
       }
-      const moved = await window.api.moveBacklogObjectSource({
+      const moved = await backlogApi.moveBacklogObjectSource({
         workspaceRoot: folderPath,
         relativePath: item.relativePath,
         nextRelativePath: archivedRel,
@@ -1113,7 +1114,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
             // Re-point the child to the epic's final (possibly renamed) slug
             // before the move, so the archived copy carries the matching `epic:`.
             if (move.repointEpic !== null) {
-              const repointed = await window.api.updateBacklogEpic({
+              const repointed = await backlogApi.updateBacklogEpic({
                 workspaceRoot: folderPath,
                 relativePath: move.item.relativePath,
                 epic: move.repointEpic,
@@ -1152,7 +1153,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           removeFileTabsForPath(workspaceId, item.path)
         }
         if (folderPath) {
-          const removed = await window.api.removeBacklogObjectRecord({
+          const removed = await backlogApi.removeBacklogObjectRecord({
             workspaceRoot: folderPath,
             relativePath: item.relativePath,
           })
@@ -1180,7 +1181,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     ) =>
       runAction(async () => {
         if (!folderPath) return
-        const updated = await window.api.updateBacklogTriage({
+        const updated = await backlogApi.updateBacklogTriage({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           ...triage,
@@ -1219,7 +1220,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           })
           if (!confirmed) return
           for (const link of executionLinks) {
-            const unlinked = await window.api.removeBacklogLink({
+            const unlinked = await backlogApi.removeBacklogLink({
               workspaceRoot: folderPath,
               relativePath: item.relativePath,
               linkId: link.id,
@@ -1227,7 +1228,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
             assertBacklogMutation(unlinked)
           }
         }
-        const updated = await window.api.updateBacklogStatus({
+        const updated = await backlogApi.updateBacklogStatus({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           status,
@@ -1248,7 +1249,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           confirmLabel: 'Unlink',
         })
         if (!confirmed) return
-        const removed = await window.api.removeBacklogLink({
+        const removed = await backlogApi.removeBacklogLink({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           linkId: link.id,
@@ -1260,14 +1261,14 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
   )
 
   // Star / highlight color persist to the backlog object store (items.json)
-  // via backlog:update-highlight and re-scan, same as triage — owned metadata,
+  // via backlog.edit (highlight) and re-scan, same as triage — owned metadata,
   // never frontmatter, never disconnected renderer state. Visual marks only:
   // sorting and filtering never key on them.
   const setItemHighlight = useCallback(
     (item: BacklogItem, highlight: BacklogHighlight) =>
       runAction(async () => {
         if (!folderPath) return
-        const updated = await window.api.updateBacklogHighlight({
+        const updated = await backlogApi.updateBacklogHighlight({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           starred: highlight.starred,
@@ -1279,14 +1280,14 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     [folderPath, runAction, runScan],
   )
 
-  // Epic membership is the child's `epic:` frontmatter only (backlog:update-epic
+  // Epic membership is the child's `epic:` frontmatter only (backlog.edit, epic
   // rewrites the markdown; items.json is untouched). slug assigns, null clears
   // back into the No-epic group.
   const setItemEpic = useCallback(
     (item: BacklogItem, slug: string | null) =>
       runAction(async () => {
         if (!folderPath || item.epic === (slug ?? undefined)) return
-        const updated = await window.api.updateBacklogEpic({
+        const updated = await backlogApi.updateBacklogEpic({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           epic: slug,
@@ -1298,7 +1299,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
   )
 
   // Prerequisites are the dependent's `dependsOn:` frontmatter only
-  // (backlog:update-dependencies rewrites the markdown via the shared serializer;
+  // (backlog.edit's dependencies rewrites the markdown via the shared serializer;
   // items.json is untouched). The full slug list is rewritten each time; null /
   // empty clears the line. The service de-dupes/validates and drops self, so the
   // UI just sends the toggled set and re-scans.
@@ -1306,7 +1307,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     (item: BacklogItem, slugs: string[] | null) =>
       runAction(async () => {
         if (!folderPath) return
-        const updated = await window.api.updateBacklogDependencies({
+        const updated = await backlogApi.updateBacklogDependencies({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           dependsOn: slugs,
@@ -1318,7 +1319,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
   )
 
   // Mockup attachments are the item's `mockups:` frontmatter only
-  // (backlog:update-mockups rewrites the markdown via the shared serializer;
+  // (backlog.edit's mockups rewrites the markdown via the shared serializer;
   // items.json is untouched). The full path list is rewritten each attach/remove;
   // null / empty clears the line. The service validates/dedupes, so the UI just
   // sends the next set and re-scans (the fs watcher refreshes the item).
@@ -1326,7 +1327,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     (item: BacklogItem, mockups: string[] | null) =>
       runAction(async () => {
         if (!folderPath) return
-        const updated = await window.api.updateBacklogMockups({
+        const updated = await backlogApi.updateBacklogMockups({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           mockups,
@@ -1353,9 +1354,9 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           })
         )?.trim()
         if (!title) return
-        const created = await window.api.createBacklogEpic({ workspaceRoot: folderPath, title })
+        const created = await backlogApi.createBacklogEpic({ workspaceRoot: folderPath, title })
         if (!created.ok) throw new Error(created.message)
-        const assigned = await window.api.updateBacklogEpic({
+        const assigned = await backlogApi.updateBacklogEpic({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           epic: created.slug,
@@ -1367,7 +1368,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
   )
 
   // Set (or clear) an epic's identity colour. Writes the epic file's `color:`
-  // frontmatter via backlog:update-epic-color — distinct from the per-item
+  // frontmatter via backlog.edit (epicColor) — distinct from the per-item
   // `highlight` (items.json), so the epic's members can derive a shared hue at
   // scan time. A no-op write is skipped so re-picking the current colour is free.
   const setEpicColorForItem = useCallback(
@@ -1376,7 +1377,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         if (!folderPath) return
         const current = epicMeta.get(epicSlug(item))?.color ?? null
         if (current === color) return
-        const updated = await window.api.updateBacklogEpicColor({
+        const updated = await backlogApi.updateBacklogEpicColor({
           workspaceRoot: folderPath,
           relativePath: item.relativePath,
           color,
@@ -1485,7 +1486,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         item,
         readSource: () => filesApi.readfile(item.path),
         updateStatus: async (status) => {
-          const updated = await window.api.updateBacklogStatus({
+          const updated = await backlogApi.updateBacklogStatus({
             workspaceRoot: folderPath,
             relativePath: item.relativePath,
             status,
@@ -1494,7 +1495,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           await runScan()
         },
         addLink: async (link) => {
-          const updated = await window.api.addOrUpdateBacklogLink({
+          const updated = await backlogApi.addOrUpdateBacklogLink({
             workspaceRoot: folderPath,
             relativePath: item.relativePath,
             link,
@@ -1503,7 +1504,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           await runScan()
         },
         updateModuleMetadata: async (moduleId, value) => {
-          const updated = await window.api.updateBacklogModuleMetadata({
+          const updated = await backlogApi.updateBacklogModuleMetadata({
             workspaceRoot: folderPath,
             relativePath: item.relativePath,
             moduleId,

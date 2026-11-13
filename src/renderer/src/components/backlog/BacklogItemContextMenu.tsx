@@ -28,7 +28,7 @@ import { BACKLOG_STATUS_LABEL } from './BacklogRow'
 import { BacklogItemSearchPicker } from './BacklogItemSearchPicker'
 
 // Row-level Backlog actions, owned by the panel (the handlers persist through
-// the backlog IPC and re-scan). The context menu and the detail pane dispatch
+// the backlog methods and re-scan). The context menu and the detail pane dispatch
 // through this one vocabulary so the two surfaces cannot drift.
 export type DifficultyChoice = BacklogDifficulty | 'unset'
 export type CriticalityChoice = BacklogCriticality | 'unset'

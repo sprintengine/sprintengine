@@ -517,6 +517,17 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'worktrees.installChanged',
         ],
       ],
+      [
+        'a project’s backlog by its folder on this machine: an owner’s; a device reads and triages backlogs by token (backlog.list, backlog.update)',
+        [
+          'backlog.location',
+          'backlog.setRoot',
+          'backlog.ensureRecords',
+          'backlog.ensureIds',
+          'backlog.edit',
+          'backlog.createEpic',
+        ],
+      ],
       ['updating this Studio (environment:maintain)', ['update.start']],
       [
         'skills, plugins, design systems and cards: what the agents here are given, set up from the desktop (providers:read, files:read or write, settings:write, environment:maintain, or an owner’s)',

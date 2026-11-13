@@ -17,7 +17,7 @@ import { BacklogItemSearchPicker } from './BacklogItemSearchPicker'
 // cycle warning — plus the in-app editor (a checkable "Depends on…" popover) so
 // prerequisites can be added/removed without leaving the pane. Nothing here is
 // persisted beyond the dependent's `dependsOn:` frontmatter, rewritten through
-// actions.setDependencies → window.api.updateBacklogDependencies → re-scan; the
+// actions.setDependencies → backlogApi.updateBacklogDependencies → re-scan; the
 // node is recomputed on every scan, so the view never desyncs from the files.
 //
 // Epics never declare prerequisites (they are grouping containers), so the

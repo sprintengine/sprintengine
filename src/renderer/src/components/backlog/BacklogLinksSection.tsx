@@ -4,6 +4,7 @@ import { IconButton, InlineNotice, RowButton, Section, Tooltip } from '../ui'
 import type { BacklogItem, BacklogItemLink, BacklogItemStatus, BacklogResolvedLink } from '../../utils/backlog'
 import { backlogLinkControlModel, openBacklogLink, syncBacklogItemLinks } from '../../utils/backlogLinks'
 import type { BacklogLinkProvider } from '../../modules/renderer-host'
+import { backlogApi } from '../../studio/backlog'
 
 // Provider-backed Backlog link surface for the detail pane, kept out of the
 // already-large Backlog panel so the link resolution/opening state machine and
@@ -60,7 +61,7 @@ function useResolvedBacklogItemLinks(input: {
           item,
           epicChildStatuses: childStatusesRef.current,
           providers,
-          persistLink: (args) => window.api.addOrUpdateBacklogLink(args),
+          persistLink: (args) => backlogApi.addOrUpdateBacklogLink(args),
         })
         if (token !== tokenRef.current) return
         setResolvedLinks(links)

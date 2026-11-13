@@ -25,7 +25,7 @@ function fakePort() {
 }
 
 test('a web tab reaches the domains it draws, and not the ones that act beyond this server', () => {
-  for (const channel of ['workspace-sync:dispatch', 'workspace-sync:lifecycle', 'backlog:create-epic'])
+  for (const channel of ['workspace-sync:dispatch', 'workspace-sync:lifecycle', 'automation:mcp-http-create'])
     expect(webTunnelAllows(channel), channel).toBe(true)
   for (const channel of [
     'studio-local-apps:offer',
@@ -78,7 +78,7 @@ test('a call that changes something is audited with its outcome; a read is not',
   expect(audit.map(({ channel, ok, workspaceId }) => ({ channel, ok, workspaceId }))).toEqual([
     { channel: 'workspace-sync:dispatch', ok: true, workspaceId: 'ws-1' },
   ])
-  expect(webTunnelAudited('backlog:update-status')).toBe(true)
+  expect(webTunnelAudited('automation:mcp-http-revoke')).toBe(true)
   expect(webTunnelAudited('conversation:threads')).toBe(false)
 })
 
@@ -173,7 +173,7 @@ test('a browser that is not the owner reaches no tunnel channel, whatever it sen
   })
   guarded.on('message', (event) => heard.push(event.data))
   inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'workspace-sync:get-snapshot', args: [] })
-  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'backlog:create-epic', args: [{}] })
+  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'automation:mcp-http-create', args: [{}] })
   inner.deliver({ t: 'ipc.send', channel: 'workspace-sync:dispatch', args: [{}] })
   expect(heard).toEqual([])
   expect(inner.posted).toMatchObject([

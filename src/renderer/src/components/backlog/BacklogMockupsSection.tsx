@@ -29,7 +29,7 @@ import { filesApi } from '../../studio/files'
 // (frontmatter `mockups:`, removable) and body-detected (read-only) — as live
 // scripts-off preview cards, plus an "Attach mockup…" popover so attachments can
 // be added without leaving the pane. Attach/remove is persisted only through the
-// item's `mockups:` frontmatter (onSetMockups → window.api.updateBacklogMockups
+// item's `mockups:` frontmatter (onSetMockups → backlogApi.updateBacklogMockups
 // → re-scan); nothing here holds disconnected local list state.
 //
 // The section renders for epics and leaf items alike (amendment 3: epics are

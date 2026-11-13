@@ -113,7 +113,7 @@ updated: 2026-06-26T10:00:00.000Z   # precise UTC instant; drives the "recently 
   `backlogMockupResolutionCandidates` probes the ref as written first, then the
   same ref under `backlog/`, so either root resolves. Each attachment shows in the item detail pane's
   **Mockups** section as a live scripts-off preview, openable rendered in the
-  panel and removable there (UI-editable via `window.api.updateBacklogMockups`,
+  panel and removable there (UI-editable via `backlog.edit` with `kind: mockups`,
   which validates paths and preserves every other frontmatter key). Body-prose
   mockup links (`Mockup: [x](../mockups/x.html)`) light up the same section
   read-only without being written here. Absolute paths and `..` escapes are

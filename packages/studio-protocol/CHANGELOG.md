@@ -14,6 +14,17 @@
   (capability `provider-sign-in-flow`): a CLI's own login on the Studio's
   machine with no terminal, each step under a `commandId`, an owner's.
 
+### Added (a project's backlog by its folder)
+
+- **`backlog.location`, `.setRoot`, `.ensureRecords`, `.ensureIds`, `.edit` and
+  `.createEpic`** (`backlog.ts`, capability `backlog`): the desktop's own
+  Backlog panel, naming a project by its folder (`workspaceRoot`). `.edit` is
+  one item's change, by `edit.kind` (status, triage, highlight, addLink,
+  removeLink, moduleMetadata, moveSource, removeRecord, epic, epicColor,
+  dependencies, mockups). Each is an owner's (`STUDIO_BACKLOG_FOLDER_OWNER`);
+  the writes carry a `commandId`. The shapes move into the package
+  (`backlog-types.ts`).
+
 ### Added (Create PR on the chat's Studio)
 
 - **`pullRequests.createState`, `.draft`, `.draftCancel`, `.push` and

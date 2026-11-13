@@ -179,7 +179,7 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   extensions: 0,
   'paired-machines': 26,
   access: 44,
-  workspaces: 47,
+  workspaces: 30,
   'web-tab': 6,
 }
 
