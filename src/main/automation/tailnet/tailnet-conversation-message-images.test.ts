@@ -242,4 +242,3 @@ test('a device without a conversation grant is told which scope it lacks', async
 })
 
 // ── A paired desktop showing a remote chat's sent pictures ──────────────────
-

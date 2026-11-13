@@ -177,7 +177,10 @@ function farMethods(listed: () => MeshConversation, recordPullRequest: () => voi
       address: { environmentId: 'env-connection', chatId: key.workspaceId, agentId: asked.newAgentId },
       name: 'Fork of Fix the flaky upload test',
     })),
-    'conversation.askSideQuestion': typed('conversation.askSideQuestion', () => ({ ok: true, answer: 'In src/upload.test.ts.' })),
+    'conversation.askSideQuestion': typed('conversation.askSideQuestion', () => ({
+      ok: true,
+      answer: 'In src/upload.test.ts.',
+    })),
     'conversation.cancelSideQuestion': typed('conversation.cancelSideQuestion', () => ({ ok: true })),
     'conversation.contextBreakdown': typed('conversation.contextBreakdown', () => ({
       ok: true,
@@ -984,7 +987,10 @@ test('an agent in a chat over there has a Stop of its own, which stops that agen
     await startAgent(chat)
     expect(agentStops(chat)).toHaveLength(1)
     await chat.act(async () => agentStops(chat)[0]!.click())
-    expect(chat.far['conversation.stopSubagent']).toHaveBeenCalledExactlyOnceWith({ key: ref, toolUseId: 'toolu_agent' })
+    expect(chat.far['conversation.stopSubagent']).toHaveBeenCalledExactlyOnceWith({
+      key: ref,
+      toolUseId: 'toolu_agent',
+    })
     expect(chat.far['conversation.interrupt']).not.toHaveBeenCalled()
   } finally {
     await chat.unmount()
@@ -2106,9 +2112,7 @@ test('a steer to a chat over there clears once its message is in, and a failure 
     capabilities: { ...thread.capabilities!, steer: true },
   })
   let failFirst: (error: StudioError) => void = () => undefined
-  chat.far['conversation.send'].mockImplementationOnce(
-    () => new Promise((_resolve, reject) => (failFirst = reject)),
-  )
+  chat.far['conversation.send'].mockImplementationOnce(() => new Promise((_resolve, reject) => (failFirst = reject)))
   try {
     // The card is answered: the turn runs on, and can take a message.
     await chat.act(async () =>

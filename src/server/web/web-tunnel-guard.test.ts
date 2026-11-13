@@ -27,11 +27,7 @@ function fakePort() {
 test('a web tab reaches the domains it draws, and not the ones that act beyond this server', () => {
   for (const channel of ['hosts:list', 'hosts:home', 'web:previews:open'])
     expect(webTunnelAllows(channel), channel).toBe(true)
-  for (const channel of [
-    'conversation:secrets:set',
-    'github:set-token',
-    'github:clone',
-  ])
+  for (const channel of ['conversation:secrets:set', 'github:set-token', 'github:clone'])
     expect(webTunnelAllows(channel), channel).toBe(false)
 })
 

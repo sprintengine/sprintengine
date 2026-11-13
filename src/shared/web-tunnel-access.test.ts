@@ -66,10 +66,7 @@ test('an owner’s tab reaches exactly the channels it reached before permission
   // The exclusions a tab must keep. What main's rest sweep reads that only a
   // desktop window can say is the protocol's now, which takes it from no
   // browser (`studio-workspace-sync.ts`).
-  for (const channel of [
-    'conversation:sessions:terminal-handoff',
-    'conversation:secrets:set',
-  ])
+  for (const channel of ['conversation:sessions:terminal-handoff', 'conversation:secrets:set'])
     assert.equal(webTunnelAllows(channel), false, channel)
 })
 

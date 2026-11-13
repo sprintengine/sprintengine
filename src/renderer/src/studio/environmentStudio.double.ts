@@ -128,7 +128,11 @@ async function result(ask: () => Promise<unknown>): Promise<unknown> {
 export function fakePairedStudios(
   api: object,
   answers: Record<string, Answer> = {},
-  options: { capabilities?: readonly string[]; conversationCapabilities?: readonly string[]; scopes?: StudioScope[] } = {},
+  options: {
+    capabilities?: readonly string[]
+    conversationCapabilities?: readonly string[]
+    scopes?: StudioScope[]
+  } = {},
 ): PairedStudiosDouble {
   const followers = new Map<string, Set<{ params: unknown; listener: (payload: unknown) => void }>>()
   const receivers: Array<{
@@ -194,7 +198,13 @@ export function fakePairedStudios(
         environment: { id: `env-${connectionId}` },
         capabilities: [...double.capabilities],
         conversation: { protocolVersion: 1, minProtocolVersion: 1, capabilities: [...double.conversationCapabilities] },
-        grant: { clientId: 'tailnet:double', name: 'dev-macbook-air', owner: false, scopes: double.scopes, ceiling: 'bypass' },
+        grant: {
+          clientId: 'tailnet:double',
+          name: 'dev-macbook-air',
+          owner: false,
+          scopes: double.scopes,
+          ceiling: 'bypass',
+        },
       })
       let said: { as: string; welcome: ReturnType<typeof sayWelcome> } | null = null
       const welcome = (): ReturnType<typeof sayWelcome> => {

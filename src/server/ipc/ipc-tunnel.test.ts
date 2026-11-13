@@ -211,4 +211,3 @@ test('a channel registered twice is refused where it is wired', () => {
   tunnel.registry.handle('once', () => undefined)
   assert.deepEqual(tunnel.channels(), ['once'])
 })
-

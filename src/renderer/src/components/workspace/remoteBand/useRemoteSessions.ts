@@ -216,8 +216,7 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
             topic: 'conversations.changed',
             params: {},
             capability: STUDIO_CONVERSATIONS_CAPABILITY,
-            onPayload: (change) =>
-              noteChange(connection.id, change.what === 'workspaces' ? 'browse' : 'conversations'),
+            onPayload: (change) => noteChange(connection.id, change.what === 'workspaces' ? 'browse' : 'conversations'),
           }) ?? (() => undefined)
         let opened = false
         const stopOpen = source.watchOpen(() => {

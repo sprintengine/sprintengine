@@ -222,7 +222,6 @@ beforeAll(async () => {
   }
   reader = await pair(['conversation:read'])
   noConversations = await pair(TAILNET_SCOPES.filter((scope) => !scope.startsWith('conversation:')))
-
 })
 
 afterAll(async () => {

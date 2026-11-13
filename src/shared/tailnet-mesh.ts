@@ -447,7 +447,6 @@ export function meshListChanged(event: MeshEvent): boolean {
   return event.kind === 'machine-paired' || event.kind === 'machine-forgotten' || event.kind === 'machine-identified'
 }
 
-
 // ── Conversations on a paired machine ───────────────────────────────────────
 //
 // Main follows a conversation over that machine's conversation socket, keeps
@@ -734,6 +733,5 @@ export function meshConversationTab(
     },
   }
 }
-
 
 /** A paired machine's chat folder searched for a mention, and its CLI's `/` list. */

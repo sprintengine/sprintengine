@@ -185,7 +185,8 @@ function remoteSessionFeatures(welcome: StudioWelcomeFrame | null): Omit<RemoteS
     handoff: has(CONVERSATION_HANDOFF_CAPABILITY),
     // Its skills are listed by its workspaces' extensions, and a send carries them.
     sendSkills:
-      has(CONVERSATION_SEND_SKILLS_CAPABILITY) && (welcome?.capabilities.includes(STUDIO_WORKSPACES_CAPABILITY) ?? false),
+      has(CONVERSATION_SEND_SKILLS_CAPABILITY) &&
+      (welcome?.capabilities.includes(STUDIO_WORKSPACES_CAPABILITY) ?? false),
     rewind: has(CONVERSATION_REWIND_CAPABILITY),
     agentReads: {
       fork: has(CONVERSATION_FORK_CAPABILITY),

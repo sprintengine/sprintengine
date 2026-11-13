@@ -5,7 +5,7 @@ import type {
   ConversationEventType,
   ConversationSessionFrame,
 } from '../../../../../../shared/conversation-runtime'
-import type { MeshConversationFrame, MeshConversationKey, MeshSubagent } from '../../../../../../shared/tailnet-mesh'
+import type { MeshSubagent } from '../../../../../../shared/tailnet-mesh'
 import type { ConversationSessionEntry } from '../../../../hooks/conversationSessionsStore'
 import type { ConversationTransport } from '../../../panels/agentChat/conversationTransport'
 import { latestSessionOf } from '../../../panels/agentChat/chatSubagents'
@@ -124,8 +124,6 @@ async function mountPanel({
   }
   Object.assign(globalThis, globals)
   const frames: ((frame: ConversationSessionFrame) => void)[] = []
-  const followed = new Map<string, (frame: MeshConversationFrame) => void>()
-  const resolved: unknown[] = []
   Object.assign(dom.window, {
     matchMedia: () => ({ matches: true, addEventListener: () => undefined, removeEventListener: () => undefined }),
     api: {
@@ -134,21 +132,17 @@ async function mountPanel({
         frames.push(receive)
         return () => undefined
       },
-      onMeshConversationSession: (
-        input: { key: MeshConversationKey },
-        receive: (frame: MeshConversationFrame) => void,
-      ) => {
-        followed.set(input.key.agentId, receive)
-        return () => undefined
-      },
-      meshConversationResolveApproval: async (input: unknown) => {
-        resolved.push(input)
-        return { ok: true }
-      },
       canvasListBoards: async () => ({ ok: true, value: [] }),
     },
   })
   installStudioLoopback(dom.window as never)
+  // A paired machine's Studio, as this window's own client of it reaches it:
+  // its chats are followed there, and the test plays what it sends (`farFrame`).
+  const { fakePairedStudios } = await import('../../../../studio/environmentStudio.double')
+  const farStudio = fakePairedStudios(dom.window.api as object, {
+    'session.list': () => ({ ok: true, sessions: [] }),
+    'conversation.list': () => ({ conversations: [] }),
+  })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { useWorkspaceStore } = await import('../../../../store/workspaceStore')
@@ -234,8 +228,8 @@ async function mountPanel({
       })
       await settleStudio(act)
     },
-    followed,
-    resolved,
+    /** A frame of a chat followed on the paired machine, as that machine sends it. */
+    farFrame: (frame: Parameters<typeof farStudio.frame>[0], agentId: string) => farStudio.frame(frame, agentId),
     async unmount() {
       await act(async () => {
         resetSubagentViews()
@@ -548,9 +542,8 @@ async function openRemoteChat(tab: Awaited<ReturnType<typeof mountPanel>>) {
   }
   const deliver = async (events: ConversationEvent[]) => {
     await tab.act(async () => {
-      const receive = tab.followed.get('far-agent')!
-      receive({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } })
-      receive({ type: 'synchronized', seq: events.at(-1)?.seq ?? 0 })
+      tab.farFrame({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null } }, 'far-agent')
+      tab.farFrame({ type: 'synchronized', seq: events.at(-1)?.seq ?? 0 }, 'far-agent')
     })
     await tab.act(() => pause(500))
   }

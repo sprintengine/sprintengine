@@ -3311,9 +3311,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   )
   const conversationCommands = useConversationCommands(
     chatCli,
-    localCommands
-      ? workspaceRoot
-      : (binding.sessionRoot ?? null),
+    localCommands ? workspaceRoot : (binding.sessionRoot ?? null),
     {
       appCommands,
       discover: localCommands || Boolean(commandSource),

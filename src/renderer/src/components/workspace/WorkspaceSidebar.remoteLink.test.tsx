@@ -70,8 +70,10 @@ test('WorkspaceSidebar.remoteLink', async () => {
     pairedVia: 'request',
   }
 
-  // The chat over there, as that machine lists it.
+  // The chat over there, as that machine lists it: starred there, since that
+  // machine keeps its chats' marks (its Studio serves `chat-lifecycle`).
   const remoteChat = {
+    highlight: { starred: true },
     workspaceId: 'rw1',
     agentId: 'agent-1',
     title: 'sprintengine',

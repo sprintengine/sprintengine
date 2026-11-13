@@ -778,7 +778,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       broadcast({ kind: 'machine-identified', connectionId, environmentId: identity.environmentId })
   }
 
-
   // ── The supervisor ────────────────────────────────────────────────────────
 
   /** The five-minute check runs only while there is a machine to check. */
