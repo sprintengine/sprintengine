@@ -348,6 +348,13 @@ function sameProof(expected, presented) {
 }
 
 /**
+ * What an owner stream is refused with when the server took the connection
+ * and never answered the front door: alive, but not answering. The desktop
+ * tells this apart by these words (an older relay says the same).
+ */
+export const FRONT_DOOR_TIMED_OUT = 'The handshake with the Studio server timed out.'
+
+/**
  * The front door's half of the mutual proof (front-door-proof.ts, which
  * the server runs), here on the remote: the relay proves itself with the owner
  * token it read from the server's private run directory, so the token never
@@ -414,7 +421,7 @@ export function enterFrontDoorAsRelay(socket, { token, purpose, via, client, tim
         return
       }
     }
-    const timer = setTimeout(() => finish(new Error('The handshake with the Studio server timed out.')), timeoutMs)
+    const timer = setTimeout(() => finish(new Error(FRONT_DOOR_TIMED_OUT)), timeoutMs)
     socket.on('data', onData)
     socket.on('error', onError)
     socket.on('close', onClose)

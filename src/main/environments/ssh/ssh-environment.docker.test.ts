@@ -299,6 +299,68 @@ test.skipIf(!DOCKER_TESTS)(
   },
 )
 
+test.skipIf(!DOCKER_TESTS)(
+  'a server that hangs on build-box is said in words, not replaced, and reached again once it answers',
+  async () => {
+    // A key with no passphrase, so the background reconnects (BatchMode) reach the server.
+    const machine = startSshd({ sshdOptions: ['AllowTcpForwarding no', 'AllowStreamLocalForwarding no'] })
+    const broker = await createAskpassBroker({ runAsNode: false, ask: async () => 'yes' })
+    const destination = parseDestination('build-box')
+    assert.ok(destination.ok)
+    const changes: string[] = []
+    const env: SshEnvironment = new SshEnvironment({
+      id: 'hung',
+      label: () => 'build-box',
+      settings: () => ({ ...DEFAULT_SSH_ENVIRONMENT_SETTINGS, keepRunning: true }),
+      spawn: ({ interactive }) =>
+        spawnSshSession({
+          ssh: 'ssh',
+          destination: destination.destination,
+          label: 'build-box',
+          interactive,
+          askpass: broker,
+          configFile: machine.configFile,
+          env: { PATH: process.env.PATH, HOME: process.env.HOME },
+        }) as unknown as SessionProcess,
+      app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      dataName: 'data',
+      startedBy: 'Studio on dev-macbook-air',
+      serverTree: () => ({ dir: tree, digest }),
+      nodeBinary: (target) => ensureNodeBinary(target, { cacheDir: CACHE, subject: 'build-box' }),
+      onChange: () => changes.push(`${env.summary().state}: ${env.summary().stateText}`),
+      timing: { backoff: { baseMs: 200, maxMs: 1_000 }, livenessMs: 1_000, pingMs: 1_000 },
+    })
+    const serverPid = () =>
+      Number(
+        machine.exec(
+          'sed -n \'s/.*"pid":\\([0-9]*\\).*/\\1/p\' /home/dev/.local/share/sprintengine-studio/data/run/server.json',
+        ),
+      )
+    const words =
+      'The Studio server on build-box is running but not answering. Stop it there, or restart build-box. Studio keeps trying.'
+    try {
+      await env.connect({ interactive: true })
+      const pid = serverPid()
+      assert.ok(pid > 0)
+      machine.exec(`kill -STOP ${pid}`)
+      try {
+        assert.ok(await until(() => env.summary().stateText === words, 90_000), changes.join('\n'))
+        assert.equal(env.summary().state, 'reconnecting')
+        assert.equal(serverPid(), pid, 'no second server was started beside it')
+      } finally {
+        machine.exec(`kill -CONT ${pid}`)
+      }
+      assert.ok(await until(() => env.summary().state === 'connected', 90_000), changes.join('\n'))
+      assert.equal(env.summary().stateText, 'Connected')
+      assert.equal(serverPid(), pid, 'the same server, answering again')
+    } finally {
+      env.disconnect()
+      broker.close()
+      machine.stop()
+    }
+  },
+)
+
 test.skipIf(!DOCKER_TESTS)('a key the remote refuses, and a home mounted noexec, are said in words', async () => {
   const noexec = startSshd({ noexecHome: true })
   try {
