@@ -98,6 +98,17 @@ export function windowStudioWelcome(api: object = window.api): StudioWelcomeFram
   return welcomes.get(api) ?? null
 }
 
+/**
+ * The environment this page's shell runs beside: the Studio a desktop
+ * window's shell started, by its id, which its windows reach. Null for a page
+ * whose Studio is on another machine (a web tab) and before the first
+ * welcome. A chat in this environment has its files on the shell's own disk.
+ */
+export function windowShellEnvironmentId(api: object = window.api): string | null {
+  if (windowStudioIsAnotherMachine(api)) return null
+  return welcomes.get(api)?.environment.id ?? null
+}
+
 /** Hear the window's welcome change. Returns the unsubscriber. */
 export function watchWindowStudioWelcome(api: object, listener: () => void): () => void {
   let set = welcomeWatchers.get(api)

@@ -1,4 +1,4 @@
-import { test, expect } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   displayToolPath,
@@ -18,6 +18,20 @@ import {
   normalizeCodeLanguage,
 } from '../../../../lib/highlight/codeHighlight'
 import { installStudioLoopback, settleStudio } from '../../../../../../../tests/studio-chat-loopback'
+
+// A row of a chat on the window's own Studio, welcomed: its paths are read
+// and linked through the window's services. Only for the drawing itself, so
+// nothing else reads a window that is not a page.
+async function onWindowStudio<T>(draw: () => T): Promise<T> {
+  const win = { api: { platform: 'darwin' } as Record<string, unknown> }
+  vi.stubGlobal('window', win)
+  try {
+    await installStudioLoopback(win).welcomed()
+    return draw()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+}
 
 function tool(values: Partial<TranscriptToolEntry>): TranscriptToolEntry {
   return { kind: 'tool', id: 'tool', turnId: 'turn', name: 'Bash', status: 'done', ...values }
@@ -121,9 +135,11 @@ test('a press on the row ground goes through the label button, and a portalled c
   }
 })
 
-test('collapsed file subtitles are independent links, never nested inside the disclosure button', () => {
-  const html = renderToStaticMarkup(
-    <ToolRow tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: 'src/app.ts' } })} />,
+test('collapsed file subtitles are independent links, never nested inside the disclosure button', async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ToolRow tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: 'src/app.ts' } })} />,
+    ),
   )
   const document = new JSDOM(html).window.document
   const link = document.querySelector('[aria-label="Open src/app.ts"]')
@@ -229,7 +245,7 @@ test('truncated output is fetched only on request and failures can be retried', 
       },
     },
   })
-  installStudioLoopback(dom.window as never)
+  await installStudioLoopback(dom.window as never).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -343,7 +359,7 @@ test('a change that crossed without its bodies is read whole when its row opens,
       },
     },
   })
-  installStudioLoopback(dom.window as never)
+  await installStudioLoopback(dom.window as never).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -473,7 +489,7 @@ async function withToolDetailDom(
       },
     },
   })
-  installStudioLoopback(dom.window as never)
+  await installStudioLoopback(dom.window as never).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { ConversationLinkProvider } = await import('../conversationLinks')
@@ -596,11 +612,15 @@ test('an opened step sits in one contained panel with a copy action, not loose t
   expect(new JSDOM(search).window.document.querySelector('.rounded-sm.border')?.textContent).toContain('src/a.ts')
 })
 
-test('a row names its file relative to the workspace and keeps the full path as the link target', () => {
-  const html = renderToStaticMarkup(
-    <ConversationLinkProvider workspaceId="w" cwd="/Users/dev/project" workspaceRoot="/Users/dev/project">
-      <ToolRow tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: '/Users/dev/project/src/app.ts' } })} />
-    </ConversationLinkProvider>,
+test('a row names its file relative to the workspace and keeps the full path as the link target', async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ConversationLinkProvider workspaceId="w" cwd="/Users/dev/project" workspaceRoot="/Users/dev/project">
+        <ToolRow
+          tool={tool({ name: 'Read', toolKind: 'file_read', input: { path: '/Users/dev/project/src/app.ts' } })}
+        />
+      </ConversationLinkProvider>,
+    ),
   )
   const document = new JSDOM(html).window.document
   // The label carries the file's name, so the link beside it names only the
@@ -876,7 +896,7 @@ test('a generated picture shows under its row unopened, opens in the system view
     },
   })
   // A picture on this machine is read by the window's Studio, over the protocol.
-  installStudioLoopback(dom.window as never)
+  await installStudioLoopback(dom.window as never).welcomed()
   const { act } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const host = dom.window.document.createElement('div')
@@ -1022,18 +1042,20 @@ test('a remote chat asks its machine for a step’s picture by the step, and say
   }
 })
 
-test("a step's returned pictures are drawn in its body, one preview each", () => {
-  const html = renderToStaticMarkup(
-    <ToolBody
-      tool={tool({
-        name: 'mcp__sprintengine-studio__browser_screenshot',
-        output: 'Captured 1280×800.',
-        images: [
-          '/Users/dev/Studio/conversation-images/s/shot-1.png',
-          '/Users/dev/Studio/conversation-images/s/shot-2.png',
-        ],
-      })}
-    />,
+test("a step's returned pictures are drawn in its body, one preview each", async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ToolBody
+        tool={tool({
+          name: 'mcp__sprintengine-studio__browser_screenshot',
+          output: 'Captured 1280×800.',
+          images: [
+            '/Users/dev/Studio/conversation-images/s/shot-1.png',
+            '/Users/dev/Studio/conversation-images/s/shot-2.png',
+          ],
+        })}
+      />,
+    ),
   )
   const pictures = new JSDOM(html).window.document.querySelector('[data-tool-images]')
   expect(pictures?.children).toHaveLength(2)
@@ -1043,16 +1065,18 @@ test("a step's returned pictures are drawn in its body, one preview each", () =>
   )
 })
 
-test('a step called with nothing that answered only with a picture draws the picture alone, with no `{}`', () => {
-  const html = renderToStaticMarkup(
-    <ToolBody
-      tool={tool({
-        name: 'mcp__sprintengine-studio__browser_screenshot',
-        input: {},
-        output: '',
-        images: ['/Users/dev/Studio/conversation-images/c1/shot-1.png'],
-      })}
-    />,
+test('a step called with nothing that answered only with a picture draws the picture alone, with no `{}`', async () => {
+  const html = await onWindowStudio(() =>
+    renderToStaticMarkup(
+      <ToolBody
+        tool={tool({
+          name: 'mcp__sprintengine-studio__browser_screenshot',
+          input: {},
+          output: '',
+          images: ['/Users/dev/Studio/conversation-images/c1/shot-1.png'],
+        })}
+      />,
+    ),
   )
   expect(html).toContain('data-tool-images')
   expect(html).not.toContain('{}')

@@ -19,6 +19,7 @@ import { CHAT_FIND_SEGMENT_ATTRIBUTE } from './chatFindSegment'
 import { ConversationMarkdown, useConversationLinkContext } from './conversationLinks'
 import type { ChatServices } from './chatServices'
 import { useConversationTransport } from './conversationTransport'
+import { useShellReach } from './shellReach'
 
 const HEADING = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/u
 
@@ -76,7 +77,7 @@ export function usePlanOpener(): ((plan: string, planFilePath?: string) => void)
   const transport = useConversationTransport()
   if (!context?.agentId) return null
   const { workspaceId, workspaceRoot, agentId } = context
-  const local = transport.kind === 'local'
+  const local = useShellReach().openDocument
   return (plan, planFilePath) =>
     void openPlanInPane(
       transport.services,

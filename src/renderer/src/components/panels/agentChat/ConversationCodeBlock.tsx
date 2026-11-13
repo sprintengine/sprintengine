@@ -2,7 +2,7 @@ import { CodeBlock, type CodeBlockProps } from '../../ui/CodeBlock'
 import { showToast } from '../../../store/toastStore'
 import { focusOrAddTerminalTab, getModel } from '../../../utils/modelRegistry'
 import { useConversationLinkContext, type ConversationLinkContext } from './conversationLinks'
-import { useConversationTransport } from './conversationTransport'
+import { useShellReach } from './shellReach'
 import { clientSupports } from '../../../clientCapabilities'
 import { useDiagramDrawing } from './conversationDiagram'
 import { useVisualDrawing } from './conversationVisual'
@@ -134,8 +134,8 @@ async function pasteInTerminal(context: ConversationLinkContext, command: string
 // from a conversation on another machine cannot — its folder is over there.
 function usePasteInTerminal(): CodeBlockProps['onPasteInTerminal'] {
   const context = useConversationLinkContext()
-  const localFiles = useConversationTransport().capabilities.localFiles
-  return context && localFiles && clientSupports('terminals')
+  const { openDocument } = useShellReach()
+  return context && openDocument && clientSupports('terminals')
     ? (command) => void pasteInTerminal(context, command)
     : undefined
 }
