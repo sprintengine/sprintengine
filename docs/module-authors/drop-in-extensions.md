@@ -63,9 +63,13 @@ the user has trusted execute code.
   file's top level survives the switch. Keep state inside `registerMain`, and
   release timers, watchers and handles in `onShutdown`: once its shutdown
   hooks have run, the host a switched-off extension was given drops its
-  `emit` and `notify` calls and refuses its registrations. A file changed on
-  disk since the server started is refused rather than loaded; an updated
-  extension runs from the next start.
+  `emit` and `notify` calls, refuses its registrations, and refuses every
+  call to the host's services, both through the host (`requireService`,
+  `getModuleDataDir`, ...) and through any service it was handed before
+  (secrets, storage, chats, backlog, usage, workspace), which then throws.
+  Switched on again, its new host hands out services that work. A file
+  changed on disk since the server started is refused rather than loaded; an
+  updated extension runs from the next start.
 - Validate, sign, and pack with the bundled `sprintengine-module` CLI. `sign`
   records the sha256 of every file the module ships in the manifest's `files`
   field, so the signature covers the code, not only the manifest.
