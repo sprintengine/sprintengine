@@ -2,8 +2,6 @@ import assert from 'node:assert/strict'
 import type { IpcMain } from 'electron'
 import { test } from 'vitest'
 
-import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
-import { MESH_CONVERSATION_FOLLOW_CHANNEL } from '../../shared/tailnet-mesh'
 import { createIpcTunnel, IpcSenderUnavailable, type TunnelClient, type TunnelPort } from './ipc-tunnel'
 
 /** A window's end of its port, as the preload holds it, wired to the server's end. */
@@ -215,24 +213,3 @@ test('a channel registered twice is refused where it is wired', () => {
   assert.deepEqual(tunnel.channels(), ['once'])
 })
 
-test('a followed conversation on another machine ends with the window that followed it', async () => {
-  const tunnel = createIpcTunnel()
-  const unfollowed: unknown[] = []
-  const mesh = {
-    followConversation: () => ({ ok: true }),
-    unfollowConversation: (followId: unknown) => unfollowed.push(followId),
-  }
-  registerMeshIpc(tunnel.registry as unknown as IpcMain, { mesh: () => mesh } as never)
-  const window = portPair()
-  tunnel.attach(client('w1'), window.server)
-  window.send({
-    t: 'ipc.invoke',
-    id: 1,
-    channel: MESH_CONVERSATION_FOLLOW_CHANNEL,
-    args: [{ followId: 'f1', key: { workspaceId: 'ws', agentId: 'a' } }],
-  })
-  const answer = await window.result(1)
-  assert.equal(answer.ok, true, JSON.stringify(answer))
-  window.hangUp()
-  assert.deepEqual(unfollowed, ['f1'])
-})

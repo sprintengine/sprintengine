@@ -40,37 +40,10 @@ import {
 // reaches: what it is in the protocol's terms is said there.
 const TUNNEL_OWNER = "A browser tab reaches this desktop's own channels only under the owner's session."
 const owner = (...permissions: StudioPermission[]): StudioAccess => ({ permissions, owner: TUNNEL_OWNER })
-const desktopOnly = (reason: string): StudioAccess => ({ localOnly: reason })
-
-const BEYOND = 'It acts beyond this server, on another machine or account.'
 
 export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunnelChannelName]: StudioAccess } = {
   'hosts:home': owner('workspace:read'),
   'hosts:list': owner('workspace:read'),
-  'mesh:conversation-cancel-side-question': desktopOnly(BEYOND),
-  'mesh:conversation-command': desktopOnly(BEYOND),
-  'mesh:conversation-context-breakdown': desktopOnly(BEYOND),
-  'mesh:conversation-commands': desktopOnly(BEYOND),
-  'mesh:conversation-earlier': desktopOnly(BEYOND),
-  'mesh:conversation-file-search': desktopOnly(BEYOND),
-  'mesh:conversation-follow': desktopOnly(BEYOND),
-  'mesh:conversation-list': desktopOnly(BEYOND),
-  'mesh:conversation-pull-request-create': desktopOnly(BEYOND),
-  'mesh:conversation-pull-request-draft': desktopOnly(BEYOND),
-  'mesh:conversation-pull-request-draft-cancel': desktopOnly(BEYOND),
-  'mesh:conversation-pull-request-push': desktopOnly(BEYOND),
-  'mesh:conversation-pull-request-state': desktopOnly(BEYOND),
-  'mesh:conversation-send': desktopOnly(BEYOND),
-  'mesh:conversation-side-question': desktopOnly(BEYOND),
-  'mesh:conversation-tool-detail': desktopOnly(BEYOND),
-  'mesh:conversation-event': desktopOnly(BEYOND),
-  'mesh:conversation-tool-image': desktopOnly(BEYOND),
-  'mesh:conversation-attachment': desktopOnly(BEYOND),
-  'mesh:conversation-turn-diff': desktopOnly(BEYOND),
-  'mesh:conversation-watch-changes': desktopOnly(BEYOND),
-  'mesh:conversation-changes-diff': desktopOnly(BEYOND),
-  'mesh:conversation-changed-file': desktopOnly(BEYOND),
-  'mesh:conversation-unfollow': desktopOnly(BEYOND),
   // The front door's own channels.
   [WEB_BROWSE_FOLDERS_CHANNEL]: owner('filesystem:read'),
   [WEB_PREVIEWS_LIST_CHANNEL]: owner('workspace:read'),

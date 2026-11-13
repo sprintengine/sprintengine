@@ -5,7 +5,6 @@ import { authApi } from './api/auth'
 import { remoteOpenApi } from './api/remote-open'
 import { studioConnectionApi } from './api/studio-connection'
 import { studioServerApi } from './api/studio-server'
-import { meshApi } from './api/mesh'
 import { buildStampApi } from './api/build-stamp'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
@@ -57,7 +56,6 @@ export const apiModules = {
   ...remoteOpenApi,
   ...studioConnectionApi,
   ...studioServerApi,
-  ...meshApi,
   ...clipboardApi,
   ...chatExportApi,
   ...filesystemApi,

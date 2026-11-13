@@ -61,8 +61,6 @@ const CHAT_LINK = shell("A chat link from the operating system, opened in one of
 /** Moves to the protocol: chats and what hangs off them: sessions, providers, secrets, import, held and scheduled messages, usage limits, export, pull request creation. */
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
-/** Moves to the protocol: a chat or a canvas on a paired desktop. */
-const pairedMachines = server('paired-machines')
 /** Moves to the protocol: projects and their chats, the backlog, scheduled agents and the machines a project runs on. */
 const workspaces = server('workspaces')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
@@ -268,31 +266,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),
-  'mesh:conversation-attachment': pairedMachines('invoke'),
-  'mesh:conversation-cancel-side-question': pairedMachines('invoke'),
-  'mesh:conversation-changed-file': pairedMachines('invoke'),
-  'mesh:conversation-changes-diff': pairedMachines('invoke'),
-  'mesh:conversation-command': pairedMachines('invoke'),
-  'mesh:conversation-commands': pairedMachines('invoke'),
-  'mesh:conversation-context-breakdown': pairedMachines('invoke'),
-  'mesh:conversation-earlier': pairedMachines('invoke'),
-  'mesh:conversation-event': pairedMachines('invoke'),
-  'mesh:conversation-file-search': pairedMachines('invoke'),
-  'mesh:conversation-follow': pairedMachines('invoke'),
-  'mesh:conversation-list': pairedMachines('invoke'),
-  'mesh:conversation-pull-request-create': pairedMachines('invoke'),
-  'mesh:conversation-pull-request-draft': pairedMachines('invoke'),
-  'mesh:conversation-pull-request-draft-cancel': pairedMachines('invoke'),
-  'mesh:conversation-pull-request-push': pairedMachines('invoke'),
-  'mesh:conversation-pull-request-state': pairedMachines('invoke'),
-  'mesh:conversation-send': pairedMachines('invoke'),
-  'mesh:conversation-side-question': pairedMachines('invoke'),
-  'mesh:conversation-tool-detail': pairedMachines('invoke'),
-  'mesh:conversation-tool-image': pairedMachines('invoke'),
-  'mesh:conversation-turn-diff': pairedMachines('invoke'),
-  'mesh:conversation-unfollow': pairedMachines('invoke'),
-  'mesh:conversation-watch-changes': pairedMachines('invoke'),
-  'mesh:conversation:*': pairedMachines('push'),
   'hosts:changed': workspaces('push'),
   'hosts:home': workspaces('invoke'),
   'hosts:list': workspaces('invoke'),

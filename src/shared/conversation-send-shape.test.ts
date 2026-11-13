@@ -8,12 +8,10 @@ import type {
   ConversationSendRequest,
   ConversationSendTurnInput,
 } from './conversation-runtime'
-import type { ElectronApi } from './electron-api'
-import type { MeshConversationKey, MeshConversationSendInput } from './tailnet-mesh'
 import type { StudioMethodParams } from '../../packages/studio-protocol/src/methods'
 
-// The runtime's input and a paired desktop's mesh IPC are the contract's send
-// and approval answer with their addressing, nothing hand-copied: each row
+// The runtime's input and the protocol's are the contract's send and approval
+// answer with their addressing, nothing hand-copied: each row
 // fails `npm run typecheck:tests` the moment one drifts.
 
 type Flat<T> = { [K in keyof T]: T[K] }
@@ -37,17 +35,6 @@ test("the runtime's input is the request with the session and what only Studio's
   >(true)
 })
 
-test("a paired desktop's send is the request, addressed to the chat, less what the lane says its own way", () => {
-  expectExact<
-    MeshConversationSendInput,
-    { key: MeshConversationKey } & Omit<Request, 'localTurnId' | 'reasoningEffort'>
-  >(true)
-  expectExact<Parameters<ElectronApi['meshConversationSend']>[0], MeshConversationSendInput>(true)
-})
-
 test('every way of answering a permission request takes the one union', () => {
   expectExact<NonNullable<ConversationRespondToRequestInput['decision']>, ConversationApprovalDecision>(true)
-  expectExact<Parameters<ElectronApi['meshConversationResolveApproval']>[0]['decision'], ConversationApprovalDecision>(
-    true,
-  )
 })
