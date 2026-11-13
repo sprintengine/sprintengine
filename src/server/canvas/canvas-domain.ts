@@ -398,6 +398,14 @@ export function createStudioCanvasDomain(host: StudioCanvasHost): StudioCanvasDo
           message: 'This change is larger than a board may hold. Split the board, or remove an embedded image.',
         }
       }
+      // Counted as well as weighed: a stage of empty parts weighs nothing,
+      // and each one held is a timer and a map until it is spent or expires.
+      if (!stage && (own?.size ?? 0) >= STUDIO_CANVAS_LIMITS.stagesPerConnection)
+        return {
+          ok: false,
+          code: 'too_large',
+          message: 'Too many changes are being sent at once. Wait for one to finish, then send this again.',
+        }
       if (!stage) {
         if (!own) stages.set(connectionId, (own = new Map()))
         const stageId = params.stageId

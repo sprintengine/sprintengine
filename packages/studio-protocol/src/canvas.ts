@@ -160,6 +160,8 @@ export const STUDIO_CANVAS_LIMITS = {
   stageParts: 128,
   /** Bytes one connection may hold staged at once. */
   stagedBytesPerConnection: 64 * 1024 * 1024,
+  /** Changes one connection may be staging at once, however small: one per board a desktop's windows draw on. */
+  stagesPerConnection: 32,
   /** Bytes of pictures one `canvas.files` answer carries before naming the rest in `more`. */
   filesAnswerBytes: 16 * 1024 * 1024,
   /** Ids one `canvas.files` may ask for. */

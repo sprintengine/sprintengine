@@ -176,6 +176,12 @@ test('a large change goes in parts, and each picture crosses once each way', asy
   assert.equal((files.files.photo as { dataURL: string }).dataURL.length, picture.dataURL.length)
   assert.deepEqual(files.missing, ['gone'])
   assert.deepEqual(files.more, [])
+
+  // Stages are counted, not only weighed: empty ones cannot pile up.
+  const empty = (stageId: string) =>
+    drawer.request('canvas.stage', { ...board('big'), stageId, index: 0, total: 2, text: '' })
+  for (let index = 0; index < STUDIO_CANVAS_LIMITS.stagesPerConnection; index++) await empty(`empty-${index}`)
+  assert.equal(await refusalOf(empty('one-too-many')), 'too_large')
 })
 
 test('a pairing that may only look reads boards, and is refused every change', async () => {
