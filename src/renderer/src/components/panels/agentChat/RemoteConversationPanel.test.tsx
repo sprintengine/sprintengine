@@ -158,6 +158,7 @@ async function mountRemote({
   messageFiles = false,
   scheduledSends = false,
   usageLimits = false,
+  restartSession = false,
 }: {
   access: 'read' | 'operate'
   permissionPreset?: MeshConversation['permissionPreset']
@@ -217,6 +218,8 @@ async function mountRemote({
   scheduledSends?: boolean
   /** The machine says what it knows of its agents' usage limits (`conversation-usage-limits`). */
   usageLimits?: boolean
+  /** The machine ends one of its chats' agent sessions from here (`conversation-restart-session`). */
+  restartSession?: boolean
 }) {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost', pretendToBeVisual: true })
   const previous = Object.getOwnPropertyDescriptors(globalThis)
@@ -290,6 +293,7 @@ async function mountRemote({
         upload: messageFiles,
         'conversation-scheduled-sends': scheduledSends,
         'conversation-usage-limits': usageLimits,
+        'conversation-restart-session': restartSession,
       })
         .filter(([, advertised]) => advertised)
         .map(([name]) => name),
@@ -1776,7 +1780,7 @@ async function toastTitles() {
 }
 
 test('Restart agent session on a chat over there is carried out by that machine once the turn is over', async () => {
-  const chat = await mountRemote({ access: 'operate' })
+  const chat = await mountRemote({ access: 'operate', restartSession: true })
   const { useToastStore } = await import('../../../store/toastStore')
   try {
     useToastStore.setState({ toasts: [] })
@@ -1795,7 +1799,7 @@ test('Restart agent session on a chat over there is carried out by that machine 
 })
 
 test('a machine that had no agent running, or cannot restart one from here, says so', async () => {
-  const chat = await mountRemote({ access: 'operate' })
+  const chat = await mountRemote({ access: 'operate', restartSession: true })
   const { useToastStore } = await import('../../../store/toastStore')
   try {
     await settleTurn(chat)
@@ -1815,6 +1819,25 @@ test('a machine that had no agent running, or cannot restart one from here, says
     await restartSession(chat)
     expect(useToastStore.getState().toasts.map((toast) => [toast.title, toast.description])).toEqual([
       ['The session was not restarted', "mac-mini cannot restart a chat's agent from here yet."],
+    ])
+  } finally {
+    await chat.unmount()
+  }
+})
+
+test('a machine that does not restart sessions is not asked, and the toast says to update it', async () => {
+  const chat = await mountRemote({ access: 'operate', restartSession: false })
+  const { useToastStore } = await import('../../../store/toastStore')
+  try {
+    await settleTurn(chat)
+    useToastStore.setState({ toasts: [] })
+    await restartSession(chat)
+    expect(chat.api.meshConversationRestartSession).not.toHaveBeenCalled()
+    expect(useToastStore.getState().toasts.map((toast) => [toast.title, toast.description])).toEqual([
+      [
+        'This chat cannot be restarted from here',
+        'Update SprintEngine Studio on mac-mini to restart its chats from here.',
+      ],
     ])
   } finally {
     await chat.unmount()

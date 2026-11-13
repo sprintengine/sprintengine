@@ -2914,10 +2914,24 @@ function restartSessionCommand(chat: { dom: JSDOM; field: () => HTMLElement }) {
   )
 }
 
-test('Restart agent session ends the idle agent’s process the way Settle does, keeping the chat', async () => {
+/** A Studio that restarts a chat's session as the chat's server does, answering a notice where none ran. */
+function restartingStudio(notice?: string) {
+  const restarts: Array<Record<string, unknown>> = []
+  return {
+    restarts,
+    api: {
+      conversationCommand: vi.fn(async (input: { key: Record<string, unknown>; command: Record<string, unknown> }) => {
+        if (input.command.kind === 'restartSession') restarts.push(input.key)
+        return notice ? { ok: true, notice } : { ok: true }
+      }),
+    },
+  }
+}
+
+test('Restart agent session asks the chat’s server to end the idle agent’s process, keeping the chat', async () => {
   const sendTurn = vi.fn<SendTurn>(async () => ({ ok: true }))
-  const conversationSessionSuspend = vi.fn(async () => ({ ok: true }))
-  const chat = await mountChat({ sendTurn, api: { conversationSessionSuspend } })
+  const studio = restartingStudio()
+  const chat = await mountChat({ sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Hello'))
     await chat.act(async () => chat.enter())
@@ -2928,7 +2942,8 @@ test('Restart agent session ends the idle agent’s process the way Settle does,
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'hello' }) })
     })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend).toHaveBeenCalledExactlyOnceWith({ sessionId: 'session' })
+    await settleStudio(chat.act)
+    expect(studio.restarts).toEqual([expect.objectContaining({ workspaceId: 'workspace', agentId: 'agent' })])
   } finally {
     await chat.unmount()
   }
@@ -2936,8 +2951,8 @@ test('Restart agent session ends the idle agent’s process the way Settle does,
 
 test('Restart agent session is refused while a turn is running', async () => {
   const sendTurn = vi.fn<SendTurn>(async () => ({ ok: true }))
-  const conversationSessionSuspend = vi.fn(async () => ({ ok: true }))
-  const chat = await mountChat({ sendTurn, api: { conversationSessionSuspend } })
+  const studio = restartingStudio()
+  const chat = await mountChat({ sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Go'))
     await chat.act(async () => chat.enter())
@@ -2946,26 +2961,28 @@ test('Restart agent session is refused while a turn is running', async () => {
       chat.emit({ type: 'event', event: event('turn_started', { turnId: 'running' }) })
     })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend).not.toHaveBeenCalled()
+    await settleStudio(chat.act)
+    expect(studio.restarts).toHaveLength(0)
     await chat.act(async () => {
       chat.emit({ type: 'event', event: event('turn_completed', { turnId: 'running' }) })
     })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend, 'once the turn is over it goes ahead').toHaveBeenCalledOnce()
+    await settleStudio(chat.act)
+    expect(studio.restarts, 'once the turn is over it goes ahead').toHaveLength(1)
   } finally {
     await chat.unmount()
   }
 })
 
 test('Restart agent session in a chat with no agent running ends nothing, and says so', async () => {
-  const conversationSessionSuspend = vi.fn(async () => ({ ok: true }))
-  const chat = await mountChat({ api: { conversationSessionSuspend } })
+  const studio = restartingStudio('No agent was running for this chat.')
+  const chat = await mountChat({ api: studio.api })
   const { useToastStore } = await import('../../../store/toastStore')
   try {
     // Earlier cases' toasts are still in the one store.
     useToastStore.setState({ toasts: [] })
     await chat.act(async () => restartSessionCommand(chat))
-    expect(conversationSessionSuspend).not.toHaveBeenCalled()
+    await settleStudio(chat.act)
     const titles = useToastStore.getState().toasts.map((toast) => toast.title)
     expect(titles).toContain('No agent session to restart')
     expect(titles).not.toContain('Agent session restarted')

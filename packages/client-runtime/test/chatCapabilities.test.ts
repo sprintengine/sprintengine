@@ -48,9 +48,15 @@ test("the window's own Studio, on the owner's grant, offers what it serves", () 
 test('the same grant sees the same controls: the owner flag decides only what the protocol keeps for owners', () => {
   const owner = studio(chatWelcome())
   const pairedWithEverything = studio(chatWelcome({ grant: { owner: false, scopes: [...STUDIO_SCOPES] } }))
-  // Create PR runs git and `gh` on the Studio's machine: an owner's method
-  // (`pullRequests.create`), whatever scopes another grant holds.
-  expect(pairedWithEverything).toEqual({ ...owner, hostPullRequests: false })
+  // Create PR runs git and `gh` on the Studio's machine, and sign-in and Resume
+  // in terminal open a terminal there: an owner's methods
+  // (`pullRequests.create`, `terminal.open`), whatever scopes another grant holds.
+  expect(pairedWithEverything).toEqual({
+    ...owner,
+    hostPullRequests: false,
+    providerSignIn: false,
+    resumeInTerminal: false,
+  })
 })
 
 test('a paired client that may operate is offered what its scopes reach', () => {

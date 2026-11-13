@@ -194,33 +194,54 @@ function ForkFromHereButton({
 }
 
 /**
- * Make the fork and open it. The chat's Studio writes the fork's conversation
- * and joins it to the workspace as this one's twin (its CLI, model, effort,
- * permission mode, skills and working folder), named after it beside the
- * workspace's other chats, and answers where it is and what it called it.
- * Here it opens in the tab after this one's once its record has arrived, and
- * a message forked before goes into its composer.
+ * Make the fork and open it, for every chat. The chat's server makes the fork
+ * beside it, as its twin (its CLI, model, effort, permission mode, skills and
+ * working folder), named after it beside its workspace's other chats, and
+ * answers where it is and what it called it: it opens by that address, in the
+ * tab after this one's once its record has arrived, with a message forked
+ * before in its composer. A paired desktop over the tailnet lane answers no
+ * address; its fork opens as a pane onto that machine (`openPairedFork`)
+ * until that lane is the protocol.
  */
 export async function forkChat(input: {
-  transport: Pick<ConversationTransport, 'fork'>
+  transport: Pick<ConversationTransport, 'fork' | 'machineName' | 'remoteExtensions'>
+  /** The chat as the view names it: its workspace here, and its id where it runs. */
   key: ConversationKey
   /** The chat's provider, which names the fork's id as every chat's is named. */
   providerId: string
+  /** The chat's name, for a fork its server does not name. */
+  name?: string
   target: ForkFromHereTarget
 }): Promise<void> {
   const { key, target } = input
   if (!input.transport.fork) throw new Error('This chat cannot be forked here.')
+  const newAgentId = `conversation-${input.providerId}-${newAgentIdSuffix()}`
   const forked = await input.transport.fork({
     key,
-    newAgentId: `conversation-${input.providerId}-${newAgentIdSuffix()}`,
+    newAgentId,
     ...(target.side === 'user'
       ? { side: 'user' as const, turnSeq: target.turnSeq }
       : { side: 'assistant' as const, turnId: target.turnId }),
   })
   if (!forked.ok) throw new Error(forked.message)
-  if (!forked.address || !forked.name || forked.address.chatId !== key.workspaceId)
-    throw new Error('Studio made the fork but did not say where it is. Reload the window to find it.')
-  await openFork(forked.address, forked.name, key.agentId, target)
+  if (forked.address) {
+    if (!forked.name || forked.address.chatId !== key.workspaceId)
+      throw new Error('Studio made the fork but did not say where it is. Reload the window to find it.')
+    await openFork(forked.address, forked.name, key.agentId, target)
+    return
+  }
+  if (input.transport.remoteExtensions) {
+    await openPairedFork({
+      transport: input.transport,
+      workspaceId: key.workspaceId,
+      agentId: key.agentId,
+      newAgentId,
+      name: input.name ?? 'Chat',
+      target,
+    })
+    return
+  }
+  throw new Error('Studio made the fork but did not say where it is. Reload the window to find it.')
 }
 
 /** How long a fork's record is waited for here before its tab opens all the same. */
@@ -272,44 +293,32 @@ async function openFork(
 }
 
 /**
- * Fork a chat followed from a paired machine. The machine makes the fork, as
- * its own Fork from here would: beside the chat in its workspace there, named
- * after it beside that workspace's other chats, in the same files. Here it
- * opens as a pane onto that machine in the tab after this chat's, as a local
- * fork opens after its chat, or, where this chat's layout is not mounted, as a
- * chat of its own, the way a chat started over there from New chat opens. A
- * message forked before goes into its composer; the files it attached by path
- * stay behind, since those paths are on that machine's disk.
+ * Open a fork a paired machine made over the tailnet lane: beside the chat in
+ * its workspace there, named after it beside that workspace's other chats, in
+ * the same files. Here it opens as a pane onto that machine in the tab after
+ * this chat's, as a fork by address opens after its chat, or, where this
+ * chat's layout is not mounted, as a chat of its own, the way a chat started
+ * over there from New chat opens. A message forked before goes into its
+ * composer; the files it attached by path stay behind, since those paths are
+ * on that machine's disk.
  */
-export async function forkRemoteChat(input: {
-  transport: Pick<ConversationTransport, 'fork' | 'machineName' | 'remoteExtensions'>
+async function openPairedFork(input: {
+  transport: Pick<ConversationTransport, 'machineName' | 'remoteExtensions'>
   /** The workspace here whose pane follows the chat. */
   workspaceId: string
-  /** The chat's id over there, and the provider it runs on, which names the fork's id as a local fork's. */
+  /** The chat's id over there, and the fork's. */
   agentId: string
-  providerId: string
+  newAgentId: string
   /** The chat's name, for the fork's until the machine says what it called it. */
   name: string
   target: ForkFromHereTarget
 }): Promise<void> {
-  const { target } = input
-  const remote = input.transport.remoteExtensions
+  const { target, newAgentId: agentId } = input
+  const remote = input.transport.remoteExtensions!
   const origin = useWorkspaceStore
     .getState()
     .workspaces.find((candidate) => candidate.id === input.workspaceId)?.remoteOrigin
-  if (!input.transport.fork || !remote) throw new Error('This chat cannot be forked here.')
   const machineName = input.transport.machineName ?? origin?.machineName ?? 'the other machine'
-  const agentId = `conversation-${input.providerId}-${newAgentIdSuffix()}`
-  const forked = await input.transport.fork({
-    // The transport names the chat by its ids over there; this key is only
-    // the shape the call takes, and its root means nothing to that machine.
-    key: { workspaceRoot: '', workspaceId: remote.workspaceId, agentId: input.agentId },
-    newAgentId: agentId,
-    ...(target.side === 'user'
-      ? { side: 'user' as const, turnSeq: target.turnSeq }
-      : { side: 'assistant' as const, turnId: target.turnId }),
-  })
-  if (!forked.ok) throw new Error(forked.message)
   // What the machine called it, beside the chats of its workspace there.
   const listed = await window.api.meshConversationList(remote.connectionId).catch(() => null)
   const named = listed?.ok

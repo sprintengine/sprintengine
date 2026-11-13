@@ -231,7 +231,7 @@ export type ConversationTransport = {
    * Start a new chat beside this one holding it up to an earlier message
    * ("Fork from here"). Absent where the transport cannot. A paired machine's
    * chat has it: the fork is made over there, beside the chat, and opens
-   * here as a pane of its own onto that machine (`forkRemoteChat`); its
+   * here as a pane of its own onto that machine (`openPairedFork`); its
    * session declares `fork` only where that machine takes the command
    * (`conversation-fork`). The key a remote fork is handed is not the one it
    * forks: it names the chat by its ids over there. Offered only where the
@@ -268,14 +268,13 @@ export type ConversationTransport = {
    */
   messageSubagent?(input: ConversationMessageSubagentInput): Promise<ConversationTransportResult>
   /**
-   * Restart the chat's agent on the machine it runs on, as Restart agent
-   * session does for a chat here (which suspends its session through
-   * `session.suspend`): answered with a `notice` where it had none
-   * running, and nothing was done. A paired machine's chat has it, refused in
-   * words for a machine that does not take the command
-   * (`conversation-restart-session`).
+   * End the chat's agent session on the server it runs on, keeping the
+   * conversation, so the next message starts it again
+   * (`conversation.restartSession`): answered with a `notice` where it had
+   * none running, and nothing was done. Used where
+   * `capabilities.restartSession` is.
    */
-  restartSession?(): Promise<ConversationTransportResult>
+  restartSession?(input: { key: ConversationKey }): Promise<ConversationTransportResult>
   /**
    * Reconnect, switch or sign in to one of a live chat's MCP servers, where
    * the session lists the action (`capabilities.mcpServerActions`). A paired
@@ -417,6 +416,7 @@ const windowConversationCalls: Omit<ConversationTransport, 'capabilities' | 'env
   cancelSideQuestion: (input) => localParts().cancelSideQuestion(input),
   readContextBreakdown: (input) => localParts().readContextBreakdown(input),
   queue: (input) => localParts().queue(input),
+  restartSession: (input) => localParts().restartSession(input),
   unwatchPullRequest: async ({ key, url }) => {
     const stopped = await unwatchConversationPullRequest({ workspaceId: key.workspaceId, agentId: key.agentId }, url)
     return stopped.ok ? { ok: true } : { ok: false, message: stopped.message }
@@ -442,7 +442,7 @@ export type ChatForkInput = ConversationForkInput extends infer Fork
 /**
  * A fork made: where it is and what it was called, as a Studio answers
  * `conversation.fork`. A paired machine's lane says neither, so a fork made
- * there is found by its id in that machine's list (`forkRemoteChat`).
+ * there is found by its id in that machine's list (`openPairedFork`).
  */
 export type ChatForkResult = { ok: true; address?: ConversationAddress; name?: string } | { ok: false; message: string }
 

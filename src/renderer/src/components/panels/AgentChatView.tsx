@@ -126,7 +126,6 @@ import { isClippedEvent, useConversationSession } from './agentChat/useConversat
 import { useChatViewActive } from './agentChat/chatViewActivity'
 import { prefersReducedMotion } from './agentChat/reducedMotion'
 import { useConversationTransport } from './agentChat/conversationTransport'
-import { windowChatServices } from './agentChat/windowChat'
 import type { ChatCommandSource } from './agentChat/chatServices'
 import { openCliSignInTerminal } from './agentChat/cliSignIn'
 import { useLocalChatBinding, type ChatBinding } from './agentChat/chatBinding'
@@ -245,7 +244,7 @@ import { ConversationTodoStrip } from './agentChat/todoProgressStrip'
 import { TimelineRow, type TimelineChrome } from './agentChat/timelineRows'
 import { UnreadDivider } from './agentChat/turnMeta'
 import { editFromHereDraft, type EditFromHereDraft } from './agentChat/editFromHere'
-import { forkChat, forkRemoteChat, takeForkedAttachments, type ForkFromHereTarget } from './agentChat/forkFromHere'
+import { forkChat, takeForkedAttachments, type ForkFromHereTarget } from './agentChat/forkFromHere'
 import { SideQuestionDrawer, useSideQuestion, type SideQuestionApi } from './agentChat/sideQuestion'
 import { ReadinessState, readinessLabel, type ChatReadiness } from './agentChat/chatStates'
 import { PendingFirstMessage } from './agentChat/pendingFirstMessage'
@@ -1014,9 +1013,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   useEffect(() => {
     if (!liveModelEvent || appliedModelEventRef.current === liveModelEvent.id) return
     appliedModelEventRef.current = liveModelEvent.id
-    if (transport.kind !== 'local' || !conversation || liveModelEvent.modelId === conversation.modelId) return
+    if (!conversation || liveModelEvent.modelId === conversation.modelId) return
     updateBinding({ conversation: { providerId: conversation.providerId, modelId: liveModelEvent.modelId } })
-  }, [liveModelEvent, transport.kind, conversation, updateBinding])
+  }, [liveModelEvent, conversation, updateBinding])
 
   // Follow the stream only while the user is at (or near) the bottom: reading
   // scrollback must never be yanked away by incoming tokens. A "jump to
@@ -2561,7 +2560,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   })
   const sshMachinesOn = window.api?.sshMachinesEnabled === true
   const signInProviderId =
-    transport.kind === 'local' &&
+    transport.capabilities.providerSignIn &&
     (!machineId || sshMachinesOn) &&
     (machineId
       ? cliForConversationProvider(conversation?.providerId)
@@ -2739,7 +2738,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const pluginCatalogEntries = useWorkspaceStore((s) => s.pluginCatalogEntries)
   const isSubagent = binding.subagent !== undefined
   const resumesInTerminal =
-    transport.kind === 'local' && !isSubagent && chatResumesInTerminal(agent, pluginCatalogEntries)
+    transport.capabilities.resumeInTerminal &&
+    clientSupports('terminals') &&
+    !isSubagent &&
+    chatResumesInTerminal(agent, pluginCatalogEntries)
   const resumeInTerminalRef = useRef(() => {})
   resumeInTerminalRef.current = () => {
     if (!resumesInTerminal) {
@@ -2870,19 +2872,27 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (!transcript || composerInputDisabled) return false
     return quoteSelectionInto(transcript, document.getSelection(), quoteIntoComposer, citeIntoComposer)
   }
-  // Restart agent session (`chat.restartSession`): end the agent's process the
-  // way Settle and the idle sweep do — suspended, so the session keeps its
-  // resume cursor and the next message starts it again on the same
-  // conversation (sessionRecovery.ts covers a session the runtime no longer
-  // holds) — then list the slash commands again, so a skill or plugin
-  // installed since shows up. Refused while the agent works: a suspend
-  // interrupts the turn and ends the agents it sent off. A chat on another
-  // machine is restarted by that machine, the same way.
+  // Restart agent session (`chat.restartSession`): the chat's server ends the
+  // agent's session (`conversation.restartSession`), keeping the conversation,
+  // so the next message starts it again — then list the slash commands again,
+  // so a skill or plugin installed since shows up. Refused while the agent
+  // works: ending it interrupts the turn and the agents it sent off. Offered
+  // where the chat's server restarts sessions for this window.
   const restartSessionRef = useRef<() => Promise<void>>(async () => undefined)
   restartSessionRef.current = async () => {
-    const restartRemotely = transport.restartSession
-    if (transport.kind !== 'local' && !restartRemotely) {
-      showToast({ tone: 'warn', title: 'This chat runs on another machine', description: 'Restart it there.' })
+    const restart = transport.capabilities.restartSession ? transport.restartSession : undefined
+    if (!restart) {
+      // Say what would let it: a grant that may operate the chat, or a
+      // machine whose Studio restarts sessions.
+      showToast({
+        tone: 'warn',
+        title: 'This chat cannot be restarted from here',
+        description: !transport.capabilities.operate
+          ? 'This window may read this chat but not drive it.'
+          : transport.machineName
+            ? `Update SprintEngine Studio on ${transport.machineName} to restart its chats from here.`
+            : 'Its server does not restart sessions for this window.',
+      })
       return
     }
     const working =
@@ -2897,57 +2907,25 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       })
       return
     }
-    if (restartRemotely) {
-      const result = await restartRemotely().catch((error: unknown) => ({
-        ok: false as const,
-        message: error instanceof Error ? error.message : String(error),
-      }))
-      if (!result.ok) {
-        showToast({ tone: 'error', title: 'The session was not restarted', description: result.message })
-        return
-      }
-      conversationCommands.refresh()
-      // A notice is that machine saying it had no agent running for the chat.
-      showToast(
-        result.notice
-          ? { tone: 'neutral', title: 'No agent session to restart', description: result.notice }
-          : {
-              tone: 'good',
-              title: 'Agent session restarted',
-              description: 'Your next message starts it again, with the conversation as it was.',
-            },
-      )
-      return
-    }
-    if (!sessionId) {
-      // No agent has started for this chat since it opened: nothing runs to
-      // end. The command list is still asked again, which is what someone
-      // reaching for this after an install wants.
-      conversationCommands.refresh()
-      showToast({
-        tone: 'neutral',
-        title: 'No agent session to restart',
-        description: 'This chat has no agent running. Your next message starts one.',
-      })
-      return
-    }
-    const result = await windowChatServices()
-      .sessions.suspend({ sessionId })
-      .catch((error: unknown) => ({
-        ok: false as const,
-        message: error instanceof Error ? error.message : String(error),
-      }))
+    const result = await restart({ key: chatKey }).catch((error: unknown) => ({
+      ok: false as const,
+      message: error instanceof Error ? error.message : String(error),
+    }))
     if (!result.ok) {
       showToast({ tone: 'error', title: 'The session was not restarted', description: result.message })
       return
     }
-    if (result.session) setSession(result.session)
     conversationCommands.refresh()
-    showToast({
-      tone: 'good',
-      title: 'Agent session restarted',
-      description: 'Your next message starts it again, with the conversation as it was.',
-    })
+    // A notice is the server saying it had no agent running for the chat.
+    showToast(
+      result.notice
+        ? { tone: 'neutral', title: 'No agent session to restart', description: result.notice }
+        : {
+            tone: 'good',
+            title: 'Agent session restarted',
+            description: 'Your next message starts it again, with the conversation as it was.',
+          },
+    )
   }
   // Typing or pasting in the chat away from the composer lands in it
   // (agentChat/typeToComposer). Read through a ref so the listeners are bound
@@ -3038,7 +3016,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     }
   }
   const exportable = chatExportSupported()
-  const exportsRemote = transport.kind === 'remote'
+  // Read from the chat's server where it pages a transcript out; elsewhere from what this view holds.
+  const exportsFromView = !transport.capabilities.transcriptExport
   useEffect(
     () =>
       registerMountedChatView({
@@ -3069,12 +3048,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   workspaceId,
                   agentId,
                   action,
-                  ...(exportsRemote ? { remote: () => remoteExportSourceRef.current() } : {}),
+                  ...(exportsFromView ? { remote: () => remoteExportSourceRef.current() } : {}),
                 }),
             }
           : {}),
       }),
-    [workspaceId, agentId, stepTurn, openChatFind, exportable, exportsRemote],
+    [workspaceId, agentId, stepTurn, openChatFind, exportable, exportsFromView],
   )
   const modelPickerShortcutLabel = useMemo(() => {
     const keybinding = getEffectiveKeybindings(MODEL_PICKER_TOGGLE_COMMAND, keybindingSettings)[0]
@@ -3543,21 +3522,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // is not started for nothing. The chat's Studio answers where the fork is,
   // and it opens there. A paired machine's chat followed over the tailnet lane
   // is forked over there, never started here, and the fork opens as a pane
-  // onto that machine (`forkRemoteChat`), until that lane is the protocol.
+  // onto that machine (`openPairedFork`), until that lane is the protocol.
   const forkRef = useRef<(target: ForkFromHereTarget) => Promise<void>>(async () => undefined)
   forkRef.current = async (target) => {
-    if (transport.kind === 'remote') {
-      await forkRemoteChat({
-        transport,
-        workspaceId,
-        agentId,
-        providerId: conversation?.providerId || 'remote',
-        name: agent.name,
-        target,
-      })
-      return
-    }
-    if (!workspaceRoot) throw new Error('This chat has no folder to fork in.')
     if (
       target.side === 'assistant' &&
       target.turnId === latestTurnId &&
@@ -3566,12 +3533,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     )
       await ensureSession()
     if (!conversation?.providerId) throw new Error('This chat cannot be forked here.')
-    await forkChat({
-      transport,
-      key: { workspaceRoot, workspaceId, agentId },
-      providerId: conversation.providerId,
-      target,
-    })
+    await forkChat({ transport, key: chatKey, providerId: conversation.providerId, name: agent.name, target })
   }
   const forkFromHere = useCallback((target: ForkFromHereTarget) => forkRef.current(target), [])
   const onFork =
