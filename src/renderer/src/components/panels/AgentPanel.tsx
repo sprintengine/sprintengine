@@ -21,6 +21,7 @@ import { revealBacklogItemInPane } from '../workspace/pane/backlogPaneReveal'
 import { requestPaletteOpen } from '../palette/paletteOpenRequest'
 import { CliInstallCta } from '../workspace/cliInstallRoute'
 import { ChatViewErrorBoundary } from './agentChat/ChatViewErrorBoundary'
+import { EnvironmentChatScope } from './agentChat/EnvironmentChatScope'
 import { AgentChatView } from './agentPanelChunks'
 import { setTerminalReapExempt, suspendTerminal } from '../../studio/terminals'
 
@@ -200,7 +201,9 @@ export default function AgentPanel({ workspaceId, agentId, sessionId, shouldKill
     return (
       <ChatViewErrorBoundary chatKey={`${workspaceId}:${agentId}`}>
         <React.Suspense fallback={null}>
-          <AgentChatView workspaceId={workspaceId} agentId={agentId} />
+          <EnvironmentChatScope workspaceId={workspaceId}>
+            <AgentChatView workspaceId={workspaceId} agentId={agentId} />
+          </EnvironmentChatScope>
         </React.Suspense>
       </ChatViewErrorBoundary>
     )

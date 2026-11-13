@@ -57,6 +57,7 @@ import {
   useConversationSessions,
   type ConversationSessionEntry,
 } from '../../hooks/conversationSessionsStore'
+import { useFollowWindowEnvironments } from '../../hooks/useFollowWindowEnvironments'
 import { recencyEqual, stableRecord, stableSet, type RowRecency } from './stableRowSlices'
 import { conversationSummaryPhase } from '../../../../shared/conversation/phase'
 import { meshConversationSessionId } from '../../../../shared/tailnet-mesh'
@@ -478,6 +479,8 @@ function addWorkingChatWorkspaces(
 
 export default function WorkspaceManager() {
   useAppTheme()
+  // The SSH machines this window has chats on: their sessions join the window's list.
+  useFollowWindowEnvironments()
   const dialog = useConfirmDialog()
   // The row menu's Delete chat… on a settled chat, the same flow Settings ▸ Settled chats runs.
   const { deleteChats: deleteSettledChats, deleteThere: deleteSettledChatThere } = useDeleteSettledChats()
