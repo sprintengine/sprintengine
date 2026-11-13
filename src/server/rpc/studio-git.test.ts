@@ -9,7 +9,6 @@ import { afterEach, test } from 'vitest'
 import { STUDIO_GIT_METHODS, type StudioScope } from '../../../packages/studio-protocol/src/public'
 import { createStudioFileSystem } from '../files/studio-file-system'
 import { createStudioGit } from '../git/studio-git'
-import type { StudioMachineCall } from './studio-file-system'
 import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer } from './studio-rpc.test-helper'
 
 // Git on this machine over the owner socket, on real repositories: what an
@@ -50,12 +49,11 @@ function disk() {
   return { base, workspace, outside, data }
 }
 
-async function serve(options: { machine?: StudioMachineCall; withGit?: boolean } = {}) {
+async function serve(options: { withGit?: boolean } = {}) {
   const at = disk()
   const started = await startTestServer({
     fileSystem: createStudioFileSystem({ readableRoots: () => [at.workspace], writableRoots: () => [at.workspace] }),
     ...(options.withGit === false ? {} : { git: createStudioGit({ dataDir: () => at.data }) }),
-    ...(options.machine ? { machine: options.machine } : {}),
   })
   cleanups.push(() => started.dispose())
   return { started, ...at }
@@ -211,32 +209,16 @@ test('a followed checkout is heard while its stream is open, and given back when
   owner.line.close()
 })
 
-test('an owner’s repository on an SSH machine is asked there, plain, and answered spelled; the rest is refused in words', async () => {
-  const asked: Array<[string, string, unknown[]]> = []
-  const machine: StudioMachineCall = async (id, channel, args) => {
-    asked.push([id, channel, args])
-    if (channel === 'git:check-ignored') return ['dist']
-    return { branch: 'main', files: {} }
-  }
-  const { started } = await serve({ machine })
+test('an owner’s repository on an SSH machine is refused in words here: its own Studio answers for it', async () => {
+  const { started, workspace } = await serve()
   const owner = await client(started.path, OWNER_TOKEN)
-  const app = 'ssh://build-box/home/dev/app'
-  assert.equal(codeOf(await owner.request('git.status', { repoRoot: app })), null)
-  assert.deepEqual(resultOf(await owner.request('git.checkIgnored', { repoRoot: app, paths: ['dist'] })), {
-    paths: ['dist'],
-  })
-  assert.equal(codeOf(await owner.request('git.commit', { commandId: cid(), repoRoot: app, message: 'm' })), null)
-  assert.deepEqual(
-    asked.map(([id, channel, args]) => [id, channel, args[0]]),
-    [
-      ['build-box', 'git:get-status', '/home/dev/app'],
-      ['build-box', 'git:check-ignored', '/home/dev/app'],
-      ['build-box', 'git:commit', '/home/dev/app'],
-    ],
-  )
+  const app = `ssh://build-box${workspace}`
   for (const [method, params] of [
+    ['git.status', { repoRoot: app }],
+    ['git.checkIgnored', { repoRoot: app, paths: ['dist'] }],
+    ['git.commit', { commandId: cid(), repoRoot: app, message: 'm' }],
     ['git.push', { commandId: cid(), repoRoot: app }],
-    ['git.stashList', { repoRoot: app }],
+    ['git.changeSummary', { checkoutPath: app }],
   ] as const)
     assert.deepEqual([method, codeOf(await owner.request(method, params))], [method, 'unavailable'])
 })

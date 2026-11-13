@@ -96,7 +96,7 @@ export const BACKEND_WIRE = {
   snapshot: 'backend.snapshot',
   event: 'backend.event',
   sessions: 'backend.sessions',
-  /** `{ channel, args }` → the answer: a machine channel (shared/machine-channels.ts), answered on the server's machine. */
+  /** `{ channel, args }` → the answer: whether the server has work of its own (`studio:background-work`), for a WSL server's idle stop. */
   machine: 'backend.machine',
 } as const
 
@@ -220,7 +220,7 @@ export function serveConversationBackend(
   stream: Duplex,
   options: {
     log?: (message: string) => void
-    /** The machine channels, for a client whose workspace is on this server's machine (an SSH machine's, phase 8). */
+    /** A question about the server's machine: whether it has work of its own (`BACKGROUND_WORK_MACHINE_CHANNEL`). */
     machine?: (channel: string, args: unknown[]) => Promise<unknown>
   } = {},
 ): { close(): void } {
@@ -274,7 +274,7 @@ export function serveConversationBackend(
 export type RemoteConversationBackend = Pick<ConversationBackend, RemoteBackendMember | 'onEvent' | 'listSessions'> & {
   /** Read the server's sessions again (after a reconnect). */
   refresh(): Promise<void>
-  /** A machine channel answered on the server's machine (shared/machine-channels.ts). */
+  /** A question about the server's machine (`BACKGROUND_WORK_MACHINE_CHANNEL`). */
   machine(channel: string, args: unknown[]): Promise<unknown>
   /** Whether the wire is up. */
   isOpen(): boolean

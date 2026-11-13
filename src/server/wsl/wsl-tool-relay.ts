@@ -79,7 +79,8 @@ export type RelayTarget = {
   key: string
   /** For the log: "WSL: Ubuntu", "build-box". */
   name: string
-  backend: { isOpen(): boolean; onClose(listener: (reason: string) => void): void }
+  /** The server's own liveness: its backend wire for WSL, main's owner connection for SSH. The offers end with it. */
+  alive: RelayLiveness
   open(purpose: 'studio'): Promise<Duplex>
   toolsets: readonly string[]
   /** Whether the tools modules add on the Windows side are offered too (phase 5, 7.2). */
@@ -88,15 +89,49 @@ export type RelayTarget = {
   args(toolset: string, args: Record<string, unknown>): Record<string, unknown>
 }
 
+/** Whether a target's server is up, and word when it goes. */
+export type RelayLiveness = { isOpen(): boolean; onClose(listener: (reason: string) => void): void }
+
 /** The toolsets offered to an SSH machine's server: none that act on this computer's files or processes. */
 export const SSH_RELAYED_TOOLSETS = ['browser', 'canvas'] as const
+
+/**
+ * An SSH machine's server as a relay target: alive while the owner connection
+ * this computer holds to it is (design-wsl-ssh-direct PR 1a: that connection
+ * ending is the server lost), offered the browser and the canvas only, on a
+ * `studio` stream of its own.
+ */
+export function sshRelayTarget(input: {
+  route: string
+  name: string
+  owner: Pick<StudioClient, 'state' | 'closed'>
+  open(): Promise<Duplex>
+}): RelayTarget {
+  const { owner } = input
+  return {
+    key: input.route,
+    name: input.name,
+    alive: {
+      isOpen: () => owner.state !== 'closed',
+      onClose: (listener) => {
+        void owner.closed.then(
+          () => listener('closed'),
+          (error: unknown) => listener(error instanceof Error ? error.message : String(error)),
+        )
+      },
+    },
+    open: () => input.open(),
+    toolsets: SSH_RELAYED_TOOLSETS,
+    args: (_toolset, args) => args,
+  }
+}
 
 /** A WSL server as a relay target, its editor and workspace paths respelled for Windows. */
 export function wslRelayTarget(connection: WslServerConnection): RelayTarget {
   return {
     key: `wsl:${connection.distro}`,
     name: `WSL: ${connection.distro}`,
-    backend: connection.backend,
+    alive: connection.backend,
     open: (purpose) => connection.open(purpose),
     toolsets: [...RELAYED_TOOLSETS, ...WINDOWS_SIDE_TOOLSETS],
     moduleTools: true,
@@ -196,7 +231,7 @@ export function relayShellToolsets(input: {
     string,
     {
       client: StudioClient
-      backend: RelayTarget['backend']
+      alive: RelayLiveness
       offered: Map<string, OfferedToolset>
       syncing: Promise<void>
       stop(): void
@@ -204,8 +239,8 @@ export function relayShellToolsets(input: {
   >()
   // The newest target under each key: a reopen for one a new server start replaced is not made.
   const current = new Map<string, RelayTarget>()
-  // Backends whose close is already listened for: each reopen would add another.
-  const watched = new WeakSet<RelayTarget['backend']>()
+  // Servers whose close is already listened for: each reopen would add another.
+  const watched = new WeakSet<RelayLiveness>()
   let closed = false
 
   /**
@@ -358,7 +393,7 @@ export function relayShellToolsets(input: {
       backoffDelayMs(attempt, { baseMs: RELAY_REOPEN_MS, maxMs: RELAY_REOPEN_MAX_MS }) ?? RELAY_REOPEN_MAX_MS
     setTimeout(() => {
       if (closed || current.get(connection.key) !== connection) return
-      if (connection.backend.isOpen() === false || open.has(connection.key)) return
+      if (connection.alive.isOpen() === false || open.has(connection.key)) return
       relay(connection, attempt + 1)
     }, delay).unref?.()
   }
@@ -366,11 +401,11 @@ export function relayShellToolsets(input: {
   function relay(connection: RelayTarget, attempt = 0): void {
     if (closed) return
     open.get(connection.key)?.stop()
-    if (!watched.has(connection.backend)) {
-      watched.add(connection.backend)
-      connection.backend.onClose(() => {
+    if (!watched.has(connection.alive)) {
+      watched.add(connection.alive)
+      connection.alive.onClose(() => {
         const entry = open.get(connection.key)
-        if (entry?.backend === connection.backend) entry.stop()
+        if (entry?.alive === connection.alive) entry.stop()
       })
     }
     const doConnect = input.connectClient ?? connect
@@ -385,14 +420,14 @@ export function relayShellToolsets(input: {
       reconnect: false,
     }).then(
       (client) => {
-        if (closed || connection.backend.isOpen() === false) {
+        if (closed || connection.alive.isOpen() === false) {
           client.close()
           return
         }
         const unsubscribe = input.registry.subscribe(() => void sync(connection))
         open.set(connection.key, {
           client,
-          backend: connection.backend,
+          alive: connection.alive,
           offered: new Map(),
           syncing: Promise.resolve(),
           stop: () => {
@@ -401,8 +436,7 @@ export function relayShellToolsets(input: {
             open.delete(connection.key)
           },
         })
-        // The tools' own stream can end while the server and its backend wire
-        // stay up (each stream is its own relay): opened again, or the WSL
+        // The tools' own stream can end while the server stays up (each stream is its own relay): opened again, or the WSL
         // agents lose the desktop's toolsets until the server restarts.
         void client.closed
           .then(
@@ -412,7 +446,7 @@ export function relayShellToolsets(input: {
           .then(() => {
             if (open.get(connection.key)?.client !== client) return
             open.get(connection.key)?.stop()
-            if (closed || connection.backend.isOpen() === false) return
+            if (closed || connection.alive.isOpen() === false) return
             log(`The desktop's tools stream to ${connection.name} closed; opening it again.`)
             reopen(connection, 0)
           })
@@ -424,7 +458,7 @@ export function relayShellToolsets(input: {
         )
         // Tried again while the server is up, or its agents go without the
         // desktop's toolsets until it restarts.
-        if (!closed && connection.backend.isOpen() !== false) reopen(connection, attempt)
+        if (!closed && connection.alive.isOpen() !== false) reopen(connection, attempt)
       },
     )
   }

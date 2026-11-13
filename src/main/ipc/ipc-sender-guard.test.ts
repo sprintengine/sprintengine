@@ -103,7 +103,7 @@ test('handlers registered through a wrapper of ipcMain are guarded too, and the 
   const { ipc, invoke } = fakeIpcMain()
   guardIpcSenders(ipc, isTrusted)
   guardIpcSenders(ipc, () => true)
-  // As `machineAwareIpc` does: a proxy whose `handle` calls ipcMain's own.
+  // A wrapper whose `handle` calls ipcMain's own.
   const wrapper = { handle: (channel: string, listener: () => unknown) => ipc.handle(channel, listener) }
   wrapper.handle('git:status', () => 'clean')
   assert.equal(await invoke('git:status', app), 'clean')

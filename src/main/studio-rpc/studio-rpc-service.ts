@@ -42,7 +42,6 @@ import {
 import type { ClientToolRegistry } from '../../server/tools/client-tool-registry'
 import type { StudioFiles } from '../../server/rpc/studio-files'
 import type { StudioFileSystem } from '../../server/files/studio-file-system'
-import type { StudioMachineCall } from '../../server/rpc/studio-file-system'
 import type { StudioGit } from '../../server/git/studio-git-types'
 import type { StudioWorktrees } from '../../server/worktrees/studio-worktrees-types'
 import type { StudioWorkspaceSync } from '../../server/workspaces/studio-workspace-sync'
@@ -196,8 +195,6 @@ export type StudioRpcServiceOptions = {
   files?: StudioFiles
   /** The files on this machine by path (`file-system`, `files-mention`). */
   fileSystem?: StudioFileSystem
-  /** An SSH machine's server, for an owner's `ssh://` path. */
-  machine?: StudioMachineCall
   /** Git on this machine (`git`). */
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats (`worktrees`). */
@@ -489,7 +486,6 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.tools ? { tools: options.tools } : {}),
       ...(options.files ? { files: options.files } : {}),
       ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
-      ...(options.machine ? { machine: options.machine } : {}),
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktrees ? { worktrees: options.worktrees } : {}),
       ...(options.workspaceSync ? { workspaceSync: options.workspaceSync } : {}),

@@ -1,24 +1,31 @@
 import { shell, type IpcMain } from 'electron'
 
+import { isMachinePath } from '../../shared/machine-paths'
 import { writeViewedImageFile, type AttachmentImageInput } from '../attachment-image-file'
 
 // What a window asks of this computer's desktop about a file: show it in the
 // system's file manager, open an HTML file in the system's browser, open a
 // chat's picture in the system's image viewer. Shell channels: each acts on
 // this computer's screen and apps. Reading and changing files is the Studio
-// protocol's (`files.*`, served by the Studio server's core).
+// protocol's (`files.*`, served by the Studio server's core). A file on an
+// SSH machine (`ssh://…`) is not on this computer's screen to show or open:
+// refused in words, never handed to this computer's file manager.
 
 type FilesystemShellIpcDependencies = {
   showItemInFolder(targetPath: string): Promise<void>
   openHtmlFileInBrowser(targetPath: string): Promise<void>
 }
 
+export const NOT_ON_THIS_COMPUTER = 'That file is on an SSH machine, not on this computer.'
+
 export function registerFilesystemShellIpc(ipcMain: IpcMain, deps: FilesystemShellIpcDependencies): void {
   ipcMain.handle('fs:show-item-in-folder', async (_, targetPath: string): Promise<void> => {
+    if (isMachinePath(targetPath)) throw new Error(NOT_ON_THIS_COMPUTER)
     await deps.showItemInFolder(targetPath)
   })
 
   ipcMain.handle('fs:open-html-file-in-browser', async (_, targetPath: string): Promise<void> => {
+    if (isMachinePath(targetPath)) throw new Error(NOT_ON_THIS_COMPUTER)
     await deps.openHtmlFileInBrowser(targetPath)
   })
 

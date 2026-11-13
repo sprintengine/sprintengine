@@ -172,7 +172,6 @@ export function createStudioRpc(
       readableRoots: () => knownFolders(core.workspaceRegistry, core.platform.paths.dataDir()),
       writableRoots: () => workspaceFolders(core.workspaceRegistry),
     }),
-    ...(core.sshMachineCall ? { machine: core.sshMachineCall } : {}),
     // Git on this machine, for every client: its repositories held to the
     // folders Studio knows for any client but an owner, as its files are.
     git: createStudioGit({

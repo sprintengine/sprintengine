@@ -9,11 +9,9 @@ import type {
   StudioMethodParams,
   StudioMethodResult,
 } from '../../../packages/studio-protocol/src/public'
-import { spelledResult } from '../../main/environments/ssh/machine-ipc'
 import { expandHomePath } from '../../main/home-path'
 import { confineToRoots } from '../../main/studio-rpc/studio-file-confinement'
-import { isMachinePath, parseMachinePath } from '../../shared/machine-paths'
-import { notOnMachineYet } from '../../shared/machine-channels'
+import { isMachinePath } from '../../shared/machine-paths'
 import type { StudioFileSystem, StudioFileSystemWatch } from '../files/studio-file-system'
 import type { StudioRequestContext } from './studio-rpc-types'
 
@@ -32,19 +30,16 @@ import type { StudioRequestContext } from './studio-rpc-types'
 // workspace folder itself is never renamed, moved or trashed by such a
 // client.
 //
-// A path on an SSH machine (`ssh://<id>/…`) is an owner's only. The reads
-// that machine's server answers go there, as the window's IPC sent them
-// (`machine-channels.ts`); the rest are refused in words. This forward goes
-// when the SSH machines' panes reach their own servers.
+// A path on an SSH machine (`ssh://<id>/…`) is never this machine's: that
+// machine's own Studio answers for it, and the window asks it there
+// (design-wsl-ssh-direct PR 2). Here it is refused, in words to an owner and
+// as unknown to anyone else, never resolved on this disk.
 
 export type StudioFileSystemAsking = {
   grant: StudioGrant
   context: StudioRequestContext
   voice: { failed(code: 'unavailable', detail: string | undefined, context: string): unknown }
 }
-
-/** An SSH machine's server, asked about a machine channel; rejects in words when it cannot be reached. */
-export type StudioMachineCall = (id: string, channel: string, args: unknown[]) => Promise<unknown>
 
 type Answer<M extends StudioFileSystemMethod> = StudioHandlerOf<StudioFileSystemMethodMap[M], StudioFileSystemAsking>
 
@@ -61,8 +56,6 @@ type Kept = <A extends { ok: boolean; error?: StudioErrorBody }>(
 export type StudioFileSystemHandlerOptions = {
   /** The files; without them, every method is answered `unavailable`. */
   fileSystem?: StudioFileSystem
-  /** SSH machines' servers, for an owner's `ssh://` path. */
-  machine?: StudioMachineCall
   /** The first answer to a command id is every retry's. */
   once: Kept
   /** A client's command id, namespaced by the client. */
@@ -70,16 +63,19 @@ export type StudioFileSystemHandlerOptions = {
 }
 
 export const UNKNOWN_PATH = 'That path is not in a folder Studio knows.'
+export const ON_ANOTHER_MACHINE = 'That path is on an SSH machine: its own Studio answers for it.'
 const ROOT_ITSELF = 'A workspace’s own folder is not renamed, moved or removed from here.'
 
 const refuse = <C extends string>(code: C, message: string): Refused<C> => ({ ok: false, error: { code, message } })
 const ok = <T>(result: T): { ok: true; result: T } => ({ ok: true, result })
 
-/** Where a path the asker named is: its path here, or a path on an SSH machine. */
-export type Placed =
-  | { ok: true; path: string; machine?: undefined }
-  | { ok: true; path: string; machine: { id: string; path: string } }
-  | { ok: false }
+/** Where a path the asker named is: its path here; or none, and whether that is because it is on another machine. */
+export type Placed = { ok: true; path: string } | { ok: false; elsewhere?: true }
+
+/** The refusal for a path that could not be placed. */
+export function unplaced(at: { ok: false; elsewhere?: true }): Refused<'not_found' | 'unavailable'> {
+  return at.elsewhere ? refuse('unavailable', ON_ANOTHER_MACHINE) : refuse('not_found', UNKNOWN_PATH)
+}
 
 /** Whether the asker names any path as written: an owner's connection not held to known folders. */
 export function namesAnyPath(asking: Pick<StudioFileSystemAsking, 'grant' | 'context'>): boolean {
@@ -97,10 +93,7 @@ export async function placePath(
   purpose: 'read' | 'write',
 ): Promise<Placed> {
   const anyPath = namesAnyPath(asking)
-  if (isMachinePath(raw)) {
-    const machine = anyPath ? parseMachinePath(raw) : null
-    return machine ? { ok: true, path: raw, machine } : { ok: false }
-  }
+  if (isMachinePath(raw)) return anyPath ? { ok: false, elsewhere: true } : { ok: false }
   if (anyPath) return { ok: true, path: raw }
   const roots = purpose === 'write' ? await fileSystem.writableRoots() : await fileSystem.readableRoots()
   const confined = await confineToRoots(expandHomePath(raw), roots)
@@ -120,32 +113,16 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
   const { fileSystem } = options
   const unserved = (method: string) => refuse('unavailable', `This Studio does not serve ${method}.`)
 
-  /** Ask the SSH machine's server, its answer's paths spelled for this computer again. */
-  async function onMachine<T>(machine: { id: string; path: string }, channel: string, args: unknown[]): Promise<T> {
-    if (!options.machine) throw new Error(notOnMachineYet(channel))
-    return spelledResult(machine.id, channel, await options.machine(machine.id, channel, args)) as T
-  }
-
-  /**
-   * Read about one path: refused as unknown when the asker may not name it,
-   * sent to its machine where that machine answers `channel`, refused in words
-   * where it does not.
-   */
+  /** Read about one path: refused when the asker may not name it, or when it is on another machine. */
   async function reading<T>(
     method: string,
     raw: string,
     asking: StudioFileSystemAsking,
     here: (fs: StudioFileSystem, path: string) => Promise<T>,
-    channel: string | null,
-    machineArgs: (path: string) => unknown[] = (path) => [path],
   ): Promise<{ ok: true; result: T } | Refused<'unavailable' | 'not_found'>> {
     if (!fileSystem) return unserved(method)
     const at = await placePath(fileSystem, raw, asking, 'read')
-    if (!at.ok) return refuse('not_found', UNKNOWN_PATH)
-    if (at.machine) {
-      if (!channel) return refuse('unavailable', notOnMachineYet(method))
-      return ok(await onMachine<T>(at.machine, channel, machineArgs(at.machine.path)))
-    }
+    if (!at.ok) return unplaced(at)
     return ok(await here(fileSystem, at.path))
   }
 
@@ -164,8 +141,7 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
         const placed: string[] = []
         for (const { raw, purpose, notRoot } of paths) {
           const at = await placePath(fileSystem, raw, asking, purpose)
-          if (!at.ok) return refuse('not_found', UNKNOWN_PATH)
-          if (at.machine) return refuse('unavailable', notOnMachineYet(method))
+          if (!at.ok) return unplaced(at)
           if (notRoot && !namesAnyPath(asking) && (await isRoot(fileSystem, at.path)))
             return refuse('not_found', ROOT_ITSELF)
           placed.push(at.path)
@@ -181,58 +157,39 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
     'files.listDirectory': async ({ path }, asking) => {
       if (!fileSystem) return unserved('files.listDirectory')
       const at = await placePath(fileSystem, path, asking, 'read')
-      if (!at.ok) return refuse('not_found', UNKNOWN_PATH)
-      const entries = at.machine
-        ? await onMachine<Array<{ name: string; isDir: boolean }>>(at.machine, 'fs:readdir', [at.machine.path])
-        : await fileSystem.listDirectory(at.path)
-      return ok({ entries })
+      if (!at.ok) return unplaced(at)
+      return ok({ entries: await fileSystem.listDirectory(at.path) })
     },
     'files.readText': async ({ path }, asking) => {
       if (!fileSystem) return unserved('files.readText')
       const at = await placePath(fileSystem, path, asking, 'read')
-      if (!at.ok) return refuse('not_found', UNKNOWN_PATH)
-      const text = at.machine
-        ? await onMachine<string>(at.machine, 'fs:readfile', [at.machine.path])
-        : await fileSystem.readText(at.path)
-      return ok({ text })
+      if (!at.ok) return unplaced(at)
+      return ok({ text: await fileSystem.readText(at.path) })
     },
     'files.exists': async ({ path }, asking) => {
       if (!fileSystem) return unserved('files.exists')
       const at = await placePath(fileSystem, path, asking, 'read')
+      // Never there, as asked here: a path on another machine is that machine's to say.
       if (!at.ok) return ok({ exists: false })
-      const exists = at.machine
-        ? await onMachine<boolean>(at.machine, 'fs:path-exists', [at.machine.path])
-        : await fileSystem.exists(at.path)
-      return ok({ exists })
+      return ok({ exists: await fileSystem.exists(at.path) })
     },
     'files.checkWorkspaceFolder': ({ path }, asking) =>
-      reading(
-        'files.checkWorkspaceFolder',
-        path,
-        asking,
-        (fs, at) => fs.checkWorkspaceFolder(at),
-        'fs:check-workspace-folder',
-      ),
+      reading('files.checkWorkspaceFolder', path, asking, (fs, at) => fs.checkWorkspaceFolder(at)),
     'files.projectLogo': async ({ folderPath }, asking) => {
       if (!fileSystem) return unserved('files.projectLogo')
       const at = await placePath(fileSystem, folderPath, asking, 'read')
-      if (!at.ok || at.machine) return ok({ logo: null })
+      if (!at.ok) return ok({ logo: null })
       return ok({ logo: await fileSystem.projectLogo(at.path) })
     },
     'files.projectIcon': async ({ path }, asking) => {
       if (!fileSystem) return unserved('files.projectIcon')
       const at = await placePath(fileSystem, path, asking, 'read')
-      if (!at.ok || at.machine) return ok({ logo: null })
+      if (!at.ok) return ok({ logo: null })
       return ok({ logo: await fileSystem.projectIcon(at.path) })
     },
     'files.searchContent': ({ rootPath, query, limit }, asking) =>
-      reading(
-        'files.searchContent',
-        rootPath,
-        asking,
-        (fs, at) =>
-          fs.searchContent(asking.context.slot, { rootPath: at, query, ...(limit === undefined ? {} : { limit }) }),
-        null,
+      reading('files.searchContent', rootPath, asking, (fs, at) =>
+        fs.searchContent(asking.context.slot, { rootPath: at, query, ...(limit === undefined ? {} : { limit }) }),
       ),
     'files.cancelContentSearch': (_params, { context }) => {
       if (!fileSystem) return unserved('files.cancelContentSearch')
@@ -322,13 +279,8 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
   // The reads `chat.ts` declares by an absolute path, served here.
   const byPath = {
     search: (input: StudioMethodParams<'files.search'>, asking: StudioFileSystemAsking) =>
-      reading(
-        'files.search',
-        input.rootPath,
-        asking,
-        (fs, at) => fs.searchFiles(asking.context.slot, { ...input, rootPath: at }),
-        'fs:search-files',
-        (path) => [{ ...input, rootPath: path }],
+      reading('files.search', input.rootPath, asking, (fs, at) =>
+        fs.searchFiles(asking.context.slot, { ...input, rootPath: at }),
       ),
     cancelSearch: (channel: string | undefined, context: StudioRequestContext) => {
       if (!fileSystem) return unserved('files.cancelSearch')
@@ -336,11 +288,11 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
       return ok({} as Record<string, never>)
     },
     stat: (path: string, asking: StudioFileSystemAsking) =>
-      reading('files.stat', path, asking, (fs, at) => fs.stat(at), 'fs:stat'),
+      reading('files.stat', path, asking, (fs, at) => fs.stat(at)),
     readImage: (path: string, asking: StudioFileSystemAsking) =>
-      reading('files.readImage', path, asking, (fs, at) => fs.readImage(at), 'fs:read-image-data-url'),
+      reading('files.readImage', path, asking, (fs, at) => fs.readImage(at)),
     repoRoot: (folderPath: string, hostId: string | undefined, asking: StudioFileSystemAsking) =>
-      reading('files.repoRoot', folderPath, asking, (fs, at) => fs.repoRoot(at, hostId), 'git:get-repo-root'),
+      reading('files.repoRoot', folderPath, asking, (fs, at) => fs.repoRoot(at, hostId)),
   }
 
   /** Follow a folder for `files.watchPath`: refused as unknown, or not there, in the subscriber's terms. */
@@ -351,9 +303,7 @@ export function createStudioFileSystemHandlers(options: StudioFileSystemHandlerO
   ): Promise<StudioFileSystemWatch | { ok: false; code: 'not_found' | 'unavailable'; message: string }> {
     if (!fileSystem) return { ok: false, code: 'unavailable', message: 'This Studio does not serve files.watchPath.' }
     const at = await placePath(fileSystem, params.path, asking, 'read')
-    if (!at.ok) return { ok: false, code: 'not_found', message: UNKNOWN_PATH }
-    // A folder on an SSH machine is not watched: its views refresh by asking again.
-    if (at.machine) return { ok: false, code: 'unavailable', message: notOnMachineYet('files.watchPath') }
+    if (!at.ok) return { ok: false, ...unplaced(at).error }
     return fileSystem.watch(at.path, params.includeIgnored === true, listener)
   }
 
