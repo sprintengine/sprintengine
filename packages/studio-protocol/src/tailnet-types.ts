@@ -516,6 +516,17 @@ export type MeshMachineReachability = {
   lastReachedAt: number | null
   /** The failure in a sentence when not reachable; null otherwise. */
   detail: string | null
+  /**
+   * The machines it relays this pairing to (`environment.relayed`), as it
+   * last said: each a `relay:<connection>.<environmentId>` route here.
+   * Absent until a Studio that serves the list has answered.
+   */
+  relayed?: Array<{
+    environmentId: string
+    name: string
+    connected: boolean
+    machine?: { host: string; port?: number | null }
+  }>
 }
 
 export type MeshRequestPairingResult =

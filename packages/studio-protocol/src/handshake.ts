@@ -193,6 +193,13 @@ export const STUDIO_WINDOW_TICKETS_CAPABILITY = 'window-tickets' as const
 export const STUDIO_DEVICE_TICKETS_CAPABILITY = 'device-tickets' as const
 
 /**
+ * `environment.relayed` (`environment-access.ts`): the machines this desktop
+ * relays its paired devices to (`relay:` routes), which a device reaches at
+ * `/tailnet/v1/environments/<environmentId>/studio` on this desktop.
+ */
+export const STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY = 'relayed-environments' as const
+
+/**
  * `environment.adopt` (`environment-access.ts`): records the desktop that
  * holds this Studio kept for its chats, kept here from then on, asked by that
  * desktop's shell alone.
@@ -379,6 +386,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
   STUDIO_DEVICE_TICKETS_CAPABILITY,
+  STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,

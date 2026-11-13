@@ -150,6 +150,7 @@ function serveSshToServer(server: ShellServerLink, environments: SshEnvironments
       scopes: named.scopes as StudioRelayedDeviceScope[],
     })
   })
+  server.rpc.handle(SHELL_METHODS.environmentList, async () => environments.relayedEnvironments())
   server.rpc.handle(SHELL_METHODS.environmentOpen, async (params) => {
     const environmentId = (params as { environmentId?: unknown } | null)?.environmentId
     if (!isEnvironmentId(environmentId)) throw new Error('That is not an environment id.')

@@ -62,7 +62,7 @@ export type EnvironmentConnectionReport = {
   window?: StudioProtocolWindow | null
 }
 
-export type EnvironmentSourceKind = 'wsl' | 'ssh' | 'tailnet'
+export type EnvironmentSourceKind = 'wsl' | 'ssh' | 'tailnet' | 'relay'
 
 export type EnvironmentRegistry = {
   /** Every environment known now, this machine first, then by best route and name. */
@@ -166,7 +166,13 @@ export function createEnvironmentRegistry(options: {
   }
 
   function sources(): EnvironmentSource[] {
-    return [local, ...(observed.get('wsl') ?? []), ...(observed.get('ssh') ?? []), ...(observed.get('tailnet') ?? [])]
+    return [
+      local,
+      ...(observed.get('wsl') ?? []),
+      ...(observed.get('ssh') ?? []),
+      ...(observed.get('tailnet') ?? []),
+      ...(observed.get('relay') ?? []),
+    ]
   }
 
   function idOf(source: EnvironmentSource): EnvironmentId | null {

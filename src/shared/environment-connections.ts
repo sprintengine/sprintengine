@@ -59,6 +59,18 @@ export function meshConnection(reach: MeshMachineReachability | undefined): Envi
   return { state: 'offline', detail: 'Not answering', lastReachedAt: reach.lastReachedAt }
 }
 
+/**
+ * A machine a paired desktop relays this one to: as that desktop answers,
+ * and, while it does, as that desktop's own connection to the machine stands.
+ */
+export function relayConnection(reach: MeshMachineReachability | undefined, connected: boolean): EnvironmentConnection {
+  const through = meshConnection(reach)
+  if (through.state !== 'up') return through
+  return connected
+    ? through
+    : { state: 'offline', detail: `Not connected on ${reach!.machineName}`, lastReachedAt: null }
+}
+
 /** A WSL distribution's connection, from its state on this PC. Only those turned on as machines are listed. */
 export function wslConnectionReport(
   host: ExecutionHostSummary,

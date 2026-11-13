@@ -26,7 +26,10 @@ import {
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
 } from '../../../../packages/studio-protocol/src/handshake'
-import type { StudioRelayedDeviceScope } from '../../../../packages/studio-protocol/src/environment-access'
+import type {
+  StudioRelayedDeviceScope,
+  StudioRelayedEnvironment,
+} from '../../../../packages/studio-protocol/src/environment-access'
 import type { StudioCapability } from '../../../../packages/studio-protocol/src/handshake'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import { createLoopbackRoute, type LoopbackRoute } from '../environment-route'
@@ -600,6 +603,29 @@ export class SshEnvironments {
           ),
         )
     }
+  }
+
+  /**
+   * The machines a paired device may be relayed to (`environment.relayed`):
+   * each saved one whose server has said its environment id, and whether
+   * this desktop holds a connection to that server now.
+   */
+  relayedEnvironments(): StudioRelayedEnvironment[] {
+    return this.saved.flatMap((saved) => {
+      if (!saved.environmentId) return []
+      const connection = this.connection(saved.id)
+      return [
+        {
+          environmentId: saved.environmentId,
+          name: saved.label,
+          kind: 'ssh' as const,
+          connected: connection?.environmentId === saved.environmentId,
+          machine: saved.resolved
+            ? { host: saved.resolved.hostname, port: saved.resolved.port }
+            : { host: saved.destination },
+        },
+      ]
+    })
   }
 
   /** The saved machine whose server is this environment, if it is one of these. */

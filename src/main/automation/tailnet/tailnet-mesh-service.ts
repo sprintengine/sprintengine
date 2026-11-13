@@ -73,6 +73,7 @@ import type { TailnetPeerIdentity } from './tailnet-peer-identity'
 import { tailnetPeerSupports } from './tailnet-routes'
 import { createPeerStudios, peerRefusal, peerStudioTicket, type PeerStudioTarget } from './tailnet-peer-studio'
 import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
+import { STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY } from '../../../../packages/studio-protocol/src/handshake'
 import {
   callRemoteTool,
   fetchRemoteConversationImage,
@@ -276,7 +277,7 @@ export type TailnetMeshService = {
    * seconds, from the window's `origin` alone. The window spends it and keeps
    * nothing; the token never leaves this process.
    */
-  windowTicket(connectionId: unknown, origin: string): Promise<EnvironmentTicketResult>
+  windowTicket(connectionId: unknown, origin: string, environmentId?: string): Promise<EnvironmentTicketResult>
   /**
    * The requests still waiting and each machine's last reachability answer,
    * stamped with the same revision the events carry — the initial read behind
@@ -1046,6 +1047,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         store.markConnected(connection.id)
         rememberIdentity(connection.id, identity.value)
         recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
+        await readRelayed(stored)
         return
       }
       recordReachability(connection, {
@@ -1058,6 +1060,38 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     })
     probes.set(connection.id, probe)
     return probe
+  }
+
+  /**
+   * The machines a paired desktop relays this pairing to (`environment.relayed`),
+   * kept with its reachability so this desktop's environment list names each
+   * as a `relay:` route. A Studio that does not serve the list relays none; a
+   * read that fails keeps what was last heard.
+   */
+  async function readRelayed(connection: StoredMeshConnection): Promise<void> {
+    let relayed: NonNullable<MeshMachineReachability['relayed']>
+    try {
+      relayed = await peerStudios.ask(peerTarget(connection), async (client) =>
+        client.supports(STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY)
+          ? (await client.request('environment.relayed', {})).environments.map(
+              ({ environmentId, name, connected, machine }) => ({
+                environmentId,
+                name,
+                connected,
+                ...(machine ? { machine } : {}),
+              }),
+            )
+          : [],
+      )
+    } catch {
+      return
+    }
+    const known = reachability.get(connection.id)
+    if (!known || !store.find(connection.id)) return
+    if (JSON.stringify(known.relayed ?? []) === JSON.stringify(relayed)) return
+    const next = { ...known, relayed }
+    reachability.set(connection.id, next)
+    broadcast({ kind: 'machine-reachability', ...next })
   }
 
   async function checkAllReachability(): Promise<void> {
@@ -1667,12 +1701,19 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
   //
   // The window asks that machine's Studio itself (design-lane-on-protocol D1);
   // what it needs from here is a ticket for each connection, bought with the
-  // device token kept here, good once and from its origin alone.
-  async function windowTicket(connectionId: unknown, origin: string): Promise<EnvironmentTicketResult> {
+  // device token kept here, good once and from its origin alone. A machine
+  // that desktop relays this pairing to (`relay:` route) is asked the same
+  // way, naming its environment: that machine admits the window as this
+  // pairing's device, held to the pairing's grant, never an owner.
+  async function windowTicket(
+    connectionId: unknown,
+    origin: string,
+    environmentId?: string,
+  ): Promise<EnvironmentTicketResult> {
     const connection = connectionFor(connectionId)
     if (!connection) return { ok: false, code: 'unknown_route', message: 'That machine is not paired here.' }
     try {
-      return { ok: true, ...(await peerStudioTicket(peerTarget(connection), origin)) }
+      return { ok: true, ...(await peerStudioTicket(peerTarget(connection), origin, environmentId)) }
     } catch (error) {
       const refused = peerRefusal(connection, error)
       // A pairing that machine no longer knows is one this machine shows as

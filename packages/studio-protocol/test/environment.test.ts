@@ -72,9 +72,10 @@ test('a route string that names nothing is not a route, and formatting one throw
   assert.throws(() => formatEnvironmentRoute({ kind: 'wsl', distro: '' }))
 })
 
-test('routes are ordered this machine, WSL, tailnet, SSH, keeping the order within a kind and each once', () => {
-  assert.deepEqual([...ENVIRONMENT_ROUTE_KINDS], ['local', 'wsl', 'tailnet', 'ssh'])
+test('routes are ordered this machine, WSL, tailnet, relay, SSH, keeping the order within a kind and each once', () => {
+  assert.deepEqual([...ENVIRONMENT_ROUTE_KINDS], ['local', 'wsl', 'tailnet', 'relay', 'ssh'])
   const given: EnvironmentRoute[] = [
+    { kind: 'relay', via: 't1', environment: 'env-b' },
     { kind: 'ssh', machine: 'b' },
     { kind: 'tailnet', connection: 't2' },
     { kind: 'ssh', machine: 'a' },
@@ -89,6 +90,7 @@ test('routes are ordered this machine, WSL, tailnet, SSH, keeping the order with
     'wsl:Ubuntu',
     'tailnet:t2',
     'tailnet:t1',
+    'relay:t1.env-b',
     'ssh:b',
     'ssh:a',
   ])
@@ -108,4 +110,14 @@ test('a chat address round-trips through its key, and the key has exactly one co
     assert.equal(parseChatAddress(bad), null, String(bad))
   assert.equal(isChatAddress({ environmentId: ENV }), false)
   assert.throws(() => formatChatAddress({ environmentId: 'a:b', chatId: 'c' }))
+})
+
+test('a relay route names the pairing it goes through and the machine it reaches, and reads back the same', () => {
+  const route: EnvironmentRoute = { kind: 'relay', via: 'pair-1', environment: '0b9f-4c' }
+  assert.equal(formatEnvironmentRoute(route), 'relay:pair-1.0b9f-4c')
+  assert.deepEqual(parseEnvironmentRoute('relay:pair-1.0b9f-4c'), route)
+  for (const bad of ['relay:', 'relay:pair-1', 'relay:.env', 'relay:pair-1.', 'relay:a.b.c', 'relay:a b.c'])
+    assert.equal(parseEnvironmentRoute(bad), null, bad)
+  assert.ok(sameEnvironmentRoute(route, { kind: 'relay', via: 'pair-1', environment: '0b9f-4c' }))
+  assert.ok(!sameEnvironmentRoute(route, { kind: 'relay', via: 'pair-2', environment: '0b9f-4c' }))
 })

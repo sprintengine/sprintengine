@@ -93,6 +93,7 @@ async function rig() {
   })
   const asked: unknown[] = []
   const relay: TailnetEnvironmentRelay = {
+    list: async () => [{ environmentId: MACHINE, name: 'build-box', kind: 'ssh', connected: true }],
     async ticket(environmentId, device) {
       asked.push({ environmentId, ...device })
       if (environmentId !== MACHINE) return { ok: false, code: 'unknown_route', message: 'No such machine here.' }

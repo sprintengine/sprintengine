@@ -52,7 +52,7 @@ test('every router key is a route, and every route the router serves is its key 
     const mapped = environmentRouteOfRouterKey(key)
     assert.ok(mapped, String(key))
     assert.equal(formatEnvironmentRoute(mapped), route)
-    assert.ok(mapped.kind !== 'tailnet')
+    assert.ok(mapped.kind !== 'tailnet' && mapped.kind !== 'relay')
     assert.equal(routerKeyOfEnvironmentRoute(mapped), key)
   }
   // Keys the router never makes.

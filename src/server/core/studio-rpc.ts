@@ -220,6 +220,11 @@ export function createStudioRpc(
     // What this machine lacks for its schedules and watches, which every
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),
+    // A desktop's paired devices reach the machines it holds through it
+    // (`relay:` routes); a machine's own Studio relays nothing.
+    ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'
+      ? {}
+      : { relayedEnvironments: () => gateway.relayedEnvironments() }),
     // What the core keeps beside its chats, for every chat at once: the usage
     // limits and the resumes after them, the usage dashboard's report and the import of a CLI's saved sessions.
     chatStores: createStudioChatStores({

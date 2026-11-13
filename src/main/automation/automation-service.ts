@@ -27,6 +27,7 @@ import { createTailnetRemoteService, type TailnetRemoteService } from './tailnet
 import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
 import type { TailnetEnvironmentRelay, TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
 import type { ConversationImageDownscaler } from '../conversation-image-downscale'
+import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
 
 // Owns the always-on Studio MCP gateway lifecycle, local socket endpoint, and
 // discovery files external clients read to find it. The old enabled setting is
@@ -470,6 +471,8 @@ export function createAutomationService(options: AutomationServiceOptions) {
     linkEnvironments: (relay: TailnetEnvironmentRelay): void => {
       environmentRelay = relay
     },
+    /** The machines a paired device may be relayed to; none until a relay is linked. */
+    relayedEnvironments: async (): Promise<StudioRelayedEnvironment[]> => (await environmentRelay?.list()) ?? [],
     /** The one mutation audit, shared with every other listener (the Studio RPC's owner socket). */
     gatewayAudit: (): GatewayAuditStore => auditStore(),
     getStatus,

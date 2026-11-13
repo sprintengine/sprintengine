@@ -35,6 +35,7 @@ import {
   STUDIO_AGENT_SETTINGS_CAPABILITY,
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
+  STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
   STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
@@ -51,6 +52,7 @@ import {
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
   type StudioEnvironmentReadiness,
+  type StudioRelayedEnvironment,
   type StudioProtocolWindow,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
@@ -235,6 +237,8 @@ export type StudioRpcServerOptions = {
   modules?: StudioModules
   /** What this machine has and lacks for its background work. Advertised as `environment-readiness` only when given. */
   readiness?: () => Promise<StudioEnvironmentReadiness>
+  /** The machines this desktop relays its paired devices to. Advertised as `relayed-environments` only when given. */
+  relayedEnvironments?: () => Promise<StudioRelayedEnvironment[]>
   /** A ticket for one connection of a window of the desktop that holds this Studio. Advertised as `window-tickets` only when given. */
   environmentAccess?: StudioEnvironmentAccess
   /** Records the desktop that holds this Studio hands over. Advertised as `environment-adopt` only when given. */
@@ -305,6 +309,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
         (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&
+        (capability !== STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY || options.relayedEnvironments !== undefined) &&
         ((capability !== STUDIO_WINDOW_TICKETS_CAPABILITY && capability !== STUDIO_DEVICE_TICKETS_CAPABILITY) ||
           options.environmentAccess !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_ADOPT_CAPABILITY || options.adoption !== undefined) &&
@@ -360,6 +365,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.readiness ? { readiness: options.readiness } : {}),
+    ...(options.relayedEnvironments ? { relayedEnvironments: options.relayedEnvironments } : {}),
     ...(options.environmentAccess ? { environmentAccess: options.environmentAccess } : {}),
     ...(options.adoption ? { adoption: options.adoption } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),

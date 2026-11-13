@@ -114,6 +114,12 @@ export const SHELL_METHODS = {
    */
   environmentDeviceTicket: 'shell.environment.device-ticket',
   /**
+   * `{}` → `StudioRelayedEnvironment[]`: the machines main holds that a paired
+   * device may be relayed to (`environment.relayed`), each by the environment
+   * id its server said.
+   */
+  environmentList: 'shell.environment.list',
+  /**
    * `{ targetVersion? }` → `StudioUpdateStart`: a client asked this desktop to
    * update itself (`update.start`); the app updater is the shell's.
    */

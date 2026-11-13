@@ -30,6 +30,7 @@ import {
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
+import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
 import type { SignIns } from '../machine/machine-sign-in'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
@@ -228,6 +229,8 @@ export type StudioRpcRouterOptions = {
   discovery?: StudioDiscovery
   /** What this machine has and lacks for its background work; without it, `environment.readiness` is answered `unavailable`. */
   readiness?: () => Promise<StudioEnvironmentReadiness>
+  /** The machines this desktop relays its paired devices to; without it, `environment.relayed` is answered `unavailable`. */
+  relayedEnvironments?: () => Promise<StudioRelayedEnvironment[]>
   /**
    * A ticket for one connection of a window of the desktop that holds this
    * Studio (`environment.windowTicket`); without it, that method is answered
@@ -2060,6 +2063,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // What the machine has is a providers read; what waits names schedules
     // (from their prompts) and watched pull requests, which are the chats'
     // business, so a grant that cannot read chats is told none of it.
+    // The machines this desktop relays devices to: reaching one still takes
+    // its own ticket, held there to the device's grant.
+    'environment.relayed': async (_params, { voice }) => {
+      if (!options.relayedEnvironments) return unserved('environment.relayed')
+      return { ok: true, result: voice.redact({ environments: await options.relayedEnvironments() }) }
+    },
     'environment.readiness': async (_params, { grant, voice }) => {
       if (!options.readiness) return unserved('environment.readiness')
       const read = await options.readiness()

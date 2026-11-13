@@ -74,7 +74,9 @@ export function environmentRouteOfRouterKey(key: string | null): EnvironmentRout
 }
 
 /** The router key for a machine the router serves (this process, a distribution, an SSH machine). */
-export function routerKeyOfEnvironmentRoute(route: Exclude<EnvironmentRoute, { kind: 'tailnet' }>): string | null {
+export function routerKeyOfEnvironmentRoute(
+  route: Exclude<EnvironmentRoute, { kind: 'tailnet' } | { kind: 'relay' }>,
+): string | null {
   if (route.kind === 'local') return null
   if (route.kind === 'wsl') return route.distro
   return `ssh:${route.machine}`
@@ -274,6 +276,21 @@ export function sshEnvironmentSource(
 }
 
 /** A desktop paired over the tailnet, under its machine name, with the id its identity answer gave. */
+/** A machine a paired desktop relays this one to, as the environment list names it: a `relay:` route through that pairing. */
+export function relayEnvironmentSource(
+  via: string,
+  machine: { environmentId: string; name: string; machine?: { host: string; port?: number | null } },
+): EnvironmentSource {
+  return {
+    route: { kind: 'relay', via, environment: machine.environmentId },
+    displayName: machine.name,
+    machine: machine.machine
+      ? { kind: 'ssh', host: machine.machine.host, port: machine.machine.port ?? null }
+      : { kind: 'paired', name: machine.name },
+    environmentId: isEnvironmentId(machine.environmentId) ? machine.environmentId : null,
+  }
+}
+
 export function meshEnvironmentSource(
   connection: Pick<MeshConnection, 'id' | 'machineName' | 'environmentId'>,
 ): EnvironmentSource {

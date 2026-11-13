@@ -5,6 +5,7 @@ import {
   STUDIO_RELAYED_DEVICE_SCOPES,
   type StudioGrant,
   type StudioRelayedDeviceScope,
+  type StudioRelayedEnvironment,
 } from '../../../../packages/studio-protocol/src/public'
 import type { StudioAuthenticator } from '../../../server/rpc/studio-rpc-types'
 import { tailnetDeviceStudioScopes, type TailnetDevice } from '../../../shared/tailnet'
@@ -46,6 +47,8 @@ export type TailnetEnvironmentRelay = {
   ): Promise<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>
   /** A fresh stream to that machine's window listener (the front door's `ws`). */
   open(environmentId: string): Promise<Duplex>
+  /** The machines a device may be relayed to (`environment.relayed`). */
+  list(): Promise<StudioRelayedEnvironment[]>
 }
 
 /** What a paired device may do on a machine this desktop relays: its own scopes here, cut to the relayed ceiling. */
