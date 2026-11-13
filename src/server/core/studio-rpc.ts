@@ -19,6 +19,7 @@ import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
 import { createStudioFileSystem, type StudioFileSystemShell } from '../files/studio-file-system'
 import { keepScheduledImage } from '../../main/scheduled-agents/prompt-images'
+import { resolveMachineIdentity } from '../../shared/machine-identity'
 import { knownFolders, workspaceFolders } from '../files/known-folders'
 import { createStudioGit } from '../git/studio-git'
 import { createStudioWorktrees } from '../worktrees/studio-worktrees'
@@ -224,7 +225,19 @@ export function createStudioRpc(
     // (`relay:` routes); a machine's own Studio relays nothing.
     ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'
       ? {}
-      : { relayedEnvironments: () => gateway.relayedEnvironments() }),
+      : {
+          relayedEnvironments: async () =>
+            (await gateway.relayedEnvironments()).map((entry) => {
+              // Marked as this desktop marks the machine's chats, the person's choice applied.
+              const identity = entry.machine
+                ? resolveMachineIdentity(
+                    { kind: 'ssh', host: entry.machine.host, port: entry.machine.port ?? null },
+                    core.agentLaunchSettings.get().machineMarks,
+                  )
+                : null
+              return identity ? { ...entry, mark: { kind: identity.kind, color: identity.colour } } : entry
+            }),
+        }),
     // What the core keeps beside its chats, for every chat at once: the usage
     // limits and the resumes after them, the usage dashboard's report and the import of a CLI's saved sessions.
     chatStores: createStudioChatStores({

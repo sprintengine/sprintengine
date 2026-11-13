@@ -72,6 +72,8 @@ export type StudioRelayedEnvironment = {
   connected: boolean
   /** How the machine draws itself: its host and port, as its marks are keyed. */
   machine?: { host: string; port?: number | null }
+  /** Its kind and colour, as this desktop marks it (the person's choice applied); absent when it cannot be named. */
+  mark?: { kind: string; color: string }
 }
 
 /**
