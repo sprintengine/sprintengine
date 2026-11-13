@@ -60,6 +60,7 @@ import type { StudioChatStores } from '../../server/chat-stores/chat-stores-doma
 import type { StudioAgentSkills } from '../../server/core/studio-agent-skills'
 import type { StudioUpdates } from '../../server/update/studio-updates'
 import type { SignIns } from '../../server/machine/machine-sign-in'
+import type { EnvironmentAdoption } from '../../server/environment/environment-adoption'
 import type { StudioModules } from '../../server/rpc/studio-modules'
 import type {
   StudioAuditEntry,
@@ -213,6 +214,8 @@ export type StudioRpcServiceOptions = {
   readiness?: () => Promise<StudioEnvironmentReadiness>
   /** A CLI's login on this machine with no terminal (`provider-sign-in-flow`): a server a desktop reaches over its front door. */
   signIns?: () => Promise<SignIns>
+  /** Records the desktop that holds this Studio hands over (`environment-adopt`): a server a desktop reaches over its front door. */
+  adoption?: EnvironmentAdoption
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
   terminals?: StudioTerminals
   /** The CLIs on this machine (`agent-runtimes`): the core's, which every Studio gives (studio-rpc.ts). */
@@ -490,6 +493,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.readiness ? { readiness: options.readiness } : {}),
       ...(options.signIns ? { signIns: options.signIns } : {}),
+      ...(options.adoption ? { adoption: options.adoption } : {}),
       // The desktop that holds a WSL or SSH machine's Studio connects its
       // windows to this one's listener through its front door (`ws`), asking
       // for each connection's ticket here, over its own shell connection.

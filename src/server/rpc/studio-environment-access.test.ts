@@ -282,3 +282,39 @@ test('a window is revoked and a device ticket minted only for the shell, a devic
   assert.equal(revoked.length, 1)
   assert.equal(devices.length, 1)
 })
+
+test('a hand-over is the shell’s alone, answered once per command id', async () => {
+  const handed: unknown[] = []
+  const started = await startTestServer({
+    adoption: {
+      adopt: async (input) => {
+        handed.push(input)
+        return { held: input.records.map((entry) => ({ kind: entry.kind, id: entry.id })), conflicts: [] }
+      },
+    },
+  })
+  cleanups.push(() => started.dispose())
+  const shell = await shellOf(started.server)
+  assert.ok((shell.welcome.capabilities as string[]).includes('environment-adopt'))
+  const records = [{ kind: 'workspace', id: 'ws-1', digest: 'a'.repeat(64), body: { id: 'ws-1' } }]
+  const first = await shell.request('environment.adopt', { commandId: 'h-1', migrationId: 'm-1', records })
+  assert.deepEqual(first.result, { held: [{ kind: 'workspace', id: 'ws-1' }], conflicts: [] })
+  await shell.request('environment.adopt', { commandId: 'h-1', migrationId: 'm-1', records })
+  assert.equal(handed.length, 1, 'the same command is answered from its receipt')
+  assert.equal(
+    errorCode(
+      await shell.request('environment.adopt', {
+        commandId: 'h-2',
+        migrationId: 'm-1',
+        records: [{ kind: 'terminal', id: 't', digest: 'a'.repeat(64), body: {} }],
+      }),
+    ),
+    'invalid_params',
+  )
+  const owner = await lineClient(started.path, OWNER_TOKEN)
+  assert.equal(
+    errorCode(await owner.request('environment.adopt', { commandId: 'h-3', migrationId: 'm-1', records })),
+    'owner_required',
+  )
+  assert.equal(handed.length, 1)
+})

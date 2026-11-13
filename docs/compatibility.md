@@ -1235,6 +1235,20 @@ for a paired device the desktop relays (good once, for thirty seconds, no
 folders the machine knows, and never an owner's (`clientId` `relay:<deviceId>`).
 Its scopes are exactly those named, each of them one of
 `STUDIO_RELAYED_DEVICE_SCOPES`; any other is refused `invalid_params`.
+`environment-adopt` (2026-11-13) adds `environment.adopt` (`{ commandId, migrationId,
+records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's): the records a
+desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are
+`workspace`, `schedule`, `scheduled-message`, `usage-limit-resume` and `pull-request`, each
+going into its own store through that store's own way in. `digest` is the sha-256 of the body
+as canonical JSON (keys sorted, no spaces). It is safe to repeat: a ledger,
+`environment-adoptions.json` (0600), says what was kept under which digest. A record kept
+under the same digest is held again and nothing is written; one already here under another,
+or by another way in, is left as it is and reported in `conflicts`. The answer comes once the
+stores and the ledger are written. What a hand-over is about to keep goes in the ledger first,
+as pending, so one repeated after a crash between a store's write and the ledger's is held,
+not reported as already here. A held message that carries pictures or files is reported,
+not kept: those are not handed over yet. Served by a WSL distribution's or an SSH machine's
+Studio, which a desktop reaches over its front door.
 `provider-sign-in-flow` (2026-11-13) adds `providers.signInStart`, `.signInPaste`,
 `.signInWait` and `.signInCancel`, each under a `commandId`: a CLI's own login on
 that machine with no terminal (decision R34), named by provider, never by a

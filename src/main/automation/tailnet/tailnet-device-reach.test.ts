@@ -241,6 +241,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['environment.deviceTicket'],
       ],
       [
+        'a hand-over into this Studio’s stores, the shell’s alone: the desktop that held the records asks, never a device',
+        ['environment.adopt'],
+      ],
+      [
         'a CLI’s login on the machine, an owner’s: it runs the login there and keeps its credential',
         ['providers.signInStart', 'providers.signInPaste', 'providers.signInWait', 'providers.signInCancel'],
       ],

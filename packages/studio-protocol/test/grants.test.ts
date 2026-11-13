@@ -64,6 +64,7 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'commitMessage.cancel',
   'commitMessage.draft',
   'designSystem.lint',
+  'environment.adopt',
   'environment.deviceTicket',
   'environment.revokeWindow',
   'environment.windowTicket',
@@ -306,6 +307,7 @@ test('what only Studio’s own desktop windows may call is an owner’s too, and
 test('what only the desktop’s own shell may call is an owner’s too, so every other refusal reads it', () => {
   const shellOnly = (Object.keys(STUDIO_METHODS) as StudioMethod[]).filter((name) => STUDIO_METHODS[name].shell)
   assert.deepEqual(shellOnly.sort(), [
+    'environment.adopt',
     'environment.deviceTicket',
     'environment.revokeWindow',
     'environment.windowTicket',

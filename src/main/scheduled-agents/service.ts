@@ -20,7 +20,7 @@ import { moduleConversationCeiling } from '../module-host/module-conversation-se
 import { clampToModuleToolCaller, moduleToolCallerCeiling } from '../module-host/module-tool-caller'
 import type { ScheduledAgentsScheduler } from './scheduler'
 import type { ScheduledPromptImages } from './prompt-images'
-import type { ScheduledAgentsStore } from './store'
+import { readStoredScheduledAgent, type ScheduledAgentsStore } from './store'
 
 /** Lowers a validated draft's preset before it is stored; the identity when absent. */
 type CapPreset = (preset: CliPermissionPreset | null) => CliPermissionPreset | null
@@ -80,6 +80,13 @@ export type ScheduledAgentsService = {
   onRun(listener: (agent: ScheduledAgentView, run: ScheduledAgentRun) => void): () => void
   /** A run finished starting, however it went: the scheduler's report. */
   notifyRan(agent: ScheduledAgent, run: ScheduledAgentLastRun): void
+  /**
+   * Keep a scheduled agent another Studio kept, under its own id, as that
+   * Studio's file held it (`environment.adopt`): read as this store reads its
+   * own file. Refused when one with that id is already here, or when it does
+   * not read.
+   */
+  adopt(record: unknown): Promise<{ ok: true } | { ok: false; reason: 'exists' | 'invalid'; message: string }>
 }
 
 export type ScheduledAgentsServiceDeps = {
@@ -285,6 +292,15 @@ export function createScheduledAgentsService(deps: ScheduledAgentsServiceDeps): 
       return () => listeners.delete(listener)
     },
     notifyChanged: changed,
+    async adopt(record) {
+      await deps.store.load()
+      const read = readStoredScheduledAgent(record, now())
+      if (!read.ok) return { ok: false, reason: 'invalid', message: read.message }
+      if (!(await deps.store.restore(read.agent)))
+        return { ok: false, reason: 'exists', message: 'A scheduled agent with that id is already here.' }
+      changed()
+      return { ok: true }
+    },
     onRun(listener) {
       runListeners.add(listener)
       return () => runListeners.delete(listener)
