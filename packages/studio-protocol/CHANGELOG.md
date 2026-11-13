@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Removed (permissions no method needs)
+
+- **`access:read` and `access:write`** leave `STUDIO_PERMISSIONS`: who may
+  reach a Studio (`gateway.*`, `mcpHttp.*`, `localApps.*`, `webDevices.*`) is
+  an owner's by method, and the tunnel rows that named them are gone. A
+  permission is never sent on the wire, so no peer reads the change.
+
 ### Changed (what starts a schedule is held to what the asker may reach)
 
 - **`schedules.resume`, `.runNow` and `.resumeAll` start no schedule in a

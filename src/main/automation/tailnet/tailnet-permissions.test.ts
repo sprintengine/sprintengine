@@ -127,8 +127,6 @@ test('each of the six scopes carries only permissions from the closed set, and n
     'filesystem:write',
     'settings:write',
     'environment:maintain',
-    'access:read',
-    'access:write',
     'conversation:create',
     'tools:offer',
   ])
