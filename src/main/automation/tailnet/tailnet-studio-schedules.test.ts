@@ -199,10 +199,7 @@ test('an operating pairing starts no schedule in a folder Studio does not know: 
   const client = await r.client(r.pair(['workspace:operate']).token)
   // The owner's, in a folder only an owner names.
   const { workspaceId: _workspaceId, ...noWorkspace } = DRAFT
-  const made = await r.schedules.create(
-    { ...noWorkspace, workspaceRoot: '/Users/dev/elsewhere', hostId: null },
-    'bypass',
-  )
+  const made = await r.schedules.create({ ...noWorkspace, workspaceRoot: '/Users/dev/elsewhere' }, 'bypass')
   assert.ok(made.ok)
   const id = made.value.id
   // Pausing starts nothing, and stays the device's.
