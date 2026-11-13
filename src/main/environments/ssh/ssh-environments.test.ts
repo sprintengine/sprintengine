@@ -185,3 +185,63 @@ test('an empty pasted code, or one the login would not take, ends the sign-in in
   })
   assert.deepEqual(ops, ['start', 'wait', 'paste', 'cancel'])
 })
+
+test('a window is given a ticket the machine minted, for this computer’s loopback route to it', async () => {
+  const { store } = machines()
+  const internals = store as unknown as {
+    saved: unknown[]
+    connection: (id: string) => unknown
+    connectQuietly: (id: string, ms: number) => Promise<boolean>
+  }
+  internals.saved.push({
+    id: 'm1',
+    label: 'build-box',
+    destination: 'build-box',
+    environmentId: null,
+    settings: { ...DEFAULT_SSH_ENVIRONMENT_SETTINGS },
+    addedAt: 0,
+  })
+  const asked: unknown[] = []
+  let capable = true
+  let connected = true
+  internals.connectQuietly = async () => connected
+  internals.connection = () =>
+    connected
+      ? {
+          owner: {
+            supports: (capability: string) => capable && capability === 'window-tickets',
+            request: async (method: string, params: unknown) => {
+              asked.push([method, params])
+              return { token: 'ticket-1', path: '/ws?ticket=ticket-1' }
+            },
+          },
+          open: async () => {
+            throw new Error('not in this test')
+          },
+        }
+      : null
+  try {
+    const first = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.ok(first.ok)
+    const url = new URL(first.url)
+    assert.equal(url.hostname, '127.0.0.1')
+    assert.equal(`${url.pathname}${url.search}`, '/ws?ticket=ticket-1')
+    assert.equal(first.token, 'ticket-1')
+    assert.deepEqual(asked, [['environment.windowTicket', { windowKey: 'window-7', origin: 'file://' }]])
+    // The route is the machine's for the run: the next ticket names the same port.
+    const second = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.ok(second.ok)
+    assert.equal(new URL(second.url).port, url.port)
+
+    capable = false
+    const outdated = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.equal(outdated.ok ? null : outdated.code, 'outdated')
+    connected = false
+    const away = await store.windowTicket('m1', { windowKey: 'window-7', origin: 'file://' })
+    assert.equal(away.ok ? null : away.code, 'unavailable')
+    const unknown = await store.windowTicket('m2', { windowKey: 'window-7', origin: 'file://' })
+    assert.equal(unknown.ok ? null : unknown.code, 'unknown_route')
+  } finally {
+    store.shutdown()
+  }
+})
