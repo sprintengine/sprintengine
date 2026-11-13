@@ -2,6 +2,7 @@ import { studioParams, studioParamsRefused, type StudioMethodTable } from './con
 import {
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_DEVICE_TICKETS_CAPABILITY,
+  STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
@@ -167,6 +168,23 @@ export const MAX_ADOPTED_RECORDS = 500
 /** The most files one hand-over call stages beside its records: as many as a client may stage at once. */
 export const MAX_ADOPTED_FILES = 16
 
+/**
+ * What a Studio is doing that stopping it would end: a chat working (starting,
+ * mid-turn, waiting on a person, or running background agents, shells or
+ * monitors), and the work it does on its own with no client and no chat
+ * working: schedules with a run to come, pull request watches, messages kept
+ * to send later, resumes after a usage limit.
+ */
+export type StudioEnvironmentWork = {
+  working: boolean
+  schedules: Array<{ id: string; title: string; nextRunAt: number }>
+  watches: Array<{ url: string; title: string }>
+  /** Messages kept to send into a chat later (scheduled, or held for a turn's end). */
+  messages: number
+  /** Chats a usage limit stopped, with a resume set for when it resets. */
+  resumes: number
+}
+
 /** A sign-in that started: its link, the code to type there, and whether a code is pasted back. */
 export type StudioSignInStarted =
   { ok: true; id: string; url: string; code: string | null; paste: boolean } | { ok: false; message: string }
@@ -181,6 +199,12 @@ export type StudioEnvironmentAccessMethodMap = {
    * reaching one still needs its own ticket, held to that device's grant.
    */
   'environment.relayed': { params: Record<string, never>; result: { environments: StudioRelayedEnvironment[] } }
+  /**
+   * What stopping this Studio would end, asked by the desktop that holds it:
+   * before it stops a WSL distribution's server for being idle, and for the
+   * quit question that names what stops with it.
+   */
+  'environment.work': { params: Record<string, never>; result: StudioEnvironmentWork }
   /**
    * A ticket for one connection of one of the shell's windows. Only the
    * desktop's own shell connection may ask (the method is the shell's, not
@@ -239,6 +263,8 @@ const RELAYS = 'It admits a device the desktop that holds this Studio relays, so
 const WINDOW_KEY = '"windowKey" names the window: 1 to 200 characters.'
 const ADOPTS =
   'It writes this Studio’s own stores with the records the desktop that holds it kept, so only that desktop asks.'
+const HOLDS =
+  'It names this Studio’s schedules and watched pull requests, for the desktop that holds it to decide whether to stop it.'
 const SIGNS_IN = 'It runs a CLI’s login on this machine and keeps its credential here.'
 
 const signIn = {
@@ -253,6 +279,14 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
     scope: 'conversation:read',
     mutation: false,
     capability: STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
+    params: () => studioParams({}),
+  },
+  'environment.work': {
+    scope: null,
+    mutation: false,
+    capability: STUDIO_ENVIRONMENT_WORK_CAPABILITY,
+    owner: HOLDS,
+    shell: HOLDS,
     params: () => studioParams({}),
   },
   'environment.windowTicket': {

@@ -249,6 +249,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['environment.adopt'],
       ],
       [
+        'what stopping the Studio would end, the shell’s alone: the desktop that holds it asks before stopping it',
+        ['environment.work'],
+      ],
+      [
         'a CLI’s login on the machine, an owner’s: it runs the login there and keeps its credential',
         ['providers.signInStart', 'providers.signInPaste', 'providers.signInWait', 'providers.signInCancel'],
       ],

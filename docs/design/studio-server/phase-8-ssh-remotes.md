@@ -645,7 +645,7 @@ detached-start.ts`), run by the connect script with stdin on `/dev/null`.
   (`loopback: false`), so the server listens on no TCP port.
 - The server writes `run/server.json` itself once its doors are open (pid,
   version, origin, startedBy, hostId, environmentId, socketPath,
-  `backendWire`, dataDir; 0600) and removes it when it stops.
+  dataDir; 0600) and removes it when it stops.
 - Idle: with no admitted front-door connection for `idleMs` (default five
   minutes; `--keep-running` for none), no chat working and no work of its own
   (a schedule with a run to come, a pull request watch, a message kept to

@@ -63,7 +63,8 @@ test("a WSL agent's call runs through the Windows side's registry as that agent'
   relayShellToolsets({ onConnected: (listener) => (connected = listener), registry, connectClient: fakeConnect })
   connected({
     distro: 'Ubuntu',
-    backend: { isOpen: () => true, onClose: () => undefined } as unknown as WslServerConnection['backend'],
+    owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
+    backend: {} as WslServerConnection['backend'],
     driveMountRoot: '/mnt/',
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
@@ -141,7 +142,8 @@ async function relayed(shell: ReturnType<typeof definition>[], own: McpToolRegis
   })
   connected({
     distro: 'Ubuntu',
-    backend: { isOpen: () => true, onClose: () => undefined } as unknown as WslServerConnection['backend'],
+    owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
+    backend: {} as WslServerConnection['backend'],
     driveMountRoot: '/mnt/',
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
@@ -334,7 +336,8 @@ test('a toolset is offered with each tool name once, and offered again when its 
   })
   connected({
     distro: 'Ubuntu',
-    backend: { isOpen: () => true, onClose: () => undefined } as unknown as WslServerConnection['backend'],
+    owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
+    backend: {} as WslServerConnection['backend'],
     driveMountRoot: '/mnt/',
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
@@ -374,7 +377,8 @@ test('a tools stream that closes while the server stays up is opened again, and 
   })
   connected({
     distro: 'Ubuntu',
-    backend: { isOpen: () => true, onClose: () => undefined } as unknown as WslServerConnection['backend'],
+    owner: { state: 'open', closed: new Promise<void>(() => undefined) } as unknown as WslServerConnection['owner'],
+    backend: {} as WslServerConnection['backend'],
     driveMountRoot: '/mnt/',
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
@@ -417,10 +421,13 @@ test('a tools stream that fails to open is tried again while the server is up, a
   })
   connected({
     distro: 'Ubuntu',
-    backend: {
-      isOpen: () => backendOpen,
-      onClose: () => void closeListeners++,
-    } as unknown as WslServerConnection['backend'],
+    owner: {
+      get state() {
+        return backendOpen ? 'open' : 'closed'
+      },
+      closed: { then: () => void closeListeners++ },
+    } as unknown as WslServerConnection['owner'],
+    backend: {} as WslServerConnection['backend'],
     driveMountRoot: '/mnt/',
     environmentId: 'env',
     open: async () => assert.fail('the fake client opens nothing'),
@@ -431,7 +438,7 @@ test('a tools stream that fails to open is tried again while the server is up, a
   ends[0]()
   await waitFor(() => offered.length === 2, 5_000)
   assert.equal(closeListeners, 1, 'one close listener for the server, however often its stream is opened')
-  // Once the server's wire is down, nothing is tried again.
+  // Once the owner connection to the server is down, nothing is tried again.
   backendOpen = false
   ends[1]()
   await new Promise((resolve) => setTimeout(resolve, 1_500))

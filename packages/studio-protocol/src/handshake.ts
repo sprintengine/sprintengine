@@ -200,6 +200,13 @@ export const STUDIO_DEVICE_TICKETS_CAPABILITY = 'device-tickets' as const
 export const STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY = 'relayed-environments' as const
 
 /**
+ * `environment.work` (`environment-access.ts`): whether a chat works here and
+ * what this Studio does on its own, asked by the desktop that holds it before
+ * it stops the server for being idle and for its quit question.
+ */
+export const STUDIO_ENVIRONMENT_WORK_CAPABILITY = 'environment-work' as const
+
+/**
  * `environment.adopt` (`environment-access.ts`): records the desktop that
  * holds this Studio kept for its chats, kept here from then on, asked by that
  * desktop's shell alone.
@@ -387,6 +394,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_WINDOW_TICKETS_CAPABILITY,
   STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
+  STUDIO_ENVIRONMENT_WORK_CAPABILITY,
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,

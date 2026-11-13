@@ -472,6 +472,7 @@ test('every method the server serves has its call in the SDK, under the same sco
     'environment.revokeWindow': 'request',
     'environment.deviceTicket': 'request',
     'environment.adopt': 'request',
+    'environment.work': 'request',
     'providers.signInStart': 'request',
     'providers.signInPaste': 'request',
     'providers.signInWait': 'request',

@@ -41,8 +41,10 @@ import type { ConversationBackend, ConversationBackendMember } from '../core/con
  *    `sendTurn` takes `subagentMessage` and an `origin` reason `agent-message`.
  * 8: `backend.sign-in` leaves the wire: a CLI's sign-in on the server's
  *    machine is the Studio protocol's `providers.signIn*`, on the owner connection.
+ * 9: `backend.machine` leaves the wire: what a WSL server does on its own is
+ *    the Studio protocol's `environment.work`, on the owner connection.
  */
-export const BACKEND_WIRE_VERSION = 8
+export const BACKEND_WIRE_VERSION = 9
 
 /** Members answered over the wire. The synchronous ones are the router's to answer (from the mirror, or locally). */
 export const REMOTE_BACKEND_MEMBERS = [
@@ -96,8 +98,6 @@ export const BACKEND_WIRE = {
   snapshot: 'backend.snapshot',
   event: 'backend.event',
   sessions: 'backend.sessions',
-  /** `{ channel, args }` → the answer: whether the server has work of its own (`studio:background-work`), for a WSL server's idle stop. */
-  machine: 'backend.machine',
 } as const
 
 /** A pushed chat event, with its session as the server sees it once the event is published. */
@@ -218,23 +218,10 @@ function rpcOver(frames: ReturnType<typeof lineFrames>, log?: (message: string) 
 export function serveConversationBackend(
   backend: ConversationBackend,
   stream: Duplex,
-  options: {
-    log?: (message: string) => void
-    /** A question about the server's machine: whether it has work of its own (`BACKGROUND_WORK_MACHINE_CHANNEL`). */
-    machine?: (channel: string, args: unknown[]) => Promise<unknown>
-  } = {},
+  options: { log?: (message: string) => void } = {},
 ): { close(): void } {
   const frames = lineFrames(stream)
   const rpc = rpcOver(frames, options.log)
-  const machine = options.machine
-  if (machine)
-    rpc.handle(BACKEND_WIRE.machine, async (params) => {
-      const { channel, args } = (params ?? {}) as { channel?: unknown; args?: unknown }
-      if (typeof channel !== 'string' || !Array.isArray(args))
-        throw new Error('A machine call names a channel and its arguments.')
-      const value = await machine(channel, args)
-      return value === undefined ? null : value
-    })
   rpc.handle(BACKEND_WIRE.call, async (params) => {
     const { member, args } = (params ?? {}) as { member?: unknown; args?: unknown }
     if (typeof member !== 'string' || !REMOTE_MEMBERS.has(member) || !Array.isArray(args))
@@ -274,8 +261,6 @@ export function serveConversationBackend(
 export type RemoteConversationBackend = Pick<ConversationBackend, RemoteBackendMember | 'onEvent' | 'listSessions'> & {
   /** Read the server's sessions again (after a reconnect). */
   refresh(): Promise<void>
-  /** A question about the server's machine (`BACKGROUND_WORK_MACHINE_CHANNEL`). */
-  machine(channel: string, args: unknown[]): Promise<unknown>
   /** Whether the wire is up. */
   isOpen(): boolean
   onClose(listener: (reason: string) => void): void
@@ -366,7 +351,6 @@ export function connectRemoteConversationBackend(
       const snapshot = (await rpc.call(BACKEND_WIRE.snapshot, {})) as { sessions?: unknown }
       replace(snapshot?.sessions)
     },
-    machine: (channel, args) => rpc.call(BACKEND_WIRE.machine, { channel, args }, { timeoutMs: 120_000 }),
     isOpen: () => open,
     onClose: (listener) => frames.onClose(listener),
     close: () => frames.close(),

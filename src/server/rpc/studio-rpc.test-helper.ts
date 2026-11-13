@@ -13,6 +13,7 @@ import {
   type ConversationWirePermissionPreset,
   type StudioCreatedConversation,
   type StudioEnvironmentReadiness,
+  type StudioEnvironmentWork,
   type StudioRelayedEnvironment,
   type StudioGrant,
   type StudioParsedServerFrame,
@@ -411,6 +412,7 @@ export async function startTestServer(
     relayedEnvironments?: () => Promise<StudioRelayedEnvironment[]>
     environmentAccess?: StudioEnvironmentAccess
     adoption?: EnvironmentAdoption
+    work?: () => StudioEnvironmentWork
     signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
@@ -470,6 +472,7 @@ export async function startTestServer(
     ...(input.relayedEnvironments ? { relayedEnvironments: input.relayedEnvironments } : {}),
     ...(input.environmentAccess ? { environmentAccess: input.environmentAccess } : {}),
     ...(input.adoption ? { adoption: input.adoption } : {}),
+    ...(input.work ? { work: input.work } : {}),
     ...(input.signIns ? { signIns: input.signIns } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),

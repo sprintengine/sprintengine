@@ -72,6 +72,7 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'environment.deviceTicket',
   'environment.revokeWindow',
   'environment.windowTicket',
+  'environment.work',
   'localServers.changed',
   'localServers.list',
   'localServers.remove',
@@ -357,6 +358,7 @@ test('what only the desktop’s own shell may call is an owner’s too, so every
     'environment.deviceTicket',
     'environment.revokeWindow',
     'environment.windowTicket',
+    'environment.work',
   ])
   for (const name of shellOnly) {
     assert.ok((STUDIO_METHODS[name].shell ?? '').length > 20, `${name} says why it is the shell's`)

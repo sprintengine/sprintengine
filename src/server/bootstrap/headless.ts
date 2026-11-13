@@ -5,10 +5,10 @@ import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { driveMountRootFromMounts, driveMountRootFromWslConf } from '../../shared/host-paths'
 import { chatsAreWorking } from '../core/chats-working'
-import { BACKGROUND_WORK_MACHINE_CHANNEL, backgroundWorkOf, hasBackgroundWork } from '../core/background-work'
+import { backgroundWorkOf, hasBackgroundWork } from '../core/background-work'
 import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '../update/studio-updates'
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
-import { BACKEND_WIRE_VERSION, serveConversationBackend } from '../wsl/backend-wire'
+import { serveConversationBackend } from '../wsl/backend-wire'
 import type { SignIns } from '../machine/machine-sign-in'
 import { startFrontDoorListeners, type FrontDoorListeners } from '../wsl/front-door-listener'
 import type { FrontDoorPurpose } from '../wsl/front-door-proof'
@@ -107,16 +107,7 @@ export function serveFrontDoorPurpose(
   log: (message: string) => void,
 ): void {
   if (purpose === 'backend') {
-    serveConversationBackend(server.core.conversations, stream, {
-      log,
-      // Whether this server has work of its own, which the Windows side asks
-      // before stopping a WSL server for being idle. A window's files and git
-      // on this machine are the Studio protocol's `files.*` and `git.*`.
-      machine: (channel) =>
-        channel === BACKGROUND_WORK_MACHINE_CHANNEL
-          ? Promise.resolve(backgroundWorkOf(server.core))
-          : Promise.reject(new Error(`This server does not answer ${channel}.`)),
-    })
+    serveConversationBackend(server.core.conversations, stream, { log })
     return
   }
   // A window's socket: the window listener admits it, or not, by the ticket
@@ -262,7 +253,6 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       socketPath: frontDoor.socketPath,
       protocolVersion: STUDIO_PROTOCOL_VERSION,
       minProtocolVersion: STUDIO_PROTOCOL_MIN_SUPPORTED,
-      backendWire: BACKEND_WIRE_VERSION,
       dataDir: envelope.dataDir,
     })
   }

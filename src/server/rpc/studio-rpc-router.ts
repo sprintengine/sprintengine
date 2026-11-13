@@ -30,7 +30,10 @@ import {
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
-import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
+import type {
+  StudioEnvironmentWork,
+  StudioRelayedEnvironment,
+} from '../../../packages/studio-protocol/src/environment-access'
 import type { SignIns } from '../machine/machine-sign-in'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
@@ -239,6 +242,8 @@ export type StudioRpcRouterOptions = {
   environmentAccess?: StudioEnvironmentAccess
   /** Records the desktop that holds this Studio hands over (`environment.adopt`); without it, that method is answered `unavailable`. */
   adoption?: EnvironmentAdoption
+  /** What stopping this Studio would end (`environment.work`); without it, that method is answered `unavailable`. */
+  work?: () => StudioEnvironmentWork
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
   signIns?: () => Promise<SignIns>
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
@@ -2092,6 +2097,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       } catch (error) {
         return refuse('unavailable', error instanceof Error ? error.message : String(error))
       }
+    },
+    'environment.work': () => {
+      if (!options.work) return unserved('environment.work')
+      return { ok: true, result: options.work() }
     },
     'environment.revokeWindow': async ({ windowKey }) => {
       if (!options.environmentAccess) return unserved('environment.revokeWindow')
