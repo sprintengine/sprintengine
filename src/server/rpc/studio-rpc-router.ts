@@ -986,13 +986,18 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // ids again, so the host answers it as the same send, and the uploads it
   // spent are not asked for twice. Kept as long as an upload is.
   const stagedSends = new Map<string, { ids: string[]; at: number }>()
+  // A retry that arrives while the first is still staging (a phone that sent
+  // again after its socket dropped, mid-upload) waits for that staging rather
+  // than staging the same uploads a second time under other host ids.
+  const stagingSends = new Map<string, Promise<StagedSend>>()
+  type StagedSend =
+    | { ok: true; ids: string[] }
+    | Refused<'not_found' | 'invalid_params' | 'too_large' | 'busy' | 'unavailable'>
   async function stagedFor(
     params: { key: StudioConversationKey; commandId: string },
     uploadIds: string[],
     asking: Asking,
-  ): Promise<
-    { ok: true; ids: string[] } | Refused<'not_found' | 'invalid_params' | 'too_large' | 'busy' | 'unavailable'>
-  > {
+  ): Promise<StagedSend> {
     const stage = followed.stageUploads
     if (!stage) return refuse('unavailable', 'This Studio does not take pictures or files on a send.')
     const { grant } = asking
@@ -1001,6 +1006,24 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     const sendId = `${grant.clientId}\n${params.commandId}`
     const kept = stagedSends.get(sendId)
     if (kept) return { ok: true, ids: kept.ids }
+    const staging = stagingSends.get(sendId)
+    if (staging) return staging
+    const made = stageSend(stage, params, uploadIds, grant, sendId, at)
+    stagingSends.set(sendId, made)
+    try {
+      return await made
+    } finally {
+      if (stagingSends.get(sendId) === made) stagingSends.delete(sendId)
+    }
+  }
+  async function stageSend(
+    stage: NonNullable<typeof followed.stageUploads>,
+    params: { key: StudioConversationKey; commandId: string },
+    uploadIds: string[],
+    grant: StudioGrant,
+    sendId: string,
+    at: number,
+  ): Promise<StagedSend> {
     const key = resolve(params.key, grant)
     if (!key) return notFound(params.key)
     const spent = uploads.spend(grant.clientId, uploadIds, sendId, ['picture', 'attachment'])

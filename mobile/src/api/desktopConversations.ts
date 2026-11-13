@@ -863,6 +863,29 @@ const EXTENSIONS: Record<string, string> = {
 /** Pictures being read now, by their file: one read however many rows draw it. */
 const reading = new Map<string, Promise<ConversationPicture>>();
 
+/**
+ * How many pictures cross from the desktops at once. One answer can be 8 MB,
+ * about 11 MB of text held twice while it is read; a transcript scrolled past
+ * a run of screenshots would otherwise hold every one of them at once, and
+ * keep the chat's own frames waiting behind them on the socket.
+ */
+const PICTURES_AT_ONCE = 2;
+let picturesCrossing = 0;
+const picturesWaiting: Array<() => void> = [];
+
+/** Run `work` once a crossing is free; a finished one hands its turn straight to the next. */
+async function crossingOne<T>(work: () => Promise<T>): Promise<T> {
+  if (picturesCrossing < PICTURES_AT_ONCE) picturesCrossing++;
+  else await new Promise<void>((resolve) => picturesWaiting.push(resolve));
+  try {
+    return await work();
+  } finally {
+    const next = picturesWaiting.shift();
+    if (next) next();
+    else picturesCrossing--;
+  }
+}
+
 /** A short stable name for a picture's address: FNV-1a over its parts, twice over. */
 function pictureName(parts: string): string {
   let a = 0x811c9dc5;
@@ -899,13 +922,17 @@ async function picture(
     }
     try {
       const client = await studio();
-      const answer = await client.request("conversation.picture", {
-        key: { workspaceId: ref.workspaceId, agentId: ref.agentId },
-        ...(ref.toolUseId !== undefined ? { toolUseId: ref.toolUseId } : { attachment: ref.attachment! }),
+      // The text is let go once it is in the file, before the next crossing starts.
+      const path = await crossingOne(async () => {
+        const answer = await client.request("conversation.picture", {
+          key: { workspaceId: ref.workspaceId, agentId: ref.agentId },
+          ...(ref.toolUseId !== undefined ? { toolUseId: ref.toolUseId } : { attachment: ref.attachment! }),
+        });
+        const file = `${stem}.${EXTENSIONS[answer.mediaType] ?? "img"}`;
+        await LegacyFileSystem.makeDirectoryAsync(`${base}${PICTURE_FOLDER}`, { intermediates: true }).catch(() => undefined);
+        await LegacyFileSystem.writeAsStringAsync(file, answer.dataBase64, { encoding: LegacyFileSystem.EncodingType.Base64 });
+        return file;
       });
-      const path = `${stem}.${EXTENSIONS[answer.mediaType] ?? "img"}`;
-      await LegacyFileSystem.makeDirectoryAsync(`${base}${PICTURE_FOLDER}`, { intermediates: true }).catch(() => undefined);
-      await LegacyFileSystem.writeAsStringAsync(path, answer.dataBase64, { encoding: LegacyFileSystem.EncodingType.Base64 });
       return { ok: true, uri: path };
     } catch (error) {
       const { code } = refusalOf(error);

@@ -439,6 +439,31 @@ test("an upload is begun with its size and sent in the pieces the desktop names,
   closeDesktopStudios();
 });
 
+test("no more than two pictures cross from the desktop at once", async () => {
+  const held = [];
+  const f = fixture({
+    answer: (method) =>
+      method === "conversation.picture"
+        ? new Promise((resolve) => held.push(() => resolve({ mediaType: "image/png", dataBase64: Buffer.from("png").toString("base64") })))
+        : {},
+  });
+  const reads = [1, 2, 3, 4].map((n) => f.api.picture({ ...key, toolUseId: `crossing-${n}` }));
+  await until(() => f.sent("conversation.picture").length === 2, "two pictures asked for");
+  await sleep(50);
+  assert.equal(f.sent("conversation.picture").length, 2, "the third waits for a crossing");
+  held.shift()();
+  await until(() => f.sent("conversation.picture").length === 3, "the third once one is in");
+  await sleep(50);
+  assert.equal(f.sent("conversation.picture").length, 3);
+  while (held.length || f.sent("conversation.picture").length < 4) {
+    if (held.length) held.shift()();
+    await sleep(5);
+  }
+  for (const read of await Promise.all(reads)) assert.equal(read.ok, true);
+  assert.equal(f.sent("conversation.picture").length, 4);
+  closeDesktopStudios();
+});
+
 test("a chat's picture is read once into the phone's cache, and from there after that", async () => {
   const f = fixture({
     answer: (method, params) =>

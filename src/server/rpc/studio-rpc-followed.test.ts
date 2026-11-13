@@ -117,11 +117,14 @@ function fakeFollowed(calls: Calls): Required<StudioFollowedBackend> & { tell(ki
         clientId,
         uploads.map((upload) => [upload.purpose, upload.name ?? null, upload.bytes.toString()]),
       ])
+      await stagingHeld
       return { ok: true, ids: uploads.map((_upload, index) => `host-${clientId}-${staged++}-${index}`) }
     },
   }
 }
 let staged = 0
+/** What the fake host's staging waits on: a test holds it to send again mid-staging. */
+let stagingHeld: Promise<void> = Promise.resolve()
 
 async function serve() {
   const calls: Calls = []
@@ -614,6 +617,36 @@ test('a keyed send carries the pictures and files its client staged, made the ch
     uploadIds: [theirs],
   })
   assert.equal(errorOf(borrowed), 'not_found')
+})
+
+test('a send sent again while its pictures are still being staged is staged once, under the same host ids', async () => {
+  const started = await serve()
+  const phone = await client(
+    started.path,
+    pairFakeClient(started.auth, 'phone', ['conversation:read', 'conversation:operate']),
+  )
+  const picture = await upload(phone, 'picture', 'picture')
+  let release = (): void => undefined
+  stagingHeld = new Promise<void>((resolve) => (release = resolve))
+  try {
+    const send = { key: KEY, commandId: 'mid-staging', message: 'Look', uploadIds: [picture] }
+    const first = ask(phone, 'conversation.send', send)
+    for (let tries = 0; !started.calls.some(([kind]) => kind === 'stageUploads') && tries < 100; tries++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    // The phone's socket dropped and it sends again before the first answer.
+    const again = ask(phone, 'conversation.send', send)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    release()
+    const answers = await Promise.all([first, again])
+    for (const answer of answers) assert.equal(answer.ok, true, JSON.stringify(answer))
+  } finally {
+    release()
+    stagingHeld = Promise.resolve()
+  }
+  assert.equal(started.calls.filter(([kind]) => kind === 'stageUploads').length, 1)
+  const sends = started.backend.commands.filter((carried) => carried.command.kind === 'send')
+  const ids = sends.map((carried) => JSON.stringify((carried.command as { uploadIds?: string[] }).uploadIds))
+  assert.equal(new Set(ids).size, 1, ids.join(' '))
 })
 
 test('a chat’s picture is read by its step or the ref its message recorded, never by a path', async () => {

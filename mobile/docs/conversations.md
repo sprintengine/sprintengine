@@ -302,8 +302,10 @@ uploads, so the message shows it while it is pending and after the desktop
 echoes it, with no fetch. Any other (sent from the desktop, from another
 phone, or before the app last started) is fetched from a desktop that
 advertises `conversation-message-images`, by its `ref`
-(`conversation.picture` with `attachment`). Where neither has it, the
-square names the picture instead. The phone reads the member defensively
+(`conversation.picture` with `attachment`). A fetched picture is written to
+the phone's cache and drawn from there, and no more than two cross from the
+desktops at once, since one answer can be 8 MB of picture.
+Where neither has it, the square names the picture instead. The phone reads the member defensively
 (`sentPhotos.ts`): an entry without an id is skipped, a ref not in the
 desktop store's shape is never asked for, and no more than the desktop's
 sixteen are drawn.
