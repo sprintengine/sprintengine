@@ -1964,8 +1964,11 @@ export function createConversationGatewayHost(
       // A queued message is held here and sent from here when the turn ends,
       // answered as soon as it is held: no session is resumed for it now, and
       // nothing waits on the turn.
+      // A repeat while the first is still being held waits for it and is
+      // answered as it was (`receipted`); one after it, or after a restart,
+      // finds it held (`heldBefore`).
       if (command.kind === 'send' && command.queue && held)
-        return Promise.resolve(staleHold() ?? holdMessage(command, held))
+        return Promise.resolve(staleHold() ?? receipted(key, deviceId, commandId, () => holdMessage(command, held)))
       // A steer the running turn cannot take is held for the turn's end, as a
       // queued send is, and answered at once with a notice saying so: the
       // person's words are never lost to a provider that cannot take them, or

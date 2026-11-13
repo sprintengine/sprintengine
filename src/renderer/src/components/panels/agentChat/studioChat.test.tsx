@@ -432,3 +432,52 @@ test('a fork is asked only of a Studio that says where its forks are, and an ans
   expect(made).toEqual({ ok: true, address, name: 'Atlas (fork)' })
   expect(asked).toEqual(['conversation.fork', 'conversation.fork', 'conversation.fork'])
 })
+
+test('a queued message whose answer was lost with the connection is asked again under its command id, and held once', async () => {
+  const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+  const { createStudioConversationParts } = await import('./studioChat')
+  // A Studio that holds a message once per command id, as its hold does, and
+  // a window client that gives up the first answer: closed and replaced
+  // before it came, as a client that is replaced or parked gives its requests up.
+  const held = new Map<string, string>()
+  const asked: Array<{ method: string; commandId: string }> = []
+  let lose = 1
+  const client = {
+    request: async (method: string, params: { commandId: string; message: string; queue?: boolean }) => {
+      asked.push({ method, commandId: params.commandId })
+      if (params.queue && !held.has(params.commandId)) held.set(params.commandId, params.message)
+      if (lose > 0) {
+        lose--
+        throw new StudioError('closed', 'The client is closed.')
+      }
+      return {}
+    },
+  }
+  const parts = createStudioConversationParts(async () => client as never)
+  const key = { workspaceId: 'workspace', agentId: 'agent', workspaceRoot: '/Users/dev/app' }
+  expect(await parts.queue!({ key, message: 'Then the docs.' })).toEqual({ ok: true })
+  expect(asked).toHaveLength(2)
+  expect(asked[0]!.method).toBe('conversation.send')
+  expect(asked[1]!.commandId).toBe(asked[0]!.commandId)
+  expect([...held.values()]).toEqual(['Then the docs.'])
+
+  // Lost every time, it is asked a bounded number of times and said in the window's words.
+  asked.length = 0
+  lose = Number.POSITIVE_INFINITY
+  const gaveUp = await parts.queue!({ key, message: 'And the tests.' })
+  expect(gaveUp.ok).toBe(false)
+  expect(!gaveUp.ok && gaveUp.message).toMatch(/lost its connection to Studio/)
+  expect(asked).toHaveLength(4)
+  expect(new Set(asked.map((entry) => entry.commandId)).size).toBe(1)
+
+  // A refusal is the Studio's answer, not a lost one: it is not asked again.
+  asked.length = 0
+  lose = 0
+  client.request = async (method, params) => {
+    asked.push({ method, commandId: params.commandId })
+    throw new StudioError('stale', 'This message was written a while ago and was not sent.')
+  }
+  const refused = await parts.queue!({ key, message: 'Old words.' })
+  expect(refused.ok).toBe(false)
+  expect(asked).toHaveLength(1)
+}, 20_000)

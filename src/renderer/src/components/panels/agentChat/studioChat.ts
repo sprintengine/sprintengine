@@ -90,6 +90,34 @@ async function ask<M extends StudioMethod>(
   }
 }
 
+/**
+ * How often a queued message is asked again after its answer was lost with
+ * the connection, and how long apart. The client resends what is unanswered
+ * when it reconnects, but a client that is closed, replaced or parked first
+ * gives the request up; asked again under the same command id, the Studio
+ * answers from its receipt whether or not the first one reached it.
+ */
+const HOLD_REPLAYS = 3
+const HOLD_REPLAY_MS = 500
+
+/** `ask`, asked again under the same params (its command id among them) while the answer is lost with the connection. */
+async function askUntilAnswered<M extends StudioMethod>(
+  client: ClientSource,
+  method: M,
+  params: StudioMethodParams<M>,
+): Promise<StudioMethodResult<M>> {
+  for (let replays = 0; ; replays++) {
+    try {
+      return await (await client()).request(method, params)
+    } catch (error) {
+      const lost = error instanceof StudioError && CONNECTION_CODES.has(error.code)
+      if (!lost) throw error
+      if (replays >= HOLD_REPLAYS) throw new Error(CONNECTION_LOST)
+      await new Promise((resolve) => setTimeout(resolve, HOLD_REPLAY_MS))
+    }
+  }
+}
+
 /** A call whose answer has an `ok` of its own: a refused request reads as that call failing. */
 async function outcome<T>(work: () => Promise<T>): Promise<T | { ok: false; message: string }> {
   try {
@@ -554,7 +582,9 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
       commanded(async () => {
         if (input.attachments?.length || input.files?.length)
           throw new Error('This Studio holds a queued message as words only.')
-        return ask(client, 'conversation.send', {
+        // One command id for every try: a hold whose answer was lost is held
+        // there once, not once there and again here when the view keeps it.
+        return askUntilAnswered(client, 'conversation.send', {
           key: refOf(input.key),
           message: input.message,
           ...(input.skills?.length ? { skills: input.skills.map((skill) => skill.id) } : {}),

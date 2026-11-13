@@ -298,6 +298,8 @@ function memoryHeld() {
       holds.push({ chat: { workspaceId: chat.workspaceId, agentId: chat.agentId }, text, source })
       return { ok: true }
     },
+    // As the scheduled-message store keeps it: a hold is found again by the command that made it.
+    heldBefore: (source) => holds.some((hold) => hold.source === source),
     cancel: (_chat, id) => {
       cancels.push(id)
       return id === 'sm-1' ? { ok: true } : { ok: false, message: 'That message is already on its way into the chat.' }
@@ -346,6 +348,27 @@ test('a queued send is held for the turn and answered at once: no session is res
     assert.ok(started.ok)
     assert.equal((await f.host.command(f.key, 'laptop', 'now-1', { kind: 'send', message: '/tools' })).ok, true)
     assert.equal(memory.holds.length, 1)
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('a queued send asked again under its command id is held once: at once, beside the first, or after it', async () => {
+  const memory = memoryHeld()
+  const f = await fixture({ heldMessages: memory.held })
+  try {
+    const send = { kind: 'send', message: 'Then the docs.', queue: true } as const
+    // The answer to the first was lost: the window asks again while it is still being held, and after.
+    const [first, beside] = await Promise.all([
+      f.host.command(f.key, 'laptop', 'queued-1', send),
+      f.host.command(f.key, 'laptop', 'queued-1', send),
+    ])
+    const after = await f.host.command(f.key, 'laptop', 'queued-1', send)
+    assert.deepEqual([first, beside, after], [{ ok: true }, { ok: true }, { ok: true }])
+    assert.equal(memory.holds.length, 1, 'held once')
+    // Another command is another message.
+    assert.deepEqual(await f.host.command(f.key, 'laptop', 'queued-2', send), { ok: true })
+    assert.equal(memory.holds.length, 2)
   } finally {
     await f.cleanup()
   }
