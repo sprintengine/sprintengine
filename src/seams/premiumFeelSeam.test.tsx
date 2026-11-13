@@ -439,12 +439,12 @@ test('premiumFeelSeam', async () => {
 
     // ═══ 2. T4's probe → T5's version-control rows ═══════════════════════════
     //
-    // Real main handler → real preload → real settings sections. The only
+    // The server's real probe → the window's git (its stand-in calls what is
+    // on window.api, here the probe) → real settings sections. The only
     // stand-ins are the functions that shell out to `--version` and to the
     // forge CLIs' auth, because their answers would otherwise be this laptop's.
 
-    const { ipcMain } = await import('electron')
-    const { registerVersionControlIpc } = await import('../main/ipc/version-control-ipc')
+    const { createVersionControl } = await import('../server/git/version-control')
     const { VERSION_CONTROL_PROVIDER_IDS } = await import('../shared/version-control')
     const { filesystemApi } = await import('../preload/api/filesystem')
     const { VersionControlSections } = await import('../renderer/src/components/settings/SettingsPanel')
@@ -459,7 +459,7 @@ test('premiumFeelSeam', async () => {
       }) as BinaryVersionProbe
     let ghLogin: string | null = null
 
-    registerVersionControlIpc(ipcMain, {
+    const versionControl = createVersionControl({
       probeVersion: async (binary) => binaryProbe(binary),
       readGhLogin: async () => ghLogin,
       readForgeLogin: async () => null,
@@ -467,6 +467,7 @@ test('premiumFeelSeam', async () => {
 
     domWindow.api = withInertPreloadFallback({
       ...filesystemApi,
+      probeVersionControlProviders: () => versionControl.probeProviders(),
       platform: 'darwin',
       isDevelopment: false,
       isDiagnosticsEnabled: false,
@@ -641,6 +642,7 @@ test('premiumFeelSeam', async () => {
     // halves. (The title bar's "Open" control that once rendered this probe
     // went on 2026-11-02; a chat's file links still read it.)
 
+    const { ipcMain } = await import('electron')
     const { registerFolderOpenIpc, resolveFolderOpenLauncher } = await import('../main/ipc/folder-open-ipc')
     const { FOLDER_OPEN_TARGET_IDS } = await import('../shared/folder-open-targets')
     /** Which launchers this fixture machine resolves. */

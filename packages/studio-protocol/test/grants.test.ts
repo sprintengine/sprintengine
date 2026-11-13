@@ -39,7 +39,9 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * configuration, the memory activity hook); a plugin's install and
  * uninstall (its hooks and MCP servers), a design bundle's lint (it runs the
  * bundle's own script) and a card's Go (modules, plugins and MCP servers in
- * one press).
+ * one press). In git: what moves a branch, rewrites history or discards
+ * work, what reaches a remote with this machine's credentials, removing or
+ * unlocking agents' worktrees, and the GitHub account Studio holds.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -80,6 +82,40 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   ...(Object.keys(STUDIO_TERMINALS_METHODS) as StudioMethod[]),
   ...(Object.keys(STUDIO_TERMINALS_TOPICS) as StudioTopic[]),
   'usage.report',
+  // Git that moves a branch, rewrites history or discards work.
+  'git.revertPaths',
+  'git.switchBranch',
+  'git.mergeRef',
+  'git.rebase',
+  'git.cherryPick',
+  'git.revertCommit',
+  'git.resetToCommit',
+  'git.deleteBranch',
+  'git.renameBranch',
+  'git.continueOperation',
+  'git.abortOperation',
+  'git.stashApply',
+  'git.stashDrop',
+  'git.checkoutCommit',
+  'git.checkoutCommitAsBranch',
+  'git.tagCommit',
+  // Git that reaches a remote with this machine's credentials.
+  'git.push',
+  'git.fetch',
+  'git.pullWithStash',
+  // The worktrees agents run in.
+  'git.pruneWorktrees',
+  'git.unlockAgentWorktree',
+  // The GitHub account Studio holds.
+  'github.tokenStatus',
+  'github.setToken',
+  'github.clearToken',
+  'github.listRepos',
+  'github.listOwners',
+  'github.clone',
+  'github.cancelClone',
+  'github.newProject',
+  'github.cloneProgress',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [

@@ -99,6 +99,23 @@
   workspaces' own folders, never renaming, moving or trashing one of them.
   `WorkspaceFolderCheckResult`, `ProjectLogo`, `ContentSearchResult` and
   `FileWatchEvent` move into the package.
+- **Git on a Studio's machine** (`git.ts`, capability `git`): 61 methods and
+  three streams.
+  - `files:read`: `git.status`, `.branches`, `.commitGraph`, the file and hunk
+    reads, `.changeSummary`, `.branchSteps`, `.stashList`, `.worktrees`,
+    `.changelists`, `.createPatch` and the rest, with `git.checkoutChanged`
+    and `git.changelistsChanged`.
+  - `files:write`: staging (paths and hunks), `git.commit`,
+    `.resolveConflict`, `.stashPush` and the changelist writes.
+  - An owner's as well, each with its reason in the table: what moves a
+    branch, rewrites history or discards work (`git.revertPaths`, `.reset*`,
+    `.switchBranch`, `.rebase`, `.stashDrop`, ...), what reaches a remote
+    (`git.push`, `.fetch`, `.pullWithStash`), the agents' worktrees
+    (`git.pruneWorktrees`, `.unlockAgentWorktree`), and the GitHub account
+    (`github.*`, with `github.cloneProgress`).
+  - `versionControl.probeProviders` and `.probeHostGh` under `providers:read`.
+  - A ref, branch, tag or commit may not start with `-`. The shapes move into
+    the package (`git-types.ts`), with `VERSION_CONTROL_PROVIDER_IDS`.
 - **`files-mention` is served by every Studio's core.** `files.search`,
   `files.cancelSearch`, `files.stat` by path, `files.readImage` and
   `files.repoRoot` no longer need the chat surface, and the capability leaves

@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 
 import { useWorkspaceStore } from '../../../../../store/workspaceStore'
+import { gitApi } from '../../../../../studio/git'
 
 /** The Settings tab the GitHub token lives on — labelled "Version control". */
 const GITHUB_SETTINGS_TAB = 'github'
@@ -38,11 +39,11 @@ export function useGitHubTokenConfigured(): boolean | null {
   const [configured, setConfigured] = useState<boolean | null>(null)
   useEffect(() => {
     let cancelled = false
-    if (typeof window.api.getGitHubTokenStatus !== 'function') {
+    if (typeof gitApi.getGitHubTokenStatus !== 'function') {
       setConfigured(false)
       return
     }
-    void window.api
+    void gitApi
       .getGitHubTokenStatus()
       .then((status) => {
         if (!cancelled) setConfigured(status.configured)

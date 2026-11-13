@@ -19,6 +19,7 @@ import { memoryRendererModule } from './memory-module'
 import { scheduledAgentsRendererModule } from './scheduled-agents-module'
 import { createRendererHost, type RendererModule } from './renderer-host'
 import { filesApi } from '../studio/files'
+import { gitApi } from '../studio/git'
 
 // Bundled renderer capability modules. Features migrate onto the host one at a
 // time; this list grows as each renderer surface is extracted from the
@@ -360,10 +361,10 @@ if (typeof window !== 'undefined') {
             return { ok: false, code: 'unknown_workspace', message: `No open workspace "${workspaceId}".` }
           const root = workspaceWorktree.workspaceWorkingRoot(workspace)
           if (!root) return { ok: false, code: 'no_folder', message: 'The workspace has no folder.' }
-          if (typeof window.api?.getModuleWorkspaceGitInfo !== 'function') {
+          if (typeof gitApi.getModuleWorkspaceGitInfo !== 'function') {
             return { ok: false, code: 'unavailable', message: 'Workspace git information is not available here.' }
           }
-          return window.api.getModuleWorkspaceGitInfo(root)
+          return gitApi.getModuleWorkspaceGitInfo(root)
         })
         // File-watch backend over the shell's fs watch plumbing (the same
         // window.api surface runStateSynchronizer rides).

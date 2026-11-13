@@ -321,6 +321,7 @@ import { windowChatServices } from '../panels/agentChat/windowChat'
 import { agentSettingsApi, windowHasStudio } from '../../studio/agentSettings'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
+import { gitApi } from '../../studio/git'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -2664,7 +2665,7 @@ export default function WorkspaceManager() {
       spawnError('Worktree needs a project', 'Open a project folder before spawning an agent on a worktree.')
       return null
     }
-    const repoRoot = await window.api.getGitRepoRoot(workspace.folderPath)
+    const repoRoot = await gitApi.getGitRepoRoot(workspace.folderPath)
     if (!repoRoot) {
       spawnError(
         'Worktree needs a git repository',
@@ -3718,7 +3719,7 @@ export default function WorkspaceManager() {
   // popover, so success always lands — the panel is reopened on that project
   // if it was closed meanwhile — and the toast names what arrived.
   const cloneNewChatProject = useCallback(async (input: RepositoryCloneInput): Promise<RepositoryCloneResult> => {
-    const cloned = await window.api.cloneRepository(input).catch((caught: unknown): RepositoryCloneResult => ({
+    const cloned = await gitApi.cloneRepository(input).catch((caught: unknown): RepositoryCloneResult => ({
       ok: false,
       message: caught instanceof Error ? caught.message : 'Could not clone the repository.',
     }))

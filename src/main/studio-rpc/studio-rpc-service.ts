@@ -40,6 +40,7 @@ import type { ClientToolRegistry } from '../../server/tools/client-tool-registry
 import type { StudioFiles } from '../../server/rpc/studio-files'
 import type { StudioFileSystem } from '../../server/files/studio-file-system'
 import type { StudioMachineCall } from '../../server/rpc/studio-file-system'
+import type { StudioGit } from '../../server/git/studio-git-types'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../../server/local-servers/local-server-domain'
 import type { StudioTerminals } from '../../server/terminals/studio-terminals'
@@ -174,6 +175,8 @@ export type StudioRpcServiceOptions = {
   fileSystem?: StudioFileSystem
   /** An SSH machine's server, for an owner's `ssh://` path. */
   machine?: StudioMachineCall
+  /** Git on this machine (`git`). */
+  git?: StudioGit
   /** The pull requests the conversations opened, for owners (`pull-requests`). */
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners (`local-servers`). */
@@ -394,6 +397,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.files ? { files: options.files } : {}),
       ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
       ...(options.machine ? { machine: options.machine } : {}),
+      ...(options.git ? { git: options.git } : {}),
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),

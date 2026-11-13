@@ -105,6 +105,7 @@ import {
   type EditorTreePrefs,
 } from './editorTreePrefs'
 import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
 
 // The diff viewer: the changed-file list, a read-only Monaco DiffEditor, and
 // hunk navigation that flows across files. Two hosts render it — the
@@ -235,7 +236,7 @@ async function readStageSide(
   path: string,
   stage: 'head' | 'index',
 ): Promise<{ content: string; binary: boolean; tooLarge: boolean } | { error: string }> {
-  const result = await window.api.getGitFileAtStage(repoRoot, path, stage)
+  const result = await gitApi.getGitFileAtStage(repoRoot, path, stage)
   if (!result.ok) return { error: result.message }
   return { content: result.content, binary: result.binary, tooLarge: result.tooLarge }
 }
@@ -270,7 +271,7 @@ async function stageOwnedHunks(input: {
       index: hunk.index,
       fingerprint: hunk.fingerprint,
     }
-    const result = wanted ? await window.api.stageGitHunk(ref) : await window.api.unstageGitHunk(ref)
+    const result = wanted ? await gitApi.stageGitHunk(ref) : await gitApi.unstageGitHunk(ref)
     if (!result.ok) return result
   }
   return { ok: true }
@@ -301,7 +302,7 @@ async function readRevSide(
     const worktree = await readWorktreeSide(joinFilePath(repoRoot, path))
     return { ...worktree, tooLarge: false }
   }
-  const result = await window.api.getGitFileAtRev(repoRoot, rev, path)
+  const result = await gitApi.getGitFileAtRev(repoRoot, rev, path)
   if (result.kind === 'too-large') return { content: '', binary: false, tooLarge: true }
   if (result.kind === 'absent') return { content: '', binary: false, tooLarge: false }
   return { content: result.content, binary: result.content.includes(NUL), tooLarge: false }
@@ -1482,8 +1483,8 @@ export function DiffViewer({
               action,
             })
           : action === 'stage'
-            ? await window.api.stageGitPaths(repoRoot, [item.relativePath])
-            : await window.api.unstageGitPaths(repoRoot, [item.relativePath])
+            ? await gitApi.stageGitPaths(repoRoot, [item.relativePath])
+            : await gitApi.unstageGitPaths(repoRoot, [item.relativePath])
         if (!result.ok) {
           // Let the real state win rather than leaving a box that lies.
           setIncludeOverride(null)

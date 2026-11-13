@@ -4,6 +4,7 @@ import { resolveWorkspaceWorktree } from '../../utils/workspaceWorktree'
 import { isWindowVisible, onWindowVisibilityChange } from '../../utils/windowActivity'
 import type { WorkspaceChangeSummary } from '../../../../shared/electron-api'
 import type { Workspace } from '../../types/workspace'
+import { gitApi } from '../../studio/git'
 
 // Git facts for the sidebar's rows (remote-sessions-ux / two-line-session-rows):
 // branch + working-tree ±lines, keyed by whatever the caller keys its entries
@@ -201,7 +202,7 @@ export function useSidebarGitSummaries(entries: ReadonlyArray<SummaryEntry>): Re
               const entry = queue.shift()
               if (!entry || cancelled) return
               try {
-                fetched.set(entry.id, await window.api.getWorkspaceChangeSummary(entry.checkoutPath))
+                fetched.set(entry.id, await gitApi.getWorkspaceChangeSummary(entry.checkoutPath))
               } catch {
                 // Quiet: the previously known facts for this row stand.
               }
@@ -238,9 +239,9 @@ export function useSidebarGitSummaries(entries: ReadonlyArray<SummaryEntry>): Re
     // (a commit touches the index and a ref) are gathered into one sweep.
     const checkouts = [...new Set(entries.map((entry) => entry.checkoutPath))]
     const stops =
-      typeof window.api.watchGitCheckout === 'function'
+      typeof gitApi.watchGitCheckout === 'function'
         ? checkouts.map((checkoutPath) =>
-            window.api.watchGitCheckout(checkoutPath, () => {
+            gitApi.watchGitCheckout(checkoutPath, () => {
               dirty = dirty ?? new Set()
               dirty.add(checkoutPath)
               if (followUp !== null) return

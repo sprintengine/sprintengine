@@ -16,6 +16,8 @@ import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
 import { createStudioFileSystem, type StudioFileSystemShell } from '../files/studio-file-system'
 import { knownFolders, workspaceFolders } from '../files/known-folders'
+import { createStudioGit } from '../git/studio-git'
+import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
@@ -49,6 +51,8 @@ export function createStudioRpc(
     modules?: StudioModules
     /** What the shell around this Studio adds to its files: the Trash and an image codec, on a desktop. */
     fileSystemShell?: StudioFileSystemShell
+    /** The GitHub token this Studio keeps, where its process holds one; without it `github.*` says so. */
+    githubTokens?: GitHubTokenStore
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -115,6 +119,12 @@ export function createStudioRpc(
       writableRoots: () => workspaceFolders(core.workspaceRegistry),
     }),
     ...(core.sshMachineCall ? { machine: core.sshMachineCall } : {}),
+    // Git on this machine, for every client: its repositories held to the
+    // folders Studio knows for any client but an owner, as its files are.
+    git: createStudioGit({
+      dataDir: () => core.platform.paths.dataDir(),
+      ...(options.githubTokens ? { githubTokens: options.githubTokens } : {}),
+    }),
     // What the conversations' branches have on GitHub, which every client
     // displays and none decides.
     pullRequests: core.pullRequests,

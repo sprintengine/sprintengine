@@ -142,8 +142,6 @@ import type {
 } from './tailnet'
 import type { TailnetPeerScan } from './tailnet-peers'
 import type { TailnetShareResult, TailnetShareStatus } from './tailnet-share'
-import type { RepositoryIdentityRead } from './repository-identity'
-import type { ModuleWorkspaceGitInfoResult } from './modules/workspace-view'
 import type {
   MeshBrowse,
   MeshConnection,
@@ -224,8 +222,6 @@ import type {
   WorkspaceSyncEvent,
   WorkspaceSyncSnapshot,
 } from './workspace-sync'
-import type { VersionControlProviderProbe } from './version-control'
-import type { HostGhStatus } from './host-gh'
 import type { ExecutionHostId, HostHomeResult, HostsListResult } from './execution-host'
 // Re-exported because the probe shape is part of this IPC contract: the
 // version-control settings sections read it straight off the api surface.
@@ -274,45 +270,14 @@ import type {
 } from './ipc/backlog'
 import type { DiagnosticLogEntry, DiagnosticLogInput } from './ipc/diagnostics'
 import type {
-  BranchStepDiff,
-  BranchStepSelection,
-  BranchStepsSnapshot,
-  Changelist,
-  GitBranchSnapshot,
   GitCommandResult,
-  GitConflictFileContent,
-  GitFileBaseResult,
-  GitFileHunksResult,
-  GitFileStage,
-  GitFileStageResult,
-  GitGraphOptions,
-  GitGraphSnapshot,
-  CloneProgress,
-  RepositoryCloneInput,
-  RepositoryCloneResult,
-  NewProjectInput,
-  NewProjectResult,
-  GitHubOwnerListResult,
-  GitHubRepoListResult,
-  GitHubTokenStatus,
-  GitHunkRef,
-  GitHunkScope,
-  GitPatchResult,
   GitPatchSaveResult,
-  GitRepoOperation,
-  GitResetMode,
-  GitStashListSnapshot,
-  GitStatusSnapshot,
   GitWorktreeCreateInput,
   GitWorktreeCreated,
-  GitWorktreeListSnapshot,
   GitWorktreeOperationResult,
   GitWorktreeRemoveInput,
   GitWorktreeRestoreInput,
   GitWorktreeRestoreResult,
-  RevFileResult,
-  WorkspaceChangeSummary,
-  GitCheckoutChange,
   AgentWorktreeCleanupInput,
   AgentWorktreeCleanupReport,
 } from './ipc/git'
@@ -1407,40 +1372,6 @@ export type ElectronApi = {
    * Main reads the chat; the window names it and the format.
    */
   exportChat: (input: ChatExportInput) => Promise<ChatExportResult>
-  // What this machine actually has: probed `git`/`gh` versions plus gh's own
-  // auth login. Read-only and argument-free — see src/shared/version-control.ts.
-  probeVersionControlProviders: () => Promise<VersionControlProviderProbe[]>
-  /**
-   * A WSL machine's `gh`: installed, its version, and whether it holds a
-   * token for github.com. Read-only; null when the machine did not answer.
-   * Absent in a browser tab, which has no WSL machines of its own.
-   */
-  probeHostGh?: (hostId: string) => Promise<HostGhStatus | null>
-  getGitRepoRoot: (folderPath: string, hostId?: string) => Promise<string | null>
-  getGitStatus: (repoRoot: string) => Promise<GitStatusSnapshot>
-  /**
-   * Which of `relativePaths` the ignore rules cover — one `check-ignore` per
-   * call, batched by the caller. Paths are relative to `repoRoot` with forward
-   * slashes, and the reply echoes the same strings back.
-   *
-   * The answer depends on the path EXISTING: a rule written `out/` matches only
-   * a directory, and directory-ness is read off the disk. Ask about entries you
-   * have listed, never about speculative ones.
-   */
-  checkIgnored: (repoRoot: string, relativePaths: string[]) => Promise<string[]>
-  /**
-   * The branch reading for one checkout — the worktree the workspace's agents
-   * run in when it has one, else its folder. Resolved by the caller, because
-   * only the renderer holds the workspace's worktree record.
-   */
-  getWorkspaceChangeSummary: (checkoutPath: string) => Promise<WorkspaceChangeSummary>
-  /**
-   * Be told when a checkout's git readings go stale, instead of polling for it.
-   * Main watches the checkout's git directory while any listener in any window
-   * wants it, holds changes while no window is focused, and sends a slow
-   * fallback. Returns the unsubscribe.
-   */
-  watchGitCheckout: (checkoutPath: string, cb: (change: GitCheckoutChange) => void) => () => void
   /** Remove agent worktrees that are clean and merged; report (and keep) the rest. */
   cleanupAgentWorktrees: (input: AgentWorktreeCleanupInput) => Promise<AgentWorktreeCleanupReport>
   /** A repository's worktree pool (main's worktree-pool/), or null when it has none. */
@@ -1476,127 +1407,12 @@ export type ElectronApi = {
   onWorktreeInstallChanged: (cb: (view: WorktreeDependencyInstallView) => void) => () => void
   /** Stop a running install; its agent starts as after a failed one. False when it had already ended. */
   cancelWorktreeInstall: (id: string) => Promise<boolean>
-  /**
-   * The branch's commits as steps, oldest first, for the changed-files surface.
-   * Read live on every call — a rebase re-identifies commits, so a cached strip
-   * would be confidently wrong about work that no longer exists.
-   */
-  getBranchSteps: (checkoutPath: string) => Promise<BranchStepsSnapshot>
-  /** The files and line counts for one step, or for the whole span. */
-  getBranchStepDiff: (checkoutPath: string, selection: BranchStepSelection) => Promise<BranchStepDiff>
-  /**
-   * A file's content at a revision, for one side of a step's diff. `absent` is
-   * the correct original side for an addition and modified side for a deletion —
-   * and also what a rejected rev or an out-of-repo path resolves to, so a caller
-   * renders an empty pane rather than an error.
-   */
-  getGitFileAtRev: (repoRoot: string, rev: string, filePath: string) => Promise<RevFileResult>
-  getGitFileBase: (repoRoot: string, filePath: string) => Promise<GitFileBaseResult>
-  getGitFileAtStage: (repoRoot: string, filePath: string, stage: GitFileStage) => Promise<GitFileStageResult>
-  getGitBranches: (repoRoot: string) => Promise<GitBranchSnapshot>
-  /**
-   * Which repository a folder is a clone of — its primary remote, normalised
-   * (one-project-across-machines). A null `identity` is a non-repo or a
-   * remote-less one; `settled: false` is a read that could not be made at all
-   * (a spun-down volume, git unavailable), which is NOT the same answer and
-   * must not be written down as one. See `RepositoryIdentityRead`.
-   */
-  getGitRepositoryIdentity: (folderPath: string) => Promise<RepositoryIdentityRead>
-  /** A folder's branch and remotes, for a capability module's `getWorkspaceGitInfo`. */
-  getModuleWorkspaceGitInfo: (folderPath: string) => Promise<ModuleWorkspaceGitInfoResult>
-  getGitCommitGraph: (repoRoot: string, options?: GitGraphOptions) => Promise<GitGraphSnapshot>
-  getGitConflictFile: (repoRoot: string, filePath: string) => Promise<GitConflictFileContent | null>
-  resolveGitConflict: (repoRoot: string, filePath: string, content: string) => Promise<GitCommandResult>
-  /**
-   * The hunks of the diff the viewer is showing for one file, plus the whole
-   * file's "N differences, M included" counter (git-commit-window T7).
-   */
-  getGitFileHunks: (repoRoot: string, filePath: string, scope: GitHunkScope) => Promise<GitFileHunksResult>
-  /** Put one hunk of the working tree into the index — `git apply --cached`. */
-  stageGitHunk: (ref: GitHunkRef) => Promise<GitCommandResult>
-  /** Take one hunk back out of the index — the same patch, reversed. */
-  unstageGitHunk: (ref: GitHunkRef) => Promise<GitCommandResult>
-  stageGitPaths: (repoRoot: string, paths: string[]) => Promise<GitCommandResult>
-  unstageGitPaths: (repoRoot: string, paths: string[]) => Promise<GitCommandResult>
-  revertGitPaths: (repoRoot: string, paths: string[]) => Promise<GitCommandResult>
-  commitGitChanges: (repoRoot: string, message: string) => Promise<GitCommandResult>
-  pushGitBranch: (repoRoot: string) => Promise<GitCommandResult>
-  fetchGitRemotes: (repoRoot: string) => Promise<GitCommandResult>
-  pullGitBranchWithStash: (repoRoot: string) => Promise<GitCommandResult>
-  switchGitBranch: (repoRoot: string, branchName: string) => Promise<GitCommandResult>
-  mergeGitRef: (repoRoot: string, ref: string) => Promise<GitCommandResult>
-  rebaseGitBranch: (repoRoot: string, ontoRef: string) => Promise<GitCommandResult>
-  cherryPickGitCommit: (repoRoot: string, commitHash: string) => Promise<GitCommandResult>
-  revertGitCommit: (repoRoot: string, commitHash: string) => Promise<GitCommandResult>
-  resetGitBranchToCommit: (repoRoot: string, commitHash: string, mode: GitResetMode) => Promise<GitCommandResult>
-  deleteGitBranch: (repoRoot: string, branchName: string, force?: boolean) => Promise<GitCommandResult>
-  renameGitBranch: (repoRoot: string, branchName: string, newName: string) => Promise<GitCommandResult>
-  continueGitOperation: (repoRoot: string, operation: GitRepoOperation) => Promise<GitCommandResult>
-  abortGitOperation: (repoRoot: string, operation: GitRepoOperation) => Promise<GitCommandResult>
-  listGitStashes: (repoRoot: string) => Promise<GitStashListSnapshot>
-  pushGitStash: (repoRoot: string, message: string, includeUntracked?: boolean) => Promise<GitCommandResult>
-  applyGitStash: (repoRoot: string, index: number, expectedHash: string, pop?: boolean) => Promise<GitCommandResult>
-  dropGitStash: (repoRoot: string, index: number, expectedHash: string) => Promise<GitCommandResult>
-  checkoutGitCommit: (repoRoot: string, commitHash: string) => Promise<GitCommandResult>
-  checkoutGitCommitAsBranch: (repoRoot: string, branchName: string, commitHash: string) => Promise<GitCommandResult>
-  createGitTagFromCommit: (repoRoot: string, tagName: string, commitHash: string) => Promise<GitCommandResult>
-  listGitWorktrees: (repoRoot: string) => Promise<GitWorktreeOperationResult<GitWorktreeListSnapshot>>
   createGitWorktree: (input: GitWorktreeCreateInput) => Promise<GitWorktreeOperationResult<GitWorktreeCreated>>
   /** Recreate a chat's worktree the cleanup gave back, at its old path, from the branch it kept. */
   restoreGitWorktree: (input: GitWorktreeRestoreInput) => Promise<GitWorktreeRestoreResult>
   removeGitWorktree: (input: GitWorktreeRemoveInput) => Promise<GitWorktreeOperationResult<GitCommandResult>>
-  pruneGitWorktrees: (repoRoot: string) => Promise<GitWorktreeOperationResult<GitCommandResult>>
-  /** Lift an in-use lock the app placed on an agent worktree (never a lock a person placed). */
-  unlockAgentGitWorktree: (
-    repoRoot: string,
-    worktreePath: string,
-  ) => Promise<GitWorktreeOperationResult<GitCommandResult>>
-  /**
-   * This repository's changelists, pruned against `git status` before they are
-   * answered (git-commit-window T6). Every call below answers with the whole
-   * reconciled set for the same reason.
-   */
-  getGitChangelists: (repoRoot: string) => Promise<Changelist[]>
-  /** Which list new changes land in. Exactly one is active, always. */
-  setActiveGitChangelist: (repoRoot: string, id: string) => Promise<Changelist[]>
-  createGitChangelist: (
-    repoRoot: string,
-    input: { name: string; comment?: string; activate?: boolean; paths?: string[] },
-  ) => Promise<Changelist[]>
-  renameGitChangelist: (
-    repoRoot: string,
-    id: string,
-    input: { name: string; comment?: string },
-  ) => Promise<Changelist[]>
-  /** Delete a list; its paths return to the default, which cannot be deleted. */
-  deleteGitChangelist: (repoRoot: string, id: string) => Promise<Changelist[]>
-  moveGitChangelistPaths: (repoRoot: string, id: string, paths: string[]) => Promise<Changelist[]>
-  /**
-   * Main has written a repository's changelists itself — an agent launched,
-   * edited or exited, and its list moved without any window asking for it. The
-   * renderer re-reads for a matching root; the payload carries the root and
-   * nothing else, because the store's answer is always the WHOLE reconciled set
-   * and a pushed copy of it could only ever be the older one.
-   */
-  onGitChangelistsChanged: (cb: (event: { repoRoot: string }) => void) => () => void
-  /** `git diff` (or `--cached`) of the named paths, as patch text. */
-  createGitPatch: (repoRoot: string, paths: string[], cached?: boolean) => Promise<GitPatchResult>
   /** The same text, through the OS save dialog. */
   saveGitPatch: (repoRoot: string, patch: string, defaultFileName?: string) => Promise<GitPatchSaveResult>
-  getGitHubTokenStatus: () => Promise<GitHubTokenStatus>
-  setGitHubToken: (token: string) => Promise<GitHubTokenStatus>
-  clearGitHubToken: () => Promise<GitHubTokenStatus>
-  listGitHubRepos: () => Promise<GitHubRepoListResult>
-  /** Clone any git repository (GitHub, GitLab, Bitbucket, Azure DevOps, Gitea, a self-hosted server). */
-  cloneRepository: (input: RepositoryCloneInput) => Promise<RepositoryCloneResult>
-  /** Make a new project folder with a first commit, publishing it to GitHub only when `publish` is confirmed. */
-  createNewProject: (input: NewProjectInput) => Promise<NewProjectResult>
-  /** The signed-in GitHub account and its organisations, for a new repository's owner. */
-  listGitHubOwners: () => Promise<GitHubOwnerListResult>
-  /** Stop the clone started with this `cloneId`; it answers `{ ok: false, reason: 'cancelled' }`. */
-  cancelRepositoryClone: (cloneId: string) => Promise<void>
-  /** Every running clone's progress, for the caller to filter on its `cloneId`. */
-  onRepositoryCloneProgress: (cb: (progress: CloneProgress) => void) => () => void
   // The chat's "Create PR" (src/main/pull-request-create.ts): whether it may
   // show for a checkout, a drafted title and description, the push, and the
   // creation. This computer's checkouts only. Never rejects.

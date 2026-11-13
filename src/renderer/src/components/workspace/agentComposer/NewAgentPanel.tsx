@@ -158,6 +158,7 @@ import { renderKeybinding } from '../../../commands/keybindings'
 import { isImeKey } from '../../../utils/imeKey'
 import { preloadAgentPanelChunks } from '../../panels/agentPanelChunks'
 import { filesApi } from '../../../studio/files'
+import { gitApi } from '../../../studio/git'
 
 export type NewAgentLaunch = AgentComposerConfirm & {
   /** The agent's startup prompt. Empty means "start with nothing typed". */
@@ -1334,7 +1335,7 @@ export default function NewAgentPanel({
       setWorkspaceIsGitRepo(false)
       return
     }
-    void window.api
+    void gitApi
       .getGitRepoRoot(workspaceRoot)
       .then((root) => {
         if (!cancelled) setWorkspaceIsGitRepo(Boolean(root))

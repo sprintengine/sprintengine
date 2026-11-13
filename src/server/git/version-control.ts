@@ -1,10 +1,8 @@
-import type { IpcMain } from 'electron'
-
 import type { VersionControlProviderProbe } from '../../shared/version-control'
-import { binaryVersionProbeFrom, parseProbeOutput, probeBinaryVersion } from '../cli-runtime-install'
-import { hostRegistry } from '../hosts/host-registry'
-import { sharedGhRunner, sharedHostCliRunner } from '../github/gh'
-import { probeHostGh } from '../github/host-gh-status'
+import { binaryVersionProbeFrom, parseProbeOutput, probeBinaryVersion } from '../../main/cli-runtime-install'
+import { hostRegistry } from '../../main/hosts/host-registry'
+import { sharedGhRunner, sharedHostCliRunner } from '../../main/github/gh'
+import { probeHostGh } from '../../main/github/host-gh-status'
 import { isWslHostId } from '../../shared/execution-host'
 import type { HostGhStatus } from '../../shared/host-gh'
 import {
@@ -13,7 +11,7 @@ import {
   parseTeaLogin,
   probeVersionControlProviders,
   type VersionControlProbeDeps,
-} from './version-control-probe'
+} from '../../main/ipc/version-control-probe'
 
 // The real probes: the same machinery agent-CLI detection uses for versions, and
 // the same gh runner the review paths use for auth (so a GUI-launched app finds a
@@ -65,23 +63,19 @@ function createVersionControlProbeDeps(): VersionControlProbeDeps {
   }
 }
 
-export function registerVersionControlIpc(
-  ipcMain: IpcMain,
-  deps: VersionControlProbeDeps = createVersionControlProbeDeps(),
-): void {
-  // Read-only and argument-free: the channel probes exactly the providers the
-  // product integrates, so no renderer-supplied value can reach a spawn.
-  ipcMain.handle('version-control:probe-providers', (): Promise<VersionControlProviderProbe[]> =>
-    probeVersionControlProviders(deps),
-  )
-  // One WSL machine's `gh`, for its row in Settings › Agents. Only a WSL
-  // machine's id is taken, so a renderer value names a machine and nothing else.
-  ipcMain.handle('version-control:probe-host-gh', async (_event, hostId: unknown): Promise<HostGhStatus | null> => {
-    if (typeof hostId !== 'string' || !isWslHostId(hostId)) return null
-    try {
-      return await probeHostGh(hostRegistry().get(hostId))
-    } catch {
-      return null
-    }
-  })
+// What `versionControl.*` answers: the providers this machine has, probing
+// exactly the ones the product integrates, so nothing a client sends reaches
+// a spawn; and one WSL machine's `gh`, by its id and nothing else.
+export function createVersionControl(deps: VersionControlProbeDeps = createVersionControlProbeDeps()) {
+  return {
+    probeProviders: (): Promise<VersionControlProviderProbe[]> => probeVersionControlProviders(deps),
+    async probeHostGh(hostId: string): Promise<HostGhStatus | null> {
+      if (!isWslHostId(hostId)) return null
+      try {
+        return await probeHostGh(hostRegistry().get(hostId))
+      } catch {
+        return null
+      }
+    },
+  }
 }

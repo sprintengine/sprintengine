@@ -51,6 +51,8 @@ import type { ModuleHostServices } from '../../main/module-host/main-host'
 import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 import type { StudioFileSystem, StudioFileSystemWatch } from '../files/studio-file-system'
 import { createStudioFileSystemHandlers, type StudioMachineCall } from './studio-file-system'
+import type { StudioGit } from '../git/studio-git-types'
+import { createStudioGitHandlers } from './studio-git'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -139,6 +141,10 @@ export type StudioRpcRouter = {
     asking: { grant: StudioGrant; context: StudioRequestContext },
     listener: (event: FileWatchEvent) => void,
   ): Promise<StudioFileSystemWatch | { ok: false; code: 'not_found' | 'unavailable'; message: string }>
+  /** Follow a checkout for `git.checkoutChanged`, held to what the asker may name. */
+  followCheckout: ReturnType<typeof createStudioGitHandlers>['followCheckout']
+  /** Git's other streams, where this Studio serves git. */
+  readonly git: StudioGit | null
   /** The RPC is stopping: timers stop and staged uploads go. */
   close(): void
 }
@@ -160,6 +166,8 @@ export type StudioRpcRouterOptions = {
   fileSystem?: StudioFileSystem
   /** An SSH machine's server, for an owner's `ssh://` path, until those machines' panes reach their own servers. */
   machine?: StudioMachineCall
+  /** Git on this machine; without it, `git.*`, `github.*` and `versionControl.*` are answered `unavailable`. */
+  git?: StudioGit
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
@@ -770,6 +778,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // The files on this machine by path, every server's: the router's one rule
   // for them is who may name which path (`studio-file-system.ts`).
   const fileSystem = createStudioFileSystemHandlers({
+    ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    ...(options.machine ? { machine: options.machine } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const gitRouting = createStudioGitHandlers({
+    ...(options.git ? { git: options.git } : {}),
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
     ...(options.machine ? { machine: options.machine } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
@@ -1602,6 +1617,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── Files on this machine, by path ─────────────────────────────────────
 
     ...fileSystem.handlers,
+
+    // ── Git on this machine ────────────────────────────────────────────────
+
+    ...gitRouting.handlers,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules
@@ -1739,6 +1758,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (slot !== undefined) options.fileSystem?.releaseSlot(slot)
     },
     watchPath: (params, asking, listener) => fileSystem.watch(params, asking, listener),
+    followCheckout: (checkoutPath, asking, listener) => gitRouting.followCheckout(checkoutPath, asking, listener),
+    git: options.git ?? null,
     close: () => uploads.close(),
     async handle(grant, method, params, context = NO_CONTEXT) {
       const spec = STUDIO_METHODS[method]

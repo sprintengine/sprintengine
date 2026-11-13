@@ -25,9 +25,8 @@ import { registerDiagnosticsIpc } from './ipc/diagnostics-ipc'
 import { registerAttachedFilesIpc } from './ipc/attached-files-ipc'
 import { createAttachedFileRegistry, createAttachedFiles, createAttachedFileThumbnails } from './attached-files'
 import { registerFilesystemShellIpc } from './ipc/filesystem-shell-ipc'
-import { registerGitRepoWatchIpc } from './ipc/git-repo-watch-ipc'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
-import { registerGitIpc } from './ipc/git-ipc'
+import { registerGitShellIpc } from './ipc/git-shell-ipc'
 import { registerMenuDialogIpc } from './ipc/menu-dialog-ipc'
 import { registerProjectlessChatsIpc } from './ipc/projectless-chats-ipc'
 import { registerMarketplacePluginIpc } from './ipc/marketplace-plugin-ipc'
@@ -42,7 +41,6 @@ import { webContentsIdOfWindowKey } from './ipc/studio-window-ticket-ipc'
 import { registerThirdPartyModuleIpc } from './ipc/third-party-module-ipc'
 import type { ThirdPartyLaunchSession } from './modules/third-party-main-loader'
 import { registerUpdateIpc } from './ipc/update-ipc'
-import { registerVersionControlIpc } from './ipc/version-control-ipc'
 import { registerWindowIpc } from './ipc/window-ipc'
 import { registerPanePopOutIpc } from './ipc/pane-popout-ipc'
 import { registerBrowserIpc } from './ipc/browser-ipc'
@@ -233,23 +231,9 @@ export function registerCoreIpc(
       openPath: (path) => shell.openPath(path),
     }),
   )
-  registerGitIpc(
-    machineIpc,
-    {
-      enabled: diagnosticsEnabled,
-      logMainPerfEvent: services.logMainPerfEvent,
-      withIpcDiagnostics: services.withIpcDiagnostics,
-    },
-    // The changelist store's home. Resolved here rather than inside the git
-    // modules so those stay free of `electron.app` and remain testable against
-    // a temp directory.
-    {
-      userDataDir: app.getPath('userData'),
-      onChangelistsChanged: services.broadcastGitChangelistsChanged,
-    },
-  )
-  registerGitRepoWatchIpc(machineIpc)
-  registerVersionControlIpc(machineIpc)
+  // Saving a patch through this computer's save dialog stays a shell channel;
+  // reading and running git is the Studio protocol's.
+  registerGitShellIpc(ipcMain)
   registerMenuDialogIpc(ipcMain)
   registerProjectlessChatsIpc(ipcMain)
   // Module app state (Settings section values), mirrored for `entry.main`.
@@ -284,7 +268,6 @@ export function registerCoreIpc(
           core: services.studioCore,
           gateway: automationService,
           studioRpc: studioRpcService,
-          githubTokenStore: services.githubTokenStore,
           workspaceBackup: workspaceBackupService,
           terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
           assertAppSender,

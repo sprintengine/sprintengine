@@ -1,3 +1,19 @@
+export type {
+  DiffHunk,
+  GitHunkScope,
+  GitHunkView,
+  GitHunkUnsupported,
+  GitFileHunks,
+  GitFileHunksResult,
+  GitHunkRef,
+  HunkInclusionSummary,
+} from '../../../packages/studio-protocol/src/public'
+import type {
+  DiffHunk,
+  GitHunkScope,
+  GitHunkView,
+  HunkInclusionSummary,
+} from '../../../packages/studio-protocol/src/public'
 // Unified diffs, read as hunks — git-commit-window T7, "include a hunk".
 //
 // Everything in this file is pure text. The MAIN process produces the diffs
@@ -19,22 +35,6 @@
 //      hunk moves every later hunk's line numbers, so an offset read a second
 //      ago is already wrong. `hunkFingerprint` / `locateHunk` are how a hunk
 //      survives that.
-
-/** One `@@ … @@` block of a `-U0` diff. */
-export type DiffHunk = {
-  /** First line of the range on the OLD side (1-based; 0 for an empty range). */
-  oldStart: number
-  oldLines: number
-  /** First line of the range on the NEW side (1-based; 0 for an empty range). */
-  newStart: number
-  newLines: number
-  /**
-   * The hunk's body exactly as git wrote it: `+` and `-` lines, any
-   * `\ No newline at end of file` markers, and — with `-U0` there are none, but
-   * the parser accepts them — context lines. Never re-wrapped, never trimmed.
-   */
-  lines: string[]
-}
 
 /** One file's entry in a diff: everything before the first `@@`, then the hunks. */
 export type ParsedFileDiff = {
@@ -175,9 +175,6 @@ export function locateHunk(hunks: DiffHunk[], index: number, fingerprint: string
  * The counter
  * ------------------------------------------------------------------ */
 
-/** "N differences, M included" — the mockup's sentence, as two numbers. */
-export type HunkInclusionSummary = { total: number; included: number }
-
 /**
  * How many of a file's differences are in the index, and how many there are.
  *
@@ -207,36 +204,6 @@ export function summariseInclusion(staged: DiffHunk[], unstaged: DiffHunk[]): Hu
  * ------------------------------------------------------------------ */
 
 /**
- * Which diff the viewer is showing, and therefore which TEXT is under the
- * boxes: `staged` is HEAD↔index, `unstaged` is index↔worktree.
- *
- * It is no longer which hunks are drawn. A hunk's scope IS its include state —
- * a hunk of the staged diff is in the index, a hunk of the unstaged diff is not
- * — so drawing only the scope's own hunks made the box vanish the moment it was
- * ticked, and a hunk you had just included could never be taken back out from
- * this window. The boxes are the UNION of both diffs (`readFileHunks`); the
- * scope only chooses which of the two texts Monaco is showing.
- */
-export type GitHunkScope = 'staged' | 'unstaged'
-
-/** One hunk as the renderer sees it: where to draw the box, and what to say. */
-export type GitHunkView = {
-  /** Position in ITS OWN diff, as read. A hint for `locateHunk`, not an id —
-   *  the union interleaves two diffs, so two hunks can share an index. */
-  index: number
-  /** The diff this hunk came from, which is the diff a toggle must name. */
-  scope: GitHunkScope
-  oldStart: number
-  oldLines: number
-  newStart: number
-  newLines: number
-  /** `hunkFingerprint` of the hunk — what actually names it across a re-read. */
-  fingerprint: string
-  /** Whether this hunk is in the index. Follows its own scope, always. */
-  included: boolean
-}
-
-/**
  * What names one box across a re-read.
  *
  * Not the index: staging one hunk renumbers every later hunk of both diffs, and
@@ -252,44 +219,6 @@ export function hunkKey(hunk: Pick<GitHunkView, 'scope' | 'fingerprint'>): strin
  *  in the index or it is not. */
 export function hunkToggleScope(hunk: Pick<GitHunkView, 'included'>): GitHunkScope {
   return hunk.included ? 'staged' : 'unstaged'
-}
-
-/** Why a file has no per-hunk boxes, when it has none. */
-export type GitHunkUnsupported = 'binary' | 'untracked'
-
-export type GitFileHunks = {
-  ok: true
-  /** Which of the two texts Monaco is showing. Not a filter on `hunks`. */
-  scope: GitHunkScope
-  /**
-   * EVERY hunk of the file, both sides of the index, ordered by their new-side
-   * line so the boxes read down the gutter in file order. The staged ones carry
-   * `included: true` and the unstaged ones `included: false`, which is the
-   * whole of what a box shows and the whole of what a click has to decide.
-   */
-  hunks: GitHunkView[]
-  /**
-   * The whole file's counter. Null when the file's differences could not be
-   * counted honestly (binary, untracked) — the caller then says the shorter
-   * true thing rather than a confident zero.
-   */
-  summary: HunkInclusionSummary | null
-  unsupported: GitHunkUnsupported | null
-}
-
-export type GitFileHunksResult = GitFileHunks | { ok: false; message: string }
-
-/**
- * Which hunk to stage or unstage. Carries no patch and no content — main reads
- * the diff again and builds the patch itself.
- */
-export type GitHunkRef = {
-  repoRoot: string
-  /** Absolute or repo-relative; main normalises it. */
-  filePath: string
-  scope: GitHunkScope
-  index: number
-  fingerprint: string
 }
 
 /**

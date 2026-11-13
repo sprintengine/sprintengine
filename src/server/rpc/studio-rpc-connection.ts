@@ -993,6 +993,37 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       )
   }
 
+  /** A checkout's changes, while the client follows it: retained here, released when the stream ends. */
+  function subscribeCheckout(id: string, params: StudioTopicParams<'git.checkoutChanged'>): void {
+    const grant = liveGrant()
+    if (!grant) return
+    const subscription: Subscription = { id, topic: 'git.checkoutChanged', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    void options.router
+      .followCheckout(params.checkoutPath, { grant, context }, (change) => {
+        if (current() && stillGranted('git.checkoutChanged')) push('git.checkoutChanged', id, change)
+      })
+      .then(
+        (followed) => {
+          if (!followed.ok) {
+            if (current()) {
+              subscriptions.delete(id)
+              subscriptionFailed(id, followed.code, followed.message)
+            }
+            return
+          }
+          if (current()) subscription.handle = { dispose: () => followed.dispose() }
+          else followed.dispose()
+        },
+        () => {
+          if (!current()) return
+          subscriptions.delete(id)
+          subscriptionFailed(id, 'unavailable', 'Studio could not follow that checkout.', SUBSCRIBE_RETRY_MS)
+        },
+      )
+  }
+
   /** What moved in the pull request record, as it moves: the client asks for the lists it shows. */
   function subscribePullRequests(id: string): void {
     const pullRequests = options.pullRequests
@@ -1321,6 +1352,11 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'tools.catalog': subscribeCatalog,
     'files.watch': subscribeWatch,
     'files.watchPath': subscribeWatchPath,
+    'git.checkoutChanged': subscribeCheckout,
+    'git.changelistsChanged': (id) =>
+      subscribeFeed(id, 'git.changelistsChanged', options.router.git?.onChangelistsChanged ?? null),
+    'github.cloneProgress': (id) =>
+      subscribeFeed(id, 'github.cloneProgress', options.router.git?.onCloneProgress ?? null),
     'pullRequests.changed': subscribePullRequests,
     'localServers.changed': subscribeLocalServers,
     'module.events': subscribeModuleEvents,

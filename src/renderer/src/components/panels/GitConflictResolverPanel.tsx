@@ -12,6 +12,7 @@ import { detectLanguage } from '../../utils/files'
 import { configureMonacoLanguages } from '../../utils/patchLanguage'
 import { EmptyState, GhostButton, InlineNotice, PanelHeader, PrimaryButton, Section, Spinner } from '../ui'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
+import { gitApi } from '../../studio/git'
 
 type ResolverState =
   | { status: 'loading' }
@@ -36,12 +37,12 @@ export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) 
     setState({ status: 'loading' })
 
     const load = async () => {
-      if (typeof window.api.getGitConflictFile !== 'function') {
+      if (typeof gitApi.getGitConflictFile !== 'function') {
         setState({ status: 'error', message: 'Restart the app to enable the conflict resolver.' })
         return
       }
 
-      const conflict = await window.api.getGitConflictFile(repoRoot, filePath)
+      const conflict = await gitApi.getGitConflictFile(repoRoot, filePath)
       if (cancelled) return
       if (!conflict) {
         setState({ status: 'error', message: 'This file is not available as a Git conflict.' })
@@ -98,7 +99,7 @@ export default function GitConflictResolverPanel({ repoRoot, filePath }: Props) 
 
     setState({ ...state, saving: true, message: null })
     try {
-      const result = await window.api.resolveGitConflict(repoRoot, filePath, state.content)
+      const result = await gitApi.resolveGitConflict(repoRoot, filePath, state.content)
       setState((current) =>
         current.status === 'ready'
           ? {

@@ -67,6 +67,7 @@ import {
   type WorktreeRow,
 } from './worktreesSettingsModel'
 import { isImeKey } from '../../utils/imeKey'
+import { gitApi } from '../../studio/git'
 
 /**
  * Settings ▸ Worktrees (owner, 2026-10-05): every worktree Studio's agents
@@ -475,9 +476,9 @@ export function WorktreesSettingsTab({
     run(
       [row.key],
       async () => {
-        const pruned = await window.api.pruneGitWorktrees(row.repoRoot)
+        const pruned = await gitApi.pruneGitWorktrees(row.repoRoot)
         if (!pruned.ok) return pruned
-        const listed = await window.api.listGitWorktrees(row.repoRoot)
+        const listed = await gitApi.listGitWorktrees(row.repoRoot)
         // Without the listing there is nothing to say what git did, only that it ran.
         if (!listed.ok)
           return {

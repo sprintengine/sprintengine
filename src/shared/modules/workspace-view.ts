@@ -1,4 +1,9 @@
 import type { Workspace } from '../../renderer/src/types/workspace'
+export type {
+  ModuleWorkspaceGitRemote,
+  ModuleWorkspaceGitInfoErrorCode,
+  ModuleWorkspaceGitInfoResult,
+} from '../../../packages/studio-protocol/src/public'
 
 // The read-only workspace view served to capability modules — the one
 // app-side declaration behind both process surfaces (RendererHost.getWorkspace
@@ -35,27 +40,6 @@ export type ModuleWorkspaceListOptions = {
   /** Also list the workspaces closed on this machine (the most recent 500). */
   includeClosed?: boolean
 }
-
-/** A git remote of a workspace's repository, as `git remote -v` names it (fetch URL). */
-export type ModuleWorkspaceGitRemote = {
-  name: string
-  /** The fetch URL, with any credentials in it removed. */
-  url: string
-  /** `owner/repo` when the remote is a GitHub repository, SSH host aliases resolved. */
-  github?: string
-}
-
-export type ModuleWorkspaceGitInfoErrorCode =
-  'permission_missing' | 'unknown_workspace' | 'no_folder' | 'not_a_repository' | 'unavailable' | 'git_failed'
-
-/**
- * A workspace's checked-out branch (null on a detached HEAD) and its remotes,
- * read by git from the workspace's own folder — so a worktree reports its own
- * branch and a submodule its own repository.
- */
-export type ModuleWorkspaceGitInfoResult =
-  | { ok: true; branch: string | null; remotes: ModuleWorkspaceGitRemote[] }
-  | { ok: false; code: ModuleWorkspaceGitInfoErrorCode; message: string }
 
 export type ModuleWorkspaceViewSource = Pick<Workspace, 'id' | 'name' | 'folderPath' | 'mode' | 'templateId'>
 

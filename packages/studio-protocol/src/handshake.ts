@@ -210,6 +210,13 @@ export const STUDIO_SCHEDULES_CAPABILITY = 'schedules' as const
 export const STUDIO_FILE_SYSTEM_CAPABILITY = 'file-system' as const
 
 /**
+ * Git on the Studio's machine (`git.ts`): `git.*`, `github.*` and
+ * `versionControl.*`, with the checkout, changelist and clone streams. Every
+ * Studio's core serves it.
+ */
+export const STUDIO_GIT_CAPABILITY = 'git' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -254,6 +261,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_BACKLOG_CAPABILITY,
   STUDIO_SHARES_CAPABILITY,
   STUDIO_PULL_REQUEST_READS_CAPABILITY,
+  STUDIO_GIT_CAPABILITY,
 ] as const
 
 /**

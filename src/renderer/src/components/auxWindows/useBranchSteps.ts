@@ -4,6 +4,7 @@ import { selectedEntry, stripEntriesFrom } from './branchSteps'
 import { isWindowVisible, onWindowVisibilityChange } from '../../utils/windowActivity'
 import type { BranchStepDiff, BranchStepSelection, BranchStepsSnapshot } from '../../../../shared/electron-api'
 import type { DiffViewerSource } from './diffViewerSource'
+import { gitApi } from '../../studio/git'
 
 /**
  * The branch's steps and the selected step's diff
@@ -61,7 +62,7 @@ export function useBranchSteps(
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (farSource || !enabled || !repoRoot || typeof window.api?.getBranchSteps !== 'function') {
+    if (farSource || !enabled || !repoRoot || typeof gitApi.getBranchSteps !== 'function') {
       setSnapshot(null)
       return
     }
@@ -78,7 +79,7 @@ export function useBranchSteps(
       }
       missed = false
       try {
-        const next = await window.api.getBranchSteps(repoRoot)
+        const next = await gitApi.getBranchSteps(repoRoot)
         if (!cancelled) setSnapshot(next)
       } catch {
         // Quiet: the strip falls back to the span, which always reads.
@@ -87,8 +88,8 @@ export function useBranchSteps(
     }
     void read()
     const stopWatching =
-      typeof window.api.watchGitCheckout === 'function'
-        ? window.api.watchGitCheckout(repoRoot, (change) => {
+      typeof gitApi.watchGitCheckout === 'function'
+        ? gitApi.watchGitCheckout(repoRoot, (change) => {
             if (change.kinds.includes('refs')) void read()
           })
         : null
@@ -144,7 +145,7 @@ export function useBranchSteps(
   }, [enabled, snapshot, selection])
 
   useEffect(() => {
-    if (!enabled || !repoRoot || (!farSource && typeof window.api?.getBranchStepDiff !== 'function')) {
+    if (!enabled || !repoRoot || (!farSource && typeof gitApi.getBranchStepDiff !== 'function')) {
       setDiff(null)
       return
     }
@@ -157,9 +158,7 @@ export function useBranchSteps(
     setLoading(true)
     void (async () => {
       try {
-        const next = farSource
-          ? await farSource.stepDiff(resolved)
-          : await window.api.getBranchStepDiff(repoRoot, resolved)
+        const next = farSource ? await farSource.stepDiff(resolved) : await gitApi.getBranchStepDiff(repoRoot, resolved)
         if (!cancelled) setDiff(next)
       } catch {
         if (!cancelled) setDiff(null)

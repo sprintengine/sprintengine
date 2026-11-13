@@ -295,7 +295,7 @@ and with the chat surface `conversation-folders`, `conversation-sessions`,
 `session.send` attach files by path), `conversation-handoff`,
 `session-controls`, `session-terminal-handoff`, `conversation-history`,
 `approval-rules` and `provider-settings` (`STUDIO_CHAT_CAPABILITIES`);
-`files-mention` and `file-system` from every Studio's core. The
+`files-mention`, `file-system` and `git` from every Studio's core. The
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's
 `docs/compatibility.md`.
