@@ -189,12 +189,13 @@ That runs, in order:
 | `npm run typecheck` | `tsc --noEmit` over the whole app, and over the shared client runtime and conversation timeline in `../packages/`. |
 | `npm run lint` | ESLint with Expo's config. |
 | `npm run lint:tokens` | Checks that screens use the design tokens in `src/theme/tokens.ts` rather than raw colours, spacing and font values. |
-| `npm run test:mobile` | Compiles the logic modules to `.mobile-test-build/` and runs the `*.regression.test.js` suites with `node --test`. |
+| `npm run test:mobile` | Compiles the logic modules to `.mobile-test-build/` and runs every `*.regression.test.js` suite under `src/` with `node --test` (`scripts/run-mobile-tests.cjs`). |
 | `npm run test:runtime` | Compiles the shared client runtime's portable tests (the connection supervisor's and the conversation timeline's, in `../packages/`) the same way and runs them with `node --test` (`scripts/run-runtime-tests.cjs`); `scripts/vitest-bridge.cjs` answers their `vitest` imports, so the desktop's suite runs the same files. |
 
-The tests run on plain Node with no simulator. A new suite has to be added to
-the `test:mobile` list in `package.json`, and any module it loads to
-`tsconfig.test.json`.
+The tests run on plain Node with no simulator. A new suite is found by its
+name, `*.regression.test.js` anywhere under `src/`; any module it loads has to
+be added to `tsconfig.test.json`. The run fails on a test it would pass over (a
+`*.test.ts`, or a `*.test.js` with another name) and on finding no suites.
 
 Other scripts:
 
