@@ -3,6 +3,7 @@ import {
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_CANVAS_BOARDS_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+  STUDIO_CONVERSATIONS_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
@@ -40,6 +41,8 @@ export type PairedStudiosDouble = {
   refuse: (connectionId: string) => StudioError | null
   /** The changes asked, reads left out, each without its command id. */
   writes(): Array<{ connectionId: string; method: string; params: Record<string, unknown> }>
+  /** Push a topic's payload to every client of the machines that follows it. */
+  push(topic: string, payload: unknown): void
 }
 
 /** The methods that only read, which `writes` leaves out. */
@@ -61,6 +64,7 @@ const READS = new Set([
 ])
 
 const ALL_CAPABILITIES = [
+  STUDIO_CONVERSATIONS_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
   STUDIO_APPROVAL_RULES_CAPABILITY,
@@ -82,7 +86,11 @@ export function fakePairedStudios(
   answers: Record<string, Answer> = {},
   options: { capabilities?: readonly string[]; scopes?: StudioScope[] } = {},
 ): PairedStudiosDouble {
+  const followers = new Map<string, Set<(payload: unknown) => void>>()
   const double: PairedStudiosDouble = {
+    push: (topic, payload) => {
+      for (const listener of [...(followers.get(topic) ?? [])]) listener(payload)
+    },
     calls: [],
     answers: { ...answers },
     capabilities: new Set(options.capabilities ?? ALL_CAPABILITIES),
@@ -116,9 +124,24 @@ export function fakePairedStudios(
         get grant() {
           return { clientId: 'tailnet:double', name: 'dev-macbook-air', owner: false, scopes: double.scopes }
         },
+        // What that machine's Studio said of itself: what a chat there may do is read off it.
+        get welcome() {
+          return {
+            environment: { id: `env-${connectionId}` },
+            capabilities: [...double.capabilities],
+            conversation: { protocolVersion: 1, minProtocolVersion: 1, capabilities: [] },
+            grant: { clientId: 'tailnet:double', name: 'dev-macbook-air', owner: false, scopes: double.scopes, ceiling: 'bypass' },
+          }
+        },
         supports: (capability: string) => double.capabilities.has(capability),
-        // No pushes: a topic followed here hears nothing.
-        subscribe: () => () => undefined,
+        // A topic followed here hears what the test pushes (`push`).
+        subscribe: (topic: string, _params: unknown, handlers: { onPayload?: (payload: unknown) => void }) => {
+          const listener = (payload: unknown) => handlers.onPayload?.(payload)
+          const set = followers.get(topic) ?? new Set()
+          set.add(listener)
+          followers.set(topic, set)
+          return () => set.delete(listener)
+        },
         request: ask,
         rpc: new Proxy(
           {},

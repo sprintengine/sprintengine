@@ -6,8 +6,8 @@ import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPr
 import { publishRemoteConversationList } from './remoteConversationFacts'
 import { browsePairedMachine } from '../../../studio/pairedDiscovery'
 import { listPairedChats } from '../../../studio/pairedChats'
-import { environmentStudioAvailable, pairedRoute, pairedTarget } from '../../../studio/environmentStudio'
-import { followedEnvironmentChatsOf, onFollowedEnvironmentChats } from '../../../studio/environmentChats'
+import { environmentStudioAvailable, pairedTarget } from '../../../studio/environmentStudio'
+import { environmentChatSourceFor, onFollowedEnvironmentChats } from '../../../studio/environmentChats'
 import { environmentConversationTransport } from '../../panels/agentChat/environmentChat'
 import {
   chatManageOf,
@@ -206,8 +206,7 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
     const sync = () => {
       const wanted = new Set<string>()
       for (const connection of mesh) {
-        const source = followedEnvironmentChatsOf(pairedRoute(connection.id))
-        if (!source) continue
+        const source = environmentChatSourceFor(pairedTarget(connection))
         wanted.add(connection.id)
         if (following.get(connection.id)?.source === source) continue
         following.get(connection.id)?.stop()

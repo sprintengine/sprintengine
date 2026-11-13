@@ -109,9 +109,11 @@ test('a chat opened here from a paired machine wears the marks its machine lists
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations: [
+  }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
+  fakePairedStudios(domWindow.api as object, {
+    'conversation.list': () => ({ conversations: [
         listed('rw1', 'Asks approval', 'waiting_for_approval', 30),
         listed('rw2', 'Builds away', 'running', 2, { workingSince: now - minute }),
         listed('rw3', 'Finished unseen', 'completed', 20, {
@@ -120,14 +122,7 @@ test('a chat opened here from a paired machine wears the marks its machine lists
         }),
         listed('rw4', 'Stopped by an error', 'failed', 40),
         listed('rw5', 'Followed from a rename', 'completed', 50),
-      ],
-      access: 'operate',
-      capabilities: [],
-    }),
-  }
-  // That machine's Studio, as this window's own client of it reaches it.
-  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
-  fakePairedStudios(domWindow.api as object, {
+      ] }),
     'workspaces.list': () => ({
       workspaces: [
         ...['rw1', 'rw2', 'rw3'].map((id) => ({
