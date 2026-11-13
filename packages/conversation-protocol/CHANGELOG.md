@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Removed (the lane's own readers)
+
+Every client now follows and drives a chat on the Studio protocol, which
+carries the answers below as its own method results; the readers a lane
+client used for them go:
+
+- `createConversationChunkAssembler` and `createConversationSnapshotAssembler`
+  (a lane socket's chunked frames and split snapshots);
+- `parseConversationSideQuestionAnswer`, `parseConversationContextBreakdownAnswer`,
+  `parseConversationFileSearchAnswer`, `parseConversationChangesDiff` and
+  `parseConversationChangedFileSides` (answers to the lane's requests);
+- `conversationPeerSupports` and `checkConversationProtocolVersion` (the lane's
+  `hello`; a Studio client reads the welcome).
+
 ### Added (a step's kind and tone without its words)
 
 - **`presentedToolKind`** and **`presentedToolTone`**: the kind and the tone
