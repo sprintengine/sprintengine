@@ -9,6 +9,7 @@ import { createStudioSchedulesDomain } from '../../../server/schedules/schedules
 import { studioWindowGrant } from '../../../server/rpc/studio-frame-port'
 import { createStudioRpcRouter } from '../../../server/rpc/studio-rpc-router'
 import { createFakeBackend } from '../../../server/rpc/studio-rpc.test-helper'
+import type { StudioChatBackend } from '../../../server/rpc/studio-rpc-types'
 import { schedulerWithRunRecords } from '../../scheduled-agents/scheduled-runs.test-helper'
 import { createScheduledAgentsService } from '../../scheduled-agents/service'
 import { createScheduledAgentsStore } from '../../scheduled-agents/store'
@@ -62,11 +63,16 @@ async function domain() {
   return { schedules, runs, store }
 }
 
+// The folders this Studio knows, as its chat surface says them: the one workspace's.
+const knows = {
+  isKnownFolder: async (path: string) => path === '/Users/dev/app' || path.startsWith('/Users/dev/app/'),
+} as unknown as StudioChatBackend
+
 async function rig() {
   const { schedules, runs, store } = await domain()
-  const r: DeviceRig = await deviceRig({ schedules })
+  const r: DeviceRig = await deviceRig({ schedules, chat: knows })
   cleanups.push(() => r.dispose())
-  return Object.assign(r, { runs, store })
+  return Object.assign(r, { runs, store, schedules })
 }
 
 const DRAFT = { workspaceId: 'ws-1', prompt: 'Triage new issues', cron: '0 9 * * 1-5', timezone: 'UTC' }
@@ -186,6 +192,47 @@ test('an operating pairing pauses and resumes them all and marks a failure seen;
     ),
     'owner_required',
   )
+})
+
+test('an operating pairing starts no schedule in a folder Studio does not know: not one at a time, nor all at once', async () => {
+  const r = await rig()
+  const client = await r.client(r.pair(['workspace:operate']).token)
+  // The owner's, in a folder only an owner names.
+  const { workspaceId: _workspaceId, ...noWorkspace } = DRAFT
+  const made = await r.schedules.create(
+    { ...noWorkspace, workspaceRoot: '/Users/dev/elsewhere', hostId: null },
+    'bypass',
+  )
+  assert.ok(made.ok)
+  const id = made.value.id
+  // Pausing starts nothing, and stays the device's.
+  await client.rpc['schedules.pause']({ id, commandId: 'c-1' })
+  assert.equal(await refusalOf(client.rpc['schedules.resume']({ id, commandId: 'c-2' })), 'invalid_params')
+  assert.equal(await refusalOf(client.rpc['schedules.runNow']({ id, commandId: 'c-3' })), 'invalid_params')
+  assert.deepEqual(r.runs, [])
+  // Paused on its own, it does not hold Resume all back: Resume all leaves it paused.
+  await client.rpc['schedules.pauseAll']({ until: null, commandId: 'c-4' })
+  assert.deepEqual(await client.rpc['schedules.resumeAll']({ commandId: 'c-5' }), { pausedAll: null })
+  // Running again, Resume all would start it: refused, and the pause stays.
+  assert.ok((await r.schedules.resume(id, 'bypass')).ok)
+  await client.rpc['schedules.pauseAll']({ until: null, commandId: 'c-6' })
+  assert.equal(await refusalOf(client.rpc['schedules.resumeAll']({ commandId: 'c-7' })), 'invalid_params')
+  assert.notEqual((await client.rpc['schedules.list']({})).pausedAll, null)
+})
+
+test('Resume all is held to the ceiling as Resume is: one schedule above it keeps them all paused', async () => {
+  const { schedules } = await domain()
+  const made = await schedules.create({ ...DRAFT, permissionPreset: 'bypass' }, 'bypass')
+  assert.ok(made.ok)
+  assert.equal((await schedules.resume(made.value.id, 'auto')).ok, false, 'one at a time')
+  await schedules.pauseAll(null)
+  const refused = await schedules.resumeAll('auto')
+  assert.equal(refused.ok, false)
+  assert.notEqual(schedules.list().pausedAll, null)
+  // Paused on its own, it starts nothing when the rest resume.
+  await schedules.pause(made.value.id)
+  assert.equal((await schedules.resumeAll('auto')).ok, true)
+  assert.equal(schedules.list().pausedAll, null)
 })
 
 test("the desktop's own window schedules by folder and machine, and its chips keep their names", async () => {

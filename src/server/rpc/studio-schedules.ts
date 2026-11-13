@@ -9,15 +9,19 @@ import type {
   StudioSchedulesDomain,
   StudioSchedulesRefusal,
 } from '../schedules/schedules-domain'
+import type { StudioRequestContext } from './studio-rpc-types'
 
 // The router's answers to `schedules.*`: each method's call on the Studio's
 // scheduled agents, once the router has held the grant to the method's scope.
 // A change is carried out once per command id: a retry after a dropped
 // connection is answered with the first answer, so a retried Run now starts
 // one chat, not two. The preset a schedule may run on is held to the asking
-// grant's ceiling.
+// grant's ceiling, and what starts a schedule (Resume, Run now, Resume all)
+// to the folders the asker may name: a paired device starts none in a folder
+// Studio does not know, and Resume all, which starts every schedule not
+// paused on its own, is refused when one of them is beyond either.
 
-type Asking = { grant: StudioGrant }
+type Asking = { grant: StudioGrant; context: StudioRequestContext }
 
 export type StudioSchedulesHandlers<A extends Asking = Asking> = {
   readonly [M in StudioSchedulesMethod]: StudioHandlerOf<StudioSchedulesMethodMap[M], A>
@@ -36,6 +40,8 @@ export type StudioSchedulesHandlerOptions<A extends Asking = Asking> = {
     commandId: string,
     work: () => Promise<Answer<R, C>>,
   ): Promise<Answer<R, C | 'unavailable'>>
+  /** Whether the asker may name this folder: any, for an owner's own connection; otherwise one Studio knows. */
+  mayName(folder: string, asking: A): Promise<boolean>
 }
 
 const unserved = (method: StudioSchedulesMethod) =>
@@ -52,6 +58,24 @@ export function createStudioSchedulesHandlers<A extends Asking>(
 ): StudioSchedulesHandlers<A> {
   const { schedules } = options
   const schedule = <T>(value: T) => ({ schedule: value })
+  // The first of these schedules in a folder the asker may not name, as a refusal; null when there is none.
+  const beyondReach = async (ids: readonly string[] | 'running', asking: A) => {
+    const all = schedules?.list().schedules ?? []
+    const starting =
+      ids === 'running'
+        ? all.filter((agent) => agent.pausedAt === undefined)
+        : all.filter((agent) => ids.includes(agent.id))
+    for (const agent of starting)
+      if (!(await options.mayName(agent.folderPath, asking)))
+        return {
+          ok: false as const,
+          error: {
+            code: 'invalid_params' as const,
+            message: `${agent.name || agent.id} runs in a folder this connection cannot name, so it is started from the machine it runs on.`,
+          },
+        }
+    return null
+  }
   return {
     'schedules.list': () => (schedules ? { ok: true, result: schedules.list() } : unserved('schedules.list')),
     'schedules.create': ({ commandId, ...draft }, asking) =>
@@ -72,14 +96,23 @@ export function createStudioSchedulesHandlers<A extends Asking>(
         : unserved('schedules.pause'),
     'schedules.resume': ({ commandId, id }, asking) =>
       schedules
-        ? options.kept('schedules.resume', asking, commandId, async () =>
-            answer(await schedules.resume(id, asking.grant.ceiling), schedule),
+        ? options.kept(
+            'schedules.resume',
+            asking,
+            commandId,
+            async () =>
+              (await beyondReach([id], asking)) ?? answer(await schedules.resume(id, asking.grant.ceiling), schedule),
           )
         : unserved('schedules.resume'),
     'schedules.runNow': ({ commandId, id }, asking) =>
       schedules
-        ? options.kept('schedules.runNow', asking, commandId, async () =>
-            answer(await schedules.runNow(id, asking.grant.ceiling), (ran) => ran),
+        ? options.kept(
+            'schedules.runNow',
+            asking,
+            commandId,
+            async () =>
+              (await beyondReach([id], asking)) ??
+              answer(await schedules.runNow(id, asking.grant.ceiling), (ran) => ran),
           )
         : unserved('schedules.runNow'),
     'schedules.delete': ({ commandId, id }, asking) =>
@@ -102,8 +135,13 @@ export function createStudioSchedulesHandlers<A extends Asking>(
         : unserved('schedules.pauseAll'),
     'schedules.resumeAll': ({ commandId }, asking) =>
       schedules
-        ? options.kept('schedules.resumeAll', asking, commandId, async () =>
-            answer(await schedules.resumeAll(), (resumed) => resumed),
+        ? options.kept(
+            'schedules.resumeAll',
+            asking,
+            commandId,
+            async () =>
+              (await beyondReach('running', asking)) ??
+              answer(await schedules.resumeAll(asking.grant.ceiling), (resumed) => resumed),
           )
         : unserved('schedules.resumeAll'),
   }
