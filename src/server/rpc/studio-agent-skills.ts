@@ -1,5 +1,6 @@
 import type {
   SkillSource,
+  SkillSourceUpdateCheck,
   StudioAgentSkillsMethod,
   StudioAgentSkillsMethodMap,
   StudioGrant,
@@ -44,6 +45,40 @@ const UNKNOWN_FOLDER = 'That folder is not one Studio knows.'
 /** The folder a source stands for: a local source's (its id is the prefix and the path); none for a repository. */
 function sourceFolder(sourceId: string): string | null {
   return sourceId.startsWith(LOCAL_SKILL_SOURCE_ID_PREFIX) ? sourceId.slice(LOCAL_SKILL_SOURCE_ID_PREFIX.length) : null
+}
+
+/**
+ * An update check as one client is shown it: every repository source, and
+ * only the local sources whose folder it may name, in each of the check's
+ * lists (a local source's id is its folder). The answer to
+ * `skillSources.checkUpdates`, and each `skillSources.updated` push.
+ */
+export async function skillSourceUpdatesShown(
+  check: SkillSourceUpdateCheck,
+  mayName: (folder: string) => Promise<boolean>,
+): Promise<SkillSourceUpdateCheck> {
+  const hidden = new Set<string>()
+  const ids = new Set([
+    ...check.sources.map((entry) => entry.sourceId),
+    ...check.changed,
+    ...check.newlyChanged,
+    ...check.failures.map((entry) => entry.sourceId),
+    ...check.skipped.map((entry) => entry.sourceId),
+  ])
+  for (const id of ids) {
+    const folder = sourceFolder(id)
+    if (folder !== null && !(await mayName(folder))) hidden.add(id)
+  }
+  if (hidden.size === 0) return check
+  const shown = (id: string) => !hidden.has(id)
+  return {
+    ...check,
+    sources: check.sources.filter((entry) => shown(entry.sourceId)),
+    changed: check.changed.filter(shown),
+    newlyChanged: check.newlyChanged.filter(shown),
+    failures: check.failures.filter((entry) => shown(entry.sourceId)),
+    skipped: check.skipped.filter((entry) => shown(entry.sourceId)),
+  }
 }
 
 type Refused<C extends 'unavailable' | 'not_found'> = { ok: false; error: { code: C; message: string } }
@@ -116,31 +151,9 @@ export function createStudioAgentSkillsHandlers(options: StudioAgentSkillsHandle
     // As the list: every repository source, and only the local sources the
     // asker could name, in each of the check's lists (an id is its folder).
     'skillSources.checkUpdates': (_params, asking) =>
-      served('skillSources.checkUpdates', async (d) => {
-        const check = await d.skills.checkSourceUpdates()
-        const hidden = new Set<string>()
-        const ids = new Set([
-          ...check.sources.map((entry) => entry.sourceId),
-          ...check.changed,
-          ...check.newlyChanged,
-          ...check.failures.map((entry) => entry.sourceId),
-          ...check.skipped.map((entry) => entry.sourceId),
-        ])
-        for (const id of ids) {
-          const folder = sourceFolder(id)
-          if (folder !== null && !(await options.mayName(folder, asking))) hidden.add(id)
-        }
-        if (hidden.size === 0) return check
-        const shown = (id: string) => !hidden.has(id)
-        return {
-          ...check,
-          sources: check.sources.filter((entry) => shown(entry.sourceId)),
-          changed: check.changed.filter(shown),
-          newlyChanged: check.newlyChanged.filter(shown),
-          failures: check.failures.filter((entry) => shown(entry.sourceId)),
-          skipped: check.skipped.filter((entry) => shown(entry.sourceId)),
-        }
-      }),
+      served('skillSources.checkUpdates', async (d) =>
+        skillSourceUpdatesShown(await d.skills.checkSourceUpdates(), (folder) => options.mayName(folder, asking)),
+      ),
     'skillSources.add': ({ commandId: _commandId, ...input }) =>
       served('skillSources.add', (d) => d.skills.addSource(input)),
     'skillSources.addLocal': ({ folder, replace }, asking) =>

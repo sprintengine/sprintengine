@@ -1175,7 +1175,8 @@ cards a Studio's agents are given: `skillSources.*` with
 id that stands for it (a workspace, a local source, a bundle, a library
 entry's registered folder, a card's workspace), is held to the folders the
 Studio knows, on the path it resolves to, and the design library, the
-source list and an update check show such a client only those. A plugin's
+source list and an update check, asked or pushed, show such a client only
+those. A plugin's
 install and uninstall, a bundle's lint (it runs the bundle's own script) and a
 card's Go are an owner's. A Studio without the desktop's shell beside it (on a
 WSL or SSH machine) answers a card's `install.module` and an installed skill's

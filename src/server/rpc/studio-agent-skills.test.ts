@@ -433,6 +433,44 @@ test('an update check shows a paired app every repository source, and only the l
   })
 })
 
+test('a pushed update check shows a paired app only the local sources it could name, as the answer does', async () => {
+  const { started, emitSources } = await serve()
+  const entry = (sourceId: string) => ({ sourceId, name: sourceId, headSha: 'abc', changed: true, checked: true })
+  const check = (n: number): SkillSourceUpdateCheck => ({
+    ...CHECK,
+    checkedAt: `2026-11-12T00:00:0${n}.000Z`,
+    sources: [entry('github:a/b'), entry(LOCAL_HERE), entry(LOCAL_ELSEWHERE)],
+    changed: ['github:a/b', LOCAL_HERE, LOCAL_ELSEWHERE],
+    newlyChanged: [LOCAL_ELSEWHERE],
+    failures: [{ sourceId: LOCAL_ELSEWHERE, message: 'gone' }],
+    skipped: [{ sourceId: LOCAL_ELSEWHERE, message: 'later' }],
+  })
+  const owner = await client(started.path, OWNER_TOKEN)
+  const app = await client(started.path, pairFakeClient(started.auth, 'app', ['providers:read']))
+  const ownerSub = await owner.subscribe('skillSources.updated')
+  const appSub = await app.subscribe('skillSources.updated')
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  emitSources(check(1))
+  emitSources(check(2))
+  const payloadOf = (frame: unknown) => (frame as { payload: SkillSourceUpdateCheck }).payload
+  const isPush = (sub: string) => (frame: { t: string; sub?: string }) => frame.t === 'push' && frame.sub === sub
+  assert.deepEqual(payloadOf(await owner.line.next(isPush(ownerSub))), check(1))
+  const seen = [payloadOf(await app.line.next(isPush(appSub))), payloadOf(await app.line.next(isPush(appSub)))]
+  for (const pushed of seen) assert.ok(!JSON.stringify(pushed).includes(ELSEWHERE), JSON.stringify(pushed))
+  // In the order they came, each held as `skillSources.checkUpdates` holds its answer.
+  assert.deepEqual(
+    seen,
+    [1, 2].map((n) => ({
+      ...check(n),
+      sources: [entry('github:a/b'), entry(LOCAL_HERE)],
+      changed: ['github:a/b', LOCAL_HERE],
+      newlyChanged: [],
+      failures: [],
+      skipped: [],
+    })),
+  )
+})
+
 test('a grant that may only read chats reaches none of it', async () => {
   const { started, asked } = await serve()
   const reader = await client(started.path, pairFakeClient(started.auth, 'reader', ['conversation:read']))
