@@ -27,6 +27,7 @@ import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
 import type { StudioPhoneReads } from '../backlog/backlog-domain'
 import type { StudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
+import type { StudioCanvasDomain } from '../canvas/canvas-domain'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
@@ -386,6 +387,7 @@ export async function startTestServer(
     agentSkills?: StudioAgentSkills
     schedules?: StudioSchedulesDomain
     chatLifecycle?: StudioChatLifecycleDomain
+    canvas?: StudioCanvasDomain
     updates?: StudioUpdates
     protocol?: StudioProtocolWindow
     modules?: StudioModules
@@ -434,6 +436,7 @@ export async function startTestServer(
     ...(input.agentSkills ? { agentSkills: input.agentSkills } : {}),
     ...(input.schedules ? { schedules: input.schedules } : {}),
     ...(input.chatLifecycle ? { chatLifecycle: input.chatLifecycle } : {}),
+    ...(input.canvas ? { canvas: input.canvas } : {}),
     ...(input.updates ? { updates: input.updates } : {}),
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),

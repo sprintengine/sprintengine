@@ -17,6 +17,7 @@ import {
   parseStudioTopicParams,
   studioClientFrameIds,
   authorizeStudioTopic,
+  studioGrantAllows,
   projectTerminalSession,
   studioGrantPrincipal,
   studioRefusedGrantName,
@@ -58,6 +59,7 @@ import type { StudioAgentSettings } from '../agent-settings/agent-settings-domai
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
 import type { StudioPhoneReads } from '../backlog/backlog-domain'
+import type { StudioCanvasDomain } from '../canvas/canvas-domain'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type {
@@ -181,6 +183,8 @@ export type StudioRpcConnectionOptions = {
   agentSkills?: StudioAgentSkills
   /** The scheduled agents: the `schedules.changed` stream. */
   schedules?: StudioSchedulesDomain
+  /** The machine's boards: the `canvas.board` and `canvas.openRequests` streams. */
+  canvas?: StudioCanvasDomain
   /** The window this connection is one of Studio's own for, as main names it. */
   windowKey?: string
   /** The welcome's server-wide members: who this Studio is and what it serves. */
@@ -1121,6 +1125,63 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     subscription.handle = { dispose: stop }
   }
 
+  /**
+   * One board, held open on the machine's canvas service while subscribed:
+   * notices only (opened, a revision, a presence), never the scene, which the
+   * client reads by request. Whether the grant may change the board is read
+   * at each open, a resubscribe after a drop included.
+   */
+  function subscribeCanvasBoard(id: string, params: StudioTopicParams<'canvas.board'>): void {
+    const canvas = options.canvas
+    if (!canvas) {
+      subscriptionFailed(id, 'unavailable', 'This Studio does not serve canvas.board.')
+      return
+    }
+    const subscription: Subscription = { id, topic: 'canvas.board', key: null, replay: null, handle: null }
+    subscriptions.set(id, subscription)
+    const grant = liveGrant()
+    const canEdit = grant !== null && studioGrantAllows(grant, 'canvas.commit')
+    void canvas
+      .open(options.connectionId, params, canEdit, (notice) => {
+        if (state === 'closed' || subscriptions.get(id) !== subscription) return
+        if (stillGranted('canvas.board')) push('canvas.board', id, notice)
+      })
+      .then(
+        (opened) => {
+          if (!opened.ok) {
+            if (subscriptions.get(id) === subscription) {
+              subscriptions.delete(id)
+              subscriptionFailed(id, opened.code, opened.message)
+            }
+            return
+          }
+          if (state === 'closed' || subscriptions.get(id) !== subscription) opened.value.close()
+          else subscription.handle = { dispose: () => opened.value.close() }
+        },
+        () => {
+          if (subscriptions.get(id) !== subscription) return
+          subscriptions.delete(id)
+          subscriptionFailed(id, 'unavailable', 'Studio could not open that board.', SUBSCRIBE_RETRY_MS)
+        },
+      )
+  }
+
+  /** An agent's `canvas.open` in the workspaces the client follows: the board it wants shown. */
+  function subscribeCanvasOpenRequests(id: string, params: StudioTopicParams<'canvas.openRequests'>): void {
+    const canvas = options.canvas
+    const workspaces = new Set(params.workspaceIds)
+    subscribeFeed(
+      id,
+      'canvas.openRequests',
+      canvas
+        ? (deliver) =>
+            canvas.onOpenRequest((ref) => {
+              if (workspaces.has(ref.workspaceId)) deliver(ref)
+            })
+        : null,
+    )
+  }
+
   /** Whether the grant as it stands still reaches a topic; a revoked or narrowed one ends what it no longer reaches. */
   function stillGranted(topic: StudioTopic): boolean {
     const grant = liveGrant()
@@ -1412,6 +1473,8 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'skillSources.updated': (id) =>
       subscribeFeed(id, 'skillSources.updated', options.agentSkills?.onSourcesUpdated ?? null),
     'schedules.changed': (id) => subscribeFeed(id, 'schedules.changed', options.schedules?.onChanged ?? null),
+    'canvas.board': subscribeCanvasBoard,
+    'canvas.openRequests': subscribeCanvasOpenRequests,
   }
 
   // ── Reading ───────────────────────────────────────────────────────────────

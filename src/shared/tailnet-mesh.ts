@@ -123,7 +123,7 @@ export type MeshWorkspaceExtensionsResult =
   | { ok: true; extensions: import('./workspace-extensions').WorkspaceExtensions }
   | { ok: false; code: string; message: string }
 
-/** One board on a paired machine. `id` is absent from a machine that does not name its boards yet. */
+/** One board on a paired machine. */
 export type MeshCanvasBoard = {
   id: string | null
   path: string
@@ -141,14 +141,14 @@ export type MeshCanvasBoard = {
 
 /**
  * A paired machine's boards (`canvas.list` there). `allBoards`: the list is the
- * whole machine's. False from a machine without `canvas-machine-boards`, which
- * answers for the one workspace, with `note` saying so.
+ * whole machine's, each row with its project; otherwise the asking chat's
+ * project's alone.
  */
 export type MeshCanvasBoardsResult =
   | { ok: true; boards: MeshCanvasBoard[]; allBoards: boolean; note: string | null }
   | { ok: false; code: string; message: string }
 
-/** A picture of a board on a paired machine (`canvas.screenshot` there). */
+/** A picture of a board on a paired machine (`canvas.picture` there). */
 export type MeshCanvasScreenshotResult =
   | { ok: true; mimeType: string; data: string; width: number; height: number }
   | { ok: false; code: string; message: string }

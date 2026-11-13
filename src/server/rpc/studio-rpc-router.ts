@@ -65,6 +65,8 @@ import type { StudioPhoneReads } from '../backlog/backlog-domain'
 import { createStudioPhoneReadsHandlers } from './studio-phone-reads'
 import type { StudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
 import { createStudioChatLifecycleHandlers } from './studio-chat-lifecycle'
+import type { StudioCanvasDomain } from '../canvas/canvas-domain'
+import { createStudioCanvasHandlers } from './studio-canvas'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -204,6 +206,8 @@ export type StudioRpcRouterOptions = {
   phoneReads?: StudioPhoneReads
   /** The chats' records beyond their rest; without them, `chat-lifecycle`'s methods are answered `unavailable`. */
   chatLifecycle?: StudioChatLifecycleDomain
+  /** The machine's boards, for another device; without them, `canvas.*` is answered `unavailable`. */
+  canvas?: StudioCanvasDomain
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -1790,6 +1794,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
     }),
 
+    // ── Canvas boards ──────────────────────────────────────────────────────
+
+    ...createStudioCanvasHandlers({
+      ...(options.canvas ? { canvas: options.canvas } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+    }),
+
     // ── Updates ────────────────────────────────────────────────────────────
     // Served on every connection, and on one kept open only for them (an
     // incompatible client's), so their shapes never change.
@@ -1823,12 +1834,16 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     connectionClosed: (connectionId, slot) => {
       uploads.release(connectionId)
       if (slot !== undefined) options.fileSystem?.releaseSlot(slot)
+      options.canvas?.connectionClosed(connectionId)
     },
     watchPath: (params, asking, listener) => fileSystem.watch(params, asking, listener),
     followCheckout: (checkoutPath, asking, listener) => gitRouting.followCheckout(checkoutPath, asking, listener),
     git: options.git ?? null,
     worktrees: options.worktrees ?? null,
-    close: () => uploads.close(),
+    close: () => {
+      uploads.close()
+      options.canvas?.close()
+    },
     async handle(grant, method, params, context = NO_CONTEXT) {
       const spec = STUDIO_METHODS[method]
       const voice = context.ownWindow ? windowVoice : clientVoice

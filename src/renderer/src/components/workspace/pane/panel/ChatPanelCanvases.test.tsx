@@ -63,7 +63,7 @@ beforeEach(() => {
         note: null,
         boards: [farBoard('diagrams/flow.excalidraw'), farBoard('diagrams/plan.excalidraw')],
       })),
-      // That machine carries its boards here (`canvas-live-boards`).
+      // That machine carries its boards here (`canvas-boards` on its Studio).
       canvasRemoteAccess: vi.fn(async () => ({ ok: true, live: true, canEdit: true })),
     },
   })

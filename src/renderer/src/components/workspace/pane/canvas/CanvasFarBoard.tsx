@@ -9,11 +9,11 @@ import { canvasPictureUrl, continueBoardInNewChat, type CanvasBoardSource } from
 
 // A board on a paired machine whose Studio cannot carry it here.
 //
-// A machine with `canvas-live-boards` opens its boards in the same editor a
-// board here opens in (CanvasTab). One without it, a Studio built before the
-// canvas lane, can still draw a picture of a board with `canvas.screenshot`:
-// that is what this shows, with the reason in words and the way to change the
-// board from here, a chat on that machine.
+// A machine whose Studio serves `canvas-boards` opens its boards in the same
+// editor a board here opens in (CanvasTab). Where the pane cannot (a browser
+// tab, which carries no paired connection of its own), a board is shown as the
+// picture that machine draws (`canvas.picture`), with the reason in words and
+// the way to change the board from here, a chat on that machine.
 
 type FarBoard = { path: string; store?: string }
 

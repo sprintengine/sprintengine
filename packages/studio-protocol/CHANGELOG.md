@@ -14,6 +14,18 @@
   the runtime's words for the Studio's own window and stable words for anyone
   else.
 
+### Added (canvas boards)
+
+- **A machine's Canvas boards for another device** (`canvas.ts`, capability
+  `canvas-boards`): `canvas.list` and `canvas.picture`; the `canvas.board`
+  stream, which holds a board open on the machine's canvas service and pushes
+  notices only (`opened`, `scene` with its revision, `presence`); `canvas.read`
+  and `canvas.files` for the scene and its pictures by id; `canvas.stage` and
+  `canvas.commit` (under a `commandId`) to draw; `canvas.takePen`; and the
+  `canvas.openRequests` stream for an agent's `canvas.open`. Looking needs
+  `workspaces:read`, drawing `workspaces:operate`. Advertised only by a Studio
+  given the machine's canvas service.
+
 ### Added (the phone's reads)
 
 - **Backlogs, shares and pull request reads are protocol methods.**

@@ -141,7 +141,7 @@ type CanvasCommit = CanvasBoardRef & {
 /**
  * The calls a Canvas tab and its editor make about a board, wherever it is.
  * Here they are the canvas service's own IPC; for a paired chat they are the
- * same calls carried to the machine the chat runs on (`canvas-live-boards`),
+ * same calls carried to the machine the chat runs on (`canvas-boards` on its Studio),
  * whose answers and pushes come back under the tab's own ref. So the tab and
  * the editor are one code path for both, and only this says which machine.
  */

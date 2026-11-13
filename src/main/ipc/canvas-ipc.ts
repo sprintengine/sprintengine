@@ -15,7 +15,7 @@ import { emptyScene, serializeSceneFile } from '../../shared/canvas/scene-file'
 import type { CanvasFs, CanvasServiceInternal } from '../canvas/canvas-service'
 import type { CanvasSubscriberRegistry } from '../canvas/canvas-subscribers'
 import { checkCanvasExport, writeCanvasExport } from '../canvas/canvas-export'
-import type { RemoteCanvasViewer, TailnetRemoteCanvas } from '../automation/tailnet/tailnet-remote-canvas'
+import type { PeerCanvas, PeerCanvasViewer } from '../automation/tailnet/tailnet-peer-canvas'
 
 // The Canvas pane's IPC. Seven channels, and every one of them treats its
 // payload as input rather than as the shape the preload promises — the preload
@@ -53,10 +53,10 @@ export type CanvasIpcOptions = {
   continueInNewChat?: (input: CanvasContinueInput) => Promise<CanvasResult<CanvasContinueResult>>
   /**
    * A paired chat's boards, on the machine the chat runs on
-   * (tailnet-remote-canvas.ts). Absent, or answering null, where this process
+   * (tailnet-peer-canvas.ts). Absent, or answering null, where this process
    * runs no mesh: the pane is told so in words.
    */
-  remote?: () => TailnetRemoteCanvas | null
+  remote?: () => PeerCanvas | null
   /** This machine's disk, where an export of a paired chat's board is written. */
   exportFs?: CanvasFs
 }
@@ -206,7 +206,7 @@ function registerRemoteCanvasIpc(
   options: CanvasIpcOptions,
 ): void {
   const remote = () => options.remote?.() ?? null
-  const viewerOf = (sender: WebContents): RemoteCanvasViewer => {
+  const viewerOf = (sender: WebContents): PeerCanvasViewer => {
     const id = subscribers.add(sender)
     return { id, send: (channel, payload) => subscribers.sendTo(id, channel, payload) }
   }

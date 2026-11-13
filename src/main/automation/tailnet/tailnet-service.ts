@@ -166,8 +166,6 @@ export type TailnetRemoteServiceOptions = {
   conversations?: ConversationGatewayHost
   /** Shrinks an uploaded picture for the model; see the gateway's own option. */
   downscaleUpload?: TailnetGatewayServerOptions['downscaleUpload']
-  /** This machine's canvas service, for a paired desktop's Canvas pane; see the gateway's own option. */
-  canvas?: TailnetGatewayServerOptions['canvas']
   /** This machine's Studio server, for a device's Studio socket; see the gateway's own option. */
   studio?: TailnetGatewayServerOptions['studio']
   /**
@@ -644,7 +642,6 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
       // folder beside a browser's uploads, never in a project's folder.
       fileUploads: createTailnetFileUploads({ root: join(options.resolveUserDataDir(), TAILNET_UPLOADS_DIRNAME) }),
       ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
-      ...(options.canvas ? { canvas: options.canvas } : {}),
       ...(options.studio ? { studio: options.studio } : {}),
       onToolCall: options.onToolCall,
       onPairRequested: () => announcePairRequests(),

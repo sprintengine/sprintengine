@@ -137,6 +137,12 @@ The `welcome`'s `grant` is what the connection may do:
   capability, each once per `commandId`); carries `workspaces:read`, which
   lists them (`schedules.list` and the `schedules.changed` stream) and reads
   this machine's usage rows for a paired desktop's dashboard (`usage.rows`).
+  It also draws on this machine's Canvas boards (`canvas.commit` under a
+  `commandId`, `canvas.stage`, `canvas.takePen`, under the `canvas-boards`
+  capability); `workspaces:read` lists, pictures, opens and reads them
+  (`canvas.list`, `canvas.picture`, `canvas.read`, `canvas.files`, and the
+  `canvas.board` and `canvas.openRequests` streams). No file scope is
+  involved: these name boards only.
   A paired device holds it with its `workspace:operate` pairing.
 - No scope reaches the terminals (`terminal.*`, under the `terminals`
   capability). A terminal is a shell on this machine, so every terminal

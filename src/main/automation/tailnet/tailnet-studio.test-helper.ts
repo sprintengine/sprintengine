@@ -33,13 +33,14 @@ export type DeviceRig = {
   dispose(): Promise<void>
 }
 
-export async function deviceRig(server: ServerInput): Promise<DeviceRig> {
+export async function deviceRig(server: ServerInput, options: { port?: number } = {}): Promise<DeviceRig> {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-studio-family-'))
   const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
   const studio = await startTestServer({ backend: createFakeBackend(['agent-1']), ...server })
   const gateway = createTailnetGatewayServer({
     bindAddress: '127.0.0.1',
-    port: 0,
+    // A fixed port lets a test stop the listener and start it again where a client looks for it.
+    port: options.port ?? 0,
     serverName: 'sprintengine-studio',
     serverVersion: '9.9.9',
     resolveTools: () => [],

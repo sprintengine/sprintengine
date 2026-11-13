@@ -161,6 +161,16 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'shares.list': WORKSPACE,
   'pullRequests.detail': WORKSPACE_OPERATE,
   'pullRequests.diff': WORKSPACE_OPERATE,
+
+  // The machine's boards: listed, pictured, opened and read on a workspace
+  // read; drawn on, staged for and the pen taken on `workspace:operate`.
+  'canvas.list': WORKSPACE,
+  'canvas.picture': WORKSPACE,
+  'canvas.read': WORKSPACE,
+  'canvas.files': WORKSPACE,
+  'canvas.stage': WORKSPACE_OPERATE,
+  'canvas.commit': WORKSPACE_OPERATE,
+  'canvas.takePen': WORKSPACE_OPERATE,
 }
 
 const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
@@ -177,6 +187,8 @@ const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'pullRequests.changed': WORKSPACE,
   'schedules.changed': WORKSPACE,
   'backlog.changed': BACKLOG_READ,
+  'canvas.board': WORKSPACE,
+  'canvas.openRequests': WORKSPACE,
 }
 
 /**

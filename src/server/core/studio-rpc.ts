@@ -32,6 +32,7 @@ import { createStudioSchedulesDomain } from '../schedules/schedules-domain'
 import { createStudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
 import { searchChatsHere } from '../../main/automation/conversation-search'
 import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
+import { createStudioCanvasDomain, type StudioCanvasHost } from '../canvas/canvas-domain'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { createStudioPhoneReads } from '../backlog/backlog-domain'
 import { createTailnetShareService, readTailnetWebTargets } from '../../main/automation/tailnet/tailnet-share-service'
@@ -57,6 +58,12 @@ export function createStudioRpc(
     fileSystemShell?: StudioFileSystemShell
     /** The GitHub token this Studio keeps, where its process holds one; without it `github.*` says so. */
     githubTokens?: GitHubTokenStore
+    /**
+     * The machine's one canvas service, where it runs in this process (the
+     * desktop with its server in process): another device's boards are served
+     * from it (`canvas-boards`). Absent, they are not served.
+     */
+    canvas?: StudioCanvasHost
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -65,6 +72,7 @@ export function createStudioRpc(
     // SSH server by the desktop that manages it, a hand-started one by hand).
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.modules ? { modules: options.modules } : {}),
+    ...(options.canvas ? { canvas: createStudioCanvasDomain(options.canvas) } : {}),
     paths: core.platform.paths,
     identity: core.platform.identity,
     clients: core.platform.clients,
