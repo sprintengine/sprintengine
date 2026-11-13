@@ -8,7 +8,6 @@ import { buildPullRequestDetail, fileDiffSection, pageFileDiff, type MobileContr
 import { STUDIO_PULL_REQUEST_READ_LIMITS } from '../../../../packages/studio-protocol/src/public'
 
 const URL = 'https://github.com/acme/app/pull/42'
-const now = new Date('2026-10-30T12:00:00.000Z')
 
 function summary(overrides: Partial<Extract<PullRequestWatchRead, { settled: true }>> = {}) {
   return {
