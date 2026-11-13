@@ -42,6 +42,8 @@ export * from './file-system.js'
 export * from './git.js'
 // The worktrees Studio's agents run in, and deleting settled chats.
 export * from './worktrees.js'
+// The desktop's own windows' workspace registry.
+export * from './workspace-sync.js'
 export * from './chat-lifecycle.js'
 // A machine's Canvas boards, for a client on another device.
 export * from './canvas.js'

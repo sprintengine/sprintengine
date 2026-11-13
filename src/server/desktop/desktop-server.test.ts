@@ -8,6 +8,13 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { afterAll, beforeAll, test } from 'vitest'
 
+import {
+  connect as connectStudio,
+  webSocketTransport,
+  type StudioClient,
+  type StudioWebSocketConstructor,
+} from '../../../packages/client-runtime/src/public'
+import type { StudioWindowTicket } from '../../shared/studio-connection'
 import { createControlRpc } from '../bootstrap/control-rpc'
 import { createMessageHub, type ServerControlChannel } from '../bootstrap/control-channel'
 import type { ServerBootstrapEnvelope } from '../bootstrap/envelope'
@@ -37,7 +44,11 @@ beforeAll(() => {
   process.env.HOME = join(scratch, 'home')
   mkdirSync(process.env.HOME, { recursive: true })
 })
+/** The window clients a test opened, closed with the server's scratch. */
+const windows: StudioClient[] = []
+
 afterAll(() => {
+  for (const client of windows.splice(0)) client.close()
   if (previousHome === undefined) delete process.env.HOME
   else process.env.HOME = previousHome
   resetStudioPlatform()
@@ -169,8 +180,11 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   )
   const hosts = await window.invoke('hosts:list')
   assert.equal(hosts.ok, true, JSON.stringify(hosts))
-  const snapshot = await window.invoke('workspace-sync:get-snapshot')
-  assert.ok(Array.isArray(snapshot.value.state.workspaces))
+  // The window's registry is the Studio protocol's: a ticket the shell buys
+  // for the window, then the window's own connection to the listener.
+  const studio = await windowStudio(shellRpc)
+  const snapshot = await studio.request('workspaceSync.snapshot', {})
+  assert.ok(Array.isArray(snapshot.state.workspaces))
 
   // The terminals are this server's: their list reaches the shell once it is
   // serving, and a launch the shell asks for goes through the server's own
@@ -226,16 +240,20 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   // An agent this server's shell launched calls `worktree.lease` and
   // `worktree.release` over the gateway socket, as this very orchestration's
   // agents do: the gateway's own tools now, not a toolset the shell offers.
-  const created = await window.invoke('workspace-sync:dispatch', {
-    type: 'workspace.created',
-    payload: {
-      workspace: projectWorkspace('lease-ws', repo),
-      windowId: 'primary',
-      insert: { kind: 'folder_head', folderPath: repo },
-      activate: false,
+  const created = await studio.request('workspaceSync.dispatch', {
+    commandId: 'lease-ws-created',
+    windowId: 'primary',
+    command: {
+      type: 'workspace.created',
+      payload: {
+        workspace: projectWorkspace('lease-ws', repo),
+        windowId: 'primary',
+        insert: { kind: 'folder_head', folderPath: repo },
+        activate: false,
+      },
     },
   })
-  assert.equal(created.value?.ok, true, JSON.stringify(created))
+  assert.equal(created.ok, true, JSON.stringify(created))
   applyGatewayLaunchTokenChange({
     digest: createHash('sha256').update('lease-agent-token').digest('hex'),
     identity: { workspaceId: 'lease-ws', agentId: 'agent-lease' },
@@ -297,6 +315,27 @@ test('the desktop server composes, serves a window over the tunnel and the shell
 })
 
 /** One newline-delimited JSON-RPC exchange per call, on one gateway connection. */
+/** A desktop window's Studio client: a ticket the shell buys for it, then a socket saying the window's origin. */
+async function windowStudio(shellRpc: { call<T>(method: string, params: unknown): Promise<T> }) {
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
+  const WindowWebSocket = class {
+    constructor(url: string) {
+      return new NodeWebSocket(url, { headers: { origin: 'file://' } }) as never
+    }
+  } as unknown as StudioWebSocketConstructor
+  const client = await connectStudio({
+    transport: webSocketTransport({
+      ticket: () =>
+        shellRpc.call<StudioWindowTicket>(SERVER_METHODS.windowTicket, { windowKey: 'window-1-1', origin: 'file://' }),
+      WebSocket: WindowWebSocket,
+    }),
+    client: { name: 'desktop-server test window' },
+    reconnect: false,
+  })
+  windows.push(client)
+  return client
+}
+
 async function mcpSession(socketPath: string) {
   const socket = connect(socketPath)
   await new Promise<void>((resolve, reject) => socket.once('connect', resolve).once('error', reject))

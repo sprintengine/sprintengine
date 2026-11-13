@@ -43,6 +43,7 @@ import type { StudioAccessDomain } from './studio-access'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioGit } from '../git/studio-git-types'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
+import type { StudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { StudioUpdates } from '../update/studio-updates'
 import type {
   StudioAuditEntry,
@@ -381,6 +382,7 @@ export async function startTestServer(
     machine?: StudioMachineCall
     git?: StudioGit
     worktrees?: StudioWorktrees
+    workspaceSync?: StudioWorkspaceSync
     extensions?: StudioExtensions
     artifacts?: StudioArtifacts
     access?: StudioAccessDomain
@@ -436,6 +438,7 @@ export async function startTestServer(
     ...(input.machine ? { machine: input.machine } : {}),
     ...(input.git ? { git: input.git } : {}),
     ...(input.worktrees ? { worktrees: input.worktrees } : {}),
+    ...(input.workspaceSync ? { workspaceSync: input.workspaceSync } : {}),
     ...(input.extensions ? { extensions: input.extensions } : {}),
     ...(input.artifacts ? { artifacts: input.artifacts } : {}),
     ...(input.access ? { access: input.access } : {}),

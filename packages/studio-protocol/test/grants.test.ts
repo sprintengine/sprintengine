@@ -52,6 +52,9 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * names a folder on this machine and writes the files there.
  * Who may reach this machine's agents (`access.ts`): the gateway's socket, the
  * HTTP endpoint's clients and tokens, and the apps paired with the owner socket.
+ * The desktop's own windows' workspace registry (`workspaceSync.*` and its
+ * neighbours): their arrangement and the records they mirror, which no other
+ * client reads that way.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -190,6 +193,20 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'localApps.revoke',
   'localApps.setReach',
   'localApps.changed',
+  // The desktop's own windows' workspace registry.
+  'workspaceSync.snapshot',
+  'workspaceSync.eventsAfter',
+  'workspaceSync.dispatch',
+  'workspaceSync.lifecycle',
+  'workspaceSync.setSettledChatsSettings',
+  'workspaceSync.setModuleRunStates',
+  'workspaceRegistry.needsHydration',
+  'workspaceRegistry.hydrate',
+  'workspaceBackup.read',
+  'workspaceBackup.write',
+  'projectlessChats.root',
+  'projectlessChats.createFolder',
+  'workspaceSync.events',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [

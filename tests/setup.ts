@@ -69,3 +69,5 @@ vi.mock('../src/renderer/src/studio/backlog', () => import('../src/renderer/src/
 vi.mock('../src/renderer/src/studio/schedules', () => import('../src/renderer/src/studio/schedules.double'))
 // Who may reach this machine's agents (`src/renderer/src/studio/access.ts`), the same way.
 vi.mock('../src/renderer/src/studio/access', () => import('../src/renderer/src/studio/access.double'))
+// The desktop's workspace registry (`src/renderer/src/studio/workspaceSync.ts`), the same way.
+vi.mock('../src/renderer/src/studio/workspaceSync', () => import('../src/renderer/src/studio/workspaceSync.double'))

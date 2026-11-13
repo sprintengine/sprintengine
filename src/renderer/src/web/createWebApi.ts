@@ -122,12 +122,6 @@ const browserEmptyStates = {
   listFolderOpenTargets: async () => [],
   setBackgroundMode: async () => undefined,
   setTelemetryEnabled: async () => undefined,
-  // So are the Settled chats settings and the module run states main's rest
-  // sweep reads: a tab's settings start at the defaults, and a tab loads no
-  // third-party module, so its pushes would replace the desktop's choices and
-  // readings with defaults and blanks.
-  setSettledChatsSettings: async () => undefined,
-  setModuleRunStates: async () => undefined,
   // A browser tab has no quit to ask about, and no app to relaunch.
   restartApp: undefined,
   // Nor a file manager on the server's disk to open a module's folder in.

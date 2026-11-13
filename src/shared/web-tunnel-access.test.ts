@@ -63,11 +63,10 @@ test('every channel the server owns and the front door adds says what it needs, 
 
 test('an owner’s tab reaches exactly the channels it reached before permissions', () => {
   for (const channel of CHANNELS) assert.equal(webTunnelAllows(channel), legacyWebTunnelAllows(channel), channel)
-  // The exclusions a tab must keep, among them what main's rest sweep reads
-  // that only a desktop window can say.
+  // The exclusions a tab must keep. What main's rest sweep reads that only a
+  // desktop window can say is the protocol's now, which takes it from no
+  // browser (`studio-workspace-sync.ts`).
   for (const channel of [
-    'workspace-sync:set-settled-chats-settings',
-    'workspace-sync:set-module-run-states',
     'conversation:sessions:terminal-handoff',
     'conversation:secrets:set',
     'tailnet:update-device-scopes',
@@ -99,9 +98,6 @@ test('an owner’s tab holds only the permissions some channel it reaches needs,
   for (const permission of ['environment:maintain', 'tools:offer'])
     assert.equal(WEB_OWNER_TUNNEL_PERMISSIONS.includes(permission as never), false, permission)
   // And the owner principal is refused where a channel is the desktop's, whatever it holds.
-  const decision = authorizeStudioAccess(
-    webTunnelPrincipal({ owner: true }),
-    WEB_TUNNEL_ACCESS['workspace-sync:set-module-run-states'],
-  )
+  const decision = authorizeStudioAccess(webTunnelPrincipal({ owner: true }), WEB_TUNNEL_ACCESS['mesh:cancel-pairing'])
   assert.equal(!decision.ok && decision.reason, 'local_only')
 })

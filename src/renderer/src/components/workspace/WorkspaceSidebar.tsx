@@ -252,6 +252,7 @@ import {
 import { cancelNextMiddleButtonRelease } from '../../utils/middleButtonRelease'
 import { isImeKey } from '../../utils/imeKey'
 import { schedulesApi } from '../../studio/schedules'
+import { workspaceSyncApi, workspaceSyncReachable } from '../../studio/workspaceSync'
 
 export { TerminalLineView } from './sidebar/TerminalLineView'
 
@@ -1825,9 +1826,9 @@ function WorkspaceSidebar({
   // (`canMarkWorkspaceUnread` below).
   const unreadOnLeaveRef = useRef(new Set<string>())
   const markWorkspaceUnread = useCallback((workspaceId: string) => {
-    const mark = window.api?.workspaceMarkUnread
-    if (typeof mark !== 'function') return
-    void mark(workspaceId)
+    if (!workspaceSyncReachable('workspaceMarkUnread')) return
+    void workspaceSyncApi
+      .workspaceMarkUnread(workspaceId)
       .then((answer) => {
         if (!answer.ok) showToast({ tone: 'error', title: 'Not marked unread', description: answer.message })
       })

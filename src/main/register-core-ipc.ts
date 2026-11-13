@@ -23,7 +23,6 @@ import { registerFilesystemShellIpc } from './ipc/filesystem-shell-ipc'
 import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/folder-open-ipc'
 import { registerGitShellIpc } from './ipc/git-shell-ipc'
 import { registerMenuDialogIpc } from './ipc/menu-dialog-ipc'
-import { registerProjectlessChatsIpc } from './ipc/projectless-chats-ipc'
 import { registerPullRequestIpc } from './ipc/pull-request-ipc'
 import { webContentsIdOfWindowKey } from './ipc/studio-window-ticket-ipc'
 import { registerThirdPartyModuleIpc } from './ipc/third-party-module-ipc'
@@ -201,7 +200,6 @@ export function registerCoreIpc(
   // reading and running git is the Studio protocol's.
   registerGitShellIpc(ipcMain)
   registerMenuDialogIpc(ipcMain)
-  registerProjectlessChatsIpc(ipcMain)
   registerAppearanceIpc(ipcMain)
   registerBackgroundModeIpc(ipcMain, services.backgroundModeStore)
   registerTelemetryIpc(ipcMain, services.telemetryConsentStore)
@@ -214,14 +212,13 @@ export function registerCoreIpc(
   // The domains the Studio server owns: registered here while it runs in
   // process, and by the server itself on its IPC tunnel when it runs in a
   // process of its own (src/server/desktop/server-ipc.ts).
-  const { automationService, studioRpcService, workspaceBackupService, conversationTerminalHandoff } = services
+  const { automationService, studioRpcService, conversationTerminalHandoff } = services
   const { conversationCommands } =
-    !options.server && automationService && studioRpcService && workspaceBackupService && conversationTerminalHandoff
+    !options.server && automationService && studioRpcService && conversationTerminalHandoff
       ? registerServerDomainIpc(ipcMain, {
           core: services.studioCore,
           gateway: automationService,
           studioRpc: studioRpcService,
-          workspaceBackup: workspaceBackupService,
           terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
         })
       : // The server registers them, and disposes its own command lists.

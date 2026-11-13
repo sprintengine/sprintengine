@@ -272,6 +272,15 @@ export const STUDIO_GIT_CAPABILITY = 'git' as const
 export const STUDIO_WORKTREES_CAPABILITY = 'worktrees' as const
 
 /**
+ * The desktop's own windows' workspace registry (`workspace-sync.ts`): the
+ * mirror each window keeps of the workspaces and windows main records, its
+ * changes, the one-time hydration from a window's own copy, the window's
+ * backup of it, and the folders a chat without a project runs in. Owner-only:
+ * a desktop's Studio serves it to its own windows.
+ */
+export const STUDIO_WORKSPACE_SYNC_CAPABILITY = 'workspace-sync' as const
+
+/**
  * A chat's record beyond its rest and visit clock (`chat-lifecycle.ts`):
  * `conversation.markUnread`, `.snooze`, `.highlight`, `.setAutoSettle`,
  * `.setAutoCompact`, `.rename`, `.deletePlan`, `.delete` and
@@ -364,6 +373,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_EXTENSIONS_CAPABILITY,
   STUDIO_ARTIFACTS_CAPABILITY,
   STUDIO_ACCESS_CAPABILITY,
+  STUDIO_WORKSPACE_SYNC_CAPABILITY,
 ] as const
 
 /**

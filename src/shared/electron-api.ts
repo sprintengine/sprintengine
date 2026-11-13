@@ -1,6 +1,3 @@
-import type { WorkspaceLifecycleRequest, WorkspaceLifecycleResult } from './workspace-lifecycle'
-import type { SettledChatsSettings } from './workspace-settlement'
-import type { LifecycleState } from './lifecycle-state'
 import type { ClientCapability } from './client-capabilities'
 import type { AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
@@ -154,13 +151,6 @@ import type {
   ConversationPageResult,
   ConversationTurnDiffResult,
 } from './conversation-runtime'
-import type {
-  WorkspaceMarkUnreadResult,
-  WorkspaceSyncCommand,
-  WorkspaceSyncCommandResult,
-  WorkspaceSyncEvent,
-  WorkspaceSyncSnapshot,
-} from './workspace-sync'
 import type { ExecutionHostId, HostHomeResult, HostsListResult } from './execution-host'
 // Re-exported because the probe shape is part of this IPC contract: the
 // version-control settings sections read it straight off the api surface.
@@ -172,17 +162,10 @@ export type {
 import type { SprintEngineAuthState } from './ipc/account'
 import type { ThirdPartyModuleRevealResult } from './modules/manifest'
 import type { CliPermissionPreset } from './ipc/agent-runtime'
-import type {
-  AppMenuAcceleratorUpdate,
-  AppMenuAcceleratorUpdateResult,
-  ColorScheme,
-  WindowMaterial,
-  WorkspaceBackupWriteResult,
-} from './ipc/app'
+import type { AppMenuAcceleratorUpdate, AppMenuAcceleratorUpdateResult, ColorScheme, WindowMaterial } from './ipc/app'
 import type { DiagnosticLogEntry, DiagnosticLogInput } from './ipc/diagnostics'
 import type { GitPatchSaveResult } from './ipc/git'
-import type { WorkspaceBackupPayload, WorkspaceBackupReadResult } from './ipc/workspace-backup'
-import type { IpcStatsSnapshot, ProcessMetricsSnapshot, WorkspaceRegistryHydrateResult } from './ipc/terminal'
+import type { IpcStatsSnapshot, ProcessMetricsSnapshot } from './ipc/terminal'
 import type {
   AppUpdateChannelSetting,
   AppUpdateCheckResult,
@@ -515,40 +498,6 @@ export type ElectronApi = {
   // built from; main compares it against its own and says so once when the two
   // halves have diverged — see src/shared/build-stamp.ts.
   reportBuildStamp: (stamp: BuildStamp) => void
-  workspaceSyncDispatch: (command: WorkspaceSyncCommand) => Promise<WorkspaceSyncCommandResult>
-  workspaceSyncGetSnapshot: () => Promise<WorkspaceSyncSnapshot>
-  workspaceSyncGetEventsAfter: (sequence: number) => Promise<WorkspaceSyncEvent[]>
-  /**
-   * True while main has never written a workspace registry — the
-   * first boot after the inversion, or a fresh install. A window answers it by
-   * offering its post-migrate-ladder localStorage state to
-   * `workspaceRegistryHydrate`; false means main is authoritative and the
-   * window mirrors instead.
-   */
-  workspaceRegistryNeedsHydration: () => Promise<boolean>
-  workspaceRegistryHydrate: (payload: unknown) => Promise<WorkspaceRegistryHydrateResult>
-  onWorkspaceSyncEvent: (cb: (event: WorkspaceSyncEvent) => void) => () => void
-  /**
-   * Mark a chat here unread, as `conversation.mark_unread` does for a paired
-   * device: its visit clock goes back to just before its latest finish, so
-   * every device shows it unseen again. The change arrives as a sync event.
-   */
-  workspaceMarkUnread: (workspaceId: string) => Promise<WorkspaceMarkUnreadResult>
-  /**
-   * The row menu's Settle, Un-settle, Snooze and Wake now, decided in main on
-   * the reading of the chat it was made on: main refuses one made on a chat
-   * that has moved on since, and answers with the chat as it stands. The
-   * change arrives as a sync event.
-   */
-  workspaceLifecycle: (request: WorkspaceLifecycleRequest) => Promise<WorkspaceLifecycleResult>
-  /** Push Settings ▸ Settled chats to main, whose rest sweep reads them with or without a window. */
-  setSettledChatsSettings: (settings: SettledChatsSettings) => Promise<void>
-  /**
-   * Push the run state each module chat's provider reports (`deriveRunGlyph`),
-   * by workspace, `null` where its type reports none: main's rest sweep never
-   * settles a run in flight, and cannot ask a module's provider itself.
-   */
-  setModuleRunStates: (states: Record<string, LifecycleState | null>) => Promise<void>
   /**
    * Where this window's next connection to its Studio goes, and the ticket
    * its socket and hello present: good once, within thirty seconds. Asked
@@ -1025,10 +974,6 @@ export type ElectronApi = {
   openDir: (options?: { defaultPath?: string }) => Promise<string | null>
   /** The file dialog for a project's icon, filtered to images. */
   openProjectIconFile: (options?: { defaultPath?: string }) => Promise<string | null>
-  /** Creates `~/.sprintengine/chats` if needed and returns it: New chat's "No project" scope. */
-  projectlessChatsRoot: () => Promise<string>
-  /** Makes a new folder in that root for one chat started without a project, named after its first words. */
-  createProjectlessChatFolder: (prompt?: string) => Promise<string>
   showMenubarMenu: (label: string, position?: { x?: number; y?: number }) => Promise<boolean>
   clipboardReadText: () => Promise<string>
   clipboardWriteText: (text: string) => Promise<void>
@@ -1076,8 +1021,6 @@ export type ElectronApi = {
   diagnosticsOpenWindow: () => Promise<void>
   onAppMenuCommand: (cb: (command: string) => void) => () => void
   updateAppMenuAccelerators: (updates: AppMenuAcceleratorUpdate[]) => Promise<AppMenuAcceleratorUpdateResult>
-  workspaceBackupWrite: (payload: WorkspaceBackupPayload) => Promise<WorkspaceBackupWriteResult>
-  workspaceBackupRead: () => Promise<WorkspaceBackupReadResult>
   setColorScheme: (scheme: ColorScheme) => Promise<void>
   // `canvasColor` is the theme's opaque window ground (`#rrggbb`), sent with an
   // opaque material so main can paint new windows in it; omitted under glass.

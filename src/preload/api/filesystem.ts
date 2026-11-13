@@ -55,8 +55,6 @@ export const filesystemApi = {
   openDir: (options?: { defaultPath?: string }) => ipcRenderer.invoke('fs:dialog:opendir', options),
   openProjectIconFile: (options?: { defaultPath?: string }) =>
     ipcRenderer.invoke('fs:dialog:open-project-icon', options),
-  projectlessChatsRoot: () => ipcRenderer.invoke('chats:projectless-root'),
-  createProjectlessChatFolder: (prompt?: string) => ipcRenderer.invoke('chats:projectless-folder:create', prompt),
   showMenubarMenu: (label: string, position?: { x?: number; y?: number }) =>
     ipcRenderer.invoke('app:show-menubar-menu', label, position),
 } satisfies Pick<
@@ -77,7 +75,5 @@ export const filesystemApi = {
   | 'openFolderInTarget'
   | 'openDir'
   | 'openProjectIconFile'
-  | 'projectlessChatsRoot'
-  | 'createProjectlessChatFolder'
   | 'showMenubarMenu'
 >

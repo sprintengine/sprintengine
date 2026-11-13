@@ -76,17 +76,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'tailnet:share-status': { retry: 'once' },
   'tailnet:unshare-port': {},
   'tailnet:update-device-scopes': {},
-  'workspace-backup:read': { retry: 'once' },
-  'workspace-backup:write': {},
-  'workspace-registry:hydrate': {},
-  'workspace-registry:needs-hydration': { retry: 'once' },
-  'workspace-sync:dispatch': {},
-  'workspace-sync:get-events-after': { retry: 'once' },
-  'workspace-sync:get-snapshot': { retry: 'once' },
-  'workspace-sync:lifecycle': {},
-  'workspace-sync:mark-unread': {},
-  'workspace-sync:set-module-run-states': {},
-  'workspace-sync:set-settled-chats-settings': {},
 } as const satisfies Readonly<Record<string, ServerIpcChannel>>
 
 /** Every channel the server owns, by name: what a table keyed by channel must cover (`WEB_TUNNEL_ACCESS`). */

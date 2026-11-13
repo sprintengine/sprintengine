@@ -3,7 +3,6 @@ import { existsSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
-import { createWorkspaceBackupService } from '../../main/workspace-backup'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
 import { registerServerDomainIpc, type ServerDomainIpcHandles } from '../desktop/server-ipc'
@@ -144,11 +143,6 @@ export async function startWebFrontDoor(input: {
     core,
     gateway,
     studioRpc: rpc,
-    workspaceBackup: createWorkspaceBackupService({
-      resolveUserDataDir: () => dataDir,
-      readRegistry: () => core.workspaceRegistry.getState(),
-      minRegistryIntervalMs: 10_000,
-    }),
     // No terminals on the web (ruling a): a chat is not handed to one.
     terminalHandoff: async () => ({ ok: false, message: 'Terminals are not available in a browser.' }),
   })
@@ -176,14 +170,6 @@ export async function startWebFrontDoor(input: {
     const sessionId = sessionOfClient.get(event.caller.clientId)
     if (!sessionId) throw new Error('This tab is not paired with Studio.')
     return sessionId
-  }
-  // A folder Studio already has a workspace for, spelled as that workspace has it.
-  const isWorkspaceFolder = (folderPath: string): boolean => {
-    const plain = (path: string) => path.replace(/[\\/]+$/u, '')
-    const asked = plain(folderPath)
-    return core.workspaceRegistry
-      .getRecords()
-      .some((record) => !!record.folderPath && plain(record.folderPath) === asked)
   }
   const onLoopback = (event: { caller: { clientId: string } }): boolean =>
     sessions.get(sessionOfClient.get(event.caller.clientId) ?? '')?.route === 'loopback'
@@ -364,7 +350,6 @@ export async function startWebFrontDoor(input: {
                 result: entry.ok ? toolSuccess({ ok: true }) : toolError('failed', 'The call did not succeed.'),
               }),
             log: input.log,
-            ...(session.route === 'loopback' ? {} : { knownFolder: isWorkspaceFolder }),
           }),
         )
       },
