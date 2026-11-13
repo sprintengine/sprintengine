@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { createPullRequestApi, joinDiffPages, type PullRequestDiffPage } from "../../api/pullRequests";
-import { tailnetClientForSession } from "../../api/tailnetControlClient";
 import type { MobileSession } from "../../api/types";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { ScreenFrame, useScreenBottomInset } from "../../components/Screen";
@@ -31,7 +30,7 @@ export function PullRequestFileScreen({
 }) {
   const styles = useThemedStyles(createStyles);
   const inset = useScreenBottomInset();
-  const api = useMemo(() => (session ? createPullRequestApi(tailnetClientForSession(session)) : null), [session]);
+  const api = useMemo(() => (session ? createPullRequestApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }) : null), [session]);
   const [pages, setPages] = useState<PullRequestDiffPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

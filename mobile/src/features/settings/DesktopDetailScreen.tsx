@@ -8,7 +8,7 @@ import { formatTimestamp } from "../../components/formatTimestamp";
 import { iconSize, RemoteMachineGlyph } from "../../components/glyphs";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { ScreenFrame, useListContentStyle } from "../../components/Screen";
-import { mobileControlProtocolVersion } from "../../../../packages/studio-protocol/src/mobile-control";
+import { STUDIO_PROTOCOL_VERSION } from "../../../../packages/studio-protocol/src/public";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { space, typography, type Theme, fontWeight } from "../../theme/tokens";
@@ -115,7 +115,7 @@ export function DesktopDetailScreen({
           <Field label="Endpoint" mono value={session.baseUrl} />
           <Field label="This phone" mono value={session.deviceId} />
           <Field label="Last seen" value={formatTimestamp(session.lastSeenAt ?? session.pairedAt)} />
-          <Field label="Protocol" value={`${mobileControlProtocolVersion} · ${describeScopes(scopes)}`} />
+          <Field label="Protocol" value={`Studio ${STUDIO_PROTOCOL_VERSION} · ${describeScopes(scopes)}`} />
           <Field label="Transport" value={describeTransport(session)} />
           <Field label="Storage" value="Encrypted on this device" />
         </Card>

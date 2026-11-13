@@ -25,6 +25,9 @@ import {
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
+  STUDIO_BACKLOG_CAPABILITY,
+  STUDIO_SHARES_CAPABILITY,
+  STUDIO_PULL_REQUEST_READS_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
@@ -50,6 +53,7 @@ import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
+import type { StudioPhoneReads } from '../backlog/backlog-domain'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type {
@@ -173,6 +177,8 @@ export type StudioRpcServerOptions = {
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats. Advertised as `chat-stores` only when given. */
   chatStores?: StudioChatStores
+  /** The projects' backlogs, the machine's shares and the pull request reads. Advertised as `backlog`, `shares` and `pull-request-reads` only when given. */
+  phoneReads?: StudioPhoneReads
   /** The skills, design systems and cards the agents are given. Advertised as `agent-skills` only when given; every Studio's core gives them. */
   agentSkills?: StudioAgentSkills
   /** The scheduled agents this Studio runs. Advertised as `schedules` only when given. */
@@ -250,6 +256,10 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_AGENT_SETTINGS_CAPABILITY || options.agentSettings !== undefined) &&
         (capability !== STUDIO_AGENT_SETUP_CAPABILITY || options.agentSetup !== undefined) &&
         (capability !== STUDIO_CHAT_STORES_CAPABILITY || options.chatStores !== undefined) &&
+        ((capability !== STUDIO_BACKLOG_CAPABILITY &&
+          capability !== STUDIO_SHARES_CAPABILITY &&
+          capability !== STUDIO_PULL_REQUEST_READS_CAPABILITY) ||
+          options.phoneReads !== undefined) &&
         (capability !== STUDIO_AGENT_SKILLS_CAPABILITY || options.agentSkills !== undefined) &&
         (capability !== STUDIO_SCHEDULES_CAPABILITY || options.schedules !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
@@ -280,6 +290,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
     ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
     ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+    ...(options.phoneReads ? { phoneReads: options.phoneReads } : {}),
     ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
     ...(options.schedules ? { schedules: options.schedules } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
@@ -320,6 +331,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
         ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
         ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+        ...(options.phoneReads ? { phoneReads: options.phoneReads } : {}),
         ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
         ...(options.schedules ? { schedules: options.schedules } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
@@ -367,6 +379,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
         ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
         ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+        ...(options.phoneReads ? { phoneReads: options.phoneReads } : {}),
         ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
         ...(options.schedules ? { schedules: options.schedules } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,

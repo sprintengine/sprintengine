@@ -6,7 +6,7 @@ import {
   type StudioParamsRefusal,
 } from './contract.js'
 import { STUDIO_MODULES_CAPABILITY } from './handshake.js'
-import type { MobileControlBacklogItemStatus } from './mobile-control.js'
+import type { StudioBacklogItemStatus } from './backlog.js'
 
 // The host's services a module's window half calls on its server: the
 // Backlog's writes and the token-usage query, the same services its main half
@@ -26,7 +26,7 @@ import type { MobileControlBacklogItemStatus } from './mobile-control.js'
 // Offered under the `modules` capability, where a module kernel runs.
 
 /** A Backlog item's status, as the Backlog writes it. */
-export type StudioModuleBacklogStatus = MobileControlBacklogItemStatus
+export type StudioModuleBacklogStatus = StudioBacklogItemStatus
 
 /** Why a Backlog service call was refused, in the service's own words. */
 export type StudioModuleBacklogErrorCode =

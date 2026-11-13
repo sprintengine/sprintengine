@@ -12,7 +12,7 @@ import { GlyphFrame, iconSize, type GlyphProps } from "./Glyph";
 // shape, never colour alone: epic = stacked layers, feature = spark, bug =
 // beetle, mockup = framed artboard, spike = bolt.
 //
-// Structurally identical to `MobileControlBacklogItemType`, restated here so a
+// Structurally identical to `StudioBacklogItemType`, restated here so a
 // UI primitive never depends on the wire protocol.
 export type BacklogType = "epic" | "feature" | "bug" | "mockup" | "spike";
 

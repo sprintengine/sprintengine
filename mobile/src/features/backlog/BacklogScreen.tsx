@@ -1,9 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import type {
-  MobileControlBacklogItemCriticality,
-  MobileControlBacklogItemDifficulty,
-  MobileControlBacklogItemType,
-} from "../../../../packages/studio-protocol/src/mobile-control";
+  StudioBacklogItemCriticality,
+  StudioBacklogItemDifficulty,
+  StudioBacklogItemType,
+} from "../../../../packages/studio-protocol/src/public";
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -38,9 +38,9 @@ export interface BacklogUpdateInput {
   // Every axis is optional: the wire treats an omitted field as "leave it alone",
   // so a triage edit sends only the axis it changed.
   status?: "idea" | "ready";
-  type?: MobileControlBacklogItemType;
-  difficulty?: MobileControlBacklogItemDifficulty;
-  criticality?: MobileControlBacklogItemCriticality;
+  type?: StudioBacklogItemType;
+  difficulty?: StudioBacklogItemDifficulty;
+  criticality?: StudioBacklogItemCriticality;
 }
 
 export interface BacklogCommandCapabilities {

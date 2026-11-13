@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { readMobileBacklogWorkspaceSnapshot } from './backlog'
-import type { MobileControlBacklogItemSnapshot } from '../../../../packages/studio-protocol/src/mobile-control'
+import type { StudioBacklogItem } from '../../../../packages/studio-protocol/src/public'
 import { test } from 'vitest'
 
 test('backlog', async () => {
@@ -25,7 +25,7 @@ test('backlog', async () => {
     return root
   }
 
-  function bySource(items: MobileControlBacklogItemSnapshot[], relativePath: string): MobileControlBacklogItemSnapshot {
+  function bySource(items: StudioBacklogItem[], relativePath: string): StudioBacklogItem {
     const found = items.find((item) => item.relativePath === relativePath)
     assert.ok(found, `expected a snapshot item for ${relativePath}`)
     return found

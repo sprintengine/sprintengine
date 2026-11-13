@@ -1,13 +1,3 @@
-import type { MobileControlErrorCode } from "../../../packages/studio-protocol/src/mobile-control";
-
-export {
-  mobileControlProtocolVersion,
-  type MobileControlCommand,
-  type MobileControlSnapshot,
-  type MobileSnapshotCollection,
-  validateMobileControlSnapshot,
-} from "../../../packages/studio-protocol/src/mobile-control";
-
 /**
  * One paired desktop, as this phone holds it: a tailnet pairing with the
  * desktop's Studio gateway. There is no other kind — the phone reaches a
@@ -68,18 +58,18 @@ export interface DesktopMachineMark {
 export type DesktopSessionStatus = "online" | "offline" | "stale" | "revoked";
 
 /**
- * What a call to the desktop can fail with: the desktop's own refusals
- * (`MobileControlErrorCode`), and the phone's reading of what its transport
- * said (no credential, a pairing the desktop ended, no desktop to reach, a
- * snapshot over the phone's budget).
+ * What a call to the desktop can fail with, in the phone's words: a request
+ * the desktop could not read, a method it does not serve, and what the
+ * transport said (no credential, a grant that does not reach it, a pairing
+ * the desktop ended, no desktop to reach).
  */
 export type ApiErrorCode =
-  | MobileControlErrorCode
+  | "invalid_payload"
+  | "command_not_supported"
   | "unauthenticated"
   | "unauthorized"
   | "device_revoked"
-  | "desktop_unavailable"
-  | "snapshot_too_large";
+  | "desktop_unavailable";
 
 export interface ApiResult<TData> {
   ok: boolean;

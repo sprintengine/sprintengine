@@ -269,14 +269,6 @@
       "sha256": "16923cd7a238930671ebb9a87c286ac993fd1cb3e6afed6ccac5fd9ebe95926e"
     },
     {
-      "name": "workspace.mobile_command",
-      "sha256": "70eb03165286a1d0eb56a50a70898563fc561bb9ac85a81b89d0477858e0f0cc"
-    },
-    {
-      "name": "workspace.snapshot",
-      "sha256": "b671eafa4e5520092b2e972c1cf45a71acd105c38fcd3110a595dd85c42a2285"
-    },
-    {
       "name": "workspace.status",
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
@@ -715,14 +707,6 @@
       "sha256": "16923cd7a238930671ebb9a87c286ac993fd1cb3e6afed6ccac5fd9ebe95926e"
     },
     {
-      "name": "workspace.mobile_command",
-      "sha256": "70eb03165286a1d0eb56a50a70898563fc561bb9ac85a81b89d0477858e0f0cc"
-    },
-    {
-      "name": "workspace.snapshot",
-      "sha256": "b671eafa4e5520092b2e972c1cf45a71acd105c38fcd3110a595dd85c42a2285"
-    },
-    {
       "name": "workspace.status",
       "sha256": "7678e50cd0d430bebf9a51e73007501b0abbd22fcf0859d753a1f87a1bf2aba6"
     },
@@ -971,10 +955,6 @@
     {
       "name": "workspace.list",
       "sha256": "16923cd7a238930671ebb9a87c286ac993fd1cb3e6afed6ccac5fd9ebe95926e"
-    },
-    {
-      "name": "workspace.snapshot",
-      "sha256": "b671eafa4e5520092b2e972c1cf45a71acd105c38fcd3110a595dd85c42a2285"
     },
     {
       "name": "workspace.status",

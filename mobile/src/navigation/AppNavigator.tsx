@@ -47,7 +47,6 @@ import { ConversationFileDiffScreen } from "../features/conversations/Conversati
 import { PullRequestFileScreen } from "../features/pullRequests/PullRequestFileScreen";
 import { PullRequestScreen } from "../features/pullRequests/PullRequestScreen";
 import { openPullRequest } from "../features/conversations/ChatMarkViews";
-import { tailnetGrantAllows } from "../api/tailnetControlClient";
 import { NewChatScreen } from "../features/conversations/NewChatScreen";
 import { routesAfterNewChat, routesAfterSchedule } from "../features/conversations/launchLogic";
 import { openWebTarget, WebTargetsScreen } from "../features/web/WebTargetsScreen";
@@ -130,7 +129,8 @@ export function AppNavigator() {
   // browser from there.
   const viewsPullRequests = (deviceId: string) => {
     const paired = sessions.find((candidate) => candidate.deviceId === deviceId);
-    return !!paired && tailnetGrantAllows(paired.tailnetScopes, "pullRequest.read");
+    // The desktop reads a pull request in full for a pairing that may operate it.
+    return !!paired && paired.tailnetScopes.includes("workspace:operate");
   };
 
   return (
@@ -487,7 +487,6 @@ function BacklogNavigator() {
     refreshSnapshot,
     backlogCapabilities,
     sendBacklogUpdate,
-    sendBacklogCreate,
     currentProject,
   } = useSnapshot();
 
@@ -504,7 +503,6 @@ function BacklogNavigator() {
             errorMessage={snapshotError}
             isLoading={snapshotState === "loading"}
             isRefreshing={isRefreshing}
-            onCreateItem={sendBacklogCreate}
             onOpenItem={(item) =>
               navigation.navigate("BacklogDetail", {
                 workspacePath: item.workspacePath,

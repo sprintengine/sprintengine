@@ -28,6 +28,10 @@ export type FakeDesktopStudio = {
   socketUrls: string[];
   /** Drop every open socket, as a backgrounded phone's are. */
   cut(): void;
+  /** The push topics followed now, by subscription id. */
+  subscriptions: Map<string, string>;
+  /** Say something on a push topic to whoever follows it. */
+  push(topic: string, payload: unknown): void;
 };
 
 export function fakeDesktopStudio(input: {
@@ -41,7 +45,8 @@ export function fakeDesktopStudio(input: {
   const requests: FakeDesktopStudio["requests"] = [];
   const ticketHeaders: FakeDesktopStudio["ticketHeaders"] = [];
   const socketUrls: string[] = [];
-  const open = new Set<{ drop(): void }>();
+  const open = new Set<{ drop(): void; push(topic: string, payload: unknown): void }>();
+  const subscriptions = new Map<string, string>();
   let minted = 0;
 
   const fetchImpl = (async (_url: string, init: { headers: Record<string, string> }) => {
@@ -61,7 +66,12 @@ export function fakeDesktopStudio(input: {
     constructor(url: string) {
       socketUrls.push(url);
       this.ticket = new URL(url).searchParams.get("ticket") ?? "";
-      const handle = { drop: () => this.close(1006, "cut") };
+      const handle = {
+        drop: () => this.close(1006, "cut"),
+        push: (topic: string, payload: unknown) => {
+          for (const [id, followed] of this.followed) if (followed === topic) this.reply({ t: "push", sub: id, payload });
+        },
+      };
       open.add(handle);
       setTimeout(() => {
         this.readyState = 1;
@@ -69,7 +79,8 @@ export function fakeDesktopStudio(input: {
       }, 0);
       this.handle = handle;
     }
-    private handle: { drop(): void };
+    private handle: { drop(): void; push(topic: string, payload: unknown): void };
+    private followed = new Map<string, string>();
     addEventListener(type: string, listener: (event: never) => void) {
       (this.listeners[type] ??= []).push(listener);
     }
@@ -109,6 +120,16 @@ export function fakeDesktopStudio(input: {
         });
         return;
       }
+      if (frame.t === "sub") {
+        this.followed.set(frame.id as string, frame.topic as string);
+        subscriptions.set(frame.id as string, frame.topic as string);
+        return;
+      }
+      if (frame.t === "unsub") {
+        this.followed.delete(frame.id as string);
+        subscriptions.delete(frame.id as string);
+        return;
+      }
       if (frame.t === "req") {
         const method = frame.method as string;
         const params = (frame.params ?? {}) as Record<string, unknown>;
@@ -139,6 +160,10 @@ export function fakeDesktopStudio(input: {
     socketUrls,
     cut: () => {
       for (const socket of [...open]) socket.drop();
+    },
+    subscriptions,
+    push: (topic, payload) => {
+      for (const socket of open) socket.push(topic, payload);
     },
   };
 }

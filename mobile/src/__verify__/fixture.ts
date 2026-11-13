@@ -1,5 +1,5 @@
 import type { MobileSession } from "../api/types";
-import { mobileControlProtocolVersion, type MobileControlSnapshot } from "../../../packages/studio-protocol/src/mobile-control";
+import type { DesktopSnapshot } from "../api/desktopReads";
 
 // A realistic desktop snapshot for screenshot verification: a backlog with
 // two epics. The Sprint Engine runs, their workspaces and the role catalog
@@ -85,12 +85,10 @@ export const verifySessions: MobileSession[] = [
   },
 ];
 
-export const verifySnapshot: MobileControlSnapshot = {
-  protocolVersion: mobileControlProtocolVersion,
-  generatedAt: minutesAgo(0),
-  desktopSessionId: "desk_verify",
-  snapshotVersion: "verify-1",
-  commands: ["snapshot.request", "backlog.update", "backlog.create"],
+export const verifySnapshot: DesktopSnapshot = {
+  canUpdateBacklog: true,
+  canReadPullRequests: true,
+  webTargets: [],
   backlog: [
     {
       workspaceId: "backlog_mobile",

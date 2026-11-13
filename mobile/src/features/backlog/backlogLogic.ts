@@ -1,12 +1,12 @@
 import {
-  MobileControlBacklogItemCriticality,
-  MobileControlBacklogItemDifficulty,
-  MobileControlBacklogItemSnapshot,
-  MobileControlBacklogItemStatus,
-  MobileControlBacklogItemType,
-} from "../../../../packages/studio-protocol/src/mobile-control";
+  StudioBacklogItemCriticality,
+  StudioBacklogItemDifficulty,
+  StudioBacklogItem,
+  StudioBacklogItemStatus,
+  StudioBacklogItemType,
+} from "../../../../packages/studio-protocol/src/public";
 
-export interface BacklogRowItem extends MobileControlBacklogItemSnapshot {
+export interface BacklogRowItem extends StudioBacklogItem {
   workspacePath: string;
   workspaceName: string;
 }
@@ -26,7 +26,7 @@ export interface BacklogWorkspaceGroup {
   epics: Map<string, BacklogEpicMeta>;
 }
 
-const backlogStatuses = new Set<MobileControlBacklogItemStatus>([
+const backlogStatuses = new Set<StudioBacklogItemStatus>([
   "idea",
   "ready",
   "in_progress",
@@ -34,9 +34,9 @@ const backlogStatuses = new Set<MobileControlBacklogItemStatus>([
   "completed",
   "archived",
 ]);
-const backlogTypes = new Set<MobileControlBacklogItemType>(["epic", "feature", "bug", "mockup", "spike"]);
-const backlogDifficulties = new Set<MobileControlBacklogItemDifficulty>(["xs", "s", "m", "l", "xl"]);
-const backlogCriticalities = new Set<MobileControlBacklogItemCriticality>(["low", "normal", "high", "critical"]);
+const backlogTypes = new Set<StudioBacklogItemType>(["epic", "feature", "bug", "mockup", "spike"]);
+const backlogDifficulties = new Set<StudioBacklogItemDifficulty>(["xs", "s", "m", "l", "xl"]);
+const backlogCriticalities = new Set<StudioBacklogItemCriticality>(["low", "normal", "high", "critical"]);
 
 // Defensive normalizer for the snapshot's backlog field: the desktop is the
 // source of truth, but the phone never trusts the wire shape blindly.
@@ -98,17 +98,17 @@ function normalizeBacklogItem(
     relativePath,
     title: readString(input.title) || lastPathSegment(relativePath),
     ...(typeof input.excerpt === "string" && input.excerpt.trim() ? { excerpt: input.excerpt.trim() } : {}),
-    status: backlogStatuses.has(status as MobileControlBacklogItemStatus)
-      ? (status as MobileControlBacklogItemStatus)
+    status: backlogStatuses.has(status as StudioBacklogItemStatus)
+      ? (status as StudioBacklogItemStatus)
       : "idea",
-    ...(backlogTypes.has(input.type as MobileControlBacklogItemType)
-      ? { type: input.type as MobileControlBacklogItemType }
+    ...(backlogTypes.has(input.type as StudioBacklogItemType)
+      ? { type: input.type as StudioBacklogItemType }
       : {}),
-    ...(backlogDifficulties.has(input.difficulty as MobileControlBacklogItemDifficulty)
-      ? { difficulty: input.difficulty as MobileControlBacklogItemDifficulty }
+    ...(backlogDifficulties.has(input.difficulty as StudioBacklogItemDifficulty)
+      ? { difficulty: input.difficulty as StudioBacklogItemDifficulty }
       : {}),
-    ...(backlogCriticalities.has(input.criticality as MobileControlBacklogItemCriticality)
-      ? { criticality: input.criticality as MobileControlBacklogItemCriticality }
+    ...(backlogCriticalities.has(input.criticality as StudioBacklogItemCriticality)
+      ? { criticality: input.criticality as StudioBacklogItemCriticality }
       : {}),
     ...(epic ? { epic } : {}),
     ...(typeof input.updatedAt === "string" ? { updatedAt: input.updatedAt } : {}),
@@ -117,7 +117,7 @@ function normalizeBacklogItem(
   };
 }
 
-export const backlogStatusLabel: Record<MobileControlBacklogItemStatus, string> = {
+export const backlogStatusLabel: Record<StudioBacklogItemStatus, string> = {
   idea: "Idea",
   ready: "Ready",
   in_progress: "In progress",
@@ -127,7 +127,7 @@ export const backlogStatusLabel: Record<MobileControlBacklogItemStatus, string> 
 };
 
 export function backlogStatusTone(
-  status: MobileControlBacklogItemStatus,
+  status: StudioBacklogItemStatus,
 ): "neutral" | "success" | "warning" | "danger" {
   switch (status) {
     case "needs_input":
@@ -139,7 +139,7 @@ export function backlogStatusTone(
   }
 }
 
-export function triageSummary(item: MobileControlBacklogItemSnapshot): string {
+export function triageSummary(item: StudioBacklogItem): string {
   const parts: string[] = [];
   if (item.type) {
     parts.push(item.type.charAt(0).toUpperCase() + item.type.slice(1));
@@ -169,7 +169,7 @@ export function triageSummary(item: MobileControlBacklogItemSnapshot): string {
 // order" was a control the user chose that then sorted by recency — and the two
 // orders correlate on a young backlog, so it read as working. It is removed
 // rather than left degrading. Restoring it needs `dependsOn` on
-// MobileControlBacklogItemSnapshot, which the desktop models
+// StudioBacklogItem, which the desktop models
 // (renderer/src/utils/backlogDependencies.ts) but does not project.
 // ---------------------------------------------------------------------------
 
@@ -241,15 +241,15 @@ export const backlogSortOptions: readonly BacklogSort[] = [
 ];
 export const backlogGroupOptions: readonly BacklogGroup[] = ["none", "by_epic"];
 
-const DIFFICULTY_RANK: Record<MobileControlBacklogItemDifficulty, number> = { xs: 0, s: 1, m: 2, l: 3, xl: 4 };
-const CRITICALITY_RANK: Record<MobileControlBacklogItemCriticality, number> = {
+const DIFFICULTY_RANK: Record<StudioBacklogItemDifficulty, number> = { xs: 0, s: 1, m: 2, l: 3, xl: 4 };
+const CRITICALITY_RANK: Record<StudioBacklogItemCriticality, number> = {
   low: 0,
   normal: 1,
   high: 2,
   critical: 3,
 };
 const RISK_RANK: Record<BacklogRisk, number> = { low: 0, normal: 1, high: 2 };
-const STATUS_RANK: Record<MobileControlBacklogItemStatus, number> = {
+const STATUS_RANK: Record<StudioBacklogItemStatus, number> = {
   needs_input: 0,
   in_progress: 1,
   ready: 2,
@@ -258,16 +258,16 @@ const STATUS_RANK: Record<MobileControlBacklogItemStatus, number> = {
   archived: 5,
 };
 
-const SMALL = new Set<MobileControlBacklogItemDifficulty>(["xs", "s"]);
-const LARGE = new Set<MobileControlBacklogItemDifficulty>(["l", "xl"]);
-const URGENT = new Set<MobileControlBacklogItemCriticality>(["high", "critical"]);
+const SMALL = new Set<StudioBacklogItemDifficulty>(["xs", "s"]);
+const LARGE = new Set<StudioBacklogItemDifficulty>(["l", "xl"]);
+const URGENT = new Set<StudioBacklogItemCriticality>(["high", "critical"]);
 
 /** The subset of an item the triage lenses and sorts read — desktop `Triageable`. */
 export interface Triageable {
-  difficulty?: MobileControlBacklogItemDifficulty;
-  criticality?: MobileControlBacklogItemCriticality;
+  difficulty?: StudioBacklogItemDifficulty;
+  criticality?: StudioBacklogItemCriticality;
   risk?: BacklogRisk;
-  status: MobileControlBacklogItemStatus;
+  status: StudioBacklogItemStatus;
   modifiedAt: number;
   createdAtMs: number;
   relativePath: string;
@@ -610,9 +610,9 @@ function epicSlugForContainer(item: BacklogRowItem): string | null {
 // Create-form option lists. Ordered for the picker, not by the validator sets
 // above (which are unordered membership checks). Mirrors the desktop create
 // dialog's selectable axes; `status` is fixed to `idea` by the desktop service.
-export const backlogCreateTypeOptions: readonly MobileControlBacklogItemType[] = ["feature", "bug", "spike", "mockup"];
-export const backlogCreateDifficultyOptions: readonly MobileControlBacklogItemDifficulty[] = ["xs", "s", "m", "l", "xl"];
-export const backlogCreateCriticalityOptions: readonly MobileControlBacklogItemCriticality[] = [
+export const backlogCreateTypeOptions: readonly StudioBacklogItemType[] = ["feature", "bug", "spike", "mockup"];
+export const backlogCreateDifficultyOptions: readonly StudioBacklogItemDifficulty[] = ["xs", "s", "m", "l", "xl"];
+export const backlogCreateCriticalityOptions: readonly StudioBacklogItemCriticality[] = [
   "low",
   "normal",
   "high",
@@ -627,7 +627,7 @@ export const backlogCreateCriticalityOptions: readonly MobileControlBacklogItemC
 // There is no "unset" option on any axis: an omitted field on the wire means
 // "leave this alone", so the protocol has no way to express "clear it". Offering
 // a deselect would silently no-op — the picker therefore only ever sets.
-export const backlogTypeOptions: readonly MobileControlBacklogItemType[] = [
+export const backlogTypeOptions: readonly StudioBacklogItemType[] = [
   "epic",
   "feature",
   "bug",
@@ -662,18 +662,18 @@ export interface BacklogCreateDraft {
   workspacePath: string | null;
   title: string;
   description: string;
-  type?: MobileControlBacklogItemType;
-  difficulty?: MobileControlBacklogItemDifficulty;
-  criticality?: MobileControlBacklogItemCriticality;
+  type?: StudioBacklogItemType;
+  difficulty?: StudioBacklogItemDifficulty;
+  criticality?: StudioBacklogItemCriticality;
 }
 
 export interface BacklogCreatePayload {
   workspacePath: string;
   title: string;
   description?: string;
-  type?: MobileControlBacklogItemType;
-  difficulty?: MobileControlBacklogItemDifficulty;
-  criticality?: MobileControlBacklogItemCriticality;
+  type?: StudioBacklogItemType;
+  difficulty?: StudioBacklogItemDifficulty;
+  criticality?: StudioBacklogItemCriticality;
 }
 
 export type BacklogCreateValidation =

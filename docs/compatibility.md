@@ -14,7 +14,6 @@ a private data structure, and changing one is not a local edit.**
 | Wire                                                                                  | Version                                  | Window                                               | Declared in                                      |
 | ------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
 | Tailnet transport — Studio driving another Studio                                     | `TAILNET_TRANSPORT_VERSION` (integer)    | `TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION` .. current | `src/main/automation/tailnet/tailnet-routes.ts`  |
-| Mobile control — the phone reading and driving a desktop over the tailnet gateway     | `mobileControlProtocolVersion` (integer) | `mobileControlSupportedProtocolVersions`             | `packages/studio-protocol/src/mobile-control.ts` |
 | MCP                                                                                   | dated strings, newest first              | every entry in the list                              | `src/shared/mcp/protocol.ts`                     |
 | Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)             | `HOST_API_MIN_SUPPORTED` .. current                  | `src/shared/modules/host-api.ts`                 |
 | Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)      | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current           | `packages/studio-protocol/src/handshake.ts`      |
@@ -23,7 +22,9 @@ a private data structure, and changing one is not a local edit.**
 One more version number is near these and is **not** a wire window: the
 backlog item schema version is a file format, and is not negotiated with a peer.
 (`mobileControlWorkspaceSnapshotVersion` was a second; it versioned the mobile
-snapshot's `workspaces` detail body and left the wire with it in v4.)
+snapshot's `workspaces` detail body and left the wire with it in v4. The
+mobile-control wire itself, with `mobileControlProtocolVersion`, went on
+2026-11-12: see "The phone's reads are Studio protocol methods" below.)
 
 Alongside the tailnet version is `TAILNET_CAPABILITIES` — a list of named,
 additive features. It is not a version and does not follow one; see
@@ -100,20 +101,13 @@ straight after, is read by the desktop's own runtime and by nothing else.
 
 ## The support window
 
-Both integer wires accept **one version of slack**: the current version and the
+The tailnet transport accepts **one version of slack**: the current version and the
 one before it. Anything outside is refused at the handshake, by a named error
 that says both what was seen and what is supported.
 
 - Tailnet: `checkTailnetTransportVersion` in `tailnet-routes.ts`, applied in
   `readRemoteIdentity` (`tailnet-remote-client.ts`). A machine outside the window
   is reported unreachable with the reason, and shown as such in the Remote panel.
-- Mobile: `isSupportedMobileControlProtocolVersion`, and the
-  `unsupported_protocol_version` error code. Enforced on inbound commands
-  (`packages/studio-protocol/src/mobile-control-commands.ts`, behind
-  `workspace.mobile_command`). The snapshot the
-  desktop sends is stamped with the current version, and the phone reads it at
-  that version only. The phone pairs through the tailnet gateway's own pairing,
-  which is versioned by the tailnet transport, not by this integer.
 
 One version, and not more, because the second version back is one this tree no
 longer has to be able to produce, and a window wider than the shapes anyone
@@ -291,34 +285,32 @@ HOST_API_VERSION`. `checkHostApiCompatibility` is the one check; it is
   `scripts/release/sdk-release-check.mjs` (run by `npm run test:release`) checks
   that the version quoted here matches the source.
 
-## The mobile wire lives in this tree
+## The phone's reads are Studio protocol methods
 
-The mobile-control shapes — the snapshot the phone reads and the commands it
-sends — are declared once, in `packages/studio-protocol/src/mobile-control.ts`
-(the command validator beside it in `mobile-control-commands.ts`), which the
-desktop's snapshot builder and command service and the phone app all import. They
-used to ship as the `@sprintengine/mobile-control-protocol` package, when the
-same wire also ran through a hosted relay; the relay was removed on 2026-09-27
-(owner ruling) and the package with it. Its published `4.x` versions stay on
-npm, and wire version 4 is what this tree still speaks, unchanged.
+What the phone reads of a desktop beside its chats, and the little it changes
+there, are Studio protocol methods on the desktop's `/tailnet/v1/studio`
+(2026-11-12), defined once in `packages/studio-protocol/src/backlog.ts` and
+`pull-request-reads.ts`, which the desktop serves and the phone imports:
 
-The phone app imports that module from this repository's source, so there is
-no second copy to keep in step. An installed phone still runs the version it
-was built with, so a change that crosses the wire still follows this policy,
-and the version integer is still the only thing a peer sees. The relay-era
-members the phone's old copy kept (devices, capabilities, events and
-`device.revoke`) had no producer and went with it.
+- `backlog.list` and the `backlog.changed` stream (`backlog` capability,
+  `backlog:read`): each project's items and epics, the project named by a token
+  (`backlog:<token>`) and never by its folder. `backlog.update`
+  (`backlog:operate`, a mutation under its `commandId`) changes one item's
+  status or triage. Both scopes are new; a paired device holds them with its
+  pairing's `backlog:read` and `backlog:operate`.
+- `shares.list` (`shares`, `workspaces:read`): the pages the machine publishes
+  on the tailnet.
+- `pullRequests.detail` and `pullRequests.diff` (`pull-request-reads`,
+  `workspaces:operate`): one pull request read in full, and one file's diff a
+  page at a time, read afresh each time.
 
-Two commands that only read joined the wire on 2026-10-30, without a bump:
-`pullRequest.read` (a pull request's state, checks, reviews, latest comments
-and changed files, each list capped) and `pullRequest.diff` (one changed
-file's diff, a few hundred lines a page, cut between hunks). A desktop that
-serves them lists them in the snapshot's `commands` and in
-`workspace.mobile_command`'s allowlist; one from before them refuses either,
-as `invalid_payload` from its validator or `command_not_supported` from its
-gateway, and the phone then opens the pull request in the browser, as it did
-before. They are answered afresh each time and kept out of the idempotency
-cache and the audit log, since a read changes nothing.
+They replace the mobile-control wire: the `workspace.snapshot` and
+`workspace.mobile_command` gateway tools, `mobileControlProtocolVersion` and
+its window, and `packages/studio-protocol/src/mobile-control.ts` with its
+command validator are gone. The phone hears a backlog move rather than polling
+the snapshot. A phone from before this change is refused by the gateway
+(`Unknown tool`) and says the desktop could not answer; a current phone meeting
+an older desktop is told to update it, by the Studio handshake.
 
 ### Direct conversation lane
 
@@ -327,7 +319,7 @@ additive `conversations` tailnet capability. It owns the direct conversation
 WebSocket frames, their client validator and pure tool-presentation helpers,
 and since `0.2.0` the whole conversation contract: the event layer, the
 command vocabulary, create requests, the `hello` handshake and the capability
-names. It does not change the mobile-control wire or its version number.
+names.
 
 The lane has its own `CONVERSATION_PROTOCOL_VERSION`, answered by `hello` on a
 desktop that advertises `conversation-hello`, with the same one-version window
@@ -1333,8 +1325,8 @@ If your change alters anything that crosses either wire, do all of this:
    `src/main/mobile/control/command-validation.test.ts` and
    `src/main/mobile/control/protocol.test.ts`.
 5. **Update the phone's use of it in the same change.** The phone imports the
-   mobile-control module itself (see "The mobile wire lives in this tree"
-   above), so a shape change reaches its typecheck; what it does with a new
+   protocol package itself (see "The phone's reads are Studio protocol
+   methods" above), so a shape change reaches its typecheck; what it does with a new
    member is still yours to write. The window is the grace period a bump needs,
    not permission to skip the other side.
 6. **Update this file**, if what you changed is the policy rather than an

@@ -113,9 +113,10 @@ export function tailnetDevicePrincipal(scopes: readonly unknown[]): StudioPrinci
  *   the list, the CLIs a chat may run, a checkout, a project's skills, and
  *   the scheduled agents and the usage rows another desktop's dashboard reads.
  * - `workspace:operate` also carries `workspaces:operate`: making, changing,
- *   running, pausing and closing the scheduled agents.
- * - The backlog scopes carry nothing here yet: no backlog method is served to
- *   a device on this socket.
+ *   running, pausing and closing the scheduled agents, and reading a pull
+ *   request in full.
+ * - The backlog scopes carry their own: the backlogs read, and their items
+ *   changed.
  *
  * No scope carries a terminal, the filesystem, settings, tools, modules or
  * this machine's upkeep, and the grant is never an owner's.
@@ -123,8 +124,8 @@ export function tailnetDevicePrincipal(scopes: readonly unknown[]): StudioPrinci
 export const TAILNET_SCOPE_STUDIO_SCOPES: { readonly [S in TailnetScope]: readonly StudioScope[] } = {
   'workspace:read': ['workspaces:read'],
   'workspace:operate': ['workspaces:read', 'workspaces:operate'],
-  'backlog:read': [],
-  'backlog:operate': [],
+  'backlog:read': ['backlog:read'],
+  'backlog:operate': ['backlog:read', 'backlog:operate'],
   'conversation:read': ['conversation:read'],
   'conversation:operate': ['conversation:read', 'conversation:operate', 'conversation:create'],
 }

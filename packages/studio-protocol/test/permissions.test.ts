@@ -32,6 +32,7 @@ import { STUDIO_SCOPES, type StudioScope } from '../src/scopes'
 // one must agree with: a scope covers itself, and operate covers read.
 function legacyStudioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
+  if (needed === 'backlog:read') return scopes.includes('backlog:operate')
   if (needed === 'modules:read') return scopes.includes('modules:operate')
   // `workspaces:operate` (the scheduled agents) carries its read, as the others do.
   if (needed === 'workspaces:read') return scopes.includes('workspaces:operate')

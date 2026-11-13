@@ -14,6 +14,11 @@
 // gains them, since a grant holds exactly the names it was given. A client
 // that is not an owner names files only inside the folders Studio knows.
 //
+// `backlog:read` reads the backlogs of the projects a Studio holds
+// (`backlog.list` and its `backlog.changed` stream); `backlog:operate` changes
+// an item's status and triage there (`backlog.update`) and carries
+// `backlog:read`. A paired device holds them with its pairing's `backlog:*`.
+//
 // `tools:offer` lets a client give Studio's agents tools of its own (`tools.*`),
 // and read the catalog and which chats were opened to a toolset beside it:
 // Settings shows it as "Give agents tools from this app", off unless ticked.
@@ -49,6 +54,8 @@ export const STUDIO_SCOPES = [
   'providers:read',
   'files:read',
   'workspaces:read',
+  'backlog:read',
+  'backlog:operate',
   'tools:offer',
   'files:write',
   'environment:maintain',
@@ -79,6 +86,7 @@ export function normalizeStudioScopes(value: unknown): StudioScope[] {
 /** Whether a grant covers `needed`. An `operate` scope covers its `read`. */
 export function studioScopesGrant(scopes: readonly string[], needed: StudioScope): boolean {
   if (scopes.includes(needed)) return true
+  if (needed === 'backlog:read') return scopes.includes('backlog:operate')
   if (needed === 'modules:read') return scopes.includes('modules:operate')
   if (needed === 'workspaces:read') return scopes.includes('workspaces:operate')
   return needed === 'conversation:read' && scopes.includes('conversation:operate')

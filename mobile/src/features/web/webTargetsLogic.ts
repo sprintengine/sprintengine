@@ -1,4 +1,5 @@
-import type { MobileControlSnapshot, MobileControlWebTargetSnapshot } from "../../../../packages/studio-protocol/src/mobile-control";
+import type { StudioShare } from "../../../../packages/studio-protocol/src/public";
+import type { DesktopSnapshot } from "../../api/desktopReads";
 
 /**
  * Dev servers a paired desktop publishes on the tailnet, as this phone may open
@@ -48,7 +49,7 @@ export type WebTarget = {
   machine: string;
 };
 
-function isUsable(target: MobileControlWebTargetSnapshot | undefined | null): target is MobileControlWebTargetSnapshot {
+function isUsable(target: StudioShare | undefined | null): target is StudioShare {
   return (
     !!target
     && typeof target.id === "string"
@@ -66,7 +67,7 @@ function isUsable(target: MobileControlWebTargetSnapshot | undefined | null): ta
  * Ordered by machine, then by local port, so the list is stable across polls —
  * a list that reorders under a thumb is a list that gets mis-tapped.
  */
-export function readWebTargets(snapshot: MobileControlSnapshot | null): WebTarget[] {
+export function readWebTargets(snapshot: Pick<DesktopSnapshot, "webTargets"> | null): WebTarget[] {
   const raw = snapshot?.webTargets;
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();

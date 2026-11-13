@@ -4,10 +4,10 @@ import { Text, TextInput, View } from "react-native";
 import { PrimaryButton } from "../../components/PrimaryButton";
 import { useTheme } from "../../theme/ThemeProvider";
 import type {
-  MobileControlBacklogItemCriticality,
-  MobileControlBacklogItemDifficulty,
-  MobileControlBacklogItemType,
-} from "../../../../packages/studio-protocol/src/mobile-control";
+  StudioBacklogItemCriticality,
+  StudioBacklogItemDifficulty,
+  StudioBacklogItemType,
+} from "../../../../packages/studio-protocol/src/public";
 import {
   backlogCreateCriticalityOptions,
   backlogCreateDescriptionMaxChars,
@@ -29,9 +29,9 @@ export interface BacklogCreateInput {
   workspacePath: string;
   title: string;
   description?: string;
-  type?: MobileControlBacklogItemType;
-  difficulty?: MobileControlBacklogItemDifficulty;
-  criticality?: MobileControlBacklogItemCriticality;
+  type?: StudioBacklogItemType;
+  difficulty?: StudioBacklogItemDifficulty;
+  criticality?: StudioBacklogItemCriticality;
 }
 
 export interface BacklogCreateResult {
@@ -62,9 +62,9 @@ export function BacklogCreateForm({
   const [workspacePath, setWorkspacePath] = useState<string | null>(defaultWorkspacePath);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [type, setType] = useState<MobileControlBacklogItemType | undefined>(undefined);
-  const [difficulty, setDifficulty] = useState<MobileControlBacklogItemDifficulty | undefined>(undefined);
-  const [criticality, setCriticality] = useState<MobileControlBacklogItemCriticality | undefined>(undefined);
+  const [type, setType] = useState<StudioBacklogItemType | undefined>(undefined);
+  const [difficulty, setDifficulty] = useState<StudioBacklogItemDifficulty | undefined>(undefined);
+  const [criticality, setCriticality] = useState<StudioBacklogItemCriticality | undefined>(undefined);
   const [formState, setFormState] = useState<CreateFormState>({ status: "editing", error: null });
 
   const selectedWorkspace = useMemo(

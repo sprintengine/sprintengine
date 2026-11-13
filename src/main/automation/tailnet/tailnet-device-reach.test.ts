@@ -32,6 +32,8 @@ const CHAT_READ = ['conversation:read', 'conversation:operate'] as const
 const CHAT_OPERATE = ['conversation:operate'] as const
 const WORKSPACE = ['workspace:read', 'workspace:operate'] as const
 const WORKSPACE_OPERATE = ['workspace:operate'] as const
+const BACKLOG_READ = ['backlog:read', 'backlog:operate'] as const
+const BACKLOG_OPERATE = ['backlog:operate'] as const
 
 const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   // The connection itself, and whether this Studio needs updating: any authenticated grant.
@@ -134,6 +136,14 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'schedules.runNow': WORKSPACE_OPERATE,
   'schedules.delete': WORKSPACE_OPERATE,
   'usage.rows': WORKSPACE,
+  // The phone's Backlog and Web: the projects' backlogs on the pairing's own
+  // backlog scopes, the machine's shares on a workspace read, and a pull
+  // request read in full where the old command lane allowed it (operate).
+  'backlog.list': BACKLOG_READ,
+  'backlog.update': BACKLOG_OPERATE,
+  'shares.list': WORKSPACE,
+  'pullRequests.detail': WORKSPACE_OPERATE,
+  'pullRequests.diff': WORKSPACE_OPERATE,
 }
 
 const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
@@ -149,6 +159,7 @@ const DEVICE_TOPICS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'usageLimitResumes.changed': CHAT_READ,
   'pullRequests.changed': WORKSPACE,
   'schedules.changed': WORKSPACE,
+  'backlog.changed': BACKLOG_READ,
 }
 
 /**
@@ -469,6 +480,8 @@ test('a read-only device follows chats and reads workspaces, and drives, starts 
     'uploads.begin',
     'schedules.create',
     'schedules.runNow',
+    'backlog.update',
+    'pullRequests.detail',
   ])
     assert.ok(!reach.methods.includes(method), method)
   assert.ok(reach.methods.includes('conversation.list'))
