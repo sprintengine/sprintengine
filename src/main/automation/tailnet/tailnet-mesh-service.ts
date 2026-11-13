@@ -1033,7 +1033,11 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     const checking: MeshMachineReachability = { ...reachabilityFor(connection), checking: true }
     reachability.set(connection.id, checking)
     broadcast({ kind: 'machine-reachability', ...checking })
-    const probe = (async () => {
+    // Only this probe's own entry is cleared: a later check may already hold the slot.
+    const settle = (): void => {
+      if (probes.get(connection.id) === probe) probes.delete(connection.id)
+    }
+    const probe: Promise<void> = (async () => {
       const stored = store.find(connection.id)
       if (!stored) return
       const identity = await readRemoteIdentity({
@@ -1048,6 +1052,10 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         store.markConnected(connection.id)
         rememberIdentity(connection.id, identity.value)
         recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
+        // The answer is in: a check asked from here on is a new one, not a
+        // wait on this probe's relayed read. Otherwise a machine that went
+        // away during that read would still be called reachable.
+        settle()
         // Only a desktop that says it relays devices is asked which machines.
         if (tailnetPeerSupports(identity.value.capabilities, 'relayed-environments')) await readRelayed(stored)
         return
@@ -1057,9 +1065,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         unauthorized: identity.code === 'unauthorized',
         detail: identity.message,
       })
-    })().finally(() => {
-      probes.delete(connection.id)
-    })
+    })().finally(settle)
     probes.set(connection.id, probe)
     return probe
   }
