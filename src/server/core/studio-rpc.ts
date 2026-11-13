@@ -43,8 +43,11 @@ import { createStudioCanvasDomain, type StudioCanvasHost } from '../canvas/canva
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { createStudioPhoneReads } from '../backlog/backlog-domain'
 import type { StudioTailnetDomain } from '../rpc/studio-tailnet'
-import type { TailnetShareService } from '../../main/automation/tailnet/tailnet-share-service'
-import { createTailnetShareService, readTailnetWebTargets } from '../../main/automation/tailnet/tailnet-share-service'
+import {
+  createTailnetShareService,
+  readTailnetWebTargets,
+  type TailnetShareService,
+} from '../../main/automation/tailnet/tailnet-share-service'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 
