@@ -543,9 +543,9 @@ project's working tree unless the person puts it there.
   machine's boards through `canvas.list` there, offers New board, and opens a
   board in the same editor, through the same calls: `canvasBoardSource.ts` hands
   the tab and the editor a client that is this machine's `canvas:*` IPC for a chat
-  here and `canvas:remote-*` for a paired one, which main carries on its one
-  Studio connection to that machine (`tailnet-peer-canvas.ts` over
-  `tailnet-peer-studio.ts`). Following `canvas.board` there opens the board as a
+  here and, for a paired one, the window's own coordinator of that machine's
+  boards (`src/renderer/src/studio/pairedCanvas.ts`) on the window's own Studio
+  connection to it (`pairedStudio.ts`, its tickets bought by main). Following `canvas.board` there opens the board as a
   subscriber of that machine's canvas service, which pushes notices (a revision,
   the agent's presence) and an agent's `canvas.open` (`canvas.openRequests`);
   the scene is read with `canvas.read` and only the pictures this end lacks with
@@ -561,8 +561,8 @@ project's working tree unless the person puts it there.
   followed (`confineBoard`, through `canvas-remote-subscribers.ts`): a link
   inside a project or a store that leads out of it is answered `not_found`, as
   `files.*` answers a path outside the folders Studio knows. This machine's
-  windows and agents still name a board by its path as written. Export writes this
-  desktop's copy into a folder picked here; Reveal file is left out, as the file
+  windows and agents still name a board by its path as written. Export writes the
+  window's copy into a folder picked here (`canvas:export-scene`); Reveal file is left out, as the file
   is on the other machine. Where the pane cannot edit (a browser tab, or a
   machine whose Studio does not serve boards) a board is drawn as a picture from
   `canvas.picture` (`CanvasFarBoard`), with its reason, and a new chat there is

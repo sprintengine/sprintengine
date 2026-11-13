@@ -102,7 +102,6 @@ export function registerCoreIpc(
   registerCanvasIpc(ipcMain, services.canvasService, services.canvasSubscribers, {
     pickExportDirectory: pickCanvasExportDirectory,
     revealFile: revealCanvasBoardFile,
-    remote: () => services.automationService?.mesh().remoteCanvas ?? null,
     exportFs: createNodeCanvasFs(),
     continueInNewChat: (input) =>
       continueCanvasBoardInNewChat(

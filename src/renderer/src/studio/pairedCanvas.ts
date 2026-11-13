@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto'
-
 import { StudioError, type StudioClient, type StudioClientState } from '../../../../packages/client-runtime/src/public'
 import {
   STUDIO_CANVAS_BOARDS_CAPABILITY,
@@ -23,21 +21,28 @@ import type {
 } from '../../../shared/canvas/types'
 import { canvasFail, canvasOk } from '../../../shared/canvas/types'
 import { isRecord } from '../../../shared/records'
-import { peerRefusal, type PeerHold, type PeerStudios, type PeerStudioTarget } from './tailnet-peer-studio'
+import type { MeshCanvasBoard, MeshCanvasBoardsResult, MeshCanvasScreenshotResult } from '../../../shared/tailnet-mesh'
+import {
+  onPairedStudioForgotten,
+  pairedRefusal,
+  pairedStudios,
+  withPairedStudio,
+  type PairedHold,
+  type PairedMachine,
+  type PairedStudios,
+} from './pairedStudio'
 
 // This desktop's half of a paired chat's Canvas pane: the boards of the
 // machine the chat runs on, edited with the same editor and the same calls the
 // pane makes for a board here (`canvas:open-board`, `canvas:commit-scene`, the
 // `canvas:scene` and `canvas:presence` pushes), carried over that machine's
 // Studio protocol (`canvas.*`, packages/studio-protocol/src/canvas.ts) on this
-// desktop's one connection to it (tailnet-peer-studio.ts). The far machine's
-// canvas service is the one owner of each board; this end keeps a copy of what
-// it last read so a second window, an export and a reconnect have something to
-// read.
+// window's own connection to it (pairedStudio.ts). The far machine's canvas
+// service is the one owner of each board; this end keeps a copy of what it
+// last read so a second tab, an export and a reconnect have something to read.
 //
-// A board several windows hold is one `canvas.board` stream over there, and
-// what one window sends the others are told here, as the far service tells
-// its own. The stream says only that the board moved; the scene is read with
+// A board several tabs hold is one `canvas.board` stream over there, and what
+// one tab sends the others are told here, as the far service tells its own. The stream says only that the board moved; the scene is read with
 // `canvas.read`, and only the pictures this end lacks with `canvas.files`, so
 // each picture crosses once.
 //
@@ -48,11 +53,11 @@ import { peerRefusal, type PeerHold, type PeerStudios, type PeerStudioTarget } f
 // as long as this app runs. A far restart begins its revisions again; what the
 // windows are told never moves backwards.
 
-/** A window holding boards, by the id the canvas subscriber list gave it. */
-export type PeerCanvasViewer = { id: number; send(channel: string, payload: unknown): void }
+/** What holds boards and hears their pushes: this window, in the app. */
+export type PairedCanvasViewer = { id: number; send(channel: string, payload: unknown): void }
 
 /** A far board as a window names it: its own ref, and where the board is over there. */
-export type PeerCanvasBoardInput = {
+export type PairedCanvasBoardInput = {
   connectionId: unknown
   /** The chat's workspace on the far machine. */
   remoteWorkspaceId: unknown
@@ -62,31 +67,33 @@ export type PeerCanvasBoardInput = {
   store?: unknown
 }
 
-export const CANVAS_REMOTE_LINK_CHANNEL = 'canvas:remote-link'
-export const CANVAS_REMOTE_OPEN_REQUEST_CHANNEL = 'canvas:remote-open-request'
+/** A paired board's link, told to what holds it: `CanvasRemoteLink`, under its own ref. */
+export const PAIRED_CANVAS_LINK = 'paired-canvas:link'
+/** A far agent's `canvas.open`, for a watched chat: `{ connectionId, workspaceId, path, store? }`. */
+export const PAIRED_CANVAS_OPEN_REQUEST = 'paired-canvas:open-request'
 
-export type PeerCanvas = {
+export type PairedCanvas = {
   access(connectionId: unknown): Promise<CanvasRemoteAccess>
   open(
-    viewer: PeerCanvasViewer,
-    input: PeerCanvasBoardInput & { create?: unknown },
+    viewer: PairedCanvasViewer,
+    input: PairedCanvasBoardInput & { create?: unknown },
   ): Promise<CanvasResult<CanvasBoardState & { canEdit: boolean }>>
-  close(viewer: PeerCanvasViewer, input: PeerCanvasBoardInput): void
+  close(viewer: PairedCanvasViewer, input: PairedCanvasBoardInput): void
   commit(
-    viewer: PeerCanvasViewer,
-    input: PeerCanvasBoardInput & { baseRevision?: unknown; elements?: unknown; appState?: unknown; files?: unknown },
+    viewer: PairedCanvasViewer,
+    input: PairedCanvasBoardInput & { baseRevision?: unknown; elements?: unknown; appState?: unknown; files?: unknown },
   ): Promise<CanvasResult<{ revision: number; elements: CanvasElement[] | null }>>
-  noteHumanInput(viewer: PeerCanvasViewer, input: PeerCanvasBoardInput): void
+  noteHumanInput(viewer: PairedCanvasViewer, input: PairedCanvasBoardInput): void
   /** The board as this end last read it, with what it sent since: what an export writes. */
-  snapshot(input: PeerCanvasBoardInput): CanvasResult<{
+  snapshot(input: PairedCanvasBoardInput): CanvasResult<{
     name: string
     elements: CanvasElement[]
     appState: Record<string, unknown>
     files: Record<string, unknown>
   }>
   /** Follow a far chat's `canvas.open`, for the window showing it. */
-  watch(viewer: PeerCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void
-  unwatch(viewer: PeerCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void
+  watch(viewer: PairedCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void
+  unwatch(viewer: PairedCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void
   /** A window went away: everything it held is let go. */
   dropViewer(viewerId: number): void
   /** A pairing was removed: its boards go with it. */
@@ -94,17 +101,17 @@ export type PeerCanvas = {
   shutdown(): void
 }
 
-export type PeerCanvasDeps = {
+export type PairedCanvasDeps = {
   /** Where a paired machine is and the token this desktop holds for it; null for one not paired here. */
-  target(connectionId: string): PeerStudioTarget | null
-  studios: PeerStudios
+  target(connectionId: string): PairedMachine | null
+  studios: PairedStudios
   /** How long a board nobody here shows is kept open, for the last change of a tab that just closed. */
   lingerMs?: number
   requestTimeoutMs?: number
   log?: (message: string) => void
 }
 
-type ViewerHold = { viewer: PeerCanvasViewer; local: CanvasBoardRef }
+type ViewerHold = { viewer: PairedCanvasViewer; local: CanvasBoardRef }
 type Held = { elements: CanvasElement[]; appState: Record<string, unknown>; files: Record<string, unknown> }
 type Origin = 'agent' | 'human' | 'disk'
 
@@ -147,14 +154,14 @@ type Board = {
 
 type Session = {
   connectionId: string
-  hold: PeerHold
+  hold: PairedHold
   client: StudioClient | null
   state: StudioClientState | 'connecting'
   stopState: () => void
   /** Why it will not be reached again; null while it may be. */
   gone: string | null
   boards: Map<string, Board>
-  watches: Map<number, { viewer: PeerCanvasViewer; workspaceIds: Set<string> }>
+  watches: Map<number, { viewer: PairedCanvasViewer; workspaceIds: Set<string> }>
   stopWatch: (() => void) | null
 }
 
@@ -188,7 +195,7 @@ function codeOf(code: string): CanvasErrorCode {
 const isLinkFailure = (error: unknown): boolean =>
   !(error instanceof StudioError) || error.code === 'unavailable' || error.code === 'closed' || error.code === 'busy'
 
-export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
+export function createPairedCanvas(deps: PairedCanvasDeps): PairedCanvas {
   const sessions = new Map<string, Session>()
   const lingerMs = deps.lingerMs ?? DEFAULT_LINGER_MS
   const requestTimeoutMs = deps.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
@@ -210,12 +217,11 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
       work,
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => reject(new StudioError('unavailable', what)), requestTimeoutMs)
-        timer.unref?.()
       }),
     ]).finally(() => clearTimeout(timer))
   }
 
-  function sessionFor(connectionId: string, target: PeerStudioTarget): Session {
+  function sessionFor(connectionId: string, target: PairedMachine): Session {
     let session = sessions.get(connectionId)
     if (session) return session
     const hold = deps.studios.hold(target)
@@ -247,7 +253,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
         if (created.state === 'connecting') created.state = client.state
       },
       (error: unknown) => {
-        created.gone = peerRefusal(target, error).message
+        created.gone = pairedRefusal(target, error).message
       },
     )
     sessions.set(connectionId, created)
@@ -266,7 +272,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
 
   /** A window's ask, checked as the pane's own IPC checks it, and its far half beside it. */
   function readInput(
-    input: PeerCanvasBoardInput,
+    input: PairedCanvasBoardInput,
   ): CanvasResult<{ connectionId: string; local: CanvasBoardRef; remote: StudioCanvasRef }> {
     if (!isRecord(input)) return canvasFail('invalid_path', 'This call carried no board.')
     if (typeof input.connectionId !== 'string' || !input.connectionId)
@@ -334,7 +340,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
           : board.canEdit
             ? null
             : readOnlyWords(session.connectionId)
-    tell(board, CANVAS_REMOTE_LINK_CHANNEL, () => ({ state, canEdit: board.canEdit && state !== 'gone', message }))
+    tell(board, PAIRED_CANVAS_LINK, () => ({ state, canEdit: board.canEdit && state !== 'gone', message }))
   }
 
   /** Move what the windows are told on to a far revision, never backwards. */
@@ -470,18 +476,17 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
       try {
         client = await clientOf(session)
       } catch (error) {
-        return canvasFail('forbidden', peerRefusal({ machineName: machineOf(session.connectionId) }, error).message)
+        return canvasFail('forbidden', pairedRefusal({ machineName: machineOf(session.connectionId) }, error).message)
       }
       if (!client.supports(STUDIO_CANVAS_BOARDS_CAPABILITY))
         return canvasFail('forbidden', outdatedWords(session.connectionId))
       const opened = new Promise<CanvasResult<void>>((resolve) => {
         board.firstOpen = resolve
-        const timer = setTimeout(() => {
+        setTimeout(() => {
           if (board.firstOpen !== resolve) return
           board.firstOpen = null
           resolve(canvasFail('timeout', `${machineOf(session.connectionId)} did not answer in time.`))
         }, requestTimeoutMs)
-        timer.unref?.()
       })
       board.unsubscribe = client.subscribe(
         'canvas.board',
@@ -535,7 +540,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
     const body = { elements: change.elements, appState: change.appState, files }
     const base = {
       ...board.ref,
-      commandId: `canvas-${randomUUID()}`,
+      commandId: `canvas-${crypto.randomUUID()}`,
       baseRevision: Math.max(0, change.baseRevision - board.offset),
     }
     const text = JSON.stringify(body)
@@ -546,7 +551,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
         `${machineOf(session.connectionId)} did not answer in time.`,
       )
     } else {
-      const stageId = `stage-${randomUUID()}`
+      const stageId = `stage-${crypto.randomUUID()}`
       const size = STUDIO_CANVAS_LIMITS.stagePartChars
       const total = Math.ceil(text.length / size)
       for (let index = 0; index < total; index += 1)
@@ -636,10 +641,9 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
       if (board.held) return
       removeBoard(session, board)
     }, lingerMs)
-    board.linger.unref?.()
   }
 
-  function boardOf(input: PeerCanvasBoardInput): { session: Session; board: Board; local: CanvasBoardRef } | null {
+  function boardOf(input: PairedCanvasBoardInput): { session: Session; board: Board; local: CanvasBoardRef } | null {
     const read = readInput(input)
     if (!read.ok) return null
     const session = sessions.get(read.value.connectionId)
@@ -669,7 +673,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
             onPayload: (ref) => {
               for (const watch of session.watches.values()) {
                 if (!watch.workspaceIds.has(ref.workspaceId)) continue
-                watch.viewer.send(CANVAS_REMOTE_OPEN_REQUEST_CHANNEL, { connectionId: session.connectionId, ...ref })
+                watch.viewer.send(PAIRED_CANVAS_OPEN_REQUEST, { connectionId: session.connectionId, ...ref })
               }
             },
           },
@@ -682,7 +686,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
   function watchInput(input: {
     connectionId: unknown
     workspaceId: unknown
-  }): { connectionId: string; workspaceId: string; target: PeerStudioTarget } | null {
+  }): { connectionId: string; workspaceId: string; target: PairedMachine } | null {
     if (!isRecord(input) || typeof input.connectionId !== 'string' || typeof input.workspaceId !== 'string') return null
     const target = deps.target(input.connectionId)
     if (!input.workspaceId.trim() || !target) return null
@@ -702,7 +706,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
       lastAccess.set(connectionId, known)
       return { ok: true, ...known, ...(known.live ? {} : { reason: outdatedWords(connectionId) }) }
     } catch (error) {
-      const refusal = peerRefusal(target, error)
+      const refusal = pairedRefusal(target, error)
       if (refusal.kind === 'outdated')
         return { ok: true, live: false, canEdit: false, reason: outdatedWords(connectionId) }
       // Out of reach: what it last said decides which pane to draw, and the
@@ -714,8 +718,8 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
   }
 
   async function open(
-    viewer: PeerCanvasViewer,
-    input: PeerCanvasBoardInput & { create?: unknown },
+    viewer: PairedCanvasViewer,
+    input: PairedCanvasBoardInput & { create?: unknown },
   ): Promise<CanvasResult<CanvasBoardState & { canEdit: boolean }>> {
     if (shutDown) return canvasFail('worker_unavailable', 'The app is shutting down.')
     const read = readInput(input)
@@ -780,7 +784,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
     return canvasOk(stateOf(board))
   }
 
-  function close(viewer: PeerCanvasViewer, input: PeerCanvasBoardInput): void {
+  function close(viewer: PairedCanvasViewer, input: PairedCanvasBoardInput): void {
     const found = boardOf(input)
     if (!found) return
     found.board.holds.delete(localKey(viewer.id, found.local))
@@ -790,8 +794,8 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
   }
 
   async function commit(
-    viewer: PeerCanvasViewer,
-    input: PeerCanvasBoardInput & { baseRevision?: unknown; elements?: unknown; appState?: unknown; files?: unknown },
+    viewer: PairedCanvasViewer,
+    input: PairedCanvasBoardInput & { baseRevision?: unknown; elements?: unknown; appState?: unknown; files?: unknown },
   ): Promise<CanvasResult<{ revision: number; elements: CanvasElement[] | null }>> {
     const found = boardOf(input)
     if (!found) return canvasFail('not_found', 'This board is not open from here.')
@@ -840,14 +844,14 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
     return canvasOk({ revision: board.shown, elements: answer.elements })
   }
 
-  function noteHumanInput(_viewer: PeerCanvasViewer, input: PeerCanvasBoardInput): void {
+  function noteHumanInput(_viewer: PairedCanvasViewer, input: PairedCanvasBoardInput): void {
     const found = boardOf(input)
     if (!found || !found.board.canEdit || !found.board.opened || found.session.state !== 'open') return
     const client = found.session.client
     void client?.request('canvas.takePen', found.board.ref).catch(() => undefined)
   }
 
-  function snapshot(input: PeerCanvasBoardInput) {
+  function snapshot(input: PairedCanvasBoardInput) {
     const found = boardOf(input)
     if (!found) return canvasFail<never>('not_found', 'This board is not open from here.')
     const { board } = found
@@ -866,7 +870,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
     })
   }
 
-  function watch(viewer: PeerCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void {
+  function watch(viewer: PairedCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void {
     const read = watchInput(input)
     if (!read || shutDown) return
     const session = sessionFor(read.connectionId, read.target)
@@ -877,7 +881,7 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
     sendWatches(session)
   }
 
-  function unwatch(viewer: PeerCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void {
+  function unwatch(viewer: PairedCanvasViewer, input: { connectionId: unknown; workspaceId: unknown }): void {
     const read = watchInput(input)
     if (!read) return
     const session = sessions.get(read.connectionId)
@@ -929,4 +933,119 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
   }
 
   return { access, open, close, commit, noteHumanInput, snapshot, watch, unwatch, dropViewer, forget, shutdown }
+}
+
+// ── This window's paired boards ─────────────────────────────────────────────
+//
+// One coordinator per window, over the window's own clients of its paired
+// machines; what it pushes (`canvas:scene`, `canvas:presence`, the link and an
+// agent's open request) is heard here, in the window, by the tab and the
+// editor, as a board here's pushes are heard from main.
+
+type PushListener = (payload: unknown) => void
+const pushListeners = new Map<string, Set<PushListener>>()
+
+/** Hear what this window's paired boards push on one channel. Returns the unsubscriber. */
+export function onPairedCanvasPush(channel: string, listener: PushListener): () => void {
+  let set = pushListeners.get(channel)
+  if (!set) pushListeners.set(channel, (set = new Set()))
+  set.add(listener)
+  return () => set.delete(listener)
+}
+
+/** This window, as the coordinator's one viewer. */
+export const WINDOW_CANVAS_VIEWER: PairedCanvasViewer = {
+  id: 1,
+  send(channel, payload) {
+    for (const listener of [...(pushListeners.get(channel) ?? [])]) listener(payload)
+  },
+}
+
+const machineNames = new Map<string, string>()
+let windowCanvas: PairedCanvas | null = null
+
+/**
+ * This window's coordinator of its paired boards, made on first use. A
+ * machine named here is the name its words use; a pairing forgotten here
+ * takes its boards with it.
+ */
+export function windowPairedCanvas(machine?: PairedMachine): PairedCanvas {
+  if (machine) machineNames.set(machine.id, machine.machineName)
+  if (windowCanvas) return windowCanvas
+  const made = createPairedCanvas({
+    target: (connectionId) => ({ id: connectionId, machineName: machineNames.get(connectionId) ?? 'That machine' }),
+    studios: pairedStudios(),
+  })
+  onPairedStudioForgotten((connectionId) => made.forget(connectionId))
+  windowCanvas = made
+  return made
+}
+
+/** A far refusal of a board list or picture, in words about boards. */
+function boardsRefused(machine: PairedMachine, error: unknown): { ok: false; code: string; message: string } {
+  const refused = pairedRefusal(machine, error)
+  return {
+    ok: false,
+    code: refused.code,
+    message:
+      refused.kind === 'outdated'
+        ? `${machine.machineName} runs a Studio that does not serve its boards here. Update SprintEngine Studio there.`
+        : refused.code === 'unavailable' && /does not serve canvas/u.test(refused.message)
+          ? `${machine.machineName} is not offering its boards right now. Open SprintEngine Studio there and try again.`
+          : refused.message,
+  }
+}
+
+/** A paired machine's boards: the chat's project's there, or (`machine`) every board on it. */
+export async function listPairedBoards(
+  machine: PairedMachine,
+  workspaceId: string,
+  scope: 'workspace' | 'machine',
+): Promise<MeshCanvasBoardsResult> {
+  if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose boards to list.' }
+  const allBoards = scope === 'machine'
+  try {
+    const listed = await withPairedStudio(machine, (client) => client.request('canvas.list', { workspaceId }))
+    const boards: MeshCanvasBoard[] = listed.boards
+      .filter((board) => allBoards || board.here)
+      .map((board) => ({
+        id: board.id,
+        path: board.path,
+        name: board.name,
+        project: board.project,
+        workspaceId: allBoards ? board.workspaceId : workspaceId,
+        modifiedAt: board.modifiedAt,
+        elementCount: board.elementCount,
+        here: board.here,
+      }))
+    return { ok: true, boards, allBoards, note: listed.note }
+  } catch (error) {
+    return boardsRefused(machine, error)
+  }
+}
+
+/** A picture of one of a paired machine's boards, named by its id. */
+export async function pairedBoardPicture(
+  machine: PairedMachine,
+  input: { workspaceId: string; board: string; dark: boolean },
+): Promise<MeshCanvasScreenshotResult> {
+  if (!input.workspaceId || !input.board)
+    return { ok: false, code: 'invalid_arguments', message: 'Name the board to show.' }
+  try {
+    const picture = await withPairedStudio(
+      machine,
+      (client) => client.request('canvas.picture', input),
+      // Drawn in a hidden window over there; the picture's own wait, not a read's.
+      { timeoutMs: 45_000 },
+    )
+    return {
+      ok: true,
+      mimeType: picture.mimeType,
+      data: picture.dataBase64,
+      width: picture.width,
+      height: picture.height,
+    }
+  } catch (error) {
+    return boardsRefused(machine, error)
+  }
 }

@@ -2,8 +2,6 @@ import type { IpcRendererEvent } from 'electron'
 import { ipc as ipcRenderer } from '../ipc-router'
 
 import {
-  MESH_CANVAS_BOARDS_CHANNEL,
-  MESH_CANVAS_SCREENSHOT_CHANNEL,
   MESH_FORGET_CHANNEL,
   MESH_GET_LIVE_STATE_CHANNEL,
   MESH_LIST_CONNECTIONS_CHANNEL,
@@ -12,8 +10,6 @@ import {
   MESH_REQUEST_PAIRING_CHANNEL,
   MESH_EVENT_CHANNEL,
   type MeshConnection,
-  type MeshCanvasBoardsResult,
-  type MeshCanvasScreenshotResult,
   type MeshEvent,
   type MeshLiveState,
   type MeshPairResult,
@@ -102,21 +98,6 @@ export const meshApi = {
     ipcRenderer.invoke(MESH_CANCEL_PAIRING_CHANNEL, requestId) as Promise<void>,
   meshForget: (connectionId: string): Promise<MeshConnection[]> =>
     ipcRenderer.invoke(MESH_FORGET_CHANNEL, connectionId) as Promise<MeshConnection[]>,
-  meshCanvasBoards: (input: {
-    connectionId: string
-    workspaceId: string
-    scope: 'workspace' | 'machine'
-  }): Promise<MeshCanvasBoardsResult> =>
-    ipcRenderer.invoke(MESH_CANVAS_BOARDS_CHANNEL, input) as Promise<MeshCanvasBoardsResult>,
-  meshCanvasScreenshot: (input: {
-    connectionId: string
-    workspaceId: string
-    board: string
-    dark: boolean
-  }): Promise<MeshCanvasScreenshotResult> =>
-    ipcRenderer.invoke(MESH_CANVAS_SCREENSHOT_CHANNEL, input) as Promise<MeshCanvasScreenshotResult>,
-  // Whole-app mesh lifecycle (remote-sessions-ux): machine paired/forgotten,
-  // reachability and pairing waits, broadcast to every window.
   meshGetLiveState: (): Promise<MeshLiveState> =>
     ipcRenderer.invoke(MESH_GET_LIVE_STATE_CHANNEL) as Promise<MeshLiveState>,
   onMeshEvent: (cb: (event: MeshEvent) => void): (() => void) => {
@@ -354,8 +335,6 @@ export const meshApi = {
   | 'meshRequestPairing'
   | 'meshCancelPairing'
   | 'meshForget'
-  | 'meshCanvasBoards'
-  | 'meshCanvasScreenshot'
   | 'meshGetLiveState'
   | 'onMeshEvent'
   | 'meshConversationList'

@@ -606,8 +606,6 @@ export const TAILNET_FORGET_MACHINE_CHANNEL = 'tailnet:forget-machine'
 /** A row menu change to a chat on a paired machine (`MeshConversationChange`). */
 /** One remote workspace's checkout facts (branch, branches, worktrees) over `workspace.checkout`. */
 /** A paired machine's Canvas boards and a picture of one, over the `canvas.*` tools there. */
-export const MESH_CANVAS_BOARDS_CHANNEL = 'mesh:canvas-boards'
-export const MESH_CANVAS_SCREENSHOT_CHANNEL = 'mesh:canvas-screenshot'
 /** A remote chat's Create PR, one channel per step (`chat-create-pull-request`). */
 export const MESH_CONVERSATION_PULL_REQUEST_STATE_CHANNEL = 'mesh:conversation-pull-request-state'
 export const MESH_CONVERSATION_PULL_REQUEST_DRAFT_CHANNEL = 'mesh:conversation-pull-request-draft'

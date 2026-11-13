@@ -3,7 +3,6 @@ import {
   connect,
   webSocketTransport,
   type StudioClient,
-  type StudioClientState,
   type StudioWebSocketConstructor,
 } from '../../../../packages/client-runtime/src/public'
 import { requestTailnetJson, type TailnetEndpoint } from './tailnet-remote-client'
@@ -77,20 +76,9 @@ type Held = {
   idle: ReturnType<typeof setTimeout> | null
   asking: number
   /** Holds that keep the connection open past its idle close: a board followed there. */
-  holds: number
-  states: Set<(state: StudioClientState) => void>
 }
 
 /** A paired machine's connection kept open for a stream that lives longer than one ask. */
-export type PeerHold = {
-  /** The connection, once open. Rejects as `ask` does. */
-  client: Promise<StudioClient>
-  /** The connection's state as it moves: `reconnecting` after a drop, `open` once it is back. */
-  onState(listener: (state: StudioClientState) => void): () => void
-  /** Done with it: it closes once nothing else holds or asks of it, after the idle wait. */
-  release(): void
-}
-
 export type PeerStudios = {
   /**
    * Ask a paired machine's Studio something, on its connection: opened now if
@@ -99,8 +87,6 @@ export type PeerStudios = {
    * `unavailable` for one that did not answer in time, or the refusal it gave.
    */
   ask<T>(target: PeerStudioTarget, work: (client: StudioClient) => Promise<T>, timeoutMs?: number): Promise<T>
-  /** Keep a paired machine's connection open, opening it now if there is none, until released. */
-  hold(target: PeerStudioTarget): PeerHold
   /** Close a machine's connection: it was forgotten, or its token changed. */
   forget(connectionId: string): void
   closeAll(): void
@@ -130,16 +116,12 @@ export function createPeerStudios(
     if (known) close(target.id)
     const NodeWebSocket =
       options.WebSocket ?? (globalThis as unknown as { WebSocket: StudioWebSocketConstructor }).WebSocket
-    const states = new Set<(state: StudioClientState) => void>()
     const opening = connect({
       client: { name: 'SprintEngine Studio' },
       transport: webSocketTransport({ ticket: () => peerStudioTicket(target), WebSocket: NodeWebSocket }),
       reconnect: { initialDelayMs: 500, maxDelayMs: 30_000 },
-      onStateChange: (state) => {
-        for (const listener of [...states]) listener(state)
-      },
     })
-    const entry: Held = { key, opening, idle: null, asking: 0, holds: 0, states }
+    const entry: Held = { key, opening, idle: null, asking: 0 }
     held.set(target.id, entry)
     const forget = () => {
       if (held.get(target.id) === entry) close(target.id)
@@ -148,12 +130,12 @@ export function createPeerStudios(
     return entry
   }
 
-  /** Close it after the idle wait, once nothing asks of it or holds it. */
+  /** Close it after the idle wait, once nothing asks of it. */
   function settle(target: PeerStudioTarget, entry: Held): void {
-    if (entry.asking > 0 || entry.holds > 0 || held.get(target.id) !== entry) return
+    if (entry.asking > 0 || held.get(target.id) !== entry) return
     if (entry.idle) clearTimeout(entry.idle)
     entry.idle = setTimeout(() => {
-      if (held.get(target.id) === entry && entry.asking === 0 && entry.holds === 0) close(target.id)
+      if (held.get(target.id) === entry && entry.asking === 0) close(target.id)
     }, idleCloseMs)
     // An idle connection waiting to close holds no process open.
     entry.idle.unref?.()
@@ -167,30 +149,6 @@ export function createPeerStudios(
   }
 
   return {
-    hold(target) {
-      const entry = use(target)
-      entry.holds += 1
-      const listeners = new Set<(state: StudioClientState) => void>()
-      let released = false
-      return {
-        client: entry.opening,
-        onState(listener) {
-          listeners.add(listener)
-          entry.states.add(listener)
-          return () => {
-            listeners.delete(listener)
-            entry.states.delete(listener)
-          }
-        },
-        release() {
-          if (released) return
-          released = true
-          for (const listener of listeners) entry.states.delete(listener)
-          entry.holds -= 1
-          settle(target, entry)
-        },
-      }
-    },
     async ask(target, work, timeoutMs = ASK_TIMEOUT_MS) {
       const entry = use(target)
       entry.asking += 1

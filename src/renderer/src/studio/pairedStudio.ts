@@ -3,6 +3,7 @@ import {
   connect,
   webSocketTransport,
   type StudioClient,
+  type StudioClientState,
   type StudioWebSocketConstructor,
 } from '../../../../packages/client-runtime/src/public'
 import type { StudioCapability } from '../../../../packages/studio-protocol/src/public'
@@ -52,12 +53,18 @@ type Held = {
   opening: Promise<StudioClient>
   idle: ReturnType<typeof setTimeout> | null
   asking: number
+  /** Holds on the connection (an open board): it is not closed for idling while any lasts. */
+  holds: number
+  /** Who hears the connection's state as it moves. */
+  states: Set<(state: StudioClientState) => void>
 }
 
 type Registry = {
   held: Map<string, Held>
   /** Stops hearing the machine list; set once the first client is made. */
   unwatch: (() => void) | null
+  /** Who hears a pairing forgotten here (the machine list no longer has it). */
+  forgotten: Set<(connectionId: string) => void>
 }
 
 const registries = new WeakMap<object, Registry>()
@@ -79,7 +86,7 @@ export function configurePairedStudio(api: object, setup: PairedStudioSetup): vo
 
 function registryOf(api: PairedApi): Registry {
   let registry = registries.get(api)
-  if (!registry) registries.set(api, (registry = { held: new Map(), unwatch: null }))
+  if (!registry) registries.set(api, (registry = { held: new Map(), unwatch: null, forgotten: new Set() }))
   return registry
 }
 
@@ -127,12 +134,25 @@ function watchPairings(api: PairedApi, registry: Registry): void {
     if (registry.held.size === 0) return
     void list().then(
       (entries) => {
-        for (const connectionId of [...registry.held.keys()])
-          if (!listsPairing(entries, connectionId)) close(api, connectionId)
+        for (const connectionId of [...registry.held.keys()]) {
+          if (listsPairing(entries, connectionId)) continue
+          close(api, connectionId)
+          for (const listener of [...registry.forgotten]) listener(connectionId)
+        }
       },
       () => undefined,
     )
   })
+}
+
+/** Hear a pairing forgotten here, once its connection has been closed. Returns the unsubscriber. */
+export function onPairedStudioForgotten(
+  listener: (connectionId: string) => void,
+  api: PairedApi = window.api,
+): () => void {
+  const registry = registryOf(api)
+  registry.forgotten.add(listener)
+  return () => registry.forgotten.delete(listener)
 }
 
 function open(api: PairedApi, connectionId: string): Held {
@@ -142,6 +162,7 @@ function open(api: PairedApi, connectionId: string): Held {
   watchPairings(api, registry)
   const route = pairedRoute(connectionId)
   const setup = setups.get(api) ?? {}
+  const states = new Set<(state: StudioClientState) => void>()
   const WebSocket = setup.WebSocket
   const opening = setup.connect
     ? setup.connect(connectionId)
@@ -160,12 +181,13 @@ function open(api: PairedApi, connectionId: string): Held {
         // Another machine: this one being offline does say it cannot be reached.
         parkWhenOffline: true,
         onStateChange: (state, error) => {
+          for (const listener of [...states]) listener(state)
           // Parked on its credential: the pairing is gone there. Nothing to wait for.
           if (state === 'parked' && error && error.code !== 'offline' && registry.held.get(connectionId) === entry)
             close(api, connectionId)
         },
       })
-  const entry: Held = { opening, idle: null, asking: 0 }
+  const entry: Held = { opening, idle: null, asking: 0, holds: 0, states }
   registry.held.set(connectionId, entry)
   const forget = () => {
     if (registry.held.get(connectionId) === entry) close(api, connectionId)
@@ -187,9 +209,7 @@ export async function withPairedStudio<T>(
   options: { timeoutMs?: number; api?: PairedApi } = {},
 ): Promise<T> {
   const api = options.api ?? window.api
-  const entry = open(api, machine.id)
-  if (entry.idle) clearTimeout(entry.idle)
-  entry.idle = null
+  const entry = use(api, machine.id)
   entry.asking += 1
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -205,11 +225,79 @@ export async function withPairedStudio<T>(
   } finally {
     clearTimeout(timer)
     entry.asking -= 1
-    const registry = registries.get(api)
-    if (entry.asking === 0 && registry?.held.get(machine.id) === entry)
-      entry.idle = setTimeout(() => {
-        if (registry.held.get(machine.id) === entry && entry.asking === 0) close(api, machine.id)
-      }, IDLE_CLOSE_MS)
+    settle(api, machine.id, entry)
+  }
+}
+
+/** The connection, opened now if there is none, kept from closing for idling while it is used. */
+function use(api: PairedApi, connectionId: string): Held {
+  const entry = open(api, connectionId)
+  if (entry.idle) clearTimeout(entry.idle)
+  entry.idle = null
+  return entry
+}
+
+/** Close it after the idle wait, once nothing asks of it or holds it. */
+function settle(api: PairedApi, connectionId: string, entry: Held): void {
+  const registry = registries.get(api)
+  if (entry.asking > 0 || entry.holds > 0 || registry?.held.get(connectionId) !== entry) return
+  if (entry.idle) clearTimeout(entry.idle)
+  entry.idle = setTimeout(() => {
+    if (registry.held.get(connectionId) === entry && entry.asking === 0 && entry.holds === 0) close(api, connectionId)
+  }, IDLE_CLOSE_MS)
+}
+
+/** A paired machine's connection kept open while something here needs it (a board on screen). */
+export type PairedHold = {
+  /** The connection, once open. Rejects as an ask does. */
+  client: Promise<StudioClient>
+  /** The connection's state as it moves: `reconnecting` after a drop, `open` once it is back. */
+  onState(listener: (state: StudioClientState) => void): () => void
+  /** Done with it: it closes once nothing else holds or asks of it, after the idle wait. */
+  release(): void
+}
+
+/** Keep a paired machine's connection open, opening it now if there is none, until released. */
+export function holdPairedStudio(machine: PairedMachine, options: { api?: PairedApi } = {}): PairedHold {
+  const api = options.api ?? window.api
+  const entry = use(api, machine.id)
+  entry.holds += 1
+  const listeners = new Set<(state: StudioClientState) => void>()
+  let released = false
+  return {
+    client: entry.opening,
+    onState(listener) {
+      listeners.add(listener)
+      entry.states.add(listener)
+      return () => {
+        listeners.delete(listener)
+        entry.states.delete(listener)
+      }
+    },
+    release() {
+      if (released) return
+      released = true
+      for (const listener of listeners) entry.states.delete(listener)
+      entry.holds -= 1
+      settle(api, machine.id, entry)
+    },
+  }
+}
+
+/** What a coordinator over paired machines asks of them: one ask, or a hold. */
+export type PairedStudios = {
+  ask<T>(machine: PairedMachine, work: (client: StudioClient) => Promise<T>, timeoutMs?: number): Promise<T>
+  hold(machine: PairedMachine): PairedHold
+}
+
+/** This window's paired machines (or another api's), for a coordinator that asks and holds them. */
+export function pairedStudios(given?: PairedApi): PairedStudios {
+  // The window's bridge as it stands at each ask: a page may be given it late.
+  const api = () => given ?? window.api
+  return {
+    ask: (machine, work, timeoutMs) =>
+      withPairedStudio(machine, work, { api: api(), ...(timeoutMs === undefined ? {} : { timeoutMs }) }),
+    hold: (machine) => holdPairedStudio(machine, { api: api() }),
   }
 }
 

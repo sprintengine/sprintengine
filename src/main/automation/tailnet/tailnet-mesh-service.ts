@@ -24,9 +24,6 @@ import {
   type MeshPairRequestView,
   type MeshRequestPairingResult,
   type MeshForgetMachineResult,
-  type MeshCanvasBoard,
-  type MeshCanvasBoardsResult,
-  type MeshCanvasScreenshotResult,
   type MeshPullRequestCreateResult,
   type MeshPullRequestDraftResult,
   type MeshPullRequestPushResult,
@@ -110,7 +107,6 @@ import { asRecord, isRecord } from '../../../shared/records'
 import { mayHoldQuotes, quotesToPlainText } from '../../../shared/chat-quotes'
 import { parseCliPermissionPreset } from '../../../shared/cli-permission-preset'
 import { powerActivity, type PowerActivity } from '../../power-activity'
-import { createPeerCanvas, type PeerCanvas, type PeerCanvasDeps } from './tailnet-peer-canvas'
 
 // The Mesh: this Studio driving other machines.
 //
@@ -369,15 +365,6 @@ export type TailnetMeshService = {
    * (`conversation-commands`); `refresh` asks that CLI again now.
    */
   conversationCommandList(input: { key: unknown; refresh?: unknown }): Promise<MeshConversationCommandsResult>
-  /** A paired machine's Canvas boards (`canvas.list` there): this chat's project's, or every board on it. */
-  canvasBoards(input: { connectionId: unknown; workspaceId: unknown; scope?: unknown }): Promise<MeshCanvasBoardsResult>
-  /** A picture of one of them, named by its id (`canvas.picture` there). */
-  canvasScreenshot(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    board: unknown
-    dark?: unknown
-  }): Promise<MeshCanvasScreenshotResult>
   /**
    * One machine's usage over a window, for this desktop's usage dashboard
    * (`usage-report`, on `workspace:read`). The handshake comes first, so a
@@ -460,12 +447,6 @@ export type TailnetMeshService = {
    * name `conversation-message-images`.
    */
   conversationAttachment(input: { key: unknown; ref: unknown }): Promise<MeshConversationImageResult>
-  /**
-   * A paired chat's Canvas pane editing that machine's boards
-   * (tailnet-peer-canvas.ts): the same calls the pane makes of this machine's
-   * canvas service, carried to that one's Studio.
-   */
-  remoteCanvas: PeerCanvas
   shutdown(): void
 }
 
@@ -541,8 +522,6 @@ export type TailnetMeshServiceOptions = {
     RemoteConversationsOptions,
     'retry' | 'requestTimeoutMs' | 'commandTimeoutMs' | 'listTimeoutMs' | 'livenessTimeoutMs' | 'saveDelayMs'
   >
-  /** Timing for a paired chat's boards; tests shorten it. */
-  canvas?: Pick<PeerCanvasDeps, 'lingerMs' | 'requestTimeoutMs'>
   log?: (message: string) => void
 }
 
@@ -1494,87 +1473,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     return peerCapabilities.get(connection.id)
   }
 
-  /** A failed ask of a paired machine's boards, in the words the pane shows. */
-  function canvasRefused(
-    connection: StoredMeshConnection,
-    error: unknown,
-  ): { ok: false; code: string; message: string } {
-    const refused = peerRefusal(connection, error)
-    return {
-      ok: false,
-      code: refused.code,
-      message:
-        refused.kind === 'outdated'
-          ? `${connection.machineName} runs a Studio that does not serve its boards here. Update SprintEngine Studio there.`
-          : refused.code === 'unavailable' && /does not serve canvas/u.test(refused.message)
-            ? `${connection.machineName} is not offering its boards right now. Open SprintEngine Studio there and try again.`
-            : refused.message,
-    }
-  }
-
-  async function canvasBoards(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    scope?: unknown
-  }): Promise<MeshCanvasBoardsResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    if (typeof input.workspaceId !== 'string' || !input.workspaceId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose boards to list.' }
-    const workspaceId = input.workspaceId
-    const allBoards = input.scope === 'machine'
-    try {
-      const listed = await peerStudios.ask(peerTarget(connection), (client) =>
-        client.request('canvas.list', { workspaceId }),
-      )
-      const boards: MeshCanvasBoard[] = listed.boards
-        .filter((board) => allBoards || board.here)
-        .map((board) => ({
-          id: board.id,
-          path: board.path,
-          name: board.name,
-          project: board.project,
-          workspaceId: allBoards ? board.workspaceId : workspaceId,
-          modifiedAt: board.modifiedAt,
-          elementCount: board.elementCount,
-          here: board.here,
-        }))
-      return { ok: true, boards, allBoards, note: listed.note }
-    } catch (error) {
-      return canvasRefused(connection, error)
-    }
-  }
-
-  async function canvasScreenshot(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    board: unknown
-    dark?: unknown
-  }): Promise<MeshCanvasScreenshotResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    if (typeof input.workspaceId !== 'string' || !input.workspaceId || typeof input.board !== 'string' || !input.board)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the board to show.' }
-    const params = { workspaceId: input.workspaceId, board: input.board, dark: input.dark === true }
-    try {
-      const picture = await peerStudios.ask(
-        peerTarget(connection),
-        (client) => client.request('canvas.picture', params),
-        // Drawn in a hidden window over there; the picture's own wait, not a read's.
-        45_000,
-      )
-      return {
-        ok: true,
-        mimeType: picture.mimeType,
-        data: picture.dataBase64,
-        width: picture.width,
-        height: picture.height,
-      }
-    } catch (error) {
-      return canvasRefused(connection, error)
-    }
-  }
-
   async function readUsage(input: {
     connectionId: unknown
     args: Record<string, unknown>
@@ -2294,7 +2192,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     // Its followed conversations end, and what was kept of them goes too: a
     // transcript from a machine no longer paired is not this machine's to keep.
     void remoteConversations.forgetConnection(connectionId, 'This machine was removed from your mesh.')
-    remoteCanvas.forget(connectionId)
     peerStudios.forget(connectionId)
     store.forget(connectionId)
     syncReachabilityTimer()
@@ -2314,18 +2211,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     machineName: connection.machineName,
   })
 
-  const remoteCanvas = createPeerCanvas({
-    target: (connectionId) => {
-      const connection = connectionFor(connectionId)
-      return connection ? peerTarget(connection) : null
-    },
-    studios: peerStudios,
-    ...(options.canvas ? options.canvas : {}),
-    log: options.log,
-  })
-
   return {
-    remoteCanvas,
     start,
     onWake,
     async checkReachability(connectionId): Promise<MeshLiveState> {
@@ -2370,8 +2256,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       return store.list()
     },
     windowTicket,
-    canvasBoards,
-    canvasScreenshot,
     readUsage,
     conversationPullRequestState,
     conversationPullRequestDraft,
@@ -2740,7 +2624,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       for (const connectionId of [...awayMachines.keys()]) forgetAway(connectionId)
       supervising = false
       remoteConversations.shutdown()
-      remoteCanvas.shutdown()
       for (const connectionId of [...watches.keys()]) stopWatch(connectionId)
       if (reachabilityTimer) clearInterval(reachabilityTimer)
       reachabilityTimer = null

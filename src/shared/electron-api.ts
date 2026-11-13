@@ -75,10 +75,6 @@ import type {
   CanvasExportResult,
   CanvasMachineListing,
   CanvasPresence,
-  CanvasRemoteAccess,
-  CanvasRemoteBoardRef,
-  CanvasRemoteLink,
-  CanvasRemoteOpenRequest,
   CanvasResult,
   CanvasScenePush,
 } from './canvas/types'
@@ -131,8 +127,6 @@ import type { TailnetPeerScan } from './tailnet-peers'
 import type { TailnetShareResult, TailnetShareStatus } from './tailnet-share'
 import type {
   MeshConnection,
-  MeshCanvasBoardsResult,
-  MeshCanvasScreenshotResult,
   MeshPullRequestCreateResult,
   MeshPullRequestDraftResult,
   MeshPullRequestPushResult,
@@ -482,35 +476,18 @@ export type ElectronApi = {
   onCanvasPresence: (cb: (presence: CanvasBoardRef & CanvasPresence) => void) => () => void
   /** An agent asked for a board in this workspace's pane (canvas.open); the tab opens docked. */
   onCanvasOpenRequest: (cb: (ref: CanvasBoardRef) => void) => () => void
-  // A paired chat's boards, on the machine it runs on (`canvas-boards` on its Studio).
-  // Each is its `canvas*` twin with the machine named beside the board; the
-  // scene and presence pushes are the same `onCanvasScene` and
-  // `onCanvasPresence`, under the pane's own ref.
-  /** Whether that machine's boards can be edited from here, and by this pairing. */
-  canvasRemoteAccess: (connectionId: string) => Promise<CanvasRemoteAccess>
-  canvasRemoteOpen: (
-    input: CanvasRemoteBoardRef & { create?: boolean },
-  ) => Promise<CanvasResult<CanvasBoardState & { canEdit: boolean }>>
-  canvasRemoteClose: (input: CanvasRemoteBoardRef) => Promise<void>
-  canvasRemoteCommit: (
-    input: CanvasRemoteBoardRef & {
-      baseRevision: number
-      elements: CanvasElement[]
-      appState: Record<string, unknown>
-      files: Record<string, unknown>
-    },
-  ) => Promise<CanvasResult<{ revision: number; elements: CanvasElement[] | null }>>
-  canvasRemoteNoteHumanInput: (input: CanvasRemoteBoardRef) => void
-  /** Export the board as this desktop holds it into a folder picked here. */
-  canvasRemoteExport: (
-    input: CanvasRemoteBoardRef & { images?: CanvasExportImages },
-  ) => Promise<CanvasResult<CanvasExportResult>>
-  /** Hear a far chat's agent's `canvas.open`, while this window shows that chat. */
-  canvasRemoteWatch: (input: { connectionId: string; workspaceId: string }) => Promise<void>
-  canvasRemoteUnwatch: (input: { connectionId: string; workspaceId: string }) => Promise<void>
-  /** A paired board's link: out of reach, back, read-only or gone, in words. */
-  onCanvasRemoteLink: (cb: (link: CanvasRemoteLink) => void) => () => void
-  onCanvasRemoteOpenRequest: (cb: (request: CanvasRemoteOpenRequest) => void) => () => void
+  /**
+   * Export a scene this window holds (a paired chat's board, as the window
+   * last read it) into a folder the person picks here: the copy is theirs, on
+   * this computer's disk.
+   */
+  canvasExportScene: (input: {
+    name: string
+    elements: CanvasElement[]
+    appState: Record<string, unknown>
+    files: Record<string, unknown>
+    images?: CanvasExportImages
+  }) => Promise<CanvasResult<CanvasExportResult>>
   // Diff tours (src/main/tours). The Diff viewer reads and plays them; the
   // workspace window docks a tour's Diff tab when an agent writes one.
   tourList: (workspaceId: string) => Promise<TourSummary[]>
@@ -739,19 +716,6 @@ export type ElectronApi = {
   meshCancelPairing: (requestId: string) => Promise<void>
   /** Drop this machine's credential for a peer. Revoking the device THERE is the other half. */
   meshForget: (connectionId: string) => Promise<MeshConnection[]>
-  /** A paired machine's Canvas boards: this chat's project there, or every board on it (`canvas.list` there). */
-  meshCanvasBoards: (input: {
-    connectionId: string
-    workspaceId: string
-    scope: 'workspace' | 'machine'
-  }) => Promise<MeshCanvasBoardsResult>
-  /** A picture of a board on a paired machine, named by its id or, on an older machine, its path. */
-  meshCanvasScreenshot: (input: {
-    connectionId: string
-    workspaceId: string
-    board: string
-    dark: boolean
-  }) => Promise<MeshCanvasScreenshotResult>
   /**
    * The pairing requests still waiting and each machine's last reachability —
    * the initial read behind `onMeshEvent`, carrying the same revision the

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { StudioWebSocketConstructor } from '../packages/client-runtime/src/public'
 import { parseEnvironmentRoute } from '../packages/studio-protocol/src/environment'
 import { createTailnetMeshService, type TailnetMeshService } from '../src/main/automation/tailnet/tailnet-mesh-service'
+import { peerStudioTicket } from '../src/main/automation/tailnet/tailnet-peer-studio'
 import { pairingUrl } from '../src/main/automation/tailnet/tailnet-service'
 import { closePairedStudio, configurePairedStudio } from '../src/renderer/src/studio/pairedStudio'
 import type { EnvironmentEntry, EnvironmentTicketResult } from '../src/shared/environments'
@@ -137,4 +138,29 @@ export function openPairedWindow(mesh: TailnetMeshService, connectionId: string)
     if (!openWindows.delete(connectionId)) return
     if (openWindows.size === 0) global.window = windowBefore
   }
+}
+
+/**
+ * A window's bridge to one machine by a device token held here, with no mesh:
+ * each connection's ticket bought with that token for a `file://` window, as
+ * main buys it. For a coordinator's own tests (`pairedStudios(api)`); the
+ * caller closes its clients with `closePairedStudios(api)`.
+ */
+export function deviceWindowApi(target: {
+  endpoint: { host: string; port: number }
+  deviceToken: string
+  machineName: string
+}): { environmentsTicket: (route: string) => Promise<EnvironmentTicketResult> } {
+  const api = {
+    environmentsTicket: async (): Promise<EnvironmentTicketResult> => {
+      try {
+        return { ok: true, ...(await peerStudioTicket(target, 'file://')) }
+      } catch (error) {
+        const code = (error as { code?: unknown }).code
+        return { ok: false, code: typeof code === 'string' ? code : 'unavailable', message: String(error) }
+      }
+    },
+  }
+  configurePairedStudio(api, { WebSocket: windowSocket('file://') })
+  return api
 }

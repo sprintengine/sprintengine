@@ -948,13 +948,11 @@ chat's workspace, every change under a command id and answered once:
   switch, or the desktop's default where it left that unset), read beside its
   `providerId`: only a Claude chat compacts by itself yet. A switch moves the
   list. It compacts nothing at once.
-- **`conversation.pull_request_unwatch`** `{ workspaceId, agentId, url? }`
-  (`chat-unwatch-pull-request`, still a gateway tool listed to paired devices
-  only) is Stop watching: the desktop stops watching the chat's pull request
-  at `url`, or every one the chat's agent has it watching without one, and
-  the chat is not woken for it again. The pull request stays the chat's. It
-  answers `{ stopped, pullRequests }`, the addresses it stopped; one not
-  watched changes nothing. Each listed pull request says while it is watched
+- **`pullRequests.unwatch`** `{ conversation: { workspaceId, agentId }, url }`
+  (`pull-request-watch`, on `conversation:operate`) is Stop watching: the
+  desktop stops watching the chat's pull request at `url`, and the chat is not
+  woken for it again. The pull request stays the chat's. It answers
+  `{ watched }`, false for one that was not watched. Each listed pull request says while it is watched
   as `watch` (what it waits on, as the desktop's own strip says it), so a
   paired desktop's strip and menus say it too and offer Stop watching where
   the desktop's own do.

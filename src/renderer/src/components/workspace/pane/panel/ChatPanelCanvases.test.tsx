@@ -3,6 +3,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
+import { StudioError } from '../../../../../../../packages/client-runtime/src/public'
+import { fakePairedStudios } from '../../../../studio/pairedStudio.double'
 import { useWorkspaceStore } from '../../../../store/workspaceStore'
 import type { Workspace } from '../../../../types/workspace'
 import { CanvasTab } from '../canvas/CanvasTab'
@@ -18,8 +20,10 @@ vi.mock('./useWorkspaceCheckoutFacts', () => ({
 }))
 
 const WS = 'ws-paired'
+// One of that machine's boards, as its Studio's `canvas.list` names it.
 const farBoard = (path: string) => ({
   id: null,
+  here: true,
   name: path.replace(/^.*\/|\.excalidraw$/gu, ''),
   path,
   bytes: 10,
@@ -29,6 +33,7 @@ const farBoard = (path: string) => ({
 })
 
 let roots: Root[] = []
+let canvasList: ReturnType<typeof vi.fn<(params: Record<string, unknown>) => unknown>>
 
 function mount(node: React.ReactNode): HTMLElement {
   const host = document.createElement('div')
@@ -58,15 +63,15 @@ beforeEach(() => {
     api: {
       ...window.api,
       platform: 'darwin',
-      meshCanvasBoards: vi.fn(async () => ({
-        ok: true,
-        note: null,
-        boards: [farBoard('diagrams/flow.excalidraw'), farBoard('diagrams/plan.excalidraw')],
-      })),
-      // That machine carries its boards here (`canvas-boards` on its Studio).
-      canvasRemoteAccess: vi.fn(async () => ({ ok: true, live: true, canEdit: true })),
     },
   })
+  // That machine's Studio, as this window's own client of it reaches it: it
+  // carries its boards here (`canvas-boards`).
+  canvasList = vi.fn(() => ({
+    note: null,
+    boards: [farBoard('diagrams/flow.excalidraw'), farBoard('diagrams/plan.excalidraw')],
+  }))
+  fakePairedStudios(window.api, { 'canvas.list': (params) => canvasList(params) })
   useWorkspaceStore.setState({
     workspaces: [
       {
@@ -112,15 +117,13 @@ test('on a paired chat the row says how many boards that machine has, and opens 
   expect(picker.textContent).toContain('flow')
   expect(picker.textContent).toContain('plan')
   expect(picker.textContent).not.toContain('The boards could not be listed')
-  expect(window.api.meshCanvasBoards).toHaveBeenLastCalledWith({
-    connectionId: 'connection',
-    workspaceId: 'far-workspace',
-    scope: 'workspace',
-  })
+  expect(canvasList).toHaveBeenLastCalledWith({ workspaceId: 'far-workspace' })
 })
 
 test('a machine that cannot list its boards leaves the row with no number, and still a door', async () => {
-  Object.assign(window.api, { meshCanvasBoards: vi.fn(async () => ({ ok: false, message: 'Not offered.' })) })
+  canvasList = vi.fn(() => {
+    throw new StudioError('forbidden', 'Not offered.')
+  })
   const host = mount(panel)
   await act(async () => undefined)
   const row = [...host.querySelectorAll<HTMLElement>('[data-panel-row]')].find((item) =>

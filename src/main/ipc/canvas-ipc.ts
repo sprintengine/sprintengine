@@ -3,6 +3,7 @@ import type { IpcMain, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'ele
 import type {
   CanvasContinueInput,
   CanvasContinueResult,
+  CanvasElement,
   CanvasExportImages,
   CanvasExportResult,
   CanvasResult,
@@ -15,7 +16,7 @@ import { emptyScene, serializeSceneFile } from '../../shared/canvas/scene-file'
 import type { CanvasFs, CanvasServiceInternal } from '../canvas/canvas-service'
 import type { CanvasSubscriberRegistry } from '../canvas/canvas-subscribers'
 import { checkCanvasExport, writeCanvasExport } from '../canvas/canvas-export'
-import type { PeerCanvas, PeerCanvasViewer } from '../automation/tailnet/tailnet-peer-canvas'
+import { assertAppSender } from './ipc-sender'
 
 // The Canvas pane's IPC. Seven channels, and every one of them treats its
 // payload as input rather than as the shape the preload promises — the preload
@@ -51,18 +52,9 @@ export type CanvasIpcOptions = {
   revealFile?: (absolutePath: string) => void
   /** Start a chat on a board; absent, "Continue in a new chat" answers `forbidden`. */
   continueInNewChat?: (input: CanvasContinueInput) => Promise<CanvasResult<CanvasContinueResult>>
-  /**
-   * A paired chat's boards, on the machine the chat runs on
-   * (tailnet-peer-canvas.ts). Absent, or answering null, where this process
-   * runs no mesh: the pane is told so in words.
-   */
-  remote?: () => PeerCanvas | null
-  /** This machine's disk, where an export of a paired chat's board is written. */
+  /** This machine's disk, where a scene a window holds (a paired chat's board) is exported. */
   exportFs?: CanvasFs
 }
-
-const NO_REMOTE =
-  "This Studio runs its server in a separate process, which does not carry a paired machine's boards yet, so they are shown as pictures."
 
 /** A request for a chat on a board, checked: strings where strings go, and the id whole. */
 function continueInputOf(input: unknown): CanvasResult<CanvasContinueInput> {
@@ -88,10 +80,8 @@ export function registerCanvasIpc(
 ): void {
   // A window that closed, reloaded or crashed stops being a subscriber of every
   // board it held, without each board having to notice separately.
-  // Its paired machines' boards too (registerRemoteCanvasIpc).
   subscribers.onGone((subscriberId) => {
     service.dropSubscriber(subscriberId)
-    options.remote?.()?.dropViewer(subscriberId)
   })
 
   ipcMain.handle('canvas:list-boards', (_event, workspaceId: unknown) => {
@@ -189,70 +179,25 @@ export function registerCanvasIpc(
     service.noteHumanInput(ref.value, event.sender.id)
   })
 
-  registerRemoteCanvasIpc(ipcMain, subscribers, options)
+  registerCanvasExportSceneIpc(ipcMain, options)
 }
 
 /**
- * The same pane, for a board on the machine a paired chat runs on. Each channel
- * is its `canvas:*` twin with the machine named beside the board; the pushes
- * are the same `canvas:scene` and `canvas:presence` a board here sends, under
- * the window's own ref, so the tab and the editor read them as they read their
- * own. What only a paired board has is its link: `canvas:remote-link` says it
- * is out of reach, back, or read-only, in words.
+ * A scene a window holds, written into a folder the person picks here: a
+ * paired chat's board, which the window reads of that machine's Studio itself
+ * (`pairedCanvas.ts`). The copy is theirs, on this computer's disk.
  */
-function registerRemoteCanvasIpc(
-  ipcMain: IpcMain,
-  subscribers: CanvasSubscriberRegistry,
-  options: CanvasIpcOptions,
-): void {
-  const remote = () => options.remote?.() ?? null
-  const viewerOf = (sender: WebContents): PeerCanvasViewer => {
-    const id = subscribers.add(sender)
-    return { id, send: (channel, payload) => subscribers.sendTo(id, channel, payload) }
-  }
-
-  ipcMain.handle('canvas:remote-access', async (_event, connectionId: unknown) => {
-    const lane = remote()
-    return lane ? lane.access(connectionId) : { ok: true, live: false, canEdit: false, reason: NO_REMOTE }
-  })
-  ipcMain.handle('canvas:remote-open', (event: IpcMainInvokeEvent, input: unknown) => {
-    const lane = remote()
-    if (!lane) return canvasFail('forbidden', NO_REMOTE)
-    const record = isRecord(input) ? input : {}
-    return lane.open(viewerOf(event.sender), { ...(record as object), create: record.create } as never)
-  })
-  ipcMain.handle('canvas:remote-close', (event: IpcMainInvokeEvent, input: unknown) => {
-    remote()?.close(viewerOf(event.sender), (isRecord(input) ? input : {}) as never)
-  })
-  ipcMain.handle('canvas:remote-commit', (event: IpcMainInvokeEvent, input: unknown) => {
-    const lane = remote()
-    if (!lane) return canvasFail('forbidden', NO_REMOTE)
-    return lane.commit(viewerOf(event.sender), (isRecord(input) ? input : {}) as never)
-  })
-  ipcMain.on('canvas:remote-note-human-input', (event: IpcMainEvent, input: unknown) => {
-    remote()?.noteHumanInput(viewerOf(event.sender), (isRecord(input) ? input : {}) as never)
-  })
-  ipcMain.handle('canvas:remote-watch', (event: IpcMainInvokeEvent, input: unknown) => {
-    remote()?.watch(viewerOf(event.sender), (isRecord(input) ? input : {}) as never)
-  })
-  ipcMain.handle('canvas:remote-unwatch', (event: IpcMainInvokeEvent, input: unknown) => {
-    remote()?.unwatch(viewerOf(event.sender), (isRecord(input) ? input : {}) as never)
-  })
-
-  // The board as this desktop holds it, after the tab's last change, written
-  // into a folder the person picks here: the copy is theirs, on their disk.
+function registerCanvasExportSceneIpc(ipcMain: IpcMain, options: CanvasIpcOptions): void {
   ipcMain.handle(
-    'canvas:remote-export',
+    'canvas:export-scene',
     async (event: IpcMainInvokeEvent, input: unknown): Promise<CanvasResult<CanvasExportResult>> => {
-      const lane = remote()
-      if (!lane) return canvasFail('forbidden', NO_REMOTE)
-      const record = isRecord(input) ? input : {}
-      const snapshot = lane.snapshot(record as never)
-      if (!snapshot.ok) return snapshot
+      assertAppSender(event)
+      const scene = sceneOf(input)
+      if (!scene.ok) return scene
       if (!options.pickExportDirectory || !options.exportFs) {
         return canvasFail('forbidden', 'Exporting a board is not available in this window.')
       }
-      const images = exportImagesOf(record.images)
+      const images = exportImagesOf(isRecord(input) ? input.images : undefined)
       let directory: string | null
       try {
         directory = await options.pickExportDirectory(event.sender)
@@ -267,12 +212,12 @@ function registerRemoteCanvasIpc(
       if (!checked.ok) return checked
       const exported = await writeCanvasExport(options.exportFs, {
         directory,
-        name: snapshot.value.name,
+        name: scene.value.name,
         text: serializeSceneFile({
           ...emptyScene(),
-          elements: snapshot.value.elements,
-          appState: snapshot.value.appState,
-          files: snapshot.value.files,
+          elements: scene.value.elements,
+          appState: scene.value.appState,
+          files: scene.value.files,
         }),
         images,
       })
@@ -280,4 +225,30 @@ function registerRemoteCanvasIpc(
       return canvasOk({ cancelled: false, directory: exported.value.directory, files: exported.value.files })
     },
   )
+}
+
+/**
+ * A scene a window asks to export, checked as a commit of a board by that
+ * name is: a plain board name (no folder, nothing above it) and a scene within
+ * a board's limits.
+ */
+function sceneOf(input: unknown): CanvasResult<{
+  name: string
+  elements: CanvasElement[]
+  appState: Record<string, unknown>
+  files: Record<string, unknown>
+}> {
+  if (!isRecord(input) || typeof input.name !== 'string' || !input.name.trim())
+    return canvasFail('invalid_scene', 'This call carried no scene to export.')
+  const name = input.name.trim()
+  if (/[\\/]/u.test(name) || name === '.' || name === '..')
+    return canvasFail('invalid_path', 'A board is exported by its own name, not a path.')
+  const checked = canvasCommitOf({ ...input, workspaceId: 'export', path: `${name}.excalidraw` })
+  if (!checked.ok) return checked
+  return canvasOk({
+    name: canvasBoardName(checked.value.path),
+    elements: checked.value.elements,
+    appState: checked.value.appState,
+    files: checked.value.files,
+  })
 }

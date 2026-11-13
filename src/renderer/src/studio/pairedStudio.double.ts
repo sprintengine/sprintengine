@@ -1,6 +1,7 @@
 import { StudioError, type StudioClient } from '../../../../packages/client-runtime/src/public'
 import {
   STUDIO_APPROVAL_RULES_CAPABILITY,
+  STUDIO_CANVAS_BOARDS_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
@@ -50,6 +51,10 @@ const READS = new Set([
   'conversation.deletePlan',
   'conversation.searchChats',
   'conversation.approvalRules',
+  'canvas.list',
+  'canvas.picture',
+  'canvas.read',
+  'canvas.files',
 ])
 
 const ALL_CAPABILITIES = [
@@ -58,6 +63,7 @@ const ALL_CAPABILITIES = [
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
+  STUDIO_CANVAS_BOARDS_CAPABILITY,
 ]
 
 const ALL_SCOPES: StudioScope[] = [

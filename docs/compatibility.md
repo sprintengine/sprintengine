@@ -935,13 +935,15 @@ gateway tools listed to paired devices under the `chat-row-menu`,
 `chat-lifecycle` methods (below) and its `approval-rules`, those six tailnet
 capabilities are gone, and so are the tools a device alone used
 (`conversation.rename`, `.auto_compact`, `.delete_plan`, `.delete`,
-`.search`, `.approval_rules` and `.approval_rule_revoke`). Stop watching is
-still `chat-unwatch-pull-request` (`conversation.pull_request_unwatch`). The
-list result a desktop's window reads names which of them a machine takes as
-`rowMenu`, `markUnread` and `manage`
-(`{ rename, autoCompact, unwatchPullRequest, deleteSettled, search }`), read
-off that machine's Studio welcome: a machine on an older build offers none of
-them, and is asked to update.
+`.search`, `.approval_rules` and `.approval_rule_revoke`). Stop watching was
+`chat-unwatch-pull-request` (`conversation.pull_request_unwatch`); since
+2026-11-13 it is the Studio's `pullRequests.unwatch` (`pull-request-watch`),
+and that capability and tool are gone. A desktop's window asks each paired
+machine's Studio itself, on its own connection (`pairedStudio.ts`), and reads
+which of them a machine takes off that welcome (`chat-lifecycle`,
+`pull-request-watch`); the list no longer says (`rowMenu`, `markUnread`,
+`manage` and `lifecycle` are gone from it). A machine on an older build offers
+none of them, and is asked to update.
 Breaking frame changes require a new
 negotiated capability or the tailnet version-window process above, not merely
 a package version change. Presentation-only fixes use a package patch.
