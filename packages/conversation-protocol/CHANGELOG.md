@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added (a step's kind and tone without its words)
+
+- **`presentedToolKind`** and **`presentedToolTone`**: the kind and the tone
+  `presentToolItem` gives a step, apart from its title, so a view that only
+  counts what went wrong does not word every step. `presentToolItem` reads
+  them from these.
+
 ### Added (a message scheduled for a limit's reset)
 
 - **`scheduleSend.untilLimitReset`**: the provider whose usage limit the

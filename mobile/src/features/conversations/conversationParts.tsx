@@ -7,20 +7,17 @@ import { MarkdownDocument, type QuoteMark } from "../../components/document/Mark
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { fontWeight, iconSize, radius, space, typography, type Theme } from "../../theme/tokens";
-import {
-  laneDetail,
-  laneLabel,
-  laneStatus,
-  type AgentLane,
-} from "./agentLogic";
+import type {
+  AgentLane,
+  FoldPart,
+  RowTool,
+} from "../../../../packages/conversation-timeline/src/public";
 import {
   describeToolGroup,
   reasoningPreview,
   recordValue,
   stringValue,
   toolStep,
-  type FoldPart,
-  type MobileTool,
 } from "./conversationLogic";
 import { createToolDetailCache, readToolDetail, type ToolDetail } from "./toolOutput";
 import { ToolOutputPanel, type ToolDetailState } from "./ToolOutputPanel";
@@ -30,7 +27,15 @@ import { DisclosureGlyph, SideQuestionGlyph, ThoughtGlyph, ToolKindGlyph } from 
 import {
   type ConversationSubagent,
 } from "../../../../packages/conversation-protocol/src/public";
-import { chatSubagentName, chatSubagentStatus, subagentEnded, subagentStartFacts } from "./subagentLogic";
+import {
+  chatSubagentName,
+  chatSubagentStatus,
+  laneDetail,
+  laneLabel,
+  laneStatus,
+  subagentEnded,
+  subagentStartFacts,
+} from "./subagentLogic";
 import { cliForChatProvider } from "./launchLogic";
 import type { usePhoneConversation } from "./usePhoneConversation";
 
@@ -71,7 +76,7 @@ const toolDetails = createToolDetailCache();
  * its step without the step being opened. Memoised: an agent's page and an
  * open fold draw many, and a step that has not changed stays as drawn.
  */
-export const ToolStepRow = memo(function ToolStepRow({ tool, source }: { tool: MobileTool; source: StepDetailSource }) {
+export const ToolStepRow = memo(function ToolStepRow({ tool, source }: { tool: RowTool; source: StepDetailSource }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
@@ -148,7 +153,7 @@ export const ToolStepRow = memo(function ToolStepRow({ tool, source }: { tool: M
  * never folded out of sight. Live work stays outside the fold, and so do the
  * pictures Codex generated: they are what their steps were for.
  */
-export function ToolGroup({ tools, source }: { tools: MobileTool[]; source: StepDetailSource }) {
+export function ToolGroup({ tools, source }: { tools: RowTool[]; source: StepDetailSource }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
   const [open, setOpen] = useState(false);
@@ -536,7 +541,7 @@ export function SubagentStartRow({
   now,
   onOpen,
 }: {
-  tool: MobileTool;
+  tool: RowTool;
   chatCli: string | null;
   subagent: ConversationSubagent | undefined;
   now: number;

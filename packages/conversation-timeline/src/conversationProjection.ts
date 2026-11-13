@@ -139,6 +139,9 @@ export type TranscriptEntry =
       // What the person wrote to one of the chat's agents, for a message that
       // asked the chat to pass it on: what the row says in place of the ask.
       subagentMessage?: ConversationSubagentMessage
+      // The command the send went under, so a client holding the send knows
+      // the desktop has it.
+      commandId?: string
     }
   | {
       kind: 'assistant'
@@ -186,6 +189,9 @@ export type TranscriptEntry =
       checkpointTurnSeq?: number
       checkpointAvailable?: boolean
       checkpointSummary?: { files: number; addedLines: number; removedLines: number }
+      // What the turn's finished steps said they changed (`fileChanges` on a
+      // step's output), for a turn the desktop kept no checkpoint summary for.
+      reportedChanges?: TurnChanges
       reverted?: boolean
       undoRevertSeq?: number
       undoOverwritesLaterWork?: boolean
@@ -219,6 +225,10 @@ export type TranscriptEntry =
       // Answers chosen when a question card resolved (question → answer), so
       // the resolved card keeps showing what was picked — including on replay.
       answers?: Record<string, string>
+      // False where the desktop said the request cannot be remembered (a
+      // compound shell command), and the words its "remember" choice says.
+      rememberable?: boolean
+      rememberLabel?: string
     }
   | CompactionEntry
   | HandoffEntry
@@ -280,6 +290,25 @@ export type SideQuestionEntry = {
   // The answer was longer than the transcript keeps; this is its beginning.
   truncated?: true
   createdAt: number
+}
+
+/** What a turn changed on disk: a count of files, and its lines where every file said them. */
+export type TurnChanges = { files: number; addedLines?: number; removedLines?: number }
+
+/**
+ * How a client reads the events, where clients draw the same conversation
+ * differently. The window's reading is the default; each option is one
+ * difference a client asked for, not a second fold.
+ */
+export type ConversationProjectionOptions = {
+  /**
+   * A session's end (`session_closed`) ends what it was
+   * doing: a turn still streaming stops streaming (settled, neither failed nor
+   * completed, so it has no end time), its steps and agents still running stop,
+   * and its open requests are cancelled. The phone reads it so; the window
+   * waits for the turn's own end.
+   */
+  sessionEndSettlesWork?: boolean
 }
 
 export type UserTurn = {
@@ -377,11 +406,13 @@ export function parseStoredAttachments(value: unknown): ConversationStoredImageA
   const stored = value.flatMap((entry): ConversationStoredImageAttachment[] => {
     if (!entry || typeof entry !== 'object') return []
     const { id, mediaType, name, byteLength, ref } = entry as Record<string, unknown>
-    if (typeof id !== 'string' || typeof mediaType !== 'string' || typeof ref !== 'string') return []
+    if (typeof id !== 'string' || typeof ref !== 'string') return []
     return [
       {
         id,
-        mediaType,
+        // A record that lost its type still names the picture; the bytes read
+        // back by `ref` carry their own.
+        mediaType: typeof mediaType === 'string' ? mediaType : '',
         ref,
         byteLength: typeof byteLength === 'number' ? byteLength : 0,
         ...(typeof name === 'string' ? { name } : {}),
@@ -525,6 +556,58 @@ function readToolKind(payload: Record<string, unknown> | undefined, name: string
   return inferToolKind(name)
 }
 
+/** The most files one step's report is read for. */
+const MAX_STEP_FILES = 256
+
+/** A finished step's `fileChanges`: each file it changed, by path, with its line counts where it gave them. */
+function readStepFileChanges(payload: Record<string, unknown> | undefined): StepFileChanges | undefined {
+  const reported = payload?.fileChanges
+  if (!Array.isArray(reported)) return undefined
+  const files: StepFileChanges = new Map()
+  for (const change of reported.slice(0, MAX_STEP_FILES)) {
+    if (!change || typeof change !== 'object' || Array.isArray(change)) continue
+    const record = change as Record<string, unknown>
+    const path = readString(record, 'path')
+    if (!path || path.length > 4096) continue
+    const added = readNumber(record, 'additions') ?? readNumber(record, 'addedLines')
+    const removed = readNumber(record, 'deletions') ?? readNumber(record, 'removedLines')
+    files.set(path, { ...(added !== undefined ? { added } : {}), ...(removed !== undefined ? { removed } : {}) })
+  }
+  return files
+}
+
+/**
+ * What a turn's steps said they changed: each file once, its lines summed
+ * over the steps that changed it, and the turn's lines counted only where
+ * every file's were. Undefined when no step named a file.
+ */
+function stepChangesOfTurn(steps: ReadonlyMap<string, StepFileChanges> | undefined): TurnChanges | undefined {
+  if (!steps?.size) return undefined
+  const files = new Map<string, { added?: number; removed?: number }>()
+  for (const step of steps.values())
+    for (const [path, change] of step) {
+      const seen = files.get(path)
+      const sum = (key: 'added' | 'removed') =>
+        seen && !(key in seen) ? undefined : change[key] === undefined ? undefined : (seen?.[key] ?? 0) + change[key]
+      const added = sum('added')
+      const removed = sum('removed')
+      files.set(path, { ...(added !== undefined ? { added } : {}), ...(removed !== undefined ? { removed } : {}) })
+    }
+  if (!files.size) return undefined
+  const entries = [...files.values()]
+  const total = (key: 'added' | 'removed') =>
+    entries.every((entry) => entry[key] !== undefined)
+      ? entries.reduce((count, entry) => count + (entry[key] ?? 0), 0)
+      : undefined
+  const addedLines = total('added')
+  const removedLines = total('removed')
+  return {
+    files: files.size,
+    ...(addedLines !== undefined ? { addedLines } : {}),
+    ...(removedLines !== undefined ? { removedLines } : {}),
+  }
+}
+
 function readToolStatus(payload: Record<string, unknown> | undefined): ConversationToolStatus | undefined {
   const status = payload?.status
   return status === 'ok' || status === 'error' || status === 'declined' || status === 'stopped' ? status : undefined
@@ -589,7 +672,14 @@ export type TurnAccumulator = {
   // nesting into lanes happens once, when the transcript entries are built.
   tools: Map<string, ToolAccumulator>
   approvals: string[]
+  // The files each finished step reported changing, by step: a step reported
+  // twice (a retransmission, a replayed page) counts once, its latest report
+  // replacing the last.
+  stepFiles?: Map<string, StepFileChanges>
 }
+
+/** The files one step reported changing, by path, with its line counts where it gave them. */
+export type StepFileChanges = Map<string, { added?: number; removed?: number }>
 
 export type ToolAccumulator = {
   id: string
@@ -642,25 +732,80 @@ export function userEntryFromLocalTurn(userTurn: UserTurn): Extract<TranscriptEn
   }
 }
 
+// Events that, naming no turn, belong to the turn running when they came: an
+// older desktop's words, steps and requests named none.
+const JOINS_RUNNING_TURN: ReadonlySet<string> = new Set([
+  'content_delta',
+  'reasoning_delta',
+  'tool_started',
+  'approval_requested',
+])
+
+/** The turn an event belongs to: the one it names, else the one running, for the events that join it. */
+export function eventTurnId(event: ConversationEvent, runningTurnId: () => string | undefined): string | undefined {
+  const named = readString(event.payload, 'turnId')
+  if (named || !JOINS_RUNNING_TURN.has(event.type)) return named
+  // A subagent's step goes with its lane, wherever the lane is.
+  if (event.type === 'tool_started' && readString(event.payload, 'parentToolUseId')) return undefined
+  return runningTurnId()
+}
+
+type EventUserTurn = UserTurn & {
+  subagentMessage?: ConversationSubagentMessage
+  seq?: number
+  localTurnId?: string
+  storedAttachments?: ConversationStoredImageAttachment[]
+  origin?: ConversationMessageOrigin
+  commandId?: string
+}
+
+// A message the log recorded, as its bubble's entry: the local send's own
+// images while that send is still here, else the references the log kept.
+function eventUserEntry(
+  message: EventUserTurn,
+  localAttachments: ReadonlyMap<string, ConversationImageAttachment[]>,
+): Extract<TranscriptEntry, { kind: 'user' }> {
+  const attachments = message.localTurnId ? localAttachments.get(message.localTurnId) : undefined
+  return {
+    kind: 'user',
+    id: message.id,
+    ...(message.seq !== undefined ? { seq: message.seq } : {}),
+    text: message.text,
+    createdAt: message.createdAt,
+    mentions: message.mentions,
+    ...(message.files?.length ? { files: message.files } : {}),
+    skills: message.skills,
+    ...(message.origin ? { origin: message.origin } : {}),
+    ...(message.subagentMessage ? { subagentMessage: message.subagentMessage } : {}),
+    ...(message.commandId ? { commandId: message.commandId } : {}),
+    ...(attachments
+      ? { attachments }
+      : message.storedAttachments
+        ? { storedAttachments: message.storedAttachments }
+        : {}),
+  }
+}
+
+// A turn's `reportedChanges`, present only when its steps named a file.
+function reportedChangesOf(steps: ReadonlyMap<string, StepFileChanges>): { reportedChanges?: TurnChanges } {
+  const reportedChanges = stepChangesOfTurn(steps)
+  return reportedChanges ? { reportedChanges } : {}
+}
+
 export function projectConversation(
   events: readonly ConversationEvent[],
   userTurns: UserTurn[] = [],
+  options: ConversationProjectionOptions = {},
 ): ConversationProjection {
   const turns = new Map<string, TurnAccumulator>()
   const turnOrder: string[] = []
   // User bubbles recorded in the event stream itself (persisted transcript);
   // when present these are authoritative and the locally tracked userTurns
   // only fill the optimistic gap between a send and its first event.
-  const eventUserTurns = new Map<
-    string,
-    UserTurn & {
-      subagentMessage?: ConversationSubagentMessage
-      seq?: number
-      localTurnId?: string
-      storedAttachments?: ConversationStoredImageAttachment[]
-      origin?: ConversationMessageOrigin
-    }
-  >()
+  const eventUserTurns = new Map<string, EventUserTurn>()
+  // Messages that named no turn (an older desktop's), each waiting for the
+  // turn that answers it: the next one to begin takes the first.
+  const awaitingTurn: EventUserTurn[] = []
   const representedLocalTurnIds = new Set<string>()
   // The persisted `user_message` event names its images by store reference,
   // not by their bytes. While the local send that produced a bubble is still
@@ -715,12 +860,19 @@ export function projectConversation(
   // Where each turn begins in the log, which is what a rewind's range covers.
   const turnStartSeq = new Map<string, number>()
 
-  const ensureTurn = (turnId: string): TurnAccumulator => {
+  const ensureTurn = (turnId: string, answers = true): TurnAccumulator => {
     let turn = turns.get(turnId)
     if (!turn) {
       turn = { turnId, text: '', reasoning: '', status: 'streaming', tools: new Map(), approvals: [] }
       turns.set(turnId, turn)
       turnOrder.push(turnId)
+      // A turn that begins with no message of its own answers the message
+      // still waiting for one.
+      const waiting = answers ? awaitingTurn.shift() : undefined
+      if (waiting) {
+        eventUserTurns.set(turnId, waiting)
+        turn.seq = waiting.seq
+      }
     }
     return turn
   }
@@ -733,6 +885,27 @@ export function projectConversation(
       if (turns.get(id)?.status === 'streaming') return id
     }
     return undefined
+  }
+
+  // A session that ended leaves nothing running: what it was doing stops where
+  // it was, and what it asked for can no longer be answered.
+  const settleSessionWork = (at: number): void => {
+    awaitingTurn.length = 0
+    for (const turn of turns.values()) {
+      if (turn.status === 'streaming') {
+        closeReasoning(turn, at)
+        turn.status = 'complete'
+        turn.retry = undefined
+        turn.compacting = undefined
+      }
+    }
+    for (const tool of toolsById.values()) {
+      if (tool.status !== 'running') continue
+      tool.status = 'done'
+      tool.completedAt = at
+      tool.outputStatus ??= 'stopped'
+    }
+    for (const approval of approvals.values()) if (approval.status === 'pending') approval.status = 'cancelled'
   }
 
   // A reasoning run closes at the next non-reasoning signal of the turn; the
@@ -748,7 +921,7 @@ export function projectConversation(
     const sessionMapped = SESSION_STATUS_BY_EVENT[event.type]
     if (sessionMapped) sessionStatus = sessionMapped
     if (event.seq !== undefined && event.seq > highestSeq) highestSeq = event.seq
-    const turnId = readString(event.payload, 'turnId')
+    const turnId = eventTurnId(event, latestActiveTurnId)
     if (turnId && event.seq !== undefined && !turnStartSeq.has(turnId)) turnStartSeq.set(turnId, event.seq)
     promptCache = applyPromptCacheEvent(promptCache, event)
     // A retry notice says why the turn has nothing to show yet. Anything else
@@ -832,38 +1005,41 @@ export function projectConversation(
       }
       case 'user_message': {
         if (event.seq !== undefined) lastFileChangeSeq = event.seq
-        if (turnId) {
-          ensureTurn(turnId)
-          const localTurnId = readString(event.payload, 'localTurnId')
-          const origin = readConversationMessageOrigin(event.payload?.origin)
-          const subagentMessage = readConversationSubagentMessage(event.payload?.subagentMessage)
-          // The lane was spawned before anyone could write to it, so it is
-          // here unless a page of the log starts after it, when it is not on
-          // screen to show the words either.
-          if (subagentMessage) {
-            const lane = toolsById.get(subagentMessage.toolUseId)
-            if (lane) (lane.sent ??= []).push({ at: event.createdAt, text: subagentMessage.text })
-          }
-          eventUserTurns.set(turnId, {
-            // The acknowledgement replaces an optimistic bubble in place. The
-            // local identity is persisted too, so remounts keep the same key.
-            id: localTurnId ?? event.id,
-            text: readString(event.payload, 'text') ?? '',
-            createdAt: event.createdAt,
-            ...(event.seq !== undefined ? { seq: event.seq } : {}),
-            ...(localTurnId ? { localTurnId } : {}),
-            storedAttachments: parseStoredAttachments(event.payload?.attachments),
-            mentions: parseConversationMentions(event.payload?.mentions) ?? undefined,
-            files: parseConversationAttachedFiles(event.payload?.files) ?? undefined,
-            skills: Array.isArray(event.payload?.skills)
-              ? event.payload.skills.filter((id): id is string => typeof id === 'string')
-              : undefined,
-            ...(origin ? { origin } : {}),
-            ...(subagentMessage ? { subagentMessage } : {}),
-          })
-          ensureTurn(turnId).seq = event.seq
-          if (localTurnId) representedLocalTurnIds.add(localTurnId)
+        if (turnId) ensureTurn(turnId, false)
+        const localTurnId = readString(event.payload, 'localTurnId')
+        const origin = readConversationMessageOrigin(event.payload?.origin)
+        const subagentMessage = readConversationSubagentMessage(event.payload?.subagentMessage)
+        const commandId = readString(event.payload, 'commandId')
+        // The lane was spawned before anyone could write to it, so it is
+        // here unless a page of the log starts after it, when it is not on
+        // screen to show the words either.
+        if (subagentMessage) {
+          const lane = toolsById.get(subagentMessage.toolUseId)
+          if (lane) (lane.sent ??= []).push({ at: event.createdAt, text: subagentMessage.text })
         }
+        const message: EventUserTurn = {
+          // The acknowledgement replaces an optimistic bubble in place. The
+          // local identity is persisted too, so remounts keep the same key.
+          id: localTurnId ?? event.id,
+          text: readString(event.payload, 'text') ?? '',
+          createdAt: event.createdAt,
+          ...(event.seq !== undefined ? { seq: event.seq } : {}),
+          ...(localTurnId ? { localTurnId } : {}),
+          storedAttachments: parseStoredAttachments(event.payload?.attachments),
+          mentions: parseConversationMentions(event.payload?.mentions) ?? undefined,
+          files: parseConversationAttachedFiles(event.payload?.files) ?? undefined,
+          skills: Array.isArray(event.payload?.skills)
+            ? event.payload.skills.filter((id): id is string => typeof id === 'string')
+            : undefined,
+          ...(origin ? { origin } : {}),
+          ...(subagentMessage ? { subagentMessage } : {}),
+          ...(commandId ? { commandId } : {}),
+        }
+        if (turnId) {
+          eventUserTurns.set(turnId, message)
+          ensureTurn(turnId).seq = event.seq
+        } else awaitingTurn.push(message)
+        if (localTurnId) representedLocalTurnIds.add(localTurnId)
         break
       }
       case 'turn_started': {
@@ -923,6 +1099,25 @@ export function projectConversation(
           turn.reasoning = ''
           turn.reasoningMs = undefined
         }
+        const reported = turn.tools.get(id)
+        if (reported) {
+          // A call reported again (its input filled in, or the start sent
+          // twice) updates the one call: a call that already finished stays
+          // finished, with its output, and what the new report leaves out is
+          // what the call had.
+          reported.name = name
+          if (event.payload?.kind !== undefined) reported.toolKind = readToolKind(event.payload, name)
+          reported.input = readJson(event.payload, 'input') ?? reported.input
+          reported.inputTruncated = readBoolean(event.payload, 'inputTruncated') ?? reported.inputTruncated
+          reported.summary = readString(event.payload, 'summary') ?? reported.summary
+          reported.addedLines = readNumber(event.payload, 'addedLines') ?? reported.addedLines
+          reported.removedLines = readNumber(event.payload, 'removedLines') ?? reported.removedLines
+          reported.subagentLane = readBoolean(event.payload, 'subagentLane') ?? reported.subagentLane
+          reported.subagentType = readString(event.payload, 'subagentType') ?? reported.subagentType
+          reported.displayTitle = readString(event.payload, 'displayTitle') ?? reported.displayTitle
+          reported.serverName = readString(event.payload, 'serverName') ?? reported.serverName
+          break
+        }
         const tool: ToolAccumulator = {
           id,
           turnId: ownerTurnId,
@@ -932,15 +1127,13 @@ export function projectConversation(
           inputTruncated: readBoolean(event.payload, 'inputTruncated'),
           status: 'running',
           summary: readString(event.payload, 'summary'),
-          // A call reported again (its input filled in on completion) keeps
-          // the moment it began.
-          startedAt: turn.tools.get(id)?.startedAt ?? event.createdAt,
+          startedAt: event.createdAt,
           addedLines: readNumber(event.payload, 'addedLines'),
           removedLines: readNumber(event.payload, 'removedLines'),
           subagentLane: readBoolean(event.payload, 'subagentLane'),
           subagentType: readString(event.payload, 'subagentType'),
-          displayTitle: readString(event.payload, 'displayTitle') ?? turn.tools.get(id)?.displayTitle,
-          serverName: readString(event.payload, 'serverName') ?? turn.tools.get(id)?.serverName,
+          displayTitle: readString(event.payload, 'displayTitle'),
+          serverName: readString(event.payload, 'serverName'),
           parentToolUseId,
         }
         const pendingMessage = pendingMessages.get(id)
@@ -964,6 +1157,13 @@ export function projectConversation(
         const id =
           (resultTaskId && lanesByTask.get(resultTaskId)) ||
           readString(event.payload, 'toolUseId', 'callId', 'id', 'toolCallId')
+        // What a finished step changed counts toward its own turn's changes.
+        // A step still running has changed nothing yet, as the desktop reads it.
+        const files = event.payload?.partial === true ? undefined : readStepFileChanges(event.payload)
+        if (files) {
+          const owner = turns.get(((id && toolsById.get(id)?.turnId) || turnId || latestActiveTurnId()) ?? '')
+          if (owner) (owner.stepFiles ??= new Map()).set(id || event.id, files)
+        }
         // A background agent's result carries no turn: it closes its lane by id.
         if (!turnId && !id) break
         const turn = turnId ? ensureTurn(turnId) : undefined
@@ -1054,6 +1254,12 @@ export function projectConversation(
           questions: requestKind === 'question' ? readQuestions(event.payload) : undefined,
           plan: requestKind === 'plan' ? (readString(event.payload, 'plan') ?? '') : undefined,
           planFilePath: requestKind === 'plan' ? readPlanFilePath(event.payload) : undefined,
+          ...(readBoolean(event.payload, 'rememberable') !== undefined
+            ? { rememberable: readBoolean(event.payload, 'rememberable') }
+            : {}),
+          ...(readString(event.payload, 'rememberLabel')
+            ? { rememberLabel: readString(event.payload, 'rememberLabel') }
+            : {}),
         })
         approvalOrder.push(requestId)
         if (turnId) ensureTurn(turnId).approvals.push(requestId)
@@ -1240,12 +1446,17 @@ export function projectConversation(
         }
         break
       }
+      case 'session_closed': {
+        if (options.sessionEndSettlesWork) settleSessionWork(event.createdAt)
+        break
+      }
       default:
         break
     }
   }
 
-  const activeTurn = turnOrder.some((id) => turns.get(id)?.status === 'streaming')
+  // A message still waiting for its turn is work begun.
+  const activeTurn = awaitingTurn.length > 0 || turnOrder.some((id) => turns.get(id)?.status === 'streaming')
   const awaitingApproval = approvalOrder.some((id) => approvals.get(id)?.status === 'pending')
 
   // Interleave: each user turn precedes the assistant turn it triggered. When
@@ -1259,7 +1470,7 @@ export function projectConversation(
     turnOrder.map((id) => turns.get(id)).filter((turn): turn is TurnAccumulator => turn !== undefined),
     toolsById,
   )
-  const useEventUserTurns = eventUserTurns.size > 0
+  const useEventUserTurns = eventUserTurns.size > 0 || awaitingTurn.length > 0
   const blockCount = useEventUserTurns ? turnOrder.length : Math.max(turnOrder.length, userTurns.length)
   entries.push(...(compactionsAfterTurn.get('') ?? []))
   const rewound = (turnId: string | undefined): boolean => {
@@ -1271,26 +1482,7 @@ export function projectConversation(
     if (rewound(turnId)) continue
     const eventUserTurn = turnId ? eventUserTurns.get(turnId) : undefined
     if (useEventUserTurns) {
-      if (eventUserTurn) {
-        const attachments = eventUserTurn.localTurnId ? localAttachments.get(eventUserTurn.localTurnId) : undefined
-        entries.push({
-          kind: 'user',
-          id: eventUserTurn.id,
-          ...(eventUserTurn.seq !== undefined ? { seq: eventUserTurn.seq } : {}),
-          text: eventUserTurn.text,
-          createdAt: eventUserTurn.createdAt,
-          mentions: eventUserTurn.mentions,
-          ...(eventUserTurn.files?.length ? { files: eventUserTurn.files } : {}),
-          skills: eventUserTurn.skills,
-          ...(eventUserTurn.origin ? { origin: eventUserTurn.origin } : {}),
-          ...(eventUserTurn.subagentMessage ? { subagentMessage: eventUserTurn.subagentMessage } : {}),
-          ...(attachments
-            ? { attachments }
-            : eventUserTurn.storedAttachments
-              ? { storedAttachments: eventUserTurn.storedAttachments }
-              : {}),
-        })
-      }
+      if (eventUserTurn) entries.push(eventUserEntry(eventUserTurn, localAttachments))
     } else {
       const userTurn = userTurns[i]
       if (userTurn) entries.push(userEntryFromLocalTurn(userTurn))
@@ -1327,6 +1519,7 @@ export function projectConversation(
       checkpointTurnSeq: turn.checkpointTurnSeq,
       checkpointAvailable: turn.checkpointAvailable,
       checkpointSummary: turn.checkpointSummary,
+      ...(turn.stepFiles ? reportedChangesOf(turn.stepFiles) : {}),
     })
     for (const tool of nestSubagentLanes(turn, laneIndex)) entries.push(tool)
     for (const requestId of turn.approvals) {
@@ -1336,6 +1529,8 @@ export function projectConversation(
     entries.push(...(compactionsAfterTurn.get(turnId) ?? []))
   }
   entries.push(...(commandOutputsInTurn.get('') ?? []))
+  // Messages no turn has answered yet, newest last.
+  for (const waiting of awaitingTurn) entries.push(eventUserEntry(waiting, localAttachments))
   // Optimistic tail: local sends not yet represented by user_message events.
   if (useEventUserTurns) {
     for (const userTurn of userTurns) {

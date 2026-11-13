@@ -50,7 +50,6 @@ import {
   type Theme,
 } from "../../theme/tokens";
 import type { WorkspaceCheckout } from "../../api/tailnetWorkspaces";
-import { backgroundWorkLabel, formatElapsed, workingLabel } from "./agentLogic";
 import { useChats } from "./ChatsContext";
 import { followUpAction, followUpSendLabel, steerOffered } from "./followUp";
 import { chatHostMark, stripPullRequest } from "./chatMarks";
@@ -99,10 +98,12 @@ import {
   stringValue,
   turnChangesLabel,
   turnMetaParts,
-  type ChangedTurn,
-  type ConversationRow,
-  type PendingRequest,
 } from "./conversationLogic";
+import type {
+  ChangedTurn,
+  ConversationRow,
+  PendingRequest,
+} from "../../../../packages/conversation-timeline/src/public";
 import {
   AgentLaneCard,
   SubagentStartRow,
@@ -141,12 +142,15 @@ import {
   type ChatQuoteToken,
 } from "../../shared/quotes/chat-quotes";
 import {
+  backgroundWorkLabel,
+  formatElapsed,
   harnessName,
   isSubagentStart,
   parentRelation,
   subagentCounts,
   subagentStartFacts,
   subagentThread,
+  workingLabel,
   type SubagentChatParent,
 } from "./subagentLogic";
 import {
@@ -2455,7 +2459,8 @@ function PendingCard({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const p = pending.payload;
+  // The request as the shared projection read it off its event.
+  const p = pending.entry;
   const [picks, setPicks] = useState<Record<string, string[]>>({});
   const [freeText, setFreeText] = useState<Record<string, string>>({});
   // The part of a several-part question on show. The card is keyed by the
@@ -2485,7 +2490,7 @@ function PendingCard({
       ? command({ kind: "resolvePlan", requestId: pending.id, decision: approve ? "approve" : "reject" })
       : resolve(approve ? "once" : "deny");
   // A plan is read on its own page; the dock only asks for the decision.
-  if (p.kind === "plan")
+  if (p.requestKind === "plan")
     return (
       <View style={styles.planDock}>
         <Text accessibilityRole="header" style={styles.planDockTitle}>
@@ -2518,11 +2523,11 @@ function PendingCard({
   return (
     <ScrollView ref={scroll} style={styles.pending} keyboardShouldPersistTaps="handled">
       <Text accessibilityRole="header" style={styles.text}>
-        {p.kind === "question" ? "Your input is needed" : "Permission needed"}
+        {p.requestKind === "question" ? "Your input is needed" : "Permission needed"}
       </Text>
       {/* A question's summary is one of its questions, which the part below
           already says; above a later part it named the first part instead. */}
-      {p.kind === "question" ? null : (
+      {p.requestKind === "question" ? null : (
         <Text style={styles.meta}>
           {stringValue(p.summary) || stringValue(p.action)}
         </Text>
@@ -2530,7 +2535,7 @@ function PendingCard({
       {p.originAgentId ? (
         <Text style={styles.meta}>Requested by a subagent</Text>
       ) : null}
-      {p.kind !== "question" && typeof recordValue(p.input).command === "string" ? (
+      {p.requestKind !== "question" && typeof recordValue(p.input).command === "string" ? (
         // A command is read as the command, wrapped: as JSON its one long
         // string ran off the card's edge with nothing to say it went on.
         <View style={styles.commandBox}>
@@ -2540,13 +2545,13 @@ function PendingCard({
             </Text>
           </View>
         </View>
-      ) : p.kind !== "question" && p.input ? (
+      ) : p.requestKind !== "question" && p.input ? (
         <SourceBlock
           content={JSON.stringify(p.input, null, 2)}
           language="json"
         />
       ) : null}
-      {p.kind === "question" ? (
+      {p.requestKind === "question" ? (
         <>
           {questions.slice(step.index, step.index + 1).map((question) => {
             const label = stringValue(question.question);

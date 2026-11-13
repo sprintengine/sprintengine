@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 const {
   chatOpenedSince,
   unreadDividerRowId,
@@ -28,13 +28,13 @@ function exchange(turnId, start, end, extra = []) {
   return events;
 }
 const divider = (events, opened) => {
-  const projected = projectConversation(events);
+  const projected = projectPhoneConversation(events);
   return unreadDividerRowId(projected.rows, unreadDividerTurn(projected.replies, opened));
 };
 
 test("the divider goes above the first reply that finished after the chat was last seen", () => {
   const events = [...exchange("t1", 100, 110), ...exchange("t2", 200, 210), ...exchange("t3", 300, 310)];
-  const rows = projectConversation(events).rows;
+  const rows = projectPhoneConversation(events).rows;
   // Seen after t1 ended, before t2 did: t2's reply is the first one new.
   const id = divider(events, { openedAt: 1_000, seenAt: 150 });
   assert.equal(id, "fold:t2");
@@ -92,7 +92,7 @@ test("a compaction on the way into the new turn goes below the divider", () => {
     ...exchange("t1", 100, 110),
     ...exchange("t2", 200, 210, [event("context_compacted", 200, { turnId: "t2", trigger: "auto" })]),
   ];
-  const rows = projectConversation(events).rows;
+  const rows = projectPhoneConversation(events).rows;
   const id = divider(events, { openedAt: 1_000, seenAt: 150 });
   assert.equal(rows.find((row) => row.id === id).kind, "compaction");
   assert.equal(rows[rows.findIndex((row) => row.id === id) + 1].id, "fold:t2");
@@ -107,9 +107,9 @@ test("a reply with no steps lands on its prose, and a turn with no row yet waits
     event("turn_completed", 202, { turnId: "t2" }),
   ];
   const id = divider(events, { openedAt: 1_000, seenAt: 150 });
-  assert.equal(projectConversation(events).rows.find((row) => row.id === id).text, "You're welcome.");
-  assert.equal(unreadDividerRowId(projectConversation(events).rows, "t9"), null);
-  assert.equal(unreadDividerRowId(projectConversation(events).rows, null), null);
+  assert.equal(projectPhoneConversation(events).rows.find((row) => row.id === id).text, "You're welcome.");
+  assert.equal(unreadDividerRowId(projectPhoneConversation(events).rows, "t9"), null);
+  assert.equal(unreadDividerRowId(projectPhoneConversation(events).rows, null), null);
 });
 
 test("the reading is the later of the thread opened with and the list's, and a missing clock says nothing", () => {
@@ -120,7 +120,7 @@ test("the reading is the later of the thread opened with and the list's, and a m
 });
 
 test("the projection lists each answered turn's clocks, oldest first", () => {
-  const { replies } = projectConversation([...exchange("t1", 100, 110), ...exchange("t2", 200, null)]);
+  const { replies } = projectPhoneConversation([...exchange("t1", 100, 110), ...exchange("t2", 200, null)]);
   assert.deepEqual(replies, [
     { turn: "t1", startedAt: 100, endedAt: 110, streaming: false },
     { turn: "t2", startedAt: 200, streaming: true },
@@ -137,5 +137,5 @@ test("a reply that opens by thinking takes the divider above its thought", () =>
     event("turn_completed", 203, { turnId: "t2" }),
   ];
   const id = divider(events, { openedAt: 1_000, seenAt: 150 });
-  assert.equal(projectConversation(events).rows.find((row) => row.id === id).kind, "reasoning");
+  assert.equal(projectPhoneConversation(events).rows.find((row) => row.id === id).kind, "reasoning");
 });

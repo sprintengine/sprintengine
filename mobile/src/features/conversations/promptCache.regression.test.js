@@ -1,7 +1,8 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
+// The reading is folded by the shared projection's reader.
+const { applyPromptCacheEvent } = require("../../../.mobile-test-build/packages/conversation-timeline/src/promptCache.js");
 const {
-  applyPromptCacheEvent,
   promptCacheState,
   promptCacheNeedsAttention,
   promptCacheCopy,

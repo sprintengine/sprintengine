@@ -28,15 +28,25 @@ import {
   plainLineBreaks,
 } from "./sendRules";
 import {
+  foldable,
+  followContext,
   isStreamedEvent,
   keepUnchangedRows,
   mergeConversationEvents,
-  projectConversation,
+  NO_LOCAL_TURNS,
+  PHONE_PROJECTION,
+  phoneRows,
   recordValue,
+  type HeldContext,
+} from "./conversationLogic";
+import {
+  createConversationProjectionState,
+  syncConversationProjection,
+  type AgentLane,
   type ChangedTurn,
   type ConversationRow,
-} from "./conversationLogic";
-import type { AgentLane } from "./agentLogic";
+  type IncrementalConversationState,
+} from "../../../../packages/conversation-timeline/src/public";
 import { chatWorksInBackground } from "./conversationListLogic";
 import { keepUnchanged } from "./keepUnchanged";
 import { CACHE_SAVE_NOTICE, createCacheSaveHealth } from "./cacheSaveHealth";
@@ -299,8 +309,18 @@ export function usePhoneConversation(
     lanes: [],
     changedTurns: [],
   });
+  // The projection is kept from one draw to the next: a log that only grew
+  // is folded from where it was (a streamed word changes one entry), anything
+  // else is folded whole.
+  const folding = useRef<{ state: IncrementalConversationState; context: HeldContext } | null>(null);
   const projection = useMemo(() => {
-    const projected = projectConversation(events);
+    const held = folding.current;
+    const state = held
+      ? syncConversationProjection(held.state, foldable(events), NO_LOCAL_TURNS)
+      : createConversationProjectionState(foldable(events), NO_LOCAL_TURNS, PHONE_PROJECTION);
+    const context = followContext(held?.context ?? null, events);
+    folding.current = { state, context };
+    const projected = phoneRows(state.projection, context.reading);
     const rows = keepUnchangedRows(shown.current.rows, projected.rows);
     const lanes = keepUnchanged(shown.current.lanes, projected.lanes, (lane) => lane.id);
     const changedTurns = keepUnchanged(shown.current.changedTurns, projected.changedTurns, (turn) => turn.id);

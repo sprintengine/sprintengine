@@ -88,17 +88,18 @@ test("a parent's link goes back to its screen under the top when it is there", (
 });
 
 test("a subagent the turn started stays in view, out of the turn's fold", () => {
-  const { foldTurns } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
-  const read = { id: "r", name: "Read", input: { path: "a.ts" }, status: "ok" };
-  const start = { id: "s", name: "mcp__sprintengine-studio__subagent_start", serverName: "sprintengine-studio", input: {}, status: "ok" };
-  const grep = { id: "g", name: "Grep", input: { pattern: "x" }, status: "ok" };
-  const rows = foldTurns(
-    [
-      { kind: "tools", id: "t1", turn: "t", tools: [read, start, grep] },
-      { kind: "message", id: "m", role: "assistant", turn: "t", text: "Done.", at: 1 },
-    ],
-    () => ({ status: "done", steps: 2 }),
-  );
+  const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+  const event = (seq, type, payload) => ({ id: `e${seq}`, seq, sessionId: "s", workspaceId: "w", agentId: "a", createdAt: seq, type, payload });
+  const { rows } = projectPhoneConversation([
+    event(1, "turn_started", { turnId: "t" }),
+    event(2, "tool_started", { turnId: "t", toolUseId: "r", name: "Read", input: { path: "a.ts" } }),
+    event(3, "tool_output", { turnId: "t", toolUseId: "r", status: "ok" }),
+    event(4, "tool_started", { turnId: "t", toolUseId: "s", name: "mcp__sprintengine-studio__subagent_start", serverName: "sprintengine-studio", input: {} }),
+    event(5, "tool_output", { turnId: "t", toolUseId: "s", status: "ok" }),
+    event(6, "tool_started", { turnId: "t", toolUseId: "g", name: "Grep", input: { pattern: "x" } }),
+    event(7, "tool_output", { turnId: "t", toolUseId: "g", status: "ok" }),
+    event(8, "content_delta", { turnId: "t", text: "Done." }),
+  ]);
   const kept = rows.filter((row) => row.kind === "tools");
   assert.equal(kept.length, 1);
   assert.deepEqual(kept[0].tools.map((tool) => tool.id), ["s"]);

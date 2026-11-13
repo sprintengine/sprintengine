@@ -8,12 +8,12 @@ import { Screen } from "../../components/Screen";
 import { useNow } from "../../components/useNow";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { fontWeight, space, typography, type Theme } from "../../theme/tokens";
-import { formatTokens } from "./agentLogic";
 import { AgentListRow, SubagentChatRow } from "./conversationParts";
 import { chatThreadCli } from "./launchLogic";
 import { useLiveConversation, type LiveConversationKey } from "./liveConversation";
 import {
   directLanes,
+  formatTokens,
   subagentEntries,
   subagentsFooter,
   subagentThread,
