@@ -13,8 +13,11 @@ import type { StudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 // only a desktop window knows (its Settled chats settings, its module chats'
 // run states) is not taken from a browser, whose settings start at the
 // defaults and which loads no module, so its push is answered and not
-// applied, as the web build's stand-ins did; and a browser on the tailnet
-// makes a workspace only on a folder Studio already has one for.
+// applied, as the web build's stand-ins did; a browser on the tailnet
+// makes a workspace only on a folder Studio already has one for; and New
+// chat's "No project" is the desktop's, refused to a browser as the tunnel
+// refused it: a tab is not told where on this disk those chats live, and makes
+// no folder there.
 
 type Asking = { grant: StudioGrant; context: StudioRequestContext }
 
@@ -40,9 +43,11 @@ export type StudioWorkspaceSyncHandlerOptions<A extends Asking = Asking> = {
 }
 
 const UNKNOWN_FOLDER = 'A browser on the tailnet starts a chat only in a folder Studio already has.'
+const NO_PROJECT_DESKTOP_ONLY = 'A chat without a project is started from the desktop app.'
 
 const unserved = (method: StudioWorkspaceSyncMethod) =>
   ({ ok: false, error: { code: 'unavailable', message: `This Studio does not serve ${method}.` } }) as const
+const desktopOnly = (message: string) => ({ ok: false, error: { code: 'unavailable', message } }) as const
 const refused = (message: string) => ({ ok: false, error: { code: 'invalid_params', message } }) as const
 const ok = <R>(result: R): Answer<R> => ({ ok: true, result })
 
@@ -90,11 +95,17 @@ export function createStudioWorkspaceSyncHandlers<A extends Asking>(
     'workspaceBackup.read': async () => (sync ? ok(await sync.backupRead()) : unserved('workspaceBackup.read')),
     'workspaceBackup.write': ({ commandId, payload }, asking) =>
       write('workspaceBackup.write', asking, commandId, async () => ok(await sync!.backupWrite(payload))),
-    'projectlessChats.root': async () =>
-      sync ? ok({ path: await sync.projectlessRoot() }) : unserved('projectlessChats.root'),
+    'projectlessChats.root': async (_params, asking) =>
+      asking.context.browser
+        ? desktopOnly(NO_PROJECT_DESKTOP_ONLY)
+        : sync
+          ? ok({ path: await sync.projectlessRoot() })
+          : unserved('projectlessChats.root'),
     'projectlessChats.createFolder': ({ commandId, prompt }, asking) =>
-      write('projectlessChats.createFolder', asking, commandId, async () =>
-        ok({ path: await sync!.createProjectlessFolder(prompt ?? null) }),
-      ),
+      asking.context.browser
+        ? Promise.resolve(desktopOnly(NO_PROJECT_DESKTOP_ONLY))
+        : write('projectlessChats.createFolder', asking, commandId, async () =>
+            ok({ path: await sync!.createProjectlessFolder(prompt ?? null) }),
+          ),
   }
 }

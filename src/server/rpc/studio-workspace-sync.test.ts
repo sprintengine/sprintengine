@@ -210,6 +210,16 @@ test('a browser’s window-only state is not taken, and a tailnet browser makes 
       payload: { insert: { kind: 'folder_head', folderPath: '/Users/dev/elsewhere' } },
     },
   }
+  // "No project" is the desktop's: a tab is not told where those chats live, and makes no folder there.
+  for (const context of [tab, tailnet]) {
+    assert.equal((await ask('projectlessChats.root', {}, context)).error?.code, 'unavailable')
+    assert.equal(
+      (await ask('projectlessChats.createFolder', { commandId: 'p-1', prompt: 'hi' }, context)).error?.code,
+      'unavailable',
+    )
+  }
+  assert.equal((await ask('projectlessChats.root', {}, window)).ok, true)
+
   const refused = await ask('workspaceSync.dispatch', created, tailnet)
   assert.equal(refused.error?.code, 'invalid_params')
   // Studio's own window names any folder; the registry decides the rest.
