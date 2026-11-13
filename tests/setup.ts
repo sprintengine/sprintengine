@@ -71,3 +71,5 @@ vi.mock('../src/renderer/src/studio/schedules', () => import('../src/renderer/sr
 vi.mock('../src/renderer/src/studio/access', () => import('../src/renderer/src/studio/access.double'))
 // The desktop's workspace registry (`src/renderer/src/studio/workspaceSync.ts`), the same way.
 vi.mock('../src/renderer/src/studio/workspaceSync', () => import('../src/renderer/src/studio/workspaceSync.double'))
+// A web tab's paired browsers (`src/renderer/src/studio/webDevices.ts`), the same way.
+vi.mock('../src/renderer/src/studio/webDevices', () => import('../src/renderer/src/studio/webDevices.double'))

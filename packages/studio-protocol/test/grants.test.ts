@@ -55,6 +55,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * The desktop's own windows' workspace registry (`workspaceSync.*` and its
  * neighbours): their arrangement and the records they mirror, which no other
  * client reads that way.
+ * The browsers paired with the web listener (`web-devices.ts`): who may reach
+ * this Studio from a browser.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -208,6 +210,12 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'projectlessChats.root',
   'projectlessChats.createFolder',
   'workspaceSync.events',
+  // The browsers paired with the web listener: who may reach this Studio from a browser.
+  'webDevices.status',
+  'webDevices.revoke',
+  'webDevices.approve',
+  'webDevices.decline',
+  'webDevices.changed',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [

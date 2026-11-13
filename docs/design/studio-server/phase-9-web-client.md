@@ -1431,9 +1431,10 @@ recorded here, with the commit that made it.
   the token for a single-use ticket; the `postMessage` wire with its row in
   `docs/compatibility.md`; and `studio-server embed`, which mints one from the
   command line (`--list` and `--revoke <id>` added in review, so an embed
-  made anywhere can be seen and taken back). An owner's tab can create, list and revoke embeds over its
-  tunnel (`web:embeds:*`), as 14.1 says of the folder browser; there is no
-  Settings surface for them yet.
+  made anywhere can be seen and taken back). An owner's tab could also create, list and revoke embeds over its
+  tunnel (`web:embeds:*`), which nothing called; those channels are gone
+  (2026-11-13), and embeds are made only with `studio-server embed`. There is
+  no Settings surface for them.
 - **Held three ways.** The socket's grant is `conversation:read` and not an
   owner's, so the router refuses every write and redacts what it reads; a
   gate on the socket passes only `hello`, `unsub`, the one conversation's
@@ -1516,9 +1517,11 @@ keeps the same swaps, since the browser's own window still takes
 - **Settings → Remote → Browsers**, in an owner's tab: every paired browser,
   with where it paired from, when it was last seen and when its pairing ends,
   and Remove, which closes its connections at once (a removed tab goes back
-  to `/pair`). "Pair another browser" makes a one-time link on one of the
-  server's origins, shown as text and as a QR code (the repo's own encoder).
-  Pending requests wait here.
+  to `/pair`). Pending requests wait here. (Since 2026-11-13 this is the
+  Studio protocol's `webDevices.*`, an owner's. "Pair another browser" no
+  longer makes a link: a one-time pairing link is a credential, and no tab is
+  handed one, so a stolen session cannot mint a way in. Another browser asks
+  by approval, below, or is paired with `studio-server pair` on the machine.)
 - **Pairing by approval (6.2)**, as specified, with the owner's prompt in
   that Settings section rather than the desktop's: the pairing page asks
   (`POST /pair/request`, the exact-Origin rule applies), shows six digits,

@@ -445,6 +445,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ],
       ],
       [
+        'the browsers paired with the web listener: listing, removing and letting one in, an owner’s (an owner’s web tab administers them); a device that could let a browser in would manufacture the next grant',
+        ['webDevices.status', 'webDevices.revoke', 'webDevices.approve', 'webDevices.decline', 'webDevices.changed'],
+      ],
+      [
         'what extensions run here, installed, trusted or switched, and the window’s own report of what it resolved: an owner’s',
         ['module.setEnabled', 'module.install', 'module.setTrust', 'module.uninstall', 'module.reportRegistry'],
       ],

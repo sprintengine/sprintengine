@@ -34,6 +34,14 @@
   windows, with the reason, always beside `owner`. `mcpHttp.create` and all of
   `localApps.*` say it.
 
+### Added (the browsers paired with a web listener)
+
+- **`webDevices.status`, `.revoke`, `.approve`, `.decline` and the
+  `webDevices.changed` stream** (`web-devices.ts`, capability `web-devices`):
+  Settings ▸ Browsers in a web tab. Each is an owner's; the mutations carry a
+  `commandId`. The shapes (`WebDevice`, `WebPairRequest`, `WebDevicesStatus`)
+  move into the package. No method answers a pairing link.
+
 ### Changed (an unreadable extension folder is named, not placed)
 
 - **`module.installed` tells a folder's place on disk only to a connection

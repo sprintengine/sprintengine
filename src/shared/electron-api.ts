@@ -3,7 +3,7 @@ import type { AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
 import type { AgentNotificationMode } from './agent-notifications'
 import type { ConversationChangesSelection } from '../../packages/conversation-protocol/src/checkoutChanges'
-import type { PreviewOpenAnswer, PreviewPort, PreviewSummary, WebDevicesStatus } from './web-client'
+import type { PreviewOpenAnswer, PreviewPort, PreviewSummary } from './web-client'
 import type {
   SshEnvironmentResult,
   SshEnvironmentSettings,
@@ -252,16 +252,6 @@ export type ElectronApi = {
   previewsOpen: (input: { port: number; typed?: boolean }) => Promise<PreviewOpenAnswer>
   previewsClose: (previewId: string) => Promise<boolean>
   onPreviewsChanged: (cb: (previews: PreviewSummary[]) => void) => () => void
-  /** The browsers paired with this server's web listener, and the ones asking (web client only). */
-  webDevicesStatus: () => Promise<WebDevicesStatus>
-  webDevicesRevoke: (id: string) => Promise<boolean>
-  webDevicesRename: (id: string, name: string) => Promise<boolean>
-  /** A one-time link that pairs another browser, on one of the server's origins. */
-  webDevicesLink: (origin?: string) => Promise<{ url: string; expiresAt: string }>
-  /** Let a browser in by the six digits it shows. Three wrong tries decline it. */
-  webDevicesApprove: (requestId: string, code: string) => Promise<{ ok: true } | { ok: false; message: string }>
-  webDevicesDecline: (requestId: string) => Promise<boolean>
-  onWebDevicesChanged: (cb: (status: WebDevicesStatus) => void) => () => void
   /** Whether this session has SSH machines (a preview, off by default; phase 8). */
   sshMachinesEnabled?: boolean
   isDevelopment: boolean

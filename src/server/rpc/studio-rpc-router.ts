@@ -74,6 +74,7 @@ import { createStudioExtensionsHandlers } from './studio-extensions'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import { createStudioArtifactsHandlers } from './studio-artifacts'
 import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
+import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -214,6 +215,8 @@ export type StudioRpcRouterOptions = {
   artifacts?: StudioArtifacts
   /** Who may reach the agents from this machine; without it, `gateway.status`, `mcpHttp.*` and `localApps.*` are answered `unavailable`. */
   access?: StudioAccessDomain
+  /** The web listener's paired browsers, once its front door gave them; until then `webDevices.*` is answered `unavailable`. */
+  webDevices?: () => StudioWebDevicesDomain | null
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
@@ -982,6 +985,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   })
   const accessRouting = createStudioAccessHandlers({
     ...(options.access ? { access: options.access } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const webDevicesRouting = createStudioWebDevicesHandlers({
+    webDevices: () => options.webDevices?.() ?? null,
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -2036,6 +2044,9 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── Who may reach the agents from this machine ─────────────────────────
 
     ...accessRouting,
+    // ── The browsers paired with the web listener ──────────────────────────
+
+    ...webDevicesRouting,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules
