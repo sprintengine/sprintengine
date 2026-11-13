@@ -1026,8 +1026,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // than staging the same uploads a second time under other host ids.
   const stagingSends = new Map<string, Promise<StagedSend>>()
   type StagedSend =
-    | { ok: true; ids: string[] }
-    | Refused<'not_found' | 'invalid_params' | 'too_large' | 'busy' | 'unavailable'>
+    { ok: true; ids: string[] } | Refused<'not_found' | 'invalid_params' | 'too_large' | 'busy' | 'unavailable'>
   async function stagedFor(
     params: { key: StudioConversationKey; commandId: string },
     uploadIds: string[],
