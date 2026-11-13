@@ -7,7 +7,6 @@ import { registerTelemetryIpc } from './ipc/telemetry-ipc'
 import { registerQuitConfirmationIpc } from './ipc/quit-confirmation-ipc'
 import { registerAgentNotificationsIpc } from './ipc/agent-notifications-ipc'
 import { registerAgentBrowserToolsIpc } from './ipc/agent-browser-tools-ipc'
-import { registerArtifactsIpc } from './ipc/artifacts-ipc'
 import { registerKeepAwakeIpc } from './ipc/keep-awake-ipc'
 import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerStudioWindowTicketIpc, type StudioWindowTicketIssuer } from './ipc/studio-window-ticket-ipc'
@@ -214,11 +213,6 @@ export function registerCoreIpc(
     void services.desktopShell?.refreshToolsets()
   })
   registerKeepAwakeIpc(ipcMain, services.keepAwakeStore, () => services.agentKeepAwake.refresh())
-  registerArtifactsIpc(ipcMain, {
-    store: services.artifactsSettingsStore,
-    setUp: services.setUpArtifacts,
-    consent: services.artifactsSetupConsent,
-  })
   // The domains the Studio server owns: registered here while it runs in
   // process, and by the server itself on its IPC tunnel when it runs in a
   // process of its own (src/server/desktop/server-ipc.ts).

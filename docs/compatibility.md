@@ -1289,6 +1289,21 @@ Additive: a Studio without a desktop around it (a WSL or SSH server) leaves
 `extensions` out. The desktop's windows reach all of these only this way:
 their window IPC is gone, but for showing an extension's folder in the file
 manager, which stays the shell's.
+`artifacts` (2026-11-13) is where a desktop's Studio publishes its agents'
+pages: Settings ▸ Artifacts (`artifacts.settings`), setting the host up
+(`artifacts.setUp`, a mutation under its `commandId`), and the question an
+agent's `artifacts.setup` tool puts to the person (the
+`artifacts.setupQuestions` stream, every open question whole at subscribing
+and on each change, answered with `artifacts.answerSetupQuestion`). Every one
+is an owner's, with its reason in the table: the setting names the host and
+account and whether a token is held, a set-up signs in with this machine's
+credentials and seals the token it is given with the Studio's own cipher, and
+a yes is the person's at this machine. The token is never in an answer.
+Additive: a WSL or SSH server leaves `artifacts` out. The desktop's windows
+reach these only this way: their window IPC is gone. The agents'
+`artifacts.*` tools are the server's own in both modes, over the same
+service; the shell is asked only for a page's picture and, with no window
+showing, a native question.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

@@ -17,7 +17,6 @@ import { agentCompactApi } from './api/agent-compact'
 import { pullRequestApi } from './api/pull-request'
 import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
-import { artifactsApi } from './api/artifacts'
 import { modulesApi } from './api/modules'
 import { hostsApi } from './api/hosts'
 import { sshEnvironmentsApi } from './api/ssh-environments'
@@ -60,7 +59,6 @@ export const apiModules = {
   ...startupApi,
   ...buildStampApi,
   ...appearanceApi,
-  ...artifactsApi,
   ...authApi,
   ...automationApi,
   ...studioLocalAppsApi,

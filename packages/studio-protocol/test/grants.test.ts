@@ -42,7 +42,9 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * one press); an extension's code fetched, reviewed, installed, updated or
  * removed, and a new extension project written on this disk. In git: what moves a branch, rewrites history or discards
  * work, what reaches a remote with this machine's credentials, removing or
- * unlocking agents' worktrees, and the GitHub account Studio holds. A chat's
+ * unlocking agents' worktrees, and the GitHub account Studio holds. Where
+ * this machine publishes agents' pages: the setting and the token it holds,
+ * a set-up that signs in to the host, and the person's set-up question. A chat's
  * Create PR (`pull-request-create`): its forge, its push, its drafting CLI. The
  * worktree pool and the agents' worktrees (`worktrees.*`, with its streams):
  * this machine's checkouts, which the pool hands out, resets and removes.
@@ -137,6 +139,12 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'github.cancelClone',
   'github.newProject',
   'github.cloneProgress',
+  // Where this machine publishes agents' pages: the setting and the token it
+  // holds, a set-up that signs in to the host, and the person's set-up question.
+  'artifacts.settings',
+  'artifacts.setUp',
+  'artifacts.answerSetupQuestion',
+  'artifacts.setupQuestions',
   // The pool of worktrees Studio's agents run in, and the agents' worktrees.
   'worktrees.poolSnapshot',
   'worktrees.poolSettings',

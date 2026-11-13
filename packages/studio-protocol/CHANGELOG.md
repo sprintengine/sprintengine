@@ -26,6 +26,19 @@
   the runtime's words for the Studio's own window and stable words for anyone
   else.
 
+### Added (artifacts)
+
+- **Where a desktop's Studio publishes its agents' pages is the protocol's**
+  (`artifacts.ts`, capability `artifacts`): `artifacts.settings` (Settings ▸
+  Artifacts, whether a Cloudflare token is held but never the token),
+  `artifacts.setUp` (test or save a host, a mutation under its `commandId`),
+  and the set-up question an agent's `artifacts.setup` puts to the person:
+  the `artifacts.setupQuestions` stream (every open question, whole, at
+  subscribing and on each change) and `artifacts.answerSetupQuestion`. Each is
+  an owner's, with its reason (`STUDIO_ARTIFACTS_SETTING_OWNER`,
+  `STUDIO_ARTIFACTS_SETUP_OWNER`, `STUDIO_ARTIFACTS_CONSENT_OWNER`). Their
+  shapes are in `artifacts-types.ts`.
+
 ### Added (canvas boards)
 
 - **A machine's Canvas boards for another device** (`canvas.ts`, capability

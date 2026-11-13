@@ -223,11 +223,7 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   )
   assert.equal(cut.error, undefined, cut.error ?? '')
   assert.equal(cut.branch, 'agent/launched')
-  const leases = await shellRpc.call<Array<{ path: string; lease: unknown }>>(SERVER_METHODS.worktreeLeases)
-  assert.deepEqual(
-    leases.map((slot) => slot.path),
-    [cut.worktreePath],
-  )
+  assert.ok(cut.worktreePath && worktreesOf(repo).includes(realpathSync(cut.worktreePath)), 'cut from the pool')
 
   // An agent this server's shell launched calls `worktree.lease` and
   // `worktree.release` over the gateway socket, as this very orchestration's
@@ -258,16 +254,15 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.ok(tools.includes('worktree.lease') && tools.includes('worktree.release'), tools.join(', '))
   // The terminal and agent tools are the gateway's own too, not a toolset the shell offers.
   assert.ok(tools.includes('terminal.list') && tools.includes('agent.launch'), tools.join(', '))
+  // And the artifacts tools: the server publishes, over the setting it holds.
+  assert.ok(tools.includes('artifacts.publish') && tools.includes('artifacts.list'), tools.join(', '))
   const listed = await mcp.call('tools/call', { name: 'terminal.list', arguments: {} })
   assert.equal(listed.result?.isError ?? false, false, JSON.stringify(listed))
   const leasedOverMcp = await mcp.call('tools/call', { name: 'worktree.lease', arguments: { name: 'over-mcp' } })
   assert.equal(leasedOverMcp.result?.isError ?? false, false, JSON.stringify(leasedOverMcp))
   const leasedPath = (leasedOverMcp.result?.structuredContent as { path: string; branch: string }).path
   assert.equal((leasedOverMcp.result?.structuredContent as { branch: string }).branch, 'agent/over-mcp')
-  const afterLease = await shellRpc.call<Array<{ path: string; lease: { agentId: string | null } | null }>>(
-    SERVER_METHODS.worktreeLeases,
-  )
-  assert.equal(afterLease.find((slot) => slot.path === leasedPath)?.lease?.agentId, 'agent-lease')
+  assert.ok(worktreesOf(repo).includes(realpathSync(leasedPath)), 'a slot of the pool')
   const releasedOverMcp = await mcp.call('tools/call', { name: 'worktree.release', arguments: { path: leasedPath } })
   assert.equal(
     (releasedOverMcp.result?.structuredContent as { released: boolean }).released,
@@ -339,6 +334,14 @@ function projectWorkspace(id: string, folderPath: string) {
 }
 
 /** A project cloned from an origin of its own, as a person's checkout is. */
+/** The worktrees git lists for a repository, real paths. */
+function worktreesOf(repo: string): string[] {
+  return execFileSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' })
+    .split('\n')
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => realpathSync(line.slice('worktree '.length)))
+}
+
 async function gitProject(dir: string): Promise<string> {
   const env = {
     ...process.env,

@@ -9,13 +9,12 @@ import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
  * The terminals are the server's (studio-agent-terminals.ts), so `terminal.*`,
  * `agent.*` and `backlog.work` are its own tools in every mode. The worktree
  * pool's `worktree` family is the server's, as the pool is (studio-worktree-pool.ts).
- * `artifacts` is the shell's: a publish
- * reads the page from this machine's disk and signs in with its credentials,
- * and its clone of the site is one main keeps. And `visual`: a preview is
- * drawn in a hidden window of the app. `extension` and `plugin` are the
- * server's own (the scaffold and the plugin sources are its extensions').
+ * And `visual`: a preview is drawn in a hidden window of the app. `extension`
+ * and `plugin` are the server's own (the scaffold and the plugin sources are
+ * its extensions'), and so is `artifacts` (Settings ▸ Artifacts and its
+ * clone of the site are its own; it asks the shell only for a page's picture).
  */
-export const SHELL_TOOLSETS = ['browser', 'canvas', 'editor', 'tour', 'visual', 'artifacts'] as const
+export const SHELL_TOOLSETS = ['browser', 'canvas', 'editor', 'tour', 'visual'] as const
 
 /** Whether a gateway tool is one the shell offers, out of process, and not the server's. */
 export function isShellToolName(name: string): boolean {

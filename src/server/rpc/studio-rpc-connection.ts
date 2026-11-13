@@ -53,6 +53,7 @@ import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioExtensions } from '../extensions/extensions-domain'
+import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioModules } from './studio-modules'
 import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
@@ -173,6 +174,8 @@ export type StudioRpcConnectionOptions = {
   terminals?: StudioTerminals
   /** The marketplace and the feeds: the `cardFeed.changed` stream. */
   extensions?: StudioExtensions
+  /** Where the Studio publishes its agents' pages: the `artifacts.setupQuestions` stream. */
+  artifacts?: StudioArtifacts
   /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
@@ -1435,6 +1438,16 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     },
     'cardFeed.changed': (id) =>
       subscribeFeed(id, 'cardFeed.changed', options.extensions?.feeds.onCardFeedChanged ?? null),
+    // The questions open now, then the whole list again on each change: a
+    // window that connects or reconnects mid-question is shown it.
+    'artifacts.setupQuestions': (id) => {
+      const artifacts = options.artifacts
+      subscribeFeed(
+        id,
+        'artifacts.setupQuestions',
+        artifacts ? (deliver) => artifacts.onSetupQuestions((questions) => deliver({ questions })) : null,
+      )
+    },
     'terminal.output': subscribeTerminalOutput,
     'terminal.sessions': subscribeTerminalSessions,
     'terminal.promptUndelivered': subscribePromptUndelivered,

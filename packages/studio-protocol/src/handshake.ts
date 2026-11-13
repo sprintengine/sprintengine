@@ -267,6 +267,15 @@ export const STUDIO_CHAT_LIFECYCLE_CAPABILITY = 'chat-lifecycle' as const
 export const STUDIO_EXTENSIONS_CAPABILITY = 'extensions' as const
 
 /**
+ * Where a Studio publishes its agents' pages (`artifacts.ts`): Settings ▸
+ * Artifacts read and set up (`artifacts.settings`, `artifacts.setUp`), and the
+ * question put to the person before an agent's set-up changes anything
+ * (`artifacts.setupQuestions`, `artifacts.answerSetupQuestion`). Offered where
+ * the Studio publishes them (a desktop's).
+ */
+export const STUDIO_ARTIFACTS_CAPABILITY = 'artifacts' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -318,6 +327,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_CANVAS_BOARDS_CAPABILITY,
   STUDIO_CHAT_EXPORT_CAPABILITY,
   STUDIO_EXTENSIONS_CAPABILITY,
+  STUDIO_ARTIFACTS_CAPABILITY,
 ] as const
 
 /**

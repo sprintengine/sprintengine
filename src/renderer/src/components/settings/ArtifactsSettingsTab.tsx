@@ -21,6 +21,7 @@ import {
   Select,
 } from '../ui'
 import { SettingCard, SettingsPageHeader, SettingsRow, SettingsSectionTitle } from './SettingsAtoms'
+import { artifactsApi } from '../../studio/artifacts'
 
 // Settings ▸ Artifacts: where agents publish the HTML pages they make, so the
 // person can open them from any device. Each host asks for one thing:
@@ -99,7 +100,8 @@ export function ArtifactsSettingsTab(): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    void Promise.resolve(window.api?.getArtifactsSettings?.())
+    void artifactsApi
+      .getArtifactsSettings()
       .then((next) => {
         if (cancelled) return
         setView(next ?? null)
@@ -127,8 +129,7 @@ export function ArtifactsSettingsTab(): JSX.Element {
       setBusy(save ? 'save' : 'test')
       setResult(null)
       try {
-        const answer = await window.api.setUpArtifacts(inputOf(draft), save)
-        if (!answer) return
+        const answer = await artifactsApi.setUpArtifacts(inputOf(draft), save)
         setResult(answer)
         if (!answer.ok && answer.accounts?.length) setAccounts(answer.accounts)
         if (answer.ok && answer.saved) {

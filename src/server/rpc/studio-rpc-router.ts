@@ -63,6 +63,8 @@ import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 import { createStudioWorktreesHandlers } from './studio-worktrees'
 import type { StudioExtensions } from '../extensions/extensions-domain'
 import { createStudioExtensionsHandlers } from './studio-extensions'
+import type { StudioArtifacts } from '../artifacts/artifacts-domain'
+import { createStudioArtifactsHandlers } from './studio-artifacts'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -189,6 +191,8 @@ export type StudioRpcRouterOptions = {
   worktrees?: StudioWorktrees
   /** The marketplace, the CLI catalogue, the scaffold and the feeds; without it, `extensions` is answered `unavailable`. */
   extensions?: StudioExtensions
+  /** Where the Studio publishes its agents' pages; without it, `artifacts.*` is answered `unavailable`. */
+  artifacts?: StudioArtifacts
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
@@ -897,6 +901,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
     mayName,
+  })
+  const artifactsRouting = createStudioArtifactsHandlers({
+    ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
   })
   // A session command's receipt keeps what it was, across a restart too.
   const stamp = (fingerprint: string | undefined) => (fingerprint ? { commandFingerprint: fingerprint } : {})
@@ -1843,6 +1852,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── What the Studio is extended with ───────────────────────────────────
 
     ...extensionsRouting,
+
+    // ── Where the Studio publishes its agents' pages ───────────────────────
+
+    ...artifactsRouting,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules

@@ -144,6 +144,14 @@ The `welcome`'s `grant` is what the connection may do:
   `.updateStates`, `cliPlugins.*`, `cardFeed.get`, `sourcesFeed.get`) is
   `providers:read`; Studio's plugin in a workspace (`studioPlugin.status`),
   `files:read`.
+- Nor does any scope reach where the machine publishes its agents' pages:
+  reading Settings ▸ Artifacts (`artifacts.settings`), setting the host up
+  (`artifacts.setUp`) and hearing or answering an agent's set-up question
+  (`artifacts.setupQuestions`, `artifacts.answerSetupQuestion`) are an
+  owner's, each with its reason in `artifacts.ts`. The setting says which host
+  and account publish and whether a token is held; a set-up signs in with the
+  machine's credentials and keeps the token it is given sealed there; a yes is
+  the person's at that machine to give.
 - `workspaces:operate` — change this Studio's scheduled agents: make,
   change, run now, pause, resume and close one (`schedules.create`,
   `.update`, `.runNow`, `.pause`, `.resume`, `.delete`, under the `schedules`
@@ -328,7 +336,7 @@ and with the chat surface `conversation-folders`, `conversation-sessions`,
 `session-controls`, `session-terminal-handoff`, `conversation-history`,
 `approval-rules` and `provider-settings` (`STUDIO_CHAT_CAPABILITIES`);
 `files-mention`, `file-system`, `git` and `worktrees` from every Studio's core,
-and `extensions` from a desktop's. The
+and `extensions` and `artifacts` from a desktop's. The
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's
 `docs/compatibility.md`.

@@ -105,7 +105,8 @@ import { isTelemetryEventName, type TelemetryProperties } from '../shared/teleme
 import { syncStudioMcpConfig } from './studio-mcp-sync'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
 import { excludeMcpConfigFromWorktree } from './git'
-import { createArtifactsServices } from './artifacts-services'
+import { createElectronThumbnailer } from './artifacts/artifact-thumbnail-electron'
+import { askToSetUpArtifacts } from './artifacts/artifacts-setup-consent-electron'
 import { createConversationPeekService } from './conversation-peek/service'
 import {
   getTerminalSessionById,
@@ -182,12 +183,7 @@ import { createStudioRpc } from '../server/core/studio-rpc'
 import { createStudioModuleHub } from '../server/rpc/studio-modules'
 import type { StudioRpcService } from './studio-rpc/studio-rpc-service'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from '../server/desktop/gateway-backends'
-import {
-  SERVER_EVENTS,
-  SERVER_METHODS,
-  SHELL_METHODS,
-  type ServerWorktreeLease,
-} from '../server/desktop/server-methods'
+import { SERVER_EVENTS, SERVER_METHODS, SHELL_METHODS } from '../server/desktop/server-methods'
 import { createRemoteCore, createRemoteGitHubTokenStore, type ShellServerLink } from './server-supervisor/remote-core'
 import { anyWindowFocused, broadcastToAllWindows } from './window-broadcast'
 
@@ -924,6 +920,16 @@ export function createAppServices(
           studioPluginStatus: (workspaceRoot) => studioPluginStatus(workspaceRoot),
           changed: () => moduleHub.deliverChanged(),
         },
+        // Where this desktop publishes its agents' pages: Settings ▸
+        // Artifacts, its set-up and the `artifacts.*` tools are the core's. A
+        // page's picture is drawn in a hidden window of this shell, and with
+        // no workspace window showing the set-up question is a message box.
+        artifacts: {
+          thumbnailer: createElectronThumbnailer(),
+          hasWindow: () => listWorkspaceWindows().some((window) => window.isVisible() && !window.isMinimized()),
+          askNatively: askToSetUpArtifacts,
+          resolveGitHubToken: () => githubTokenStore.resolveToken(),
+        },
         ...(ssh
           ? {
               sshServers: {
@@ -1144,6 +1150,9 @@ export function createAppServices(
   const moduleRegistryMirror = createModuleRegistryMirror()
   // The marketplace, the scaffold and the feeds, where this process's core holds them.
   const coreExtensions = 'extensions' in core ? core.extensions : null
+  // Settings ▸ Artifacts and the `artifacts.*` tools, where this process's core
+  // holds them; out of process the server's, which serves the tools itself.
+  const coreArtifacts = 'artifacts' in core ? core.artifacts : null
 
   // Agent changelists: an agent's own list, holding exactly the lines it wrote.
   // The feed owns every rule about WHICH checkout a claim belongs to and what it
@@ -1304,21 +1313,6 @@ export function createAppServices(
   // (server/core/studio-worktree-pool.ts): in process this one's, out of
   // process the server's, which the windows reach over their tunnel.
   const worktrees = 'worktrees' in core ? core.worktrees : null
-  // Settings ▸ Artifacts and the `artifacts.*` tools. Main serves them in
-  // process and out: the pages are this machine's files, and publishing signs
-  // in with this machine's credentials.
-  const { artifactsSettingsStore, artifactsTools, setUpArtifacts, artifactsSetupConsent } = createArtifactsServices({
-    githubTokenStore,
-    findWorkspace: (workspaceId) =>
-      workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
-    // The pool's slots and who holds each, from the core that keeps the pool.
-    poolWorktrees: async () => {
-      if (worktrees) return (await worktrees.pool.snapshots()).flatMap((snapshot) => snapshot.slots)
-      if (!server) return []
-      const listed = await server.rpc.call<ServerWorktreeLease[] | null>(SERVER_METHODS.worktreeLeases)
-      return Array.isArray(listed) ? listed : []
-    },
-  })
 
   const canvasSubscribers = createCanvasSubscriberRegistry()
   // A board another device holds over the Studio protocol is a subscriber too
@@ -1602,7 +1596,7 @@ export function createAppServices(
           ),
           // Remote-control configuration, local socket only: the listener refuses
           // this whole family regardless of a device's scopes (tailnet-scopes.ts).
-          artifacts: artifactsTools,
+          artifacts: coreArtifacts?.tools ?? [],
           extension: extensionTools,
           plugin: pluginTools,
           tailnet: createTailnetTools({ resolveTailnet: () => tailnetToolsFrontDoor }),
@@ -1776,15 +1770,14 @@ export function createAppServices(
           version: app.getVersion(),
           // Out of process the server serves none of these itself (phase 6,
           // 6.3, decision R78): the browser and the canvas, the editor and
-          // tours, previews and artifacts. The terminal and agent tools are the server's own, as the
-          // terminals are.
+          // tours, and previews. The terminal and agent tools are the server's own, as the
+          // terminals are, and so are `artifacts.*`, `extension.*` and `plugin.*`.
           toolsets: [
             { name: 'browser', registrations: browserTools, enabled: browserToolsOffered },
             { name: 'canvas', registrations: canvasTools },
             { name: 'editor', registrations: editorTools },
             { name: 'tour', registrations: tourTools },
             { name: 'visual', registrations: visualTools },
-            { name: 'artifacts', registrations: artifactsTools },
           ],
           focus: desktopFocus,
           log: logDesktopTools,
@@ -2109,9 +2102,6 @@ export function createAppServices(
     /** The core's worktree pool and installs, in process; out of process the server's, which quits them itself. */
     worktreePool: worktrees?.pool,
     dependencyInstaller: worktrees?.installer,
-    artifactsSettingsStore,
-    setUpArtifacts,
-    artifactsSetupConsent,
     automationService,
     studioRpcService,
     moduleHub,
