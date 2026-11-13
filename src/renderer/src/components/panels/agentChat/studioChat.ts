@@ -385,6 +385,7 @@ export type StudioTransportParts = Omit<ConversationTransport, 'kind' | 'capabil
       | 'sendScheduledNow'
       | 'cancelScheduled'
       | 'usageLimitResume'
+      | 'restartSession'
     >
   >
 
@@ -596,6 +597,8 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
           commandId: commandId(),
         }),
       ),
+    restartSession: (input) =>
+      commanded(() => ask(client, 'conversation.restartSession', { key: refOf(input.key), commandId: commandId() })),
     usageLimitResume: (input) =>
       commanded(() =>
         ask(client, 'conversation.usageLimitResume', {

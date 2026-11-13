@@ -268,14 +268,13 @@ export type ConversationTransport = {
    */
   messageSubagent?(input: ConversationMessageSubagentInput): Promise<ConversationTransportResult>
   /**
-   * Restart the chat's agent on the machine it runs on, as Restart agent
-   * session does for a chat here (which suspends its session through
-   * `session.suspend`): answered with a `notice` where it had none
-   * running, and nothing was done. A paired machine's chat has it, refused in
-   * words for a machine that does not take the command
-   * (`conversation-restart-session`).
+   * End the chat's agent session on the server it runs on, keeping the
+   * conversation, so the next message starts it again
+   * (`conversation.restartSession`): answered with a `notice` where it had
+   * none running, and nothing was done. Used where
+   * `capabilities.restartSession` is.
    */
-  restartSession?(): Promise<ConversationTransportResult>
+  restartSession?(input: { key: ConversationKey }): Promise<ConversationTransportResult>
   /**
    * Reconnect, switch or sign in to one of a live chat's MCP servers, where
    * the session lists the action (`capabilities.mcpServerActions`). A paired
@@ -417,6 +416,7 @@ const windowConversationCalls: Omit<ConversationTransport, 'capabilities' | 'env
   cancelSideQuestion: (input) => localParts().cancelSideQuestion(input),
   readContextBreakdown: (input) => localParts().readContextBreakdown(input),
   queue: (input) => localParts().queue(input),
+  restartSession: (input) => localParts().restartSession(input),
   unwatchPullRequest: async ({ key, url }) => {
     const stopped = await unwatchConversationPullRequest({ workspaceId: key.workspaceId, agentId: key.agentId }, url)
     return stopped.ok ? { ok: true } : { ok: false, message: stopped.message }

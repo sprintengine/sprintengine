@@ -11,6 +11,7 @@ import {
   CONVERSATION_QUEUED_ATTACHMENTS_CAPABILITY,
   CONVERSATION_QUEUED_SENDS_CAPABILITY,
   CONVERSATION_QUOTE_TOKENS_CAPABILITY,
+  CONVERSATION_RESTART_SESSION_CAPABILITY,
   CONVERSATION_SCHEDULED_SENDS_CAPABILITY,
   CONVERSATION_SEND_MENTIONS_CAPABILITY,
   CONVERSATION_SEND_SKILLS_CAPABILITY,
@@ -78,6 +79,14 @@ export type ChatCapabilities = {
   hostChanges: boolean
   /** The person's words can be passed to one agent of the chat. */
   agentMessages: boolean
+  /** End the chat's agent session, keeping the conversation, so the next message starts it again. */
+  restartSession: boolean
+  /** Sign the chat's CLI in, in a terminal of the chat's server. */
+  providerSignIn: boolean
+  /** Hand the chat to its CLI in a terminal of the chat's server (Resume in terminal). */
+  resumeInTerminal: boolean
+  /** The chat's server pages its transcript out for an export; elsewhere the view exports what it holds. */
+  transcriptExport: boolean
 }
 
 /**
@@ -152,6 +161,11 @@ export function negotiateChatCapabilities(offer: ChatServerOffer | null): ChatCa
     hostUsageLimits: serves(CONVERSATION_USAGE_LIMITS_CAPABILITY),
     hostChanges: serves(CONVERSATION_CHANGES_CAPABILITY),
     agentMessages: offers('session.messageSubagent') && serves(CONVERSATION_AGENT_MESSAGE_CAPABILITY),
+    restartSession: offers('conversation.restartSession') && serves(CONVERSATION_RESTART_SESSION_CAPABILITY),
+    // Both open a terminal on the Studio's machine: an owner's methods there.
+    providerSignIn: offers('providers.signIn') && offers('terminal.open'),
+    resumeInTerminal: offers('session.terminalHandoff') && offers('terminal.open'),
+    transcriptExport: offers('conversation.exportPage'),
   }
 }
 
@@ -191,5 +205,11 @@ function pairedLaneCapabilities(offer: Extract<ChatServerOffer, { via: 'paired-l
     hostUsageLimits: has(CONVERSATION_USAGE_LIMITS_CAPABILITY),
     hostChanges: has(CONVERSATION_CHANGES_CAPABILITY),
     agentMessages: operate && has(CONVERSATION_AGENT_MESSAGE_CAPABILITY),
+    restartSession: operate && has(CONVERSATION_RESTART_SESSION_CAPABILITY),
+    // No terminal of a paired machine is reached from here (owner ruling), and
+    // the lane pages out no export: the view exports what it holds.
+    providerSignIn: false,
+    resumeInTerminal: false,
+    transcriptExport: false,
   }
 }

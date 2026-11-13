@@ -158,6 +158,7 @@ async function mountRemote({
   messageFiles = false,
   scheduledSends = false,
   usageLimits = false,
+  restartSession = false,
 }: {
   access: 'read' | 'operate'
   permissionPreset?: MeshConversation['permissionPreset']
@@ -217,6 +218,8 @@ async function mountRemote({
   scheduledSends?: boolean
   /** The machine says what it knows of its agents' usage limits (`conversation-usage-limits`). */
   usageLimits?: boolean
+  /** The machine ends one of its chats' agent sessions from here (`conversation-restart-session`). */
+  restartSession?: boolean
 }) {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost', pretendToBeVisual: true })
   const previous = Object.getOwnPropertyDescriptors(globalThis)
@@ -290,6 +293,7 @@ async function mountRemote({
         upload: messageFiles,
         'conversation-scheduled-sends': scheduledSends,
         'conversation-usage-limits': usageLimits,
+        'conversation-restart-session': restartSession,
       })
         .filter(([, advertised]) => advertised)
         .map(([name]) => name),
@@ -1776,7 +1780,7 @@ async function toastTitles() {
 }
 
 test('Restart agent session on a chat over there is carried out by that machine once the turn is over', async () => {
-  const chat = await mountRemote({ access: 'operate' })
+  const chat = await mountRemote({ access: 'operate', restartSession: true })
   const { useToastStore } = await import('../../../store/toastStore')
   try {
     useToastStore.setState({ toasts: [] })
@@ -1795,7 +1799,7 @@ test('Restart agent session on a chat over there is carried out by that machine 
 })
 
 test('a machine that had no agent running, or cannot restart one from here, says so', async () => {
-  const chat = await mountRemote({ access: 'operate' })
+  const chat = await mountRemote({ access: 'operate', restartSession: true })
   const { useToastStore } = await import('../../../store/toastStore')
   try {
     await settleTurn(chat)

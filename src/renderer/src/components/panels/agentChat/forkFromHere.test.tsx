@@ -8,7 +8,7 @@ import { useWorkspaceStore } from '../../../store/workspaceStore'
 import { useToastStore } from '../../../store/toastStore'
 import { addAgentTabAfter, registerModel, unregisterModel } from '../../../utils/modelRegistry'
 import { composerDraftStore } from './draftStore'
-import { forkChat, forkRemoteChat, takeForkedAttachments } from './forkFromHere'
+import { forkChat, takeForkedAttachments } from './forkFromHere'
 import { forkName, forkedAgentPatch } from '../../../../../shared/conversation/fork'
 
 const WS = 'fork-from-here-ws'
@@ -350,10 +350,9 @@ const meshTabsOf = (model: Model) => {
 test('a chat on a paired machine forks over there, and the fork opens here in the tab after it, named as it is there', async () => {
   const t = remoteSetup()
   try {
-    await forkRemoteChat({
+    await forkChat({
       transport: t.transport,
-      workspaceId: REMOTE_WS,
-      agentId: 'remote-agent',
+      key: { workspaceRoot: '', workspaceId: REMOTE_WS, agentId: 'remote-agent' },
       providerId: 'claude-agent',
       name: 'Atlas',
       target: {
@@ -364,11 +363,12 @@ test('a chat on a paired machine forks over there, and the fork opens here in th
     })
     expect(t.forks).toHaveLength(1)
     const [asked] = t.forks
-    // Named by the chat's ids over there, and with no title: that machine names it.
+    // Asked with no title: that machine names it. The view names the chat as
+    // it does every chat; a paired machine's transport asks by its own key there.
     expect(asked).toMatchObject({
       side: 'user',
       turnSeq: 4,
-      key: { workspaceId: 'remote-workspace', agentId: 'remote-agent' },
+      key: { workspaceId: REMOTE_WS, agentId: 'remote-agent' },
     })
     expect(asked).not.toHaveProperty('title')
     expect(asked.newAgentId).toMatch(/^conversation-claude-agent-/)
@@ -396,10 +396,9 @@ test('a remote fork whose chat has no pane mounted here opens as a chat of its o
   const addWorkspace = useWorkspaceStore.getState().addWorkspace
   useWorkspaceStore.setState({ addWorkspace: added as never })
   try {
-    await forkRemoteChat({
+    await forkChat({
       transport: t.transport,
-      workspaceId: REMOTE_WS,
-      agentId: 'remote-agent',
+      key: { workspaceRoot: '', workspaceId: REMOTE_WS, agentId: 'remote-agent' },
       providerId: 'claude-agent',
       name: 'Atlas',
       target: { side: 'assistant', turnId: 'turn_1', draft: { text: 'and the docs?' } },
