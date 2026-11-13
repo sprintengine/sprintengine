@@ -9,7 +9,12 @@ import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../s
 import type { EnvironmentTarget } from '../../../studio/environmentStudio'
 import { machineStudioClient } from '../../../../../shared/machine-studio-client'
 import type { WorkspaceEnvironmentRef } from '../../../types/workspace'
-import { studioConversationTransport, type ConversationTransport } from './conversationTransport'
+import {
+  localConversationTransport,
+  studioConversationTransport,
+  type ConversationTransport,
+} from './conversationTransport'
+import { parseMachinePath } from '../../../../../shared/machine-paths'
 import { createStudioChatServices, createStudioConversationParts } from './studioChat'
 
 // A chat that another environment's Studio holds, as this window's chat view
@@ -82,4 +87,25 @@ export function useEnvironmentConversationTransport(
     () => source?.welcome() ?? null,
   )
   return target && route ? environmentConversationTransport(target) : null
+}
+
+/** The transport of the chat a record names: its environment's, or this window's own Studio's. */
+export function conversationTransportOfRecord(ref: WorkspaceEnvironmentRef | null | undefined): ConversationTransport {
+  const target = environmentTargetOf(ref)
+  return target ? environmentConversationTransport(target) : localConversationTransport
+}
+
+/**
+ * The transport of the chat a key names, read off its folder alone, for a
+ * caller that has no record (an aux window): an SSH machine's chat keeps its
+ * folder spelled `ssh://<id>/…` here.
+ */
+export function conversationTransportOfKey(key: { workspaceRoot: string }): ConversationTransport {
+  const machine = parseMachinePath(key.workspaceRoot)
+  return machine
+    ? environmentConversationTransport({
+        route: formatEnvironmentRoute({ kind: 'ssh', machine: machine.id }),
+        name: machine.id,
+      })
+    : localConversationTransport
 }
