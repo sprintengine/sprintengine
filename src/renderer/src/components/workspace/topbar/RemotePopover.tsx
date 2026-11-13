@@ -14,6 +14,7 @@ import { shortMachineName } from '../../remote/machineRowModel'
 import { environmentOfRoute, type EnvironmentEntry } from '../../../../../shared/environments'
 import { environmentStatus } from '../../../../../shared/environment-status'
 import { retryEnvironment } from '../../../hooks/useEnvironments'
+import { tailnetApi } from '../../../studio/tailnet'
 
 // The Remote glyph's surface (remote-sessions-ux / remote-glyph-topbar):
 // ONE list of the other machines — the devices holding a socket here and the
@@ -125,7 +126,7 @@ function ConnectedDeviceRow({ device, now }: { device: TailnetLiveDevice; now: n
     if (revoking) return
     setRevoking(true)
     try {
-      await window.api.tailnetRevokeDevice(device.deviceId)
+      await tailnetApi.tailnetRevokeDevice(device.deviceId)
       // The push channel removes the row everywhere; nothing to do locally.
     } catch (error) {
       showToast({
@@ -239,7 +240,7 @@ function MachineRow({
     if (forgetting) return
     setForgetting(true)
     try {
-      await window.api.meshForget(connection.id)
+      await tailnetApi.meshForget(connection.id)
       // `machine-forgotten` clears the row everywhere and announces the
       // removal; the half only a person over there can do is added here.
       showToast({

@@ -20,6 +20,7 @@ import {
   STUDIO_ARTIFACTS_CAPABILITY,
   STUDIO_ACCESS_CAPABILITY,
   STUDIO_WEB_DEVICES_CAPABILITY,
+  STUDIO_TAILNET_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   STUDIO_PULL_REQUESTS_CAPABILITY,
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
@@ -63,6 +64,7 @@ import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioAccessDomain } from './studio-access'
 import type { StudioWebDevicesDomain } from './studio-web-devices'
+import type { StudioTailnetDomain } from './studio-tailnet'
 import type { StudioMachineCall } from './studio-file-system'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
@@ -198,6 +200,8 @@ export type StudioRpcServerOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers, read when asked. Advertised as `web-devices` only while it gives one. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** The tailnet listener and the machines this one drives. Advertised as `tailnet` only when given. */
+  tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened, for owners. Advertised as `pull-requests` and `pull-request-tool-calls` only when given. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`), for owners. */
@@ -325,6 +329,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_ARTIFACTS_CAPABILITY || options.artifacts !== undefined) &&
         (capability !== STUDIO_ACCESS_CAPABILITY || options.access !== undefined) &&
         (capability !== STUDIO_WEB_DEVICES_CAPABILITY || (options.webDevices?.() ?? null) !== null) &&
+        (capability !== STUDIO_TAILNET_CAPABILITY || options.tailnet !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined) &&
@@ -353,6 +358,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.artifacts ? { artifacts: options.artifacts } : {}),
     ...(options.access ? { access: options.access } : {}),
     ...(options.webDevices ? { webDevices: options.webDevices } : {}),
+    ...(options.tailnet ? { tailnet: options.tailnet } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
@@ -418,6 +424,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.artifacts ? { artifacts: options.artifacts } : {}),
         ...(options.access ? { access: options.access } : {}),
         ...(options.webDevices ? { webDevices: options.webDevices } : {}),
+        ...(options.tailnet ? { tailnet: options.tailnet } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,
@@ -472,6 +479,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.artifacts ? { artifacts: options.artifacts } : {}),
         ...(options.access ? { access: options.access } : {}),
         ...(options.webDevices ? { webDevices: options.webDevices } : {}),
+        ...(options.tailnet ? { tailnet: options.tailnet } : {}),
         resyncRetryAfterMs: options.resyncRetryAfterMs,
         helloTimeoutMs: options.helloTimeoutMs,
         log: options.log,

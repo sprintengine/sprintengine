@@ -23,7 +23,25 @@ import type { RepositoryIdentity } from './repository-identity'
 import type { CliPermissionPreset } from './cli-permission-preset'
 import type { ScheduledAgentView, ScheduledAgentsPause } from './scheduled-agents'
 import type { SettledChatWorktreePlan } from './ipc/settled-chats'
-import type { TailnetRemoteStatus, TailnetScope } from './tailnet'
+import type { TailnetScope } from './tailnet'
+import {
+  type MeshConnection,
+  type MeshPairRequestView,
+  type MeshEvent,
+} from '../../packages/studio-protocol/src/tailnet-types'
+// The wire shapes, defined once in the protocol package.
+export type {
+  MeshConnection,
+  MeshPairResult,
+  MeshPairRequestView,
+  MeshPairRequestPhase,
+  MeshMachineReachability,
+  MeshRequestPairingResult,
+  MeshEvent,
+  MeshLiveState,
+  MeshForgetMachineResult,
+  TailnetForgetMachineResult,
+} from '../../packages/studio-protocol/src/tailnet-types'
 
 // The Mesh: another machine's Studio, mounted in this one.
 //
@@ -37,44 +55,6 @@ import type { TailnetRemoteStatus, TailnetScope } from './tailnet'
 // carrying an `Origin` header, and a renderer's fetch/WebSocket always sends
 // one. Main is also where the device token belongs — a credential that reached
 // the renderer would be one XSS away from the tailnet.
-
-/**
- * One machine this Studio is paired with.
- *
- * The device token is deliberately NOT here: it lives in the main-process store
- * and never crosses the IPC boundary, so nothing a window can read is a
- * credential.
- */
-export type MeshConnection = {
-  /** Local id for this pairing record. Ours, not the remote machine's. */
-  id: string
-  /** What to call the machine in the UI — its tailnet host name where we could resolve one. */
-  machineName: string
-  /** `address:port` of that machine's listener. */
-  endpoint: string
-  /** The device id the remote machine issued us, so a person can match it to a row in ITS settings. */
-  deviceId: string
-  /** The name we paired under (this machine's name), for the same reason. */
-  deviceName: string
-  /** What that machine granted us. Refreshed from the remote on every browse. */
-  scopes: TailnetScope[]
-  pairedAt: string
-  lastConnectedAt: string | null
-  /**
-   * How this pairing came about (pair-from-the-scan-and-stay-paired): a
-   * carried link, a request someone approved over there, or the reverse half
-   * of a both-ways pairing that machine asked for. `unknown` for records
-   * written before this was kept.
-   */
-  pairedVia: 'link' | 'request' | 'reverse' | 'unknown'
-  /**
-   * The environment id that machine's Studio says it is (its `identity`
-   * answer), kept from the first time it said one. The same whatever the
-   * machine is called or whichever address reaches it; absent until a build
-   * that says it has answered.
-   */
-  environmentId?: string
-}
 
 /** A workspace on the remote machine, as `workspace.list` reports it. */
 export type MeshWorkspace = {
@@ -225,8 +205,6 @@ export type MeshLinkState =
   | 'offline'
   /** Finished for good: the conversation ended, access was revoked, or the pane stopped following. */
   | 'closed'
-
-export type MeshPairResult = { ok: true; connection: MeshConnection } | { ok: false; code: string; message: string }
 
 /**
  * Where a New chat on a paired machine runs when it is not the project's own
@@ -449,56 +427,6 @@ export type MeshChangeConversationResult =
   { ok: true; workspaceId: string } | { ok: false; code: string; message: string }
 
 /**
- * A pairing we have ASKED for and are waiting on, as a window sees
- * it. The collect secret is not here and never leaves main.
- */
-export type MeshPairRequestView = {
-  requestId: string
-  endpoint: string
-  machineName: string
-  /**
-   * The six digits the person at the other machine must TYPE to allow this
-   * (pair-from-the-scan-and-stay-paired, phase 2). Minted over there; shown
-   * large here so it can be read out.
-   */
-  comparisonCode: string
-  expiresAt: string
-  /** True when this request also offers the other machine a device here (phase 6). */
-  reverseOffered: boolean
-}
-
-/**
- * How a request THIS machine made stopped waiting, or that it still is.
- * `failed` is the one phase the other machine never said: the wait ended
- * here (the credential could not be saved, or the reverse grant could not
- * be minted) and `detail` says why.
- */
-export type MeshPairRequestPhase = 'waiting' | 'approved' | 'denied' | 'expired' | 'cancelled' | 'failed'
-
-/**
- * Whether a paired machine answers right now (phase 4), as main last checked
- * it. `unauthorized` is the one refusal that is not "asleep": the machine
- * answered and refused our credential, so it was revoked over there.
- */
-export type MeshMachineReachability = {
-  connectionId: string
-  machineName: string
-  /** A check is in flight; `reachable` is the previous answer meanwhile. */
-  checking: boolean
-  reachable: boolean
-  unauthorized: boolean
-  /** Epoch ms of the last completed check, or null before the first. */
-  checkedAt: number | null
-  /** Epoch ms of the last time the machine answered, or null if it never has. */
-  lastReachedAt: number | null
-  /** The failure in a sentence when not reachable; null otherwise. */
-  detail: string | null
-}
-
-export type MeshRequestPairingResult =
-  { ok: true; request: MeshPairRequestView } | { ok: false; code: string; message: string }
-
-/**
  * The answer to one poll. `unreachable` is deliberately NOT an outcome here —
  * it comes back as `ok: false` so the panel keeps waiting rather than tearing
  * the request down: a machine that went to sleep mid-wait has not refused.
@@ -511,65 +439,6 @@ export type MeshCollectPairingResult =
   | { ok: false; code: string; message: string }
 
 /**
- * Broadcast mesh lifecycle (MC: remote-sessions-ux / tailnet-live-state-push).
- *
- * Distinct from a followed conversation's frame channel, which carries its
- * events to the one window that owns the pane. These are the whole-app facts
- * every window may care about — a machine paired or forgotten, answering or
- * not — pushed on one channel so chrome (the Remote glyph, toasts) never polls.
- */
-export type MeshEvent =
-  | { kind: 'machine-paired'; revision: number; connection: MeshConnection }
-  | { kind: 'machine-forgotten'; revision: number; connectionId: string; machineName: string }
-  /**
-   * A paired machine said which Studio it is for the first time, or now says
-   * it is another (`MeshConnection.environmentId`). Whatever lists pairings
-   * by environment reads the list again.
-   */
-  | { kind: 'machine-identified'; revision: number; connectionId: string; environmentId: string }
-  /**
-   * A request this machine made to pair with another (phase 3): main owns
-   * the wait, so every surface — not just the panel that asked — can show
-   * the code while it waits and the answer when it lands. `connection` rides
-   * on `approved`; `detail` on `failed` and `denied`.
-   */
-  | {
-      kind: 'pair-request'
-      revision: number
-      phase: MeshPairRequestPhase
-      request: MeshPairRequestView
-      connection?: MeshConnection
-      detail?: string
-    }
-  | ({ kind: 'machine-reachability'; revision: number } & MeshMachineReachability)
-  /**
-   * A paired machine said its workspace list or conversation list changed
-   * (2026-09-05, the change feed). Carries nothing else: a surface that
-   * shows that machine re-reads it through the mesh's browse, which is the
-   * read it already knows how to do — and no longer does on a timer.
-   */
-  | {
-      kind: 'remote-changed'
-      revision: number
-      connectionId: string
-      machineName: string
-      what: 'workspaces' | 'conversations'
-    }
-
-/**
- * The initial read behind `MESH_EVENT_CHANNEL`, so a window that mounts (or
- * reloads) mid-wait starts where every other window is. Carries the same
- * monotonic `revision` the events do; a subscriber keeps whichever is newer.
- */
-export type MeshLiveState = {
-  revision: number
-  /** Requests this machine made that are still waiting to be answered. */
-  requests: MeshPairRequestView[]
-  /** The last reachability answer per paired machine; absent before the first check. */
-  reachability: MeshMachineReachability[]
-}
-
-/**
  * Whether an event changes the list of paired desktops as `listConnections`
  * gives it, as far as environments read it: one paired, forgotten, or newly
  * identified.
@@ -578,28 +447,6 @@ export function meshListChanged(event: MeshEvent): boolean {
   return event.kind === 'machine-paired' || event.kind === 'machine-forgotten' || event.kind === 'machine-identified'
 }
 
-export const MESH_EVENT_CHANNEL = 'mesh:event'
-export const MESH_GET_LIVE_STATE_CHANNEL = 'mesh:get-live-state'
-
-export const MESH_REQUEST_PAIRING_CHANNEL = 'mesh:request-pairing'
-export const MESH_CANCEL_PAIRING_CHANNEL = 'mesh:cancel-pairing'
-export const MESH_LIST_CONNECTIONS_CHANNEL = 'mesh:list-connections'
-export const MESH_PAIR_CHANNEL = 'mesh:pair'
-export const MESH_FORGET_CHANNEL = 'mesh:forget'
-/**
- * Forget a machine in BOTH directions at once (remote-settings-rebuild).
- *
- * `mesh:forget` drops only this machine's credential for a peer, and
- * `tailnet:revoke-device` only the peer's credential for this machine — two
- * halves of one pairing that a person thinks of as one relationship. A Remote
- * row's Revoke means "we are not paired any more", so it takes both, and takes
- * them tolerantly: a machine that only ever drove us has no connection to
- * forget, and one we only ever drove has no device to revoke.
- *
- * Named `tailnet:*` rather than `mesh:*` because it spans both stores; it
- * lives on the same IPC-only front door as the rest of that family.
- */
-export const TAILNET_FORGET_MACHINE_CHANNEL = 'tailnet:forget-machine'
 /** Start a chat agent on a paired machine, over its `conversation.create`. */
 /** Settle a chat on a paired machine, or bring it back, over its `conversation.settle`. */
 /** Say a chat on a paired machine is on screen here, over its `conversation.visit`. */
@@ -612,25 +459,6 @@ export const MESH_CONVERSATION_PULL_REQUEST_DRAFT_CHANNEL = 'mesh:conversation-p
 export const MESH_CONVERSATION_PULL_REQUEST_DRAFT_CANCEL_CHANNEL = 'mesh:conversation-pull-request-draft-cancel'
 export const MESH_CONVERSATION_PULL_REQUEST_PUSH_CHANNEL = 'mesh:conversation-pull-request-push'
 export const MESH_CONVERSATION_PULL_REQUEST_CREATE_CHANNEL = 'mesh:conversation-pull-request-create'
-
-/**
- * What forgetting a machine did, from the Mesh's side.
- *
- * The ids are reported back rather than assumed: a caller that passed both and
- * got one null knows the other half was already gone, which is a different
- * story from "nothing happened" and the difference a row needs to explain
- * itself.
- */
-export type MeshForgetMachineResult = {
-  connections: MeshConnection[]
-  revokedDeviceId: string | null
-  forgottenConnectionId: string | null
-}
-
-/** The same, plus the fresh listener status the inbound revoke produced. */
-export type TailnetForgetMachineResult = MeshForgetMachineResult & {
-  status: TailnetRemoteStatus
-}
 
 // ── Conversations on a paired machine ───────────────────────────────────────
 //

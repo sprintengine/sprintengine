@@ -32,13 +32,7 @@ import { agentBrowserToolGate, agentBrowserToolsEnabledOnDisk } from '../../main
 import { conversationTurnInProgress } from '../../shared/conversation/phase'
 import { isWslHostId } from '../../shared/execution-host'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
-import { TAILNET_EVENT_CHANNEL } from '../../shared/tailnet'
-import {
-  MESH_EVENT_CHANNEL,
-  meshListChanged,
-  type MeshConnection,
-  type MeshMachineReachability,
-} from '../../shared/tailnet-mesh'
+import { meshListChanged, type MeshConnection, type MeshMachineReachability } from '../../shared/tailnet-mesh'
 import { SERVER_EXIT } from '../bootstrap/envelope'
 import type { RunningServer, ServerStart } from '../bootstrap/serve'
 import { runShutdownLegs } from '../bootstrap/serve'
@@ -342,12 +336,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           dismissLaunchNotice: (sessionId) => terminals.launchNotices.dismiss(sessionId),
         }
       : {}),
+    // The shell's notifications; windows follow these on the Studio protocol
+    // (`tailnet.changed`, `mesh.changed`).
     onTailnetEvent: (payload) => {
-      tunnel.publish(TAILNET_EVENT_CHANNEL, payload)
       tailnetNotifier.onTailnetEvent(payload)
     },
     onMeshEvent: (event) => {
-      tunnel.publish(MESH_EVENT_CHANNEL, event)
       tailnetNotifier.onMeshEvent(event)
       if (meshListChanged(event)) rpc.emit(SERVER_EVENTS.mirrorMeshConnections, meshConnectionsView())
       if (meshListChanged(event) || event.kind === 'machine-reachability')

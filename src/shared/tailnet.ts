@@ -10,28 +10,31 @@ import {
   type StudioPrincipal,
 } from '../../packages/studio-protocol/src/permissions'
 import { STUDIO_SCOPES, type StudioScope } from '../../packages/studio-protocol/src/scopes'
-
-/**
- * Per-device scopes, mirroring the gateway's tool families.
- *
- * Read and operate are separate grants so "watch my backlog from the laptop"
- * does not carry the power to change it.
- *
- * There is no terminal tier. `terminal:observe` and `terminal:control` were
- * retired on 2026-09-29, when terminals stopped crossing the tailnet: a stored
- * device that holds them loads without them (`normalizeTailnetScopes`), and
- * nothing a device can be granted reaches a shell on this machine.
- */
-export const TAILNET_SCOPES = [
-  'workspace:read',
-  'workspace:operate',
-  'backlog:read',
-  'backlog:operate',
-  'conversation:read',
-  'conversation:operate',
-] as const
-
-export type TailnetScope = (typeof TAILNET_SCOPES)[number]
+import {
+  TAILNET_SCOPES,
+  type TailnetScope,
+  type TailnetPairRequestPhase,
+} from '../../packages/studio-protocol/src/tailnet-types'
+// The wire shapes, defined once in the protocol package.
+export { TAILNET_SCOPES } from '../../packages/studio-protocol/src/tailnet-types'
+export type {
+  TailnetScope,
+  TailnetDeviceOrigin,
+  TailnetDevice,
+  TailnetPairingState,
+  TailnetRemoteStatus,
+  TailnetMcpAccess,
+  TailnetHttpsState,
+  TailnetPairingOfferView,
+  TailnetPairRequest,
+  TailnetOAuthRequestView,
+  TailnetApprovePairRequestView,
+  TailnetLiveDevice,
+  TailnetLiveState,
+  TailnetPairRequestPhase,
+  TailnetLiveEvent,
+  TailnetPushPayload,
+} from '../../packages/studio-protocol/src/tailnet-types'
 
 /** Missing scope lists in older pairing requests must not grant features added later. */
 export const TAILNET_LEGACY_REQUEST_SCOPES: readonly TailnetScope[] = [
@@ -136,218 +139,6 @@ export function tailnetDeviceStudioScopes(scopes: readonly unknown[]): StudioSco
   return STUDIO_SCOPES.filter((scope) => held.has(scope))
 }
 
-/**
- * How a paired device came to exist (pair-from-the-scan-and-stay-paired,
- * phase 5). Recorded at mint and never changed: the answer to "what is
- * this row?" when a person cannot place a device in their list.
- *
- * - `code`: someone redeemed a carried pairing link (the QR / URL path).
- * - `approval`: a person here allowed a request from another machine; `by`
- *   is the peer node the transport proved, when whois resolved it.
- * - `agent`: an agent on this machine minted it through
- *   `tailnet.offer_pairing`; `by` is the agent's name.
- * - `reverse`: the other half of a both-ways pairing — THIS machine asked to
- *   drive another, and granted it a device here in the same exchange; `by`
- *   is that machine's name.
- * - `oauth`: an MCP client that signed in with OAuth (`tailnet-oauth.ts`) and
- *   that a person here approved; `by` is the name the client registered. It
- *   holds no device token: it is served by the OAuth access tokens its grant
- *   issues, on the MCP endpoint alone.
- * - `unknown`: a record from before origins were kept.
- */
-export type TailnetDeviceOrigin = {
-  kind: 'code' | 'approval' | 'agent' | 'reverse' | 'oauth' | 'unknown'
-  by: string | null
-}
-
-/** A paired device, as any surface may see it. The device token is never part of this. */
-export type TailnetDevice = {
-  id: string
-  name: string
-  scopes: TailnetScope[]
-  createdAt: string
-  /** Last authenticated request, or null for a device that has never connected. */
-  lastSeenAt: string | null
-  /** Tailscale node name resolved at the last request; null when whois was unavailable. */
-  lastPeerNode: string | null
-  origin: TailnetDeviceOrigin
-  /**
-   * When an MCP client's OAuth sign-in ends (origin `oauth`): 30 days after it
-   * was approved. Absent for every other device, which does not lapse, and for
-   * an OAuth client still between approval and its first token.
-   */
-  signInEndsAt?: string
-}
-
-/** An outstanding pairing offer — what it grants and when it lapses, never the code. */
-export type TailnetPairingState = {
-  scopes: TailnetScope[]
-  expiresAt: string
-}
-
-export type TailnetRemoteStatus = {
-  /** The user's setting. False in every build until someone turns it on. */
-  enabled: boolean
-  running: boolean
-  /** `address:port` while running, for the pairing URL. */
-  endpoint: string | null
-  port: number
-  /** This machine's Tailscale address, or null when Tailscale is not up. */
-  tailnetAddress: string | null
-  /** Why the listener is not running when it was asked to be. */
-  lastError: string | null
-  /** Whether pairing and reachability events raise OS notifications (phase 3). Defaults on. */
-  notifications: boolean
-  devices: TailnetDevice[]
-  pairing: TailnetPairingState | null
-  /** Requests from other machines waiting to be approved or denied here. */
-  pairRequests: TailnetPairRequest[]
-  /**
-   * Where an outside MCP client connects, and whether HTTPS is on. Optional
-   * because a status from a main process built before MCP sign-in carried
-   * none; a surface reads its absence as "say nothing about it".
-   */
-  mcp?: TailnetMcpAccess
-}
-
-/**
- * The MCP endpoint as a person gives it to an outside client (Claude Code,
- * Codex, any MCP client that signs in with OAuth): the URL, and the HTTPS front
- * door that Tailscale Serve can put before it.
- */
-export type TailnetMcpAccess = {
-  /** The URL to give a client, or null while the listener is not running. HTTPS when HTTPS is on. */
-  url: string | null
-  /** The plain-HTTP URL on the tailnet address, kept beside the HTTPS one for clients that take either. */
-  httpUrl: string | null
-  https: TailnetHttpsState
-}
-
-/**
- * HTTPS through Tailscale Serve. `enabled` is the person's setting; `state`
- * is what happened when it was applied, `message` why when it did not work.
- */
-export type TailnetHttpsState = {
-  enabled: boolean
-  state: 'off' | 'starting' | 'on' | 'error'
-  /** `https://<node>.<tailnet>.ts.net` while on. */
-  origin: string | null
-  message: string | null
-}
-
-export const TAILNET_GET_STATUS_CHANNEL = 'tailnet:get-status'
-export const TAILNET_SET_ENABLED_CHANNEL = 'tailnet:set-enabled'
-export const TAILNET_OFFER_PAIRING_CHANNEL = 'tailnet:offer-pairing'
-export const TAILNET_CANCEL_PAIRING_CHANNEL = 'tailnet:cancel-pairing'
-export const TAILNET_REVOKE_DEVICE_CHANNEL = 'tailnet:revoke-device'
-/**
- * Replace a paired device's scopes from this machine (remote-settings-rebuild).
- *
- * IPC-only, exactly like the rest of this family and for the same reason
- * `tailnet-scopes.ts` gives: a device that could widen its own grant would make
- * revoking the device it came in on meaningless. Only this keyboard may.
- */
-export const TAILNET_UPDATE_DEVICE_SCOPES_CHANNEL = 'tailnet:update-device-scopes'
-/**
- * Turn HTTPS through Tailscale Serve on or off for the listener. IPC-only like
- * the rest of this family: it changes what this machine publishes on the
- * tailnet, which is the person's decision.
- */
-export const TAILNET_SET_HTTPS_CHANNEL = 'tailnet:set-https'
-/**
- * Forget every MCP client registration, so each client registers afresh
- * before it next signs in (a new signing key for client ids). Signed-in
- * clients are untouched; each is revoked on its own row. IPC-only.
- */
-export const TAILNET_RESET_MCP_REGISTRATIONS_CHANNEL = 'tailnet:reset-mcp-registrations'
-
-/** What `offer-pairing` returns: the one-time code, shown once and never re-readable. */
-export type TailnetPairingOfferView = {
-  token: string
-  scopes: TailnetScope[]
-  expiresAt: string
-  /** Full pairing URL when the listener is up, so a QR encodes one scannable string. */
-  pairingUrl: string | null
-}
-
-/**
- * A pairing request waiting for a person to answer it on the machine being
- * driven.
- *
- * The other pairing path — a code minted here and carried to the other machine
- * — stays exactly as it was: a machine with nobody in front of it cannot
- * approve anything, which is the normal case for a server and a common one for
- * a desktop in another room. This adds a path rather than replacing one.
- */
-export type TailnetPairRequest = {
-  id: string
-  /** The name the requesting client asked to be known by, once paired. */
-  deviceName: string
-  /**
-   * Tailscale's name for the requesting node, or null when `whois` could not
-   * resolve it. Null is shown as the bare address and marked unverified rather
-   * than dropped: refusing an unresolvable peer would make the feature dead on
-   * any machine without the Tailscale CLI, which is most of them.
-   */
-  peerNode: string | null
-  /** The tailnet address the request arrived from. */
-  peerAddress: string
-  // The six digits the person types to allow the request are deliberately not
-  // here: they are shown on the ASKING machine only, and read off that screen.
-  // This record is what a status, an event and the tools carry, and a code
-  // anything on this machine could read would be one nobody had to look at
-  // the other screen for. The store keeps it (`TailnetPairRequestWithCode`).
-  createdAt: string
-  expiresAt: string
-  /**
-   * The scopes the asking machine asked for.
-   *
-   * A request, never a grant: what is actually granted is whatever the person
-   * here approves, and the approving surface may tick any subset or superset of
-   * this. It exists so that surface can open pre-ticked to what was asked for
-   * rather than to a house default the asker never wanted — the difference
-   * between answering the question that was put and answering a different one.
-   *
-   * An asker that names nothing (an older build, or a client that does not
-   * care) is recorded as `TAILNET_LEGACY_REQUEST_SCOPES`, the same set every
-   * pairing path defaulted to before this field existed.
-   *
-   * Optional in the TYPE, always present at runtime: this machine's store fills
-   * it on every request it accepts. It is optional because a status payload
-   * from a main process older than this field would not carry one, and a
-   * consumer must read it as `request.requestedScopes ?? TAILNET_LEGACY_REQUEST_SCOPES`
-   * rather than as an empty grant.
-   */
-  requestedScopes?: TailnetScope[]
-  /**
-   * Present when the request is an MCP client signing in with OAuth rather
-   * than a Studio or a phone asking to pair. The name is the client's own
-   * claim; `redirectHost` is where the approval is sent, and so who gets the
-   * access. Surfaces show both as untrusted text and never as links.
-   */
-  oauth?: TailnetOAuthRequestView
-  /** A sign-in retried from the same machine, replacing the one it left waiting. */
-  retry?: true
-}
-
-/** What an approving surface shows of an OAuth sign-in (see `TailnetPairRequest.oauth`). */
-export type TailnetOAuthRequestView = {
-  /** The name the client gave itself. Untrusted display text. */
-  clientName: string
-  /**
-   * Where the approval is sent. A loopback host (`localhost`, `127.0.0.1`)
-   * means a client on the computer whose browser opened the sign-in page; any
-   * other is a web service, and whoever runs it gets the access.
-   */
-  redirectHost: string
-  redirectKind: 'loopback' | 'https'
-  /**
-   * Arrived over HTTPS through Tailscale Serve, where the machine named is the
-   * one Serve reports and a program on this machine could have claimed any.
-   */
-  viaServe?: true
-}
-
 /** What a requesting client learns when it polls its own request. */
 export type TailnetPairRequestOutcome =
   | { status: 'pending'; comparisonCode: string; expiresAt: string }
@@ -374,32 +165,6 @@ export type TailnetPairRequestOutcome =
 export const PAIR_REQUEST_CODE_ATTEMPTS = 3
 
 /**
- * What a surface learns when it answers a request: the device, and fresh status.
- *
- * `code_mismatch` carries how many tries remain; on the last one the request
- * is declined outright and the answer says so, so the card does not offer
- * another go at a request that no longer exists.
- */
-export type TailnetApprovePairRequestView =
-  | { ok: true; device: TailnetDevice; status: TailnetRemoteStatus }
-  | {
-      ok: false
-      /** `approve_in_window`: an MCP client's sign-in, which only a window here may approve. */
-      code: 'request_not_found' | 'code_required' | 'approve_in_window'
-      message: string
-      status: TailnetRemoteStatus
-    }
-  | {
-      ok: false
-      code: 'code_mismatch'
-      message: string
-      status: TailnetRemoteStatus
-      attemptsLeft: number
-      /** True when this mismatch was the last allowed and the request has been declined. */
-      declined: boolean
-    }
-
-/**
  * The reverse half of a both-ways pairing (phase 6): what the ASKING machine
  * sends with its final collect so the machine that approved it can drive it
  * back. The asker minted this device for the approver on its own store; the
@@ -419,100 +184,18 @@ export type TailnetReverseGrant = {
   scopes: TailnetScope[]
 }
 
-export const TAILNET_APPROVE_PAIR_REQUEST_CHANNEL = 'tailnet:approve-pair-request'
-export const TAILNET_DENY_PAIR_REQUEST_CHANNEL = 'tailnet:deny-pair-request'
-/** Main → renderer: open the Remote popover (an OS notification was clicked). */
+/** Main → window, the shell's own: open the Remote popover (an OS notification was clicked). */
 export const REMOTE_OPEN_REQUESTED_CHANNEL = 'remote:open-requested'
 
-// ── Live state, pushed (MC: remote-sessions-ux / tailnet-live-state-push) ────
+// ── Live state, pushed ──────────────────────────────────────────────────────
 //
-// Everything above is request/response. These types are the push half: main
-// broadcasts a `TailnetPushPayload` to every window whenever the listener,
-// a pairing request, or a device's live connection changes, so the renderer
-// never polls for a fact main already holds. The payload always carries a
-// fresh status + live snapshot beside the event that caused it — a consumer
-// stores the latest and can never drift from main by missing one event.
-
-/** One inbound device's live connections, derived from open sockets — never persisted. */
-export type TailnetLiveDevice = {
-  deviceId: string
-  deviceName: string
-  /** An RPC stream is open right now. */
-  connected: boolean
-  /** Epoch ms of the first socket in the current connected stretch, or null. */
-  connectedSince: number | null
-  /**
-   * Epoch ms of the last observed activity — a socket opening or closing, or
-   * an authenticated HTTP call — on this device, or null.
-   */
-  lastActivityAt: number | null
-  /**
-   * Transport-proven identity of the peer holding the sockets: Tailscale's
-   * name for the node when `whois` resolved it, and the address the last
-   * socket arrived from. Distinct from `deviceName`, which is what the client
-   * CALLED itself at pairing. No user agent or platform: nothing on this
-   * transport sends one, and a field main does not hold is not reported.
-   */
-  peerNode: string | null
-  peerAddress: string | null
-}
-
-export type TailnetLiveState = {
-  /**
-   * The service's monotonic change counter at the time of the read, so a
-   * subscriber can drop this snapshot when a pushed payload already applied
-   * is newer (the initial read resolving after a push — the mount race).
-   */
-  revision: number
-  devices: TailnetLiveDevice[]
-}
-
-/**
- * How a pair request stopped waiting. Distinct because the surfaces say
- * different things — an answer given here, an answer nobody gave, and a
- * listener that went away underneath the request are three stories.
- */
-export type TailnetPairRequestPhase = 'received' | 'approved' | 'denied' | 'expired' | 'cancelled'
+// The listener pushes a `TailnetPushPayload` to every follower of
+// `tailnet.changed` whenever it, a pairing request, or a device's live
+// connection changes, so a window never polls. The payload always carries a
+// fresh status and live snapshot beside the event that caused it, so a
+// consumer stores the latest and cannot drift by missing one event.
 
 /** Every phase after `received`: the request no longer exists to be answered. */
 export function isPairRequestTerminalPhase(phase: TailnetPairRequestPhase): boolean {
   return phase !== 'received'
 }
-
-type TailnetLiveEvent =
-  | { kind: 'listener'; running: true }
-  /**
-   * Down, with the reason when it was ASKED to be up: a port already taken
-   * or an interface that vanished at boot reaches every window as this,
-   * without waiting for someone to open Settings. `error` is null for a
-   * stop that was requested.
-   */
-  | { kind: 'listener'; running: false; error: string | null }
-  | {
-      kind: 'pair-request'
-      phase: TailnetPairRequestPhase
-      requestId: string
-      deviceName: string
-      peerNode: string | null
-      /** An MCP client signing in with OAuth rather than a machine asking to pair. */
-      oauth?: true
-      /** A sign-in retried from the same machine: announced already, so not notified again. */
-      retry?: true
-    }
-  | { kind: 'device-connection'; deviceId: string; deviceName: string; connected: boolean }
-  | { kind: 'devices-changed' }
-
-export type TailnetPushPayload = {
-  /**
-   * Monotonically increasing per service lifetime: a subscriber applies a payload
-   * only when it is newer than the last one applied, so out-of-order delivery
-   * or a late initial read can never roll presence backwards.
-   */
-  revision: number
-  event: TailnetLiveEvent
-  status: TailnetRemoteStatus
-  live: TailnetLiveState
-}
-
-export const TAILNET_EVENT_CHANNEL = 'tailnet:event'
-export const TAILNET_GET_LIVE_STATE_CHANNEL = 'tailnet:get-live-state'

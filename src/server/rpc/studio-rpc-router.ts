@@ -75,6 +75,7 @@ import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import { createStudioArtifactsHandlers } from './studio-artifacts'
 import { createStudioAccessHandlers, type StudioAccessDomain } from './studio-access'
 import { createStudioWebDevicesHandlers, type StudioWebDevicesDomain } from './studio-web-devices'
+import { createStudioTailnetHandlers, type StudioTailnetDomain } from './studio-tailnet'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -217,6 +218,8 @@ export type StudioRpcRouterOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers, once its front door gave them; until then `webDevices.*` is answered `unavailable`. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** The tailnet listener and the machines this one drives; without it, `tailnet.*` and `mesh.*` are answered `unavailable`. */
+  tailnet?: StudioTailnetDomain
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
@@ -990,6 +993,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   })
   const webDevicesRouting = createStudioWebDevicesHandlers({
     webDevices: () => options.webDevices?.() ?? null,
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const tailnetRouting = createStudioTailnetHandlers({
+    ...(options.tailnet ? { tailnet: options.tailnet } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -2047,6 +2055,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── The browsers paired with the web listener ──────────────────────────
 
     ...webDevicesRouting,
+
+    // ── Who reaches this machine over the tailnet, and the machines it drives ──
+
+    ...tailnetRouting,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules

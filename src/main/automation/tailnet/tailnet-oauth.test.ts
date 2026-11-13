@@ -240,7 +240,7 @@ async function startSignIn(gateway: Gateway, extra: Record<string, string> = {})
 
 /** The person types the code into the Studio window and allows it. */
 function approve(gateway: Gateway, signIn: SignIn, scopes: TailnetScope[] = [...TAILNET_SCOPES]): void {
-  const outcome = gateway.devices.approvePairRequest({ id: signIn.requestId, scopes, code: signIn.code, via: 'ipc' })
+  const outcome = gateway.devices.approvePairRequest({ id: signIn.requestId, scopes, code: signIn.code, via: 'window' })
   assert.equal(outcome.ok, true, JSON.stringify(outcome))
 }
 
@@ -557,7 +557,12 @@ test('approval happens only in the Studio window', async () => {
     const guessed = await http(gateway.port, 'GET', signIn.waitPath.replace(/key=[^&]+/u, 'key=guess'))
     assert.equal(guessed.status, 404)
     // A wrong code in the window does not approve it either.
-    const wrong = gateway.devices.approvePairRequest({ id: signIn.requestId, scopes: [], code: '000000', via: 'ipc' })
+    const wrong = gateway.devices.approvePairRequest({
+      id: signIn.requestId,
+      scopes: [],
+      code: '000000',
+      via: 'window',
+    })
     assert.equal(wrong.ok, false)
   })
 })

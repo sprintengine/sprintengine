@@ -34,6 +34,7 @@ import { RemoteMcpSection } from './RemoteMcpSection'
 import { useTailnetPresence } from '../workspace/topbar/useTailnetPresence'
 import { hostPlatform } from '../../clientCapabilities'
 import { isImeKey } from '../../utils/imeKey'
+import { tailnetApi } from '../../studio/tailnet'
 
 // Settings → Remote (remote-settings-rebuild): one switch and one list of
 // machines.
@@ -51,7 +52,8 @@ import { isImeKey } from '../../utils/imeKey'
 // the scan runs by itself, and the scope set is the one link on the row. The
 // only remaining chrome is the split button that starts a pairing.
 //
-// Everything here is IPC-only (`tailnet:*` / `mesh:*`). The matching
+// Everything here is the Studio protocol's `tailnet.*` and `mesh.*`, and what
+// lets someone in is served to Studio's own desktop windows only. The matching
 // `tailnet.*` gateway tools let an agent ON THIS MACHINE drive the same
 // service, but that family is refused over the tailnet itself, so no paired
 // remote device can pair another device or widen its own reach.
@@ -79,7 +81,7 @@ export function RemoteTailnetSettingsTab() {
 
   const refresh = useCallback(async () => {
     const before = appliedRevision.current
-    const read = await window.api.tailnetGetStatus()
+    const read = await tailnetApi.tailnetGetStatus()
     if (appliedRevision.current === before) setStatus(read)
   }, [])
 
@@ -93,10 +95,7 @@ export function RemoteTailnetSettingsTab() {
   // status, so a pair request arriving — or being answered from any other
   // surface — lands here without a refetch.
   useEffect(() => {
-    // Tolerant of a host without the push bridge: the tab then stays
-    // fetch-on-action, exactly as it was before the channel existed.
-    if (typeof window.api.onTailnetEvent !== 'function') return
-    return window.api.onTailnetEvent((payload) => {
+    return tailnetApi.onTailnetEvent((payload) => {
       if (payload.revision < appliedRevision.current) return
       appliedRevision.current = payload.revision
       setStatus(payload.status)
@@ -137,7 +136,7 @@ export function RemoteTailnetSettingsTab() {
   useEffect(() => {
     if (readiness.state === 'loading') return
     let cancelled = false
-    void window.api
+    void tailnetApi
       .tailnetListPeers()
       .then((next) => {
         if (!cancelled) setScan(next)
@@ -198,7 +197,7 @@ export function RemoteTailnetSettingsTab() {
 
   const toggleEnabled = (next: boolean): Promise<void> =>
     run(next ? 'Starting the listener.' : 'Stopping the listener.', async () => {
-      setStatus(await window.api.tailnetSetEnabled(next))
+      setStatus(await tailnetApi.tailnetSetEnabled(next))
       // Turning it off drops any outstanding pairing in the main process; the
       // panel must not keep showing a code that no longer works.
       if (!next) setOffer(null)
@@ -210,7 +209,7 @@ export function RemoteTailnetSettingsTab() {
       // Both ways, always (owner ruling 2026-09-10): the same set is what we
       // ask for over there and what we grant back here.
       void run(`Asking ${target.machineName} to pair.`, async () => {
-        const result = await window.api.meshRequestPairing(target.endpoint, {
+        const result = await tailnetApi.meshRequestPairing(target.endpoint, {
           scopes,
           reverseScopes: scopes,
         })
@@ -220,7 +219,7 @@ export function RemoteTailnetSettingsTab() {
     }
     void run('Creating a pairing code.', async () => {
       setPasteOpen(false)
-      setOffer(await window.api.tailnetOfferPairing(scopes))
+      setOffer(await tailnetApi.tailnetOfferPairing(scopes))
       setNow(Date.now())
       await refresh()
     })
@@ -228,7 +227,7 @@ export function RemoteTailnetSettingsTab() {
 
   const cancelPairing = (): Promise<void> =>
     run('Cancelling the pairing code.', async () => {
-      setStatus(await window.api.tailnetCancelPairing())
+      setStatus(await tailnetApi.tailnetCancelPairing())
       setOffer(null)
     })
 
@@ -237,7 +236,7 @@ export function RemoteTailnetSettingsTab() {
   // the other direction live is how a "revoked" machine kept answering.
   const forgetMachine = (machine: TailnetMachine): Promise<void> =>
     run(`Revoking ${machine.name}.`, async () => {
-      const result = await window.api.tailnetForgetMachine({
+      const result = await tailnetApi.tailnetForgetMachine({
         deviceId: machine.inbound?.deviceId,
         connectionId: machine.outbound?.connectionId,
       })
@@ -248,18 +247,18 @@ export function RemoteTailnetSettingsTab() {
     const deviceId = machine.inbound?.deviceId
     if (!deviceId) return Promise.resolve()
     return run(`Widening what ${machine.name} may do.`, async () => {
-      setStatus(await window.api.tailnetUpdateDeviceScopes(deviceId, [...STANDARD_SCOPES]))
+      setStatus(await tailnetApi.tailnetUpdateDeviceScopes(deviceId, [...STANDARD_SCOPES]))
     })
   }
 
   const setHttps = (next: boolean): Promise<void> =>
     run(next ? 'Turning on HTTPS.' : 'Turning off HTTPS.', async () => {
-      setStatus(await window.api.tailnetSetHttps(next))
+      setStatus(await tailnetApi.tailnetSetHttps(next))
     })
 
   const resetRegistrations = (): Promise<void> =>
     run('Resetting MCP client registrations.', async () => {
-      setStatus(await window.api.tailnetResetMcpRegistrations())
+      setStatus(await tailnetApi.tailnetResetMcpRegistrations())
       setAction({
         tone: 'idle',
         message: 'MCP client registrations reset. Each client registers again before it next signs in.',
@@ -268,12 +267,12 @@ export function RemoteTailnetSettingsTab() {
 
   const revokeClient = (device: TailnetDevice): Promise<void> =>
     run(`Revoking ${device.name}.`, async () => {
-      setStatus(await window.api.tailnetRevokeDevice(device.id))
+      setStatus(await tailnetApi.tailnetRevokeDevice(device.id))
     })
 
   const updateClientScopes = (device: TailnetDevice, scopes: TailnetScope[]): Promise<void> =>
     run(`Changing what ${device.name} may do.`, async () => {
-      setStatus(await window.api.tailnetUpdateDeviceScopes(device.id, scopes))
+      setStatus(await tailnetApi.tailnetUpdateDeviceScopes(device.id, scopes))
     })
 
   // Pair by a carried link: the possession-based path for a machine with
@@ -282,7 +281,7 @@ export function RemoteTailnetSettingsTab() {
     const link = pairingLink.trim()
     if (!link) return Promise.resolve()
     return run('Pairing with that machine.', async () => {
-      const result = await window.api.meshPair(link)
+      const result = await tailnetApi.meshPair(link)
       if (!result.ok) {
         setAction({ tone: 'error', message: result.message })
         return

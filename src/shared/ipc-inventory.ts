@@ -63,8 +63,6 @@ const CHAT_LINK = shell("A chat link from the operating system, opened in one of
 const terminals = server('terminals')
 /** Moves to the protocol: a chat or a canvas on a paired desktop. */
 const pairedMachines = server('paired-machines')
-/** Moves to the protocol: who may reach this machine: the tailnet, pairing, MCP endpoints, local apps, browsers and embeds. */
-const access = server('access')
 /** Moves to the protocol: projects and their chats, the backlog, scheduled agents and the machines a project runs on. */
 const workspaces = server('workspaces')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
@@ -84,6 +82,8 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'pane-popout:open': WINDOW('invoke'),
   'pane-popout:push': WINDOW('send'),
   'pane-popout:state': WINDOW('push'),
+  // A notification about a pairing was clicked: main brought this window forward, which opens Remote.
+  'remote:open-requested': WINDOW('push'),
   'window:close': WINDOW('invoke'),
   'window:close-requested': WINDOW('push'),
   'window:confirm-close': WINDOW('invoke'),
@@ -292,31 +292,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'mesh:conversation-unfollow': pairedMachines('invoke'),
   'mesh:conversation-watch-changes': pairedMachines('invoke'),
   'mesh:conversation:*': pairedMachines('push'),
-  'mesh:event': pairedMachines('push'),
-  'mesh:cancel-pairing': access('invoke'),
-  'mesh:forget': access('invoke'),
-  'mesh:get-live-state': access('invoke'),
-  'mesh:list-connections': access('invoke'),
-  'mesh:pair': access('invoke'),
-  'mesh:request-pairing': access('invoke'),
-  'remote:open-requested': access('push'),
-  'tailnet:approve-pair-request': access('invoke'),
-  'tailnet:cancel-pairing': access('invoke'),
-  'tailnet:deny-pair-request': access('invoke'),
-  'tailnet:event': access('push'),
-  'tailnet:forget-machine': access('invoke'),
-  'tailnet:get-live-state': access('invoke'),
-  'tailnet:get-status': access('invoke'),
-  'tailnet:list-peers': access('invoke'),
-  'tailnet:offer-pairing': access('invoke'),
-  'tailnet:reset-mcp-registrations': access('invoke'),
-  'tailnet:revoke-device': access('invoke'),
-  'tailnet:set-enabled': access('invoke'),
-  'tailnet:set-https': access('invoke'),
-  'tailnet:share-port': access('invoke'),
-  'tailnet:share-status': access('invoke'),
-  'tailnet:unshare-port': access('invoke'),
-  'tailnet:update-device-scopes': access('invoke'),
   'hosts:changed': workspaces('push'),
   'hosts:home': workspaces('invoke'),
   'hosts:list': workspaces('invoke'),

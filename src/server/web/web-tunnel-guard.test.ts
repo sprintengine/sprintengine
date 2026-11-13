@@ -28,10 +28,8 @@ test('a web tab reaches the domains it draws, and not the ones that act beyond t
   for (const channel of ['hosts:list', 'hosts:home', 'web:previews:open'])
     expect(webTunnelAllows(channel), channel).toBe(true)
   for (const channel of [
-    'tailnet:offer-pairing',
-    'tailnet:set-enabled',
-    'tailnet:approve-pair-request',
-    'mesh:pair',
+    'mesh:conversation-send',
+    'mesh:conversation-follow',
     'conversation:secrets:set',
     'github:set-token',
     'github:clone',
@@ -47,15 +45,15 @@ test('a channel the tab may not use is answered DesktopOnly and never reaches a 
     audit: () => undefined,
   })
   guarded.on('message', (event) => heard.push(event.data))
-  inner.deliver({ t: 'ipc.invoke', id: 7, channel: 'tailnet:offer-pairing', args: [['conversation:read']] })
-  inner.deliver({ t: 'ipc.send', channel: 'tailnet:set-enabled', args: [true] })
+  inner.deliver({ t: 'ipc.invoke', id: 7, channel: 'mesh:conversation-send', args: [{}] })
+  inner.deliver({ t: 'ipc.send', channel: 'mesh:conversation-follow', args: [{}] })
   expect(heard).toEqual([])
   expect(inner.posted).toEqual([
     {
       t: 'ipc.result',
       id: 7,
       ok: false,
-      error: { name: 'DesktopOnly', message: 'tailnet:offer-pairing is available in the desktop app only.' },
+      error: { name: 'DesktopOnly', message: 'mesh:conversation-send is available in the desktop app only.' },
     },
   ])
 })

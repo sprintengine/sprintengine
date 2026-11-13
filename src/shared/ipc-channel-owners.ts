@@ -28,7 +28,6 @@ export type ServerIpcChannel = { retry?: 'once'; subscription?: ServerIpcSubscri
 const SERVER_IPC_CHANNEL_TABLE = {
   'hosts:home': { retry: 'once' },
   'hosts:list': { retry: 'once' },
-  'mesh:cancel-pairing': {},
   'mesh:conversation-cancel-side-question': {},
   'mesh:conversation-command': {},
   'mesh:conversation-context-breakdown': { retry: 'once' },
@@ -53,29 +52,8 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'mesh:conversation-changes-diff': { retry: 'once' },
   'mesh:conversation-changed-file': { retry: 'once' },
   'mesh:conversation-unfollow': {},
-  'mesh:forget': {},
-  'mesh:get-live-state': { retry: 'once' },
-  'mesh:list-connections': { retry: 'once' },
-  'mesh:pair': {},
-  'mesh:request-pairing': {},
   // The Schedules window's (registered with the server's domains, refused
   // while scheduled agents is off).
-  'tailnet:approve-pair-request': {},
-  'tailnet:cancel-pairing': {},
-  'tailnet:deny-pair-request': {},
-  'tailnet:forget-machine': {},
-  'tailnet:get-live-state': { retry: 'once' },
-  'tailnet:get-status': { retry: 'once' },
-  'tailnet:list-peers': { retry: 'once' },
-  'tailnet:offer-pairing': {},
-  'tailnet:revoke-device': {},
-  'tailnet:set-enabled': {},
-  'tailnet:set-https': {},
-  'tailnet:reset-mcp-registrations': {},
-  'tailnet:share-port': {},
-  'tailnet:share-status': { retry: 'once' },
-  'tailnet:unshare-port': {},
-  'tailnet:update-device-scopes': {},
 } as const satisfies Readonly<Record<string, ServerIpcChannel>>
 
 /** Every channel the server owns, by name: what a table keyed by channel must cover (`WEB_TUNNEL_ACCESS`). */

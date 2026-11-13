@@ -21,12 +21,13 @@ import {
 //
 // The tunnel is an owner's: a tab of a browser the owner paired drives the
 // domains the web client draws, and nothing that acts beyond this server.
-// Pairing other machines, the tailnet's administration, and setting or
-// clearing provider keys or the GitHub token stay with the desktop app; their
-// reads that the web client shows (whether a key is set) do not. Who may reach
-// this Studio otherwise is the Studio protocol's, which says who reaches each:
-// the agents' gateway, its HTTP tokens and the paired local apps (`access.ts`),
-// and the browsers paired with the web listener (`web-devices.ts`).
+// Chats on paired machines, and setting or clearing provider keys or the
+// GitHub token stay with the desktop app; their reads that the web client
+// shows (whether a key is set) do not. Who may reach this Studio otherwise is
+// the Studio protocol's, which says who reaches each: the agents' gateway, its
+// HTTP tokens and the paired local apps (`access.ts`), the browsers paired with
+// the web listener (`web-devices.ts`), and the tailnet and pairing with another
+// machine (`tailnet.ts`).
 //
 // Typed over every channel the server owns and the front door's own, so a
 // channel added to either does not compile until it says here what it needs
@@ -41,14 +42,11 @@ const TUNNEL_OWNER = "A browser tab reaches this desktop's own channels only und
 const owner = (...permissions: StudioPermission[]): StudioAccess => ({ permissions, owner: TUNNEL_OWNER })
 const desktopOnly = (reason: string): StudioAccess => ({ localOnly: reason })
 
-const ACCESS_ADMIN =
-  'Who may reach this machine (paired apps, other machines, the tailnet) is administered in the desktop app.'
 const BEYOND = 'It acts beyond this server, on another machine or account.'
 
 export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunnelChannelName]: StudioAccess } = {
   'hosts:home': owner('workspace:read'),
   'hosts:list': owner('workspace:read'),
-  'mesh:cancel-pairing': desktopOnly(BEYOND),
   'mesh:conversation-cancel-side-question': desktopOnly(BEYOND),
   'mesh:conversation-command': desktopOnly(BEYOND),
   'mesh:conversation-context-breakdown': desktopOnly(BEYOND),
@@ -73,27 +71,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'mesh:conversation-changes-diff': desktopOnly(BEYOND),
   'mesh:conversation-changed-file': desktopOnly(BEYOND),
   'mesh:conversation-unfollow': desktopOnly(BEYOND),
-  'mesh:forget': desktopOnly(BEYOND),
-  'mesh:get-live-state': desktopOnly(BEYOND),
-  'mesh:list-connections': desktopOnly(BEYOND),
-  'mesh:pair': desktopOnly(BEYOND),
-  'mesh:request-pairing': desktopOnly(BEYOND),
-  'tailnet:approve-pair-request': desktopOnly(ACCESS_ADMIN),
-  'tailnet:cancel-pairing': desktopOnly(ACCESS_ADMIN),
-  'tailnet:deny-pair-request': desktopOnly(ACCESS_ADMIN),
-  'tailnet:forget-machine': desktopOnly(ACCESS_ADMIN),
-  'tailnet:get-live-state': desktopOnly(ACCESS_ADMIN),
-  'tailnet:get-status': desktopOnly(ACCESS_ADMIN),
-  'tailnet:list-peers': desktopOnly(ACCESS_ADMIN),
-  'tailnet:offer-pairing': desktopOnly(ACCESS_ADMIN),
-  'tailnet:revoke-device': desktopOnly(ACCESS_ADMIN),
-  'tailnet:set-enabled': desktopOnly(ACCESS_ADMIN),
-  'tailnet:set-https': desktopOnly(ACCESS_ADMIN),
-  'tailnet:reset-mcp-registrations': desktopOnly(ACCESS_ADMIN),
-  'tailnet:share-port': desktopOnly(ACCESS_ADMIN),
-  'tailnet:share-status': desktopOnly(ACCESS_ADMIN),
-  'tailnet:unshare-port': desktopOnly(ACCESS_ADMIN),
-  'tailnet:update-device-scopes': desktopOnly(ACCESS_ADMIN),
   // The front door's own channels.
   [WEB_BROWSE_FOLDERS_CHANNEL]: owner('filesystem:read'),
   [WEB_PREVIEWS_LIST_CHANNEL]: owner('workspace:read'),

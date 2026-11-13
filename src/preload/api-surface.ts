@@ -2,7 +2,7 @@ import type { ElectronApi } from '../shared/electron-api'
 import { appMenuApi } from './api/app-menu'
 import { appearanceApi } from './api/appearance'
 import { authApi } from './api/auth'
-import { automationApi } from './api/automation'
+import { remoteOpenApi } from './api/remote-open'
 import { studioConnectionApi } from './api/studio-connection'
 import { studioServerApi } from './api/studio-server'
 import { meshApi } from './api/mesh'
@@ -54,7 +54,7 @@ export const apiModules = {
   ...buildStampApi,
   ...appearanceApi,
   ...authApi,
-  ...automationApi,
+  ...remoteOpenApi,
   ...studioConnectionApi,
   ...studioServerApi,
   ...meshApi,

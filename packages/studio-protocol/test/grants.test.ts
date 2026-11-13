@@ -52,6 +52,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * names a folder on this machine and writes the files there.
  * Who may reach this machine's agents (`access.ts`): the gateway's socket, the
  * HTTP endpoint's clients and tokens, and the apps paired with the owner socket.
+ * Who reaches this machine over the tailnet (`tailnet.ts`): its devices, offers,
+ * requests and shared dev servers, and the machines it is paired to drive.
  * The desktop's own windows' workspace registry (`workspaceSync.*` and its
  * neighbours): their arrangement and the records they mirror, which no other
  * client reads that way.
@@ -196,6 +198,31 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'localApps.revoke',
   'localApps.setReach',
   'localApps.changed',
+  // Who reaches this machine over the tailnet, and the machines it drives.
+  'tailnet.status',
+  'tailnet.liveState',
+  'tailnet.setEnabled',
+  'tailnet.setHttps',
+  'tailnet.offerPairing',
+  'tailnet.cancelPairing',
+  'tailnet.approvePairRequest',
+  'tailnet.denyPairRequest',
+  'tailnet.revokeDevice',
+  'tailnet.updateDeviceScopes',
+  'tailnet.forgetMachine',
+  'tailnet.resetMcpRegistrations',
+  'tailnet.peers',
+  'tailnet.shares',
+  'tailnet.share',
+  'tailnet.unshare',
+  'tailnet.changed',
+  'mesh.connections',
+  'mesh.liveState',
+  'mesh.pair',
+  'mesh.requestPairing',
+  'mesh.cancelPairing',
+  'mesh.forget',
+  'mesh.changed',
   // The desktop's own windows' workspace registry.
   'workspaceSync.snapshot',
   'workspaceSync.eventsAfter',
@@ -303,6 +330,17 @@ test('what only Studio’s own desktop windows may call is an owner’s too, and
     'localApps.setReach',
     'localApps.status',
     'mcpHttp.create',
+    'mesh.changed',
+    'mesh.liveState',
+    'mesh.pair',
+    'mesh.requestPairing',
+    'tailnet.approvePairRequest',
+    'tailnet.offerPairing',
+    'tailnet.peers',
+    'tailnet.setEnabled',
+    'tailnet.setHttps',
+    'tailnet.share',
+    'tailnet.updateDeviceScopes',
   ])
   for (const name of windowOnly) {
     const spec: { owner?: string; window?: string } =
