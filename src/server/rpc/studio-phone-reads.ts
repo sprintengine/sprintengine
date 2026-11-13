@@ -89,8 +89,14 @@ export function createStudioPhoneReadsHandlers<A extends Asking>(
   return {
     'backlog.location': ({ workspaceRoot }, asking) =>
       inFolder('backlog.location', asking, workspaceRoot, null, (folders) => folders.location(workspaceRoot)),
-    'backlog.setRoot': ({ commandId, workspaceRoot, root }, asking) =>
-      inFolder('backlog.setRoot', asking, workspaceRoot, commandId, (folders) => folders.setRoot(workspaceRoot, root)),
+    // The folder it points the backlog at is held as the project's is: one a
+    // browser on the tailnet could not name, it cannot have read or written.
+    'backlog.setRoot': async ({ commandId, workspaceRoot, root }, asking) =>
+      root !== null && (isMachinePath(root) || !(await options.mayName(root, asking)))
+        ? { ok: false, error: { code: 'invalid_params', message: UNKNOWN_FOLDER } }
+        : inFolder('backlog.setRoot', asking, workspaceRoot, commandId, (folders) =>
+            folders.setRoot(workspaceRoot, root),
+          ),
     'backlog.ensureRecords': ({ commandId, workspaceRoot, items }, asking) =>
       inFolder('backlog.ensureRecords', asking, workspaceRoot, commandId, (folders) =>
         folders.ensureRecords(workspaceRoot, items),

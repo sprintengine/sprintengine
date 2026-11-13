@@ -762,8 +762,8 @@ test('backlog', async () => {
     )
     assert.match(
       backlogPanelSource,
-      /window\.api\.removeBacklogLink\(/,
-      'unlink persists through the dedicated Backlog IPC',
+      /backlogApi\.removeBacklogLink\(/,
+      'unlink persists through the backlog methods',
     )
     assert.match(
       backlogPanelSource,
@@ -785,7 +785,7 @@ test('backlog', async () => {
     assert.match(linksSectionSource, /syncBacklogItemLinks\(/, 'the section resolves provider-backed links')
     assert.match(
       linksSectionSource,
-      /persistLink: \(args\) => window\.api\.addOrUpdateBacklogLink\(args\)/,
+      /persistLink: \(args\) => backlogApi\.addOrUpdateBacklogLink\(args\)/,
       'resolved status persists through the Backlog service',
     )
   })
@@ -798,7 +798,7 @@ test('backlog', async () => {
     )
     assert.match(
       backlogPanelSource,
-      /window\.api\.updateBacklogStatus/,
+      /backlogApi\.updateBacklogStatus/,
       'manual completion persists through the Backlog object service',
     )
   })

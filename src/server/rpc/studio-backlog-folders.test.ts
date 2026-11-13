@@ -170,6 +170,14 @@ test('a browser on the tailnet is held to the folders Studio knows, and an SSH m
   assert.equal(codeOf(refused), 'invalid_params')
   assert.match(refused.error!.message, /not one of the projects Studio holds/u)
 
+  // Nor may it point a known project's backlog at a folder it could not name.
+  const elsewhere = await ask(
+    'backlog.setRoot',
+    { commandId: cid(), workspaceRoot: root, root: '/Users/dev/elsewhere' },
+    { context: tailnet },
+  )
+  assert.equal(codeOf(elsewhere), 'invalid_params')
+
   const ssh = await ask('backlog.location', { workspaceRoot: 'ssh://build-box/home/dev/app' })
   assert.equal(codeOf(ssh), 'unavailable')
   assert.match(ssh.error!.message, /SSH machine/u)
