@@ -8,7 +8,6 @@ import { createInterface } from 'node:readline'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { acquireDataDirLock } from './core/data-dir'
-import { connectRemoteConversationBackend } from './wsl/backend-wire'
 import { connectLoopback } from './wsl/front-door-client'
 import { enterFrontDoor, ownerTokenHash } from './wsl/front-door-proof'
 
@@ -360,15 +359,6 @@ test('a server with a front door lets in only a proven front door, and serves it
   assert.ok(ready.frontDoor.port > 0)
   assert.equal(ready.frontDoor.socketPath, join(dataDir, 'run', 'front-door.sock'))
 
-  const socket = await connectLoopback(ready.frontDoor.port)
-  const backend = connectRemoteConversationBackend(await enterFrontDoor(socket, { token, purpose: 'backend' }))
-  await backend.refresh()
-  const listed = backend.listSessions()
-  assert.ok(listed.ok && listed.sessions.length === 0)
-  const threads = await backend.listThreads({ workspaceRoot: dataDir, workspaceId: 'ws-1' })
-  assert.ok(threads.ok, 'a call crosses to the core and back')
-  backend.close()
-
   const shell = await enterFrontDoor(connect(ready.frontDoor.socketPath), { token, purpose: 'studio' })
   const ticketLine = await new Promise<string>((resolve) => {
     let text = ''
@@ -381,7 +371,7 @@ test('a server with a front door lets in only a proven front door, and serves it
   shell.destroy()
 
   await assert.rejects(
-    enterFrontDoor(await connectLoopback(ready.frontDoor.port), { token: 'seown_not-it', purpose: 'backend' }),
+    enterFrontDoor(await connectLoopback(ready.frontDoor.port), { token: 'seown_not-it', purpose: 'studio' }),
     /could not prove/u,
   )
 

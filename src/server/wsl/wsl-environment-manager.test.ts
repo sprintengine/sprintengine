@@ -228,8 +228,7 @@ test('a first chat installs the server tree, starts it, and reaches it over loop
     existsSync(join(home, WSL_DATA_REL, 'data-0123456789ab', 'run', 'studio.lock')),
     'the profile has its own data',
   )
-  const threads = await connection.backend.listThreads({ workspaceRoot: join(home, 'repo'), workspaceId: 'ws-1' })
-  assert.ok(threads.ok, threads.ok ? '' : threads.message)
+  await connection.owner.request('server.ping', {})
   assert.equal(await wsl.connect('Ubuntu-24.04'), connection, 'a second connect reuses the running server')
   assert.deepEqual(
     statuses.map((status) => status.state),
@@ -370,24 +369,22 @@ test('with the bridge chosen, the server is reached through the stdio relay and 
   const { manager: wsl } = manager({ homes: { Debian: home }, transport: 'stdio' })
   const connection = await wsl.connect('Debian')
   assert.equal(wsl.status('Debian').transport, 'stdio')
-  const threads = await connection.backend.listThreads({ workspaceRoot: join(home, 'repo'), workspaceId: 'ws-1' })
-  assert.ok(threads.ok)
+  await connection.owner.request('server.ping', {})
 })
 
-test('a lost wire is reconnected once, and a call meanwhile waits for it instead of opening another', async () => {
+test('a lost owner connection is reconnected once, and a call meanwhile waits for it instead of opening another', async () => {
   const home = fakeHome('reconnect')
   const connections: WslServerConnection[] = []
   const { manager: wsl } = manager({ homes: { Ubuntu: home }, connected: (connection) => connections.push(connection) })
   const first = await wsl.connect('Ubuntu')
   const pid = readServerPid(home)
-  first.backend.close()
+  first.owner.close()
   const second = await wsl.connect('Ubuntu')
   assert.notEqual(second, first)
-  assert.equal(connections.length, 2, 'one reconnect, not a second wire beside it')
+  assert.equal(connections.length, 2, 'one reconnect, not a second connection beside it')
   assert.equal(await wsl.connect('Ubuntu'), second)
   assert.equal(readServerPid(home), pid, 'the same server')
-  const threads = await second.backend.listThreads({ workspaceRoot: join(home, 'repo'), workspaceId: 'ws-1' })
-  assert.ok(threads.ok)
+  await second.owner.request('server.ping', {})
 })
 
 test("the desktop's owner connection is the server's Studio, and its end is the server lost, reconnected once", async () => {
@@ -403,7 +400,6 @@ test("the desktop's owner connection is the server's Studio, and its end is the 
   const second = await wsl.connect('Ubuntu')
   assert.notEqual(second, first)
   assert.equal(second.owner.state === 'closed', false)
-  assert.equal(first.backend.isOpen(), false, 'the wire went with it: one connection, never half of one')
   assert.equal(connections.length, 2)
   assert.equal(readServerPid(home), pid, 'the same server')
 })
@@ -560,7 +556,7 @@ test('a lost wire to a server too busy to answer at once is reconnected when it 
   // under load or a VM waking from sleep is, while its wire drops.
   process.kill(pid, 'SIGSTOP')
   try {
-    first.backend.close()
+    first.owner.close()
     await new Promise((resolve) => setTimeout(resolve, 6_000))
   } finally {
     try {
@@ -585,7 +581,7 @@ test('a server whose wire is being reconnected is not stopped for being idle onc
   // Its idle clock runs out while the reconnect waits on a server slow to answer.
   process.kill(pid, 'SIGSTOP')
   try {
-    first.backend.close()
+    first.owner.close()
     await new Promise((resolve) => setTimeout(resolve, 2_500))
   } finally {
     process.kill(pid, 'SIGCONT')
@@ -680,7 +676,7 @@ test('a server that stops answering its pings is taken for hung, stopped, and sa
     }
   }
   assert.match(wsl.status('Ubuntu').reason ?? '', /stopped answering, so it was stopped/u)
-  await waitFor(() => first.backend.isOpen() === false)
+  await waitFor(() => first.owner.state === 'closed')
   await waitFor(() => {
     try {
       process.kill(pid, 0)
@@ -790,7 +786,7 @@ test('a server killed under a running distribution is a crash; under a stopped o
   process.kill(pid, 'SIGKILL')
   await waitFor(() => wsl.status('Ubuntu').state === 'unavailable')
   assert.match(wsl.status('Ubuntu').reason ?? '', /stopped unexpectedly/u)
-  assert.equal(first.backend.isOpen(), false)
+  await waitFor(() => first.owner.state === 'closed')
   await assert.rejects(wsl.connect('Ubuntu'), /tried again in \d+ s/u, 'a crash is not restarted at once')
 
   const { manager: shutDown } = manager({

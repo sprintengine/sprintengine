@@ -16,7 +16,6 @@ import type { ServerBootstrapEnvelope } from '../bootstrap/envelope'
 import { backoffDelayMs } from '../../shared/exponentialBackoff'
 import { connect as connectStudio, type StudioClient } from '../../../packages/client-runtime/src/public'
 import { hasBackgroundWork, parseBackgroundWork, type BackgroundWork } from '../core/background-work'
-import { connectRemoteConversationBackend, type RemoteConversationBackend } from './backend-wire'
 import { lineTransport, readTicket } from './studio-door'
 import { connectLoopback, openBridge } from './front-door-client'
 import { enterFrontDoor, ownerTokenHash, type FrontDoorPurpose } from './front-door-proof'
@@ -89,7 +88,6 @@ export type WslServerConnection = {
    * makes the next one.
    */
   owner: StudioClient
-  backend: RemoteConversationBackend
   /** Where the distribution mounts Windows drives; null when automount is off. */
   driveMountRoot: string | null
   environmentId: string
@@ -248,10 +246,9 @@ function askWork(owner: Pick<StudioClient, 'request'>, budgetMs: number): Promis
   ]).finally(() => clearTimeout(timer))
 }
 
-/** A connection let go: its owner connection and its wire. */
+/** A connection let go: its owner connection. */
 function closeConnection(connection: WslServerConnection | null | undefined): void {
   connection?.owner.close()
-  connection?.backend.close()
 }
 
 export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): WslEnvironmentManager {
@@ -557,33 +554,17 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     return { owner, transport: how?.transport ?? 'stdio', reason: how?.reason ?? '' }
   }
 
-  async function connectBackend(handle: Handle): Promise<WslServerConnection> {
+  async function connectOwner(handle: Handle): Promise<WslServerConnection> {
     const server = handle.server!
     const { owner, transport, reason } = await openOwner(handle)
-    let backend: RemoteConversationBackend
-    try {
-      const door = await openDoor(handle, 'backend')
-      backend = connectRemoteConversationBackend(door.stream, { log })
-      // A first read that fails leaves nobody holding the wire: closed here, or
-      // every later attempt would leave another stream open on the server.
-      await backend.refresh().catch((error: unknown) => {
-        backend.close()
-        throw error
-      })
-    } catch (error) {
-      owner.close()
-      throw error
-    }
     const connection: WslServerConnection = {
       distro: handle.distro,
       owner,
-      backend,
       driveMountRoot: server.ready.frontDoor?.driveMountRoot ?? null,
       environmentId: server.ready.environmentId,
       open: async (purpose) => (await openDoor(handle, purpose)).stream,
     }
-    // Lost when the owner connection ends (closed, or a ping unanswered) or
-    // the wire closes: whichever comes first.
+    // Lost when the owner connection ends: closed, or a ping unanswered.
     const lost = (why: string) => {
       if (handle.connection !== connection) return
       handle.connection = null
@@ -599,7 +580,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
           throw new Error(`The Studio server in ${handle.distro} stopped.`)
         if (!alive) throw new Error('the server did not answer a ping.')
         log(`The Studio server in ${handle.distro} is still running; reconnecting.`)
-        return connectBackend(handle)
+        return connectOwner(handle)
       }
       // Held as the start in progress, so a call meanwhile waits for this
       // reconnect instead of opening a second connection beside it.
@@ -621,7 +602,6 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
         },
       )
     }
-    backend.onClose((why) => lost(why))
     void owner.closed.then(
       () => lost('its Studio connection ended'),
       (error: unknown) =>
@@ -767,7 +747,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       handle.probe = { inFlight: false, missed: 0, lastAt: 0, graceUntil: 0 }
       handle.pingTimer = setInterval(() => void probe(handle, server), pingMs)
       handle.pingTimer.unref?.()
-      const connection = await connectBackend(handle)
+      const connection = await connectOwner(handle)
       // Not a reset of the crash count: a server that crashes again soon after
       // starting is the next crash in a row, and waits longer.
       handle.startedAt = now()
@@ -838,7 +818,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
     const hung = handle.killedFor !== null ? handle.server : null
     if (hung) {
       handle.starting ??= exitOfHung(handle, hung)
-        .then(() => (handle.server ? connectBackend(handle) : start(handle)))
+        .then(() => (handle.server ? connectOwner(handle) : start(handle)))
         .finally(() => {
           handle.starting = null
         })
@@ -856,7 +836,7 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       armIdle(handle)
       return Promise.resolve(handle.connection)
     }
-    handle.starting ??= (handle.server ? connectBackend(handle) : start(handle)).finally(() => {
+    handle.starting ??= (handle.server ? connectOwner(handle) : start(handle)).finally(() => {
       handle.starting = null
     })
     return handle.starting

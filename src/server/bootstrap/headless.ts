@@ -8,7 +8,6 @@ import { chatsAreWorking } from '../core/chats-working'
 import { backgroundWorkOf, hasBackgroundWork } from '../core/background-work'
 import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '../update/studio-updates'
 import { startStudioServer, type StudioServer, type StudioServerOptions } from '../studio-server'
-import { serveConversationBackend } from '../wsl/backend-wire'
 import type { SignIns } from '../machine/machine-sign-in'
 import { startFrontDoorListeners, type FrontDoorListeners } from '../wsl/front-door-listener'
 import type { FrontDoorPurpose } from '../wsl/front-door-proof'
@@ -89,12 +88,7 @@ export function serveFrontDoorPurpose(
   server: Pick<StudioServer, 'core' | 'rpc'>,
   purpose: FrontDoorPurpose,
   stream: Duplex,
-  log: (message: string) => void,
 ): void {
-  if (purpose === 'backend') {
-    serveConversationBackend(server.core.conversations, stream, { log })
-    return
-  }
   // A window's socket: the window listener admits it, or not, by the ticket
   // it minted for it.
   if (purpose === 'ws') {
@@ -193,7 +187,7 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
         tokenHash: envelope.owner.tokenHash,
         runDir: envelope.runDir,
         loopback: door.loopback,
-        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream, log),
+        onAdmitted: (purpose, stream) => serveFrontDoorPurpose(server, purpose, stream),
         ...(idle ? { onOpenCount: (count: number) => idle.connections(count) } : {}),
         log,
       })

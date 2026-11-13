@@ -52,23 +52,18 @@ export type ExecutionHostSummary = {
   enabled?: boolean
   /** WSL only: 1 or 2, when WSL reported it. */
   wslVersion?: number | null
-  /** WSL only, on a desktop that can run Studio servers in its distributions: where its chats run (phase 7). */
-  chatServer?: WslChatServerSummary
+  /** WSL only, on a desktop that runs Studio servers in its distributions: how its server stands (phase 7). */
+  server?: WslServerSummary
 }
 
-/** Where a distribution's chats run, and how its Studio server stands, in words for Settings. */
-export type WslChatServerSummary = {
-  /** Chats run on a Studio server inside the distribution. */
-  on: boolean
+/** How a distribution's Studio server, which holds its chats, stands, in words for Settings. */
+export type WslServerSummary = {
   state: 'stopped' | 'starting' | 'ready' | 'unavailable' | 'shut-down'
   /** How Windows reaches it while it is ready: over loopback, or through the stdio bridge. */
   transport?: 'loopback' | 'stdio'
   /** Why it is unavailable or shut down, or why the bridge, in words. */
   reason?: string
 }
-
-/** Where a WSL distribution's chats run when the person has not chosen: off until the flip criteria are met. */
-export const DEFAULT_WSL_CHAT_SERVER: 'on' | 'off' = 'off'
 
 /** A machine on this computer's state, in words: Settings and the environment list read it. */
 export function executionHostStateWords(host: Pick<ExecutionHostSummary, 'state' | 'reason' | 'wslVersion'>): string {
@@ -310,7 +305,6 @@ export function normalizeExecutionHostSettings(value: unknown): ExecutionHostSet
     cliCommands: stringRecord(value.cliCommands),
     env,
     ...(shell ? { shell } : {}),
-    ...(value.chatServer === 'on' || value.chatServer === 'off' ? { chatServer: value.chatServer } : {}),
     ...(value.serverTransport === 'auto' || value.serverTransport === 'stdio'
       ? { serverTransport: value.serverTransport }
       : {}),

@@ -23,7 +23,6 @@ import { useStudioChatHeld } from './chatServerHeld'
 import { usePullRequestsOfConversation } from '../../workspace/useConversationPullRequests'
 import { useLocalServersOfConversation } from '../../workspace/useLocalServers'
 import { useConversationTransport } from './conversationTransport'
-import { LOCAL_HOST_ID } from '../../../../../shared/execution-host'
 
 // What a chat view is bound to besides its transport: the agent fields it reads
 // (name, model, preset, mode, skills, the one-shot startup prompt) and where it writes
@@ -186,17 +185,13 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
   }, [pendingWorktree, attemptRunning, workspaceId])
   // What the chat's own Studio holds and keeps for it, and what it knows of
   // its usage limits: the window's Studio's for its own chats, an SSH
-  // machine's for its (design-wsl-ssh-direct PR 1d), read on the push topics
-  // its transport follows. A paired chat's come with its lane's frames. A WSL
-  // chat's agent runs in the distribution, through this Studio's router, whose
-  // scheduler does not reach it until WSL distributions are environments too.
+  // machine's or a WSL distribution's for theirs (design-wsl-ssh-direct PR 1d,
+  // PR 3c), read on the push topics its transport follows. A paired chat's
+  // come with its lane's frames.
   const transport = useConversationTransport()
   const followPush = transport.services.followPush ?? null
-  const throughRouter = Boolean(workspace?.hostId && workspace.hostId !== LOCAL_HOST_ID)
   const workingRoot =
-    agent?.conversation && !pendingGate && followPush && !throughRouter
-      ? conversationWorkingRoot(agent, workspace?.folderPath)
-      : null
+    agent?.conversation && !pendingGate && followPush ? conversationWorkingRoot(agent, workspace?.folderPath) : null
   const heldKey = useMemo(
     () => (workingRoot ? { workspaceId, agentId, workspaceRoot: workingRoot } : null),
     [workspaceId, agentId, workingRoot],

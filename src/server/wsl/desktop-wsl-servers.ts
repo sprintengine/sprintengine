@@ -5,12 +5,7 @@ import { listWslDistros } from '../../main/hosts/wsl-distro'
 import { installNodeInto, installTree, wslNodeDigests, wslProfileId } from '../../main/hosts/wsl-helper-runtime'
 import { streamedAppPayload, type StreamedPayload } from '../../main/hosts/wsl-install'
 import { wslExeRunner } from '../../main/hosts/wsl-runner'
-import {
-  DEFAULT_WSL_CHAT_SERVER,
-  wslHostId,
-  type ExecutionHostId,
-  type ExecutionHostSettings,
-} from '../../shared/execution-host'
+import { wslHostId, type ExecutionHostId, type ExecutionHostSettings } from '../../shared/execution-host'
 import {
   createWslEnvironmentManager,
   type WslEnvironmentManager,
@@ -21,15 +16,13 @@ import { createWslEnvironmentAccess, type WslEnvironmentAccess } from './wsl-env
 
 // The WSL servers of a desktop on Windows, wired to the running app: where
 // the server tree this build ships is, the profile its data directory is
-// named for, the per-distribution switch and transport, and the one-time Node
+// named for, the per-distribution transport, and the one-time Node
 // download. Built by the Studio core's owner (Electron main in process, the
 // desktop's server process out of process), and only on Windows.
 
 export type WslServers = {
   manager: WslEnvironmentManager
-  /** Whether a distribution's chats run on its server now: the person's switch, off by default. */
-  chatServerOn(distro: string): boolean
-  /** Who hears a new connection (the router, to follow its events). */
+  /** Who hears a new connection (the core's clients of its Studio, the access routes). */
   onConnected(listener: (connection: WslServerConnection) => void): void
   /** Who hears a status change (Settings › Machines). */
   onStatus(listener: (status: WslServerStatus) => void): void
@@ -127,7 +120,6 @@ export function createDesktopWslServers(options: DesktopWslServersOptions): WslS
   return {
     manager,
     access,
-    chatServerOn: (distro) => (settingsOf(distro)?.chatServer ?? DEFAULT_WSL_CHAT_SERVER) === 'on',
     onConnected: (listener) => void connectedListeners.push(listener),
     onStatus: (listener) => void statusListeners.push(listener),
   }

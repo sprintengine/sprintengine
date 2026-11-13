@@ -262,12 +262,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   let wslServersForHosts: WslServers | null = null
   const hosts = createHostRegistry({
     readHostSettings: () => agentLaunchSettings.get().hosts,
-    chatServer: (distro) => {
+    server: (distro) => {
       const servers = wslServersForHosts
       if (!servers) return undefined
       const status = servers.manager.status(distro)
       return {
-        on: servers.chatServerOn(distro),
         state: status.state,
         ...(status.transport ? { transport: status.transport } : {}),
         ...((status.reason ?? status.transportReason) ? { reason: status.reason ?? status.transportReason } : {}),
