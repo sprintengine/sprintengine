@@ -585,7 +585,6 @@ export type MeshConversationListResult =
       ok: true
       conversations: MeshConversation[]
       access: MeshConversationAccess
-      capabilities: string[]
     }
   | { ok: false; code: string; message: string }
 

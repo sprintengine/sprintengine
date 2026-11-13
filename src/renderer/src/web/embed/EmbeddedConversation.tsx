@@ -68,7 +68,7 @@ function embedTransport(client: StudioClient): ConversationTransport {
     // The Studio it was let into, which is its own: no machine to name.
     get environment() {
       const id = client.welcome.environment.id
-      if (where?.id !== id) where = { id, label: null, lane: null }
+      if (where?.id !== id) where = { id, label: null, route: null }
       return where
     },
     subscribe: (input, cb) => parts.subscribe(keyed(input), cb),

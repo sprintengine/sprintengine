@@ -7,7 +7,11 @@ import {
   type StudioWebSocketConstructor,
 } from '../../../../packages/client-runtime/src/public'
 import type { StudioCapability } from '../../../../packages/studio-protocol/src/public'
-import { formatEnvironmentRoute, isEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
+import {
+  formatEnvironmentRoute,
+  isEnvironmentRoute,
+  parseEnvironmentRoute,
+} from '../../../../packages/studio-protocol/src/environment'
 import type { ElectronApi } from '../../../shared/electron-api'
 import type { EnvironmentEntry } from '../../../shared/environments'
 
@@ -44,6 +48,12 @@ export type PairedMachine = { id: string; machineName: string }
 /** The route a paired machine is reached by, as the environments bridge names it. */
 export function pairedRoute(connectionId: string): string {
   return formatEnvironmentRoute({ kind: 'tailnet', connection: connectionId })
+}
+
+/** The pairing a route reaches a paired desktop by; null for any other route, or none. */
+export function pairedConnectionOf(route: string | null): string | null {
+  const parsed = route ? parseEnvironmentRoute(route) : null
+  return parsed?.kind === 'tailnet' ? parsed.connection : null
 }
 
 /** A paired machine, as the environment this window asks. */

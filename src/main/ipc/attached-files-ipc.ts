@@ -1,6 +1,6 @@
 import type { IpcMain } from 'electron'
 
-import type { AttachedFilePreview } from '../../shared/attached-files'
+import type { AttachedFileBytes, AttachedFilePreview } from '../../shared/attached-files'
 import type { AttachedFiles } from '../attached-files'
 import { assertAppSender } from './ipc-sender'
 
@@ -17,6 +17,11 @@ export function registerAttachedFilesIpc(ipcMain: IpcMain, files: AttachedFiles)
   ipcMain.handle('attached-files:preview', async (event, path: unknown): Promise<AttachedFilePreview> => {
     assertAppSender(event)
     return files.preview(path)
+  })
+
+  ipcMain.handle('attached-files:read', async (event, path: unknown): Promise<AttachedFileBytes> => {
+    assertAppSender(event)
+    return files.read(path)
   })
 
   ipcMain.handle('attached-files:open', async (event, path: unknown): Promise<void> => {

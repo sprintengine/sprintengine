@@ -2055,6 +2055,8 @@ export function createConversationGatewayHost(
             const written = {
               ...(command.composedAt !== undefined ? { composedAt: command.composedAt } : {}),
               ...(command.confirmedStale ? { confirmedStale: true } : {}),
+              // The client's bubble id, echoed on the `user_message`.
+              ...(command.localTurnId ? { localTurnId: command.localTurnId } : {}),
             }
             // The mode the device's chat sends the turn in, as this machine's
             // own chat does; the runtime refuses `plan` for a provider that

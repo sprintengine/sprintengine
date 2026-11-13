@@ -215,6 +215,7 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'tours:reveal-request': EDITOR('push'),
   'attached-files:open': ATTACHED('invoke'),
   'attached-files:preview': ATTACHED('invoke'),
+  'attached-files:read': ATTACHED('invoke'),
   'attached-files:register': ATTACHED('invoke'),
   'studio-server:info': SERVER_PROCESS('invoke'),
   'studio-server:open-log': SERVER_PROCESS('invoke'),

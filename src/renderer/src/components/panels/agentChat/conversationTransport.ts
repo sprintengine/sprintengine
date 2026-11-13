@@ -1,11 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import { changePairedChat } from '../../../studio/pairedChats'
 
-import {
-  negotiateChatCapabilities,
-  type ChatCapabilities,
-  type ChatServerOffer,
-} from '../../../../../../packages/client-runtime/src/public'
+import { negotiateChatCapabilities, type ChatCapabilities } from '../../../../../../packages/client-runtime/src/public'
 import { watchWindowStudioWelcome, windowStudioWelcome } from '../../../studio/windowStudioClient'
 import { followWindowStudioPush } from '../../../studio/windowStudioPush'
 import type { EnvironmentId, StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
@@ -13,7 +8,7 @@ import type { EnvironmentId, StudioWelcomeFrame } from '../../../../../../packag
 import type { ChatServices } from './chatServices'
 import type { StudioTransportParts } from './studioChat'
 import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
-import { remotePullRequestHost, studioPullRequestHost, type PullRequestHost } from './pullRequestHost'
+import { studioPullRequestHost, type PullRequestHost } from './pullRequestHost'
 import { unwatchPullRequest as unwatchConversationPullRequest } from '../../workspace/useConversationPullRequests'
 import type {
   ConversationAttachmentInput,
@@ -56,34 +51,22 @@ import type {
   ConversationTurnDiffInput,
   ConversationTurnDiffResult,
 } from '../../../../../shared/conversation-runtime'
-import {
-  conciseConversationSendRequest,
-  parseConversationRevertAnswer,
-} from '../../../../../../packages/conversation-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import type { ConversationAddress } from '../../../../../../packages/studio-protocol/src/public'
 import type { UsageLimitProvider } from '../../../../../shared/usage-limits'
 import type { ConversationFileSearchEntry } from '../../../../../../packages/conversation-protocol/src/public'
-import type {
-  MeshConversationCommandResult,
-  MeshConversationKey,
-  MeshConversationLink,
-  MeshQueuedMessage,
-  MeshScheduledMessage,
-  MeshConversationUsageLimits,
-  MeshSubagent,
-  MeshUsageLimitResumeAction,
-} from '../../../../../shared/tailnet-mesh'
+import type { MeshUsageLimitResumeAction } from '../../../../../shared/tailnet-mesh'
 
 // Where a chat view's conversation lives. The view — its transcript, pending
 // dock, composer — is the same whether the conversation runs on this machine
-// or on a paired one; only the calls behind it differ. The local transport is
-// the window's Studio protocol client; a remote one is the Mesh's, which follows the
-// conversation over the tailnet from main.
+// or on another; only the calls behind it differ. Every transport is a client
+// of the Studio that holds the chat, over the Studio protocol: the window's
+// own, an SSH machine's or a paired desktop's (`pairedChat.ts`), over this
+// window's own client of it.
 //
 // What a transport can do is said by its capabilities, which every transport
 // reads from what the chat's server said (`negotiateChatCapabilities`): a
-// window's own Studio's welcome, a paired machine's lane, an embed's welcome.
+// window's own Studio's welcome, a paired machine's, an embed's.
 // None is a constant, and none is inferred from where the chat runs.
 //
 // A conversation on this machine is reached over the Studio protocol, through
@@ -103,11 +86,9 @@ type ConversationTransportResult =
  */
 export type ChatEnvironment = {
   /**
-   * The Studio's id (`welcome.environment.id`); for a paired desktop over the
-   * tailnet lane, the id that machine said of itself (`MeshConnection.environmentId`).
-   * Null where its server has not said one: before a welcome, or a paired
-   * build that does not say it. What the window and its shell reach of the
-   * chat's disk is asked of this (`useShellReach`).
+   * The Studio's id (`welcome.environment.id`). Null before its welcome. What
+   * the window and its shell reach of the chat's disk is asked of this
+   * (`useShellReach`).
    */
   // The one identity type an environment has (env-identity), never a second.
   readonly id: EnvironmentId | null
@@ -118,14 +99,13 @@ export type ChatEnvironment = {
    */
   readonly label: string | null
   /**
-   * How a paired desktop still on the tailnet lane is reached for what the
-   * lane serves beside the chat's own calls: its skills and MCP servers
-   * (`useRemoteExtensions`), the key its `/` list is kept under here (no
-   * folder of this disk names it), and the pane a fork it made opens as
-   * (`openPairedFork`). Null for every Studio on the protocol. Goes with the
-   * lane (design-lane-on-protocol).
+   * The route this window reaches the environment by (`tailnet:<pairing>`,
+   * `ssh:<machine>`, …: `formatEnvironmentRoute`); null for the window's own
+   * Studio. What is asked of that environment beside the chat's own calls (a
+   * paired desktop's skills and MCP servers, the pane a fork it made opens
+   * as) is asked by it.
    */
-  readonly lane: { connectionId: string; workspaceId: string; commandsKey: string } | null
+  readonly route: string | null
 }
 
 export type ConversationTransport = {
@@ -396,6 +376,8 @@ export type StudioTransportImplementation = {
   pullRequestHost?(key: ConversationKey): PullRequestHost
   /** What the person calls the machine (`ChatEnvironment.label`); absent for the window's own Studio. */
   label?: string
+  /** The route this window reaches it by (`ChatEnvironment.route`); absent for the window's own Studio. */
+  route?: string
 }
 
 /**
@@ -421,7 +403,7 @@ export function studioConversationTransport(
     },
     get environment() {
       const id = welcome()?.environment.id ?? null
-      if (where?.id !== id) where = { id, label: implementation.label ?? null, lane: null }
+      if (where?.id !== id) where = { id, label: implementation.label ?? null, route: implementation.route ?? null }
       return where
     },
   }
@@ -488,12 +470,8 @@ export type ChatForkInput = ConversationForkInput extends infer Fork
     : never
   : never
 
-/**
- * A fork made: where it is and what it was called, as a Studio answers
- * `conversation.fork`. A paired machine's lane says neither, so a fork made
- * there is found by its id in that machine's list (`openPairedFork`).
- */
-export type ChatForkResult = { ok: true; address?: ConversationAddress; name?: string } | { ok: false; message: string }
+/** A fork made: where it is and what it was called, as a Studio answers `conversation.fork`. */
+export type ChatForkResult = { ok: true; address: ConversationAddress; name: string } | { ok: false; message: string }
 
 const ConversationTransportContext = createContext<ConversationTransport>(localConversationTransport)
 
@@ -517,304 +495,4 @@ const readWelcome = () => {
 export function useConversationTransport(): ConversationTransport {
   useSyncExternalStore(watchWelcome, readWelcome, readWelcome)
   return useContext(ConversationTransportContext)
-}
-
-/**
- * What a paired machine's chat's command list is kept under in this window:
- * the chat itself, as no folder of this disk names it, so two of that
- * machine's chats in different folders never share a list.
- */
-export function remoteCommandsFolder(key: MeshConversationKey): string {
-  return `mesh:${key.connectionId}/${key.workspaceId}/${key.agentId}`
-}
-
-const commandResult = (result: MeshConversationCommandResult): ConversationTransportResult =>
-  result.ok ? { ok: true, ...(result.notice ? { notice: result.notice } : {}) } : { ok: false, message: result.message }
-
-/**
- * A conversation on a paired machine, over the Mesh. The key it was made for
- * is the one every call names: the local key a view passes carries this
- * machine's idea of a workspace root, which means nothing over there.
- * `onLink` receives the connection state main narrates beside the frames, and
- * `onQueued` what the machine holds for the conversation's turn to end, and
- * `onScheduled` what it keeps for a time, `onUsageLimits` what it knows of
- * its usage limits for it, and `onSubagents` which sub-agents the chat has.
- */
-export function createRemoteConversationTransport(input: {
-  key: MeshConversationKey
-  machineName: string
-  /**
-   * The id that machine's Studio said it is, read whenever the environment
-   * is; null until it has said one.
-   */
-  environmentId?: () => EnvironmentId | null
-  /**
-   * What the machine last said of itself and what this pairing may do there,
-   * read whenever the capabilities are; null before it has said anything.
-   */
-  offer?: () => Extract<ChatServerOffer, { via: 'paired-lane' }> | null
-  onLink?: (link: MeshConversationLink) => void
-  onQueued?: (messages: MeshQueuedMessage[]) => void
-  onScheduled?: (messages: MeshScheduledMessage[]) => void
-  onUsageLimits?: (said: MeshConversationUsageLimits) => void
-  onSubagents?: (subagents: MeshSubagent[]) => void
-  /** The machine recorded a pull request Create PR opened there as the chat's. */
-  onPullRequestRecorded?: () => void
-}): ConversationTransport {
-  const { key } = input
-  let said: { offer: ChatServerOffer | null; capabilities: ConversationTransportCapabilities } | null = null
-  const pullRequests = remotePullRequestHost(key, () => input.onPullRequestRecorded?.())
-  const lane = { connectionId: key.connectionId, workspaceId: key.workspaceId, commandsKey: remoteCommandsFolder(key) }
-  let where: ChatEnvironment | null = null
-  return {
-    // Read off what the machine last said of itself, each time asked: the
-    // pane hears its list again on a grant change or a reconnect.
-    get capabilities() {
-      const offer = input.offer?.() ?? null
-      if (said?.offer !== offer) said = { offer, capabilities: negotiateChatCapabilities(offer) }
-      return said.capabilities
-    },
-    // Named by what the person calls the machine, and by the id its Studio
-    // said, once it has: held while that id is, as views key memos on it.
-    get environment() {
-      const id = input.environmentId?.() ?? null
-      if (where?.id !== id) where = { id, label: input.machineName, lane }
-      return where
-    },
-    // Every step over there, under the chat's key there, whatever the view names.
-    pullRequestHost: () => pullRequests,
-    subscribe: (subscription, cb) =>
-      window.api.onMeshConversationSession({ key, turnLimit: subscription.turnLimit }, (frame) => {
-        if (frame.type === 'link') input.onLink?.(frame)
-        else if (frame.type === 'queued') input.onQueued?.(frame.messages)
-        else if (frame.type === 'scheduled') input.onScheduled?.(frame.messages)
-        else if (frame.type === 'usageLimits') input.onUsageLimits?.(frame)
-        else if (frame.type === 'subagents') input.onSubagents?.(frame.subagents)
-        // A chat's changes are read by the Diff tab, which follows for itself.
-        else if (frame.type === 'changes') return
-        else cb(frame)
-      }),
-    loadEarlier: (page) =>
-      window.api.meshConversationLoadEarlier({ key, beforeCursor: page.beforeCursor, turnLimit: page.turnLimit }),
-    toolDetail: (detail) => window.api.meshConversationToolDetail({ key, toolUseId: detail.toolUseId }),
-    readEvent: (read) => window.api.meshConversationEvent({ key, seq: read.seq, id: read.id }),
-    turnDiff: (diff) => window.api.meshConversationTurnDiff({ key, turnSeq: diff.turnSeq, path: diff.path }),
-    // The request goes as a chat here sends it: main puts its pictures and
-    // files in that machine's upload store first, names its skills by id and
-    // refuses in words a part the machine would drop. What only this
-    // machine's runtime reads stays here, and the bubble's id and the effort
-    // the lane says its own way (`ConversationLaneNotCarried`).
-    send: async (turn) => {
-      const {
-        sessionId: _sessionId,
-        commandId: _commandId,
-        commandFingerprint: _fingerprint,
-        origin: _origin,
-        subagentMessage: _subagentMessage,
-        localTurnId: _localTurnId,
-        reasoningEffort: _reasoningEffort,
-        ...request
-      } = turn
-      return commandResult(await window.api.meshConversationSend({ key, ...conciseConversationSendRequest(request) }))
-    },
-    // What it carries goes up first, as a send's does, and the machine keeps
-    // it with the message; main refuses it in words for one that would not.
-    queue: async ({ key: _viewKey, ...turn }) =>
-      commandResult(
-        await window.api.meshConversationSend({ key, ...conciseConversationSendRequest(turn), queue: true }),
-      ),
-    cancelQueued: async (held) =>
-      commandResult(await window.api.meshConversationCancelQueued({ key, queuedId: held.queuedId })),
-    searchMentions: async ({ query }) => {
-      const result = await window.api.meshConversationSearchFiles({ key, query })
-      return result.ok ? { ok: true, entries: result.entries } : { ok: false, message: result.message }
-    },
-    // Kept as this window keeps a list read here: under the chat's own key,
-    // never a folder of this disk's (`remoteCommandsFolder`).
-    listCommands: async ({ refresh }) => {
-      const result = await window.api.meshConversationCommands({ key, ...(refresh ? { refresh: true } : {}) })
-      if (!result.ok) throw new Error(result.message)
-      return {
-        cli: result.cli,
-        cwd: remoteCommandsFolder(key),
-        commands: result.commands,
-        fetchedAt: result.fetchedAt,
-        ...(result.error ? { error: result.error } : {}),
-      }
-    },
-    scheduleSend: async (scheduled) =>
-      commandResult(
-        await window.api.meshConversationScheduleSend({
-          key,
-          message: scheduled.message,
-          sendAt: scheduled.sendAt,
-          ...(scheduled.untilLimitReset ? { untilLimitReset: scheduled.untilLimitReset } : {}),
-        }),
-      ),
-    sendScheduledNow: async (scheduled) =>
-      commandResult(await window.api.meshConversationSendScheduledNow({ key, scheduledId: scheduled.scheduledId })),
-    cancelScheduled: async (scheduled) =>
-      commandResult(await window.api.meshConversationCancelScheduled({ key, scheduledId: scheduled.scheduledId })),
-    usageLimitResume: async (resume) =>
-      commandResult(
-        await window.api.meshConversationUsageLimitResume({
-          key,
-          action: resume.action,
-          ...(resume.always ? { always: true } : {}),
-        }),
-      ),
-    unwatchPullRequest: async (asked) => {
-      // The pull request's, on that machine's Studio, asked by this window itself.
-      const answer = await changePairedChat({ id: key.connectionId, machineName: input.machineName }, key.workspaceId, {
-        kind: 'unwatch-pull-request',
-        agentId: key.agentId,
-        url: asked.url,
-      })
-      return answer.ok ? { ok: true } : { ok: false, message: answer.message }
-    },
-    interrupt: async () => commandResult(await window.api.meshConversationInterrupt({ key })),
-    restartSession: async () => commandResult(await window.api.meshConversationRestartSession({ key })),
-    // Offered only for an action the pane's session lists, which it does
-    // where the machine takes the command; a sign-in never is.
-    mcpServerAction: async (asked) => {
-      if (asked.action === 'sign-in')
-        return {
-          ok: false,
-          message: `Sign in to ${asked.serverId} on ${input.machineName}: its agent waits for the sign-in there.`,
-        }
-      const done = await window.api.meshConversationMcpServerAction({
-        key,
-        serverId: asked.serverId,
-        action: asked.action,
-      })
-      return done.ok ? { ok: true } : { ok: false, message: done.message }
-    },
-    // Offered only where the machine takes it and lists the chat's provider
-    // as able (the pane's session says `stopSubagent`).
-    stopSubagent: async (input) =>
-      commandResult(await window.api.meshConversationStopSubagent({ key, toolUseId: input.toolUseId })),
-    // Offered only where the machine takes it and lists the chat's provider
-    // as able (the pane's session says `messageSubagent`).
-    messageSubagent: async (input) =>
-      commandResult(
-        await window.api.meshConversationMessageSubagent({
-          key,
-          toolUseId: input.toolUseId,
-          message: input.message,
-        }),
-      ),
-    // Offered only where the machine takes it and lists the chat's provider as
-    // able (the pane's session says `handoff`). The file is written over
-    // there, so its path means nothing here.
-    handoff: async () => {
-      const handed = await window.api.meshConversationHandoff({ key })
-      return handed.ok ? { ok: true, path: '' } : { ok: false, message: handed.message }
-    },
-    // Offered only where the machine takes it and lists the chat's provider
-    // as able (the pane's session says `rewind`).
-    rewind: async (turn) => {
-      const rewound = await window.api.meshConversationRewind({ key, turnSeq: turn.turnSeq })
-      return rewound.ok ? { ok: true } : { ok: false, message: rewound.message }
-    },
-    // Used only where the machine reverts files itself (the pane turns
-    // `checkpointRevert` on). The paths are that machine's checkout's, shown
-    // in the dialog and sent back as they came, never looked for here.
-    revert: async (turn) => {
-      const result = await window.api.meshConversationRevert({
-        key,
-        turnSeq: turn.turnSeq,
-        ...(turn.undo ? { undo: true } : {}),
-        ...(turn.confirmed ? { confirmed: true, files: turn.files ?? [] } : {}),
-      })
-      const answer = parseConversationRevertAnswer(result.data)
-      if (!result.ok)
-        return { ok: false, message: result.message, ...(answer && 'changed' in answer ? { changed: true } : {}) }
-      if (!answer || 'changed' in answer)
-        return { ok: false, message: `${input.machineName} answered with files this build cannot read.` }
-      return { ok: true, ...answer }
-    },
-    // Each of these offered only where the machine takes it and lists the
-    // chat's provider as able (the pane's session says `fork`, `sideQuestion`,
-    // `contextBreakdown`). Every one names the chat by its ids over there; the
-    // session id a view passes is the list's, which means nothing to them.
-    fork: async (fork) => {
-      const forked = await window.api.meshConversationFork({
-        key,
-        fork:
-          fork.side === 'user'
-            ? { kind: 'fork', newAgentId: fork.newAgentId, side: 'user', turnSeq: fork.turnSeq }
-            : { kind: 'fork', newAgentId: fork.newAgentId, side: 'assistant', turnId: fork.turnId },
-      })
-      return forked.ok ? { ok: true } : { ok: false, message: forked.message }
-    },
-    askSideQuestion: (question) =>
-      window.api.meshConversationSideQuestion({
-        key,
-        requestId: question.requestId,
-        question: question.question,
-        ...(question.history?.length ? { history: question.history } : {}),
-      }),
-    cancelSideQuestion: (question) =>
-      window.api.meshConversationCancelSideQuestion({ key, requestId: question.requestId }),
-    readContextBreakdown: () => window.api.meshConversationContextBreakdown({ key }),
-    respond: async (response) => {
-      if (response.answers && response.approved)
-        return commandResult(
-          await window.api.meshConversationAnswerQuestion({
-            key,
-            requestId: response.requestId,
-            answers: response.answers,
-          }),
-        )
-      // "Always" is offered only where the machine saves the rule
-      // (`permanentApprovals`); main refuses it in words for one that would not.
-      const decision = !response.approved
-        ? 'deny'
-        : response.decision === 'always' || response.decision === 'conversation'
-          ? response.decision
-          : 'once'
-      return commandResult(
-        await window.api.meshConversationResolveApproval({ key, requestId: response.requestId, decision }),
-      )
-    },
-    // The CLI's own mode rides beside its preset where the chat's session
-    // lists any, which the pane does only for a machine that runs them.
-    setPermissionPreset: async (change) =>
-      commandResult(
-        await window.api.meshConversationSetPermissionPreset({
-          key,
-          preset: change.permissionPreset,
-          ...(change.permissionMode ? { permissionMode: change.permissionMode } : {}),
-        }),
-      ),
-    // Offered only while the machine advertises model switching; the pane turns
-    // `modelSwitch` on from its list, and the chip stays locked without it.
-    setModel: async (change) =>
-      commandResult(await window.api.meshConversationSetModel({ key, modelId: change.modelId })),
-    // That machine keeps the chat's effort and sends each turn at it, so the
-    // send leaves it out.
-    setReasoningEffort: async (change) =>
-      commandResult(
-        await window.api.meshConversationSetReasoningEffort({
-          key,
-          ...(change.effort ? { effort: change.effort } : {}),
-        }),
-      ),
-    toolImage: async (image) => {
-      const result = await window.api.meshConversationToolImage({ key, toolUseId: image.toolUseId })
-      return result.ok
-        ? { ok: true, src: result.dataUrl }
-        : { ok: false, unsupported: result.code === 'images_unsupported', message: result.message }
-    },
-    attachment: async (stored) => {
-      const result = await window.api.meshConversationAttachment({ key, ref: stored.ref })
-      const picture = result.ok ? /^data:([^;,]+);base64,(.*)$/su.exec(result.dataUrl) : null
-      return picture
-        ? { ok: true, mediaType: picture[1]!, dataBase64: picture[2]! }
-        : { ok: false, message: result.ok ? 'The picture could not be read.' : result.message }
-    },
-    // A chat followed from a paired machine still reads this window's Studio
-    // for providers, files, plans and command lists, as it always has.
-    services: windowServices,
-  }
 }

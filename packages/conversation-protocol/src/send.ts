@@ -70,8 +70,8 @@ export type ConversationSendRequest<Picture = ConversationSendUpload> = {
  * - `by-id`: by its id only; the desktop resolves it against its own folder.
  * - `when-set`: `true` or left out.
  * - `unless-default`: left out when it is the default.
- * - `not-carried`: the lane has its own way to say it — a device's bubble is
- *   its command id, and a chat's effort is the lane's `setReasoningEffort`.
+ * - `not-carried`: the lane has its own way to say it — a chat's effort is
+ *   the lane's `setReasoningEffort`.
  */
 const LANE_CARRIAGE = {
   message: 'as-is',
@@ -84,7 +84,7 @@ const LANE_CARRIAGE = {
   queue: 'when-set',
   confirmedStale: 'when-set',
   mode: 'unless-default',
-  localTurnId: 'not-carried',
+  localTurnId: 'as-is',
   reasoningEffort: 'not-carried',
 } as const satisfies Record<
   keyof ConversationSendRequest,

@@ -9,7 +9,7 @@ import type {
   FolderOpenTargetAvailability,
   ProcessMetricsSnapshot,
 } from '../../shared/electron-api'
-import type { AttachedFilePreview } from '../../shared/attached-files'
+import type { AttachedFileBytes, AttachedFilePreview } from '../../shared/attached-files'
 
 export const filesystemApi = {
   getPathForFile: (file: unknown): string => {
@@ -34,6 +34,7 @@ export const filesystemApi = {
   previewAttachedFile: (path: string): Promise<AttachedFilePreview> =>
     ipcRenderer.invoke('attached-files:preview', path),
   openAttachedFile: (path: string): Promise<void> => ipcRenderer.invoke('attached-files:open', path),
+  readAttachedFile: (path: string): Promise<AttachedFileBytes> => ipcRenderer.invoke('attached-files:read', path),
   // A desktop window reads a dropped file's own path; only a browser uploads.
   uploadFiles: async (): Promise<string[]> => {
     throw new Error('Uploading is the web client’s; a desktop window reads a dropped file by its path.')
@@ -63,6 +64,7 @@ export const filesystemApi = {
   | 'attachFile'
   | 'previewAttachedFile'
   | 'openAttachedFile'
+  | 'readAttachedFile'
   | 'uploadFiles'
   | 'logDiagnostic'
   | 'openDiagnosticsLogsFolder'

@@ -317,6 +317,15 @@ export function parseConversationClientMessage(value: unknown): ConversationClie
     }
     // A steer is read as the send it rides on, and is never one held for
     // later: the two ask for opposite things.
+    // The client's id for its optimistic bubble, echoed on the `user_message`
+    // the send becomes, so the bubble is replaced rather than drawn twice.
+    if (command.kind === 'send' && command.localTurnId !== undefined) {
+      if (!id(command.localTurnId)) return null
+      const localTurnId = command.localTurnId
+      const frame = parseConversationClientMessage({ ...value, command: { ...command, localTurnId: undefined } })
+      if (!frame || frame.type !== 'command' || frame.command.kind !== 'send') return null
+      return { ...frame, command: { ...frame.command, localTurnId } }
+    }
     if (command.kind === 'send' && command.steer !== undefined) {
       if (command.steer !== true || command.queue !== undefined) return null
       const frame = parseConversationClientMessage({ ...value, command: { ...command, steer: undefined } })

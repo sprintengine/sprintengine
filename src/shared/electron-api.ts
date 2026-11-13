@@ -1,5 +1,5 @@
 import type { ClientCapability } from './client-capabilities'
-import type { AttachedFilePreview } from './attached-files'
+import type { AttachedFileBytes, AttachedFilePreview } from './attached-files'
 import type { ChatLink } from './deep-link'
 import type { AgentNotificationMode } from './agent-notifications'
 import type { ConversationChangesSelection } from '../../packages/conversation-protocol/src/checkoutChanges'
@@ -736,6 +736,8 @@ export type ElectronApi = {
   attachFile: (file: unknown) => string
   /** What an attached path is now, the system's thumbnail of it, and whether a click may open it. */
   previewAttachedFile: (path: string) => Promise<AttachedFilePreview>
+  /** An attached file's bytes, for a chat on another machine to take with a message (registered paths only). */
+  readAttachedFile: (path: string) => Promise<AttachedFileBytes>
   /**
    * Open an attached file in its default app. Refuses, with the reason, a path
    * that was not attached and a file that would run as a program when opened.

@@ -11,6 +11,7 @@
 // AgentChatView.test.ts so the streaming/approval/interrupt/failure states have
 // node-level coverage without rendering.
 
+import { pairedConnectionOf } from '../../studio/environmentStudio'
 import { parseMachinePath } from '../../../../shared/machine-paths'
 import { workspaceHostIdOf } from '../../../../shared/execution-host'
 import { withoutStudioNoticePrefix } from '../../../../shared/studio-notice'
@@ -419,12 +420,6 @@ const COMPOSER_CLASS = 'max-h-[280px] min-h-[40px] w-full'
 // appears when there is one to repeat.
 type ComposerActionError = string | { message: string; retry: QueuedTurn }
 
-// A message's words as the runtime records them: one kind of line break, no
-// space at either end.
-function steeredText(text: string): string {
-  return text.replace(/\r\n?/gu, '\n').trim()
-}
-
 function composerErrorMessage(error: ComposerActionError | null): string | null {
   return typeof error === 'string' ? error : (error?.message ?? null)
 }
@@ -723,10 +718,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Steers whose `user_message` is in the conversation while their send has
   // not settled yet.
   const landedSteerIdsRef = useRef(new Set<string>())
-  // A steer to a chat on a paired machine has no echoed id to land by: its
-  // words, and how many of the chat's messages were already in when it went,
-  // are what its own message is known by when it arrives.
-  const steerLandingRef = useRef<{ id: string; text: string; before: number } | null>(null)
   // The composer's right-click menu (1793); null when closed. Opening it snapshots
   // the click point, the field's selection, and the clipboard, so the menu's
   // enable states describe the moment the user asked for it.
@@ -1479,12 +1470,11 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       // that began when the chat opened; the turn's carries on from there.
       setTurnRequestedAt(inPlace ? startupSince : Date.now())
       const localTurnId = `user-${userTurns.length}-${Date.now()}`
-      // An optimistic bubble only where the runtime echoes its id back on the
-      // `user_message` that replaces it. A remote send has no such id, so its
-      // bubble is the host's own event, a moment later. It goes up before the
-      // session is made sure of: a chat's first message otherwise waited out
-      // its CLI starting before it showed at all.
-      if (transport.capabilities.optimisticTurns) {
+      // An optimistic bubble, which the `user_message` echoing its id
+      // replaces. It goes up before the session is made sure of: a chat's
+      // first message otherwise waited out its CLI starting before it showed
+      // at all.
+      {
         pendingUserScrollIdRef.current = `user:${localTurnId}`
         if (inPlace) animatedRowIds.current.add(`user:${localTurnId}`)
         setUserTurns((current) => [
@@ -2238,19 +2228,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     const text = turn.text.trim()
     const files = attachedFilesOf(metadata.files)
     const localTurnId = `user-${userTurns.length}-${Date.now()}`
-    // An optimistic bubble only where the runtime echoes its id back, as for
-    // any send: a paired machine's chat draws the message from its own event.
-    const optimistic = transport.capabilities.optimisticTurns
     setActionError(null)
     setSteeringTurnId(localTurnId)
-    steerLandingRef.current = optimistic
-      ? null
-      : {
-          id: localTurnId,
-          text: steeredText(text),
-          before: shapeEntries.filter((entry) => entry.kind === 'user' && entry.seq !== undefined).length,
-        }
-    if (optimistic) {
+    // An optimistic bubble, which the `user_message` echoing its id replaces.
+    {
       pendingUserScrollIdRef.current = `user:${localTurnId}`
       setUserTurns((current) => [
         ...current,
@@ -2269,24 +2250,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // The send settles only when the turn the steer opened does, so a failure
     // can arrive after the message was already written to the conversation.
     // Queueing that one again would send it twice; only a message that never
-    // landed goes back to the head of the queue. Where the landing cannot be
-    // seen (no echoed id: a paired machine, which holds a steer its turn
-    // could not take for the turn's end itself), a refused one goes back to
-    // the composer instead, for the person to send again or not.
+    // landed goes back to the head of the queue.
     const requeue = (message: string) => {
       setActionError(message)
       if (landedSteerIdsRef.current.has(localTurnId)) return
-      if (!optimistic) {
-        setDraft((current) => restoreRefusedText(current, turn.text))
-        setDraftMetadata((current) => ({
-          skillIds: [...new Set([...turn.metadata.skillIds, ...current.skillIds])],
-          mentions: [...turn.metadata.mentions, ...current.mentions],
-          files: [...new Set([...turn.metadata.files, ...current.files])],
-        }))
-        if (turn.attachments.length)
-          setAttachments((current) => [...turn.attachments, ...current].slice(0, MAX_ATTACHMENTS_PER_TURN))
-        return
-      }
       setUserTurns((current) => current.filter((entry) => entry.id !== localTurnId))
       putBackQueued(turn)
     }
@@ -2311,7 +2278,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       requeue(err instanceof Error ? err.message : 'Could not send the message.')
     } finally {
       landedSteerIdsRef.current.delete(localTurnId)
-      if (steerLandingRef.current?.id === localTurnId) steerLandingRef.current = null
       setSteeringTurnId((current) => (current === localTurnId ? null : current))
     }
   }
@@ -2322,13 +2288,9 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // until its send settles, so a late failure knows the message is already in.
   useEffect(() => {
     if (steeringTurnId === null) return
-    const landing = steerLandingRef.current?.id === steeringTurnId ? steerLandingRef.current : null
-    const landed = landing
-      ? shapeEntries
-          .filter((entry) => entry.kind === 'user' && entry.seq !== undefined)
-          .slice(landing.before)
-          .some((entry) => entry.kind === 'user' && steeredText(entry.text) === landing.text)
-      : shapeEntries.some((entry) => entry.kind === 'user' && entry.id === steeringTurnId && entry.seq !== undefined)
+    const landed = shapeEntries.some(
+      (entry) => entry.kind === 'user' && entry.id === steeringTurnId && entry.seq !== undefined,
+    )
     if (!landed) return
     landedSteerIdsRef.current.add(steeringTurnId)
     setSteeringTurnId(null)
@@ -3205,19 +3167,21 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       (clientSupports('drag-paths') && transport.capabilities.attachFiles))
 
   // The inventory is the window's own Studio's, except for a paired desktop's
-  // chat on the tailnet lane, which that machine lists over the lane.
-  const laneSkills = useMemo(
+  // chat, which that machine lists for the chat's project there.
+  const pairedConnection = pairedConnectionOf(environment.route)
+  const pairedWorkspaceId = pairedConnection ? (hostSession?.workspaceId ?? null) : null
+  const pairedSkills = useMemo(
     () =>
-      environment.lane
+      pairedConnection && pairedWorkspaceId
         ? {
-            connectionId: environment.lane.connectionId,
-            workspaceId: environment.lane.workspaceId,
+            connectionId: pairedConnection,
+            workspaceId: pairedWorkspaceId,
             ...(environment.label ? { machineName: environment.label } : {}),
           }
         : null,
-    [environment],
+    [pairedConnection, pairedWorkspaceId, environment.label],
   )
-  const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !laneSkills)
+  const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !pairedSkills)
   // Held from render to render, as the "+" menu that takes them is memoized:
   // a list rebuilt each render redrew the menu on every keystroke and token.
   const attachedSkills = useMemo(
@@ -3261,7 +3225,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             mcpCli: chatCli,
             mcpPickable: false,
             // A chat on a paired machine lists that machine's.
-            ...(laneSkills ? { remote: laneSkills } : {}),
+            ...(pairedSkills ? { remote: pairedSkills } : {}),
             // A live chat can reconnect its servers, switch them, and sign in
             // to one, as far as its CLI lets it; one on a paired machine as
             // far as that machine takes it, which its session says.
@@ -3282,7 +3246,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       attachedSkills,
       setAttachedSkills,
       chatCli,
-      laneSkills,
+      pairedSkills,
       runMcpServerAction,
       sessionId,
       mcpServerActions,
@@ -3349,7 +3313,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     chatCli,
     localCommands
       ? workspaceRoot
-      : ((commandSource ? environment.lane?.commandsKey : undefined) ?? binding.sessionRoot ?? null),
+      : (binding.sessionRoot ?? null),
     {
       appCommands,
       discover: localCommands || Boolean(commandSource),
@@ -3370,7 +3334,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // The type-ahead reads this machine's inventory, and a remote chat's that
     // machine's, as its "+" does.
     skillsEnabled: supportsSkills,
-    remoteSkills: laneSkills,
+    remoteSkills: pairedSkills,
     // A file mention names a file in the chat's folder: on this machine's
     // disk, or, for a remote chat, in its folder over there, searched there.
     mentionsEnabled: transport.capabilities.mentions,
@@ -3647,7 +3611,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const permissionsEditable =
     operate &&
     !isSubagent &&
-    (transport.capabilities.reportsPreset || session?.permissionPreset !== undefined) &&
     Boolean(capabilities?.approvals || capabilities?.permissionPresets?.length)
   const presetRefusals = chatPermissionRefusals({
     cli: chatCli,
