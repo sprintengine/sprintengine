@@ -20,6 +20,8 @@ import {
 import type { CliRuntimeOption } from '../../ui/CliModelPicker'
 import type { ChatReadiness } from './chatStates'
 import { useStudioChatHeld } from './chatServerHeld'
+import { usePullRequestsOfConversation } from '../../workspace/useConversationPullRequests'
+import { useLocalServersOfConversation } from '../../workspace/useLocalServers'
 import { useWorkspaceMachineRef } from '../../../hooks/useMachineIdentity'
 
 // What a chat view is bound to besides its transport: the agent fields it reads
@@ -195,6 +197,20 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
     [workspaceId, agentId, workingRoot],
   )
   const held = useStudioChatHeld(heldKey)
+  // The pull requests the chat opened and the local servers its agents
+  // started, as the window's Studio lists them: the chat's server's lists, as
+  // a paired chat's are its machine's. Its branch and changes are read from
+  // its checkout through the window (`useConversationStripFacts`).
+  const chatRef = useMemo(
+    () => (agent?.conversation ? { workspaceId, agentId } : null),
+    [agent?.conversation, workspaceId, agentId],
+  )
+  const pullRequests = usePullRequestsOfConversation(chatRef)
+  const localServers = useLocalServersOfConversation(chatRef)
+  const listed = useMemo(
+    () => ({ branch: null, worktree: false, files: null, pullRequests, localServers }),
+    [pullRequests, localServers],
+  )
   return useMemo(
     () =>
       agent?.conversation
@@ -208,9 +224,10 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
             recordUserMessage,
             rememberModel,
             ...held,
+            listed,
             ...pendingGate,
           }
         : null,
-    [agent, update, workspace, recordUserMessage, rememberModel, held, pendingGate],
+    [agent, update, workspace, recordUserMessage, rememberModel, held, listed, pendingGate],
   )
 }

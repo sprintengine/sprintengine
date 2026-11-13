@@ -379,7 +379,7 @@ export default function RemoteConversationPanel({
         // stops saying it is watched without waiting for the sidebar's read.
         ...(unwatchPullRequest
           ? {
-              unwatchPullRequest: async (input: { url: string }) => {
+              unwatchPullRequest: async (input: Parameters<typeof unwatchPullRequest>[0]) => {
                 const result = await unwatchPullRequest(input)
                 if (result.ok) setListVersion((version) => version + 1)
                 return result

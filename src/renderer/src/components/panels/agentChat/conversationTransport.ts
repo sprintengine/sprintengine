@@ -11,7 +11,8 @@ import type { StudioWelcomeFrame } from '../../../../../../packages/studio-proto
 
 import type { ChatServices } from './chatServices'
 import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
-import { remotePullRequestHost, type PullRequestHost } from './pullRequestHost'
+import { remotePullRequestHost, studioPullRequestHost, type PullRequestHost } from './pullRequestHost'
+import { unwatchPullRequest as unwatchConversationPullRequest } from '../../workspace/useConversationPullRequests'
 import type {
   ConversationAttachmentInput,
   ConversationAttachmentResult,
@@ -105,8 +106,11 @@ export type ConversationTransport = {
    * folder (`remoteCommandsFolder`): no folder of this disk names it.
    */
   commandsFolder?: string
-  /** Where a remote chat's Create PR does its work, used where `capabilities.hostPullRequests` is. */
-  pullRequestHost?: PullRequestHost
+  /**
+   * Where the chat's Create PR does its work: the server it runs on, in its
+   * own checkout there. Used where `capabilities.hostPullRequests` is.
+   */
+  pullRequestHost?(key: ConversationKey): PullRequestHost
   capabilities: ConversationTransportCapabilities
   /**
    * The environment the chat runs in, by its Studio's id
@@ -154,12 +158,11 @@ export type ConversationTransport = {
   /** Take back a message that server holds, by its id there. */
   cancelQueued?(input: { key: ConversationKey; queuedId: string }): Promise<ConversationTransportResult>
   /**
-   * Stop the machine the chat runs on watching one of its pull requests
-   * (`pullRequests.unwatch` on its Studio). Absent here, where the window's own
-   * Studio keeps the watch. A machine whose Studio does not take it is refused
-   * in words.
+   * Stop the server the chat runs on watching one of its pull requests
+   * (`pullRequests.unwatch` on its Studio). A server whose Studio does not
+   * take it is refused in words.
    */
-  unwatchPullRequest?(input: { url: string }): Promise<ConversationTransportResult>
+  unwatchPullRequest?(input: { key: ConversationKey; url: string }): Promise<ConversationTransportResult>
   /**
    * Have the server the chat runs on keep a message and send it at `sendAt`
    * (epoch ms), or when `untilLimitReset`'s usage limit resets; answered once
@@ -414,6 +417,11 @@ const windowConversationCalls: Omit<ConversationTransport, 'capabilities' | 'env
   cancelSideQuestion: (input) => localParts().cancelSideQuestion(input),
   readContextBreakdown: (input) => localParts().readContextBreakdown(input),
   queue: (input) => localParts().queue(input),
+  unwatchPullRequest: async ({ key, url }) => {
+    const stopped = await unwatchConversationPullRequest({ workspaceId: key.workspaceId, agentId: key.agentId }, url)
+    return stopped.ok ? { ok: true } : { ok: false, message: stopped.message }
+  },
+  pullRequestHost: (key) => studioPullRequestHost({ workspaceId: key.workspaceId, agentId: key.agentId }),
   cancelQueued: (input) => localParts().cancelQueued(input),
   scheduleSend: (input) => localParts().scheduleSend(input),
   sendScheduledNow: (input) => localParts().sendScheduledNow(input),
@@ -501,6 +509,7 @@ export function createRemoteConversationTransport(input: {
 }): ConversationTransport {
   const { key } = input
   let said: { offer: ChatServerOffer | null; capabilities: ConversationTransportCapabilities } | null = null
+  const pullRequests = remotePullRequestHost(key, () => input.onPullRequestRecorded?.())
   return {
     kind: 'remote',
     machineName: input.machineName,
@@ -515,7 +524,8 @@ export function createRemoteConversationTransport(input: {
     environmentId: null,
     remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId, machineName: input.machineName },
     commandsFolder: remoteCommandsFolder(key),
-    pullRequestHost: remotePullRequestHost(key, () => input.onPullRequestRecorded?.()),
+    // Every step over there, under the chat's key there, whatever the view names.
+    pullRequestHost: () => pullRequests,
     subscribe: (subscription, cb) =>
       window.api.onMeshConversationSession({ key, turnLimit: subscription.turnLimit }, (frame) => {
         if (frame.type === 'link') input.onLink?.(frame)

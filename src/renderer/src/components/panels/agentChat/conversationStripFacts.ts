@@ -114,10 +114,9 @@ export function useConversationStripFacts({
       dispatchFileReveal({ workspaceId, path: checkout })
   }, [checkout, folderPath, openPaneTab, workspaceId])
 
-  // A chat on a paired machine has no checkout here; its machine names the
-  // branch in its list, and there is no explorer here to open it in.
-  const shownBranch =
-    checkout && branchName ? branchName : transport.kind === 'remote' ? (listed?.branch ?? null) : null
+  // A chat whose checkout the window does not read (a paired machine's) has
+  // its branch named by its server's list, and no explorer here to open it in.
+  const shownBranch = checkout && branchName ? branchName : (listed?.branch ?? null)
   const shownWorktree = checkout && branchName ? inWorktree : (listed?.worktree ?? false)
   const onOpenBranch = checkout && branchName && filesEnabled && folderPath ? openFiles : null
   const branch = useMemo<ChatPanelBranch | null>(
@@ -127,8 +126,8 @@ export function useConversationStripFacts({
   )
 
   const counts = useCheckoutChanges(checkout, NO_PULL_REQUESTS, 'conversation-strip')
-  // A remote chat's counts are its machine's.
-  const remoteFiles = transport.kind === 'remote' ? (listed?.files ?? null) : null
+  // Counts its server lists (a paired machine's) where the window reads none itself.
+  const remoteFiles = listed?.files ?? null
   const remoteMarks = remoteFiles ? changedFileMarks(remoteFiles) : null
   const localChanges = counts.hasCounts && counts.marks && counts.files ? counts : null
   const remoteChanged = remoteFiles && remoteMarks && (remoteMarks.plus > 0 || remoteMarks.minus > 0)
