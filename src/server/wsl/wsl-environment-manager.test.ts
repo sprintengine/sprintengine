@@ -503,21 +503,11 @@ for (const transport of ['auto', 'stdio'] as const)
       (error: unknown) => (error as { code?: string }).code ?? 'closed',
     )
     access.revokeWindow('window-1-1')
-    if (transport === 'auto') assert.equal(await ended, 'revoked')
-    else {
-      // Through the stdio bridge the server's close is not carried back
-      // promptly (the bridge holds the half-closed socket): the window learns
-      // late, but the server has already let it go, and answers it nothing.
-      const answered = await Promise.race([
-        doomed.request('conversation.list', {}).then(
-          () => 'answered',
-          () => 'refused',
-        ),
-        new Promise((resolve) => setTimeout(() => resolve('nothing'), 2_000)),
-      ])
-      assert.notEqual(answered, 'answered')
-      doomed.close()
-    }
+    // Promptly on both: the stdio bridge ends when the server ends its side.
+    assert.equal(
+      await Promise.race([ended, new Promise((resolve) => setTimeout(() => resolve('still open'), 5_000))]),
+      'revoked',
+    )
 
     // A device this desktop relays: listed by its environment id, its grant
     // cut to what it was minted with, never an owner, never a terminal.
