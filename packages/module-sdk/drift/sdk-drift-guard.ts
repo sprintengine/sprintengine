@@ -333,7 +333,11 @@ function expectType<_T extends true>(): void {}
 
 // Exact mirrors (any structural difference, including optional-property
 // drift, is a failure).
-expectType<IsExact<AppCapabilityManifest, SdkCapabilityManifest>>()
+// The manifest crosses the Studio protocol, which names a host capability as
+// any string (the SDK's `HostCapability` is open too: `string & {}`); every
+// other member is held exactly.
+expectType<IsExact<Omit<AppCapabilityManifest, 'requires'>, Omit<SdkCapabilityManifest, 'requires'>>>()
+expectType<Extends<NonNullable<SdkCapabilityManifest['requires']>, NonNullable<AppCapabilityManifest['requires']>>>()
 expectType<IsExact<AppModuleEntry, SdkModuleEntry>>()
 expectType<IsExact<AppModuleSignature, SdkModuleSignature>>()
 expectType<IsExact<AppModuleFileDigests, SdkModuleFileDigests>>()

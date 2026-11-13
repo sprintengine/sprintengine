@@ -8,6 +8,8 @@ import { afterEach, test } from 'vitest'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import { readModuleOverridesSync } from '../module-host/enablement-store'
 import { createModuleLifecycle, liveModuleIds, summarizeModules, type ModuleLifecycleView } from './module-lifecycle'
+import { createModuleRegistryMirror } from './registry-mirror'
+import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 
 // The lifecycle's own rules: which switches apply at once, how a module is
 // listed, and that switches arriving together are each kept. Its whole path
@@ -16,6 +18,15 @@ import { createModuleLifecycle, liveModuleIds, summarizeModules, type ModuleLife
 const dirs: string[] = []
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+/** A kernel that loaded nothing, and a registry nobody reported. */
+const quiet = () => ({
+  launchSession: () => ({
+    snapshot: { loaded: new Set<string>(), manifestOnly: new Set<string>(), errors: new Map<string, string>() },
+    mcpTools: new Map<string, string[]>(),
+  }),
+  registry: createModuleRegistryMirror(),
 })
 
 const manifest = (id: string, extra: Partial<CapabilityManifest> = {}): CapabilityManifest => ({
@@ -83,6 +94,7 @@ test('switches sent together are each kept, applied in order, and null is back t
       return { ok: true }
     },
     changed: () => undefined,
+    ...quiet(),
   })
   await Promise.all([
     lifecycle.setEnabled('a', false),
@@ -105,10 +117,36 @@ test('a switch that cannot be applied now is still kept for the next start, and 
     view: () => null,
     applyEnablement: async () => ({ ok: false, message: 'Scheduled agents could not start.' }),
     changed: () => undefined,
+    ...quiet(),
   })
   assert.deepEqual(await lifecycle.setEnabled('scheduled-agents', true), {
     ok: false,
     message: 'Scheduled agents could not start.',
   })
   assert.deepEqual(readModuleOverridesSync(dataDir), { 'scheduled-agents': true })
+})
+
+test('what a window sets for the modules is kept for their main halves, and a registry it reports is held to its shape', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'module-lifecycle-'))
+  dirs.push(dataDir)
+  const registry = createModuleRegistryMirror()
+  const lifecycle = createModuleLifecycle({
+    dataDir,
+    moduleRoot: () => join(dataDir, 'modules'),
+    view: () => null,
+    applyEnablement: async () => ({ ok: true }),
+    changed: () => undefined,
+    ...quiet(),
+    registry,
+  })
+  lifecycle.setAppState({ 'module:deck': { theme: 'dark' } })
+  assert.deepEqual(moduleAppStateMirrorFor(dataDir).get('deck'), { theme: 'dark' })
+  assert.equal(lifecycle.reportRegistry({ modules: 'none' }).ok, false)
+  assert.equal(registry.read(), null, 'a malformed report is refused and nothing is kept')
+  assert.deepEqual(lifecycle.reportRegistry({ capturedAt: 1_700_000_000_000, channel: 'production', modules: [] }), {
+    ok: true,
+  })
+  assert.equal(registry.read()?.channel, 'production')
+  assert.deepEqual(await lifecycle.installed(), { modules: [], rejected: [] }, 'nothing installed, nothing listed')
+  assert.deepEqual(await lifecycle.rendererEntries(), { entries: [], failures: {} })
 })

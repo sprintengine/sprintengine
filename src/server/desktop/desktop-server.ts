@@ -39,7 +39,6 @@ import {
   type MeshConnection,
   type MeshMachineReachability,
 } from '../../shared/tailnet-mesh'
-import type { ModuleRegistrySnapshot } from '../../shared/modules/registry-snapshot'
 import { SERVER_EXIT } from '../bootstrap/envelope'
 import type { RunningServer, ServerStart } from '../bootstrap/serve'
 import { runShutdownLegs } from '../bootstrap/serve'
@@ -52,6 +51,9 @@ import {
 } from '../core/studio-core'
 import { createStudioGateway, type StudioGateway } from '../core/studio-gateway'
 import { WORKTREE_QUIT_WAIT_MS } from '../core/studio-worktree-pool'
+import { createExtensionTools } from '../../main/automation/extension-tools'
+import { createPluginTools } from '../../main/automation/plugin-tools'
+import { resolveScaffoldRoots } from '../../main/extension-scaffold'
 import { createStudioRpc } from '../core/studio-rpc'
 import { mirroredStudioUpdates, type StudioUpdateStart } from '../update/studio-updates'
 import { createIpcTunnel, type TunnelPort } from '../ipc/ipc-tunnel'
@@ -213,11 +215,14 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         trash: async (path) => {
           await rpc.call(SHELL_METHODS.trash, { path })
         },
-        marketplace: {
-          readMarketplaceRegistry: () => rpc.call(SHELL_METHODS.marketplaceRead, {}),
-          listMarketplaceReceipts: () => rpc.call(SHELL_METHODS.marketplaceReceipts),
-          installMarketplaceEntry: (input) => rpc.call(SHELL_METHODS.marketplaceInstall, input),
-        },
+      },
+      // This desktop's Studio holds the marketplace, the CLI catalogue, the
+      // extension scaffold and the hosted feeds; Studio's own plugin in a
+      // workspace is the shell's, which installs it, and what is installed
+      // changing is told to the clients following `module.changed`.
+      extensions: {
+        studioPluginStatus: (workspaceRoot) => rpc.call(SHELL_METHODS.studioPluginStatus, { workspaceRoot }),
+        changed: () => modules.hub.deliverChanged(),
       },
       ...(shellSsh
         ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
@@ -292,11 +297,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     terminals
       ? terminals.launchService.launch(request)
       : Promise.resolve({ ok: false, code: 'terminals_unavailable', message: TERMINALS_UNAVAILABLE })
-  // The renderer's module registry, which the shell mirrors and passes on.
-  let moduleRegistry: ModuleRegistrySnapshot | null = null
-  rpc.on(SERVER_EVENTS.moduleRegistrySnapshot, (payload) => {
-    if (payload && typeof payload === 'object') moduleRegistry = payload as ModuleRegistrySnapshot
-  })
 
   // OS notifications for pairing and reachability, only while no window has
   // focus; a click opens the Remote popover, which the shell does.
@@ -308,12 +308,13 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     show: (notice) => bridge.notify({ ...notice, activate: { kind: 'remote' } }),
   })
 
+  // A desktop's Studio is given its extensions above, so they are here.
+  const extensions = core.extensions
+  if (!extensions) throw new Error('A desktop’s Studio holds its extensions.')
   const modules = createServerModules({
     platform,
     core,
     log,
-    // The windows are the shell's: it tells them to load their extensions again.
-    modulesChanged: () => rpc.emit(SERVER_EVENTS.modulesChanged, null),
   })
   gateway = createStudioGateway(core, {
     // An agent that starts a chat hears back from it, as one that launches a
@@ -372,14 +373,27 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           studioDataDirs: () => [envelope.dataDir],
           getScheduledAgents: () => modules.scheduledAgents(),
           ...launchSettingsGatewayDeps(agentLaunchSettings),
-          getModuleRegistrySnapshot: () => moduleRegistry,
-          // The marketplace and the module trust store are the shell's caches.
-          listInstalledThirdPartyModules: () => rpc.call(SHELL_METHODS.thirdPartyModules),
+          // The registry the windows report (`module.reportRegistry`), and
+          // the extensions installed here, as `module.installed` lists them.
+          getModuleRegistrySnapshot: () => modules.registry.read(),
+          listInstalledThirdPartyModules: async () =>
+            (await modules.hub.lifecycle()?.installed()) ?? { modules: [], rejected: [] },
           listModuleContributedTools: () =>
             modules.mcpTools().map((tool) => ({ moduleId: tool.moduleId, toolName: tool.registration.name })),
-          readMarketplaceRegistry: (input) => rpc.call(SHELL_METHODS.marketplaceRead, input ?? {}),
+          readMarketplaceRegistry: (input) => extensions.marketplace.read(input),
         }),
       ),
+      // `extension.*` and `plugin.*`: a project made on this machine by the
+      // scaffold a window's New chat door uses, and the plugin sources the
+      // Extensions door lists, both this Studio's own.
+      ...createExtensionTools({
+        scaffold: extensions.scaffold,
+        guideRoot: () => resolveScaffoldRoots().guideRoot,
+      }),
+      ...createPluginTools({
+        listSources: () => core.agents.skills.skills.listSources(),
+        getScan: (input) => core.agents.skills.skills.getScan(input),
+      }),
       ...createTailnetTools({ resolveTailnet: () => tailnetFrontDoor }),
     ],
   })
@@ -837,6 +851,8 @@ function serveShellRequests(deps: {
         lease: slot.lease ? { workspaceId: slot.lease.workspaceId, agentId: slot.lease.agentId } : null,
       })),
   )
+  // The hourly refresh of the hosted feeds, which the shell times.
+  rpc.handle(SERVER_METHODS.hostedFeedsRefresh, () => core.extensions?.feeds.refresh())
   rpc.handle(SERVER_METHODS.quitStops, async () => {
     const listed = core.conversations.listSessions()
     const wsl = (await core.wslServers?.manager.backgroundWork({ budgetMs: 800 })) ?? []
@@ -845,7 +861,6 @@ function serveShellRequests(deps: {
       ...quitStopsOf(backgroundWorkOf(core), wsl),
     }
   })
-  rpc.handle(SERVER_METHODS.thirdPartyLaunchSession, () => deps.modules.thirdPartyLaunchSession())
   const takePort = (params: unknown): TunnelPort => {
     const clientId = (params as { clientId?: unknown } | null)?.clientId
     const pending = typeof clientId === 'string' ? pendingConnections.get(clientId) : undefined

@@ -11,22 +11,11 @@ import type { McpToolRegistration } from '../../shared/modules/mcp-tools'
  * pool's `worktree` family is the server's, as the pool is (studio-worktree-pool.ts).
  * `artifacts` is the shell's: a publish
  * reads the page from this machine's disk and signs in with its credentials,
- * and its clone of the site is one main keeps. And `extension`: making an
- * extension project uses the templates and the guide shipped beside the app,
- * through the same scaffold as the New chat door. And `plugin`: the plugin
- * sources are main's, and an offer draws in a chat window of the shell's. And
- * `visual`: a preview is drawn in a hidden window of the app.
+ * and its clone of the site is one main keeps. And `visual`: a preview is
+ * drawn in a hidden window of the app. `extension` and `plugin` are the
+ * server's own (the scaffold and the plugin sources are its extensions').
  */
-export const SHELL_TOOLSETS = [
-  'browser',
-  'canvas',
-  'editor',
-  'tour',
-  'visual',
-  'artifacts',
-  'extension',
-  'plugin',
-] as const
+export const SHELL_TOOLSETS = ['browser', 'canvas', 'editor', 'tour', 'visual', 'artifacts'] as const
 
 /** Whether a gateway tool is one the shell offers, out of process, and not the server's. */
 export function isShellToolName(name: string): boolean {

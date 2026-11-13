@@ -14,6 +14,11 @@ import {
 import { test, vi } from 'vitest'
 
 import { agentSetupDouble } from '../../../studio/agentSetup.double'
+import { adoptExtensionsDouble } from '../../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../../studio/extensions', () => import('../../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 vi.mock('../../../studio/agentSetup', () => import('../../../studio/agentSetup.double'))

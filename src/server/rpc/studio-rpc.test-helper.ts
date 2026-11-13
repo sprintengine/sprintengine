@@ -37,6 +37,7 @@ import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioMachineCall } from './studio-file-system'
+import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioGit } from '../git/studio-git-types'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -376,6 +377,7 @@ export async function startTestServer(
     machine?: StudioMachineCall
     git?: StudioGit
     worktrees?: StudioWorktrees
+    extensions?: StudioExtensions
     pullRequests?: StudioPullRequests
     pullRequestCreation?: ConversationPullRequests
     localServers?: StudioLocalServers
@@ -426,6 +428,7 @@ export async function startTestServer(
     ...(input.machine ? { machine: input.machine } : {}),
     ...(input.git ? { git: input.git } : {}),
     ...(input.worktrees ? { worktrees: input.worktrees } : {}),
+    ...(input.extensions ? { extensions: input.extensions } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.pullRequestCreation ? { pullRequestCreation: input.pullRequestCreation } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),

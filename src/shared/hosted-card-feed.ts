@@ -30,8 +30,16 @@
 // counted, because one bad row must never blank the home page.
 
 import { isRecord } from './records'
-import type { CardAction, CardActionVerb, CardSurfaceView } from '../../packages/studio-protocol/src/public'
+import type {
+  CardAction,
+  CardActionVerb,
+  CardSurfaceView,
+  HostedCard,
+  HostedCardFeed,
+  HostedCardKind,
+} from '../../packages/studio-protocol/src/public'
 export type { CardAction, CardActionVerb, CardSurfaceView } from '../../packages/studio-protocol/src/public'
+export type { HostedCard, HostedCardFeed, HostedCardKind } from '../../packages/studio-protocol/src/public'
 
 export const HOSTED_CARD_FEED_SCHEMA_VERSION = 1 as const
 
@@ -45,7 +53,6 @@ export const HOSTED_CARD_FEED_URL =
 // `automation` was a kind until automations became scheduled agents
 // (2026-09-30): a card of that kind named something this build no longer has,
 // so it is dropped and counted like any other kind a build does not know.
-export type HostedCardKind = 'mcp' | 'skill' | 'plugin' | 'showcase'
 
 const CARD_KINDS: readonly HostedCardKind[] = ['mcp', 'skill', 'plugin', 'showcase']
 
@@ -101,40 +108,6 @@ const CARD_SURFACE_VIEWS: readonly CardSurfaceView[] = ['home', 'plugins', 'skil
  * so the comparison is too.
  */
 const CARD_CLONE_OWNERS: readonly string[] = ['sprintengine']
-
-export type HostedCard = {
-  // Stable for the life of the card: the directory name in the cards repo, and
-  // the key the renderer counts a press against.
-  slug: string
-  kind: HostedCardKind
-  // A capability in the second person, never a product name — "Let an agent
-  // drive your browser", not "Playwright MCP server" (epic ruling R2).
-  title: string
-  dek: string
-  // The quiet line under the dek: what it is built on, in words a person
-  // recognises. Optional because a showcase often has nothing to credit.
-  credit?: string
-  // The NAME of an artwork this build ships ('browser', 'city', 'tokens'),
-  // never a URL. A card with no picture is not a card, so this is required and
-  // a row without it is dropped.
-  art: string
-  // ISO date the card was published. The home page orders by it.
-  publishedAt: string
-  // The one full-bleed card at the top of the page. More than one is allowed by
-  // the schema; which of them leads is the renderer's business.
-  hero?: boolean
-  // What Go does, in order. An empty list is legal — a showcase card can be
-  // pure marketing — so it is not a reason to drop the row.
-  go: CardAction[]
-}
-
-export type HostedCardFeed = {
-  schemaVersion: typeof HOSTED_CARD_FEED_SCHEMA_VERSION
-  // Bumped on every edit. The tie-break between a bundled seed and a disk
-  // cache: whichever was edited later wins, regardless of when it was fetched.
-  updatedAt: string
-  cards: HostedCard[]
-}
 
 export type HostedCardFeedParseResult =
   | {

@@ -52,6 +52,7 @@ import type { ClientToolConnection, ClientToolRegistry } from '../tools/client-t
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
+import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioModules } from './studio-modules'
 import type { StudioTerminalFollow, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
@@ -170,6 +171,8 @@ export type StudioRpcConnectionOptions = {
   modules?: StudioModules
   /** The terminals on this machine: the `terminal.*` streams. */
   terminals?: StudioTerminals
+  /** The marketplace and the feeds: the `cardFeed.changed` stream. */
+  extensions?: StudioExtensions
   /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
@@ -1426,6 +1429,12 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     'localServers.changed': subscribeLocalServers,
     'module.events': subscribeModuleEvents,
     'module.notifications': subscribeModuleNotifications,
+    'module.changed': (id) => {
+      const modules = options.modules
+      subscribeFeed(id, 'module.changed', modules ? (deliver) => modules.onChanged(() => deliver({})) : null)
+    },
+    'cardFeed.changed': (id) =>
+      subscribeFeed(id, 'cardFeed.changed', options.extensions?.feeds.onCardFeedChanged ?? null),
     'terminal.output': subscribeTerminalOutput,
     'terminal.sessions': subscribeTerminalSessions,
     'terminal.promptUndelivered': subscribePromptUndelivered,

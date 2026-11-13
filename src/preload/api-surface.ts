@@ -10,7 +10,6 @@ import { meshApi } from './api/mesh'
 import { scheduledAgentsApi } from './api/scheduled-agents'
 import { backlogApi } from './api/backlog'
 import { buildStampApi } from './api/build-stamp'
-import { builtinSkillsApi } from './api/builtinSkills'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
 import { conversationPeekApi } from './api/conversation-peek'
@@ -19,11 +18,7 @@ import { pullRequestApi } from './api/pull-request'
 import { filesystemApi } from './api/filesystem'
 import { gitApi } from './api/git'
 import { artifactsApi } from './api/artifacts'
-import { marketplaceApi } from './api/marketplace'
-import { hostedSourcesFeedApi } from './api/hosted-sources-feed'
-import { hostedCardFeedApi } from './api/hosted-card-feed'
 import { modulesApi } from './api/modules'
-import { pluginsApi } from './api/plugins'
 import { hostsApi } from './api/hosts'
 import { sshEnvironmentsApi } from './api/ssh-environments'
 import { environmentsApi } from './api/environments'
@@ -37,7 +32,6 @@ import { editorRevealApi } from './api/editor-reveal'
 import { toursApi } from './api/tours'
 import { workspaceBackupApi } from './api/workspace-backup'
 import { workspaceSyncApi } from './api/workspace-sync'
-import { extensionScaffoldApi } from './api/extension-scaffold'
 import { previewsApi } from './api/previews'
 import { webDevicesApi } from './api/web-devices'
 
@@ -75,19 +69,14 @@ export const apiModules = {
   ...meshApi,
   ...scheduledAgentsApi,
   ...backlogApi,
-  ...builtinSkillsApi,
   ...clipboardApi,
   ...chatExportApi,
-  ...hostedSourcesFeedApi,
-  ...hostedCardFeedApi,
   ...filesystemApi,
   ...hostsApi,
   ...sshEnvironmentsApi,
   ...environmentsApi,
   ...gitApi,
-  ...marketplaceApi,
   ...modulesApi,
-  ...pluginsApi,
   ...conversationPeekApi,
   ...agentCompactApi,
   ...pullRequestApi,
@@ -95,7 +84,6 @@ export const apiModules = {
   ...appMenuApi,
   ...workspaceBackupApi,
   ...workspaceSyncApi,
-  ...extensionScaffoldApi,
   ...previewsApi,
   ...webDevicesApi,
 } satisfies Omit<ElectronApi, ComputedApiMembers>

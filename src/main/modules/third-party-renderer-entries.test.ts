@@ -1,19 +1,13 @@
 import assert from 'node:assert/strict'
 import { createHash, generateKeyPairSync, sign } from 'crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
-import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import type { CapabilityManifest, ThirdPartyRendererEntriesResult } from '../../shared/modules/manifest'
-import { THIRD_PARTY_RENDERER_ENTRIES_CHANNEL } from '../../shared/modules/manifest'
+import type { CapabilityManifest } from '../../shared/modules/manifest'
 import { canonicalManifestPayload } from '../../shared/modules/third-party-manifest'
 import { manifestFingerprint, type ModuleTrustContext } from './module-signature'
-import {
-  collectThirdPartyRendererEntries,
-  registerThirdPartyRendererEntryIpc,
-  rendererEntryView,
-} from './third-party-renderer-entries'
+import { collectThirdPartyRendererEntries, rendererEntryView } from './third-party-renderer-entries'
 import { discoverUserModules, type InstalledModule } from './user-module-registry'
 import { test } from 'vitest'
 
@@ -243,30 +237,18 @@ test('third-party-renderer-entries', async () => {
     })
   }
 
-  // The serving channel is registered through the module-host kernel: ownership
-  // is recorded, and the handler returns only trusted entries.
+  // What `module.rendererEntries` serves: only the trusted entries, each with
+  // the private origin its assets are served at in this Studio's windows.
   async function testKernelIpcSurface(): Promise<void> {
     await withTempDir(async (root) => {
       await writeModule(root, 'approved', { entry: { renderer: 'renderer.js' } }, { 'renderer.js': 'export {}' })
       await writeModule(root, 'unapproved', { entry: { renderer: 'renderer.js' } }, { 'renderer.js': 'export {}' })
       const trust = await trustOf(root, 'approved')
-
-      const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>()
-      const ipcMain = {
-        handle: (channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => {
-          handlers.set(channel, handler)
-        },
-      } as unknown as IpcMain
-      registerThirdPartyRendererEntryIpc(ipcMain, {
-        discoverModules: () => discoverUserModules(root, trust),
-      })
-
-      const handler = handlers.get(THIRD_PARTY_RENDERER_ENTRIES_CHANNEL)
-      assert.ok(handler, 'channel handler is registered on ipcMain')
-      const result = (await handler({} as IpcMainInvokeEvent)) as ThirdPartyRendererEntriesResult
+      const { modules } = await discoverUserModules(root, trust)
+      const result = await collectThirdPartyRendererEntries(modules, trust, (id) => `module-asset://${id}.test`)
       assert.deepEqual(
-        result.entries.map((entry) => entry.id),
-        ['approved'],
+        result.entries.map((entry) => [entry.id, entry.assetOrigin]),
+        [['approved', 'module-asset://approved.test']],
       )
     })
   }

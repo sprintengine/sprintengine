@@ -61,18 +61,18 @@ import type { StudioPlatform } from '../platform/platform'
 // its own machine: the desktop in process or in a process of its own, and a
 // server on a WSL or SSH machine.
 //
-// What only a desktop's shell can do is handed in, and a server without it
-// answers in words:
+// What only a desktop can do is handed in, and a server without it answers in
+// words:
 // - moving a removed skill to the Trash (Electron's `shell`);
-// - a card's `install.module`, through the marketplace and module trust store
-//   the shell keeps.
+// - a card's `install.module`, through the marketplace a desktop's Studio
+//   holds (its extensions, extensions-domain.ts).
 // Everything else (git, the GitHub token, a bundle's own scripts, which run
 // in a child process of this one) is the server's own.
 
 /** A clone nobody has read in sixty days is not worth the disk; the reader rebuilds it on the next read. */
 const SKILL_REPO_CACHE_IDLE_MS = 60 * 24 * 60 * 60 * 1000
 
-/** The marketplace a card's `install.module` goes through: the shell's, where a desktop holds one. */
+/** The marketplace a card's `install.module` goes through: a desktop's Studio's own. */
 export type StudioCardMarketplace = Pick<
   CardRunDeps,
   'readMarketplaceRegistry' | 'listMarketplaceReceipts' | 'installMarketplaceEntry'

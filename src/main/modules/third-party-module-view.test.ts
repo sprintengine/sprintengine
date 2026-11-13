@@ -4,17 +4,16 @@ import { HOST_API_VERSION } from '../../shared/modules/host-api'
 import type { CapabilityManifest } from '../../shared/modules/manifest'
 import type { MarketplacePluginInstallReceipt } from '../marketplace/plugin-lifecycle'
 import {
-  decodeThirdPartyLaunchSession,
-  encodeThirdPartyLaunchSession,
   readThirdPartyMainLaunchSnapshot,
   recordThirdPartyMainLaunchReport,
+  thirdPartyLaunchSession,
   type ThirdPartyMainLaunchSnapshot,
-} from '../modules/third-party-main-loader'
-import type { InstalledModule } from '../modules/user-module-registry'
-import { moduleOriginsFromReceipts, toThirdPartyModuleView } from './third-party-module-ipc'
+} from './third-party-main-loader'
+import type { InstalledModule } from './user-module-registry'
+import { moduleOriginsFromReceipts, toThirdPartyModuleView } from './third-party-module-view'
 import { test } from 'vitest'
 
-test('third-party-module-ipc', async () => {
+test('third-party-module-view', async () => {
   function main(): void {
     testLaunchReadinessClasses()
     testExpectedToLoadUsesEnablementOverrides()
@@ -22,7 +21,7 @@ test('third-party-module-ipc', async () => {
     testLaunchErrorsAreSanitized()
     testHostApiMismatchIsSaidBeforeTrust()
 
-    console.log('third-party-module-ipc tests passed')
+    console.log('third-party-module-view tests passed')
   }
 
   function testLaunchReadinessClasses(): void {
@@ -320,22 +319,16 @@ test('the view carries how a trusted module was trusted, and what it registered 
   assert.equal(toThirdPartyModuleView(untrusted, snapshot).trustedVia, undefined)
 })
 
-test('the launch session survives the shell ↔ server channel, and garbage decodes to nothing', () => {
-  const wire = encodeThirdPartyLaunchSession(
+test('the launch session groups each module’s MCP tools under it', () => {
+  const session = thirdPartyLaunchSession(
     { loaded: new Set(['a']), manifestOnly: new Set(), errors: new Map([['b', 'boom']]) },
     [
       { moduleId: 'a', registration: { name: 'a.one' } },
       { moduleId: 'a', registration: { name: 'a.two' } },
     ],
   )
-  const session = decodeThirdPartyLaunchSession(JSON.parse(JSON.stringify(wire)))
   assert.deepEqual([...session.snapshot.loaded], ['a'])
   assert.equal(session.snapshot.errors.get('b'), 'boom')
   assert.deepEqual(session.mcpTools.get('a'), ['a.one', 'a.two'])
-
-  const empty = decodeThirdPartyLaunchSession({ loaded: 'nope', errors: [[1, 2]], mcpTools: [null] })
-  assert.equal(empty.snapshot.loaded.size, 0)
-  assert.equal(empty.snapshot.errors.size, 0)
-  assert.equal(empty.mcpTools.size, 0)
-  assert.equal(decodeThirdPartyLaunchSession(undefined).snapshot.loaded.size, 0)
+  assert.equal(thirdPartyLaunchSession(session.snapshot, []).mcpTools.size, 0)
 })

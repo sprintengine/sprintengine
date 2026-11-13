@@ -107,6 +107,7 @@ function register(
   let prepareForInstall: (() => Promise<void>) | null = null
   registerAppLifecycle({
     diagnosticsEnabled: false,
+    refreshHostedFeeds: async () => undefined,
     allowMultipleInstances: options.allowMultipleInstances ?? true,
     terminalRuntime: {
       shutdown: async () => {

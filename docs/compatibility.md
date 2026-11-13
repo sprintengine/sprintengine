@@ -1268,6 +1268,27 @@ under `conversation:operate`) reaches what a paired device's Delete on a chat
 reaches. A folder on an SSH machine is refused in words. Additive: an older
 Studio leaves `worktrees` out. The desktop's windows reach the pool and
 settled-chat deletion only this way: their window IPC is gone.
+`extensions` (2026-11-13) is what a desktop's Studio is extended with beyond
+its modules: the marketplace's registry and each installed entry against it
+(`marketplace.read`, `.updateStates`), the agent CLIs' plugin catalogue
+(`cliPlugins.list`, `.availability`, `.launchPreview`) and the hosted feeds
+(`cardFeed.get` with the `cardFeed.changed` stream, `sourcesFeed.get`), all
+under `providers:read`; Studio's own plugin in a workspace
+(`studioPlugin.status`) under `files:read`, in a folder the Studio knows for a
+client that is not an owner. Reviewing an entry or a GitHub repository,
+installing, updating and removing it (`marketplace.verify`, `.install`,
+`.update`, `.uninstall`, `.resolveGithub`, `.installGithub`) and making an
+extension project (`extensionScaffold.*`) are an owner's, with the reason in
+the table: they fetch code to run on the machine, approve it, or write outside
+the folders the Studio knows. A review's one-time approval is spent by the
+install it approves, and checked by the Studio as strictly as before. The
+`modules` capability gains `module.installed` and `module.rendererEntries`
+(`modules:read`), `module.setAppState` (`settings:write`),
+`module.reportRegistry` (`modules:operate`) and the `module.changed` stream.
+Additive: a Studio without a desktop around it (a WSL or SSH server) leaves
+`extensions` out. The desktop's windows reach all of these only this way:
+their window IPC is gone, but for showing an extension's folder in the file
+manager, which stays the shell's.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

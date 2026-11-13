@@ -20,6 +20,8 @@ import { scheduledAgentsRendererModule } from './scheduled-agents-module'
 import { createRendererHost, type RendererModule } from './renderer-host'
 import { filesApi } from '../studio/files'
 import { gitApi } from '../studio/git'
+import { extensionsApi } from '../studio/extensions'
+import { watchWindowStudio, windowHasStudio, windowStudioState } from '../studio/windowStudioClient'
 
 // Bundled renderer capability modules. Features migrate onto the host one at a
 // time; this list grows as each renderer surface is extracted from the
@@ -183,8 +185,8 @@ if (typeof window !== 'undefined') {
         onThirdPartyRendererModulesLoaded(() => {
           void workspaceOpener.openFirstLoads()
         })
-        if (typeof window.api?.onThirdPartyModulesChanged === 'function') {
-          window.api.onThirdPartyModulesChanged(() => {
+        if (windowHasStudio()) {
+          extensionsApi.onThirdPartyModulesChanged(() => {
             void refreshThirdPartyRendererModules().catch((error) => {
               console.error('[modules] could not refresh installed renderer modules:', error)
             })
@@ -204,8 +206,8 @@ if (typeof window !== 'undefined') {
         // only when the overrides object changes identity — the store hands out a
         // new one exactly when enablement changes — and once more when the
         // third-party modules finish loading, which widens the universe.
-        if (typeof window.api?.setModuleRegistrySnapshot === 'function') {
-          const pushSnapshot = window.api.setModuleRegistrySnapshot
+        if (windowHasStudio()) {
+          const pushSnapshot = extensionsApi.setModuleRegistrySnapshot
           startModuleRegistrySnapshotMirror({
             build: () =>
               buildModuleRegistrySnapshot({
@@ -238,6 +240,12 @@ if (typeof window !== 'undefined') {
                 stopThirdParty()
               }
             },
+            // The Studio keeps the registry in memory: one that restarted is
+            // told again when the window's connection opens.
+            resendOn: (resend) =>
+              watchWindowStudio(window.api, () => {
+                if (windowStudioState(window.api) === 'open') resend()
+              }),
           })
         }
         // Workspace-view source for RendererHost.getWorkspace: a fresh snapshot
@@ -548,8 +556,8 @@ async function loadRendererModuleBatch(refresh: boolean): Promise<void> {
   try {
     // Older preload bundles may not carry the bridge yet; treat that as "no
     // third-party renderer entries" rather than failing the boot.
-    if (typeof window.api?.listThirdPartyRendererEntries !== 'function') return
-    const served = await window.api.listThirdPartyRendererEntries()
+    if (!windowHasStudio()) return
+    const served = await extensionsApi.listThirdPartyRendererEntries()
     const { loadThirdPartyRendererEntries, rendererEntriesForRefresh } = await import('./third-party-loader')
     const loaded = await loadThirdPartyRendererEntries(
       rendererHost,

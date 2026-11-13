@@ -40,8 +40,8 @@ export const SERVER_METHODS = {
    * server and its WSL servers run, all of which a quit would stop.
    */
   quitStops: 'quit.stops',
-  /** → `ThirdPartyLaunchSessionWire`: which third-party main halves loaded here, and what they registered. */
-  thirdPartyLaunchSession: 'modules.third-party-launch-session',
+  /** → nothing once tried: the hourly refresh of the hosted feeds, which the shell times and the server runs. */
+  hostedFeedsRefresh: 'hosted-feeds.refresh',
   /**
    * `{ windowKey, origin }` → `StudioWindowTicket`: a ticket for one connection
    * of one of the app's windows to the window listener, which starts on the first.
@@ -84,12 +84,10 @@ export const SERVER_METHODS = {
   skillSourcesCheck: 'skill-sources.check',
 } as const
 
-/** Server → shell requests: the shell's own caches the gateway's tools read. */
+/** Server → shell requests: what only the shell holds. */
 export const SHELL_METHODS = {
-  /** `MarketplaceRegistryReadInput` → its result. */
-  marketplaceRead: 'shell.marketplace.read',
-  /** → the installed third-party modules with trust and launch readiness. */
-  thirdPartyModules: 'shell.modules.third-party-list',
+  /** `{ workspaceRoot }` → `StudioPluginStatus`: Studio's own plugin in a workspace, which the shell installs. */
+  studioPluginStatus: 'shell.studio-plugin.status',
   /**
    * → every live launch token the shell issued (its WSL helper's channels), by digest
    * (`LaunchTokenChange[]`, decision R87). Asked before the gateway listens,
@@ -107,10 +105,6 @@ export const SHELL_METHODS = {
    * update itself (`update.start`); the app updater is the shell's.
    */
   updateStart: 'shell.update.start',
-  /** → the marketplace install receipts: a card's Go installs a module once. */
-  marketplaceReceipts: 'shell.marketplace.receipts',
-  /** `MarketplacePluginLifecycleInstallInput` → its result: a card's `install.module`, through the shell's lifecycle. */
-  marketplaceInstall: 'shell.marketplace.install',
   /** `{ path }` → nothing once moved: a removed skill's folder to this computer's Trash. */
   trash: 'shell.trash',
 } as const
@@ -137,10 +131,6 @@ export const SERVER_EVENTS = {
   mirrorMeshReachability: 'mirror.mesh-reachability',
   /** Server → shell: a chat's or a terminal agent's phase moved; the dock badge, banners, keep-awake and tours follow it. */
   attentionPhase: 'attention.agent-phase',
-  /** Server → shell: what is installed or trusted changed (`module.install`, …); the windows load their extensions again. */
-  modulesChanged: 'modules.changed',
-  /** Shell → server: the renderer's module registry, mirrored. */
-  moduleRegistrySnapshot: 'modules.registry-snapshot',
   /** Shell → server: the idle threshold shared with terminals. */
   conversationIdleThreshold: 'conversations.idle-threshold',
   /**

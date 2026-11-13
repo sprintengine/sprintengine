@@ -7,8 +7,18 @@
 // component file digests. This module re-exports that plugin contract and adds
 // the marketplace.json registry index contract used by the app.
 
-import type { ModuleSignature } from '../modules/manifest'
-import type { McpServerConfig } from '../electron-api'
+import type {
+  MarketplaceComponentKind as StudioMarketplaceComponentKind,
+  MarketplaceIndex,
+  MarketplaceManifestIssue as StudioMarketplaceManifestIssue,
+  MarketplacePluginEntry,
+  MarketplacePluginSkill,
+  MarketplacePluginSkillFile,
+  MarketplaceProvidesKind,
+  MarketplacePublisher,
+  McpServerConfig,
+  ModuleSignature,
+} from '../../../packages/studio-protocol/src/public'
 // Inline-MCP registry entries carry raw MCP server configs; validate them through
 // the same normalizer the app uses everywhere else (shared/mcp, node-free) so an
 // inline entry cannot express a server the app would reject.
@@ -44,96 +54,29 @@ export {
 // plus `cli` for the inline-CLI lane — a first-party agent CLI the app already
 // ships, surfaced as catalogue content. `cli` is not a bundle component; an
 // extension can neither add an agent CLI nor replace one.
-export type MarketplaceProvidesKind = MarketplaceComponentKind | 'cli'
 const MARKETPLACE_PROVIDES_KINDS: readonly MarketplaceProvidesKind[] = Array.from(
   new Set<MarketplaceProvidesKind>([...MARKETPLACE_COMPONENT_KINDS, 'cli']),
 )
 
-type MarketplacePublisher = {
-  name: string
-  verified: boolean
-}
+type MarketplaceInlineMcp = NonNullable<MarketplacePluginEntry['mcp']>
+type MarketplaceInlineCli = NonNullable<MarketplacePluginEntry['cli']>
 
-// Inline-MCP registry entries ship MCP server configs directly (modeled on
-// the shape an MCP server config takes) instead of a signed bundle.
-type MarketplaceInlineMcp = {
-  servers: McpServerConfig[]
-}
+// The protocol carries the SDK's plugin contract under its own names; these
+// fail to compile if the two ever say different things.
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+const componentKindsAgree: Same<MarketplaceComponentKind, StudioMarketplaceComponentKind> = true
+const issuesAgree: Same<MarketplaceManifestIssue, StudioMarketplaceManifestIssue> = true
+void componentKindsAgree
+void issuesAgree
 
-// Inline-CLI registry entries surface an app-bundled agent CLI plugin as
-// marketplace content. They ship no bytes: the referenced plugin
-// already lives in the app bundle (resources/plugins/<pluginId>), and the
-// install action executes that plugin's `install` spec through the CLI runtime
-// installer — never the bundle download flow. Agent CLIs ship with the app
-// only; a bundle entry cannot provide one.
-type MarketplaceInlineCli = {
-  // Plugin-registry id of the bundled plugin (the pluginRegistryIdForCli
-  // mapping captured at generation time — not assumed equal to the entry id).
-  pluginId: string
-}
-
-// Digest of one file inside a bundled skill payload; the bytes ship under
-// resources/marketplace/skills/<entryId>/<skill folder>/.
-//
-// Nothing in the registry carries one today: the frozen-snapshots retirement
-// (2026-09-06) removed the 256 snapshotted `claude-plugin` entries and their
-// 1,786 SKILL.md, because `anthropics/claude-plugins-official` is now an
-// always-present source read live. The shape stays because it is the FORMAT a
-// signed skill bundle would use, and a Claude marketplace cannot carry a signed
-// bundle; the entry type is what the registry may hold, not what it holds.
-export type MarketplacePluginSkillFile = {
-  // Posix path relative to the skill folder, e.g. `SKILL.md`.
-  path: string
-  // Lowercase hex sha256 of the file bytes.
-  sha256: string
-  // File size in bytes.
-  size: number
-}
-
-// One Agent Skill a plugin bundles, enumerated from its source repo when the
-// entry was published. `files` + `contentDigest` are present when the entry
-// shipped the skill folder's content — the install verifies the
-// bundled bytes against them; without them the skill is display metadata only
-// and cannot be installed offline.
-type MarketplacePluginSkill = {
-  name: string
-  description: string
-  // Repo-relative path of the skill folder, e.g. `skills/hf-cli`.
-  path?: string
-  // Complete per-file digests of the bundled payload (always with contentDigest).
-  files?: MarketplacePluginSkillFile[]
-  // Folder digest: sha256 over the sorted `<path>\0<sha256>` lines of `files`,
-  // joined with `\n` (the `skillContentDigest` formula in
-  // src/main/marketplace/skill-content.ts).
-  contentDigest?: string
-}
-
-// A registry entry is exactly one of: a bundle entry (has `source`), an
-// inline-MCP entry (has `mcp`, `provides` is exactly ['mcp']), or an
-// inline-CLI entry (has `cli`, `provides` is exactly ['cli']). `signature` is
-// optional; trust classification is decided downstream, not by the schema.
-export type MarketplacePluginEntry = {
-  id: string
-  name: string
-  publisher: MarketplacePublisher
-  summary: string
-  category: string
-  categories?: string[]
-  tags?: string[]
-  icon: string
-  latest: number
-  provides: MarketplaceProvidesKind[]
-  source?: string
-  signature?: ModuleSignature
-  mcp?: MarketplaceInlineMcp
-  cli?: MarketplaceInlineCli
-  skills?: MarketplacePluginSkill[]
-}
-
-export type MarketplaceIndex = {
-  schemaVersion: 1
-  plugins: MarketplacePluginEntry[]
-}
+export type {
+  MarketplaceIndex,
+  MarketplacePluginEntry,
+  MarketplacePluginSkill,
+  MarketplacePluginSkillFile,
+  MarketplaceProvidesKind,
+  MarketplacePublisher,
+} from '../../../packages/studio-protocol/src/public'
 
 // Machine tag the generated catalogue stamps on Claude Code plugin entries
 // (content in Claude's plugin format — `.claude-plugin/plugin.json` + skills

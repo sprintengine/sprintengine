@@ -105,6 +105,7 @@ import {
   type PluginListItem,
 } from './pluginsSurfaceModel'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { extensionsApi, windowHasStudio } from '../../../../../studio/extensions'
 
 const MISSING_API_MESSAGE = 'Plugins need an app restart before they are available.'
 
@@ -209,8 +210,8 @@ export function PluginsCatalogue({
   const [studioPluginStatus, setStudioPluginStatus] = useState<StudioPluginStatus | null>(null)
   useEffect(() => {
     let cancelled = false
-    if (typeof window.api.studioPluginStatus !== 'function') return
-    void window.api
+    if (!windowHasStudio()) return
+    void extensionsApi
       .studioPluginStatus({ workspaceRoot })
       .then((status) => {
         if (!cancelled) setStudioPluginStatus(status)

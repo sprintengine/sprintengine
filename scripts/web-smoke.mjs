@@ -69,8 +69,6 @@ cpSync(webBundle, webRoot, { recursive: true })
 // refusal as "not here". A member added to this list is a decision; a member
 // that appears without one is a regression in what the boot reaches for.
 const KNOWN_BOOT_REFUSALS = new Set([
-  'plugins:list',
-  'plugins:detect-availability',
   'studio-server:status',
   'update:get-state',
   'tailnet:get-status',
@@ -82,11 +80,6 @@ const KNOWN_BOOT_REFUSALS = new Set([
   'git:get-repo-root',
   'git:get-workspace-change-summary',
   'git:checkout-watch-retain',
-  'hosted-card-feed:get',
-  // Third-party modules run in the desktop app only (the module bridge is
-  // refused to a web tab too): the push of module settings to main has
-  // nothing to serve in a browser.
-  'modules:set-app-state',
   // The machines a desktop knows are its own state (shared/environments.ts),
   // not a server method: a tab's Studio is the one that served it, and the
   // list's store reads the refusal as no other machines.

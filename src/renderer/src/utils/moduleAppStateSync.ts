@@ -1,11 +1,12 @@
 /**
- * Pushes every module's app-level state (`appSettings.moduleSettings`, the
- * `module:<id>` namespaces a Settings section writes) to main.
+ * Sends every module's app-level state (`appSettings.moduleSettings`, the
+ * `module:<id>` namespaces a Settings section writes) to the window's Studio
+ * (`module.setAppState`).
  *
  * A module's `entry.main` reads its settings there (`MainHost.getModuleAppState`)
  * with no window to ask — a scheduler's run time, a poller's interval — so
- * main keeps a persisted copy. Same one-way contract as the text-generation
- * and background-mode mirrors: the renderer owns the values, main keeps the
+ * the Studio keeps a persisted copy. Same one-way contract as the
+ * text-generation setting: the window owns the values, the Studio keeps the
  * copy, and there is no read path back.
  *
  * Mounted once from `WorkspaceManager`. The first push runs on mount so main
@@ -13,10 +14,11 @@
  * import; after that only a change that moved the bag is sent.
  */
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { extensionsApi, windowHasStudio } from '../studio/extensions'
 
 export function initModuleAppStateSync(): () => void {
-  const api = typeof window !== 'undefined' ? window.api : undefined
-  if (!api?.setModuleAppState) return () => undefined
+  if (!windowHasStudio()) return () => undefined
+  const api = extensionsApi
 
   let lastPushed: string | null = null
   let lastBag: unknown = null
@@ -29,7 +31,7 @@ export function initModuleAppStateSync(): () => void {
     if (key === lastPushed) return
     lastPushed = key
     void api.setModuleAppState(bag ?? {}).catch(() => {
-      // Retry on the next change; main keeps the last good push meanwhile.
+      // Retry on the next change; the Studio keeps the last good copy meanwhile.
       lastPushed = null
     })
   }

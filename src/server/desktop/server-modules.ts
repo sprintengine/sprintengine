@@ -8,16 +8,16 @@ import { createModuleLifecycle, liveModuleIds } from '../../main/modules/module-
 import { scheduledAgentsSwitchModule } from '../../main/modules/scheduled-agents-switch'
 import { applyHostApiGate } from '../../main/modules/host-api-gate'
 import {
-  encodeThirdPartyLaunchSession,
   planThirdPartyMainModules,
   readThirdPartyMainLaunchSnapshot,
+  thirdPartyLaunchSession,
   recordThirdPartyMainLaunchReport,
-  type ThirdPartyLaunchSessionWire,
 } from '../../main/modules/third-party-main-loader'
 import { readModuleTrustContextSync } from '../../main/modules/trust-context'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
+import { createModuleRegistryMirror, type ModuleRegistryMirror } from '../../main/modules/registry-mirror'
 import type { CapabilityManifest, ModuleResolutionErrorCode } from '../../shared/modules/manifest'
 import { resolveModuleEnablement } from '../../shared/modules/resolve'
 import type { StudioCore } from '../core/studio-core'
@@ -34,8 +34,8 @@ import { installElectronRequireGuard } from './electron-require-guard'
 // What runs here is changed through the Studio RPC (`module.setEnabled`,
 // `.install`, `.setTrust`, `.uninstall`, main/modules/module-lifecycle.ts):
 // enablement applies live where a module can load live; what is installed
-// and trusted is read at the next start. The marketplace's own installs are
-// still the shell's.
+// and trusted is read at the next start. The marketplace installs here too
+// (`marketplace.*`, the core's extensions).
 
 export type ServerModules = {
   /** What the modules say to clients, for the Studio RPC. */
@@ -43,8 +43,8 @@ export type ServerModules = {
   /** Register every enabled module. Called once the gateway exists. */
   load(gateway: StudioGateway): void
   mcpTools(): ReadonlyArray<McpToolContribution>
-  /** Which third-party main halves loaded here, and their tools; the shell's Settings asks for it. */
-  thirdPartyLaunchSession(): ThirdPartyLaunchSessionWire
+  /** The module registry a window resolved (`module.reportRegistry`), for the agents' `module.*` tools. */
+  readonly registry: ModuleRegistryMirror
   isEnabled(moduleId: string): boolean
   scheduledAgents(): ScheduledAgentsService | null
   startup(): void
@@ -56,8 +56,6 @@ export function createServerModules(deps: {
   platform: StudioPlatform
   core: StudioCore
   log: (message: string) => void
-  /** What is installed or trusted here changed: the shell's windows load their extensions again. */
-  modulesChanged?: () => void
 }): ServerModules {
   const { platform, core } = deps
   const dataDir = platform.paths.dataDir()
@@ -70,6 +68,7 @@ export function createServerModules(deps: {
   }
   const enabled = new Set<string>()
   const hub = createStudioModuleHub()
+  const registry = createModuleRegistryMirror()
   hub.readRecentFrom(() => load?.kernel.recentNotifications() ?? [])
   // A module's declared methods, called over the Studio RPC's `module.read` and `module.operate`.
   hub.serveCallsFrom(async (request) =>
@@ -117,7 +116,11 @@ export function createServerModules(deps: {
       dataDir,
       moduleRoot: defaultUserModuleRoot,
       applyEnablement,
-      changed: () => deps.modulesChanged?.(),
+      // Every client following `module.changed` lists and loads them again.
+      changed: () => hub.deliverChanged(),
+      launchSession: () =>
+        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), load?.kernel.mcpToolRegistrations() ?? []),
+      registry,
       view: () => {
         const current = load
         if (!current) return null
@@ -142,6 +145,7 @@ export function createServerModules(deps: {
 
   return {
     hub,
+    registry,
     load(nextGateway) {
       gateway = nextGateway
       const overrides = readOverrides()
@@ -221,8 +225,6 @@ export function createServerModules(deps: {
       }
     },
     mcpTools: () => load?.kernel.mcpToolRegistrations() ?? [],
-    thirdPartyLaunchSession: () =>
-      encodeThirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), load?.kernel.mcpToolRegistrations() ?? []),
     isEnabled: (moduleId) => enabled.has(moduleId),
     scheduledAgents: () => load?.kernel.hostFor('@host').getService(ScheduledAgentsServiceToken) ?? null,
     startup() {

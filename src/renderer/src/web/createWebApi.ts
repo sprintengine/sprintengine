@@ -144,11 +144,6 @@ const browserEmptyStates = {
   // Nor the desktop's disk and credentials to publish an artifact with.
   getArtifactsSettings: async () => null,
   setUpArtifacts: async () => null,
-  // Third-party renderer modules are off on the web unless the owner turns
-  // them on for this server (R61); bundled modules load from the bundle.
-  listThirdPartyRendererEntries: async () => ({ entries: [], failures: {} }),
-  // The shell's copies of module state, which a tab has no shell to keep.
-  setModuleRegistrySnapshot: async () => ({ ok: true }),
   // The tab's own console is its diagnostics log.
   logDiagnostic: async (input) => {
     console.info('[diagnostics]', input)

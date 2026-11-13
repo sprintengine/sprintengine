@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { EnvironmentEntry } from '../../../../shared/environments'
 import type { HostsListResult } from '../../../../shared/execution-host'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 // Settings ▸ Agents' machine switcher and Settings ▸ Machines' link into it,
 // wired together through the panel itself. Every IPC the panel reaches for on

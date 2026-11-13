@@ -203,12 +203,6 @@ import type {
   ConversationTurnDiffResult,
 } from './conversation-runtime'
 import type {
-  ThirdPartyModuleListResult,
-  ThirdPartyModuleTrustResult,
-  ThirdPartyRendererEntriesResult,
-} from './modules/manifest'
-import type { ModuleRegistrySnapshot, ModuleRegistrySnapshotWriteResult } from './modules/registry-snapshot'
-import type {
   WorkspaceMarkUnreadResult,
   WorkspaceSyncCommand,
   WorkspaceSyncCommandResult,
@@ -224,12 +218,7 @@ export type {
   VersionControlProviderProbe,
 } from './version-control'
 import type { SprintEngineAuthState } from './ipc/account'
-import type {
-  AgentLaunchPreviewInput,
-  AgentLaunchPreviewResult,
-  PluginAvailabilityResult,
-  PluginDetectAvailabilityInput,
-} from './ipc/agent-cli'
+import type { ThirdPartyModuleRevealResult } from './modules/manifest'
 import type { CliPermissionPreset } from './ipc/agent-runtime'
 import type {
   AppMenuAcceleratorUpdate,
@@ -263,27 +252,7 @@ import type {
 } from './ipc/backlog'
 import type { DiagnosticLogEntry, DiagnosticLogInput } from './ipc/diagnostics'
 import type { GitPatchSaveResult } from './ipc/git'
-import type { HostedCardFeedReadInput, HostedCardFeedReadResult, HostedSourcesFeedReadResult } from './ipc/hosted-feeds'
-import type {
-  GithubExtensionCheckUpdateInput,
-  GithubExtensionCheckUpdateResult,
-  GithubExtensionInstallInput,
-  GithubExtensionResolveInput,
-  GithubExtensionResolveResult,
-  MarketplacePluginRegistryInstallInput,
-  MarketplacePluginRegistryInstallResult,
-  MarketplacePluginUninstallInput,
-  MarketplacePluginUninstallResult,
-  MarketplacePluginVerifyInput,
-  MarketplacePluginVerifyResult,
-} from './ipc/marketplace'
-import type {
-  MarketplaceRegistryReadInput,
-  MarketplaceRegistryReadResult,
-  MarketplaceUpdateStatesResult,
-} from './ipc/marketplace-registry'
 import type { WorkspaceBackupPayload, WorkspaceBackupReadResult } from './ipc/workspace-backup'
-import type { PluginRegistryListResult, StudioPluginStatus } from './ipc/studio-plugin'
 import type { IpcStatsSnapshot, ProcessMetricsSnapshot, WorkspaceRegistryHydrateResult } from './ipc/terminal'
 import type {
   AppUpdateChannelSetting,
@@ -316,12 +285,6 @@ import type {
   PanePopOutState,
   PanePopOutStatePush,
 } from './ipc/pane-popout'
-import type {
-  ExtensionScaffoldCreateInput,
-  ExtensionScaffoldCreateResult,
-  ExtensionScaffoldTarget,
-  ExtensionScaffoldTargetInput,
-} from './extension-scaffold'
 
 // The contract, one module per domain. Everything a caller imports from this
 // file is declared in one of them; this file adds the ElectronApi shape.
@@ -1189,47 +1152,6 @@ export type ElectronApi = {
   openAttachedFile: (path: string) => Promise<void>
   /** Send dropped files that have no path to the server; answers a path there for each (`file-uploads`). */
   uploadFiles: (files: File[]) => Promise<string[]>
-  /**
-   * The app's own plugin: what this build ships against what the open workspace
-   * holds. Read-only — the built-in plugin has no Install and no Remove.
-   */
-  studioPluginStatus: (input: { workspaceRoot: string | null }) => Promise<StudioPluginStatus>
-  pluginsList: () => Promise<PluginRegistryListResult>
-  pluginsDetectAvailability: (input?: PluginDetectAvailabilityInput) => Promise<PluginAvailabilityResult>
-  agentLaunchPreview: (input: AgentLaunchPreviewInput) => Promise<AgentLaunchPreviewResult>
-  readMarketplaceRegistry: (input?: MarketplaceRegistryReadInput) => Promise<MarketplaceRegistryReadResult>
-  /** The recommended-sources feed, from disk (cache, else seed); never fetches. */
-  hostedSourcesFeedGet: () => Promise<HostedSourcesFeedReadResult>
-  // The hosted card feed (src/shared/hosted-card-feed.ts). `get` is the disk copy with no network — the first-paint path;
-  // `refresh` may fetch (the client's TTL decides unless forced); `changed`
-  // fires after any read that replaced the feed, and only then.
-  hostedCardFeedGet: () => Promise<HostedCardFeedReadResult>
-  hostedCardFeedRefresh: (input?: Pick<HostedCardFeedReadInput, 'forceRefresh'>) => Promise<HostedCardFeedReadResult>
-  onHostedCardFeedChanged: (cb: (result: HostedCardFeedReadResult) => void) => () => void
-  // Verify resolves the entry by id in main and answers with what an install
-  // would put on the machine, plus the one-time trust token that installs
-  // exactly that (see src/main/marketplace/trust-tokens.ts).
-  verifyMarketplacePlugin: (input: MarketplacePluginVerifyInput) => Promise<MarketplacePluginVerifyResult>
-  installMarketplacePluginFromRegistry: (
-    input: MarketplacePluginRegistryInstallInput,
-  ) => Promise<MarketplacePluginRegistryInstallResult>
-  updateMarketplacePluginFromRegistry: (
-    input: MarketplacePluginRegistryInstallInput,
-  ) => Promise<MarketplacePluginRegistryInstallResult>
-  // Removes an installed marketplace plugin: its module folders, CLI plugins
-  // and skill copies, its MCP servers out of the synced configs, and its module
-  // trust grants. `pluginId` is the marketplace entry's id, or the id of a
-  // module it installed. An added automation is deliberately left in place —
-  // it is the user's from the moment it lands.
-  uninstallMarketplacePlugin: (input: MarketplacePluginUninstallInput) => Promise<MarketplacePluginUninstallResult>
-  readMarketplacePluginUpdateStates: (input?: MarketplaceRegistryReadInput) => Promise<MarketplaceUpdateStatesResult>
-  // Install extension from GitHub: main resolves the repository's default
-  // branch (or the ref the URL names) to a commit, discloses what it found
-  // there, and issues the one-time token `installGithubExtension` spends.
-  // `checkGithubExtensionUpdate` is the same review of where the branch is now.
-  resolveGithubExtension: (input: GithubExtensionResolveInput) => Promise<GithubExtensionResolveResult>
-  installGithubExtension: (input: GithubExtensionInstallInput) => Promise<MarketplacePluginRegistryInstallResult>
-  checkGithubExtensionUpdate: (input: GithubExtensionCheckUpdateInput) => Promise<GithubExtensionCheckUpdateResult>
   logDiagnostic: (input: DiagnosticLogInput) => Promise<DiagnosticLogEntry>
   openDiagnosticsLogsFolder: () => Promise<{ opened: true; path: string }>
   updateGetState: () => Promise<AppUpdateState>
@@ -1347,14 +1269,8 @@ export type ElectronApi = {
   saveChatExport: (input: ChatExportInput) => Promise<ChatExportResult>
   /** The same text, through the OS save dialog. */
   saveGitPatch: (repoRoot: string, patch: string, defaultFileName?: string) => Promise<GitPatchSaveResult>
-  /** List installed third-party capability modules with trust, permissions, and launch readiness. */
-  listThirdPartyModules: () => Promise<ThirdPartyModuleListResult>
   /** Open an installed third-party module's folder. Absent where there is no file manager to open it in. */
-  revealThirdPartyModule?: (id: string) => Promise<ThirdPartyModuleTrustResult>
-  /** Serve trusted third-party modules' entry.renderer bundles for the renderer loader. */
-  listThirdPartyRendererEntries: () => Promise<ThirdPartyRendererEntriesResult>
-  /** Install/trust changed; renderer-only modules may now be available. */
-  onThirdPartyModulesChanged: (cb: () => void) => () => void
+  revealThirdPartyModule?: (id: string) => Promise<ThirdPartyModuleRevealResult>
   // The conversation peek: what has been said in a chat the person is hovering
   // rather than looking at — the first message and everything since, from the
   // prompts this app captured. `source` says whether there is an answer, a
@@ -1384,12 +1300,6 @@ export type ElectronApi = {
   updateAppMenuAccelerators: (updates: AppMenuAcceleratorUpdate[]) => Promise<AppMenuAcceleratorUpdateResult>
   workspaceBackupWrite: (payload: WorkspaceBackupPayload) => Promise<WorkspaceBackupWriteResult>
   workspaceBackupRead: () => Promise<WorkspaceBackupReadResult>
-  // Renderer → main mirror of every module's app-level state (`module:<id>`
-  // namespaces), so a module's entry.main reads its settings with no window.
-  setModuleAppState: (bag: Record<string, Record<string, unknown>>) => Promise<void>
-  // Renderer → main mirror of the module registry the user sees; main
-  // caches the last push in memory for its own read surfaces.
-  setModuleRegistrySnapshot: (snapshot: ModuleRegistrySnapshot) => Promise<ModuleRegistrySnapshotWriteResult>
   setColorScheme: (scheme: ColorScheme) => Promise<void>
   // `canvasColor` is the theme's opaque window ground (`#rrggbb`), sent with an
   // opaque material so main can paint new windows in it; omitted under glass.
@@ -1448,12 +1358,4 @@ export type ElectronApi = {
   updateBacklogDependencies: (input: BacklogDependenciesInput) => Promise<BacklogMutationResult>
   updateBacklogMockups: (input: BacklogMockupsInput) => Promise<BacklogMutationResult>
   createBacklogEpic: (input: BacklogCreateEpicInput) => Promise<BacklogCreateEpicResult>
-  // ── extension-platform additions ──
-  // Build an extension (the New chat door's extension mode): the folder new
-  // extensions are made in when the person picks none, what is at the
-  // extension's folder while the name is typed (null for a name that is not
-  // an id yet), and the project made there.
-  extensionScaffoldHome: () => Promise<string>
-  extensionScaffoldTarget: (input: ExtensionScaffoldTargetInput) => Promise<ExtensionScaffoldTarget | null>
-  extensionScaffoldCreate: (input: ExtensionScaffoldCreateInput) => Promise<ExtensionScaffoldCreateResult>
 }

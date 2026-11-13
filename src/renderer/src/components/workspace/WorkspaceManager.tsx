@@ -323,6 +323,7 @@ import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
 import { gitApi } from '../../studio/git'
 import { worktreesApi } from '../../studio/worktrees'
+import { extensionsApi } from '../../studio/extensions'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -3841,7 +3842,7 @@ export default function WorkspaceManager() {
     confirmNewChatWith(
       {
         makeExtension: async ({ id, folder }, prompt) => {
-          const made = await window.api
+          const made = await extensionsApi
             .extensionScaffoldCreate({
               id,
               ...(folder ? { folder } : {}),

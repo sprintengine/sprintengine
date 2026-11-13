@@ -314,7 +314,7 @@ export type AutomationBackends = {
   listModuleContributedTools(): ReadonlyArray<{ moduleId: string; toolName: string }>
   /**
    * The marketplace registry index through the same client, cache, and
-   * bundled-first policy the Extensions storefront reads (`marketplace:registry:read`)
+   * bundled-first policy the Extensions storefront reads (`marketplace.read`)
    * — one source of truth, not a second fetch path.
    */
   readMarketplaceRegistry(input?: MarketplaceRegistryReadInput): Promise<MarketplaceRegistryReadResult>

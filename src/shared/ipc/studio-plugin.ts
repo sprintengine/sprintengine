@@ -1,7 +1,6 @@
-// Part of the IPC contract: built-in skills, the studio plugin, and the plugin registry listing.
+// Built-in skills, Studio's own plugin, and the agent CLIs' plugin listing.
 // ../electron-api.ts re-exports everything here.
 
-import type { PluginRegistryListEntry } from '../plugin-manifest'
 import type { BuiltinSkill, BuiltinSkillTargetState } from '../../../packages/studio-protocol/src/public'
 
 // A built-in skill and what it would install, as the Studio protocol carries them (`builtinSkills.*`).
@@ -11,20 +10,7 @@ export type {
   BuiltinSkillTargetState,
 } from '../../../packages/studio-protocol/src/public'
 
-/**
- * What the catalogue's built-in row for the app's own plugin reads.
- * `installedVersion` is '' until this app run has installed into that
- * workspace; a value that differs from `bundledVersion` is the drift Sync
- * reports, and the next open closes it.
- */
-export type StudioPluginStatus = {
-  bundledVersion: string
-  installedVersion: string
-  skillDirNames: string[]
-  claudePluginKey: string
-  /** ISO timestamp the hooks acknowledgement was answered, '' when it has not been. */
-  hooksAcknowledgedAt: string
-}
+export type { PluginRegistryListResult, StudioPluginStatus } from '../../../packages/studio-protocol/src/public'
 
 export type BuiltinSkillInstallResult =
   | {
@@ -40,5 +26,3 @@ export type BuiltinSkillInstallResult =
       skillId: string
       message: string
     }
-
-export type PluginRegistryListResult = { ok: true; plugins: PluginRegistryListEntry[] } | { ok: false; message: string }
