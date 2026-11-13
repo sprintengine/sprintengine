@@ -7,7 +7,7 @@ import {
   type ChatServerOffer,
 } from '../../../../../../packages/client-runtime/src/public'
 import { watchWindowStudioWelcome, windowStudioWelcome } from '../../../studio/windowStudioClient'
-import type { StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
+import type { EnvironmentId, StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
 
 import type { ChatServices } from './chatServices'
 import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
@@ -107,7 +107,8 @@ export type ChatEnvironment = {
    * build that does not say it. What the window and its shell reach of the
    * chat's disk is asked of this (`useShellReach`).
    */
-  readonly id: string | null
+  // The one identity type an environment has (env-identity), never a second.
+  readonly id: EnvironmentId | null
   /**
    * What the person calls the machine, where it is not the window's own
    * Studio (a paired machine's name); null for the window's own, which the
@@ -515,7 +516,7 @@ export function createRemoteConversationTransport(input: {
    * The id that machine's Studio said it is, read whenever the environment
    * is; null until it has said one.
    */
-  environmentId?: () => string | null
+  environmentId?: () => EnvironmentId | null
   /**
    * What the machine last said of itself and what this pairing may do there,
    * read whenever the capabilities are; null before it has said anything.
