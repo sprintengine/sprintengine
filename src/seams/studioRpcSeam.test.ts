@@ -225,7 +225,17 @@ test('a paired app starts a chat, follows it and drives it, held to its ceiling'
     // Asked for bypass, given the ceiling.
     assert.equal(chat.info.permissionPreset, 'auto')
     const stream = chat.events()
-    const opening = await until(stream, (frame) => frame.type === 'event' && frame.event.type === 'turn_completed')
+    // The first turn may end before the follow begins (a busy machine), and is
+    // then in the snapshot, not after it: waiting only for a live end would wait forever.
+    const opening = await until(
+      stream,
+      (frame) =>
+        (frame.type === 'event' && frame.event.type === 'turn_completed') ||
+        (frame.type === 'snapshot' && frame.page.events.some((event) => event.type === 'turn_completed')),
+    )
+    // Ended in the snapshot, it is read on to the fence, which the cursor is.
+    if (opening.at(-1)?.type === 'snapshot')
+      opening.push(...(await until(stream, (frame) => frame.type === 'synchronized')))
     const snapshot = opening.find((frame) => frame.type === 'snapshot')
     const snapshotTexts =
       snapshot?.type === 'snapshot'
