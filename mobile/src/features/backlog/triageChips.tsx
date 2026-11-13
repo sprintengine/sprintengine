@@ -3,17 +3,12 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useThemedStyles } from "../../theme/ThemeProvider";
 import { monoFontFamily } from "../../theme/fonts";
 import { radius, space, typography, type Theme, hitTargetMin, fontWeight } from "../../theme/tokens";
-import type { BacklogCreateWorkspaceOption } from "./backlogLogic";
 
 /**
- * One triage axis as a row of chips. Shared by the create form and the item
- * detail's triage block, so the two surfaces that set `type` / `difficulty` /
- * `criticality` cannot drift apart.
- *
- * Whether a second tap on the selected chip *clears* the axis is the caller's
- * decision, not this control's: create can clear (an absent field means "the
- * desktop picks"), but `backlog.update` reads an omitted field as "leave it
- * alone" and so has no way to express a clear.
+ * One triage axis as a row of chips, as the item detail's triage block sets
+ * `type` / `difficulty` / `criticality`. A second tap on the selected chip does
+ * not clear the axis: `backlog.update` reads an omitted field as "leave it
+ * alone", and so has no way to express a clear.
  */
 export function OptionRow<T extends string>({
   label,
@@ -72,75 +67,7 @@ export function capitalizeToken(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Shared scaffold for the backlog feature's create panel: it collects a
-// workspace then runs an edit → confirm → pending → success/error lifecycle, so
-// the picker, the state machine, and the panel chrome live here rather than
-// inside the form. It was shared with the Sprint Engine create panel until that
-// went (2026-09-16); the split is kept because the lifecycle is the interesting
-// part and the form should not have to re-own it.
-
-export type CreateFormState =
-  | { status: "editing"; error: string | null }
-  | { status: "confirming" }
-  | { status: "pending" }
-  | { status: "success"; message: string }
-  | { status: "error"; message: string };
-
-interface WorkspacePickerProps {
-  workspaces: BacklogCreateWorkspaceOption[];
-  selectedPath: string | null;
-  isLoading: boolean;
-  onSelect: (workspacePath: string | null) => void;
-}
-
-// The picker writes into a workspace the desktop already knows about; there is
-// no silent default, so re-tapping the selected row clears it.
-export function WorkspacePicker({ workspaces, selectedPath, isLoading, onSelect }: WorkspacePickerProps) {
-  const createFormStyles = useCreateFormStyles();
-
-  return (
-    <View style={createFormStyles.field}>
-      <Text style={createFormStyles.fieldLabel}>Workspace</Text>
-      {workspaces.length === 0 ? (
-        <Text style={createFormStyles.fieldHint}>
-          {isLoading
-            ? "Loading workspaces…"
-            : "No workspaces yet. Refresh once one appears on your desktop."}
-        </Text>
-      ) : (
-        <View style={createFormStyles.optionColumn}>
-          {workspaces.map((workspace) => {
-            const selected = workspace.workspacePath === selectedPath;
-            return (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                key={workspace.workspaceId}
-                onPress={() => onSelect(selected ? null : workspace.workspacePath)}
-                style={({ pressed }) => [
-                  createFormStyles.workspaceRow,
-                  selected ? createFormStyles.workspaceRowSelected : null,
-                  pressed ? createFormStyles.pressedRow : null,
-                ]}
-              >
-                <Text
-                  style={[createFormStyles.workspaceName, selected ? createFormStyles.workspaceNameSelected : null]}
-                >
-                  {workspace.workspaceName}
-                </Text>
-                <Text numberOfLines={1} style={createFormStyles.workspacePath}>
-                  {workspace.workspacePath}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
-
-export function useCreateFormStyles() {
+function useCreateFormStyles() {
   return useThemedStyles(createCreateFormStyles);
 }
 

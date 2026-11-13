@@ -6,4 +6,4 @@
 // typecheck rather than the gate's run. A changed signature shows in the gate.
 export { completeTailnetPairing } from "../api/tailnetControlClient";
 export { createConversation } from "../api/conversationLaunch";
-export { createTailnetConversationsApi } from "../api/tailnetConversations";
+export { createDesktopConversationsApi } from "../api/desktopConversations";

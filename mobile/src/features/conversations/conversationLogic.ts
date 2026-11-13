@@ -1,12 +1,14 @@
 import { parseChatLink, type ChatLink } from "../../../../packages/studio-protocol/src/chat-link";
-import type { ConversationEvent, ConversationThread } from "../../api/conversationWire";
+import type {
+  ConversationListedThread as ConversationThread,
+  ConversationWireEvent as ConversationEvent,
+} from "../../../../packages/conversation-protocol/src/public";
 import {
   presentToolItem,
   type ConversationToolKind,
   type PresentableTool,
 } from "../../../../packages/conversation-protocol/src/public";
-import type { MobileSession } from "../../api/types";
-import { declaresConversationModels, declaresPermissionModes } from "../../api/tailnetTransport";
+import type { PhoneChatOffers } from "../../api/chatOffers";
 import {
   applyAgentReport,
   formatDuration,
@@ -51,19 +53,6 @@ export function composerActionKind(input: {
   return input.dictating || input.sending || input.justSent ? "send" : "stop";
 }
 
-/** The desktop streams chats. Whether this phone may follow them is `conversationEnabled`'s other half. */
-export const conversationOffered = (session: MobileSession) =>
-  session.status !== "revoked" && session.tailnetCapabilities?.includes("conversations") === true;
-/**
- * The desktop streams chats and this phone's grant may read them: the socket
- * is refused without `conversation:read` (or `operate`, which includes it),
- * and a phone that dialled anyway retried an unexplained close for good.
- */
-export const conversationEnabled = (session: MobileSession) =>
-  conversationOffered(session) &&
-  (session.tailnetScopes.includes("conversation:read") || session.tailnetScopes.includes("conversation:operate"));
-export const conversationCanOperate = (session: MobileSession) =>
-  conversationEnabled(session) && session.tailnetScopes.includes("conversation:operate");
 export type ConversationTarget = { deviceId: string; thread: ConversationThread };
 export type ConversationLink = { deviceId: string; workspaceId: string; agentId: string };
 /** Links identify a paired desktop; they never carry credentials or a server URL. */
@@ -1158,9 +1147,9 @@ export function permissionLabel(preset: ConversationThread["permissionPreset"]):
  * ones its CLI's chat runs), Bypass and No flag where it does not, and always
  * the one the chat is on now.
  */
-export function permissionChoices(session: MobileSession, thread: ConversationThread) {
+export function permissionChoices(offers: Pick<PhoneChatOffers, "permissionModes">, thread: ConversationThread) {
   return offeredPermissionPresets({
-    fourPresets: declaresPermissionModes(session),
+    fourPresets: offers.permissionModes,
     listed: thread.capabilities?.permissionPresets,
     cli: thread.models?.cli?.trim() || cliForChatProvider(thread.providerId),
     current: thread.permissionPreset,
@@ -1173,20 +1162,20 @@ export type ModelChoice = { id: string; label: string; current: boolean };
 /**
  * What the model control shows for a chat: the current model's friendly name,
  * the rows a person can pick (the CLI's default first, then its catalog), and
- * whether picking is offered at all. Null hides the control: the desktop did
- * not declare `conversation-models`, it listed no catalog for this chat, or
- * this phone may not operate the chat. A chat whose provider cannot switch
+ * whether picking is offered at all. Null hides the control: the desktop's
+ * Studio does not switch models for this pairing (`modelSwitch`: it serves
+ * `conversation-models` and the grant reaches the switch), or it listed no
+ * catalog for this chat. A chat whose provider cannot switch
  * models mid-conversation shows its model read-only: the desktop refuses a
  * switch for it, started or not, since a listed chat always has a session or
  * a transcript to resume.
  */
 export function modelControl(
-  session: MobileSession,
+  offers: Pick<PhoneChatOffers, "modelSwitch">,
   thread: ConversationThread,
 ): { label: string; choices: ModelChoice[]; editable: boolean } | null {
   const catalog = thread.models;
-  if (!catalog || !conversationCanOperate(session)) return null;
-  if (!declaresConversationModels(session)) return null;
+  if (!catalog || !offers.modelSwitch) return null;
   const current = thread.modelId || DEFAULT_MODEL_ID;
   const choices: ModelChoice[] = [
     { id: DEFAULT_MODEL_ID, label: `${catalog.cliLabel || catalog.cli} default`, current: current === DEFAULT_MODEL_ID },

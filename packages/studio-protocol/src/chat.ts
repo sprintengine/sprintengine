@@ -103,6 +103,12 @@ export const STUDIO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 export const STUDIO_MAX_UPLOADS_PER_SEND = 16
 /** The most bytes one `uploads.append` may carry, decoded: its base64 stays well under a client frame. */
 export const STUDIO_UPLOAD_CHUNK_BYTES = 512 * 1024
+/**
+ * The largest file of any type a keyed send may carry beside its words
+ * (`uploads.begin` with `purpose: 'attachment'`): kept on the machine that runs
+ * the chat, and attached to the message by its path there.
+ */
+export const STUDIO_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 /** The picture types a send may carry. */
 export const STUDIO_UPLOAD_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const
 
@@ -239,8 +245,12 @@ export type StudioChatMethodMap = {
     result: ConversationSessionActionResult
   }
   'uploads.begin': {
-    /** A picture for a send, or (`purpose: 'file'`, owners) a file's bytes for `files.write`, of any type. */
-    params: { mediaType: string; byteLength: number; name?: string; purpose?: 'picture' | 'file' }
+    /**
+     * A picture for a send; a file of any type a keyed send carries beside its
+     * words (`purpose: 'attachment'`, named); or (`purpose: 'file'`, owners) a
+     * file's bytes for `files.write`.
+     */
+    params: { mediaType: string; byteLength: number; name?: string; purpose?: 'picture' | 'attachment' | 'file' }
     result: { uploadId: string; chunkBytes: number }
   }
   'uploads.append': {
@@ -735,7 +745,26 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
           return refuse(`A file may be at most ${STUDIO_MAX_FILE_BYTES / (1024 * 1024)} MB.`, 'too_large')
         return studioParams({ mediaType: value.mediaType, byteLength: value.byteLength, purpose: 'file' as const })
       }
-      if (value.purpose !== undefined && value.purpose !== 'picture') return refuse('"purpose" is picture or file.')
+      if (value.purpose === 'attachment') {
+        if (!(typeof value.mediaType === 'string' && /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/.test(value.mediaType)))
+          return refuse('"mediaType" is the file’s media type.')
+        if (!(integer(value.byteLength) && value.byteLength > 0))
+          return refuse('"byteLength" is the file’s size in bytes.')
+        if (value.byteLength > STUDIO_MAX_ATTACHMENT_BYTES)
+          return refuse(
+            `A file sent with a message may be at most ${STUDIO_MAX_ATTACHMENT_BYTES / (1024 * 1024)} MB.`,
+            'too_large',
+          )
+        if (!text(value.name, 500)) return refuse('"name" is the file’s name.')
+        return studioParams({
+          mediaType: value.mediaType,
+          byteLength: value.byteLength,
+          name: value.name as string,
+          purpose: 'attachment' as const,
+        })
+      }
+      if (value.purpose !== undefined && value.purpose !== 'picture')
+        return refuse('"purpose" is picture, attachment or file.')
       if (!(
         typeof value.mediaType === 'string' &&
         (STUDIO_UPLOAD_MEDIA_TYPES as readonly string[]).includes(value.mediaType)

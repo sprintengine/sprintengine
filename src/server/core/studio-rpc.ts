@@ -1,4 +1,5 @@
 import { hostname } from 'node:os'
+import { join } from 'node:path'
 
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import {
@@ -38,6 +39,7 @@ import { createStudioCanvasDomain, type StudioCanvasHost } from '../canvas/canva
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { createStudioPhoneReads } from '../backlog/backlog-domain'
 import { createTailnetShareService, readTailnetWebTargets } from '../../main/automation/tailnet/tailnet-share-service'
+import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
@@ -89,6 +91,9 @@ export function createStudioRpc(
         // The live workspace state the module conversation service reads too.
         getWorkspaceAgents: () => core.workspaceSyncService.getSnapshot().state.workspaces,
         lifecycle: core.conversationLifecycle,
+        // A paired device's files sent with a message, kept where the tailnet's
+        // upload route keeps them, so one store prunes both.
+        fileUploads: createTailnetFileUploads({ root: join(core.platform.paths.dataDir(), TAILNET_UPLOADS_DIRNAME) }),
       }),
     audit: () => gateway.gatewayAudit(),
     tools: gateway.clientTools,

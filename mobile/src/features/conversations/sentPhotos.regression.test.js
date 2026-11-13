@@ -14,8 +14,7 @@ const {
   sentPhotoUri,
 } = require("../../../.mobile-test-build/mobile/src/features/conversations/sentPhotos.js");
 const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
-const { conversationImageSource, conversationImageUrl } = require("../../../.mobile-test-build/mobile/src/api/conversationImages.js");
-const { declaresMessageImages } = require("../../../.mobile-test-build/mobile/src/api/tailnetTransport.js");
+const { phoneChatOffers } = require("../../../.mobile-test-build/mobile/src/api/chatOffers.js");
 
 // A ref in the shape the desktop's attachment store chooses: its folder for the
 // chat, a random file name, the picture's extension.
@@ -138,24 +137,17 @@ test("a square is said by the picture's name, else by its place among the messag
   assert.equal(sentImageLabel({ id: "a" }, 0, 1), "Image");
 });
 
-test("a sent picture's address names the chat and the ref, in place of a step", () => {
-  const desktop = { baseUrl: "http://studio.tail1234.ts.net:8471/", deviceToken: "mctn_token" };
-  const url = new URL(conversationImageUrl(desktop.baseUrl, { workspaceId: "ws-1", agentId: "agent-1", attachment: REF }));
-  assert.equal(url.pathname, "/tailnet/v1/conversation-image");
-  assert.deepEqual([...url.searchParams.keys()], ["workspaceId", "agentId", "attachment"]);
-  assert.equal(url.searchParams.get("attachment"), REF);
-  const source = conversationImageSource(desktop, { workspaceId: "ws-1", agentId: "agent-1", attachment: REF });
-  assert.deepEqual(source.headers, { Authorization: "Bearer mctn_token" });
-  // A step's picture is still named by its call.
-  const step = new URL(conversationImageUrl(desktop.baseUrl, { workspaceId: "ws-1", agentId: "agent-1", toolUseId: "ig_1" }));
-  assert.deepEqual([...step.searchParams.keys()], ["workspaceId", "agentId", "toolUseId"]);
-});
-
-test("sent pictures are fetched only from a desktop that declared conversation-message-images; silence is a no", () => {
-  assert.equal(declaresMessageImages({ tailnetCapabilities: ["conversations", "conversation-images", "conversation-message-images"] }), true);
-  // A desktop that serves step pictures only answers a sent picture's request 400.
-  assert.equal(declaresMessageImages({ tailnetCapabilities: ["conversations", "conversation-images"] }), false);
-  assert.equal(declaresMessageImages({}), false);
+test("sent pictures are read back only where the desktop's Studio serves them; silence is a no", () => {
+  const welcome = (capabilities) => ({
+    capabilities: ["conversations"],
+    conversation: { protocolVersion: 1, minProtocolVersion: 1, capabilities },
+    grant: { clientId: "tailnet:phone", name: "android-phone", owner: false, scopes: ["conversation:read"], ceiling: "none" },
+  });
+  assert.equal(phoneChatOffers(welcome(["conversation-images", "conversation-message-images"])).sentPictures, true);
+  // A desktop that serves step pictures only has no sent picture to give.
+  assert.equal(phoneChatOffers(welcome(["conversation-images"])).sentPictures, false);
+  assert.equal(phoneChatOffers(welcome(["conversation-images"])).stepPictures, true);
+  assert.equal(phoneChatOffers(null).sentPictures, false);
 });
 
 test("the phone's copies a past run kept come back under the ones this run has, and say when they change", () => {

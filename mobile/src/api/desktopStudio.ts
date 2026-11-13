@@ -3,8 +3,10 @@ import {
   connect,
   webSocketTransport,
   type StudioClient,
+  type StudioClientState,
   type StudioWebSocketConstructor,
 } from "../../../packages/client-runtime/src/public";
+import type { StudioWelcomeFrame } from "../../../packages/studio-protocol/src/public";
 import type { ApiErrorCode } from "./types";
 import { readPeerRefusal } from "./tailnetTransport";
 
@@ -88,8 +90,17 @@ async function mintTicket(target: DesktopTarget, fetchImpl: typeof fetch): Promi
 }
 
 const clients = new Map<string, Promise<StudioClient>>();
-/** Who wants to hear that a desktop's connection is back after a drop, by desktop and pairing. */
-const backListeners = new Map<string, Set<() => void>>();
+/** Who wants to hear how a desktop's connection stands, by desktop and pairing. */
+const stateListeners = new Map<string, Set<(state: StudioClientState, error?: StudioError) => void>>();
+/** What each desktop's Studio last said it serves this pairing: its welcome. */
+const welcomes = new Map<string, StudioWelcomeFrame>();
+const welcomeListeners = new Map<string, Set<() => void>>();
+
+function heard(key: string, welcome: StudioWelcomeFrame): void {
+  if (welcomes.get(key) === welcome) return;
+  welcomes.set(key, welcome);
+  for (const listener of [...(welcomeListeners.get(key) ?? [])]) listener();
+}
 
 function clientKey(target: DesktopTarget): string {
   return `${target.baseUrl}\n${target.deviceToken}`;
@@ -105,19 +116,13 @@ export function desktopStudio(target: DesktopTarget, options: DesktopStudioOptio
   const held = clients.get(key);
   if (held) return held;
   const fetchImpl = options.fetchImpl ?? fetch;
-  // A push stream replays nothing of what was said while the socket was down,
-  // so whoever follows one is told when it is back, to read again.
-  let down = false;
+  let connected: StudioClient | null = null;
   const opening = connect({
     client: { name: "SprintEngine Studio phone" },
-    onStateChange: (state) => {
-      if (state !== "open") {
-        down = true;
-        return;
-      }
-      if (!down) return;
-      down = false;
-      for (const listener of [...(backListeners.get(key) ?? [])]) listener();
+    onStateChange: (state, error) => {
+      // Each connection's welcome says again what this pairing may use there.
+      if (state === "open" && connected) heard(key, connected.welcome);
+      for (const listener of [...(stateListeners.get(key) ?? [])]) listener(state, error);
     },
     transport: webSocketTransport({
       ticket: () => mintTicket(target, fetchImpl),
@@ -127,6 +132,8 @@ export function desktopStudio(target: DesktopTarget, options: DesktopStudioOptio
   clients.set(key, opening);
   opening.then(
     (client) => {
+      connected = client;
+      heard(key, client.welcome);
       const forget = () => {
         if (clients.get(key) === opening) clients.delete(key);
       };
@@ -139,26 +146,66 @@ export function desktopStudio(target: DesktopTarget, options: DesktopStudioOptio
   return opening;
 }
 
+function listen<T>(table: Map<string, Set<T>>, key: string, listener: T): () => void {
+  const listeners = table.get(key) ?? new Set<T>();
+  table.set(key, listeners);
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && table.get(key) === listeners) table.delete(key);
+  };
+}
+
+/**
+ * Hear each change in how this desktop's connection stands (`open`,
+ * `reconnecting`, `parked` with why, `closed`), while the returned stop is
+ * not called.
+ */
+export function watchDesktopStudio(
+  target: DesktopTarget,
+  listener: (state: StudioClientState, error?: StudioError) => void,
+): () => void {
+  return listen(stateListeners, clientKey(target), listener);
+}
+
 /**
  * Hear each time this desktop's connection is back after a drop, while the
  * returned stop is not called. Nothing said on a push topic while it was down
  * is replayed, so a follower reads again here.
  */
 export function onDesktopStudioBack(target: DesktopTarget, listener: () => void): () => void {
-  const key = clientKey(target);
-  const listeners = backListeners.get(key) ?? new Set<() => void>();
-  backListeners.set(key, listeners);
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0 && backListeners.get(key) === listeners) backListeners.delete(key);
-  };
+  let down = false;
+  return watchDesktopStudio(target, (state) => {
+    if (state !== "open") {
+      down = true;
+      return;
+    }
+    if (!down) return;
+    down = false;
+    listener();
+  });
+}
+
+/**
+ * What this desktop's Studio last said it serves this pairing (its welcome:
+ * its capabilities, its chats' and the grant), or null before it has said
+ * anything in this run of the app. What the phone offers is read from here,
+ * never from what the desktop said at pairing time.
+ */
+export function desktopWelcome(target: DesktopTarget): StudioWelcomeFrame | null {
+  return welcomes.get(clientKey(target)) ?? null;
+}
+
+/** Hear each new welcome from this desktop, while the returned stop is not called. */
+export function onDesktopWelcome(target: DesktopTarget, listener: () => void): () => void {
+  return listen(welcomeListeners, clientKey(target), listener);
 }
 
 /** Close every desktop's connection: the phone unpaired, or a test is done. */
 export function closeDesktopStudios(): void {
   const open = [...clients.values()];
   clients.clear();
+  welcomes.clear();
   for (const opening of open) opening.then((client) => client.close(), () => undefined);
 }
 

@@ -37,7 +37,7 @@ export type HomeStackParamList = {
   };
   Conversation: {
     deviceId: string;
-    thread: import("../api/conversationWire").ConversationThread;
+    thread: import("../../../packages/conversation-protocol/src/public").ConversationListedThread;
     /** New's first message, when it carries pictures: its words, and the pictures New uploaded to the chat. */
     opening?: import("../features/conversations/photoLaunch").ChatOpening;
     /**

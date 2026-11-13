@@ -37,10 +37,10 @@ test("the window's own Studio, on the owner's grant, offers what it serves", () 
     hostSchedule: true,
     hostUsageLimits: true,
     hostChanges: true,
-    // The socket withholds files on a keyed send and queued attachments, and
-    // no method of it opens a pull request.
-    attachFiles: false,
-    hostQueueAttachments: false,
+    // Files on a keyed send and held with a queued message are staged on the
+    // socket itself; no method of it opens a pull request.
+    attachFiles: true,
+    hostQueueAttachments: true,
     hostPullRequests: false,
   })
 })
@@ -74,12 +74,20 @@ test('a Studio that does not serve a feature is not offered it, and nothing else
   for (const [missing, flags] of [
     ['conversation-steer-sends', ['steer']],
     ['conversation-quote-tokens', ['quotes']],
-    ['conversation-queued-sends', ['hostQueue']],
+    // What a held message carries is held only where messages are.
+    ['conversation-queued-sends', ['hostQueue', 'hostQueueAttachments']],
     ['conversation-permanent-approvals', ['permanentApprovals']],
     ['conversation-checkpoints', ['checkpointRevert']],
     ['session-controls', ['agentMessages']],
     // Sending is a session's: without it the chat is followed, not driven.
-    ['conversation-sessions', OPERATIONS.filter((flag) => !['checkpointRevert', 'agentMessages'].includes(flag))],
+    [
+      'conversation-sessions',
+      [
+        ...OPERATIONS.filter((flag) => !['checkpointRevert', 'agentMessages'].includes(flag)),
+        'attachFiles',
+        'hostQueueAttachments',
+      ],
+    ],
   ] as const) {
     const less = studio(chatWelcome({ without: [missing] }))
     const changed = (Object.keys(full) as Array<keyof ChatCapabilities>).filter((flag) => less[flag] !== full[flag])

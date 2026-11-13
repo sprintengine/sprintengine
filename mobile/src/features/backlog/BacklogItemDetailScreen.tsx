@@ -28,7 +28,7 @@ import {
   type BacklogEpicMeta,
   type BacklogRowItem,
 } from "./backlogLogic";
-import { capitalizeToken, OptionRow } from "./createFormShared";
+import { capitalizeToken, OptionRow } from "./triageChips";
 
 /** The three axes `backlog.update` can set beyond `status`. */
 type TriageOverride = Pick<BacklogUpdateInput, "type" | "difficulty" | "criticality">;

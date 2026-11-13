@@ -1,7 +1,11 @@
 import { isConversationWirePermissionPreset } from "../../../packages/conversation-protocol/src/public";
 import type { StudioConversationCreate } from "../../../packages/studio-protocol/src/public";
 import { StudioError } from "../../../packages/client-runtime/src/public";
-import { plainLineBreaks, type ConversationPermissionPreset, type ConversationThread } from "./conversationWire";
+import {
+  type ConversationWirePermissionPreset as ConversationPermissionPreset,
+  type ConversationListedThread as ConversationThread,
+} from "../../../packages/conversation-protocol/src/public";
+import { plainLineBreaks } from "../features/conversations/sendRules";
 import { desktopStudio, type DesktopStudioOptions } from "./desktopStudio";
 
 // Starting a chat on a paired desktop: `conversation.create` on the desktop's

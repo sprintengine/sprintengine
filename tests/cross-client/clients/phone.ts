@@ -10,9 +10,10 @@ import { Feed, type GateEvent } from '../feed'
 // file (expo-file-system-node.ts). Node's global fetch and WebSocket stand in
 // for React Native's.
 //
-// It starts a chat over the desktop's Studio protocol (`/tailnet/v1/studio`,
-// through the shared client runtime), and follows and drives one over the
-// tailnet lane, until the phone's chats move onto the protocol as well.
+// It starts, follows and drives a chat over the desktop's Studio protocol
+// (`/tailnet/v1/studio`, through the shared client runtime), as the app does:
+// the chat as `conversation.session`, each command its own method, a picture
+// staged with `uploads.*` and named by the send.
 //
 // The types below are the gate's reading of the phone's API, which the phone's
 // typecheck does not see: a changed signature shows when the gate runs.
@@ -43,7 +44,7 @@ type PhoneApi = {
     handlers: { onState(state: string, detail?: string): void; onFrame(frame: PhoneFrame): void },
     options?: Record<string, unknown>,
   ): PhoneStream
-  uploadImage(input: { sessionId: string; uri: string; name: string; mediaType: string }): Promise<string>
+  uploadImage(input: { uri: string; name: string; mediaType: string }): Promise<string>
   list(): Promise<Array<{ workspaceId: string; agentId: string; sessionId?: string | null }>>
 }
 
@@ -63,7 +64,7 @@ export type PhoneProtocol = {
     | { ok: true; conversation: { workspaceId: string; agentId: string } }
     | { ok: false; title: string; message?: string }
   >
-  createTailnetConversationsApi(input: { baseUrl: string; deviceToken: string }): PhoneApi
+  createDesktopConversationsApi(target: { baseUrl: string; deviceToken: string }): PhoneApi
 }
 
 export async function phoneClient(input: {
@@ -81,8 +82,7 @@ export async function phoneClient(input: {
   })
   if (!paired.ok) throw new Error(`phone: pairing was refused: ${paired.message}`)
   const deviceToken = paired.data.deviceToken
-  const capabilities = new Set(paired.data.transport.capabilities ?? [])
-  const api = input.protocol.createTailnetConversationsApi({ baseUrl, deviceToken })
+  const api = input.protocol.createDesktopConversationsApi({ baseUrl, deviceToken })
   const streams = new Map<string, { stream: PhoneStream; results: Map<string, (frame: PhoneFrame) => void> }>()
   const keyOf = (chat: ChatRef) => `${chat.workspaceId}/${chat.agentId}`
 
@@ -102,55 +102,35 @@ export async function phoneClient(input: {
     if (result.ok === false) throw new Error(`phone: ${what}: ${result.code ?? ''} ${result.message ?? ''}`.trim())
   }
 
-  /** The session a chat's upload names: the one the phone's chat list says it runs. */
-  async function sessionOf(chat: ChatRef): Promise<string> {
-    const listed = await api.list()
-    const sessionId = listed.find(
-      (thread) => thread.workspaceId === chat.workspaceId && thread.agentId === chat.agentId,
-    )?.sessionId
-    if (!sessionId) throw new Error('phone: the chat list names no session for the chat')
-    return sessionId
-  }
-
   return {
     id: 'phone',
     label: 'Phone',
-    transport: 'Studio protocol on the tailnet (New chat); tailnet lane (a chat)',
+    transport: 'Studio protocol on the tailnet',
     simulated: [
-      "the phone's native file module: an upload reads the file and posts it with Node's fetch",
+      "the phone's native file module: an upload reads the file's pieces from disk with Node's fs",
       "background and foreground: the gate cuts the phone's socket and calls the stream's foreground()",
       'the tailnet: the listener is bound to loopback and no Tailscale whois names the phone',
     ],
     async follow(chat) {
       const feed = new Feed('phone')
       const results = new Map<string, (frame: PhoneFrame) => void>()
-      const stream = api.open(
-        { workspaceId: chat.workspaceId, agentId: chat.agentId },
-        0,
-        {
-          onState: (state, detail) => feed.side({ live: state === 'live', lastError: detail ?? null }),
-          onFrame: (frame) => {
-            if (frame.type === 'snapshot' && frame.page)
-              feed.snapshot(frame.page.events, {
-                ...(frame.reset ? { reset: true } : {}),
-                ...(frame.generation ? { generation: frame.generation } : {}),
-              })
-            else if (frame.type === 'event' && frame.event) feed.event(frame.event)
-            else if (frame.type === 'scheduled' && frame.messages)
-              feed.side({ scheduled: frame.messages.map((message) => ({ id: message.id, text: message.text })) })
-            else if (frame.type === 'commandResult' && frame.commandId) {
-              results.get(frame.commandId)?.(frame)
-              results.delete(frame.commandId)
-            }
-          },
+      const stream = api.open({ workspaceId: chat.workspaceId, agentId: chat.agentId }, 0, {
+        onState: (state, detail) => feed.side({ live: state === 'live', lastError: detail ?? null }),
+        onFrame: (frame) => {
+          if (frame.type === 'snapshot' && frame.page)
+            feed.snapshot(frame.page.events, {
+              ...(frame.reset ? { reset: true } : {}),
+              ...(frame.generation ? { generation: frame.generation } : {}),
+            })
+          else if (frame.type === 'event' && frame.event) feed.event(frame.event)
+          else if (frame.type === 'scheduled' && frame.messages)
+            feed.side({ scheduled: frame.messages.map((message) => ({ id: message.id, text: message.text })) })
+          else if (frame.type === 'commandResult' && frame.commandId) {
+            results.get(frame.commandId)?.(frame)
+            results.delete(frame.commandId)
+          }
         },
-        {
-          hello: capabilities.has('conversation-hello'),
-          queuedSends: capabilities.has('conversation-queued-sends'),
-          scheduledSends: capabilities.has('conversation-scheduled-sends'),
-          subagents: capabilities.has('conversation-subagents'),
-        },
-      )
+      })
       streams.set(keyOf(chat), { stream, results })
       return feed
     },
@@ -171,7 +151,6 @@ export async function phoneClient(input: {
     send: (chat, text) => command(chat, 'send', { kind: 'send', message: text, composedAt: Date.now() }),
     async sendWithAttachment(chat, text, attachment: Attachment) {
       const uploadId = await api.uploadImage({
-        sessionId: await sessionOf(chat),
         uri: pathToFileURL(attachment.path).toString(),
         name: attachment.name,
         mediaType: attachment.mediaType,

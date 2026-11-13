@@ -40,8 +40,13 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
+// Every Studio lists a chat's clocks: when the person last wrote in it and when
+// its last turn ended. A case that names only `updatedAt` means all three.
 function thread(overrides = {}) {
+  const at = overrides.updatedAt;
+  const clocks = at !== undefined && !("lastUserMessageAt" in overrides) && !("lastTurnEndedAt" in overrides);
   return {
+    ...(clocks ? { lastUserMessageAt: at, lastTurnEndedAt: at } : {}),
     workspaceId: "workspace",
     agentId: "agent",
     title: "Remote conversation launch",
@@ -253,59 +258,53 @@ test("by date: rows keep the order they were given within a section, even out of
   );
 });
 
-test("a lifecycle desktop's chat is ordered and split by when the person last wrote in it", () => {
-  const lifecycle = { lifecycle: true };
+test("a chat is ordered and split by when the person last wrote in it", () => {
+  const lifecycle = {};
   const rows = [
     // The agent just finished and a usage report bumped it: neither moves it.
     row({ agentId: "bumped", lastUserMessageAt: NOW - 3 * HOUR, lastTurnEndedAt: NOW - MIN, updatedAt: NOW }, lifecycle),
     row({ agentId: "written", lastUserMessageAt: NOW - 20 * MIN, updatedAt: NOW - 2 * HOUR }, lifecycle),
     row({ agentId: "waiting", phase: "waiting_for_input", lastUserMessageAt: NOW - 5 * HOUR, updatedAt: NOW }, lifecycle),
     // Never written in: it counts from when it was made, not from `updatedAt`.
-    row({ agentId: "fresh", createdAt: NOW - 4 * HOUR, updatedAt: NOW }, lifecycle),
+    row({ agentId: "fresh", createdAt: NOW - 4 * HOUR, updatedAt: NOW, lastUserMessageAt: undefined }, lifecycle),
     // Written in two days ago, though its agent finished an hour ago.
     row({ agentId: "old", lastUserMessageAt: NOW - 2 * DAY, lastTurnEndedAt: NOW - HOUR, updatedAt: NOW - HOUR }, lifecycle),
-    // An older desktop's chat sends no message clock, and orders by `updatedAt`.
-    row({ agentId: "older-desktop", updatedAt: NOW - 30 * MIN }),
   ];
   const { recent, earlier } = chatSections(rows, NOW);
-  assert.deepEqual(recent.map((item) => item.thread.agentId), ["written", "older-desktop", "bumped", "fresh", "waiting"]);
+  assert.deepEqual(recent.map((item) => item.thread.agentId), ["written", "bumped", "fresh", "waiting"]);
   assert.deepEqual(earlier.map((item) => item.thread.agentId), ["old"]);
   assert.equal(chatRecencyAt(rows[3]), NOW - 4 * HOUR);
-  assert.equal(chatRecencyAt(rows[5]), NOW - 30 * MIN);
   // Ties keep the order the desktop listed them in.
   const tied = [row({ agentId: "first", lastUserMessageAt: NOW - MIN }, lifecycle), row({ agentId: "second", lastUserMessageAt: NOW - MIN }, lifecycle)];
   assert.deepEqual(chatSections(tied, NOW).recent.map((item) => item.thread.agentId), ["first", "second"]);
   // The time on a resting row is when its last turn ended, where that is listed.
   assert.equal(chatRestingAt(thread({ lastTurnEndedAt: NOW - HOUR, updatedAt: NOW })), NOW - HOUR);
-  assert.equal(chatRestingAt(thread({ updatedAt: NOW - 3 * MIN })), NOW - 3 * MIN);
 });
 
 test("finished and unseen: anyone's visit counts, and only the turn's end makes news", () => {
-  const lifecycle = true;
+  const lifecycle = undefined;
   // Finished, and nobody has looked since: green.
   const ended = thread({ lastTurnEndedAt: NOW - 10 * MIN, updatedAt: NOW - 10 * MIN });
-  assert.equal(chatRowState(ended, { now: NOW, openedAt: NOW - HOUR, lifecycle }), "finished");
+  assert.equal(chatRowState(ended, { now: NOW, openedAt: NOW - HOUR }), "finished");
   // Read on the desktop after it ended: not green on the phone, which never opened it.
   const visited = thread({ lastTurnEndedAt: NOW - 10 * MIN, lastVisitedAt: NOW - 5 * MIN });
-  assert.equal(chatRowState(visited, { now: NOW, openedAt: NOW - HOUR, lifecycle }), "idle");
+  assert.equal(chatRowState(visited, { now: NOW, openedAt: NOW - HOUR }), "idle");
   assert.equal(chatSeenAt(visited, NOW - HOUR), NOW - 5 * MIN);
   assert.equal(chatSeenAt(thread(), NOW - HOUR), NOW - HOUR);
   // Opened here after it ended, never visited on the desktop: still seen.
-  assert.equal(chatRowState(ended, { now: NOW, openedAt: NOW - 5 * MIN, lifecycle }), "idle");
+  assert.equal(chatRowState(ended, { now: NOW, openedAt: NOW - 5 * MIN }), "idle");
   // Seen after the turn, then renamed, restarted or reported usage: `updatedAt`
   // moves and the turn's end does not, so it stays quiet.
   const bumped = thread({ lastTurnEndedAt: NOW - 30 * MIN, lastVisitedAt: NOW - 20 * MIN, updatedAt: NOW - MIN });
-  assert.equal(chatRowState(bumped, { now: NOW, openedAt: null, lifecycle }), "idle");
-  // A lifecycle chat listed with no turn end has never finished one.
-  assert.equal(chatTurnEndedAt(thread({ updatedAt: NOW - MIN }), true), null);
-  assert.equal(chatHasUnseenTurn(thread({ updatedAt: NOW - MIN }), { now: NOW, openedAt: null, lifecycle }), false);
-  // An older desktop: `updatedAt` stands in for the turn's end, as before.
-  assert.equal(chatTurnEndedAt(thread({ updatedAt: NOW - MIN })), NOW - MIN);
-  assert.equal(chatRowState(thread({ updatedAt: NOW - MIN }), { now: NOW, openedAt: NOW - 5 * MIN }), "finished");
+  assert.equal(chatRowState(bumped, { now: NOW, openedAt: null }), "idle");
+  // A chat listed with no turn end has never finished one, whatever `updatedAt` says.
+  const unfinished = thread({ updatedAt: NOW - MIN, lastTurnEndedAt: undefined });
+  assert.equal(chatTurnEndedAt(unfinished), null);
+  assert.equal(chatHasUnseenTurn(unfinished, { now: NOW, openedAt: null }), false);
   // The day's window reads the turn's end too.
-  assert.equal(chatRowState(thread({ lastTurnEndedAt: NOW - 2 * DAY, updatedAt: NOW }), { now: NOW, openedAt: null, lifecycle }), "idle");
+  assert.equal(chatRowState(thread({ lastTurnEndedAt: NOW - 2 * DAY, updatedAt: NOW }), { now: NOW, openedAt: null }), "idle");
   // Waiting on you is gold whatever anyone has seen.
-  assert.equal(chatRowState(thread({ phase: "waiting_for_approval", lastVisitedAt: NOW }), { now: NOW, lifecycle }), "needs-input");
+  assert.equal(chatRowState(thread({ phase: "waiting_for_approval", lastVisitedAt: NOW }), { now: NOW }), "needs-input");
 });
 
 test("rows name the chat by the desktop's title, and settled chats never reach the list", () => {
@@ -320,7 +319,7 @@ test("rows name the chat by the desktop's title, and settled chats never reach t
     thread({ workspaceId: "w2", agentId: "c" }),
     thread({ workspaceId: "w3", agentId: "d" }),
   ];
-  const rows = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces, lifecycle: true, canOperate: true });
+  const rows = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces, manage: true });
   assert.deepEqual(rows.map((item) => item.thread.agentId), ["a", "b", "d"]);
   assert.equal(rows[0].workspaceChats, 2, "a settled workspace's chats are not counted either");
   assert.equal(rows[0].settleable, true);
@@ -329,13 +328,12 @@ test("rows name the chat by the desktop's title, and settled chats never reach t
   assert.equal(matchesChatSearch(rows[0], "sidebar"), true);
   // Settled chats leave the project groups with the list.
   assert.deepEqual(groupChatsByProject(rows, NOW).map((group) => group.rows.length), [2, 1]);
-  // Read-only pairings and older desktops settle nothing; an unreadable workspace list drops nothing.
-  const readOnly = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces, lifecycle: true, canOperate: false });
+  // A grant that does not reach the chats' rest settles nothing; an unreadable workspace list drops nothing.
+  const readOnly = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces, manage: false });
   assert.equal(readOnly[0].settleable, false);
-  const older = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces: null, lifecycle: false, canOperate: true });
-  assert.equal(older.length, 4);
-  assert.equal(older[0].settleable, false);
-  assert.equal(older[0].projectName, null);
+  const unlisted = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces: null, manage: true });
+  assert.equal(unlisted.length, 4);
+  assert.equal(unlisted[0].projectName, null);
 });
 
 test("search covers the title, the project, the machine and the CLI", () => {
@@ -354,31 +352,20 @@ test("a chat's opened key cannot collide with another desktop's agent", () => {
   assert.notEqual(chatOpenedKey("mac-mini-id", "agent-1"), chatOpenedKey("build-box-id", "agent-1"));
 });
 
-test("New offers a chat only where the desktop streams chats and the grant operates them", () => {
-  const session = {
-    deviceId: "mac-mini-id",
-    desktopName: "mac-mini",
-    baseUrl: "http://mac-mini:4100",
-    deviceToken: "mctn_example",
-    pairedAt: "2026-09-01T00:00:00.000Z",
-    tailnetScopes: ["conversation:read", "conversation:operate"],
-    tailnetCapabilities: ["conversations"],
-  };
-  assert.deepEqual(chatLaunchAvailability(session, { machineName: "mac-mini" }), { available: true });
+test("New offers a chat only where the desktop's Studio lets this pairing drive its chats", () => {
+  const offers = { said: true, follow: true, operate: true };
+  assert.deepEqual(chatLaunchAvailability(offers, { machineName: "mac-mini" }), { available: true });
   assert.match(
-    chatLaunchAvailability({ ...session, tailnetCapabilities: [] }, { machineName: "build-box" }).reason,
-    /^build-box does not stream chats yet/,
-  );
-  assert.match(
-    chatLaunchAvailability({ ...session, tailnetScopes: ["conversation:read"] }, { machineName: "mac-mini" }).reason,
+    chatLaunchAvailability({ ...offers, operate: false }, { machineName: "mac-mini" }).reason,
     /may read chats on mac-mini but not start them/,
   );
   assert.match(
-    chatLaunchAvailability({ ...session, tailnetScopes: ["workspace:read"] }, { machineName: "mac-mini" }).reason,
+    chatLaunchAvailability({ ...offers, follow: false, operate: false }, { machineName: "mac-mini" }).reason,
     /^This phone may not use chats on mac-mini/,
   );
-  assert.equal(chatLaunchAvailability({ ...session, status: "revoked" }, { machineName: "mac-mini" }).available, false);
-  assert.equal(chatLaunchAvailability(null, { machineName: "" }).available, false);
+  // Before the desktop has said anything, nothing is refused: the create itself says what went wrong.
+  assert.deepEqual(chatLaunchAvailability({ said: false, follow: false, operate: false }, { machineName: "" }), { available: true });
+  assert.deepEqual(chatLaunchAvailability(null, { machineName: "" }), { available: true });
 });
 
 test("New needs chat control and the projects; the workspace grant is read or operate, never a terminal scope", () => {
@@ -389,7 +376,6 @@ test("New needs chat control and the projects; the workspace grant is read or op
     deviceToken: "mctn_example",
     pairedAt: "2026-09-01T00:00:00.000Z",
     tailnetScopes: ["workspace:read", "conversation:operate"],
-    tailnetCapabilities: ["conversations"],
     status: "online",
   };
   assert.equal(canReadWorkspaces(session), true);
@@ -398,10 +384,9 @@ test("New needs chat control and the projects; the workspace grant is read or op
   assert.equal(canReadWorkspaces({ ...session, tailnetScopes: ["conversation:operate", "terminal:control"] }), false);
   assert.equal(canReadWorkspaces({ ...session, status: "revoked" }), false);
 
-  assert.equal(canStartChats(session), true);
-  assert.equal(canStartChats({ ...session, tailnetScopes: ["workspace:read", "conversation:read"] }), false);
-  assert.equal(canStartChats({ ...session, tailnetScopes: ["conversation:operate"] }), false);
-  assert.equal(canStartChats({ ...session, tailnetCapabilities: [] }), false);
+  assert.equal(canStartChats(session, { operate: true }), true);
+  assert.equal(canStartChats(session, { operate: false }), false, "the Studio's grant does not drive its chats");
+  assert.equal(canStartChats({ ...session, tailnetScopes: ["conversation:operate"] }, { operate: true }), false);
 });
 
 test("New lists each project once: every chat in a folder answers for the folder, and a worktree stays its own", () => {
@@ -489,7 +474,7 @@ test("a worktree chat's row and its project group wear the project's name, and t
     },
   ];
   const threads = [thread({ workspaceId: "ws-main", agentId: "a" }), thread({ workspaceId: "ws-pool", agentId: "b" })];
-  const rows = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces, lifecycle: true, canOperate: true });
+  const rows = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces, manage: true });
   assert.deepEqual(rows.map((item) => [item.projectName, item.worktree]), [["multicode", null], ["multicode", "pool-02"]]);
   const groups = groupChatsByProject(rows, NOW);
   assert.deepEqual(groups.map((group) => [group.projectName, group.rows.length]), [["multicode", 2]]);
@@ -498,9 +483,9 @@ test("a worktree chat's row and its project group wear the project's name, and t
 const link = (environmentId, chatId, agentId = null) => ({ kind: "chat", environmentId, chatId, agentId });
 
 test("a chat link opens the chat on the desktop that is its environment, and only there", () => {
-  const mine = row({ workspaceId: "ws-docs", agentId: "agent-a" }, { deviceId: "dev-a", environmentId: "env-a", lifecycle: true });
-  const other = row({ workspaceId: "ws-other", agentId: "agent-b" }, { deviceId: "dev-a", environmentId: "env-a", lifecycle: true });
-  const twin = row({ workspaceId: "ws-docs", agentId: "agent-c" }, { deviceId: "dev-b", environmentId: "env-b", lifecycle: true });
+  const mine = row({ workspaceId: "ws-docs", agentId: "agent-a" }, { deviceId: "dev-a", environmentId: "env-a" });
+  const other = row({ workspaceId: "ws-other", agentId: "agent-b" }, { deviceId: "dev-a", environmentId: "env-a" });
+  const twin = row({ workspaceId: "ws-docs", agentId: "agent-c" }, { deviceId: "dev-b", environmentId: "env-b" });
   assert.deepEqual(resolveChatLink(link("env-a", "ws-docs"), [other, mine, twin]), { kind: "one", row: mine });
   assert.deepEqual(resolveChatLink(link("env-b", "ws-docs"), [other, mine, twin]), { kind: "one", row: twin });
   assert.deepEqual(resolveChatLink(link("env-a", "ws-gone"), [other, mine, twin]), { kind: "none" });
@@ -512,21 +497,21 @@ test("a chat link opens the chat on the desktop that is its environment, and onl
 });
 
 test("while no desktop has said it is the link's environment, a desktop that has said none may be it", () => {
-  const unsaid = row({ workspaceId: "ws-docs", agentId: "agent-a" }, { deviceId: "dev-old", lifecycle: true });
-  const said = row({ workspaceId: "ws-docs", agentId: "agent-b" }, { deviceId: "dev-b", environmentId: "env-b", lifecycle: true });
+  const unsaid = row({ workspaceId: "ws-docs", agentId: "agent-a" }, { deviceId: "dev-old" });
+  const said = row({ workspaceId: "ws-docs", agentId: "agent-b" }, { deviceId: "dev-b", environmentId: "env-b" });
   assert.deepEqual(resolveChatLink(link("env-a", "ws-docs"), [unsaid, said]), { kind: "one", row: unsaid });
   assert.deepEqual(resolveChatLink(link("env-b", "ws-docs"), [unsaid, said]), { kind: "one", row: said });
 });
 
 test("an old link opens the one desktop that lists its workspace, offers several, and says none", () => {
-  const mine = row({ workspaceId: "ws-docs", agentId: "agent-a", lastUserMessageAt: NOW - HOUR }, { deviceId: "dev-a", lifecycle: true });
-  const other = row({ workspaceId: "ws-other", agentId: "agent-b" }, { deviceId: "dev-a", lifecycle: true });
+  const mine = row({ workspaceId: "ws-docs", agentId: "agent-a", lastUserMessageAt: NOW - HOUR }, { deviceId: "dev-a" });
+  const other = row({ workspaceId: "ws-other", agentId: "agent-b" }, { deviceId: "dev-a" });
   assert.deepEqual(resolveChatLink(link(null, "ws-docs"), [other, mine]), { kind: "one", row: mine });
   assert.deepEqual(resolveChatLink(link(null, "ws-gone"), [other, mine]), { kind: "none" });
   assert.deepEqual(resolveChatLink(link(null, "ws-docs"), []), { kind: "none" });
 
   // The same workspace on two paired desktops: the person picks, in the list's order.
-  const twin = row({ workspaceId: "ws-docs", agentId: "agent-c" }, { deviceId: "dev-b", lifecycle: true });
+  const twin = row({ workspaceId: "ws-docs", agentId: "agent-c" }, { deviceId: "dev-b" });
   assert.deepEqual(resolveChatLink(link(null, "ws-docs"), [mine, other, twin]), { kind: "several", rows: [mine, twin] });
 });
 
@@ -542,9 +527,9 @@ test("a chat link's agent picks its chat in the workspace, else the chat last wr
 
 test("a desktop's rows carry its environment id when it has said one", () => {
   const threads = [thread({ workspaceId: "ws-1", agentId: "a" })];
-  const said = buildChatRows({ deviceId: "mac", desktopName: "Mac", environmentId: "env-mac", threads, workspaces: null, lifecycle: true, canOperate: true });
+  const said = buildChatRows({ deviceId: "mac", desktopName: "Mac", environmentId: "env-mac", threads, workspaces: null, manage: true });
   assert.equal(said[0].environmentId, "env-mac");
-  const unsaid = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces: null, lifecycle: true, canOperate: true });
+  const unsaid = buildChatRows({ deviceId: "mac", desktopName: "Mac", threads, workspaces: null, manage: true });
   assert.equal("environmentId" in unsaid[0], false);
 });
 

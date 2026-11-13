@@ -15,7 +15,7 @@ const { librarySelection, readPickedImages, uploadEach } = require(
 const { CHAT_IMAGE_MAX_BYTES, chatImageMaxBytes } = require(
   path.join(buildRoot, "src/features/conversations/composerOptions.js"),
 );
-const { CONVERSATION_MAX_IMAGES } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+const { CONVERSATION_MAX_IMAGES } = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
 
 const jpeg = (name, size = 1024) => ({
   asset: { uri: `file:///cache/${name}`, fileName: name, mimeType: "image/jpeg", fileSize: size },

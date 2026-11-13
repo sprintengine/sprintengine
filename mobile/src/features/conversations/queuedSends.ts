@@ -1,5 +1,7 @@
-import type { ConversationQueuedMessage } from "../../api/conversationWire";
-import type { ConversationLaneSend } from "../../../../packages/conversation-protocol/src/public";
+import type {
+  ConversationLaneSend,
+  ConversationQueuedMessage,
+} from "../../../../packages/conversation-protocol/src/public";
 import { formatTimestamp } from "../../components/formatTimestamp";
 
 // Where a message queued behind a running turn waits, and what the queued
@@ -138,7 +140,7 @@ export function queuedCarryLine(carry: QueuedCarry | undefined): string | null {
  * refuse them beside `queue` too.
  *
  * The stream applies the same rule to what it knows and the screen may not
- * yet (`tailnetConversations.ts`): a plain send made while it sees the chat
+ * yet (`desktopConversations.ts`): a plain send made while it sees the chat
  * busy, or still waiting in its outbox when a redial finds a turn running, is
  * handed over there too.
  */

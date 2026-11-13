@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { createChatLifecycleApi, type ChatLifecycleApi } from "../../api/chatLifecycle";
-import { createTailnetConversationsApi, type ConversationApi } from "../../api/tailnetConversations";
-import { declaresConversationLifecycle } from "../../api/tailnetTransport";
+import { chatOffersNow, useChatOffersOf, type PhoneChatOffers } from "../../api/chatOffers";
+import { createDesktopConversationsApi, type ConversationApi } from "../../api/desktopConversations";
 import { createTailnetWorkspacesApi, type DesktopWorkspace, type WorkspacesApi } from "../../api/tailnetWorkspaces";
 import type { ApiResult, MobileSession } from "../../api/types";
 import { useToast } from "../../components/Toast";
@@ -31,7 +31,6 @@ import {
   type ChatListRow,
 } from "./conversationListLogic";
 import type { ChatGrouping } from "./chatGrouping";
-import { conversationCanOperate, conversationEnabled } from "./conversationLogic";
 import { keepUnchanged } from "./keepUnchanged";
 import type { FollowUpBehavior } from "./followUp";
 import { createRecentRead } from "./recentRead";
@@ -86,6 +85,8 @@ export interface ChatsValue {
    * try to reach a real one.
    */
   conversationsApiOverride: ConversationApi | null;
+  /** What the harness's fake desktop offers in its chats, in place of a welcome; null in the app. */
+  offersOverride: PhoneChatOffers | null;
   /**
    * One desktop's workspace list as the chat list last read it, when that
    * was in the last minute, else read now; null where it may not be read.
@@ -177,6 +178,7 @@ export function ChatsProvider({
   workspacesApiOverride,
   conversationsApiOverride,
   lifecycleApiOverride,
+  offersOverride,
 }: {
   sessions: MobileSession[];
   /** Which desktop the rest of the app is pointed at; it leads the desktop list. */
@@ -187,8 +189,11 @@ export function ChatsProvider({
   workspacesApiOverride?: WorkspacesApi | null;
   conversationsApiOverride?: ConversationApi | null;
   lifecycleApiOverride?: ChatLifecycleApi | null;
+  offersOverride?: PhoneChatOffers | null;
 }) {
   const toast = useToast();
+  // What each desktop's chats offer here, from its Studio's latest welcome.
+  const offersOf = useChatOffersOf(sessions, offersOverride);
   // Read through a ref: outside a provider the hook hands back a new object
   // every render, and the callbacks below should not churn with it.
   const toastRef = useRef(toast);
@@ -206,36 +211,40 @@ export function ChatsProvider({
       desktop: {
         deviceId: session.deviceId,
         name: session.desktopName,
-        canStart: canStartChats(session),
+        canStart: canStartChats(session, offersOf(session)),
         machineMark: session.machineMark ?? null,
       },
       api:
         workspacesApiOverride ??
         createTailnetWorkspacesApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
     }));
-  }, [activeDeviceId, sessions, workspacesApiOverride]);
+  }, [activeDeviceId, sessions, workspacesApiOverride, offersOf]);
 
+  // Every paired desktop's chats are asked for; what each offers is what its
+  // Studio said in its latest welcome and the grant this pairing holds there,
+  // read when its list comes back.
   const chatClients = useMemo(
     () =>
-      sessions.filter(conversationEnabled).map((session) => ({
-        session,
-        api:
-          conversationsApiOverride ??
-          createTailnetConversationsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
-        // Settle, visit, Mark unread, Snooze and Wake now, on the desktop's
-        // Studio, where the desktop keeps its chats' rest.
-        lifecycle: declaresConversationLifecycle(session)
-          ? (lifecycleApiOverride ??
-            createChatLifecycleApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }))
-          : null,
-        canOperate: conversationCanOperate(session),
-      })),
+      sessions
+        .filter((session) => session.status !== "revoked")
+        .map((session) => ({
+          session,
+          api:
+            conversationsApiOverride ??
+            createDesktopConversationsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
+          // Settle, visit, Mark unread, Snooze and Wake now, on the desktop's
+          // Studio, where the desktop keeps its chats' rest.
+          lifecycle:
+            lifecycleApiOverride ?? createChatLifecycleApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
+        })),
     [conversationsApiOverride, lifecycleApiOverride, sessions],
   );
   const lifecycleFor = useCallback(
-    (deviceId: string): ChatLifecycleApi | null =>
-      chatClients.find((client) => client.session.deviceId === deviceId)?.lifecycle ?? null,
-    [chatClients],
+    (deviceId: string): ChatLifecycleApi | null => {
+      const client = chatClients.find((entry) => entry.session.deviceId === deviceId);
+      return client && offersOf(client.session).manage ? client.lifecycle : null;
+    },
+    [chatClients, offersOf],
   );
 
   const desktops = useMemo(() => workspaceClients.map((client) => client.desktop), [workspaceClients]);
@@ -295,7 +304,7 @@ export function ChatsProvider({
     const startedAt = Date.now();
     setRefreshing(true);
     const answers = await Promise.all(
-      chatClients.map(async ({ session, api, lifecycle, canOperate }) => {
+      chatClients.map(async ({ session, api }) => {
         // The project pill comes from the desktop's workspace list. A pairing
         // that may not read it omits the pill rather than showing a workspace
         // id nobody chose.
@@ -313,6 +322,9 @@ export function ChatsProvider({
           threads?.some((thread) => !workspaces?.data?.some((entry) => entry.workspaceId === thread.workspaceId))
         )
           workspaces = await reads.fresh().catch(() => null);
+        // What the desktop offers, from the welcome the list was read on.
+        const offers = offersOverride ?? chatOffersNow(session);
+        if (threads && !offers.follow) threads = [];
         return {
           session,
           rows: buildChatRows({
@@ -321,10 +333,9 @@ export function ChatsProvider({
             ...(session.environmentId ? { environmentId: session.environmentId } : {}),
             threads: threads ?? [],
             workspaces: workspaces?.ok ? (workspaces.data ?? []) : null,
-            lifecycle: lifecycle !== null,
-            canOperate,
+            manage: offers.manage,
           }),
-          markUnread: lifecycle !== null,
+          markUnread: offers.manage,
           failed: threads === null,
         };
       }),
@@ -369,7 +380,7 @@ export function ChatsProvider({
     // empty answer drew "No chats yet" over a cold start's first real read.
     setLoaded(chatClients.length > 0);
     setRefreshing(false);
-  }, [workspaceReads, chatClients, noteRewind]);
+  }, [workspaceReads, chatClients, noteRewind, offersOverride]);
 
   // The read under way, and the pairings it is for. A refresh asked for while
   // one for the same pairings is in flight joins it: a cold start asked twice
@@ -727,6 +738,7 @@ export function ChatsProvider({
       streamingDesktops: chatClients.length,
       apiFor,
       conversationsApiOverride: conversationsApiOverride ?? null,
+      offersOverride: offersOverride ?? null,
       recentWorkspaces,
       chats: listedChats,
       failures,
@@ -748,6 +760,7 @@ export function ChatsProvider({
     [
       apiFor,
       conversationsApiOverride,
+      offersOverride,
       chatClients.length,
       desktops,
       failures,

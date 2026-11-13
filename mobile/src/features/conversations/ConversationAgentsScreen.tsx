@@ -1,6 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
 
-import type { ConversationThread } from "../../api/conversationWire";
+import {
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import { Card } from "../../components/Card";
 import { Screen } from "../../components/Screen";
 import { useNow } from "../../components/useNow";

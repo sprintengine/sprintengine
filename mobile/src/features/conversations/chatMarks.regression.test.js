@@ -12,9 +12,9 @@ const test = require("node:test");
 const buildRoot = path.resolve(__dirname, "../../../.mobile-test-build/mobile");
 const {
   CONVERSATION_MAX_PULL_REQUESTS,
-  parseConversationFrame,
-  pullRequestUrl,
-} = require(path.join(buildRoot, "src/api/conversationWire.js"));
+  decodeConversationServerFrame: parseConversationFrame,
+} = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
+const { pullRequestUrl } = require(path.join(buildRoot, "src/features/conversations/chatMarks.js"));
 // The pull requests a chat is listed with, read as the phone reads them: in a `sessions` frame.
 const listedPullRequests = (pullRequests) =>
   parseConversationFrame(

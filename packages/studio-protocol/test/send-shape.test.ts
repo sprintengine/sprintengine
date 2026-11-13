@@ -34,11 +34,8 @@ test("the lane's send and the protocol's send are the same type", () => {
   // The lane carries the contract's request as `ConversationLaneSend` says.
   expectExact<LaneSend, ConversationLaneSend>(true)
   // The Studio protocol's `conversation.send` is the lane's own send,
-  // addressed; its pictures go by `session.send`'s uploads, never `uploadIds`.
-  expectExact<
-    Omit<StudioMethodParams<'conversation.send'>, 'key' | 'commandId'>,
-    Omit<ConversationLaneSend, 'uploadIds'>
-  >(true)
+  // addressed; its `uploadIds` name uploads staged on the same connection.
+  expectExact<Omit<StudioMethodParams<'conversation.send'>, 'key' | 'commandId'>, ConversationLaneSend>(true)
   expectExact<
     Pick<StudioMethodParams<'conversation.send'>, 'key' | 'commandId'>,
     { key: StudioConversationKey; commandId: string }

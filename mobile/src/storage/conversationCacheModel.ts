@@ -1,8 +1,8 @@
 import { parseConversationClientFrame, parseConversationWireEvent } from "../../../packages/conversation-protocol/src/public";
-import type {
-  ConversationCommand,
-  ConversationEvent,
-} from "../api/conversationWire";
+import {
+  type ConversationCommand,
+  type ConversationWireEvent as ConversationEvent,
+} from "../../../packages/conversation-protocol/src/public";
 
 export interface CachedConversation {
   /**
@@ -14,7 +14,7 @@ export interface CachedConversation {
   lastSeq: number;
   generation?: string;
   events: ConversationEvent[];
-  pending: Array<{
+  pending: {
     commandId: string;
     command: Extract<ConversationCommand, { kind: "send" }>;
     /**
@@ -38,7 +38,7 @@ export interface CachedConversation {
      * Discard, across a restart, and no stream sends it until then.
      */
     stale?: true;
-  }>;
+  }[];
 }
 export const MAX_PENDING_SENDS = 20;
 export const MAX_CACHE_CHARS = 1_000_000;

@@ -1,4 +1,7 @@
-import { rmdir } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdtemp, rm, rmdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type {
   ConversationWirePermissionPreset,
@@ -13,8 +16,15 @@ import type {
   ConversationStopSessionInput,
 } from '../../shared/conversation-runtime'
 import { DEFAULT_AGENT_SPAWN_PERMISSION_PRESET } from '../../shared/launch-settings'
-import type { StudioConversationBackend } from '../../server/rpc/studio-rpc-types'
+import type {
+  StudioConversationBackend,
+  StudioFollowedBackend,
+  StudioStagedUpload,
+} from '../../server/rpc/studio-rpc-types'
+import { ATTACHABLE_IMAGE_TYPES, MAX_ATTACHMENT_BYTES } from '../../shared/conversation-attachments'
 import type { ConversationGatewayHost } from '../automation/tailnet/tailnet-conversation-host'
+import { openConversationImage } from '../automation/tailnet/tailnet-conversation-images'
+import type { TailnetFileUploads } from '../automation/tailnet/tailnet-file-uploads'
 import { redactConversationValue } from '../conversation-tool-details'
 import type { ConversationLaunchRequest, ConversationLaunchResult } from '../conversation-launch-service'
 import { createProjectlessChatFolder } from '../projectless-chat-folders'
@@ -41,6 +51,131 @@ export type StudioConversationBackendDeps = {
   lifecycle?: Pick<ConversationLifecycle, 'settle' | 'visit'>
   /** The folder a chat under no project starts in; Studio's own "No project" folders unless a test gives one. */
   makeProjectlessFolder?: (prompt: string | null) => Promise<string>
+  /**
+   * Where a client's files sent with a message are kept (`tailnet-file-uploads.ts`):
+   * absent, a keyed send carries pictures only.
+   */
+  fileUploads?: TailnetFileUploads
+}
+
+/**
+ * A client's finished uploads made one chat's, as the tailnet's upload route
+ * makes a device's: a picture written where the host reads it into the turn
+ * and removed once spent, a file kept where Studio keeps a device's files and
+ * attached by its path. Each is registered with the host under the client's
+ * id, for the chat's session now, so only that client's send to that chat
+ * spends it.
+ */
+function uploadStager(
+  host: ConversationGatewayHost,
+  fileUploads: TailnetFileUploads | undefined,
+): StudioFollowedBackend['stageUploads'] {
+  const register = host.registerUpload?.bind(host)
+  if (!register) return undefined
+  // Made once and shared; a failed creation is tried again next time.
+  let pictures: Promise<string> | null = null
+  const pictureFolder = () => {
+    const making = (pictures ??= mkdtemp(join(tmpdir(), 'studio-conversation-images-')))
+    making.catch(() => {
+      if (pictures === making) pictures = null
+    })
+    return making
+  }
+  const refused = (message: string) => ({ ok: false as const, code: 'invalid_params' as const, message })
+  return async (key, clientId, uploads) => {
+    const thread = (await host.list()).find(
+      (candidate) => candidate.workspaceId === key.workspaceId && candidate.agentId === key.agentId,
+    )
+    if (!thread)
+      return { ok: false, code: 'not_found', message: 'No eligible conversation on this machine has that id.' }
+    if (!thread.sessionId)
+      return refused('This chat has no session yet to carry pictures or files. Send it a message first.')
+    const sessionId = thread.sessionId
+    const made: Array<{ id: string; dispose: () => void }> = []
+    const undo = () => {
+      for (const entry of made) entry.dispose()
+    }
+    for (const upload of uploads) {
+      const placed = await place(upload).catch((error: unknown) =>
+        refused(error instanceof Error ? error.message : String(error)),
+      )
+      if ('ok' in placed) {
+        undo()
+        return placed
+      }
+      made.push({ id: register({ deviceId: clientId, sessionId, ...placed }), dispose: placed.dispose })
+    }
+    return { ok: true, ids: made.map((entry) => entry.id) }
+
+    async function place(upload: StudioStagedUpload) {
+      if (upload.purpose === 'attachment') {
+        if (!fileUploads) return refused('This Studio takes pictures only on a send.')
+        const spot = fileUploads.place(clientId, upload.name ?? 'file')
+        await writeFile(spot.path, upload.bytes)
+        return {
+          path: spot.path,
+          name: spot.name,
+          mediaType: upload.mediaType,
+          bytes: upload.bytes.length,
+          kind: 'file' as const,
+          dispose: () => {
+            try {
+              spot.remove()
+            } catch {
+              // Pruned with the week's others instead.
+            }
+          },
+        }
+      }
+      if (!ATTACHABLE_IMAGE_TYPES.includes(upload.mediaType as (typeof ATTACHABLE_IMAGE_TYPES)[number]))
+        return refused('Only PNG, JPEG, WebP and GIF images can be attached.')
+      if (upload.bytes.length > MAX_ATTACHMENT_BYTES)
+        return refused(`A picture may be at most ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB.`)
+      if (thread!.capabilities?.images !== true) return refused('This conversation cannot accept images.')
+      const path = join(await pictureFolder(), randomUUID())
+      await writeFile(path, upload.bytes)
+      return {
+        path,
+        name: upload.name ?? 'picture',
+        mediaType: upload.mediaType,
+        bytes: upload.bytes.length,
+        dispose: () => {
+          void rm(path, { force: true }).catch(() => {})
+        },
+      }
+    }
+  }
+}
+
+/** One picture of a chat, read as the tailnet's picture route reads it. */
+function pictureReader(host: ConversationGatewayHost): StudioFollowedBackend['picture'] {
+  if (!host.toolImagePath && !host.sentImage) return undefined
+  const gone = { ok: false as const, code: 'not_found' as const, message: 'That picture is not in this conversation.' }
+  return async (key, ref) => {
+    if ('attachment' in ref) {
+      const sent = host.sentImage ? await host.sentImage(key, ref.attachment) : null
+      return sent?.ok ? { ok: true, mediaType: sent.mediaType, bytes: sent.bytes } : gone
+    }
+    const found = host.toolImagePath ? await host.toolImagePath(key, ref.toolUseId) : null
+    if (!found?.ok) return gone
+    const opened = await openConversationImage(found.path)
+    if (!opened.ok)
+      return {
+        ok: false,
+        code: opened.refusal.code === 'image_too_large' ? 'too_large' : 'not_found',
+        message: opened.refusal.message,
+      }
+    const { file, size, mediaType } = opened.image
+    try {
+      const bytes = Buffer.alloc(size)
+      const { bytesRead } = await file.read(bytes, 0, size, 0)
+      return { ok: true, mediaType, bytes: bytes.subarray(0, bytesRead) }
+    } catch {
+      return gone
+    } finally {
+      await file.close().catch(() => undefined)
+    }
+  }
 }
 
 /**
@@ -184,6 +319,8 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
     // The same host's per-chat reads and watches the tailnet lane serves, and
     // the record's lifecycle the gateway's tools write.
     followed: {
+      ...withDefined('picture', pictureReader(host)),
+      ...withDefined('stageUploads', uploadStager(host, deps.fileUploads)),
       ...(host.watchQueued ? { watchQueued: (chat, listener) => host.watchQueued!(chat, listener) } : {}),
       ...(host.watchScheduled ? { watchScheduled: (chat, listener) => host.watchScheduled!(chat, listener) } : {}),
       ...(host.watchUsageLimits
@@ -221,4 +358,12 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
         : {}),
     },
   }
+}
+
+/** `{ [name]: value }` when there is a value, else nothing: a member the router reads as served only when present. */
+function withDefined<K extends keyof StudioFollowedBackend>(
+  name: K,
+  value: StudioFollowedBackend[K] | undefined,
+): Partial<StudioFollowedBackend> {
+  return value ? ({ [name]: value } as Partial<StudioFollowedBackend>) : {}
 }

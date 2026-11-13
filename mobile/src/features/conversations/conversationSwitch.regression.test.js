@@ -125,7 +125,7 @@ function harness({ deviceId = "device" } = {}) {
         connection.sent.push(id ?? "command");
         return id ?? "command";
       };
-      connection.request = () => "request";
+      connection.read = () => Promise.reject(new Error("No answer."));
       connections.push(connection);
       return connection;
     },
@@ -151,7 +151,9 @@ function harness({ deviceId = "device" } = {}) {
         if (name === "react-native")
           return { AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) } };
         if (name === "expo-crypto") return { randomUUID: () => `send-${++serial}` };
-        if (name.endsWith("/tailnetConversations")) return { createTailnetConversationsApi: () => api };
+        if (name.endsWith("/desktopConversations")) return { createDesktopConversationsApi: () => api };
+        // A desktop that has said nothing yet: every offer off, as the app starts.
+        if (name.endsWith("/chatOffers")) return { useChatOffers: () => localRequire("../../api/chatOffers.js").phoneChatOffers(null) };
         if (name.endsWith("/conversationCache")) return cache;
         if (name.endsWith("/transcriptMemory")) {
           if (!fresh.has(name)) {

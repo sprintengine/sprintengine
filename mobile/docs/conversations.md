@@ -13,8 +13,15 @@ protocol: one socket per desktop at `/tailnet/v1/studio`, through the shared
 client runtime (`src/api/desktopStudio.ts`), opened with a ticket the device
 token buys and saying no `Origin`. What the phone may ask is its pairing's
 grant, read by the desktop at every request. A desktop whose Studio predates
-the endpoint is told to update. Following and driving a chat still use the
-conversation lane.
+the endpoint is told to update. Following and driving a chat go over the same
+socket (`src/api/desktopConversations.ts`): the chat is the topic
+`conversation.session`, resumed by its cursor after a dropped connection with
+nothing missed and nothing twice; its held, scheduled and sub-agent lists are
+push topics; every command is a method of its own under the phone's command
+id, which the client sends again after a reconnect and the desktop answers
+once. What a chat offers here (models, held messages, files, pictures, Settle
+and the row menu) is read from the desktop Studio's welcome and this pairing's
+grant there (`src/api/chatOffers.ts`), never from what it said at pairing.
 
 ## The list
 
@@ -225,8 +232,9 @@ files, send a message, or respond to pending requests. Supported live sessions
 also offer image attachments and interruption. Images are uploaded directly to
 the paired desktop, not the hosted relay, and their references expire. A
 picture over 5 MB is refused before it is uploaded, since the desktop would
-refuse it; one that advertises `conversation-image-downscale` scales pictures
-down itself and takes them up to 20 MB, and the phone lets them through there.
+refuse it. A picture goes up in pieces on the chat's own socket
+(`uploads.begin`, then `uploads.append`, each read from the file as it goes),
+and the send names the upload.
 
 **Choose photos** opens the library for several at once, on New and in a chat:
 as many as the message still has room for (sixteen uploads a send, photos and
@@ -249,8 +257,8 @@ new build. iOS hands back a copy whose name is the file's; Android hands back a
 document uri, which is copied into the app's cache before it uploads, and
 named from the path its provider id carries, or `file` with the extension its
 type says where the id names nothing. A file over 25 MB, or an empty one, is
-refused before it goes (`chatFiles.ts`). It uploads to the chat's session with
-`kind=file`; the desktop keeps it in Studio's own data folder, never the
+refused before it goes (`chatFiles.ts`). It uploads the way a picture does, as
+an `attachment`; the desktop keeps it in Studio's own data folder, never the
 project, and the send names its id beside any photo's, sixteen at most
 between them. The tray shows it as a chip with its kind's glyph, and the
 message, once the desktop has it, as a file card (below). A desktop without
@@ -293,8 +301,8 @@ drawn from the phone's own file, remembered by its upload id the moment it
 uploads, so the message shows it while it is pending and after the desktop
 echoes it, with no fetch. Any other (sent from the desktop, from another
 phone, or before the app last started) is fetched from a desktop that
-advertises `conversation-message-images`, by its `ref` on the
-`conversation-image` route (`attachment=<ref>`). Where neither has it, the
+advertises `conversation-message-images`, by its `ref`
+(`conversation.picture` with `attachment`). Where neither has it, the
 square names the picture instead. The phone reads the member defensively
 (`sentPhotos.ts`): an entry without an id is skipped, a ref not in the
 desktop store's shape is never asked for, and no more than the desktop's
@@ -588,8 +596,7 @@ shows "76,000 / 200,000 tokens". It reads `contextWindow` and `contextUsed` off
 report's input plus output tokens. A desktop that never sends `contextWindow`
 shows no ring (`contextUsage.ts`).
 
-The chat's header names the paired desktop it runs on. The tailnet lane does
-not yet say when that desktop runs the chat in WSL or on an SSH machine.
+The chat's header names the paired desktop it runs on.
 
 A desktop that advertises `conversation-models` lists each chat's CLI and the
 models it can switch between, and the composer shows the chat's model by its
@@ -619,9 +626,10 @@ only those two are offered there. A desktop that advertises
 `conversation-plans` takes a plan's answer as `resolvePlan`; an older one takes
 it as an approval, as before.
 
-A desktop that advertises `conversation-images` serves a chat's pictures over
-the tailnet (`GET /tailnet/v1/conversation-image`, with the device token, as
-the image upload is authorised). A picture Codex generated shows under its step
+A desktop that advertises `conversation-images` serves a chat's pictures
+(`conversation.picture`, by the step): each is read once into a file in the
+phone's cache and drawn from there, so scrolling back never reads it again and
+no picture is held in memory as text. A picture Codex generated shows under its step
 without opening it, captioned with its prompt; an image an agent read shows when
 its step is opened. Only finished steps are fetched. Tapping a picture opens it
 full screen. A picture the desktop no longer has, or one too large to send,
@@ -655,7 +663,7 @@ revocation.
 A chat on a Studio server that restarted (a WSL distribution's, an SSH
 machine's, or the desktop's own when it runs out of process) can have a send
 refused because the session it went to is gone (`session_not_found`, or the
-runtime's "Conversation session is invalid." on the tailnet lane). The phone
+runtime's "Conversation session is invalid." where no code came with it). The phone
 offers that send once more under the same command id, and the desktop resumes
 the chat from its transcript and sends it there. A second refusal stands. An
 answer to a request on a lost session says the request ended with it.
@@ -712,7 +720,7 @@ Not every message goes to the desktop (`queuedSends.ts`):
 - The phone sends no skills, which the contract would refuse beside `queue`.
 
 The stream makes the same choice for a send the screen thought had no turn to
-wait on (`tailnetConversations.ts`). A send made while the stream knows the
+wait on (`desktopConversations.ts`). A send made while the stream knows the
 chat is busy (a turn running, or the phone's own last send in the chat and its
 turn not over) is handed to the desktop at once, under its id, rather than
 waiting in the phone's outbox. So is what still waits there when a redial finds

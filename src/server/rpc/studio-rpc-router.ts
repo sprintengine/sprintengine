@@ -335,6 +335,8 @@ export function studioRuntimeCommandId(grant: StudioGrant, commandId: string): s
 /** The strictest ceiling under which an app may answer a request for the rest of a conversation. */
 const CONVERSATION_RULE_FLOOR = 'auto' as const
 const MAX_REMEMBERED_STOPS = 1024
+/** How long a keyed send's staged uploads are named by its command id: as long as the host keeps an upload. */
+const STAGED_SEND_TTL_MS = 60 * 60_000
 
 /**
  * The always-allow rules as a client that is not an owner reads them: each
@@ -977,6 +979,54 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     return voice.failed('unavailable', done.message, method)
   }
 
+  // A keyed send's pictures and files, made the chat's once per command:
+  // spent from this client's uploads and handed to the conversation host,
+  // whose ids the send then names. A retry of the send under the same id
+  // (after a dropped connection, or a `busy` it waited out) names the same
+  // ids again, so the host answers it as the same send, and the uploads it
+  // spent are not asked for twice. Kept as long as an upload is.
+  const stagedSends = new Map<string, { ids: string[]; at: number }>()
+  async function stagedFor(
+    params: { key: StudioConversationKey; commandId: string },
+    uploadIds: string[],
+    asking: Asking,
+  ): Promise<
+    { ok: true; ids: string[] } | Refused<'not_found' | 'invalid_params' | 'too_large' | 'busy' | 'unavailable'>
+  > {
+    const stage = followed.stageUploads
+    if (!stage) return refuse('unavailable', 'This Studio does not take pictures or files on a send.')
+    const { grant } = asking
+    const at = now()
+    for (const [id, kept] of stagedSends) if (at - kept.at > STAGED_SEND_TTL_MS) stagedSends.delete(id)
+    const sendId = `${grant.clientId}\n${params.commandId}`
+    const kept = stagedSends.get(sendId)
+    if (kept) return { ok: true, ids: kept.ids }
+    const key = resolve(params.key, grant)
+    if (!key) return notFound(params.key)
+    const spent = uploads.spend(grant.clientId, uploadIds, sendId, ['picture', 'attachment'])
+    if (!spent.ok) return refused(spent)
+    const made = await stage(
+      key,
+      grant.clientId,
+      spent.pictures.map((upload) => ({
+        purpose: upload.purpose === 'attachment' ? 'attachment' : 'picture',
+        mediaType: upload.mediaType,
+        ...(upload.name === undefined ? {} : { name: upload.name }),
+        bytes: upload.bytes,
+      })),
+    ).catch((error: unknown) => ({
+      ok: false as const,
+      code: 'invalid_params' as const,
+      message: error instanceof Error ? error.message : String(error),
+    }))
+    // The host holds the bytes now, or nothing was made of them and the
+    // uploads are this client's to send again.
+    uploads.settle(grant.clientId, sendId, made.ok)
+    if (!made.ok) return made.code === 'not_found' ? notFound(params.key) : refuse('invalid_params', made.message)
+    stagedSends.set(sendId, { ids: made.ids, at })
+    return { ok: true, ids: made.ids }
+  }
+
   const handlers: StudioHandlers<Asking> = {
     'server.info': (_params, { grant }) => ({ ok: true, result: { ...options.info(), grant } }),
     'server.ping': () => ({ ok: true, result: { at: now() } }),
@@ -984,7 +1034,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'conversation.create': create,
 
     // The conversation lane's commands, each carried as its own kind.
-    'conversation.send': (p, asking) => plainCommand(asking, p, { kind: 'send', ...members(p) }),
+    'conversation.send': async (p, asking) => {
+      const { uploadIds, ...words } = members(p)
+      if (!uploadIds?.length) return plainCommand(asking, p, { kind: 'send', ...words })
+      const staged = await stagedFor(p, uploadIds, asking)
+      if (!staged.ok) return staged
+      return plainCommand(asking, p, { kind: 'send', ...words, uploadIds: staged.ids })
+    },
     'conversation.interrupt': (p, asking) => plainCommand(asking, p, { kind: 'interrupt' }),
     'conversation.resolveApproval': (p, asking) => plainCommand(asking, p, { kind: 'resolveApproval', ...members(p) }),
     'conversation.answerQuestion': (p, asking) => plainCommand(asking, p, { kind: 'answerQuestion', ...members(p) }),
@@ -1110,6 +1166,18 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!cancel) return unserved('conversation.cancelSideQuestion')
       // Under this client's own id: another client's question is passed over.
       return { ok: true, result: voice.redact(await cancel(grant.clientId, questionId)) }
+    },
+    'conversation.picture': async ({ key: wire, ...which }, asking) => {
+      const read = followed.picture
+      if (!read) return unserved('conversation.picture')
+      const key = resolve(wire, asking.grant)
+      if (!key) return notFound(wire)
+      const picture = await read(
+        key,
+        which.toolUseId !== undefined ? { toolUseId: which.toolUseId } : { attachment: which.attachment! },
+      )
+      if (!picture.ok) return refuse(picture.code, picture.message)
+      return { ok: true, result: { mediaType: picture.mediaType, dataBase64: picture.bytes.toString('base64') } }
     },
     'conversation.contextBreakdown': async ({ key: wire }, asking) => {
       const read = followed.contextBreakdown

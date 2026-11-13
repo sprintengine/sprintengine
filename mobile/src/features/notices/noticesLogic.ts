@@ -4,7 +4,9 @@
 //
 // No react-native import, so `node --test` can pin every rule here.
 
-import type { ConversationThread } from "../../api/conversationWire";
+import {
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import {
   CHAT_EARLIER_AFTER_MS,
   chatOpenedKey,
@@ -72,7 +74,7 @@ export function buildNotices(input: NoticeBuildInput): Notice[] {
   for (const row of input.chats) {
     const { thread } = row;
     const openedAt = input.openedAt[chatOpenedKey(row.deviceId, thread.agentId)] ?? null;
-    const state = chatRowState(thread, { now: input.now, openedAt, lifecycle: row.lifecycle });
+    const state = chatRowState(thread, { now: input.now, openedAt });
     const { title, agent } = chatRowTitle(row);
     // Two chats in one workspace share a title, so the chip names the agent
     // as well as the project — it is the only thing that tells them apart.
@@ -93,7 +95,7 @@ export function buildNotices(input: NoticeBuildInput): Notice[] {
       continue;
     }
     // A finished chat always has a turn end; the fallback only satisfies the type.
-    const ended = chatTurnEndedAt(thread, row.lifecycle) ?? thread.updatedAt;
+    const ended = chatTurnEndedAt(thread) ?? thread.updatedAt;
     if (state === "finished" && input.now - ended < CHAT_EARLIER_AFTER_MS) {
       notices.push({
         // The turn's end is part of the id: a second turn finishing on the

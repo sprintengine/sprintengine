@@ -204,6 +204,23 @@ export type StudioFollowedBackend = {
     limit?: number,
   ): Promise<StudioComposerRead<ConversationFileSearchAnswer>>
   listCommands?(key: ConversationKey, refresh: boolean): Promise<StudioComposerRead<ConversationCommandsAnswer>>
+  /**
+   * One picture of the chat as it is kept: a step's by its call, or one the
+   * person sent by the ref its message recorded. The chat's record names the
+   * file; nothing the client says is read as a path.
+   */
+  picture?(key: ConversationKey, ref: StudioPictureRef): Promise<StudioPictureRead>
+  /**
+   * Make a client's finished uploads the chat's, for the keyed send that names
+   * them: each picture staged and each file kept where the conversation host
+   * keeps a device's, under ids only that client may spend on that chat.
+   * Answered with those ids, in the order given.
+   */
+  stageUploads?(
+    key: ConversationKey,
+    clientId: string,
+    uploads: StudioStagedUpload[],
+  ): Promise<{ ok: true; ids: string[] } | { ok: false; code: 'not_found' | 'invalid_params'; message: string }>
   /** The chat's rest, written to its workspace's record as its row menu writes it; `byOwner` says whose write it is. */
   settle?(workspaceId: string, settled: boolean, byOwner: boolean): StudioLifecycleOutcome<{ settledAt: number | null }>
   visit?(
@@ -212,6 +229,16 @@ export type StudioFollowedBackend = {
     byOwner: boolean,
   ): StudioLifecycleOutcome<{ lastVisitedAt: number }>
 }
+
+/** Which picture of a chat: a step's, or one the person sent. */
+export type StudioPictureRef = { toolUseId: string } | { attachment: string }
+
+/** A chat's picture, or why there is none to read. */
+export type StudioPictureRead =
+  { ok: true; mediaType: string; bytes: Buffer } | { ok: false; code: 'not_found' | 'too_large'; message: string }
+
+/** One finished upload a keyed send carries: a picture, or a file of any type attached by its path. */
+export type StudioStagedUpload = { purpose: 'picture' | 'attachment'; mediaType: string; name?: string; bytes: Buffer }
 
 /** A chat method's params as the router hands them on: its command id is the router's to namespace. */
 type ChatInput<M extends StudioChatMethod> = Omit<StudioMethodParams<M>, 'commandId'>

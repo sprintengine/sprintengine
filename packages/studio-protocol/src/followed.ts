@@ -162,6 +162,19 @@ export type StudioFollowedMethodMap = {
     result: { lastVisitedAt: number }
     errors: 'not_found'
   }
+  /**
+   * One picture of the chat, its bytes as they are kept: what a step made or
+   * looked at, by the call's `toolUseId` (`conversation-images`), or one the
+   * person sent with a message, by the `ref` its `user_message` recorded
+   * (`conversation-message-images`). The chat's record names the file; a client
+   * never names a path. `not_found` for a step that shows none or a ref the chat
+   * was not sent; `too_large` past what one answer carries.
+   */
+  'conversation.picture': {
+    params: Keyed & ({ toolUseId: string; attachment?: never } | { attachment: string; toolUseId?: never })
+    result: { mediaType: string; dataBase64: string }
+    errors: 'not_found' | 'too_large'
+  }
   /** One step of the chat's changes: its files (`conversation-changes`). */
   'conversation.changesDiff': {
     params: Keyed & { selection: ConversationChangesSelection }
@@ -348,6 +361,23 @@ export const STUDIO_FOLLOWED_METHODS: StudioMethodTable<StudioFollowedMethodMap>
       if (!(typeof visitedAt === 'number' && Number.isFinite(visitedAt) && visitedAt >= 0))
         return refuse('"visitedAt" is a time in epoch milliseconds.')
       return studioParams({ ...at.params, visitedAt: Math.trunc(visitedAt) })
+    },
+  },
+  'conversation.picture': {
+    ...reading,
+    params: (value) => {
+      const at = keyed(value)
+      if (!at.ok) return at
+      const { toolUseId, attachment } = value
+      if (id(toolUseId) && attachment === undefined) return studioParams({ ...at.params, toolUseId })
+      if (
+        typeof attachment === 'string' &&
+        attachment.length > 0 &&
+        attachment.length <= 1000 &&
+        toolUseId === undefined
+      )
+        return studioParams({ ...at.params, attachment })
+      return refuse('A picture is named by one of "toolUseId" (a step) or "attachment" (the ref a message recorded).')
     },
   },
   'conversation.changesDiff': { ...reading, params: selected },

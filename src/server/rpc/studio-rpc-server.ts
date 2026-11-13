@@ -99,16 +99,13 @@ import type {
  * - `conversation-hello`: the lane's `hello` frame, which here is the
  *   connection's own handshake (its welcome carries these capabilities).
  * - `conversation-image-downscale`: the lane's upload route shrinks a picture
- *   on receipt; this socket keeps an upload as it came.
- * - `conversation-images`, `conversation-message-images`,
- *   `conversation-message-files` and `conversation-queued-attachments`: a
- *   step's and a message's pictures read by a URL, and files and pictures on
- *   a keyed send, held or not. `conversation.send` refuses `uploadIds` until
- *   the one upload path every client uses (a streamed PUT to a URL from
- *   `uploads.begin`) carries them.
+ *   on receipt; this socket keeps an upload as it came, under the 5MB
+ *   `uploads.begin` holds a picture to.
  *
  * Every other one is served by a method or topic of the protocol over the
- * same conversation host the lane uses (`followed.ts`): the per-chat topics,
+ * same conversation host the lane uses (`followed.ts`): a chat's pictures
+ * (`conversation.picture`), pictures and files on a keyed send, held or not
+ * (uploads staged with `uploads.*`, named by `conversation.send`), the per-chat topics,
  * side questions and their records, context breakdown, the composer's file
  * search and command list, settle and visit (with the list in the sidebar's
  * order, settled chats left out), `always` approvals, and a fork joined to
@@ -121,10 +118,6 @@ import type {
 export const STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES: ReadonlySet<string> = new Set([
   'conversation-hello',
   'conversation-image-downscale',
-  'conversation-images',
-  'conversation-message-images',
-  'conversation-message-files',
-  'conversation-queued-attachments',
 ])
 
 /**
@@ -132,6 +125,10 @@ export const STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES: ReadonlySet<string> 
  * Studio whose host cannot serve one does not advertise it.
  */
 const FOLLOWED_NEEDS: Readonly<Record<string, ReadonlyArray<keyof StudioFollowedBackend>>> = {
+  'conversation-images': ['picture'],
+  'conversation-message-images': ['picture', 'stageUploads'],
+  'conversation-message-files': ['stageUploads'],
+  'conversation-queued-attachments': ['stageUploads', 'watchQueued'],
   'conversation-lifecycle': ['settle', 'visit'],
   'conversation-queued-sends': ['watchQueued'],
   'conversation-scheduled-sends': ['watchScheduled'],

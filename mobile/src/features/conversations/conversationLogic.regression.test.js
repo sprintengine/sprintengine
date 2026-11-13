@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseAppLink, conversationEnabled, conversationCanOperate, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { projectConversation, keepUnchangedRows, mergeConversationEvents, parseConversationLink, parseAppLink, modelControl, modelLabel, compactionLabel, handoffLabel, turnMetaParts, planTitle, planBody, describeToolGroup, toolStep, cliModelLabel, permissionLabel, permissionChoices, retryLabel, turnChangesLabel, turnFoldLabel, composerActionKind, SEND_SETTLE_MS, reasoningPreview, rowStreaming } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 
 // A turn's steps rest inside its fold; these tests read the groups as the fold
 // holds them, in place, as the fold draws them when it is opened.
@@ -48,18 +48,6 @@ test("multiple pending requests retain their order and resolve independently", (
   events.push(event(6, "turn_failed", { message: "Interrupted" }));
   assert.equal(projectConversation(events).pending.length, 0);
   assert.equal(projectConversation(events).busy, false);
-});
-test("the conversation capability and the operate grant are separate", () => {
-  const paired = { tailnetCapabilities: ["conversations"], tailnetScopes: ["conversation:read"] };
-  assert.equal(conversationEnabled(paired), true);
-  assert.equal(conversationCanOperate(paired), false);
-  assert.equal(conversationEnabled({ ...paired, tailnetCapabilities: ["conversation-models"] }), false);
-  assert.equal(conversationCanOperate({ ...paired, tailnetScopes: ["conversation:operate"] }), true);
-  assert.equal(conversationEnabled({ ...paired, status: "revoked" }), false);
-  // The desktop refuses the socket to a grant without conversation:read; a
-  // phone that dialled anyway read the bare close as a dropped link forever.
-  assert.equal(conversationEnabled({ ...paired, tailnetScopes: ["workspace:read", "backlog:read"] }), false);
-  assert.equal(conversationEnabled({ ...paired, tailnetScopes: ["conversation:operate"] }), true);
 });
 test("deep links contain only paired desktop and conversation identifiers", () => {
   assert.deepEqual(parseConversationLink("sprintengine://conversation/device/workspace/agent"), { deviceId: "device", workspaceId: "workspace", agentId: "agent" });
@@ -144,7 +132,8 @@ test("automatic grants are not human requests and a published user send acquires
 });
 
 test("the model control names the current model and offers the CLI's catalog only where it may be used", () => {
-  const session = { tailnetCapabilities: ["conversations", "conversation-models"], tailnetScopes: ["conversation:operate"] };
+  // What the desktop's welcome and the grant say (`chatOffers.ts`): a model switch is offered.
+  const session = { modelSwitch: true };
   const models = { cli: "claude-code", cliLabel: "Claude Code", liveModelSwitch: true, options: [{ id: "model-a", label: "Model A" }, { id: "model-b" }] };
   const chat = { workspaceId: "w", agentId: "a", modelId: "model-a", models };
   const control = modelControl(session, chat);
@@ -158,10 +147,8 @@ test("the model control names the current model and offers the CLI's catalog onl
   assert.equal(modelLabel({ ...chat, modelId: "default" }), "Claude Code default");
   assert.equal(modelLabel({ ...chat, modelId: "unlisted-model" }), "unlisted-model");
   // Hidden: an undeclared or older desktop, no catalog, or a read-only pairing.
-  assert.equal(modelControl({ ...session, tailnetCapabilities: ["conversations"] }, chat), null);
-  assert.equal(modelControl({ ...session, tailnetCapabilities: undefined }, chat), null);
+  assert.equal(modelControl({ modelSwitch: false }, chat), null, "a desktop that switches no models, or a grant that may not");
   assert.equal(modelControl(session, { ...chat, models: undefined }), null);
-  assert.equal(modelControl({ ...session, tailnetScopes: ["conversation:read"] }, chat), null);
   // A provider that cannot switch mid-chat shows its model read-only: the
   // desktop refuses a switch for it.
   const fixed = { ...chat, models: { ...models, liveModelSwitch: false } };
@@ -336,8 +323,8 @@ test("the header names the CLI and model, and the permission chip names the pres
 
 test("a chat's permission menu offers what its desktop and provider run, and always the chat's own preset", () => {
   const ids = (session, thread) => permissionChoices(session, thread).map((choice) => choice.id);
-  const older = { tailnetCapabilities: ["conversations"] };
-  const current = { tailnetCapabilities: ["conversations", "conversation-permission-modes"] };
+  const older = { permissionModes: false };
+  const current = { permissionModes: true };
   assert.deepEqual(ids(older, { permissionPreset: "none" }), ["bypass", "none"]);
   assert.deepEqual(ids(current, { permissionPreset: "auto" }), ["manual", "auto", "bypass", "none"]);
   assert.deepEqual(
