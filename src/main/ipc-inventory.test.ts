@@ -178,7 +178,7 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   modules: 0,
   extensions: 0,
   'paired-machines': 26,
-  access: 44,
+  access: 34,
   workspaces: 17,
   'web-tab': 6,
 }
@@ -255,7 +255,6 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
     studioRpc: { provideChat: () => undefined } as never,
     workspaceBackup: anything(),
     terminalHandoff: anything(),
-    assertAppSender: () => undefined,
   }
 }
 

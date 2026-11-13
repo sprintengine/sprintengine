@@ -1366,6 +1366,22 @@ reach these only this way: their window IPC is gone. The agents'
 `artifacts.*` tools are the server's own in both modes, over the same
 service; the shell is asked only for a page's picture and, with no window
 showing, a native question.
+
+`access` (2026-11-13) is who may reach a Studio's agents from its machine: the
+gateway's status (`gateway.status`), the tokens its loopback HTTP endpoint
+admits (`mcpHttp.status`, `.create`, `.revoke`), and the apps paired with its
+owner socket (`localApps.status`, `.offer`, `.cancelOffer`, `.revoke`,
+`.setReach`, and the `localApps.changed` stream, whole at subscribing and on
+each change). Every one is an owner's. A method or stream may now say `window`
+(its reason, always with `owner`): the server serves it only to a connection
+the window listener admitted with a ticket main minted for one of its windows,
+and refuses it `owner_required` to every other, an owner's web tab, a script
+holding the owner's credential and the shell included. Minting an HTTP token
+and all of local app pairing say it, so a stolen browser session or a paired
+app cannot mint the next way in. A web tab still lists and revokes the HTTP
+clients; before, its tunnel could also mint a token, and now Settings there
+says a new one is made in the desktop app. Same build on both ends: the
+window's 4 `automation:*` and 6 `studio-local-apps:*` IPC channels are gone.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

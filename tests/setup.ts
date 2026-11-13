@@ -67,3 +67,5 @@ vi.mock('../src/renderer/src/studio/worktrees', () => import('../src/renderer/sr
 vi.mock('../src/renderer/src/studio/backlog', () => import('../src/renderer/src/studio/backlog.double'))
 // This machine's scheduled agents (`src/renderer/src/studio/schedules.ts`), the same way.
 vi.mock('../src/renderer/src/studio/schedules', () => import('../src/renderer/src/studio/schedules.double'))
+// Who may reach this machine's agents (`src/renderer/src/studio/access.ts`), the same way.
+vi.mock('../src/renderer/src/studio/access', () => import('../src/renderer/src/studio/access.double'))

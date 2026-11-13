@@ -39,6 +39,7 @@ import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioMachineCall } from './studio-file-system'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { StudioExtensions } from '../extensions/extensions-domain'
+import type { StudioAccessDomain } from './studio-access'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioGit } from '../git/studio-git-types'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
@@ -382,6 +383,7 @@ export async function startTestServer(
     worktrees?: StudioWorktrees
     extensions?: StudioExtensions
     artifacts?: StudioArtifacts
+    access?: StudioAccessDomain
     pullRequests?: StudioPullRequests
     pullRequestCreation?: ConversationPullRequests
     localServers?: StudioLocalServers
@@ -436,6 +438,7 @@ export async function startTestServer(
     ...(input.worktrees ? { worktrees: input.worktrees } : {}),
     ...(input.extensions ? { extensions: input.extensions } : {}),
     ...(input.artifacts ? { artifacts: input.artifacts } : {}),
+    ...(input.access ? { access: input.access } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.pullRequestCreation ? { pullRequestCreation: input.pullRequestCreation } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),

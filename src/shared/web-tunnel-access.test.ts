@@ -71,7 +71,6 @@ test('an owner’s tab reaches exactly the channels it reached before permission
     'conversation:sessions:terminal-handoff',
     'conversation:secrets:set',
     'tailnet:update-device-scopes',
-    'studio-local-apps:offer',
     'mesh:pair',
   ])
     assert.equal(webTunnelAllows(channel), false, channel)

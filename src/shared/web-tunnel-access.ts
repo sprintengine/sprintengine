@@ -30,13 +30,12 @@ import {
 //
 // The tunnel is an owner's: a tab of a browser the owner paired drives the
 // domains the web client draws, and nothing that acts beyond this server.
-// Pairing apps and other machines, the tailnet's administration, and setting
-// or clearing provider keys or the GitHub token stay with the desktop app;
-// their reads that the web client shows (whether a key is set) do not. Two
-// kinds of credential an owner's tab does hand out, as the owner it is: an
-// MCP endpoint's bearer token for a client on this machine
-// (`automation:mcp-http-create`), and the browsers and embeds it pairs
-// (`web:devices:*`, `web:embeds:*`), each under `access:write`.
+// Pairing other machines, the tailnet's administration, and setting or
+// clearing provider keys or the GitHub token stay with the desktop app; their
+// reads that the web client shows (whether a key is set) do not. The browsers
+// and embeds an owner's tab pairs (`web:devices:*`, `web:embeds:*`) are under
+// `access:write`. The agents' gateway, its HTTP tokens and the paired local
+// apps are the Studio protocol's (`access.ts`), which says who reaches them.
 //
 // Typed over every channel the server owns and the front door's own, so a
 // channel added to either does not compile until it says here what it needs
@@ -57,10 +56,6 @@ const WINDOW_STATE = 'Only a desktop window can say it: a tab would report defau
 const BEYOND = 'It acts beyond this server, on another machine or account.'
 
 export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunnelChannelName]: StudioAccess } = {
-  'automation:get-status': owner('workspace:read'),
-  'automation:mcp-http-create': owner('access:write'),
-  'automation:mcp-http-revoke': owner('access:write'),
-  'automation:mcp-http-status': owner('access:read'),
   'hosts:home': owner('workspace:read'),
   'hosts:list': owner('workspace:read'),
   'mesh:cancel-pairing': desktopOnly(BEYOND),
@@ -93,11 +88,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'mesh:list-connections': desktopOnly(BEYOND),
   'mesh:pair': desktopOnly(BEYOND),
   'mesh:request-pairing': desktopOnly(BEYOND),
-  'studio-local-apps:cancel-offer': desktopOnly(ACCESS_ADMIN),
-  'studio-local-apps:offer': desktopOnly(ACCESS_ADMIN),
-  'studio-local-apps:revoke': desktopOnly(ACCESS_ADMIN),
-  'studio-local-apps:set-reach': desktopOnly(ACCESS_ADMIN),
-  'studio-local-apps:status': desktopOnly(ACCESS_ADMIN),
   'tailnet:approve-pair-request': desktopOnly(ACCESS_ADMIN),
   'tailnet:cancel-pairing': desktopOnly(ACCESS_ADMIN),
   'tailnet:deny-pair-request': desktopOnly(ACCESS_ADMIN),

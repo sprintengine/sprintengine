@@ -106,14 +106,6 @@ export type {
   AgentSkillSource,
   CapabilityDiagnostic,
 } from './skills'
-import type { AutomationServerStatus } from './automation'
-import type { McpHttpCreateResult, McpHttpStatus } from './mcp-http'
-import type {
-  StudioLocalAppOfferInput,
-  StudioLocalAppOfferView,
-  StudioLocalAppToolReach,
-  StudioLocalAppsStatus,
-} from './studio-local-apps'
 import type { StudioWindowTicket } from './studio-connection'
 import type {
   TailnetApprovePairRequestView,
@@ -557,26 +549,6 @@ export type ElectronApi = {
    * settles a run in flight, and cannot ask a module's provider itself.
    */
   setModuleRunStates: (states: Record<string, LifecycleState | null>) => Promise<void>
-  automationGetStatus: () => Promise<AutomationServerStatus>
-  /** The gateway's loopback HTTP endpoint: where it listens and the clients given a token. */
-  mcpHttpStatus: () => Promise<McpHttpStatus>
-  /** Make a token for a named client; the token comes back this once and is kept only hashed. */
-  mcpHttpCreate: (name: string) => Promise<McpHttpCreateResult>
-  mcpHttpRevoke: (id: string) => Promise<McpHttpStatus>
-  /**
-   * The applications on this machine paired with Studio's owner socket. Like
-   * the tailnet's pairing, reachable from a window only: no socket method can
-   * pair an app or widen one.
-   */
-  studioLocalAppsStatus: () => Promise<StudioLocalAppsStatus>
-  /** Mint a one-time pairing code for an app. The code comes back once and is never re-readable. */
-  studioLocalAppsOffer: (input: StudioLocalAppOfferInput) => Promise<StudioLocalAppOfferView>
-  studioLocalAppsCancelOffer: (id: string) => Promise<StudioLocalAppsStatus>
-  /** Revoke an app: its token stops working and its open connections are closed at once. */
-  studioLocalAppsRevoke: (id: string) => Promise<StudioLocalAppsStatus>
-  /** Change which agents a paired app's tools reach: the chats it starts, or every agent here. */
-  studioLocalAppsSetReach: (id: string, reach: StudioLocalAppToolReach) => Promise<StudioLocalAppsStatus>
-  onStudioLocalAppsChanged: (cb: (status: StudioLocalAppsStatus) => void) => () => void
   /**
    * Where this window's next connection to its Studio goes, and the ticket
    * its socket and hello present: good once, within thirty seconds. Asked

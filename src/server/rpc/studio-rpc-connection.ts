@@ -38,7 +38,14 @@ import {
   type StudioTopicPayload,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
-import { BROWSER_NO_TERMINALS, browserCapabilities, refusedToBrowser } from './studio-browser-reach'
+import {
+  BROWSER_NO_TERMINALS,
+  browserCapabilities,
+  refusedOutsideWindow,
+  refusedToBrowser,
+  WINDOW_ONLY,
+} from './studio-browser-reach'
+import type { StudioAccessDomain } from './studio-access'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
 import {
   CONVERSATION_WIRE_EVENT_BYTES,
@@ -176,6 +183,8 @@ export type StudioRpcConnectionOptions = {
   extensions?: StudioExtensions
   /** Where the Studio publishes its agents' pages: the `artifacts.setupQuestions` stream. */
   artifacts?: StudioArtifacts
+  /** Who may reach the agents from this machine: the `localApps.changed` stream. */
+  access?: StudioAccessDomain
   /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
@@ -700,6 +709,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     const decision = authorizeStudioTopic(grant, frame.topic)
     if (decision.ok && refusedToBrowser(spec, options.browser)) {
       subscriptionFailed(frame.id, 'owner_required', BROWSER_NO_TERMINALS)
+      return
+    }
+    if (decision.ok && refusedOutsideWindow(spec, options)) {
+      subscriptionFailed(frame.id, 'owner_required', WINDOW_ONLY)
       return
     }
     if (!decision.ok) {
@@ -1469,6 +1482,21 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
         id,
         'artifacts.setupQuestions',
         artifacts ? (deliver) => artifacts.onSetupQuestions((questions) => deliver({ questions })) : null,
+      )
+    },
+    // The paired apps whole, then again on every change: a window that
+    // reconnects is shown them as they stand.
+    'localApps.changed': (id) => {
+      const access = options.access
+      subscribeFeed(
+        id,
+        'localApps.changed',
+        access
+          ? (deliver) => {
+              deliver(access.localApps.status())
+              return access.localApps.onChanged(deliver)
+            }
+          : null,
       )
     },
     'terminal.output': subscribeTerminalOutput,

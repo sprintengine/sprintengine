@@ -425,6 +425,22 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['artifacts.settings', 'artifacts.setUp', 'artifacts.answerSetupQuestion', 'artifacts.setupQuestions'],
       ],
       [
+        'who reaches this machine’s agents from this machine: the gateway’s socket and bridge script, and the clients of its loopback HTTP endpoint: an owner’s, never a device’s (a device that could list or revoke them could widen or end what it did not grant)',
+        ['gateway.status', 'mcpHttp.status', 'mcpHttp.revoke'],
+      ],
+      [
+        'minting a token to the agents’ HTTP endpoint, and pairing, revoking or widening an app on the owner socket: Studio’s own desktop windows’ only, not even an owner’s web tab (one grant must not manufacture the next, and a stolen session must not mint a way in that outlives it)',
+        [
+          'mcpHttp.create',
+          'localApps.status',
+          'localApps.offer',
+          'localApps.cancelOffer',
+          'localApps.revoke',
+          'localApps.setReach',
+          'localApps.changed',
+        ],
+      ],
+      [
         'what extensions run here, installed, trusted or switched, and the window’s own report of what it resolved: an owner’s',
         ['module.setEnabled', 'module.install', 'module.setTrust', 'module.uninstall', 'module.reportRegistry'],
       ],

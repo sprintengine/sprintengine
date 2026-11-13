@@ -25,6 +25,7 @@ import {
   STUDIO_CANVAS_METHODS,
   STUDIO_EXTENSIONS_METHODS,
   STUDIO_ARTIFACTS_METHODS,
+  STUDIO_ACCESS_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -42,6 +43,7 @@ import {
   type StudioWorktreesMethod,
   type StudioExtensionsMethodMap,
   type StudioArtifactsMethodMap,
+  type StudioAccessMethodMap,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -50,8 +52,6 @@ import { emptyAgentLaunchSettings } from '../shared/launch-settings'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
 import type { Workspace } from '../renderer/src/types/workspace'
 import { createStaticAppIdentity } from '../server/platform/app-identity'
-import { createLocalClientBus } from '../server/platform/client-bus'
-import { STUDIO_LOCAL_APPS_CHANGED_CHANNEL, type StudioLocalAppsStatus } from '../shared/studio-local-apps'
 import { createGatewayAuditStore } from '../main/automation/gateway-audit'
 import { createConversationGatewayHost } from '../main/automation/tailnet/tailnet-conversation-host'
 import { createConversationLaunchService } from '../main/conversation-launch-service'
@@ -79,8 +79,6 @@ let root: string
 let userData: string
 let service: StudioRpcService
 let runtime: ConversationRuntime
-const bus = createLocalClientBus()
-const published: Array<{ topic: string; payload: unknown }> = []
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'studio-rpc-seam-'))
@@ -155,12 +153,10 @@ beforeAll(async () => {
     send: (input) => runtime.sendTurn(input),
   })
   const audit = createGatewayAuditStore({ resolveUserDataDir: () => userData })
-  bus.subscribe((topic, payload) => published.push({ topic, payload }))
   service = createStudioRpcService({
     // The platform's pieces, as a standalone server would install them.
     paths: { dataDir: () => userData },
     identity: createStaticAppIdentity({ version: '0.0.0-seam' }),
-    clients: bus,
     backend: () =>
       createStudioConversationBackend({
         host: createConversationGatewayHost(
@@ -308,13 +304,11 @@ test('revoking the app in Settings ends its stream and its client', async () => 
   await until(stream, (frame) => frame.type === 'synchronized')
   const app = service.getStatus().apps.find((entry) => entry.id === client.grant.clientId)
   assert.equal(app?.connected, true)
-  published.length = 0
   service.revoke(client.grant.clientId)
   await assert.rejects(stream.next(), (error: StudioError) => error.code === 'revoked')
-  // Settings hears it on the platform's client bus, with the app gone.
-  const pushed = published.filter((entry) => entry.topic === STUDIO_LOCAL_APPS_CHANGED_CHANNEL).at(-1)
+  // Settings reads it with the app gone (its stream is `localApps.changed`, studio-access.test.ts).
   assert.equal(
-    (pushed?.payload as StudioLocalAppsStatus | undefined)?.apps.some((entry) => entry.id === client.grant.clientId),
+    service.getStatus().apps.some((entry) => entry.id === client.grant.clientId),
     false,
   )
   // Parked, not retrying: another try would only be refused again.
@@ -530,6 +524,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // And where it publishes its agents' pages, which its Settings ▸ Artifacts uses, by name.
     ...(Object.fromEntries(Object.keys(STUDIO_ARTIFACTS_METHODS).map((method) => [method, 'request'])) as Record<
       keyof StudioArtifactsMethodMap,
+      string
+    >),
+    // And who may reach its agents from its machine, which its Settings uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_ACCESS_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioAccessMethodMap,
       string
     >),
   }

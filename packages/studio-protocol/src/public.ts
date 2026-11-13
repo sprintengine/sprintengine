@@ -52,6 +52,8 @@ export * from './extensions.js'
 export * from './extensions-types.js'
 export * from './artifacts.js'
 export * from './artifacts-types.js'
+export * from './access.js'
+export * from './access-types.js'
 // The host's services a module's window half calls on its server.
 export * from './module-services.js'
 // What a Studio's machine has and lacks for the work it runs on its own.

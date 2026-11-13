@@ -1,4 +1,4 @@
-import type { IpcMain, IpcMainInvokeEvent } from 'electron'
+import type { IpcMain } from 'electron'
 
 import type { createConversationTerminalHandoff } from '../../main/conversation-terminal-handoff'
 import type { HostRegistry } from '../../main/hosts/host-registry'
@@ -6,7 +6,6 @@ import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { createConversationService } from '../../main/conversation-service'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
-import { registerStudioLocalAppsIpc } from '../../main/ipc/studio-local-apps-ipc'
 import { registerWorkspaceBackupIpc } from '../../main/ipc/workspace-backup-ipc'
 import { registerWorkspaceSyncIpc } from '../../main/ipc/workspace-sync-ipc'
 import type { AgentLaunchSettingsStore } from '../../main/launch-settings-store'
@@ -25,8 +24,7 @@ import { knownFolders } from '../files/known-folders'
 // completeness test holds to this list).
 //
 // What is here: the workspace bus and registry hydration, launch settings and
-// machines, the gateway's settings and the tailnet and mesh, the paired local
-// apps, workspace backups, model discovery, the composer's command lists,
+// machines, the tailnet and the mesh, workspace backups, model discovery, the composer's command lists,
 // the GitHub token, the chats, with the copy of the model-written titles setting the
 // server titles them by. The worktree pool and settled chats are the Studio
 // protocol's (`worktrees.*`, `settledChats.*`).
@@ -56,8 +54,6 @@ export type ServerDomainIpcDeps = {
   studioRpc: StudioRpcService
   workspaceBackup: WorkspaceBackupService
   terminalHandoff: ReturnType<typeof createConversationTerminalHandoff>['handoff']
-  /** Only an app window may pair a local app: `assertAppSender` in main; the port is the check in the server. */
-  assertAppSender: (event: IpcMainInvokeEvent) => void
 }
 
 export type ServerDomainIpcHandles = {
@@ -76,7 +72,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
     setModuleRunStates: (states) => core.settlement.setModuleRunStates(states),
   })
   registerAutomationIpc(ipc, deps.gateway)
-  registerStudioLocalAppsIpc(ipc, deps.studioRpc, deps.assertAppSender)
   registerMeshIpc(ipc, deps.gateway)
   registerWorkspaceBackupIpc(ipc, deps.workspaceBackup)
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.

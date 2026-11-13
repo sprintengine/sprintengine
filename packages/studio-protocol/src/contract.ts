@@ -77,6 +77,14 @@ export type StudioMethodSpec = {
    * (a web tab, a paired app).
    */
   shell?: string
+  /**
+   * Only Studio's own desktop windows may call it, and why: its answer
+   * carries a credential, or it lets someone reach this machine from
+   * elsewhere. Always with `owner`; this refuses the owner's other clients
+   * too: a web tab (a stolen browser session must not mint the next way in),
+   * an app or script holding the owner's credential, and the shell.
+   */
+  window?: string
 }
 
 /**
@@ -157,6 +165,8 @@ export type StudioTopicDefinition<C extends StudioTopicContract> = {
   capability: StudioCapability
   /** As for a method: why only an owner may follow it. */
   owner?: string
+  /** As for a method: why only Studio's own desktop windows may follow it. */
+  window?: string
   /** Reads an object of params; absent params are read as `{}`, which a topic that names something refuses. */
   readonly params: (value: Record<string, unknown>) => StudioParsed<C['params']>
 } & (C['stream'] extends 'push' ? { push: true } : { push?: never })

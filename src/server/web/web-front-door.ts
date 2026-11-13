@@ -151,8 +151,6 @@ export async function startWebFrontDoor(input: {
     }),
     // No terminals on the web (ruling a): a chat is not handed to one.
     terminalHandoff: async () => ({ ok: false, message: 'Terminals are not available in a browser.' }),
-    // The cookie checked at the upgrade is the check: only an owner's session reaches the tunnel.
-    assertAppSender: () => undefined,
   })
 
   // The web tab's own channels, beside the domains every window reaches.

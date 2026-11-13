@@ -1,6 +1,4 @@
 import type { IpcMain } from 'electron'
-import { AUTOMATION_GET_STATUS_CHANNEL } from '../../shared/automation'
-import { MCP_HTTP_CREATE_CHANNEL, MCP_HTTP_REVOKE_CHANNEL, MCP_HTTP_STATUS_CHANNEL } from '../../shared/mcp-http'
 import {
   TAILNET_CANCEL_PAIRING_CHANNEL,
   TAILNET_GET_LIVE_STATE_CHANNEL,
@@ -25,26 +23,13 @@ import type { AutomationService } from '../automation/automation-service'
 import { createTailnetShareService } from '../automation/tailnet/tailnet-share-service'
 import { asRecord } from '../../shared/records'
 
-// Status only: a window reads whether the gateway is up and may turn it off.
-// The respond half of the old renderer-delegate pair went with the delegate
-// — no gateway request travels to a window any more.
-//
 // The tailnet channels are the configuration front door for the opt-in remote
 // listener: enable it, mint or cancel a pairing code, revoke a paired
 // device. They are IPC-only on purpose — none of this is reachable through the
 // MCP gateway itself, so no agent (local or remote) can pair a new device or
-// widen its own reach.
+// widen its own reach. The gateway's status and its HTTP endpoint's tokens are
+// the Studio protocol's (`gateway.status`, `mcpHttp.*`, access.ts).
 export function registerAutomationIpc(ipcMain: IpcMain, service: AutomationService): void {
-  ipcMain.handle(AUTOMATION_GET_STATUS_CHANNEL, () => service.getStatus())
-  // The HTTP endpoint's tokens: made, named and revoked from a window only, as
-  // a pairing is, so no caller of the gateway can mint itself another door.
-  ipcMain.handle(MCP_HTTP_STATUS_CHANNEL, () => service.getMcpHttpStatus())
-  ipcMain.handle(MCP_HTTP_CREATE_CHANNEL, (_event, name: unknown) =>
-    service.createMcpHttpClient(typeof name === 'string' ? name : ''),
-  )
-  ipcMain.handle(MCP_HTTP_REVOKE_CHANNEL, (_event, id: unknown) =>
-    service.revokeMcpHttpClient(typeof id === 'string' ? id : ''),
-  )
   ipcMain.handle(TAILNET_GET_STATUS_CHANNEL, () => service.getTailnetStatus())
   // The initial read behind the push channel: a subscriber takes this snapshot
   // once, then stores each pushed payload's fresher copy.

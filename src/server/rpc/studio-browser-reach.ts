@@ -30,3 +30,21 @@ export function refusedToBrowser(
 export function browserCapabilities(capabilities: readonly string[]): string[] {
   return capabilities.filter((capability) => !TERMINAL_CAPABILITIES.has(capability))
 }
+
+// What the table holds to Studio's own desktop windows (`window`): a method
+// whose answer carries a credential, or that lets someone reach this machine
+// from elsewhere. A window's connection is one the window listener admitted
+// with a ticket main minted for one of its windows (`windowKey`); everything
+// else is refused, an owner's web tab (a browser, whatever its session), a
+// script or app holding the owner's credential, and the shell included.
+
+export const WINDOW_ONLY = 'This is served only to Studio’s own desktop windows.'
+
+/** Whether a method or stream the table holds to Studio's own windows is refused to this connection. */
+export function refusedOutsideWindow(
+  spec: { window?: string } | undefined,
+  who: { ownWindow?: boolean; windowKey?: string; browser?: boolean },
+): boolean {
+  if (typeof spec?.window !== 'string') return false
+  return !(who.ownWindow === true && who.windowKey !== undefined && who.browser !== true)
+}
