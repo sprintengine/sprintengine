@@ -59,3 +59,5 @@ afterEach(() => {
 // `watchPath`, ...), else answers as an empty disk; the module's own suite
 // asks for the real one (`vi.importActual`).
 vi.mock('../src/renderer/src/studio/files', () => import('../src/renderer/src/studio/files.double'))
+// The window's git (`src/renderer/src/studio/git.ts`), the same way.
+vi.mock('../src/renderer/src/studio/git', () => import('../src/renderer/src/studio/git.double'))

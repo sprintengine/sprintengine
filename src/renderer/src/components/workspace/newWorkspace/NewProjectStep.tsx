@@ -15,6 +15,7 @@ import {
 } from '../../ui'
 import { basename } from '../../../utils/paths'
 import { isImeKey } from '../../../utils/imeKey'
+import { gitApi } from '../../../studio/git'
 
 // The New-chat project selector's "New project" step: a name, where it goes on
 // this machine, and — only if the person ticks it — a GitHub repository for it.
@@ -72,7 +73,7 @@ export function NewProjectStep({
 
   const loadOwners = () => {
     setOwners({ status: 'loading' })
-    void window.api
+    void gitApi
       .listGitHubOwners()
       .then((result) => {
         if (mounted.current) setOwners(result)

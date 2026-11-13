@@ -26,6 +26,7 @@ export type {
 } from '../../../packages/studio-protocol/src/public'
 import type { TerminalKind } from '../../../packages/studio-protocol/src/public'
 import type { AgentCli } from './conversations'
+export type { GitFileStatus } from '../../../packages/studio-protocol/src/public'
 
 /** Main's answer to a window's one-time registry hydration offer. */
 export type WorkspaceRegistryHydrateResult = {
@@ -174,5 +175,3 @@ export type IpcStatsSnapshot = {
   sampledAt: number
   channels: IpcChannelStat[]
 }
-
-export type GitFileStatus = 'new' | 'modified' | 'deleted' | 'renamed' | 'conflicted'

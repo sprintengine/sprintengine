@@ -38,6 +38,7 @@ export * from './agent-skills.js'
 export * from './schedules.js'
 // The files on its machine, by path.
 export * from './file-system.js'
+export * from './git.js'
 // Keeping a Studio up to date, and reaching one whose protocol does not meet the client's.
 export * from './update.js'
 export * from './modules.js'
@@ -49,3 +50,4 @@ export * from './permissions.js'
 export * from './environment.js'
 // `sprintengine://` links: the one grammar every client reads and writes.
 export * from './chat-link.js'
+export * from './git-types.js'

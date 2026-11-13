@@ -8,10 +8,8 @@ import type {
   FolderOpenResult,
   FolderOpenTargetAvailability,
   ProcessMetricsSnapshot,
-  VersionControlProviderProbe,
 } from '../../shared/electron-api'
 import type { AttachedFilePreview } from '../../shared/attached-files'
-import type { HostGhStatus } from '../../shared/host-gh'
 
 export const filesystemApi = {
   getPathForFile: (file: unknown): string => {
@@ -50,10 +48,6 @@ export const filesystemApi = {
   openImageAttachment: (input: { mediaType: string; dataBase64: string; name?: string }): Promise<void> =>
     ipcRenderer.invoke('fs:open-image-attachment', input),
   showItemInFolder: (targetPath: string) => ipcRenderer.invoke('fs:show-item-in-folder', targetPath),
-  probeVersionControlProviders: (): Promise<VersionControlProviderProbe[]> =>
-    ipcRenderer.invoke('version-control:probe-providers'),
-  probeHostGh: (hostId: string): Promise<HostGhStatus | null> =>
-    ipcRenderer.invoke('version-control:probe-host-gh', hostId),
   openHtmlFileInBrowser: (targetPath: string) => ipcRenderer.invoke('fs:open-html-file-in-browser', targetPath),
   listFolderOpenTargets: (): Promise<FolderOpenTargetAvailability[]> => ipcRenderer.invoke('fs:folder-open-targets'),
   openFolderInTarget: (request: FolderOpenRequest): Promise<FolderOpenResult> =>
@@ -78,8 +72,6 @@ export const filesystemApi = {
   | 'diagnosticsOpenWindow'
   | 'openImageAttachment'
   | 'showItemInFolder'
-  | 'probeVersionControlProviders'
-  | 'probeHostGh'
   | 'openHtmlFileInBrowser'
   | 'listFolderOpenTargets'
   | 'openFolderInTarget'

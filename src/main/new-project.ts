@@ -263,6 +263,6 @@ export function realNewProjectDeps(resolveToken: () => Promise<string | null>): 
     writeFile: (path, content) => writeFile(path, content, { encoding: 'utf8', flag: 'wx' }),
     join,
     resolveToken,
-    fetch: (...args) => fetch(...args),
+    fetch: (input, init) => fetch(input, init),
   }
 }

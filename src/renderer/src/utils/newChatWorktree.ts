@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import type { AgentId, WorkspaceId, WorkspaceWorktree } from '../types/workspace'
 import { publishDiagnosticSync } from './diagnostics'
 import { agentWorktreePaths, newChatWorktreeName, workspaceProjectRootOf } from './workspaceWorktree'
+import { gitApi } from '../studio/git'
 
 export type NewChatWorktreeResult =
   | {
@@ -72,7 +73,7 @@ export async function createNewChatWorktree(
   const projectFolder = workspaceProjectRootOf({ folderPath }) ?? folderPath
   const worktreeHostId = hostId ?? undefined
   try {
-    const repoRoot = await window.api.getGitRepoRoot(projectFolder, worktreeHostId)
+    const repoRoot = await gitApi.getGitRepoRoot(projectFolder, worktreeHostId)
     if (!repoRoot) {
       return fail(
         'Worktree needs a git repository',

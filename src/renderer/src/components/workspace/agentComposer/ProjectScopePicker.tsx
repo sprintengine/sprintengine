@@ -27,6 +27,7 @@ import { ChipCaretGlyph } from './agentSpawnShared'
 import type { NewProjectRequest } from '../newWorkspace/NewProjectStep'
 import type { NewProjectResult } from '../../../../../shared/electron-api'
 import { filesApi } from '../../../studio/files'
+import { gitApi } from '../../../studio/git'
 
 // "Which project is this about?", as one chip.
 //
@@ -225,7 +226,7 @@ export function ProjectScopePicker({
   const runClone = React.useCallback(
     async (request: ProjectCloneRequest): Promise<ProjectCloneResult> => {
       if (onClone) return onClone(request)
-      const cloned = await window.api.cloneRepository(request).catch((caught: unknown): ProjectCloneResult => ({
+      const cloned = await gitApi.cloneRepository(request).catch((caught: unknown): ProjectCloneResult => ({
         ok: false,
         message: caught instanceof Error ? caught.message : 'Could not clone the repository.',
       }))
@@ -241,7 +242,7 @@ export function ProjectScopePicker({
   // closed while GitHub was answering.
   const createProject = React.useCallback(
     async (request: NewProjectRequest): Promise<NewProjectResult> => {
-      const made = await window.api.createNewProject(request).catch((caught: unknown): NewProjectResult => ({
+      const made = await gitApi.createNewProject(request).catch((caught: unknown): NewProjectResult => ({
         ok: false,
         reason: 'failed',
         message: caught instanceof Error ? caught.message : 'Could not create the project.',

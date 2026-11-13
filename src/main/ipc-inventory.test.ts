@@ -182,7 +182,6 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   access: 45,
   workspaces: 47,
   'worktree-pool': 16,
-  git: 68,
   'web-tab': 6,
 }
 
@@ -263,7 +262,6 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
     } as never,
     gateway: anything(),
     studioRpc: { provideChat: () => undefined } as never,
-    githubTokenStore: anything(),
     workspaceBackup: anything(),
     terminalHandoff: anything(),
     assertAppSender: () => undefined,

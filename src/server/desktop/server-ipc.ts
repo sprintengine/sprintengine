@@ -1,13 +1,10 @@
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
 import type { createConversationTerminalHandoff } from '../../main/conversation-terminal-handoff'
-import type { GitHubTokenStore } from '../../main/github-token-store'
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { registerBacklogIpc } from '../../main/ipc/backlog-ipc'
 import { createConversationService } from '../../main/conversation-service'
-import { registerGitHubReposIpc } from '../../main/ipc/github-repos-ipc'
-import { registerGitHubTokenIpc } from '../../main/ipc/github-token-ipc'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
 import { registerStudioLocalAppsIpc } from '../../main/ipc/studio-local-apps-ipc'
@@ -63,7 +60,6 @@ export type ServerDomainIpcDeps = {
   > & { hosts: HostRegistry; agentLaunchSettings: AgentLaunchSettingsStore }
   gateway: StudioGateway
   studioRpc: StudioRpcService
-  githubTokenStore: GitHubTokenStore
   workspaceBackup: WorkspaceBackupService
   terminalHandoff: ReturnType<typeof createConversationTerminalHandoff>['handoff']
   /** Only an app window may pair a local app: `assertAppSender` in main; the port is the check in the server. */
@@ -97,8 +93,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerScheduledAgentsIpc(ipc, { service: deps.scheduledAgents })
   registerHostsIpc(ipc, { hosts: core.hosts })
   registerBacklogIpc(ipc)
-  registerGitHubTokenIpc(ipc, deps.githubTokenStore)
-  registerGitHubReposIpc(ipc, deps.githubTokenStore)
   // One conversation service over the core's chats, which the Studio RPC's
   // chat surface serves to every client, the app's own windows included.
   const conversationService = {

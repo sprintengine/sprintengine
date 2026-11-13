@@ -1223,6 +1223,17 @@ folders. A Studio with no Trash on its machine refuses `files.trash` in words.
 Additive: an older Studio leaves the capability out, and the desktop's window
 says the Studio does not serve its files. The desktop's windows reach the
 files only this way: their window IPC is gone.
+`git` (2026-11-13) is git on a Studio's machine, by the repository's folder:
+the reads under `files:read` with the `git.checkoutChanged` and
+`git.changelistsChanged` streams; staging, commits, resolved conflicts,
+stashing and changelists under `files:write`. What moves a branch, rewrites
+history or discards work, reaches a remote, touches the agents' worktrees, or
+uses the GitHub account Studio holds (`github.*`) is an owner's as well. The
+machine's version-control CLIs are `versionControl.*` under `providers:read`.
+A client that is not an owner names a repository only inside the folders the
+Studio knows. Additive: an older Studio leaves `git` out. The desktop's windows
+reach git only this way, but for saving a patch through the system's save
+dialog, which stays the shell's.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

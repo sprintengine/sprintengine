@@ -53,7 +53,6 @@ const desktopOnly = (reason: string): StudioAccess => ({ localOnly: reason })
 
 const ACCESS_ADMIN =
   'Who may reach this machine (paired apps, other machines, the tailnet) is administered in the desktop app.'
-const CREDENTIALS = 'A provider key or the GitHub token is set and cleared in the desktop app.'
 const WINDOW_STATE = 'Only a desktop window can say it: a tab would report defaults and blanks.'
 const BEYOND = 'It acts beyond this server, on another machine or account.'
 const DESKTOP = 'It is served to the desktop app only.'
@@ -84,14 +83,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'git:worktree:create': desktopOnly(DESKTOP),
   'git:worktree:remove': desktopOnly(DESKTOP),
   'git:worktree:restore': desktopOnly(DESKTOP),
-  'github:clear-token': desktopOnly(CREDENTIALS),
-  'github:clone': desktopOnly(BEYOND),
-  'github:clone-cancel': desktopOnly(BEYOND),
-  'github:list-owners': desktopOnly(BEYOND),
-  'github:list-repos': owner('workspace:read'),
-  'github:new-project': desktopOnly(BEYOND),
-  'github:set-token': desktopOnly(CREDENTIALS),
-  'github:token-status': owner('workspace:read'),
   'hosts:home': owner('workspace:read'),
   'hosts:list': owner('workspace:read'),
   'mesh:browse': desktopOnly(BEYOND),

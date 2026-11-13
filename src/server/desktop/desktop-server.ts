@@ -442,6 +442,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         await rpc.call(SHELL_METHODS.trash, { path })
       },
     },
+    githubTokens: githubTokenStore,
   })
   const workspaceBackup = createWorkspaceBackupService({
     resolveUserDataDir: () => envelope.dataDir,
@@ -452,7 +453,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     core,
     gateway,
     studioRpc,
-    githubTokenStore,
     workspaceBackup,
     // Resume in terminal: the core's, launched here.
     terminalHandoff: (input) =>

@@ -120,6 +120,7 @@ import { clientSupports, hostPlatform } from '../../clientCapabilities'
 import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
+import { gitApi } from '../../studio/git'
 
 interface Props {
   onClose: () => void
@@ -143,7 +144,7 @@ interface Props {
   chrome?: 'panel' | 'overlay' | 'door'
 }
 
-type GitHubTokenUiStatus = Awaited<ReturnType<typeof window.api.getGitHubTokenStatus>>
+type GitHubTokenUiStatus = Awaited<ReturnType<typeof gitApi.getGitHubTokenStatus>>
 
 const EMPTY_PROJECT_KNOWLEDGE_ROOTS: Record<string, string | null> = {}
 const NO_UPDATE_BADGE_CLIS: ReadonlySet<string> = new Set()
@@ -530,7 +531,7 @@ export function VersionControlSections({ githubToken }: { githubToken: React.Rea
   const platform = hostPlatform()
 
   const runProbe = useCallback(async () => {
-    if (typeof window.api.probeVersionControlProviders !== 'function') {
+    if (typeof gitApi.probeVersionControlProviders !== 'function') {
       // An older preload than this renderer. Named as the missing capability it
       // is, rather than letting the call throw a TypeError whose message would
       // reach the screen as "… is not a function".
@@ -540,7 +541,7 @@ export function VersionControlSections({ githubToken }: { githubToken: React.Rea
     }
     setChecking(true)
     try {
-      const results = await window.api.probeVersionControlProviders()
+      const results = await gitApi.probeVersionControlProviders()
       // Replace rather than merge: a re-check is a fresh reading of the machine,
       // so a provider that disappeared must not keep its old version line.
       setProbes(Object.fromEntries(results.filter((result) => !result.machine).map((result) => [result.id, result])))
@@ -972,7 +973,7 @@ export default function SettingsPanel({
 
   useEffect(() => {
     let cancelled = false
-    void window.api.getGitHubTokenStatus().then((status) => {
+    void gitApi.getGitHubTokenStatus().then((status) => {
       if (!cancelled) setGithubTokenStatus(status)
     })
     return () => {
@@ -1103,7 +1104,7 @@ export default function SettingsPanel({
     setGithubTokenPending(true)
     setGithubTokenMessage('')
     try {
-      const status = await window.api.setGitHubToken(token)
+      const status = await gitApi.setGitHubToken(token)
       setGithubTokenStatus(status)
       setGithubTokenDraft('')
       setGithubTokenEditing(false)
@@ -1119,7 +1120,7 @@ export default function SettingsPanel({
     setGithubTokenPending(true)
     setGithubTokenMessage('')
     try {
-      const status = await window.api.clearGitHubToken()
+      const status = await gitApi.clearGitHubToken()
       setGithubTokenStatus(status)
       setGithubTokenDraft('')
       setGithubTokenEditing(false)

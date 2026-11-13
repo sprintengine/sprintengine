@@ -36,6 +36,7 @@ import {
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import { openTerminal } from '../../studio/terminals'
 import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
 
 type WorktreeMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -238,10 +239,10 @@ export default function WorktreeManager({
   }, [worktreeName])
 
   const refreshWorktrees = useCallback(async () => {
-    if (typeof window.api.listGitWorktrees !== 'function') return
+    if (typeof gitApi.listGitWorktrees !== 'function') return
     setLoading(true)
     try {
-      const result = await window.api.listGitWorktrees(repoRoot)
+      const result = await gitApi.listGitWorktrees(repoRoot)
       if (!result.ok) {
         setMessage({ tone: 'error', text: result.message })
         return
@@ -253,7 +254,7 @@ export default function WorktreeManager({
           let dirtyCount: number | null = null
           if (exists && !worktree.bare) {
             try {
-              const status = await window.api.getGitStatus(worktree.path)
+              const status = await gitApi.getGitStatus(worktree.path)
               dirtyCount = Object.keys(status.files).length
             } catch {
               dirtyCount = null
@@ -420,7 +421,7 @@ export default function WorktreeManager({
 
   const handlePrune = async () => {
     await runWorktreeAction('Pruning stale worktrees', async () => {
-      const result = await window.api.pruneGitWorktrees(repoRoot)
+      const result = await gitApi.pruneGitWorktrees(repoRoot)
       setMessage(messageFromResult(result, 'Pruned stale worktree metadata.'))
       if (result.ok) {
         await refreshWorktrees()
@@ -586,7 +587,7 @@ export default function WorktreeManager({
     })
     if (!confirmed) return
     await runWorktreeAction('Releasing agent lock', async () => {
-      const result = await window.api.unlockAgentGitWorktree(repoRoot, row.path)
+      const result = await gitApi.unlockAgentGitWorktree(repoRoot, row.path)
       setMessage(messageFromResult(result, 'Released the agent lock.'))
       if (!result.ok) return
       await refreshWorktrees()

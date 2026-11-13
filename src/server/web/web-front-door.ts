@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { GitHubTokenStore } from '../../main/github-token-store'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
 import { createWorkspaceBackupService } from '../../main/workspace-backup'
 import type { StudioCore } from '../core/studio-core'
@@ -145,7 +144,6 @@ export async function startWebFrontDoor(input: {
     core,
     gateway,
     studioRpc: rpc,
-    githubTokenStore: new GitHubTokenStore(),
     workspaceBackup: createWorkspaceBackupService({
       resolveUserDataDir: () => dataDir,
       readRegistry: () => core.workspaceRegistry.getState(),

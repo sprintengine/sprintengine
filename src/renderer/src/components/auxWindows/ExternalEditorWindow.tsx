@@ -71,6 +71,7 @@ import {
   type EditorDiskNoticeState,
 } from '../panels/editor/EditorDiskNotice'
 import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
 
 // Match EditorPanel: above this size the rendered preview is disabled and the
 // file falls back to the Monaco source view so a huge document can't hang the
@@ -127,8 +128,8 @@ function useTreeRoot(tab: FileTab | null): string | null {
     let cancelled = false
     const folder = splitTreePath(path).directory || path
     const lookup =
-      typeof window.api.getGitRepoRoot === 'function'
-        ? window.api.getGitRepoRoot(folder).catch(() => null)
+      typeof gitApi.getGitRepoRoot === 'function'
+        ? gitApi.getGitRepoRoot(folder).catch(() => null)
         : Promise.resolve(null)
     void lookup.then((repoRoot) => {
       if (cancelled) return

@@ -55,7 +55,8 @@ import { readStudioEnv } from '../shared/studio-env'
 import type { McpToolContribution } from './module-host/main-host'
 import { createDefaultMarketplaceRegistryClient } from './ipc/marketplace-registry-ipc'
 import { toThirdPartyModuleView } from './ipc/third-party-module-ipc'
-import { getGitRepoWatch } from './ipc/git-repo-watch-ipc'
+import { getGitRepoWatch } from '../server/git/checkout-watch'
+import { announceChangelistsChanged } from '../server/git/changelist-events'
 import { createModuleRegistryMirror } from './modules/registry-mirror'
 import { readModuleTrustContextSync } from './modules/trust-context'
 import { defaultUserModuleRoot, discoverUserModules } from './modules/user-module-registry'
@@ -1136,9 +1137,8 @@ export function createAppServices(
   // a list moved by an agent and a list renamed by a person reach the other
   // windows the same way.
   const broadcastGitChangelistsChanged = (repoRoot: string): void => {
-    // Same shape and same spelling the preload subscribes to
-    // (`onGitChangelistsChanged`); the renderer re-reads for a matching root.
-    broadcastToAllWindows('git:changelists-changed', { repoRoot })
+    // Every client's `git.changelistsChanged` stream hears it and re-reads that root.
+    announceChangelistsChanged(repoRoot)
   }
   const agentChangelistFeed = createAgentChangelistFeed({
     userDataDir: app.getPath('userData'),
@@ -1741,6 +1741,8 @@ export function createAppServices(
         // What this desktop's shell adds to the files on its disk: its Trash,
         // its image codec for project logos, and where Documents is.
         fileSystemShell: desktopFileSystemShell(),
+        // The GitHub account this desktop keeps, for `github.*`.
+        githubTokens: githubTokenStore,
       })
     : null
   // Where the person's attention is, for routing a call to the window in

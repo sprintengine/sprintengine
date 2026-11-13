@@ -19,6 +19,7 @@ import {
   STUDIO_AGENT_SKILLS_METHODS,
   STUDIO_SCHEDULES_METHODS,
   STUDIO_FILE_SYSTEM_METHODS,
+  STUDIO_GIT_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -30,6 +31,7 @@ import {
   type StudioChatStoresMethod,
   type StudioAgentSkillsMethod,
   type StudioFileSystemMethod,
+  type StudioGitMethod,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -461,6 +463,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // The files on a Studio's machine by path, which its own windows browse and edit, called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_FILE_SYSTEM_METHODS).map((method) => [method, 'request'])) as Record<
       StudioFileSystemMethod,
+      string
+    >),
+    // And git on it, which its windows' Git pane and diff view drive, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_GIT_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioGitMethod,
       string
     >),
   }

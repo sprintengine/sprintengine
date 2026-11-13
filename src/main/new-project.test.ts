@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
 import { newProjectNameProblem } from '../shared/new-project-name'
-import { parseNewProjectInput } from './ipc/github-repos-ipc'
+import { parseStudioMethodParams } from '../../packages/studio-protocol/src/methods'
 import { createNewProject, listGitHubOwners, realNewProjectDeps, type NewProjectDeps } from './new-project'
 
 type FetchCall = { url: string; method: string; body: unknown; auth: string | null }
@@ -235,21 +235,21 @@ describe('new project', () => {
     })
   })
 
-  test('the IPC request is parsed strictly, and a missing publish is a local project', () => {
-    expect(parseNewProjectInput({ parentDir: '/Users/dev/code', name: 'x' })).toEqual({
-      parentDir: '/Users/dev/code',
-      name: 'x',
-      publish: null,
-    })
-    expect(parseNewProjectInput({ parentDir: '/Users/dev/code', name: 'x', publish: { owner: null } })).toBeNull()
+  test('the request is read strictly by the protocol, and a missing publish is a local project', () => {
+    const read = (input: unknown) => {
+      const parsed = parseStudioMethodParams('github.newProject', { commandId: 'c1', input })
+      return parsed.ok ? parsed.params.input : null
+    }
+    expect(read({ parentDir: '/Users/dev/code', name: 'x' })).toEqual({ parentDir: '/Users/dev/code', name: 'x' })
+    expect(read({ parentDir: '/Users/dev/code', name: 'x', publish: { owner: null } })).toBeNull()
     expect(
-      parseNewProjectInput({
+      read({
         parentDir: '/Users/dev/code',
         name: 'x',
         publish: { owner: 'acme', visibility: 'internal', confirmed: true },
       }),
     ).toBeNull()
-    expect(parseNewProjectInput(null)).toBeNull()
+    expect(read(null)).toBeNull()
   })
 })
 

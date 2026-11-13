@@ -53,6 +53,7 @@ import {
 } from '../ui'
 import { EditorDiskNotice, overwriteOnDiskConfirmation, type EditorDiskNoticeState } from './editor/EditorDiskNotice'
 import { filesApi } from '../../studio/files'
+import { gitApi } from '../../studio/git'
 
 // The editor's three non-content states, each in its own kit idiom so a failed
 // read never renders like an empty pane (principles.md → Accessibility;
@@ -647,12 +648,12 @@ export default function EditorPanel({ workspaceId, filePath }: Props) {
         return
       }
 
-      if (typeof window.api.getGitFileBase !== 'function') {
+      if (typeof gitApi.getGitFileBase !== 'function') {
         setGitBaseContent(null)
         return
       }
 
-      const result = await window.api.getGitFileBase(repoRoot, activeFilePath)
+      const result = await gitApi.getGitFileBase(repoRoot, activeFilePath)
       if (cancelled) return
 
       setGitBaseContent(result.ok ? { path: activeFilePath, content: result.content } : null)
