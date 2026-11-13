@@ -4,8 +4,6 @@ import type { Duplex } from 'node:stream'
 import { FRONT_DOOR_TIMED_OUT, type MuxEndpoint } from '../../../../resources/wsl-server/relay-mux.mjs'
 import { commitFailure } from '../../hosts/remote-install'
 import { remoteNodeDigests, type RemoteNodeTarget } from '../../hosts/wsl-node-runtime'
-import { connectRemoteConversationBackend, type RemoteConversationBackend } from '../../../server/wsl/backend-wire'
-import type { FrontDoorPurpose } from '../../../server/wsl/front-door-proof'
 import { lineTransport, readTicket } from '../../../server/wsl/studio-door'
 import type {
   SshEnvironmentSettings,
@@ -84,7 +82,6 @@ export type SshServerConnection = {
   key: string
   id: string
   label: string
-  backend: RemoteConversationBackend
   /**
    * Main's own connection to the machine's server, as its owner (the `studio`
    * door): what says the server is alive, whatever the SSH session says.
@@ -93,7 +90,7 @@ export type SshServerConnection = {
   environmentId: string | null
   serverVersion: string | null
   /** A fresh, admitted Studio-server connection for `purpose`, over the same session. */
-  open(purpose: FrontDoorPurpose): Promise<Duplex>
+  open(purpose: 'studio' | 'ws'): Promise<Duplex>
   /** A TCP connection made from the machine (the pane's traffic, spec 6.8). */
   openTcp(host: string, port: number): Promise<Duplex>
 }
@@ -104,7 +101,7 @@ export type SshEnvironmentDeps = {
   settings(): SshEnvironmentSettings
   /** Spawn `ssh … -- <destination> sh -s`; `interactive` gets an askpass token, a background one BatchMode. */
   spawn(options: { interactive: boolean }): SessionProcess
-  app: { version: string; channel: 'latest' | 'nightly'; backendWire: number }
+  app: { version: string; channel: 'latest' | 'nightly' }
   /** `data`, or `data-<profile>` for a desktop on another profile. */
   dataName: string
   /** "Studio on dev-macbook-air", for the remote's record. */
@@ -556,11 +553,7 @@ export class SshEnvironment {
           continue
         }
         this.view.protocol = recordWindow(probe.serverRecord) ?? this.view.protocol
-        const located = locateServer(
-          probe,
-          { version: this.deps.app.version, backendWire: this.deps.app.backendWire },
-          label,
-        )
+        const located = locateServer(probe, { version: this.deps.app.version }, label)
         let decision: string
         let deadline = this.timing.relayMs
         const idle = this.deps.settings().keepRunning ? 'keep' : String(IDLE_MS)
@@ -765,17 +758,12 @@ export class SshEnvironment {
     const server = ready.server
     if (!server)
       throw new StepError('failed', `No Studio server is running on ${label} after it was started; see its log there.`)
-    const stream = await endpoint.open({ kind: 'owner', purpose: 'backend' }).catch((error: Error) => {
-      const words = `The Studio server on ${label} did not let Studio in: ${error.message}`
-      // It took the connection and never answered its front door.
-      throw error.message === FRONT_DOOR_TIMED_OUT ? new NoAnswerError('failed', words) : new StepError('failed', words)
-    })
-    const backend = connectRemoteConversationBackend(stream, { log: this.log })
-    // The owner connection is made once the wire answers, so one opened for a
-    // handshake that then times out is closed when it arrives, not left open.
+    // Main's owner connection is the one connection the handshake makes: one
+    // opened for a handshake that then times out is closed when it arrives,
+    // not left open.
     let timedOut = false
     let timer: ReturnType<typeof setTimeout> | undefined
-    const opening = backend.refresh().then(() => this.openOwner(endpoint))
+    const opening = this.openOwner(endpoint, label)
     void opening.then(
       (late) => timedOut && late.close(),
       () => undefined,
@@ -788,17 +776,11 @@ export class SshEnvironment {
           reject(new NoAnswerError('failed', `The Studio server on ${label} did not answer.`))
         }, this.timing.handshakeMs)
       }),
-    ])
-      .catch((error: unknown) => {
-        backend.close()
-        throw error
-      })
-      .finally(() => clearTimeout(timer))
+    ]).finally(() => clearTimeout(timer))
     const connection: SshServerConnection = {
       key: this.key,
       id: this.deps.id,
       label,
-      backend,
       owner,
       environmentId: server.environmentId,
       serverVersion: server.version,
@@ -816,7 +798,6 @@ export class SshEnvironment {
       attempt.lost(new StepError('failed', reason))
     }
     endpoint.onClosed(lose)
-    backend.onClose(() => lose(`The Studio server on ${label} closed the chats' connection.`))
     void owner.closed.then(
       () => lose(`The Studio server on ${label} closed its connection.`),
       (error: unknown) =>
@@ -836,24 +817,33 @@ export class SshEnvironment {
    * one-use ticket, then the Studio protocol. It does not reconnect: its end is
    * the server's, and the supervisor makes the next one.
    */
-  private openOwner(endpoint: MuxEndpoint): Promise<StudioClient> {
+  private openOwner(endpoint: MuxEndpoint, label: string): Promise<StudioClient> {
+    // A door that does not let Studio in fails the handshake in words; one
+    // that took the connection and never answered is a server not answering.
+    let refused: Error | null = null
     return connect({
       transport: async () => {
-        const stream = await endpoint.open({ kind: 'owner', purpose: 'studio' })
+        const stream = await endpoint.open({ kind: 'owner', purpose: 'studio' }).catch((error: Error) => {
+          const words = `The Studio server on ${label} did not let Studio in: ${error.message}`
+          refused =
+            error.message === FRONT_DOOR_TIMED_OUT ? new NoAnswerError('failed', words) : new StepError('failed', words)
+          throw refused
+        })
         return lineTransport(stream, await readTicket(stream, this.timing.handshakeMs))
       },
       client: { name: 'SprintEngine Studio', kind: 'desktop' },
       reconnect: false,
       helloTimeoutMs: this.timing.handshakeMs,
       heartbeat: { intervalMs: this.timing.pingMs, timeoutMs: this.timing.pingMs },
+    }).catch((error: unknown) => {
+      throw refused ?? error
     })
   }
 
-  /** A session that ended or was let go: its backend, its ssh, and the supervisor's hold on it. */
+  /** A session that ended or was let go: its owner connection, its ssh, and the supervisor's hold on it. */
   private release(live: LiveSession): void {
     if (live.released) return
     live.released = true
-    live.connection.backend.close()
     live.connection.owner.close()
     live.session.kill()
     if (this.announced === live) this.announced = null

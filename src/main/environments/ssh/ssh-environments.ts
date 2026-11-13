@@ -6,7 +6,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Duplex } from 'node:stream'
 
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { wslServerTreeDir } from '../../../server/wsl/desktop-wsl-servers'
 import {
   DEFAULT_SSH_ENVIRONMENT_SETTINGS,
@@ -325,7 +324,7 @@ export class SshEnvironments {
           askpass: this.brokerReady,
           configFile: this.deps.configFile ?? null,
         }) as unknown as SessionProcess,
-      app: { ...this.deps.app, backendWire: BACKEND_WIRE_VERSION },
+      app: this.deps.app,
       dataName: this.dataName(),
       startedBy: this.deps.startedBy,
       serverTree: () => this.serverTree(),

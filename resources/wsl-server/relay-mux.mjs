@@ -477,7 +477,10 @@ export function serveRelay({ input, output, runDir, via = 'ssh-relay', client = 
     onOpen: async (request, stream) => {
       if (request.kind === 'owner') {
         const purpose = request.purpose
-        if (purpose !== 'backend' && purpose !== 'studio' && purpose !== 'ws')
+        // `studio` for main's owner connection and the toolsets it offers, `ws`
+        // for a window's or a relayed device's socket. A machine's chats are its
+        // Studio's own: nothing here opens the WSL-only `backend` wire.
+        if (purpose !== 'studio' && purpose !== 'ws')
           throw refusal('refused', 'That is not a purpose the server serves.')
         const record = readServerRecord(runDir)
         if (!record || typeof record.socketPath !== 'string')

@@ -147,6 +147,11 @@ async function main(): Promise<number> {
   mkdirSync(home, { recursive: true })
   const repository = join(scratch, 'repo')
   makeRepository(repository)
+  // The server's temp folder is the gate's too (the pictures a client sends
+  // are staged in `studio-conversation-images-*` there), so it goes with the
+  // scratch folder, never left in the machine's.
+  const temp = join(scratch, 'tmp')
+  mkdirSync(temp, { recursive: true })
   // Nothing of this machine's own Studio is read: a home of its own, and none of its variables.
   const hostEnv: NodeJS.ProcessEnv = Object.fromEntries(
     Object.entries({
@@ -154,6 +159,9 @@ async function main(): Promise<number> {
       HOME: home,
       USERPROFILE: home,
       XDG_DATA_HOME: join(home, '.local', 'share'),
+      TMPDIR: temp,
+      TMP: temp,
+      TEMP: temp,
     }).filter(([key]) => !key.startsWith('SPRINTENGINE_')),
   )
   const clients: GateClient[] = []

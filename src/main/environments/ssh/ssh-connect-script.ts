@@ -541,12 +541,12 @@ function failedUpdateWords(failed: FailedUpdateRecord, label: string, running: s
  * version that failed before is not tried again on its own: the person
  * retries it.
  *
- * The backend wire is one more input while it carries the chat: a server on
- * another wire cannot be attached, whatever its window says.
+ * The private backend wire is no input: a machine's chats are its own
+ * Studio's, reached over the protocol whose window decides.
  */
 export function locateServer(
   probe: Probe,
-  app: { version: string; backendWire: number; window?: StudioProtocolWindow },
+  app: { version: string; window?: StudioProtocolWindow },
   label: string,
 ): Located {
   const record = probe.serverRecord
@@ -573,15 +573,14 @@ export function locateServer(
     }
   const version = typeof record.version === 'string' ? record.version : '?'
   const origin = typeof record.origin === 'string' ? record.origin : 'bootstrap'
-  const wire = typeof record.backendWire === 'number' ? record.backendWire : null
   const compatibility = studioCompatibility(recordWindow(record), app.window ?? STUDIO_PROTOCOL_WINDOW)
   const order = compareVersions(version, app.version)
   const upgrade = (): Located => (failed ? retry(version) : { action: 'upgrade', from: version })
-  if (compatibility === 'compatible' && wire === app.backendWire)
+  if (compatibility === 'compatible')
     return origin === 'bootstrap' && order !== null && order < 0 ? upgrade() : { action: 'attach' }
   // A record with no window from this very build (one this app's server
   // wrote, read by a relay older than the window): the same server as ours.
-  if (compatibility === 'unknown' && order === 0 && wire === app.backendWire) return { action: 'attach' }
+  if (compatibility === 'unknown' && order === 0) return { action: 'attach' }
   if (compatibility === 'client-outdated')
     return {
       action: 'blocked',
@@ -595,7 +594,7 @@ export function locateServer(
       reason: `${label} runs a Studio server whose version (${version}) this app (${app.version}) cannot compare with its own, so Studio left it alone.`,
       offerUpgrade: false,
     }
-  if (order > 0 || (order === 0 && (wire ?? 0) > app.backendWire))
+  if (order > 0)
     return {
       action: 'blocked',
       reason: `${label} runs Studio server ${version}; this app is ${app.version}. Update this app to use it.`,

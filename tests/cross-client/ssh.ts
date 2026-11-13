@@ -9,7 +9,6 @@ import { SshEnvironment } from '../../src/main/environments/ssh/ssh-environment'
 import { ensureNodeBinary, serverTreeDigest } from '../../src/main/environments/ssh/ssh-install'
 import type { SessionProcess } from '../../src/main/environments/ssh/ssh-session'
 import { createLoopbackRoute } from '../../src/main/environments/environment-route'
-import { BACKEND_WIRE_VERSION } from '../../src/server/wsl/backend-wire'
 import { adoptedRecordDigest } from '../../src/server/environment/environment-adoption'
 import {
   connect,
@@ -123,7 +122,7 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
         if (wiring.cut) sessions.push(child)
         return child
       },
-      app: { version, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      app: { version, channel: 'latest' },
       dataName: 'data',
       startedBy: 'Studio on dev-macbook-air',
       serverTree: () => ({ dir: tree, digest }),
@@ -136,12 +135,11 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
   // reach: what it does while the first is cut off is what the first's
   // catch-up has to bring.
   const other = machineFor('gate-other', { cut: false })
-  const otherBackend = async () =>
-    (await other.connect({ interactive: true })).backend as unknown as {
-      startSession(input: unknown): Promise<unknown>
-      sendTurn(input: unknown): Promise<unknown>
-      respondToRequest(input: unknown): Promise<unknown>
-    }
+  // Its chat calls go to the machine's Studio on its own owner connection,
+  // the chat's paths respelled at that edge, as main's are.
+  const otherParts = createStudioConversationParts(async () =>
+    machineStudioClient((await other.connect({ interactive: true })).owner, 'gate'),
+  )
   const serverPid = () =>
     Number(
       sshd.exec(
@@ -333,7 +331,7 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       sessions.at(-1)!.kill()
       if (!(await until(() => machine().current() !== dropped, 10_000)))
         throw new Error('ssh: the dropped session was not noticed')
-      ok(await (await otherBackend()).respondToRequest({ sessionId, requestId, approved: true }), 'answer')
+      ok(await otherParts.respond({ sessionId, requestId, approved: true } as never), 'answer')
       await until(() => false, 1_000)
       if (resolvedAfter(feed, requestId))
         throw new Error('ssh: the cut-off desktop heard the answer: the cut did not cut')
@@ -475,14 +473,14 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       // is made to connect now, which starts the server or attaches to the one
       // its own reconnect started.
       other.disconnect()
-      const second = await otherBackend()
+      await other.connect({ interactive: true })
       const after = serverPid()
       if (!(after > 0 && after !== pid)) throw new Error('ssh: the server was not started again')
       sessionId = ok<{ session: { sessionId: string } }>(
-        await second.startSession({ ...key, workspaceRoot: '/home/dev/repo', ...MOCK_PROVIDER }),
+        await otherParts.startSession!({ ...key, ...MOCK_PROVIDER }),
         'start again',
       ).session.sessionId
-      void second.sendTurn({ sessionId, message: away, commandId: 'ssh-away' }).catch(() => undefined)
+      void otherParts.send({ sessionId, message: away, commandId: 'ssh-away' } as never).catch(() => undefined)
       await until(() => false, 2_000)
       if (feed.find(isUserMessage(away)))
         throw new Error('ssh: the cut-off desktop heard the turn: the cut did not cut')

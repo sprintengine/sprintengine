@@ -149,6 +149,17 @@ function chatOf(body: Record<string, unknown>): { workspaceId: string; agentId: 
     : null
 }
 
+/**
+ * A carried file's name as it is kept here: its last part alone, whatever
+ * path the desktop's name held, and `fallback` for one with no name left
+ * (empty, `.`, `..`), so no name leads its write out of its folder.
+ */
+export function carriedName(value: unknown, fallback: string): string {
+  if (!text(value, 500)) return fallback
+  const base = value.split(/[\\/]/u).pop()?.trim() ?? ''
+  return base && base !== '.' && base !== '..' ? base : fallback
+}
+
 type CarriedEntry = { sha256?: unknown; name?: unknown; mediaType?: unknown; promptPath?: unknown }
 
 /**
@@ -173,7 +184,7 @@ async function promptWithPictures(
       return { ok: false, reason: 'A picture its prompt names did not arrive whole.' }
     if (!text(entry.promptPath, 4096) || !rest.prompt.includes(entry.promptPath))
       return { ok: false, reason: 'A picture it carries is not one its prompt names.' }
-    arrived.push({ from: entry.promptPath, name: text(entry.name, 500) ? entry.name : 'picture', bytes: staged.bytes })
+    arrived.push({ from: entry.promptPath, name: carriedName(entry.name, 'picture'), bytes: staged.bytes })
   }
   let prompt = rest.prompt
   for (const picture of arrived)
@@ -204,7 +215,7 @@ function carriedOf(
     const staged = bytesOf(entry)
     if (!staged) return { ok: false, reason: 'A picture it carries did not arrive whole.' }
     images.push({
-      name: text(entry.name, 500) ? entry.name : 'picture',
+      name: carriedName(entry.name, 'picture'),
       mediaType: text(entry.mediaType, 200) ? entry.mediaType : staged.mediaType,
       bytes: staged.bytes,
     })
@@ -212,7 +223,7 @@ function carriedOf(
   for (const entry of list(given.files)) {
     const staged = bytesOf(entry)
     if (!staged) return { ok: false, reason: 'A file it carries did not arrive whole.' }
-    attached.push({ name: text(entry.name, 500) ? entry.name : 'file', bytes: staged.bytes })
+    attached.push({ name: carriedName(entry.name, 'file'), bytes: staged.bytes })
   }
   const skills = Array.isArray(given.skills) ? given.skills.filter((skill): skill is string => text(skill, 200)) : []
   const mentions = Array.isArray(given.mentions) ? given.mentions : []

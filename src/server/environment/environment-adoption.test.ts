@@ -10,6 +10,7 @@ import type { StudioAdoptedRecord } from '../../../packages/studio-protocol/src/
 import {
   adoptedRecordDigest,
   canonicalRecordJson,
+  carriedName,
   createEnvironmentAdoption,
   type EnvironmentAdoptionStores,
 } from './environment-adoption'
@@ -402,4 +403,34 @@ test('a schedule whose picture did not arrive whole, or that its prompt does not
     ['A picture its prompt names did not arrive whole.', 'A picture it carries is not one its prompt names.'],
   )
   assert.deepEqual(calls, ['flush'])
+})
+
+test('a carried file is kept under its last name part alone, never a path out of its folder', async () => {
+  assert.equal(carriedName('notes.txt', 'file'), 'notes.txt')
+  assert.equal(carriedName('../../etc/passwd', 'file'), 'passwd')
+  assert.equal(carriedName('C:\\Users\\dev\\shot.png', 'picture'), 'shot.png')
+  for (const name of ['..', '.', '', 'a/..', '/', 42]) assert.equal(carriedName(name, 'file'), 'file', String(name))
+
+  const { adoption, calls } = rig()
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [
+      record('scheduled-message', 'sm-9', {
+        workspaceId: 'ws-1',
+        agentId: 'a1',
+        text: 'look',
+        queued: true,
+        carried: {
+          images: [{ sha256: sha('png bytes'), name: '../shot.png', mediaType: 'image/png' }],
+          files: [{ sha256: sha('notes'), name: '..' }],
+        },
+      }),
+    ],
+    files: new Map([
+      [sha('png bytes'), { bytes: Buffer.from('png bytes'), mediaType: 'image/png' }],
+      [sha('notes'), { bytes: Buffer.from('notes'), mediaType: 'text/plain' }],
+    ]),
+  })
+  assert.deepEqual(answer.conflicts, [])
+  assert.equal(calls[0], 'hold a1 look with shot.png:png bytes file:notes ')
 })

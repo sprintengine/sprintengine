@@ -79,7 +79,6 @@ function startMux(runDir) {
           pid: server.pid ?? null,
           version: server.version ?? null,
           origin: server.origin ?? null,
-          backendWire: server.backendWire ?? null,
           protocolVersion: server.protocolVersion ?? null,
           minProtocolVersion: server.minProtocolVersion ?? null,
           environmentId: server.environmentId ?? null,

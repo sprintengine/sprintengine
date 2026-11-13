@@ -17,9 +17,7 @@ import { join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { afterAll, beforeAll, test } from 'vitest'
 
-import type { ConversationEvent } from '../../../shared/conversation-runtime'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../../shared/ssh-environments'
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { createAskpassBroker, type AskpassRequest } from './askpass'
 import {
   DOCKER_TESTS,
@@ -85,19 +83,6 @@ const until = async (check: () => boolean, ms: number) => {
   return check()
 }
 
-function nextEvent(
-  backend: { onEvent(listener: (event: ConversationEvent) => void): () => void },
-  type: string,
-): Promise<ConversationEvent> {
-  return new Promise((resolve) => {
-    const stop = backend.onEvent((event) => {
-      if (event.type !== type) return
-      stop()
-      resolve(event)
-    })
-  })
-}
-
 test.skipIf(!DOCKER_TESTS)(
   'build-box for real: first connect asks, installs, starts; a chat survives a dropped session; the relay reaches its localhost',
   async () => {
@@ -133,7 +118,7 @@ test.skipIf(!DOCKER_TESTS)(
         spawned.push({ interactive, child })
         return child
       },
-      app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      app: { version: VERSION, channel: 'latest' },
       dataName: 'data',
       startedBy: 'Studio on dev-macbook-air',
       serverTree: () => ({ dir: tree, digest }),
@@ -248,68 +233,29 @@ test.skipIf(!DOCKER_TESTS)(
         await route.close()
       }
 
-      // A chat on the mock provider: its turn waits on an approval.
-      fixture.exec('mkdir -p /home/dev/repo', 'dev')
-      const key = { workspaceRoot: '/home/dev/repo', workspaceId: 'w-docker', agentId: 'a1' }
-      const started = (await connection.backend.startSession({
-        ...key,
-        providerId: 'mock-provider',
-        modelId: 'mock-model',
-      } as never)) as { ok: boolean; session: { sessionId: string } }
-      assert.ok(started.ok)
-      const sessionId = started.session.sessionId
-      const asking = nextEvent(connection.backend, 'approval_requested')
-      const turn = connection.backend.sendTurn({
-        sessionId,
-        message: 'hello from the desktop',
-        commandId: 'c-1',
-      } as never)
-      const approval = await asking
-      // The mock provider's turn stream ends at its approval request, so the
-      // send is answered there, a moment after the event: its message is
-      // committed and the turn waits on the person. Dropped before that
-      // answer is read, the send would fail with the wire instead; which one
-      // happens is timing, not behaviour (backend-wire.test.ts covers a turn
-      // in flight when the wire closes).
-      assert.equal(((await turn) as { ok: boolean }).ok, true, 'the send is answered once the turn waits on the person')
-
-      // The session drops mid-turn: the wire closes, and a call on it fails...
-      const closed = new Promise<void>((resolve) => connection.backend.onClose(() => resolve()))
+      // The session drops: main's owner connection ends with it, and the
+      // machine is reconnecting. A chat's turn kept across the drop is the
+      // cross-client gate's SSH leg (create, stream, approval, resume), on the
+      // window's client over the loopback route.
+      const ownerClosed = connection.owner.closed.then(
+        () => undefined,
+        () => undefined,
+      )
       spawned.at(-1)!.child.kill()
-      await closed
-      await assert.rejects(connection.backend.refresh(), { code: 'unavailable' })
+      await ownerClosed
       assert.ok(await until(() => env.summary().state === 'reconnecting', 5_000))
-      // ...the server keeps the turn, and the background reconnect (BatchMode,
-      // no prompt possible) cannot unlock the key: it says so.
+      // The background reconnect (BatchMode, no prompt possible) cannot unlock
+      // the key: it says so, and the server keeps running.
       assert.ok(await until(() => env.summary().state !== 'reconnecting', 60_000), changes.join('\n'))
       assert.equal(env.summary().state, 'needs-sign-in', changes.join('\n'))
       assert.equal(env.summary().stateText, 'build-box needs you to sign in.')
       assert.equal(Number(fixture.exec(`kill -0 ${serverPid} && echo 1 || echo 0`)), 1, 'the server kept running')
 
-      // The person connects: the same server, the same chat, the turn still waiting.
+      // The person connects: the same server, answering on a new owner connection.
       const again = await env.connect({ interactive: true })
       assert.notEqual(again, connection)
-      const retried = again.backend.sendTurn({
-        sessionId,
-        message: 'hello from the desktop',
-        commandId: 'c-1',
-      } as never)
-      const done = nextEvent(again.backend, 'turn_completed')
-      const answered = (await again.backend.respondToRequest({
-        sessionId,
-        requestId: (approval.payload as { requestId: string }).requestId,
-        approved: true,
-      } as never)) as { ok: boolean }
-      assert.ok(answered.ok)
-      await done
-      assert.equal(((await retried) as { ok: boolean }).ok, true, 'the repeated command is answered from its receipt')
-      const transcript = JSON.stringify(await again.backend.readTranscript({ ...key } as never))
-      assert.equal(transcript.split('hello from the desktop').length - 1 >= 1, true)
-      assert.equal(
-        (transcript.match(/Mock response for: hello from the desktop/gu) ?? []).length >= 1,
-        true,
-        'one turn, answered once',
-      )
+      assert.equal(again.environmentId, connection.environmentId)
+      assert.ok((await again.owner.request('conversation.list', {})).conversations)
 
       // The remote's own localhost, through the relay (the pane's path, spec 6.8).
       fixture.exec(
@@ -356,7 +302,7 @@ test.skipIf(!DOCKER_TESTS)(
           configFile: machine.configFile,
           env: { PATH: process.env.PATH, HOME: process.env.HOME },
         }) as unknown as SessionProcess,
-      app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      app: { version: VERSION, channel: 'latest' },
       dataName: 'data',
       startedBy: 'Studio on dev-macbook-air',
       serverTree: () => ({ dir: tree, digest }),
@@ -415,7 +361,7 @@ test.skipIf(!DOCKER_TESTS)('a key the remote refuses, and a home mounted noexec,
           configFile: noexec.configFile,
           env: { PATH: process.env.PATH, HOME: process.env.HOME },
         }) as unknown as SessionProcess,
-      app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+      app: { version: VERSION, channel: 'latest' },
       dataName: 'data',
       startedBy: 'Studio on dev-macbook-air',
       serverTree: () => ({ dir: tree, digest }),

@@ -13,7 +13,6 @@ import type { Duplex } from 'node:stream'
 import { afterAll, afterEach, beforeAll, test } from 'vitest'
 
 import { attachRelay, type AttachedRelay } from '../../main/environments/ssh/relay-client'
-import { connectRemoteConversationBackend } from '../wsl/backend-wire'
 import { READY_MARKER } from './detached-start'
 
 const ROOT = join(__dirname, '..', '..', '..')
@@ -139,19 +138,14 @@ test('a detached start: one server, its token private, reached through the relay
   assert.ok(!ps.includes(token), 'the owner token is in no command line')
   assert.ok(!readFileSync(join(runDir, 'server.json'), 'utf8').includes(token), 'nor in the record')
 
-  // The relay names the server it found, then carries the backend.
+  // The relay names the server it found, then carries main's owner door: its
+  // connection says its ticket first. The WSL-only backend wire is no purpose here.
   const attached = await relay(home, runDir)
   assert.equal(attached.ready.server?.version, VERSION)
   assert.equal(attached.ready.server?.pid, record.pid)
-  const stream = await attached.endpoint.open({ kind: 'owner', purpose: 'backend' })
-  const backend = connectRemoteConversationBackend(stream)
-  await backend.refresh()
-  const listed = backend.listSessions()
-  assert.ok(listed.ok)
-
-  // The shell role's connection says its ticket first.
   const studio = await attached.endpoint.open({ kind: 'owner', purpose: 'studio' })
   assert.match(await readLine(studio), /"t":"ticket"/u)
+  await assert.rejects(attached.endpoint.open({ kind: 'owner', purpose: 'backend' as never }), { code: 'refused' })
 
   // The audit line names the relay and the SSH client, never what was said.
   const log = readFileSync(
@@ -166,7 +160,7 @@ test('a detached start: one server, its token private, reached through the relay
     ),
     'utf8',
   )
-  assert.match(log, /Admitted a backend connection on the bridge door via ssh-relay from 203\.0\.113\.7/u)
+  assert.match(log, /Admitted a studio connection on the bridge door via ssh-relay from 203\.0\.113\.7/u)
 
   // A second start finds it, and does not start another.
   const again = start(home, dataDir)
@@ -174,7 +168,7 @@ test('a detached start: one server, its token private, reached through the relay
   assert.equal(again.started?.record.pid, record.pid)
 
   // The session ends: the server does not.
-  backend.close()
+  studio.destroy()
   attached.child.kill('SIGKILL')
   await new Promise((resolve) => setTimeout(resolve, 500))
   assert.ok(alive(record.pid), 'the server outlives the relay')
@@ -182,7 +176,7 @@ test('a detached start: one server, its token private, reached through the relay
   // A relay with a token that is not the server's is refused, and learns nothing.
   writeFileSync(join(runDir, 'owner-token'), 'not-the-token\n', { mode: 0o600 })
   const impostor = await relay(home, runDir)
-  await assert.rejects(impostor.endpoint.open({ kind: 'owner', purpose: 'backend' }), { code: 'refused' })
+  await assert.rejects(impostor.endpoint.open({ kind: 'owner', purpose: 'studio' }), { code: 'refused' })
   writeFileSync(join(runDir, 'owner-token'), `${token}\n`, { mode: 0o600 })
 
   // An upgrade replaces it: the old one drains and goes, a new one with a new token starts.
@@ -192,9 +186,9 @@ test('a detached start: one server, its token private, reached through the relay
   assert.ok(await until(() => !alive(record.pid), 5_000), 'the old server has gone')
   assert.notEqual(readFileSync(join(runDir, 'owner-token'), 'utf8').trim(), token)
   const next = await relay(home, runDir)
-  const reached = connectRemoteConversationBackend(await next.endpoint.open({ kind: 'owner', purpose: 'backend' }))
-  await reached.refresh()
-  reached.close()
+  const reached = await next.endpoint.open({ kind: 'owner', purpose: 'studio' })
+  assert.match(await readLine(reached), /"t":"ticket"/u)
+  reached.destroy()
 
   // Asked to stop, it drains and removes its record.
   process.kill(replaced.started!.record.pid, 'SIGTERM')
@@ -202,7 +196,7 @@ test('a detached start: one server, its token private, reached through the relay
   assert.ok(!existsSync(join(runDir, 'server.json')), 'the record goes with the server')
   const none = await relay(home, runDir)
   assert.equal(none.ready.server, null)
-  await assert.rejects(none.endpoint.open({ kind: 'owner', purpose: 'backend' }), { code: 'no-server' })
+  await assert.rejects(none.endpoint.open({ kind: 'owner', purpose: 'studio' }), { code: 'no-server' })
 })
 
 test('a managed server with nobody connected and no chat working idles out', async () => {
@@ -210,7 +204,7 @@ test('a managed server with nobody connected and no chat working idles out', asy
   const { started, out } = start(home, dataDir, ['--idle-ms', '1500'])
   assert.ok(started, out)
   const attached = await relay(home, runDir)
-  const stream = await attached.endpoint.open({ kind: 'owner', purpose: 'backend' })
+  const stream = await attached.endpoint.open({ kind: 'owner', purpose: 'studio' })
   await new Promise((resolve) => setTimeout(resolve, 2_500))
   assert.ok(alive(started.record.pid), 'a client is connected: it stays')
   stream.destroy()

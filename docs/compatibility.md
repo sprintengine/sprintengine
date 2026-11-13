@@ -38,9 +38,10 @@ relay's multiplexer (`MUX_VERSION` in `resources/wsl-server/relay-mux.mjs`).
 Both ends are this app's own build: the tree is installed per app version and
 checked by digest. An SSH machine can run another version's server (a newer
 desktop installed it); its `run/server.json` says the Studio protocol window
-it speaks, and the desktop attaches it when that window meets its own and the
-backend wire is the same, upgrades an older managed one, and otherwise refuses
-in words (`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`).
+it speaks, and the desktop attaches it when that window meets its own,
+upgrades an older managed one, and otherwise refuses in words (the backend
+wire is no input since an SSH machine's chats are its own Studio's, and the
+SSH relay opens only `studio` and `ws`; the wire is a WSL server's alone) (`locateServer` in `src/main/environments/ssh/ssh-connect-script.ts`).
 An upgrade that does not start falls back to the previous server and is not
 retried on its own (`run/update-failed.json`). Bump
 `BACKEND_WIRE_VERSION` whenever a forwarded member's arguments or answer
@@ -1235,6 +1236,14 @@ for a paired device the desktop relays (good once, for thirty seconds, no
 folders the machine knows, and never an owner's (`clientId` `relay:<deviceId>`).
 Its scopes are exactly those named, each of them one of
 `STUDIO_RELAYED_DEVICE_SCOPES`; any other is refused `invalid_params`.
+`relayed-environments` (2026-11-13) adds `environment.relayed` (`{}` →
+`{ environments: [{ environmentId, name, kind: 'ssh', connected, machine?, mark? }] }`,
+`conversation:read`, devices included): the machines a desktop relays its paired
+devices to. A device reaches one at `/tailnet/v1/environments/<environmentId>/studio`
+on the desktop's tailnet listener with a ticket from `ws-ticket` naming the
+`environmentId`; a paired desktop names it as the route
+`relay:<pairing>.<environmentId>` (ranked after `tailnet`, before `ssh`). A desktop
+without it relays nothing, and a client lists no relayed machines.
 `environment-adopt` (2026-11-13) adds `environment.adopt` (`{ commandId, migrationId,
 records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's): the records a
 desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are

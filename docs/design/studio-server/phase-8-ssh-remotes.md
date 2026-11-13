@@ -558,8 +558,9 @@ As built (2026-10-03), `src/main/environments/ssh/ssh-environment.ts`:
   one, which is upgraded; one outside it is refused in words (newer: "Update
   this app"; an older external one: an Update button that asks first, R31). A
   record without a window reads as `unknown`, and is decided by version
-  order alone. While the private backend wire carries the chat it is one more
-  input: a server on another wire is never attached.
+  order alone. The private backend wire is no input: since the machine's
+  chats are its own Studio's (design-wsl-ssh-direct), main opens no backend
+  on an SSH machine, and the relay opens only `studio` and `ws`.
 - A failed upgrade is recovered: when the new server does not start after the
   old one drained, `start --detach --replace` writes `run/update-failed.json`
   (`{ from, to, at, reason }`), starts the previous tree again
@@ -567,11 +568,11 @@ As built (2026-10-03), `src/main/environments/ssh/ssh-environment.ts`:
   fails `update-failed`. The desktop does not try the same update again on
   its own: the row says what failed and offers **Retry update**. The next
   start that succeeds removes the record.
-- Resume, as built: the private backend wire has no stream cursors. A new
-  wire re-reads the server's sessions (`refresh`), and a call that carries a
-  `commandId` is answered once by the server's receipts, so repeating it after
-  a reconnect joins the turn still running there instead of starting another
-  (`ssh-environment.docker.test.ts` drops a session mid-turn and shows it).
+- Resume, as built: the window's client of the machine resumes by its
+  cursor, and a call that carries a `commandId` is answered once by the
+  server's receipts, so repeating it after a reconnect joins the turn still
+  running there instead of starting another (the cross-client gate's SSH leg
+  drops a session mid-turn and shows it).
   Events emitted while the window was cut off are caught up by the window's
   own client of the machine (until PR 1d, by the router's `onRouteResumed`):
   its streams join again from their own cursor and generation once it
@@ -1403,8 +1404,17 @@ when it is not connected. The window drives the chat on its own client of the
 machine (the loopback route and a ticket from the machine's window listener);
 the gateway's tools act on it as a client of the machine
 (`src/server/core/environment-chat-calls.ts`). Devices do not see these chats
-through the desktop (`workspaces.list` leaves copies out) until they reach the
-machine over `relay:<environmentId>`.
+through the desktop (`workspaces.list` leaves copies out): they reach the
+machine itself. The desktop lists the machines it relays (`environment.relayed`,
+to whoever may read chats); the phone files each as a session of its own,
+never stored, whose client gets its ticket from the desktop's `ws-ticket`
+naming the machine and connects at `/tailnet/v1/environments/<environmentId>/studio`;
+a paired desktop names each as the route `relay:<pairing>.<environmentId>` and
+reaches it on the window's per-route client. The machine admits each as that
+device, with its grant cut to `STUDIO_RELAYED_DEVICE_SCOPES`, never an owner,
+so never a terminal. A settled chat of the machine is deleted by the
+machine's own Studio (`settledChats.*` on the window's client of it), and a
+schedule handed over takes the pictures its prompt names.
 
 The jump-host and password variants of 9.3 ran against containers' sshd
 (`ssh-variants.docker.test.ts`): a machine reachable only through a bastion
