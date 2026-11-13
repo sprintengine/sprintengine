@@ -62,6 +62,9 @@ export async function spliceToEnvironment(
   socket.resume()
 }
 
+/** Sockets one route carries at once: every window's connections and their reconnects, with room to spare. */
+export const MAX_CARRIED_SOCKETS = 64
+
 export type LoopbackRoute = {
   /** The route's port on 127.0.0.1, listening from the first ask and kept for the run. */
   port(): Promise<number>
@@ -83,7 +86,9 @@ export function createLoopbackRoute(options: {
   function listen(): Promise<number> {
     listening ??= new Promise<number>((resolve, reject) => {
       const next = createServer({ pauseOnConnect: true }, (socket) => {
-        if (closed) {
+        // Any process here may connect, ticket or not: each socket costs a
+        // stream to the machine until its listener refuses it, so they are capped.
+        if (closed || sockets.size >= MAX_CARRIED_SOCKETS) {
           socket.destroy()
           return
         }

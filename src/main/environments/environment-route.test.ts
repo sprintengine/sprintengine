@@ -4,7 +4,7 @@ import { Duplex, PassThrough } from 'node:stream'
 
 import { afterEach, test } from 'vitest'
 
-import { createLoopbackRoute, type LoopbackRoute } from './environment-route'
+import { createLoopbackRoute, MAX_CARRIED_SOCKETS, type LoopbackRoute } from './environment-route'
 
 // Main's loopback route to a machine's Studio: bytes both ways onto a fresh
 // stream per socket, nothing when the machine is not there, and one port for
@@ -113,4 +113,21 @@ test('the route keeps its port for the run, and closing it ends what it carries'
   await loopback.close()
   await ending
   await assert.rejects(loopback.port(), /closed/u)
+})
+
+test('a route carries a bounded number of sockets at once', async () => {
+  const loopback = route(async () => farEnd().stream)
+  const port = await loopback.port()
+  const held: Socket[] = []
+  for (let index = 0; index < MAX_CARRIED_SOCKETS; index++) held.push(await dial(port))
+  // Every one of those is carried: the last answers.
+  held.at(-1)!.write('last')
+  assert.equal(await read(held.at(-1)!), 'LAST')
+  const over = await dial(port)
+  await closed(over)
+  held[0]!.destroy()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const room = await dial(port)
+  room.write('room')
+  assert.equal(await read(room), 'ROOM')
 })
