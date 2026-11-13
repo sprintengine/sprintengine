@@ -1050,7 +1050,16 @@ test('a held export outlives its connection only for the reconnect that asks for
   } as never
   const key = { workspaceId: 'ws-1', agentId: 'agent-1' }
   const page = async (connectionId: string, exportId: string, offset: number) => {
-    const answer = await router.handle(grant, 'conversation.exportPage', { key, exportId, offset }, { connectionId })
+    const answer = await router.handle(
+      grant,
+      'conversation.exportPage',
+      { key, exportId, offset },
+      {
+        connectionId,
+        slot: 1,
+        ownWindow: false,
+      },
+    )
     return answer.ok ? (answer.result as { nextOffset: number | null }).nextOffset : answer.error.code
   }
   // Each connection part way through an export of its own.
