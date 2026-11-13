@@ -190,8 +190,7 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
         const value = (copy as Record<string, unknown>)[field]
         if (!same((local as Record<string, unknown>)[field], value)) patch[field] = value ?? null
       }
-      if (Object.keys(patch).length > 0)
-        sync.mirrorWorkspaceFields(local.id, patch as WorkspaceFieldsPatch, 'system')
+      if (Object.keys(patch).length > 0) sync.mirrorWorkspaceFields(local.id, patch as WorkspaceFieldsPatch, 'system')
       const agents = isRecord(copy.agents) ? copy.agents : {}
       for (const [agentId, agent] of Object.entries(agents))
         if (!same(local.agents?.[agentId], agent))
@@ -326,7 +325,10 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
           ? { ok: true, event: mine as unknown as StudioWorkspaceSyncEvent }
           : refuse('unchanged', `${reached.name} already had that.`)
       } catch (error) {
-        return refuse('environment_unreachable', `${reached.name}: ${error instanceof Error ? error.message : String(error)}`)
+        return refuse(
+          'environment_unreachable',
+          `${reached.name}: ${error instanceof Error ? error.message : String(error)}`,
+        )
       }
     })
   }

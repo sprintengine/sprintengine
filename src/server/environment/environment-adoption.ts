@@ -52,6 +52,17 @@ export type EnvironmentAdoptionStores = {
       text: string,
       source: string,
     ): { ok: true } | { ok: false; reason: string }
+    /**
+     * Hold one with what it carries beside its words, once per `source`: its
+     * pictures copied and its files placed on this disk, as a message a
+     * device queued with them is held.
+     */
+    holdCarrying(
+      chat: { workspaceId: string; agentId: string },
+      text: string,
+      source: string,
+      carried: AdoptedCarried,
+    ): Promise<{ ok: true } | { ok: false; reason: string }>
   }
   resumes: {
     /** Keep the resume after this chat's usage limit scheduled. */
@@ -66,11 +77,28 @@ export type EnvironmentAdoptionStores = {
       chat: { workspaceId: string; agentId: string },
       input: { url: string },
     ): Promise<{ ok: true } | { ok: false; code: string; message: string }>
+    /** Keep the news a watch found that the chat was not told yet, to be told here. */
+    keepUntold(chat: { workspaceId: string; agentId: string }, url: string, untold: unknown): void
   }
 }
 
+/** A held message's pictures and files as handed over: their bytes, staged through `uploads.*`. */
+export type AdoptedCarried = {
+  images: Array<{ name: string; mediaType: string; bytes: Buffer }>
+  files: Array<{ name: string; bytes: Buffer }>
+  skills: string[]
+  mentions: unknown[]
+}
+
+/** A staged file, by the sha-256 of its bytes. */
+export type AdoptedFiles = ReadonlyMap<string, { bytes: Buffer; mediaType: string; name?: string }>
+
 export type EnvironmentAdoption = {
-  adopt(input: { migrationId: string; records: StudioAdoptedRecord[] }): Promise<StudioAdoptResult>
+  adopt(input: {
+    migrationId: string
+    records: StudioAdoptedRecord[]
+    files?: AdoptedFiles
+  }): Promise<StudioAdoptResult>
 }
 
 const LEDGER_FILE = 'environment-adoptions.json'
@@ -117,6 +145,47 @@ function chatOf(body: Record<string, unknown>): { workspaceId: string; agentId: 
     : null
 }
 
+type CarriedEntry = { sha256?: unknown; name?: unknown; mediaType?: unknown }
+
+/**
+ * A held message's `carried` as the desktop named it (each picture and file by
+ * the sha-256 of its bytes, its skills and mentions as words), read against the
+ * files staged beside it: null when it carries nothing beside its words.
+ */
+function carriedOf(
+  value: unknown,
+  files: AdoptedFiles,
+): { ok: true; carried: AdoptedCarried | null } | { ok: false; reason: string } {
+  if (!value || typeof value !== 'object') return { ok: true, carried: null }
+  const given = value as { images?: unknown; files?: unknown; skills?: unknown; mentions?: unknown }
+  const list = (entries: unknown): CarriedEntry[] => (Array.isArray(entries) ? (entries as CarriedEntry[]) : [])
+  const bytesOf = (entry: CarriedEntry) => {
+    const sha256 = typeof entry.sha256 === 'string' ? entry.sha256 : ''
+    const staged = files.get(sha256)
+    return staged && createHash('sha256').update(staged.bytes).digest('hex') === sha256 ? staged : null
+  }
+  const images: AdoptedCarried['images'] = []
+  const attached: AdoptedCarried['files'] = []
+  for (const entry of list(given.images)) {
+    const staged = bytesOf(entry)
+    if (!staged) return { ok: false, reason: 'A picture it carries did not arrive whole.' }
+    images.push({
+      name: text(entry.name, 500) ? entry.name : 'picture',
+      mediaType: text(entry.mediaType, 200) ? entry.mediaType : staged.mediaType,
+      bytes: staged.bytes,
+    })
+  }
+  for (const entry of list(given.files)) {
+    const staged = bytesOf(entry)
+    if (!staged) return { ok: false, reason: 'A file it carries did not arrive whole.' }
+    attached.push({ name: text(entry.name, 500) ? entry.name : 'file', bytes: staged.bytes })
+  }
+  const skills = Array.isArray(given.skills) ? given.skills.filter((skill): skill is string => text(skill, 200)) : []
+  const mentions = Array.isArray(given.mentions) ? given.mentions : []
+  if (!images.length && !attached.length && !skills.length && !mentions.length) return { ok: true, carried: null }
+  return { ok: true, carried: { images, files: attached, skills, mentions } }
+}
+
 export function createEnvironmentAdoption(deps: {
   dataDir: string
   stores: EnvironmentAdoptionStores
@@ -153,7 +222,7 @@ export function createEnvironmentAdoption(deps: {
   }
 
   /** Keep one record in its store; a refusal says why, and nothing was written. */
-  async function keep(record: StudioAdoptedRecord, migrationId: string): Promise<Kept> {
+  async function keep(record: StudioAdoptedRecord, migrationId: string, files: AdoptedFiles): Promise<Kept> {
     const body = record.body
     // The same command again, after a crash between the store's write and the ledger's.
     const source = `adopt:${migrationId}:${record.kind}:${record.id}`
@@ -178,10 +247,14 @@ export function createEnvironmentAdoption(deps: {
         const chat = chatOf(body)
         if (!chat || !text(body.text, MAX_SCHEDULED_MESSAGE_LENGTH))
           return { ok: false, reason: 'A scheduled message names its chat and its words.' }
-        // What a held message carries beside its words is on the desktop's disk; not carried yet.
-        const carries = body.carries as { images?: unknown[]; files?: unknown[] } | undefined
-        if ((carries?.images?.length ?? 0) > 0 || (carries?.files?.length ?? 0) > 0)
-          return { ok: false, reason: 'It carries pictures or files, which are not handed over yet.' }
+        // What a held message carries beside its words came staged beside
+        // the records, each named by the digest of its bytes.
+        const carried = body.queued === true ? carriedOf(body.carried, files) : null
+        if (carried && !carried.ok) return { ok: false, reason: carried.reason }
+        if (carried?.ok && carried.carried) {
+          const held = await stores.messages.holdCarrying(chat, body.text, source, carried.carried)
+          return held.ok ? { ok: true } : { ok: false, reason: held.reason }
+        }
         const kept =
           body.queued === true
             ? stores.messages.hold(chat, body.text, source)
@@ -214,13 +287,20 @@ export function createEnvironmentAdoption(deps: {
         if (body.watched === true) {
           const watched = await stores.pullRequests.watch(chat, { url: body.url })
           if (!watched.ok) return { ok: false, reason: watched.message }
+          // What the desktop's watch found and had not told yet is told from here.
+          if (Array.isArray(body.untold) && body.untold.length > 0)
+            stores.pullRequests.keepUntold(chat, body.url, body.untold)
         }
         return { ok: true }
       }
     }
   }
 
-  async function run(input: { migrationId: string; records: StudioAdoptedRecord[] }): Promise<StudioAdoptResult> {
+  async function run(input: {
+    migrationId: string
+    records: StudioAdoptedRecord[]
+    files?: AdoptedFiles
+  }): Promise<StudioAdoptResult> {
     const ledger = readLedger()
     const held: StudioAdoptResult['held'] = []
     const conflicts: StudioAdoptResult['conflicts'] = []
@@ -268,7 +348,7 @@ export function createEnvironmentAdoption(deps: {
       }
       let kept: Kept
       try {
-        kept = await keep(record, input.migrationId)
+        kept = await keep(record, input.migrationId, input.files ?? new Map())
       } catch (error) {
         kept = { ok: false, reason: error instanceof Error ? error.message : String(error) }
       }

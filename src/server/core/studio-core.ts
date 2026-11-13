@@ -91,8 +91,10 @@ import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
 import { localConversationBackend, refuseMachinePaths, type ConversationBackend } from './conversation-backend'
-import type { EnvironmentClients } from '../../shared/environment-clients'
+import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
 import { createEnvironmentReplicas } from '../environment/environment-replicas'
+import { createEnvironmentMigration } from '../environment/environment-migration'
+import { studioMigrationStores } from '../environment/environment-migration-stores'
 import {
   createRoutedConversationBackend,
   type SshRoutedConnection,
@@ -343,7 +345,6 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
         },
       })
     : null
-  options.environmentClients?.onConnected((route) => void environmentReplicas?.follow(route))
 
   // Git for a repository runs on the machine of the open workspace holding
   // it, which is where its agents run theirs: a `C:\` folder of a WSL
@@ -1269,6 +1270,49 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     waitingFor: (agent, context) => readiness.scheduleWaitingFor(agent, { signIn: !context?.asked }),
   })
   if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start()
+
+  // What this desktop kept for an SSH machine's chats goes to that machine's
+  // Studio (environment-migration.ts): planned at start and on each connect,
+  // delivered once it is reachable. Only then are this desktop's records of
+  // its chats the machine's copies, followed from what it says.
+  const environmentMigration = options.environmentClients
+    ? createEnvironmentMigration({
+        dataDir,
+        clients: options.environmentClients,
+        stores: studioMigrationStores({
+          workspaceRegistry,
+          scheduledAgents: scheduledAgents.service,
+          scheduledMessages,
+          usageLimitResumes,
+          pullRequests: pullRequests.record,
+        }),
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
+        },
+      })
+    : null
+  const handOver = async (route: string) => {
+    if (!environmentMigration || !environmentReplicas) return
+    await environmentMigration.plan()
+    if ((await environmentMigration.deliver(route)) && environmentMigration.handedOver(route))
+      await environmentReplicas.follow(route)
+  }
+  if (environmentMigration && options.environmentClients) {
+    options.environmentClients.onConnected((route) => void handOver(route).catch(() => undefined))
+    // At start: every machine this desktop holds chats or waiting records
+    // for, reached if it is connected already; the rest wait for their connect.
+    void environmentMigration
+      .plan()
+      .then(() => {
+        const routes = new Set(environmentMigration.waiting())
+        for (const record of workspaceRegistry.getRecords()) {
+          const route = environmentRouteOfRecord(record)
+          if (route) routes.add(route)
+        }
+        for (const route of routes) void handOver(route).catch(() => undefined)
+      })
+      .catch(() => undefined)
+  }
 
   // A chat is titled here, from its own events, rather than by a window: the
   // chats that most need a title are the ones a phone or a paired machine

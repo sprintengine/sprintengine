@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import {
@@ -29,6 +31,8 @@ import type { SignIns } from '../machine/machine-sign-in'
 import { createEnvironmentAdoption, type EnvironmentAdoption } from '../environment/environment-adoption'
 import type { UsageLimitProvider } from '../../shared/usage-limits'
 import type { StudioCore } from './studio-core'
+import { studioHeldMessages } from './studio-scheduled-messages'
+import type { ConversationWireMention } from '../../../packages/conversation-protocol/src/public'
 import { createConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import type { StudioGateway } from './studio-gateway'
@@ -285,9 +289,10 @@ export function createStudioRpc(
 
 /** The hand-over into this core's own stores, each through its own way in. */
 function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
+  const dataDir = core.platform.paths.dataDir()
   const primaryWindow = () => core.workspaceRegistry.getState().primaryWorkspaceWindowId
   return createEnvironmentAdoption({
-    dataDir: core.platform.paths.dataDir(),
+    dataDir,
     stores: {
       flush: async () => {
         await Promise.all([
@@ -334,6 +339,25 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
             untilLimitReset as UsageLimitProvider | undefined,
           ),
         hold: (chat, text, source) => core.scheduledMessages.hold(chat, text, source),
+        holdCarrying: async (chat, text, source, carried) => {
+          // Its files go where a device's uploads are kept, as a file a
+          // device queued is; the held message marks them its own.
+          const placed: Array<{ path: string; name: string; bytes: number }> = []
+          for (const file of carried.files) {
+            const folder = join(dataDir, TAILNET_UPLOADS_DIRNAME, randomUUID())
+            await mkdir(folder, { recursive: true, mode: 0o700 })
+            const path = join(folder, basename(file.name) || 'file')
+            await writeFile(path, file.bytes, { mode: 0o600 })
+            placed.push({ path, name: file.name, bytes: file.bytes.length })
+          }
+          const held = await studioHeldMessages(() => core.scheduledMessages, dataDir).hold(chat, text, source, {
+            images: carried.images,
+            files: placed,
+            skills: carried.skills,
+            mentions: carried.mentions as ConversationWireMention[],
+          })
+          return held.ok ? { ok: true } : { ok: false, reason: held.message }
+        },
       },
       resumes: {
         schedule: (chat) => void core.usageLimitResumes.update({ kind: 'schedule', ...chat }),
@@ -341,6 +365,7 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
       pullRequests: {
         noteOpened: (chat, input) => core.pullRequests.record.noteOpened(chat, input),
         watch: (chat, input) => core.pullRequests.record.watch(chat, input),
+        keepUntold: (chat, url, untold) => core.pullRequests.record.keepUntold(chat, url, untold),
       },
     },
   })

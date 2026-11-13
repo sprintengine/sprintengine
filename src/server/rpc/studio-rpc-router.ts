@@ -2098,12 +2098,42 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       }
     },
     // Answered once per command id: a hand-over sent again is the same one.
-    'environment.adopt': ({ commandId, migrationId, records }, { grant, voice }) => {
+    'environment.adopt': ({ commandId, migrationId, records, files }, { grant, voice }) => {
       const adoption = options.adoption
       if (!adoption) return unserved('environment.adopt')
+      const id = keptId('environment.adopt', grant, commandId)
       return once(
-        keptId('environment.adopt', grant, commandId),
-        async () => ({ ok: true as const, result: await adoption.adopt({ migrationId, records }) }),
+        id,
+        async () => {
+          // The pictures and files the held messages carry, staged by this
+          // connection, by the digest each record names them by.
+          const staged = new Map<string, { bytes: Buffer; mediaType: string; name?: string }>()
+          if (files?.length) {
+            const spent = uploads.spend(
+              grant.clientId,
+              files.map((file) => file.uploadId),
+              id,
+              ['picture', 'attachment'],
+            )
+            // A file that did not arrive is the hand-over's to send again.
+            if (!spent.ok) return refuse('invalid_params', spent.message)
+            files.forEach((file, index) => {
+              const upload = spent.pictures[index]
+              staged.set(file.digest, {
+                bytes: upload.bytes,
+                mediaType: upload.mediaType,
+                ...(upload.name === undefined ? {} : { name: upload.name }),
+              })
+            })
+          }
+          try {
+            return { ok: true as const, result: await adoption.adopt({ migrationId, records, files: staged }) }
+          } finally {
+            // Kept or not, their bytes are the held messages' copies now, or
+            // sent again with the next attempt.
+            if (files?.length) uploads.settle(grant.clientId, id, true)
+          }
+        },
         voice,
         'environment.adopt',
       )

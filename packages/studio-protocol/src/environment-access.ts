@@ -75,8 +75,14 @@ export type StudioAdoptedRecordKind = (typeof STUDIO_ADOPTED_RECORD_KINDS)[numbe
  * spelling of its paths. What each body holds is the record as the desktop's
  * own store keeps it: a workspace record; a scheduled agent; a scheduled or
  * held message; `{ workspaceId, agentId }` for a usage-limit resume to keep
- * scheduled; `{ workspaceId, agentId, url, title?, watched? }` for a pull
- * request a chat opened.
+ * scheduled; `{ workspaceId, agentId, url, title?, watched?, untold? }` for
+ * a pull request a chat opened, `untold` being the news its watch found that
+ * the chat has not been told yet.
+ *
+ * A held message's pictures and files travel beside the records
+ * (`StudioAdoptedFile`): its body names each in `carried.images` and
+ * `carried.files` by the sha-256 of its bytes, and the call stages each once
+ * through `uploads.*` and names its upload by that digest.
  */
 export type StudioAdoptedRecord = {
   kind: StudioAdoptedRecordKind
@@ -84,6 +90,9 @@ export type StudioAdoptedRecord = {
   digest: string
   body: Record<string, unknown>
 }
+
+/** A file a handed-over record carries: an upload this connection staged, by the sha-256 of its bytes. */
+export type StudioAdoptedFile = { uploadId: string; digest: string }
 
 /** What a hand-over came to: what the machine now keeps, and what it kept its own copy of instead, and why. */
 export type StudioAdoptResult = {
@@ -93,6 +102,9 @@ export type StudioAdoptResult = {
 
 /** The most records one hand-over carries; a longer one is sent in parts under the same migration. */
 export const MAX_ADOPTED_RECORDS = 500
+
+/** The most files one hand-over call stages beside its records: as many as a client may stage at once. */
+export const MAX_ADOPTED_FILES = 16
 
 /** A sign-in that started: its link, the code to type there, and whether a code is pasted back. */
 export type StudioSignInStarted =
@@ -133,7 +145,7 @@ export type StudioEnvironmentAccessMethodMap = {
    * this Studio has it and reported. Answered only for what is on disk.
    */
   'environment.adopt': {
-    params: { commandId: string; migrationId: string; records: StudioAdoptedRecord[] }
+    params: { commandId: string; migrationId: string; records: StudioAdoptedRecord[]; files?: StudioAdoptedFile[] }
     result: StudioAdoptResult
   }
   /** Start the CLI's own login on this machine, for a provider whose CLI has one that needs no terminal. */
@@ -255,7 +267,31 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
           body: record.body as Record<string, unknown>,
         })
       }
-      return studioParams({ commandId: value.commandId as string, migrationId: value.migrationId, records })
+      const staged = value.files
+      if (
+        staged !== undefined &&
+        !(
+          Array.isArray(staged) &&
+          staged.length <= MAX_ADOPTED_FILES &&
+          staged.every(
+            (file) =>
+              file !== null &&
+              typeof file === 'object' &&
+              text((file as Record<string, unknown>).uploadId, 200) &&
+              /^[0-9a-f]{64}$/u.test(String((file as Record<string, unknown>).digest)),
+          )
+        )
+      )
+        return studioParamsRefused(
+          `"files" lists at most ${MAX_ADOPTED_FILES} { uploadId, digest }: an upload this connection staged and the sha-256 of its bytes.`,
+        )
+      const files = (staged as StudioAdoptedFile[] | undefined)?.map(({ uploadId, digest }) => ({ uploadId, digest }))
+      return studioParams({
+        commandId: value.commandId as string,
+        migrationId: value.migrationId,
+        records,
+        ...(files?.length ? { files } : {}),
+      })
     },
   },
   'providers.signInStart': {

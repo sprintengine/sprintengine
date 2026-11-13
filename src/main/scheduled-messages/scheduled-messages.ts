@@ -214,6 +214,8 @@ export type ScheduledMessages = {
   ): ScheduledMessageHoldResult
   /** The held message the command `source` went into, still held or gone; null for a command never held. */
   heldFrom(source: string): string | null
+  /** What a message still here carries beside its words, by where it is on this disk; null for none. */
+  carriedOf(id: string): ScheduledMessageCarried | null
   /**
    * Schedule a message a paired machine asked for, to go at `sendAt` as one
    * scheduled here does. `source` names the command it came in on; the same
@@ -669,6 +671,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     start,
     hold,
     heldFrom,
+    carriedOf: (id) => messages.find((entry) => entry.id === id)?.carried ?? null,
     scheduleFrom,
     wake() {
       if (!running) return

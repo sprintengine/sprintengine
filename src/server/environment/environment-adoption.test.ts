@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -64,6 +65,13 @@ function fakeStores() {
         sources.add(source)
         return { ok: true }
       },
+      async holdCarrying(chat, text, source, carried) {
+        calls.push(
+          `hold ${chat.agentId} ${text} with ${carried.images.map((image) => `${image.name}:${image.bytes.toString()}`).join(',')} ${carried.files.map((file) => `${file.name}:${file.bytes.toString()}`).join(',')} ${carried.skills.join(',')}`,
+        )
+        sources.add(source)
+        return { ok: true }
+      },
     },
     resumes: {
       schedule: (chat) => void calls.push(`resume ${chat.agentId}`),
@@ -78,6 +86,9 @@ function fakeStores() {
       async watch(chat, input) {
         calls.push(`watch ${chat.agentId} ${input.url}`)
         return { ok: true }
+      },
+      keepUntold(chat, url, untold) {
+        calls.push(`untold ${chat.agentId} ${url} ${JSON.stringify(untold)}`)
       },
     },
   }
@@ -95,6 +106,8 @@ function rig() {
 function record(kind: StudioAdoptedRecord['kind'], id: string, body: Record<string, unknown>): StudioAdoptedRecord {
   return { kind, id, digest: adoptedRecordDigest(body), body }
 }
+
+const sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
 const WORKSPACE = { id: 'ws-1', name: 'repo', folderPath: '/home/dev/repo', agents: {} }
 const SCHEDULE = { id: 'sa-1', prompt: 'Triage the inbox', workspaceId: 'ws-1' }
@@ -216,7 +229,7 @@ test('what does not read, does not match its digest, or is already here by anoth
         agentId: 'a1',
         text: 'with a picture',
         queued: true,
-        carries: { images: ['photo.png'] },
+        carried: { images: [{ sha256: sha('never staged'), name: 'photo.png', mediaType: 'image/png' }] },
       }),
       record('scheduled-message', 'sm-4', { workspaceId: 'ws-1', agentId: 'a1', text: 'no time' }),
       record('pull-request', 'pr-9', { workspaceId: 'ws-1', agentId: 'a1', url: 'https://github.com/o/r/pull/9' }),
@@ -230,7 +243,7 @@ test('what does not read, does not match its digest, or is already here by anoth
       'ws-here: A workspace with that id is already here.',
       'ws-3: The workspace record names another id.',
       'sa-2: A scheduled agent has a prompt.',
-      'sm-3: It carries pictures or files, which are not handed over yet.',
+      'sm-3: A picture it carries did not arrive whole.',
       'sm-4: A scheduled message says when it goes.',
       'pr-9: Another chat here opened it.',
     ],
@@ -253,4 +266,67 @@ test('two hand-overs at once are kept one after the other, never interleaved', a
   ])
   assert.equal(a.held.length + b.held.length, 2)
   assert.deepEqual(calls, ['workspace ws-a', 'flush', 'workspace ws-b', 'flush'])
+})
+
+test('a held message goes with its pictures and files, staged beside it by digest, and a watch with its untold news', async () => {
+  const { adoption, calls } = rig()
+  const picture = Buffer.from('png bytes')
+  const file = Buffer.from('notes')
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [
+      record('scheduled-message', 'sm-1', {
+        workspaceId: 'ws-1',
+        agentId: 'a1',
+        text: 'look at this',
+        queued: true,
+        carried: {
+          images: [{ sha256: sha('png bytes'), name: 'shot.png', mediaType: 'image/png' }],
+          files: [{ sha256: sha('notes'), name: 'notes.txt' }],
+          skills: ['review'],
+        },
+      }),
+      record('pull-request', 'https://github.com/o/r/pull/1', {
+        workspaceId: 'ws-1',
+        agentId: 'a1',
+        url: 'https://github.com/o/r/pull/1',
+        watched: true,
+        untold: [{ news: 'checks passed' }],
+      }),
+    ],
+    files: new Map([
+      [sha('png bytes'), { bytes: picture, mediaType: 'image/png', name: 'shot.png' }],
+      [sha('notes'), { bytes: file, mediaType: 'text/plain', name: 'notes.txt' }],
+    ]),
+  })
+  assert.equal(answer.held.length, 2)
+  assert.deepEqual(answer.conflicts, [])
+  assert.deepEqual(calls.slice(0, -1), [
+    'hold a1 look at this with shot.png:png bytes notes.txt:notes review',
+    'opened a1 https://github.com/o/r/pull/1',
+    'watch a1 https://github.com/o/r/pull/1',
+    'untold a1 https://github.com/o/r/pull/1 [{"news":"checks passed"}]',
+  ])
+})
+
+test('a staged file whose bytes are not the digest its message names is refused, and the message is not held', async () => {
+  const { adoption, calls } = rig()
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [
+      record('scheduled-message', 'sm-1', {
+        workspaceId: 'ws-1',
+        agentId: 'a1',
+        text: 'look',
+        queued: true,
+        carried: { files: [{ sha256: sha('notes'), name: 'notes.txt' }] },
+      }),
+    ],
+    files: new Map([[sha('notes'), { bytes: Buffer.from('something else'), mediaType: 'text/plain' }]]),
+  })
+  assert.deepEqual(
+    answer.conflicts.map((entry) => entry.reason),
+    ['A file it carries did not arrive whole.'],
+  )
+  assert.deepEqual(calls, ['flush'])
 })
