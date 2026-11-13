@@ -39,8 +39,7 @@ import {
   setLaunchSkillPluginDirsResolver,
   setLaunchStatusLineScriptResolver,
 } from './terminal-launch'
-import { TAILNET_EVENT_CHANNEL } from '../shared/tailnet'
-import { MESH_EVENT_CHANNEL, meshListChanged } from '../shared/tailnet-mesh'
+import { meshListChanged } from '../shared/tailnet-mesh'
 import { CANVAS_MODULE_DEFAULT_ENABLED } from '../shared/modules/manifest'
 import { createTailnetNotifier } from './tailnet-notifications'
 import { createInProcessShellBridge } from './shell-bridge'
@@ -1497,15 +1496,13 @@ export function createAppServices(
         // A picture a paired device uploads is sized for the model on receipt,
         // with this process's own image codec.
         downscaleUpload: (bytes, mediaType) => shellBridge.images.downscale(bytes, mediaType),
-        // The live-state push (remote-sessions-ux): every window hears listener,
-        // pairing, and connection changes the moment main does — the fix for pair
-        // requests that could expire while only Settings, if open, would show them.
+        // Listener, pairing and connection changes raise the shell's
+        // notifications here; every window follows the same changes on the
+        // Studio protocol (`tailnet.changed`, `mesh.changed`).
         onTailnetEvent: (payload) => {
-          broadcastToAllWindows(TAILNET_EVENT_CHANNEL, payload)
           tailnetNotifier?.onTailnetEvent(payload)
         },
         onMeshEvent: (event) => {
-          broadcastToAllWindows(MESH_EVENT_CHANNEL, event)
           tailnetNotifier?.onMeshEvent(event)
           if (meshListChanged(event)) for (const listener of [...meshListeners]) listener()
           if (meshListChanged(event) || event.kind === 'machine-reachability')

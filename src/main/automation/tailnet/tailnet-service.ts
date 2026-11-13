@@ -55,7 +55,7 @@ import { readStudioEnvironmentId } from '../../../server/environment/environment
 
 /**
  * What approving a request answers with. Aliased from the shared view rather
- * than restated: Settings reads the same shape over IPC, and two declarations
+ * than restated: Settings reads the same shape over the Studio protocol, and two declarations
  * of it would be two things to keep in step.
  */
 export type TailnetApprovePairRequestResult = TailnetApprovePairRequestView
@@ -114,16 +114,17 @@ export type TailnetRemoteService = {
    *
    * `via` says which door the answer came through, and exists only so the audit
    * is written exactly once: a `tailnet.*` tool call is already audited by
-   * dispatch, so only the IPC path records here.
+   * dispatch, and so is a protocol call the router audits (`tool`), so only a
+   * Studio window's answer (`window`), which the router leaves out, records here.
    */
   approvePairRequest(input: {
     id: string
     scopes?: unknown
     /** The six digits on the asker's screen, typed here (phase 2). */
     code?: unknown
-    via?: 'ipc' | 'tool'
+    via?: 'window' | 'tool'
   }): TailnetApprovePairRequestResult
-  denyPairRequest(id: string, via?: 'ipc' | 'tool'): TailnetRemoteStatus
+  denyPairRequest(id: string, via?: 'window' | 'tool'): TailnetRemoteStatus
   /**
    * Machines on this tailnet, and which of them answer as a Studio.
    *
@@ -884,7 +885,7 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
         id: requestId,
         scopes: normalizeTailnetScopes(input.scopes),
         code: input.code,
-        // Passed as given: only an explicit 'ipc' may approve a sign-in.
+        // Passed as given: only an explicit 'window' may approve a sign-in.
         via: input.via,
       })
       if (!outcome.ok) {

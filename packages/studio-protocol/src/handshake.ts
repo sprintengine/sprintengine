@@ -331,6 +331,15 @@ export const STUDIO_ACCESS_CAPABILITY = 'access' as const
 export const STUDIO_WEB_DEVICES_CAPABILITY = 'web-devices' as const
 
 /**
+ * Who reaches this machine over the tailnet, and the machines it reaches
+ * (`tailnet.ts`): its listener's devices, offers, requests and shared dev
+ * servers (`tailnet.*`, with the `tailnet.changed` stream), and pairing with
+ * another machine (`mesh.*`, with `mesh.changed`). Offered where the Studio
+ * runs the gateway, which every Studio does.
+ */
+export const STUDIO_TAILNET_CAPABILITY = 'tailnet' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -390,6 +399,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_ACCESS_CAPABILITY,
   STUDIO_WORKSPACE_SYNC_CAPABILITY,
   STUDIO_WEB_DEVICES_CAPABILITY,
+  STUDIO_TAILNET_CAPABILITY,
 ] as const
 
 /**

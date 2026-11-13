@@ -2,7 +2,6 @@ import type { IpcMain } from 'electron'
 
 import type { createConversationTerminalHandoff } from '../../main/conversation-terminal-handoff'
 import type { HostRegistry } from '../../main/hosts/host-registry'
-import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { createConversationService } from '../../main/conversation-service'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
@@ -20,12 +19,13 @@ import { knownFolders } from '../files/known-folders'
 // the preload routes their channels there (SERVER_IPC_CHANNELS, which the
 // completeness test holds to this list).
 //
-// What is here: launch settings and machines, the tailnet and the mesh, model
+// What is here: launch settings and machines, the chats on paired machines, model
 // discovery, the composer's command lists, the GitHub token, the chats, with
 // the copy of the model-written titles setting the server titles them by. The
 // worktree pool and settled chats are the Studio protocol's (`worktrees.*`,
 // `settledChats.*`), and so is the workspace registry with its hydration and
-// backup (`workspaceSync.*`).
+// backup (`workspaceSync.*`), and the tailnet and pairing with another
+// machine (`tailnet.*`, `mesh.*`).
 // What is not: anything that acts on a window, a terminal or the shell's own
 // caches (the rest of the git panel, the file explorer, skills and the marketplace,
 // modules' enablement and trust), which stays with the shell until phase 10.
@@ -57,7 +57,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   const ipc = registry as IpcMain
   const { core } = deps
   const dataDir = () => core.platform.paths.dataDir()
-  registerAutomationIpc(ipc, deps.gateway)
   registerMeshIpc(ipc, deps.gateway)
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.
   const conversationCommands = core.conversationCommands()

@@ -290,10 +290,10 @@ export type TailnetDeviceStore = {
     code: unknown
     /**
      * Who is answering. An OAuth sign-in is approved only from a window here
-     * (`ipc`): an agent on this machine that could approve one could open the
+     * (`window`: Studio's own desktop window, `tailnet.approvePairRequest`): an agent on this machine that could approve one could open the
      * sign-in page itself, read its code, and let itself in.
      */
-    via?: 'ipc' | 'tool'
+    via?: 'window' | 'tool'
   }): TailnetPairApprovalResult
   denyPairRequest(id: string): boolean
   /**
@@ -745,7 +745,7 @@ export function createTailnetDeviceStore(options: {
           message: 'That pairing request is no longer waiting to be answered.',
         }
       }
-      if (entry.request.oauth && input.via !== 'ipc') {
+      if (entry.request.oauth && input.via !== 'window') {
         return {
           ok: false,
           code: 'approve_in_window',

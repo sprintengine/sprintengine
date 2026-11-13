@@ -3,6 +3,7 @@ import React from 'react'
 import type { MeshPairRequestView } from '../../../../shared/tailnet-mesh'
 import { OutlineButton, StatusDot } from '../ui'
 import { showToast } from '../../store/toastStore'
+import { tailnetApi } from '../../studio/tailnet'
 
 // A request THIS machine made, while it waits (pair-from-the-scan-and-stay-
 // paired, phases 2–3). The code is shown large because the person at the
@@ -40,7 +41,7 @@ export function OutboundPairRequestCard({
   const stop = async (): Promise<void> => {
     setStopping(true)
     try {
-      await window.api.meshCancelPairing(request.requestId)
+      await tailnetApi.meshCancelPairing(request.requestId)
     } catch (error) {
       showToast({
         tone: 'error',

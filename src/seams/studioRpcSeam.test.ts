@@ -28,6 +28,7 @@ import {
   STUDIO_ARTIFACTS_METHODS,
   STUDIO_ACCESS_METHODS,
   STUDIO_WEB_DEVICES_METHODS,
+  STUDIO_TAILNET_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -46,6 +47,7 @@ import {
   type StudioWorkspaceSyncMethod,
   type StudioExtensionsMethodMap,
   type StudioArtifactsMethodMap,
+  type StudioTailnetMethodMap,
   type StudioAccessMethodMap,
   type StudioWebDevicesMethodMap,
   type StudioChatMethod,
@@ -554,6 +556,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // And the browsers paired with its web listener, which a web tab's Settings uses, by name.
     ...(Object.fromEntries(Object.keys(STUDIO_WEB_DEVICES_METHODS).map((method) => [method, 'request'])) as Record<
       keyof StudioWebDevicesMethodMap,
+      string
+    >),
+    // And who reaches it over the tailnet and the machines it drives, which its Settings uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_TAILNET_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioTailnetMethodMap,
       string
     >),
   }

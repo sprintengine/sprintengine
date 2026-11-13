@@ -75,9 +75,10 @@ type AutomationServiceOptions = {
   /** Absolute path of the shipped stdio bridge script, when the app knows it. */
   resolveBridgeScriptPath?: () => string | null
   /**
-   * The live-state push (remote-sessions-ux): tailnet listener/pairing/socket
-   * changes and mesh lifecycle, for broadcast to every window. Wired by the
-   * app shell; absent in tests and headless embeddings, where nothing listens.
+   * Tailnet listener, pairing and socket changes, and the mesh's lifecycle,
+   * for the shell's notifications. Windows follow the same changes on the
+   * Studio protocol (`tailnet.changed`, `mesh.changed`: `onTailnetChanged`,
+   * `onMeshChanged` below). Absent in tests and headless embeddings.
    */
   onTailnetEvent?: (payload: TailnetPushPayload) => void
   /**
@@ -94,6 +95,29 @@ type AutomationServiceOptions = {
 export type AutomationService = ReturnType<typeof createAutomationService>
 
 export function createAutomationService(options: AutomationServiceOptions) {
+  // Who follows the tailnet's and the mesh's changes: the Studio protocol's
+  // streams, one listener per following connection.
+  const tailnetListeners = new Set<(payload: TailnetPushPayload) => void>()
+  const meshListeners = new Set<(event: MeshEvent) => void>()
+  function announce<T>(listeners: Set<(value: T) => void>, value: T, shell?: (value: T) => void): void {
+    for (const listener of [shell, ...listeners]) {
+      if (!listener) continue
+      try {
+        listener(value)
+      } catch (error) {
+        warn(
+          'Tailnet remote control',
+          `A change could not be delivered: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+  }
+  function follow<T>(listeners: Set<(value: T) => void>, listener: (value: T) => void): () => void {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  }
   let lastError: string | null = null
   let server: ReturnType<typeof createMcpSocketServer> | null = null
   let socketPath: string | null = null
@@ -217,7 +241,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
           return
         auditStore().record({ connection: context.metadata, tool, args, durationMs, result, error, servedBy })
       },
-      onEvent: options.onTailnetEvent,
+      onEvent: (payload) => announce(tailnetListeners, payload, options.onTailnetEvent),
       // The reverse half of a both-ways pairing lands in the mesh: the
       // machine that just asked to drive this one can now be driven back.
       onReverseGrant: (input) => {
@@ -248,7 +272,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
         return tailnetService().revokeDevice(deviceId).devices.length < before
       },
       hasWindow: options.hasWindow,
-      onEvent: options.onMeshEvent,
+      onEvent: (event) => announce(meshListeners, event, options.onMeshEvent),
       log: (text) => warn('Tailnet mesh', text),
     })
     return mesh
@@ -484,11 +508,16 @@ export function createAutomationService(options: AutomationServiceOptions) {
       id: string
       scopes?: unknown
       code?: unknown
-      via?: 'ipc' | 'tool'
+      via?: 'window' | 'tool'
     }): TailnetApprovePairRequestResult => tailnetService().approvePairRequest(input),
-    denyTailnetPairRequest: (id: string, via?: 'ipc' | 'tool'): TailnetRemoteStatus =>
+    denyTailnetPairRequest: (id: string, via?: 'window' | 'tool'): TailnetRemoteStatus =>
       tailnetService().denyPairRequest(id, via),
     listTailnetPeers: (): Promise<TailnetPeerScan> => tailnetService().listPeers(),
+    /** Every change to the listener, its requests and live connections (`tailnet.changed`). */
+    onTailnetChanged: (listener: (payload: TailnetPushPayload) => void): (() => void) =>
+      follow(tailnetListeners, listener),
+    /** Every whole-app fact of the mesh (`mesh.changed`). */
+    onMeshChanged: (listener: (event: MeshEvent) => void): (() => void) => follow(meshListeners, listener),
     /** The Mesh client: the machines this Studio drives. */
     mesh: (): TailnetMeshService => meshService(),
   }

@@ -46,6 +46,7 @@ import {
   WINDOW_ONLY,
 } from './studio-browser-reach'
 import type { StudioAccessDomain } from './studio-access'
+import { currentMesh, currentTailnet, type StudioTailnetDomain } from './studio-tailnet'
 import type { ConversationEvent, ConversationKey, ConversationSessionFrame } from '../../shared/conversation-runtime'
 import {
   CONVERSATION_WIRE_EVENT_BYTES,
@@ -188,6 +189,8 @@ export type StudioRpcConnectionOptions = {
   access?: StudioAccessDomain
   /** The web listener's paired browsers: the `webDevices.changed` stream. */
   webDevices?: () => StudioWebDevicesDomain | null
+  /** The tailnet listener and the machines this one drives: the `tailnet.changed` and `mesh.changed` streams. */
+  tailnet?: StudioTailnetDomain
   /** The CLIs on this machine: the `cliRuntimes.*` and `cliVersions.changed` streams. */
   runtimes?: CliRuntimes
   /** The launch settings and the CLIs' catalogs: the `launchSettings.changed` and `cliModels.changed` streams. */
@@ -1519,6 +1522,34 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
               }
               shown()
               return domain.onChanged(shown)
+            }
+          : null,
+      )
+    },
+    // The listener and the mesh as they stand (`current`), then every
+    // change: a window that reconnects is shown them as they are now.
+    'tailnet.changed': (id) => {
+      const tailnet = options.tailnet
+      subscribeFeed(
+        id,
+        'tailnet.changed',
+        tailnet
+          ? (deliver) => {
+              deliver(currentTailnet(tailnet))
+              return tailnet.onChanged(deliver)
+            }
+          : null,
+      )
+    },
+    'mesh.changed': (id) => {
+      const tailnet = options.tailnet
+      subscribeFeed(
+        id,
+        'mesh.changed',
+        tailnet
+          ? (deliver) => {
+              deliver(currentMesh(tailnet))
+              return tailnet.mesh.onChanged(deliver)
             }
           : null,
       )

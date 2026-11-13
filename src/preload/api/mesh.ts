@@ -2,18 +2,6 @@ import type { IpcRendererEvent } from 'electron'
 import { ipc as ipcRenderer } from '../ipc-router'
 
 import {
-  MESH_FORGET_CHANNEL,
-  MESH_GET_LIVE_STATE_CHANNEL,
-  MESH_LIST_CONNECTIONS_CHANNEL,
-  MESH_CANCEL_PAIRING_CHANNEL,
-  MESH_PAIR_CHANNEL,
-  MESH_REQUEST_PAIRING_CHANNEL,
-  MESH_EVENT_CHANNEL,
-  type MeshConnection,
-  type MeshEvent,
-  type MeshLiveState,
-  type MeshPairResult,
-  type MeshRequestPairingResult,
   meshConversationFrameChannel,
   MESH_CONVERSATION_CANCEL_SIDE_QUESTION_CHANNEL,
   MESH_CONVERSATION_COMMAND_CHANNEL,
@@ -68,43 +56,16 @@ import type {
   ConversationEventReadResult,
   ConversationTurnDiffResult,
 } from '../../shared/conversation-runtime'
-import type { TailnetScope } from '../../shared/tailnet'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import type { ElectronApi } from '../../shared/electron-api'
 
-// The Mesh's data path: the machines this Studio drives, what they
-// hold, and the terminals it has open on them.
+// Chats on the machines this Studio drives (pairing, listing and forgetting
+// them are the Studio protocol's `mesh.*`: `src/renderer/src/studio/tailnet.ts`).
 //
 // Nothing here carries a credential. The device tokens stay in main, which is
 // also the only place that can dial the listener at all — it refuses any
 // request with an `Origin` header, and a renderer always sends one.
 export const meshApi = {
-  meshListConnections: (): Promise<MeshConnection[]> =>
-    ipcRenderer.invoke(MESH_LIST_CONNECTIONS_CHANNEL) as Promise<MeshConnection[]>,
-  meshPair: (pairingUrl: string): Promise<MeshPairResult> =>
-    ipcRenderer.invoke(MESH_PAIR_CHANNEL, { pairingUrl }) as Promise<MeshPairResult>,
-  meshRequestPairing: (
-    endpoint: string,
-    options?: { scopes?: TailnetScope[]; reverseScopes?: TailnetScope[] },
-  ): Promise<MeshRequestPairingResult> =>
-    ipcRenderer.invoke(MESH_REQUEST_PAIRING_CHANNEL, {
-      endpoint,
-      // Omitted rather than sent empty when the caller names nothing, so each
-      // end's own default stays in force.
-      ...(options?.scopes ? { scopes: options.scopes } : {}),
-      ...(options?.reverseScopes ? { reverseScopes: options.reverseScopes } : {}),
-    }) as Promise<MeshRequestPairingResult>,
-  meshCancelPairing: (requestId: string): Promise<void> =>
-    ipcRenderer.invoke(MESH_CANCEL_PAIRING_CHANNEL, requestId) as Promise<void>,
-  meshForget: (connectionId: string): Promise<MeshConnection[]> =>
-    ipcRenderer.invoke(MESH_FORGET_CHANNEL, connectionId) as Promise<MeshConnection[]>,
-  meshGetLiveState: (): Promise<MeshLiveState> =>
-    ipcRenderer.invoke(MESH_GET_LIVE_STATE_CHANNEL) as Promise<MeshLiveState>,
-  onMeshEvent: (cb: (event: MeshEvent) => void): (() => void) => {
-    const handler = (_: IpcRendererEvent, event: MeshEvent) => cb(event)
-    ipcRenderer.on(MESH_EVENT_CHANNEL, handler)
-    return () => ipcRenderer.removeListener(MESH_EVENT_CHANNEL, handler)
-  },
   meshConversationList: (connectionId: string): Promise<MeshConversationListResult> =>
     ipcRenderer.invoke(MESH_CONVERSATION_LIST_CHANNEL, connectionId) as Promise<MeshConversationListResult>,
   // The same shape as `onConversationSession`: listen first, then ask main
@@ -330,13 +291,6 @@ export const meshApi = {
     ipcRenderer.invoke(MESH_CONVERSATION_PULL_REQUEST_CREATE_CHANNEL, input) as Promise<MeshPullRequestCreateResult>,
 } satisfies Pick<
   ElectronApi,
-  | 'meshListConnections'
-  | 'meshPair'
-  | 'meshRequestPairing'
-  | 'meshCancelPairing'
-  | 'meshForget'
-  | 'meshGetLiveState'
-  | 'onMeshEvent'
   | 'meshConversationList'
   | 'onMeshConversationSession'
   | 'meshConversationLoadEarlier'

@@ -140,6 +140,28 @@ test('useTailnetPresence', async () => {
     })
     assert.equal(current().status?.running, true, 'an older pushed revision is dropped')
 
+    // The stream reopened on a restarted server: its `current` is the state
+    // as it stands, applied though its revision starts again below ours, and
+    // the changes after it are applied too.
+    await act(async () => {
+      tailnetListener!({
+        revision: 1,
+        event: { kind: 'current' },
+        status: status(false),
+        live: { revision: 1, devices: [] },
+      })
+    })
+    assert.equal(current().status?.running, false, 'a reopened stream’s current state is applied')
+    await act(async () => {
+      tailnetListener!({
+        revision: 2,
+        event: { kind: 'listener', running: true },
+        status: status(true),
+        live: { revision: 2, devices: [] },
+      })
+    })
+    assert.equal(current().status?.running, true, 'and so is the change after it')
+
     // The mesh channel folds the same way, by its own revision.
     reads.mesh.resolve([])
     reads.meshLive.resolve({
@@ -201,6 +223,29 @@ test('useTailnetPresence', async () => {
     })
     assert.equal(current().meshRemoteChanges.get('air'), undefined, 'forgetting the machine drops its change')
     assert.equal(current().meshReachability.get('air'), undefined, 'and its reachability')
+
+    // The mesh stream reopened on a restarted server: its `current` is applied
+    // whatever its revision, and so is what follows it.
+    const waiting = {
+      requestId: 'r1',
+      endpoint: 'build-box:7777',
+      machineName: 'build-box',
+      comparisonCode: '000000',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+      reverseOffered: false,
+    }
+    await act(async () => {
+      meshListener!({ kind: 'current', revision: 1, requests: [waiting], reachability: [] })
+    })
+    assert.deepEqual(
+      current().meshRequests.map((entry) => entry.requestId),
+      ['r1'],
+      'a reopened mesh stream’s current state is applied',
+    )
+    await act(async () => {
+      meshListener!({ kind: 'pair-request', revision: 2, phase: 'cancelled', request: waiting })
+    })
+    assert.deepEqual(current().meshRequests, [], 'and so is the change after it')
 
     act(() => root.unmount())
     assert.equal(tailnetListener, null, 'unmount releases the tailnet subscription')

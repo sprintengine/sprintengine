@@ -42,7 +42,12 @@ import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/wor
 import { createStudioCanvasDomain, type StudioCanvasHost } from '../canvas/canvas-domain'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { createStudioPhoneReads } from '../backlog/backlog-domain'
-import { createTailnetShareService, readTailnetWebTargets } from '../../main/automation/tailnet/tailnet-share-service'
+import type { StudioTailnetDomain } from '../rpc/studio-tailnet'
+import {
+  createTailnetShareService,
+  readTailnetWebTargets,
+  type TailnetShareService,
+} from '../../main/automation/tailnet/tailnet-share-service'
 import { createTailnetFileUploads, TAILNET_UPLOADS_DIRNAME } from '../../main/automation/tailnet/tailnet-file-uploads'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 
@@ -76,6 +81,9 @@ export function createStudioRpc(
     signIns?: () => Promise<SignIns>
   } = {},
 ): StudioRpcService {
+  // The dev servers this machine publishes on the tailnet: Settings and the
+  // browser pane share them (`tailnet.share*`), the phone opens them.
+  const shares = createTailnetShareService()
   const service = createStudioRpcService({
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
     // How this Studio is updated: the host says (a desktop itself, a WSL or
@@ -97,6 +105,10 @@ export function createStudioRpc(
       createMcpHttp: (name) => gateway.createMcpHttpClient(name),
       revokeMcpHttp: (id) => gateway.revokeMcpHttpClient(id),
     },
+    // Who reaches this machine over the tailnet, and the machines it drives
+    // (`tailnet`): the gateway's listener and mesh, the same service the
+    // agents' local-socket `tailnet.*` tools call.
+    tailnet: createStudioTailnetDomain(gateway, shares),
     backend: () =>
       createStudioConversationBackend({
         // Listed as `conversation-lifecycle` promises, which this socket
@@ -222,13 +234,10 @@ export function createStudioRpc(
     // What the phone reads beside its chats: the projects' backlogs (each
     // item's status and triage it may change), the pages this machine shares
     // on the tailnet, and a pull request read in full. No local path leaves.
-    phoneReads: (() => {
-      const shareService = createTailnetShareService()
-      return createStudioPhoneReads({
-        roots: () => uniqueResolvedRoots(listKnownWorkspaceRoots(core.workspaceSyncService.getSnapshot())),
-        readShares: () => readTailnetWebTargets(shareService),
-      })
-    })(),
+    phoneReads: createStudioPhoneReads({
+      roots: () => uniqueResolvedRoots(listKnownWorkspaceRoots(core.workspaceSyncService.getSnapshot())),
+      readShares: () => readTailnetWebTargets(shares),
+    }),
     // A chat's record beyond its rest, for the phone and another desktop:
     // its marks and name written by the same lifecycle the sidebar's are, its
     // delete made as a window's Delete makes it, and a search of what was
@@ -335,4 +344,38 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
       },
     },
   })
+}
+
+/** The tailnet family's domain over the gateway's listener and mesh, and this machine's shared dev servers. */
+export function createStudioTailnetDomain(gateway: StudioGateway, shares: TailnetShareService): StudioTailnetDomain {
+  return {
+    status: () => gateway.getTailnetStatus(),
+    liveState: () => gateway.getTailnetLiveState(),
+    setEnabled: (enabled) => gateway.setTailnetEnabled(enabled),
+    setHttps: (enabled) => gateway.setTailnetHttps(enabled),
+    offerPairing: (scopes) => gateway.offerTailnetPairing(scopes ? { scopes } : {}),
+    cancelPairing: () => gateway.cancelTailnetPairing(),
+    // Only a window reaches this (the table's `window`): the one door that
+    // may approve an MCP client's sign-in, and that the service audits.
+    approvePairRequest: (input) => gateway.approveTailnetPairRequest({ ...input, via: 'window' }),
+    denyPairRequest: (id, via) => gateway.denyTailnetPairRequest(id, via),
+    revokeDevice: (id) => gateway.revokeTailnetDevice(id),
+    updateDeviceScopes: (id, scopes) => gateway.updateTailnetDeviceScopes(id, scopes),
+    forgetMachine: (input) => gateway.forgetTailnetMachine(input),
+    resetMcpRegistrations: () => gateway.resetTailnetMcpRegistrations(),
+    peers: () => gateway.listTailnetPeers(),
+    shares: () => shares.readStatus(),
+    share: (localPort) => shares.share(localPort),
+    unshare: (servePort) => shares.unshare(servePort),
+    onChanged: (listener) => gateway.onTailnetChanged(listener),
+    mesh: {
+      connections: () => gateway.mesh().listConnections(),
+      liveState: () => gateway.mesh().getLiveState(),
+      pair: (pairingUrl) => gateway.mesh().pair({ pairingUrl }),
+      requestPairing: (input) => gateway.mesh().requestPairing(input),
+      cancelPairing: (requestId) => gateway.mesh().cancelPairing(requestId),
+      forget: (connectionId) => gateway.mesh().forget(connectionId),
+      onChanged: (listener) => gateway.onMeshChanged(listener),
+    },
+  }
 }

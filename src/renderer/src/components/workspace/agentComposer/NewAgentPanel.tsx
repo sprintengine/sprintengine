@@ -167,6 +167,7 @@ import { filesApi } from '../../../studio/files'
 import { gitApi } from '../../../studio/git'
 import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
 import { schedulesApi } from '../../../studio/schedules'
+import { tailnetApi } from '../../../studio/tailnet'
 
 export type NewAgentLaunch = AgentComposerConfirm & {
   /** The agent's startup prompt. Empty means "start with nothing typed". */
@@ -759,7 +760,7 @@ export default function NewAgentPanel({
     if (!remoteCapable) return
     let cancelled = false
     const load = (): void => {
-      void window.api
+      void tailnetApi
         .meshListConnections()
         .then((connections) => {
           if (cancelled) return
@@ -789,15 +790,12 @@ export default function NewAgentPanel({
     }
     load()
     // A machine paired or forgotten while the door is open shows up live.
-    const unsubscribe =
-      typeof window.api.onMeshEvent === 'function'
-        ? window.api.onMeshEvent((event) => {
-            if (event.kind === 'machine-paired' || event.kind === 'machine-forgotten') load()
-          })
-        : null
+    const unsubscribe = tailnetApi.onMeshEvent((event) => {
+      if (event.kind === 'machine-paired' || event.kind === 'machine-forgotten') load()
+    })
     return () => {
       cancelled = true
-      unsubscribe?.()
+      unsubscribe()
     }
   }, [remoteCapable])
   // Chat agent is offered only where the workspace can host one; without it

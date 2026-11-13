@@ -6,6 +6,7 @@ import { windowChatServices } from '../panels/agentChat/windowChat'
 import { SettingsSectionTitle } from './SettingsAtoms'
 import { pairedApprovalRules, revokePairedApprovalRule } from '../../studio/pairedChats'
 import { environmentStudioAvailable } from '../../studio/environmentStudio'
+import { tailnetApi } from '../../studio/tailnet'
 
 export function ConversationApprovalSettings() {
   const [rules, setRules] = useState<ConversationApprovalRule[]>()
@@ -107,8 +108,8 @@ function PairedMachineApprovalRules() {
     return { connectionId: connection.id, machineName: connection.machineName, answer }
   }, [])
   const load = useCallback(async () => {
-    if (typeof window.api?.meshListConnections !== 'function' || !environmentStudioAvailable()) return
-    const connections = await window.api.meshListConnections().catch(() => [])
+    if (!environmentStudioAvailable()) return
+    const connections = await tailnetApi.meshListConnections().catch(() => [])
     setMachines(Array.isArray(connections) ? await Promise.all(connections.map(read)) : [])
   }, [read])
   useEffect(() => {

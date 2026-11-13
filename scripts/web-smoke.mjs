@@ -71,10 +71,6 @@ cpSync(webBundle, webRoot, { recursive: true })
 const KNOWN_BOOT_REFUSALS = new Set([
   'studio-server:status',
   'update:get-state',
-  'tailnet:get-status',
-  'tailnet:get-live-state',
-  'mesh:list-connections',
-  'mesh:get-live-state',
   'git:get-repository-identity',
   'pullRequest:listForWorkspaces',
   'git:get-repo-root',

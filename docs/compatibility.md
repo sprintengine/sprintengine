@@ -1425,6 +1425,31 @@ browser is paired by approval, or with `studio-server pair` on the machine.
 Same build on both ends: a web tab's 7 `web:devices:*` tunnel channels are gone,
 and so are its 3 `web:embeds:*` channels, which nothing called (embeds are made
 with `studio-server embed`).
+
+`tailnet` (2026-11-13) is who reaches a Studio over the tailnet, and the
+machines it drives: its listener (`tailnet.status`, `.liveState`,
+`.setEnabled`, `.setHttps`, `.offerPairing`, `.cancelPairing`,
+`.approvePairRequest`, `.denyPairRequest`, `.revokeDevice`,
+`.updateDeviceScopes`, `.forgetMachine`, `.resetMcpRegistrations`, `.peers`,
+`.shares`, `.share`, `.unshare`, and the `tailnet.changed` stream) and
+pairing with another machine (`mesh.connections`, `.liveState`, `.pair`,
+`.requestPairing`, `.cancelPairing`, `.forget`, and the `mesh.changed`
+stream). Every one is an owner's; the mutations carry a `commandId`. What
+lets someone in or answers a code says `window`: turning the listener or
+HTTPS on, offering or approving a pairing, widening a device, sharing a dev
+server, the peer sweep, and pairing with another machine, its live state and
+its stream (which carry the code read out to the person there). The rest, a
+web tab included, read or narrow: status, live connections and their stream,
+withdrawing an offer, declining, revoking, forgetting, MCP registrations, the
+shares and unsharing, the machines this one drives. Both streams deliver the
+state as it stands on subscribing (an event of kind `current`) and then each
+change, so a client that reconnects is current again. An approval from a
+window is the only one that may let an MCP client's OAuth sign-in in, as the
+IPC-only approval was. The agents' local-socket `tailnet.*` tools are
+unchanged. Same build on both ends: the window's 17 `tailnet:*` IPC channels,
+the 6 `mesh:*` pairing channels and the `mesh:event` push are gone;
+`remote:open-requested` stays, the shell's push that opens the Remote
+popover.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

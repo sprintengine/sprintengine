@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { isWindowVisible } from '../../../../utils/windowActivity'
 import { EMPTY_TAILNET_SHARE_STATUS, type TailnetShareStatus } from '../../../../../../shared/tailnet-share'
+import { tailnetApi } from '../../../../studio/tailnet'
+import { clientSupports } from '../../../../clientCapabilities'
 
 // Which of this machine's dev servers are published on the tailnet.
 //
@@ -11,7 +13,9 @@ import { EMPTY_TAILNET_SHARE_STATUS, type TailnetShareStatus } from '../../../..
 // attached to the result so a share and the list it changed can never disagree.
 //
 // Polled only alongside the local-server poll on the start page — the same
-// "only while someone is looking at it" rule, for the same reason.
+// "only while someone is looking at it" rule, for the same reason. Only in
+// Studio's own window: sharing a port is a window's (`tailnet.share`), so a
+// browser tab is shown nothing to share.
 
 export type TailnetShares = {
   status: TailnetShareStatus
@@ -32,14 +36,14 @@ export function useTailnetShares(active: boolean, pollMs: number): TailnetShares
   const generation = useRef(0)
 
   useEffect(() => {
-    if (!active) return
+    if (!active || !clientSupports('tailnet-admin')) return
     let cancelled = false
     let timer: number | null = null
     const poll = async () => {
       if (isWindowVisible()) {
         const mine = ++generation.current
         try {
-          const next = await window.api.tailnetShareStatus()
+          const next = await tailnetApi.tailnetShareStatus()
           if (!cancelled && generation.current === mine) setStatus(next)
         } catch {
           if (!cancelled && generation.current === mine) setStatus(EMPTY_TAILNET_SHARE_STATUS)
@@ -66,7 +70,7 @@ export function useTailnetShares(active: boolean, pollMs: number): TailnetShares
   const share = useCallback(async (localPort: number) => {
     setBusyPort(localPort)
     try {
-      const result = await window.api.tailnetSharePort(localPort)
+      const result = await tailnetApi.tailnetSharePort(localPort)
       generation.current += 1
       setStatus(result.status)
       return result.ok
@@ -85,7 +89,7 @@ export function useTailnetShares(active: boolean, pollMs: number): TailnetShares
       if (servePort === null) return { ok: true, message: '' }
       setBusyPort(localPort)
       try {
-        const result = await window.api.tailnetUnsharePort(servePort)
+        const result = await tailnetApi.tailnetUnsharePort(servePort)
         generation.current += 1
         setStatus(result.status)
         return result.ok ? { ok: true, message: '' } : { ok: false, message: result.message }

@@ -2,6 +2,7 @@ import React from 'react'
 
 import type { TailnetScope } from '../../../../shared/tailnet'
 import { showToast } from '../../store/toastStore'
+import { tailnetApi } from '../../studio/tailnet'
 
 // Answering a pair request, in one place: the code normaliser and the IPC
 // round trip with its inline-mismatch rule. Two surfaces answer — the full card
@@ -62,7 +63,7 @@ export function usePairRequestAnswer(requestId: string): PairRequestAnswer {
       setBusy(kind)
       try {
         if (kind === 'allow') {
-          const result = await window.api.tailnetApprovePairRequest(requestId, scopes, code)
+          const result = await tailnetApi.tailnetApprovePairRequest(requestId, scopes, code)
           if (!result.ok) {
             if (result.code === 'code_mismatch') {
               // Inline, beside the field, in the words main used: the person
@@ -76,7 +77,7 @@ export function usePairRequestAnswer(requestId: string): PairRequestAnswer {
             // leave a person who pressed Allow believing they had paired.
             showToast({ tone: 'error', title: 'Could not approve the pair request', description: result.message })
           }
-        } else await window.api.tailnetDenyPairRequest(requestId)
+        } else await tailnetApi.tailnetDenyPairRequest(requestId)
         // The push channel clears the surface everywhere; nothing to do locally.
       } catch (error) {
         showToast({

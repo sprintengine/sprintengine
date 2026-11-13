@@ -1,12 +1,6 @@
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 
 import {
-  MESH_FORGET_CHANNEL,
-  MESH_GET_LIVE_STATE_CHANNEL,
-  MESH_LIST_CONNECTIONS_CHANNEL,
-  MESH_CANCEL_PAIRING_CHANNEL,
-  MESH_PAIR_CHANNEL,
-  MESH_REQUEST_PAIRING_CHANNEL,
   meshConversationFrameChannel,
   MESH_CONVERSATION_CANCEL_SIDE_QUESTION_CHANNEL,
   MESH_CONVERSATION_COMMAND_CHANNEL,
@@ -38,13 +32,12 @@ import type { AutomationService } from '../automation/automation-service'
 import { asRecord } from '../../shared/records'
 import { boundConversationPage, conversationWireFrame } from '../../server/conversation-stream-shaping'
 
-// The window's door onto the Mesh.
+// The window's door onto chats on the machines this one drives.
 //
-// IPC-only, exactly like the tailnet configuration channels: no MCP tool
-// reaches any of this, so neither a local agent nor a paired remote device can
-// make this machine pair with a third one, enumerate what it is paired with, or
-// follow a conversation somewhere else. Pairing another machine is a decision a
-// person makes at this keyboard.
+// No MCP tool reaches any of this, so neither a local agent nor a paired
+// remote device can follow a conversation somewhere else. Pairing with
+// another machine, listing and forgetting them are the Studio protocol's
+// (`mesh.*`), served to Studio's own windows.
 //
 // A followed conversation is owned by the WINDOW that followed it. A window
 // that closes or reloads has no pane left to paint, so its follows end with it
@@ -70,33 +63,6 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
     event.sender.once('destroyed', () => releaseSender(event.sender.id))
   }
 
-  ipcMain.handle(MESH_LIST_CONNECTIONS_CHANNEL, () => service.mesh().listConnections())
-  // The initial read behind `mesh:event`: the requests waiting and each
-  // machine's last reachability, so a reloaded window starts where it was.
-  ipcMain.handle(MESH_GET_LIVE_STATE_CHANNEL, () => service.mesh().getLiveState())
-  ipcMain.handle(MESH_PAIR_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input)
-    return service.mesh().pair({ pairingUrl: record?.pairingUrl, deviceName: record?.deviceName })
-  })
-  // Asking a machine to pair, and polling the answer. Like every other
-  // `mesh:*` channel this is IPC-only: pairing WITH a machine stays a decision
-  // made at this keyboard, reachable from no MCP tool.
-  ipcMain.handle(MESH_REQUEST_PAIRING_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input)
-    return service.mesh().requestPairing({
-      endpoint: record?.endpoint,
-      deviceName: record?.deviceName,
-      // Both halves of a both-ways pairing carry their own set: `scopes` is
-      // what this machine asks to do THERE, `reverseScopes` what that machine
-      // may do here. Absent leaves each end's own default in force.
-      scopes: record?.scopes,
-      reverseScopes: record?.reverseScopes,
-    })
-  })
-  ipcMain.handle(MESH_CANCEL_PAIRING_CHANNEL, (_event, requestId: unknown) => {
-    service.mesh().cancelPairing(requestId)
-  })
-  ipcMain.handle(MESH_FORGET_CHANNEL, (_event, connectionId: unknown) => service.mesh().forget(connectionId))
   // A remote chat's Create PR, a step per channel as the shell's own are:
   // every one runs on the chat's machine, in its checkout there.
   ipcMain.handle(MESH_CONVERSATION_PULL_REQUEST_STATE_CHANNEL, (_event, input: unknown) =>

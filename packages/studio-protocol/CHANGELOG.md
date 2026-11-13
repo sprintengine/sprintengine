@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added (who reaches a Studio over the tailnet, and the machines it drives)
+
+- **`tailnet.status`, `.liveState`, `.setEnabled`, `.setHttps`,
+  `.offerPairing`, `.cancelPairing`, `.approvePairRequest`,
+  `.denyPairRequest`, `.revokeDevice`, `.updateDeviceScopes`,
+  `.forgetMachine`, `.resetMcpRegistrations`, `.peers`, `.shares`, `.share`,
+  `.unshare`, `mesh.connections`, `.liveState`, `.pair`, `.requestPairing`,
+  `.cancelPairing`, `.forget`, and the `tailnet.changed` and `mesh.changed`
+  streams** (`tailnet.ts`, capability `tailnet`). Each is an owner's; the
+  mutations carry a `commandId`. What lets someone in or answers a code is
+  `window`. The shapes move into the package (`tailnet-types.ts`), with a new
+  `current` event kind on each stream for the state as it stands on
+  subscribing.
+
 ### Removed (permissions no method needs)
 
 - **`access:read` and `access:write`** leave `STUDIO_PERMISSIONS`: who may

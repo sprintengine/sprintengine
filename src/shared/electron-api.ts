@@ -105,26 +105,10 @@ export type {
 } from './skills'
 import type { StudioWindowTicket } from './studio-connection'
 import type {
-  TailnetApprovePairRequestView,
-  TailnetLiveState,
-  TailnetPairingOfferView,
-  TailnetPushPayload,
-  TailnetRemoteStatus,
-  TailnetScope,
-} from './tailnet'
-import type { TailnetPeerScan } from './tailnet-peers'
-import type { TailnetShareResult, TailnetShareStatus } from './tailnet-share'
-import type {
-  MeshConnection,
   MeshPullRequestCreateResult,
   MeshPullRequestDraftResult,
   MeshPullRequestPushResult,
   MeshPullRequestStateResult,
-  MeshEvent,
-  MeshLiveState,
-  MeshPairResult,
-  MeshRequestPairingResult,
-  TailnetForgetMachineResult,
   MeshChangedFileResult,
   MeshChangesDiffResult,
   MeshConversationCommand,
@@ -494,121 +478,17 @@ export type ElectronApi = {
    * again before every connection, reconnects included.
    */
   studioWindowTicket: () => Promise<StudioWindowTicket>
-  // Tailnet remote control: the opt-in listener that serves the same
-  // gateway surface to paired devices on the Tailscale network. Configuration
-  // only — it never carries a tool call, and no MCP tool can reach it, so an
-  // agent cannot pair a device or widen its own reach.
-  tailnetGetStatus: () => Promise<TailnetRemoteStatus>
-  tailnetSetEnabled: (enabled: boolean) => Promise<TailnetRemoteStatus>
-  /** Mint a one-time pairing code. The token comes back once and is never re-readable. */
-  tailnetOfferPairing: (scopes?: TailnetScope[]) => Promise<TailnetPairingOfferView>
-  tailnetCancelPairing: () => Promise<TailnetRemoteStatus>
-  tailnetRevokeDevice: (deviceId: string) => Promise<TailnetRemoteStatus>
-  /**
-   * Replace a paired device's scopes from this machine (remote-settings-rebuild).
-   *
-   * The set REPLACES what the device had, so this narrows as readily as it
-   * widens. Rejects when no device holds that id: a row acting on something
-   * that is no longer there must hear about it rather than report success.
-   */
-  tailnetUpdateDeviceScopes: (deviceId: string, scopes: TailnetScope[]) => Promise<TailnetRemoteStatus>
-  /**
-   * Publish the tailnet listener over HTTPS with Tailscale Serve, or stop
-   * (`https://<node>.<tailnet>.ts.net`), for MCP clients that sign in with
-   * OAuth. The outcome is in the answer's `mcp.https`.
-   */
-  tailnetSetHttps: (enabled: boolean) => Promise<TailnetRemoteStatus>
-  /** Forget every MCP client registration; each client registers afresh before it next signs in. */
-  tailnetResetMcpRegistrations: () => Promise<TailnetRemoteStatus>
-  /**
-   * End a pairing in BOTH directions: revoke the device that machine holds
-   * here, and forget the credential this machine holds there. Either id may be
-   * omitted, and an id that is already gone is not an error — the result says
-   * which halves were actually ended.
-   */
-  tailnetForgetMachine: (input: { deviceId?: string; connectionId?: string }) => Promise<TailnetForgetMachineResult>
-  /**
-   * Answer a pairing request from another machine. The scopes are the
-   * ones chosen here, and this is the only surface that can grant the terminal
-   * tier to a person rather than to an agent on the local socket.
-   */
-  tailnetApprovePairRequest: (
-    id: string,
-    scopes: TailnetScope[],
-    code: string,
-  ) => Promise<TailnetApprovePairRequestView>
-  tailnetDenyPairRequest: (id: string) => Promise<TailnetRemoteStatus>
   /**
    * Main asks the chrome to open the Remote popover — the click on an OS
    * notification about a pair request or a machine's answer lands here.
    */
   onRemoteOpenRequested: (cb: () => void) => () => void
-  /**
-   * Machines on this tailnet, and which of them answer as a Studio.
-   *
-   * A read of the local Tailscale daemon plus a probe of each peer's public
-   * health endpoint. Works with this machine's own listener off: finding
-   * somewhere to connect to is independent of being connectable.
-   */
-  tailnetListPeers: () => Promise<TailnetPeerScan>
-  /**
-   * Live connections behind the push channel (remote-sessions-ux): which
-   * devices hold a socket right now and which terminals they are attached to.
-   * Read once as the initial snapshot; every `onTailnetEvent` payload carries
-   * a fresher one.
-   */
-  tailnetGetLiveState: () => Promise<TailnetLiveState>
-  /**
-   * Subscribe to tailnet changes pushed from main — listener up/down, pair
-   * requests arriving or resolving, devices connecting, terminal drive
-   * begin/end. Returns the unsubscribe.
-   */
-  onTailnetEvent: (cb: (payload: TailnetPushPayload) => void) => () => void
-  /**
-   * Dev servers this machine publishes on the tailnet (`tailscale serve`), so a
-   * phone or another desktop can open one. Read on demand: serve config lives
-   * in tailscaled and outlives this process, so these never return a
-   * remembered list.
-   */
-  tailnetShareStatus: () => Promise<TailnetShareStatus>
-  tailnetSharePort: (localPort: number) => Promise<TailnetShareResult>
-  tailnetUnsharePort: (servePort: number) => Promise<TailnetShareResult>
-  // The Mesh: the machines this Studio is paired WITH, and the chats
-  // it follows on them. Main owns the device tokens and every outbound socket —
-  // the listener refuses any request carrying an `Origin`, which a renderer
-  // always sends, so this is the only route a window has.
-  meshListConnections: () => Promise<MeshConnection[]>
-  /** Redeem a pairing link from another machine's Settings → Remote. */
-  meshPair: (pairingUrl: string) => Promise<MeshPairResult>
-  /**
-   * Ask a machine to pair, for someone there to approve, then poll it.
-   * Main holds the collect secret, so a window can neither dial the peer nor
-   * take the token the approval mints.
-   */
-  meshRequestPairing: (
-    endpoint: string,
-    options?: {
-      /** What to ask that machine to let THIS one do. The far end's default applies when omitted. */
-      scopes?: TailnetScope[]
-      /** What that machine may do HERE, granted in the same exchange. Omitted asks one way only. */
-      reverseScopes?: TailnetScope[]
-    },
-  ) => Promise<MeshRequestPairingResult>
-  meshCancelPairing: (requestId: string) => Promise<void>
-  /** Drop this machine's credential for a peer. Revoking the device THERE is the other half. */
-  meshForget: (connectionId: string) => Promise<MeshConnection[]>
-  /**
-   * The pairing requests still waiting and each machine's last reachability —
-   * the initial read behind `onMeshEvent`, carrying the same revision the
-   * events do.
-   */
-  meshGetLiveState: () => Promise<MeshLiveState>
-  /**
-   * Whole-app mesh lifecycle (remote-sessions-ux): a machine paired or
-   * forgotten, answering or not, a pairing wait moving on — broadcast to every
-   * window, credential-free. Returns the unsubscribe.
-   */
-  onMeshEvent: (cb: (event: MeshEvent) => void) => () => void
+  // The Mesh: the chats this Studio follows on the machines it is paired
+  // WITH. Main owns the device tokens and every outbound socket — the
+  // listener refuses any request carrying an `Origin`, which a renderer
+  // always sends, so this is the only route a window has. Pairing, listing
+  // and forgetting machines, and this machine's own listener, are the Studio
+  // protocol's (`tailnet.*`, `mesh.*`; `src/renderer/src/studio/tailnet.ts`).
   /**
    * Conversations on a paired machine, the same calls the local session API
    * makes with the machine named in the key. Main follows over the tailnet
