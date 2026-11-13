@@ -53,7 +53,13 @@ went to 5 when `sendTurn` took `composedAt` and `confirmedStale` and could
 answer `stale` (2026-10-20), and to 6 when it gained `handoffConversation`, a
 chat handed off to a fresh session, and `sendTurn`'s `origin` the reason
 `auto-compact` (2026-10-21), and to 7 when it gained `messageSubagent`, and
-`sendTurn` `subagentMessage` and the `origin` reason `agent-message` (2026-11-07).
+`sendTurn` `subagentMessage` and the `origin` reason `agent-message` (2026-11-07),
+and to 8 when `backend.sign-in` left it for the Studio protocol's `providers.signIn*`
+(2026-11-13). The front door gained a third purpose, `ws` (2026-11-13): a window's
+socket, which main's loopback route for that machine carries to the server's own
+window listener. The proof says only that the stream came through the front door;
+the listener admits it by the ticket it minted, as it admits a local window. An
+older server tree refuses the purpose in words, and the desktop updates it.
 
 A session's summary, which that wire pushes with every chat event, carries
 three optional clocks a reader must not count on: `lastTurnEndedAt` (when
@@ -1192,6 +1198,21 @@ is `null`, and nothing waits on one. A pull request's `watch` gains an
 optional `waiting` (the words) while a read fails for want of `gh` there; an
 older client reads past it. Additive: an older Studio answers `unknown_method`
 and leaves the capability out.
+`window-tickets` (2026-11-13) adds `environment.windowTicket` (`{ windowKey, origin }`
+→ `{ token, path }`): a ticket for one connection of a window of the desktop that
+holds this Studio, minted by its window listener (good once, for thirty seconds,
+from that origin, to `Host: 127.0.0.1`). It is the first method held to the
+desktop's own shell connection (`shell` in the table, beside `owner`): an
+owner's web tab and a paired app are refused `owner_required`, and no device
+reaches it. Served by a WSL distribution's or an SSH machine's Studio, which a
+desktop reaches over its front door.
+`provider-sign-in-flow` (2026-11-13) adds `providers.signInStart`, `.signInPaste`,
+`.signInWait` and `.signInCancel`, each under a `commandId`: a CLI's own login on
+that machine with no terminal (decision R34), named by provider, never by a
+command line. They are an owner's (`settings:write`), and no device reaches them.
+Served where the desktop holds the machine's Studio over its front door. They
+replace the backend wire's `backend.sign-in`. Additive: an older Studio answers
+`unknown_method` and leaves both capabilities out.
 `chat-stores` (2026-11-12) is what a Studio keeps beside its chats, for every
 chat at once: `usageLimits.get` with `usageLimits.changed`,
 `usageLimitResumes.get`, `.update` (one chat's notice) and `.setAuto` (the

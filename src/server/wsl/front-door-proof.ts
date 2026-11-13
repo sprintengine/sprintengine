@@ -39,8 +39,14 @@ export type FrontDoorPurpose =
   | 'backend'
   /** A Studio protocol connection, as the shell role (the toolsets the front door offers). */
   | 'studio'
+  /**
+   * A window's socket, carried by the desktop's loopback route to the server's
+   * window listener, which admits it only with a ticket it minted: the proof
+   * says the stream came through the front door, never who the window is.
+   */
+  | 'ws'
 
-const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['backend', 'studio'])
+const PURPOSES: ReadonlySet<string> = new Set<FrontDoorPurpose>(['backend', 'studio', 'ws'])
 const NONCE_BYTES = 32
 // A preamble line is a few hundred bytes; anything longer is not one.
 const MAX_PREAMBLE_LINE = 4_096

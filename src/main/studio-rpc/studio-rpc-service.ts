@@ -58,6 +58,7 @@ import type { StudioCanvasDomain } from '../../server/canvas/canvas-domain'
 import type { StudioChatStores } from '../../server/chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../../server/core/studio-agent-skills'
 import type { StudioUpdates } from '../../server/update/studio-updates'
+import type { SignIns } from '../../server/machine/machine-sign-in'
 import type { StudioModules } from '../../server/rpc/studio-modules'
 import type {
   StudioAuditEntry,
@@ -109,6 +110,13 @@ export type StudioRpcService = {
   windowTicket(request: StudioWindowTicketRequest): Promise<StudioWindowTicket>
   /** A window has gone (closed, crashed, navigated away): its tickets are void and its connections end. */
   revokeWindow(windowKey: string): void
+  /**
+   * Serve a socket the desktop that holds this Studio carried here through its
+   * front door (`ws`) as a connection to the window listener: what is admitted
+   * is what that listener admits, a ticket it minted (`environment.windowTicket`),
+   * from the origin and to the host it was minted for.
+   */
+  acceptWindowStream(stream: Duplex): void
   /**
    * Serve the desktop's shell over a port main holds the other end of, when
    * the server runs in a process of its own (phase 6, 6.3): the shell role,
@@ -199,6 +207,8 @@ export type StudioRpcServiceOptions = {
   discovery?: StudioDiscovery
   /** What this machine has and lacks for its background work (`environment-readiness`). */
   readiness?: () => Promise<StudioEnvironmentReadiness>
+  /** A CLI's login on this machine with no terminal (`provider-sign-in-flow`): a server a desktop reaches over its front door. */
+  signIns?: () => Promise<SignIns>
   /** The terminals on this machine (`terminals`): given only where this process holds the terminal runtime. */
   terminals?: StudioTerminals
   /** The CLIs on this machine (`agent-runtimes`): the core's, which every Studio gives (studio-rpc.ts). */
@@ -424,6 +434,19 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.readiness ? { readiness: options.readiness } : {}),
+      ...(options.signIns ? { signIns: options.signIns } : {}),
+      // The desktop that holds a WSL or SSH machine's Studio connects its
+      // windows to this one's listener through its front door (`ws`), asking
+      // for each connection's ticket here, over its own shell connection.
+      ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'
+        ? {
+            windowTickets: async (request: StudioWindowTicketRequest) => {
+              const minted = await windowListener().ticket(request)
+              const url = new URL(minted.url)
+              return { token: minted.token, path: `${url.pathname}${url.search}` }
+            },
+          }
+        : {}),
       ...(options.terminals ? { terminals: options.terminals } : {}),
       ...(options.runtimes ? { runtimes: options.runtimes } : {}),
       ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
@@ -531,6 +554,9 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
     windowTicket: (request) => windowListener().ticket(request),
     revokeWindow(windowKey) {
       windows?.revokeWindow(windowKey)
+    },
+    acceptWindowStream(stream) {
+      windowListener().accept(stream)
     },
     connectShell(port) {
       const ticket = mintStudioTicket()

@@ -82,6 +82,19 @@ test('the bind guard admits the literal IPv4 loopback and nothing else', () => {
   }
 })
 
+test('a window socket comes through the door as its own purpose, proven like the others', async () => {
+  const admitted: Array<{ purpose: FrontDoorPurpose; stream: Duplex }> = []
+  const doors = await listeners(admitted)
+  const socket = await connectLoopback(doors.port!)
+  cleanups.push(() => socket.destroy())
+  const stream = await enterFrontDoor(socket, { token: TOKEN, purpose: 'ws' })
+  assert.equal(await readLine(stream), '{"after":"admitted"}')
+  assert.deepEqual(
+    admitted.map((entry) => entry.purpose),
+    ['ws'],
+  )
+})
+
 test('both ends prove themselves over loopback TCP, and the first bytes after the proof arrive intact', async () => {
   const admitted: Array<{ purpose: FrontDoorPurpose; stream: Duplex }> = []
   const doors = await listeners(admitted)

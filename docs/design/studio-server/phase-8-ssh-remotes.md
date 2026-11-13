@@ -1361,8 +1361,10 @@ real relay, with a decoy local folder of the same plain path).
 
 Signing a chat's CLI in on an SSH machine, with no terminal (decision R34,
 `src/server/machine/machine-sign-in.ts`): the chat's Sign in runs the CLI's
-own login on the machine as a plain child of its server (`backend.sign-in`
-on the wire: start, paste, wait, cancel), read for its link, its one-time
+own login on the machine as a plain child of its server (the Studio
+protocol's `providers.signInStart`, `.signInPaste`, `.signInWait` and
+`.signInCancel` on main's owner connection; until 2026-11-13 it was
+`backend.sign-in` on the backend wire), read for its link, its one-time
 code and whether it waits for a pasted code. Read from each CLI's output
 with no terminal attached: `codex login --device-auth` (a device code),
 `cursor-agent login` with `NO_OPEN_BROWSER` (a link it polls), `claude auth

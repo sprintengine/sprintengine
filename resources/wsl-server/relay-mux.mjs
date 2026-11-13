@@ -470,7 +470,7 @@ export function serveRelay({ input, output, runDir, via = 'ssh-relay', client = 
     onOpen: async (request, stream) => {
       if (request.kind === 'owner') {
         const purpose = request.purpose
-        if (purpose !== 'backend' && purpose !== 'studio')
+        if (purpose !== 'backend' && purpose !== 'studio' && purpose !== 'ws')
           throw refusal('refused', 'That is not a purpose the server serves.')
         const record = readServerRecord(runDir)
         if (!record || typeof record.socketPath !== 'string')

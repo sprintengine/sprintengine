@@ -352,6 +352,12 @@ export type StudioRequestContext = {
   browser?: boolean
   /** The window this connection is one of Studio's own for, as main names it; absent for any other client. */
   windowKey?: string
+  /**
+   * The desktop's own shell, over a port or a front-door stream its main
+   * process holds: the one caller of what the table holds to the shell
+   * (`shell`), such as a ticket for one of its windows.
+   */
+  shell?: boolean
 }
 
 export type StudioAuthOutcome = { ok: true; grant: StudioGrant; pairingToken?: string } | { ok: false; message: string }

@@ -70,6 +70,13 @@ export type StudioMethodSpec = {
    * paired client by its scope.
    */
   owner?: string
+  /**
+   * Only the desktop's own shell connection may call it, and why: it hands out
+   * what admits a window of Studio's own. Always with `owner`, which every
+   * other non-owner refusal reads; this refuses the owner's other clients too
+   * (a web tab, a paired app).
+   */
+  shell?: string
 }
 
 /**

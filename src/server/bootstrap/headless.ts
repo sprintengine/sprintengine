@@ -45,6 +45,8 @@ export function headlessServerOptions(
     // A detached server is an SSH machine's: one the desktop reaches over SSH.
     hostKind: envelope.wsl ? 'wsl' : envelope.detached ? 'ssh' : 'local',
     updates: headlessUpdates(envelope),
+    // Where the desktop holds this server, its people have no terminal here.
+    ...(envelope.wsl || envelope.detached ? { signIns: signInsLoaded } : {}),
     log,
   }
 }
@@ -120,8 +122,13 @@ export function serveFrontDoorPurpose(
         channel === BACKGROUND_WORK_MACHINE_CHANNEL
           ? Promise.resolve(backgroundWorkOf(server.core))
           : machineChannels(channel, args),
-      signIns: signInsLoaded,
     })
+    return
+  }
+  // A window's socket: the window listener admits it, or not, by the ticket
+  // it minted for it.
+  if (purpose === 'ws') {
+    server.rpc.acceptWindowStream(stream)
     return
   }
   // The ticket goes first, on its own line, before the Studio protocol starts:

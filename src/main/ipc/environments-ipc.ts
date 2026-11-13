@@ -13,7 +13,16 @@ import { assertAppSender } from './ipc-sender'
 // machine are kept here, never in a window.
 
 /** Who buys a window's ticket for a route: the owner of that kind of route. */
-export type EnvironmentTicketIssuer = (route: EnvironmentRoute, origin: string) => Promise<EnvironmentTicketResult>
+export type EnvironmentTicketIssuer = (
+  route: EnvironmentRoute,
+  origin: string,
+  /**
+   * The window asking, as the machine's listener keeps it: its connections
+   * are counted per window there, so one window reconnecting never ends
+   * another's.
+   */
+  windowKey: string,
+) => Promise<EnvironmentTicketResult>
 
 export function registerEnvironmentsIpc(
   ipcMain: IpcMain,
@@ -41,7 +50,7 @@ export function registerEnvironmentsIpc(
       if (!origin) return { ok: false, code: 'unauthorized', message: 'This window has no origin Studio can admit.' }
       const route = parseEnvironmentRoute((payload as { route?: unknown } | null)?.route)
       if (!route) return { ok: false, code: 'unknown_route', message: 'That is not a machine this desktop knows.' }
-      return deps.ticket(route, origin)
+      return deps.ticket(route, origin, `window-${event.sender.id}`)
     },
   )
   const off = deps.environments.onChanged(() => deps.broadcast(ENVIRONMENT_CHANNELS.changed))

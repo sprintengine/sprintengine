@@ -1662,7 +1662,14 @@ export function createAppServices(
     // A window's own client of a paired desktop's Studio (design-lane-on-protocol
     // D1): the mesh keeps the device token and buys each connection's ticket.
     // The other kinds of route are reached through this machine's server for now.
-    ticket: async (route, origin) => {
+    ticket: async (route, origin, windowKey) => {
+      // An SSH machine's own window listener mints it, asked over main's
+      // owner connection; the window's socket goes to main's loopback route.
+      if (route.kind === 'ssh') {
+        if (!ssh)
+          return { ok: false, code: 'unsupported_route', message: 'SSH machines are not turned on in this app.' }
+        return ssh.environments.windowTicket(route.machine, { windowKey, origin })
+      }
       if (route.kind !== 'tailnet')
         return { ok: false, code: 'unsupported_route', message: 'This window reaches that machine through this one.' }
       if (automationService) return automationService.mesh().windowTicket(route.connection, origin)

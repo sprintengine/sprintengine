@@ -23,6 +23,11 @@ import { wslProfileId } from '../../hosts/wsl-helper-runtime'
 import { cliForConversationProvider } from '../../../shared/conversation-harness'
 import { SIGN_IN_FLOWS } from '../../../server/machine/machine-sign-in'
 import {
+  STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
+  STUDIO_WINDOW_TICKETS_CAPABILITY,
+} from '../../../../packages/studio-protocol/src/handshake'
+import { createLoopbackRoute, type LoopbackRoute } from '../environment-route'
+import {
   ASKPASS_TIMEOUT_MS,
   createAskpassBroker,
   marksRemotePrompts,
@@ -152,6 +157,8 @@ export function signInOverSsh(cli: string, saved: Pick<SavedSshEnvironment, 'des
 export class SshEnvironments {
   private saved: SavedSshEnvironment[]
   private readonly machines = new Map<string, SshEnvironment>()
+  /** Each machine's loopback route for the windows' sockets, made on the first ticket and kept for the run. */
+  private readonly routes = new Map<string, LoopbackRoute>()
   private broker: Promise<AskpassBroker> | null = null
   /** The broker once it is listening; an interactive spawn waits for it (`askpass()`). */
   private brokerReady: AskpassBroker | null = null
@@ -515,6 +522,69 @@ export class SshEnvironments {
   }
 
   /**
+   * A ticket for one connection of a window to the machine's Studio
+   * (design-wsl-ssh-direct): minted by that server's own window listener,
+   * asked for over main's owner connection, and answered with this computer's
+   * loopback route to it in place of the machine's own port. Connects in the
+   * background (never a prompt) when it must; refuses in words, with the
+   * client runtime's codes, when it cannot.
+   */
+  async windowTicket(
+    id: string,
+    request: { windowKey: string; origin: string },
+  ): Promise<{ ok: true; url: string; token: string } | { ok: false; code: string; message: string }> {
+    const saved = this.get(id)
+    if (!saved)
+      return {
+        ok: false,
+        code: 'unknown_route',
+        message: 'That SSH machine is no longer saved in Settings › Machines.',
+      }
+    if (!this.connection(id) && !(await this.connectQuietly(id, 20_000)))
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: `${saved.label} is not connected. Connect it in Settings › Machines.`,
+      }
+    const connection = this.connection(id)
+    if (!connection) return { ok: false, code: 'unavailable', message: `${saved.label} is not connected.` }
+    if (!connection.owner.supports(STUDIO_WINDOW_TICKETS_CAPABILITY))
+      return {
+        ok: false,
+        code: 'outdated',
+        message: `The Studio server on ${saved.label} is older than this app. Update it in Settings › Machines.`,
+      }
+    try {
+      const minted = await connection.owner.request('environment.windowTicket', request)
+      const port = await this.routeFor(id).port()
+      return { ok: true, url: `ws://127.0.0.1:${port}${minted.path}`, token: minted.token }
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: `${saved.label} did not give this window a ticket: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+  }
+
+  /** The machine's loopback route: each socket onto a fresh `ws` stream of the session up now. */
+  private routeFor(id: string): LoopbackRoute {
+    let route = this.routes.get(id)
+    if (!route) {
+      route = createLoopbackRoute({
+        open: async () => {
+          const connection = this.connection(id)
+          if (!connection) throw new Error(`${this.get(id)?.label ?? 'That SSH machine'} is not connected.`)
+          return connection.open('ws')
+        },
+        log: this.log,
+      })
+      this.routes.set(id, route)
+    }
+    return route
+  }
+
+  /**
    * Sign a chat's CLI in on the machine, with no terminal (decision R34):
    * the login runs on the machine, its link and code are shown in a dialog,
    * a pasted code goes back. A CLI with no such flow is answered with the
@@ -536,10 +606,26 @@ export class SshEnvironments {
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
     }
-    const started = await connection.backend.signIn({ op: 'start', cli })
+    const owner = connection.owner
+    if (!owner.supports(STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY))
+      return { ok: false, message: `The Studio server on ${saved.label} cannot sign a CLI in this way. ${over}` }
+    // Each step under its own command id, so a step is carried out once.
+    const step = (): string => randomUUID()
+    const started = await owner.request('providers.signInStart', { commandId: step(), providerId })
     if (!started.ok) return { ok: false, message: `${started.message} ${over}` }
+    const cancel = () =>
+      owner.request('providers.signInCancel', { commandId: step(), id: started.id }).catch(() => undefined)
     const finished = new AbortController()
-    const waiting = connection.backend.signIn({ op: 'wait', id: started.id }).finally(() => finished.abort())
+    const waiting = owner
+      .request('providers.signInWait', { commandId: step(), id: started.id })
+      .then(
+        (done) => done,
+        (error: unknown) => ({
+          ok: false as const,
+          message: `The connection to ${saved.label} was lost during sign-in${error instanceof Error && error.message ? ` (${error.message})` : ''}.`,
+        }),
+      )
+      .finally(() => finished.abort())
     const answer = await this.ask(
       {
         kind: 'sign-in',
@@ -551,16 +637,15 @@ export class SshEnvironments {
     )
     if (finished.signal.aborted) return waiting
     if (answer === null || (started.paste && !answer.trim())) {
-      // Nobody waits on the login any more: a wire that drops now is not an unhandled rejection.
-      waiting.catch(() => undefined)
-      await connection.backend.signIn({ op: 'cancel', id: started.id }).catch(() => undefined)
+      await cancel()
       return { ok: false, message: answer === null ? 'Sign-in cancelled.' : 'No code was pasted, so sign-in stopped.' }
     }
     if (started.paste) {
-      const pasted = await connection.backend.signIn({ op: 'paste', id: started.id, code: answer })
+      const pasted = await owner
+        .request('providers.signInPaste', { commandId: step(), id: started.id, code: answer })
+        .catch(() => ({ ok: false }))
       if (!pasted.ok) {
-        waiting.catch(() => undefined)
-        await connection.backend.signIn({ op: 'cancel', id: started.id }).catch(() => undefined)
+        await cancel()
         return { ok: false, message: 'That code could not be sent to the sign-in. Try signing in again.' }
       }
     }
@@ -604,6 +689,8 @@ export class SshEnvironments {
     }
     machine?.disconnect()
     this.machines.delete(id)
+    void this.routes.get(id)?.close()
+    this.routes.delete(id)
     this.saved = this.saved.filter((entry) => entry.id !== id)
     this.persist()
     if (saved) await this.deps.onForget?.(saved, { clearBrowsingData: options.clearBrowsingData === true })
@@ -644,6 +731,8 @@ export class SshEnvironments {
   /** At quit: let every session go. The managed servers keep running (decision R32). */
   shutdown(): void {
     for (const machine of this.machines.values()) machine.disconnect()
+    for (const route of this.routes.values()) void route.close()
+    this.routes.clear()
     for (const prompt of this.prompts.values()) prompt.resolve(null)
     void this.broker?.then(
       (broker) => broker.close(),

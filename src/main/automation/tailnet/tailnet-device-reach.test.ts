@@ -227,6 +227,14 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
   (
     [
       [
+        'a window’s ticket, the shell’s alone: it admits a window of Studio’s own, shown what an owner is shown',
+        ['environment.windowTicket'],
+      ],
+      [
+        'a CLI’s login on the machine, an owner’s: it runs the login there and keeps its credential',
+        ['providers.signInStart', 'providers.signInPaste', 'providers.signInWait', 'providers.signInCancel'],
+      ],
+      [
         'terminals: an owner’s by declaration, never a device’s (owner ruling)',
         [
           'terminal.list',
