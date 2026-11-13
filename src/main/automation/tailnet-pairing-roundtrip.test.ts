@@ -248,7 +248,6 @@ test('tailnet-pairing-roundtrip', async () => {
         'workspace-extensions',
         'new-chat-skills',
         'chat-create-pull-request',
-        'chat-unwatch-pull-request',
         'mcp-oauth',
       ])
 
@@ -437,7 +436,6 @@ test('tailnet-pairing-roundtrip', async () => {
         'workspace-extensions',
         'new-chat-skills',
         'chat-create-pull-request',
-        'chat-unwatch-pull-request',
         'mcp-oauth',
       ])
 
