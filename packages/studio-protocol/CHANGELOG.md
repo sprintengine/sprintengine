@@ -259,7 +259,7 @@
   folder an id stands for: a library entry's (`designSystem.attach`,
   `.forget`) and a local source's (every method naming a `sourceId`). One
   outside them is refused `not_found`. The design library, the source list and
-  an update check (`skillSources.checkUpdates`) show such a client only those. The skill, design system and card shapes
+  an update check (`skillSources.checkUpdates`, and each `skillSources.updated` push) show such a client only those. The skill, design system and card shapes
   move here from the desktop app.
 
 - **What a Studio's agents are set up with** (`src/agent-setup.ts`), under

@@ -16,6 +16,7 @@ import {
   type StudioModuleBacklogAnswer,
   type StudioErrorCode,
   type FileWatchEvent,
+  type SkillSourceUpdateCheck,
   type StudioGrant,
   type StudioHandlers,
   type StudioMethod,
@@ -51,7 +52,7 @@ import type { StudioAgentSettings } from '../agent-settings/agent-settings-domai
 import { createStudioAgentSettingsHandlers } from './studio-agent-settings'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
-import { createStudioAgentSkillsHandlers } from './studio-agent-skills'
+import { createStudioAgentSkillsHandlers, skillSourceUpdatesShown } from './studio-agent-skills'
 import { createStudioAgentSetupHandlers } from './studio-agent-setup'
 import type { ModuleHostServices } from '../../main/module-host/main-host'
 import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
@@ -160,6 +161,11 @@ export type StudioRpcRouter = {
   ): Promise<StudioFileSystemWatch | { ok: false; code: 'not_found' | 'unavailable'; message: string }>
   /** Follow a checkout for `git.checkoutChanged`, held to what the asker may name. */
   followCheckout: ReturnType<typeof createStudioGitHandlers>['followCheckout']
+  /** A `skillSources.updated` push as this asker is shown it: the local sources it could name, as `checkUpdates` answers. */
+  skillSourceUpdatesFor(
+    check: SkillSourceUpdateCheck,
+    asking: { grant: StudioGrant; context: StudioRequestContext },
+  ): Promise<SkillSourceUpdateCheck>
   /** Git's other streams, where this Studio serves git. */
   readonly git: StudioGit | null
   /** The worktree pool's streams, where this Studio serves its worktrees. */
@@ -2120,6 +2126,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     },
     watchPath: (params, asking, listener) => fileSystem.watch(params, asking, listener),
     followCheckout: (checkoutPath, asking, listener) => gitRouting.followCheckout(checkoutPath, asking, listener),
+    skillSourceUpdatesFor: (check, asking) => skillSourceUpdatesShown(check, (folder) => mayName(folder, asking)),
     git: options.git ?? null,
     worktrees: options.worktrees ?? null,
     close: () => {

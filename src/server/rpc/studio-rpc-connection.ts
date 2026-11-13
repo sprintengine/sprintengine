@@ -1111,6 +1111,14 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     id: string,
     topic: T,
     listen: ((deliver: (payload: StudioTopicPayload<T>) => void) => () => void) | null,
+    /**
+     * What this client is shown of a payload, decided with its grant at the
+     * moment it goes out. Payloads still go out in the order they came.
+     */
+    shownTo?: (
+      payload: StudioTopicPayload<T>,
+      asking: { grant: StudioGrant; context: StudioRequestContext },
+    ) => Promise<StudioTopicPayload<T>>,
   ): void {
     if (!listen) {
       subscriptionFailed(id, 'unavailable', `This Studio does not serve ${topic}.`)
@@ -1118,15 +1126,29 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     }
     const subscription: Subscription = { id, topic, key: null, replay: null, handle: null }
     subscriptions.set(id, subscription)
+    const current = () => state !== 'closed' && subscriptions.get(id) === subscription
+    let queue: Promise<void> = Promise.resolve()
     const stop = listen((payload) => {
-      if (state === 'closed' || subscriptions.get(id) !== subscription) return
+      if (!current()) return
       const grant = liveGrant()
       if (!grant) return
       if (!authorizeStudioTopic(grant, topic).ok) {
         refreshGrant()
         return
       }
-      push(topic, id, payload)
+      if (!shownTo) {
+        push(topic, id, payload)
+        return
+      }
+      queue = queue
+        .then(() => shownTo(payload, { grant, context }))
+        .then(
+          (shown) => {
+            if (current() && stillGranted(topic)) push(topic, id, shown)
+          },
+          // A payload this client could not be shown safely is not shown at all.
+          () => undefined,
+        )
     })
     subscription.handle = { dispose: stop }
   }
@@ -1491,7 +1513,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'usageLimitResumes.changed', options.chatStores?.onUsageLimitResumesChanged ?? null),
     'backlog.changed': (id) => subscribeFeed(id, 'backlog.changed', options.phoneReads?.backlog.onChanged ?? null),
     'skillSources.updated': (id) =>
-      subscribeFeed(id, 'skillSources.updated', options.agentSkills?.onSourcesUpdated ?? null),
+      // Held to the local sources this client could name, as `skillSources.checkUpdates` is.
+      subscribeFeed(id, 'skillSources.updated', options.agentSkills?.onSourcesUpdated ?? null, (check, asking) =>
+        options.router.skillSourceUpdatesFor(check, asking),
+      ),
     'schedules.changed': (id) => subscribeFeed(id, 'schedules.changed', options.schedules?.onChanged ?? null),
     'canvas.board': subscribeCanvasBoard,
     'canvas.openRequests': subscribeCanvasOpenRequests,
