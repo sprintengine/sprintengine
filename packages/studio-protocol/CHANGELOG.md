@@ -33,6 +33,18 @@
   paired app holding `modules:operate` could replace it; it is now refused
   `owner_required`. A window on another machine never sent it.
 
+### Added (the desktop's own schedules)
+
+- **`schedules.markSeen`, `.pauseAll` and `.resumeAll`** (`schedules.ts`,
+  capability `schedules`, `workspaces:operate`, each under a `commandId`): a
+  failed run looked at, and every schedule paused (until a time, or until
+  resumed) or resumed at once.
+- **A schedule by folder.** `schedules.create` and `.update` take, in place of
+  `workspaceId`, an owner's `workspaceRoot` with its `hostId` (`local` or
+  `wsl:<distro>`); a non-owner naming a folder is refused `owner_required`.
+  `skills` and `mcpServers` entries may be `{ id, name }` as well as an id
+  (`StudioScheduleAttachment`).
+
 ### Added (Create PR on the chat's Studio)
 
 - **`pullRequests.createState`, `.draft`, `.draftCancel`, `.push` and

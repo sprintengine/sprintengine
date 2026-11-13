@@ -70,6 +70,9 @@ function fakeSchedules(calls: Call[]): StudioSchedulesDomain {
       calls.push({ method: 'remove', params: id })
       return { ok: true, value: { removed: id } }
     },
+    markSeen: (id) => one('markSeen', id),
+    pauseAll: async () => ({ ok: true, value: { pausedAll: { since: 1, until: null } } }),
+    resumeAll: async () => ({ ok: true, value: { pausedAll: null } }),
     onChanged: () => () => undefined,
   }
 }

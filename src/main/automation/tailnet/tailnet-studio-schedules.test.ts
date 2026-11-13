@@ -6,6 +6,9 @@ import { afterEach, test } from 'vitest'
 
 import type { StudioSchedules } from '../../../../packages/studio-protocol/src/public'
 import { createStudioSchedulesDomain } from '../../../server/schedules/schedules-domain'
+import { studioWindowGrant } from '../../../server/rpc/studio-frame-port'
+import { createStudioRpcRouter } from '../../../server/rpc/studio-rpc-router'
+import { createFakeBackend } from '../../../server/rpc/studio-rpc.test-helper'
 import { schedulerWithRunRecords } from '../../scheduled-agents/scheduled-runs.test-helper'
 import { createScheduledAgentsService } from '../../scheduled-agents/service'
 import { createScheduledAgentsStore } from '../../scheduled-agents/store'
@@ -23,7 +26,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 
-async function rig(): Promise<DeviceRig & { runs: string[] }> {
+async function domain() {
   const dir = mkdtempSync(join(tmpdir(), 'tailnet-schedules-'))
   let ids = 0
   const store = createScheduledAgentsStore({
@@ -52,13 +55,18 @@ async function rig(): Promise<DeviceRig & { runs: string[] }> {
           : null,
     defaultCli: () => 'claude-code',
   })
-  const r = await deviceRig({ schedules })
-  cleanups.push(async () => {
+  cleanups.push(() => {
     scheduler.stop()
-    await r.dispose()
     rmSync(dir, { recursive: true, force: true })
   })
-  return Object.assign(r, { runs })
+  return { schedules, runs, store }
+}
+
+async function rig() {
+  const { schedules, runs, store } = await domain()
+  const r: DeviceRig = await deviceRig({ schedules })
+  cleanups.push(() => r.dispose())
+  return Object.assign(r, { runs, store })
 }
 
 const DRAFT = { workspaceId: 'ws-1', prompt: 'Triage new issues', cron: '0 9 * * 1-5', timezone: 'UTC' }
@@ -146,4 +154,75 @@ test('a pairing without a workspace scope reaches no schedule, and a removed one
   assert.equal(await refusalOf(client.rpc['schedules.create']({ ...DRAFT, commandId: 'c-2' })), 'scope_required')
   r.devices.revokeDevice(phone.id)
   await until(() => client.state !== 'open', 'the revoked connection to close')
+})
+
+test('an operating pairing pauses and resumes them all and marks a failure seen; it names no folder', async () => {
+  const r = await rig()
+  const client = await r.client(r.pair(['workspace:operate']).token)
+  const { schedule } = await client.rpc['schedules.create']({ ...DRAFT, commandId: 'c-1' })
+
+  const until = Date.now() + 60 * 60_000
+  const paused = await client.rpc['schedules.pauseAll']({ until, commandId: 'c-2' })
+  assert.equal(paused.pausedAll.until, until)
+  assert.deepEqual((await client.rpc['schedules.list']({})).pausedAll, paused.pausedAll)
+  assert.equal(
+    await refusalOf(client.rpc['schedules.pauseAll']({ until: Date.now() - 1_000, commandId: 'c-3' })),
+    'invalid_params',
+    'a time already gone',
+  )
+  assert.deepEqual(await client.rpc['schedules.resumeAll']({ commandId: 'c-4' }), { pausedAll: null })
+  assert.equal((await client.rpc['schedules.list']({})).pausedAll, null)
+
+  await r.store.recordRun(schedule.id, { at: Date.now(), ok: false, message: 'Codex is not signed in.' })
+  const seen = await client.rpc['schedules.markSeen']({ id: schedule.id, commandId: 'c-5' })
+  assert.equal(typeof seen.schedule.lastFailureSeenAt, 'number')
+  assert.equal(await refusalOf(client.rpc['schedules.markSeen']({ id: 'gone', commandId: 'c-6' })), 'not_found')
+
+  // A folder is the owner's to name, however much else the pairing holds.
+  const { workspaceId: _workspaceId, ...noWorkspace } = DRAFT
+  assert.equal(
+    await refusalOf(
+      client.rpc['schedules.create']({ ...noWorkspace, workspaceRoot: '/Users/dev/app', commandId: 'c-7' }),
+    ),
+    'owner_required',
+  )
+})
+
+test("the desktop's own window schedules by folder and machine, and its chips keep their names", async () => {
+  const { schedules } = await domain()
+  const router = createStudioRpcRouter({ backend: createFakeBackend(), info: () => ({}) as never, schedules })
+  cleanups.push(() => router.close())
+  const window = { connectionId: 'w', slot: 1, ownWindow: true }
+  const ask = (method: string, params: unknown) =>
+    router.handle(studioWindowGrant(), method as never, params as never, window as never) as Promise<{
+      ok: boolean
+      result?: { schedule: StudioSchedules['schedules'][number] }
+      error?: { code: string }
+    }>
+  const { workspaceId: _workspaceId, ...noWorkspace } = DRAFT
+  const made = await ask('schedules.create', {
+    ...noWorkspace,
+    workspaceRoot: '/Users/dev/notes',
+    hostId: 'wsl:Ubuntu',
+    skills: [{ id: 'skill-1', name: 'Release notes' }],
+    mcpServers: ['server-1'],
+    commandId: 'w-1',
+  })
+  assert.equal(made.ok, true, JSON.stringify(made))
+  const schedule = made.result!.schedule
+  assert.equal(schedule.folderPath, '/Users/dev/notes')
+  assert.equal(schedule.hostId, 'wsl:Ubuntu')
+  assert.deepEqual(schedule.skills, [{ id: 'skill-1', name: 'Release notes' }])
+  assert.deepEqual(schedule.mcpServers, [{ id: 'server-1', name: 'server-1' }])
+
+  // An edit by id alone keeps the name it was saved with.
+  const edited = await ask('schedules.update', { id: schedule.id, skills: ['skill-1'], commandId: 'w-2' })
+  assert.deepEqual(edited.result!.schedule.skills, [{ id: 'skill-1', name: 'Release notes' }])
+
+  for (const params of [
+    { ...DRAFT, workspaceRoot: '/Users/dev/notes', commandId: 'w-3' },
+    { ...noWorkspace, workspaceRoot: '/Users/dev/notes', hostId: 'ssh:build-box', commandId: 'w-4' },
+    { ...DRAFT, hostId: 'local', commandId: 'w-5' },
+  ])
+    assert.equal((await ask('schedules.create', params)).error?.code, 'invalid_params', JSON.stringify(params))
 })

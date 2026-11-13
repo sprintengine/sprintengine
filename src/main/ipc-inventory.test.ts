@@ -179,7 +179,7 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   extensions: 0,
   'paired-machines': 26,
   access: 44,
-  workspaces: 30,
+  workspaces: 17,
   'web-tab': 6,
 }
 
@@ -256,7 +256,6 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
     workspaceBackup: anything(),
     terminalHandoff: anything(),
     assertAppSender: () => undefined,
-    scheduledAgents: () => null,
   }
 }
 

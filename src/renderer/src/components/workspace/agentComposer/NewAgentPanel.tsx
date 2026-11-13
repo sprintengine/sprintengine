@@ -166,6 +166,7 @@ import { preloadAgentPanelChunks } from '../../panels/agentPanelChunks'
 import { filesApi } from '../../../studio/files'
 import { gitApi } from '../../../studio/git'
 import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
+import { schedulesApi } from '../../../studio/schedules'
 
 export type NewAgentLaunch = AgentComposerConfirm & {
   /** The agent's startup prompt. Empty means "start with nothing typed". */
@@ -1572,7 +1573,7 @@ export default function NewAgentPanel({
   React.useEffect(() => {
     // A paired machine keeps its own record of what was seen there.
     if (editingId && lastRunFailure && !editingRemote) {
-      void window.api.markScheduledAgentFailureSeen(editingId).catch(() => {})
+      void schedulesApi.markScheduledAgentFailureSeen(editingId).catch(() => {})
     }
     // Once, on open: seeing it here is what the card's "Failed" was waiting for.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1769,8 +1770,8 @@ export default function NewAgentPanel({
     setScheduleBusy(true)
     try {
       const result = editing
-        ? await window.api.updateScheduledAgent(editing.id, draftRecord)
-        : await window.api.createScheduledAgent(draftRecord)
+        ? await schedulesApi.updateScheduledAgent(editing.id, draftRecord)
+        : await schedulesApi.createScheduledAgent(draftRecord)
       if (!result.ok) {
         showToast({ tone: 'error', title: editing ? 'Not saved' : 'Not scheduled', description: result.message })
         return
@@ -1806,7 +1807,7 @@ export default function NewAgentPanel({
       announceRemoteScheduledChange(editingRemote.connectionId)
       return
     }
-    const result = await window.api.runScheduledAgentNow(editing.id).catch((error: unknown) => ({
+    const result = await schedulesApi.runScheduledAgentNow(editing.id).catch((error: unknown) => ({
       ok: false as const,
       message: error instanceof Error ? error.message : String(error),
     }))

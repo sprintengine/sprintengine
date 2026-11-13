@@ -64,17 +64,6 @@ const SERVER_IPC_CHANNEL_TABLE = {
   'mesh:request-pairing': {},
   // The Schedules window's (registered with the server's domains, refused
   // while scheduled agents is off).
-  'scheduled-agents:create': {},
-  'scheduled-agents:list': { retry: 'once' },
-  'scheduled-agents:mark-seen': {},
-  'scheduled-agents:pause': {},
-  'scheduled-agents:pause-all': {},
-  'scheduled-agents:pause-state': { retry: 'once' },
-  'scheduled-agents:remove': {},
-  'scheduled-agents:resume': {},
-  'scheduled-agents:resume-all': {},
-  'scheduled-agents:run-now': {},
-  'scheduled-agents:update': {},
   'studio-local-apps:cancel-offer': {},
   'studio-local-apps:offer': {},
   'studio-local-apps:revoke': {},

@@ -1246,6 +1246,15 @@ phone and a paired desktop reach a machine's schedules only this way: the
 `scheduled-agents` and `scheduled-agents-edit` tailnet capabilities, and the
 devices' use of the `schedule.*` gateway tools, are gone (agents keep the
 tools, which follow the same rules).
+`schedules.markSeen`, `.pauseAll` (`until`, or null for until resumed) and
+`.resumeAll` (2026-11-13) join them on `workspaces:operate`: a failed run looked
+at, and every schedule paused or resumed at once. A draft may name, in place of
+`workspaceId`, a folder (`workspaceRoot`) and its machine on that computer
+(`hostId`, `local` or `wsl:<distro>`), which only an owner may; and its `skills`
+and `mcpServers` may carry `{ id, name }`, the name kept for the editor's chips.
+The desktop's own windows reach their machine's schedules only this way: the
+13 `scheduled-agents:*` IPC channels are gone. Additive for a client: an older
+Studio answers the new methods `unknown_method`.
 `chat-lifecycle` (2026-11-13) is a chat's record beyond its rest, by the
 chat's `workspaceId`: `conversation.markUnread`, `.snooze` (`until`, or null
 to wake), `.highlight` (`starred`, `color`), `.setAutoSettle`,

@@ -251,6 +251,7 @@ import {
 } from './sidebar/contextMenus'
 import { cancelNextMiddleButtonRelease } from '../../utils/middleButtonRelease'
 import { isImeKey } from '../../utils/imeKey'
+import { schedulesApi } from '../../studio/schedules'
 
 export { TerminalLineView } from './sidebar/TerminalLineView'
 
@@ -524,7 +525,7 @@ function WorkspaceSidebar({
   // the background as every run is, and it runs whether or not the schedule is
   // paused — it was asked for.
   const runScheduledAgentNow = useCallback((agent: ScheduledAgentView) => {
-    void window.api
+    void schedulesApi
       .runScheduledAgentNow(agent.id)
       .then((result) => {
         const failure = !result.ok ? result.message : !result.run.ok ? result.run.message : null
@@ -540,7 +541,7 @@ function WorkspaceSidebar({
   // and said so. No Undo on the toast — the toast spec keeps its action row for
   // its two named consumers, and an undo racing a dismissal timer is not one.
   const closeScheduledAgent = useCallback((agent: ScheduledAgentView) => {
-    void window.api
+    void schedulesApi
       .removeScheduledAgent(agent.id)
       .then((removed) => {
         showToast(

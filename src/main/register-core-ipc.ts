@@ -225,7 +225,6 @@ export function registerCoreIpc(
           workspaceBackup: workspaceBackupService,
           terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
           assertAppSender,
-          scheduledAgents: () => services.scheduledAgents(),
         })
       : // The server registers them, and disposes its own command lists.
         { conversationCommands: { dispose: async () => undefined } }

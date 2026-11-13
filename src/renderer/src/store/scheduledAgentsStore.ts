@@ -1,5 +1,5 @@
 // The scheduled agents, as every surface in this window reads them: one fetch,
-// then main's broadcast after every change — a write from any window, an
+// then the Studio's `schedules.changed` after every change — a write from any window, an
 // extension or an agent, and each run's outcome. Main owns the list; this is
 // its mirror. Beside it, the same for the pause of every scheduled agent at
 // once, which main says with every change to the list.
@@ -7,6 +7,7 @@
 import { useSyncExternalStore } from 'react'
 
 import type { ScheduledAgentView, ScheduledAgentsPause } from '../../../shared/scheduled-agents'
+import { schedulesApi } from '../studio/schedules'
 
 const EMPTY: ScheduledAgentView[] = []
 let agents: ScheduledAgentView[] = EMPTY
@@ -37,10 +38,10 @@ function publishPause(next: unknown): void {
 function start(): void {
   if (started) return
   started = true
-  const bridge = typeof window === 'undefined' ? undefined : (window.api as Partial<Window['api']> | undefined)
-  // An older preload, or a test that stubs none of this: no scheduled agents.
-  if (typeof bridge?.listScheduledAgents !== 'function') return
-  bridge.onScheduledAgentsChanged?.((next) => {
+  // The Studio's `schedules.list` and `schedules.changed`, over the window's
+  // own connection. A window with no Studio hears nothing and lists none.
+  const bridge = schedulesApi
+  bridge.onScheduledAgentsChanged((next) => {
     broadcastSeen = true
     publish(next)
   })
@@ -50,12 +51,12 @@ function start(): void {
       if (!broadcastSeen) publish(listed)
     })
     .catch(() => undefined)
-  bridge.onScheduledAgentsPauseChanged?.((next) => {
+  bridge.onScheduledAgentsPauseChanged((next) => {
     pauseBroadcastSeen = true
     publishPause(next)
   })
   void bridge
-    .getScheduledAgentsPause?.()
+    .getScheduledAgentsPause()
     .then((pause) => {
       if (!pauseBroadcastSeen) publishPause(pause)
     })

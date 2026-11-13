@@ -88,5 +88,23 @@ export function createStudioSchedulesHandlers<A extends Asking>(
             answer(await schedules.remove(id), (gone) => gone),
           )
         : unserved('schedules.delete'),
+    'schedules.markSeen': ({ commandId, id }, asking) =>
+      schedules
+        ? options.kept('schedules.markSeen', asking, commandId, async () =>
+            answer(await schedules.markSeen(id), schedule),
+          )
+        : unserved('schedules.markSeen'),
+    'schedules.pauseAll': ({ commandId, until }, asking) =>
+      schedules
+        ? options.kept('schedules.pauseAll', asking, commandId, async () =>
+            answer(await schedules.pauseAll(until), (paused) => paused),
+          )
+        : unserved('schedules.pauseAll'),
+    'schedules.resumeAll': ({ commandId }, asking) =>
+      schedules
+        ? options.kept('schedules.resumeAll', asking, commandId, async () =>
+            answer(await schedules.resumeAll(), (resumed) => resumed),
+          )
+        : unserved('schedules.resumeAll'),
   }
 }

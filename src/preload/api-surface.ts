@@ -7,7 +7,6 @@ import { studioLocalAppsApi } from './api/studio-local-apps'
 import { studioConnectionApi } from './api/studio-connection'
 import { studioServerApi } from './api/studio-server'
 import { meshApi } from './api/mesh'
-import { scheduledAgentsApi } from './api/scheduled-agents'
 import { buildStampApi } from './api/build-stamp'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
@@ -64,7 +63,6 @@ export const apiModules = {
   ...studioConnectionApi,
   ...studioServerApi,
   ...meshApi,
-  ...scheduledAgentsApi,
   ...clipboardApi,
   ...chatExportApi,
   ...filesystemApi,
