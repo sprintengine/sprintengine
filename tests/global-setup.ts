@@ -34,8 +34,8 @@ function tempBase(): string {
 export default function setup(): () => Promise<void> {
   const root = mkdtempSync(join(tempBase(), 'se-'))
   process.env[RUN_TEMP_ENV] = root
-  // A run that starts outside every test file (a worker before its first file)
-  // already writes in the run's folder.
+  // What a worker writes outside every test file (before its first one) lands
+  // in the run's folder too.
   for (const name of ['TMPDIR', 'TMP', 'TEMP']) process.env[name] = root
 
   return async () => {
