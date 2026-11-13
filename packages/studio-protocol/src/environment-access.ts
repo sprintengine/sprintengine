@@ -1,5 +1,6 @@
 import { studioParams, studioParamsRefused, type StudioMethodTable } from './contract.js'
 import {
+  STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
@@ -53,6 +54,46 @@ export const STUDIO_RELAYED_DEVICE_SCOPES = [
 
 export type StudioRelayedDeviceScope = (typeof STUDIO_RELAYED_DEVICE_SCOPES)[number]
 
+/**
+ * The kinds of record a desktop hands over to the machine whose chats they
+ * concern (`environment.adopt`), in the order they are kept: a workspace
+ * first, so what names its chats finds them.
+ */
+export const STUDIO_ADOPTED_RECORD_KINDS = [
+  'workspace',
+  'schedule',
+  'scheduled-message',
+  'usage-limit-resume',
+  'pull-request',
+] as const
+
+export type StudioAdoptedRecordKind = (typeof STUDIO_ADOPTED_RECORD_KINDS)[number]
+
+/**
+ * One record handed over: its kind, its id there, the sha-256 of its body as
+ * canonical JSON (keys sorted, no spaces), and the body in the machine's own
+ * spelling of its paths. What each body holds is the record as the desktop's
+ * own store keeps it: a workspace record; a scheduled agent; a scheduled or
+ * held message; `{ workspaceId, agentId }` for a usage-limit resume to keep
+ * scheduled; `{ workspaceId, agentId, url, title?, watched? }` for a pull
+ * request a chat opened.
+ */
+export type StudioAdoptedRecord = {
+  kind: StudioAdoptedRecordKind
+  id: string
+  digest: string
+  body: Record<string, unknown>
+}
+
+/** What a hand-over came to: what the machine now keeps, and what it kept its own copy of instead, and why. */
+export type StudioAdoptResult = {
+  held: Array<{ kind: StudioAdoptedRecordKind; id: string }>
+  conflicts: Array<{ kind: StudioAdoptedRecordKind; id: string; reason: string }>
+}
+
+/** The most records one hand-over carries; a longer one is sent in parts under the same migration. */
+export const MAX_ADOPTED_RECORDS = 500
+
 /** A sign-in that started: its link, the code to type there, and whether a code is pasted back. */
 export type StudioSignInStarted =
   { ok: true; id: string; url: string; code: string | null; paste: boolean } | { ok: false; message: string }
@@ -84,6 +125,17 @@ export type StudioEnvironmentAccessMethodMap = {
     params: { deviceId: string; name: string; scopes: StudioRelayedDeviceScope[] }
     result: StudioWindowTicketGrant
   }
+  /**
+   * Keep records the desktop that holds this Studio kept for its chats, so
+   * they go on here with no desktop watching (design-environment-migration).
+   * Safe to repeat: a record already kept under the same digest is held
+   * again and nothing changes; one already here under another is left as
+   * this Studio has it and reported. Answered only for what is on disk.
+   */
+  'environment.adopt': {
+    params: { commandId: string; migrationId: string; records: StudioAdoptedRecord[] }
+    result: StudioAdoptResult
+  }
   /** Start the CLI's own login on this machine, for a provider whose CLI has one that needs no terminal. */
   'providers.signInStart': { params: { commandId: string; providerId: string }; result: StudioSignInStarted }
   /** Send the code the browser showed back to a sign-in that asked for one. */
@@ -106,6 +158,8 @@ const OWN_WINDOW =
   'It admits a window of Studio’s own, shown what an owner is shown, so only the desktop that holds this Studio asks.'
 const RELAYS = 'It admits a device the desktop that holds this Studio relays, so only that desktop asks.'
 const WINDOW_KEY = '"windowKey" names the window: 1 to 200 characters.'
+const ADOPTS =
+  'It writes this Studio’s own stores with the records the desktop that holds it kept, so only that desktop asks.'
 const SIGNS_IN = 'It runs a CLI’s login on this machine and keeps its credential here.'
 
 const signIn = {
@@ -161,6 +215,47 @@ export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironm
         name: value.name,
         scopes: STUDIO_RELAYED_DEVICE_SCOPES.filter((scope) => scopes.includes(scope)),
       })
+    },
+  },
+  'environment.adopt': {
+    scope: null,
+    mutation: true,
+    capability: STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
+    owner: ADOPTS,
+    shell: ADOPTS,
+    params: (value) => {
+      if (!commandId(value)) return studioParamsRefused(COMMAND_ID)
+      if (!(typeof value.migrationId === 'string' && /^[A-Za-z0-9_-]{1,128}$/u.test(value.migrationId)))
+        return studioParamsRefused('"migrationId" names the hand-over: 1 to 128 of [A-Za-z0-9_-].')
+      const given = value.records
+      if (!Array.isArray(given) || given.length === 0 || given.length > MAX_ADOPTED_RECORDS)
+        return studioParamsRefused(`"records" holds 1 to ${MAX_ADOPTED_RECORDS} records.`)
+      const kinds: readonly string[] = STUDIO_ADOPTED_RECORD_KINDS
+      const records: StudioAdoptedRecord[] = []
+      for (const entry of given) {
+        const record = entry as Record<string, unknown> | null
+        if (
+          !record ||
+          typeof record !== 'object' ||
+          typeof record.kind !== 'string' ||
+          !kinds.includes(record.kind) ||
+          !text(record.id, 200) ||
+          !(typeof record.digest === 'string' && /^[0-9a-f]{64}$/u.test(record.digest)) ||
+          !record.body ||
+          typeof record.body !== 'object' ||
+          Array.isArray(record.body)
+        )
+          return studioParamsRefused(
+            'Each record is { kind, id, digest, body }: a kind this Studio keeps, its id, the sha-256 of its body, and the body.',
+          )
+        records.push({
+          kind: record.kind as StudioAdoptedRecordKind,
+          id: record.id,
+          digest: record.digest,
+          body: record.body as Record<string, unknown>,
+        })
+      }
+      return studioParams({ commandId: value.commandId as string, migrationId: value.migrationId, records })
     },
   },
   'providers.signInStart': {

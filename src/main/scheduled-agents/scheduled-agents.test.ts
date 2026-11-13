@@ -964,3 +964,40 @@ test('the list says what a waiting schedule waits for, and Run now says it in wo
     file.cleanup()
   }
 })
+
+test('a scheduled agent another Studio kept is kept here under its own id, read as this store reads its file', async () => {
+  const file = tempFile()
+  try {
+    const store = createScheduledAgentsStore({ filePath: file.path, now: () => NOW, newId: () => 'sa-new' })
+    const scheduler = schedulerWithRunRecords({
+      list: () => store.list(),
+      run: async () => ({ at: NOW, ok: true, workspaceId: 'w' }),
+      recordRun: (entry, run) => store.recordRun(entry, run),
+      now: () => NOW,
+      setTimer: () => null,
+      clearTimer: () => undefined,
+    })
+    const service = createScheduledAgentsService({ store, scheduler, now: () => NOW })
+    const heard: number[] = []
+    service.onChanged((agents) => heard.push(agents.length))
+    const kept = agent({ id: 'sa-desktop', pausedAt: NOW - 1_000 })
+
+    assert.deepEqual(await service.adopt(kept), { ok: true })
+    assert.equal(service.get('sa-desktop')?.pausedAt, NOW - 1_000, 'as it was there, paused included')
+    assert.deepEqual(heard, [1])
+    const again = await service.adopt(kept)
+    assert.equal(again.ok ? null : again.reason, 'exists')
+    const broken = await service.adopt({ id: 'sa-broken', prompt: '' })
+    assert.equal(broken.ok ? null : broken.reason, 'invalid')
+
+    // On disk, as this store would have written it.
+    const reread = createScheduledAgentsStore({ filePath: file.path, now: () => NOW })
+    await reread.load()
+    assert.deepEqual(
+      reread.list().map((entry) => entry.id),
+      ['sa-desktop'],
+    )
+  } finally {
+    file.cleanup()
+  }
+})

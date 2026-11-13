@@ -38,6 +38,7 @@ import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioMachineCall } from './studio-file-system'
 import type { SignIns } from '../machine/machine-sign-in'
+import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioAccessDomain } from './studio-access'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
@@ -405,6 +406,7 @@ export async function startTestServer(
     modules?: StudioModules
     readiness?: () => Promise<StudioEnvironmentReadiness>
     environmentAccess?: StudioEnvironmentAccess
+    adoption?: EnvironmentAdoption
     signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
@@ -461,6 +463,7 @@ export async function startTestServer(
     ...(input.modules ? { modules: input.modules } : {}),
     ...(input.readiness ? { readiness: input.readiness } : {}),
     ...(input.environmentAccess ? { environmentAccess: input.environmentAccess } : {}),
+    ...(input.adoption ? { adoption: input.adoption } : {}),
     ...(input.signIns ? { signIns: input.signIns } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),

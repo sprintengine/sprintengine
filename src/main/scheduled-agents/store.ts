@@ -337,6 +337,34 @@ export function createScheduledAgentsStore(options: ScheduledAgentsStoreOptions)
 // entry is held back with a warning rather than scheduled in a shape nothing
 // else would have written, and written back as it was. Null for a file whose
 // shape is not this store's at all.
+/**
+ * One scheduled agent as this store writes it, read back as it reads its own
+ * file: the record another Studio kept, handed over (`environment.adopt`),
+ * is held to exactly what this one would have written.
+ */
+export function readStoredScheduledAgent(
+  entry: unknown,
+  now: number,
+): { ok: true; agent: ScheduledAgent } | { ok: false; message: string } {
+  if (!isRecord(entry) || typeof entry.id !== 'string' || !entry.id)
+    return { ok: false, message: 'A scheduled agent names its id.' }
+  const validated = validateScheduledAgentDraft(entry, now, { stored: true })
+  if (!validated.ok) return { ok: false, message: validated.message }
+  return {
+    ok: true,
+    agent: {
+      ...withoutEmptyLabels(validated.draft),
+      id: entry.id,
+      ownerModuleId: typeof entry.ownerModuleId === 'string' && entry.ownerModuleId ? entry.ownerModuleId : null,
+      createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : now,
+      updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : now,
+      lastRun: parseLastRun(entry.lastRun),
+      lastFailureSeenAt: typeof entry.lastFailureSeenAt === 'number' ? entry.lastFailureSeenAt : null,
+      ...(isInstant(entry.pausedAt) ? { pausedAt: entry.pausedAt } : {}),
+    },
+  }
+}
+
 function parseStoreFile(
   input: unknown,
   now: number,
@@ -356,22 +384,13 @@ function parseStoreFile(
       heldBack.push(entry)
       continue
     }
-    const validated = validateScheduledAgentDraft(entry, now, { stored: true })
-    if (!validated.ok) {
-      warn?.(`Scheduled agent "${entry.id}" was skipped: ${validated.message}`)
+    const read = readStoredScheduledAgent(entry, now)
+    if (!read.ok) {
+      warn?.(`Scheduled agent "${entry.id}" was skipped: ${read.message}`)
       heldBack.push(entry)
       continue
     }
-    agents.push({
-      ...withoutEmptyLabels(validated.draft),
-      id: entry.id,
-      ownerModuleId: typeof entry.ownerModuleId === 'string' && entry.ownerModuleId ? entry.ownerModuleId : null,
-      createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : now,
-      updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : now,
-      lastRun: parseLastRun(entry.lastRun),
-      lastFailureSeenAt: typeof entry.lastFailureSeenAt === 'number' ? entry.lastFailureSeenAt : null,
-      ...(isInstant(entry.pausedAt) ? { pausedAt: entry.pausedAt } : {}),
-    })
+    agents.push(read.agent)
   }
   return { agents, heldBack, pausedAll: parsePausedAll(input.pausedAll), runs: parseRuns(input.runs, warn) }
 }

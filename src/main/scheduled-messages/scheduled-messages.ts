@@ -233,6 +233,8 @@ export type ScheduledMessages = {
   state(): ScheduledMessagesState
   update(update: ScheduledMessageUpdate): ScheduledMessagesState
   onChanged(listener: (state: ScheduledMessagesState) => void): () => void
+  /** Settles once every change made so far is written to the file. */
+  flush(): Promise<void>
   /** Stop the timer and the listeners, and let the last write land. */
   dispose(): Promise<void>
 }
@@ -684,6 +686,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    flush: () => writing,
     async dispose() {
       running = false
       if (timer !== null) clearTimer(timer)
