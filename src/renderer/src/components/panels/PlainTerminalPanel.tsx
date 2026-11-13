@@ -52,6 +52,7 @@ import {
   terminalStatus,
   writeTerminal,
 } from '../../studio/terminals'
+import { filesApi } from '../../studio/files'
 
 interface Props {
   workspaceId: string
@@ -146,7 +147,7 @@ function PlainTerminalPanelOnThisComputer({
     let oscExecutionRoot: string | null = null
     const inspectPath = async (path: string): Promise<{ exists: boolean; isDirectory: boolean }> => {
       try {
-        const stat = await window.api.statPath(path)
+        const stat = await filesApi.statPath(path)
         return { exists: true, isDirectory: stat.isDirectory }
       } catch {
         return { exists: false, isDirectory: false }
@@ -463,7 +464,7 @@ function PlainTerminalPanelOnThisComputer({
         const resolved = await resolveWorkspaceTerminalCwd(
           workspaceWorktreeGitRoot,
           folderReadyPath,
-          window.api.pathExists,
+          filesApi.pathExists,
         )
         if (disposed) return
         const terminalCwd = cwdOverride ?? resolved.cwd ?? folderReadyPath ?? undefined

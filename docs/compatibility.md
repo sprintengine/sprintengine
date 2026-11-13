@@ -1209,6 +1209,20 @@ tools, which follow the same rules).
 A CLI's API key is a provider's key under the CLI's manifest id, read and set
 with `providers.secretStatus`, `.setSecret` and `.clearSecret`. The desktop's
 windows reach all of these only this way: their window IPC is gone.
+`file-system` (2026-11-12) is the files on a Studio's machine by path:
+`files.listDirectory`, `.readText`, `.exists`, `.checkWorkspaceFolder`,
+`.projectLogo`, `.projectIcon`, `.searchContent`, `.cancelContentSearch` and
+`.defaultWorkspaceParent` under `files:read`, the writes (`files.writeText`,
+`.saveDroppedImage`, `.createFile`, `.createDirectory`, `.rename`, `.copy`,
+`.move`, `.trash`) under `files:write`, and the `files.watchPath` stream. Every
+Studio's core serves it, with `files-mention` (`files.search`, `files.stat` by
+path, `files.readImage`, `files.repoRoot`), which no longer waits for the chat
+surface. A client that is not an owner names a path only where it really is
+inside the folders the Studio knows, and writes only inside its workspaces'
+folders. A Studio with no Trash on its machine refuses `files.trash` in words.
+Additive: an older Studio leaves the capability out, and the desktop's window
+says the Studio does not serve its files. The desktop's windows reach the
+files only this way: their window IPC is gone.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

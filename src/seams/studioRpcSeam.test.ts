@@ -18,6 +18,7 @@ import {
   STUDIO_CHAT_STORES_METHODS,
   STUDIO_AGENT_SKILLS_METHODS,
   STUDIO_SCHEDULES_METHODS,
+  STUDIO_FILE_SYSTEM_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -28,6 +29,7 @@ import {
   type StudioAgentSetupMethod,
   type StudioChatStoresMethod,
   type StudioAgentSkillsMethod,
+  type StudioFileSystemMethod,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -448,6 +450,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // drive (`schedules.ts`), called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_SCHEDULES_METHODS).map((method) => [method, 'request'])) as Record<
       StudioSchedulesMethod,
+      string
+    >),
+    // The files on a Studio's machine by path, which its own windows browse and edit, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_FILE_SYSTEM_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioFileSystemMethod,
       string
     >),
   }

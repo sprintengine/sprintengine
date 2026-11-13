@@ -33,14 +33,6 @@ function registerConversationIpc(
 ): void {
   const backend = createStudioChatBackend({
     conversation: service,
-    files: {
-      searchFiles: async () => ({ ok: true, results: [] }) as never,
-      cancelActiveFileSearch: () => undefined,
-      cancelAllFileSearches: () => undefined,
-      statPath: async () => ({ ok: false }) as never,
-      readImageDataUrl: async () => '',
-    },
-    repoRoot: async () => null,
     readableRoots: () => ['/'],
     hasReceipt: async () => false,
     commands: async () => ({}) as never,

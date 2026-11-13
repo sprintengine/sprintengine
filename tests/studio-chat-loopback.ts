@@ -3,6 +3,7 @@ import { createTicketAuthenticator, framePortStream, mintStudioTicket } from '..
 import { createStudioRpcServer, type StudioRpcServer } from '../src/server/rpc/studio-rpc-server'
 import type { StudioPullRequests } from '../src/server/pull-requests/pull-request-domain'
 import type { StudioConversationBackend } from '../src/server/rpc/studio-rpc-types'
+import type { StudioFileSystem } from '../src/server/files/studio-file-system'
 import type { ConversationSessionFrame } from '../src/shared/conversation-runtime'
 import { configureWindowStudio } from '../src/renderer/src/studio/windowStudioClient'
 import { createMemoryChannel, type MemoryChannelEnd } from './memory-channel'
@@ -195,23 +196,6 @@ function chatOver(api: Api) {
       onEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
       onLifecycleEvent: (listener) => subscribeTo(api, 'onConversationEvent', listener),
     },
-    files: {
-      searchFiles: (_slot, input) =>
-        call(api, 'searchFiles', input.rootPath, input.query, {
-          ...(input.limit === undefined ? {} : { limit: input.limit }),
-          ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
-          ...(input.channel === undefined ? {} : { channel: input.channel }),
-          ...(input.recentAt === undefined ? {} : { recentAt: input.recentAt }),
-        }),
-      cancelActiveFileSearch: (_slot, channel) => {
-        if (has(api, 'cancelFileSearch')) void call(api, 'cancelFileSearch', channel).catch(() => undefined)
-      },
-      cancelAllFileSearches: () => undefined,
-      statPath: (path) => call(api, 'statPath', path),
-      readImageDataUrl: (path) => call(api, 'readImageDataUrl', path),
-    },
-    repoRoot: (folderPath, hostId) =>
-      hostId === undefined ? call(api, 'getGitRepoRoot', folderPath) : call(api, 'getGitRepoRoot', folderPath, hostId),
     hasReceipt: receipts.has,
     // The chat suites name files on a stubbed disk; nothing here is confined but by the stubs.
     readableRoots: () => ['/'],
@@ -229,6 +213,58 @@ export type StudioLoopback = {
   drop(): void
   /** How many connections the window has opened so far. */
   connections(): number
+}
+
+/**
+ * The files by path over the same stubs, under the names the window's IPC
+ * once had (`searchFiles`, `statPath`, `readfile`, ...). The suites name files
+ * on a stubbed disk, so nothing here is confined but by the stubs.
+ */
+function fileSystemOver(api: Api): StudioFileSystem {
+  const quiet = (name: string, ...args: unknown[]) => {
+    if (has(api, name)) void call(api, name, ...args).catch(() => undefined)
+  }
+  return {
+    readableRoots: async () => ['/'],
+    writableRoots: async () => ['/'],
+    listDirectory: (path) => call(api, 'readdir', path),
+    readText: (path) => call(api, 'readfile', path),
+    readImage: (path) => call(api, 'readImageDataUrl', path),
+    exists: (path) => call(api, 'pathExists', path),
+    stat: (path) => call(api, 'statPath', path),
+    checkWorkspaceFolder: (path) => call(api, 'checkWorkspaceFolder', path),
+    projectLogo: (folderPath) =>
+      has(api, 'detectProjectLogo') ? call(api, 'detectProjectLogo', folderPath) : Promise.resolve(null),
+    projectIcon: (path) => call(api, 'readProjectIconFile', path),
+    repoRoot: (folderPath, hostId) =>
+      hostId === undefined ? call(api, 'getGitRepoRoot', folderPath) : call(api, 'getGitRepoRoot', folderPath, hostId),
+    searchFiles: (_slot, input) =>
+      call(api, 'searchFiles', input.rootPath, input.query, {
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+        ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
+        ...(input.channel === undefined ? {} : { channel: input.channel }),
+        ...(input.recentAt === undefined ? {} : { recentAt: input.recentAt }),
+      }),
+    cancelFileSearch: (_slot, channel) => quiet('cancelFileSearch', channel),
+    searchContent: (_slot, input) =>
+      call(api, 'searchContent', input.rootPath, input.query, input.limit === undefined ? {} : { limit: input.limit }),
+    cancelContentSearch: () => quiet('cancelContentSearch'),
+    releaseSlot: () => undefined,
+    defaultWorkspaceParent: () => null,
+    writeText: (path, text, roots) => call(api, 'writefile', path, text, { roots }),
+    saveDroppedImage: (input) => call(api, 'saveDroppedImage', input),
+    createFile: (parentPath, name) => call(api, 'createFile', parentPath, name),
+    createDirectory: (parentPath, name, existing) =>
+      call(api, existing === 'keep' ? 'ensureDir' : 'createDir', parentPath, name),
+    rename: (path, name) => call(api, 'renamePath', path, name),
+    copy: (path, toFolder, onConflict) =>
+      onConflict === 'rename'
+        ? call(api, 'copyPath', path, toFolder)
+        : call(api, 'copyPathInto', path, toFolder, { overwrite: onConflict === 'overwrite' }),
+    move: (path, toFolder) => call(api, 'movePath', path, toFolder),
+    trash: (path) => call(api, 'deletePath', path),
+    watch: async () => ({ ok: true, dispose: () => undefined }),
+  }
 }
 
 /**
@@ -250,6 +286,7 @@ export function installStudioLoopback(
     environmentId: options.environmentId ?? 'studio-loopback',
     backend: conversationsOver(api),
     chat: () => chat,
+    fileSystem: fileSystemOver(api),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     // The socket is never started; windows say hello with their tickets.
     authenticator: createTicketAuthenticator(mintStudioTicket()),

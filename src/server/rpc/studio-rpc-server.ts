@@ -10,6 +10,8 @@ import {
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
   STUDIO_CLIENT_TOOLS_CAPABILITY,
   STUDIO_BOARD_FILES_CAPABILITY,
+  STUDIO_FILE_SYSTEM_CAPABILITY,
+  STUDIO_FILES_CAPABILITY,
   STUDIO_PULL_REQUESTS_CAPABILITY,
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
   STUDIO_PULL_REQUEST_LINK_CAPABILITY,
@@ -37,6 +39,8 @@ import { createStudioRpcListener, type StudioRpcListener } from './studio-rpc-li
 import { createStudioRpcRouter } from './studio-rpc-router'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
+import type { StudioFileSystem } from '../files/studio-file-system'
+import type { StudioMachineCall } from './studio-file-system'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
@@ -149,6 +153,10 @@ export type StudioRpcServerOptions = {
   tools?: ClientToolRegistry
   /** Files under a workspace's roots, for owners. Advertised as `files-write` only when given. */
   files?: StudioFiles
+  /** The files on this machine by path. Advertised as `file-system` and `files-mention` only when given; every Studio's core gives them. */
+  fileSystem?: StudioFileSystem
+  /** An SSH machine's server, for an owner's `ssh://` path. */
+  machine?: StudioMachineCall
   /** The pull requests the conversations opened, for owners. Advertised as `pull-requests` and `pull-request-tool-calls` only when given. */
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners. Advertised as `local-servers` only when given. */
@@ -226,6 +234,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
       (capability) =>
         (capability !== STUDIO_CLIENT_TOOLS_CAPABILITY || options.tools !== undefined) &&
         (capability !== STUDIO_BOARD_FILES_CAPABILITY || options.files !== undefined) &&
+        ((capability !== STUDIO_FILE_SYSTEM_CAPABILITY && capability !== STUDIO_FILES_CAPABILITY) ||
+          options.fileSystem !== undefined) &&
         ((capability !== STUDIO_PULL_REQUESTS_CAPABILITY &&
           capability !== STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY &&
           capability !== STUDIO_PULL_REQUEST_LINK_CAPABILITY) ||
@@ -259,6 +269,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     audit: options.audit,
     ...(options.tools ? { tools: options.tools } : {}),
     ...(options.files ? { files: options.files } : {}),
+    ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
+    ...(options.machine ? { machine: options.machine } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),

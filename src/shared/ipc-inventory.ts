@@ -32,7 +32,6 @@ export type IpcServerArea =
   | 'access'
   | 'workspaces'
   | 'worktree-pool'
-  | 'files'
   | 'git'
   | 'web-tab'
 
@@ -83,8 +82,6 @@ const access = server('access')
 const workspaces = server('workspaces')
 /** Moves to the protocol: the worktree pool, its installs and settled chats. */
 const worktreePool = server('worktree-pool')
-/** Moves to the protocol: a project's files. */
-const files = server('files')
 /** Moves to the protocol: a project's git and GitHub. */
 const git = server('git')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
@@ -476,32 +473,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'worktree-pool:settings-get': worktreePool('invoke'),
   'worktree-pool:settings-set': worktreePool('invoke'),
   'worktree-pool:snapshot': worktreePool('invoke'),
-  'app:default-workspace-parent': files('invoke'),
-  'fs:cancel-content-search': files('invoke'),
-  'fs:cancel-file-search': files('invoke'),
-  'fs:check-workspace-folder': files('invoke'),
-  'fs:copy': files('invoke'),
-  'fs:copy-into': files('invoke'),
-  'fs:create-dir': files('invoke'),
-  'fs:create-file': files('invoke'),
-  'fs:delete': files('invoke'),
-  'fs:detect-project-logo': files('invoke'),
-  'fs:ensure-dir': files('invoke'),
-  'fs:move': files('invoke'),
-  'fs:path-exists': files('invoke'),
-  'fs:read-image-data-url': files('invoke'),
-  'fs:read-project-icon': files('invoke'),
-  'fs:readdir': files('invoke'),
-  'fs:readfile': files('invoke'),
-  'fs:rename': files('invoke'),
-  'fs:save-dropped-image': files('invoke'),
-  'fs:search-content': files('invoke'),
-  'fs:search-files': files('invoke'),
-  'fs:stat': files('invoke'),
-  'fs:watch-event:*': files('push'),
-  'fs:watch-start': files('invoke'),
-  'fs:watch-stop': files('invoke'),
-  'fs:writefile': files('invoke'),
   'git:changelists-changed': git('push'),
   'git:changelists:create': git('invoke'),
   'git:changelists:delete': git('invoke'),

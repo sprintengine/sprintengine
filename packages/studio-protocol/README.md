@@ -257,11 +257,11 @@ of its own.
 Staged pictures are the client's, counted against the connection that staged
 them, and expire unsent after ten minutes (a minute once that connection has
 closed and no other has taken them up); `uploads.discard` gives back what will
-not be sent. `files.stat` and `files.readImage` read only inside a workspace's
-folder or Studio's own stores of sent pictures and plans, and refuse a path
-that is not the plain spelling of where it really is; an owner's connection
-not held to known folders (Studio's own window) reads any path, as the
-window always could.
+not be sent. `files.stat` and `files.readImage`, and the rest of the files by
+path (`file-system`), read only inside a workspace's folder or Studio's own
+stores of sent pictures and plans, and refuse a path that is not the plain
+spelling of where it really is; an owner's connection not held to known
+folders (Studio's own window) reads any path, as the window always could.
 
 `{ t: 'sub', id, topic: 'conversation.commands' }` hears every command list a
 CLI reports from then on, one `push` frame each, nothing replayed.
@@ -291,10 +291,11 @@ both numbers. Features are asked about by capability (`studioPeerSupports`),
 never by version: `conversations`, `conversation-create`, `local-pairing`,
 and with the chat surface `conversation-folders`, `conversation-sessions`,
 `conversation-files`, `conversation-checkpoints`, `conversation-commands`,
-`providers`, `files-mention`, `workspaces`, `session-files` (it lets
+`providers`, `workspaces`, `session-files` (it lets
 `session.send` attach files by path), `conversation-handoff`,
 `session-controls`, `session-terminal-handoff`, `conversation-history`,
-`approval-rules` and `provider-settings` (`STUDIO_CHAT_CAPABILITIES`). The
+`approval-rules` and `provider-settings` (`STUDIO_CHAT_CAPABILITIES`);
+`files-mention` and `file-system` from every Studio's core. The
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's
 `docs/compatibility.md`.

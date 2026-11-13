@@ -32,6 +32,7 @@ import {
   type DesignRailStatusFilter,
 } from './designRailState'
 import { agentSkillsApi } from '../../../../studio/agentSkills'
+import { filesApi } from '../../../../studio/files'
 
 // The Design door (epic `design-door`, item 2002): design is a first-class
 // surface beside Extensions, Backlog and Automations. The
@@ -91,7 +92,7 @@ export default function DesignGlobalSurface(): JSX.Element {
     }
     let cancelled = false
     setStoredScopeExists(null)
-    void window.api
+    void filesApi
       .pathExists(storedScopePath)
       .then((exists) => {
         if (!cancelled) setStoredScopeExists(exists)

@@ -14,6 +14,8 @@ import { canvasBoardStoreDir } from '../../main/canvas/canvas-board-store'
 import { workspaceStoreRoot } from '../../main/workspace-store'
 import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
+import { createStudioFileSystem, type StudioFileSystemShell } from '../files/studio-file-system'
+import { knownFolders, workspaceFolders } from '../files/known-folders'
 import { createStudioDiscovery } from './studio-discovery'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
@@ -42,6 +44,8 @@ export function createStudioRpc(
     updates?: StudioUpdates
     /** What the modules of the kernel beside it say; a Studio without one leaves `module.*` unserved. */
     modules?: StudioModules
+    /** What the shell around this Studio adds to its files: the Trash and an image codec, on a desktop. */
+    fileSystemShell?: StudioFileSystemShell
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -100,6 +104,14 @@ export function createStudioRpc(
         return inStore ? { root: { kind: 'store', workspaceId: root.workspaceId }, path: inStore.join('/') } : null
       },
     }),
+    // The files on this machine by path, for every client: a non-owner's
+    // paths held to the folders Studio knows, its writes to the workspaces'.
+    fileSystem: createStudioFileSystem({
+      ...options.fileSystemShell,
+      readableRoots: () => knownFolders(core.workspaceRegistry, core.platform.paths.dataDir()),
+      writableRoots: () => workspaceFolders(core.workspaceRegistry),
+    }),
+    ...(core.sshMachineCall ? { machine: core.sshMachineCall } : {}),
     // What the conversations' branches have on GitHub, which every client
     // displays and none decides.
     pullRequests: core.pullRequests,

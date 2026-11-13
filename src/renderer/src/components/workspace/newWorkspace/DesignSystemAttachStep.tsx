@@ -8,6 +8,7 @@ import type { DesignSystemLibraryEntry } from '../../../../../shared/design-syst
 import { CardButton, GhostButton } from '../../ui'
 import { pathJoin } from '../../../utils/paths'
 import { agentSkillsApi } from '../../../studio/agentSkills'
+import { filesApi } from '../../../studio/files'
 
 // Attach-a-design-system section of the wizard's Advanced setup, shared by
 // every create flow. Follows the
@@ -114,7 +115,7 @@ export function DesignSystemAttachStep({
   useEffect(() => {
     let cancelled = false
     setExistingBundle(null)
-    window.api
+    filesApi
       .pathExists(pathJoin(workspaceRoot, DESIGN_SYSTEM_BUNDLE_DIRECTORY_NAME))
       .then((exists) => {
         if (!cancelled) setExistingBundle(exists)

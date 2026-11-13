@@ -31,6 +31,8 @@ import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
+import type { StudioFileSystem } from '../files/studio-file-system'
+import type { StudioMachineCall } from './studio-file-system'
 import type { StudioUpdates } from '../update/studio-updates'
 import type {
   StudioAuditEntry,
@@ -362,6 +364,8 @@ export async function startTestServer(
     chat?: StudioChatBackend
     tools?: ClientToolRegistry
     files?: StudioFiles
+    fileSystem?: StudioFileSystem
+    machine?: StudioMachineCall
     pullRequests?: StudioPullRequests
     localServers?: StudioLocalServers
     discovery?: StudioDiscovery
@@ -404,6 +408,8 @@ export async function startTestServer(
     ...(input.chat ? { chat: () => input.chat! } : {}),
     ...(input.tools ? { tools: input.tools } : {}),
     ...(input.files ? { files: input.files } : {}),
+    ...(input.fileSystem ? { fileSystem: input.fileSystem } : {}),
+    ...(input.machine ? { machine: input.machine } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
     ...(input.discovery ? { discovery: input.discovery } : {}),

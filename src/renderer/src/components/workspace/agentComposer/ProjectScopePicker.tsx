@@ -26,6 +26,7 @@ import {
 import { ChipCaretGlyph } from './agentSpawnShared'
 import type { NewProjectRequest } from '../newWorkspace/NewProjectStep'
 import type { NewProjectResult } from '../../../../../shared/electron-api'
+import { filesApi } from '../../../studio/files'
 
 // "Which project is this about?", as one chip.
 //
@@ -200,7 +201,7 @@ export function ProjectScopePicker({
   const [fallbackParent, setFallbackParent] = React.useState<string | null>(null)
   React.useEffect(() => {
     let active = true
-    void window.api
+    void filesApi
       .defaultWorkspaceParentDir?.()
       .then((dir) => {
         if (active) setFallbackParent(dir)

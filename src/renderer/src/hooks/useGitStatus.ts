@@ -4,6 +4,7 @@ import { isWindowVisible, onWindowVisibilityChange } from '../utils/windowActivi
 import { isWatchEventIgnored } from '../../../shared/file-watch-event'
 import type { FileWatchEvent } from '../../../shared/ipc/filesystem'
 import { hostPlatform } from '../clientCapabilities'
+import { filesApi } from '../studio/files'
 
 type UseGitStatusResult = {
   repoRoot: string | null
@@ -325,7 +326,7 @@ export function gitStatusWatchRefreshDelay(now: number, lastWatchRefreshAt: numb
 }
 
 function startGitStatusWatch(subscription: GitStatusSubscription): void {
-  if (subscription.watchStarting || subscription.stopWatching || typeof window.api.watchPath !== 'function') return
+  if (subscription.watchStarting || subscription.stopWatching || typeof filesApi.watchPath !== 'function') return
   if (hostPlatform() === 'win32') {
     logPerfEvent('GitStatus', 'watch-disabled', {
       repoRoot: subscription.repoRoot,
@@ -337,7 +338,7 @@ function startGitStatusWatch(subscription: GitStatusSubscription): void {
   }
 
   subscription.watchStarting = true
-  window.api
+  filesApi
     .watchPath(subscription.repoRoot, (event) => {
       if (shouldIgnoreGitStatusWatchEvent(event)) {
         logPerfEvent('GitStatus', 'watch-ignored', {

@@ -272,8 +272,7 @@ import type {
   BacklogStatusInput,
   BacklogTriageInput,
 } from './ipc/backlog'
-import type { DiagnosticLogEntry, DiagnosticLogInput, ProjectLogo, WorkspaceFolderCheckResult } from './ipc/diagnostics'
-import type { ContentSearchResult, FileSearchResult, FileSystemStat, FileWatchEvent } from './ipc/filesystem'
+import type { DiagnosticLogEntry, DiagnosticLogInput } from './ipc/diagnostics'
 import type {
   BranchStepDiff,
   BranchStepSelection,
@@ -1237,19 +1236,6 @@ export type ElectronApi = {
   authRefreshAccount: () => Promise<SprintEngineAuthState>
   onAuthStateChanged: (cb: (state: SprintEngineAuthState) => void) => () => void
   onAuthCallbackError: (cb: (message: string) => void) => () => void
-  readdir: (path: string) => Promise<{ name: string; isDir: boolean }[]>
-  searchFiles: (
-    rootPath: string,
-    query: string,
-    options?: { limit?: number; purpose?: 'mention'; channel?: string; recentAt?: Record<string, number> },
-  ) => Promise<FileSearchResult>
-  searchContent: (rootPath: string, query: string, options?: { limit?: number }) => Promise<ContentSearchResult>
-  cancelContentSearch: () => Promise<void>
-  cancelFileSearch: (channel?: string) => Promise<void>
-  readfile: (path: string) => Promise<string>
-  readImageDataUrl: (path: string) => Promise<string>
-  pathExists: (path: string) => Promise<boolean>
-  statPath: (path: string) => Promise<FileSystemStat>
   getPathForFile: (file: unknown) => string
   /**
    * A dropped, picked or pasted file's path, as `getPathForFile` reads it, and
@@ -1266,10 +1252,6 @@ export type ElectronApi = {
   openAttachedFile: (path: string) => Promise<void>
   /** Send dropped files that have no path to the server; answers a path there for each (`file-uploads`). */
   uploadFiles: (files: File[]) => Promise<string[]>
-  checkWorkspaceFolder: (path: string) => Promise<WorkspaceFolderCheckResult>
-  detectProjectLogo: (folderPath: string) => Promise<ProjectLogo | null>
-  /** A chosen icon file, through the logo guards; null when it cannot be used. */
-  readProjectIconFile: (filePath: string) => Promise<ProjectLogo | null>
   /**
    * The app's own plugin: what this build ships against what the open workspace
    * holds. Read-only — the built-in plugin has no Install and no Remove.
@@ -1393,50 +1375,19 @@ export type ElectronApi = {
   sshPreviewStatus: () => Promise<SshPreviewStatus>
   sshPreviewSet: (enabled: boolean) => Promise<SshPreviewStatus>
   /**
-   * Write a text file. `roots` are the folders of the project it was opened in:
-   * a save there does not write through a link that leads out of them.
-   */
-  writefile: (path: string, content: string, options?: { roots?: readonly string[] }) => Promise<void>
-  /**
-   * Save one pasted/dropped image that exists only as bytes (a clipboard
-   * screenshot, an image dragged out of a browser) into the app's temp images
-   * folder, returning the absolute path an agent can read. An image dropped
-   * from the OS already has a path and never comes through here.
-   */
-  saveDroppedImage: (input: { mediaType: string; dataBase64: string }) => Promise<string>
-  /**
    * Open one conversation image attachment in the operating system's own image
    * viewer. The attachment exists only as base64 in the renderer, so the bytes
    * are written to the app's temp images folder first; `name` is a suggestion
    * for what that file is called, never a path.
    */
   openImageAttachment: (input: { mediaType: string; dataBase64: string; name?: string }) => Promise<void>
-  createFile: (parentDir: string, name: string) => Promise<string>
-  createDir: (parentDir: string, name: string) => Promise<string>
-  ensureDir: (parentDir: string, name: string) => Promise<string>
-  renamePath: (sourcePath: string, nextName: string) => Promise<string>
-  movePath: (sourcePath: string, destinationDir: string) => Promise<string>
-  copyPath: (sourcePath: string, destinationDir: string) => Promise<string>
-  copyPathInto: (sourcePath: string, destinationDir: string, options?: { overwrite?: boolean }) => Promise<string>
-  deletePath: (targetPath: string) => Promise<void>
   showItemInFolder: (targetPath: string) => Promise<void>
   openHtmlFileInBrowser: (targetPath: string) => Promise<void>
   listFolderOpenTargets: () => Promise<FolderOpenTargetAvailability[]>
   openFolderInTarget: (request: FolderOpenRequest) => Promise<FolderOpenResult>
-  /**
-   * Watch a directory tree. Events under `.git/`, `node_modules/`,
-   * `.sprintengine/` and build output are dropped in main unless
-   * `includeIgnored` is set; a burst arrives as one event naming its paths.
-   */
-  watchPath: (
-    path: string,
-    cb: (event: FileWatchEvent) => void,
-    options?: { includeIgnored?: boolean },
-  ) => Promise<() => Promise<void>>
   openDir: (options?: { defaultPath?: string }) => Promise<string | null>
   /** The file dialog for a project's icon, filtered to images. */
   openProjectIconFile: (options?: { defaultPath?: string }) => Promise<string | null>
-  defaultWorkspaceParentDir: () => Promise<string | null>
   /** Creates `~/.sprintengine/chats` if needed and returns it: New chat's "No project" scope. */
   projectlessChatsRoot: () => Promise<string>
   /** Makes a new folder in that root for one chat started without a project, named after its first words. */

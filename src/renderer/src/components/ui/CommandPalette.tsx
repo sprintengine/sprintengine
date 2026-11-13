@@ -108,6 +108,7 @@ import { OVERLAY_SHELL_CHROME_CLASS, overlayWidthStyle } from './tokens'
 import { isImeKey } from '../../utils/imeKey'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
+import { filesApi } from '../../studio/files'
 
 // The four canonical source groups the global-search palette organizes results
 // into (T6), plus the two disk-backed groups: Files (name matches, plus the
@@ -1080,12 +1081,12 @@ export default function CommandPalette({
       debounceMs: DISK_SEARCH_DEBOUNCE_MS,
       minQueryLength: 1,
       cancel: () => {
-        void window.api.cancelContentSearch().catch(() => {})
+        void filesApi.cancelContentSearch().catch(() => {})
       },
       load: async (searchQuery, context): Promise<Command[]> => {
         if (!activeWorkspaceId || !activeFolderPath) return []
         const openOnDisk = (path: string, name: string, lineNumber?: number, column?: number) => {
-          void window.api
+          void filesApi
             .readfile(path)
             .then((content) => {
               openFileSurface({ workspaceId: activeWorkspaceId, path, name, content, lineNumber, column })
@@ -1111,12 +1112,12 @@ export default function CommandPalette({
         const wantsContent = groupInScope('content', context.scope) && searchQuery.length >= CONTENT_SEARCH_MIN_QUERY
         const [fileResult, contentResult] = await Promise.all([
           wantsFiles
-            ? window.api
+            ? filesApi
                 .searchFiles(activeFolderPath, searchQuery, { limit: PALETTE_FILE_SEARCH_LIMIT })
                 .catch((error: unknown) => ({ ok: false as const, message: String(error), engine: null }))
             : Promise.resolve(null),
           wantsContent
-            ? window.api
+            ? filesApi
                 .searchContent(activeFolderPath, searchQuery, { limit: PALETTE_CONTENT_SEARCH_LIMIT })
                 .catch((error: unknown) => ({ ok: false as const, message: String(error), engine: null }))
             : Promise.resolve(null),

@@ -1,16 +1,6 @@
-import { join } from 'node:path'
-
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
-import {
-  CONVERSATION_ATTACHMENTS_DIRECTORY,
-  CONVERSATION_TOOL_IMAGES_DIRECTORY,
-} from '../../main/conversation-attachment-store'
-import { CONVERSATION_PLANS_DIRECTORY } from '../../main/conversation-plan-store'
 import type { createConversationTerminalHandoff } from '../../main/conversation-terminal-handoff'
-import type { createFilesystemReadHandlers } from '../../main/filesystem-read'
-import type { createFilesystemWatchSearchHandlers } from '../../main/filesystem-watch-search-handlers'
-import { gitRepoRootFor } from '../../main/git-repo-root'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
@@ -33,6 +23,7 @@ import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
 import type { WorkspaceBackupService } from '../../main/workspace-backup'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
+import { knownFolders } from '../files/known-folders'
 
 // The `window.api` domains the Studio server owns (phase 6 spec, sections 5
 // and 6.2), registered in one place. Main registers them on `ipcMain` when the
@@ -75,8 +66,6 @@ export type ServerDomainIpcDeps = {
   githubTokenStore: GitHubTokenStore
   workspaceBackup: WorkspaceBackupService
   terminalHandoff: ReturnType<typeof createConversationTerminalHandoff>['handoff']
-  /** The file reads and searches the chat view's protocol surface answers from. */
-  files: ReturnType<typeof createFilesystemReadHandlers> & ReturnType<typeof createFilesystemWatchSearchHandlers>
   /** Only an app window may pair a local app: `assertAppSender` in main; the port is the check in the server. */
   assertAppSender: (event: IpcMainInvokeEvent) => void
   /** The scheduled-agents module's service, or null while it is off; asked on every call. */
@@ -119,17 +108,8 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   deps.studioRpc.provideChat(
     createStudioChatBackend({
       conversation: conversationService,
-      files: deps.files,
-      repoRoot: gitRepoRootFor,
       hasReceipt: (sessionId, commandId) => core.conversations.hasCommandReceipt(sessionId, commandId),
-      // A run's worktree is inside its repository's folder, or a workspace of its own.
-      readableRoots: () => [
-        ...core.workspaceRegistry.getRecords().flatMap((record) => (record.folderPath ? [record.folderPath] : [])),
-        join(dataDir(), CONVERSATION_ATTACHMENTS_DIRECTORY),
-        join(dataDir(), CONVERSATION_PLANS_DIRECTORY),
-        // The pictures a chat's steps returned (a screenshot) and Codex generated.
-        join(dataDir(), CONVERSATION_TOOL_IMAGES_DIRECTORY),
-      ],
+      readableRoots: () => knownFolders(core.workspaceRegistry, dataDir()),
       commands: (input) => conversationCommands.list(input),
     }),
   )

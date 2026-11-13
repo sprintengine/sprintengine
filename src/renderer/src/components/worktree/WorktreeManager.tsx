@@ -35,6 +35,7 @@ import {
 } from '../ui'
 import { useConfirmDialog } from '../ui/ConfirmDialog'
 import { openTerminal } from '../../studio/terminals'
+import { filesApi } from '../../studio/files'
 
 type WorktreeMessage = {
   tone: 'neutral' | 'error' | 'success'
@@ -248,7 +249,7 @@ export default function WorktreeManager({
 
       const listedRows = await Promise.all(
         result.data.worktrees.map(async (worktree): Promise<WorktreeRow> => {
-          const exists = await window.api.pathExists(worktree.path).catch(() => false)
+          const exists = await filesApi.pathExists(worktree.path).catch(() => false)
           let dirtyCount: number | null = null
           if (exists && !worktree.bare) {
             try {
@@ -294,7 +295,7 @@ export default function WorktreeManager({
           storedEntries
             .filter((entry) => !listedPaths.has(trimPath(entry.path).toLowerCase()))
             .map(async (entry): Promise<WorktreeRow | null> => {
-              const exists = await window.api.pathExists(entry.path).catch(() => false)
+              const exists = await filesApi.pathExists(entry.path).catch(() => false)
               if (!exists) {
                 removeWorktreeEntry(workspaceId, entry.id)
                 return null

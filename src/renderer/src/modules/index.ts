@@ -18,6 +18,7 @@ import { gitRendererModule } from './git-module'
 import { memoryRendererModule } from './memory-module'
 import { scheduledAgentsRendererModule } from './scheduled-agents-module'
 import { createRendererHost, type RendererModule } from './renderer-host'
+import { filesApi } from '../studio/files'
 
 // Bundled renderer capability modules. Features migrate onto the host one at a
 // time; this list grows as each renderer surface is extracted from the
@@ -371,8 +372,8 @@ if (typeof window !== 'undefined') {
             resolveFolderPath: resolveWorkingRoot,
             // A module may watch a file under a folder the shared watcher
             // drops for everyone else (`node_modules/`, build output).
-            watchPath: (path, cb) => window.api.watchPath(path, cb, { includeIgnored: true }),
-            readFile: (path) => window.api.readfile(path),
+            watchPath: (path, cb) => filesApi.watchPath(path, cb, { includeIgnored: true }),
+            readFile: (path) => filesApi.readfile(path),
           }),
         )
         // Tab focus over the layout tab helpers: a chat is an agent tab whose

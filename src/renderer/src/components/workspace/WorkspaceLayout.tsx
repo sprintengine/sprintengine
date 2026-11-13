@@ -109,6 +109,7 @@ import {
 import { remoteConversationFactsKey, useRemoteConversationFacts } from './remoteBand/remoteConversationFacts'
 import { isImeKey } from '../../utils/imeKey'
 import { agentPanelChunk } from '../panels/agentPanelChunks'
+import { filesApi } from '../../studio/files'
 
 const EMPTY_LAYOUT_MODEL: IJsonModel = { global: {}, borders: [], layout: { type: 'row', children: [] } }
 
@@ -541,7 +542,7 @@ function WorkspaceLayoutBody({
     }
     let cancelled = false
     const check = (): void => {
-      void window.api.pathExists(worktreeGitRoot).then((exists) => {
+      void filesApi.pathExists(worktreeGitRoot).then((exists) => {
         if (!cancelled) setWorktreeMissing(!exists)
       })
     }

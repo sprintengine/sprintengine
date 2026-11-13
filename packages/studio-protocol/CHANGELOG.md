@@ -68,6 +68,23 @@
 
 ### Added
 
+- **The files on a Studio's machine by path** (`file-system.ts`, capability
+  `file-system`): `files.listDirectory`, `.readText`, `.exists`,
+  `.checkWorkspaceFolder`, `.projectLogo`, `.projectIcon`, `.searchContent`,
+  `.cancelContentSearch` and `.defaultWorkspaceParent` under `files:read`;
+  `files.writeText`, `.saveDroppedImage`, `.createFile`, `.createDirectory`,
+  `.rename`, `.copy`, `.move` and `.trash` under `files:write`, each once per
+  command id; and the `files.watchPath` stream. None is an owner's alone. A
+  client that is not an owner (or an owner's connection held to known
+  folders) names a path only where it really is inside the folders the Studio
+  knows, links followed and `..` taken, and writes only inside its
+  workspaces' own folders, never renaming, moving or trashing one of them.
+  `WorkspaceFolderCheckResult`, `ProjectLogo`, `ContentSearchResult` and
+  `FileWatchEvent` move into the package.
+- **`files-mention` is served by every Studio's core.** `files.search`,
+  `files.cancelSearch`, `files.stat` by path, `files.readImage` and
+  `files.repoRoot` no longer need the chat surface, and the capability leaves
+  `STUDIO_CHAT_CAPABILITIES`.
 - **`environment.readiness`** (`readiness.ts`, capability
   `environment-readiness`, scope `providers:read`): what the Studio's machine
   has and lacks for its schedules and pull request watches (CLIs installed and

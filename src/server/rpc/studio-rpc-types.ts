@@ -63,7 +63,6 @@ import type {
   ConversationSecretStatusResult,
 } from '../../shared/ipc/conversations'
 import type { ConversationSearchResult, ConversationThreadsResult } from '../../shared/conversation-index'
-import type { FileSearchResult, FileSystemStat } from '../../shared/ipc/filesystem'
 
 // What the Studio RPC needs from the rest of Studio, as interfaces, so the
 // router and the connection import nothing from Electron or from main: the
@@ -247,21 +246,6 @@ export type StudioChatBackend = {
   providers(input: ChatInput<'providers.list'>): Promise<ConversationProviderListResult>
   providerModels(input: ChatInput<'providers.models'>): Promise<ConversationProviderModelsResult>
   secretStatus(input: ChatInput<'providers.secretStatus'>): Promise<ConversationSecretStatusResult>
-  /**
-   * File search, in the slot of the connection asking: a newer search on the
-   * same channel ends the older one, and a closed connection's are ended.
-   */
-  searchFiles(slot: number, input: ChatInput<'files.search'>): Promise<FileSearchResult>
-  cancelFileSearch(slot: number, channel?: string): void
-  releaseFileSearches(slot: number): void
-  /**
-   * A path's stat and a picture's bytes. Held to the folders a chat can read
-   * (`isKnownFolder`) unless `anyPath`: an owner's connection that is not held
-   * to known folders (Studio's own window) reads any path, as it always has.
-   */
-  stat(path: string, reading?: { anyPath?: boolean }): Promise<FileSystemStat>
-  readImage(path: string, reading?: { anyPath?: boolean }): Promise<string>
-  repoRoot(folderPath: string, hostId?: string): Promise<string | null>
   /** Whether a folder is inside one a chat can be about: a workspace's, or Studio's own stores. */
   isKnownFolder?(path: string): Promise<boolean>
   listSessions(input: ChatInput<'session.list'>): Promise<ConversationListSessionsResult>

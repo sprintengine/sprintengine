@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
 import type { ConversationSendTurnInput } from '../../shared/conversation-runtime'
 import { createStudioChatBackend, type StudioChatBackendDeps } from './studio-chat-backend'
@@ -44,14 +42,6 @@ function deps(overrides: Partial<StudioChatBackendDeps['conversation']> = {}) {
   } as StudioChatBackendDeps['conversation']
   const value: StudioChatBackendDeps = {
     conversation,
-    files: {
-      searchFiles: async () => ({ ok: false, message: 'no', engine: null }),
-      cancelActiveFileSearch: () => undefined,
-      cancelAllFileSearches: () => undefined,
-      statPath: async () => ({ isFile: true, isDirectory: false, sizeBytes: 0, modifiedAt: '', modifiedAtMs: 0 }),
-      readImageDataUrl: async () => 'data:',
-    },
-    repoRoot: async () => null,
     hasReceipt: async () => false,
     readableRoots: () => [tmpdir()],
     commands: async (input) => ({ cli: input.cli, cwd: input.cwd, commands: [], fetchedAt: 0 }),
@@ -124,41 +114,6 @@ test('a revert, rewind, fork or picture read that throws is answered as that one
   assert.deepEqual(await chat.attachment('a/b.png'), failure)
 })
 
-test('a file is stat’d or read only inside the folders a chat can read, and by its real path', async () => {
-  const workspace = await realpath(await mkdtemp(join(tmpdir(), 'studio-chat-files-')))
-  try {
-    await writeFile(join(workspace, 'a.png'), 'png')
-    const read: string[] = []
-    const { value } = deps()
-    const chat = createStudioChatBackend({
-      ...value,
-      readableRoots: () => [workspace],
-      files: {
-        ...value.files,
-        statPath: async (path) => {
-          read.push(path)
-          return { isFile: true, isDirectory: false, sizeBytes: 3, modifiedAt: '', modifiedAtMs: 1 }
-        },
-        readImageDataUrl: async (path) => {
-          read.push(path)
-          return 'data:image/png;base64,cG5n'
-        },
-      },
-    })
-    assert.equal((await chat.stat(join(workspace, 'a.png'))).isFile, true)
-    assert.equal(await chat.readImage(join(workspace, 'a.png')), 'data:image/png;base64,cG5n')
-    await assert.rejects(chat.stat('/etc/hosts'), /outside the folders this chat can read/)
-    await assert.rejects(chat.readImage(`${workspace}/../a.png`), /not written plainly/)
-    assert.deepEqual(read, [join(workspace, 'a.png'), join(workspace, 'a.png')])
-    // Studio's own window (an owner not held to known folders) reads anywhere, as over IPC.
-    assert.equal((await chat.stat('/tmp/shot.png', { anyPath: true })).isFile, true)
-    assert.equal(await chat.readImage('/tmp/shot.png', { anyPath: true }), 'data:image/png;base64,cG5n')
-    assert.deepEqual(read.slice(2), ['/tmp/shot.png', '/tmp/shot.png'])
-  } finally {
-    await rm(workspace, { recursive: true, force: true })
-  }
-})
-
 test('a command list is asked for with a chat CLI and an absolute folder, as over IPC', async () => {
   const chat = createStudioChatBackend(deps().value)
   await assert.rejects(chat.commands({ cli: 'not-a-cli', cwd: '/Users/dev/app' }), /chat CLI and an absolute folder/)
@@ -169,38 +124,4 @@ test('a command list is asked for with a chat CLI and an absolute folder, as ove
     commands: [],
     fetchedAt: 0,
   })
-})
-
-test('a ~/ picture is read as the file in the home folder, and held to the same folders', async () => {
-  const home = await realpath(await mkdtemp(join(tmpdir(), 'studio-chat-home-')))
-  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
-  process.env.HOME = home
-  process.env.USERPROFILE = home
-  try {
-    await mkdir(join(home, 'Desktop'))
-    await writeFile(join(home, 'Desktop', 'shot.png'), 'png')
-    const read: string[] = []
-    const { value } = deps()
-    const chat = createStudioChatBackend({
-      ...value,
-      readableRoots: () => [join(home, 'Desktop')],
-      files: {
-        ...value.files,
-        readImageDataUrl: async (path) => {
-          read.push(path)
-          return 'data:image/png;base64,cG5n'
-        },
-      },
-    })
-    assert.equal(await chat.readImage('~/Desktop/shot.png'), 'data:image/png;base64,cG5n')
-    assert.deepEqual(read, [join(home, 'Desktop', 'shot.png')])
-    await assert.rejects(chat.readImage('~/Desktop/../Desktop/shot.png'), /not written plainly/)
-    await assert.rejects(chat.readImage('~/elsewhere.png'), /outside the folders this chat can read/)
-  } finally {
-    for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key]
-      else process.env[key] = value
-    }
-    await rm(home, { recursive: true, force: true })
-  }
 })

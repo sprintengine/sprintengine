@@ -150,6 +150,7 @@ import type {
   WorkspacePanelProps,
 } from '../../modules/renderer-host'
 import { listTerminals } from '../../studio/terminals'
+import { filesApi } from '../../studio/files'
 
 // Backlog panel: capture / browse / triage / start surface for the lightweight
 // items (rough ideas, notes, feature sketches, imported markdown, mockups)
@@ -892,8 +893,8 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         if (!folderPath) return
         const found = await resolveFirstMockupCandidate(target.path, async (relativePath) => {
           const absolutePath = await backlogOrWorkspacePath(folderPath, relativePath)
-          if (!(await window.api.pathExists(absolutePath))) return null
-          return { relativePath, absolutePath, content: await window.api.readfile(absolutePath) }
+          if (!(await filesApi.pathExists(absolutePath))) return null
+          return { relativePath, absolutePath, content: await filesApi.readfile(absolutePath) }
         })
         if (found) setPreviewedMockup({ path: target.path, ...found })
       }),
@@ -957,9 +958,9 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       )
       // ensureDir is idempotent; it also covers a missing backlog/ folder.
       const backlogDir = await ensureBacklogRoot(folderPath)
-      const newPath = await window.api.createFile(backlogDir, fileName)
+      const newPath = await filesApi.createFile(backlogDir, fileName)
       const description = draft.description.trim()
-      await window.api.writefile(newPath, description ? `# ${title}\n\n${description}\n` : `# ${title}\n`)
+      await filesApi.writefile(newPath, description ? `# ${title}\n\n${description}\n` : `# ${title}\n`)
       // Persist triage + type to the object store keyed by the new path. The
       // upsert creates the record, so this is the real metadata source — no
       // markdown frontmatter and no disconnected UI state.
@@ -1022,7 +1023,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         )?.trim()
         if (!next || next === current) return
         // renamePath stays in the same directory and rejects an existing name.
-        const newPath = await window.api.renamePath(item.path, next)
+        const newPath = await filesApi.renamePath(item.path, next)
         // Keep any open editor tab / open-file entry pointed at the new path.
         if (workspaceId) {
           remapOpenFiles(workspaceId, item.path, newPath)
@@ -1058,14 +1059,14 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
     async (item: BacklogItem, archivedRel: string): Promise<void> => {
       if (!folderPath) return
       const archivedName = archivedRel.slice(archivedRel.lastIndexOf('/') + 1)
-      const content = await window.api.readfile(item.path)
-      const archivedDir = await window.api.ensureDir(await backlogRootOf(folderPath), 'archived')
-      const newPath = await window.api.createFile(archivedDir, archivedName)
+      const content = await filesApi.readfile(item.path)
+      const archivedDir = await filesApi.ensureDir(await backlogRootOf(folderPath), 'archived')
+      const newPath = await filesApi.createFile(archivedDir, archivedName)
       try {
-        await window.api.writefile(newPath, content)
-        await window.api.deletePath(item.path)
+        await filesApi.writefile(newPath, content)
+        await filesApi.deletePath(item.path)
       } catch (error) {
-        await window.api.deletePath(newPath).catch(() => {})
+        await filesApi.deletePath(newPath).catch(() => {})
         throw error
       }
       if (workspaceId) {
@@ -1143,7 +1144,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           tone: 'danger',
         })
         if (!confirmed) return
-        await window.api.deletePath(item.path)
+        await filesApi.deletePath(item.path)
         // Close any open editor tab / open-file entry for the trashed file so it
         // does not linger as stale editor state pointing at a missing path.
         if (workspaceId) {
@@ -1482,7 +1483,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
         workspaceId,
         workspaceRoot: folderPath,
         item,
-        readSource: () => window.api.readfile(item.path),
+        readSource: () => filesApi.readfile(item.path),
         updateStatus: async (status) => {
           const updated = await window.api.updateBacklogStatus({
             workspaceRoot: folderPath,
