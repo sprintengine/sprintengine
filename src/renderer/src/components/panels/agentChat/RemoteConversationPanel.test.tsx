@@ -1825,6 +1825,25 @@ test('a machine that had no agent running, or cannot restart one from here, says
   }
 })
 
+test('a machine that does not restart sessions is not asked, and the toast says to update it', async () => {
+  const chat = await mountRemote({ access: 'operate', restartSession: false })
+  const { useToastStore } = await import('../../../store/toastStore')
+  try {
+    await settleTurn(chat)
+    useToastStore.setState({ toasts: [] })
+    await restartSession(chat)
+    expect(chat.api.meshConversationRestartSession).not.toHaveBeenCalled()
+    expect(useToastStore.getState().toasts.map((toast) => [toast.title, toast.description])).toEqual([
+      [
+        'This chat cannot be restarted from here',
+        'Update SprintEngine Studio on mac-mini to restart its chats from here.',
+      ],
+    ])
+  } finally {
+    await chat.unmount()
+  }
+})
+
 // Claude Code's own modes, as its manifest names them to the picker.
 const claudeModes = [
   { id: 'manual', label: 'Manual', level: 'manual' },

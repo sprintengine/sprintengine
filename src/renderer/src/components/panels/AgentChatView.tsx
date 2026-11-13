@@ -2884,10 +2884,16 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   restartSessionRef.current = async () => {
     const restart = transport.capabilities.restartSession ? transport.restartSession : undefined
     if (!restart) {
+      // Say what would let it: a grant that may operate the chat, or a
+      // machine whose Studio restarts sessions.
       showToast({
         tone: 'warn',
         title: 'This chat cannot be restarted from here',
-        description: 'Its server does not restart sessions for this window.',
+        description: !transport.capabilities.operate
+          ? 'This window may read this chat but not drive it.'
+          : transport.machineName
+            ? `Update SprintEngine Studio on ${transport.machineName} to restart its chats from here.`
+            : 'Its server does not restart sessions for this window.',
       })
       return
     }
