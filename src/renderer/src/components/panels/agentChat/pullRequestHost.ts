@@ -5,17 +5,19 @@ import type {
   PushForPullRequestOutcome,
 } from '../../../../../shared/git/pull-request-create'
 import type { MeshConversationKey } from '../../../../../shared/tailnet-mesh'
-import { resolveStoreTextGenerationEngine } from '../../../store/generatedWorkspaceTitle'
-import { useWorkspaceStore } from '../../../store/workspaceStore'
-import { linkPullRequestToConversation } from '../../workspace/useConversationPullRequests'
+import type { StudioClient } from '../../../../../../packages/client-runtime/src/public'
+import { STUDIO_PULL_REQUEST_CREATE_CAPABILITY } from '../../../../../../packages/studio-protocol/src/public'
+import { randomId } from '../../../../../shared/random-id'
+import { windowStudioClient } from '../../../studio/windowStudioClient'
 
 // Where the chat's "Create PR" does its work. The button, its dialog and the
 // sentences on the strip are the same for every chat (owner ruling
 // 2026-10-18: apart from the machine's mark, a remote chat looks and behaves
 // as a local one); what differs is which machine reads the checkout, writes
-// the draft, pushes and opens the pull request. A chat here asks this
-// computer's shell; a chat on a paired machine asks that machine, in its own
-// checkout, with its own text generation settings. Opening the forge's page
+// the draft, pushes and opens the pull request. A chat on this window's
+// Studio asks that Studio over the protocol; a chat followed over a paired
+// machine's lane asks that machine. Each works in the chat's own checkout,
+// with its own text generation settings. Opening the forge's page
 // and the clipboard stay on this computer, in front of the person, whichever
 // machine did the work.
 
@@ -39,49 +41,84 @@ export type PullRequestHost = {
 
 const draftFailed = (message: string) => `The draft could not be written: ${message}`
 
-/** This computer's checkout at `cwd`, through the shell's own channels, recorded as `conversation`'s. */
-export function localPullRequestHost(
-  cwd: string,
+/** What a host asks of a Studio: its calls, and whether it serves one. */
+type PullRequestStudio = Pick<StudioClient, 'request' | 'supports'>
+
+/**
+ * A chat on this window's Studio, every step asked of that Studio
+ * (`pull-request-create`), in the chat's own checkout there, with its own
+ * text generation settings. It records a pull request it creates as the
+ * chat's itself, so `link` here only says how that went.
+ */
+export function studioPullRequestHost(
   conversation: { workspaceId: string; agentId: string },
+  client: () => Promise<PullRequestStudio> = windowStudioClient,
 ): PullRequestHost {
+  const recorded = new Map<string, { ok: true } | { ok: false; message: string }>()
+  // A Studio from before Create PR was a protocol method does not serve it,
+  // and is not asked: the button stays hidden.
+  const studio = async () => {
+    const connected = await client()
+    if (!connected.supports(STUDIO_PULL_REQUEST_CREATE_CAPABILITY))
+      throw new Error('This Studio is older than this window and cannot open a pull request. Update it.')
+    return connected
+  }
+  const failed = (error: unknown) => (error instanceof Error ? error.message : String(error))
   return {
     state: async () => {
-      const api = typeof window === 'undefined' ? undefined : window.api
-      if (typeof api?.createPullRequestState !== 'function') return null
-      return api.createPullRequestState(cwd)
+      const connected = await client().catch(() => null)
+      if (!connected?.supports(STUDIO_PULL_REQUEST_CREATE_CAPABILITY)) return null
+      const read = await connected.request('pullRequests.createState', { conversation }).catch(() => null)
+      return read?.state ?? null
     },
-    draft: (draftId) => {
-      const engine = resolveStoreTextGenerationEngine()
-      if (!engine)
-        return {
-          refused:
-            'Text generation is off (Settings → Agents → Text generation), so write the title and description here.',
-        }
-      // The style the title is written in and the CLI overrides (Settings →
-      // Agents), read as the draft starts, like the engine.
-      const { cliRuntimes, textGeneration } = useWorkspaceStore.getState().appSettings
-      return {
-        written: window.api
-          .draftPullRequestText({
-            cwd,
-            engine,
-            draftId,
-            writingStyle: textGeneration.writingStyle,
-            ...(cliRuntimes ? { cliRuntimes } : {}),
-          })
-          .then((result) =>
-            result.ok
-              ? { ok: true as const, title: result.value.title, body: result.value.body }
-              : { ok: false as const, message: draftFailed(result.message) },
-          ),
-      }
-    },
+    draft: (draftId) => ({
+      written: studio()
+        .then((connected) => connected.request('pullRequests.draft', { conversation, draftId }))
+        .then((result) =>
+          result.ok
+            ? { ok: true as const, title: result.title, body: result.body }
+            : // Text generation being off is said as it is, not as a failure.
+              {
+                ok: false as const,
+                message: result.code === 'text_generation_off' ? result.message : draftFailed(result.message),
+              },
+        )
+        .catch((error: unknown) => ({ ok: false as const, message: draftFailed(failed(error)) })),
+    }),
     cancelDraft: async (draftId) => {
-      await window.api.cancelPullRequestDraft?.(draftId)
+      await studio()
+        .then((connected) => connected.request('pullRequests.draftCancel', { conversation, draftId }))
+        .catch(() => undefined)
     },
-    push: (pin) => window.api.pushForPullRequest(cwd, pin),
-    create: (text, pin) => window.api.createPullRequest({ cwd, ...text, ...(pin ? { pin } : {}) }),
-    link: (url, title) => linkPullRequestToConversation(conversation, url, title),
+    push: (pin) =>
+      studio()
+        .then((connected) =>
+          connected.request('pullRequests.push', { conversation, commandId: randomId(), ...(pin ? { pin } : {}) }),
+        )
+        .catch((error: unknown) => ({ ok: false as const, message: failed(error) })),
+    create: async (text, pin) => {
+      const created = await studio()
+        .then((connected) =>
+          connected.request('pullRequests.create', {
+            conversation,
+            commandId: randomId(),
+            ...text,
+            ...(pin ? { pin } : {}),
+          }),
+        )
+        .catch((error: unknown) => ({ ok: false as const, message: failed(error) }))
+      if (!created.ok || created.kind !== 'created') return created
+      recorded.set(
+        created.url,
+        created.recorded ? { ok: true } : { ok: false, message: created.recordMessage ?? 'It was not recorded.' },
+      )
+      return { ok: true, kind: 'created', url: created.url }
+    },
+    link: async (url) => {
+      const outcome = recorded.get(url) ?? { ok: true }
+      recorded.delete(url)
+      return outcome
+    },
   }
 }
 

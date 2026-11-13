@@ -1,4 +1,5 @@
 import type { Duplex } from 'node:stream'
+import type { ConversationPullRequests } from '../automation/conversation-pull-request-tools'
 
 import { toolError, toolSuccess } from '../../shared/modules/mcp-tools'
 import {
@@ -184,6 +185,8 @@ export type StudioRpcServiceOptions = {
   worktrees?: StudioWorktrees
   /** The pull requests the conversations opened, for owners (`pull-requests`). */
   pullRequests?: StudioPullRequests
+  /** A chat's "Create PR" in its checkout here, for owners (`pull-request-create`). */
+  pullRequestCreation?: ConversationPullRequests
   /** The local servers the conversations started, for owners (`local-servers`). */
   localServers?: StudioLocalServers
   /** What a client reads before it starts a chat (`workspaces`). */
@@ -409,6 +412,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktrees ? { worktrees: options.worktrees } : {}),
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
+      ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
       ...(options.readiness ? { readiness: options.readiness } : {}),

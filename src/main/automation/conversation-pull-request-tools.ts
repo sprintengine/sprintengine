@@ -8,6 +8,10 @@ import {
   type PullRequestCheckoutPin,
   type PushForPullRequestOutcome,
 } from '../../shared/git/pull-request-create'
+import type {
+  StudioPullRequestCreated,
+  StudioPullRequestDraftOutcome,
+} from '../../../packages/studio-protocol/src/public'
 import {
   toolError,
   toolSuccess,
@@ -27,12 +31,14 @@ import { gatewayConversation } from '../../server/tools/client-tool-gateway'
 import { createDraftRuns } from '../ipc/text-generation-draft'
 import type { DraftInputOutcome } from '../pull-request-create'
 
-// The chat's "Create PR" for a paired desktop that follows one of this
-// machine's chats (owner ruling 2026-10-18: apart from the machine's mark, a
-// remote chat looks and behaves as a local one). The checkout, git, the
-// forge's CLI and the agent CLI that drafts the text are all here, so every
-// step runs here, in the chat's own checkout, as the shell's channels run it
-// for a window on this machine (`ipc/pull-request-create-ipc.ts`).
+// The chat's "Create PR" on the machine that holds the chat (owner ruling
+// 2026-10-18: apart from the machine's mark, a remote chat looks and behaves
+// as a local one). The checkout, git, the forge's CLI and the agent CLI that
+// drafts the text are all here, so every step runs here, in the chat's own
+// checkout (`createConversationPullRequests`): for a client of this Studio
+// over the protocol (`pullRequests.createState` … `.create`, an owner's), and
+// for a paired desktop that follows one of its chats over the lane, through
+// the tools below.
 //
 // A call names the CHAT, never a folder: this machine resolves the folder the
 // chat works in from its own record, so a paired device can reach no checkout
@@ -178,19 +184,6 @@ function refuseAnotherChat(context: McpConnectionContext | undefined, key: ChatK
   )
 }
 
-/** The chat a call names, and the folder it works in here. */
-function resolveChat(
-  deps: ConversationPullRequestToolsDeps,
-  args: Record<string, unknown>,
-  context: McpConnectionContext | undefined,
-): { key: ChatKey; root: string } | McpToolResult {
-  const key = chatArg(args, context)
-  if (isResult(key)) return key
-  const checkout = deps.checkoutOf(key)
-  if (!checkout.ok) return toolError(checkout.code, checkout.message)
-  return { key, root: checkout.root }
-}
-
 /** The pin a call carries: absent is the checkout as it stands; one that is not a pin is refused, never dropped. */
 function pinArg(args: Record<string, unknown>): { pin: PullRequestCheckoutPin | undefined } | McpToolResult {
   if (args.pin === undefined) return { pin: undefined }
@@ -205,12 +198,124 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function createConversationPullRequestTools(deps: ConversationPullRequestToolsDeps): McpToolRegistration[] {
-  // Drafts in flight, by the caller, the chat and the id the caller gave
-  // each: one device's cancel reaches only its own draft.
+/** A chat a step cannot run for here: no such chat, or no checkout of it on this machine. */
+export type ChatPullRequestRefusal = { ok: false; refused: { code: string; message: string } }
+
+/**
+ * The chat's "Create PR" steps, each in the chat's own checkout here: what
+ * the gateway's tools answer a paired desktop with, and what the Studio
+ * protocol's `pullRequests.createState`, `.draft`, `.draftCancel`, `.push` and
+ * `.create` answer a client with. `caller` names who asks, so one caller's
+ * cancel reaches only its own draft.
+ */
+export type ConversationPullRequests = {
+  state(key: ChatKey): Promise<{ ok: true; state: CreatePullRequestState | null } | ChatPullRequestRefusal>
+  draft(
+    key: ChatKey,
+    caller: string,
+    draftId: string | null,
+  ): Promise<StudioPullRequestDraftOutcome | ChatPullRequestRefusal>
+  cancelDraft(key: ChatKey, caller: string, draftId: string): void
+  push(key: ChatKey, pin?: PullRequestCheckoutPin): Promise<PushForPullRequestOutcome | ChatPullRequestRefusal>
+  create(
+    key: ChatKey,
+    text: { title: string; body: string },
+    pin?: PullRequestCheckoutPin,
+  ): Promise<StudioPullRequestCreated | ChatPullRequestRefusal>
+}
+
+export const isChatPullRequestRefusal = (value: object): value is ChatPullRequestRefusal => 'refused' in value
+
+export function createConversationPullRequests(deps: ConversationPullRequestToolsDeps): ConversationPullRequests {
+  // Drafts in flight, by the caller, the chat and the id the caller gave each.
   const drafts = createDraftRuns()
-  const draftKey = (context: McpConnectionContext | undefined, key: ChatKey, draftId: string) =>
-    [context?.metadata.deviceId ?? context?.metadata.kind ?? 'local', key.workspaceId, key.agentId, draftId].join('\0')
+  const draftKey = (caller: string, key: ChatKey, draftId: string) =>
+    [caller, key.workspaceId, key.agentId, draftId].join('\0')
+  const checkout = (key: ChatKey): { root: string } | ChatPullRequestRefusal => {
+    const found = deps.checkoutOf(key)
+    return found.ok ? { root: found.root } : { ok: false, refused: { code: found.code, message: found.message } }
+  }
+  return {
+    async state(key) {
+      const chat = checkout(key)
+      if (isChatPullRequestRefusal(chat)) return chat
+      const read = await deps.creator.state(chat.root).catch(() => null)
+      // No path on this machine in the answer.
+      return { ok: true, state: read ? { ...read, gitRoot: null } : null }
+    },
+    async draft(key, caller, draftId) {
+      const chat = checkout(key)
+      if (isChatPullRequestRefusal(chat)) return chat
+      const engine = deps.draftEngine()
+      if (!engine)
+        return {
+          ok: false,
+          code: 'text_generation_off',
+          message:
+            'Text generation is off on this machine (Settings → Agents → Text generation), so write the title and description yourself.',
+        }
+      const result = await drafts.run(
+        draftId === null ? null : draftKey(caller, key, draftId),
+        async (signal): Promise<PullRequestTextResult> => {
+          const gathered = await deps.creator.draftInput(chat.root)
+          if (!gathered.ok) return { ok: false, code: 'unsupported', message: gathered.message }
+          return deps.generate({
+            input: { ...gathered.input, style: engine.writingStyle },
+            engine: engine.engine,
+            ...(engine.cliRuntimes ? { cliRuntimes: engine.cliRuntimes } : {}),
+            signal,
+          })
+        },
+      )
+      if (result.ok) return { ok: true, title: result.value.title, body: result.value.body }
+      if (result.code !== 'cancelled') deps.log?.(`${engine.engine.cli}: ${result.code} — ${result.message}`)
+      return { ok: false, code: result.code === 'cancelled' ? 'cancelled' : 'draft_failed', message: result.message }
+    },
+    cancelDraft(key, caller, draftId) {
+      drafts.cancel(draftKey(caller, key, draftId))
+    },
+    async push(key, pin) {
+      const chat = checkout(key)
+      if (isChatPullRequestRefusal(chat)) return chat
+      return deps.creator
+        .push(chat.root, pin)
+        .catch((error: unknown): PushForPullRequestOutcome => ({ ok: false, message: describe(error) }))
+    },
+    async create(key, input, pin) {
+      const chat = checkout(key)
+      if (isChatPullRequestRefusal(chat)) return chat
+      const text = {
+        title: input.title.trim().slice(0, PULL_REQUEST_TITLE_MAX_CHARS),
+        body: input.body.slice(0, PULL_REQUEST_BODY_MAX_CHARS),
+      }
+      const outcome = await deps.creator
+        .create(chat.root, text, pin)
+        .catch((error: unknown): CreatePullRequestOutcome => ({ ok: false, message: describe(error) }))
+      if (!outcome.ok || outcome.kind !== 'created') return outcome
+      // Recorded here, where the chat's record is; a failure to record is
+      // said with the address, since the pull request exists either way.
+      const linked = await deps
+        .link({ conversation: key, url: outcome.url, title: text.title })
+        .catch((error: unknown) => ({ ok: false as const, message: describe(error) }))
+      return {
+        ...outcome,
+        recorded: linked.ok,
+        ...(linked.ok
+          ? {}
+          : {
+              recordMessage: `The pull request is open (${outcome.url}), but it could not be recorded: ${linked.message}`,
+            }),
+      }
+    },
+  }
+}
+
+export function createConversationPullRequestTools(deps: ConversationPullRequestToolsDeps): McpToolRegistration[] {
+  const pullRequests = createConversationPullRequests(deps)
+  // One device's cancel reaches only its own draft.
+  const callerOf = (context: McpConnectionContext | undefined) =>
+    context?.metadata.deviceId ?? context?.metadata.kind ?? 'local'
+  const refusal = (refused: ChatPullRequestRefusal) => toolError(refused.refused.code, refused.refused.message)
 
   const state: McpToolRegistration = {
     name: CONVERSATION_PULL_REQUEST_STATE_TOOL,
@@ -226,11 +331,11 @@ export function createConversationPullRequestTools(deps: ConversationPullRequest
       additionalProperties: false,
     },
     handler: async (args, context) => {
-      const chat = resolveChat(deps, args, context)
-      if (isResult(chat)) return chat
-      const read = await deps.creator.state(chat.root).catch(() => null)
-      // No path on this machine in the answer.
-      return toolSuccess({ ok: true, ...chat.key, state: read ? { ...read, gitRoot: null } : null })
+      const key = chatArg(args, context)
+      if (isResult(key)) return key
+      const read = await pullRequests.state(key)
+      if (isChatPullRequestRefusal(read)) return refusal(read)
+      return toolSuccess({ ok: true, ...key, state: read.state })
     },
   }
 
@@ -250,35 +355,18 @@ export function createConversationPullRequestTools(deps: ConversationPullRequest
       additionalProperties: false,
     },
     handler: async (args, context) => {
-      const chat = resolveChat(deps, args, context)
-      if (isResult(chat)) return chat
+      const key = chatArg(args, context)
+      if (isResult(key)) return key
       if (
         args.draftId !== undefined &&
         (typeof args.draftId !== 'string' || !args.draftId || args.draftId.length > ID_MAX)
       )
         return toolError('invalid_arguments', '"draftId" must be a non-empty string when provided.')
-      const engine = deps.draftEngine()
-      if (!engine)
-        return toolError(
-          'text_generation_off',
-          'Text generation is off on this machine (Settings → Agents → Text generation), so write the title and description yourself.',
-        )
-      const draftId = typeof args.draftId === 'string' ? draftKey(context, chat.key, args.draftId) : null
-      const result = await drafts.run(draftId, async (signal): Promise<PullRequestTextResult> => {
-        const gathered = await deps.creator.draftInput(chat.root)
-        if (!gathered.ok) return { ok: false, code: 'unsupported', message: gathered.message }
-        return deps.generate({
-          input: { ...gathered.input, style: engine.writingStyle },
-          engine: engine.engine,
-          ...(engine.cliRuntimes ? { cliRuntimes: engine.cliRuntimes } : {}),
-          signal,
-        })
-      })
-      if (!result.ok) {
-        if (result.code !== 'cancelled') deps.log?.(`${engine.engine.cli}: ${result.code} — ${result.message}`)
-        return toolError(result.code === 'cancelled' ? 'cancelled' : 'draft_failed', result.message)
-      }
-      return toolSuccess({ ok: true, title: result.value.title, body: result.value.body })
+      const draftId = typeof args.draftId === 'string' ? args.draftId : null
+      const result = await pullRequests.draft(key, callerOf(context), draftId)
+      if (isChatPullRequestRefusal(result)) return refusal(result)
+      if (!result.ok) return toolError(result.code, result.message)
+      return toolSuccess({ ok: true, title: result.title, body: result.body })
     },
   }
 
@@ -296,7 +384,7 @@ export function createConversationPullRequestTools(deps: ConversationPullRequest
       if (isResult(key)) return key
       const draftId = idArg(args, 'draftId')
       if (typeof draftId !== 'string') return draftId
-      drafts.cancel(draftKey(context, key, draftId))
+      pullRequests.cancelDraft(key, callerOf(context), draftId)
       return toolSuccess({ ok: true })
     },
   }
@@ -313,13 +401,12 @@ export function createConversationPullRequestTools(deps: ConversationPullRequest
       additionalProperties: false,
     },
     handler: async (args, context) => {
-      const chat = resolveChat(deps, args, context)
-      if (isResult(chat)) return chat
+      const key = chatArg(args, context)
+      if (isResult(key)) return key
       const pinned = pinArg(args)
       if (isResult(pinned)) return pinned
-      const pushed = await deps.creator
-        .push(chat.root, pinned.pin)
-        .catch((error: unknown): PushForPullRequestOutcome => ({ ok: false, message: describe(error) }))
+      const pushed = await pullRequests.push(key, pinned.pin)
+      if (isChatPullRequestRefusal(pushed)) return refusal(pushed)
       if (!pushed.ok) return toolError('push_failed', pushed.message)
       return toolSuccess({ ok: true, pushed: pushed.pushed })
     },
@@ -344,35 +431,16 @@ export function createConversationPullRequestTools(deps: ConversationPullRequest
       additionalProperties: false,
     },
     handler: async (args, context) => {
-      const chat = resolveChat(deps, args, context)
-      if (isResult(chat)) return chat
+      const key = chatArg(args, context)
+      if (isResult(key)) return key
       if (typeof args.title !== 'string' || !args.title.trim() || typeof args.body !== 'string')
         return toolError('invalid_arguments', '"title" and "body" are the pull request\'s text.')
       const pinned = pinArg(args)
       if (isResult(pinned)) return pinned
-      const text = {
-        title: args.title.trim().slice(0, PULL_REQUEST_TITLE_MAX_CHARS),
-        body: args.body.slice(0, PULL_REQUEST_BODY_MAX_CHARS),
-      }
-      const outcome = await deps.creator
-        .create(chat.root, text, pinned.pin)
-        .catch((error: unknown): CreatePullRequestOutcome => ({ ok: false, message: describe(error) }))
+      const outcome = await pullRequests.create(key, { title: args.title, body: args.body }, pinned.pin)
+      if (isChatPullRequestRefusal(outcome)) return refusal(outcome)
       if (!outcome.ok) return toolError('create_failed', outcome.message)
-      if (outcome.kind !== 'created') return toolSuccess({ ...outcome })
-      // Recorded here, where the chat's record is; a failure to record is
-      // said with the address, since the pull request exists either way.
-      const linked = await deps
-        .link({ conversation: chat.key, url: outcome.url, title: text.title })
-        .catch((error: unknown) => ({ ok: false as const, message: describe(error) }))
-      return toolSuccess({
-        ...outcome,
-        recorded: linked.ok,
-        ...(linked.ok
-          ? {}
-          : {
-              recordMessage: `The pull request is open (${outcome.url}), but it could not be recorded: ${linked.message}`,
-            }),
-      })
+      return toolSuccess({ ...outcome })
     },
   }
 

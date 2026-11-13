@@ -1,5 +1,6 @@
 import { arch, platform } from 'node:os'
 import type { Duplex } from 'node:stream'
+import type { ConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
 
 import {
   CONVERSATION_CAPABILITIES,
@@ -19,6 +20,7 @@ import {
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
   STUDIO_PULL_REQUEST_LINK_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
+  STUDIO_PULL_REQUEST_CREATE_CAPABILITY,
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_WORKSPACES_CAPABILITY,
   STUDIO_MODULES_CAPABILITY,
@@ -174,6 +176,8 @@ export type StudioRpcServerOptions = {
   worktrees?: StudioWorktrees
   /** The pull requests the conversations opened, for owners. Advertised as `pull-requests` and `pull-request-tool-calls` only when given. */
   pullRequests?: StudioPullRequests
+  /** A chat's "Create PR" in its checkout here (`pull-request-create`), for owners. */
+  pullRequestCreation?: ConversationPullRequests
   /** The local servers the conversations started, for owners. Advertised as `local-servers` only when given. */
   localServers?: StudioLocalServers
   /** What a client reads before it starts a chat. Advertised as `workspaces` only when given. */
@@ -264,6 +268,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
           capability !== STUDIO_PULL_REQUEST_LINK_CAPABILITY) ||
           options.pullRequests !== undefined) &&
         (capability !== STUDIO_PULL_REQUEST_WATCH_CAPABILITY || options.pullRequests?.unwatch !== undefined) &&
+        (capability !== STUDIO_PULL_REQUEST_CREATE_CAPABILITY || options.pullRequestCreation !== undefined) &&
         (capability !== STUDIO_LOCAL_SERVERS_CAPABILITY || options.localServers !== undefined) &&
         (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
         (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
@@ -305,6 +310,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.git ? { git: options.git } : {}),
     ...(options.worktrees ? { worktrees: options.worktrees } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
+    ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.readiness ? { readiness: options.readiness } : {}),
@@ -349,6 +355,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.files ? { files: options.files } : {}),
         ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
+        ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
         ...(options.localServers ? { localServers: options.localServers } : {}),
         ...(options.modules ? { modules: options.modules } : {}),
         ...(options.terminals ? { terminals: options.terminals } : {}),
@@ -398,6 +405,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.files ? { files: options.files } : {}),
         ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
+        ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
         ...(options.localServers ? { localServers: options.localServers } : {}),
         ...(options.modules ? { modules: options.modules } : {}),
         ...(options.terminals ? { terminals: options.terminals } : {}),

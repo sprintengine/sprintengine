@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { connect, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
 
 import {
   STUDIO_SCOPES,
@@ -376,6 +377,7 @@ export async function startTestServer(
     git?: StudioGit
     worktrees?: StudioWorktrees
     pullRequests?: StudioPullRequests
+    pullRequestCreation?: ConversationPullRequests
     localServers?: StudioLocalServers
     discovery?: StudioDiscovery
     terminals?: StudioTerminals
@@ -425,6 +427,7 @@ export async function startTestServer(
     ...(input.git ? { git: input.git } : {}),
     ...(input.worktrees ? { worktrees: input.worktrees } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
+    ...(input.pullRequestCreation ? { pullRequestCreation: input.pullRequestCreation } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
     ...(input.discovery ? { discovery: input.discovery } : {}),
     ...(input.terminals ? { terminals: input.terminals } : {}),

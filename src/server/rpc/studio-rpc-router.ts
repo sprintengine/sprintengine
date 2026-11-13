@@ -39,6 +39,11 @@ import { boundConversationPage } from '../conversation-stream-shaping'
 import type { ClientToolRegistry } from '../tools/client-tool-registry'
 import type { StudioFiles } from './studio-files'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
+import {
+  isChatPullRequestRefusal,
+  type ChatPullRequestRefusal,
+  type ConversationPullRequests,
+} from '../../main/automation/conversation-pull-request-tools'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
 import type { StudioTerminalCaller, StudioTerminals } from '../terminals/studio-terminals'
 import type { CliRuntimes } from '../../main/cli-runtimes'
@@ -182,6 +187,8 @@ export type StudioRpcRouterOptions = {
   worktrees?: StudioWorktrees
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
+  /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
+  pullRequestCreation?: ConversationPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
   localServers?: StudioLocalServers
   /** What a client reads before it starts a chat; without it, `workspaces.*` and `cliRuntimes.list` are `unavailable`. */
@@ -880,6 +887,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // An upload is the client's; its budget is this connection's. Staging needs
   // no chat: a board too large for one frame is staged the same way.
   const holder = ({ grant, context }: Asking) => ({ client: grant.clientId, connection: context.connectionId })
+
+  // A chat the core does not know is not found; any other refusal (no
+  // checkout of it here) is the caller's to say.
+  const refusedChat = (refusal: ChatPullRequestRefusal, voice: Voice, method: StudioMethod) =>
+    refusal.refused.code === 'unknown_workspace' || refusal.refused.code === 'unknown_conversation'
+      ? voice.failed('not_found', refusal.refused.message, method)
+      : null
 
   // ── Every method's handler ──────────────────────────────────────────────
 
@@ -1623,6 +1637,65 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'pullRequests.unwatch': async (unwatch) => {
       if (!options.pullRequests?.unwatch) return unserved('pullRequests.unwatch')
       return { ok: true, result: await options.pullRequests.unwatch(unwatch) }
+    },
+    // A chat's "Create PR", every step in its checkout here (an owner's, by
+    // the table). A chat with no checkout here has no state to show; a step
+    // asked of one anyway is refused in the core's words.
+    'pullRequests.createState': async ({ conversation }, { voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.createState')
+      const read = await creation.state(conversation)
+      if (!isChatPullRequestRefusal(read)) return { ok: true, result: { state: read.state } }
+      return refusedChat(read, voice, 'pullRequests.createState') ?? { ok: true, result: { state: null } }
+    },
+    'pullRequests.draft': async ({ conversation, draftId }, { grant, voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.draft')
+      const drafted = await creation.draft(conversation, `client:${grant.clientId}`, draftId)
+      if (!isChatPullRequestRefusal(drafted)) return { ok: true, result: drafted }
+      return (
+        refusedChat(drafted, voice, 'pullRequests.draft') ??
+        voice.failed('unavailable', drafted.refused.message, 'pullRequests.draft')
+      )
+    },
+    'pullRequests.draftCancel': ({ conversation, draftId }, { grant }) => {
+      if (!options.pullRequestCreation) return unserved('pullRequests.draftCancel')
+      options.pullRequestCreation.cancelDraft(conversation, `client:${grant.clientId}`, draftId)
+      return { ok: true, result: {} }
+    },
+    'pullRequests.push': ({ conversation, commandId, pin }, { grant, voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.push')
+      return once(
+        keptId('pullRequests.push', grant, commandId),
+        async () => {
+          const pushed = await creation.push(conversation, pin)
+          if (!isChatPullRequestRefusal(pushed)) return { ok: true as const, result: pushed }
+          return (
+            refusedChat(pushed, voice, 'pullRequests.push') ??
+            voice.failed('unavailable', pushed.refused.message, 'pullRequests.push')
+          )
+        },
+        voice,
+        'pullRequests.push',
+      )
+    },
+    'pullRequests.create': ({ conversation, commandId, title, body, pin }, { grant, voice }) => {
+      const creation = options.pullRequestCreation
+      if (!creation) return unserved('pullRequests.create')
+      return once(
+        keptId('pullRequests.create', grant, commandId),
+        async () => {
+          const created = await creation.create(conversation, { title, body }, pin)
+          if (!isChatPullRequestRefusal(created)) return { ok: true as const, result: created }
+          return (
+            refusedChat(created, voice, 'pullRequests.create') ??
+            voice.failed('unavailable', created.refused.message, 'pullRequests.create')
+          )
+        },
+        voice,
+        'pullRequests.create',
+      )
     },
     'pullRequests.noteToolCall': (call) => {
       if (!options.pullRequests) return unserved('pullRequests.noteToolCall')

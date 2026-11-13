@@ -141,7 +141,7 @@ import {
   useCreatePullRequestFlow,
   useCreatePullRequestState,
 } from './agentChat/createPullRequest'
-import { localPullRequestHost } from './agentChat/pullRequestHost'
+import { studioPullRequestHost } from './agentChat/pullRequestHost'
 import { conversationContextReading } from './agentChat/contextReading'
 import { ContextComposerButton, type ContextBreakdownSource } from './agentChat/ContextBreakdown'
 import { useConversationStripFacts } from './agentChat/conversationStripFacts'
@@ -4172,22 +4172,23 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     },
     [transport],
   )
-  // "Create PR" works in this computer's checkout, or on the paired machine a
-  // remote chat runs on, which does every step in its own checkout (owner
-  // ruling 2026-10-18) where it says it can and this pairing may drive the
-  // chat. A chat on WSL or an SSH machine (the strip names its machine) has
-  // no git or `gh` here, and nothing there answers for them.
-  const createPullRequestCwd =
-    transport.kind !== 'remote' && transport.capabilities.localFiles && !stripFacts.machine ? workspaceRoot : null
+  // "Create PR" is asked of the Studio that holds the chat, which does every
+  // step in the chat's own checkout there (owner-only, `pull-request-create`;
+  // a Studio that refuses or does not serve it answers no state, and the
+  // button stays hidden), or of the paired machine a chat followed over its
+  // lane runs on, where it says it can and this pairing may drive the chat
+  // (owner ruling 2026-10-18). A chat on WSL or an SSH machine routed through
+  // this desktop (the strip names its machine) has no checkout here.
+  const createsPullRequestOnStudio =
+    transport.kind !== 'remote' && transport.capabilities.localFiles && !stripFacts.machine && Boolean(workspaceRoot)
   const remotePullRequestHost =
     transport.kind === 'remote' && transport.capabilities.hostPullRequests && operate
       ? (transport.pullRequestHost ?? null)
       : null
   const pullRequestHost = useMemo(
     () =>
-      remotePullRequestHost ??
-      (createPullRequestCwd ? localPullRequestHost(createPullRequestCwd, { workspaceId, agentId }) : null),
-    [remotePullRequestHost, createPullRequestCwd, workspaceId, agentId],
+      remotePullRequestHost ?? (createsPullRequestOnStudio ? studioPullRequestHost({ workspaceId, agentId }) : null),
+    [remotePullRequestHost, createsPullRequestOnStudio, workspaceId, agentId],
   )
   // A turn ending moves the transcript's shape, and a token never does: read
   // when the shape moves, not on every streamed frame, which scanned back over

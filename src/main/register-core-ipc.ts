@@ -14,7 +14,6 @@ import { registerStudioWindowTicketIpc, type StudioWindowTicketIssuer } from './
 import { assertAppSender } from './ipc/ipc-sender'
 import { registerAppMenuIpc } from './app-menu'
 import { registerStudioPluginIpc } from './ipc/studio-plugin-ipc'
-import { registerPullRequestCreateIpc } from './ipc/pull-request-create-ipc'
 import { registerClipboardIpc } from './ipc/clipboard-ipc'
 import { registerChatExportIpc } from './ipc/chat-export-ipc'
 import { getPluginRegistry } from './plugin-registry-instance'
@@ -164,8 +163,6 @@ export function registerCoreIpc(
       })
     },
   })
-  // The chat's "Create PR": git, gh and the drafting CLI all run on this computer.
-  registerPullRequestCreateIpc(ipcMain)
   registerAuthIpc(ipcMain, services.sprintengineAuth)
   registerStudioPluginIpc(ipcMain, services.studioPluginService)
   // Revealing a file and opening one in another app stay this computer's

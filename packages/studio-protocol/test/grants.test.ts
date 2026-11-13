@@ -41,7 +41,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * bundle's own script) and a card's Go (modules, plugins and MCP servers in
  * one press). In git: what moves a branch, rewrites history or discards
  * work, what reaches a remote with this machine's credentials, removing or
- * unlocking agents' worktrees, and the GitHub account Studio holds. The
+ * unlocking agents' worktrees, and the GitHub account Studio holds. A chat's
+ * Create PR (`pull-request-create`): its forge, its push, its drafting CLI. The
  * worktree pool and the agents' worktrees (`worktrees.*`, with its streams):
  * this machine's checkouts, which the pool hands out, resets and removes.
  * A method joins this list with its reason, in the change that makes it an
@@ -79,6 +80,12 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'pullRequests.link',
   'pullRequests.noteWork',
   'pullRequests.noteToolCall',
+  // A chat's Create PR: the forge, the remote and the drafting CLI with this machine's credentials.
+  'pullRequests.createState',
+  'pullRequests.draft',
+  'pullRequests.draftCancel',
+  'pullRequests.push',
+  'pullRequests.create',
   'session.terminalHandoff',
   // Every terminal method and stream: a terminal is a shell on this machine.
   ...(Object.keys(STUDIO_TERMINALS_METHODS) as StudioMethod[]),

@@ -254,17 +254,18 @@ What a chat view needs beside the conversation lane, so any client can show
 and drive a chat as Studio's own windows do (`chat.ts`). Each reaches a client
 by its scope; `session.terminalHandoff` and `providers.signIn` are an owner's.
 
-| Method                                                                  | Scope             | What                                                                                    |
-| ----------------------------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------- |
-| `session.start`                                                         | operate           | start a provider session for a chat                                                     |
-| `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel` | operate           | drive a live session by its id, with all a composer sends; answered with its outcome    |
-| `uploads.begin`, `.append`, `.discard`                                  | operate           | stage a picture in pieces of `STUDIO_UPLOAD_CHUNK_BYTES`; a send names it by `uploadId` |
-| `conversation.revert`, `.rewind`                                        | operate           | a turn's files from its checkpoint; back to an earlier message                          |
-| `conversation.attachment`, `.planDocument`, `.commands`                 | read              | a sent picture; a proposed plan as a file; the `/` command list a CLI reports           |
-| `conversation.exportPage`                                               | read              | a chat's whole export, its pictures and what its record says, in pages                  |
-| `providers.list`, `.models`, `.secretStatus`                            | `providers:read`  | the providers a chat can run, their models, whether each has its key                    |
-| `files.search`, `.cancelSearch`, `.stat`, `.readImage`, `.repoRoot`     | `files:read`      | @-mention search and the file facts a chat's links and pictures need                    |
-| `workspaces.list`                                                       | `workspaces:read` | the workspaces this Studio holds                                                        |
+| Method                                                                   | Scope             | What                                                                                    |
+| ------------------------------------------------------------------------ | ----------------- | --------------------------------------------------------------------------------------- |
+| `session.start`                                                          | operate           | start a provider session for a chat                                                     |
+| `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel`  | operate           | drive a live session by its id, with all a composer sends; answered with its outcome    |
+| `uploads.begin`, `.append`, `.discard`                                   | operate           | stage a picture in pieces of `STUDIO_UPLOAD_CHUNK_BYTES`; a send names it by `uploadId` |
+| `conversation.revert`, `.rewind`                                         | operate           | a turn's files from its checkpoint; back to an earlier message                          |
+| `conversation.attachment`, `.planDocument`, `.commands`                  | read              | a sent picture; a proposed plan as a file; the `/` command list a CLI reports           |
+| `conversation.exportPage`                                                | read              | a chat's whole export, its pictures and what its record says, in pages                  |
+| `providers.list`, `.models`, `.secretStatus`                             | `providers:read`  | the providers a chat can run, their models, whether each has its key                    |
+| `files.search`, `.cancelSearch`, `.stat`, `.readImage`, `.repoRoot`      | `files:read`      | @-mention search and the file facts a chat's links and pictures need                    |
+| `pullRequests.createState`, `.draft`, `.draftCancel`, `.push`, `.create` | owner             | a chat's Create PR in its checkout on this Studio, each step an owner's                 |
+| `workspaces.list`                                                        | `workspaces:read` | the workspaces this Studio holds                                                        |
 
 A session method's result is the runtime's own outcome, a refusal by the
 runtime included: `{ ok: true, session, notice? } | { ok: false, message,

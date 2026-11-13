@@ -1024,7 +1024,18 @@ requests, and says a listed pull request may carry `watch` (what a watched one
 waits on, an optional member): a client that does not read it shows the pull
 request as before, and a client offers Stop watching only to a Studio that
 advertises the capability. A `waitingOn` word a client does not know reads as
-plain watching. `local-servers` adds the owner-only
+plain watching. `pull-request-create` (2026-11-13) adds a chat's Create PR on
+the Studio that holds the chat, each step an owner's with its reason:
+`pullRequests.createState` (`conversation`; the checkout's readiness, `gitRoot`
+null, `state` null where the chat has no checkout there),
+`pullRequests.draft` and `.draftCancel` (`conversation`, the client's
+`draftId`; drafted with that Studio's own text generation settings,
+`text_generation_off` said as it is), `pullRequests.push` and
+`pullRequests.create` (`conversation`, `commandId`, an optional `pin`; each
+answered once per command id, and a created pull request recorded as the
+chat's there, `recorded` saying whether that landed). The desktop's window
+asks them only of a Studio that advertises the capability; a Studio from
+before answers no state, and the button stays hidden. `local-servers` adds the owner-only
 `localServers.*` methods and stream: the local servers a Studio's agents
 linked, as the Studio checks them, and running one's command again, stopping
 that run, or forgetting the link (`run` and `stop` refused as `conflict` when

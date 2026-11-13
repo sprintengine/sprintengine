@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added (Create PR on the chat's Studio)
+
+- **`pullRequests.createState`, `.draft`, `.draftCancel`, `.push` and
+  `.create`** (`pull-request-create.ts`, capability `pull-request-create`): a
+  chat's Create PR in the chat's own checkout on its Studio, named by the
+  chat, never a folder. Each is an owner's, with its reason (the forge, the
+  drafting CLI, the push, the creation with this machine's credentials).
+  `push` and `create` carry a `commandId` and are answered once per id; a
+  created pull request is recorded as the chat's (`recorded`). The checkout
+  shapes move into the package (`StudioCreatePullRequestState`,
+  `StudioPullRequestCheckoutPin`, `StudioCreatePullRequestOutcome`, …).
+
 ### Changed (a fork answers where it is)
 
 - **`conversation.fork` is the conversation host's fork**, as the tailnet

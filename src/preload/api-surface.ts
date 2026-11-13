@@ -11,7 +11,6 @@ import { scheduledAgentsApi } from './api/scheduled-agents'
 import { backlogApi } from './api/backlog'
 import { buildStampApi } from './api/build-stamp'
 import { builtinSkillsApi } from './api/builtinSkills'
-import { textGenerationApi } from './api/text-generation'
 import { clipboardApi } from './api/clipboard'
 import { chatExportApi } from './api/chat-export'
 import { conversationPeekApi } from './api/conversation-peek'
@@ -79,7 +78,6 @@ export const apiModules = {
   ...builtinSkillsApi,
   ...clipboardApi,
   ...chatExportApi,
-  ...textGenerationApi,
   ...hostedSourcesFeedApi,
   ...hostedCardFeedApi,
   ...filesystemApi,
