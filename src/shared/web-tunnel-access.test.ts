@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { authorizeStudioAccess, isStudioPermission } from '../../packages/studio-protocol/src/permissions'
+import { isStudioPermission } from '../../packages/studio-protocol/src/permissions'
 import { SERVER_IPC_CHANNELS } from './ipc-channel-owners'
 import { WEB_TUNNEL_CHANNELS } from './web-client'
 import {

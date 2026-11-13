@@ -512,22 +512,14 @@ const farReviewer: MeshSubagent = {
 
 /** The tab on a chat of a paired machine: its pane publishes it as `RemoteConversationPanel` does. */
 async function openRemoteChat(tab: Awaited<ReturnType<typeof mountPanel>>) {
-  const { createRemoteConversationTransport } = await import('../../../panels/agentChat/conversationTransport')
+  const { createPairedChatTransport } = await import('../../../panels/agentChat/pairedChat')
   const { publishRemoteChat } = await import('../../../panels/agentChat/remoteChatRegistry')
-  const transport = createRemoteConversationTransport({
-    key: chatOnMachine,
-    machineName: 'mac-mini',
-    offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
-  })
+  const transport = createPairedChatTransport({ key: chatOnMachine, machineName: 'mac-mini' })
   const transports = new Map<string, ConversationTransport>()
   const subagentTransport = (agentId: string) => {
     const made =
       transports.get(agentId) ??
-      createRemoteConversationTransport({
-        key: { ...chatOnMachine, agentId },
-        machineName: 'mac-mini',
-        offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
-      })
+      createPairedChatTransport({ key: { ...chatOnMachine, agentId }, machineName: 'mac-mini' })
     transports.set(agentId, made)
     return made
   }

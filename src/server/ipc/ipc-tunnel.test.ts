@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import type { IpcMain } from 'electron'
 import { test } from 'vitest'
 
 import { createIpcTunnel, IpcSenderUnavailable, type TunnelClient, type TunnelPort } from './ipc-tunnel'

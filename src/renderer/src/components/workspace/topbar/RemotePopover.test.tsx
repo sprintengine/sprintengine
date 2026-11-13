@@ -192,7 +192,6 @@ test('RemotePopover', async () => {
       mesh: [],
       meshRequests: [],
       meshReachability: new Map(),
-      meshRemoteChanges: new Map(),
       ...overrides,
     }
   }

@@ -126,6 +126,15 @@ test('an attached document opens in its default app', async () => {
   expect(openPath).toHaveBeenCalledWith(expect.stringMatching(/Quarterly report\.pdf$/))
 })
 
+test('an attached file is read for a chat on another machine, and nothing else is', async () => {
+  const { files } = setup()
+  const path = await file('notes.txt', 'hello')
+  expect(await files.read(path)).toEqual({ ok: false, message: 'notes.txt was not attached here.' })
+  files.register(path)
+  expect(await files.read(path)).toEqual({ ok: true, name: 'notes.txt', dataBase64: Buffer.from('hello').toString('base64') })
+  expect(await files.read('relative/notes.txt')).toEqual({ ok: false, message: 'That is not a file attached here.' })
+})
+
 test('a path nobody attached is not opened, whatever it is', async () => {
   const { files, openPath } = setup()
   const path = await file('elsewhere.pdf')

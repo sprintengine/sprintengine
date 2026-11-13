@@ -44,6 +44,8 @@ export type PairedStudiosDouble = {
 
 /** The methods that only read, which `writes` leaves out. */
 const READS = new Set([
+  'session.list',
+  'conversation.list',
   'workspaces.list',
   'workspaces.checkout',
   'workspaces.extensions',
@@ -115,6 +117,8 @@ export function fakePairedStudios(
           return { clientId: 'tailnet:double', name: 'dev-macbook-air', owner: false, scopes: double.scopes }
         },
         supports: (capability: string) => double.capabilities.has(capability),
+        // No pushes: a topic followed here hears nothing.
+        subscribe: () => () => undefined,
         request: ask,
         rpc: new Proxy(
           {},

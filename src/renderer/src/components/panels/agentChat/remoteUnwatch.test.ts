@@ -2,7 +2,7 @@
 import { expect, test } from 'vitest'
 
 import { fakePairedStudios } from '../../../studio/environmentStudio.double'
-import { createRemoteConversationTransport } from './conversationTransport'
+import { createPairedChatTransport } from './pairedChat'
 
 // Stop watching on a paired machine's chat's strip ends that machine's watch
 // (`pullRequests.unwatch` on its Studio, asked by this window itself), named
@@ -13,10 +13,9 @@ test('Stop watching asks the machine the chat runs on', async () => {
   const api = {}
   ;(window as unknown as { api: unknown }).api = api
   const studio = fakePairedStudios(api, { 'pullRequests.unwatch': () => ({ watched: true }) })
-  const transport = createRemoteConversationTransport({
+  const transport = createPairedChatTransport({
     key: { connectionId: 'c1', workspaceId: 'rw1', agentId: 'agent-there' },
     machineName: 'mac-mini',
-    offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
   })
   const url = 'https://github.com/acme/app/pull/7'
   // The view names the chat by its key here; the machine is asked by its own.
