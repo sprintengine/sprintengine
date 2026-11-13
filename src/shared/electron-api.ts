@@ -14,7 +14,7 @@ import type {
   SshPromptRequest,
   SshResolveResult,
 } from './ssh-environments'
-import type { EnvironmentEntry } from './environments'
+import type { EnvironmentEntry, EnvironmentTicketResult } from './environments'
 import type { SshPreviewStatus } from './ssh-preview'
 import type { ServerMode } from './server-mode'
 import type { ChatExportInput, ChatExportResult } from './chat-export'
@@ -130,29 +130,9 @@ import type {
 import type { TailnetPeerScan } from './tailnet-peers'
 import type { TailnetShareResult, TailnetShareStatus } from './tailnet-share'
 import type {
-  MeshBrowse,
   MeshConnection,
-  MeshCreateConversationResult,
-  MeshNewChatWorktree,
-  MeshSettleConversationResult,
-  MeshChangeConversationResult,
-  MeshConversationDeletePlanResult,
-  MeshConversationSearchResult,
-  MeshApprovalRulesResult,
-  MeshRevokeApprovalRuleResult,
-  MeshCreateScheduledAgentInput,
-  MeshCreateScheduledAgentResult,
-  MeshUpdateScheduledAgentInput,
-  MeshUpdateScheduledAgentResult,
-  MeshScheduledAgentAction,
-  MeshScheduledAgentActionResult,
-  MeshScheduledAgentsResult,
-  MeshConversationChange,
-  MeshVisitConversationResult,
-  MeshWorkspaceCheckoutResult,
   MeshCanvasBoardsResult,
   MeshCanvasScreenshotResult,
-  MeshWorkspaceExtensionsResult,
   MeshPullRequestCreateResult,
   MeshPullRequestDraftResult,
   MeshPullRequestPushResult,
@@ -192,7 +172,6 @@ import type {
   ConversationSideQuestionResult,
   ConversationToolDetailResult,
   ConversationEventReadResult,
-  ConversationImageAttachment,
   ConversationPageResult,
   ConversationTurnDiffResult,
 } from './conversation-runtime'
@@ -760,87 +739,6 @@ export type ElectronApi = {
   meshCancelPairing: (requestId: string) => Promise<void>
   /** Drop this machine's credential for a peer. Revoking the device THERE is the other half. */
   meshForget: (connectionId: string) => Promise<MeshConnection[]>
-  /** One machine's workspaces, or the gap that says why this pairing may not read them. */
-  meshBrowse: (connectionId: string) => Promise<MeshBrowse>
-  /**
-   * Start a chat agent in a workspace on a paired machine (`conversation:operate`
-   * there), and get the ids a chat pane here follows it by.
-   */
-  meshCreateConversation: (input: {
-    connectionId: string
-    /** The project it starts in; absent with `noProject`. */
-    workspaceId?: string
-    /** Start it in a folder of its own over there, under no project. */
-    noProject?: boolean
-    cli?: string
-    prompt?: string
-    cliModel?: string
-    permissionPreset?: string
-    /** The CLI's effort level; dropped for a machine that does not advertise `new-chat-effort`. */
-    effort?: string
-    /** A worktree to start in; refused, never dropped, by a machine without the capability for it. */
-    worktree?: MeshNewChatWorktree
-    /**
-     * Images that go with the first message. Each is put in that machine's
-     * upload store under the new chat's session, and the first message names
-     * them, as a message sent to a followed chat does.
-     */
-    attachments?: ConversationImageAttachment[]
-    /** That machine's skill ids, attached as the chat's chips; refused by a machine without `new-chat-skills`. */
-    skills?: string[]
-  }) => Promise<MeshCreateConversationResult>
-  /**
-   * Settle a chat on a paired machine, or bring it back with `settled: false`
-   * (`conversation.settle` there, which needs `conversation-lifecycle`).
-   */
-  meshSettleConversation: (input: {
-    connectionId: string
-    workspaceId: string
-    settled?: boolean
-  }) => Promise<MeshSettleConversationResult>
-  /** Say a chat on a paired machine is on screen here (`conversation.visit` there). */
-  meshVisitConversation: (input: { connectionId: string; workspaceId: string }) => Promise<MeshVisitConversationResult>
-  /**
-   * A row menu change to a chat on a paired machine: Star, Highlight color,
-   * Snooze, Auto-settle (`chat-lifecycle` there) or Mark unread
-   * (`chat-lifecycle` there), written to that machine's record of it.
-   */
-  meshChangeConversation: (input: {
-    connectionId: string
-    workspaceId: string
-    change: MeshConversationChange
-  }) => Promise<MeshChangeConversationResult>
-  /** What deleting a settled chat on a paired machine would do, as that machine plans it (`chat-lifecycle` there). */
-  meshConversationDeletePlan: (input: {
-    connectionId: string
-    workspaceId: string
-  }) => Promise<MeshConversationDeletePlanResult>
-  /** What was said in a paired machine's chats, as its own palette finds it (`chat-lifecycle` there). */
-  meshConversationSearch: (input: { connectionId: string; query: string }) => Promise<MeshConversationSearchResult>
-  /** The "always allow" rules a paired machine's chats run with (`approval-rules` there). */
-  meshApprovalRules: (input: { connectionId: string }) => Promise<MeshApprovalRulesResult>
-  /** Revoke one of them there. */
-  meshRevokeApprovalRule: (input: { connectionId: string; ruleId: string }) => Promise<MeshRevokeApprovalRuleResult>
-  /** A paired machine's scheduled agents (`schedule.list` there), and whether it takes one from here. */
-  meshScheduledAgents: (input: { connectionId: string }) => Promise<MeshScheduledAgentsResult>
-  /** Run now, pause, resume or close one of them there. */
-  meshScheduledAgentAction: (input: {
-    connectionId: string
-    id: string
-    action: MeshScheduledAgentAction
-  }) => Promise<MeshScheduledAgentActionResult>
-  /** Schedule an agent on a paired machine, in one of its projects (`scheduled-agents` there). */
-  meshCreateScheduledAgent: (input: MeshCreateScheduledAgentInput) => Promise<MeshCreateScheduledAgentResult>
-  /** Save an edit to one of a paired machine's scheduled agents (`scheduled-agents-edit` there). */
-  meshUpdateScheduledAgent: (input: MeshUpdateScheduledAgentInput) => Promise<MeshUpdateScheduledAgentResult>
-  /** A remote workspace's checkout facts — branch, trunk, branches, worktrees — for the launch panel's checkout · branch segments. */
-  meshWorkspaceCheckout: (connectionId: string, workspaceId: string) => Promise<MeshWorkspaceCheckoutResult>
-  /** A remote project's skills and, for a CLI, its MCP servers with their connection, for the composer's picker. */
-  meshWorkspaceExtensions: (input: {
-    connectionId: string
-    workspaceId: string
-    cli?: string
-  }) => Promise<MeshWorkspaceExtensionsResult>
   /** A paired machine's Canvas boards: this chat's project there, or every board on it (`canvas.list` there). */
   meshCanvasBoards: (input: {
     connectionId: string
@@ -1193,6 +1091,12 @@ export type ElectronApi = {
   environmentsList: () => Promise<EnvironmentEntry[]>
   /** Ask the owner of a route (`formatEnvironmentRoute`) to try it again now. */
   environmentsRetry: (route: string) => Promise<void>
+  /**
+   * A ticket for one connection from this window to that route's Studio
+   * (`formatEnvironmentRoute`): good once, for thirty seconds. Spend it on the
+   * connection it was asked for and keep nothing; ask again for the next.
+   */
+  environmentsTicket: (route: string) => Promise<EnvironmentTicketResult>
   /** The machine list reads differently now; ask again. Returns the unsubscribe. */
   onEnvironmentsChanged: (cb: () => void) => () => void
   /** SSH machines (phase 8): saved, with their state in words. */

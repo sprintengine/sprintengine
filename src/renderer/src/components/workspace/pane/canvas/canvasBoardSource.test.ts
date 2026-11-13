@@ -1,5 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
+import { StudioError } from '../../../../../../../packages/client-runtime/src/public'
+import { fakePairedStudios } from '../../../../studio/pairedStudio.double'
 import type { Workspace } from '../../../../types/workspace'
 
 const state = vi.hoisted(() => ({
@@ -53,6 +55,13 @@ function api(members: Record<string, unknown>): void {
   vi.stubGlobal('window', { api: members })
 }
 
+/** A paired machine's Studio, as this window's own client of it reaches it, starting chats as `create` answers. */
+function pairedStudio(create: () => unknown) {
+  const members = {}
+  api(members)
+  return fakePairedStudios(members, { 'conversation.create': create })
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
@@ -88,18 +97,14 @@ test("a row of the chat's own project opens without a store, and a foreign row w
 
 test('continuing on a paired machine starts the chat there, naming the board, with its tab open here', async () => {
   state.workspaces = [{ id: 'local-chat', remoteOrigin: origin }]
-  const meshCreateConversation = vi.fn(async () => ({
-    ok: true,
-    workspaceId: 'new-far',
-    agentId: 'agent-1',
-    title: 'Chat',
+  const studio = pairedStudio(() => ({
+    conversation: { workspaceId: 'new-far', agentId: 'agent-1', name: 'Chat', providerId: 'p', modelId: 'm' },
   }))
-  api({ meshCreateConversation })
   const started = await continueBoardInNewChat(paired, 'local-chat', board)
   expect(started.ok).toBe(true)
-  const asked = meshCreateConversation.mock.calls[0] as unknown as [{ workspaceId: string; prompt: string }]
-  expect(asked[0].workspaceId).toBe('far-project')
-  expect(asked[0].prompt).toContain(ID)
+  const asked = studio.calls[0]!.params as { workspaceId: string; prompt: string }
+  expect(asked.workspaceId).toBe('far-project')
+  expect(asked.prompt).toContain(ID)
   expect(state.openPaneTab).toHaveBeenCalledWith('local-chat', {
     kind: 'canvas',
     canvas: { path: 'fleet.excalidraw', store: STORE },
@@ -108,14 +113,15 @@ test('continuing on a paired machine starts the chat there, naming the board, wi
 
 test("an older machine, with no id to give, is asked by the board's path", async () => {
   state.workspaces = [{ id: 'local-chat', remoteOrigin: origin }]
-  const meshCreateConversation = vi.fn(async () => ({ ok: false, code: 'x', message: 'Refused there.' }))
-  api({ meshCreateConversation })
+  const studio = pairedStudio(() => {
+    throw new StudioError('x', 'Refused there.')
+  })
   const started = await continueBoardInNewChat(paired, 'local-chat', { ...board, id: null, store: null })
   expect(started.ok).toBe(false)
   expect(!started.ok && started.error.message).toBe('Refused there.')
-  const asked = meshCreateConversation.mock.calls[0] as unknown as [{ prompt: string }]
-  expect(asked[0].prompt).toContain('fleet.excalidraw')
-  expect(asked[0].prompt).not.toContain('canvas://')
+  const asked = studio.calls[0]!.params as { prompt: string }
+  expect(asked.prompt).toContain('fleet.excalidraw')
+  expect(asked.prompt).not.toContain('canvas://')
 })
 
 test("a paired chat's board calls carry the machine and the chat there, under the tab's own ref", async () => {

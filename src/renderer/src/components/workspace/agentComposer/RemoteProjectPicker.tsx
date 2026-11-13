@@ -20,8 +20,11 @@ export type RemoteTargetState = {
   picked: RemoteProject | null
   /** The picked project's checkout facts, for the branch the launch names; null until read, or unreadable. */
   checkout: MeshWorkspaceCheckout | null
-  /** What the machine said it can do, from its browse; null until it answered, or when it said nothing. */
-  capabilities: readonly string[] | null
+  /**
+   * Its Studio answered the browse: it takes New chat's effort, no project,
+   * worktrees and skills on `conversation.create`. False until it answered.
+   */
+  reached: boolean
 }
 
 /**

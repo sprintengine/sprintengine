@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { pairedWorkspaceExtensions } from '../../../studio/pairedDiscovery'
 
 import type { AgentCli, McpServerConfig, WorkspaceSkill } from '../../../../../shared/electron-api'
 import type { AgentMcpServer, AgentMcpServerStatus, SkillSource } from '../../../../../shared/skills'
@@ -878,7 +879,7 @@ function useCliMcpServers(
  * type-ahead reads a remote chat's skills through it too.
  */
 export function useRemoteExtensions(
-  remote: { connectionId: string; workspaceId: string } | null,
+  remote: { connectionId: string; workspaceId: string; machineName?: string } | null,
   cli: string | null,
   active: boolean,
   read = 0,
@@ -891,12 +892,13 @@ export function useRemoteExtensions(
   }>({ skills: [], servers: [], loading: false, error: null })
   const connectionId = remote?.connectionId ?? null
   const workspaceId = remote?.workspaceId ?? null
+  const machineName = remote?.machineName ?? 'That machine'
   useEffect(() => {
     if (!active || !connectionId || !workspaceId) return
     let cancelled = false
     setState((current) => ({ ...current, loading: true, error: null }))
-    window.api
-      .meshWorkspaceExtensions({ connectionId, workspaceId, ...(cli ? { cli } : {}) })
+    // Asked of that machine's Studio by this window itself.
+    pairedWorkspaceExtensions({ id: connectionId, machineName }, workspaceId, cli ?? undefined)
       .then((answer) => {
         if (cancelled) return
         setState(
@@ -917,7 +919,7 @@ export function useRemoteExtensions(
     return () => {
       cancelled = true
     }
-  }, [active, cli, connectionId, workspaceId, read])
+  }, [active, cli, connectionId, workspaceId, machineName, read])
   return state
 }
 

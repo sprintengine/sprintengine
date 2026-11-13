@@ -107,17 +107,6 @@ test('WorkspaceSidebar.remoteLink', async () => {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
-      workspaces: [
-        { id: 'rw1', name: 'sprintengine', mode: 'standard', folderPath: '/Users/mini/sprintengine', repository: null },
-      ],
-      gaps: [],
-    }),
     meshConversationList: async () => ({
       ok: true,
       conversations: [remoteChat],
@@ -125,6 +114,15 @@ test('WorkspaceSidebar.remoteLink', async () => {
       capabilities: [],
     }),
   }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  fakePairedStudios(domWindow.api as object, {
+    'workspaces.list': () => ({
+      workspaces: [
+        { id: 'rw1', name: 'sprintengine', mode: 'standard', folderPath: '/Users/mini/sprintengine', repository: null },
+      ],
+    }),
+  })
 
   async function main(): Promise<void> {
     const React = await import('react')

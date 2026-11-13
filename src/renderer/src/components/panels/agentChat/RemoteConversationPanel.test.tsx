@@ -306,10 +306,6 @@ async function mountRemote({
       fetchedAt: 1_700_000_000_000,
       commands: [{ name: 'review-pr', description: 'Review a pull request over there', source: 'custom' }],
     })),
-    meshWorkspaceExtensions: vi.fn(async (_input: { connectionId: string; workspaceId: string; cli?: string }) => ({
-      ok: true,
-      extensions,
-    })),
     // Create PR on the machine the chat runs on: each step answers as that
     // machine would, and a creation records the pull request there.
     meshConversationPullRequestState: vi.fn(async (_input: { key: MeshConversationKey }) => ({
@@ -482,6 +478,14 @@ async function mountRemote({
     matchMedia: () => ({ matches: true, addEventListener: () => undefined, removeEventListener: () => undefined }),
     api,
   })
+  // That machine's Studio, as this window's own client of it reaches it: the
+  // chat's project's skills and its CLI's servers there.
+  const workspaceExtensions = vi.fn((_params: Record<string, unknown>, _connectionId: string) => ({
+    workspaceId: key.workspaceId,
+    ...extensions,
+  }))
+  const { fakePairedStudios } = await import('../../../studio/pairedStudio.double')
+  fakePairedStudios(api, { 'workspaces.extensions': workspaceExtensions })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { default: RemoteConversationPanel } = await import('./RemoteConversationPanel')
@@ -546,6 +550,7 @@ async function mountRemote({
     document: dom.window.document,
     act,
     api,
+    workspaceExtensions,
     followed,
     emit: (frame: MeshConversationFrame) => receivers.at(-1)!(frame),
     /** To the chat's own follow, when a sub-agent has been followed since. */
@@ -1697,7 +1702,7 @@ test('a chat over there that takes that machine\'s skills lists them in the "+" 
   })
   try {
     expect(await openExtensions(chat)).toBe(true)
-    expect(chat.api.meshWorkspaceExtensions).toHaveBeenCalled()
+    expect(chat.workspaceExtensions).toHaveBeenCalled()
     expect(chat.document.body.textContent).toContain('Review a change')
   } finally {
     await chat.unmount()
@@ -1717,7 +1722,7 @@ test('a server that failed over there is reconnected from its row, over the mesh
   })
   try {
     expect(await openExtensions(chat, true)).toBe(true)
-    const reads = chat.api.meshWorkspaceExtensions.mock.calls.length
+    const reads = chat.workspaceExtensions.mock.calls.length
     const reconnect = Array.from(chat.document.querySelectorAll('button')).find(
       (item) => item.textContent?.trim() === 'Reconnect',
     )
@@ -1728,7 +1733,7 @@ test('a server that failed over there is reconnected from its row, over the mesh
       serverId: 'tracker',
       action: 'reconnect',
     })
-    expect(chat.api.meshWorkspaceExtensions.mock.calls.length).toBeGreaterThan(reads)
+    expect(chat.workspaceExtensions.mock.calls.length).toBeGreaterThan(reads)
   } finally {
     await chat.unmount()
   }
@@ -2505,10 +2510,7 @@ test("a $ in a chat over there lists that machine's skills, and the send carries
     await settleTurn(chat)
     await chat.act(async () => chat.type('$systematic'))
     await settleSearch(chat)
-    expect(chat.api.meshWorkspaceExtensions).toHaveBeenCalledWith({
-      connectionId: key.connectionId,
-      workspaceId: key.workspaceId,
-    })
+    expect(chat.workspaceExtensions).toHaveBeenCalledWith({ workspaceId: key.workspaceId }, key.connectionId)
     expect(chat.document.body.textContent).toContain('Find the root cause first.')
     await chat.act(async () => chat.enter())
     await chat.act(async () => chat.type('Why does it flake?'))

@@ -1,4 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { changePairedChat, settlePairedChat, visitPairedChat } from '../../studio/pairedChats'
+import { pairedStudioAvailable } from '../../studio/pairedStudio'
+import { pairedScheduledAgentAction } from '../../studio/pairedSchedules'
 import { ChatGlyph, NewChatIcon, RemoteMachineGlyph, ScheduleGlyph, resolveEnabledWorkspaceType } from '../AppIcons'
 import CliIcon from '../CliIcon'
 import { PromptCacheMark } from './PromptCacheMark'
@@ -1474,8 +1477,7 @@ function WorkspaceSidebar({
   const refreshRemoteScheduled = remoteScheduled.refresh
   const actOnRemoteScheduled = useCallback(
     (machine: RemoteScheduledMachine, agent: ScheduledAgentView, action: 'run' | 'pause' | 'resume' | 'delete') => {
-      void window.api
-        .meshScheduledAgentAction({ connectionId: machine.connectionId, id: agent.id, action })
+      void pairedScheduledAgentAction({ id: machine.connectionId, machineName: machine.machineName }, agent.id, action)
         .then((result) => {
           const titles = { run: 'Started', pause: 'Paused', resume: 'Resumed', delete: 'Scheduled agent closed' }
           const failed = { run: 'Did not run', pause: 'Not paused', resume: 'Not resumed', delete: 'Not closed' }
@@ -1686,8 +1688,7 @@ function WorkspaceSidebar({
   // the machine's own words.
   const settleRemoteConversation = useCallback(
     (conversation: RemoteConversation) => {
-      const settle = window.api?.meshSettleConversation
-      if (typeof settle !== 'function') return
+      if (!pairedStudioAvailable()) return
       const restore = (message: string) => {
         setSettlingRemote((current) => {
           const next = new Set(current)
@@ -1697,7 +1698,10 @@ function WorkspaceSidebar({
         showToast({ tone: 'error', title: `${conversation.title} was not settled`, description: message })
       }
       setSettlingRemote((current) => new Set(current).add(conversation.key))
-      void settle({ connectionId: conversation.connectionId, workspaceId: conversation.workspaceId })
+      void settlePairedChat(
+        { id: conversation.connectionId, machineName: conversation.machineName },
+        conversation.workspaceId,
+      )
         .then((answer) => {
           if (!answer.ok) restore(answer.message)
           // Read again, so the list that no longer names it is what clears
@@ -1709,6 +1713,15 @@ function WorkspaceSidebar({
     [refreshRemote],
   )
 
+  // A paired machine by its pairing here, for what this window asks of its Studio.
+  const pairedMachineOf = useCallback(
+    (connectionId: string) => ({
+      id: connectionId,
+      machineName:
+        remotePresence.mesh.find((connection) => connection.id === connectionId)?.machineName ?? 'That machine',
+    }),
+    [remotePresence.mesh],
+  )
   // The row menu on a paired machine's chat, open here or not: its star,
   // colour, sleep and Auto-settle are that machine's record of the chat
   // (`chat-lifecycle`), and Mark unread its read state (`chat-lifecycle`).
@@ -1721,8 +1734,7 @@ function WorkspaceSidebar({
       marks?: RemoteChatPending,
       onTaken?: () => void,
     ) => {
-      const call = window.api?.meshChangeConversation
-      if (typeof call !== 'function') return
+      if (!pairedStudioAvailable()) return
       const key = remoteChatKey(target.connectionId, target.workspaceId)
       if (marks)
         setPendingRemoteMarks((current) =>
@@ -1746,7 +1758,7 @@ function WorkspaceSidebar({
         if (marks) settlePending(false)
         showToast({ tone: 'error', title: remoteChangeRefusedTitle(change, target.title), description: message })
       }
-      void call({ connectionId: target.connectionId, workspaceId: target.workspaceId, change })
+      void changePairedChat(pairedMachineOf(target.connectionId), target.workspaceId, change)
         .then((answer) => {
           if (!answer.ok) {
             refused(answer.message)
@@ -1759,7 +1771,7 @@ function WorkspaceSidebar({
         })
         .catch((error: unknown) => refused(error instanceof Error ? error.message : String(error)))
     },
-    [refreshRemote],
+    [refreshRemote, pairedMachineOf],
   )
   // The same, from either menu's action: what each asks of the machine, and
   // what the row wears meanwhile. Snooze presets are resolved against the
@@ -1842,8 +1854,7 @@ function WorkspaceSidebar({
     const origin = workspace.remoteOrigin
     if (origin) {
       const row = remoteConversationByWorkspace.get(workspace.id)?.agents[0]
-      const visit = window.api?.meshVisitConversation
-      if (!row?.lifecycle || typeof visit !== 'function') return null
+      if (!row?.lifecycle || !pairedStudioAvailable()) return null
       const chatWorkspaceId = remoteOriginChatWorkspaceId(origin)
       return {
         key: `remote:${origin.connectionId}:${chatWorkspaceId}`,
@@ -1852,7 +1863,9 @@ function WorkspaceSidebar({
         // The machine stamps the visit with its own clock, which this one's
         // may not agree with.
         stamp: () => {
-          void visit({ connectionId: origin.connectionId, workspaceId: chatWorkspaceId }).catch(() => undefined)
+          void visitPairedChat({ id: origin.connectionId, machineName: origin.machineName }, chatWorkspaceId).catch(
+            () => undefined,
+          )
         },
         // The "New" divider weighs the machine's visit clock, as its list said
         // it before this opening's first stamp, against the replies that
@@ -2009,9 +2022,8 @@ function WorkspaceSidebar({
   const settleOpenedRemote = useCallback(
     (workspace: Workspace, settled = true) => {
       const origin = workspace.remoteOrigin
-      const settle = window.api?.meshSettleConversation
       const here = () => (settled ? settleWorkspaceById(workspace.id) : setWorkspaceSettled(workspace.id, false))
-      if (!origin || typeof settle !== 'function' || !remoteKeepsRest(workspace)) {
+      if (!origin || !pairedStudioAvailable() || !remoteKeepsRest(workspace)) {
         here()
         return
       }
@@ -2021,7 +2033,11 @@ function WorkspaceSidebar({
           title: settled ? `${workspace.name} was not settled` : `${workspace.name} was not brought back`,
           description: message,
         })
-      void settle({ connectionId: origin.connectionId, workspaceId: remoteOriginChatWorkspaceId(origin), settled })
+      void settlePairedChat(
+        { id: origin.connectionId, machineName: origin.machineName },
+        remoteOriginChatWorkspaceId(origin),
+        settled,
+      )
         .then((answer) => {
           if (answer.ok) here()
           else refused(answer.message)

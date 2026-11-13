@@ -1,23 +1,8 @@
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 
 import {
-  MESH_BROWSE_CHANNEL,
-  MESH_CREATE_CONVERSATION_CHANNEL,
-  MESH_SETTLE_CONVERSATION_CHANNEL,
-  MESH_VISIT_CONVERSATION_CHANNEL,
-  MESH_CHANGE_CONVERSATION_CHANNEL,
-  MESH_CONVERSATION_DELETE_PLAN_CHANNEL,
-  MESH_CONVERSATION_SEARCH_CHANNEL,
-  MESH_APPROVAL_RULES_CHANNEL,
-  MESH_REVOKE_APPROVAL_RULE_CHANNEL,
-  MESH_SCHEDULED_AGENTS_CHANNEL,
-  MESH_SCHEDULED_AGENT_ACTION_CHANNEL,
-  MESH_CREATE_SCHEDULED_AGENT_CHANNEL,
-  MESH_UPDATE_SCHEDULED_AGENT_CHANNEL,
-  MESH_WORKSPACE_CHECKOUT_CHANNEL,
   MESH_CANVAS_BOARDS_CHANNEL,
   MESH_CANVAS_SCREENSHOT_CHANNEL,
-  MESH_WORKSPACE_EXTENSIONS_CHANNEL,
   MESH_FORGET_CHANNEL,
   MESH_GET_LIVE_STATE_CHANNEL,
   MESH_LIST_CONNECTIONS_CHANNEL,
@@ -114,93 +99,6 @@ export function registerMeshIpc(ipcMain: IpcMain, service: AutomationService): v
     service.mesh().cancelPairing(requestId)
   })
   ipcMain.handle(MESH_FORGET_CHANNEL, (_event, connectionId: unknown) => service.mesh().forget(connectionId))
-  ipcMain.handle(MESH_BROWSE_CHANNEL, (_event, connectionId: unknown) => service.mesh().browse(connectionId))
-  ipcMain.handle(MESH_CREATE_CONVERSATION_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service.mesh().createConversation({
-      connectionId: record.connectionId,
-      workspaceId: record.workspaceId,
-      noProject: record.noProject,
-      cli: record.cli,
-      prompt: record.prompt,
-      cliModel: record.cliModel,
-      permissionPreset: record.permissionPreset,
-      effort: record.effort,
-      worktree: record.worktree,
-      attachments: record.attachments,
-      skills: record.skills,
-    })
-  })
-  // A remote chat's rest and visit clock, kept by the machine it runs on.
-  ipcMain.handle(MESH_SETTLE_CONVERSATION_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service.mesh().settleConversation({
-      connectionId: record.connectionId,
-      workspaceId: record.workspaceId,
-      settled: record.settled,
-    })
-  })
-  ipcMain.handle(MESH_VISIT_CONVERSATION_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service.mesh().visitConversation({
-      connectionId: record.connectionId,
-      workspaceId: record.workspaceId,
-    })
-  })
-  // A remote chat's row menu: its star, colour, snooze, Auto-settle and Mark
-  // unread, kept by the machine it runs on.
-  ipcMain.handle(MESH_CHANGE_CONVERSATION_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service.mesh().changeConversation({
-      connectionId: record.connectionId,
-      workspaceId: record.workspaceId,
-      change: record.change,
-    })
-  })
-  // A paired desktop's chat management: what a Delete there would do.
-  ipcMain.handle(MESH_CONVERSATION_DELETE_PLAN_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service.mesh().conversationDeletePlan({ connectionId: record.connectionId, workspaceId: record.workspaceId })
-  })
-  // …and what was said in its chats, for the palette.
-  ipcMain.handle(MESH_CONVERSATION_SEARCH_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service.mesh().conversationSearch({ connectionId: record.connectionId, query: record.query })
-  })
-  // …and the "always allow" rules its chats run with, for Settings.
-  ipcMain.handle(MESH_APPROVAL_RULES_CHANNEL, (_event, input: unknown) =>
-    service.mesh().approvalRules({ connectionId: asRecord(input)?.connectionId }),
-  )
-  ipcMain.handle(MESH_REVOKE_APPROVAL_RULE_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service.mesh().revokeApprovalRule({ connectionId: record.connectionId, ruleId: record.ruleId })
-  })
-  // …and its scheduled agents, for the sidebar's Scheduled section and New chat.
-  ipcMain.handle(MESH_SCHEDULED_AGENTS_CHANNEL, (_event, input: unknown) =>
-    service.mesh().scheduledAgents({ connectionId: asRecord(input)?.connectionId }),
-  )
-  ipcMain.handle(MESH_SCHEDULED_AGENT_ACTION_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service
-      .mesh()
-      .scheduledAgentAction({ connectionId: record.connectionId, id: record.id, action: record.action })
-  })
-  ipcMain.handle(MESH_CREATE_SCHEDULED_AGENT_CHANNEL, (_event, input: unknown) =>
-    service.mesh().createScheduledAgent(asRecord(input) ?? {}),
-  )
-  ipcMain.handle(MESH_UPDATE_SCHEDULED_AGENT_CHANNEL, (_event, input: unknown) =>
-    service.mesh().updateScheduledAgent(asRecord(input) ?? {}),
-  )
-  ipcMain.handle(MESH_WORKSPACE_CHECKOUT_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input)
-    return service.mesh().workspaceCheckout(record?.connectionId, record?.workspaceId)
-  })
-  ipcMain.handle(MESH_WORKSPACE_EXTENSIONS_CHANNEL, (_event, input: unknown) => {
-    const record = asRecord(input) ?? {}
-    return service
-      .mesh()
-      .workspaceExtensions({ connectionId: record.connectionId, workspaceId: record.workspaceId, cli: record.cli })
-  })
   ipcMain.handle(MESH_CANVAS_BOARDS_CHANNEL, (_event, input: unknown) => {
     const record = asRecord(input) ?? {}
     return service

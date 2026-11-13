@@ -11,6 +11,7 @@ import {
 import type { Workspace } from '../../../types/workspace'
 import type { EnvironmentConnectionState, EnvironmentEntry } from '../../../../../shared/environments'
 import {
+  chatManageOf,
   attachedConversations,
   attachedWorkspaceFor,
   buildRemoteBand,
@@ -844,8 +845,6 @@ function bandOfListed(over: Partial<MeshConversation>, entry: Partial<RemoteBrow
 const operate: Partial<RemoteBrowseEntry> = {
   lifecycle: true,
   access: 'operate',
-  rowMenu: true,
-  markUnread: true,
 }
 
 test('a remote row carries its machine’s star, colour and Auto-settle, and whether that machine takes them from here', () => {
@@ -856,8 +855,8 @@ test('a remote row carries its machine’s star, colour and Auto-settle, and whe
   assert.equal(conversation!.rowMenu, true)
   assert.equal(conversation!.markUnread, true)
 
-  // A machine from before the marks: none listed, and none offered.
-  const [older] = conversationsOf(bandOfListed({}, { lifecycle: true, access: 'operate' })[0]!)
+  // A machine whose Studio keeps no records of its chats: none listed, and none offered.
+  const [older] = conversationsOf(bandOfListed({}, { lifecycle: false, access: 'operate' })[0]!)
   assert.equal(older!.highlight, null)
   assert.equal(older!.autoSettle, false)
   assert.equal(older!.rowMenu, false)
@@ -938,7 +937,7 @@ test('a sleeping remote chat is asleep until its wake, and Mark unread is offere
   const [fresh] = conversationsOf(bandOfListed({}, operate)[0]!)
   assert.equal(canMarkRemoteConversationUnread(fresh!, 7_000), false, 'nothing finished yet')
   const [older] = conversationsOf(
-    bandOfListed({ lastTurnEndedAt: 5_000, lastVisitedAt: 6_000 }, { ...operate, markUnread: false })[0]!,
+    bandOfListed({ lastTurnEndedAt: 5_000, lastVisitedAt: 6_000 }, { ...operate, lifecycle: false })[0]!,
   )
   assert.equal(canMarkRemoteConversationUnread(older!, 7_000), false, 'a machine that does not take it')
 })
@@ -1018,3 +1017,20 @@ function pairedEnvironment(connection: string, state: EnvironmentConnectionState
     compatibility: 'unknown',
   }
 }
+
+test('what of its chats a machine takes from here is read off its Studio’s welcome', () => {
+  assert.deepEqual(chatManageOf({ lifecycle: true, unwatchPullRequest: false }), {
+    rename: true,
+    autoCompact: true,
+    unwatchPullRequest: false,
+    deleteSettled: true,
+    search: true,
+  })
+  assert.deepEqual(chatManageOf({ lifecycle: false, unwatchPullRequest: true }), {
+    rename: false,
+    autoCompact: false,
+    unwatchPullRequest: true,
+    deleteSettled: false,
+    search: false,
+  })
+})

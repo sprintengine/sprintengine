@@ -901,6 +901,11 @@ function serveShellRequests(deps: {
     const { connectionId } = (params ?? {}) as { connectionId?: unknown }
     await deps.gateway.mesh().checkReachability(typeof connectionId === 'string' ? connectionId : undefined)
   })
+  rpc.handle(SERVER_METHODS.meshWindowTicket, (params) => {
+    const { connectionId, origin } = (params ?? {}) as { connectionId?: unknown; origin?: unknown }
+    if (typeof origin !== 'string') throw new Error('A window ticket names its window’s origin.')
+    return deps.gateway.mesh().windowTicket(connectionId, origin)
+  })
   rpc.handle(SERVER_METHODS.info, (): ServerInfo => {
     const status = deps.gateway.getStatus()
     return {

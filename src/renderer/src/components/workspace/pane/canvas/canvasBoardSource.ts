@@ -1,4 +1,5 @@
 import { isRecord } from '../../../../../../shared/records'
+import { createPairedChat } from '../../../../studio/pairedDiscovery'
 import { canvasContinuePrompt, parseCanvasBoardId } from '../../../../../../shared/canvas/paths'
 import type {
   CanvasBoardRef,
@@ -256,11 +257,13 @@ async function continuePaired(
   workspaceId: string,
   board: CanvasPickerBoard,
 ): Promise<CanvasResult<void>> {
-  const created = await window.api.meshCreateConversation({
-    connectionId: source.connectionId,
-    workspaceId: board.workspaceId ?? source.remoteWorkspaceId,
-    prompt: canvasContinuePrompt(board.name, board.id ?? board.path),
-  })
+  const created = await createPairedChat(
+    { id: source.connectionId, machineName: source.machineName },
+    {
+      workspaceId: board.workspaceId ?? source.remoteWorkspaceId,
+      prompt: canvasContinuePrompt(board.name, board.id ?? board.path),
+    },
+  )
   if (!created.ok) return canvasFail('forbidden', created.message)
   const store = useWorkspaceStore.getState()
   const origin = store.workspaces.find((candidate) => candidate.id === workspaceId)?.remoteOrigin

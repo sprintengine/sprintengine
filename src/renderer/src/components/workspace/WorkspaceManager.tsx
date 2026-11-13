@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPairedChat } from '../../studio/pairedDiscovery'
 import { StudioServerBanner } from '../studioServer/StudioServerBanner'
 import { hostIdForFolder, isWslHostId, LOCAL_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
 import { isProjectlessChatsRoot, PROJECTLESS_CHATS_LABEL } from '../../../../shared/projectless-chats'
@@ -4022,8 +4023,9 @@ export default function WorkspaceManager() {
   )
 
   // A chat agent started on a paired machine (remote-sessions-ux /
-  // new-chat-on-a-remote-machine): it is created THERE over the audited mesh
-  // client — cli, prompt, model, and preset forwarded verbatim, so the remote's
+  // new-chat-on-a-remote-machine): it is created THERE, on that machine's
+  // Studio, by this window's own client of it (`createPairedChat`) — cli,
+  // prompt, model, and preset forwarded verbatim, so the remote's
   // own refusals (a scope, a CLI it lacks) surface word for word — and runs in
   // that machine's conversation runtime. What opens here is the same chat pane
   // the Remote band opens for one of its chats, following it by workspace and
@@ -4031,32 +4033,27 @@ export default function WorkspaceManager() {
   // toast; no phantom row.
   const confirmRemoteNewChat = useCallback(
     async (launch: RemoteNewChatLaunch): Promise<void> => {
-      const created = await window.api
-        .meshCreateConversation({
-          connectionId: launch.connectionId,
+      // Asked of that machine's Studio by this window itself.
+      const created = await createPairedChat(
+        { id: launch.connectionId, machineName: launch.machineName },
+        {
           ...(launch.noProject ? { noProject: true } : { workspaceId: launch.remoteWorkspaceId }),
-          cli: launch.cli,
-          prompt: launch.prompt || undefined,
-          cliModel: launch.cliModel ?? undefined,
+          ...(launch.cli ? { cli: launch.cli } : {}),
+          ...(launch.prompt ? { prompt: launch.prompt } : {}),
+          ...(launch.cliModel ? { cliModel: launch.cliModel } : {}),
           // As named, either preset: the launcher showed it, and the chat
           // over there starts on it.
           permissionPreset: launch.permissionPreset,
-          // Present only for a machine that keeps one (`new-chat-effort`).
-          effort: launch.effort,
-          // A worktree cut for it there, or one the project has; refused in
-          // words by a machine that does not take it, never dropped.
+          ...(launch.effort ? { effort: launch.effort } : {}),
+          // A worktree cut for it there, or one the project has.
           ...(launch.worktree ? { worktree: launch.worktree } : {}),
-          // The staged images, as bytes: main puts them in that machine's
-          // upload store and the first message names them there.
-          ...(launch.images?.length ? { attachments: launch.images } : {}),
+          // The staged images, as bytes: staged there once the chat exists, and
+          // its first message names them.
+          ...(launch.images?.length ? { images: launch.images } : {}),
           // That machine's skills, installed and run over there.
           ...(launch.skills?.length ? { skills: launch.skills } : {}),
-        })
-        .catch((error: unknown): { ok: false; code: string; message: string } => ({
-          ok: false,
-          code: 'failed',
-          message: error instanceof Error ? error.message : String(error),
-        }))
+        },
+      )
       if (!created.ok) {
         showToast({
           tone: 'error',

@@ -190,7 +190,7 @@ export type MeshGap = {
   message: string
 }
 
-/** One machine's contents, as the Mesh surface shows them. */
+/** One machine's contents, as the window reads them of its Studio (`browsePairedMachine`). */
 export type MeshBrowse = {
   connectionId: string
   /** False when the machine did not answer at all; everything below is then empty. */
@@ -204,12 +204,13 @@ export type MeshBrowse = {
   workspaces: MeshWorkspace[]
   gaps: MeshGap[]
   /**
-   * What the machine said in its handshake it can do (`TAILNET_CAPABILITIES`),
-   * so a surface offers only what it will honour: New chat leaves its effort
-   * control off for a machine without `new-chat-effort`. Null, or absent, when
-   * it said nothing, which promises nothing.
+   * What of its chats' records the machine's Studio keeps for this one, as its
+   * welcome says: `lifecycle` (`chat-lifecycle`) their rest and read state, the
+   * row menu's marks, Rename, Auto compact, Delete and a search of them;
+   * `unwatchPullRequest` (`pull-request-watch`) Stop watching. Absent from a
+   * browse that did not reach its Studio, which offers none of them.
    */
-  capabilities?: string[] | null
+  chatRecord?: { lifecycle: boolean; unwatchPullRequest: boolean }
 }
 
 /** The state of one followed remote conversation's link, as the pane badges it. */
@@ -258,8 +259,8 @@ export type MeshCreateConversationResult =
 /**
  * A chat settled, or brought back, on a paired machine (`conversation.settle`).
  * `settledAt` is the machine's answer: when it was settled, or null when it is
- * in the list. `lifecycle_unsupported` is a machine that does not advertise
- * `conversation-lifecycle`.
+ * in the list. `lifecycle_unsupported` is a machine whose Studio does not serve
+ * `chat-lifecycle`.
  */
 export type MeshSettleConversationResult =
   { ok: true; workspaceId: string; settledAt: number | null } | { ok: false; code: string; message: string }
@@ -284,14 +285,14 @@ export type MeshConversationChange =
 /**
  * A chat's management from a paired desktop, beyond its marks, each where
  * the machine takes it (`MeshConversationManage`): Rename, Auto compact and
- * Delete on its Studio (`chat-lifecycle`), and Stop watching by its gateway
- * tool (`chat-unwatch-pull-request`).
+ * Delete on its Studio (`chat-lifecycle`), and Stop watching
+ * (`pull-request-watch`).
  */
 export type MeshConversationManageChange =
   | { kind: 'rename'; name: string }
   | { kind: 'auto-compact'; enabled: boolean }
-  /** One agent's watch of a pull request, by its address; every watch the agent has without one. */
-  | { kind: 'unwatch-pull-request'; agentId: string; url?: string }
+  /** One agent's watch of a pull request, by its address. */
+  | { kind: 'unwatch-pull-request'; agentId: string; url: string }
   /** A settled chat deleted there for good (`chat-lifecycle`), after its plan was said. */
   | { kind: 'delete' }
 
@@ -301,10 +302,10 @@ export type MeshConversationManageChange =
  * (`chat-lifecycle`): the chat renamed there, so every device lists it by the
  * new name; its Auto compact switched there, the machine that runs it
  * compacting it by itself; a settled chat deleted there for good, its plan
- * read first (`meshConversationDeletePlan`); and what was said in its chats
- * found from here (`meshConversationSearch`). `unwatchPullRequest`:
- * `chat-unwatch-pull-request`, a watch of the chat's pull request ended
- * there, where its listed pull request says it is watched.
+ * read first (`pairedChatDeletePlan`); and what was said in its chats
+ * found from here (`searchPairedChats`). `unwatchPullRequest`:
+ * `pull-request-watch`, a watch of the chat's pull request ended there
+ * (`pullRequests.unwatch`), where its listed pull request says it is watched.
  */
 export type MeshConversationManage = {
   rename: boolean
@@ -333,8 +334,6 @@ export type MeshConversationSearchResult =
     }
   | { ok: false; code: string; message: string }
 
-export const MESH_CONVERSATION_SEARCH_CHANNEL = 'mesh:conversation-search'
-
 /**
  * The "always allow" rules a paired machine's chats run with
  * (`conversation.approval_rules`), each project by its folder's name.
@@ -356,9 +355,6 @@ export type MeshApprovalRulesResult =
 
 /** One of them revoked there (`conversation.approval_rule_revoke`). */
 export type MeshRevokeApprovalRuleResult = { ok: true; ruleId: string } | { ok: false; code: string; message: string }
-
-export const MESH_APPROVAL_RULES_CHANNEL = 'mesh:approval-rules'
-export const MESH_REVOKE_APPROVAL_RULE_CHANNEL = 'mesh:revoke-approval-rule'
 
 /**
  * A paired machine's scheduled agents (`schedule.list`, `workspace:read`),
@@ -391,7 +387,6 @@ export type MeshScheduledAgentActionResult =
  * project's checkout; empty has a worktree named for it there.
  */
 export type MeshCreateScheduledAgentInput = {
-  connectionId: string
   workspaceId: string
   prompt: string
   cron: string
@@ -416,7 +411,6 @@ export type MeshCreateScheduledAgentResult =
  * there; absent, it keeps its own. `once` absent repeats on `cron`.
  */
 export type MeshUpdateScheduledAgentInput = {
-  connectionId: string
   id: string
   workspaceId?: string
   prompt: string
@@ -432,11 +426,6 @@ export type MeshUpdateScheduledAgentInput = {
 }
 
 export type MeshUpdateScheduledAgentResult = MeshCreateScheduledAgentResult
-
-export const MESH_SCHEDULED_AGENTS_CHANNEL = 'mesh:scheduled-agents'
-export const MESH_SCHEDULED_AGENT_ACTION_CHANNEL = 'mesh:scheduled-agent-action'
-export const MESH_CREATE_SCHEDULED_AGENT_CHANNEL = 'mesh:create-scheduled-agent'
-export const MESH_UPDATE_SCHEDULED_AGENT_CHANNEL = 'mesh:update-scheduled-agent'
 
 /**
  * What deleting a settled chat on a paired machine would do, as that machine
@@ -454,8 +443,6 @@ export type MeshConversationDeletePlanResult =
       worktrees: Array<Omit<SettledChatWorktreePlan, 'path'>>
     }
   | { ok: false; code: string; message: string }
-
-export const MESH_CONVERSATION_DELETE_PLAN_CHANNEL = 'mesh:conversation-delete-plan'
 
 /** That machine took the change, or why not. `row_menu_unsupported` is a machine without the tool. */
 export type MeshChangeConversationResult =
@@ -613,18 +600,11 @@ export const MESH_FORGET_CHANNEL = 'mesh:forget'
  * lives on the same IPC-only front door as the rest of that family.
  */
 export const TAILNET_FORGET_MACHINE_CHANNEL = 'tailnet:forget-machine'
-export const MESH_BROWSE_CHANNEL = 'mesh:browse'
 /** Start a chat agent on a paired machine, over its `conversation.create`. */
-export const MESH_CREATE_CONVERSATION_CHANNEL = 'mesh:create-conversation'
 /** Settle a chat on a paired machine, or bring it back, over its `conversation.settle`. */
-export const MESH_SETTLE_CONVERSATION_CHANNEL = 'mesh:settle-conversation'
 /** Say a chat on a paired machine is on screen here, over its `conversation.visit`. */
-export const MESH_VISIT_CONVERSATION_CHANNEL = 'mesh:visit-conversation'
 /** A row menu change to a chat on a paired machine (`MeshConversationChange`). */
-export const MESH_CHANGE_CONVERSATION_CHANNEL = 'mesh:change-conversation'
 /** One remote workspace's checkout facts (branch, branches, worktrees) over `workspace.checkout`. */
-export const MESH_WORKSPACE_CHECKOUT_CHANNEL = 'mesh:workspace-checkout'
-export const MESH_WORKSPACE_EXTENSIONS_CHANNEL = 'mesh:workspace-extensions'
 /** A paired machine's Canvas boards and a picture of one, over the `canvas.*` tools there. */
 export const MESH_CANVAS_BOARDS_CHANNEL = 'mesh:canvas-boards'
 export const MESH_CANVAS_SCREENSHOT_CHANNEL = 'mesh:canvas-screenshot'
@@ -769,16 +749,10 @@ export type MeshConversationFrame =
  * (`negotiateChatCapabilities`, `@sprintengine/client-runtime`); an empty list
  * is a machine that published none, which offers nothing beyond following.
  *
- * `lifecycle`: the machine advertises `conversation-lifecycle` — its list
- * leaves out settled chats and names their titles and clocks, and it takes
- * `conversation.settle` and `conversation.visit`. False for a machine that
- * does not, whose chats offer no Settle here.
- *
- * `rowMenu`: the machine's Studio serves `chat-lifecycle` — its chats' Star,
- * Highlight color, Snooze and Auto-settle are offered here, and written there.
- *
- * `markUnread`: the machine's Studio serves `chat-lifecycle` — its chats offer
- * Mark unread here.
+ * What of a chat's record the machine keeps for this one (its rest and read
+ * state, the row menu's marks, Rename, Auto compact, Delete, a search) is not
+ * the list's: the window reads it off that machine's Studio welcome
+ * (`browsePairedMachine`).
  */
 export type MeshConversationListResult =
   | {
@@ -786,11 +760,6 @@ export type MeshConversationListResult =
       conversations: MeshConversation[]
       access: MeshConversationAccess
       capabilities: string[]
-      lifecycle?: boolean
-      rowMenu?: boolean
-      markUnread?: boolean
-      /** What of its chats' management the machine takes from here; absent from a build before it. */
-      manage?: MeshConversationManage
     }
   | { ok: false; code: string; message: string }
 

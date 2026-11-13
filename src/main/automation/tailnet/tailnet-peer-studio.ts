@@ -28,6 +28,44 @@ export function peerStudioOutdated(machineName: string): string {
   return `Update SprintEngine Studio on ${machineName} to use this from here.`
 }
 
+/**
+ * A ticket for one connection to a paired machine's Studio, bought with the
+ * device token this machine holds for it: good once, for thirty seconds. One
+ * for a desktop window names the window's `origin`, and the far listener lets
+ * only a socket saying exactly that origin open with it; one for this
+ * process's own socket names none. Rejects with a `StudioError`: `unauthorized`
+ * for a pairing the machine no longer knows, `outdated` for a machine from
+ * before the protocol, `unavailable` for one that did not answer.
+ */
+export async function peerStudioTicket(
+  target: Omit<PeerStudioTarget, 'id'>,
+  origin?: string,
+): Promise<{ url: string; token: string }> {
+  let answer: Awaited<ReturnType<typeof requestTailnetJson>>
+  try {
+    answer = await requestTailnetJson({
+      endpoint: target.endpoint,
+      method: 'POST',
+      path: TAILNET_WS_TICKET_PATH,
+      token: target.deviceToken,
+      body: origin === undefined ? {} : { origin },
+    })
+  } catch {
+    throw new StudioError('unavailable', `${target.machineName} did not answer.`)
+  }
+  if (answer.status === 401)
+    throw new StudioError('unauthorized', `${target.machineName} no longer knows this pairing.`)
+  const body = answer.body as { ticket?: unknown; studioPath?: unknown } | null
+  if (answer.status !== 200 || typeof body?.ticket !== 'string')
+    throw new StudioError('unavailable', `${target.machineName} answered ${answer.status}.`)
+  if (typeof body.studioPath !== 'string') throw new StudioError('outdated', peerStudioOutdated(target.machineName))
+  const host = target.endpoint.host.includes(':') ? `[${target.endpoint.host}]` : target.endpoint.host
+  return {
+    url: `ws://${host}:${target.endpoint.port}${body.studioPath}?ticket=${encodeURIComponent(body.ticket)}`,
+    token: body.ticket,
+  }
+}
+
 /** How long a paired machine's connection is kept with nothing asked of it. */
 const IDLE_CLOSE_MS = 5 * 60_000
 /** How long one ask waits for an answer, unless it says otherwise. */
@@ -74,32 +112,6 @@ export function createPeerStudios(
   const held = new Map<string, Held>()
   const idleCloseMs = options.idleCloseMs ?? IDLE_CLOSE_MS
 
-  async function ticket(target: PeerStudioTarget): Promise<{ url: string; token: string }> {
-    let answer: Awaited<ReturnType<typeof requestTailnetJson>>
-    try {
-      answer = await requestTailnetJson({
-        endpoint: target.endpoint,
-        method: 'POST',
-        path: TAILNET_WS_TICKET_PATH,
-        token: target.deviceToken,
-        body: {},
-      })
-    } catch {
-      throw new StudioError('unavailable', `${target.machineName} did not answer.`)
-    }
-    if (answer.status === 401)
-      throw new StudioError('unauthorized', `${target.machineName} no longer knows this pairing.`)
-    const body = answer.body as { ticket?: unknown; studioPath?: unknown } | null
-    if (answer.status !== 200 || typeof body?.ticket !== 'string')
-      throw new StudioError('unavailable', `${target.machineName} answered ${answer.status}.`)
-    if (typeof body.studioPath !== 'string') throw new StudioError('outdated', peerStudioOutdated(target.machineName))
-    const host = target.endpoint.host.includes(':') ? `[${target.endpoint.host}]` : target.endpoint.host
-    return {
-      url: `ws://${host}:${target.endpoint.port}${body.studioPath}?ticket=${encodeURIComponent(body.ticket)}`,
-      token: body.ticket,
-    }
-  }
-
   function close(connectionId: string): void {
     const entry = held.get(connectionId)
     if (!entry) return
@@ -121,7 +133,7 @@ export function createPeerStudios(
     const states = new Set<(state: StudioClientState) => void>()
     const opening = connect({
       client: { name: 'SprintEngine Studio' },
-      transport: webSocketTransport({ ticket: () => ticket(target), WebSocket: NodeWebSocket }),
+      transport: webSocketTransport({ ticket: () => peerStudioTicket(target), WebSocket: NodeWebSocket }),
       reconnect: { initialDelayMs: 500, maxDelayMs: 30_000 },
       onStateChange: (state) => {
         for (const listener of [...states]) listener(state)

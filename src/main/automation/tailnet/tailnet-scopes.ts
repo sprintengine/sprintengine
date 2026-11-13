@@ -1,6 +1,5 @@
 import type { ConversationClientMessage } from '../../../../packages/conversation-protocol/src/public'
 import type { StudioAccess } from '../../../../packages/studio-protocol/src/permissions'
-import type { McpConnectionContext, McpToolRegistration } from '../../../shared/modules/mcp-tools'
 import type { TailnetScope } from '../../../shared/tailnet'
 
 // What everything a paired device can ask of this machine requires, in the
@@ -229,27 +228,6 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
     return `"${toolName}" reads the terminals on this machine, and terminals are not served over the tailnet. A paired device follows this machine's chats instead; run it from an agent on that machine.`
   }
   return null
-}
-
-/**
- * Tools served to paired devices and left out of the local socket's list: the
- * other side of `localOnlyGatewayToolReason`. Stop watching answers a paired
- * desktop's menu on a chat here, which an agent here has its own way to, and
- * every tool an agent is listed costs it context.
- */
-const PAIRED_DEVICE_ONLY_TOOLS: ReadonlySet<string> = new Set(['conversation.pull_request_unwatch'])
-
-export function servedOnlyToPairedDevices(toolName: string): boolean {
-  return PAIRED_DEVICE_ONLY_TOOLS.has(toolName)
-}
-
-/** The gateway's own tools as one caller is listed them: without those served only to paired devices, unless it is one. */
-export function gatewayToolsForCaller(
-  tools: McpToolRegistration[],
-  context: McpConnectionContext | undefined,
-): McpToolRegistration[] {
-  if (context?.metadata.kind === 'remote-tailnet') return tools
-  return tools.filter((tool) => !servedOnlyToPairedDevices(tool.name))
 }
 
 /**

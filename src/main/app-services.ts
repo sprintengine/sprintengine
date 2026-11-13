@@ -22,6 +22,7 @@ import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
 import { createDesktopEnvironments } from './environments/desktop-environments'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
+import type { EnvironmentTicketResult } from '../shared/environments'
 import { isMachinePath } from '../shared/machine-paths'
 import { workspaceProjectRootOf } from '../shared/worktree-paths'
 import type { WorkspaceEnvironmentRef } from '../renderer/src/types/workspace'
@@ -1658,6 +1659,20 @@ export function createAppServices(
   registerEnvironmentsIpc(ipcMain, {
     environments,
     broadcast: (channel) => broadcastToAllWindows(channel, null),
+    // A window's own client of a paired desktop's Studio (design-lane-on-protocol
+    // D1): the mesh keeps the device token and buys each connection's ticket.
+    // The other kinds of route are reached through this machine's server for now.
+    ticket: async (route, origin) => {
+      if (route.kind !== 'tailnet')
+        return { ok: false, code: 'unsupported_route', message: 'This window reaches that machine through this one.' }
+      if (automationService) return automationService.mesh().windowTicket(route.connection, origin)
+      if (server)
+        return server.rpc.call<EnvironmentTicketResult>(SERVER_METHODS.meshWindowTicket, {
+          connectionId: route.connection,
+          origin,
+        })
+      return { ok: false, code: 'unavailable', message: 'Studio’s server is not running yet.' }
+    },
   })
   // A chat agent in WSL reaches its own server's gateway: the desktop's
   // toolsets, and this side's own tools of the families the WSL server cannot

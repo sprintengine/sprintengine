@@ -5,7 +5,7 @@ import { requestConversationJump } from '../../../utils/conversationHistoryNavig
 // so it says which of them take a search from here (`chat-lifecycle`), and the
 // window's manager says how one of their chats is opened here, as its sidebar
 // row opens it (`registerRemoteChatOpener`). The palette asks each machine
-// itself (`meshConversationSearch`).
+// itself (`searchPairedChats`).
 
 export type RemoteSearchMachine = { connectionId: string; machineName: string }
 

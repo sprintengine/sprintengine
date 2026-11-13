@@ -109,12 +109,26 @@ test('a chat opened here from a paired machine wears the marks its machine lists
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
+    meshConversationList: async () => ({
+      ok: true,
+      conversations: [
+        listed('rw1', 'Asks approval', 'waiting_for_approval', 30),
+        listed('rw2', 'Builds away', 'running', 2, { workingSince: now - minute }),
+        listed('rw3', 'Finished unseen', 'completed', 20, {
+          lastTurnEndedAt: now - 10 * minute,
+          lastVisitedAt: now - 15 * minute,
+        }),
+        listed('rw4', 'Stopped by an error', 'failed', 40),
+        listed('rw5', 'Followed from a rename', 'completed', 50),
+      ],
+      access: 'operate',
+      capabilities: [],
+    }),
+  }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  fakePairedStudios(domWindow.api as object, {
+    'workspaces.list': () => ({
       workspaces: [
         ...['rw1', 'rw2', 'rw3'].map((id) => ({
           id,
@@ -140,28 +154,9 @@ test('a chat opened here from a paired machine wears the marks its machine lists
           repository: DEMO_APP,
         },
       ],
-      gaps: [],
     }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations: [
-        listed('rw1', 'Asks approval', 'waiting_for_approval', 30),
-        listed('rw2', 'Builds away', 'running', 2, { workingSince: now - minute }),
-        listed('rw3', 'Finished unseen', 'completed', 20, {
-          lastTurnEndedAt: now - 10 * minute,
-          lastVisitedAt: now - 15 * minute,
-        }),
-        listed('rw4', 'Stopped by an error', 'failed', 40),
-        listed('rw5', 'Followed from a rename', 'completed', 50),
-      ],
-      access: 'operate',
-      capabilities: [],
-      lifecycle: true,
-      rowMenu: true,
-      markUnread: true,
-    }),
-    meshVisitConversation: async () => ({ ok: true, workspaceId: 'rw1', lastVisitedAt: Date.now() }),
-  }
+    'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
+  })
 
   const React = await import('react')
   const { act } = React

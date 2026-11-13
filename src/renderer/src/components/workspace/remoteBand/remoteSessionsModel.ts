@@ -53,20 +53,14 @@ export type RemoteBrowseEntry = {
    */
   conversations?: MeshConversation[]
   /**
-   * The machine advertises `conversation-lifecycle`: it owns its chats' rest
-   * and read state. Absent before a list.
+   * The machine's Studio keeps its chats' records for this one
+   * (`chat-lifecycle`): their rest and read state, and the row menu's marks.
+   * Absent before a browse has reached its Studio.
    */
   lifecycle?: boolean
   /** What the pairing may do with the machine's chats, as its newest list said. Absent before a list. */
   access?: MeshConversationAccess
-  /**
-   * The machine advertises `chat-lifecycle`: its chats' Star, Highlight color,
-   * Snooze and Auto-settle are written there. Absent before a list.
-   */
-  rowMenu?: boolean
-  /** The machine advertises `chat-lifecycle`. Absent before a list. */
-  markUnread?: boolean
-  /** What of its chats' management the machine takes from here, as its newest list said. Absent before a list. */
+  /** What of its chats' management the machine takes from here, as its Studio's welcome said. Absent before a browse. */
   manage?: MeshConversationManage
 }
 
@@ -79,23 +73,21 @@ export const NO_CHAT_MANAGE: MeshConversationManage = {
   search: false,
 }
 
+/** What of its chats' management a machine's Studio takes from here, from what its welcome serves. */
+export function chatManageOf(record: { lifecycle: boolean; unwatchPullRequest: boolean }): MeshConversationManage {
+  return {
+    rename: record.lifecycle,
+    autoCompact: record.lifecycle,
+    unwatchPullRequest: record.unwatchPullRequest,
+    deleteSettled: record.lifecycle,
+    search: record.lifecycle,
+  }
+}
+
 /** What of a machine's chats' management this pairing may ask for: what it takes, where the pairing may drive. */
 export function remoteManageWritable(entry: RemoteBrowseEntry | undefined): MeshConversationManage {
   if (!entry?.manage || entry.access !== 'operate') return NO_CHAT_MANAGE
   return { ...NO_CHAT_MANAGE, ...entry.manage }
-}
-
-/**
- * Whether this pairing may write a machine's chats' row menu marks: the
- * machine takes them (`chat-lifecycle`), and the pairing may drive its chats.
- */
-export function remoteRowMenuWritable(entry: RemoteBrowseEntry | undefined): boolean {
-  return entry?.rowMenu === true && entry.access === 'operate'
-}
-
-/** Whether this pairing may mark a machine's chats unread there (`chat-lifecycle`). */
-export function remoteMarkUnreadWritable(entry: RemoteBrowseEntry | undefined): boolean {
-  return entry?.markUnread === true && remoteLifecycleWritable(entry)
 }
 
 /** What a machine's row menu may do from here, for each of its chats. */
@@ -194,10 +186,10 @@ export type RemoteSessionRow = {
   autoSettle: boolean
   /**
    * Its machine takes the row menu's Star, Highlight color, Snooze and
-   * Auto-settle from here (`remoteRowMenuWritable`).
+   * Auto-settle from here (`remoteLifecycleWritable`).
    */
   rowMenu: boolean
-  /** Its machine takes Mark unread from here (`remoteMarkUnreadWritable`). */
+  /** Its machine takes Mark unread from here (`remoteLifecycleWritable`). */
   markUnread: boolean
   /** What of the chat's management its machine takes from here (`remoteManageWritable`). */
   manage: MeshConversationManage
@@ -574,8 +566,8 @@ export function buildRemoteBand(input: {
       // order, which is kept; one from before that is ordered here.
       const writes: RemoteRowWrites = {
         lifecycle: remoteLifecycleWritable(entry),
-        rowMenu: remoteRowMenuWritable(entry),
-        markUnread: remoteMarkUnreadWritable(entry),
+        rowMenu: remoteLifecycleWritable(entry),
+        markUnread: remoteLifecycleWritable(entry),
         manage: remoteManageWritable(entry),
       }
       const listed = (entry?.conversations ?? [])
@@ -1208,7 +1200,7 @@ export function withRemoteChatMarks(workspace: Workspace, conversation: RemoteCo
 /**
  * The pull request a paired machine watches for one of the chat's agents, and
  * that agent, where the machine takes Stop watching from here
- * (`chat-unwatch-pull-request`); null for none. An open one on GitHub, as a
+ * (`pull-request-watch`); null for none. An open one on GitHub, as a
  * local chat's watch is.
  */
 export function remoteWatchedPullRequest(

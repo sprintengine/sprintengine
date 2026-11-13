@@ -49,7 +49,7 @@ export type KnownGap = { reason: string; closedBy: string; expect: RegExp }
 export const KNOWN_GAPS: Partial<Record<`${ClientId}:${ScenarioId}`, KnownGap>> = {
   'peer:create': {
     reason:
-      'another device starts a chat by naming a CLI (conversation.create), and the fake provider has none; the request is sent and must be refused as it is today',
+      'a paired desktop’s window starts a chat by naming a CLI (conversation.create on the Studio protocol, /tailnet/v1/studio), and the fake provider has none; the request is sent and must be refused as it is today',
     closedBy: 'a contract that starts a chat by provider as well as by CLI, or a fake CLI runtime in the gate',
     expect: /cannot run as a chat/u,
   },

@@ -81,15 +81,6 @@ test('WorkspaceSidebar.remoteOpening', async () => {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
-      workspaces: [{ id: 'rw4', name: 'parser', mode: 'standard', folderPath: '/Users/dev/parser', repository: null }],
-      gaps: [],
-    }),
     meshConversationList: async () => ({
       ok: true,
       conversations: [
@@ -111,14 +102,16 @@ test('WorkspaceSidebar.remoteOpening', async () => {
       ],
       access: 'operate',
       capabilities: [],
-      lifecycle: true,
-      rowMenu: true,
-      markUnread: true,
     }),
-    meshVisitConversation: async () => {
-      return { ok: true, workspaceId: 'rw4', lastVisitedAt: Date.now() }
-    },
   }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  fakePairedStudios(domWindow.api as object, {
+    'workspaces.list': () => ({
+      workspaces: [{ id: 'rw4', name: 'parser', mode: 'standard', folderPath: '/Users/dev/parser', repository: null }],
+    }),
+    'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
+  })
 
   const React = await import('react')
   const { act } = React

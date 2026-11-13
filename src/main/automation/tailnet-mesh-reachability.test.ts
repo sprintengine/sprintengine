@@ -422,9 +422,10 @@ test('tailnet-mesh-reachability', async () => {
           mini.events.some((event) => event.kind === 'machine-paired'),
           'the mini announces it without anyone there pressing anything',
         )
-        const browse = await mini.mesh.browse(reverse.id)
-        assert.equal(browse.reachable, true, 'the mini can drive the laptop with the reverse token')
-        assert.equal(browse.unauthorized, false)
+        const checked = await mini.mesh.checkReachability(reverse.id)
+        const reach = checked.reachability.find((entry) => entry.connectionId === reverse.id)
+        assert.equal(reach?.reachable, true, 'the mini can drive the laptop with the reverse token')
+        assert.equal(reach?.unauthorized, false)
         assert.equal(
           laptop.devices.listDevices().length,
           1,

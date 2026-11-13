@@ -2,23 +2,8 @@ import type { IpcRendererEvent } from 'electron'
 import { ipc as ipcRenderer } from '../ipc-router'
 
 import {
-  MESH_BROWSE_CHANNEL,
-  MESH_CREATE_CONVERSATION_CHANNEL,
-  MESH_SETTLE_CONVERSATION_CHANNEL,
-  MESH_VISIT_CONVERSATION_CHANNEL,
-  MESH_CHANGE_CONVERSATION_CHANNEL,
-  MESH_CONVERSATION_DELETE_PLAN_CHANNEL,
-  MESH_CONVERSATION_SEARCH_CHANNEL,
-  MESH_APPROVAL_RULES_CHANNEL,
-  MESH_REVOKE_APPROVAL_RULE_CHANNEL,
-  MESH_SCHEDULED_AGENTS_CHANNEL,
-  MESH_SCHEDULED_AGENT_ACTION_CHANNEL,
-  MESH_CREATE_SCHEDULED_AGENT_CHANNEL,
-  MESH_UPDATE_SCHEDULED_AGENT_CHANNEL,
-  MESH_WORKSPACE_CHECKOUT_CHANNEL,
   MESH_CANVAS_BOARDS_CHANNEL,
   MESH_CANVAS_SCREENSHOT_CHANNEL,
-  MESH_WORKSPACE_EXTENSIONS_CHANNEL,
   MESH_FORGET_CHANNEL,
   MESH_GET_LIVE_STATE_CHANNEL,
   MESH_LIST_CONNECTIONS_CHANNEL,
@@ -26,29 +11,9 @@ import {
   MESH_PAIR_CHANNEL,
   MESH_REQUEST_PAIRING_CHANNEL,
   MESH_EVENT_CHANNEL,
-  type MeshBrowse,
   type MeshConnection,
-  type MeshCreateConversationResult,
-  type MeshNewChatWorktree,
-  type MeshSettleConversationResult,
-  type MeshChangeConversationResult,
-  type MeshConversationDeletePlanResult,
-  type MeshConversationSearchResult,
-  type MeshApprovalRulesResult,
-  type MeshRevokeApprovalRuleResult,
-  type MeshCreateScheduledAgentInput,
-  type MeshCreateScheduledAgentResult,
-  type MeshUpdateScheduledAgentInput,
-  type MeshUpdateScheduledAgentResult,
-  type MeshScheduledAgentAction,
-  type MeshScheduledAgentActionResult,
-  type MeshScheduledAgentsResult,
-  type MeshConversationChange,
-  type MeshVisitConversationResult,
-  type MeshWorkspaceCheckoutResult,
   type MeshCanvasBoardsResult,
   type MeshCanvasScreenshotResult,
-  type MeshWorkspaceExtensionsResult,
   type MeshEvent,
   type MeshLiveState,
   type MeshPairResult,
@@ -100,7 +65,6 @@ import type { ConversationChangesSelection } from '../../../packages/conversatio
 import type {
   ConversationApprovalDecision,
   ConversationContextBreakdownResult,
-  ConversationImageAttachment,
   ConversationPageResult,
   ConversationSideQuestionExchange,
   ConversationSideQuestionResult,
@@ -138,81 +102,6 @@ export const meshApi = {
     ipcRenderer.invoke(MESH_CANCEL_PAIRING_CHANNEL, requestId) as Promise<void>,
   meshForget: (connectionId: string): Promise<MeshConnection[]> =>
     ipcRenderer.invoke(MESH_FORGET_CHANNEL, connectionId) as Promise<MeshConnection[]>,
-  meshBrowse: (connectionId: string): Promise<MeshBrowse> =>
-    ipcRenderer.invoke(MESH_BROWSE_CHANNEL, connectionId) as Promise<MeshBrowse>,
-  meshCreateConversation: (input: {
-    connectionId: string
-    /** The project it starts in; absent with `noProject`. */
-    workspaceId?: string
-    /** Start it in a folder of its own over there, under no project. */
-    noProject?: boolean
-    cli?: string
-    prompt?: string
-    cliModel?: string
-    permissionPreset?: string
-    /** The CLI's effort level; dropped for a machine that does not advertise `new-chat-effort`. */
-    effort?: string
-    /** A worktree to start in; refused, never dropped, by a machine without the capability for it. */
-    worktree?: MeshNewChatWorktree
-    /** Images that go with the first message; main puts them in that machine's upload store first. */
-    attachments?: ConversationImageAttachment[]
-    skills?: string[]
-  }): Promise<MeshCreateConversationResult> => {
-    const { attachments, skills, ...rest } = input
-    return ipcRenderer.invoke(MESH_CREATE_CONVERSATION_CHANNEL, {
-      ...rest,
-      ...(attachments?.length ? { attachments } : {}),
-      ...(skills?.length ? { skills } : {}),
-    }) as Promise<MeshCreateConversationResult>
-  },
-  meshSettleConversation: (input: {
-    connectionId: string
-    workspaceId: string
-    settled?: boolean
-  }): Promise<MeshSettleConversationResult> =>
-    ipcRenderer.invoke(MESH_SETTLE_CONVERSATION_CHANNEL, input) as Promise<MeshSettleConversationResult>,
-  meshVisitConversation: (input: { connectionId: string; workspaceId: string }): Promise<MeshVisitConversationResult> =>
-    ipcRenderer.invoke(MESH_VISIT_CONVERSATION_CHANNEL, input) as Promise<MeshVisitConversationResult>,
-  meshChangeConversation: (input: {
-    connectionId: string
-    workspaceId: string
-    change: MeshConversationChange
-  }): Promise<MeshChangeConversationResult> =>
-    ipcRenderer.invoke(MESH_CHANGE_CONVERSATION_CHANNEL, input) as Promise<MeshChangeConversationResult>,
-  meshConversationDeletePlan: (input: {
-    connectionId: string
-    workspaceId: string
-  }): Promise<MeshConversationDeletePlanResult> =>
-    ipcRenderer.invoke(MESH_CONVERSATION_DELETE_PLAN_CHANNEL, input) as Promise<MeshConversationDeletePlanResult>,
-  meshConversationSearch: (input: { connectionId: string; query: string }): Promise<MeshConversationSearchResult> =>
-    ipcRenderer.invoke(MESH_CONVERSATION_SEARCH_CHANNEL, input) as Promise<MeshConversationSearchResult>,
-  meshApprovalRules: (input: { connectionId: string }): Promise<MeshApprovalRulesResult> =>
-    ipcRenderer.invoke(MESH_APPROVAL_RULES_CHANNEL, input) as Promise<MeshApprovalRulesResult>,
-  meshRevokeApprovalRule: (input: { connectionId: string; ruleId: string }): Promise<MeshRevokeApprovalRuleResult> =>
-    ipcRenderer.invoke(MESH_REVOKE_APPROVAL_RULE_CHANNEL, input) as Promise<MeshRevokeApprovalRuleResult>,
-  meshScheduledAgents: (input: { connectionId: string }): Promise<MeshScheduledAgentsResult> =>
-    ipcRenderer.invoke(MESH_SCHEDULED_AGENTS_CHANNEL, input) as Promise<MeshScheduledAgentsResult>,
-  meshScheduledAgentAction: (input: {
-    connectionId: string
-    id: string
-    action: MeshScheduledAgentAction
-  }): Promise<MeshScheduledAgentActionResult> =>
-    ipcRenderer.invoke(MESH_SCHEDULED_AGENT_ACTION_CHANNEL, input) as Promise<MeshScheduledAgentActionResult>,
-  meshCreateScheduledAgent: (input: MeshCreateScheduledAgentInput): Promise<MeshCreateScheduledAgentResult> =>
-    ipcRenderer.invoke(MESH_CREATE_SCHEDULED_AGENT_CHANNEL, input) as Promise<MeshCreateScheduledAgentResult>,
-  meshUpdateScheduledAgent: (input: MeshUpdateScheduledAgentInput): Promise<MeshUpdateScheduledAgentResult> =>
-    ipcRenderer.invoke(MESH_UPDATE_SCHEDULED_AGENT_CHANNEL, input) as Promise<MeshUpdateScheduledAgentResult>,
-  meshWorkspaceCheckout: (connectionId: string, workspaceId: string): Promise<MeshWorkspaceCheckoutResult> =>
-    ipcRenderer.invoke(MESH_WORKSPACE_CHECKOUT_CHANNEL, {
-      connectionId,
-      workspaceId,
-    }) as Promise<MeshWorkspaceCheckoutResult>,
-  meshWorkspaceExtensions: (input: {
-    connectionId: string
-    workspaceId: string
-    cli?: string
-  }): Promise<MeshWorkspaceExtensionsResult> =>
-    ipcRenderer.invoke(MESH_WORKSPACE_EXTENSIONS_CHANNEL, input) as Promise<MeshWorkspaceExtensionsResult>,
   meshCanvasBoards: (input: {
     connectionId: string
     workspaceId: string
@@ -465,21 +354,6 @@ export const meshApi = {
   | 'meshRequestPairing'
   | 'meshCancelPairing'
   | 'meshForget'
-  | 'meshBrowse'
-  | 'meshCreateConversation'
-  | 'meshSettleConversation'
-  | 'meshVisitConversation'
-  | 'meshChangeConversation'
-  | 'meshConversationDeletePlan'
-  | 'meshConversationSearch'
-  | 'meshApprovalRules'
-  | 'meshRevokeApprovalRule'
-  | 'meshScheduledAgents'
-  | 'meshScheduledAgentAction'
-  | 'meshCreateScheduledAgent'
-  | 'meshUpdateScheduledAgent'
-  | 'meshWorkspaceCheckout'
-  | 'meshWorkspaceExtensions'
   | 'meshCanvasBoards'
   | 'meshCanvasScreenshot'
   | 'meshGetLiveState'

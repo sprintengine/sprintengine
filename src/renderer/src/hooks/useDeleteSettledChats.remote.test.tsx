@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { fakePairedStudios } from '../studio/pairedStudio.double'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -46,21 +47,25 @@ afterEach(() => {
   host = null
 })
 
+/** This window, and that machine's Studio as its own client reaches it, planning as `plan` says. */
 function api(plan: Record<string, unknown>) {
-  ;(window as unknown as { api: unknown }).api = {
-    meshConversationDeletePlan: async (input: unknown) => {
-      calls.push(['plan', input])
-      return plan
-    },
-    meshChangeConversation: async (input: unknown) => {
-      calls.push(['delete there', input])
-      return { ok: true, workspaceId: 'rw4' }
-    },
+  const windowApi = {
     deleteSettledChats: async (ids: string[]) => {
       calls.push(['remove here', ids])
       return ids.map((workspaceId) => ({ workspaceId, ok: true, worktrees: [] }))
     },
   }
+  ;(window as unknown as { api: unknown }).api = windowApi
+  fakePairedStudios(windowApi, {
+    'conversation.deletePlan': (params, connectionId) => {
+      calls.push(['plan', { connectionId, workspaceId: params.workspaceId }])
+      return plan
+    },
+    'conversation.delete': (params, connectionId) => {
+      calls.push(['delete there', { connectionId, workspaceId: params.workspaceId }])
+      return { worktrees: [] }
+    },
+  })
 }
 
 async function mount() {
@@ -86,8 +91,6 @@ const settle = () => act(async () => new Promise((resolve) => setTimeout(resolve
 
 test('a paired machine’s settled chat is deleted there after the person confirms, then here', async () => {
   api({
-    ok: true,
-    workspaceId: 'rw4',
     worktrees: [
       {
         name: 'chat-k_iq',
@@ -113,14 +116,14 @@ test('a paired machine’s settled chat is deleted there after the person confir
   expect(await done!).toBe(true)
   expect(calls).toEqual([
     ['plan', { connectionId: 'c1', workspaceId: 'rw4' }],
-    ['delete there', { connectionId: 'c1', workspaceId: 'rw4', change: { kind: 'delete' } }],
+    ['delete there', { connectionId: 'c1', workspaceId: 'rw4' }],
     ['remove here', ['w-followed']],
   ])
   await act(async () => root.unmount())
 })
 
 test('a chat its machine will not delete now is said so, and nothing goes', async () => {
-  api({ ok: true, workspaceId: 'rw4', worktrees: [], refused: 'An agent in this chat is still working.' })
+  api({ worktrees: [], refused: 'An agent in this chat is still working.' })
   const { run, root } = await mount()
   let gone = true
   await act(async () => {

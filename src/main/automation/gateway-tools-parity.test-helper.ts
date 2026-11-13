@@ -18,7 +18,7 @@ import { desktopGatewayTools } from './desktop-gateway-tools'
 import { createEditorTools } from './editor-tools'
 import { createMcpDispatcher, type McpDispatchGate } from './mcp-dispatch'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
-import { gatewayToolsForCaller, localOnlyGatewayToolReason, requiredScopeForTool } from './tailnet/tailnet-scopes'
+import { localOnlyGatewayToolReason, requiredScopeForTool } from './tailnet/tailnet-scopes'
 import { createTailnetTools } from './tailnet/tailnet-tools'
 import { createTourTools } from './tour-tools'
 import { createVisualTools } from './visual-tools'
@@ -100,7 +100,7 @@ export async function listsFor(
     serverName: 'sprintengine-studio',
     serverVersion: '0.0.0-test',
     // As the gateway lists its own tools to each caller (studio-gateway.ts).
-    resolveTools: (context) => gatewayToolsForCaller(resolveTools(context), context),
+    resolveTools: (context) => resolveTools(context),
     ...(clientTools ? { clientTools } : {}),
   })
   const lists: Record<string, unknown> = {}

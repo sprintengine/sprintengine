@@ -4,6 +4,8 @@ import type { MeshApprovalRulesResult } from '../../../../shared/tailnet-mesh'
 import { GhostButton, InlineNotice, SettingCard, SettingRow, Spinner } from '../ui'
 import { windowChatServices } from '../panels/agentChat/windowChat'
 import { SettingsSectionTitle } from './SettingsAtoms'
+import { pairedApprovalRules, revokePairedApprovalRule } from '../../studio/pairedChats'
+import { pairedStudioAvailable } from '../../studio/pairedStudio'
 
 export function ConversationApprovalSettings() {
   const [rules, setRules] = useState<ConversationApprovalRule[]>()
@@ -101,14 +103,11 @@ function PairedMachineApprovalRules() {
   const [busy, setBusy] = useState<string>()
   const [error, setError] = useState<string>()
   const read = useCallback(async (connection: { id: string; machineName: string }): Promise<MachineRules> => {
-    const answer = await window.api
-      .meshApprovalRules({ connectionId: connection.id })
-      .catch((failure: unknown) => ({ ok: false as const, code: 'failed', message: String(failure) }))
+    const answer = await pairedApprovalRules({ id: connection.id, machineName: connection.machineName })
     return { connectionId: connection.id, machineName: connection.machineName, answer }
   }, [])
   const load = useCallback(async () => {
-    if (typeof window.api?.meshListConnections !== 'function' || typeof window.api.meshApprovalRules !== 'function')
-      return
+    if (typeof window.api?.meshListConnections !== 'function' || !pairedStudioAvailable()) return
     const connections = await window.api.meshListConnections().catch(() => [])
     setMachines(Array.isArray(connections) ? await Promise.all(connections.map(read)) : [])
   }, [read])
@@ -119,7 +118,10 @@ function PairedMachineApprovalRules() {
     setBusy(`${machine.connectionId}:${ruleId}`)
     try {
       setError(undefined)
-      const result = await window.api.meshRevokeApprovalRule({ connectionId: machine.connectionId, ruleId })
+      const result = await revokePairedApprovalRule(
+        { id: machine.connectionId, machineName: machine.machineName },
+        ruleId,
+      )
       if (!result.ok) throw new Error(result.message)
       const next = await read({ id: machine.connectionId, machineName: machine.machineName })
       setMachines((current) => current.map((entry) => (entry.connectionId === machine.connectionId ? next : entry)))

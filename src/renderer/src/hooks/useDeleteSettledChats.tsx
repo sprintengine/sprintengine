@@ -1,4 +1,6 @@
 import React, { useCallback, useState } from 'react'
+import { changePairedChat, pairedChatDeletePlan } from '../studio/pairedChats'
+import { pairedStudioAvailable } from '../studio/pairedStudio'
 
 import type { WorkspaceId } from '../types/workspace'
 import { useWorkspaceStore } from '../store/workspaceStore'
@@ -100,18 +102,15 @@ export function useDeleteSettledChats(): {
       const title = titleOf(workspaceId)
       const failed = (description: string) =>
         showToast({ tone: 'error', title: 'The chat was not deleted', description })
-      if (
-        !origin ||
-        typeof api?.meshConversationDeletePlan !== 'function' ||
-        typeof api.meshChangeConversation !== 'function'
-      ) {
+      if (!origin || !pairedStudioAvailable()) {
         failed('Deleting chats on another machine is not available here.')
         return false
       }
-      const target = { connectionId: origin.connectionId, workspaceId: remoteOriginChatWorkspaceId(origin) }
+      const machine = { id: origin.connectionId, machineName: origin.machineName }
+      const chatThere = remoteOriginChatWorkspaceId(origin)
       setDeleting((current) => new Set([...current, workspaceId]))
       try {
-        const plan = await api.meshConversationDeletePlan(target)
+        const plan = await pairedChatDeletePlan(machine, chatThere)
         const refused = !plan.ok ? plan.message : plan.refused
         if (!plan.ok || refused) {
           failed(refused ?? 'Nothing could be deleted.')
@@ -145,7 +144,7 @@ export function useDeleteSettledChats(): {
             tone: 'danger',
           })
           if (!confirmed) return false
-          const deleted = await api.meshChangeConversation({ ...target, change: { kind: 'delete' } })
+          const deleted = await changePairedChat(machine, chatThere, { kind: 'delete' })
           if (!deleted.ok) {
             failed(deleted.message)
             return false

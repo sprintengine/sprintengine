@@ -11,12 +11,16 @@ import { createDataKeySecretCipher } from '../../../src/server/platform/secret-c
 import type { MeshConversationFrame, MeshConversationKey } from '../../../src/shared/tailnet-mesh'
 import type { Attachment, ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'
+import { openPairedWindow } from '../../paired-window'
+import { createPairedChat } from '../../../src/renderer/src/studio/pairedDiscovery'
 import { Feed } from '../feed'
 
 // A second desktop, paired with the server's machine: the mesh service a
-// desktop drives another machine's chats with (tailnet-mesh-service.ts), over
-// the tailnet lane. It pairs with a code the server offers, as a person does
-// from Settings; its own data directory is a fresh one.
+// desktop follows another machine's chats with (tailnet-mesh-service.ts), over
+// the tailnet lane, and its window's own client of that machine's Studio
+// (`src/renderer/src/studio/pairedStudio.ts`), which starts a chat there. It
+// pairs with a code the server offers, as a person does from Settings; its own
+// data directory is a fresh one.
 
 export async function peerClient(input: {
   cutter: Cutter
@@ -39,6 +43,9 @@ export async function peerClient(input: {
   const paired = await mesh.pair({ pairingUrl: pairingUrl('127.0.0.1', address.port, await input.pairingToken()) })
   if (!paired.ok) throw new Error(`peer: pairing was refused: ${paired.message}`)
   const connectionId = paired.connection.id
+  // The window's own client of that machine's Studio, its tickets bought by the mesh.
+  const closeWindow = openPairedWindow(mesh, connectionId)
+  const machine = { id: connectionId, machineName: paired.connection.machineName }
   const keyOf = (chat: ChatRef): MeshConversationKey => ({
     connectionId,
     workspaceId: chat.workspaceId,
@@ -54,7 +61,7 @@ export async function peerClient(input: {
   return {
     id: 'peer',
     label: 'Paired desktop',
-    transport: 'tailnet lane (mesh service)',
+    transport: 'tailnet lane (mesh service); create on the window’s client of /tailnet/v1/studio',
     simulated: [
       'the tailnet: the listener is bound to loopback and no Tailscale whois names the peer',
       "the peer's keychain: its pairing is sealed with the server platform's data-key cipher",
@@ -85,10 +92,9 @@ export async function peerClient(input: {
       return feed
     },
     async createChat(workspace, name) {
-      // The way a paired desktop starts a chat: by the CLI its New chat
-      // picked. The fake provider has none (gaps.ts).
-      const created = await mesh.createConversation({
-        connectionId,
+      // The way a paired desktop's window starts a chat: by the CLI its New
+      // chat picked, on that machine's Studio. The fake provider has none (gaps.ts).
+      const created = await createPairedChat(machine, {
         workspaceId: workspace.workspaceId,
         cli: 'mock-provider',
         prompt: name,
@@ -124,6 +130,7 @@ export async function peerClient(input: {
     heal: () => input.cutter.heal(),
     async close() {
       for (const followId of followIds) mesh.unfollowConversation(followId)
+      closeWindow()
       mesh.shutdown()
     },
   }
