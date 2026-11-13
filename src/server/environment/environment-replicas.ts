@@ -150,9 +150,23 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
   /** The machine's records as this desktop keeps its copies of them: its paths respelled, stamped where they live. */
   function copyOf(route: string, name: string, workspace: Workspace): Workspace {
     const machine = parseEnvironmentRoute(route)
-    const { hostId: _hostId, remoteOrigin: _remoteOrigin, ...rest } = workspace
+    // The window's own state of a chat (its editor, file tree, Git panel,
+    // panes, backlog and modules) is this desktop's, never taken from the
+    // machine: what a window here opens is never named by another machine.
+    const {
+      hostId: _hostId,
+      remoteOrigin: _remoteOrigin,
+      editorState: _editor,
+      fileExplorerState: _files,
+      gitPanelState: _git,
+      paneState: _panes,
+      backlogState: _backlog,
+      moduleState: _modules,
+      ...rest
+    } = workspace
     return {
       ...rest,
+      editorState: { openFiles: [], activeFilePath: null },
       environment: { kind: 'ssh', id: machine?.kind === 'ssh' ? machine.machine : route, label: name },
     }
   }

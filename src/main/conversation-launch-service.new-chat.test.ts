@@ -223,12 +223,12 @@ test('a worktree git could not make refuses the launch with why', async () => {
   assert.equal(h.starts.length, 0)
 })
 
-test('a folder on an SSH machine is refused a worktree without asking git', async () => {
+test("a folder on an SSH machine is that machine's to start a chat in: refused here, without asking git", async () => {
   const h = harness()
   const result = await h.service.launch({ workspaceId: 'ws-ssh', newChat: true, newWorktree: true, cli: 'codex' })
   assert.equal(result.ok, false)
   if (result.ok) return
-  assert.equal(result.code, 'worktree_unavailable')
+  assert.equal(result.code, 'unavailable')
   assert.equal(h.repoRootAsks.length, 0)
 })
 

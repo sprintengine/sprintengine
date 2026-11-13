@@ -235,3 +235,17 @@ test("a change the machine records reaches this desktop's copy without a window 
   await replicas.refresh(ROUTE)
   assert.equal(record(desktop.sync, 'ws-1')?.settledAt, 7_000)
 })
+
+test("a copy born there takes none of the window's own state from the machine", async () => {
+  const { desktop, replicas } = rig({
+    machine: [
+      workspace('ws-born', '/home/dev/other', {
+        editorState: { openFiles: ['/Users/dev/.ssh/id_ed25519'], activeFilePath: '/Users/dev/.ssh/id_ed25519' },
+      }),
+    ],
+    desktop: [],
+  })
+  await replicas.follow(ROUTE)
+  const born = record(desktop.sync, 'ws-born')
+  assert.deepEqual(born?.editorState, { openFiles: [], activeFilePath: null })
+})
