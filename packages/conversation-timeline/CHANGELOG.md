@@ -19,6 +19,34 @@
 
 ### Added
 
+- **`deriveConversationRows`** (`conversationRows.ts`): a projected
+  conversation as one flat list of rows for a narrow screen (messages,
+  thinking, runs of steps, agent cards, each turn's work behind one line, its
+  footer and changed files), with the requests waiting, the agents, the turns'
+  clocks and the changed turns beside them. `ConversationRowsOptions` holds
+  what a client draws its own way (its clock, steps kept in view, its reading
+  of a sent picture and of Studio's notices). The phone draws it.
+- `projectConversation(events, userTurns, options)`:
+  `ConversationProjectionOptions.sessionEndSettlesWork` settles a session's
+  work when it ends (turns stop streaming, steps and agents stop, requests are
+  cancelled). Off by default; `createConversationProjectionState` takes the
+  same options and keeps them for every refold.
+- A user entry's `commandId`; an assistant entry's `reportedChanges` (the
+  files its finished steps reported changing, `fileChanges`); an approval
+  entry's `rememberable` and `rememberLabel`.
+
+### Changed (reading the events)
+
+- An event that names no turn (`content_delta`, `reasoning_delta`,
+  `tool_started` outside a lane, `approval_requested`) joins the turn running
+  when it came, where it was dropped or left on its own. A `user_message` that
+  names none waits for the next turn to begin, which answers it.
+- A `tool_started` sent again for a call updates the one call: a call that
+  already finished stays finished, with its output, and what the new report
+  leaves out (its input) is what the call had.
+- A recorded picture without a `mediaType` is still listed (its type `''`);
+  the bytes read back by `ref` carry their own.
+
 - `SideQuestionEntry` (`kind: 'sideQuestion'`) and the timeline row of the same
   kind: a side question the chat was asked, read from its `side_question`
   event, with the answer it got. It sits after the turn it was asked during or

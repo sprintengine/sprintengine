@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 const {
   JUMP_SLACK,
   jumpMark,
@@ -23,7 +23,7 @@ function exchange(seq, turn, words) {
 }
 // The rows as the screen holds them, with the turn still arriving.
 function view(events) {
-  const projected = projectConversation(events);
+  const projected = projectPhoneConversation(events);
   const live = projected.replies.find((reply) => reply.streaming)?.turn ?? null;
   return { rows: projected.rows, live, busy: projected.turnBusy };
 }

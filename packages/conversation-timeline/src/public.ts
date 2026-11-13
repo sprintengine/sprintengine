@@ -6,6 +6,7 @@
 export * from './conversationProjection.js'
 export * from './incrementalConversationProjection.js'
 export * from './conversationTimeline.js'
+export * from './conversationRows.js'
 export * from './sessionEventLog.js'
 export * from './todoProgress.js'
 export * from './backgroundTasks.js'

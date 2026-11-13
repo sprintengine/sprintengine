@@ -1,7 +1,7 @@
 import {
   type ConversationListedThread as ConversationThread,
 } from "../../../../packages/conversation-protocol/src/public";
-import type { ConversationRow, ReplyClock } from "./conversationLogic";
+import type { ConversationRow, ReplyClock } from "../../../../packages/conversation-timeline/src/public";
 
 // Where the part of a chat nobody has read starts: the "New" divider drawn
 // above the first reply the person has not seen, and the place the chat opens

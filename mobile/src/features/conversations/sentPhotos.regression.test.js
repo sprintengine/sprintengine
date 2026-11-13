@@ -13,7 +13,7 @@ const {
   sentImageShows,
   sentPhotoUri,
 } = require("../../../.mobile-test-build/mobile/src/features/conversations/sentPhotos.js");
-const { projectConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
+const { projectPhoneConversation } = require("../../../.mobile-test-build/mobile/src/features/conversations/conversationLogic.js");
 const { phoneChatOffers } = require("../../../.mobile-test-build/mobile/src/api/chatOffers.js");
 
 // A ref in the shape the desktop's attachment store chooses: its folder for the
@@ -75,7 +75,7 @@ test("no more pictures are drawn than the desktop lets one message carry", () =>
 
 test("the person's bubble carries the pictures its user_message recorded, beside its words and files", () => {
   const user = (payload) => ({ id: "e1", seq: 1, sessionId: "s", workspaceId: "w", agentId: "a", type: "user_message", createdAt: 1, payload });
-  const [row] = projectConversation([
+  const [row] = projectPhoneConversation([
     user({
       turnId: "t1",
       text: "What is this?",
@@ -87,11 +87,11 @@ test("the person's bubble carries the pictures its user_message recorded, beside
   assert.equal(row.text, "What is this?", "the picture's name is not in the words");
   assert.deepEqual(row.images, [{ id: "upload-1", name: "IMG_0001.jpg", ref: REF }]);
   // A picture alone, with no words.
-  const [bare] = projectConversation([user({ turnId: "t1", text: "", attachments: [{ id: "upload-2", ref: OTHER_REF }] })]).rows;
+  const [bare] = projectPhoneConversation([user({ turnId: "t1", text: "", attachments: [{ id: "upload-2", ref: OTHER_REF }] })]).rows;
   assert.equal(bare.text, "");
   assert.deepEqual(bare.images, [{ id: "upload-2", ref: OTHER_REF }]);
   // A message without pictures has no member at all.
-  const [plain] = projectConversation([user({ turnId: "t1", text: "Hello" })]).rows;
+  const [plain] = projectPhoneConversation([user({ turnId: "t1", text: "Hello" })]).rows;
   assert.equal("images" in plain, false);
 });
 

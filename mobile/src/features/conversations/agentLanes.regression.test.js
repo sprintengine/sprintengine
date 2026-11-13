@@ -1,8 +1,12 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
+// The status payload is read by the shared projection's reader
+// (conversation-timeline's subagents.ts); the rest is how the phone words a lane.
 const {
   readSubagentStatus,
   isBackgroundLaunchAck,
+} = require("../../../.mobile-test-build/packages/conversation-timeline/src/subagents.js");
+const {
   laneStatus,
   laneDetail,
   laneLabel,
@@ -16,7 +20,7 @@ const {
   agentTypeDescription,
   agentStopOffer,
   agentMessageOffer,
-} = require("../../../.mobile-test-build/mobile/src/features/conversations/agentLogic.js");
+} = require("../../../.mobile-test-build/mobile/src/features/conversations/subagentLogic.js");
 
 const lane = (overrides = {}) => ({
   id: "task",
@@ -35,7 +39,7 @@ test("a status payload is read field by field and a malformed one is refused", (
   assert.equal(readSubagentStatus("nope"), null);
   assert.deepEqual(
     readSubagentStatus({ toolUseId: "t", status: "completed", background: true, subagentType: "Explore", usage: { totalTokens: 12000, toolUses: "7" }, endedAt: 9 }),
-    { toolUseId: "t", state: "completed", background: true, subagentType: "Explore", endedAt: 9, usage: { totalTokens: 12000, toolUses: 0, durationMs: 0 } },
+    { toolUseId: "t", status: "completed", background: true, subagentType: "Explore", endedAt: 9, usage: { totalTokens: 12000, toolUses: 0, durationMs: 0 } },
   );
   assert.equal(isBackgroundLaunchAck("  Async agent launched successfully. agentId: x"), true);
   assert.equal(isBackgroundLaunchAck("It is mapped in mesh.ts"), false);

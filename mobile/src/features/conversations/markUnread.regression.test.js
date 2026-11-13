@@ -21,7 +21,7 @@ const { buildChatRows, chatMarkedUnread, chatRowState, chatSeenAt, chatSections 
 const { chatOpenedSince, unreadDividerRowId, unreadDividerTurn } = require(
   path.join(buildRoot, "src/features/conversations/unreadDivider.js"),
 );
-const { projectConversation } = require(path.join(buildRoot, "src/features/conversations/conversationLogic.js"));
+const { projectPhoneConversation } = require(path.join(buildRoot, "src/features/conversations/conversationLogic.js"));
 const { buildNotices } = require(path.join(buildRoot, "src/features/notices/noticesLogic.js"));
 const { decodeConversationServerFrame: parseConversationFrame } = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
 // A listed chat as the phone reads it: through a `sessions` frame, by the
@@ -141,7 +141,7 @@ test("after a mark unread the next opening's divider sits above the latest reply
     event("turn_completed", end, { turnId, durationMs: end - start }),
   ];
   const events = [...exchange("t1", 100, 110), ...exchange("t2", 200, 210)];
-  const projected = projectConversation(events);
+  const projected = projectPhoneConversation(events);
   const divider = (opened) => unreadDividerRowId(projected.rows, unreadDividerTurn(projected.replies, opened));
 
   // Read after both: no divider.

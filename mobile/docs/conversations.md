@@ -440,6 +440,22 @@ no summary, the count is taken from those: each step once, however often it
 is reported, and never from a partial output. A turn whose only steps made
 pictures has no fold, as on the desktop.
 
+The rows are not the phone's own reading of the events. A chat's events are
+folded by the projection every client folds (`projectConversation` in
+`packages/conversation-timeline`), and the phone lays its entries out with
+that package's narrow layout (`deriveConversationRows`, `conversationRows.ts`):
+the person's message, the turn's thinking, prose and steps in the order they
+came, its agents as cards, its decisions, the reply, then its footer and
+changed files. `conversationLogic.ts` says only where the phone asks for
+something the window does not, as options: a session's end settles the work it
+was doing (`sessionEndSettlesWork`); durations on the phone's clock ("2m", not
+"2m 0s"); a Studio subagent's start kept in view; its own reading of a sent
+picture; Studio's notices without the name they open with. The hook keeps the
+projection between draws, so a streamed word folds into the one entry it
+changes rather than refolding the chat. The context ring's reading
+(`contextUsage.ts`) is still the phone's: it falls back to a report's input and
+output where the window shows no ring.
+
 ### Visuals in a reply
 
 An agent's reply draws its `visual` fences (and `studio-visual`) as the
@@ -551,7 +567,8 @@ row of its own, where in the turn it thought it: a bulb, "Thinking" and the
 first line of the thought, closed, or "Thinking…" while it is the last thing
 the running turn has said. Tapping it opens the thought as Markdown in the
 muted ink on the steps' rail. One stretch of thinking is one row however many
-deltas it came in; words or a step after it start the next. Thinking before
+deltas it came in; a step after it starts the next, and thinking either side
+of words with no step between is one row, ahead of the words. Thinking before
 a turn's last step folds with the turn's work, as its prose does, and the
 thinking after it stays in view above the reply. A stretch that never says
 anything leaves no row. The thought is never part of a copied reply.
