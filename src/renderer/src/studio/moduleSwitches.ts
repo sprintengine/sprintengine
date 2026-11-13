@@ -92,6 +92,9 @@ export function createStudioModuleSwitches(deps: {
         known = new Map(known).set(answer.module.id, answer.module)
         told()
       }
+      // A read that left before the switch would land with what was held
+      // before it and undo it: read again, which drops any read still on its way.
+      void refresh()
       return { ok: true }
     },
     refresh,

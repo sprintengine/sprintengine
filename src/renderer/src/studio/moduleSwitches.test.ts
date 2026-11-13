@@ -67,10 +67,12 @@ test('a switch the Studio took changes the window’s copy and what it shows', a
   let heard = 0
   h.switches.onChange(() => void heard++)
   h.answer({ ok: true, module: summary('canvas', true, false) })
+  h.list([summary('canvas', true, false)])
   assert.deepEqual(await h.switches.switchModule('canvas', true), { ok: true })
+  await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(h.overrides.canvas, true)
   assert.equal(h.switches.modules().get('canvas')?.running, false, 'on, and not yet running, as the Studio said')
-  assert.equal(heard, 1)
+  assert.equal(heard, 2, 'once for the switch, once for the read after it')
 })
 
 test('a list that cannot be read keeps what was last said; the later of two reads lands', async () => {
@@ -82,4 +84,25 @@ test('a list that cannot be read keeps what was last said; the later of two read
   const second = h.switches.refresh()
   await Promise.all([first, second])
   assert.equal(h.switches.modules().get('canvas')?.enabled, true)
+})
+
+test('a read that left before a switch does not undo it when it lands after', async () => {
+  const overrides: Record<string, boolean> = { canvas: false }
+  const pending: Array<(listed: StudioModuleSummary[]) => void> = []
+  const switches = createStudioModuleSwitches({
+    store: { overrides: () => overrides, set: (id, enabled) => void (overrides[id] = enabled) },
+    list: () => new Promise((resolve) => pending.push(resolve)),
+    setEnabled: async () => ({ ok: true, module: summary('canvas', true) }),
+  })
+  // A reconnect's read is on its way when the person switches the module on.
+  const stale = switches.refresh()
+  assert.deepEqual(await switches.switchModule('canvas', true), { ok: true })
+  // The read that left first lands, saying what was held before the switch.
+  pending[0]!([summary('canvas', false)])
+  await stale
+  assert.equal(overrides.canvas, true, 'the switch the Studio took stands')
+  assert.equal(switches.modules().get('canvas')?.enabled, true)
+  // The read the switch asked for says what the Studio holds now.
+  pending[1]?.([summary('canvas', true)])
+  assert.equal(overrides.canvas, true)
 })
