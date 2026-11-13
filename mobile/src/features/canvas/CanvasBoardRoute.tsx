@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 
-import type { ConversationThread } from "../../api/conversationWire";
+import {
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import type { MobileSession } from "../../api/types";
 import type { HomeStackParamList } from "../../navigation/types";
 import { canvasTargetFromParams } from "./canvasLogic";

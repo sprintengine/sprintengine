@@ -11,18 +11,12 @@ import {
 import {
   CONVERSATION_MAX_IMAGES,
   type ConversationCommand,
-  type ConversationPermissionPreset,
+  type ConversationWirePermissionPreset as ConversationPermissionPreset,
   type ConversationSubagent,
-  type ConversationThread,
-} from "../../api/conversationWire";
-import {
-  declaresCliRuntimeCatalog,
-  declaresConversationPlans,
-  declaresImageDownscale,
-  declaresMessageFiles,
-  PEER_MISMATCH_SENTENCE,
-} from "../../api/tailnetTransport";
-import type { ConversationApi, ConversationConnectionState } from "../../api/tailnetConversations";
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
+import { PEER_MISMATCH_SENTENCE } from "../../api/tailnetTransport";
+import type { ConversationApi, ConversationConnectionState } from "../../api/desktopConversations";
 import { BottomSheet } from "../../components/BottomSheet";
 import { CircleButton } from "../../components/CircleButton";
 import { CopyButton } from "../../components/CopyButton";
@@ -90,7 +84,6 @@ import {
   compactionLabel,
   handoffLabel,
   composerActionKind,
-  conversationCanOperate,
   DEFAULT_MODEL_ID,
   modelControl,
   modelLabel,
@@ -251,6 +244,7 @@ export function ConversationScreen({
     apiFor,
     chats,
     conversationsApiOverride,
+    offersOverride,
     followUpBehavior,
     markUnreadChat,
     openedAt,
@@ -258,9 +252,9 @@ export function ConversationScreen({
     settleChat,
   } = useChats();
   const session = sessions.find((entry) => entry.deviceId === deviceId);
+  const chat = usePhoneConversation(session, thread, apiOverride ?? conversationsApiOverride ?? undefined, offersOverride);
   // Files of any type, beside photos, where the desktop takes them.
-  const filesOffered = !!session && declaresMessageFiles(session);
-  const chat = usePhoneConversation(session, thread, apiOverride ?? conversationsApiOverride ?? undefined);
+  const filesOffered = chat.offers.attachFiles;
   const activeThread = chat.effectiveThread;
   // What had been seen of the chat when it came on screen: its visit clock as
   // the thread it was opened with and the list's latest read have it, taken
@@ -284,9 +278,9 @@ export function ConversationScreen({
   // not news there.
   useChatVisits({ deviceId, workspaceId: thread.workspaceId }, chat.busy);
   // The chat's pictures, fetched from the desktop when it says it serves them.
-  const images = useChatImages(session, chat.api, thread);
+  const images = useChatImages(chat.offers, chat.api, thread);
   // The pictures the person sent, where the desktop serves them too.
-  const sentImages = useSentImages(session, chat.api, thread);
+  const sentImages = useSentImages(chat.offers, chat.api, thread);
   // The pushed agent, plan and changes screens read this chat's state from here
   // rather than opening a second socket (see liveConversation.ts).
   usePublishConversation(
@@ -520,7 +514,7 @@ export function ConversationScreen({
   // them: they name the chat's models' families, windows and New marks. The
   // chat's own list still decides what it can switch to.
   const [catalogRuntime, setCatalogRuntime] = useState<CliRuntime | null>(null);
-  const catalogCli = session && declaresCliRuntimeCatalog(session) ? (activeThread.models?.cli ?? null) : null;
+  const catalogCli = session ? (activeThread.models?.cli ?? null) : null;
   useEffect(() => {
     if (!catalogCli || !workspacesApi) return;
     let current = true;
@@ -553,15 +547,15 @@ export function ConversationScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [landed, chat.state]);
   const canOperate =
-    !!session && conversationCanOperate(session) && chat.state !== "blocked";
+    chat.offers.operate && chat.state !== "blocked";
   const canAct = canOperate && chat.state === "live";
   // The chat's model, and the models of its CLI it can switch to. Hidden
   // unless the desktop lists them and this phone may operate the chat.
-  const model = session ? modelControl(session, activeThread) : null;
+  const model = modelControl(chat.offers, activeThread);
   // The permission preset is offered only where the desktop lists it: an
   // older one says nothing, and the chip would be guessing.
   const preset = canOperate ? activeThread.permissionPreset : undefined;
-  const presetChoices = session && preset ? permissionChoices(session, activeThread) : [];
+  const presetChoices = preset ? permissionChoices(chat.offers, activeThread) : [];
   const [sheet, setSheet] = useState<"model" | "permission" | "changes" | "more" | "sendAt" | null>(initialSheet ?? null);
   // The time the next message is scheduled for, while the "+"'s Schedule is
   // on (`conversation-scheduled-sends`): Send then hands it to the desktop to
@@ -815,7 +809,7 @@ export function ConversationScreen({
     }
     const picked = await pickChatImages(
       source === "camera",
-      chatImageMaxBytes(!!session && declaresImageDownscale(session)),
+      chatImageMaxBytes(chat.offers.downscale),
       CONVERSATION_MAX_IMAGES - uploads.length,
     );
     if (!picked) return null;
@@ -827,7 +821,6 @@ export function ConversationScreen({
     if (!picked) return null;
     if (!chat.api || !activeThread.sessionId) throw new Error("Desktop unavailable.");
     const id = await chat.api.uploadFile({
-      sessionId: activeThread.sessionId,
       uri: picked.uri,
       name: picked.name,
       mediaType: picked.mediaType,
@@ -839,7 +832,6 @@ export function ConversationScreen({
   const uploadImage = async (image: PickedImage): Promise<{ id: string; name: string }> => {
     if (!chat.api || !activeThread.sessionId) throw new Error("Desktop unavailable.");
     const id = await chat.api.uploadImage({
-      sessionId: activeThread.sessionId,
       uri: image.uri,
       name: image.name,
       mediaType: image.mediaType,
@@ -1625,7 +1617,7 @@ export function ConversationScreen({
                   agentName={agentName}
                   error={chat.actionErrors[item.id]}
                   onOpenPlan={onOpenPlan ? () => onOpenPlan(item.id) : undefined}
-                  plans={!!session && declaresConversationPlans(session)}
+                  plans={chat.offers.plans}
                   onBypass={
                     preset && preset !== "bypass" && !changing && presetChoices.some((choice) => choice.id === "bypass")
                       ? () => allowAndBypass(item.id)

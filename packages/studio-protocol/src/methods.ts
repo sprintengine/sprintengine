@@ -195,14 +195,16 @@ type Addressed<T> = { key: StudioConversationKey; commandId: string } & T
 
 /**
  * A command method's params: the conversation lane's command of that kind,
- * its `kind` given by the method, addressed. Pictures (`uploadIds`) are not
- * carried by this connection (`parseStudioCommand`). A rule that outlives the
+ * its `kind` given by the method, addressed. A send's pictures and files
+ * (`uploadIds`) are uploads this client staged on this connection
+ * (`uploads.begin` and `uploads.append`, a picture or an `attachment`), spent
+ * by the send under its command id. A rule that outlives the
  * conversation (`always`) is taken, as the lane takes it
  * (`conversation-permanent-approvals`), from a client the router lets allow a
  * kind of request for the rest of the conversation.
  */
 type CommandParams<K extends ConversationCommand['kind']> = Addressed<
-  Omit<Extract<ConversationCommand, { kind: K }>, 'kind' | 'uploadIds'>
+  Omit<Extract<ConversationCommand, { kind: K }>, 'kind'>
 >
 
 /**
@@ -464,9 +466,6 @@ export function parseStudioCommand(
   const key = parseStudioConversationKey(params.key)
   if (!key) return refuse('invalid_params', KEY_REQUIRED)
   if (!id(params.commandId)) return refuse('invalid_params', COMMAND_ID)
-  // Pictures travel beside the socket, not in it, and this version has no
-  // upload route: refused rather than dropped, so a send never silently loses one.
-  if (params.uploadIds !== undefined) return refuse('invalid_params', 'This connection does not carry pictures yet.')
   const { key: _key, commandId, ...members } = params
   const frame = { type: 'command', commandId, command: { ...members, kind: STUDIO_COMMAND_METHODS[method] } }
   const parsed = parseConversationClientMessage(frame)

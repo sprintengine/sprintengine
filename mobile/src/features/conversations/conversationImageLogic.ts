@@ -2,7 +2,7 @@ import { presentToolItem } from "../../../../packages/conversation-protocol/src/
 import { recordValue, stringValue, type MobileTool } from "./conversationLogic";
 
 // Which steps in a chat carry a picture, and how big it is drawn. The picture
-// itself lives on the desktop (see api/conversationImages.ts).
+// itself lives on the desktop, read by `conversation.picture` (api/desktopConversations.ts).
 
 // The formats the desktop serves as pictures. An SVG is markup the agent read
 // as text, and that text is what it went on; the rest the phone cannot draw.

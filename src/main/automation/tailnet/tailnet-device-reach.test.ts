@@ -47,6 +47,9 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.toolDetail': CHAT_READ,
   'conversation.event': CHAT_READ,
   'conversation.turnDiff': CHAT_READ,
+  // A step's picture or one the person sent, by the chat's record: what the
+  // lane's picture route served the phone.
+  'conversation.picture': CHAT_READ,
   'conversation.cancelSideQuestion': CHAT_READ,
   'conversation.contextBreakdown': CHAT_READ,
   'conversation.searchFiles': CHAT_READ,

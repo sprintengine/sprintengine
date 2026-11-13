@@ -13,9 +13,8 @@ import {
 } from "../../components/glyphs";
 import { SheetOption } from "../../components/SheetOption";
 import { useTheme, useThemedStyles } from "../../theme/ThemeProvider";
-import { pullRequestUrl } from "../../api/conversationWire";
 import { radius, space, touchSlop, typography, type Theme } from "../../theme/tokens";
-import { desktopMachineMark, type MachineMarkView, type PullRequestMarkView } from "./chatMarks";
+import { desktopMachineMark, pullRequestUrl, type MachineMarkView, type PullRequestMarkView } from "./chatMarks";
 import { START_AS_LABELS, type AttachSource, type ComposerOption, type StartAs } from "./composerOptions";
 
 /** A machine's glyph in its colour, then its name in the caller's text ink. */

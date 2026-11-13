@@ -5,12 +5,11 @@
 // children listed under it, as the desktop's panel lists them
 // (`subagentFamily.tsx`). No react-native import, so `node --test` can pin it.
 
-import type {
-  ConversationPhase,
-  ConversationSubagent,
-  ConversationSubagentStatus,
-  ConversationThread,
-} from "../../api/conversationWire";
+import {
+  type ConversationSubagent,
+  type ConversationSubagentStatus,
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import { formatDuration, formatElapsed, laneGlyphState, laneLabel, laneStatus, type AgentLane } from "./agentLogic";
 
 export type SubagentTone = "working" | "waiting" | "failed" | "quiet";
@@ -52,7 +51,7 @@ export function chatSubagentName(subagent: Pick<ConversationSubagent, "title" | 
   return subagent.title.trim() || subagent.task.trim() || "Subagent";
 }
 
-const PHASES: Record<ConversationSubagentStatus, ConversationPhase> = {
+const PHASES: Record<ConversationSubagentStatus, ConversationThread["phase"]> = {
   starting: "starting",
   working: "running",
   needs_input: "waiting_for_input",

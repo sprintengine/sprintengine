@@ -607,22 +607,12 @@ function epicSlugForContainer(item: BacklogRowItem): string | null {
   return stem ? stem.toLowerCase() : null;
 }
 
-// Create-form option lists. Ordered for the picker, not by the validator sets
-// above (which are unordered membership checks). Mirrors the desktop create
-// dialog's selectable axes; `status` is fixed to `idea` by the desktop service.
-export const backlogCreateTypeOptions: readonly StudioBacklogItemType[] = ["feature", "bug", "spike", "mockup"];
-export const backlogCreateDifficultyOptions: readonly StudioBacklogItemDifficulty[] = ["xs", "s", "m", "l", "xl"];
-export const backlogCreateCriticalityOptions: readonly StudioBacklogItemCriticality[] = [
-  "low",
-  "normal",
-  "high",
-  "critical",
-];
+// The triage vocabulary for difficulty and criticality, ordered for the picker.
+export const backlogDifficultyOptions: readonly StudioBacklogItemDifficulty[] = ["xs", "s", "m", "l", "xl"];
+export const backlogCriticalityOptions: readonly StudioBacklogItemCriticality[] = ["low", "normal", "high", "critical"];
 
-// Triage option lists for `backlog.update` (item 27). These are the *edit*
-// vocabulary, which is why `epic` is offered here and not on create: create mints
-// a leaf item, but an existing item can be promoted to an epic container, and the
-// desktop executor accepts it.
+// The types `backlog.update` sets: an existing item can be promoted to an epic
+// container, and the desktop accepts it.
 //
 // There is no "unset" option on any axis: an omitted field on the wire means
 // "leave this alone", so the protocol has no way to express "clear it". Offering
@@ -634,87 +624,6 @@ export const backlogTypeOptions: readonly StudioBacklogItemType[] = [
   "mockup",
   "spike",
 ];
-export const backlogDifficultyOptions = backlogCreateDifficultyOptions;
-export const backlogCriticalityOptions = backlogCreateCriticalityOptions;
-
-export const backlogCreateTitleMaxChars = 200;
-export const backlogCreateDescriptionMaxChars = 4000;
-
-export interface BacklogCreateWorkspaceOption {
-  workspaceId: string;
-  workspacePath: string;
-  workspaceName: string;
-}
-
-// The create form offers the same per-workspace grouping the list uses, so the
-// phone writes into a workspace the desktop already knows about (no silent
-// default — the user must pick). Workspaces with zero items are kept so the
-// first item in a fresh workspace can still be captured.
-export function selectBacklogCreateWorkspaces(input: unknown): BacklogCreateWorkspaceOption[] {
-  return normalizeBacklogWorkspaces(input).map((workspace) => ({
-    workspaceId: workspace.workspaceId,
-    workspacePath: workspace.workspacePath,
-    workspaceName: workspace.workspaceName,
-  }));
-}
-
-export interface BacklogCreateDraft {
-  workspacePath: string | null;
-  title: string;
-  description: string;
-  type?: StudioBacklogItemType;
-  difficulty?: StudioBacklogItemDifficulty;
-  criticality?: StudioBacklogItemCriticality;
-}
-
-export interface BacklogCreatePayload {
-  workspacePath: string;
-  title: string;
-  description?: string;
-  type?: StudioBacklogItemType;
-  difficulty?: StudioBacklogItemDifficulty;
-  criticality?: StudioBacklogItemCriticality;
-}
-
-export type BacklogCreateValidation =
-  | { ok: true; payload: BacklogCreatePayload }
-  | { ok: false; error: string };
-
-// Pure client-side guard mirroring the desktop payload validator (required
-// workspace + non-empty title). The desktop revalidates and is the authority;
-// this keeps the user from sending an obviously-invalid command and gives a
-// precise message instead of a round trip to the desktop.
-export function buildBacklogCreatePayload(draft: BacklogCreateDraft): BacklogCreateValidation {
-  const workspacePath = typeof draft.workspacePath === "string" ? draft.workspacePath.trim() : "";
-  if (!workspacePath) {
-    return { ok: false, error: "Choose a workspace before creating the item." };
-  }
-
-  const title = draft.title.trim();
-  if (!title) {
-    return { ok: false, error: "Add a title before creating the item." };
-  }
-  if (title.length > backlogCreateTitleMaxChars) {
-    return { ok: false, error: `Title must be ${backlogCreateTitleMaxChars} characters or fewer.` };
-  }
-
-  const description = draft.description.trim();
-  if (description.length > backlogCreateDescriptionMaxChars) {
-    return { ok: false, error: `Description must be ${backlogCreateDescriptionMaxChars} characters or fewer.` };
-  }
-
-  return {
-    ok: true,
-    payload: {
-      workspacePath,
-      title,
-      ...(description ? { description } : {}),
-      ...(draft.type ? { type: draft.type } : {}),
-      ...(draft.difficulty ? { difficulty: draft.difficulty } : {}),
-      ...(draft.criticality ? { criticality: draft.criticality } : {}),
-    },
-  };
-}
 
 export function selectBacklogEmptyState({
   errorMessage,

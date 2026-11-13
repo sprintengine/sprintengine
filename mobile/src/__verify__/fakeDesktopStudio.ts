@@ -32,6 +32,14 @@ export type FakeDesktopStudio = {
   subscriptions: Map<string, string>;
   /** Say something on a push topic to whoever follows it. */
   push(topic: string, payload: unknown): void;
+  /** Every chat followed (`conversation.session`), in order: its params and the cursor it resumed from. */
+  follows: Array<{ params: Record<string, unknown>; cursor?: { afterSeq: number; generation: string } }>;
+  /** Send a frame of a followed chat to every subscription to it now. */
+  frame(frame: Record<string, unknown>): void;
+  /** Refuse the follows open now (`subFailed`). */
+  refuseFollows(refusal: { code: string; message: string; retryable: boolean; retryAfterMs?: number }): void;
+  /** Say goodbye on every open socket, as a revoked pairing is told. */
+  bye(code: string, message: string): void;
 };
 
 export function fakeDesktopStudio(input: {
@@ -41,11 +49,26 @@ export function fakeDesktopStudio(input: {
   ticketStatus?: () => number;
   /** A desktop from before the Studio protocol: its tickets name no Studio path. */
   outdated?: boolean;
+  /** What its chats serve (`conversation.capabilities` in its welcome). */
+  conversationCapabilities?: string[];
+  /** A chat followed: the frames it answers with at once (a snapshot or the missed events, then a fence). */
+  follow?: (
+    params: Record<string, unknown>,
+    cursor: { afterSeq: number; generation: string } | undefined,
+  ) => Array<Record<string, unknown>>;
 }): FakeDesktopStudio {
   const requests: FakeDesktopStudio["requests"] = [];
   const ticketHeaders: FakeDesktopStudio["ticketHeaders"] = [];
   const socketUrls: string[] = [];
-  const open = new Set<{ drop(): void; push(topic: string, payload: unknown): void }>();
+  type Open = {
+    drop(): void;
+    push(topic: string, payload: unknown): void;
+    frame(frame: Record<string, unknown>): void;
+    refuse(refusal: Record<string, unknown>): void;
+    bye(code: string, message: string): void;
+  };
+  const open = new Set<Open>();
+  const follows: FakeDesktopStudio["follows"] = [];
   const subscriptions = new Map<string, string>();
   let minted = 0;
 
@@ -66,10 +89,25 @@ export function fakeDesktopStudio(input: {
     constructor(url: string) {
       socketUrls.push(url);
       this.ticket = new URL(url).searchParams.get("ticket") ?? "";
-      const handle = {
+      const handle: Open = {
         drop: () => this.close(1006, "cut"),
         push: (topic: string, payload: unknown) => {
           for (const [id, followed] of this.followed) if (followed === topic) this.reply({ t: "push", sub: id, payload });
+        },
+        frame: (frame) => {
+          for (const [id, followed] of this.followed)
+            if (followed === "conversation.session") this.reply({ t: "frame", sub: id, frame });
+        },
+        refuse: (refusal) => {
+          for (const [id, followed] of [...this.followed])
+            if (followed === "conversation.session") {
+              this.followed.delete(id);
+              this.reply({ t: "subFailed", sub: id, ...refusal });
+            }
+        },
+        bye: (code, message) => {
+          this.reply({ t: "bye", code, message });
+          setTimeout(() => this.close(1000, message), 1);
         },
       };
       open.add(handle);
@@ -79,7 +117,7 @@ export function fakeDesktopStudio(input: {
       }, 0);
       this.handle = handle;
     }
-    private handle: { drop(): void; push(topic: string, payload: unknown): void };
+    private handle: Open;
     private followed = new Map<string, string>();
     addEventListener(type: string, listener: (event: never) => void) {
       (this.listeners[type] ??= []).push(listener);
@@ -108,7 +146,7 @@ export function fakeDesktopStudio(input: {
           conversation: {
             protocolVersion: CONVERSATION_PROTOCOL_VERSION,
             minProtocolVersion: CONVERSATION_PROTOCOL_MIN_SUPPORTED,
-            capabilities: [],
+            capabilities: input.conversationCapabilities ?? [],
           },
           grant: {
             clientId: "tailnet:device-1",
@@ -123,6 +161,13 @@ export function fakeDesktopStudio(input: {
       if (frame.t === "sub") {
         this.followed.set(frame.id as string, frame.topic as string);
         subscriptions.set(frame.id as string, frame.topic as string);
+        if (frame.topic === "conversation.session") {
+          const params = (frame.params ?? {}) as Record<string, unknown>;
+          const cursor = frame.cursor as { afterSeq: number; generation: string } | undefined;
+          follows.push({ params, ...(cursor ? { cursor } : {}) });
+          for (const answer of input.follow?.(params, cursor) ?? [])
+            this.reply({ t: "frame", sub: frame.id, frame: { key: params.key, ...answer } });
+        }
         return;
       }
       if (frame.t === "unsub") {
@@ -164,6 +209,16 @@ export function fakeDesktopStudio(input: {
     subscriptions,
     push: (topic, payload) => {
       for (const socket of open) socket.push(topic, payload);
+    },
+    follows,
+    frame: (frame) => {
+      for (const socket of open) socket.frame(frame);
+    },
+    refuseFollows: (refusal) => {
+      for (const socket of open) socket.refuse(refusal);
+    },
+    bye: (code, message) => {
+      for (const socket of [...open]) socket.bye(code, message);
     },
   };
 }

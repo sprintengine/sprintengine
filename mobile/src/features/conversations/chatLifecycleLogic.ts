@@ -1,4 +1,6 @@
-import type { ConversationThread } from "../../api/conversationWire";
+import {
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import type { ChatListRow } from "./conversationListLogic";
 import { chatHasUnseenTurn, chatWorkspaceKey } from "./conversationListLogic";
 
@@ -204,9 +206,9 @@ export function withVisitRewind<T extends Pick<ConversationThread, "lastVisitedA
  * does not.
  */
 export function markUnreadOffered(
-  row: Pick<ChatListRow, "canMarkUnread" | "lifecycle" | "thread">,
+  row: Pick<ChatListRow, "canMarkUnread" | "thread">,
   input: { now: number; openedAt?: number | null },
 ): boolean {
   if (!row.canMarkUnread || row.thread.lastTurnEndedAt === undefined) return false;
-  return !chatHasUnseenTurn(row.thread, { now: input.now, openedAt: input.openedAt, lifecycle: row.lifecycle });
+  return !chatHasUnseenTurn(row.thread, { now: input.now, openedAt: input.openedAt });
 }

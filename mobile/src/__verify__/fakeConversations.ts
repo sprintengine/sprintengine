@@ -1,12 +1,12 @@
 import type { ChatLifecycleApi } from "../api/chatLifecycle";
-import type { ConversationApi, ConversationStreamHandlers } from "../api/tailnetConversations";
-import type {
-  ConversationEvent,
-  ConversationQueuedMessage,
-  ConversationSubagent,
-  ConversationThread,
-  ConversationUsageLimitSnapshot,
-} from "../api/conversationWire";
+import type { ConversationApi, ConversationStreamHandlers } from "../api/desktopConversations";
+import {
+  type ConversationWireEvent as ConversationEvent,
+  type ConversationQueuedMessage,
+  type ConversationSubagent,
+  type ConversationListedThread as ConversationThread,
+  type ConversationUsageLimitSnapshot,
+} from "../../../packages/conversation-protocol/src/public";
 import { quoteToken } from "../shared/quotes/chat-quotes";
 import { chatOpenedKey } from "../features/conversations/conversationListLogic";
 
@@ -1098,7 +1098,7 @@ export const fakeConversationsApi: ConversationApi = {
         })
     );
   },
-  open(key, _afterSeq, handlers, options) {
+  open(key, _afterSeq, handlers) {
     listener = handlers;
     const started = VERIFY_SUBAGENTS.find((subagent) => subagent.agentId === key.agentId);
     if (started && !fakeChats.has(`${key.workspaceId}/${key.agentId}`))
@@ -1113,7 +1113,7 @@ export const fakeConversationsApi: ConversationApi = {
     const { history, owner } = chat;
     // What this desktop holds for the chat, told to a stream that watches.
     const tellHeld = () => {
-      if (options?.queuedSends && listener === handlers)
+      if (listener === handlers)
         handlers.onFrame({ type: "queued", key, messages: chat.desktopHeld.map((message) => ({ ...message })) });
     };
     queueMicrotask(() => {
@@ -1127,9 +1127,9 @@ export const fakeConversationsApi: ConversationApi = {
       handlers.onState("live");
       tellHeld();
       // The main chat's subagents and its plan's usage, to a stream that asks.
-      if (options?.subagents && key.agentId === verifyConversation.agentId)
+      if (key.agentId === verifyConversation.agentId)
         handlers.onFrame({ type: "subagents", key, subagents: VERIFY_SUBAGENTS });
-      if (options?.usageLimits) handlers.onFrame({ type: "usageLimits", key, notice: null, autoResume: false, limits: VERIFY_USAGE });
+      handlers.onFrame({ type: "usageLimits", key, notice: null, autoResume: false, limits: VERIFY_USAGE });
     });
     const publish = (entry: ConversationEvent) => {
       history.push(entry);
@@ -1241,7 +1241,7 @@ export const fakeConversationsApi: ConversationApi = {
             tellHeld();
           } else if (command.kind === "send" && command.steer && chat.turnOpen) {
             publish(event("user_message", { turnId: "turn-one", text: command.message, commandId }, 0, owner));
-          } else if (command.kind === "send" && command.queue && options?.queuedSends) {
+          } else if (command.kind === "send" && command.queue) {
             if (!chat.turnOpen) reply(commandId, command.message);
             else {
               // Joined with what else this turn has queued, as the desktop does.
@@ -1262,22 +1262,10 @@ export const fakeConversationsApi: ConversationApi = {
         });
         return commandId;
       },
-      request(frame) {
-        const requestId = `fixture-request-${++counter}`;
-        queueMicrotask(() =>
-          handlers.onFrame({
-            type: "result",
-            requestId,
-            ok: true,
-            data:
-              frame.type === "getToolDetail" && "toolUseId" in frame && typeof frame.toolUseId === "string"
-                ? fixtureToolDetail(history, frame.toolUseId)
-                : frame.type === "getTurnDiff"
-                  ? turnDiffAnswer("path" in frame && typeof frame.path === "string" ? frame.path : undefined)
-                  : { ok: false, message: "Not in the fixture." },
-          }),
-        );
-        return requestId;
+      async read(request) {
+        if (request.type === "getToolDetail") return { ok: true, ...(fixtureToolDetail(history, request.toolUseId) as object) };
+        if (request.type === "getTurnDiff") return { ok: true, ...(turnDiffAnswer(request.path) as object) };
+        throw new Error("Not in the fixture.");
       },
       cancelPending(commandId) {
         const index = held.findIndex((send) => send.commandId === commandId);
@@ -1296,11 +1284,8 @@ export const fakeConversationsApi: ConversationApi = {
   async uploadFile() {
     return "fixture-file-upload";
   },
-  imageSource() {
-    return { uri: fixturePicture };
-  },
-  async imageProblem() {
-    return "gone";
+  async picture() {
+    return { ok: true, uri: fixturePicture };
   },
 };
 

@@ -4,6 +4,8 @@ import { NavigationContainer, type LinkingOptions, type NavigatorScreenParams } 
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { ALL_CHAT_OFFERS } from "../api/chatOffers";
+
 import { ToastProvider } from "../components/Toast";
 import { RichRendererHost } from "../components/document/rich/RichRendererHost";
 import { buildProjectList, resolveCurrentProject } from "../features/projects/projectContext";
@@ -403,6 +405,7 @@ function VerifyShell() {
               activeDeviceId={verifySession.deviceId}
               conversationsApiOverride={fakeConversationsApi}
               lifecycleApiOverride={fakeLifecycleApi}
+              offersOverride={ALL_CHAT_OFFERS}
               notesStore={verifyNotesStore}
               sessions={verifySessions}
               workspacesApiOverride={fakeWorkspacesApi}

@@ -22,7 +22,7 @@ const {
   withPendingSnoozes,
 } = require(path.join(buildRoot, "src/features/conversations/snoozeLogic.js"));
 const { buildChatRows } = require(path.join(buildRoot, "src/features/conversations/conversationListLogic.js"));
-const { parseConversationFrame } = require(path.join(buildRoot, "src/api/conversationWire.js"));
+const { decodeConversationServerFrame: parseConversationFrame } = require(path.join(buildRoot, "../packages/conversation-protocol/src/public.js"));
 // A listed chat as the phone reads it: through a `sessions` frame, by the
 // desktop's contract.
 const ROW = { workspaceId: "w", agentId: "a", title: "t", phase: "idle", updatedAt: 1, createdAt: 1, providerId: "p", modelId: "m", turnCount: 0, lastSeq: 0 };
@@ -55,8 +55,7 @@ const rows = (threads, input = {}) =>
     desktopName: "Mac",
     threads,
     workspaces: null,
-    lifecycle: true,
-    canOperate: true,
+    manage: true,
     ...input,
   });
 
@@ -126,8 +125,7 @@ test("Snooze is offered only where the desktop keeps its chats' rest, this phone
   const [row] = rows([thread()]);
   assert.equal(row.snoozable, true);
   assert.equal(snoozeOffered(row), true);
-  assert.equal(rows([thread()], { canOperate: false })[0].snoozable, false);
-  assert.equal(rows([thread()], { lifecycle: false })[0].snoozable, false);
+  assert.equal(rows([thread()], { manage: false })[0].snoozable, false);
   // The desktop ends a snoozed chat's processes, so it refuses one with an agent at work.
   assert.equal(snoozeOffered(rows([thread({ phase: "running" })])[0]), false);
   assert.equal(snoozeOffered(rows([thread({ phase: "starting" })])[0]), false);

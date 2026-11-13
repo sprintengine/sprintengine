@@ -104,14 +104,21 @@ test('a command’s params are read by the conversation lane’s own validator, 
     preset: 'yolo',
   })
   assert.deepEqual(unknownPreset.ok ? null : unknownPreset.code, 'invalid_params')
-  // Pictures are refused rather than dropped from a send.
+  // A send names the uploads it carries; a malformed list is refused, never dropped.
   const pictures = parseStudioMethodParams('conversation.send', {
     key,
     commandId: 'c7',
     message: 'see',
     uploadIds: ['u1'],
   })
-  assert.deepEqual(pictures.ok ? null : pictures.code, 'invalid_params')
+  assert.deepEqual(pictures.ok ? pictures.params : null, { key, commandId: 'c7', message: 'see', uploadIds: ['u1'] })
+  const notAList = parseStudioMethodParams('conversation.send', {
+    key,
+    commandId: 'c7',
+    message: 'see',
+    uploadIds: 'u1',
+  })
+  assert.deepEqual(notAList.ok ? null : notAList.code, 'invalid_params')
   const noKey = parseStudioMethodParams('conversation.interrupt', { commandId: 'c8' })
   assert.deepEqual(noKey.ok ? null : noKey.code, 'invalid_params')
 })

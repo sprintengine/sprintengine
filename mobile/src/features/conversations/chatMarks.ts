@@ -3,17 +3,36 @@
 // the chat's header and New's context strip draw from.
 
 import {
-  CONVERSATION_LOCAL_HOST_ID,
-  type ConversationHost,
-  type ConversationPullRequest,
-  type ConversationPullRequestState,
-} from "../../api/conversationWire";
+  type ConversationWireHost as ConversationHost,
+  type ConversationWirePullRequest as ConversationPullRequest,
+  type ConversationWirePullRequestState as ConversationPullRequestState,
+} from "../../../../packages/conversation-protocol/src/public";
 import {
   readMachineMark,
   type MachineColour,
   type MachineKind,
 } from "../../components/glyphs/machineMarks";
 import type { ThemeColors } from "../../theme/tokens";
+
+/** The id the desktop gives its own machine: a chat there wears no machine mark. */
+export const CONVERSATION_LOCAL_HOST_ID = "local";
+
+/** The longest pull request address the desktop lists; it drops a longer one too. */
+const MAX_PULL_REQUEST_URL_LENGTH = 2_000;
+
+/**
+ * A pull request's address as the phone will hand it to the browser, or null.
+ * Only a web page: `http(s)://`, a host, and no credentials before it, so
+ * `https://github.com@elsewhere.example/` cannot pass for GitHub. The phone
+ * opens the address the desktop gave and never builds one of its own.
+ */
+export function pullRequestUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const address = value.trim();
+  if (address.length > MAX_PULL_REQUEST_URL_LENGTH) return null;
+  return /^https?:\/\/[^\s/?#@\\]+(?:[/?#][^\s]*)?$/iu.test(address) ? address : null;
+}
+
 
 /** A machine as a surface marks it: the drawing, the ink, and the name beside it. */
 export interface MachineMarkView {

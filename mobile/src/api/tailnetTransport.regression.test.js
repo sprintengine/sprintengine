@@ -5,14 +5,6 @@ const test = require("node:test");
 
 const buildRoot = path.resolve(__dirname, "../../.mobile-test-build/mobile");
 const {
-  declaresConversationHello,
-  declaresConversationImages,
-  declaresConversationLifecycle,
-  declaresConversationModels,
-  declaresCliRuntimeCatalog,
-  declaresImageDownscale,
-  declaresNewChatEffort,
-  declaresNewChatWorktree,
   describeTransport,
   readTransportDeclaration,
   TAILNET_TRANSPORT_KNOWN,
@@ -93,56 +85,6 @@ test("folding a fresh declaration in returns null when nothing moved, so a foreg
   });
   // ...and the original is untouched.
   assert.deepEqual(session, { deviceId: "d", tailnetTransportVersion: 2, tailnetCapabilities: ["conversations", "conversation-models"] });
-});
-
-test("the model control needs a desktop that declared conversation-models; silence is a no", () => {
-  assert.equal(declaresConversationModels({ tailnetCapabilities: ["conversations", "conversation-models"] }), true);
-  assert.equal(declaresConversationModels({ tailnetCapabilities: ["conversations"] }), false);
-  assert.equal(declaresConversationModels({}), false);
-});
-
-test("a chat's pictures are fetched only from a desktop that declares it serves them", () => {
-  assert.equal(declaresConversationImages({ tailnetCapabilities: ["conversations", "conversation-images"] }), true);
-  // An older Studio has no route for them: no picture, and no broken placeholder.
-  assert.equal(declaresConversationImages({ tailnetCapabilities: ["conversations", "conversation-models"] }), false);
-  assert.equal(declaresConversationImages({}), false);
-});
-
-test("a chat probes with hello only where the desktop declared conversation-hello", () => {
-  assert.equal(declaresConversationHello({ tailnetCapabilities: ["conversations", "conversation-hello"] }), true);
-  // An older Studio refuses a hello it does not know; the probe stays a list there.
-  assert.equal(declaresConversationHello({ tailnetCapabilities: ["conversations"] }), false);
-  assert.equal(declaresConversationHello({}), false);
-});
-
-test("larger pictures go only to a desktop that declared conversation-image-downscale", () => {
-  assert.equal(declaresImageDownscale({ tailnetCapabilities: ["conversations", "conversation-image-downscale"] }), true);
-  // An older Studio refuses a picture over 5 MB; the phone keeps refusing it first.
-  assert.equal(declaresImageDownscale({ tailnetCapabilities: ["conversations", "conversation-images"] }), false);
-  assert.equal(declaresImageDownscale({}), false);
-});
-
-test("Settle and visit stamps need a desktop that declared conversation-lifecycle; silence is a no", () => {
-  assert.equal(declaresConversationLifecycle({ tailnetCapabilities: ["conversations", "conversation-lifecycle"] }), true);
-  // An older Studio has neither tool: nothing is offered, and nothing is sent.
-  assert.equal(declaresConversationLifecycle({ tailnetCapabilities: ["conversations", "conversation-models"] }), false);
-  assert.equal(declaresConversationLifecycle({}), false);
-});
-
-test("New's worktree, effort and catalog each need their own capability; silence is a no", () => {
-  const current = { tailnetCapabilities: ["conversations", "new-chat-worktree", "new-chat-effort", "cli-runtime-catalog"] };
-  assert.equal(declaresNewChatWorktree(current), true);
-  assert.equal(declaresNewChatEffort(current), true);
-  assert.equal(declaresCliRuntimeCatalog(current), true);
-  // An older Studio skips an argument it does not know: a worktree sent there
-  // would start the chat in the checkout without a word.
-  const older = { tailnetCapabilities: ["conversations", "conversation-models"] };
-  for (const declares of [declaresNewChatWorktree, declaresNewChatEffort, declaresCliRuntimeCatalog]) {
-    assert.equal(declares(older), false);
-    assert.equal(declares({}), false);
-  }
-  // Each is its own: one does not imply another.
-  assert.equal(declaresNewChatEffort({ tailnetCapabilities: ["new-chat-worktree"] }), false);
 });
 
 test("a desktop's environment id is folded into its pairing when it is new, and kept when a later answer says none", () => {

@@ -2,7 +2,9 @@
 // desktop's (`panels/agentChat/scheduledMessages.tsx`) does: when it goes, or
 // that it is going, waiting on a turn, or was refused.
 
-import type { ConversationScheduledMessage } from "../../api/conversationWire";
+import {
+  type ConversationScheduledMessage,
+} from "../../../../packages/conversation-protocol/src/public";
 import { sendTimeWords } from "./sendTime";
 
 /** "Sends Today 3:00 PM", "Sending…", "Sends when this turn ends", "Couldn't send: …". */

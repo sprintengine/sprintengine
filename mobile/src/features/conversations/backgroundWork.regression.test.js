@@ -1,8 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const {
-  parseConversationFrame,
-} = require("../../../.mobile-test-build/mobile/src/api/conversationWire.js");
+const { decodeConversationServerFrame: parseConversationFrame } = require("../../../.mobile-test-build/packages/conversation-protocol/src/public.js");
 const {
   CHAT_EARLIER_AFTER_MS,
   chatActivity,

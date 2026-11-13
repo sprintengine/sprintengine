@@ -17,7 +17,9 @@
 // window. So an older desktop's picker reads the same; it only lacks the New
 // marks and the provider lines.
 
-import type { ConversationThread } from "../../api/conversationWire";
+import {
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import type { CliCatalogModel, CliReasoningLevel, CliRuntime } from "./launchLogic";
 
 /** One catalog id as the picker reads it; the catalog's grouping fields where the desktop sent them. */

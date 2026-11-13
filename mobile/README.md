@@ -231,14 +231,14 @@ under `/tailnet/v1/`:
   `src/api/conversationLaunch.ts`).
 - **Tools:** `mcp` takes the JSON-RPC tool calls the phone has not yet moved
   onto the protocol.
-- **Live chats:** a WebSocket per open chat, opened with a short-lived ticket
-  from `ws-ticket`, streams the conversation's events
-  (`src/api/tailnetConversations.ts`, `src/api/conversationWire.ts`).
+- **Live chats:** on the same Studio socket, each open chat followed as
+  `conversation.session` and driven by its methods (`src/api/desktopConversations.ts`),
+  what it offers read from the desktop's welcome (`src/api/chatOffers.ts`).
 
 The conversation contract, its decoder and the connection supervisor (part of
 the shared client runtime, `packages/client-runtime`) are the desktop's own
 packages, imported from the repository's `packages/` folder as source:
-`src/api/conversationWire.ts` holds only the phone's own rules beside them, and
+`src/features/conversations/sendRules.ts` holds only the phone's own rules beside them, and
 a frame, event or listed chat this build does not know is passed over or listed
 as unknown rather than refused. Metro
 watches that folder (`metro.config.js`), and the test build compiles it beside

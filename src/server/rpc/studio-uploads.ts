@@ -43,7 +43,11 @@ type Upload = {
   /** The connection whose budget it counts against, until that connection closes. */
   connection: string | null
   mediaType: string
-  /** A picture for a send, or a file's bytes for `files.write`: each is spent only as what it was begun as. */
+  /**
+   * A picture for a send, a file a keyed send attaches by its path
+   * (`attachment`), or a file's bytes for `files.write`: each is spent only as
+   * what it was begun as.
+   */
   purpose: StudioUploadPurpose
   name?: string
   byteLength: number
@@ -54,7 +58,7 @@ type Upload = {
   spentBy?: { commandId: string; at: number }
 }
 
-export type StudioUploadPurpose = 'picture' | 'file'
+export type StudioUploadPurpose = 'picture' | 'attachment' | 'file'
 
 const PICTURE_TOO_LARGE = 'A picture in this send is too large to open: over 16384 pixels a side, or 100 megapixels.'
 
@@ -73,8 +77,14 @@ export type StudioUploadRefusal<Code extends string = 'invalid_params' | 'not_fo
   message: string
 }
 
-/** A finished picture, as a send hands it to the runtime. */
-export type StudioUploadedPicture = { uploadId: string; mediaType: string; name?: string; bytes: Buffer }
+/** A finished upload, as a send hands it to the runtime: a picture, or a file of what it was begun as. */
+export type StudioUploadedPicture = {
+  uploadId: string
+  purpose: StudioUploadPurpose
+  mediaType: string
+  name?: string
+  bytes: Buffer
+}
 
 export type StudioUploads = {
   begin(
@@ -87,12 +97,12 @@ export type StudioUploads = {
   ): { ok: true; received: number } | StudioUploadRefusal
   /** Give back unsent uploads; an id that is unknown, another client's or already sent is passed over. */
   discard(owner: string, uploadIds: string[]): { discarded: number }
-  /** The finished uploads a send names, spent under its command id. */
+  /** The finished uploads a send names, spent under its command id; each must be one of `purposes`. */
   spend(
     owner: string,
     uploadIds: string[],
     commandId: string,
-    purpose?: StudioUploadPurpose,
+    purposes?: StudioUploadPurpose | readonly StudioUploadPurpose[],
   ): { ok: true; pictures: StudioUploadedPicture[] } | StudioUploadRefusal
   /**
    * What became of the send that spent these: `recorded`, and its receipt
@@ -209,18 +219,21 @@ export function createStudioUploads(options: { now?: () => number; sweepEveryMs?
       return { discarded }
     },
 
-    spend(owner, uploadIds, commandId, purpose = 'picture') {
+    spend(owner, uploadIds, commandId, purposes = 'picture') {
       sweep()
+      const allowed: readonly StudioUploadPurpose[] = typeof purposes === 'string' ? [purposes] : purposes
       const found: Upload[] = []
       for (const uploadId of uploadIds) {
         const upload = find(owner, uploadId)
         if ('ok' in upload) return upload
-        if (upload.purpose !== purpose)
+        if (!allowed.includes(upload.purpose))
           return {
             ok: false,
             code: 'invalid_params',
             message:
-              purpose === 'file' ? 'That upload is a picture, not a file.' : 'That upload is a file, not a picture.',
+              upload.purpose === 'picture'
+                ? 'That upload is a picture, not a file.'
+                : 'That upload is a file, not a picture.',
           }
         if (upload.spentBy && upload.spentBy.commandId !== commandId)
           return {
@@ -231,7 +244,7 @@ export function createStudioUploads(options: { now?: () => number; sweepEveryMs?
         if (upload.received !== upload.byteLength || (upload.spentBy && upload.chunks.length === 0))
           return { ok: false, code: 'invalid_params', message: 'A picture in this send has not finished uploading.' }
         // Measured before anything decodes it: a small file can declare a vast picture.
-        if (purpose === 'picture' && upload.chunks.length > 0 && !imageWithinDecodeLimits(bytesOf(upload)))
+        if (upload.purpose === 'picture' && upload.chunks.length > 0 && !imageWithinDecodeLimits(bytesOf(upload)))
           return { ok: false, code: 'invalid_params', message: PICTURE_TOO_LARGE }
         found.push(upload)
       }
@@ -241,6 +254,7 @@ export function createStudioUploads(options: { now?: () => number; sweepEveryMs?
         ok: true,
         pictures: found.map((upload) => ({
           uploadId: upload.id,
+          purpose: upload.purpose,
           mediaType: upload.mediaType,
           ...(upload.name === undefined ? {} : { name: upload.name }),
           bytes: bytesOf(upload),

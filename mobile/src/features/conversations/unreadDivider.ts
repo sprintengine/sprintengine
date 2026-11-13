@@ -1,4 +1,6 @@
-import type { ConversationThread } from "../../api/conversationWire";
+import {
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import type { ConversationRow, ReplyClock } from "./conversationLogic";
 
 // Where the part of a chat nobody has read starts: the "New" divider drawn

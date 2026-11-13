@@ -27,7 +27,9 @@ import { ToolOutputPanel, type ToolDetailState } from "./ToolOutputPanel";
 import { ConversationPicture, type ChatImages, type SentImages } from "./ConversationImage";
 import { toolPicture } from "./conversationImageLogic";
 import { DisclosureGlyph, SideQuestionGlyph, ThoughtGlyph, ToolKindGlyph } from "./toolGlyphs";
-import type { ConversationSubagent } from "../../api/conversationWire";
+import {
+  type ConversationSubagent,
+} from "../../../../packages/conversation-protocol/src/public";
 import { chatSubagentName, chatSubagentStatus, subagentEnded, subagentStartFacts } from "./subagentLogic";
 import { cliForChatProvider } from "./launchLogic";
 import type { usePhoneConversation } from "./usePhoneConversation";

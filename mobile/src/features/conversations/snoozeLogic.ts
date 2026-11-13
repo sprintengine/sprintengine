@@ -11,7 +11,9 @@
 
 import { formatScheduleTime } from "../scheduled/scheduleEditor";
 import { minutesOfDay, sendTimeWords } from "../scheduled/sendTime";
-import type { ConversationThread } from "../../api/conversationWire";
+import {
+  type ConversationListedThread as ConversationThread,
+} from "../../../../packages/conversation-protocol/src/public";
 import { chatWorkspaceKey, type ChatListRow } from "./conversationListLogic";
 
 const MINUTE_MS = 60_000;

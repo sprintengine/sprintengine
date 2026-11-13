@@ -104,8 +104,27 @@ function fakeFollowed(calls: Calls): Required<StudioFollowedBackend> & { tell(ki
       calls.push(['visit', workspaceId, visitedAt, byOwner])
       return { ok: true, lastVisitedAt: visitedAt ?? 2_000 }
     },
+    async picture(key, ref) {
+      calls.push(['picture', key.agentId, ref])
+      if ('toolUseId' in ref && ref.toolUseId === 'no-picture')
+        return { ok: false, code: 'not_found', message: 'That picture is not in this conversation.' }
+      return { ok: true, mediaType: 'image/png', bytes: Buffer.from('png bytes') }
+    },
+    async stageUploads(key, clientId, uploads) {
+      calls.push([
+        'stageUploads',
+        key.agentId,
+        clientId,
+        uploads.map((upload) => [upload.purpose, upload.name ?? null, upload.bytes.toString()]),
+      ])
+      await stagingHeld
+      return { ok: true, ids: uploads.map((_upload, index) => `host-${clientId}-${staged++}-${index}`) }
+    },
   }
 }
+let staged = 0
+/** What the fake host's staging waits on: a test holds it to send again mid-staging. */
+let stagingHeld: Promise<void> = Promise.resolve()
 
 async function serve() {
   const calls: Calls = []
@@ -148,6 +167,7 @@ const CALLS: Record<keyof typeof STUDIO_FOLLOWED_METHODS, Record<string, unknown
   'conversation.visit': { workspaceId: KEY.workspaceId },
   'conversation.changesDiff': { key: KEY, selection: { kind: 'span' } },
   'conversation.changedFile': { key: KEY, selection: { kind: 'uncommitted' }, path: 'src/app.ts' },
+  'conversation.picture': { key: KEY, toolUseId: 'tool-1' },
 }
 
 test('the socket withholds no conversation capability but its handshake, its upload shrinking, and what it does not carry yet', async () => {
@@ -172,6 +192,10 @@ test('the socket withholds no conversation capability but its handshake, its upl
     'conversation-permanent-approvals',
     'conversation-quote-tokens',
     'conversation-fork',
+    'conversation-images',
+    'conversation-message-images',
+    'conversation-message-files',
+    'conversation-queued-attachments',
   ])
     assert.ok(info.conversation.capabilities.includes(capability), capability)
   for (const capability of STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES)
@@ -180,6 +204,8 @@ test('the socket withholds no conversation capability but its handshake, its upl
   const bare = studioRpcConversationCapabilities(createFakeBackend())
   assert.equal(bare.includes('conversation-side-questions'), false)
   assert.equal(bare.includes('conversation-changes'), false)
+  assert.equal(bare.includes('conversation-images'), false)
+  assert.equal(bare.includes('conversation-message-files'), false)
   assert.ok(bare.includes('conversation-permanent-approvals'))
 })
 
@@ -506,5 +532,138 @@ test('a connection held to known folders names a chat by a folder Studio knows, 
         loopback,
       )
     ).ok,
+  )
+})
+
+/** Stage `text` as one upload of `purpose` on the client's connection; answers its id. */
+async function upload(c: LineClient, text: string, purpose: 'picture' | 'attachment'): Promise<string> {
+  const begun = await ask(c, 'uploads.begin', {
+    mediaType: purpose === 'picture' ? 'image/png' : 'text/plain',
+    byteLength: Buffer.byteLength(text),
+    purpose,
+    name: purpose === 'picture' ? 'shot.png' : 'notes.txt',
+  })
+  const { uploadId } = resultOf(begun) as { uploadId: string }
+  const appended = await ask(c, 'uploads.append', {
+    uploadId,
+    offset: 0,
+    dataBase64: Buffer.from(text).toString('base64'),
+  })
+  assert.equal(appended.ok, true, JSON.stringify(appended))
+  return uploadId
+}
+
+test('a keyed send carries the pictures and files its client staged, made the chat’s once per command id', async () => {
+  const started = await serve()
+  const phone = await client(
+    started.path,
+    pairFakeClient(started.auth, 'phone', ['conversation:read', 'conversation:operate']),
+  )
+  // A tiny PNG's bytes are not needed here: the host stages what it is given.
+  const picture = await upload(phone, 'picture', 'picture')
+  const file = await upload(phone, 'file body', 'attachment')
+  const sent = await ask(phone, 'conversation.send', {
+    key: KEY,
+    commandId: 'with-both',
+    message: 'Look at these',
+    uploadIds: [picture, file],
+  })
+  assert.equal(sent.ok, true, JSON.stringify(sent))
+  const staging = started.calls.filter(([kind]) => kind === 'stageUploads')
+  assert.deepEqual(staging, [
+    [
+      'stageUploads',
+      'agent-1',
+      'phone',
+      [
+        ['picture', 'shot.png', 'picture'],
+        ['attachment', 'notes.txt', 'file body'],
+      ],
+    ],
+  ])
+  const carried = started.backend.commands.at(-1)!
+  assert.equal(carried.command.kind, 'send')
+  const hostIds = (carried.command as { uploadIds?: string[] }).uploadIds!
+  assert.equal(hostIds.length, 2)
+  assert.ok(hostIds.every((id) => id.startsWith('host-phone-')))
+  // The same send again (its answer lost with the connection) names the same
+  // host ids, and asks nothing of the uploads it already spent.
+  const again = await ask(phone, 'conversation.send', {
+    key: KEY,
+    commandId: 'with-both',
+    message: 'Look at these',
+    uploadIds: [picture, file],
+  })
+  assert.equal(again.ok, true, JSON.stringify(again))
+  assert.equal(started.calls.filter(([kind]) => kind === 'stageUploads').length, 1)
+  // Spent uploads go with no other send.
+  const reused = await ask(phone, 'conversation.send', {
+    key: KEY,
+    commandId: 'another',
+    message: 'Again?',
+    uploadIds: [picture],
+  })
+  assert.equal(errorOf(reused), 'invalid_params')
+  // Another client's upload is not this one's to send.
+  const other = await client(
+    started.path,
+    pairFakeClient(started.auth, 'other', ['conversation:read', 'conversation:operate']),
+  )
+  const theirs = await upload(other, 'theirs', 'picture')
+  const borrowed = await ask(phone, 'conversation.send', {
+    key: KEY,
+    commandId: 'borrowed',
+    message: 'Not mine',
+    uploadIds: [theirs],
+  })
+  assert.equal(errorOf(borrowed), 'not_found')
+})
+
+test('a send sent again while its pictures are still being staged is staged once, under the same host ids', async () => {
+  const started = await serve()
+  const phone = await client(
+    started.path,
+    pairFakeClient(started.auth, 'phone', ['conversation:read', 'conversation:operate']),
+  )
+  const picture = await upload(phone, 'picture', 'picture')
+  let release = (): void => undefined
+  stagingHeld = new Promise<void>((resolve) => (release = resolve))
+  try {
+    const send = { key: KEY, commandId: 'mid-staging', message: 'Look', uploadIds: [picture] }
+    const first = ask(phone, 'conversation.send', send)
+    for (let tries = 0; !started.calls.some(([kind]) => kind === 'stageUploads') && tries < 100; tries++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    // The phone's socket dropped and it sends again before the first answer.
+    const again = ask(phone, 'conversation.send', send)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    release()
+    const answers = await Promise.all([first, again])
+    for (const answer of answers) assert.equal(answer.ok, true, JSON.stringify(answer))
+  } finally {
+    release()
+    stagingHeld = Promise.resolve()
+  }
+  assert.equal(started.calls.filter(([kind]) => kind === 'stageUploads').length, 1)
+  const sends = started.backend.commands.filter((carried) => carried.command.kind === 'send')
+  const ids = sends.map((carried) => JSON.stringify((carried.command as { uploadIds?: string[] }).uploadIds))
+  assert.equal(new Set(ids).size, 1, ids.join(' '))
+})
+
+test('a chat’s picture is read by its step or the ref its message recorded, never by a path', async () => {
+  const started = await serve()
+  const reader = await client(started.path, pairFakeClient(started.auth, 'reader', ['conversation:read']))
+  const step = await ask(reader, 'conversation.picture', { key: KEY, toolUseId: 'tool-1' })
+  assert.deepEqual(resultOf(step), { mediaType: 'image/png', dataBase64: Buffer.from('png bytes').toString('base64') })
+  const sent = await ask(reader, 'conversation.picture', { key: KEY, attachment: 'ref-1' })
+  assert.equal(sent.ok, true)
+  assert.equal(errorOf(await ask(reader, 'conversation.picture', { key: KEY, toolUseId: 'no-picture' })), 'not_found')
+  assert.equal(
+    errorOf(await ask(reader, 'conversation.picture', { key: KEY, toolUseId: 'tool-1', attachment: 'ref-1' })),
+    'invalid_params',
+  )
+  assert.equal(errorOf(await ask(reader, 'conversation.picture', { key: KEY, path: '/etc/passwd' })), 'invalid_params')
+  assert.deepEqual(
+    started.calls.filter(([kind]) => kind === 'picture').map((call) => call[2]),
+    [{ toolUseId: 'tool-1' }, { attachment: 'ref-1' }, { toolUseId: 'no-picture' }],
   )
 })
