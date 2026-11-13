@@ -1,19 +1,19 @@
-import { useCallback, useMemo, useState } from 'react'
-import { ScrollView, StyleSheet, Text, View } from 'react-native'
-import { useFocusEffect } from '@react-navigation/native'
+import { useCallback, useMemo, useState } from "react";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 
-import { BottomSheet } from '../../components/BottomSheet'
-import { Card, CardRow } from '../../components/Card'
-import { CircleButton } from '../../components/CircleButton'
-import { iconSize, PlusIcon, RemoteMachineGlyph } from '../../components/glyphs'
-import { ScreenFrame, useListContentStyle, useRefreshControl } from '../../components/Screen'
-import { SheetOption } from '../../components/SheetOption'
-import { SkeletonRows } from '../../components/Skeleton'
-import { useToast } from '../../components/Toast'
-import { useNow } from '../../components/useNow'
-import { useThemedStyles } from '../../theme/ThemeProvider'
-import { fontWeight, space, typography, type Theme } from '../../theme/tokens'
-import type { MobileSession } from '../../api/types'
+import { BottomSheet } from "../../components/BottomSheet";
+import { Card, CardRow } from "../../components/Card";
+import { CircleButton } from "../../components/CircleButton";
+import { iconSize, PlusIcon, RemoteMachineGlyph } from "../../components/glyphs";
+import { ScreenFrame, useListContentStyle, useRefreshControl } from "../../components/Screen";
+import { SheetOption } from "../../components/SheetOption";
+import { SkeletonRows } from "../../components/Skeleton";
+import { useToast } from "../../components/Toast";
+import { useNow } from "../../components/useNow";
+import { useThemedStyles } from "../../theme/ThemeProvider";
+import { fontWeight, space, typography, type Theme } from "../../theme/tokens";
+import type { MobileSession } from "../../api/types";
 import {
   canOperateSchedules,
   createScheduledAgentsApi,
@@ -23,23 +23,23 @@ import {
   type PhoneScheduledAgents,
   type ScheduledAgentAction,
   type ScheduledAgentsApi,
-} from '../../api/scheduledAgents'
-import { canReadWorkspaces } from '../conversations/conversationListLogic'
-import { studioTargetOf } from '../../api/desktopStudio'
+} from "../../api/scheduledAgents";
+import { canReadWorkspaces } from "../conversations/conversationListLogic";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 type DesktopSchedules = {
-  session: MobileSession
-  api: ScheduledAgentsApi
-  read: PhoneScheduledAgents | null
-  error: string | null
-}
+  session: MobileSession;
+  api: ScheduledAgentsApi;
+  read: PhoneScheduledAgents | null;
+  error: string | null;
+};
 
 const ACTION_DONE: Record<ScheduledAgentAction, string> = {
-  run: 'Started — its chat is in your list.',
-  pause: 'Paused. A run already going carries on.',
-  resume: 'Resumed. It runs at its next time.',
-  delete: 'Closed. It will not run again.',
-}
+  run: "Started — its chat is in your list.",
+  pause: "Paused. A run already going carries on.",
+  resume: "Resumed. It runs at its next time.",
+  delete: "Closed. It will not run again.",
+};
 
 /**
  * The scheduled agents on every paired desktop: each a prompt and a schedule,
@@ -53,15 +53,15 @@ export function ScheduledAgentsScreen({
   onBack,
   onNew,
 }: {
-  sessions: MobileSession[]
-  onBack: () => void
-  onNew: () => void
+  sessions: MobileSession[];
+  onBack: () => void;
+  onNew: () => void;
 }) {
-  const styles = useThemedStyles(createStyles)
-  const contentStyle = useListContentStyle()
-  const toast = useToast()
-  const now = useNow(false)
-  const readable = useMemo(() => sessions.filter(canReadWorkspaces), [sessions])
+  const styles = useThemedStyles(createStyles);
+  const contentStyle = useListContentStyle();
+  const toast = useToast();
+  const now = useNow(false);
+  const readable = useMemo(() => sessions.filter(canReadWorkspaces), [sessions]);
   const apis = useMemo(
     () =>
       readable.map((session) => ({
@@ -69,67 +69,64 @@ export function ScheduledAgentsScreen({
         api: createScheduledAgentsApi(studioTargetOf(session)),
       })),
     [readable],
-  )
-  const [reads, setReads] = useState<Record<string, { read: PhoneScheduledAgents | null; error: string | null }>>({})
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [picked, setPicked] = useState<{ desktop: DesktopSchedules; agent: PhoneScheduledAgent } | null>(null)
+  );
+  const [reads, setReads] = useState<Record<string, { read: PhoneScheduledAgents | null; error: string | null }>>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [picked, setPicked] = useState<{ desktop: DesktopSchedules; agent: PhoneScheduledAgent } | null>(null);
 
   const load = useCallback(async () => {
-    const answers = await Promise.all(apis.map(async ({ session, api }) => ({ session, result: await api.list() })))
+    const answers = await Promise.all(apis.map(async ({ session, api }) => ({ session, result: await api.list() })));
     setReads((current) => {
-      const next = { ...current }
+      const next = { ...current };
       for (const { session, result } of answers) {
         next[session.deviceId] = result.ok
           ? { read: result.data ?? { agents: [], pausedAll: null }, error: null }
-          : { read: current[session.deviceId]?.read ?? null, error: result.message ?? 'The desktop did not answer.' }
+          : { read: current[session.deviceId]?.read ?? null, error: result.message ?? "The desktop did not answer." };
       }
-      return next
-    })
-  }, [apis])
+      return next;
+    });
+  }, [apis]);
 
   // Read each time it comes into view, so one made on New is listed on the way back.
   useFocusEffect(
     useCallback(() => {
-      let live = true
+      let live = true;
       void load().finally(() => {
-        if (live) setLoading(false)
-      })
+        if (live) setLoading(false);
+      });
       return () => {
-        live = false
-      }
+        live = false;
+      };
     }, [load]),
-  )
+  );
 
   const refresh = useCallback(() => {
-    setRefreshing(true)
-    void load().finally(() => setRefreshing(false))
-  }, [load])
-  const refreshControl = useRefreshControl(refresh, refreshing)
+    setRefreshing(true);
+    void load().finally(() => setRefreshing(false));
+  }, [load]);
+  const refreshControl = useRefreshControl(refresh, refreshing);
 
   const desktops: DesktopSchedules[] = apis.map(({ session, api }) => ({
     session,
     api,
     read: reads[session.deviceId]?.read ?? null,
     error: reads[session.deviceId]?.error ?? null,
-  }))
-  const withAgents = desktops.filter((desktop) => (desktop.read?.agents.length ?? 0) > 0)
-  const count = withAgents.reduce((total, desktop) => total + (desktop.read?.agents.length ?? 0), 0)
-  const oneDesktop = readable.length <= 1
-  const unanswered = desktops.filter((desktop) => desktop.error && !desktop.read)
+  }));
+  const withAgents = desktops.filter((desktop) => (desktop.read?.agents.length ?? 0) > 0);
+  const count = withAgents.reduce((total, desktop) => total + (desktop.read?.agents.length ?? 0), 0);
+  const oneDesktop = readable.length <= 1;
+  const unanswered = desktops.filter((desktop) => desktop.error && !desktop.read);
 
   const act = (action: ScheduledAgentAction) => {
-    const target = picked
-    setPicked(null)
-    if (!target) return
+    const target = picked;
+    setPicked(null);
+    if (!target) return;
     void target.desktop.api.act(target.agent.id, action).then((result) => {
-      toast.show(
-        result.ok ? ACTION_DONE[action] : (result.message ?? 'The desktop refused it.'),
-        result.ok ? 'success' : 'error',
-      )
-      void load()
-    })
-  }
+      toast.show(result.ok ? ACTION_DONE[action] : (result.message ?? "The desktop refused it."), result.ok ? "success" : "error");
+      void load();
+    });
+  };
 
   return (
     <ScreenFrame
@@ -166,12 +163,12 @@ export function ScheduledAgentsScreen({
               )}
               <Card variant="list">
                 {desktop.read!.agents.map((agent, index) => {
-                  const pausedAll = desktop.read!.pausedAll !== null
-                  const next = agent.paused || pausedAll ? 'Paused' : nextRunWords(agent.nextRunAt, now)
-                  const operable = canOperateSchedules(desktop.session)
+                  const pausedAll = desktop.read!.pausedAll !== null;
+                  const next = agent.paused || pausedAll ? "Paused" : nextRunWords(agent.nextRunAt, now);
+                  const operable = canOperateSchedules(desktop.session);
                   return (
                     <CardRow
-                      accessibilityHint={operable ? 'Run now, pause, resume or close it.' : undefined}
+                      accessibilityHint={operable ? "Run now, pause, resume or close it." : undefined}
                       accessibilityLabel={`${agent.title}, in ${agent.projectName}. ${scheduleStatusLine(agent, pausedAll)}.`}
                       first={index === 0}
                       key={agent.id}
@@ -180,7 +177,7 @@ export function ScheduledAgentsScreen({
                       title={agent.title}
                       trailing={next ?? undefined}
                     />
-                  )
+                  );
                 })}
               </Card>
             </View>
@@ -192,37 +189,21 @@ export function ScheduledAgentsScreen({
           </Text>
         ))}
       </ScrollView>
-      <BottomSheet
-        onClose={() => setPicked(null)}
-        title={picked?.agent.title ?? 'Scheduled agent'}
-        visible={picked !== null}
-      >
+      <BottomSheet onClose={() => setPicked(null)} title={picked?.agent.title ?? "Scheduled agent"} visible={picked !== null}>
         {picked ? (
           <View style={styles.sheet}>
-            <SheetOption label="Run now" onPress={() => act('run')} sub="Starts its chat now, paused or not." />
+            <SheetOption label="Run now" onPress={() => act("run")} sub="Starts its chat now, paused or not." />
             {picked.agent.paused ? (
-              <SheetOption
-                label="Resume schedule"
-                onPress={() => act('resume')}
-                sub="It runs again at its next time."
-              />
+              <SheetOption label="Resume schedule" onPress={() => act("resume")} sub="It runs again at its next time." />
             ) : (
-              <SheetOption
-                label="Pause schedule"
-                onPress={() => act('pause')}
-                sub="No runs at its times until resumed."
-              />
+              <SheetOption label="Pause schedule" onPress={() => act("pause")} sub="No runs at its times until resumed." />
             )}
-            <SheetOption
-              label="Close schedule"
-              onPress={() => act('delete')}
-              sub="Stops it for good. Its chats stay."
-            />
+            <SheetOption label="Close schedule" onPress={() => act("delete")} sub="Stops it for good. Its chats stay." />
           </View>
         ) : null}
       </BottomSheet>
     </ScreenFrame>
-  )
+  );
 }
 
 const createStyles = ({ colors }: Theme) =>
@@ -231,10 +212,10 @@ const createStyles = ({ colors }: Theme) =>
       gap: space.sm,
     },
     groupHead: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection: "row",
+      alignItems: "center",
       gap: space.sm,
-      paddingHorizontal: space['2xs'],
+      paddingHorizontal: space["2xs"],
       paddingTop: space.sm,
     },
     groupName: {
@@ -246,15 +227,15 @@ const createStyles = ({ colors }: Theme) =>
       ...typography.meta,
       color: colors.textMuted,
       paddingVertical: space.sm,
-      textAlign: 'center',
+      textAlign: "center",
     },
     footnote: {
       ...typography.meta,
       color: colors.textSubtle,
       paddingTop: space.sm,
-      textAlign: 'center',
+      textAlign: "center",
     },
     sheet: {
       gap: space.xs,
     },
-  })
+  });

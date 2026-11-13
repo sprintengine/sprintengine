@@ -1,36 +1,36 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { Linking, StatusBar } from 'react-native'
-import { NavigationContainer, type LinkingOptions, type NavigatorScreenParams } from '@react-navigation/native'
-import { createNativeStackNavigator } from '@react-navigation/native-stack'
-import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { useEffect, useMemo, useRef } from "react";
+import { Linking, StatusBar } from "react-native";
+import { NavigationContainer, type LinkingOptions, type NavigatorScreenParams } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { ALL_CHAT_OFFERS } from '../api/chatOffers'
+import { ALL_CHAT_OFFERS } from "../api/chatOffers";
 
-import { ToastProvider } from '../components/Toast'
-import { RichRendererHost } from '../components/document/rich/RichRendererHost'
-import { buildProjectList, resolveCurrentProject } from '../features/projects/projectContext'
-import { PairingLinkProvider, type PairingLinkValue } from '../navigation/PairingLinkContext'
-import { createNavigationTheme, stackScreenOptions } from '../navigation/navigationTheme'
-import { SessionDataContext, type SessionDataValue } from '../navigation/SessionDataProvider'
-import { AppNavigator } from '../navigation/AppNavigator'
-import type { HomeStackParamList } from '../navigation/types'
-import { ChatsContext, ChatsProvider, useChats } from '../features/conversations/ChatsContext'
-import { ChatLinkScreen } from '../features/conversations/ChatLinkScreen'
-import { readChatGrouping } from '../features/conversations/chatGrouping'
-import type { ConversationTarget } from '../features/conversations/conversationLogic'
-import { NoticesProvider } from '../features/notices/NoticesContext'
-import { ThemeProvider, useTheme } from '../theme/ThemeProvider'
-import type { DeviceNotesStore } from '../storage/sessionStore'
-import { fakeWorkspacesApi } from './fakeWorkspaces'
-import { fakeCanvasSource } from './fakeCanvases'
-import { CanvasSourceContext } from '../features/canvas/CanvasSourceContext'
-import { ConversationScreen } from '../features/conversations/ConversationScreen'
-import { ConversationAgentsScreen } from '../features/conversations/ConversationAgentsScreen'
-import { ConversationAgentScreen } from '../features/conversations/ConversationAgentScreen'
-import { ConversationPlanScreen } from '../features/conversations/ConversationPlanScreen'
-import { ConversationChangesScreen } from '../features/conversations/ConversationChangesScreen'
-import { ConversationFileDiffScreen } from '../features/conversations/ConversationFileDiffScreen'
-import { useLiveConversation } from '../features/conversations/liveConversation'
+import { ToastProvider } from "../components/Toast";
+import { RichRendererHost } from "../components/document/rich/RichRendererHost";
+import { buildProjectList, resolveCurrentProject } from "../features/projects/projectContext";
+import { PairingLinkProvider, type PairingLinkValue } from "../navigation/PairingLinkContext";
+import { createNavigationTheme, stackScreenOptions } from "../navigation/navigationTheme";
+import { SessionDataContext, type SessionDataValue } from "../navigation/SessionDataProvider";
+import { AppNavigator } from "../navigation/AppNavigator";
+import type { HomeStackParamList } from "../navigation/types";
+import { ChatsContext, ChatsProvider, useChats } from "../features/conversations/ChatsContext";
+import { ChatLinkScreen } from "../features/conversations/ChatLinkScreen";
+import { readChatGrouping } from "../features/conversations/chatGrouping";
+import type { ConversationTarget } from "../features/conversations/conversationLogic";
+import { NoticesProvider } from "../features/notices/NoticesContext";
+import { ThemeProvider, useTheme } from "../theme/ThemeProvider";
+import type { DeviceNotesStore } from "../storage/sessionStore";
+import { fakeWorkspacesApi } from "./fakeWorkspaces";
+import { fakeCanvasSource } from "./fakeCanvases";
+import { CanvasSourceContext } from "../features/canvas/CanvasSourceContext";
+import { ConversationScreen } from "../features/conversations/ConversationScreen";
+import { ConversationAgentsScreen } from "../features/conversations/ConversationAgentsScreen";
+import { ConversationAgentScreen } from "../features/conversations/ConversationAgentScreen";
+import { ConversationPlanScreen } from "../features/conversations/ConversationPlanScreen";
+import { ConversationChangesScreen } from "../features/conversations/ConversationChangesScreen";
+import { ConversationFileDiffScreen } from "../features/conversations/ConversationFileDiffScreen";
+import { useLiveConversation } from "../features/conversations/liveConversation";
 import {
   VERIFY_SUBAGENTS,
   fakeConversationsApi,
@@ -38,9 +38,9 @@ import {
   verifyChatsOpened,
   verifyConversation,
   verifyQueuedMessage,
-} from './fakeConversations'
-import { verifySession, verifySessions, verifySnapshot } from './fixture'
-import { subagentThread } from '../features/conversations/subagentLogic'
+} from "./fakeConversations";
+import { verifySession, verifySessions, verifySnapshot } from "./fixture";
+import { subagentThread } from "../features/conversations/subagentLogic";
 
 /**
  * The screenshot harness: the real app navigator fed a fixture desktop, so every
@@ -54,7 +54,10 @@ import { subagentThread } from '../features/conversations/subagentLogic'
  * photographs both themes from one build.
  */
 export default function VerifyHarness() {
-  const themeStore = useMemo(() => ({ getPreference: async () => null, savePreference: async () => undefined }), [])
+  const themeStore = useMemo(
+    () => ({ getPreference: async () => null, savePreference: async () => undefined }),
+    [],
+  );
 
   return (
     <ThemeProvider store={themeStore}>
@@ -63,7 +66,7 @@ export default function VerifyHarness() {
         <RichRendererHost />
       </SafeAreaProvider>
     </ThemeProvider>
-  )
+  );
 }
 
 // iOS asks before it hands a custom-scheme link to an app, and a simulator
@@ -72,17 +75,17 @@ export default function VerifyHarness() {
 // photograph on an iPhone simulator without the prompt:
 //
 //   EXPO_PUBLIC_VERIFY_HARNESS=1 EXPO_PUBLIC_VERIFY_URL=sprintengine://verify/notices
-const verifyInitialUrl = async () => process.env.EXPO_PUBLIC_VERIFY_URL || (await Linking.getInitialURL())
+const verifyInitialUrl = async () => process.env.EXPO_PUBLIC_VERIFY_URL || (await Linking.getInitialURL());
 
 // The app's stack, and beside it the one screen the harness draws over a
 // list of its own: a chat link that finds its workspace on two desktops.
 type VerifyRootParamList = {
-  App: NavigatorScreenParams<HomeStackParamList>
-  ChatLinkTwins: { workspaceId: string; agent?: string }
-}
-const VerifyRoot = createNativeStackNavigator<VerifyRootParamList>()
+  App: NavigatorScreenParams<HomeStackParamList>;
+  ChatLinkTwins: { workspaceId: string; agent?: string };
+};
+const VerifyRoot = createNativeStackNavigator<VerifyRootParamList>();
 const linking: LinkingOptions<VerifyRootParamList> = {
-  prefixes: ['sprintengine://verify'],
+  prefixes: ["sprintengine://verify"],
   getInitialURL: verifyInitialUrl,
   config: {
     screens: {
@@ -105,28 +108,28 @@ const linking: LinkingOptions<VerifyRootParamList> = {
       //   sprintengine://verify/chat/ws-docs
       App: {
         screens: {
-          HomeOverview: 'home',
-          ChooseProject: 'new',
+          HomeOverview: "home",
+          ChooseProject: "new",
           // `…/model` opens it with the model picker up.
-          NewChat: 'new/:deviceId/:workspaceId/:projectName/:desktopName/:sheet?',
-          ChatLink: 'chat/:workspaceId',
-          Notices: 'notices',
-          SettingsHome: 'settings',
+          NewChat: "new/:deviceId/:workspaceId/:projectName/:desktopName/:sheet?",
+          ChatLink: "chat/:workspaceId",
+          Notices: "notices",
+          SettingsHome: "settings",
           // Every board, and one board's picture (see fakeCanvases.ts):
           //   sprintengine://verify/canvases
           //   sprintengine://verify/canvas/dev_verify/export-flow?path=export-flow.excalidraw&workspaceId=ws-mobile
-          Canvases: 'canvases',
-          CanvasBoard: 'canvas/:deviceId/:name',
-          Desktop: 'desktop/:deviceId',
-          Appearance: 'appearance',
-          ChatGrouping: 'grouping',
-          Pairing: 'pairing',
+          Canvases: "canvases",
+          CanvasBoard: "canvas/:deviceId/:name",
+          Desktop: "desktop/:deviceId",
+          Appearance: "appearance",
+          ChatGrouping: "grouping",
+          Pairing: "pairing",
         },
       },
-      ChatLinkTwins: 'chat-twins/:workspaceId',
+      ChatLinkTwins: "chat-twins/:workspaceId",
     },
   },
-}
+};
 
 /**
  * A chat link whose workspace two paired desktops list: the harness desktop's
@@ -138,26 +141,26 @@ function ChatLinkTwins({
   agent,
   onOpen,
 }: {
-  workspaceId: string
-  agent?: string
-  onOpen: (target: ConversationTarget) => void
+  workspaceId: string;
+  agent?: string;
+  onOpen: (target: ConversationTarget) => void;
 }) {
-  const chats = useChats()
+  const chats = useChats();
   const value = useMemo(() => {
     const twins = chats.chats
       .filter((row) => row.thread.workspaceId === workspaceId)
-      .map((row) => ({ ...row, deviceId: 'dev_mini', desktopName: 'Mac mini' }))
-    return { ...chats, chats: [...chats.chats, ...twins] }
-  }, [chats, workspaceId])
+      .map((row) => ({ ...row, deviceId: "dev_mini", desktopName: "Mac mini" }));
+    return { ...chats, chats: [...chats.chats, ...twins] };
+  }, [chats, workspaceId]);
   return (
     <ChatsContext.Provider value={value}>
       <ChatLinkScreen
-        link={{ kind: 'chat', environmentId: null, chatId: workspaceId, agentId: agent ?? null }}
+        link={{ kind: "chat", environmentId: null, chatId: workspaceId, agentId: agent ?? null }}
         onBack={noop}
         onOpen={onOpen}
       />
     </ChatsContext.Provider>
-  )
+  );
 }
 
 // The conversation fixture's own stack: the chat, and the agent, plan and
@@ -171,38 +174,38 @@ function ChatLinkTwins({
 //   sprintengine://verify/changes/1             (the settled turn's files)
 //   sprintengine://verify/diff/1/src%2Fcomponents%2FToast.tsx
 type VerifyConversationParamList = {
-  Conversation: { sheet?: 'model' } | undefined
-  ConversationAgents: undefined
-  ConversationAgent: { laneId: string }
-  ConversationPlan: { requestId: string }
-  ConversationChanges: { turnSeq: number }
-  ConversationFileDiff: { turnSeq: number; path: string }
+  Conversation: { sheet?: "model" } | undefined;
+  ConversationAgents: undefined;
+  ConversationAgent: { laneId: string };
+  ConversationPlan: { requestId: string };
+  ConversationChanges: { turnSeq: number };
+  ConversationFileDiff: { turnSeq: number; path: string };
   /** A chat the fixture's chat started with Studio, opened over it (`sub-review`, `sub-docs`). */
-  Subagent: { agentId: string }
-}
-const ConversationStack = createNativeStackNavigator<VerifyConversationParamList>()
+  Subagent: { agentId: string };
+};
+const ConversationStack = createNativeStackNavigator<VerifyConversationParamList>();
 const conversationLinking: LinkingOptions<VerifyConversationParamList> = {
-  prefixes: ['sprintengine://verify'],
+  prefixes: ["sprintengine://verify"],
   getInitialURL: verifyInitialUrl,
   config: {
     // A pushed screen opened by link still has the chat beneath it.
-    initialRouteName: 'Conversation',
+    initialRouteName: "Conversation",
     screens: {
-      Conversation: 'conversation/:sheet?',
-      ConversationAgents: 'agents',
-      ConversationAgent: 'agent/:laneId',
-      ConversationPlan: 'plan/:requestId',
-      ConversationChanges: { path: 'changes/:turnSeq', parse: { turnSeq: Number } },
-      ConversationFileDiff: { path: 'diff/:turnSeq/:path', parse: { turnSeq: Number } },
-      Subagent: 'subagent/:agentId',
+      Conversation: "conversation/:sheet?",
+      ConversationAgents: "agents",
+      ConversationAgent: "agent/:laneId",
+      ConversationPlan: "plan/:requestId",
+      ConversationChanges: { path: "changes/:turnSeq", parse: { turnSeq: Number } },
+      ConversationFileDiff: { path: "diff/:turnSeq/:path", parse: { turnSeq: Number } },
+      Subagent: "subagent/:agentId",
     },
   },
-}
+};
 const verifyChat = {
   deviceId: verifySession.deviceId,
   workspaceId: verifyConversation.workspaceId,
   agentId: verifyConversation.agentId,
-}
+};
 
 /**
  * Queues the fixture's messages once the chat is live and its turn running,
@@ -210,16 +213,16 @@ const verifyChat = {
  * fixture desktop holds them, joined a line apiece into one entry.
  */
 function QueueFixtureMessage() {
-  const live = useLiveConversation(verifyChat)
-  const sent = useRef(false)
+  const live = useLiveConversation(verifyChat);
+  const sent = useRef(false);
   useEffect(() => {
-    if (sent.current || !verifyQueuedMessage || live?.state !== 'live' || !live.turnBusy) return
-    sent.current = true
+    if (sent.current || !verifyQueuedMessage || live?.state !== "live" || !live.turnBusy) return;
+    sent.current = true;
     void (async () => {
-      for (const message of verifyQueuedMessage) await live.queueSend(message)
-    })().catch(() => undefined)
-  }, [live])
-  return null
+      for (const message of verifyQueuedMessage) await live.queueSend(message);
+    })().catch(() => undefined);
+  }, [live]);
+  return null;
 }
 
 function VerifyConversationStack() {
@@ -230,23 +233,22 @@ function VerifyConversationStack() {
         <ConversationStack.Screen name="Conversation">
           {({ navigation, route }) => (
             <ConversationScreen
-              initialSheet={route.params?.sheet === 'model' ? 'model' : undefined}
+              initialSheet={route.params?.sheet === "model" ? "model" : undefined}
               deviceId={verifySession.deviceId}
               thread={verifyConversation}
               apiOverride={fakeConversationsApi}
               onBack={noop}
-              onOpenAgents={() => navigation.push('ConversationAgents')}
-              onOpenAgent={(laneId) => navigation.push('ConversationAgent', { laneId })}
-              onOpenPlan={(requestId) => navigation.push('ConversationPlan', { requestId })}
-              onOpenChanges={(turnSeq) => navigation.push('ConversationChanges', { turnSeq })}
-              onOpenSubagent={({ thread }) => navigation.push('Subagent', { agentId: thread.agentId })}
+              onOpenAgents={() => navigation.push("ConversationAgents")}
+              onOpenAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
+              onOpenPlan={(requestId) => navigation.push("ConversationPlan", { requestId })}
+              onOpenChanges={(turnSeq) => navigation.push("ConversationChanges", { turnSeq })}
+              onOpenSubagent={({ thread }) => navigation.push("Subagent", { agentId: thread.agentId })}
             />
           )}
         </ConversationStack.Screen>
         <ConversationStack.Screen name="Subagent">
           {({ navigation, route }) => {
-            const subagent =
-              VERIFY_SUBAGENTS.find((entry) => entry.agentId === route.params.agentId) ?? VERIFY_SUBAGENTS[0]
+            const subagent = VERIFY_SUBAGENTS.find((entry) => entry.agentId === route.params.agentId) ?? VERIFY_SUBAGENTS[0];
             return (
               <ConversationScreen
                 deviceId={verifySession.deviceId}
@@ -256,7 +258,7 @@ function VerifyConversationStack() {
                 onOpenParent={() => navigation.popToTop()}
                 onBack={() => navigation.goBack()}
               />
-            )
+            );
           }}
         </ConversationStack.Screen>
         <ConversationStack.Screen name="ConversationAgents">
@@ -264,8 +266,8 @@ function VerifyConversationStack() {
             <ConversationAgentsScreen
               conversation={verifyChat}
               onBack={() => navigation.goBack()}
-              onOpenAgent={(laneId) => navigation.push('ConversationAgent', { laneId })}
-              onOpenSubagent={({ thread }) => navigation.push('Subagent', { agentId: thread.agentId })}
+              onOpenAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
+              onOpenSubagent={({ thread }) => navigation.push("Subagent", { agentId: thread.agentId })}
             />
           )}
         </ConversationStack.Screen>
@@ -276,18 +278,14 @@ function VerifyConversationStack() {
               laneId={route.params.laneId}
               onBack={() => navigation.goBack()}
               onChat={() => navigation.popToTop()}
-              onOpenAgent={(laneId) => navigation.push('ConversationAgent', { laneId })}
-              onOpenParentAgent={(laneId) => navigation.push('ConversationAgent', { laneId })}
+              onOpenAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
+              onOpenParentAgent={(laneId) => navigation.push("ConversationAgent", { laneId })}
             />
           )}
         </ConversationStack.Screen>
         <ConversationStack.Screen name="ConversationPlan">
           {({ navigation, route }) => (
-            <ConversationPlanScreen
-              conversation={verifyChat}
-              requestId={route.params.requestId}
-              onBack={() => navigation.goBack()}
-            />
+            <ConversationPlanScreen conversation={verifyChat} requestId={route.params.requestId} onBack={() => navigation.goBack()} />
           )}
         </ConversationStack.Screen>
         <ConversationStack.Screen name="ConversationChanges">
@@ -296,7 +294,7 @@ function VerifyConversationStack() {
               conversation={verifyChat}
               turnSeq={route.params.turnSeq}
               onBack={() => navigation.goBack()}
-              onOpenFile={(path) => navigation.push('ConversationFileDiff', { turnSeq: route.params.turnSeq, path })}
+              onOpenFile={(path) => navigation.push("ConversationFileDiff", { turnSeq: route.params.turnSeq, path })}
             />
           )}
         </ConversationStack.Screen>
@@ -313,24 +311,24 @@ function VerifyConversationStack() {
         </ConversationStack.Screen>
       </ConversationStack.Navigator>
     </>
-  )
+  );
 }
 
-const noop = () => undefined
-const asyncNoop = async () => undefined
+const noop = () => undefined;
+const asyncNoop = async () => undefined;
 
 // The phone's notes about which chats it has opened, held in memory and
 // seeded so the list's green row has a stamp to be newer than.
-const openedNotes: Record<string, number> = { ...verifyChatsOpened }
+const openedNotes: Record<string, number> = { ...verifyChatsOpened };
 const verifyNotesStore: DeviceNotesStore = {
   getChatsOpened: async () => ({ ...openedNotes }),
   markChatOpened: async (key, at) => {
-    openedNotes[key] = Math.max(openedNotes[key] ?? 0, at)
-    return { ...openedNotes }
+    openedNotes[key] = Math.max(openedNotes[key] ?? 0, at);
+    return { ...openedNotes };
   },
   rewindChatOpened: async (key, at) => {
-    if (openedNotes[key] !== undefined && openedNotes[key] > at) openedNotes[key] = at
-    return { ...openedNotes }
+    if (openedNotes[key] !== undefined && openedNotes[key] > at) openedNotes[key] = at;
+    return { ...openedNotes };
   },
   getReadNoticeIds: async () => [],
   saveReadNoticeIds: asyncNoop,
@@ -339,31 +337,34 @@ const verifyNotesStore: DeviceNotesStore = {
   getChatGrouping: async () => readChatGrouping(process.env.EXPO_PUBLIC_VERIFY_CHAT_GROUPING, null),
   saveChatGrouping: asyncNoop,
   // EXPO_PUBLIC_VERIFY_FOLLOW_UP=queue photographs the chat with Queue chosen.
-  getFollowUpBehavior: async () => (process.env.EXPO_PUBLIC_VERIFY_FOLLOW_UP === 'queue' ? 'queue' : 'steer'),
+  getFollowUpBehavior: async () => (process.env.EXPO_PUBLIC_VERIFY_FOLLOW_UP === "queue" ? "queue" : "steer"),
   saveFollowUpBehavior: asyncNoop,
-}
+};
 
 function VerifyShell() {
-  const theme = useTheme()
-  const navigationTheme = useMemo(() => createNavigationTheme(theme), [theme])
+  const theme = useTheme();
+  const navigationTheme = useMemo(() => createNavigationTheme(theme), [theme]);
 
-  const pairingLink = useMemo<PairingLinkValue>(() => ({ pendingPairingLink: null, clearPendingPairingLink: noop }), [])
+  const pairingLink = useMemo<PairingLinkValue>(
+    () => ({ pendingPairingLink: null, clearPendingPairingLink: noop }),
+    [],
+  );
 
   const sessionData = useMemo<SessionDataValue>(() => {
-    const value = verifySessionData()
-    return { ...value, chatSessions: value.sessions }
-  }, [])
-  function verifySessionData(): Omit<SessionDataValue, 'chatSessions'> {
-    const projects = buildProjectList(verifySnapshot)
+    const value = verifySessionData();
+    return { ...value, chatSessions: value.sessions };
+  }, []);
+  function verifySessionData(): Omit<SessionDataValue, "chatSessions"> {
+    const projects = buildProjectList(verifySnapshot);
     return {
       session: verifySession,
       sessions: process.env.EXPO_PUBLIC_VERIFY_CONVERSATION
         ? [
             {
               ...verifySession,
-              desktopName: 'mac-mini',
+              desktopName: "mac-mini",
               tailnetCapabilities: verifySession.tailnetCapabilities,
-              tailnetScopes: ['conversation:operate'],
+              tailnetScopes: ["conversation:operate"],
             },
           ]
         : verifySessions,
@@ -374,15 +375,15 @@ function VerifyShell() {
       starredProjectKeys: [],
       toggleProjectStar: noop,
       snapshot: verifySnapshot,
-      snapshotState: 'ready',
+      snapshotState: "ready",
       snapshotError: null,
       isRefreshing: false,
       refreshSnapshot: noop,
       lastUpdatedAt: Date.now() - 12_000,
       watchSnapshot: () => noop,
       fleetRowStates: {
-        dev_verify: { kind: 'ready', summary: { projectCount: 5, backlogItemCount: 8 } },
-        dev_mini: { kind: 'idle' },
+        dev_verify: { kind: "ready", summary: { projectCount: 5, backlogItemCount: 8 } },
+        dev_mini: { kind: "idle" },
       },
       isFleetRefreshing: false,
       refreshFleet: noop,
@@ -395,12 +396,12 @@ function VerifyShell() {
       markCurrentDeviceRevoked: noop,
       markDeviceRevoked: noop,
       disconnect: noop,
-    }
+    };
   }
 
   return (
     <PairingLinkProvider value={pairingLink}>
-      <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
+      <StatusBar barStyle={theme.isDark ? "light-content" : "dark-content"} />
       <ToastProvider>
         <SessionDataContext.Provider value={sessionData}>
           <CanvasSourceContext.Provider value={fakeCanvasSource}>
@@ -426,7 +427,7 @@ function VerifyShell() {
                         {({ navigation, route }) => (
                           <ChatLinkTwins
                             agent={route.params.agent}
-                            onOpen={(target) => navigation.navigate('App', { screen: 'Conversation', params: target })}
+                            onOpen={(target) => navigation.navigate("App", { screen: "Conversation", params: target })}
                             workspaceId={route.params.workspaceId}
                           />
                         )}
@@ -440,5 +441,5 @@ function VerifyShell() {
         </SessionDataContext.Provider>
       </ToastProvider>
     </PairingLinkProvider>
-  )
+  );
 }

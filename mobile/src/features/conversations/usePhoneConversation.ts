@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AppState } from 'react-native'
-import * as Crypto from 'expo-crypto'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
+import * as Crypto from "expo-crypto";
 import {
   createDesktopConversationsApi,
   type ChatRead,
@@ -8,7 +8,7 @@ import {
   type ConversationStream,
   type ConversationConnectionState,
   type ConversationThread,
-} from '../../api/desktopConversations'
+} from "../../api/desktopConversations";
 import {
   parseConversationWireEvent,
   type ConversationCommand,
@@ -18,15 +18,15 @@ import {
   type ConversationScheduledMessage,
   type ConversationSubagent,
   type ConversationUsageLimitSnapshot,
-} from '../../../../packages/conversation-protocol/src/public'
-import { useChatOffers, type PhoneChatOffers } from '../../api/chatOffers'
-import type { MobileSession } from '../../api/types'
+} from "../../../../packages/conversation-protocol/src/public";
+import { useChatOffers, type PhoneChatOffers } from "../../api/chatOffers";
+import type { MobileSession } from "../../api/types";
 import {
   conversationSendProblem,
   conversationSessionWasLost,
   LOST_REQUEST_SENTENCE,
   plainLineBreaks,
-} from './sendRules'
+} from "./sendRules";
 import {
   foldable,
   followContext,
@@ -38,7 +38,7 @@ import {
   phoneRows,
   recordValue,
   type HeldContext,
-} from './conversationLogic'
+} from "./conversationLogic";
 import {
   createConversationProjectionState,
   syncConversationProjection,
@@ -46,18 +46,22 @@ import {
   type ChangedTurn,
   type ConversationRow,
   type IncrementalConversationState,
-} from '../../../../packages/conversation-timeline/src/public'
-import { chatWorksInBackground } from './conversationListLogic'
-import { keepUnchanged } from './keepUnchanged'
-import { CACHE_SAVE_NOTICE, createCacheSaveHealth } from './cacheSaveHealth'
+} from "../../../../packages/conversation-timeline/src/public";
+import { chatWorksInBackground } from "./conversationListLogic";
+import { keepUnchanged } from "./keepUnchanged";
+import { CACHE_SAVE_NOTICE, createCacheSaveHealth } from "./cacheSaveHealth";
 import {
   loadConversationCache,
   updateConversationCache,
   MAX_PENDING_SENDS,
   type CachedConversation,
-} from '../../storage/conversationCache'
-import { conversationTranscripts, transcriptKey, type RememberedTranscript } from '../../storage/transcriptMemory'
-import { createQueuedSendCourier } from './queuedSendCourier'
+} from "../../storage/conversationCache";
+import {
+  conversationTranscripts,
+  transcriptKey,
+  type RememberedTranscript,
+} from "../../storage/transcriptMemory";
+import { createQueuedSendCourier } from "./queuedSendCourier";
 import {
   cancelRefusal,
   handingSend,
@@ -66,8 +70,8 @@ import {
   queuedSendStale,
   stillHanding,
   type HandingSend,
-} from './queuedSends'
-import { studioTargetOf } from '../../api/desktopStudio'
+} from "./queuedSends";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /**
  * How long a streamed delta may wait to be drawn with the ones behind it. A
@@ -76,7 +80,7 @@ import { studioTargetOf } from '../../api/desktopStudio'
  * 60Hz: long enough to draw a burst of tokens once, short enough that the
  * words still read as streaming.
  */
-const STREAM_DRAW_MS = 50
+const STREAM_DRAW_MS = 50;
 /**
  * How often a streaming reply is written to the phone's cache. Each write
  * serialises the chat's whole log, so one per frame kept the disk and the JS
@@ -86,77 +90,87 @@ const STREAM_DRAW_MS = 50
  * killed inside the window resumes from the cursor written with the log, so
  * the desktop sends what the cache did not keep.
  */
-const STREAM_SAVE_MS = 1_000
+const STREAM_SAVE_MS = 1_000;
 
 // Short of memory, the transcripts held for going back to a chat are the
 // first thing to give up: each is a whole chat's log, and every one can be
 // read again from the cache or the desktop, where an app the OS kills for
 // memory loses everything. React Native raises the warning on iOS only.
-AppState.addEventListener('memoryWarning', () => conversationTranscripts.shed())
+AppState.addEventListener("memoryWarning", () => conversationTranscripts.shed());
 
 /** Sends what a closed chat still had queued (`queuedSendCourier.ts`). */
 const queuedSends = createQueuedSendCourier({
   load: loadConversationCache,
   update: updateConversationCache,
   watchForeground(onForeground) {
-    let backgroundAt: number | null = AppState.currentState === 'active' ? null : Date.now()
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active' && backgroundAt !== null) {
-        onForeground(Date.now() - backgroundAt)
-        backgroundAt = null
-      } else if (next !== 'active' && backgroundAt === null) backgroundAt = Date.now()
-    })
-    return () => subscription.remove()
+    let backgroundAt: number | null = AppState.currentState === "active" ? null : Date.now();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active" && backgroundAt !== null) {
+        onForeground(Date.now() - backgroundAt);
+        backgroundAt = null;
+      } else if (next !== "active" && backgroundAt === null) backgroundAt = Date.now();
+    });
+    return () => subscription.remove();
   },
-})
+});
 
-const isWireEvent = (value: unknown): value is ConversationEvent => parseConversationWireEvent(value) !== null
+const isWireEvent = (value: unknown): value is ConversationEvent => parseConversationWireEvent(value) !== null;
 
 /** What to tell the person when the desktop refused something without saying why. */
 function refusalText(code: string | undefined, fallback: string): string {
-  if (code === 'too_large') return 'This message is too large for the desktop.'
-  if (code === 'busy') return 'The desktop is busy. Try again in a moment.'
-  if (code === 'conversation_operate_required') return 'This phone can read this conversation but not send to it.'
-  if (code === 'unsupported_model') return "That model is not in this chat's list on the desktop."
-  if (code === 'unsupported_command') return 'This desktop does not support that. Update Studio there.'
-  return fallback
+  if (code === "too_large") return "This message is too large for the desktop.";
+  if (code === "busy") return "The desktop is busy. Try again in a moment.";
+  if (code === "conversation_operate_required")
+    return "This phone can read this conversation but not send to it.";
+  if (code === "unsupported_model")
+    return "That model is not in this chat's list on the desktop.";
+  if (code === "unsupported_command")
+    return "This desktop does not support that. Update Studio there.";
+  return fallback;
 }
-type Cursor = { lastSeq: number; generation?: string }
+type Cursor = { lastSeq: number; generation?: string };
 const cursorOf = (held: { lastSeq: number; generation?: string }): Cursor => ({
   lastSeq: held.lastSeq,
   ...(held.generation === undefined ? {} : { generation: held.generation }),
-})
+});
 /**
  * A transcript reopened without a page from the desktop reaches back to older
  * turns from the oldest event it holds.
  */
 function pageHeld(events: ConversationEvent[]) {
   const oldest = events.reduce<number | null>(
-    (seq, event) => (event.seq === undefined ? seq : Math.min(seq ?? event.seq, event.seq)),
+    (seq, event) =>
+      event.seq === undefined ? seq : Math.min(seq ?? event.seq, event.seq),
     null,
-  )
-  return oldest !== null && oldest > 1 ? oldest : null
+  );
+  return oldest !== null && oldest > 1 ? oldest : null;
 }
 // A change to the chat itself (its model, its permission preset) waiting on
 // the desktop's answer. The thread takes the change only once it is accepted.
 type PendingThreadChange = {
-  patch: Partial<Pick<ConversationThread, 'modelId' | 'permissionPreset'>>
+  patch: Partial<Pick<ConversationThread, "modelId" | "permissionPreset">>;
   /** Said when the desktop refuses without a reason. */
-  refused: string
+  refused: string;
   /** Said when the link drops before the desktop answered. */
-  lost: string
-  settle: (result: ModelSwitchResult) => void
-}
-function abandonThreadChanges(pending: Map<string, PendingThreadChange>, lost?: string) {
-  for (const entry of pending.values()) entry.settle({ ok: false, message: lost ?? entry.lost })
-  pending.clear()
+  lost: string;
+  settle: (result: ModelSwitchResult) => void;
+};
+function abandonThreadChanges(
+  pending: Map<string, PendingThreadChange>,
+  lost?: string,
+) {
+  for (const entry of pending.values())
+    entry.settle({ ok: false, message: lost ?? entry.lost });
+  pending.clear();
 }
 /** How taking back a message the desktop holds ended: given back, or refused with why. */
-export type CancelHeldResult = { ok: true } | { ok: false; message: string }
+export type CancelHeldResult = { ok: true } | { ok: false; message: string };
 /** How an agent's Stop ended: the desktop took it (the agent then reports its end), or refused it with why. */
-export type StopAgentResult = { ok: true } | { ok: false; message: string }
+export type StopAgentResult = { ok: true } | { ok: false; message: string };
 /** How a model switch or preset change ended: accepted (with the desktop's caveat, if any) or refused with why. */
-export type ModelSwitchResult = { ok: true; notice?: string } | { ok: false; message: string }
+export type ModelSwitchResult =
+  | { ok: true; notice?: string }
+  | { ok: false; message: string };
 export function usePhoneConversation(
   session: MobileSession | undefined,
   thread: ConversationThread,
@@ -167,18 +181,22 @@ export function usePhoneConversation(
   const api = useMemo(
     () => apiOverride ?? (session ? createDesktopConversationsApi(studioTargetOf(session)) : null),
     [session?.baseUrl, session?.deviceToken, session?.relayedEnvironmentId, apiOverride],
-  )
+  );
   // A chat opened earlier in this run draws what it held at once, on the
   // first frame, and then asks the desktop only for what followed.
   const remembered = (): RememberedTranscript | null =>
-    session && !apiOverride ? conversationTranscripts.recall(transcriptKey(session.deviceId, thread)) : null
-  const [events, setEvents] = useState<ConversationEvent[]>(() => remembered()?.events ?? [])
-  const [state, setState] = useState<ConversationConnectionState>('connecting')
-  const [notice, setNotice] = useState('')
+    session && !apiOverride
+      ? conversationTranscripts.recall(transcriptKey(session.deviceId, thread))
+      : null;
+  const [events, setEvents] = useState<ConversationEvent[]>(
+    () => remembered()?.events ?? [],
+  );
+  const [state, setState] = useState<ConversationConnectionState>("connecting");
+  const [notice, setNotice] = useState("");
   const [page, setPage] = useState(() => {
-    const before = pageHeld(events)
-    return { hasMore: before !== null, beforeCursor: before }
-  })
+    const before = pageHeld(events);
+    return { hasMore: before !== null, beforeCursor: before };
+  });
   // `uploads`: the pictures it carries, by upload id, which its bubble draws
   // from the phone's own copies until the desktop's echo of it arrives.
   // `waiting`: the desktop turned it away behind a turn this phone had not
@@ -187,129 +205,136 @@ export function usePhoneConversation(
   // Send now or Discard; `queuedAt` says when it was written.
   const [optimistic, setOptimistic] = useState<
     {
-      commandId: string
-      text: string
-      uploads?: string[]
-      failed?: string
-      waiting?: boolean
-      stale?: boolean
-      queuedAt?: number
+      commandId: string;
+      text: string;
+      uploads?: string[];
+      failed?: string;
+      waiting?: boolean;
+      stale?: boolean;
+      queuedAt?: number;
     }[]
-  >([])
-  const [queued, setQueued] = useState<{ commandId: string; text: string; uploads: string[] }[]>([])
+  >([]);
+  const [queued, setQueued] = useState<
+    { commandId: string; text: string; uploads: string[] }[]
+  >([]);
   // What the desktop says it holds for this chat (`conversation-queued-sends`),
   // as its latest `queued` frame said it: the one list of what waits there.
-  const [desktopHeld, setDesktopHeld] = useState<ConversationQueuedMessage[]>([])
+  const [desktopHeld, setDesktopHeld] = useState<ConversationQueuedMessage[]>([]);
   // What the desktop keeps scheduled into this chat (`conversation-scheduled-sends`),
   // as its latest `scheduled` frame said, soonest first.
-  const [desktopScheduled, setDesktopScheduled] = useState<ConversationScheduledMessage[]>([])
+  const [desktopScheduled, setDesktopScheduled] = useState<ConversationScheduledMessage[]>([]);
   // The chats this one started (`conversation-subagents`), as the desktop's
   // latest `subagents` frame named them, oldest first.
-  const [subagents, setSubagents] = useState<ConversationSubagent[]>([])
+  const [subagents, setSubagents] = useState<ConversationSubagent[]>([]);
   // What the desktop knows of the usage limits of the plans this chat runs on
   // (`conversation-usage-limits`), as its latest `usageLimits` frame said.
-  const [usageLimits, setUsageLimits] = useState<ConversationUsageLimitSnapshot[]>([])
+  const [usageLimits, setUsageLimits] = useState<ConversationUsageLimitSnapshot[]>([]);
   // Messages offered to the desktop to hold that its list does not name yet.
-  const [handing, setHanding] = useState<HandingSend[]>([])
-  const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set())
+  const [handing, setHanding] = useState<HandingSend[]>([]);
+  const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(
+    new Set(),
+  );
   // Why the desktop refused an answer to a request, by request id. Said on the
   // request's own card, where the person just tapped, and gone with the
   // request: the chat-wide notice kept "This request can only be allowed
   // once." under the title long after the request itself was answered.
-  const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
-  const [effectiveThread, setEffectiveThread] = useState(thread)
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [effectiveThread, setEffectiveThread] = useState(thread);
   // The chat's title summary as the desktop's list last said it while this
   // screen was open; null until read. The desktop writes it a few seconds
   // after the first message, so the title the chat opened with is often
   // its first words, or "Chat N" for one started with pictures.
-  const [listedTitle, setListedTitle] = useState<string | null>(null)
-  const stream = useRef<ConversationStream | null>(null)
-  const eventsRef = useRef<ConversationEvent[]>([])
-  const pendingRef = useRef<CachedConversation['pending']>([])
+  const [listedTitle, setListedTitle] = useState<string | null>(null);
+  const stream = useRef<ConversationStream | null>(null);
+  const eventsRef = useRef<ConversationEvent[]>([]);
+  const pendingRef = useRef<CachedConversation["pending"]>([]);
   // Where this phone is in the desktop's log: persisted with the events so a
   // reopened conversation resumes from it instead of reloading a snapshot.
-  const cursorRef = useRef<Cursor>({ lastSeq: 0 })
-  const sendChain = useRef<Promise<unknown>>(Promise.resolve())
+  const cursorRef = useRef<Cursor>({ lastSeq: 0 });
+  const sendChain = useRef<Promise<unknown>>(Promise.resolve());
   // Sends being written to the cache now: one may land after the screen closes.
-  const sendsWriting = useRef(0)
-  const lifecycle = useRef(0)
+  const sendsWriting = useRef(0);
+  const lifecycle = useRef(0);
   // How this chat's writes to the cache are going: a failure is said only
   // once they keep failing (`cacheSaveHealth.ts`). One per chat opened.
-  const cacheHealth = useRef(createCacheSaveHealth())
-  const actionRequests = useRef(new Map<string, string>())
+  const cacheHealth = useRef(createCacheSaveHealth());
+  const actionRequests = useRef(new Map<string, string>());
   // Model switches and preset changes waiting on their commandResult, by command id.
-  const threadChanges = useRef(new Map<string, PendingThreadChange>())
+  const threadChanges = useRef(new Map<string, PendingThreadChange>());
   // Held messages being taken back (`cancelQueued`), by command id.
-  const cancellations = useRef(new Map<string, (result: CancelHeldResult) => void>())
+  const cancellations = useRef(new Map<string, (result: CancelHeldResult) => void>());
   // Scheduled messages being made, sent now or taken back, by command id.
-  const scheduledActions = useRef(new Map<string, (result: CancelHeldResult) => void>())
+  const scheduledActions = useRef(new Map<string, (result: CancelHeldResult) => void>());
   // Agents being stopped by their own Stop (`stopSubagent`), by command id.
-  const agentStops = useRef(new Map<string, { laneId: string; settle: (result: StopAgentResult) => void }>())
-  const agentMessages = useRef(new Map<string, (result: StopAgentResult) => void>())
+  const agentStops = useRef(new Map<string, { laneId: string; settle: (result: StopAgentResult) => void }>());
+  const agentMessages = useRef(new Map<string, (result: StopAgentResult) => void>());
   // The lanes whose Stop is on its way or taken, until the agent reports its
   // end (its lane stops running) or the desktop refuses: the Stop says
   // "Stopping" meanwhile, and is not sent twice.
-  const [stoppingAgentIds, setStoppingAgentIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [stoppingAgentIds, setStoppingAgentIds] = useState<ReadonlySet<string>>(() => new Set());
   // What this desktop's chats offer here, from its Studio's latest welcome
   // and this pairing's grant (`chatOffers.ts`): read again on every
   // connection, so a desktop that updates offers more without a re-pair.
-  const offers = useChatOffers(apiOverride ? null : session, offersOverride)
+  const offers = useChatOffers(apiOverride ? null : session, offersOverride);
   // Whether the desktop holds queued messages, and their pictures and files as well.
-  const holdsQueued = offers.hostQueue
-  const holdsAttachments = offers.hostQueueAttachments
+  const holdsQueued = offers.hostQueue;
+  const holdsAttachments = offers.hostQueueAttachments;
   // Whether the desktop keeps messages scheduled into a chat.
-  const holdsScheduled = offers.hostSchedule
-  const takesSteer = offers.steer
+  const holdsScheduled = offers.hostSchedule;
+  const takesSteer = offers.steer;
   // Whether an agent of this chat can be stopped by itself from here, or told
   // something; whether the chat's own CLI can is its listed capabilities.
-  const stopsAgents = offers.stopAgents && offers.operate
-  const messagesAgents = offers.agentMessages && offers.operate
+  const stopsAgents = offers.stopAgents && offers.operate;
+  const messagesAgents = offers.agentMessages && offers.operate;
   // Whether the desktop names this chat's sub-agents.
-  const watchesSubagents = offers.subagents
+  const watchesSubagents = offers.subagents;
   // Whether a quote goes as its token, which the desktop expands for its agent.
-  const quoteTokens = offers.quotes
+  const quoteTokens = offers.quotes;
   // Read by a send as it is made: a turn running, and messages the phone holds.
-  const turnBusyRef = useRef(false)
-  const phoneQueuedRef = useRef(0)
+  const turnBusyRef = useRef(false);
+  const phoneQueuedRef = useRef(0);
 
-  const metadataInFlight = useRef<Promise<void> | null>(null)
-  const metadataAgain = useRef(false)
+  const metadataInFlight = useRef<Promise<void> | null>(null);
+  const metadataAgain = useRef(false);
   // The rows and agents last handed out: a new projection keeps whatever has
   // not changed as the object it was, so only what changed is drawn again.
   const shown = useRef<{ rows: ConversationRow[]; lanes: AgentLane[]; changedTurns: ChangedTurn[] }>({
     rows: [],
     lanes: [],
     changedTurns: [],
-  })
+  });
   // The projection is kept from one draw to the next: a log that only grew
   // is folded from where it was (a streamed word changes one entry), anything
   // else is folded whole.
-  const folding = useRef<{ state: IncrementalConversationState; context: HeldContext } | null>(null)
+  const folding = useRef<{ state: IncrementalConversationState; context: HeldContext } | null>(null);
   const projection = useMemo(() => {
-    const held = folding.current
+    const held = folding.current;
     const state = held
       ? syncConversationProjection(held.state, foldable(events), NO_LOCAL_TURNS)
-      : createConversationProjectionState(foldable(events), NO_LOCAL_TURNS, PHONE_PROJECTION)
-    const context = followContext(held?.context ?? null, events)
-    folding.current = { state, context }
-    const projected = phoneRows(state.projection, context.reading)
-    const rows = keepUnchangedRows(shown.current.rows, projected.rows)
-    const lanes = keepUnchanged(shown.current.lanes, projected.lanes, (lane) => lane.id)
-    const changedTurns = keepUnchanged(shown.current.changedTurns, projected.changedTurns, (turn) => turn.id)
-    shown.current = { rows, lanes, changedTurns }
-    return { ...projected, rows, lanes, changedTurns }
-  }, [events])
-  turnBusyRef.current = projection.turnBusy
-  phoneQueuedRef.current = queued.length
+      : createConversationProjectionState(foldable(events), NO_LOCAL_TURNS, PHONE_PROJECTION);
+    const context = followContext(held?.context ?? null, events);
+    folding.current = { state, context };
+    const projected = phoneRows(state.projection, context.reading);
+    const rows = keepUnchangedRows(shown.current.rows, projected.rows);
+    const lanes = keepUnchanged(shown.current.lanes, projected.lanes, (lane) => lane.id);
+    const changedTurns = keepUnchanged(shown.current.changedTurns, projected.changedTurns, (turn) => turn.id);
+    shown.current = { rows, lanes, changedTurns };
+    return { ...projected, rows, lanes, changedTurns };
+  }, [events]);
+  turnBusyRef.current = projection.turnBusy;
+  phoneQueuedRef.current = queued.length;
   const cacheKey = useMemo(
     () => ({ workspaceId: thread.workspaceId, agentId: thread.agentId }),
     [thread.workspaceId, thread.agentId],
-  )
-  const deviceId = session?.deviceId
+  );
+  const deviceId = session?.deviceId;
   const memoryKey = useMemo(
-    () => (deviceId !== undefined && !apiOverride ? transcriptKey(deviceId, cacheKey) : null),
+    () =>
+      deviceId !== undefined && !apiOverride
+        ? transcriptKey(deviceId, cacheKey)
+        : null,
     [deviceId, apiOverride, cacheKey],
-  )
+  );
   // What the screen holds now, captured for the disk write that follows and
   // remembered for the next time this chat is opened.
   const held = useCallback(() => {
@@ -317,9 +342,9 @@ export function usePhoneConversation(
       conversationTranscripts.remember(memoryKey, {
         events: eventsRef.current,
         ...cursorRef.current,
-      })
-    return { events: eventsRef.current, cursor: cursorRef.current }
-  }, [memoryKey])
+      });
+    return { events: eventsRef.current, cursor: cursorRef.current };
+  }, [memoryKey]);
   // Every write to the cache goes through here, and is what says whether the
   // cache is keeping the chat: a write a newer one replaced before it ran,
   // or one dropped because the chat changed, never reached the disk and says
@@ -330,19 +355,19 @@ export function usePhoneConversation(
       owner: number,
       updater: (current: CachedConversation) => CachedConversation,
     ): Promise<CachedConversation> => {
-      const health = cacheHealth.current
+      const health = cacheHealth.current;
       try {
-        const saved = await updateConversationCache(deviceId, cacheKey, updater)
+        const saved = await updateConversationCache(deviceId, cacheKey, updater);
         if (health.succeeded() && owner === lifecycle.current)
-          setNotice((shown) => (shown === CACHE_SAVE_NOTICE ? '' : shown))
-        return saved
+          setNotice((shown) => (shown === CACHE_SAVE_NOTICE ? "" : shown));
+        return saved;
       } catch (error) {
-        if (health.failed(Date.now()) && owner === lifecycle.current) setNotice(CACHE_SAVE_NOTICE)
-        throw error
+        if (health.failed(Date.now()) && owner === lifecycle.current) setNotice(CACHE_SAVE_NOTICE);
+        throw error;
       }
     },
     [cacheKey],
-  )
+  );
   const persist = useCallback(
     async (
       // Captured together when the frame was applied: the write runs later,
@@ -351,81 +376,105 @@ export function usePhoneConversation(
       acknowledged: string[] = [],
       reset = false,
     ) => {
-      const owner = lifecycle.current
+      const owner = lifecycle.current;
       if (!session || apiOverride) {
-        pendingRef.current = pendingRef.current.filter((item) => !acknowledged.includes(item.commandId))
-        return
+        pendingRef.current = pendingRef.current.filter(
+          (item) => !acknowledged.includes(item.commandId),
+        );
+        return;
       }
-      const saved = await writeCache(session.deviceId, owner, (current) => {
-        const pending = current.pending.filter((item) => !acknowledged.includes(item.commandId))
-        // A reset, or a cache from another generation of the log, is
-        // replaced outright: its events and cursor describe a log that no
-        // longer exists.
-        if (reset || current.generation !== cursor.generation)
+      const saved = await writeCache(
+        session.deviceId,
+        owner,
+        (current) => {
+          const pending = current.pending.filter(
+            (item) => !acknowledged.includes(item.commandId),
+          );
+          // A reset, or a cache from another generation of the log, is
+          // replaced outright: its events and cursor describe a log that no
+          // longer exists.
+          if (reset || current.generation !== cursor.generation)
+            return {
+              events: [...events],
+              pending,
+              lastSeq: cursor.lastSeq,
+              ...(cursor.generation === undefined
+                ? {}
+                : { generation: cursor.generation }),
+            };
+          // Cached deltas are coalesced. Never merge them back into a raw
+          // event list; keep whichever screen's copy is further along.
+          const newer = cursor.lastSeq >= current.lastSeq;
           return {
-            events: [...events],
+            ...current,
+            events: newer ? [...events] : current.events,
             pending,
-            lastSeq: cursor.lastSeq,
-            ...(cursor.generation === undefined ? {} : { generation: cursor.generation }),
-          }
-        // Cached deltas are coalesced. Never merge them back into a raw
-        // event list; keep whichever screen's copy is further along.
-        const newer = cursor.lastSeq >= current.lastSeq
-        return {
-          ...current,
-          events: newer ? [...events] : current.events,
-          pending,
-          lastSeq: Math.max(current.lastSeq, cursor.lastSeq),
-        }
-      })
-      if (owner === lifecycle.current) pendingRef.current = saved.pending
+            lastSeq: Math.max(current.lastSeq, cursor.lastSeq),
+          };
+        },
+      );
+      if (owner === lifecycle.current) pendingRef.current = saved.pending;
     },
     [session?.deviceId, apiOverride, writeCache],
-  )
+  );
   const mutatePending = useCallback(
     async (change: {
-      add?: CachedConversation['pending'][number]
-      remove?: string
+      add?: CachedConversation["pending"][number];
+      remove?: string;
       /** Rewrite one entry where it stands: a send now held, found stale, or sent again. */
       patch?: {
-        commandId: string
-        update: (item: CachedConversation['pending'][number]) => CachedConversation['pending'][number]
-      }
+        commandId: string;
+        update: (
+          item: CachedConversation["pending"][number],
+        ) => CachedConversation["pending"][number];
+      };
     }) => {
-      const owner = lifecycle.current
-      const patched = (pending: CachedConversation['pending']) =>
+      const owner = lifecycle.current;
+      const patched = (pending: CachedConversation["pending"]) =>
         change.patch
-          ? pending.map((item) => (item.commandId === change.patch!.commandId ? change.patch!.update(item) : item))
-          : pending
+          ? pending.map((item) =>
+              item.commandId === change.patch!.commandId ? change.patch!.update(item) : item,
+            )
+          : pending;
       if (!session || apiOverride) {
-        pendingRef.current = patched(pendingRef.current.filter((item) => item.commandId !== change.remove))
-        if (change.add) pendingRef.current = [...pendingRef.current, change.add]
-        return
+        pendingRef.current = patched(
+          pendingRef.current.filter((item) => item.commandId !== change.remove),
+        );
+        if (change.add)
+          pendingRef.current = [...pendingRef.current, change.add];
+        return;
       }
-      const saved = await writeCache(session.deviceId, owner, (current) => ({
-        ...current,
-        pending: [
-          ...patched(
-            current.pending.filter(
-              (item) => item.commandId !== change.remove && item.commandId !== change.add?.commandId,
+      const saved = await writeCache(
+        session.deviceId,
+        owner,
+        (current) => ({
+          ...current,
+          pending: [
+            ...patched(
+              current.pending.filter(
+                (item) =>
+                  item.commandId !== change.remove &&
+                  item.commandId !== change.add?.commandId,
+              ),
             ),
-          ),
-          ...(change.add ? [change.add] : []),
-        ],
-      }))
-      if (owner === lifecycle.current) pendingRef.current = saved.pending
+            ...(change.add ? [change.add] : []),
+          ],
+        }),
+      );
+      if (owner === lifecycle.current) pendingRef.current = saved.pending;
     },
     [session?.deviceId, apiOverride, writeCache],
-  )
+  );
   const serialize = useCallback(<T>(work: () => Promise<T>): Promise<T> => {
-    const owner = lifecycle.current
+    const owner = lifecycle.current;
     const result = sendChain.current.then(() => {
-      if (owner !== lifecycle.current) throw new Error('Conversation changed before the action completed.')
-      return work()
-    })
-    sendChain.current = result.catch(() => {})
-    return result
-  }, [])
+      if (owner !== lifecycle.current)
+        throw new Error("Conversation changed before the action completed.");
+      return work();
+    });
+    sendChain.current = result.catch(() => {});
+    return result;
+  }, []);
   // Frames arrive faster than the disk takes them while a reply streams, and
   // each write queued in the same line as a send. Only the newest of the
   // writes waiting there is made: it carries the acknowledgments and any
@@ -435,218 +484,232 @@ export function usePhoneConversation(
     latest: 0,
     acknowledged: new Set<string>(),
     reset: false,
-  })
+  });
   // The streamed write waiting out its window, and when the last one went.
   const streamSave = useRef<{
-    at: number
-    timer: ReturnType<typeof setTimeout> | null
-    snapshot: { events: ConversationEvent[]; cursor: Cursor } | null
-  }>({ at: 0, timer: null, snapshot: null })
+    at: number;
+    timer: ReturnType<typeof setTimeout> | null;
+    snapshot: { events: ConversationEvent[]; cursor: Cursor } | null;
+  }>({ at: 0, timer: null, snapshot: null });
   const persistLatest = useCallback(
-    (snapshot: { events: ConversationEvent[]; cursor: Cursor }, acknowledged: string[] = [], reset = false) => {
+    (
+      snapshot: { events: ConversationEvent[]; cursor: Cursor },
+      acknowledged: string[] = [],
+      reset = false,
+    ) => {
       // This write holds the newest log, so a streamed one waiting is moot.
-      const waiting = streamSave.current
-      if (waiting.timer) clearTimeout(waiting.timer)
-      waiting.timer = null
-      waiting.snapshot = null
-      const queue = unsaved.current
-      const mine = ++queue.latest
-      for (const id of acknowledged) queue.acknowledged.add(id)
-      if (reset) queue.reset = true
+      const waiting = streamSave.current;
+      if (waiting.timer) clearTimeout(waiting.timer);
+      waiting.timer = null;
+      waiting.snapshot = null;
+      const queue = unsaved.current;
+      const mine = ++queue.latest;
+      for (const id of acknowledged) queue.acknowledged.add(id);
+      if (reset) queue.reset = true;
       return serialize(async () => {
-        if (mine !== queue.latest) return
-        const carried = [...queue.acknowledged]
-        const replaces = queue.reset
-        queue.acknowledged = new Set()
-        queue.reset = false
+        if (mine !== queue.latest) return;
+        const carried = [...queue.acknowledged];
+        const replaces = queue.reset;
+        queue.acknowledged = new Set();
+        queue.reset = false;
         try {
-          await persist(snapshot, carried, replaces)
+          await persist(snapshot, carried, replaces);
         } catch (error) {
           // Not written: the next write carries them, as it carries the log,
           // so a send the desktop took is not left in the cache's queue.
-          for (const id of carried) queue.acknowledged.add(id)
-          if (replaces) queue.reset = true
-          throw error
+          for (const id of carried) queue.acknowledged.add(id);
+          if (replaces) queue.reset = true;
+          throw error;
         }
-      })
+      });
     },
     [persist, serialize],
-  )
+  );
   // A delta's write: at once if none went inside the window, else the newest
   // waits for the window's end.
   const persistStreamed = useCallback(
     (snapshot: { events: ConversationEvent[]; cursor: Cursor }) => {
-      const waiting = streamSave.current
-      const wait = waiting.at + STREAM_SAVE_MS - Date.now()
+      const waiting = streamSave.current;
+      const wait = waiting.at + STREAM_SAVE_MS - Date.now();
       if (wait <= 0) {
-        waiting.at = Date.now()
-        return persistLatest(snapshot)
+        waiting.at = Date.now();
+        return persistLatest(snapshot);
       }
-      waiting.snapshot = snapshot
+      waiting.snapshot = snapshot;
       waiting.timer ??= setTimeout(() => {
-        const held = waiting.snapshot
-        waiting.timer = null
-        if (!held) return
-        waiting.at = Date.now()
-        void persistLatest(held).catch(() => {})
-      }, wait)
-      return Promise.resolve()
+        const held = waiting.snapshot;
+        waiting.timer = null;
+        if (!held) return;
+        waiting.at = Date.now();
+        void persistLatest(held).catch(() => {});
+      }, wait);
+      return Promise.resolve();
     },
     [persistLatest],
-  )
+  );
   const refreshMetadata = useCallback(() => {
-    if (!api) return
+    if (!api) return;
     // Asked for while a read is out: that read may have been answered before
     // what asked, so one more follows it. A background agent's end, read too
     // early, would leave the chat working in the background for good.
     if (metadataInFlight.current) {
-      metadataAgain.current = true
-      return
+      metadataAgain.current = true;
+      return;
     }
-    const owner = lifecycle.current
+    const owner = lifecycle.current;
     const read = api
       .list()
       .then((threads) => {
-        if (owner !== lifecycle.current) return
+        if (owner !== lifecycle.current) return;
         const latest = threads.find(
-          (item) => item.workspaceId === cacheKey.workspaceId && item.agentId === cacheKey.agentId,
-        )
-        if (!latest) return
-        setEffectiveThread(latest)
-        setListedTitle(latest.chatTitle?.trim() || null)
+          (item) =>
+            item.workspaceId === cacheKey.workspaceId &&
+            item.agentId === cacheKey.agentId,
+        );
+        if (!latest) return;
+        setEffectiveThread(latest);
+        setListedTitle(latest.chatTitle?.trim() || null);
       })
       .catch(() => {
         /* Keep the last known metadata when the desktop is briefly offline. */
       })
       .finally(() => {
-        if (metadataInFlight.current !== read) return
-        metadataInFlight.current = null
+        if (metadataInFlight.current !== read) return;
+        metadataInFlight.current = null;
         if (metadataAgain.current && owner === lifecycle.current) {
-          metadataAgain.current = false
-          refreshMetadata()
+          metadataAgain.current = false;
+          refreshMetadata();
         }
-      })
-    metadataInFlight.current = read
-  }, [api, cacheKey])
+      });
+    metadataInFlight.current = read;
+  }, [api, cacheKey]);
   useEffect(() => {
-    lifecycle.current++
-    let disposed = false
+    lifecycle.current++;
+    let disposed = false;
     // The map outlives every effect run; held here so the cleanup settles the
     // same one the handlers below fill.
-    const switches = threadChanges.current
-    const takingBack = cancellations.current
-    const scheduling = scheduledActions.current
-    const stopping = agentStops.current
+    const switches = threadChanges.current;
+    const takingBack = cancellations.current;
+    const scheduling = scheduledActions.current;
+    const stopping = agentStops.current;
     // An agent's Stop that will not be answered now: its lane offers Stop again.
     const abandonAgentStops = (message: string) => {
-      for (const { settle } of stopping.values()) settle({ ok: false, message })
-      stopping.clear()
-      for (const settle of agentMessages.current.values()) settle({ ok: false, message })
-      agentMessages.current.clear()
-      setStoppingAgentIds(new Set())
-    }
-    let current: ConversationStream | null = null
-    let subscription: ReturnType<typeof AppState.addEventListener> | null = null
+      for (const { settle } of stopping.values()) settle({ ok: false, message });
+      stopping.clear();
+      for (const settle of agentMessages.current.values()) settle({ ok: false, message });
+      agentMessages.current.clear();
+      setStoppingAgentIds(new Set());
+    };
+    let current: ConversationStream | null = null;
+    let subscription: ReturnType<typeof AppState.addEventListener> | null =
+      null;
     // A streamed delta joins the log at once and is drawn with the others in
     // its window; anything else draws the log there and then, deltas and all.
-    let drawTimer: ReturnType<typeof setTimeout> | null = null
+    let drawTimer: ReturnType<typeof setTimeout> | null = null;
     const drawLog = (streamed: boolean) => {
       if (streamed) {
         drawTimer ??= setTimeout(() => {
-          drawTimer = null
-          if (!disposed) setEvents(eventsRef.current)
-        }, STREAM_DRAW_MS)
-        return
+          drawTimer = null;
+          if (!disposed) setEvents(eventsRef.current);
+        }, STREAM_DRAW_MS);
+        return;
       }
-      if (drawTimer) clearTimeout(drawTimer)
-      drawTimer = null
-      setEvents(eventsRef.current)
-    }
-    const recalled = memoryKey ? conversationTranscripts.recall(memoryKey) : null
+      if (drawTimer) clearTimeout(drawTimer);
+      drawTimer = null;
+      setEvents(eventsRef.current);
+    };
+    const recalled = memoryKey ? conversationTranscripts.recall(memoryKey) : null;
     // This screen offers the chat's queued messages from here on, not the
     // stream that carried them while it was closed.
-    const durable = session && !apiOverride ? session.deviceId : null
-    if (durable !== null) queuedSends.release(durable, cacheKey)
-    const writing = sendsWriting
-    eventsRef.current = recalled?.events ?? []
-    pendingRef.current = []
-    unsaved.current = { latest: 0, acknowledged: new Set(), reset: false }
-    cacheHealth.current = createCacheSaveHealth()
-    const streamed = (streamSave.current = { at: 0, timer: null, snapshot: null })
+    const durable = session && !apiOverride ? session.deviceId : null;
+    if (durable !== null) queuedSends.release(durable, cacheKey);
+    const writing = sendsWriting;
+    eventsRef.current = recalled?.events ?? [];
+    pendingRef.current = [];
+    unsaved.current = { latest: 0, acknowledged: new Set(), reset: false };
+    cacheHealth.current = createCacheSaveHealth();
+    const streamed = (streamSave.current = { at: 0, timer: null, snapshot: null });
     // What a streaming reply had waiting, written now: on leaving the chat
     // straight to the cache, since the line of writes no longer takes this
     // chat's, and on leaving the app through it.
     const saveWaiting = (direct: boolean) => {
-      const held = streamed.snapshot
-      if (streamed.timer) clearTimeout(streamed.timer)
-      streamed.timer = null
-      streamed.snapshot = null
-      if (!held) return
-      void (direct ? persist(held) : persistLatest(held)).catch(() => {})
-    }
-    cursorRef.current = recalled ? cursorOf(recalled) : { lastSeq: 0 }
-    actionRequests.current.clear()
-    setPendingActionIds(new Set())
-    setEffectiveThread(thread)
-    setListedTitle(null)
-    setEvents(eventsRef.current)
-    setOptimistic([])
-    setQueued([])
-    setDesktopHeld([])
-    setDesktopScheduled([])
-    setSubagents([])
-    setUsageLimits([])
-    setHanding([])
-    const recalledPage = pageHeld(eventsRef.current)
-    setPage({ hasMore: recalledPage !== null, beforeCursor: recalledPage })
+      const held = streamed.snapshot;
+      if (streamed.timer) clearTimeout(streamed.timer);
+      streamed.timer = null;
+      streamed.snapshot = null;
+      if (!held) return;
+      void (direct ? persist(held) : persistLatest(held)).catch(() => {});
+    };
+    cursorRef.current = recalled ? cursorOf(recalled) : { lastSeq: 0 };
+    actionRequests.current.clear();
+    setPendingActionIds(new Set());
+    setEffectiveThread(thread);
+    setListedTitle(null);
+    setEvents(eventsRef.current);
+    setOptimistic([]);
+    setQueued([]);
+    setDesktopHeld([]);
+    setDesktopScheduled([]);
+    setSubagents([]);
+    setUsageLimits([]);
+    setHanding([]);
+    const recalledPage = pageHeld(eventsRef.current);
+    setPage({ hasMore: recalledPage !== null, beforeCursor: recalledPage });
     if (!api) {
-      setState('blocked')
-      setNotice('Pair this desktop to open its conversation.')
-      return
+      setState("blocked");
+      setNotice("Pair this desktop to open its conversation.");
+      return;
     }
     const start = async () => {
-      const cached = session && !apiOverride ? await loadConversationCache(session.deviceId, cacheKey) : null
-      if (disposed) return
-      pendingRef.current = cached?.pending ?? []
+      const cached =
+        session && !apiOverride
+          ? await loadConversationCache(session.deviceId, cacheKey)
+          : null;
+      if (disposed) return;
+      pendingRef.current = cached?.pending ?? [];
       // The remembered transcript is written on every frame applied and the
       // disk only after it, so the disk is newer only when another screen on
       // the same chat wrote it since.
       const diskIsNewer =
         cached !== null &&
-        (!recalled || (cached.generation === recalled.generation && cached.lastSeq > recalled.lastSeq))
+        (!recalled ||
+          (cached.generation === recalled.generation &&
+            cached.lastSeq > recalled.lastSeq));
       if (diskIsNewer) {
-        eventsRef.current = cached.events
-        cursorRef.current = cursorOf(cached)
-        setEvents(eventsRef.current)
-        held()
+        eventsRef.current = cached.events;
+        cursorRef.current = cursorOf(cached);
+        setEvents(eventsRef.current);
+        held();
         // A resume that sends only missed events brings no page, so the way
         // back to older turns starts from the oldest event held here.
-        const oldest = pageHeld(eventsRef.current)
-        if (oldest !== null) setPage({ hasMore: true, beforeCursor: oldest })
+        const oldest = pageHeld(eventsRef.current);
+        if (oldest !== null) setPage({ hasMore: true, beforeCursor: oldest });
       }
       // What waited too long while the chat was closed is drawn as not sent
       // at once, before the desktop answers: the stream will not offer it
       // (`queuedSends.ts`), and the person decides.
-      const openedAt = Date.now()
+      const openedAt = Date.now();
       const staleAtOpen = new Set(
-        pendingRef.current.filter((item) => queuedSendStale(item, openedAt)).map((item) => item.commandId),
-      )
+        pendingRef.current
+          .filter((item) => queuedSendStale(item, openedAt))
+          .map((item) => item.commandId),
+      );
       setOptimistic(
         pendingRef.current.map((item) => {
-          const queuedAt = item.queuedAt ?? item.command.composedAt
+          const queuedAt = item.queuedAt ?? item.command.composedAt;
           return {
             commandId: item.commandId,
             text: item.command.message,
             ...(item.command.uploadIds?.length ? { uploads: item.command.uploadIds } : {}),
             ...(staleAtOpen.has(item.commandId) ? { stale: true } : {}),
             ...(queuedAt !== undefined ? { queuedAt } : {}),
-          }
+          };
         }),
-      )
+      );
       // A send cached as handed to the desktop is offered to it again
       // under its id (the desktop holds a repeat once). One the desktop can
       // no longer hold, the stream keeps here like any other.
-      const handed = (item: CachedConversation['pending'][number]) => item.command.queue === true
+      const handed = (item: CachedConversation["pending"][number]) => item.command.queue === true;
       setQueued(
         pendingRef.current
           .filter((item) => !handed(item) && !staleAtOpen.has(item.commandId))
@@ -655,87 +718,81 @@ export function usePhoneConversation(
             text: item.command.message,
             uploads: item.command.uploadIds ?? [],
           })),
-      )
+      );
       setHanding(
         pendingRef.current
           .filter((item) => handed(item) && !staleAtOpen.has(item.commandId))
           .map((item) => handingSend(item.commandId, item.command)),
-      )
+      );
       current = api.open(
         cacheKey,
         cursorRef.current.lastSeq,
         {
           onState(next, detail) {
             if (!disposed) {
-              setState(next)
-              setNotice(detail ?? '')
-              if (next !== 'live') {
-                actionRequests.current.clear()
-                setPendingActionIds(new Set())
+              setState(next);
+              setNotice(detail ?? "");
+              if (next !== "live") {
+                actionRequests.current.clear();
+                setPendingActionIds(new Set());
                 // A change sent before the drop may still have been applied;
                 // the list read on reconnect says where the chat stands.
-                abandonThreadChanges(switches)
+                abandonThreadChanges(switches);
                 // As may a message taken back: the list the desktop sends
                 // after the redial says whether it still holds it.
                 for (const settle of takingBack.values())
-                  settle({
-                    ok: false,
-                    message: 'The desktop disconnected before answering. Check the queue once it reconnects.',
-                  })
-                takingBack.clear()
+                  settle({ ok: false, message: "The desktop disconnected before answering. Check the queue once it reconnects." });
+                takingBack.clear();
                 // The list the desktop sends after the redial says whether a
                 // schedule, a send-now or a take-back landed.
                 for (const settle of scheduling.values())
-                  settle({
-                    ok: false,
-                    message:
-                      'The desktop disconnected before answering. Check the scheduled messages once it reconnects.',
-                  })
-                scheduling.clear()
+                  settle({ ok: false, message: "The desktop disconnected before answering. Check the scheduled messages once it reconnects." });
+                scheduling.clear();
                 // A Stop sent before the drop may still have landed; the
                 // agent's lane says so once the transcript catches up.
-                abandonAgentStops(
-                  'The desktop disconnected before answering. If the agent is still working, stop it again.',
-                )
+                abandonAgentStops("The desktop disconnected before answering. If the agent is still working, stop it again.");
               }
             }
           },
           onSendStarted(commandId) {
-            if (!disposed) setQueued((previous) => previous.filter((item) => item.commandId !== commandId))
+            if (!disposed)
+              setQueued((previous) =>
+                previous.filter((item) => item.commandId !== commandId),
+              );
           },
           onSendWaiting(commandId) {
-            if (disposed) return
+            if (disposed) return;
             setOptimistic((previous) =>
               previous.some((item) => item.commandId === commandId && !item.waiting)
                 ? previous.map((item) => (item.commandId === commandId ? { ...item, waiting: true } : item))
                 : previous,
-            )
+            );
           },
           // Turned away behind a turn, and now the desktop's to send when it
           // ends: drawn as on its way to its list, and kept as held, so a
           // stream that takes it over from the cache offers it as one.
           onSendHeld(commandId, command, heldAfter) {
-            if (disposed) return
-            setQueued((previous) => previous.filter((item) => item.commandId !== commandId))
+            if (disposed) return;
+            setQueued((previous) => previous.filter((item) => item.commandId !== commandId));
             setHanding((previous) =>
               previous.some((item) => item.commandId === commandId)
                 ? previous
                 : [...previous, handingSend(commandId, command)],
-            )
+            );
             void serialize(async () => {
               await mutatePending({
                 patch: { commandId, update: (item) => ({ ...item, command, heldAfter }) },
-              })
-            }).catch(() => {})
+              });
+            }).catch(() => {});
           },
           // No longer sent without asking: Not sent, with Send now and
           // Discard, and kept so across a restart until the person decides.
           onSendStale(commandId) {
-            if (disposed) return
-            setQueued((previous) => previous.filter((item) => item.commandId !== commandId))
-            setHanding((previous) => previous.filter((item) => item.commandId !== commandId))
-            const entry = pendingRef.current.find((item) => item.commandId === commandId)
-            const queuedAt = entry?.queuedAt ?? entry?.command.composedAt
+            if (disposed) return;
+            setQueued((previous) => previous.filter((item) => item.commandId !== commandId));
+            setHanding((previous) => previous.filter((item) => item.commandId !== commandId));
+            const entry = pendingRef.current.find((item) => item.commandId === commandId);
+            const queuedAt = entry?.queuedAt ?? entry?.command.composedAt;
             setOptimistic((previous) =>
               previous.map((item) =>
                 item.commandId === commandId
@@ -747,113 +804,156 @@ export function usePhoneConversation(
                     }
                   : item,
               ),
-            )
+            );
             void serialize(async () => {
               await mutatePending({
                 patch: { commandId, update: (item) => ({ ...item, stale: true }) },
-              })
-            }).catch(() => {})
+              });
+            }).catch(() => {});
           },
           onFrame(frame) {
-            if (disposed) return
-            if (frame.type === 'snapshot') {
+            if (disposed) return;
+            if (frame.type === "snapshot") {
               eventsRef.current = frame.reset
                 ? frame.page.events
-                : mergeConversationEvents(eventsRef.current, frame.page.events)
-              const newest = frame.page.events.reduce((seq, item) => Math.max(seq, item.seq ?? 0), 0)
+                : mergeConversationEvents(eventsRef.current, frame.page.events);
+              const newest = frame.page.events.reduce(
+                (seq, item) => Math.max(seq, item.seq ?? 0),
+                0,
+              );
               cursorRef.current = frame.reset
                 ? {
                     lastSeq: newest,
-                    ...(frame.generation === undefined ? {} : { generation: frame.generation }),
+                    ...(frame.generation === undefined
+                      ? {}
+                      : { generation: frame.generation }),
                   }
                 : {
                     ...cursorRef.current,
                     lastSeq: Math.max(cursorRef.current.lastSeq, newest),
-                  }
-              drawLog(false)
+                  };
+              drawLog(false);
               const acknowledgments = new Set(
                 frame.page.events
-                  .filter((item) => item.type === 'user_message')
+                  .filter((item) => item.type === "user_message")
                   .map((item) => item.payload?.commandId)
-                  .filter((id): id is string => typeof id === 'string'),
+                  .filter((id): id is string => typeof id === "string"),
+              );
+              void persistLatest(
+                held(),
+                [...acknowledgments],
+                frame.reset === true,
+              ).catch(() => {});
+              setQueued((previous) =>
+                previous.filter((item) => !acknowledgments.has(item.commandId)),
+              );
+              setOptimistic((previous) =>
+                previous.filter((item) => !acknowledgments.has(item.commandId)),
+              );
+              if (
+                frame.page.events.some(
+                  (item) =>
+                    item.type === "session_started" ||
+                    item.type === "session_updated",
+                )
               )
-              void persistLatest(held(), [...acknowledgments], frame.reset === true).catch(() => {})
-              setQueued((previous) => previous.filter((item) => !acknowledgments.has(item.commandId)))
-              setOptimistic((previous) => previous.filter((item) => !acknowledgments.has(item.commandId)))
-              if (frame.page.events.some((item) => item.type === 'session_started' || item.type === 'session_updated'))
-                refreshMetadata()
+                refreshMetadata();
               setPage({
                 hasMore: frame.page.hasMore,
                 beforeCursor: frame.page.beforeCursor,
-              })
-            } else if (frame.type === 'synchronized') {
+              });
+            } else if (frame.type === "synchronized") {
               // The fence vouches for everything up to its sequence, in its
               // generation: from here a reconnect needs only what follows.
-              const generation = frame.generation ?? cursorRef.current.generation
+              const generation =
+                frame.generation ?? cursorRef.current.generation;
               cursorRef.current = {
                 lastSeq: frame.seq,
                 ...(generation === undefined ? {} : { generation }),
-              }
-              void persistLatest(held()).catch(() => {})
-            } else if (frame.type === 'event') {
-              eventsRef.current = mergeConversationEvents(eventsRef.current, [frame.event])
+              };
+              void persistLatest(held()).catch(() => {});
+            } else if (frame.type === "event") {
+              eventsRef.current = mergeConversationEvents(eventsRef.current, [
+                frame.event,
+              ]);
               cursorRef.current = {
                 ...cursorRef.current,
-                lastSeq: Math.max(cursorRef.current.lastSeq, frame.event.seq ?? 0),
-              }
-              drawLog(isStreamedEvent(frame.event))
+                lastSeq: Math.max(
+                  cursorRef.current.lastSeq,
+                  frame.event.seq ?? 0,
+                ),
+              };
+              drawLog(isStreamedEvent(frame.event));
               if (
-                (frame.event.type === 'session_started' || frame.event.type === 'session_updated') &&
+                (frame.event.type === "session_started" ||
+                  frame.event.type === "session_updated") &&
                 frame.event.sessionId
               ) {
                 setEffectiveThread((previous) => ({
                   ...previous,
                   sessionId: frame.event.sessionId,
-                }))
-                refreshMetadata()
+                }));
+                refreshMetadata();
               }
               // A turn's end is when its chat's title summary has landed on
               // the desktop: it is written while the first turn runs. An
               // agent's end can be the last of the chat's background work,
               // which the desktop's list says.
               if (
-                frame.event.type === 'turn_completed' ||
-                frame.event.type === 'turn_failed' ||
-                (frame.event.type === 'subagent_status' && frame.event.payload?.status !== 'running')
+                frame.event.type === "turn_completed" ||
+                frame.event.type === "turn_failed" ||
+                (frame.event.type === "subagent_status" &&
+                  frame.event.payload?.status !== "running")
               )
-                refreshMetadata()
-              const commandId = frame.event.type === 'user_message' ? frame.event.payload?.commandId : undefined
-              if (typeof commandId === 'string') {
-                setQueued((previous) => previous.filter((item) => item.commandId !== commandId))
-                setOptimistic((previous) => previous.filter((item) => item.commandId !== commandId))
+                refreshMetadata();
+              const commandId =
+                frame.event.type === "user_message"
+                  ? frame.event.payload?.commandId
+                  : undefined;
+              if (typeof commandId === "string") {
+                setQueued((previous) =>
+                  previous.filter((item) => item.commandId !== commandId),
+                );
+                setOptimistic((previous) =>
+                  previous.filter((item) => item.commandId !== commandId),
+                );
               }
               void (
-                typeof commandId !== 'string' && isStreamedEvent(frame.event)
+                typeof commandId !== "string" && isStreamedEvent(frame.event)
                   ? persistStreamed(held())
-                  : persistLatest(held(), typeof commandId === 'string' ? [commandId] : [])
-              ).catch(() => {})
-              if (['approval_resolved', 'question_resolved', 'plan_resolved'].includes(frame.event.type)) {
-                const requestId = frame.event.payload?.requestId
-                if (typeof requestId === 'string')
+                  : persistLatest(
+                      held(),
+                      typeof commandId === "string" ? [commandId] : [],
+                    )
+              ).catch(() => {});
+              if (
+                [
+                  "approval_resolved",
+                  "question_resolved",
+                  "plan_resolved",
+                ].includes(frame.event.type)
+              ) {
+                const requestId = frame.event.payload?.requestId;
+                if (typeof requestId === "string")
                   setPendingActionIds((previous) => {
-                    const next = new Set(previous)
-                    next.delete(requestId)
-                    return next
-                  })
+                    const next = new Set(previous);
+                    next.delete(requestId);
+                    return next;
+                  });
               }
-            } else if (frame.type === 'usageLimits') {
-              setUsageLimits(frame.limits)
-            } else if (frame.type === 'subagents') {
+            } else if (frame.type === "usageLimits") {
+              setUsageLimits(frame.limits);
+            } else if (frame.type === "subagents") {
               // Whole each time, as `queued` is.
-              setSubagents(frame.subagents)
-            } else if (frame.type === 'scheduled') {
+              setSubagents(frame.subagents);
+            } else if (frame.type === "scheduled") {
               // The desktop's word on what it keeps stands whole, as `queued`'s does.
-              setDesktopScheduled(frame.messages)
-            } else if (frame.type === 'queued') {
+              setDesktopScheduled(frame.messages);
+            } else if (frame.type === "queued") {
               // The desktop's word on what it holds stands whole: a message
               // sent, taken back elsewhere or refused when its turn came is
               // already as it should be here.
-              setDesktopHeld(frame.messages)
+              setDesktopHeld(frame.messages);
               // A held send found stale here that the desktop's list names
               // after all reached it before its answer was lost: the list
               // draws it, with its own Edit and Remove.
@@ -864,179 +964,195 @@ export function usePhoneConversation(
                     item.command.queue === true &&
                     heldByDesktop(frame.messages, item.command.message),
                 )
-                .map((item) => item.commandId)
+                .map((item) => item.commandId);
               if (reachedDesktop.length) {
-                setOptimistic((shown) => shown.filter((item) => !reachedDesktop.includes(item.commandId)))
+                setOptimistic((shown) => shown.filter((item) => !reachedDesktop.includes(item.commandId)));
                 for (const commandId of reachedDesktop) {
-                  current?.cancelPending(commandId)
+                  current?.cancelPending(commandId);
                   void serialize(async () => {
-                    await mutatePending({ remove: commandId })
-                  }).catch(() => {})
+                    await mutatePending({ remove: commandId });
+                  }).catch(() => {});
                 }
               }
               setHanding((previous) => {
-                const next = stillHanding(previous, frame.messages)
+                const next = stillHanding(previous, frame.messages);
                 // One the list now names is drawn from it alone, never also
                 // as a message on its way.
                 if (next !== previous) {
-                  const taken = new Set(previous.filter((item) => !next.includes(item)).map((item) => item.commandId))
-                  setOptimistic((shown) =>
-                    shown.filter((item) => !taken.has(item.commandId) || item.failed !== undefined),
-                  )
+                  const taken = new Set(previous.filter((item) => !next.includes(item)).map((item) => item.commandId));
+                  setOptimistic((shown) => shown.filter((item) => !taken.has(item.commandId) || item.failed !== undefined));
                 }
-                return next
-              })
-            } else if (frame.type === 'commandResult' && takingBack.has(frame.commandId)) {
-              const settle = takingBack.get(frame.commandId)!
-              takingBack.delete(frame.commandId)
-              settle(frame.ok ? { ok: true } : { ok: false, message: cancelRefusal(frame.message) })
-            } else if (frame.type === 'commandResult' && scheduling.has(frame.commandId)) {
-              const settle = scheduling.get(frame.commandId)!
-              scheduling.delete(frame.commandId)
+                return next;
+              });
+            } else if (
+              frame.type === "commandResult" &&
+              takingBack.has(frame.commandId)
+            ) {
+              const settle = takingBack.get(frame.commandId)!;
+              takingBack.delete(frame.commandId);
+              settle(frame.ok ? { ok: true } : { ok: false, message: cancelRefusal(frame.message) });
+            } else if (frame.type === "commandResult" && scheduling.has(frame.commandId)) {
+              const settle = scheduling.get(frame.commandId)!;
+              scheduling.delete(frame.commandId);
               settle(
                 frame.ok
                   ? { ok: true }
-                  : { ok: false, message: frame.message ?? refusalText(frame.code, 'The desktop did not take that.') },
-              )
-            } else if (frame.type === 'commandResult' && agentMessages.current.has(frame.commandId)) {
-              const settle = agentMessages.current.get(frame.commandId)!
-              agentMessages.current.delete(frame.commandId)
+                  : { ok: false, message: frame.message ?? refusalText(frame.code, "The desktop did not take that.") },
+              );
+            } else if (frame.type === "commandResult" && agentMessages.current.has(frame.commandId)) {
+              const settle = agentMessages.current.get(frame.commandId)!;
+              agentMessages.current.delete(frame.commandId);
               settle(
                 frame.ok
                   ? { ok: true }
-                  : {
-                      ok: false,
-                      message: frame.message ?? refusalText(frame.code, 'The desktop could not pass this on.'),
-                    },
-              )
-            } else if (frame.type === 'commandResult' && stopping.has(frame.commandId)) {
-              const { laneId, settle } = stopping.get(frame.commandId)!
-              stopping.delete(frame.commandId)
-              if (frame.ok) settle({ ok: true })
+                  : { ok: false, message: frame.message ?? refusalText(frame.code, "The desktop could not pass this on.") },
+              );
+            } else if (frame.type === "commandResult" && stopping.has(frame.commandId)) {
+              const { laneId, settle } = stopping.get(frame.commandId)!;
+              stopping.delete(frame.commandId);
+              if (frame.ok) settle({ ok: true });
               else {
                 // Refused: the agent works on, and its lane offers Stop again.
                 setStoppingAgentIds((previous) => {
-                  const next = new Set(previous)
-                  next.delete(laneId)
-                  return next
-                })
+                  const next = new Set(previous);
+                  next.delete(laneId);
+                  return next;
+                });
                 settle({
                   ok: false,
                   message: conversationSessionWasLost(frame)
-                    ? 'The server running this chat restarted, and its agents ended with it.'
-                    : (frame.message ?? refusalText(frame.code, 'The desktop could not stop this agent.')),
-                })
+                    ? "The server running this chat restarted, and its agents ended with it."
+                    : (frame.message ?? refusalText(frame.code, "The desktop could not stop this agent.")),
+                });
               }
-            } else if (frame.type === 'commandResult' && switches.has(frame.commandId)) {
-              const pending = switches.get(frame.commandId)!
-              switches.delete(frame.commandId)
+            } else if (
+              frame.type === "commandResult" &&
+              switches.has(frame.commandId)
+            ) {
+              const pending = switches.get(frame.commandId)!;
+              switches.delete(frame.commandId);
               if (frame.ok) {
                 setEffectiveThread((previous) => ({
                   ...previous,
                   ...pending.patch,
-                }))
-                refreshMetadata()
+                }));
+                refreshMetadata();
                 pending.settle({
                   ok: true,
                   ...(frame.notice ? { notice: frame.notice } : {}),
-                })
+                });
               } else
                 pending.settle({
                   ok: false,
                   message: conversationSessionWasLost(frame)
-                    ? 'The server running this chat restarted before the change landed. Try again.'
+                    ? "The server running this chat restarted before the change landed. Try again."
                     : (frame.message ?? refusalText(frame.code, pending.refused)),
-                })
-            } else if (frame.type === 'commandResult') {
-              const requestId = actionRequests.current.get(frame.commandId)
+                });
+            } else if (frame.type === "commandResult") {
+              const requestId = actionRequests.current.get(frame.commandId);
               const reason = frame.ok
-                ? ''
+                ? ""
                 : requestId && conversationSessionWasLost(frame)
                   ? LOST_REQUEST_SENTENCE
-                  : (frame.message ?? refusalText(frame.code, 'Desktop refused this action.'))
-              if (!frame.ok && requestId) setActionErrors((previous) => ({ ...previous, [requestId]: reason }))
-              else if (!frame.ok) setNotice(reason)
+                  : (frame.message ??
+                    refusalText(frame.code, "Desktop refused this action."));
+              if (!frame.ok && requestId)
+                setActionErrors((previous) => ({ ...previous, [requestId]: reason }));
+              else if (!frame.ok) setNotice(reason);
               // A refused send leaves the durable queue for good and stays on
               // screen, marked with why, until the person removes it.
               setOptimistic((previous) =>
                 frame.ok
-                  ? previous.filter((item) => item.commandId !== frame.commandId)
-                  : previous.map((item) => (item.commandId === frame.commandId ? { ...item, failed: reason } : item)),
-              )
-              setQueued((previous) => previous.filter((item) => item.commandId !== frame.commandId))
+                  ? previous.filter(
+                      (item) => item.commandId !== frame.commandId,
+                    )
+                  : previous.map((item) =>
+                      item.commandId === frame.commandId
+                        ? { ...item, failed: reason }
+                        : item,
+                    ),
+              );
+              setQueued((previous) =>
+                previous.filter((item) => item.commandId !== frame.commandId),
+              );
               // Held now, or refused: either way no longer on its way. A held
               // one stays drawn from the desktop's list, which named it first.
               setHanding((previous) =>
                 previous.some((item) => item.commandId === frame.commandId)
                   ? previous.filter((item) => item.commandId !== frame.commandId)
                   : previous,
-              )
+              );
               void serialize(async () => {
-                await mutatePending({ remove: frame.commandId })
-              }).catch(() => {})
+                await mutatePending({ remove: frame.commandId });
+              }).catch(() => {});
               if (requestId) {
-                actionRequests.current.delete(frame.commandId)
+                actionRequests.current.delete(frame.commandId);
                 setPendingActionIds((previous) => {
-                  const next = new Set(previous)
-                  next.delete(requestId)
-                  return next
-                })
+                  const next = new Set(previous);
+                  next.delete(requestId);
+                  return next;
+                });
               }
             }
           },
         },
         {
           pendingSends: pendingRef.current,
-          ...(cursorRef.current.generation === undefined ? {} : { generation: cursorRef.current.generation }),
+          ...(cursorRef.current.generation === undefined
+            ? {}
+            : { generation: cursorRef.current.generation }),
           initiallyBusy:
-            thread.phase === 'running' ||
-            thread.phase === 'waiting_for_approval' ||
-            thread.phase === 'waiting_for_input',
+            thread.phase === "running" ||
+            thread.phase === "waiting_for_approval" ||
+            thread.phase === "waiting_for_input",
         },
-      )
-      stream.current = current
-      let backgroundAt: number | null = AppState.currentState === 'active' ? null : Date.now()
-      subscription = AppState.addEventListener('change', (next) => {
-        if (next === 'active' && backgroundAt !== null) {
-          current?.foreground(Date.now() - backgroundAt)
-          backgroundAt = null
-        } else if (next !== 'active' && backgroundAt === null) {
-          backgroundAt = Date.now()
-          saveWaiting(false)
+      );
+      stream.current = current;
+      let backgroundAt: number | null =
+        AppState.currentState === "active" ? null : Date.now();
+      subscription = AppState.addEventListener("change", (next) => {
+        if (next === "active" && backgroundAt !== null) {
+          current?.foreground(Date.now() - backgroundAt);
+          backgroundAt = null;
+        } else if (next !== "active" && backgroundAt === null) {
+          backgroundAt = Date.now();
+          saveWaiting(false);
         }
-      })
-    }
+      });
+    };
     void start().catch((error) => {
       if (!disposed) {
-        setState('offline')
-        setNotice(error instanceof Error ? error.message : 'Conversation unavailable.')
+        setState("offline");
+        setNotice(
+          error instanceof Error ? error.message : "Conversation unavailable.",
+        );
       }
-    })
+    });
     return () => {
-      disposed = true
-      if (drawTimer) clearTimeout(drawTimer)
-      saveWaiting(true)
-      lifecycle.current++
-      metadataInFlight.current = null
-      metadataAgain.current = false
-      subscription?.remove()
-      current?.close()
-      stream.current = null
+      disposed = true;
+      if (drawTimer) clearTimeout(drawTimer);
+      saveWaiting(true);
+      lifecycle.current++;
+      metadataInFlight.current = null;
+      metadataAgain.current = false;
+      subscription?.remove();
+      current?.close();
+      stream.current = null;
       // A message still queued goes on to the desktop without this screen.
       if (durable !== null && api && (pendingRef.current.length || writing.current))
         queuedSends.carry({
           deviceId: durable,
           key: cacheKey,
           api,
-        })
-      actionRequests.current.clear()
-      abandonThreadChanges(switches, 'Conversation closed.')
-      for (const settle of takingBack.values()) settle({ ok: false, message: 'Conversation closed.' })
-      takingBack.clear()
-      for (const settle of scheduling.values()) settle({ ok: false, message: 'Conversation closed.' })
-      scheduling.clear()
-      abandonAgentStops('Conversation closed.')
-    }
+        });
+      actionRequests.current.clear();
+      abandonThreadChanges(switches, "Conversation closed.");
+      for (const settle of takingBack.values()) settle({ ok: false, message: "Conversation closed." });
+      takingBack.clear();
+      for (const settle of scheduling.values()) settle({ ok: false, message: "Conversation closed." });
+      scheduling.clear();
+      abandonAgentStops("Conversation closed.");
+    };
   }, [
     api,
     cacheKey,
@@ -1051,143 +1167,150 @@ export function usePhoneConversation(
     refreshMetadata,
     memoryKey,
     held,
-  ])
+  ]);
   const command = useCallback((input: ConversationCommand) => {
-    if (!stream.current) throw new Error('Conversation is not connected yet.')
-    if (input.kind === 'send') throw new Error('Use the durable send queue for messages.')
-    const commandId = stream.current.command(input)
-    if (input.kind === 'resolveApproval' || input.kind === 'answerQuestion' || input.kind === 'resolvePlan') {
-      actionRequests.current.set(commandId, input.requestId)
-      setPendingActionIds((previous) => new Set(previous).add(input.requestId))
+    if (!stream.current) throw new Error("Conversation is not connected yet.");
+    if (input.kind === "send")
+      throw new Error("Use the durable send queue for messages.");
+    const commandId = stream.current.command(input);
+    if (input.kind === "resolveApproval" || input.kind === "answerQuestion" || input.kind === "resolvePlan") {
+      actionRequests.current.set(commandId, input.requestId);
+      setPendingActionIds((previous) => new Set(previous).add(input.requestId));
       setActionErrors((previous) => {
-        if (!(input.requestId in previous)) return previous
-        const next = { ...previous }
-        delete next[input.requestId]
-        return next
-      })
+        if (!(input.requestId in previous)) return previous;
+        const next = { ...previous };
+        delete next[input.requestId];
+        return next;
+      });
     }
-    return commandId
-  }, [])
+    return commandId;
+  }, []);
   // Send a change to the chat itself. Settles when the desktop answers; the
   // thread shows the change only once the desktop has accepted it.
   const changeThread = useCallback(
     (
-      input: Extract<ConversationCommand, { kind: 'setModel' | 'setPermissionPreset' }>,
-      change: Omit<PendingThreadChange, 'settle'>,
+      input: Extract<ConversationCommand, { kind: "setModel" | "setPermissionPreset" }>,
+      change: Omit<PendingThreadChange, "settle">,
     ): Promise<ModelSwitchResult> =>
       new Promise<ModelSwitchResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: 'Conversation is not connected yet.' })
-          return
+          resolve({ ok: false, message: "Conversation is not connected yet." });
+          return;
         }
-        let commandId: string
+        let commandId: string;
         try {
-          commandId = stream.current.command(input)
+          commandId = stream.current.command(input);
         } catch (error) {
           resolve({
             ok: false,
             message: error instanceof Error ? error.message : change.refused,
-          })
-          return
+          });
+          return;
         }
-        threadChanges.current.set(commandId, { ...change, settle: resolve })
+        threadChanges.current.set(commandId, { ...change, settle: resolve });
       }),
     [],
-  )
+  );
   // Switch the chat to another model of its CLI.
   const setModel = useCallback(
     (modelId: string) =>
       changeThread(
-        { kind: 'setModel', modelId },
+        { kind: "setModel", modelId },
         {
           patch: { modelId },
-          refused: 'The desktop refused the model.',
-          lost: 'The desktop disconnected before confirming the model.',
+          refused: "The desktop refused the model.",
+          lost: "The desktop disconnected before confirming the model.",
         },
       ),
     [changeThread],
-  )
+  );
   // Run the chat under another permission preset.
   const setPermissionPreset = useCallback(
     (preset: ConversationPermissionPreset) =>
       changeThread(
-        { kind: 'setPermissionPreset', preset },
+        { kind: "setPermissionPreset", preset },
         {
           patch: { permissionPreset: preset },
-          refused: 'The desktop refused the permission change.',
-          lost: 'The desktop disconnected before confirming the permission change.',
+          refused: "The desktop refused the permission change.",
+          lost: "The desktop disconnected before confirming the permission change.",
         },
       ),
     [changeThread],
-  )
+  );
   // `steer` asks for the message to go into the running turn; it is honoured
   // only where the desktop takes one, with no pictures and a turn running, and
   // is otherwise an ordinary send (`followUp.ts`).
   const queueSend = useCallback(
     (message: string, uploadIds: string[] = [], options: { steer?: boolean } = {}): Promise<string> => {
-      const owner = lifecycle.current
-      const sendingStream = stream.current
+      const owner = lifecycle.current;
+      const sendingStream = stream.current;
       const run = async () => {
-        if (!sendingStream || stream.current !== sendingStream || owner !== lifecycle.current)
-          throw new Error('Conversation is not connected yet.')
-        sendsWriting.current++
+        if (
+          !sendingStream ||
+          stream.current !== sendingStream ||
+          owner !== lifecycle.current
+        )
+          throw new Error("Conversation is not connected yet.");
+        sendsWriting.current++;
         try {
-          return await write(sendingStream)
+          return await write(sendingStream);
         } finally {
-          sendsWriting.current--
+          sendsWriting.current--;
         }
-      }
+      };
       const write = async (sendingStream: ConversationStream) => {
         if (pendingRef.current.length >= MAX_PENDING_SENDS)
-          throw new Error('Too many pending messages. Reconnect before sending more.')
-        const commandId = Crypto.randomUUID()
+          throw new Error(
+            "Too many pending messages. Reconnect before sending more.",
+          );
+        const commandId = Crypto.randomUUID();
         // When the person pressed Send: kept with the queued entry, and told
         // to the desktop with the send (`composedAt`).
-        const queuedAt = Date.now()
+        const queuedAt = Date.now();
         // A steer goes now, like a send with no turn running: it is neither
         // held by the phone nor handed to the desktop to hold. Where the turn
         // cannot take it after all, the desktop holds it and its `queued`
         // frame draws it there.
-        const steer = options.steer === true && takesSteer && turnBusyRef.current && uploadIds.length === 0
+        const steer =
+          options.steer === true && takesSteer && turnBusyRef.current && uploadIds.length === 0;
         // Behind a running turn, a desktop that holds messages takes this
         // one now and sends it itself (`queuedSends.ts` says when not).
-        const handOver =
-          !steer &&
-          holdsOnDesktop({
-            declared: holdsQueued,
-            attachments: holdsAttachments,
-            turnBusy: turnBusyRef.current,
-            uploads: uploadIds.length,
-            phoneQueued: phoneQueuedRef.current,
-          })
+        const handOver = !steer && holdsOnDesktop({
+          declared: holdsQueued,
+          attachments: holdsAttachments,
+          turnBusy: turnBusyRef.current,
+          uploads: uploadIds.length,
+          phoneQueued: phoneQueuedRef.current,
+        });
         // One send is one message, whatever separators the text carries. A
         // held one carries `uploadIds` only when it has pictures or files to
         // hand over: a desktop without `conversation-queued-attachments`
         // refuses `queue` beside even an empty list, and is never handed one
         // with any (`holdsOnDesktop`).
-        const command: Extract<ConversationCommand, { kind: 'send' }> = steer
-          ? { kind: 'send', message: plainLineBreaks(message), steer: true, composedAt: queuedAt }
+        const command: Extract<ConversationCommand, { kind: "send" }> = steer
+          ? { kind: "send", message: plainLineBreaks(message), steer: true, composedAt: queuedAt }
           : handOver
             ? {
-                kind: 'send',
+                kind: "send",
                 message: plainLineBreaks(message),
                 queue: true,
                 ...(uploadIds.length ? { uploadIds } : {}),
                 composedAt: queuedAt,
               }
-            : { kind: 'send', message: plainLineBreaks(message), uploadIds, composedAt: queuedAt }
+            : { kind: "send", message: plainLineBreaks(message), uploadIds, composedAt: queuedAt };
         // Checked before the outbox: a send the desktop must refuse would
         // otherwise be persisted and offered again on every reconnect.
-        const problem = conversationSendProblem(commandId, command)
-        if (problem) throw new Error(problem)
+        const problem = conversationSendProblem(commandId, command);
+        if (problem) throw new Error(problem);
         // A handed-over send keeps the cursor it was queued at, so whichever
         // stream offers it from the cache later (the chat reopened, the
         // courier, the app restarted) can tell the desktop already sent it.
         await mutatePending({
           add: { commandId, command, queuedAt, ...(handOver ? { heldAfter: cursorRef.current.lastSeq } : {}) },
-        })
+        });
         // A persisted send belongs to its original conversation even if navigation changed.
-        if (owner !== lifecycle.current || stream.current !== sendingStream) return commandId
+        if (owner !== lifecycle.current || stream.current !== sendingStream)
+          return commandId;
         setOptimistic((previous) => [
           ...previous,
           {
@@ -1196,21 +1319,25 @@ export function usePhoneConversation(
             queuedAt,
             ...(command.uploadIds?.length ? { uploads: command.uploadIds } : {}),
           },
-        ])
-        if (handOver) setHanding((previous) => [...previous, handingSend(commandId, command)])
+        ]);
+        if (handOver)
+          setHanding((previous) => [...previous, handingSend(commandId, command)]);
         else if (!steer) {
           // Counted at once, not on the next draw: a second message queued
           // straight after this one must see it and wait behind it.
-          phoneQueuedRef.current++
-          setQueued((previous) => [...previous, { commandId, text: command.message, uploads: uploadIds }])
+          phoneQueuedRef.current++;
+          setQueued((previous) => [
+            ...previous,
+            { commandId, text: command.message, uploads: uploadIds },
+          ]);
         }
-        sendingStream.command(command, commandId)
-        return commandId
-      }
-      return serialize(run)
+        sendingStream.command(command, commandId);
+        return commandId;
+      };
+      return serialize(run);
     },
     [mutatePending, serialize, holdsQueued, holdsAttachments, takesSteer],
-  )
+  );
   // Take back a message the desktop holds, by the id its list names it by.
   // Settles when the desktop answers; its next `queued` frame then leaves the
   // message out. Refused once the message is on its way into the chat.
@@ -1218,72 +1345,72 @@ export function usePhoneConversation(
     (queuedId: string): Promise<CancelHeldResult> =>
       new Promise<CancelHeldResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: 'Conversation is not connected yet.' })
-          return
+          resolve({ ok: false, message: "Conversation is not connected yet." });
+          return;
         }
-        let commandId: string
+        let commandId: string;
         try {
-          commandId = stream.current.command({ kind: 'cancelQueued', queuedId })
+          commandId = stream.current.command({ kind: "cancelQueued", queuedId });
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : 'Reconnect before using this action.',
-          })
-          return
+            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+          });
+          return;
         }
-        cancellations.current.set(commandId, resolve)
+        cancellations.current.set(commandId, resolve);
       }),
     [],
-  )
+  );
   // Schedule a message into the chat, send a scheduled one now, or take one
   // back (`conversation-scheduled-sends`). Settles when the desktop answers;
   // its next `scheduled` frame then says what it keeps.
   const scheduledCommand = useCallback(
     (
-      command: Extract<ConversationCommand, { kind: 'scheduleSend' | 'sendScheduledNow' | 'cancelScheduled' }>,
+      command: Extract<ConversationCommand, { kind: "scheduleSend" | "sendScheduledNow" | "cancelScheduled" }>,
     ): Promise<CancelHeldResult> =>
       new Promise<CancelHeldResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: 'Conversation is not connected yet.' })
-          return
+          resolve({ ok: false, message: "Conversation is not connected yet." });
+          return;
         }
-        let commandId: string
+        let commandId: string;
         try {
-          commandId = stream.current.command(command)
+          commandId = stream.current.command(command);
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : 'Reconnect before using this action.',
-          })
-          return
+            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+          });
+          return;
         }
-        scheduledActions.current.set(commandId, resolve)
+        scheduledActions.current.set(commandId, resolve);
       }),
     [],
-  )
+  );
   const scheduleMessage = useCallback(
-    (message: string, sendAt: number) => scheduledCommand({ kind: 'scheduleSend', message, sendAt }),
+    (message: string, sendAt: number) => scheduledCommand({ kind: "scheduleSend", message, sendAt }),
     [scheduledCommand],
-  )
+  );
   const sendScheduledNow = useCallback(
-    (scheduledId: string) => scheduledCommand({ kind: 'sendScheduledNow', scheduledId }),
+    (scheduledId: string) => scheduledCommand({ kind: "sendScheduledNow", scheduledId }),
     [scheduledCommand],
-  )
+  );
   const cancelScheduled = useCallback(
-    (scheduledId: string) => scheduledCommand({ kind: 'cancelScheduled', scheduledId }),
+    (scheduledId: string) => scheduledCommand({ kind: "cancelScheduled", scheduledId }),
     [scheduledCommand],
-  )
+  );
   // An agent that has ended is stopping no more: dropped, so one resumed
   // later in the same lane (SendMessage) offers its Stop again.
   useEffect(() => {
     setStoppingAgentIds((previous) => {
-      if (!previous.size) return previous
+      if (!previous.size) return previous;
       const next = new Set(
-        [...previous].filter((id) => projection.lanes.some((lane) => lane.id === id && lane.status === 'running')),
-      )
-      return next.size === previous.size ? previous : next
-    })
-  }, [projection.lanes])
+        [...previous].filter((id) => projection.lanes.some((lane) => lane.id === id && lane.status === "running")),
+      );
+      return next.size === previous.size ? previous : next;
+    });
+  }, [projection.lanes]);
   // Stop one agent the chat spawned, by its lane (the call that spawned it),
   // leaving the chat and its turn running. Settles when the desktop answers;
   // the agent then reports its own end, which stops its lane running.
@@ -1291,60 +1418,65 @@ export function usePhoneConversation(
     (laneId: string): Promise<StopAgentResult> =>
       new Promise<StopAgentResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: 'Conversation is not connected yet.' })
-          return
+          resolve({ ok: false, message: "Conversation is not connected yet." });
+          return;
         }
-        let commandId: string
+        let commandId: string;
         try {
-          commandId = stream.current.command({ kind: 'stopSubagent', toolUseId: laneId })
+          commandId = stream.current.command({ kind: "stopSubagent", toolUseId: laneId });
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : 'Reconnect before using this action.',
-          })
-          return
+            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+          });
+          return;
         }
-        agentStops.current.set(commandId, { laneId, settle: resolve })
-        setStoppingAgentIds((previous) => new Set(previous).add(laneId))
+        agentStops.current.set(commandId, { laneId, settle: resolve });
+        setStoppingAgentIds((previous) => new Set(previous).add(laneId));
       }),
     [],
-  )
+  );
   // Pass the person's words to one agent, through the chat's model. Settles
   // when the desktop answers; the words then show on the agent's lane.
   const messageAgent = useCallback(
     (laneId: string, message: string): Promise<StopAgentResult> =>
       new Promise<StopAgentResult>((resolve) => {
         if (!stream.current) {
-          resolve({ ok: false, message: 'Conversation is not connected yet.' })
-          return
+          resolve({ ok: false, message: "Conversation is not connected yet." });
+          return;
         }
         try {
-          const commandId = stream.current.command({ kind: 'messageSubagent', toolUseId: laneId, message })
-          agentMessages.current.set(commandId, resolve)
+          const commandId = stream.current.command({ kind: "messageSubagent", toolUseId: laneId, message });
+          agentMessages.current.set(commandId, resolve);
         } catch (error) {
           resolve({
             ok: false,
-            message: error instanceof Error ? error.message : 'Reconnect before using this action.',
-          })
+            message: error instanceof Error ? error.message : "Reconnect before using this action.",
+          });
         }
       }),
     [],
-  )
+  );
   const cancelQueued = useCallback(
     (commandId: string): Promise<void> => {
-      const owner = lifecycle.current
-      const sendingStream = stream.current
+      const owner = lifecycle.current;
+      const sendingStream = stream.current;
       const run = async () => {
-        await mutatePending({ remove: commandId })
-        if (owner !== lifecycle.current || stream.current !== sendingStream) return
-        sendingStream?.cancelPending(commandId)
-        setQueued((previous) => previous.filter((item) => item.commandId !== commandId))
-        setOptimistic((previous) => previous.filter((item) => item.commandId !== commandId))
-      }
-      return serialize(run)
+        await mutatePending({ remove: commandId });
+        if (owner !== lifecycle.current || stream.current !== sendingStream)
+          return;
+        sendingStream?.cancelPending(commandId);
+        setQueued((previous) =>
+          previous.filter((item) => item.commandId !== commandId),
+        );
+        setOptimistic((previous) =>
+          previous.filter((item) => item.commandId !== commandId),
+        );
+      };
+      return serialize(run);
     },
     [mutatePending, serialize],
-  )
+  );
   // Send a message that was not sent without asking (`stale`), now the
   // person asks: the same send under its id, marked confirmed, so neither
   // this phone's rule nor the desktop's holds it back again. It is then a
@@ -1352,121 +1484,138 @@ export function usePhoneConversation(
   // else waiting here for the turn.
   const sendNow = useCallback(
     (commandId: string): Promise<void> => {
-      const owner = lifecycle.current
-      const sendingStream = stream.current
+      const owner = lifecycle.current;
+      const sendingStream = stream.current;
       const run = async () => {
         if (!sendingStream || stream.current !== sendingStream || owner !== lifecycle.current)
-          throw new Error('Conversation is not connected yet.')
-        const entry = pendingRef.current.find((item) => item.commandId === commandId)
-        if (!entry) return
-        const command = { ...entry.command, confirmedStale: true as const }
+          throw new Error("Conversation is not connected yet.");
+        const entry = pendingRef.current.find((item) => item.commandId === commandId);
+        if (!entry) return;
+        const command = { ...entry.command, confirmedStale: true as const };
         await mutatePending({
           patch: {
             commandId,
             update: ({ stale: _stale, ...item }) => ({ ...item, command }),
           },
-        })
-        if (owner !== lifecycle.current || stream.current !== sendingStream) return
+        });
+        if (owner !== lifecycle.current || stream.current !== sendingStream) return;
         setOptimistic((previous) =>
-          previous.map((item) => (item.commandId === commandId ? { ...item, stale: false, waiting: false } : item)),
-        )
+          previous.map((item) =>
+            item.commandId === commandId ? { ...item, stale: false, waiting: false } : item,
+          ),
+        );
         if (command.queue === true && holdsQueued)
-          setHanding((previous) => [...previous, handingSend(commandId, command)])
+          setHanding((previous) => [...previous, handingSend(commandId, command)]);
         else {
-          phoneQueuedRef.current++
-          setQueued((previous) => [...previous, { commandId, text: command.message, uploads: command.uploadIds ?? [] }])
+          phoneQueuedRef.current++;
+          setQueued((previous) => [
+            ...previous,
+            { commandId, text: command.message, uploads: command.uploadIds ?? [] },
+          ]);
         }
-        sendingStream.command(command, commandId)
-      }
-      return serialize(run)
+        sendingStream.command(command, commandId);
+      };
+      return serialize(run);
     },
     [mutatePending, serialize, holdsQueued],
-  )
+  );
   // A refused hand-over is shown as not sent, with the desktop's reason, as
   // any refused send is; nothing about it waits anywhere.
   const dismissFailed = useCallback((commandId: string) => {
-    setOptimistic((previous) => previous.filter((item) => !(item.commandId === commandId && item.failed !== undefined)))
-  }, [])
+    setOptimistic((previous) =>
+      previous.filter(
+        (item) => !(item.commandId === commandId && item.failed !== undefined),
+      ),
+    );
+  }, []);
   // One read of the chat beside its stream, by its own method; refused in
   // the desktop's own words, else in what its code means.
   const request = useCallback(async (input: ChatRead): Promise<unknown> => {
-    if (!stream.current) throw new Error('Conversation is not connected.')
+    if (!stream.current) throw new Error("Conversation is not connected.");
     try {
-      return await stream.current.read(input)
+      return await stream.current.read(input);
     } catch (error) {
       // A `StudioError`: its code, and the desktop's words where it gave some.
-      const { code, message: said } = (error ?? {}) as { code?: unknown; message?: unknown }
-      const message = typeof said === 'string' ? said.trim() : ''
+      const { code, message: said } = (error ?? {}) as { code?: unknown; message?: unknown };
+      const message = typeof said === "string" ? said.trim() : "";
       throw new Error(
-        message ||
-          refusalText(typeof code === 'string' ? code : undefined, 'The desktop could not answer that. Try again.'),
-      )
+        message || refusalText(typeof code === "string" ? code : undefined, "The desktop could not answer that. Try again."),
+      );
     }
-  }, [])
+  }, []);
   const retry = useCallback(() => {
-    setNotice('')
-    stream.current?.retry()
-  }, [])
+    setNotice("");
+    stream.current?.retry();
+  }, []);
   const loadEarlier = useCallback(async () => {
-    if (page.beforeCursor === null) return
-    const owner = lifecycle.current
+    if (page.beforeCursor === null) return;
+    const owner = lifecycle.current;
     try {
       const result = recordValue(
         await request({
-          type: 'loadEarlier',
+          type: "loadEarlier",
           beforeCursor: page.beforeCursor,
           turnLimit: 10,
         }),
-      )
-      if (owner !== lifecycle.current) return
-      const older = recordValue(result.page)
+      );
+      if (owner !== lifecycle.current) return;
+      const older = recordValue(result.page);
       if (result.ok === true && Array.isArray(older.events)) {
         // A page answers a request, not a frame, so nothing checked its
         // events on the way in: held to what a frame's are, they are what
         // the screen draws and the cache keeps.
-        eventsRef.current = mergeConversationEvents(eventsRef.current, older.events.filter(isWireEvent))
-        setEvents(eventsRef.current)
-        void persistLatest(held()).catch(() => {})
+        eventsRef.current = mergeConversationEvents(
+          eventsRef.current,
+          older.events.filter(isWireEvent),
+        );
+        setEvents(eventsRef.current);
+        void persistLatest(held()).catch(() => {});
         setPage({
           hasMore: older.hasMore === true,
-          beforeCursor: typeof older.beforeCursor === 'number' ? older.beforeCursor : null,
-        })
-      } else throw new Error('Could not load older messages.')
+          beforeCursor:
+            typeof older.beforeCursor === "number" ? older.beforeCursor : null,
+        });
+      } else throw new Error("Could not load older messages.");
     } catch (error) {
       if (owner === lifecycle.current)
-        setNotice(error instanceof Error ? error.message : 'Could not load older messages.')
+        setNotice(
+          error instanceof Error
+            ? error.message
+            : "Could not load older messages.",
+        );
     }
-  }, [page.beforeCursor, request, persistLatest, held])
+  }, [page.beforeCursor, request, persistLatest, held]);
   // Events the desktop sent cut to fit one frame (`wireClipped`): the screen
   // offers them whole, a read each, put in place of the cut copy as it comes.
   const clippedCount = useMemo(
     () => events.filter((event) => recordValue(event.payload).wireClipped === true).length,
     [events],
-  )
+  );
   const restoreClipped = useCallback(async () => {
-    const owner = lifecycle.current
-    const clipped = eventsRef.current.filter((event) => recordValue(event.payload).wireClipped === true)
+    const owner = lifecycle.current;
+    const clipped = eventsRef.current.filter((event) => recordValue(event.payload).wireClipped === true);
     try {
       for (const cut of clipped) {
-        if (cut.seq === undefined) continue
-        const result = recordValue(await request({ type: 'getEvent', seq: cut.seq, id: cut.id }))
-        if (owner !== lifecycle.current) return
-        if (result.ok !== true || !isWireEvent(result.event)) throw new Error('Could not read it in full.')
-        const whole = { ...result.event, id: cut.id, seq: cut.seq }
+        if (cut.seq === undefined) continue;
+        const result = recordValue(await request({ type: "getEvent", seq: cut.seq, id: cut.id }));
+        if (owner !== lifecycle.current) return;
+        if (result.ok !== true || !isWireEvent(result.event)) throw new Error("Could not read it in full.");
+        const whole = { ...result.event, id: cut.id, seq: cut.seq };
         eventsRef.current = eventsRef.current.map((event) =>
           event.seq === cut.seq && event.id === cut.id ? whole : event,
-        )
-        setEvents(eventsRef.current)
+        );
+        setEvents(eventsRef.current);
       }
-      void persistLatest(held()).catch(() => {})
+      void persistLatest(held()).catch(() => {});
     } catch (error) {
-      if (owner === lifecycle.current) setNotice(error instanceof Error ? error.message : 'Could not read it in full.')
+      if (owner === lifecycle.current)
+        setNotice(error instanceof Error ? error.message : "Could not read it in full.");
     }
-  }, [request, persistLatest, held])
+  }, [request, persistLatest, held]);
   // Background work the desktop lists for the chat, which the transcript
   // alone may not show (a monitor that will wake the agent): working, never a
   // turn, so a send goes straight to the desktop.
-  const listedBackground = !projection.turnBusy && chatWorksInBackground(effectiveThread)
+  const listedBackground = !projection.turnBusy && chatWorksInBackground(effectiveThread);
   return {
     api,
     /** What this desktop's chats offer here, from its Studio's welcome and this pairing's grant. */
@@ -1521,6 +1670,8 @@ export function usePhoneConversation(
     actionErrors,
     effectiveThread,
     listedTitle,
-    optimistic: optimistic.filter((item) => !projection.acknowledged.has(item.commandId)),
-  }
+    optimistic: optimistic.filter(
+      (item) => !projection.acknowledged.has(item.commandId),
+    ),
+  };
 }
