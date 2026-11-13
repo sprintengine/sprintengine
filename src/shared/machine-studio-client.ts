@@ -43,13 +43,17 @@ export function machineStudioClient(client: StudioClient, id: string): StudioCli
   // Each conversation call names its chat by a ref whose folder is this
   // computer's spelling: handed over plain. What it answers is the
   // transcript's, left as it was written.
-  const conversations = new Proxy(client.conversations, {
-    get(target, member, receiver) {
-      const value = Reflect.get(target, member, receiver) as unknown
-      if (typeof value !== 'function') return value
-      return (...args: unknown[]) => (value as (...given: unknown[]) => unknown).apply(target, machinePathsIn(id, args))
-    },
-  })
+  // (A stand-in client without them is left as it is.)
+  const conversations = !client.conversations
+    ? client.conversations
+    : new Proxy(client.conversations, {
+        get(target, member, receiver) {
+          const value = Reflect.get(target, member, receiver) as unknown
+          if (typeof value !== 'function') return value
+          return (...args: unknown[]) =>
+            (value as (...given: unknown[]) => unknown).apply(target, machinePathsIn(id, args))
+        },
+      })
   const wrapped = new Proxy(client, {
     get(target, member, receiver) {
       if (member === 'request') return request
