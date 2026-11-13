@@ -86,7 +86,17 @@ export function studioMigrationStores(stores: {
           route,
           kind: 'usage-limit-resume',
           id: `${notice.workspaceId}:${notice.agentId}`,
-          body: { workspaceId: notice.workspaceId, agentId: notice.agentId },
+          // The notice as the machine's resumer keeps it, with when it goes.
+          body: {
+            workspaceId: notice.workspaceId,
+            agentId: notice.agentId,
+            provider: notice.provider,
+            limit: notice.limit,
+            resetsAt: notice.resetsAt,
+            hitAt: notice.hitAt,
+            createdAt: notice.hitAt,
+            fireAt: notice.resumeAt,
+          },
         })
       }
       await stores.pullRequests.whenLoaded()

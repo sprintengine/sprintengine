@@ -382,7 +382,7 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
         },
       },
       resumes: {
-        schedule: (chat) => void core.usageLimitResumes.update({ kind: 'schedule', ...chat }),
+        adopt: (stored) => core.usageLimitResumes.adopt(stored),
       },
       pullRequests: {
         noteOpened: (chat, input) => core.pullRequests.record.noteOpened(chat, input),

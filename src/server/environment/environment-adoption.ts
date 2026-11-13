@@ -65,8 +65,8 @@ export type EnvironmentAdoptionStores = {
     ): Promise<{ ok: true } | { ok: false; reason: string }>
   }
   resumes: {
-    /** Keep the resume after this chat's usage limit scheduled. */
-    schedule(chat: { workspaceId: string; agentId: string }): void
+    /** Keep the resume after this chat's usage limit as the desktop kept it; refused for a chat not here. */
+    adopt(stored: Record<string, unknown>): Promise<{ ok: true } | { ok: false; reason: string }>
   }
   pullRequests: {
     noteOpened(
@@ -272,8 +272,8 @@ export function createEnvironmentAdoption(deps: {
       case 'usage-limit-resume': {
         const chat = chatOf(body)
         if (!chat) return { ok: false, reason: 'A resume names its chat.' }
-        stores.resumes.schedule(chat)
-        return { ok: true }
+        const kept = await stores.resumes.adopt(body)
+        return kept.ok ? kept : { ok: false, reason: kept.reason }
       }
       case 'pull-request': {
         const chat = chatOf(body)

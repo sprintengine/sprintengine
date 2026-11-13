@@ -74,7 +74,10 @@ function fakeStores() {
       },
     },
     resumes: {
-      schedule: (chat) => void calls.push(`resume ${chat.agentId}`),
+      async adopt(stored) {
+        calls.push(`resume ${String(stored.agentId)}`)
+        return stored.agentId === 'gone' ? { ok: false, reason: 'Its chat is not on this machine.' } : { ok: true }
+      },
     },
     pullRequests: {
       async noteOpened(chat, input) {
@@ -329,4 +332,17 @@ test('a staged file whose bytes are not the digest its message names is refused,
     ['A file it carries did not arrive whole.'],
   )
   assert.deepEqual(calls, ['flush'])
+})
+
+test('a resume whose chat is not here is reported, not kept', async () => {
+  const { adoption } = rig()
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [record('usage-limit-resume', 'ul-gone', { workspaceId: 'ws-1', agentId: 'gone' })],
+  })
+  assert.deepEqual(answer.held, [])
+  assert.deepEqual(
+    answer.conflicts.map((entry) => entry.reason),
+    ['Its chat is not on this machine.'],
+  )
 })

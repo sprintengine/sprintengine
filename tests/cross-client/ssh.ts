@@ -194,8 +194,15 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
      * transcript has is missing, none twice, and no snapshot replaced it.
      */
     const resumedFrom = async (before: ReturnType<typeof mark>) => {
-      await feed.until((each) => each.syncs > before.syncs, 'the catch-up after the machine came back', 60_000)
-      const read = await (await windowStudio()).conversations.loadEarlier(key, Number.MAX_SAFE_INTEGER, 1_000)
+      await feed
+        .until((each) => each.syncs > before.syncs, 'the catch-up after the machine came back', 60_000)
+        .catch(async (error: unknown) => {
+          const client = await (windowClient as Promise<StudioClient> | null)?.catch(() => null)
+          throw new Error(
+            `${error instanceof Error ? error.message : String(error)} (window client ${client?.state ?? 'none'}; last stream error: ${feed.lastError ?? 'none'})`,
+          )
+        })
+      const read = await (await windowStudio()).conversations.loadEarlier(key, Number.MAX_SAFE_INTEGER, 100)
       const transcript = ok<{ page: { events: GateEvent[] } }>(read, 'transcript').page
       const held = new Set(feed.seqs)
       const lost = transcript.events.filter(
@@ -223,7 +230,9 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
     // The window's New chat on build-box: the chat's record made in the
     // machine's own registry (as this desktop's copy forwards it), then its
     // session, then the chat view's follow.
+    let stopped = false
     const follow = () => {
+      stopped = false
       const following = parts.subscribe(
         {
           key,
@@ -239,10 +248,18 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
             })
           else if (frame.type === 'event') feed.event(frame.event)
           else if (frame.type === 'synchronized') feed.side({ syncs: feed.syncs + 1 })
-          else if (frame.type === 'error') feed.side({ lastError: frame.message })
+          else if (frame.type === 'error') {
+            // As the chat view does: a stream that ended is followed again from its cursor.
+            feed.side({ lastError: frame.message })
+            following()
+            if (!stopped) setTimeout(follow, 250)
+          }
         },
       )
-      stopFollowing = following
+      stopFollowing = () => {
+        stopped = true
+        following()
+      }
     }
     await matrix.run('ssh', 'create', async () => {
       const client = await windowStudio()
@@ -396,12 +413,25 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       // Connected again by the person, as Settings › Machines does after a Disconnect.
       await machine().connect({ interactive: true })
       const client = await windowStudio()
-      const read = ok<{ page: { events: GateEvent[] } }>(
-        await client.conversations.loadEarlier(key, Number.MAX_SAFE_INTEGER, 1_000),
-        'transcript',
-      )
-      if (!read.page.events.some(isUserMessage(text)))
-        throw new Error('ssh: the scheduled message did not go while the desktop was away')
+      // Sent by the machine at its time, or as soon as the chat's turn let it.
+      let went = false
+      for (let tries = 0; tries < 30 && !went; tries++) {
+        const read = ok<{ page: { events: GateEvent[] } }>(
+          await client.conversations.loadEarlier(key, Number.MAX_SAFE_INTEGER, 100),
+          'transcript',
+        )
+        went = read.page.events.some(isUserMessage(text))
+        if (!went) await until(() => false, 1_000)
+      }
+      if (!went) {
+        let held: unknown = null
+        const stop = client.subscribe('conversation.scheduled', { key }, { onPayload: (frame) => (held = frame) })
+        await until(() => held !== null, 3_000)
+        stop()
+        throw new Error(
+          `ssh: the scheduled message did not go while the desktop was away (still kept: ${JSON.stringify(held)})`,
+        )
+      }
       const listed = await client.request('pullRequests.list', {
         conversations: [{ workspaceId: key.workspaceId, agentId: key.agentId }],
       })
