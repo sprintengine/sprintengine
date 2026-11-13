@@ -503,14 +503,15 @@ test('an unknown skill refuses the launch before anything is written', async () 
   assert.deepEqual(record.starts, [])
 })
 
-test("a chat on an SSH machine writes no skill copy on this computer: the machine's runtime attaches them", async () => {
+test("a folder on an SSH machine is that machine's to start chats in: refused here, nothing written", async () => {
   const { service, record } = harness({
     workspace: { id: 'ws-1', folderPath: 'ssh://e1/home/dev/repo', agents: {} },
   })
   const result = await service.launch({ workspaceId: 'ws-1', cli: 'claude-code', skills: ['backlog'] })
-  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.equal(!result.ok && result.code, 'unavailable')
   assert.deepEqual(record.installs, [])
-  assert.deepEqual(record.writes[0]!.agent!.conversationSkills, ['backlog'])
+  assert.deepEqual(record.writes, [])
+  assert.deepEqual(record.starts, [])
 })
 
 test('a skill copy that could not be written is reported, and the launch goes on', async () => {

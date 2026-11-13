@@ -31,12 +31,9 @@ import { createPullRequestTools } from '../pull-requests/pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import { createLocalServerTools } from '../local-servers/local-server-tools'
 import { studioBridgeScriptPath, type StudioCore } from './studio-core'
-import { StudioError } from '../../../packages/client-runtime/src/public'
-import { STUDIO_COMMAND_METHODS, type StudioCommandMethod } from '../../../packages/studio-protocol/src/public'
-import type { ConversationCommand } from '../../../packages/conversation-protocol/src/public'
-import type { ConversationEvent, ConversationKey, ConversationSessionSummary } from '../../shared/conversation-runtime'
+import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
-import type { ConversationGatewayCommandResult } from '../../main/automation/tailnet/tailnet-conversation-host'
+import { environmentCommand, environmentPage, launchWhereItLives } from './environment-chat-calls'
 
 // The Studio MCP gateway over a core: the always-on socket agents reach the
 // app through, the opt-in tailnet listener, and the conversation lane paired
@@ -117,7 +114,12 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   const chats = studioChatControl(core)
   const coreTools = [
     ...createConversationTools({
-      launch: (request) => core.conversationLaunchService.launch(request),
+      // A chat in a workspace an SSH machine holds starts there.
+      launch: launchWhereItLives(
+        core.environmentClients,
+        (workspaceId) => core.workspaceRegistry.getRecord(workspaceId),
+        (request) => core.conversationLaunchService.launch(request),
+      ),
       resolveAgentPermissionPreset: core.resolveAgentPermissionPreset,
       permissionModesOf: (cli) => listPluginRegistryEntries().find((entry) => entry.id === cli)?.permissionModes ?? [],
       lifecycle: core.conversationLifecycle,
@@ -399,11 +401,11 @@ function studioChatControl(core: StudioCore): ConversationChatControl {
     command: async (key, clientId, commandId, command) => {
       const route = routeOf(key.workspaceId)
       if (!route) return hostOf().command(key, clientId, commandId, command)
-      return environmentCommand(core, route, key, commandId, command)
+      return environmentCommand(core.environmentClients, route, key, commandId, command)
     },
     readPage: async (key, page) => {
       const route = routeOf(key.workspaceId)
-      if (route) return environmentPage(core, route, key, page)
+      if (route) return environmentPage(core.environmentClients, route, key, page)
       if (page.before !== undefined) {
         const read = await core.conversations.readConversationPage(key, page.before, page.turns)
         return read.ok
@@ -432,73 +434,3 @@ function localSessionOf(core: StudioCore) {
 
 const latestSession = (sessions: readonly ConversationSessionSummary[]): ConversationSessionSummary | undefined =>
   [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0]
-
-/** The method a conversation command is on a Studio, by its kind. */
-const COMMAND_METHOD_OF = new Map<string, StudioCommandMethod>(
-  Object.entries(STUDIO_COMMAND_METHODS).map(([method, kind]): [string, StudioCommandMethod] => [
-    kind,
-    method as StudioCommandMethod,
-  ]),
-)
-
-/** One command carried out on the environment that holds the chat, answered as this core's host answers it. */
-async function environmentCommand(
-  core: StudioCore,
-  route: string,
-  key: ConversationKey,
-  commandId: string,
-  command: ConversationCommand,
-): Promise<ConversationGatewayCommandResult> {
-  const method = COMMAND_METHOD_OF.get(command.kind)
-  if (!method)
-    return { ok: false, code: 'invalid_frame', message: `A chat on another machine cannot ${command.kind} from here.` }
-  const reached = await core.environmentClients?.clientFor(route)
-  if (!reached) return { ok: false, code: 'unavailable', message: 'That machine cannot be reached from this computer.' }
-  if (!reached.ok) return { ok: false, code: 'unavailable', message: reached.message }
-  const { kind: _kind, ...members } = command
-  try {
-    const answer = (await (reached.client.request as (method: string, params: unknown) => Promise<unknown>)(method, {
-      key: { workspaceId: key.workspaceId, agentId: key.agentId, workspaceRoot: key.workspaceRoot },
-      commandId,
-      ...members,
-    })) as { notice?: string } | null
-    return { ok: true, ...(answer?.notice ? { notice: answer.notice } : {}) }
-  } catch (error) {
-    return {
-      ok: false,
-      ...(error instanceof StudioError ? { code: error.code as ConversationGatewayCommandResult['code'] } : {}),
-      message: `${reached.name}: ${error instanceof Error ? error.message : String(error)}`,
-    }
-  }
-}
-
-/** A page of a chat's transcript, read on the environment that holds it. */
-async function environmentPage(
-  core: StudioCore,
-  route: string,
-  key: ConversationKey,
-  page: { before?: number; turns: number },
-): Promise<
-  { ok: true; events: ConversationEvent[]; hasMore: boolean; before: number | null } | { ok: false; message: string }
-> {
-  const reached = await core.environmentClients?.clientFor(route)
-  if (!reached) return { ok: false, message: 'That machine cannot be reached from this computer.' }
-  if (!reached.ok) return { ok: false, message: reached.message }
-  const read = await reached.client.conversations
-    .loadEarlier(
-      { workspaceId: key.workspaceId, agentId: key.agentId, workspaceRoot: key.workspaceRoot },
-      page.before ?? Number.MAX_SAFE_INTEGER,
-      page.turns,
-    )
-    .catch((error: unknown) => ({
-      ok: false as const,
-      message: error instanceof Error ? error.message : String(error),
-    }))
-  if (!read.ok) return { ok: false, message: `${reached.name}: ${read.message}` }
-  return {
-    ok: true,
-    events: read.page.events as ConversationEvent[],
-    hasMore: read.page.hasMore,
-    before: read.page.beforeCursor,
-  }
-}

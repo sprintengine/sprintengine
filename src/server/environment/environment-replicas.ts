@@ -158,7 +158,13 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
   }
 
   /** Bring this desktop's copies of the route's chats in line with the machine's records. */
-  function reconcile(route: string, name: string, snapshot: StudioWorkspaceSyncSnapshot, removeMissing: boolean) {
+  function reconcile(
+    route: string,
+    name: string,
+    snapshot: StudioWorkspaceSyncSnapshot,
+    removeMissing: boolean,
+    placing: { id: string; windowId: string; activate: boolean } | null = null,
+  ) {
     const theirs = Array.isArray(snapshot.state.workspaces) ? (snapshot.state.workspaces as Workspace[]) : []
     const here = sync.getSnapshot().state
     const primary = here.primaryWorkspaceWindowId
@@ -170,8 +176,16 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
       const local = here.workspaces.find((each) => each.id === workspace.id) as Workspace | undefined
       if (!local) {
         // A chat born there (its own schedule's run, a phone's New chat) joins
-        // the primary window here without being brought to the front.
-        const adopted = sync.adoptWorkspace(copy, primary, copy.folderPath, 'system', { activate: false })
+        // the primary window here without being brought to the front; one a
+        // window here asked for joins that window as it asked.
+        const placed = placing?.id === workspace.id && here.workspaceWindows.some((w) => w.id === placing.windowId)
+        const adopted = sync.adoptWorkspace(
+          copy,
+          placed ? placing.windowId : primary,
+          copy.folderPath,
+          'system',
+          placed && placing.activate ? {} : { activate: false },
+        )
         if (!adopted.ok) deps.log?.(`Could not keep a copy of ${name}'s chat ${workspace.id}: ${adopted.message}`)
         continue
       }
@@ -316,7 +330,16 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
         const stop = sync.subscribeEvents((event) => made.push(event))
         try {
           const after = (await reached.client.request('workspaceSync.snapshot', {})) as StudioWorkspaceSyncSnapshot
-          reconcile(route, reached.name, after, followed.has(route))
+          const payload = isRecord(command.payload) ? command.payload : {}
+          reconcile(
+            route,
+            reached.name,
+            after,
+            followed.has(route),
+            command.type === 'workspace.created' && typeof payload.windowId === 'string'
+              ? { id, windowId: payload.windowId, activate: payload.activate !== false }
+              : null,
+          )
         } finally {
           stop()
         }
