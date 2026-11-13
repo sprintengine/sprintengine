@@ -73,6 +73,10 @@ const messageOf = (error: unknown): string =>
 // How long a push stream waits before following a client that replaced one
 // that closed, or retrying one that could not connect.
 const PUSH_FOLLOW_RETRY_MS = 2_000
+// How long it waits instead where the Studio is older than the protocol (a
+// paired desktop not yet updated): it is not asked again every moment, and
+// what reads it says so in words (`environmentStudioOutdated`).
+const PUSH_FOLLOW_OUTDATED_MS = 60_000
 
 // Pictures go up a few at a time: each is several requests, and a send that
 // carries many must not crowd out the reads the rest of the window makes.
@@ -203,12 +207,12 @@ function followPush<T extends 'conversation.commands' | 'conversation.events'>(
   let stop: (() => void) | null = null
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | null = null
-  const later = (run: () => void): void => {
+  const later = (run: () => void, after = PUSH_FOLLOW_RETRY_MS): void => {
     if (stopped) return
     timer = setTimeout(() => {
       timer = null
       run()
-    }, PUSH_FOLLOW_RETRY_MS)
+    }, after)
   }
   const follow = (): void =>
     void client().then(
@@ -236,7 +240,11 @@ function followPush<T extends 'conversation.commands' | 'conversation.events'>(
           },
         )
       },
-      () => later(follow),
+      (error: unknown) =>
+        later(
+          follow,
+          error instanceof StudioError && error.code === 'outdated' ? PUSH_FOLLOW_OUTDATED_MS : PUSH_FOLLOW_RETRY_MS,
+        ),
     )
   follow()
   return () => {

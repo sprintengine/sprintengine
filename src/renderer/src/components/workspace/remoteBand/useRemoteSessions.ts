@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../../../../packages/studio-protocol/src/public'
 import { useWindowPageVisible } from '../../../utils/windowActivity'
 import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPresence'
 import { publishRemoteConversationList } from './remoteConversationFacts'
 import { browsePairedMachine } from '../../../studio/pairedDiscovery'
-import { environmentStudioAvailable } from '../../../studio/environmentStudio'
+import { listPairedChats } from '../../../studio/pairedChats'
+import { environmentStudioAvailable, pairedRoute, pairedTarget } from '../../../studio/environmentStudio'
+import { followedEnvironmentChatsOf, onFollowedEnvironmentChats } from '../../../studio/environmentChats'
+import { environmentConversationTransport } from '../../panels/agentChat/environmentChat'
 import {
   chatManageOf,
   remoteLinkStateOf,
@@ -20,20 +24,20 @@ import {
 // is asleep is never dialled: its last rows stay on screen dimmed, and the
 // next reachability event that says it answered is what reads it again.
 //
-// The change feed (2026-09-05) replaced the thirty-second timer. Main holds
-// one idle socket to each paired machine, on which that machine says its
-// workspace or conversation list moved, and the band re-reads on that: the
-// server owns the state, the client subscribes. The timer
-// that remains is a slow fallback for a feed a machine could not open.
+// Every read is this window's own, over its one client of that machine's
+// Studio (`environmentStudio.ts`), which the window follows each paired
+// desktop's chats on (`environmentChats.ts`): `workspaces.list` for what it
+// holds, `conversation.list` for its chats. That machine says when either
+// list moved (`conversations.changed`), and the band re-reads on that, and
+// once more whenever the window reaches it again: the server owns the
+// state, the client subscribes. Nothing is read on a timer.
 //
 // A push re-reads only what it names: a conversation push re-lists the
 // machine's chats, a workspace push re-browses it. A window
 // nobody can see does not re-read at all; it remembers what changed and
 // reads once when it is shown again.
 
-/** The fallback re-read of awake machines while the band is open and focused; the change feed is the real beat. */
-const REMOTE_BAND_CADENCE_MS = 180_000
-/** A machine's change pushes arrive already throttled; a short settle folds the workspace and conversation pushes of one event into one read. */
+/** A machine's change pushes arrive already folded; a short settle folds the workspace and conversation pushes of one event into one read. */
 const REMOTE_CHANGE_SETTLE_MS = 250
 
 export type RemoteSessions = {
@@ -89,7 +93,6 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
   // preloads) gets a band that draws what the rows already know and asks
   // nothing — never a throw inside an effect.
   const bridge = environmentStudioAvailable()
-  const conversationBridge = bridge && typeof window.api?.meshConversationList === 'function'
   const visible = useWindowPageVisible()
 
   const read = useCallback(
@@ -104,7 +107,7 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
         return
       }
       const wantBrowse = parts.has('browse')
-      const wantList = parts.has('conversations') && conversationBridge
+      const wantList = parts.has('conversations')
       if (!wantBrowse && !wantList) return
       inFlight.current.set(connectionId, parts)
       if (wantBrowse)
@@ -116,12 +119,11 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
         const result = wantBrowse
           ? await browsePairedMachine(machine ?? { id: connectionId, machineName: 'That machine', scopes: [] })
           : null
-        // Its chats too, once it has answered: the list is a short socket
-        // on the conversation lane. A pairing that may not read them, or a
-        // machine that does not serve them, lists none.
+        // Its chats too, once it has answered. A pairing that may not read
+        // them, or a machine that does not serve them, lists none.
         const listed =
           wantList && (result === null || result.reachable)
-            ? await window.api.meshConversationList(connectionId).catch(() => null)
+            ? await listPairedChats(machine ?? { id: connectionId, machineName: 'That machine' }).catch(() => null)
             : null
         // The tab of a pane open on one of these chats draws from the same list.
         if (listed?.ok) publishRemoteConversationList(connectionId, listed.conversations)
@@ -179,48 +181,83 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
           if (waiting) read(connectionId, waiting)
         })
     },
-    [bridge, conversationBridge],
+    [bridge],
   )
   const browse = useCallback((connectionId: string) => read(connectionId), [read])
 
-  const { mesh, meshReachability, meshRemoteChanges } = presence
+  const { mesh, meshReachability } = presence
 
-  // The change feed: a machine that said it changed is re-read, once its
-  // pushes settle, for what it said changed. Keyed by the mesh's revision of
-  // each kind, so a re-render of the same push reads nothing, and only
-  // machines that may be asked are asked. While the window is out of sight
+  // The change feed: what each machine says moved (`conversations.changed`),
+  // and each time the window reaches it again (`watchOpen`), on the window's
+  // followed client of it. A machine that said it changed is re-read once its
+  // pushes settle, for what it said changed; while the window is out of sight
   // the reads wait here and run once it is back.
-  const handledChangeRevision = useRef(new Map<string, Partial<Record<string, number>>>())
   const pendingChanges = useRef(new Map<string, Set<ReadPart>>())
+  const [changeTick, setChangeTick] = useState(0)
+  const noteChange = useCallback((connectionId: string, part: ReadPart) => {
+    const parts = pendingChanges.current.get(connectionId) ?? new Set<ReadPart>()
+    parts.add(part)
+    pendingChanges.current.set(connectionId, parts)
+    setChangeTick((tick) => tick + 1)
+  }, [])
   useEffect(() => {
-    if (!enabled) return
-    for (const [id, change] of meshRemoteChanges) {
-      const handled = handledChangeRevision.current.get(id) ?? {}
-      const revisions: Partial<Record<string, number>> = change.revisions ?? { [change.what]: change.revision }
-      let parts: Set<ReadPart> | null = null
-      for (const [kind, revision] of Object.entries(revisions)) {
-        if (revision === undefined || (handled[kind] ?? 0) >= revision) continue
-        handled[kind] = revision
-        parts ??= pendingChanges.current.get(id) ?? new Set<ReadPart>()
-        parts.add(kind === 'conversations' ? 'conversations' : 'browse')
+    if (!enabled || !bridge) return
+    const following = new Map<string, { source: object; stop: () => void }>()
+    const sync = () => {
+      const wanted = new Set<string>()
+      for (const connection of mesh) {
+        const source = followedEnvironmentChatsOf(pairedRoute(connection.id))
+        if (!source) continue
+        wanted.add(connection.id)
+        if (following.get(connection.id)?.source === source) continue
+        following.get(connection.id)?.stop()
+        const services = environmentConversationTransport(pairedTarget(connection)).services
+        const stopPush =
+          services.followPush?.({
+            topic: 'conversations.changed',
+            params: {},
+            capability: STUDIO_CONVERSATIONS_CAPABILITY,
+            onPayload: (change) =>
+              noteChange(connection.id, change.what === 'workspaces' ? 'browse' : 'conversations'),
+          }) ?? (() => undefined)
+        let opened = false
+        const stopOpen = source.watchOpen(() => {
+          // The first open is the mount read's; each one after is the machine back.
+          if (opened) for (const part of EVERY_PART) noteChange(connection.id, part)
+          opened = true
+        })
+        following.set(connection.id, {
+          source,
+          stop: () => {
+            stopPush()
+            stopOpen()
+          },
+        })
       }
-      handledChangeRevision.current.set(id, handled)
-      if (parts && mesh.some((connection) => connection.id === id) && shouldBrowse(meshReachability.get(id)))
-        pendingChanges.current.set(id, parts)
+      for (const [id, entry] of following)
+        if (!wanted.has(id)) {
+          entry.stop()
+          following.delete(id)
+        }
     }
-    for (const id of [...handledChangeRevision.current.keys()]) {
-      if (meshRemoteChanges.has(id)) continue
-      handledChangeRevision.current.delete(id)
-      pendingChanges.current.delete(id)
+    sync()
+    const stopFollowed = onFollowedEnvironmentChats(sync)
+    return () => {
+      stopFollowed()
+      for (const entry of following.values()) entry.stop()
+      following.clear()
     }
-    if (!visible || pendingChanges.current.size === 0) return
+  }, [enabled, bridge, mesh, noteChange])
+  useEffect(() => {
+    if (!enabled || !visible || pendingChanges.current.size === 0) return
     const timer = window.setTimeout(() => {
       const due = [...pendingChanges.current]
       pendingChanges.current.clear()
-      for (const [id, parts] of due) read(id, parts)
+      for (const [id, parts] of due)
+        if (mesh.some((connection) => connection.id === id) && shouldBrowse(meshReachability.get(id))) read(id, parts)
     }, REMOTE_CHANGE_SETTLE_MS)
     return () => window.clearTimeout(timer)
-  }, [enabled, visible, mesh, meshReachability, meshRemoteChanges, read])
+  }, [enabled, visible, mesh, meshReachability, read, changeTick])
 
   // The pairing list: a machine not yet read gets its first read; a machine
   // forgotten drops its entry so its rows go with it.
@@ -260,20 +297,6 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
       if (!meshReachability.has(id)) wasAwake.current.delete(id)
     }
   }, [enabled, mesh, meshReachability, browse])
-
-  // The fallback cadence: only while the band is open and this window is in
-  // front, and slow — a machine whose change feed is up has already said
-  // everything this read could find.
-  useEffect(() => {
-    if (!enabled || !bridge) return
-    const timer = window.setInterval(() => {
-      if (typeof document !== 'undefined' && typeof document.hasFocus === 'function' && !document.hasFocus()) return
-      for (const connection of mesh) {
-        if (shouldBrowse(meshReachability.get(connection.id))) browse(connection.id)
-      }
-    }, REMOTE_BAND_CADENCE_MS)
-    return () => window.clearInterval(timer)
-  }, [enabled, bridge, mesh, meshReachability, browse])
 
   const refresh = useCallback(
     (connectionId?: string) => {
