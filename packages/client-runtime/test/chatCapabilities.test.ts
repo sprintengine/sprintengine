@@ -38,17 +38,19 @@ test("the window's own Studio, on the owner's grant, offers what it serves", () 
     hostUsageLimits: true,
     hostChanges: true,
     // Files on a keyed send and held with a queued message are staged on the
-    // socket itself; no method of it opens a pull request.
+    // socket itself, and Create PR is on the chat's own Studio.
     attachFiles: true,
     hostQueueAttachments: true,
-    hostPullRequests: false,
+    hostPullRequests: true,
   })
 })
 
-test('the same grant sees the same controls: the owner flag decides none of them', () => {
+test('the same grant sees the same controls: the owner flag decides only what the protocol keeps for owners', () => {
   const owner = studio(chatWelcome())
   const pairedWithEverything = studio(chatWelcome({ grant: { owner: false, scopes: [...STUDIO_SCOPES] } }))
-  expect(pairedWithEverything).toEqual(owner)
+  // Create PR runs git and `gh` on the Studio's machine: an owner's method
+  // (`pullRequests.create`), whatever scopes another grant holds.
+  expect(pairedWithEverything).toEqual({ ...owner, hostPullRequests: false })
 })
 
 test('a paired client that may operate is offered what its scopes reach', () => {
@@ -86,6 +88,7 @@ test('a Studio that does not serve a feature is not offered it, and nothing else
         ...OPERATIONS.filter((flag) => !['checkpointRevert', 'agentMessages'].includes(flag)),
         'attachFiles',
         'hostQueueAttachments',
+        'hostPullRequests',
       ],
     ],
   ] as const) {

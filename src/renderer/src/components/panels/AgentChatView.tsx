@@ -17,6 +17,8 @@ import { withoutStudioNoticePrefix } from '../../../../shared/studio-notice'
 import { limitResetSendAt } from '../../../../shared/scheduled-messages'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import type { BranchPullRequest } from '../../../../shared/git/pull-request'
+import type { StudioLocalServer } from '../../../../../packages/studio-protocol/src/public'
 import {
   LegendList,
   type LegendListRef,
@@ -134,14 +136,11 @@ import { useComposerRecall } from './agentChat/composerRecall'
 import { ComposerField, type ComposerFieldHandle, type ComposerKeyEvent } from './agentChat/ComposerField'
 import { ComposerContextChips, SkillContextChip, useComposerContextPicker } from './agentChat/composerContextPicker'
 import { ComposerPlusMenu } from '../workspace/agentComposer/ComposerPlusMenu'
-import { unwatchPullRequest, usePullRequestsOfConversation } from '../workspace/useConversationPullRequests'
-import { useLocalServersOfConversation } from '../workspace/useLocalServers'
 import {
   CreatePullRequestDialogHost,
   useCreatePullRequestFlow,
   useCreatePullRequestState,
 } from './agentChat/createPullRequest'
-import { studioPullRequestHost } from './agentChat/pullRequestHost'
 import { conversationContextReading } from './agentChat/contextReading'
 import { ContextComposerButton, type ContextBreakdownSource } from './agentChat/ContextBreakdown'
 import { useConversationStripFacts } from './agentChat/conversationStripFacts'
@@ -390,6 +389,8 @@ const EMPTY_MODELS: ConversationProviderModel[] = []
 // What a chat hands the skills picker for MCP servers: none — a chat reads
 // skills only, and the picker is told not to list servers.
 const NO_MCP_SERVERS: never[] = []
+const NO_PULL_REQUESTS: readonly BranchPullRequest[] = []
+const NO_LOCAL_SERVERS: readonly StudioLocalServer[] = []
 const ignoreMcpServers = (): void => undefined
 
 // ── Component ───────────────────────────────────────────────────────────────
@@ -4022,49 +4023,36 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     clearDraft()
     setSendAt(null)
   }
-  // The pull requests this conversation opened, from the record the sidebar
-  // reads. A chat on a paired machine has its record there, and its machine
-  // lists them with the chat.
-  const localPullRequests = usePullRequestsOfConversation(transport.kind === 'remote' ? null : { workspaceId, agentId })
-  const conversationPullRequests =
-    transport.kind === 'remote' ? (binding.listed?.pullRequests ?? localPullRequests) : localPullRequests
-  // The person's "Stop watching" on the strip's pull request: the record's
-  // change comes back through the list above, so nothing is held here. A
-  // chat on a paired machine is watched by that machine, which ends it, where
-  // this pairing may drive the chat.
+  // The pull requests this conversation opened and the local servers its
+  // agents started, as the chat's server lists them (`binding.listed`).
+  const conversationPullRequests = binding.listed?.pullRequests ?? NO_PULL_REQUESTS
+  // The person's "Stop watching" on the strip's pull request, asked of the
+  // server that keeps the watch, where this client may drive the chat; the
+  // record's change comes back through the list.
+  const unwatch = operate ? transport.unwatchPullRequest : undefined
   const stopWatchingPullRequest = useCallback(
     (url: string) => {
-      void unwatchPullRequest({ workspaceId, agentId }, url).then((stopped) => {
+      void unwatch?.({ key: chatKey, url }).then((stopped) => {
         if (!stopped.ok) setActionError(`Could not stop watching the pull request: ${stopped.message}`)
       })
     },
-    [workspaceId, agentId],
+    [unwatch, chatKey],
   )
-  const remoteUnwatch = transport.kind === 'remote' && operate ? transport.unwatchPullRequest : undefined
-  const stopRemoteWatch = useCallback(
-    (url: string) => {
-      void remoteUnwatch?.({ url }).then((stopped) => {
-        if (!stopped.ok) setActionError(`Could not stop watching the pull request: ${stopped.message}`)
-      })
-    },
-    [remoteUnwatch],
+  // Drawn read-only, and opened from here only where their address reaches
+  // here. Another machine's are labelled with its name.
+  const conversationLocalServers = binding.listed?.localServers ?? NO_LOCAL_SERVERS
+  const remoteMachineName = transport.machineName ?? null
+  const stripLocalServers = useMemo(
+    () =>
+      conversationLocalServers.length > 0
+        ? {
+            workspaceId,
+            servers: conversationLocalServers,
+            ...(remoteMachineName !== null ? { elsewhere: { machineName: remoteMachineName } } : {}),
+          }
+        : null,
+    [conversationLocalServers, remoteMachineName, workspaceId],
   )
-  // The local servers this conversation's agents started, from the same
-  // Studio record the sidebar's marks read. A paired machine's are its own,
-  // and its list names them with the chat: drawn read-only, and opened from
-  // here only where their address reaches here.
-  const conversationLocalServers = useLocalServersOfConversation(
-    transport.kind === 'remote' ? null : { workspaceId, agentId },
-  )
-  const remoteLocalServers = transport.kind === 'remote' ? binding.listed?.localServers : undefined
-  const remoteMachineName = transport.kind === 'remote' ? (transport.machineName ?? 'the other machine') : null
-  const stripLocalServers = useMemo(() => {
-    if (remoteMachineName !== null)
-      return remoteLocalServers?.length
-        ? { workspaceId, servers: remoteLocalServers, elsewhere: { machineName: remoteMachineName } }
-        : null
-    return conversationLocalServers.length > 0 ? { workspaceId, servers: conversationLocalServers } : null
-  }, [conversationLocalServers, remoteLocalServers, remoteMachineName, workspaceId])
   // The subscription limits of the agent this chat runs on, as the chat's
   // server says its agents reported them (`hostUsageLimits`). A chat on WSL
   // or an SSH machine has its agent's readings over there, and nothing there
@@ -4096,23 +4084,19 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     },
     [transport, chatKey, serverName],
   )
-  // "Create PR" is asked of the Studio that holds the chat, which does every
-  // step in the chat's own checkout there (owner-only, `pull-request-create`;
-  // a Studio that refuses or does not serve it answers no state, and the
-  // button stays hidden), or of the paired machine a chat followed over its
-  // lane runs on, where it says it can and this pairing may drive the chat
-  // (owner ruling 2026-10-18). A chat on WSL or an SSH machine routed through
-  // this desktop (the strip names its machine) has no checkout here.
-  const createsPullRequestOnStudio =
-    transport.kind !== 'remote' && shellReach.sameDisk && !stripFacts.machine && Boolean(workspaceRoot)
-  const remotePullRequestHost =
-    transport.kind === 'remote' && transport.capabilities.hostPullRequests && operate
-      ? (transport.pullRequestHost ?? null)
-      : null
+  // "Create PR" is asked of the server the chat runs on, which does every
+  // step in the chat's own checkout there (owner ruling 2026-10-18), where it
+  // serves it and this client may drive the chat. A chat on WSL or an SSH
+  // machine routed through this desktop has no checkout its Studio reads
+  // (design-wsl-ssh-direct).
   const pullRequestHost = useMemo(
     () =>
-      remotePullRequestHost ?? (createsPullRequestOnStudio ? studioPullRequestHost({ workspaceId, agentId }) : null),
-    [remotePullRequestHost, createsPullRequestOnStudio, workspaceId, agentId],
+      transport.capabilities.hostPullRequests && operate && workspaceRunsHere(binding.workspace)
+        ? (transport.pullRequestHost?.(chatKey) ?? null)
+        : null,
+    // The capability is read off the transport each render; a host is made for the chat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transport, transport.capabilities.hostPullRequests, operate, binding.workspace, chatKey],
   )
   // A turn ending moves the transcript's shape, and a token never does: read
   // when the shape moves, not on every streamed frame, which scanned back over
@@ -4202,11 +4186,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     branch: stripFacts.branch,
     changes: stripFacts.changes,
     pullRequests: conversationPullRequests,
-    ...(transport.kind !== 'remote'
-      ? { onStopWatchingPullRequest: stopWatchingPullRequest }
-      : remoteUnwatch
-        ? { onStopWatchingPullRequest: stopRemoteWatch }
-        : {}),
+    ...(unwatch ? { onStopWatchingPullRequest: stopWatchingPullRequest } : {}),
     createPullRequest,
     localServers: stripLocalServers,
     permissions: panelPermissions,

@@ -146,8 +146,8 @@ export function negotiateChatCapabilities(offer: ChatServerOffer | null): ChatCa
     hostQueue: queues,
     hostQueueAttachments: queues && serves(CONVERSATION_QUEUED_ATTACHMENTS_CAPABILITY),
     skills: sends && serves(CONVERSATION_SEND_SKILLS_CAPABILITY),
-    // No method of the Studio protocol opens a pull request yet.
-    hostPullRequests: false,
+    // Create PR, every step in the chat's checkout on its Studio (owner-only there).
+    hostPullRequests: sends && offers('pullRequests.create'),
     hostSchedule: serves(CONVERSATION_SCHEDULED_SENDS_CAPABILITY),
     hostUsageLimits: serves(CONVERSATION_USAGE_LIMITS_CAPABILITY),
     hostChanges: serves(CONVERSATION_CHANGES_CAPABILITY),

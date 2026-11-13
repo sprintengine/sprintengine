@@ -19,7 +19,9 @@ test('Stop watching asks the machine the chat runs on', async () => {
     offer: () => ({ via: 'paired-lane', capabilities: [], access: 'operate', modelCatalog: false }),
   })
   const url = 'https://github.com/acme/app/pull/7'
-  expect(await transport.unwatchPullRequest!({ url })).toEqual({ ok: true })
+  // The view names the chat by its key here; the machine is asked by its own.
+  const key = { workspaceRoot: '/Users/dev/app', workspaceId: 'here', agentId: 'here-agent' }
+  expect(await transport.unwatchPullRequest!({ key, url })).toEqual({ ok: true })
   expect(studio.writes()).toEqual([
     {
       connectionId: 'c1',
@@ -28,7 +30,7 @@ test('Stop watching asks the machine the chat runs on', async () => {
     },
   ])
   studio.capabilities.clear()
-  const refused = await transport.unwatchPullRequest!({ url })
+  const refused = await transport.unwatchPullRequest!({ key, url })
   expect(refused.ok).toBe(false)
   expect(refused.ok ? '' : refused.message).toMatch(
     /mac-mini cannot stop watching .* Update SprintEngine Studio there/u,
