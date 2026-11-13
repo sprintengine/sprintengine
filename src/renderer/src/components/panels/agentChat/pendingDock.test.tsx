@@ -108,6 +108,25 @@ test('pending requests keep FIFO within kind and show truthful origin/path warni
 // The window's own Studio, welcomed with the owner's grant.
 const ownerTransport = studioConversationTransport(() => chatWelcome())
 
+test('a remembered rule is scoped to the workspace, else to the folder the request runs in, whichever server runs the chat', () => {
+  const card = (entry: Approval, workspaceRoot?: string) =>
+    renderToStaticMarkup(
+      <ConversationTransportProvider value={ownerTransport}>
+        <ConversationPermissionCard
+          entry={entry}
+          {...(workspaceRoot ? { workspaceRoot } : {})}
+          onApprove={() => undefined}
+          busy={false}
+        />
+      </ConversationTransportProvider>,
+    )
+  expect(card(request('root'), '/Users/dev/project')).toContain('Remember permission')
+  // No workspace folder (a paired machine's chat, or one here without one): the request's folder names it.
+  expect(card(request('cwd', { cwd: '/Users/dev/project' }))).toContain('Remember permission')
+  // Neither: no folder to scope a rule to, so none is offered.
+  expect(card(request('none'))).not.toContain('Remember permission')
+})
+
 test('queue navigation preserves question answers, resolves selected ids, and defaults unsafe Enter to Deny', async () => {
   const dom = new JSDOM('<!doctype html><body><div id="root"></div></body>', {
     url: 'http://localhost',
