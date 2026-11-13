@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed (an unreadable extension folder is named, not placed)
+
+- **`module.installed` tells a folder's place on disk only to a connection
+  that may name any path** (an owner's own). Anyone else, a paired app
+  holding `modules:read` included, is told each unreadable folder
+  (`rejected[].path`) by its name. The shape does not change.
+
 ### Added (what the desktop that holds a machine's Studio asks of it)
 
 - **`environment.windowTicket`** (`environment-access.ts`, capability

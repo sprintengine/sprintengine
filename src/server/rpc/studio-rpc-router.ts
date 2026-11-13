@@ -26,6 +26,7 @@ import {
   type StudioRuntimeRefusalCode,
   type StudioServerInfo,
   type StudioUpdateStatus,
+  type ThirdPartyModuleListResult,
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
@@ -2069,9 +2070,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       lifecycleCommand('module.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
     // The installed extensions and their window halves, read now; what a
     // window sets for them and the registry it resolved, kept here.
-    'module.installed': async () => {
+    'module.installed': async (_params, asking) => {
       const lifecycle = options.modules?.lifecycle()
-      return lifecycle ? { ok: true, result: await lifecycle.installed() } : unserved('module.installed')
+      if (!lifecycle) return unserved('module.installed')
+      const installed = await lifecycle.installed()
+      // Where a folder is on this disk is told only to a connection that may
+      // name any path; anyone else is told the folder by its name.
+      return { ok: true, result: namesAnyPath(asking) ? installed : withFolderNamesOnly(installed) }
     },
     'module.rendererEntries': async () => {
       const lifecycle = options.modules?.lifecycle()
@@ -2258,6 +2263,17 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 }
 
 type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
+
+/** The installed extensions with each unreadable folder named by its last segment, not its place on this disk. */
+function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyModuleListResult {
+  return {
+    ...installed,
+    rejected: installed.rejected.map((entry) => ({
+      ...entry,
+      path: entry.path.split(/[\\/]/u).filter(Boolean).at(-1) ?? '',
+    })),
+  }
+}
 
 /** Whether a connection names any path on this disk: an owner's, unless it is held to the folders Studio knows. */
 function namesAnyPath(asking: PathAsker): boolean {
