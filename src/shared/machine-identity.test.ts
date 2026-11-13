@@ -7,6 +7,7 @@ import {
   defaultMachineKind,
   machineIdOf,
   normalizeMachineMarkSettings,
+  relayedEnvironmentMark,
   resolveMachineIdentity,
 } from './machine-identity'
 import {
@@ -123,4 +124,15 @@ test('the default kind reads whole words of the host name, so a near miss does n
   assert.equal(defaultMachineKind({ kind: 'paired', name: 'mac-mini' }), 'mini')
   assert.equal(defaultMachineKind({ kind: 'paired', name: 'dev-macbook-air' }), 'laptop')
   assert.equal(defaultMachineKind({ kind: 'paired', name: '100.64.0.7' }), 'desktop')
+})
+
+test('a machine this desktop relays wears its mark: an SSH machine by its address, a WSL distribution by its machine here', () => {
+  const marks = { 'wsl:Ubuntu': { kind: 'server' as const, colour: 'violet' as const } }
+  assert.deepEqual(relayedEnvironmentMark({ kind: 'wsl', name: 'WSL: Ubuntu' }, marks), {
+    kind: 'server',
+    color: 'violet',
+  })
+  assert.ok(relayedEnvironmentMark({ kind: 'wsl', name: 'WSL: Debian' }, null), 'a default mark when none is chosen')
+  assert.ok(relayedEnvironmentMark({ kind: 'ssh', name: 'build-box', machine: { host: 'build-box', port: 22 } }, null))
+  assert.equal(relayedEnvironmentMark({ kind: 'ssh', name: 'build-box' }, null), null, 'no address, no mark')
 })

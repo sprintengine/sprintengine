@@ -79,7 +79,7 @@ export type WslServerStatus = {
   environmentId?: string
 }
 
-/** One distribution's server as the router uses it. */
+/** One distribution's server as the desktop holds it: its owner connection and its doors. */
 export type WslServerConnection = {
   distro: string
   /**

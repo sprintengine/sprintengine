@@ -8,7 +8,6 @@ import {
   environmentRouteOfHostId,
   environmentRouteOfMachinePath,
   environmentRouteOfMeshConnection,
-  environmentRouteOfRouterKey,
   environmentRouteOfWorkspace,
   environmentRouteOfWorkspaceEnvironment,
   hostIdOfEnvironmentRoute,
@@ -16,7 +15,6 @@ import {
   machinePathOnEnvironmentRoute,
   meshConnectionIdOfEnvironmentRoute,
   meshEnvironmentSource,
-  routerKeyOfEnvironmentRoute,
   sshEnvironmentSource,
   wslEnvironmentSources,
 } from './environment-keys'
@@ -41,24 +39,6 @@ test('a host id is a route on this computer, and back', () => {
   assert.equal(hostIdOfEnvironmentRoute({ kind: 'tailnet', connection: 'tnc_1' }), null)
 })
 
-test('every router key is a route, and every route the router serves is its key again', () => {
-  const cases: Array<[string | null, string]> = [
-    [null, 'local'],
-    ['Ubuntu', 'wsl:Ubuntu'],
-    ['Ubuntu-22.04', 'wsl:Ubuntu-22.04'],
-    ['ssh:ssh_k3J9x', 'ssh:ssh_k3J9x'],
-  ]
-  for (const [key, route] of cases) {
-    const mapped = environmentRouteOfRouterKey(key)
-    assert.ok(mapped, String(key))
-    assert.equal(formatEnvironmentRoute(mapped), route)
-    assert.ok(mapped.kind !== 'tailnet' && mapped.kind !== 'relay')
-    assert.equal(routerKeyOfEnvironmentRoute(mapped), key)
-  }
-  // Keys the router never makes.
-  for (const key of ['', 'ssh:', 'ssh:a/b', 'two words']) assert.equal(environmentRouteOfRouterKey(key), null, key)
-})
-
 test('a folder spelled on an SSH machine is that machine, and the route spells it back', () => {
   const spelled = machinePath('ssh_k3J9x', '/home/dev/repo')
   const route = environmentRouteOfMachinePath(spelled)
@@ -81,7 +61,7 @@ test("a workspace's SSH record and a pairing id are routes, and the pairing id c
   assert.equal(meshConnectionIdOfEnvironmentRoute({ kind: 'local' }), null)
 })
 
-test('a workspace runs where the router sends it: pairing, then SSH, then its machine on Windows, else here', () => {
+test('a workspace runs on its machine: pairing, then SSH, then its machine on Windows, else here', () => {
   const route = (workspace: Parameters<typeof environmentRouteOfWorkspace>[0], platform = 'win32') =>
     formatEnvironmentRoute(environmentRouteOfWorkspace(workspace, platform))
   assert.equal(
@@ -96,7 +76,7 @@ test('a workspace runs where the router sends it: pairing, then SSH, then its ma
   // A workspace that records no machine goes by its folder.
   assert.equal(route({ folderPath: '\\\\wsl.localhost\\Debian\\home\\dev\\app' }), 'wsl:Debian')
   assert.equal(route({}), 'local')
-  // Off Windows a WSL id names nothing: the router runs it here, and so does the route.
+  // Off Windows a WSL id names nothing: the route is here.
   assert.equal(route({ hostId: 'wsl:Ubuntu' }, 'darwin'), 'local')
   assert.equal(route({ environment: { kind: 'ssh', id: 'm1' } }, 'linux'), 'ssh:m1')
 })

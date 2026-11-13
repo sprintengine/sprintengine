@@ -643,8 +643,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
 
   // The sessions a person ran in an agent CLI's own terminal, brought in as
   // chats (conversation-import-service.ts). The CLIs' homes it reads are this
-  // machine's, so the chats it writes are this process's own runtime's, never
-  // a router's: a session ran here, in a folder here.
+  // machine's, so the chats it writes are this process's own runtime's: a
+  // session ran here, in a folder here.
   const conversationImport = createConversationImportService({
     listWorkspaces: () => workspaceRegistry.getRecords(),
     createWorkspace: (request) => {
@@ -1147,8 +1147,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
 
   // A Claude chat with Auto compact on is compacted by Studio while it sits
   // idle, just before its prompt cache expires (conversation-auto-compact.ts,
-  // wired in studio-auto-compact.ts): its chats' sessions, a distribution's
-  // and an SSH machine's included, read through the router; the send goes
+  // wired in studio-auto-compact.ts): this core's own chats' sessions (a
+  // distribution's and an SSH machine's are compacted there); the send goes
   // through the same door a resume after a usage limit takes, marked as
   // Studio's. Looked at again whenever a chat, its record or the default
   // moves, and on waking, since a timer stands still while the machine sleeps.
