@@ -372,10 +372,10 @@ test("an agent's canvas.open over there opens the board here, for the window sho
 
 test('a desktop window carries a paired machine’s boards, list, picture and pane, end to end', async () => {
   const far = await machine()
-  const window = await pairedWindow(
-    { port: () => far.port, devices: far.rig.devices },
-    ['workspace:read', 'workspace:operate'],
-  )
+  const window = await pairedWindow({ port: () => far.port, devices: far.rig.devices }, [
+    'workspace:read',
+    'workspace:operate',
+  ])
   cleanups.push(() => window.close())
   const machineHere = window.machine
   const connectionId = machineHere.id
@@ -411,7 +411,11 @@ test('a desktop window carries a paired machine’s boards, list, picture and pa
     listed.boards.map((row) => [row.name, row.project, row.here]),
     [['plan', basename(far.project), true]],
   )
-  const picture = await pairedBoardPicture(machineHere, { workspaceId: FAR_CHAT, board: listed.boards[0]!.id!, dark: false })
+  const picture = await pairedBoardPicture(machineHere, {
+    workspaceId: FAR_CHAT,
+    board: listed.boards[0]!.id!,
+    dark: false,
+  })
   assert.ok(picture.ok, picture.ok ? '' : picture.message)
   assert.equal(picture.mimeType, 'image/png')
   // Forgetting the machine here ends the pane, and the tab is told.

@@ -2311,7 +2311,6 @@ test('NewAgentPanel', async () => {
 
     await check('a paired machine offers No project, even with no project open', async () => {
       {
-        const takes = true
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air')]
@@ -2339,8 +2338,8 @@ test('NewAgentPanel', async () => {
         const row = [...dom.window.document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((option) =>
           (option.textContent ?? '').startsWith('No project'),
         )
-        assert.equal(Boolean(row), takes, 'it is offered')
-        if (takes) {
+        assert.ok(row, 'it is offered')
+        {
           await click(row!)
           await settle()
           const field = composerField(view.container)
