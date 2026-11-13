@@ -119,3 +119,35 @@ test('a revoked app’s tools lose every approval, in either spelling, saved or 
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('a rule handed over from a desktop is kept as given, once, and one this build would narrow is refused', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'conversation-grants-adopt-'))
+  try {
+    const desktop = new ConversationApprovalRuleStore(join(dir, 'desktop'))
+    const rule = await desktop.remember(
+      '/home/dev/repo',
+      'session',
+      { action: 'Bash', input: { command: 'rg value src' } },
+      'always',
+    )
+    const machine = new ConversationApprovalRuleStore(join(dir, 'machine'))
+    expect(await machine.adopt(JSON.parse(JSON.stringify(rule)))).toEqual({ ok: true })
+    expect(await new ConversationApprovalRuleStore(join(dir, 'machine')).list('/home/dev/repo')).toEqual([rule])
+    expect(await machine.adopt(JSON.parse(JSON.stringify(rule)))).toMatchObject({ ok: false, exists: true })
+    // A program-wide grant from an older build is narrowed on load: not the rule that was sent.
+    const wide = {
+      id: 'wide',
+      workspaceRoot: '/home/dev/repo',
+      toolKind: 'command',
+      toolName: 'Bash',
+      matcher: { type: 'program', program: 'git' },
+      label: 'Bash: git',
+      createdAt: 1,
+    }
+    expect(await machine.adopt(wide)).toMatchObject({ ok: false })
+    expect(await machine.adopt({ id: 'nothing' })).toMatchObject({ ok: false })
+    expect(await new ConversationApprovalRuleStore().adopt(rule)).toMatchObject({ ok: false })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

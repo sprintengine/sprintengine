@@ -17,6 +17,7 @@ import {
   type EnvironmentRoute,
 } from '../src/environment'
 import { relayedEnvironmentsOf } from '../src/environment-access'
+import { STUDIO_METHODS } from '../src/methods'
 
 const ENV = '6f1c2a9e-4b7d-4e2f-9a1b-0c3d5e7f9a1b'
 
@@ -155,4 +156,15 @@ test("a desktop's relayed list is read as a client may use it: an entry that can
     { environmentId: DISTRO, name: 'WSL: Ubuntu', kind: 'wsl', connected: true },
   ])
   for (const bad of [null, {}, { environments: 'all' }, []]) assert.deepEqual(relayedEnvironmentsOf(bad), [])
+})
+
+test('a hand-over call names no record only when it stages parts for the records that follow', () => {
+  const adopt = STUDIO_METHODS['environment.adopt'].params
+  const files = [{ uploadId: 'u1', digest: 'a'.repeat(64) }]
+  assert.equal(adopt({ commandId: 'c1', migrationId: 'm1', records: [], files }).ok, true)
+  assert.equal(adopt({ commandId: 'c1', migrationId: 'm1', records: [] }).ok, false)
+  assert.equal(adopt({ commandId: 'c1', migrationId: 'm1', records: [], files: [] }).ok, false)
+  const chat = { kind: 'chat', id: 'w:a', digest: 'b'.repeat(64), body: { workspaceId: 'w', agentId: 'a' } }
+  const rule = { kind: 'approval-rule', id: 'r', digest: 'c'.repeat(64), body: { id: 'r' } }
+  assert.equal(adopt({ commandId: 'c1', migrationId: 'm1', records: [chat, rule] }).ok, true)
 })

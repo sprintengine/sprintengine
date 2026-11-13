@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { respellPromptPath } from '../../main/scheduled-agents/prompt-images'
+import { keepAdoptedChatFiles, readAdoptedChat } from './environment-chat-files'
 
 import {
   MAX_SCHEDULED_MESSAGE_LENGTH,
@@ -17,7 +19,9 @@ import {
 // once the desktop stops routing a machine's chats, the workspaces they are
 // in, their schedules, the messages held or scheduled for them, the resumes
 // after a usage limit and the pull requests they opened are this Studio's to
-// keep and run, with nobody watching.
+// keep and run, with nobody watching. A chat the desktop ran itself in this
+// machine's folders (a WSL distribution's, through `wsl.exe`) comes too: its
+// files (environment-chat-files.ts) and its saved approvals (PR 3c).
 //
 // Each record goes into the store that keeps its kind, through that store's
 // own way in, so it is held to what this Studio would have written itself.
@@ -68,6 +72,10 @@ export type EnvironmentAdoptionStores = {
       carried: AdoptedCarried,
     ): Promise<{ ok: true } | { ok: false; reason: string }>
   }
+  approvalRules: {
+    /** Keep a saved approval as the desktop kept it; one whose id is here is left as it is. */
+    adopt(rule: unknown): Promise<{ ok: true } | { ok: false; reason: string; exists?: true }>
+  }
   resumes: {
     /** Keep the resume after this chat's usage limit as the desktop kept it; refused for a chat not here. */
     adopt(stored: Record<string, unknown>): Promise<{ ok: true } | { ok: false; reason: string }>
@@ -106,6 +114,10 @@ export type EnvironmentAdoption = {
 }
 
 const LEDGER_FILE = 'environment-adoptions.json'
+/** Where the parts a hand-over staged ahead of its chats wait, one folder per migration. */
+const PARTS_DIR = join('environment-adoptions', 'parts')
+/** A migration's parts nobody has touched for this long are let go. */
+const PARTS_KEPT_MS = 7 * 24 * 60 * 60_000
 
 /**
  * What was kept under which digest. `pending` marks a record a hand-over was
@@ -266,6 +278,40 @@ export function createEnvironmentAdoption(deps: {
     }
   }
 
+  const partsOf = (migrationId: string) => join(deps.dataDir, PARTS_DIR, migrationId)
+
+  /** A part a chat's file is made of: staged with this call, or kept from an earlier one of its migration. */
+  async function partOf(migrationId: string, files: AdoptedFiles, sha256: string): Promise<Buffer | null> {
+    const staged = files.get(sha256)
+    if (staged) return staged.bytes
+    return readFile(join(partsOf(migrationId), sha256)).catch(() => null)
+  }
+
+  /**
+   * Keep the parts a call staged with no records, for the chats that follow
+   * under its migration; each is checked against the digest it was named by.
+   * Folders of migrations untouched for a week go.
+   */
+  async function keepParts(migrationId: string, files: AdoptedFiles): Promise<void> {
+    const root = join(deps.dataDir, PARTS_DIR)
+    for (const name of await readdir(root).catch(() => [] as string[])) {
+      const at = await stat(join(root, name)).catch(() => null)
+      if (at && name !== migrationId && now() - at.mtimeMs > PARTS_KEPT_MS)
+        await rm(join(root, name), { recursive: true, force: true })
+    }
+    const folder = partsOf(migrationId)
+    mkdirSync(folder, { recursive: true, mode: 0o700 })
+    for (const [sha256, file] of files) {
+      if (createHash('sha256').update(file.bytes).digest('hex') !== sha256)
+        throw new Error('A part is not the bytes its digest names.')
+      const temporary = join(folder, `${sha256}.${process.pid}.tmp`)
+      await writeFile(temporary, file.bytes, { mode: 0o600 })
+      await rename(temporary, join(folder, sha256))
+    }
+    const touched = new Date(now())
+    await utimes(folder, touched, touched).catch(() => undefined)
+  }
+
   /** Keep one record in its store; a refusal says why, and nothing was written. */
   async function keep(record: StudioAdoptedRecord, migrationId: string, files: AdoptedFiles): Promise<Kept> {
     const body = record.body
@@ -278,6 +324,22 @@ export function createEnvironmentAdoption(deps: {
           return { ok: false, reason: 'A workspace with that id is already here.', exists: true }
         const kept = stores.workspaces.adopt(body)
         return kept.ok ? kept : { ok: false, reason: kept.message }
+      }
+      case 'chat': {
+        const read = readAdoptedChat(record.id, body)
+        if (!read.ok) return read
+        if (!stores.workspaces.has(read.chat.workspaceId))
+          return { ok: false, reason: 'The workspace the chat is in is not here.' }
+        const kept = await keepAdoptedChatFiles(deps.dataDir, read.chat, (sha) => partOf(migrationId, files, sha))
+        if (!kept.ok) return kept
+        return kept.kept.length
+          ? { ok: false, reason: `This Studio keeps its own ${kept.kept.join(', ')}, and kept them.` }
+          : { ok: true }
+      }
+      case 'approval-rule': {
+        if (body.id !== record.id) return { ok: false, reason: 'The rule names another id.' }
+        const kept = await stores.approvalRules.adopt(body)
+        return kept.ok ? kept : { ok: false, reason: kept.reason, ...(kept.exists ? { exists: true as const } : {}) }
       }
       case 'schedule': {
         if (body.id !== record.id) return { ok: false, reason: 'The scheduled agent names another id.' }
@@ -349,6 +411,11 @@ export function createEnvironmentAdoption(deps: {
     records: StudioAdoptedRecord[]
     files?: AdoptedFiles
   }): Promise<StudioAdoptResult> {
+    // Parts staged ahead of the chats they make up: kept, and nothing else.
+    if (input.records.length === 0) {
+      await keepParts(input.migrationId, input.files ?? new Map())
+      return { held: [], conflicts: [] }
+    }
     const ledger = readLedger()
     const held: StudioAdoptResult['held'] = []
     const conflicts: StudioAdoptResult['conflicts'] = []

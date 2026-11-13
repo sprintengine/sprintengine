@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, test } from 'vitest'
 
-import type { StudioAdoptedRecord } from '../../../packages/studio-protocol/src/public'
+import { MAX_ADOPTED_PART_BYTES, type StudioAdoptedRecord } from '../../../packages/studio-protocol/src/public'
+import { workspaceStorePath } from '../../main/workspace-store'
 import {
   adoptedRecordDigest,
   canonicalRecordJson,
@@ -31,6 +32,7 @@ function fakeStores() {
   const schedules = new Set<string>()
   const adoptedSchedules: Array<Record<string, unknown>> = []
   const sources = new Set<string>()
+  const rules = new Set<string>()
   let flushed = 0
   const stores: EnvironmentAdoptionStores = {
     async flush() {
@@ -77,6 +79,15 @@ function fakeStores() {
           `hold ${chat.agentId} ${text} with ${carried.images.map((image) => `${image.name}:${image.bytes.toString()}`).join(',')} ${carried.files.map((file) => `${file.name}:${file.bytes.toString()}`).join(',')} ${carried.skills.join(',')}`,
         )
         sources.add(source)
+        return { ok: true }
+      },
+    },
+    approvalRules: {
+      async adopt(rule) {
+        const id = String((rule as { id: unknown }).id)
+        calls.push(`rule ${id}`)
+        if (rules.has(id)) return { ok: false, reason: 'A rule with that id is already here.', exists: true }
+        rules.add(id)
         return { ok: true }
       },
     },
@@ -433,4 +444,194 @@ test('a carried file is kept under its last name part alone, never a path out of
   })
   assert.deepEqual(answer.conflicts, [])
   assert.equal(calls[0], 'hold a1 look with shot.png:png bytes file:notes ')
+})
+
+// A chat the desktop ran itself in this machine's folders (a WSL
+// distribution's, through `wsl.exe`): its files put back together from their
+// parts, where this Studio's own runtime reads them.
+async function withStoreHome<T>(run: (home: string) => Promise<T>): Promise<T> {
+  const home = mkdtempSync(join(tmpdir(), 'environment-adoption-home-'))
+  dirs.push(home)
+  const before = process.env.SPRINTENGINE_STORE_HOME
+  process.env.SPRINTENGINE_STORE_HOME = home
+  try {
+    return await run(home)
+  } finally {
+    if (before === undefined) delete process.env.SPRINTENGINE_STORE_HOME
+    else process.env.SPRINTENGINE_STORE_HOME = before
+  }
+}
+
+const PART = MAX_ADOPTED_PART_BYTES
+const ATTACHMENT_FOLDER = 'a'.repeat(32)
+
+function chatFile(place: string, path: string, bytes: Buffer) {
+  const parts: string[] = []
+  for (let at = 0; at < bytes.length; at += PART)
+    parts.push(
+      createHash('sha256')
+        .update(bytes.subarray(at, at + PART))
+        .digest('hex'),
+    )
+  return {
+    file: { place, path, sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length, parts },
+    staged: parts.map((digest, index) => [
+      digest,
+      { bytes: bytes.subarray(index * PART, (index + 1) * PART), mediaType: 'application/octet-stream' },
+    ]) as Array<[string, { bytes: Buffer; mediaType: string }]>,
+  }
+}
+
+test('a chat the desktop ran comes in parts, and is put back together where its runtime reads it', async () => {
+  await withStoreHome(async () => {
+    const { adoption, dataDir, workspaces } = rig()
+    workspaces.add('ws-1')
+    // Larger than one part, so it is staged ahead in a call with no records.
+    const transcript = Buffer.alloc(PART + 10, 'x')
+    const lines = chatFile('store', 'a1.jsonl', transcript)
+    const detail = chatFile('store', 'a1.tools/toolu_1.json', Buffer.from('{"output":"ok"}'))
+    const handoff = chatFile('store', 'handoffs/a1-20261113-0930.md', Buffer.from('# Handoff'))
+    const picture = chatFile('attachments', `${ATTACHMENT_FOLDER}/0f1e.png`, Buffer.from('png bytes'))
+    const ahead = await adoption.adopt({ migrationId: 'm-1', records: [], files: new Map(lines.staged) })
+    assert.deepEqual(ahead, { held: [], conflicts: [] })
+
+    const body = {
+      workspaceId: 'ws-1',
+      agentId: 'a1',
+      workspaceRoot: '/home/dev/repo',
+      files: [lines.file, detail.file, handoff.file, picture.file],
+    }
+    const chat = record('chat', 'ws-1:a1', body)
+    const files = new Map([...detail.staged, ...handoff.staged, ...picture.staged])
+    const answer = await adoption.adopt({ migrationId: 'm-1', records: [chat], files })
+    assert.deepEqual(answer, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [] })
+
+    const store = workspaceStorePath('/home/dev/repo', 'conversations', 'ws-1')
+    assert.deepEqual(readFileSync(join(store, 'a1.jsonl')), transcript)
+    assert.equal(readFileSync(join(store, 'a1.tools', 'toolu_1.json'), 'utf8'), '{"output":"ok"}')
+    assert.equal(readFileSync(join(store, 'handoffs', 'a1-20261113-0930.md'), 'utf8'), '# Handoff')
+    // Under the folder the transcript names it by, so its bubble shows it again.
+    assert.equal(
+      readFileSync(join(dataDir, 'conversation-attachments', ATTACHMENT_FOLDER, '0f1e.png'), 'utf8'),
+      'png bytes',
+    )
+    if (process.platform !== 'win32') assert.equal(statSync(join(store, 'a1.jsonl')).mode & 0o777, 0o600)
+
+    // The same hand-over again is held, nothing written twice.
+    const again = await adoption.adopt({ migrationId: 'm-1', records: [chat] })
+    assert.deepEqual(again, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [] })
+  })
+})
+
+test("a chat's file already here with other bytes is this Studio's, and a part that never came refuses the chat until it does", async () => {
+  await withStoreHome(async () => {
+    const { adoption, workspaces } = rig()
+    workspaces.add('ws-1')
+    const lines = chatFile('store', 'a1.jsonl', Buffer.from('{"type":"user_message"}\n'))
+    const detail = chatFile('store', 'a1.tools/toolu_1.json', Buffer.from('{}'))
+    const body = {
+      workspaceId: 'ws-1',
+      agentId: 'a1',
+      workspaceRoot: '/home/dev/repo',
+      files: [lines.file, detail.file],
+    }
+    const chat = record('chat', 'ws-1:a1', body)
+
+    // Its detail's part never arrived: refused in words, the transcript left where it was written.
+    const missing = await adoption.adopt({ migrationId: 'm-2', records: [chat], files: new Map(lines.staged) })
+    assert.deepEqual(missing.held, [])
+    assert.match(missing.conflicts[0]!.reason, /a1\.tools\/toolu_1\.json did not arrive whole/)
+    const store = workspaceStorePath('/home/dev/repo', 'conversations', 'ws-1')
+    assert.equal(existsSync(join(store, 'a1.tools', 'toolu_1.json')), false)
+
+    // Sent again with it: kept, the transcript already here held.
+    const resent = await adoption.adopt({ migrationId: 'm-2', records: [chat], files: new Map(detail.staged) })
+    assert.deepEqual(resent.conflicts, [])
+
+    // The same chat once more under another digest: the ledger keeps the first.
+    const other = chatFile('store', 'a1.jsonl', Buffer.from('another transcript\n'))
+    const theirs = record('chat', 'ws-1:a1', { ...body, files: [other.file] })
+    const answer = await adoption.adopt({ migrationId: 'm-3', records: [theirs], files: new Map(other.staged) })
+    assert.match(answer.conflicts[0]!.reason, /another copy/)
+    assert.equal(readFileSync(join(store, 'a1.jsonl'), 'utf8'), '{"type":"user_message"}\n')
+
+    // A chat whose transcript this Studio already writes (it ran here): its own is kept, the rest placed.
+    writeFileSync(join(store, 'a2.jsonl'), 'written here\n')
+    const mine = chatFile('store', 'a2.jsonl', Buffer.from('written on the desktop\n'))
+    const tools = chatFile('store', 'a2.tools/toolu_2.json', Buffer.from('{}'))
+    const ran = record('chat', 'ws-1:a2', {
+      workspaceId: 'ws-1',
+      agentId: 'a2',
+      workspaceRoot: '/home/dev/repo',
+      files: [mine.file, tools.file],
+    })
+    const kept = await adoption.adopt({
+      migrationId: 'm-3',
+      records: [ran],
+      files: new Map([...mine.staged, ...tools.staged]),
+    })
+    assert.match(kept.conflicts[0]!.reason, /keeps its own a2\.jsonl/)
+    assert.equal(readFileSync(join(store, 'a2.jsonl'), 'utf8'), 'written here\n')
+    assert.equal(readFileSync(join(store, 'a2.tools', 'toolu_2.json'), 'utf8'), '{}')
+  })
+})
+
+test('a chat names only its own files in its own places, and only in a workspace that is here', async () => {
+  await withStoreHome(async () => {
+    const { adoption, workspaces } = rig()
+    const bytes = Buffer.from('x')
+    const at = (place: string, path: string) =>
+      record('chat', 'ws-1:a1', {
+        workspaceId: 'ws-1',
+        agentId: 'a1',
+        workspaceRoot: '/home/dev/repo',
+        files: [chatFile(place, path, bytes).file],
+      })
+    const notHere = await adoption.adopt({ migrationId: 'm-1', records: [at('store', 'a1.jsonl')] })
+    assert.match(notHere.conflicts[0]!.reason, /workspace the chat is in is not here/)
+    workspaces.add('ws-1')
+    for (const [place, path] of [
+      ['store', '../a1.jsonl'],
+      ['store', 'a2.jsonl'],
+      ['store', 'a1.tools/../../../x.json'],
+      ['store', 'handoffs/a2-20261113-0930.md'],
+      ['attachments', '../../etc/passwd'],
+      ['attachments', `${ATTACHMENT_FOLDER}/.hidden`],
+      ['plans', 'plan.md'],
+      ['elsewhere', `${ATTACHMENT_FOLDER}/x.png`],
+    ]) {
+      const answer = await adoption.adopt({ migrationId: 'm-1', records: [at(place!, path!)] })
+      assert.equal(answer.held.length, 0, `${place} ${path}`)
+      assert.match(answer.conflicts[0]!.reason, /one of its own names/, `${place} ${path}`)
+    }
+    const windowsRoot = record('chat', 'ws-1:a1', {
+      workspaceId: 'ws-1',
+      agentId: 'a1',
+      workspaceRoot: 'C:\\repo',
+      files: [],
+    })
+    const answer = await adoption.adopt({ migrationId: 'm-1', records: [windowsRoot] })
+    assert.match(answer.conflicts[0]!.reason, /folder as this machine spells it/)
+  })
+})
+
+test('a saved approval is kept once, after the workspace, and one whose id is here stays as it is', async () => {
+  const { adoption, calls } = rig()
+  const rule = { id: 'rule-1', workspaceRoot: '/home/dev/repo', toolKind: 'command' }
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [record('approval-rule', 'rule-1', rule), record('workspace', 'ws-1', WORKSPACE)],
+  })
+  assert.deepEqual(
+    answer.held.map((entry) => `${entry.kind}:${entry.id}`),
+    ['workspace:ws-1', 'approval-rule:rule-1'],
+  )
+  assert.deepEqual(calls, ['workspace ws-1', 'rule rule-1', 'flush'])
+  const repeat = await adoption.adopt({ migrationId: 'm-1', records: [record('approval-rule', 'rule-1', rule)] })
+  assert.deepEqual(repeat.held, [{ kind: 'approval-rule', id: 'rule-1' }])
+  const other = await adoption.adopt({
+    migrationId: 'm-2',
+    records: [record('approval-rule', 'rule-1', { ...rule, toolKind: 'edit' })],
+  })
+  assert.match(other.conflicts[0]!.reason, /another copy/)
 })

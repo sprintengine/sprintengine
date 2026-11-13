@@ -407,6 +407,9 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
           return held.ok ? { ok: true } : { ok: false, reason: held.message }
         },
       },
+      approvalRules: {
+        adopt: (rule) => core.approvalRules.adopt(rule),
+      },
       resumes: {
         adopt: (stored) => core.usageLimitResumes.adopt(stored),
       },

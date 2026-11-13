@@ -83,6 +83,23 @@ export class ConversationApprovalRuleStore {
     }
     return rule
   }
+  /**
+   * Keep a saved rule as another Studio kept it (a desktop handing over the
+   * chats it ran in this machine's folders), held to what a rule saved here
+   * may be. One whose id is here already is left as this store has it.
+   */
+  async adopt(value: unknown): Promise<{ ok: true } | { ok: false; reason: string; exists?: true }> {
+    await this.load()
+    if (!this.userDataDir) return { ok: false, reason: 'Persistent conversation permissions are unavailable.' }
+    const rule = migrateConversationApprovalRule(value)
+    // Kept only as it was given: one this build would narrow comes back as
+    // another object (as `load` reads it), and is not this rule.
+    if (!rule || rule !== value) return { ok: false, reason: 'It is not a rule this Studio keeps.' }
+    if (this.persistent.some((entry) => entry.id === rule.id))
+      return { ok: false, reason: 'A rule with that id is already here.', exists: true }
+    await this.mutate((rules) => (rules.some((entry) => entry.id === rule.id) ? rules : [...rules, rule]))
+    return { ok: true }
+  }
   async revoke(id: string): Promise<void> {
     await this.load()
     await this.mutate((rules) => rules.filter((rule) => rule.id !== id))
