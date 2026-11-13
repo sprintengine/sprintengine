@@ -1009,10 +1009,6 @@
       "sha256": "92cb04063b0099c17b578cb4b8ee61c93959d08bd124778d91b78386b501cf8c"
     },
     {
-      "name": "schedule.list",
-      "sha256": "0878d048bf14aa87f6104246c0a755806478b15bb979a76980f9be39e0575797"
-    },
-    {
       "name": "artifacts.list",
       "sha256": "922872505ed30d99021e96c81de72785e40b053ee19ac255b83fb041361d41e1"
     },

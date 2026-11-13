@@ -76,6 +76,8 @@ function legacyLocalOnly(toolName: string): boolean {
     toolName.startsWith('worktree.') ||
     LEGACY_CHAT_TO_CHAT_TOOLS.has(toolName) ||
     toolName.startsWith('visual.') ||
+    // Since `schedules.*` on the protocol: a device's way to the schedules.
+    toolName.startsWith('schedule.') ||
     toolName.startsWith('terminal.')
   )
 }

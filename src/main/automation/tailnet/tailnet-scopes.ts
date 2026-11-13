@@ -228,6 +228,9 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
   if (toolName.startsWith('visual.')) {
     return `"${toolName}" draws an agent's visual in a hidden window on this machine, for a reply it is writing here. Run it from an agent on that machine.`
   }
+  if (toolName.startsWith('schedule.')) {
+    return `"${toolName}" is an agent's way to this machine's scheduled agents. A paired device lists and changes them through this machine's Studio (\`schedules.*\`) instead.`
+  }
   if (toolName.startsWith('terminal.')) {
     return `"${toolName}" reads the terminals on this machine, and terminals are not served over the tailnet. A paired device follows this machine's chats instead; run it from an agent on that machine.`
   }
