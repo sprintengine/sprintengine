@@ -89,3 +89,19 @@ test('a folder that is not there, or is on an SSH machine, is not watched', asyn
   const stop = await filesApi.watchPath('/Users/dev/app', () => undefined)
   await stop()
 })
+
+test('back from a dropped connection, a watcher is told to read everything again', async () => {
+  const win = { api: { pathExists: vi.fn(async () => true) } as Record<string, unknown> }
+  host.window = win
+  const loopback = installStudioLoopback(win)
+  const heard: Array<{ overflow?: boolean; paths?: string[] }> = []
+  const stop = await filesApi.watchPath('/Users/dev/app', (event) => heard.push(event))
+  expect(heard).toEqual([])
+  // Nothing is replayed of what changed while it was down: everything is read again.
+  loopback.drop()
+  await vi.waitFor(() => expect(heard).toEqual([expect.objectContaining({ overflow: true, paths: [] })]))
+  await stop()
+  loopback.drop()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  expect(heard).toHaveLength(1)
+})

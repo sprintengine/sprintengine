@@ -14,7 +14,7 @@ import {
 } from '../../../../packages/studio-protocol/src/public'
 import { isMachinePath } from '../../../shared/machine-paths'
 import { followWindowStudioPush } from './windowStudioPush'
-import { windowStudioClient } from './windowStudioClient'
+import { watchWindowStudio, windowStudioClient, windowStudioState } from './windowStudioClient'
 
 // The window's way to the files on its Studio's machine: the Studio protocol's
 // `files.*` methods by path and the `files.watchPath` stream, over the
@@ -168,7 +168,25 @@ export const filesApi: FilesApi = {
       capability: STUDIO_FILE_SYSTEM_CAPABILITY,
       onPayload: cb,
     })
-    return async () => stop()
+    // The stream replays nothing: what changed while the window's connection
+    // was down is never heard. Back up, the watcher is told to read everything
+    // again (`overflow`), as it is for a burst too large to list, so an editor
+    // or a tree is not left showing a file as it was.
+    const api = typeof window === 'undefined' ? undefined : window.api
+    let down = false
+    const unwatch = api
+      ? watchWindowStudio(api, () => {
+          if (windowStudioState(api) !== 'open') down = true
+          else if (down) {
+            down = false
+            cb({ eventType: 'rename', path: null, paths: [], overflow: true })
+          }
+        })
+      : () => undefined
+    return async () => {
+      unwatch()
+      stop()
+    }
   },
   defaultWorkspaceParentDir: async () => (await call('files.defaultWorkspaceParent', {})).path,
 }
