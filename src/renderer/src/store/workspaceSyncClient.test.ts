@@ -275,8 +275,8 @@ test('workspaceSyncClient', async () => {
     return { id, agents: {} } as unknown as Workspace
   }
 
-  // A bus that mirrors the real main IPC: dispatch goes through one shared
-  // service; accepted events broadcast to every window except the source sender.
+  // A bus that mirrors the Studio's registry methods: dispatch goes through one shared
+  // service; accepted events reach every window, the source's included.
   function createBus(snapshot: WorkspaceSyncSnapshot) {
     // The bus reads and writes through the registry, so a seeded test bus is a
     // seeded registry — `initialSnapshot` went with the non-authoritative mirror.
@@ -300,12 +300,10 @@ test('workspaceSyncClient', async () => {
         workspaceSyncDispatch: (command: WorkspaceSyncCommand) => {
           dispatchCount += 1
           const result = service.dispatch({ command, sourceWindowId: windowId })
-          if (result.ok) {
-            for (const [targetWindowId, set] of listeners) {
-              if (targetWindowId === windowId) continue
-              for (const cb of set) cb(result.event)
-            }
-          }
+          // As the protocol's `workspaceSync.events` does: every window hears
+          // it, the one that made it included, and here before its own answer
+          // (the harder order), which it then takes as already applied.
+          if (result.ok) for (const set of listeners.values()) for (const cb of set) cb(result.event)
           return Promise.resolve(result)
         },
         workspaceSyncGetSnapshot: () => Promise.resolve(service.getSnapshot()),

@@ -19,6 +19,7 @@ import { createStudioFileSystem, type StudioFileSystemShell } from '../files/stu
 import { knownFolders, workspaceFolders } from '../files/known-folders'
 import { createStudioGit } from '../git/studio-git'
 import { createStudioWorktrees } from '../worktrees/studio-worktrees'
+import { createStudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
 import { isMachinePath } from '../../shared/machine-paths'
@@ -158,6 +159,9 @@ export function createStudioRpc(
     // The worktrees its agents run in, from the pool this core keeps, and
     // deleting settled chats, whose worktrees go back to it.
     worktrees: createStudioWorktrees(core.worktrees),
+    // The registry its desktop's windows mirror and change, with their
+    // backup and the folders of chats without a project.
+    workspaceSync: createStudioWorkspaceSync(core),
     // What a desktop's Studio is extended with: its marketplace, the CLI
     // catalogue, the extension scaffold and the hosted feeds.
     ...(core.extensions ? { extensions: core.extensions } : {}),

@@ -66,6 +66,8 @@ import type { StudioGit } from '../git/studio-git-types'
 import { createStudioGitHandlers } from './studio-git'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 import { createStudioWorktreesHandlers } from './studio-worktrees'
+import type { StudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
+import { createStudioWorkspaceSyncHandlers } from './studio-workspace-sync'
 import type { StudioExtensions } from '../extensions/extensions-domain'
 import { createStudioExtensionsHandlers } from './studio-extensions'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
@@ -176,6 +178,8 @@ export type StudioRpcRouter = {
   readonly git: StudioGit | null
   /** The worktree pool's streams, where this Studio serves its worktrees. */
   readonly worktrees: StudioWorktrees | null
+  /** The workspace registry's change stream, where this Studio serves its windows' registry. */
+  readonly workspaceSync: StudioWorkspaceSync | null
   /** The RPC is stopping: timers stop and staged uploads go. */
   close(): void
 }
@@ -201,6 +205,8 @@ export type StudioRpcRouterOptions = {
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats; without it, `worktrees.*` and `settledChats.*` are answered `unavailable`. */
   worktrees?: StudioWorktrees
+  /** The desktop's own windows' workspace registry; without it, `workspaceSync.*` and its neighbours are answered `unavailable`. */
+  workspaceSync?: StudioWorkspaceSync
   /** The marketplace, the CLI catalogue, the scaffold and the feeds; without it, `extensions` is answered `unavailable`. */
   extensions?: StudioExtensions
   /** Where the Studio publishes its agents' pages; without it, `artifacts.*` is answered `unavailable`. */
@@ -2008,6 +2014,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
     ...worktreesHandlers,
 
+    // ── The desktop's own windows' workspace registry ──────────────────────
+
+    ...createStudioWorkspaceSyncHandlers({
+      ...(options.workspaceSync ? { sync: options.workspaceSync } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+      mayName: (folder, asking) => mayName(folder, asking),
+    }),
+
     // ── What the Studio is extended with ───────────────────────────────────
 
     ...extensionsRouting,
@@ -2258,6 +2272,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     skillSourceUpdatesFor: (check, asking) => skillSourceUpdatesShown(check, (folder) => mayName(folder, asking)),
     git: options.git ?? null,
     worktrees: options.worktrees ?? null,
+    workspaceSync: options.workspaceSync ?? null,
     close: () => {
       if (exportSweep) clearTimeout(exportSweep)
       exportSweep = null

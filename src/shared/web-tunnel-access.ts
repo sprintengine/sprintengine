@@ -52,7 +52,6 @@ const desktopOnly = (reason: string): StudioAccess => ({ localOnly: reason })
 
 const ACCESS_ADMIN =
   'Who may reach this machine (paired apps, other machines, the tailnet) is administered in the desktop app.'
-const WINDOW_STATE = 'Only a desktop window can say it: a tab would report defaults and blanks.'
 const BEYOND = 'It acts beyond this server, on another machine or account.'
 
 export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunnelChannelName]: StudioAccess } = {
@@ -104,17 +103,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'tailnet:share-status': desktopOnly(ACCESS_ADMIN),
   'tailnet:unshare-port': desktopOnly(ACCESS_ADMIN),
   'tailnet:update-device-scopes': desktopOnly(ACCESS_ADMIN),
-  'workspace-backup:read': owner('workspace:read'),
-  'workspace-backup:write': owner('workspace:operate'),
-  'workspace-registry:hydrate': owner('workspace:operate'),
-  'workspace-registry:needs-hydration': owner('workspace:read'),
-  'workspace-sync:dispatch': owner('workspace:operate'),
-  'workspace-sync:get-events-after': owner('workspace:read'),
-  'workspace-sync:get-snapshot': owner('workspace:read'),
-  'workspace-sync:lifecycle': owner('workspace:operate'),
-  'workspace-sync:mark-unread': owner('workspace:operate'),
-  'workspace-sync:set-module-run-states': desktopOnly(WINDOW_STATE),
-  'workspace-sync:set-settled-chats-settings': desktopOnly(WINDOW_STATE),
   // The front door's own channels.
   [WEB_BROWSE_FOLDERS_CHANNEL]: owner('filesystem:read'),
   [WEB_PREVIEWS_LIST_CHANNEL]: owner('workspace:read'),

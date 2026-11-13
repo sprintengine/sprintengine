@@ -139,6 +139,12 @@ import {
 } from './file-system.js'
 import { STUDIO_GIT_METHODS, STUDIO_GIT_TOPICS, type StudioGitMethodMap, type StudioGitTopicMap } from './git.js'
 import {
+  STUDIO_WORKSPACE_SYNC_METHODS,
+  STUDIO_WORKSPACE_SYNC_TOPICS,
+  type StudioWorkspaceSyncMethodMap,
+  type StudioWorkspaceSyncTopicMap,
+} from './workspace-sync.js'
+import {
   STUDIO_WORKTREES_METHODS,
   STUDIO_WORKTREES_TOPICS,
   type StudioWorktreesMethodMap,
@@ -296,6 +302,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioPullRequestCreateMethodMap &
   StudioGitMethodMap &
   StudioWorktreesMethodMap &
+  StudioWorkspaceSyncMethodMap &
   StudioChatLifecycleMethodMap &
   StudioCanvasMethodMap &
   StudioExtensionsMethodMap &
@@ -742,6 +749,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_PULL_REQUEST_CREATE_METHODS,
   ...STUDIO_GIT_METHODS,
   ...STUDIO_WORKTREES_METHODS,
+  ...STUDIO_WORKSPACE_SYNC_METHODS,
   ...STUDIO_CHAT_LIFECYCLE_METHODS,
   ...STUDIO_CANVAS_METHODS,
   ...STUDIO_EXTENSIONS_METHODS,
@@ -795,6 +803,7 @@ export type StudioTopicMap = {
   StudioBacklogTopicMap &
   StudioGitTopicMap &
   StudioWorktreesTopicMap &
+  StudioWorkspaceSyncTopicMap &
   StudioCanvasTopicMap &
   StudioExtensionsTopicMap &
   StudioArtifactsTopicMap &
@@ -843,6 +852,7 @@ export const STUDIO_TOPICS: StudioTopicTable<StudioTopicMap> = {
   ...STUDIO_FILE_SYSTEM_TOPICS,
   ...STUDIO_GIT_TOPICS,
   ...STUDIO_WORKTREES_TOPICS,
+  ...STUDIO_WORKSPACE_SYNC_TOPICS,
   ...STUDIO_CANVAS_TOPICS,
   ...STUDIO_EXTENSIONS_TOPICS,
   ...STUDIO_ARTIFACTS_TOPICS,

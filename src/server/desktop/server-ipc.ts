@@ -6,12 +6,9 @@ import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
 import { createConversationService } from '../../main/conversation-service'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
-import { registerWorkspaceBackupIpc } from '../../main/ipc/workspace-backup-ipc'
-import { registerWorkspaceSyncIpc } from '../../main/ipc/workspace-sync-ipc'
 import type { AgentLaunchSettingsStore } from '../../main/launch-settings-store'
 import { createStudioChatBackend } from '../../main/studio-rpc/studio-chat-backend'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
-import type { WorkspaceBackupService } from '../../main/workspace-backup'
 import type { StudioCore } from '../core/studio-core'
 import type { StudioGateway } from '../core/studio-gateway'
 import { knownFolders } from '../files/known-folders'
@@ -23,11 +20,12 @@ import { knownFolders } from '../files/known-folders'
 // the preload routes their channels there (SERVER_IPC_CHANNELS, which the
 // completeness test holds to this list).
 //
-// What is here: the workspace bus and registry hydration, launch settings and
-// machines, the tailnet and the mesh, workspace backups, model discovery, the composer's command lists,
-// the GitHub token, the chats, with the copy of the model-written titles setting the
-// server titles them by. The worktree pool and settled chats are the Studio
-// protocol's (`worktrees.*`, `settledChats.*`).
+// What is here: launch settings and machines, the tailnet and the mesh, model
+// discovery, the composer's command lists, the GitHub token, the chats, with
+// the copy of the model-written titles setting the server titles them by. The
+// worktree pool and settled chats are the Studio protocol's (`worktrees.*`,
+// `settledChats.*`), and so is the workspace registry with its hydration and
+// backup (`workspaceSync.*`).
 // What is not: anything that acts on a window, a terminal or the shell's own
 // caches (the rest of the git panel, the file explorer, skills and the marketplace,
 // modules' enablement and trust), which stays with the shell until phase 10.
@@ -38,21 +36,16 @@ type IpcRegistryLike = Pick<IpcMain, 'handle' | 'on' | 'removeHandler' | 'remove
 export type ServerDomainIpcDeps = {
   core: Pick<
     StudioCore,
-    | 'workspaceSyncService'
     | 'workspaceRegistry'
     | 'agentLaunchSettings'
     | 'hosts'
     | 'conversations'
-    | 'conversationLifecycle'
-    | 'settledChatsSettings'
-    | 'settlement'
     | 'platform'
     | 'textGenerationSettings'
     | 'conversationCommands'
   > & { hosts: HostRegistry; agentLaunchSettings: AgentLaunchSettingsStore }
   gateway: StudioGateway
   studioRpc: StudioRpcService
-  workspaceBackup: WorkspaceBackupService
   terminalHandoff: ReturnType<typeof createConversationTerminalHandoff>['handoff']
 }
 
@@ -64,16 +57,8 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   const ipc = registry as IpcMain
   const { core } = deps
   const dataDir = () => core.platform.paths.dataDir()
-  registerWorkspaceSyncIpc(ipc, core.workspaceSyncService, {
-    registry: core.workspaceRegistry,
-    markUnread: (workspaceId) => core.conversationLifecycle.markUnread(workspaceId, 'ui'),
-    lifecycle: (request) => core.conversationLifecycle.fromWindow(request),
-    setSettledChatsSettings: (settings) => core.settledChatsSettings.set(settings),
-    setModuleRunStates: (states) => core.settlement.setModuleRunStates(states),
-  })
   registerAutomationIpc(ipc, deps.gateway)
   registerMeshIpc(ipc, deps.gateway)
-  registerWorkspaceBackupIpc(ipc, deps.workspaceBackup)
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.
   const conversationCommands = core.conversationCommands()
   registerHostsIpc(ipc, { hosts: core.hosts })

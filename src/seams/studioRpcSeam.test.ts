@@ -21,6 +21,7 @@ import {
   STUDIO_FILE_SYSTEM_METHODS,
   STUDIO_GIT_METHODS,
   STUDIO_WORKTREES_METHODS,
+  STUDIO_WORKSPACE_SYNC_METHODS,
   STUDIO_CHAT_LIFECYCLE_METHODS,
   STUDIO_CANVAS_METHODS,
   STUDIO_EXTENSIONS_METHODS,
@@ -41,6 +42,7 @@ import {
   type StudioFileSystemMethod,
   type StudioGitMethod,
   type StudioWorktreesMethod,
+  type StudioWorkspaceSyncMethod,
   type StudioExtensionsMethodMap,
   type StudioArtifactsMethodMap,
   type StudioAccessMethodMap,
@@ -510,6 +512,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     >),
     // And the worktrees its agents run in, with settled chats, which its
     // windows' Settings ▸ Worktrees and Delete drive, called by name.
+    // And the desktop's own windows' workspace registry, which they drive, called by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_WORKSPACE_SYNC_METHODS).map((method) => [method, 'request'])) as Record<
+      StudioWorkspaceSyncMethod,
+      string
+    >),
     ...(Object.fromEntries(Object.keys(STUDIO_WORKTREES_METHODS).map((method) => [method, 'request'])) as Record<
       StudioWorktreesMethod,
       string

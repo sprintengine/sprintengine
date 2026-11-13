@@ -147,6 +147,7 @@ import { windowHasStudio } from '../studio/extensions'
 import { configureTerminals, listTerminals } from '../studio/terminals'
 import { watchWindowStudio, windowStudioState } from '../studio/windowStudioClient'
 import { agentSettingsApi } from '../studio/agentSettings'
+import { workspaceSyncApi, workspaceSyncReachable } from '../studio/workspaceSync'
 
 migrateLegacyWorkspaceStorageKey()
 
@@ -530,8 +531,8 @@ function readAuxWindowKind(): string | null {
 
 function scheduleBackupWrite(): void {
   if (typeof window === 'undefined' || PERSISTS_NOTHING) return
-  const api = window.api
-  if (!api || typeof api.workspaceBackupWrite !== 'function') return
+  if (!workspaceSyncReachable('workspaceBackupWrite')) return
+  const api = workspaceSyncApi
 
   if (backupWriteTimer) clearTimeout(backupWriteTimer)
   backupWriteTimer = setTimeout(() => {
@@ -1166,13 +1167,13 @@ async function attemptBackupRecovery(): Promise<void> {
     emitHydrationDiagnostic()
     return
   }
-  if (typeof window.api?.workspaceBackupRead !== 'function') {
+  if (!workspaceSyncReachable('workspaceBackupRead')) {
     emitHydrationDiagnostic()
     return
   }
 
   try {
-    const result = await window.api.workspaceBackupRead()
+    const result = await workspaceSyncApi.workspaceBackupRead()
     if (!result.ok) {
       if (result.reason !== 'missing') {
         hydrationContext.recoveryError = `${result.reason}${result.message ? `:${result.message}` : ''}`
@@ -1571,13 +1572,8 @@ syncTerminalPolicyToStudio()
 // that carries no explicit "the user removed everything" record. The legacy key
 // is left untouched either way, so a refusal costs one boot and retries.
 async function offerRegistryHydration(): Promise<void> {
-  const api = window.api as
-    | {
-        workspaceRegistryNeedsHydration?: () => Promise<boolean>
-        workspaceRegistryHydrate?: (payload: unknown) => Promise<unknown>
-      }
-    | undefined
-  if (!api?.workspaceRegistryNeedsHydration || !api.workspaceRegistryHydrate) return
+  if (!workspaceSyncReachable('workspaceRegistryNeedsHydration')) return
+  const api = workspaceSyncApi
   let needsHydration = false
   try {
     needsHydration = await api.workspaceRegistryNeedsHydration()
@@ -1760,7 +1756,7 @@ async function repairRegistryAgentNames(): Promise<void> {
 let resolveWorkspaceRegistryReady: () => void = () => undefined
 export const workspaceRegistryReady = new Promise<void>((resolve) => {
   resolveWorkspaceRegistryReady = resolve
-  if (typeof window === 'undefined' || typeof window.api?.workspaceSyncGetSnapshot !== 'function') resolve()
+  if (typeof window === 'undefined' || !workspaceSyncReachable('workspaceSyncGetSnapshot')) resolve()
 })
 
 // Wire the main-mediated workspace sync bus. The client asks main for every

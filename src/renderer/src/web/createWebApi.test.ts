@@ -47,9 +47,9 @@ test('every member the preload builds is present, with the four computed values'
 
 test('a member whose channel the server owns goes over the tab’s socket', async () => {
   const api = createWebApi()
-  void api.workspaceSyncGetSnapshot()
+  void api.hostsList()
   await Promise.resolve()
-  expect(posted.at(-1)).toMatchObject({ t: 'ipc.invoke', channel: 'workspace-sync:get-snapshot' })
+  expect(posted.at(-1)).toMatchObject({ t: 'ipc.invoke', channel: 'hosts:list' })
 })
 
 test('a member a browser cannot do is a rejected promise, never a throw or undefined, and is reported once', async () => {

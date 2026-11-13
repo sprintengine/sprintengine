@@ -43,6 +43,7 @@ import type { StudioFileSystem } from '../../server/files/studio-file-system'
 import type { StudioMachineCall } from '../../server/rpc/studio-file-system'
 import type { StudioGit } from '../../server/git/studio-git-types'
 import type { StudioWorktrees } from '../../server/worktrees/studio-worktrees-types'
+import type { StudioWorkspaceSync } from '../../server/workspaces/studio-workspace-sync'
 import type { StudioExtensions } from '../../server/extensions/extensions-domain'
 import type { StudioArtifacts } from '../../server/artifacts/artifacts-domain'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
@@ -194,6 +195,8 @@ export type StudioRpcServiceOptions = {
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats (`worktrees`). */
   worktrees?: StudioWorktrees
+  /** The desktop's own windows' workspace registry (`workspace-sync`). */
+  workspaceSync?: StudioWorkspaceSync
   /** The marketplace, the CLI catalogue, the scaffold and the feeds (`extensions`). */
   extensions?: StudioExtensions
   /** Settings ▸ Artifacts and its set-up question (`artifacts`). */
@@ -478,6 +481,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.machine ? { machine: options.machine } : {}),
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktrees ? { worktrees: options.worktrees } : {}),
+      ...(options.workspaceSync ? { workspaceSync: options.workspaceSync } : {}),
       ...(options.extensions ? { extensions: options.extensions } : {}),
       ...(options.artifacts ? { artifacts: options.artifacts } : {}),
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),

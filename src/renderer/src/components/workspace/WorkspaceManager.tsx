@@ -325,6 +325,7 @@ import { agentSkillsApi } from '../../studio/agentSkills'
 import { gitApi } from '../../studio/git'
 import { worktreesApi } from '../../studio/worktrees'
 import { extensionsApi } from '../../studio/extensions'
+import { workspaceSyncApi } from '../../studio/workspaceSync'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -3684,7 +3685,7 @@ export default function WorkspaceManager() {
   // without sending makes nothing.
   const projectlessChatsRoot = async (): Promise<string | null> => {
     try {
-      return await window.api.projectlessChatsRoot()
+      return await workspaceSyncApi.projectlessChatsRoot()
     } catch (caught) {
       showToast({
         tone: 'error',
@@ -3862,7 +3863,7 @@ export default function WorkspaceManager() {
         takeReadyWorktree: (folder, name) => takeReadyNewChatWorktree(folder, name, newChatHostRef.current),
         makeProjectlessFolder: async (prompt) => {
           try {
-            return await window.api.createProjectlessChatFolder(prompt)
+            return await workspaceSyncApi.createProjectlessChatFolder(prompt)
           } catch (caught) {
             showToast({
               tone: 'error',

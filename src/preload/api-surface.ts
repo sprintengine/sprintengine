@@ -26,8 +26,6 @@ import { browserApi } from './api/browser'
 import { canvasApi } from './api/canvas'
 import { editorRevealApi } from './api/editor-reveal'
 import { toursApi } from './api/tours'
-import { workspaceBackupApi } from './api/workspace-backup'
-import { workspaceSyncApi } from './api/workspace-sync'
 import { previewsApi } from './api/previews'
 import { webDevicesApi } from './api/web-devices'
 
@@ -74,8 +72,6 @@ export const apiModules = {
   ...pullRequestApi,
   ...updateApi,
   ...appMenuApi,
-  ...workspaceBackupApi,
-  ...workspaceSyncApi,
   ...previewsApi,
   ...webDevicesApi,
 } satisfies Omit<ElectronApi, ComputedApiMembers>

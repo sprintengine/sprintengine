@@ -29,7 +29,6 @@ import { powerActivity } from '../../main/power-activity'
 import { readStudioEnvironmentId } from '../environment/environment-id'
 import { createTailnetNotifier } from '../../main/tailnet-notifications'
 import { agentBrowserToolGate, agentBrowserToolsEnabledOnDisk } from '../../main/agent-browser-tools-store'
-import { createWorkspaceBackupService } from '../../main/workspace-backup'
 import { conversationTurnInProgress } from '../../shared/conversation/phase'
 import { isWslHostId } from '../../shared/execution-host'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../../shared/product-identity'
@@ -505,16 +504,10 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     },
     githubTokens: githubTokenStore,
   })
-  const workspaceBackup = createWorkspaceBackupService({
-    resolveUserDataDir: () => envelope.dataDir,
-    readRegistry: () => workspaceRegistry.getState(),
-    minRegistryIntervalMs: 10_000,
-  })
   const domains = registerServerDomainIpc(tunnel.registry as unknown as Parameters<typeof registerServerDomainIpc>[0], {
     core,
     gateway,
     studioRpc,
-    workspaceBackup,
     // Resume in terminal: the core's, launched here.
     terminalHandoff: (input) =>
       terminals ? terminals.handoff.handoff(input) : Promise.resolve({ ok: false, message: TERMINALS_UNAVAILABLE }),

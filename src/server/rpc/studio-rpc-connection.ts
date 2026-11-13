@@ -1464,6 +1464,8 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'worktrees.poolChanged', options.router.worktrees?.onPoolChanged ?? null),
     'worktrees.installChanged': (id) =>
       subscribeFeed(id, 'worktrees.installChanged', options.router.worktrees?.onInstallChanged ?? null),
+    'workspaceSync.events': (id) =>
+      subscribeFeed(id, 'workspaceSync.events', options.router.workspaceSync?.onEvent ?? null),
     'pullRequests.changed': subscribePullRequests,
     'localServers.changed': subscribeLocalServers,
     'module.events': subscribeModuleEvents,

@@ -156,7 +156,6 @@ import { channelForVersion, createUpdateChannelStore } from './update-channel-st
 import { createUpdateInstallNoteStore } from './update-install-note'
 import { sendSplashProgress, showUpdateProgressWindow } from './splash-window'
 import { GitHubTokenStore } from './github-token-store'
-import { createWorkspaceBackupService } from './workspace-backup'
 import { writeDiagnosticLog } from './diagnostics-service'
 import { getPluginById, getPluginRegistry } from './plugin-registry-instance'
 import { createStudioPluginService } from './studio-plugin-service'
@@ -1209,17 +1208,6 @@ export function createAppServices(
     ? (createRemoteGitHubTokenStore(server.rpc) as GitHubTokenStore)
     : new GitHubTokenStore()
 
-  // The backups are the server's out of process (its own copy writes them).
-  const workspaceBackupService = server
-    ? null
-    : createWorkspaceBackupService({
-        resolveUserDataDir: () => app.getPath('userData'),
-        // Read at write time, from the core's registry.
-        readRegistry: () => workspaceRegistry.getState(),
-        // At most one registry serialization every ten seconds; the newest request
-        // inside the interval is written when it ends.
-        minRegistryIntervalMs: 10_000,
-      })
   // The skill sources, their scans and installs are the core's
   // (studio-agent-skills.ts): in process this one's; out of process the
   // server's, whose `plugin` tools and hourly check read them there.
@@ -2262,7 +2250,6 @@ export function createAppServices(
     broadcastGitChangelistsChanged,
     updateService,
     withIpcDiagnostics,
-    workspaceBackupService,
     workspaceSyncService,
     workspaceRegistry,
   }

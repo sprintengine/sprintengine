@@ -1,4 +1,3 @@
-import type { ElectronApi } from '../../../shared/electron-api'
 import type {
   WorkspaceLifecycleRequest,
   WorkspaceLifecycleResult,
@@ -13,6 +12,7 @@ import type {
   WorkspaceSyncSnapshot,
 } from '../../../shared/workspace-sync'
 import type { AgentCli, AgentId, AgentState, Workspace, WorkspaceId, WorkspaceWindowId } from '../types/workspace'
+import { workspaceSyncApi, workspaceSyncReachable, type WorkspaceSyncApi } from '../studio/workspaceSync'
 
 // Defined locally (matching WorkspaceManager/workspacesSlice) so this adapter
 // does not import a store slice, keeping the module dependency graph acyclic.
@@ -31,13 +31,13 @@ const PRIMARY_WORKSPACE_WINDOW_ID: WorkspaceWindowId = 'primary'
 // last-write-wins edit, or a workspace another window removed) and carries the
 // snapshot the store reconciles against, so a value main refused is never kept.
 
-// The narrow slice of window.api this client depends on, so tests can inject a
+// The narrow slice of the window's registry calls this client depends on, so tests can inject a
 // fake transport without constructing the full ElectronApi surface.
 export type WorkspaceSyncClientApi = Pick<
-  ElectronApi,
+  WorkspaceSyncApi,
   'workspaceSyncDispatch' | 'workspaceSyncGetSnapshot' | 'workspaceSyncGetEventsAfter' | 'onWorkspaceSyncEvent'
 > &
-  Partial<Pick<ElectronApi, 'workspaceLifecycle'>>
+  Partial<Pick<WorkspaceSyncApi, 'workspaceLifecycle'>>
 
 // Local application of an active_changed event. `isCurrentWindow` is true only
 // for the renderer that owns `windowId`; remote windows update the targeted
@@ -741,19 +741,11 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
   }
 }
 
+// The registry over the window's own connection to its Studio
+// (`studio/workspaceSync.ts`); none where the page reaches no Studio.
 function defaultGetApi(): WorkspaceSyncClientApi | null {
   if (typeof window === 'undefined') return null
-  const api = window.api
-  if (
-    !api ||
-    typeof api.workspaceSyncDispatch !== 'function' ||
-    typeof api.workspaceSyncGetSnapshot !== 'function' ||
-    typeof api.workspaceSyncGetEventsAfter !== 'function' ||
-    typeof api.onWorkspaceSyncEvent !== 'function'
-  ) {
-    return null
-  }
-  return api
+  return workspaceSyncReachable('workspaceSyncDispatch') ? workspaceSyncApi : null
 }
 
 function defaultGetWindowId(): WorkspaceWindowId {

@@ -15,6 +15,7 @@ import {
   STUDIO_FILE_SYSTEM_CAPABILITY,
   STUDIO_GIT_CAPABILITY,
   STUDIO_WORKTREES_CAPABILITY,
+  STUDIO_WORKSPACE_SYNC_CAPABILITY,
   STUDIO_EXTENSIONS_CAPABILITY,
   STUDIO_ARTIFACTS_CAPABILITY,
   STUDIO_ACCESS_CAPABILITY,
@@ -63,6 +64,7 @@ import type { StudioMachineCall } from './studio-file-system'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { StudioGit } from '../git/studio-git-types'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
+import type { StudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
@@ -182,6 +184,8 @@ export type StudioRpcServerOptions = {
   git?: StudioGit
   /** The worktrees its agents run in, and settled chats. Advertised as `worktrees` only when given; every Studio's core gives it. */
   worktrees?: StudioWorktrees
+  /** The desktop's own windows' workspace registry. Advertised as `workspace-sync` only when given; every Studio's core gives it. */
+  workspaceSync?: StudioWorkspaceSync
   /** The marketplace, the CLI catalogue, the scaffold and the feeds. Advertised as `extensions` only when given. */
   extensions?: StudioExtensions
   /** Where the Studio publishes its agents' pages. Advertised as `artifacts` only when given. */
@@ -281,6 +285,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
           options.fileSystem !== undefined) &&
         (capability !== STUDIO_GIT_CAPABILITY || options.git !== undefined) &&
         (capability !== STUDIO_WORKTREES_CAPABILITY || options.worktrees !== undefined) &&
+        (capability !== STUDIO_WORKSPACE_SYNC_CAPABILITY || options.workspaceSync !== undefined) &&
         ((capability !== STUDIO_PULL_REQUESTS_CAPABILITY &&
           capability !== STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY &&
           capability !== STUDIO_PULL_REQUEST_LINK_CAPABILITY) ||
@@ -333,6 +338,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.machine ? { machine: options.machine } : {}),
     ...(options.git ? { git: options.git } : {}),
     ...(options.worktrees ? { worktrees: options.worktrees } : {}),
+    ...(options.workspaceSync ? { workspaceSync: options.workspaceSync } : {}),
     ...(options.extensions ? { extensions: options.extensions } : {}),
     ...(options.artifacts ? { artifacts: options.artifacts } : {}),
     ...(options.access ? { access: options.access } : {}),

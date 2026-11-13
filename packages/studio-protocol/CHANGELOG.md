@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added (the desktop's own windows' workspace registry)
+
+- **`workspaceSync.snapshot`, `.eventsAfter`, `.dispatch`, `.lifecycle`,
+  `.setSettledChatsSettings`, `.setModuleRunStates`,
+  `workspaceRegistry.needsHydration`, `.hydrate`, `workspaceBackup.read`,
+  `.write`, `projectlessChats.root`, `.createFolder`** and the
+  **`workspaceSync.events`** stream (`workspace-sync.ts`, capability
+  `workspace-sync`): the registry the desktop's windows mirror and change,
+  with its hydration, backup and the folders of chats without a project. All
+  of them are an owner's (`STUDIO_WORKSPACE_SYNC_OWNER`); the writes carry a
+  `commandId`. The registry's records cross as records.
+
 ### Added (who may reach a Studio's agents from its machine)
 
 - **`gateway.status`, `mcpHttp.status`, `.create`, `.revoke`, `localApps.status`,

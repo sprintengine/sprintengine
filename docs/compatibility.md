@@ -1330,6 +1330,23 @@ under `conversation:operate`) reaches what a paired device's Delete on a chat
 reaches. A folder on an SSH machine is refused in words. Additive: an older
 Studio leaves `worktrees` out. The desktop's windows reach the pool and
 settled-chat deletion only this way: their window IPC is gone.
+`workspace-sync` (2026-11-13) is the desktop's own windows' workspace
+registry: `workspaceSync.snapshot`, `.eventsAfter` and the
+`workspaceSync.events` stream (every recorded change, sequenced; the window
+that made it hears it too and takes it once by its sequence), `.dispatch`
+(one change from a named window), `.lifecycle` (Settle, Un-settle, Snooze or
+Wake on the reading the window made it on), `.setSettledChatsSettings` and
+`.setModuleRunStates` (what only a desktop window knows; a browser's is
+answered and not applied), the one-time hydration (`workspaceRegistry.*`),
+the window's backup of its own copy (`workspaceBackup.*`) and the folders of
+chats without a project (`projectlessChats.*`). Each is an owner's, with the
+reason in the table; a browser on the tailnet makes a workspace only inside
+the folders Studio knows. The registry's records cross as the desktop defines
+them (`src/shared/workspace-sync.ts`), checked by main's registry. Mark unread
+from a window is the chat's `conversation.markUnread`. The window's 14
+`workspace-sync:*`, `workspace-registry:*`, `workspace-backup:*` and
+`chats:projectless-*` IPC channels are gone; a desktop's window and its own
+Studio are one build.
 `extensions` (2026-11-13) is what a desktop's Studio is extended with beyond
 its modules: the marketplace's registry and each installed entry against it
 (`marketplace.read`, `.updateStates`), the agent CLIs' plugin catalogue
