@@ -21,62 +21,9 @@ test('every change carries a command id; every read and stream takes nothing', (
     if (spec.mutation)
       assert.ok(refused(parseStudioMethodParams(method as never, {})), `${method} refuses no commandId`)
   }
-  assert.deepEqual(ok(parseStudioMethodParams('scheduledMessages.get', { extra: 1 })), {})
+  assert.deepEqual(ok(parseStudioMethodParams('usageLimitResumes.get', { extra: 1 })), {})
   for (const topic of Object.keys(STUDIO_CHAT_STORES_TOPICS))
     assert.deepEqual(ok(parseStudioTopicParams(topic as never, { extra: 1 })), {})
-})
-
-test('a scheduled message is one of four changes, its words trimmed and bounded', () => {
-  assert.deepEqual(
-    ok(
-      parseStudioMethodParams('scheduledMessages.update', {
-        commandId: 'c1',
-        update: {
-          kind: 'schedule',
-          workspaceId: 'w',
-          agentId: 'a',
-          text: '  later  ',
-          sendAt: 10,
-          untilLimitReset: 'claude',
-          extra: 1,
-        },
-      }),
-    ),
-    {
-      commandId: 'c1',
-      update: {
-        kind: 'schedule',
-        workspaceId: 'w',
-        agentId: 'a',
-        text: 'later',
-        sendAt: 10,
-        untilLimitReset: 'claude',
-      },
-    },
-  )
-  assert.deepEqual(
-    ok(
-      parseStudioMethodParams('scheduledMessages.update', {
-        commandId: 'c',
-        update: { kind: 'reschedule', id: 'm', sendAt: 5 },
-      }),
-    ),
-    { commandId: 'c', update: { kind: 'reschedule', id: 'm', sendAt: 5 } },
-  )
-  assert.ok(
-    refused(
-      parseStudioMethodParams('scheduledMessages.update', {
-        commandId: 'c',
-        update: { kind: 'schedule', workspaceId: 'w', agentId: 'a', text: '   ', sendAt: 10 },
-      }),
-    ),
-    'no words',
-  )
-  assert.ok(
-    refused(
-      parseStudioMethodParams('scheduledMessages.update', { commandId: 'c', update: { kind: 'unknown', id: 'm' } }),
-    ),
-  )
 })
 
 test('a resume is one chat’s action; the setting is a method of its own', () => {
@@ -139,8 +86,8 @@ test('a usage report names a span and how to ask the paired machines; an import 
   )
 })
 
-test('reading a chat’s held messages is conversation:read, changing them drives it, and the report and the import are an owner’s', () => {
-  assert.deepEqual(STUDIO_METHOD_ACCESS['scheduledMessages.get'], { permissions: ['conversation:read'] })
+test('reading a chat’s limit notice is conversation:read, changing it drives the chat, and the report and the import are an owner’s', () => {
+  assert.deepEqual(STUDIO_METHOD_ACCESS['usageLimitResumes.get'], { permissions: ['conversation:read'] })
   assert.deepEqual(STUDIO_METHOD_ACCESS['usageLimits.get'], { permissions: ['providers:read'] })
   assert.deepEqual(STUDIO_METHOD_ACCESS['usageLimitResumes.setAuto'], { permissions: ['settings:write'] })
   const owners = Object.keys(STUDIO_CHAT_STORES_METHODS).filter((method) => {
@@ -149,8 +96,10 @@ test('reading a chat’s held messages is conversation:read, changing them drive
   })
   assert.deepEqual(owners.sort(), ['conversationImport.import', 'conversationImport.scan', 'usage.report'])
   const reader = { owner: false, scopes: ['conversation:read'] }
-  assert.equal(studioGrantAllows(reader, 'scheduledMessages.get'), true)
-  assert.equal(studioGrantAllows(reader, 'scheduledMessages.update'), false)
+  assert.equal(studioGrantAllows(reader, 'usageLimitResumes.get'), true)
+  assert.equal(studioGrantAllows(reader, 'usageLimitResumes.update'), false)
+  // A chat's held and scheduled messages are its own, read and changed per chat.
+  assert.equal('scheduledMessages.get' in STUDIO_METHOD_ACCESS, false)
   assert.equal(
     studioGrantAllows({ owner: false, scopes: ['conversation:operate'] }, 'usageLimitResumes.setAuto'),
     false,

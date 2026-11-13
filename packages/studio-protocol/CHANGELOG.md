@@ -48,10 +48,14 @@
 
 ### Removed (a chat's queue is its server's)
 
-- **`scheduledMessages.hold`**. A window hands a message queued mid-turn to
-  its Studio as every client does: `conversation.send` with `queue`, followed
-  on `conversation.queued`. `conversation.scheduleSend` carries
-  `untilLimitReset` from the conversation contract.
+- **`scheduledMessages.hold`, `.get`, `.update` and `scheduledMessages.changed`**.
+  A window hands a message queued mid-turn to its Studio as every client
+  does: `conversation.send` with `queue`, followed on `conversation.queued`.
+  It schedules, sends now and deletes one chat's messages with
+  `conversation.scheduleSend`, `.sendScheduledNow` and `.cancelScheduled`,
+  followed on `conversation.scheduled`; nothing reads or changes every chat's
+  at once. `conversation.scheduleSend` carries `untilLimitReset` from the
+  conversation contract.
 
 ### Added (the phone's reads)
 

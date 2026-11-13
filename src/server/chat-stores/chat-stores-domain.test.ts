@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 
 import type { ConversationImportService } from '../../main/conversation-import/conversation-import-service'
-import type { ScheduledMessages } from '../../main/scheduled-messages/scheduled-messages'
 import { USAGE_LIMITS_CACHE_FILE } from '../../main/usage-limits/disk-cache'
 import type { UsageLimitResumer } from '../../main/usage-limits/resume'
 import { createUsageLimitsStore } from '../../main/usage-limits/store'
@@ -23,7 +22,6 @@ afterEach(async () => {
 function deps(overrides: Partial<StudioChatStoresDeps> = {}): StudioChatStoresDeps {
   return {
     resumes: {} as UsageLimitResumer,
-    scheduled: {} as ScheduledMessages,
     imports: {} as ConversationImportService,
     dataDir: () => tmpdir(),
     getWorkspaces: () => [],

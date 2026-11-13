@@ -170,11 +170,9 @@ export function createStudioRpc(
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),
     // What the core keeps beside its chats, for every chat at once: the usage
-    // limits and the resumes after them, the scheduled and held messages, the
-    // usage dashboard's report and the import of a CLI's saved sessions.
+    // limits and the resumes after them, the usage dashboard's report and the import of a CLI's saved sessions.
     chatStores: createStudioChatStores({
       resumes: core.usageLimitResumes,
-      scheduled: core.scheduledMessages,
       imports: core.conversationImport,
       dataDir: () => core.platform.paths.dataDir(),
       getWorkspaces: () => core.workspaceSyncService.getSnapshot().state.workspaces,

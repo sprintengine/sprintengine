@@ -3,13 +3,9 @@ import { createInterface } from 'node:readline'
 
 import { createStudioConversationParts } from '../../../src/renderer/src/components/panels/agentChat/studioChat'
 import type { StudioClient, StudioWebSocketConstructor } from '../../../packages/client-runtime/src/public'
-import {
-  configureWindowStudio,
-  watchWindowStudio,
-  windowStudioClient,
-  windowStudioState,
-} from '../../../src/renderer/src/studio/windowStudioClient'
-import type { ScheduledMessagesState } from '../../../src/shared/scheduled-messages'
+import { configureWindowStudio, windowStudioClient } from '../../../src/renderer/src/studio/windowStudioClient'
+import { followWindowStudioPush } from '../../../src/renderer/src/studio/windowStudioPush'
+import { STUDIO_CONVERSATIONS_CAPABILITY } from '../../../packages/studio-protocol/src/public'
 import { conversationNewChatSeed } from '../../../src/renderer/src/components/workspace/conversationSpawnOptions'
 import type { AgentState } from '../../../src/shared/agent-state'
 import type { ConversationSessionFrame } from '../../../src/shared/conversation-runtime'
@@ -114,27 +110,16 @@ export function desktopClient(
       const feed = new Feed('desktop')
       let stopped = false
       let stop: (() => void) | null = null
-      // The chat's tray: every chat's scheduled messages, as the window's
-      // store follows them (`scheduledMessages.*`), read again when the
-      // connection opens, since a change made while it was down is not pushed.
-      const showScheduled = (state: ScheduledMessagesState) =>
-        feed.side({
-          scheduled: state.messages
-            .filter((message) => message.workspaceId === chat.workspaceId && message.agentId === chat.agentId)
-            .map((message) => ({ id: message.id, text: message.text })),
-        })
-      const readScheduled = () =>
-        void windowStudioClient(api)
-          .then((client) => client.request('scheduledMessages.get', {}))
-          .then(showScheduled, () => undefined)
-      const studio = await windowStudioClient(api)
-      const stopScheduled = studio.subscribe('scheduledMessages.changed', {}, { onPayload: showScheduled })
-      readScheduled()
-      let wasOpen = windowStudioState(api) === 'open'
-      const unwatch = watchWindowStudio(api, () => {
-        const open = windowStudioState(api) === 'open'
-        if (open && !wasOpen) readScheduled()
-        wasOpen = open
+      // The chat's tray: the messages its Studio keeps for it, followed on
+      // the chat's own push topic (`conversation.scheduled`) as the chat view
+      // follows them (`useStudioChatHeld`), answered whole on each follow.
+      const stopScheduled = followWindowStudioPush({
+        topic: 'conversation.scheduled',
+        params: { key: chat },
+        capability: STUDIO_CONVERSATIONS_CAPABILITY,
+        api,
+        onPayload: (frame) =>
+          feed.side({ scheduled: frame.messages.map((message) => ({ id: message.id, text: message.text })) }),
       })
       const subscribe = () => {
         if (stopped) return
@@ -168,7 +153,6 @@ export function desktopClient(
         stopped = true
         stop?.()
         stopScheduled()
-        unwatch()
       })
       return feed
     },
@@ -207,20 +191,12 @@ export function desktopClient(
         parts.messageSubagent!({ sessionId, toolUseId, message: text }),
       ),
     // The composer's "+": the chat's message kept by its Studio for a time
-    // (`scheduledMessages.update`), as the window's store asks.
+    // (`conversation.scheduleSend`), as the chat view asks.
     async scheduleSend(chat, text, sendAt) {
-      const client = await windowStudioClient(api)
-      await client.request('scheduledMessages.update', {
-        commandId: `schedule-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        update: { kind: 'schedule', workspaceId: chat.workspaceId, agentId: chat.agentId, text, sendAt },
-      })
+      fail(await parts.scheduleSend({ key: chat, message: text, sendAt }), 'schedule a message')
     },
-    async sendScheduledNow(_chat, scheduledId) {
-      const client = await windowStudioClient(api)
-      await client.request('scheduledMessages.update', {
-        commandId: `send-now-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        update: { kind: 'send-now', id: scheduledId },
-      })
+    async sendScheduledNow(chat, scheduledId) {
+      fail(await parts.sendScheduledNow({ key: chat, scheduledId }), 'send a scheduled message now')
     },
     /** The window's own Studio client: an owner's connection, for asks the gate checks against. */
     studio: () => windowStudioClient(api),

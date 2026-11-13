@@ -772,7 +772,8 @@ waits on: the desktop asks that limit again when `sendAt` comes and moves the
 message to a later reset if one stands, and its `scheduled` frame says it
 back. An older desktop's validator drops the member and keeps the message for
 `sendAt`. A Studio window holds and schedules its own chats' messages the
-same way (`scheduledMessages.hold` is gone).
+same way (`scheduledMessages.hold`, `.get`, `.update` and
+`scheduledMessages.changed`, every chat's messages at once, are gone).
 A desktop's usage limits are the `conversation-usage-limits` capability
 (2026-10-25): `{ type: 'watchUsageLimits', requestId }` has it send a
 `usageLimits` frame (`ConversationUsageLimitsFrame`: the chat's `key`, the
@@ -1191,14 +1192,12 @@ and leaves the capability out.
 `chat-stores` (2026-11-12) is what a Studio keeps beside its chats, for every
 chat at once: `usageLimits.get` with `usageLimits.changed`,
 `usageLimitResumes.get`, `.update` (one chat's notice) and `.setAuto` (the
-setting) with `usageLimitResumes.changed`, `scheduledMessages.get`, `.update`
-and `.hold` (a composer's queued message, held once per command id) with
-`scheduledMessages.changed`, `usage.report`, `usage.rows` (a machine's own
+setting) with `usageLimitResumes.changed`, `usage.report`, `usage.rows` (a machine's own
 rows for a paired desktop's dashboard, `workspaces:read`), and
 `conversationImport.scan` and `.import`. Each stream pushes its store whole and replays nothing: a client
 reads the state when it subscribes and again when its connection returns. The
-limits are `providers:read`; reading the held and scheduled messages and the
-resumes is `conversation:read`, changing them `conversation:operate`, and the
+limits are `providers:read`; reading the resumes is `conversation:read`,
+changing them `conversation:operate`, and the
 resume setting `settings:write`. The usage report and the import are an
 owner's (they read the agents' own logs and session files on the machine).
 `schedules` (2026-11-12) is a Studio's scheduled agents, which every server

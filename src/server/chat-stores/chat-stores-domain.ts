@@ -4,8 +4,6 @@ import type {
   ConversationImportInput,
   ConversationImportResult,
   ConversationImportScanResult,
-  ScheduledMessagesState,
-  ScheduledMessageUpdate,
   UsageLimitResumeState,
   UsageLimitResumeUpdate,
   UsageLimitsState,
@@ -22,7 +20,6 @@ import {
 } from '../../shared/machine-identity'
 import type { TailnetMeshService } from '../../main/automation/tailnet/tailnet-mesh-service'
 import type { ConversationImportService } from '../../main/conversation-import/conversation-import-service'
-import type { ScheduledMessages } from '../../main/scheduled-messages/scheduled-messages'
 import { createUsageFleet, encodeUsageAnswer, fleetRowsOf, type UsageFleet } from '../../main/usage/usage-mesh'
 import { appUsageService, type UsageService, type UsageServiceWorkspace } from '../../main/usage/usage-service'
 import { createUsageLimitsDiskCache, USAGE_LIMITS_CACHE_FILE } from '../../main/usage-limits/disk-cache'
@@ -31,7 +28,7 @@ import { usageLimitsStore, type UsageLimitsStore } from '../../main/usage-limits
 
 // What the Studio keeps beside its chats, for every chat at once, as the
 // Studio protocol serves it (`usageLimits.*`, `usageLimitResumes.*`,
-// `scheduledMessages.*`, `usage.report`, `conversationImport.*`): one domain
+// `usage.report`, `conversationImport.*`): one domain
 // the RPC router answers from, for the app's own windows and every other
 // client alike. Each store is the core's; this is the one place that reads
 // the usage limits' cache file, so there is one writer of it.
@@ -43,9 +40,6 @@ export type StudioChatStores = {
   usageLimitResumes(): UsageLimitResumeState
   updateUsageLimitResume(update: UsageLimitResumeUpdate): UsageLimitResumeState
   onUsageLimitResumesChanged(listener: (state: UsageLimitResumeState) => void): () => void
-  scheduledMessages(): ScheduledMessagesState
-  updateScheduledMessage(update: ScheduledMessageUpdate): ScheduledMessagesState
-  onScheduledMessagesChanged(listener: (state: ScheduledMessagesState) => void): () => void
   /** Never rejects: a failure is `{ ok: false, message }`. */
   usageReport(request: UsageReportRequest): Promise<UsageReportResult>
   /** This machine's own rows over a window, for a paired desktop's dashboard (`usage.rows`). */
@@ -58,7 +52,6 @@ export type StudioChatStores = {
 
 export type StudioChatStoresDeps = {
   resumes: UsageLimitResumer
-  scheduled: ScheduledMessages
   imports: ConversationImportService
   /** The app's per-user data folder: the limits' cache, and the usage scan's cache and price list under `usage/`. */
   dataDir: () => string
@@ -122,9 +115,6 @@ export function createStudioChatStores(deps: StudioChatStoresDeps): StudioChatSt
     usageLimitResumes: () => deps.resumes.state(),
     updateUsageLimitResume: (update) => deps.resumes.update(update),
     onUsageLimitResumesChanged: (listener) => deps.resumes.onChanged(listener),
-    scheduledMessages: () => deps.scheduled.state(),
-    updateScheduledMessage: (update) => deps.scheduled.update(update),
-    onScheduledMessagesChanged: (listener) => deps.scheduled.onChanged(listener),
     usageReport: async (request) => {
       try {
         return await usage().report(request)

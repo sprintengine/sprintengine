@@ -176,7 +176,7 @@ export type StudioRpcConnectionOptions = {
   agentSettings?: StudioAgentSettings
   /** What the agents are set up with: the `memoryActivity.*` and `areaSkills.changed` streams. */
   agentSetup?: StudioAgentSetup
-  /** What the Studio keeps beside its chats: the `usageLimits.changed`, `usageLimitResumes.changed` and `scheduledMessages.changed` streams. */
+  /** What the Studio keeps beside its chats: the `usageLimits.changed` and `usageLimitResumes.changed` streams. */
   chatStores?: StudioChatStores
   /** The projects' backlogs: the `backlog.changed` stream. */
   phoneReads?: StudioPhoneReads
@@ -1467,8 +1467,6 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'usageLimits.changed', options.chatStores?.onUsageLimitsChanged ?? null),
     'usageLimitResumes.changed': (id) =>
       subscribeFeed(id, 'usageLimitResumes.changed', options.chatStores?.onUsageLimitResumesChanged ?? null),
-    'scheduledMessages.changed': (id) =>
-      subscribeFeed(id, 'scheduledMessages.changed', options.chatStores?.onScheduledMessagesChanged ?? null),
     'backlog.changed': (id) => subscribeFeed(id, 'backlog.changed', options.phoneReads?.backlog.onChanged ?? null),
     'skillSources.updated': (id) =>
       subscribeFeed(id, 'skillSources.updated', options.agentSkills?.onSourcesUpdated ?? null),

@@ -179,7 +179,7 @@ export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' a
 
 /**
  * What a Studio keeps beside its chats, for every chat at once:
- * `usageLimits.*`, `usageLimitResumes.*`, `scheduledMessages.*`, `usage.report`, `usage.rows`
+ * `usageLimits.*`, `usageLimitResumes.*`, `usage.report`, `usage.rows`
  * and `conversationImport.*`, with their streams.
  */
 export const STUDIO_CHAT_STORES_CAPABILITY = 'chat-stores' as const
