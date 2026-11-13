@@ -1947,11 +1947,12 @@ export function createConversationGatewayHost(
       // Held under the device's own command, so a repeat after a dropped
       // connection, or after a restart, holds it once, and finds its uploads
       // spent by the first: it is answered as held without reading them.
+      const heldSource = JSON.stringify([deviceId, commandId])
       const holdMessage = async (
         send: Extract<ConversationCommand, { kind: 'send' }>,
         heldMessages: ConversationHeldMessages,
       ): Promise<ConversationGatewayCommandResult> => {
-        const source = JSON.stringify([deviceId, commandId])
+        const source = heldSource
         if (heldMessages.heldBefore?.(source)) return { ok: true }
         const read = await carriedBy(key, deviceId, send)
         if (!read.ok) return read
@@ -1964,8 +1965,15 @@ export function createConversationGatewayHost(
       // A queued message is held here and sent from here when the turn ends,
       // answered as soon as it is held: no session is resumed for it now, and
       // nothing waits on the turn.
+      // A repeat while the first is still being held waits for it and is
+      // answered as it was (`receipted`); one after it, or after a restart,
+      // finds it held (`heldBefore`). Both come before staleness, as the
+      // runtime's receipts do: a repeat that crossed the stale line on its way
+      // is answered held, not refused into the window sending it again.
       if (command.kind === 'send' && command.queue && held)
-        return Promise.resolve(staleHold() ?? holdMessage(command, held))
+        return receipted(key, deviceId, commandId, async () =>
+          held.heldBefore?.(heldSource) ? { ok: true } : (staleHold() ?? holdMessage(command, held)),
+        )
       // A steer the running turn cannot take is held for the turn's end, as a
       // queued send is, and answered at once with a notice saying so: the
       // person's words are never lost to a provider that cannot take them, or
