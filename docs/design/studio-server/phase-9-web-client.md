@@ -1317,6 +1317,13 @@ recorded here, with the commit that made it.
   read the file), and the listener refuses the route when `Origin` is
   present. `--origin` prints the link on a public origin instead. The server
   does not print a pairing link at start: stderr may be a service's log.
+- **`studio-server mcp-token --name <client>`** is the same kind of program
+  for a token to the agents' loopback MCP endpoint: it posts the run file's
+  key and the client's name to `/mcp-http/mint` with no `Origin`, and prints
+  the client's configuration (URL and bearer token) once on stdout. Over the
+  protocol only Studio's own desktop windows may make one (`mcpHttp.create` is
+  `window`-only), so this is how a server with no desktop gets one; an owner's
+  web tab lists and revokes them in Settings ▸ MCPs and points here.
 - **Tailnet pairing by approval (6.2, the six-digit flow) is not built.** A
   browser on another tailnet device pairs with a one-time link minted for the
   public origin (`studio-server pair --origin https://<node>.ts.net`). A

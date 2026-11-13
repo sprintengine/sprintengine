@@ -28,6 +28,7 @@ import { createWebListener, type WebListener } from './web-listener'
 import { createWebSessionStore, type WebSessionStore } from './web-sessions'
 import { openWebStaticRoot, type WebStaticRoot } from './web-static'
 import { createEmbedRoutes } from './embed-routes'
+import { createMcpHttpRoutes } from './mcp-http-routes'
 import { createEmbedStore, gateEmbedFrames, type EmbedStore } from './embeds'
 import { WEB_RUN_FILENAME, readWebRunFile, type WebRunFile } from './web-run-file'
 import { serveWebOnTailnet, type WebTailscaleServe } from './web-tailscale-serve'
@@ -333,6 +334,8 @@ export async function startWebFrontDoor(input: {
         pageHeaders: (origin, frameAncestors) => listener.pageHeaders(origin, frameAncestors),
         mintKey,
       }),
+      // `studio-server mcp-token`: a token to the agents' loopback endpoint, made on the machine.
+      createMcpHttpRoutes({ mintKey, create: (name) => gateway.createMcpHttpClient(name) }),
     ],
     log: input.log,
   })

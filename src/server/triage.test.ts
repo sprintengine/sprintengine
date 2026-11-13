@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterAll, test } from 'vitest'
 
 import { parseServerArgs } from './main'
@@ -86,4 +86,13 @@ test('triage is a command of its own, with claude by default', () => {
   assert.ok(codex.kind === 'triage' && codex.agent === 'codex' && codex.print)
   assert.throws(() => parseServerArgs(['triage', '--agent', 'cursor'], {}), /claude or codex/u)
   assert.throws(() => parseServerArgs(['serve', '--print'], {}), /--print goes with triage/u)
+})
+
+test('mcp-token names its client and the data directory it asks', () => {
+  assert.deepEqual(parseServerArgs(['mcp-token', '--name', ' editor ', '--data-dir', '/tmp/studio'], {}), {
+    kind: 'mcp-token',
+    dataDir: resolve('/tmp/studio'),
+    name: 'editor',
+  })
+  assert.throws(() => parseServerArgs(['mcp-token'], {}), /needs --name/u)
 })
