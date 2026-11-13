@@ -1,6 +1,9 @@
 import type { Duplex } from 'node:stream'
 
-import type { SshRoutedConnection, SshRoutedServers } from '../core/routed-conversation-backend'
+import type {
+  SshMachineBackend as SshRoutedConnection,
+  SshMachineBackends as SshRoutedServers,
+} from '../core/ssh-machine-backends'
 import { portDuplex } from '../ipc/port-duplex'
 import type { TunnelPort } from '../ipc/ipc-tunnel'
 import { connectRemoteConversationBackend } from '../wsl/backend-wire'
@@ -92,7 +95,6 @@ export function createShellSshServers(deps: ShellSshServersDeps): ShellSshServer
       const live = current.get(key)
       return live && live.backend.isOpen() ? live : null
     },
-    touch: () => undefined,
   }
 
   return {

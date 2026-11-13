@@ -10,7 +10,6 @@ import {
   environmentRouteOfWorkspace,
   type WorkspaceMachineFacts,
 } from '../../shared/environment-keys'
-import { machinePath } from '../../shared/machine-paths'
 
 // The router on a Windows front door, with stand-ins for this process's
 // runtime and a distribution's server: which side each call reaches, with
@@ -304,8 +303,6 @@ test('the route a workspace maps to (environment-keys) is the server this router
     'ws-local': { hostId: 'local', folderPath: 'C:\\Users\\dev\\local-repo' },
     'ws-cross': { hostId: 'local', folderPath: '\\\\wsl$\\Ubuntu\\home\\dev\\other' },
     'ws-older': { folderPath: '\\\\wsl.localhost\\Debian\\home\\dev\\older' },
-    'ws-ssh': { environment: { kind: 'ssh', id: 'ssh_k3J9x' }, folderPath: '/home/dev/repo' },
-    'ws-ssh-path': { folderPath: machinePath('ssh_m2', '/srv/app') },
   }
   for (const platform of ['win32', 'darwin', 'linux'] as const) {
     const router = createRoutedConversationBackend({
@@ -314,7 +311,6 @@ test('the route a workspace maps to (environment-keys) is the server this router
       // With every distribution's chats on its server, the router's key names the machine.
       chatServerOn: () => true,
       servers: { connect: async () => assert.fail('not used'), current: () => null, touch: () => undefined },
-      ssh: { connect: async () => assert.fail('not used'), current: () => null, touch: () => undefined },
       platform,
     })
     for (const [id, workspace] of Object.entries(workspaces)) {

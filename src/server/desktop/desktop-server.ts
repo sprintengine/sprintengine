@@ -255,9 +255,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ...shellArtifactsOverControl(rpc, () => workspaceWindowVisible),
         resolveGitHubToken: () => githubTokenStore.resolveToken(),
       },
-      ...(shellSsh
-        ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
-        : {}),
+      ...(shellSsh ? { sshServers: { servers: shellSsh.servers } } : {}),
       // A chat an SSH machine holds is acted on there, on this process's own
       // client of that machine's Studio, over a stream main opens on its door.
       ...(shellEnvironments ? { environmentClients: shellEnvironments } : {}),

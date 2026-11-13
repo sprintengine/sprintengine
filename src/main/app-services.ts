@@ -938,8 +938,6 @@ export function createAppServices(
           ? {
               sshServers: {
                 servers: ssh.environments.routed,
-                onConnected: (listener: Parameters<typeof ssh.environments.onConnected>[0]) =>
-                  ssh.environments.onConnected(listener),
                 // The host and port every device keys the machine's mark by,
                 // as Settings › Machines does (`sshMachineRef`): what its SSH
                 // config resolves to, else what was typed.

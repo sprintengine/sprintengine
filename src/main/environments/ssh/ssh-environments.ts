@@ -8,7 +8,7 @@ import type { Duplex } from 'node:stream'
 
 import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { wslServerTreeDir } from '../../../server/wsl/desktop-wsl-servers'
-import type { SshRoutedConnection, SshRoutedServers } from '../../../server/core/routed-conversation-backend'
+import type { SshMachineBackend, SshMachineBackends } from '../../../server/core/ssh-machine-backends'
 import {
   DEFAULT_SSH_ENVIRONMENT_SETTINGS,
   SSH_ENV_CHANNELS,
@@ -181,15 +181,14 @@ export class SshEnvironments {
     this.log = deps.log ?? (() => undefined)
   }
 
-  // ── The routed servers (studio-core's router reaches SSH machines through these) ──
+  // ── The backend wires (the Files and Git panes' machine channels until PR 2) ──
 
-  readonly routed: SshRoutedServers = {
+  readonly routed: SshMachineBackends = {
     connect: async (key) => {
       const machine = this.machineFor(key)
       return machine.connect({ interactive: false })
     },
-    current: (key): SshRoutedConnection | null => this.machines.get(key.slice('ssh:'.length))?.current() ?? null,
-    touch: () => undefined,
+    current: (key): SshMachineBackend | null => this.machines.get(key.slice('ssh:'.length))?.current() ?? null,
   }
 
   onConnected(listener: (connection: SshServerConnection) => void): void {

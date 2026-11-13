@@ -1,9 +1,10 @@
-// An SSH machine's chats routed by the desktop's server out of process
+// An SSH machine's backend wire for the desktop's server out of process
 // (phase 8 with phase 6): main's side (a real SshEnvironment against a plain
 // `sh` standing in for ssh, the real server tree and relay) opens a relay
 // stream and splices it onto a message port; the server's side takes the
-// port, reads its conversation wire from it, and the router sends a chat
-// there. The ports are Node's own MessageChannel, shaped as Electron's.
+// port and reads the wire from it (the Files and Git panes' machine channels
+// until design-wsl-ssh-direct PR 2; a machine's chats are its own Studio's).
+// The ports are Node's own MessageChannel, shaped as Electron's.
 
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
@@ -18,8 +19,6 @@ import { serverTreeDigest } from '../../main/environments/ssh/ssh-install'
 import type { SessionProcess } from '../../main/environments/ssh/ssh-session'
 import { WSL_NODE_VERSION } from '../../main/hosts/wsl-node-runtime'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../shared/ssh-environments'
-import type { ConversationBackend } from '../core/conversation-backend'
-import { createRoutedConversationBackend } from '../core/routed-conversation-backend'
 import type { TunnelPort } from '../ipc/ipc-tunnel'
 import { splicePort } from '../ipc/port-duplex'
 import { BACKEND_WIRE_VERSION } from '../wsl/backend-wire'
@@ -66,7 +65,7 @@ function electronShaped(port: MessagePort): TunnelPort {
   } as TunnelPort
 }
 
-test('out of process, a chat on an SSH machine is routed through a port main splices onto the relay', async () => {
+test("out of process, an SSH machine's backend wire comes through a port main splices onto the relay", async () => {
   const home = join(scratch, 'home')
   mkdirSync(home)
   const fakeNode = Buffer.from(
@@ -113,57 +112,24 @@ test('out of process, a chat on an SSH machine is routed through a port main spl
       return port
     },
   })
-  // This process's own runtime holds no chats here.
-  const local = new Proxy(
-    {},
-    {
-      get: (_t, member) =>
-        member === 'onEvent'
-          ? () => () => undefined
-          : member === 'listSessions'
-            ? () => ({ ok: true, sessions: [] })
-            : undefined,
-    },
-  )
-  const router = createRoutedConversationBackend({
-    local: local as ConversationBackend,
-    workspace: () => ({ folderPath: home, environment: { kind: 'ssh', id: 'e1' } }),
-    chatServerOn: () => false,
-    ssh: shell.servers,
-    platform: 'darwin',
-  })
-  shell.onConnected((connection) => router.attach(connection))
-  const events: string[] = []
-  router.onEvent((event) => events.push(event.type))
-
-  const started = (await router.startSession({
-    workspaceId: 'w1',
-    agentId: 'a1',
-    workspaceRoot: home,
-    providerId: 'mock-provider',
-    modelId: 'mock-model',
-  } as never)) as { ok: boolean; session: { sessionId: string } }
-  assert.ok(started.ok, JSON.stringify(started))
+  const first = await shell.servers.connect('ssh:e1')
   assert.deepEqual(opened, ['ssh:e1 backend'])
   const record = JSON.parse(
     readFileSync(join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run', 'server.json'), 'utf8'),
   ) as { pid: number }
   pids.push(record.pid)
-  assert.ok(events.includes('session_started'), events.join(','))
-
-  // The session's listing comes back through the port too.
-  const listed = router.listSessions({ workspaceId: 'w1' })
-  assert.ok(listed.ok && listed.sessions.some((session) => session.sessionId === started.session.sessionId))
+  // The wire answers through the port.
+  await first.backend.refresh()
+  assert.equal(shell.servers.current('ssh:e1'), first)
 
   // The relay drops (its session dies, as on a dropped network): the port
   // closes, and the next call opens a new one once the machine is back.
   sessions.at(-1)!.kill()
   await new Promise((resolve) => setTimeout(resolve, 300))
   assert.equal(shell.servers.current('ssh:e1'), null)
-  const again = (await router.readTranscript({ workspaceId: 'w1', agentId: 'a1', workspaceRoot: home } as never)) as {
-    ok: boolean
-  }
-  assert.ok(again.ok)
+  const again = await shell.servers.connect('ssh:e1')
+  assert.notEqual(again, first)
+  await again.backend.refresh()
   assert.deepEqual(opened, ['ssh:e1 backend', 'ssh:e1 backend'])
   machine.disconnect()
 })
