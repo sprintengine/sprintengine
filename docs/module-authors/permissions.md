@@ -9,6 +9,13 @@ sandbox** — a trusted module's code runs in the app's process with the app's
 access. Declare what you actually touch so users can make an informed trust
 decision.
 
+The host's own services do hold a module to what it declared. Each SDK helper
+(`getConversationService`, `getSecretsService`, `getBacklogService`, …) checks
+the scope its call needs, against your module's manifest, and reaches the
+service as your module: a third-party module that calls a service naming
+another module's id is refused, so it cannot use another extension's
+permissions, chats, secrets or storage.
+
 The canonical vocabulary lives in `src/shared/modules/permissions.ts`
 (`KNOWN_CAPABILITY_PERMISSIONS`). Unknown scopes do not fail validation
 (forward-compatible), but the consent UI surfaces them verbatim as

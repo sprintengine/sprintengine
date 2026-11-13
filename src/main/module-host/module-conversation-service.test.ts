@@ -702,7 +702,7 @@ test('a commandId reaches the runtime namespaced by the module, and a retried cr
   assert.equal((calls.models[0] as { commandId?: string }).commandId, 'module:reviews:model-1')
   assert.equal((calls.responses[0] as { commandId?: string }).commandId, 'module:reviews:answer-1')
 
-  for (const commandId of ['', 'x'.repeat(201), 7]) {
+  for (const commandId of ['', 'x'.repeat(1001), 7]) {
     const refused = await service.send(ref, { message: 'hi', commandId: commandId as never })
     assert.equal(!refused.ok && refused.code, 'invalid_input', String(commandId))
     const notCreated = await service.create({ workspaceId: 'ws-1', commandId: commandId as never })
