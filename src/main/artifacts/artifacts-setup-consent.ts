@@ -3,8 +3,9 @@ import { parseArtifactsRepositoryUrl, DEFAULT_CLOUDFLARE_PROJECT } from '../../s
 // What the person is asked before `artifacts.setup` changes anything: an
 // agent wants to say where its pages are published, and that is the person's
 // setting (Settings ▸ Artifacts), so nothing is turned on, made or saved until
-// they confirm it in Studio. The question is put by main (the Electron half,
-// artifacts-setup-consent-electron.ts, as the quit question is), not by the
+// they confirm it in Studio. The question is put by the Studio, in its
+// windows (artifacts-setup-consent-broker.ts) or natively by the desktop's
+// shell when none is showing (artifacts-setup-consent-electron.ts), not by the
 // agent: an agent cannot answer it, and a refusal, a dismissal or no answer
 // in time all leave the setting as it was.
 //
