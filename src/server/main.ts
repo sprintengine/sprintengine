@@ -15,6 +15,7 @@ import { keepStderrInLogsDir, stdioChannel } from './bootstrap/stdio'
 import { startDetached } from './bootstrap/detached-start'
 import type { ServerBoot } from './bootstrap/envelope'
 import { readWebRunFile } from './web/web-run-file'
+import { runningDataDirHolder, type DataDirHolder } from './core/data-dir'
 import { mcpHttpClientConfig } from '../shared/mcp-http'
 import { STUDIO_MCP_SERVER_ID } from '../shared/product-identity'
 import { runTriage, TRIAGE_AGENTS, type TriageAgent } from './triage'
@@ -105,14 +106,16 @@ const USAGE = `Usage: studio-server [serve] [options]
 Usage: studio-server pair [--data-dir <dir>] [--origin <url>]
 
   Print a one-time link that pairs a browser with the server running on the data
-  directory. The link works once, within five minutes.
+  directory. The link works once, within five minutes. It asks the server's web
+  listener, so the server must run with --web.
 
 Usage: studio-server mcp-token --name <client> [--data-dir <dir>]
 
   Make a token for an MCP client on this machine to reach the agents of the
   server running on the data directory over its loopback HTTP endpoint, and
-  print the client's configuration with the token in it. The token is shown
-  this once; revoke it in Settings > MCPs, from a desktop window or a web tab.
+  print the client's configuration with the token in it. It asks the server's
+  web listener, so the server must run with --web. The token is shown this
+  once; revoke it in Settings > MCPs, from a desktop window or a web tab.
 
 Usage: studio-server embed --workspace <id> --agent <id> [--frame-origin <url>]... [--ttl-hours <n>]
        studio-server embed --list
@@ -451,7 +454,7 @@ async function manageEmbeds(
 async function mintMcpToken(dataDir: string, name: string): Promise<number> {
   const run = readWebRunFile(dataDir)
   if (!run) {
-    say(`No Studio server with its web listener on is running on ${dataDir}. Start one with: studio-server serve --web`)
+    say(noWebListener('mcp-token', dataDir, runningDataDirHolder(dataDir)))
     return EXIT_FAILED
   }
   try {
@@ -474,11 +477,28 @@ async function mintMcpToken(dataDir: string, name: string): Promise<number> {
   }
 }
 
+/**
+ * Why `pair` or `mcp-token` cannot reach a server on the data directory: both
+ * ask its web listener, which a server runs only when started with `--web`.
+ * A server running there without it, and Studio's desktop app holding the
+ * directory, are each named, so the person is not told to start a second one.
+ */
+export function noWebListener(command: 'pair' | 'mcp-token', dataDir: string, holder: DataDirHolder | null): string {
+  const needs = `studio-server ${command} asks the server's web listener`
+  if (holder?.role === 'server')
+    return `The Studio server running on ${dataDir} (pid ${holder.pid}) was started without --web, and ${needs}. Stop it and start it again with: studio-server serve --web`
+  if (holder?.role === 'desktop') {
+    const instead = command === 'mcp-token' ? ' Make the token in the app, in Settings > MCPs.' : ''
+    return `Studio's desktop app has ${dataDir} open without a web listener, and ${needs}.${instead}`
+  }
+  return `No Studio server is running on ${dataDir}, and ${needs}. Start one with: studio-server serve --web`
+}
+
 /** `studio-server pair`: a one-time pairing link from the server running on a data directory. */
 async function pairBrowser(dataDir: string, origin: string | null): Promise<number> {
   const run = readWebRunFile(dataDir)
   if (!run) {
-    say(`No Studio server with its web listener on is running on ${dataDir}. Start one with: studio-server serve --web`)
+    say(noWebListener('pair', dataDir, runningDataDirHolder(dataDir)))
     return EXIT_FAILED
   }
   const target = origin ? normalizeOrigin(origin) : null

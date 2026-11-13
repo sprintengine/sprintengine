@@ -24,6 +24,7 @@ import {
   readDataDirSecrets,
   recordDataDirSecrets,
   restrictDataDir,
+  runningDataDirHolder,
 } from './data-dir'
 
 const directories: string[] = []
@@ -77,6 +78,22 @@ test('a lock whose process is gone, or that names this very process, is taken ov
   next.lock.release()
   assert.equal(JSON.parse(readFileSync(join(dir, DATA_DIR_LOCK_FILE), 'utf8')).pid, 300)
   again.lock.release()
+})
+
+test('the running holder is named only while it runs on this machine', () => {
+  const dir = dataDir()
+  assert.equal(runningDataDirHolder(dir, { hostname: host, isRunning: running(100) }), null, 'nothing holds it')
+  const held = acquireDataDirLock(dir, 'server', { pid: 100, hostname: host, isRunning: running(100) })
+  assert.ok(held.ok)
+  assert.deepEqual(
+    (({ role, pid, hostname }) => ({ role, pid, hostname }))(
+      runningDataDirHolder(dir, { hostname: host, isRunning: running(100) }) ?? ({} as never),
+    ),
+    { role: 'server', pid: 100, hostname: host },
+  )
+  assert.equal(runningDataDirHolder(dir, { hostname: host, isRunning: running() }), null, 'its process is gone')
+  assert.equal(runningDataDirHolder(dir, { hostname: 'mac-mini', isRunning: running(100) }), null, 'another machine')
+  held.lock.release()
 })
 
 test('a lock from another machine is never presumed abandoned', () => {

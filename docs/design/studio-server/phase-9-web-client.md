@@ -1320,7 +1320,9 @@ recorded here, with the commit that made it.
 - **`studio-server mcp-token --name <client>`** is the same kind of program
   for a token to the agents' loopback MCP endpoint: it posts the run file's
   key and the client's name to `/mcp-http/mint` with no `Origin`, and prints
-  the client's configuration (URL and bearer token) once on stdout. Over the
+  the client's configuration (URL and bearer token) once on stdout. Like
+  `pair`, it needs the server to run with `--web`, and says so, naming the
+  server's pid, when one runs on the data directory without it. Over the
   protocol only Studio's own desktop windows may make one (`mcpHttp.create` is
   `window`-only), so this is how a server with no desktop gets one; an owner's
   web tab lists and revokes them in Settings ▸ MCPs and points here.
