@@ -140,7 +140,6 @@ export const WEB_OWNER_TUNNEL_PERMISSIONS: readonly StudioPermission[] = [
   'conversation:read',
   'conversation:operate',
   'workspace:read',
-  'workspace:operate',
   'filesystem:read',
   'preview:operate',
   'access:read',

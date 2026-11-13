@@ -68,12 +68,12 @@ test('a call that changes something is audited with its outcome; a read is not',
     audit: (entry) => void audit.push(entry),
   })
   guarded.on('message', () => undefined)
-  inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'automation:mcp-http-create', args: [{ workspaceId: 'ws-1' }] })
+  inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'web:devices:revoke', args: [{ id: 'x', workspaceId: 'ws-1' }] })
   inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'hosts:list', args: [] })
   guarded.postMessage({ t: 'ipc.result', id: 1, ok: true, value: {} })
   guarded.postMessage({ t: 'ipc.result', id: 2, ok: true, value: {} })
   expect(audit.map(({ channel, ok, workspaceId }) => ({ channel, ok, workspaceId }))).toEqual([
-    { channel: 'automation:mcp-http-create', ok: true, workspaceId: 'ws-1' },
+    { channel: 'web:devices:revoke', ok: true, workspaceId: 'ws-1' },
   ])
   expect(webTunnelAudited('web:devices:revoke')).toBe(true)
   expect(webTunnelAudited('conversation:threads')).toBe(false)
