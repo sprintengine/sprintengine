@@ -32,6 +32,9 @@ import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet/tai
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
 import { createTailnetMeshStore } from './tailnet/tailnet-mesh-store'
 import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet/tailnet-gateway-server'
+import type { TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
+import type { StudioChatLifecycleDomain } from '../../server/chat-lifecycle/chat-lifecycle-domain'
+import { createFakeBackend, startTestServer } from '../../server/rpc/studio-rpc.test-helper'
 import { createTailnetPeerResolver } from './tailnet/tailnet-peer-identity'
 import { createRemoteConversations } from './tailnet/tailnet-remote-conversations'
 import {
@@ -176,6 +179,8 @@ async function startHarness(
     subagentRecords?: () => ConversationListWorkspace['agents']
     /** The far end reads its chats' changes, in its workspace folder, and reads them again this often. */
     checkoutChanges?: { pollMs: number }
+    /** The far end's Studio, on its `/tailnet/v1/studio`. */
+    studio?: TailnetStudioHost
   } = {},
 ): Promise<Harness> {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'remote-conversation-host-'))
@@ -303,6 +308,7 @@ async function startHarness(
       devices,
       conversations,
       peers: createTailnetPeerResolver({ runWhois: async () => null }),
+      ...(options.studio ? { studio: () => options.studio! } : {}),
     })
   let server = build(0)
   await server.start()
@@ -713,15 +719,6 @@ function chatTools(record: { creates: Array<Record<string, unknown>>; settles: A
         })
       },
     },
-    {
-      name: 'conversation.settle',
-      description: 'Settle a chat.',
-      inputSchema: { type: 'object', properties: {}, additionalProperties: true },
-      handler: async (args) => {
-        record.settles.push(args)
-        return toolSuccess({ workspaceId: args.workspaceId, settledAt: 1 })
-      },
-    },
   ]) satisfies HarnessTools
 }
 
@@ -772,7 +769,25 @@ test('a New chat on a paired desktop takes its images with its first message, as
 
 test('a New chat whose images cannot go is refused, and the empty chat over there is put to rest', async () => {
   const record = { creates: [] as Array<Record<string, unknown>>, settles: [] as Array<Record<string, unknown>> }
-  const h = await startHarness({ tools: chatTools(record) })
+  // The far end's Studio, which settles its chats (`conversation.settle`).
+  const studio = await startTestServer({
+    backend: Object.assign(createFakeBackend([agentId]), {
+      followed: {
+        settle: (settled: string) => {
+          record.settles.push({ workspaceId: settled })
+          return { ok: true as const, settledAt: 1 }
+        },
+      },
+    }),
+    chatLifecycle: {} as StudioChatLifecycleDomain,
+  })
+  const h = await startHarness({
+    tools: chatTools(record),
+    studio: {
+      attach: (stream, authenticator) =>
+        void studio.server.attach(stream, { authenticator, ownWindow: false, audited: true, knownFoldersOnly: true }),
+    },
+  })
   try {
     const connectionId = await h.pair(['conversation:read', 'conversation:operate'])
     const turns = vi.spyOn(h.runtime, 'sendTurn')
@@ -808,6 +823,7 @@ test('a New chat whose images cannot go is refused, and the empty chat over ther
     assert.equal(record.creates.at(-1)?.prompt, 'hello')
   } finally {
     await h.close()
+    await studio.dispose()
   }
 })
 

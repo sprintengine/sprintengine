@@ -1029,8 +1029,9 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     ...held('conversation:read', STUDIO_APPROVAL_RULES_CAPABILITY, false),
     params: studioNoParams,
   },
+  // Revoking a rule only makes the chats ask again: whoever may drive them may.
   'conversation.revokeApprovalRule': {
-    ...held('settings:write', STUDIO_APPROVAL_RULES_CAPABILITY, true),
+    ...held('conversation:operate', STUDIO_APPROVAL_RULES_CAPABILITY, true),
     params: (value) => {
       if (!id(value.commandId)) return refuse(COMMAND_ID)
       if (!id(value.ruleId)) return refuse('"ruleId" names the rule.')

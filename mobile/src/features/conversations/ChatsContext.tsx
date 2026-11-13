@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { createConversationLifecycleApi, type ConversationLifecycleApi } from "../../api/conversationLifecycle";
+import { createChatLifecycleApi, type ChatLifecycleApi } from "../../api/chatLifecycle";
 import { createTailnetConversationsApi, type ConversationApi } from "../../api/tailnetConversations";
-import { declaresChatMarkUnread, declaresChatRowMenu, declaresConversationLifecycle } from "../../api/tailnetTransport";
+import { declaresConversationLifecycle } from "../../api/tailnetTransport";
 import { createTailnetWorkspacesApi, type DesktopWorkspace, type WorkspacesApi } from "../../api/tailnetWorkspaces";
 import type { ApiResult, MobileSession } from "../../api/types";
 import { useToast } from "../../components/Toast";
@@ -186,7 +186,7 @@ export function ChatsProvider({
   /** The screenshot harness supplies fake gateways; the app never passes these. */
   workspacesApiOverride?: WorkspacesApi | null;
   conversationsApiOverride?: ConversationApi | null;
-  lifecycleApiOverride?: ConversationLifecycleApi | null;
+  lifecycleApiOverride?: ChatLifecycleApi | null;
 }) {
   const toast = useToast();
   // Read through a ref: outside a provider the hook hands back a new object
@@ -222,21 +222,18 @@ export function ChatsProvider({
         api:
           conversationsApiOverride ??
           createTailnetConversationsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
-        // Settle and visit, only where the desktop said it takes them.
+        // Settle, visit, Mark unread, Snooze and Wake now, on the desktop's
+        // Studio, where the desktop keeps its chats' rest.
         lifecycle: declaresConversationLifecycle(session)
           ? (lifecycleApiOverride ??
-            createConversationLifecycleApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }))
+            createChatLifecycleApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }))
           : null,
         canOperate: conversationCanOperate(session),
-        // Mark unread rides the lifecycle tools, where the desktop takes it too.
-        markUnread: declaresConversationLifecycle(session) && declaresChatMarkUnread(session),
-        // So do Snooze and Wake now, the row menu's, where the desktop takes those.
-        rowMenu: declaresConversationLifecycle(session) && declaresChatRowMenu(session),
       })),
     [conversationsApiOverride, lifecycleApiOverride, sessions],
   );
   const lifecycleFor = useCallback(
-    (deviceId: string): ConversationLifecycleApi | null =>
+    (deviceId: string): ChatLifecycleApi | null =>
       chatClients.find((client) => client.session.deviceId === deviceId)?.lifecycle ?? null,
     [chatClients],
   );
@@ -298,7 +295,7 @@ export function ChatsProvider({
     const startedAt = Date.now();
     setRefreshing(true);
     const answers = await Promise.all(
-      chatClients.map(async ({ session, api, lifecycle, canOperate, markUnread, rowMenu }) => {
+      chatClients.map(async ({ session, api, lifecycle, canOperate }) => {
         // The project pill comes from the desktop's workspace list. A pairing
         // that may not read it omits the pill rather than showing a workspace
         // id nobody chose.
@@ -326,10 +323,8 @@ export function ChatsProvider({
             workspaces: workspaces?.ok ? (workspaces.data ?? []) : null,
             lifecycle: lifecycle !== null,
             canOperate,
-            markUnread,
-            rowMenu,
           }),
-          markUnread,
+          markUnread: lifecycle !== null,
           failed: threads === null,
         };
       }),
@@ -588,8 +583,7 @@ export function ChatsProvider({
 
   const markUnreadChat = useCallback(
     async (row: ChatListRow) => {
-      const client = chatClients.find((entry) => entry.session.deviceId === row.deviceId);
-      const api = client?.markUnread ? client.lifecycle : null;
+      const api = lifecycleFor(row.deviceId);
       if (!api || !row.canMarkUnread) return false;
       const key = chatWorkspaceKey(row);
       // Held from the moment it is asked for: the person leaving the chat's
@@ -615,7 +609,7 @@ export function ChatsProvider({
       });
       return false;
     },
-    [chatClients, noteRewind, refresh],
+    [lifecycleFor, noteRewind, refresh],
   );
   const visitChat = useCallback(
     (chat: { deviceId: string; workspaceId: string }, trigger: VisitTrigger, turnEndedAt: number | null = null) => {

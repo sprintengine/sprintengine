@@ -60,11 +60,11 @@ export type RemoteBrowseEntry = {
   /** What the pairing may do with the machine's chats, as its newest list said. Absent before a list. */
   access?: MeshConversationAccess
   /**
-   * The machine advertises `chat-row-menu`: its chats' Star, Highlight color,
+   * The machine advertises `chat-lifecycle`: its chats' Star, Highlight color,
    * Snooze and Auto-settle are written there. Absent before a list.
    */
   rowMenu?: boolean
-  /** The machine advertises `chat-mark-unread`. Absent before a list. */
+  /** The machine advertises `chat-lifecycle`. Absent before a list. */
   markUnread?: boolean
   /** What of its chats' management the machine takes from here, as its newest list said. Absent before a list. */
   manage?: MeshConversationManage
@@ -87,13 +87,13 @@ export function remoteManageWritable(entry: RemoteBrowseEntry | undefined): Mesh
 
 /**
  * Whether this pairing may write a machine's chats' row menu marks: the
- * machine takes them (`chat-row-menu`), and the pairing may drive its chats.
+ * machine takes them (`chat-lifecycle`), and the pairing may drive its chats.
  */
 export function remoteRowMenuWritable(entry: RemoteBrowseEntry | undefined): boolean {
   return entry?.rowMenu === true && entry.access === 'operate'
 }
 
-/** Whether this pairing may mark a machine's chats unread there (`chat-mark-unread`). */
+/** Whether this pairing may mark a machine's chats unread there (`chat-lifecycle`). */
 export function remoteMarkUnreadWritable(entry: RemoteBrowseEntry | undefined): boolean {
   return entry?.markUnread === true && remoteLifecycleWritable(entry)
 }
@@ -1076,14 +1076,14 @@ export function followedRemoteRestsToKeep(
 // ── A paired machine's chat's row menu marks ─────────────────────────────
 //
 // Its star, colour, sleep and Auto-settle are kept by the machine it runs on
-// (`chat-row-menu`), and read back off that machine's list. A change asked
+// (`chat-lifecycle`), and read back off that machine's list. A change asked
 // from here is drawn at once, as a local Star flips at once, and held until a
 // list read after the machine took it says the same thing for itself.
 
 /** The marks a chat's row wears from its machine's list. */
 export type RemoteChatMarks = Pick<RemoteSessionRow, 'highlight' | 'snoozedUntil' | 'autoSettle'>
 
-/** What a change asked of a paired machine draws at once: its marks, or its name (`chat-rename`). */
+/** What a change asked of a paired machine draws at once: its marks, or its name (`chat-lifecycle`). */
 export type RemoteChatPending = Partial<RemoteChatMarks & Pick<RemoteSessionRow, 'chatTitle' | 'autoCompact'>>
 
 /** A change asked of a paired machine and not yet read back off its list. */
@@ -1225,7 +1225,7 @@ export function remoteWatchedPullRequest(
 /**
  * A row opened here from a paired machine's chat, named as that machine
  * names the chat, where the machine keeps the name for every device
- * (`chat-rename`): a rename from any of them is the row's name here too. A
+ * (`chat-lifecycle`): a rename from any of them is the row's name here too. A
  * row from a machine that does not keep it is named here, as before.
  */
 export function withRemoteChatName(workspace: Workspace, conversation: RemoteConversation): Workspace {

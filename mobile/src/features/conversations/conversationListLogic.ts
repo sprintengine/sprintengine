@@ -208,12 +208,9 @@ export function buildChatRows(input: {
   environmentId?: string;
   threads: readonly ConversationThread[];
   workspaces: readonly DesktopWorkspace[] | null;
+  /** The desktop keeps its chats' rest and marks, and takes them from here. */
   lifecycle: boolean;
   canOperate: boolean;
-  /** Whether the desktop advertises `chat-mark-unread`. */
-  markUnread?: boolean;
-  /** Whether the desktop advertises `chat-row-menu`. */
-  rowMenu?: boolean;
 }): ChatListRow[] {
   const byId = new Map((input.workspaces ?? []).map((workspace) => [workspace.workspaceId, workspace]));
   const listed: ChatListRow[] = [];
@@ -232,8 +229,8 @@ export function buildChatRows(input: {
       projectHue: workspace?.projectHue ?? null,
       lifecycle: input.lifecycle,
       settleable: input.lifecycle && input.canOperate,
-      canMarkUnread: !!input.markUnread && input.canOperate,
-      snoozable: !!input.rowMenu && input.lifecycle && input.canOperate,
+      canMarkUnread: input.lifecycle && input.canOperate,
+      snoozable: input.lifecycle && input.canOperate,
       thread,
     });
   }

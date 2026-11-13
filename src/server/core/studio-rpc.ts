@@ -29,6 +29,9 @@ import type { StudioModules } from '../rpc/studio-modules'
 import { createStudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import { createStudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioSchedulesDomain } from '../schedules/schedules-domain'
+import { createStudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
+import { searchChatsHere } from '../../main/automation/conversation-search'
+import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
 import { createStudioPhoneReads } from '../backlog/backlog-domain'
 import { createTailnetShareService, readTailnetWebTargets } from '../../main/automation/tailnet/tailnet-share-service'
@@ -186,6 +189,26 @@ export function createStudioRpc(
         readShares: () => readTailnetWebTargets(shareService),
       })
     })(),
+    // A chat's record beyond its rest, for the phone and another desktop:
+    // its marks and name written by the same lifecycle the sidebar's are, its
+    // delete made as a window's Delete makes it, and a search of what was
+    // said in the chats this sidebar lists, most recently spoken in first.
+    chatLifecycle: createStudioChatLifecycleDomain({
+      lifecycle: core.conversationLifecycle,
+      deletion: (actor) => core.worktrees.settledChatDeletion(actor),
+      hasChat: (workspaceId) =>
+        core.workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
+      searchChats: (query) =>
+        searchChatsHere(query, {
+          chats: () =>
+            core.workspaceRegistry
+              .getRecords()
+              .filter((record) => record.folderPath && !record.remoteOrigin && !isSettledWorkspace(record))
+              .sort((a, b) => workspaceLastUserMessageAt(b) - workspaceLastUserMessageAt(a))
+              .map((record) => ({ workspaceId: record.id, workspaceRoot: record.folderPath!, chatTitle: record.name })),
+          search: (input) => core.conversations.searchThreads(input),
+        }),
+    }),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },

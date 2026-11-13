@@ -140,6 +140,7 @@ import {
   type StudioWorktreesMethodMap,
   type StudioWorktreesTopicMap,
 } from './worktrees.js'
+import { STUDIO_CHAT_LIFECYCLE_METHODS, type StudioChatLifecycleMethodMap } from './chat-lifecycle.js'
 
 export { parseStudioConversationKey, isStudioPath, STUDIO_MAX_PATH_CHARS, type StudioConversationKey } from './key.js'
 
@@ -259,7 +260,8 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioSharesMethodMap &
   StudioPullRequestReadsMethodMap &
   StudioGitMethodMap &
-  StudioWorktreesMethodMap
+  StudioWorktreesMethodMap &
+  StudioChatLifecycleMethodMap
 
 /** The `server` and `conversation` methods phase 2 shipped; the chat surface's are in `chat.ts`. */
 type StudioConversationMethodMap = {
@@ -701,6 +703,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_PULL_REQUEST_READS_METHODS,
   ...STUDIO_GIT_METHODS,
   ...STUDIO_WORKTREES_METHODS,
+  ...STUDIO_CHAT_LIFECYCLE_METHODS,
 }
 
 /** Whether a string names a method this version of the protocol defines. */

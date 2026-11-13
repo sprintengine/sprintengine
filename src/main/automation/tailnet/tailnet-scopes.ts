@@ -193,7 +193,22 @@ const CHAT_TO_CHAT_TOOLS: ReadonlySet<string> = new Set([
  *
  * The `plugin.*` family finds a plugin and draws it as a card in the calling
  * agent's chat, for the person at this machine to install or not.
+ *
+ * Settling, visiting, marking, snoozing and highlighting a chat are an
+ * agent's tools; a paired device does each through the Studio's own method
+ * of the same purpose (`conversation.settle` and the rest), so a device has
+ * one way to a chat's record, not two.
  */
+/** The agents' tools on a chat's rest, visit clock and marks; a device has the Studio's methods. */
+const CHAT_LIFECYCLE_TOOLS: ReadonlySet<string> = new Set([
+  'conversation.settle',
+  'conversation.visit',
+  'conversation.mark_unread',
+  'conversation.snooze',
+  'conversation.highlight',
+  'conversation.auto_settle',
+])
+
 export function localOnlyGatewayToolReason(toolName: string): string | null {
   if (toolName.startsWith('tailnet.')) {
     return `"${toolName}" configures who may drive this machine and is served only on its owner-only local socket, never over the tailnet. Run it from an agent on that machine.`
@@ -228,6 +243,9 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
   if (toolName.startsWith('visual.')) {
     return `"${toolName}" draws an agent's visual in a hidden window on this machine, for a reply it is writing here. Run it from an agent on that machine.`
   }
+  if (CHAT_LIFECYCLE_TOOLS.has(toolName)) {
+    return `"${toolName}" is an agent's way to a chat's record here. A paired device settles, marks, snoozes and highlights this machine's chats through this machine's Studio (\`conversation.settle\`, \`conversation.markUnread\` and the rest) instead.`
+  }
   if (toolName.startsWith('schedule.')) {
     return `"${toolName}" is an agent's way to this machine's scheduled agents. A paired device lists and changes them through this machine's Studio (\`schedules.*\`) instead.`
   }
@@ -239,21 +257,11 @@ export function localOnlyGatewayToolReason(toolName: string): string | null {
 
 /**
  * Tools served to paired devices and left out of the local socket's list: the
- * other side of `localOnlyGatewayToolReason`. The chat management tools
- * below answer a paired desktop's menus on a chat here, which an agent here
- * has its own ways to, and every tool an agent is listed costs it context.
+ * other side of `localOnlyGatewayToolReason`. Stop watching answers a paired
+ * desktop's menu on a chat here, which an agent here has its own way to, and
+ * every tool an agent is listed costs it context.
  */
-const PAIRED_DEVICE_ONLY_TOOLS: ReadonlySet<string> = new Set([
-  // ── A paired desktop's chat management ──
-  'conversation.rename',
-  'conversation.auto_compact',
-  'conversation.pull_request_unwatch',
-  'conversation.delete_plan',
-  'conversation.delete',
-  'conversation.search',
-  'conversation.approval_rules',
-  'conversation.approval_rule_revoke',
-])
+const PAIRED_DEVICE_ONLY_TOOLS: ReadonlySet<string> = new Set(['conversation.pull_request_unwatch'])
 
 export function servedOnlyToPairedDevices(toolName: string): boolean {
   return PAIRED_DEVICE_ONLY_TOOLS.has(toolName)

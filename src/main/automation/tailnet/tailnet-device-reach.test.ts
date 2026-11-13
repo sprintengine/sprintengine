@@ -60,6 +60,9 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.search': CHAT_READ,
   'conversation.cancelSearch': CHAT_READ,
   'conversation.approvalRules': CHAT_READ,
+  // A chat's record beyond its rest: a delete's plan and a search of every chat.
+  'conversation.deletePlan': CHAT_READ,
+  'conversation.searchChats': CHAT_READ,
   'session.list': CHAT_READ,
   'session.cancelSideQuestion': CHAT_READ,
   'session.contextBreakdown': CHAT_READ,
@@ -86,6 +89,15 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.askSideQuestion': CHAT_OPERATE,
   'conversation.settle': CHAT_OPERATE,
   'conversation.visit': CHAT_OPERATE,
+  'conversation.markUnread': CHAT_OPERATE,
+  'conversation.snooze': CHAT_OPERATE,
+  'conversation.highlight': CHAT_OPERATE,
+  'conversation.setAutoSettle': CHAT_OPERATE,
+  'conversation.setAutoCompact': CHAT_OPERATE,
+  'conversation.rename': CHAT_OPERATE,
+  'conversation.delete': CHAT_OPERATE,
+  // Revoking an always-allow rule only makes the chats ask again.
+  'conversation.revokeApprovalRule': CHAT_OPERATE,
   'conversation.revert': CHAT_OPERATE,
   'conversation.rewind': CHAT_OPERATE,
   'conversation.handoff': CHAT_OPERATE,
@@ -280,7 +292,6 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
       [
         'this Studio’s settings, launch settings and agent setup (settings:write, or an owner’s)',
         [
-          'conversation.revokeApprovalRule',
           'launchSettings.get',
           'launchSettings.update',
           'launchSettings.migrate',

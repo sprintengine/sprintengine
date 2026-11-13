@@ -576,7 +576,7 @@ function lifecycleOf(
       ? { snoozedUntil: Math.trunc(record.snoozedUntil) }
       : {}),
     // The row menu's star, colour and Auto-settle, which a paired device's
-    // menu reads and writes (`chat-row-menu`).
+    // menu reads and writes (`chat-lifecycle`).
     ...(highlight ? { highlight } : {}),
     ...(record?.autoSettleEnabled === true ? { autoSettle: true as const } : {}),
   }

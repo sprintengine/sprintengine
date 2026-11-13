@@ -8,8 +8,6 @@ import {
 } from '../../main/automation/conversation-chat-tools'
 import { createSubagentTools } from '../../main/automation/subagent-tools'
 import { LAUNCH_NOTICE_ORIGIN } from '../../main/agent-launch-notices'
-import { searchChatsHere } from '../../main/automation/conversation-search'
-import { isSettledWorkspace, workspaceLastUserMessageAt } from '../../shared/workspace-lifecycle'
 import {
   chatCheckoutFromRegistry,
   createConversationPullRequestTools,
@@ -118,7 +116,6 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   // there be read (`pull_request.link`).
   const gitHubHostToken = createGhHostTokenResolver(sharedGhRunner())
   const chats = studioChatControl(core)
-  let settledChatDeletion: ReturnType<StudioCore['worktrees']['settledChatDeletion']> | null = null
   const coreTools = [
     ...createConversationTools({
       launch: (request) => core.conversationLaunchService.launch(request),
@@ -127,42 +124,6 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
       lifecycle: core.conversationLifecycle,
       moveChat: core.conversationMove.move,
       ...(options.linkLaunchedAgent ? { linkLaunchedAgent: options.linkLaunchedAgent } : {}),
-      // A paired desktop's Delete on a settled chat here, made as a window's
-      // Delete makes it (settled-chat-deletion-app.ts), its worktree given
-      // back to this core's pool and its record removed as the paired
-      // device's. Built on first ask.
-      settledChatDeletion: () => {
-        settledChatDeletion ??= core.worktrees.settledChatDeletion('mobile')
-        const made = settledChatDeletion
-        return {
-          plan: (ids) => made.plan(ids),
-          delete: (ids) => made.delete(ids),
-          has: (workspaceId) =>
-            workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
-        }
-      },
-      // A paired desktop's palette, finding what was said in the chats here:
-      // the ones this sidebar lists, most recently spoken in first.
-      searchChats: (query) =>
-        searchChatsHere(query, {
-          chats: () =>
-            core.workspaceRegistry
-              .getRecords()
-              .filter((record) => record.folderPath && !record.remoteOrigin && !isSettledWorkspace(record))
-              .sort((a, b) => workspaceLastUserMessageAt(b) - workspaceLastUserMessageAt(a))
-              .map((record) => ({
-                workspaceId: record.id,
-                workspaceRoot: record.folderPath!,
-                chatTitle: record.name,
-              })),
-          search: (input) => core.conversations.searchThreads(input),
-        }),
-      // A paired desktop's Settings, listing and revoking the "always allow"
-      // rules the chats here run with.
-      approvalRules: {
-        list: () => core.conversations.listApprovalRules(),
-        revoke: (ruleId) => core.conversations.revokeApprovalRule(ruleId),
-      },
       // A paired desktop's Stop watching on a chat here.
       pullRequestWatches: {
         watchedOf: async (key) => {

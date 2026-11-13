@@ -4,8 +4,8 @@
 //
 // Ported from the desktop's `utils/workspaceSnooze.ts`, so a chat snoozed
 // here offers the same choices and lands on the same instant as one snoozed
-// from its row menu there. The desktop owns the snooze (`conversation.snooze`,
-// on a desktop that advertises `chat-row-menu`); this phone only asks for one
+// from its row menu there. The desktop owns the snooze (`conversation.snooze`
+// on its Studio); this phone only asks for one
 // and reads the `snoozedUntil` the list carries back. Kept free of React
 // Native so the regression suite runs the same rules the list does.
 

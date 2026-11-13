@@ -32,6 +32,7 @@ import {
   STUDIO_PULL_REQUEST_READS_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
+  STUDIO_CHAT_LIFECYCLE_CAPABILITY,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
@@ -58,6 +59,7 @@ import type { StudioAgentSettings } from '../agent-settings/agent-settings-domai
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
 import type { StudioPhoneReads } from '../backlog/backlog-domain'
+import type { StudioChatLifecycleDomain } from '../chat-lifecycle/chat-lifecycle-domain'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type {
@@ -192,6 +194,8 @@ export type StudioRpcServerOptions = {
   agentSkills?: StudioAgentSkills
   /** The scheduled agents this Studio runs. Advertised as `schedules` only when given. */
   schedules?: StudioSchedulesDomain
+  /** The chats' records beyond their rest. Advertised as `chat-lifecycle` only when given. */
+  chatLifecycle?: StudioChatLifecycleDomain
   /** How this Studio is updated (`update.*`); by hand when not given. */
   updates?: StudioUpdates
   /** The protocol window this Studio speaks: this build's unless given (a test standing in for an older or newer one). */
@@ -273,6 +277,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
           options.phoneReads !== undefined) &&
         (capability !== STUDIO_AGENT_SKILLS_CAPABILITY || options.agentSkills !== undefined) &&
         (capability !== STUDIO_SCHEDULES_CAPABILITY || options.schedules !== undefined) &&
+        (capability !== STUDIO_CHAT_LIFECYCLE_CAPABILITY || options.chatLifecycle !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
         (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined),
@@ -306,6 +311,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.phoneReads ? { phoneReads: options.phoneReads } : {}),
     ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
     ...(options.schedules ? { schedules: options.schedules } : {}),
+    ...(options.chatLifecycle ? { chatLifecycle: options.chatLifecycle } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.modules ? { modules: options.modules } : {}),
     log: options.log,

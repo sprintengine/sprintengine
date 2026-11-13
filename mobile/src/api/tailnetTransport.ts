@@ -254,34 +254,14 @@ export function declaresQuoteTokens(session: { tailnetCapabilities?: string[] })
 
 /**
  * Whether the desktop said its chat list carries each chat's title and
- * clocks, leaves settled chats out, and takes `conversation.settle` and
- * `conversation.visit` (`conversation-lifecycle`). Absence is a NO: an older
- * desktop has neither tool, so the phone offers no Settle and stamps no
- * visits there, and reads its list as it always has.
+ * clocks and leaves settled chats out (`conversation-lifecycle`): a desktop
+ * that keeps its chats' rest, which the phone settles, visits, marks unread
+ * and snoozes on its Studio (`chatLifecycle.ts`). Absence is a NO: the phone
+ * offers none of them there, stamps no visits, and reads its list as it
+ * always has.
  */
 export function declaresConversationLifecycle(session: { tailnetCapabilities?: string[] }): boolean {
   return session.tailnetCapabilities?.includes("conversation-lifecycle") ?? false;
-}
-
-/**
- * Whether the desktop said a paired device may write its chats' row marks
- * (`chat-row-menu`), Snooze and Wake now among them: `conversation.snooze`,
- * with each listed chat's `snoozedUntil`. Absence is a NO: an older desktop
- * answers the tool "Unknown tool", so the phone offers no Snooze there.
- */
-export function declaresChatRowMenu(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("chat-row-menu") ?? false;
-}
-
-/**
- * Whether the desktop said it takes `conversation.mark_unread`
- * (`chat-mark-unread`), which moves a chat's visit clock back so its latest
- * finish reads as unseen on every device. Absence is a NO: an older desktop
- * answers the tool "Unknown tool", so the phone offers no Mark unread there,
- * and its list's visit clock is read as only ever moving forward.
- */
-export function declaresChatMarkUnread(session: { tailnetCapabilities?: string[] }): boolean {
-  return session.tailnetCapabilities?.includes("chat-mark-unread") ?? false;
 }
 
 /**

@@ -816,7 +816,7 @@ test('a remote-born row names its chat by the session it was stamped with', () =
   assert.equal(remoteOriginChatWorkspaceId({ workspaceId: 'seat' }), 'seat', 'a row born before the stamp')
 })
 
-// The row menu's marks on a paired machine's chat (`chat-row-menu`): read off
+// The row menu's marks on a paired machine's chat (`chat-lifecycle`): read off
 // its list, drawn at once when asked for here, and worn by a row opened here.
 function bandOfListed(over: Partial<MeshConversation>, entry: Partial<RemoteBrowseEntry> = {}) {
   const listed: MeshConversation = {

@@ -1,6 +1,7 @@
 /* global __dirname */
 // Mark unread, synced with the desktop: where the phone offers it, the
-// `conversation.mark_unread` call and its answers, and how a visit clock the
+// desktop's `conversation.markUnread` (its call is chatLifecycle's, and its
+// suite's), and how a visit clock the
 // desktop moved back is read against this phone's own readings: the list's
 // green, the bell's, and the "New" divider.
 const assert = require("node:assert/strict");
@@ -21,11 +22,7 @@ const { chatOpenedSince, unreadDividerRowId, unreadDividerTurn } = require(
   path.join(buildRoot, "src/features/conversations/unreadDivider.js"),
 );
 const { projectConversation } = require(path.join(buildRoot, "src/features/conversations/conversationLogic.js"));
-const { createConversationLifecycleApi, readMarkUnreadAnswer } = require(
-  path.join(buildRoot, "src/api/conversationLifecycle.js"),
-);
 const { buildNotices } = require(path.join(buildRoot, "src/features/notices/noticesLogic.js"));
-const { declaresChatMarkUnread } = require(path.join(buildRoot, "src/api/tailnetTransport.js"));
 const { parseConversationFrame } = require(path.join(buildRoot, "src/api/conversationWire.js"));
 // A listed chat as the phone reads it: through a `sessions` frame, by the
 // desktop's contract.
@@ -57,73 +54,28 @@ const thread = (overrides = {}) => ({
 const rows = (input) =>
   buildChatRows({ deviceId: "mac", desktopName: "Mac", workspaces: null, lifecycle: true, canOperate: true, ...input });
 
-test("Mark unread is offered only where the desktop advertises chat-mark-unread and this phone operates its chats", () => {
-  assert.equal(declaresChatMarkUnread({ tailnetCapabilities: ["conversation-lifecycle", "chat-mark-unread"] }), true);
-  assert.equal(declaresChatMarkUnread({ tailnetCapabilities: ["conversation-lifecycle"] }), false, "an older desktop answers Unknown tool");
-  assert.equal(declaresChatMarkUnread({}), false, "a desktop that declared nothing is a no");
-
-  const [offered] = rows({ threads: [thread()], markUnread: true });
+test("Mark unread is offered only where the desktop keeps its chats' rest and this phone operates its chats", () => {
+  const [offered] = rows({ threads: [thread()] });
   assert.equal(offered.canMarkUnread, true);
   assert.equal(markUnreadOffered(offered, { now: NOW }), true);
-  const [older] = rows({ threads: [thread()] });
+  const [older] = rows({ threads: [thread()], lifecycle: false });
   assert.equal(older.canMarkUnread, false);
   assert.equal(markUnreadOffered(older, { now: NOW }), false);
-  const [readOnly] = rows({ threads: [thread()], markUnread: true, canOperate: false });
+  const [readOnly] = rows({ threads: [thread()], canOperate: false });
   assert.equal(markUnreadOffered(readOnly, { now: NOW }), false, "a pairing that may only read its chats marks nothing");
 });
 
 test("Mark unread waits for a finished reply, and is not offered on a chat already unread", () => {
-  const [nothingFinished] = rows({ threads: [thread({ lastTurnEndedAt: undefined, phase: "running" })], markUnread: true });
+  const [nothingFinished] = rows({ threads: [thread({ lastTurnEndedAt: undefined, phase: "running" })]});
   assert.equal(markUnreadOffered(nothingFinished, { now: NOW }), false, "the desktop would refuse it as nothing_finished");
   // Working on its next turn, with an earlier one finished and read: offered.
-  const [working] = rows({ threads: [thread({ phase: "running" })], markUnread: true });
+  const [working] = rows({ threads: [thread({ phase: "running" })]});
   assert.equal(markUnreadOffered(working, { now: NOW }), true);
   // Finished after anyone last looked: it is green already.
-  const [unseen] = rows({ threads: [thread({ lastVisitedAt: NOW - 20 * MIN })], markUnread: true });
+  const [unseen] = rows({ threads: [thread({ lastVisitedAt: NOW - 20 * MIN })]});
   assert.equal(markUnreadOffered(unseen, { now: NOW }), false);
   // The phone opened it after the finish: read here, so offered.
   assert.equal(markUnreadOffered(unseen, { now: NOW, openedAt: NOW - MIN }), true);
-});
-
-test("mark_unread goes over the gateway's JSON-RPC POST, and its refusal keeps the desktop's words", async (t) => {
-  const calls = [];
-  const original = globalThis.fetch;
-  t.after(() => {
-    globalThis.fetch = original;
-  });
-  let refuse = false;
-  globalThis.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
-    calls.push({ url, auth: init.headers.authorization, name: body.params.name, args: body.params.arguments });
-    const structuredContent = refuse
-      ? {
-          ok: false,
-          error: {
-            code: "nothing_finished",
-            message: "No agent in this chat has finished anything yet, so there is nothing to mark unread.",
-          },
-        }
-      : { ok: true, workspaceId: body.params.arguments.workspaceId, lastVisitedAt: 41 };
-    return { ok: true, status: 200, json: async () => ({ jsonrpc: "2.0", id: body.id, result: { structuredContent } }) };
-  };
-  const api = createConversationLifecycleApi({ baseUrl: "http://desk:7777", deviceToken: "tok" });
-  assert.deepEqual(await api.markUnread("w1"), { ok: true, data: { workspaceId: "w1", lastVisitedAt: 41 } });
-  assert.deepEqual(calls[0], {
-    url: "http://desk:7777/tailnet/v1/mcp",
-    auth: "Bearer tok",
-    name: "conversation.mark_unread",
-    args: { workspaceId: "w1" },
-  });
-  refuse = true;
-  const refused = await api.markUnread("w1");
-  assert.equal(refused.ok, false);
-  assert.match(refused.message, /nothing to mark unread/);
-
-  // Only the tool's own shape, for the chat that was asked about, counts.
-  assert.deepEqual(readMarkUnreadAnswer({ ok: true, workspaceId: "w1", lastVisitedAt: 0 }, "w1"), { workspaceId: "w1", lastVisitedAt: 0 });
-  assert.equal(readMarkUnreadAnswer({ ok: true, workspaceId: "w2", lastVisitedAt: 5 }, "w1"), null);
-  assert.equal(readMarkUnreadAnswer({ ok: true, workspaceId: "w1", lastVisitedAt: -1 }, "w1"), null);
-  assert.equal(readMarkUnreadAnswer({ ok: true, workspaceId: "w1" }, "w1"), null);
 });
 
 test("a listed visitRewoundAt is kept in its shape, beside the visit clock", () => {
@@ -222,7 +174,7 @@ test("a chat marked unread shows unread at any age: green under Earlier, where i
     lastTurnEndedAt: NOW - 3 * DAY,
     lastVisitedAt: NOW - 3 * DAY + MIN,
   });
-  const [before] = rows({ threads: [old], markUnread: true });
+  const [before] = rows({ threads: [old]});
   assert.equal(chatRowState(before.thread, { now: NOW, lifecycle: true }), "idle");
   assert.equal(markUnreadOffered(before, { now: NOW }), true);
 
@@ -235,7 +187,7 @@ test("a chat marked unread shows unread at any age: green under Earlier, where i
     // The desktop's, listed.
     { ...old, lastVisitedAt: rewind.visitedAt, visitRewoundAt: rewind.rewoundAt },
   ]) {
-    const [row] = rows({ threads: [marked], markUnread: true });
+    const [row] = rows({ threads: [marked]});
     assert.equal(chatMarkedUnread(row.thread, opened), true);
     assert.equal(chatRowState(row.thread, { now: NOW, openedAt: opened, lifecycle: true }), "finished", "the mark is seen, however old the turn");
     assert.equal(markUnreadOffered(row, { now: NOW, openedAt: opened }), false, "it is unread already");
@@ -251,7 +203,7 @@ test("a chat marked unread shows unread at any age: green under Earlier, where i
     assert.equal(seen, rewind.visitedAt);
     assert.ok(seen < old.lastTurnEndedAt);
     // And the opening reads it: the mark is gone, and Mark unread is back.
-    const [read] = rows({ threads: [row.thread], markUnread: true });
+    const [read] = rows({ threads: [row.thread]});
     assert.equal(chatMarkedUnread(read.thread, NOW), false);
     assert.equal(chatRowState(read.thread, { now: NOW, openedAt: NOW, lifecycle: true }), "idle");
     assert.equal(markUnreadOffered(read, { now: NOW, openedAt: NOW }), true);
@@ -269,6 +221,6 @@ test("without a mark, a finish nobody saw still goes quiet after a day", () => {
   assert.equal(chatMarkedUnread(readSince), false);
   assert.equal(chatRowState(readSince, { now: NOW, lifecycle: true }), "idle");
   // Within the day a marked chat rings the bell as any unseen finish does.
-  const [recent] = rows({ threads: [thread({ lastVisitedAt: NOW - 10 * MIN - 1, visitRewoundAt: NOW - MIN })], markUnread: true });
+  const [recent] = rows({ threads: [thread({ lastVisitedAt: NOW - 10 * MIN - 1, visitRewoundAt: NOW - MIN })]});
   assert.equal(buildNotices({ chats: [recent], openedAt: {}, now: NOW }).length, 1);
 });

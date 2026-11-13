@@ -422,6 +422,25 @@ test('a paired grant reaches every chat control by its scopes; only a terminal h
   }
 })
 
+test('whoever may drive the chats may revoke an always-allow rule: it only makes them ask again', async () => {
+  const { handle } = grantsRouter()
+  const driver: StudioGrant = {
+    clientId: 'phone',
+    name: 'Phone',
+    owner: false,
+    scopes: ['conversation:operate'],
+    ceiling: 'bypass',
+  }
+  assert.equal(
+    code(await handle(driver, 'conversation.revokeApprovalRule', { commandId: 'r1', ruleId: 'rule-1' })),
+    'ok',
+  )
+  assert.equal(
+    code(await handle(driver, 'providers.setSecret', { commandId: 'r2', providerId: 'p', value: 'sk' })),
+    'scope_required',
+  )
+})
+
 test('a read-only grant follows chats and is refused every method that needs more', async () => {
   const { readOnly, handle, chat } = grantsRouter()
   assert.equal(code(await handle(readOnly, 'session.list', {})), 'ok')
@@ -432,9 +451,52 @@ test('a read-only grant follows chats and is refused every method that needs mor
     ['providers.setSecret', { commandId: 'c3', providerId: 'p', value: 'sk-test' }],
     ['providers.list', {}],
     ['files.search', { rootPath: '/Users/dev/app', query: 'a' }],
+    ['conversation.revokeApprovalRule', { commandId: 'c4', ruleId: 'rule-1' }],
   ] as const)
     assert.equal(code(await handle(readOnly, method, params)), 'scope_required', method)
   assert.equal(chat.calls.sends.length, 0)
+})
+
+test('a client that is not an owner reads the always-allow rules by project, never by folder', async () => {
+  const { owner, readOnly, handle, chat } = grantsRouter()
+  const rules = [
+    {
+      id: 'rule-1',
+      workspaceRoot: '/Users/dev/app',
+      toolKind: 'file_edit' as const,
+      toolName: 'Write',
+      matcher: { type: 'path' as const, prefix: '/Users/dev/app' },
+      label: 'Write: files within /Users/dev/app except .git',
+      createdAt: 1,
+    },
+    {
+      id: 'rule-2',
+      workspaceRoot: '/Users/dev/app',
+      toolKind: 'command' as const,
+      toolName: 'Bash',
+      matcher: { type: 'command' as const, program: 'npm', subcommand: 'test' },
+      label: 'Bash: npm test',
+      createdAt: 2,
+    },
+  ]
+  chat.approvalRules = async () => ({ ok: true, rules })
+  const mine = await handle(owner, 'conversation.approvalRules', {})
+  assert.deepEqual(mine.ok && mine.result, { ok: true, rules })
+  const theirs = await handle(readOnly, 'conversation.approvalRules', {})
+  assert.ok(theirs.ok)
+  assert.ok(!JSON.stringify(theirs.result).includes('/Users/dev'), JSON.stringify(theirs.result))
+  assert.deepEqual(theirs.ok && theirs.result, {
+    ok: true,
+    rules: [
+      {
+        ...rules[0],
+        workspaceRoot: 'app',
+        matcher: { type: 'path', prefix: 'app' },
+        label: 'Write: files within app except .git',
+      },
+      { ...rules[1], workspaceRoot: 'app' },
+    ],
+  })
 })
 
 test('what a client that is not an owner names for a chat is held to the folders Studio knows, and never a CLI’s program', async () => {

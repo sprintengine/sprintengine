@@ -19,7 +19,8 @@ import { TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
 // over a fake conversation backend, and the shared client runtime on the
 // other end with a device's token, as the phone and a paired desktop run it.
 
-type ServerInput = Omit<Parameters<typeof startTestServer>[0], 'backend'>
+/** The Studio's options; its conversations are a fake backend's unless one is given. */
+type ServerInput = Parameters<typeof startTestServer>[0]
 
 export type DeviceRig = {
   gateway: TailnetGatewayServer

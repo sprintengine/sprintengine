@@ -270,9 +270,9 @@ export type MeshVisitConversationResult =
 
 /**
  * A row menu change to a chat on a paired machine, written to that machine's
- * record of it: Snooze and Wake now (`until: null`), Star and Highlight color
- * (a member left out stays as it is), Auto-settle (`chat-row-menu` there), and
- * Mark unread (`chat-mark-unread` there).
+ * record of it by its Studio (`chat-lifecycle` there): Snooze and Wake now
+ * (`until: null`), Star and Highlight color (a member left out stays as it
+ * is), Auto-settle, and Mark unread.
  */
 export type MeshConversationChange =
   | { kind: 'snooze'; until: number | null }
@@ -283,43 +283,42 @@ export type MeshConversationChange =
 
 /**
  * A chat's management from a paired desktop, beyond its marks, each where
- * the machine advertises its capability (`MeshConversationManage`): Rename
- * (`chat-rename`), Auto compact (`chat-auto-compact`) and Stop watching
- * (`chat-unwatch-pull-request`) and Delete (`chat-delete`).
+ * the machine takes it (`MeshConversationManage`): Rename, Auto compact and
+ * Delete on its Studio (`chat-lifecycle`), and Stop watching by its gateway
+ * tool (`chat-unwatch-pull-request`).
  */
 export type MeshConversationManageChange =
   | { kind: 'rename'; name: string }
   | { kind: 'auto-compact'; enabled: boolean }
   /** One agent's watch of a pull request, by its address; every watch the agent has without one. */
   | { kind: 'unwatch-pull-request'; agentId: string; url?: string }
-  /** A settled chat deleted there for good (`chat-delete`), after its plan was said. */
+  /** A settled chat deleted there for good (`chat-lifecycle`), after its plan was said. */
   | { kind: 'delete' }
 
 /**
- * Which of a chat's management a paired machine takes from here, by the
- * capability each needs there. `rename`: `chat-rename`, the chat renamed
- * there, so every device lists it by the new name. `autoCompact`:
- * `chat-auto-compact`, the chat's Auto compact switched there, the machine
- * that runs it compacting it by itself. `unwatchPullRequest`:
+ * Which of a chat's management a paired machine takes from here. `rename`,
+ * `autoCompact`, `deleteSettled` and `search` are its Studio's
+ * (`chat-lifecycle`): the chat renamed there, so every device lists it by the
+ * new name; its Auto compact switched there, the machine that runs it
+ * compacting it by itself; a settled chat deleted there for good, its plan
+ * read first (`meshConversationDeletePlan`); and what was said in its chats
+ * found from here (`meshConversationSearch`). `unwatchPullRequest`:
  * `chat-unwatch-pull-request`, a watch of the chat's pull request ended
- * there, where its listed pull request says it is watched. `deleteSettled`:
- * `chat-delete`, a settled chat deleted there for good, its plan read first
- * (`meshConversationDeletePlan`).
+ * there, where its listed pull request says it is watched.
  */
 export type MeshConversationManage = {
   rename: boolean
   autoCompact: boolean
   unwatchPullRequest: boolean
   deleteSettled: boolean
-  /** `chat-search`: what was said in the machine's chats is found from here (`meshConversationSearch`). */
   search: boolean
 }
 
 /**
- * What was said in a paired machine's chats (`conversation.search`): one entry
+ * What was said in a paired machine's chats (`conversation.searchChats`): one entry
  * per chat with a match, by its id there, carrying its matching messages and
  * how many there were. `truncated` is an answer that stopped early.
- * `search_unsupported` is a machine without `chat-search`.
+ * `search_unsupported` is a machine without `chat-lifecycle`.
  */
 export type MeshConversationSearchResult =
   | {
@@ -444,7 +443,7 @@ export const MESH_UPDATE_SCHEDULED_AGENT_CHANNEL = 'mesh:update-scheduled-agent'
  * plans it (`conversation.delete_plan`): each worktree it owns by its name and
  * branch, never a path there, and `refused` while it cannot be deleted. `gone`
  * is a chat that machine no longer has. `delete_unsupported` is a machine
- * without `chat-delete`.
+ * without `chat-lifecycle`.
  */
 export type MeshConversationDeletePlanResult =
   | {
@@ -775,10 +774,10 @@ export type MeshConversationFrame =
  * `conversation.settle` and `conversation.visit`. False for a machine that
  * does not, whose chats offer no Settle here.
  *
- * `rowMenu`: the machine advertises `chat-row-menu` — its chats' Star,
+ * `rowMenu`: the machine's Studio serves `chat-lifecycle` — its chats' Star,
  * Highlight color, Snooze and Auto-settle are offered here, and written there.
  *
- * `markUnread`: the machine advertises `chat-mark-unread` — its chats offer
+ * `markUnread`: the machine's Studio serves `chat-lifecycle` — its chats offer
  * Mark unread here.
  */
 export type MeshConversationListResult =

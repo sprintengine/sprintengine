@@ -207,12 +207,12 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
       ...(host.listCommands ? { listCommands: (key, refresh) => host.listCommands!(key, refresh) } : {}),
       ...(deps.lifecycle
         ? {
-            settle: (chat, settled, byOwner) => {
-              const done = deps.lifecycle!.settle(chat.workspaceId, settled, byOwner ? 'gateway' : 'mobile')
+            settle: (workspaceId, settled, byOwner) => {
+              const done = deps.lifecycle!.settle(workspaceId, settled, byOwner ? 'gateway' : 'mobile')
               return done.ok ? { ok: true, settledAt: done.settledAt } : done
             },
-            visit: (chat, visitedAt, byOwner) => {
-              const done = deps.lifecycle!.visit(chat.workspaceId, visitedAt, byOwner ? 'gateway' : 'mobile')
+            visit: (workspaceId, visitedAt, byOwner) => {
+              const done = deps.lifecycle!.visit(workspaceId, visitedAt, byOwner ? 'gateway' : 'mobile')
               return done.ok ? { ok: true, lastVisitedAt: done.lastVisitedAt } : done
             },
           }
