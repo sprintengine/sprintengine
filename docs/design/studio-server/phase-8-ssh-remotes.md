@@ -196,11 +196,10 @@ As built (2026-10-03):
 - A workspace on an SSH machine is recorded with
   `environment: { kind: 'ssh', id, label }` and the folder as that machine
   spells it; `hostId` stays absent (this computer's `local`), as change 1 in
-  section 12 asks. The router in the core (`RoutedConversationBackend`, phase
-  7's) sends such a workspace's chats to `ssh:<id>`, on any platform. Main's
-  sessions reach the core in process only: with the desktop's server out of
-  process, machines are listed and connected, but their chats are not routed
-  yet.
+  section 12 asks. Since design-wsl-ssh-direct PR 1d such a workspace's
+  chats are the machine's Studio's, its record here a copy the machine feeds
+  (see "The machine's own chats" below); the core's router no longer sends
+  them anywhere.
 - Settings › Machines shows on every platform now, with an "SSH machines"
   section: the add field (suggestions from the plain `Host` names of
   `~/.ssh/config`, then the resolved route shown before saving), each machine
@@ -573,11 +572,10 @@ As built (2026-10-03), `src/main/environments/ssh/ssh-environment.ts`:
   `commandId` is answered once by the server's receipts, so repeating it after
   a reconnect joins the turn still running there instead of starting another
   (`ssh-environment.docker.test.ts` drops a session mid-turn and shows it).
-  Events emitted while the wire was down are caught up by the subscription
-  itself: when the router attaches a new wire for a server it followed
-  before, it says so (`onRouteResumed`), and every `ConversationSessionApi`
-  subscription to a chat that server holds joins again from its own cursor
-  and generation, with live events held back meanwhile. A log the server
+  Events emitted while the window was cut off are caught up by the window's
+  own client of the machine (until PR 1d, by the router's `onRouteResumed`):
+  its streams join again from their own cursor and generation once it
+  reconnects on a fresh ticket. A log the server
   vouches for hands over just the missed events; a rewritten one a reset
   snapshot. The chat view needs no reload and sees nothing twice
   (`ssh-resume.test.ts`: the session dropped, another client ending the turn
@@ -1358,8 +1356,9 @@ contents). A watch is answered that there is none; every other channel is
 refused with "Not available for SSH machines yet (<channel>)". So the
 explorer, the editor's and previews' reads, @-mentions, git status and diffs
 in the Git pane, and staging and committing work, read and run on the
-machine. The router translates a chat's root at its edge as it does for WSL
-(`createPathEdge`, shared now by both). This process's own runtime refuses a
+machine. A chat's paths are respelled at the edge of this computer's client
+of the machine (`src/shared/machine-studio-client.ts`): `ssh://<id>/abs`
+there and back. This process's own runtime refuses a
 chat whose folder is spelled for a machine, in words, and local root scans
 drop such folders, so turning the preview off never makes this computer
 read or write a folder named after one (`machine-files.test.ts` against the
@@ -1384,12 +1383,30 @@ Out of process (phase 6's switch), main still holds the SSH sessions. The
 desktop's server asks main for each relay stream it needs
 (`shell.ssh.open { key, purpose }`); main opens it on the machine's session
 and hands the server a message port spliced onto it (an `ssh-stream`
-attach), over which the server reads its conversation wire and relays the
-desktop's browser and canvas toolsets. Main tells the server when a machine
-connects or reconnects (`ssh.connected`), and again for every connected
-machine when a restarted server comes up, so its router follows that
-machine's chats as the in-process core does
-(`src/server/desktop/shell-ssh-servers.ts`).
+attach), over which the server opens its owner client of the machine's
+Studio (`src/server/desktop/shell-environment-clients.ts`) and, until
+design-wsl-ssh-direct PR 2, the backend wire the Files and Git panes' machine
+channels and the relayed browser and canvas toolsets use
+(`src/server/desktop/shell-ssh-servers.ts`). Main tells the server when a
+machine connects or reconnects (`ssh.connected`).
+
+**The machine's own chats** (design-wsl-ssh-direct PR 1d). The machine's
+Studio owns its chats' records and runs their background work. The desktop
+hands over what it kept for them once, on the first connect after upgrading
+(`environment.adopt`, journal `environment-migration.json`): the workspace
+records, schedules in the machine's folders, scheduled and held messages with
+their pictures and files, usage-limit resumes, and the pull requests its
+chats opened with their watches' untold news. Its registry then keeps a copy
+of each record, written only from the machine's own `workspaceSync` stream
+over main's owner connection, and only in the fields the machine owns; the
+window's arrangement (which window, active chat, layout) stays the desktop's.
+A window's change to a copy is made on the machine first and refused in words
+when it is not connected. The window drives the chat on its own client of the
+machine (the loopback route and a ticket from the machine's window listener);
+the gateway's tools act on it as a client of the machine
+(`src/server/core/environment-chat-calls.ts`). Devices do not see these chats
+through the desktop (`workspaces.list` leaves copies out) until they reach the
+machine over `relay:<environmentId>`.
 
 The jump-host and password variants of 9.3 ran against containers' sshd
 (`ssh-variants.docker.test.ts`): a machine reachable only through a bastion

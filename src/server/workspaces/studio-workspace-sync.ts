@@ -25,8 +25,8 @@ import type { StudioCore } from '../core/studio-core'
 export type StudioWorkspaceSync = {
   snapshot(): StudioWorkspaceSyncSnapshot
   eventsAfter(sequence: number): StudioWorkspaceSyncEvent[]
-  dispatch(command: Record<string, unknown>, windowId: string): StudioWorkspaceSyncCommandResult
-  lifecycle(request: Record<string, unknown>): StudioWorkspaceLifecycleResult
+  dispatch(command: Record<string, unknown>, windowId: string): Promise<StudioWorkspaceSyncCommandResult>
+  lifecycle(request: Record<string, unknown>): Promise<StudioWorkspaceLifecycleResult>
   setSettledChatsSettings(settings: Record<string, unknown>): void
   setModuleRunStates(states: Record<string, unknown>): void
   needsHydration(): boolean
@@ -47,6 +47,7 @@ type Core = Pick<
   | 'settledChatsSettings'
   | 'settlement'
   | 'platform'
+  | 'environmentReplicas'
 >
 
 export function createStudioWorkspaceSync(core: Core): StudioWorkspaceSync {
@@ -65,7 +66,12 @@ export function createStudioWorkspaceSync(core: Core): StudioWorkspaceSync {
   return {
     snapshot: () => sync.getSnapshot() as unknown as StudioWorkspaceSyncSnapshot,
     eventsAfter: (sequence) => sync.getEventsAfter(sequence).map(asEvent),
-    dispatch(command, windowId) {
+    async dispatch(command, windowId) {
+      // A change to the record of a chat another environment holds is made
+      // there first, and here as that environment then reads
+      // (environment-replicas.ts); the window's arrangement is made here.
+      const forwarded = await core.environmentReplicas?.dispatch(command)
+      if (forwarded) return forwarded
       const result = sync.dispatch({ command, sourceWindowId: windowId })
       // A window's change is recorded without a broadcast of its own (the
       // IPC sent it to every other window); here every follower hears it on
@@ -74,9 +80,11 @@ export function createStudioWorkspaceSync(core: Core): StudioWorkspaceSync {
       if (result.ok) for (const listener of listeners) listener(asEvent(result.event))
       return result as unknown as StudioWorkspaceSyncCommandResult
     },
-    lifecycle(request) {
+    async lifecycle(request) {
       const parsed = parseWorkspaceLifecycleRequest(request)
       if (!parsed) return { ok: false, code: 'invalid_arguments', message: 'That is not a change to a chat’s rest.' }
+      const forwarded = await core.environmentReplicas?.lifecycle(request)
+      if (forwarded) return forwarded
       return core.conversationLifecycle.fromWindow(parsed) as StudioWorkspaceLifecycleResult
     },
     setSettledChatsSettings: (settings) => core.settledChatsSettings.set(settings),

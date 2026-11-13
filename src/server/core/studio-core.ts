@@ -91,11 +91,12 @@ import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
 import { localConversationBackend, refuseMachinePaths, type ConversationBackend } from './conversation-backend'
-import {
-  createRoutedConversationBackend,
-  type SshRoutedConnection,
-  type SshRoutedServers,
-} from './routed-conversation-backend'
+import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
+import { createEnvironmentReplicas } from '../environment/environment-replicas'
+import { createEnvironmentMigration } from '../environment/environment-migration'
+import { studioMigrationStores } from '../environment/environment-migration-stores'
+import { createRoutedConversationBackend } from './routed-conversation-backend'
+import type { SshMachineBackends } from './ssh-machine-backends'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
@@ -206,9 +207,19 @@ export type StudioCoreOptions = {
    * their prompts. Given, a workspace recorded on one runs its chats there.
    * In process only: out of process, main's sessions are not this core's.
    */
+  /**
+   * Other environments' Studios (an SSH machine's), as the desktop's own
+   * callers reach a chat one holds: the gateway's tools and modules act on it
+   * there, as a client of that machine (design-wsl-ssh-direct PR 1d).
+   */
+  environmentClients?: EnvironmentClients | null
+  /**
+   * SSH machines' backend wires, for the Files and Git panes' machine channels
+   * alone (`sshMachineCall`, gone with design-wsl-ssh-direct PR 2). A
+   * machine's chats are its Studio's, reached by `environmentClients`.
+   */
   sshServers?: {
-    servers: SshRoutedServers
-    onConnected(listener: (connection: SshRoutedConnection) => void): void
+    servers: SshMachineBackends
     /**
      * A saved SSH machine's host, as its SSH config resolves it (else as it
      * was typed), and its resolved port: what its kind and colour are keyed
@@ -323,6 +334,18 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     registry: workspaceRegistry,
     resolveResumeCapabilities: cliResumeCapabilities,
   })
+  // This desktop's copies of the chats an SSH machine holds, written only from
+  // what that machine's Studio says (environment-replicas.ts), and followed
+  // from each time it connects.
+  const environmentReplicas = options.environmentClients
+    ? createEnvironmentReplicas({
+        clients: options.environmentClients,
+        sync: workspaceSyncService,
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
+        },
+      })
+    : null
 
   // Git for a repository runs on the machine of the open workspace holding
   // it, which is where its agents run theirs: a `C:\` folder of a WSL
@@ -453,35 +476,30 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     ? async (id: string, channel: string, args: unknown[]): Promise<unknown> => {
         const key = `ssh:${id}`
         const connection = sshServers.servers.current(key) ?? (await sshServers.servers.connect(key))
-        sshServers.servers.touch(key)
         return connection.backend.machine(channel, args)
       }
     : null
-  if (wslServers || sshServers) {
-    if (wslServers) {
-      wslServersForHosts = wslServers
-      // Settings › Machines reads the server's state with the machine list.
-      wslServers.onStatus(() => hosts.notifyChanged())
-    }
+  if (wslServers) {
+    wslServersForHosts = wslServers
+    // Settings › Machines reads the server's state with the machine list.
+    wslServers.onStatus(() => hosts.notifyChanged())
     const routed = createRoutedConversationBackend({
       local: localConversations,
       workspace: (workspaceId) => workspaceRegistry.getRecord(workspaceId) ?? null,
-      chatServerOn: (distro) => wslServers?.chatServerOn(distro) ?? false,
-      servers: wslServers?.manager ?? null,
-      ssh: sshServers?.servers ?? null,
+      chatServerOn: (distro) => wslServers.chatServerOn(distro),
+      servers: wslServers.manager,
       log: (message) => {
         void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Remote server', message })
       },
     })
-    wslServers?.onConnected((connection) => routed.attach(connection))
+    wslServers.onConnected((connection) => routed.attach(connection))
     // A distribution's server that stopped under its chats (a crash, `wsl
     // --shutdown`): the turns it was running show as interrupted now, not
     // when the server next starts and its transcripts are read again.
-    wslServers?.onStatus((status) => {
+    wslServers.onStatus((status) => {
       if (status.state === 'unavailable' || status.state === 'shut-down')
         routed.lost(status.distro, `The Studio server in ${status.distro} stopped while this turn was running.`)
     })
-    sshServers?.onConnected((connection) => routed.attach(connection))
     conversations = routed
   }
 
@@ -494,8 +512,17 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     return workspaceRoot ? { ...chat, workspaceRoot } : null
   }
   const subagents = createSubagentLifecycle({
-    agentsOf: (workspaceId) => workspaceRegistry.getRecord(workspaceId)?.agents ?? null,
-    workspaceIds: () => workspaceRegistry.getRecords().map((record) => record.id),
+    // This core's chats only: a copy of another environment's chat has its
+    // sub-agents there, and their ends are that Studio's to record.
+    agentsOf: (workspaceId) => {
+      const record = workspaceRegistry.getRecord(workspaceId)
+      return record && !environmentRouteOfRecord(record) ? record.agents : null
+    },
+    workspaceIds: () =>
+      workspaceRegistry
+        .getRecords()
+        .filter((record) => !environmentRouteOfRecord(record))
+        .map((record) => record.id),
     writeEnd: ({ workspaceId, agentId }, subagentEnd) => {
       workspaceSyncService.updateWorkspaceAgent(workspaceId, agentId, { subagentEnd }, 'system')
     },
@@ -1249,6 +1276,49 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start()
 
+  // What this desktop kept for an SSH machine's chats goes to that machine's
+  // Studio (environment-migration.ts): planned at start and on each connect,
+  // delivered once it is reachable. Only then are this desktop's records of
+  // its chats the machine's copies, followed from what it says.
+  const environmentMigration = options.environmentClients
+    ? createEnvironmentMigration({
+        dataDir,
+        clients: options.environmentClients,
+        stores: studioMigrationStores({
+          workspaceRegistry,
+          scheduledAgents: scheduledAgents.service,
+          scheduledMessages,
+          usageLimitResumes,
+          pullRequests: pullRequests.record,
+        }),
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
+        },
+      })
+    : null
+  const handOver = async (route: string) => {
+    if (!environmentMigration || !environmentReplicas) return
+    await environmentMigration.plan()
+    if ((await environmentMigration.deliver(route)) && environmentMigration.handedOver(route))
+      await environmentReplicas.follow(route)
+  }
+  if (environmentMigration && options.environmentClients) {
+    options.environmentClients.onConnected((route) => void handOver(route).catch(() => undefined))
+    // At start: every machine this desktop holds chats or waiting records
+    // for, reached if it is connected already; the rest wait for their connect.
+    void environmentMigration
+      .plan()
+      .then(() => {
+        const routes = new Set(environmentMigration.waiting())
+        for (const record of workspaceRegistry.getRecords()) {
+          const route = environmentRouteOfRecord(record)
+          if (route) routes.add(route)
+        }
+        for (const route of routes) void handOver(route).catch(() => undefined)
+      })
+      .catch(() => undefined)
+  }
+
   // A chat is titled here, from its own events, rather than by a window: the
   // chats that most need a title are the ones a phone or a paired machine
   // started while no window was watching (chat-titler.ts). The heuristic
@@ -1362,6 +1432,10 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   }
 
   return {
+    /** Other environments' Studios, as this desktop's callers reach a chat one holds; null where it reaches none. */
+    environmentClients: options.environmentClients ?? null,
+    /** This desktop's copies of the chats other environments hold; null where it reaches none. */
+    environmentReplicas,
     platform,
     role: options.role,
     /** Null only in a desktop that could not take the directory and carried on, as builds before the lock did. */

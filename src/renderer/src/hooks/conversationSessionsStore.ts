@@ -30,6 +30,7 @@ import type {
 import { conversationPhaseWorking, conversationSummaryPhase } from '../../../shared/conversation/phase'
 import { onWindowVisibilityChange, windowActivity, type WindowActivity } from '../utils/windowActivity'
 import { windowChatServices } from '../components/panels/agentChat/windowChat'
+import { followedEnvironmentChats, onFollowedEnvironmentChats } from '../studio/environmentChats'
 
 /**
  * A summary as the renderer holds it: main's fields, plus when the work now
@@ -52,8 +53,53 @@ export type ConversationSessionsApi = {
 
 const windowSessions = (): ConversationSessionsApi =>
   typeof window !== 'undefined' && typeof window.api?.studioWindowTicket === 'function'
-    ? windowChatServices().sessions
+    ? withEnvironmentSessions(windowChatServices().sessions)
     : {}
+
+/**
+ * The window's own Studio's sessions, joined by those of every environment
+ * the window follows chats on (`environmentChats.ts`): one list, so a row,
+ * the chat view's session and its subagents read a chat's session the same
+ * way wherever it runs. An environment's list is its last one read, kept while
+ * that machine is away; a new list from any of them is read as a change.
+ */
+export function withEnvironmentSessions(local: Required<ConversationSessionsApi>): ConversationSessionsApi {
+  return {
+    list: async () => {
+      const here = await local.list()
+      if (!here.ok) return here
+      const there = followedEnvironmentChats().flatMap((source) => source.snapshot().sessions)
+      return there.length === 0 ? here : { ok: true, sessions: [...here.sessions, ...there] }
+    },
+    onLifecycleEvent: (listener, onReconnected) => {
+      const stopLocal = local.onLifecycleEvent(listener, onReconnected)
+      const following = new Map<string, () => void>()
+      const sync = () => {
+        const sources = followedEnvironmentChats()
+        const routes = new Set(sources.map((source) => source.route))
+        for (const [route, stop] of following)
+          if (!routes.has(route)) {
+            stop()
+            following.delete(route)
+          }
+        for (const source of sources)
+          if (!following.has(source.route)) following.set(source.route, source.onLifecycleEvent(listener))
+      }
+      sync()
+      // A followed environment added or dropped, or one of them listed again.
+      const stopFollowed = onFollowedEnvironmentChats(() => {
+        sync()
+        onReconnected?.()
+      })
+      return () => {
+        stopFollowed()
+        for (const stop of following.values()) stop()
+        following.clear()
+        stopLocal()
+      }
+    },
+  }
+}
 
 // Lifecycle events only. The all-conversations broadcast is not guaranteed to
 // carry token deltas at all, so nothing here may depend on them.

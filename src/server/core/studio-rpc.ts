@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import {
@@ -22,6 +24,8 @@ import { createStudioWorktrees } from '../worktrees/studio-worktrees'
 import { createStudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
+import type { StudioDiscovery } from '../rpc/studio-rpc-types'
+import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
@@ -29,6 +33,8 @@ import type { SignIns } from '../machine/machine-sign-in'
 import { createEnvironmentAdoption, type EnvironmentAdoption } from '../environment/environment-adoption'
 import type { UsageLimitProvider } from '../../shared/usage-limits'
 import type { StudioCore } from './studio-core'
+import { studioHeldMessages } from './studio-scheduled-messages'
+import type { ConversationWireMention } from '../../../packages/conversation-protocol/src/public'
 import { createConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import type { StudioGateway } from './studio-gateway'
@@ -207,7 +213,10 @@ export function createStudioRpc(
     }),
     // What a client reads before it starts a chat: the gateway's own tools
     // answer it, so the protocol and MCP read one thing.
-    discovery: createStudioDiscovery(() => gateway.ownTools()),
+    discovery: withoutCopies(
+      createStudioDiscovery(() => gateway.ownTools()),
+      (workspaceId) => Boolean(environmentRouteOfRecord(core.workspaceRegistry.getRecord(workspaceId))),
+    ),
     // What this machine lacks for its schedules and watches, which every
     // client shows and none can fix from afar.
     readiness: () => core.readiness.read(),
@@ -252,7 +261,11 @@ export function createStudioRpc(
           chats: () =>
             core.workspaceRegistry
               .getRecords()
-              .filter((record) => record.folderPath && !record.remoteOrigin && !isSettledWorkspace(record))
+              // A copy of another environment's chat is searched there, not here.
+              .filter(
+                (record) =>
+                  record.folderPath && !record.remoteOrigin && !record.environment && !isSettledWorkspace(record),
+              )
               .sort((a, b) => workspaceLastUserMessageAt(b) - workspaceLastUserMessageAt(a))
               .map((record) => ({ workspaceId: record.id, workspaceRoot: record.folderPath!, chatTitle: record.name })),
           search: (input) => core.conversations.searchThreads(input),
@@ -283,11 +296,25 @@ export function createStudioRpc(
   }
 }
 
+/**
+ * The workspaces this Studio serves its clients, without its copies of
+ * another environment's chats (design-wsl-ssh-direct PR 1d, decision 7): a
+ * device reaches those through that environment's own route, never twice and
+ * never through this desktop.
+ */
+function withoutCopies(discovery: StudioDiscovery, isCopy: (workspaceId: string) => boolean): StudioDiscovery {
+  return {
+    ...discovery,
+    workspaces: async () => (await discovery.workspaces()).filter((workspace) => !isCopy(workspace.id)),
+  }
+}
+
 /** The hand-over into this core's own stores, each through its own way in. */
 function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
+  const dataDir = core.platform.paths.dataDir()
   const primaryWindow = () => core.workspaceRegistry.getState().primaryWorkspaceWindowId
   return createEnvironmentAdoption({
-    dataDir: core.platform.paths.dataDir(),
+    dataDir,
     stores: {
       flush: async () => {
         await Promise.all([
@@ -334,13 +361,33 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
             untilLimitReset as UsageLimitProvider | undefined,
           ),
         hold: (chat, text, source) => core.scheduledMessages.hold(chat, text, source),
+        holdCarrying: async (chat, text, source, carried) => {
+          // Its files go where a device's uploads are kept, as a file a
+          // device queued is; the held message marks them its own.
+          const placed: Array<{ path: string; name: string; bytes: number }> = []
+          for (const file of carried.files) {
+            const folder = join(dataDir, TAILNET_UPLOADS_DIRNAME, randomUUID())
+            await mkdir(folder, { recursive: true, mode: 0o700 })
+            const path = join(folder, basename(file.name) || 'file')
+            await writeFile(path, file.bytes, { mode: 0o600 })
+            placed.push({ path, name: file.name, bytes: file.bytes.length })
+          }
+          const held = await studioHeldMessages(() => core.scheduledMessages, dataDir).hold(chat, text, source, {
+            images: carried.images,
+            files: placed,
+            skills: carried.skills,
+            mentions: carried.mentions as ConversationWireMention[],
+          })
+          return held.ok ? { ok: true } : { ok: false, reason: held.message }
+        },
       },
       resumes: {
-        schedule: (chat) => void core.usageLimitResumes.update({ kind: 'schedule', ...chat }),
+        adopt: (stored) => core.usageLimitResumes.adopt(stored),
       },
       pullRequests: {
         noteOpened: (chat, input) => core.pullRequests.record.noteOpened(chat, input),
         watch: (chat, input) => core.pullRequests.record.watch(chat, input),
+        keepUntold: (chat, url, untold) => core.pullRequests.record.keepUntold(chat, url, untold),
       },
     },
   })

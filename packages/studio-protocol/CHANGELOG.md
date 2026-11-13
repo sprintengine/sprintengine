@@ -92,7 +92,12 @@
 - **`environment.adopt`** (capability `environment-adopt`, the shell's, under a
   `commandId`): records a desktop kept for the machine's chats
   (`STUDIO_ADOPTED_RECORD_KINDS`), each `{ kind, id, digest, body }`, at most
-  `MAX_ADOPTED_RECORDS` per call; answered `{ held, conflicts }`.
+  `MAX_ADOPTED_RECORDS` per call; answered `{ held, conflicts }`. A held
+  message's pictures and files go beside it in `files` (at most
+  `MAX_ADOPTED_FILES`, each `{ uploadId, digest }`: an upload the same
+  connection staged and the sha-256 of its bytes), named in the message's
+  `carried` by digest; a pull request's body may carry the news its watch has
+  not told yet (`untold`).
 - **`providers.signInStart`, `.signInPaste`, `.signInWait`, `.signInCancel`**
   (capability `provider-sign-in-flow`): a CLI's own login on the Studio's
   machine with no terminal, each step under a `commandId`, an owner's.

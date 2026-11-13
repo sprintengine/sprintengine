@@ -12,6 +12,9 @@ import {
 } from './core/studio-core'
 import { createStudioGateway, type StudioGateway } from './core/studio-gateway'
 import { createStudioRpc } from './core/studio-rpc'
+import { createStudioChatBackend } from '../main/studio-rpc/studio-chat-backend'
+import { createConversationService } from '../main/conversation-service'
+import { knownFolders } from './files/known-folders'
 import type { StudioRpcService } from '../main/studio-rpc/studio-rpc-service'
 import { readDataDirSecrets, restrictDataDir } from './core/data-dir'
 import { createNodeStudioPlatform, type NodeStudioPlatform } from './platform/platform'
@@ -267,6 +270,20 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),
   })
+  // The chat surface over this core's chats (`session.*`): what a window that
+  // follows and drives a chat here reaches it by, the desktop's window over
+  // its loopback route to an SSH machine included (design-wsl-ssh-direct PR
+  // 1d). No terminal handoff: a machine's terminals are not reached from
+  // another computer (owner ruling).
+  const conversationCommands = core.conversationCommands()
+  rpc.provideChat(
+    createStudioChatBackend({
+      conversation: createConversationService(core.conversations),
+      hasReceipt: (sessionId, commandId) => core.conversations.hasCommandReceipt(sessionId, commandId),
+      readableRoots: () => knownFolders(core.workspaceRegistry, options.dataDir),
+      commands: (input) => conversationCommands.list(input),
+    }),
+  )
   let status: Awaited<ReturnType<StudioGateway['initialize']>>
   try {
     if (options.listen === false) {

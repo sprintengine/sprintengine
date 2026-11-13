@@ -59,13 +59,6 @@ export const KNOWN_GAPS: Partial<Record<`${ClientId}:${ScenarioId}`, KnownGap>> 
     closedBy: 'a contract that starts a chat by provider as well as by CLI, or a fake CLI runtime in the gate',
     expect: /cannot run as a chat/u,
   },
-  'ssh:schedule': {
-    reason:
-      "a scheduled send into an SSH machine's chat is kept by the desktop's scheduler, which this leg does not run",
-    closedBy:
-      'the change that makes SSH machines environments a client connects to, with their schedules kept on the machine',
-    expect: /has no call to/u,
-  },
 }
 
 /** What the gate cannot run on a hosted runner, and how a person checks it by hand. */

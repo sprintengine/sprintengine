@@ -74,6 +74,7 @@ import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
 import { relayShellToolsets, SSH_RELAYED_TOOLSETS } from '../wsl/wsl-tool-relay'
 import { portDuplex } from '../ipc/port-duplex'
 import { createShellSshServers } from './shell-ssh-servers'
+import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
 
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
@@ -190,10 +191,31 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         },
       })
     : null
+  const shellEnvironments = envelope.flags.sshMachines
+    ? createShellEnvironmentClients({
+        open: (route) =>
+          rpc.call<{ clientId: string; label: string }>(
+            SHELL_METHODS.sshOpen,
+            { key: route, purpose: 'studio' },
+            { timeoutMs: SSH_OPEN_TIMEOUT_MS },
+          ),
+        takePort: (clientId) => {
+          const port = sshPorts.get(clientId) ?? null
+          sshPorts.delete(clientId)
+          return port
+        },
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
+        },
+      })
+    : null
   if (shellSsh)
     rpc.on(SERVER_EVENTS.sshConnected, (payload) => {
       const key = (payload as { key?: unknown } | null)?.key
-      if (typeof key === 'string' && /^ssh:[A-Za-z0-9_-]+$/u.test(key)) shellSsh.machineConnected(key)
+      if (typeof key === 'string' && /^ssh:[A-Za-z0-9_-]+$/u.test(key)) {
+        shellSsh.machineConnected(key)
+        shellEnvironments?.machineConnected(key)
+      }
     })
 
   // The terminal agents' pull request marks (below), bound once the Studio
@@ -233,9 +255,10 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         ...shellArtifactsOverControl(rpc, () => workspaceWindowVisible),
         resolveGitHubToken: () => githubTokenStore.resolveToken(),
       },
-      ...(shellSsh
-        ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
-        : {}),
+      ...(shellSsh ? { sshServers: { servers: shellSsh.servers } } : {}),
+      // A chat an SSH machine holds is acted on there, on this process's own
+      // client of that machine's Studio, over a stream main opens on its door.
+      ...(shellEnvironments ? { environmentClients: shellEnvironments } : {}),
       role: 'desktop',
       // The person's Scheduled agents switch turns the scheduler on and off,
       // through the module kernel (modules/scheduled-agents-switch.ts).

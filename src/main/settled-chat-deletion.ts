@@ -250,6 +250,9 @@ export function createSettledChatDeletion(deps: SettledChatDeletionDeps) {
     if (!chat) return refusal('It is no longer on record.')
     if (!isSettledWorkspace(chat)) return refusal('Only a settled chat can be deleted. Settle it first.')
     if (isWorking(workspaceId)) return refusal('An agent in it is working.')
+    // An SSH machine's chat is that machine's record: deleted there, not by this desktop's sweep.
+    if (chat.environment)
+      return refusal(`It is kept on ${chat.environment.label}, where this desktop does not delete chats yet.`)
     // A paired machine's chat: its worktree is on that machine, and stays.
     if (chat.remoteOrigin) return { plan: { workspaceId, remoteMachine, worktrees: [] }, chat, worktrees: [] }
     const others = chats.filter((candidate) => candidate.id !== workspaceId)

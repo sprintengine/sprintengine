@@ -8,7 +8,7 @@ import type { Duplex } from 'node:stream'
 
 import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { wslServerTreeDir } from '../../../server/wsl/desktop-wsl-servers'
-import type { SshRoutedConnection, SshRoutedServers } from '../../../server/core/routed-conversation-backend'
+import type { SshMachineBackend, SshMachineBackends } from '../../../server/core/ssh-machine-backends'
 import {
   DEFAULT_SSH_ENVIRONMENT_SETTINGS,
   SSH_ENV_CHANNELS,
@@ -29,6 +29,7 @@ import {
 } from '../../../../packages/studio-protocol/src/handshake'
 import type { StudioRelayedDeviceScope } from '../../../../packages/studio-protocol/src/environment-access'
 import type { StudioCapability } from '../../../../packages/studio-protocol/src/handshake'
+import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import { createLoopbackRoute, type LoopbackRoute } from '../environment-route'
 import {
   ASKPASS_TIMEOUT_MS,
@@ -180,15 +181,14 @@ export class SshEnvironments {
     this.log = deps.log ?? (() => undefined)
   }
 
-  // ── The routed servers (studio-core's router reaches SSH machines through these) ──
+  // ── The backend wires (the Files and Git panes' machine channels until PR 2) ──
 
-  readonly routed: SshRoutedServers = {
+  readonly routed: SshMachineBackends = {
     connect: async (key) => {
       const machine = this.machineFor(key)
       return machine.connect({ interactive: false })
     },
-    current: (key): SshRoutedConnection | null => this.machines.get(key.slice('ssh:'.length))?.current() ?? null,
-    touch: () => undefined,
+    current: (key): SshMachineBackend | null => this.machines.get(key.slice('ssh:'.length))?.current() ?? null,
   }
 
   onConnected(listener: (connection: SshServerConnection) => void): void {
@@ -533,7 +533,7 @@ export class SshEnvironments {
    */
   private async ownerOf(
     id: string,
-    capability: StudioCapability,
+    capability: StudioCapability | null,
   ): Promise<
     | { ok: true; saved: SavedSshEnvironment; connection: SshServerConnection }
     | { ok: false; code: string; message: string }
@@ -553,13 +553,28 @@ export class SshEnvironments {
       }
     const connection = this.connection(id)
     if (!connection) return { ok: false, code: 'unavailable', message: `${saved.label} is not connected.` }
-    if (!connection.owner.supports(capability))
+    if (capability && !connection.owner.supports(capability))
       return {
         ok: false,
         code: 'outdated',
         message: `The Studio server on ${saved.label} is older than this app. Update it in Settings › Machines.`,
       }
     return { ok: true, saved, connection }
+  }
+
+  /**
+   * Main's own client of a machine's Studio (its owner connection), for the
+   * desktop's callers that act on a chat there as a client of that machine:
+   * the gateway's tools, modules, the hand-over. Connected in the background
+   * when it must; refused in words when it cannot be, or when its server does
+   * not serve `capability`.
+   */
+  async ownerClient(
+    id: string,
+    capability: StudioCapability | null = null,
+  ): Promise<{ ok: true; client: StudioClient; label: string } | { ok: false; code: string; message: string }> {
+    const owner = await this.ownerOf(id, capability)
+    return owner.ok ? { ok: true, client: owner.connection.owner, label: owner.saved.label } : owner
   }
 
   /**

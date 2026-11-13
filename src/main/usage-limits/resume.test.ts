@@ -645,3 +645,47 @@ test('a hit heard while the file is being read neither overwrites it nor goes un
   // Heard before the setting was known, it is scheduled once it is.
   assert.ok(notice(second)?.resumeAt, 'the new hit is scheduled')
 })
+
+// A hand-over (`environment.adopt`): the resume another Studio kept for a chat
+// this one holds now.
+const HANDED = {
+  ...CHAT,
+  provider: 'claude' as UsageLimitProvider,
+  limit: 'session',
+  resetsAt: T0 + HOUR,
+  hitAt: T0 - MINUTE,
+  createdAt: T0 - MINUTE,
+  fireAt: T0 + HOUR + MINUTE,
+}
+
+test('a resume handed over before the file is read waits for it, is kept with what the file had, and is written', async () => {
+  const storage = memoryStorage(
+    JSON.stringify({ version: 1, autoResume: true, pending: [{ ...HANDED, ...OTHER }], resumed: [] }),
+  )
+  const w = harness({ storage })
+  w.addChat()
+  w.addChat(OTHER)
+  let answered = false
+  const adopted = w.resumer.adopt(HANDED).then((answer) => {
+    answered = true
+    return answer
+  })
+  await Promise.resolve()
+  assert.equal(answered, false, 'not before the file is read')
+  await w.resumer.start()
+  assert.deepEqual(await adopted, { ok: true })
+  await w.resumer.flush()
+  const saved = JSON.parse(storage.body ?? '{}') as { autoResume: boolean; pending: Array<{ agentId: string }> }
+  assert.equal(saved.autoResume, true, "the file's own setting is kept")
+  assert.deepEqual(saved.pending.map((entry) => entry.agentId).sort(), ['agent-1', 'agent-2'])
+  const notice = w.resumer.state().notices.find((entry) => entry.agentId === CHAT.agentId)
+  assert.equal(notice?.resumeAt, HANDED.fireAt, 'it goes when it was to go there')
+})
+
+test('a resume handed over for a chat that is not here is refused, and nothing is kept', async () => {
+  const w = harness()
+  await w.resumer.start()
+  assert.deepEqual(await w.resumer.adopt(HANDED), { ok: false, reason: 'Its chat is not on this machine.' })
+  assert.deepEqual(w.resumer.state().notices, [])
+  assert.deepEqual((await w.resumer.adopt({ workspaceId: 'w' })).ok, false, 'one that does not read is refused')
+})

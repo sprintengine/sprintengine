@@ -74,10 +74,10 @@ export function createStudioWorkspaceSyncHandlers<A extends Asking>(
         const folder = createdFolder(command)
         if (folder && asking.context.knownFoldersOnly && !(await options.mayName(folder, asking)))
           return refused(UNKNOWN_FOLDER)
-        return ok(sync!.dispatch(command, windowId))
+        return ok(await sync!.dispatch(command, windowId))
       }),
     'workspaceSync.lifecycle': ({ commandId, request }, asking) =>
-      write('workspaceSync.lifecycle', asking, commandId, async () => ok(sync!.lifecycle(request))),
+      write('workspaceSync.lifecycle', asking, commandId, async () => ok(await sync!.lifecycle(request))),
     'workspaceSync.setSettledChatsSettings': ({ commandId, settings }, asking) =>
       write('workspaceSync.setSettledChatsSettings', asking, commandId, async () => {
         if (!asking.context.browser) sync!.setSettledChatsSettings(settings)

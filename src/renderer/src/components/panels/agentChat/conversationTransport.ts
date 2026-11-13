@@ -7,9 +7,11 @@ import {
   type ChatServerOffer,
 } from '../../../../../../packages/client-runtime/src/public'
 import { watchWindowStudioWelcome, windowStudioWelcome } from '../../../studio/windowStudioClient'
+import { followWindowStudioPush } from '../../../studio/windowStudioPush'
 import type { EnvironmentId, StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
 
 import type { ChatServices } from './chatServices'
+import type { StudioTransportParts } from './studioChat'
 import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
 import { remotePullRequestHost, studioPullRequestHost, type PullRequestHost } from './pullRequestHost'
 import { unwatchPullRequest as unwatchConversationPullRequest } from '../../workspace/useConversationPullRequests'
@@ -337,6 +339,7 @@ const localParts = () => studioImplementation().parts
 // is made; the object itself never changes, so what is keyed by it (a shared
 // subscription, a picture cache) stays put.
 const windowServices: ChatServices = {
+  followPush: followWindowStudioPush,
   providers: {
     list: (input) => windowChatServices().providers.list(input),
     models: (input) => windowChatServices().providers.models(input),
@@ -383,19 +386,33 @@ const windowServices: ChatServices = {
   },
 }
 
+/** What a transport over one Studio is built from: its chat parts and services, read at each call. */
+export type StudioTransportImplementation = {
+  parts: () => StudioTransportParts
+  services: ChatServices
+  /** Stop the Studio watching one of the chat's pull requests. */
+  unwatchPullRequest(input: { key: ConversationKey; url: string }): Promise<ConversationTransportResult>
+  /** Where Create PR does its work, for a Studio whose checkout this window's shell reaches. */
+  pullRequestHost?(key: ConversationKey): PullRequestHost
+  /** What the person calls the machine (`ChatEnvironment.label`); absent for the window's own Studio. */
+  label?: string
+}
+
 /**
- * A chat on this window's Studio, whose capabilities are read off the welcome
- * `welcome` answers when asked (the window's latest): read again only when
- * that changes.
+ * A chat on one Studio over the protocol, whose capabilities are read off the
+ * welcome `welcome` answers when asked (that Studio's latest): read again only
+ * when that changes. The window's own Studio by default; an environment's
+ * (`environmentChat.ts`) is the same transport over that environment's client.
  */
 export function studioConversationTransport(
   welcome: () => Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant' | 'environment'> | null,
+  implementation: StudioTransportImplementation = windowImplementation,
 ): ConversationTransport {
   let said: { welcome: object | null; capabilities: ConversationTransportCapabilities } | null = null
   // Held while the id is, as views key memos on it.
   let where: ChatEnvironment | null = null
   return {
-    ...windowConversationCalls,
+    ...studioCalls(implementation),
     get capabilities() {
       const now = welcome()
       if (said?.welcome !== now)
@@ -404,48 +421,62 @@ export function studioConversationTransport(
     },
     get environment() {
       const id = welcome()?.environment.id ?? null
-      if (where?.id !== id) where = { id, label: null, lane: null }
+      if (where?.id !== id) where = { id, label: implementation.label ?? null, lane: null }
       return where
     },
   }
 }
 
-const windowConversationCalls: Omit<ConversationTransport, 'capabilities' | 'environment'> = {
-  subscribe: (input, cb) => localParts().subscribe(input, cb),
-  loadEarlier: (input) => localParts().loadEarlier(input),
-  toolDetail: (input) => localParts().toolDetail(input),
-  readEvent: (input) => localParts().readEvent(input),
-  turnDiff: (input) => localParts().turnDiff(input),
-  send: (input) => localParts().send(input),
-  interrupt: (input) => localParts().interrupt(input),
-  respond: (input) => localParts().respond(input),
-  setPermissionPreset: (input) => localParts().setPermissionPreset(input),
-  setModel: (input) => localParts().setModel(input),
-  attachment: (input) => localParts().attachment(input),
-  rewind: (input) => localParts().rewind(input),
-  handoff: (input) => localParts().handoff(input),
-  fork: (input) => localParts().fork(input),
-  startSession: (input) => localParts().startSession(input),
-  revert: (input) => localParts().revert(input),
-  mcpServerAction: (input) => localParts().mcpServerAction(input),
-  stopSubagent: (input) => localParts().stopSubagent(input),
-  messageSubagent: (input) => localParts().messageSubagent(input),
-  askSideQuestion: (input) => localParts().askSideQuestion(input),
-  cancelSideQuestion: (input) => localParts().cancelSideQuestion(input),
-  readContextBreakdown: (input) => localParts().readContextBreakdown(input),
-  queue: (input) => localParts().queue(input),
-  restartSession: (input) => localParts().restartSession(input),
+function studioCalls(
+  implementation: StudioTransportImplementation,
+): Omit<ConversationTransport, 'capabilities' | 'environment'> {
+  const parts = implementation.parts
+  return {
+    subscribe: (input, cb) => parts().subscribe(input, cb),
+    loadEarlier: (input) => parts().loadEarlier(input),
+    toolDetail: (input) => parts().toolDetail(input),
+    readEvent: (input) => parts().readEvent(input),
+    turnDiff: (input) => parts().turnDiff(input),
+    send: (input) => parts().send(input),
+    interrupt: (input) => parts().interrupt(input),
+    respond: (input) => parts().respond(input),
+    setPermissionPreset: (input) => parts().setPermissionPreset(input),
+    setModel: (input) => parts().setModel(input),
+    attachment: (input) => parts().attachment(input),
+    rewind: (input) => parts().rewind(input),
+    handoff: (input) => parts().handoff(input),
+    fork: (input) => parts().fork(input),
+    startSession: (input) => parts().startSession(input),
+    revert: (input) => parts().revert(input),
+    mcpServerAction: (input) => parts().mcpServerAction(input),
+    stopSubagent: (input) => parts().stopSubagent(input),
+    messageSubagent: (input) => parts().messageSubagent(input),
+    askSideQuestion: (input) => parts().askSideQuestion(input),
+    cancelSideQuestion: (input) => parts().cancelSideQuestion(input),
+    readContextBreakdown: (input) => parts().readContextBreakdown(input),
+    queue: (input) => parts().queue(input),
+    restartSession: (input) => parts().restartSession(input),
+    unwatchPullRequest: (input) => implementation.unwatchPullRequest(input),
+    ...(implementation.pullRequestHost
+      ? { pullRequestHost: (key: ConversationKey) => implementation.pullRequestHost!(key) }
+      : {}),
+    cancelQueued: (input) => parts().cancelQueued(input),
+    scheduleSend: (input) => parts().scheduleSend(input),
+    sendScheduledNow: (input) => parts().sendScheduledNow(input),
+    cancelScheduled: (input) => parts().cancelScheduled(input),
+    usageLimitResume: (input) => parts().usageLimitResume(input),
+    services: implementation.services,
+  }
+}
+
+const windowImplementation: StudioTransportImplementation = {
+  parts: localParts,
+  services: windowServices,
   unwatchPullRequest: async ({ key, url }) => {
     const stopped = await unwatchConversationPullRequest({ workspaceId: key.workspaceId, agentId: key.agentId }, url)
     return stopped.ok ? { ok: true } : { ok: false, message: stopped.message }
   },
   pullRequestHost: (key) => studioPullRequestHost({ workspaceId: key.workspaceId, agentId: key.agentId }),
-  cancelQueued: (input) => localParts().cancelQueued(input),
-  scheduleSend: (input) => localParts().scheduleSend(input),
-  sendScheduledNow: (input) => localParts().sendScheduledNow(input),
-  cancelScheduled: (input) => localParts().cancelScheduled(input),
-  usageLimitResume: (input) => localParts().usageLimitResume(input),
-  services: windowServices,
 }
 
 export const localConversationTransport: ConversationTransport = studioConversationTransport(() => readWelcome())

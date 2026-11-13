@@ -1,3 +1,4 @@
+import { parseMachinePath } from '../../shared/machine-paths'
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -131,6 +132,11 @@ export function createEnvironmentReadiness(deps: EnvironmentReadinessDeps): Envi
   const on = () => deps.machine() || 'this machine'
 
   const scheduleWaitingFor = (agent: ScheduledAgent, options: { signIn?: boolean } = {}): string | null => {
+    // A schedule in an SSH machine's folder is that machine's Studio's to run
+    // (design-wsl-ssh-direct PR 1d): it waits here only until the hand-over
+    // takes it there, and never runs from here.
+    const machine = parseMachinePath(agent.folderPath)
+    if (machine) return `it runs on ${machine.id}, which takes it over when it is next connected`
     const extensions = deps.extensions()
     if (agent.ownerModuleId && extensions && !extensions.includes(agent.ownerModuleId))
       return `the extension "${agent.ownerModuleId}" that made it is not installed on ${on()}`

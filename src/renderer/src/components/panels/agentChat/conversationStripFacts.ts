@@ -5,7 +5,7 @@ import { displayBranchName } from '../../../utils/branchLabel'
 import type { MachineRef } from '../../../../../shared/machine-identity'
 import { isPathOrChild } from '../../../../../shared/paths'
 import { useGitBranch } from '../../../hooks/useGitBranch'
-import { useMachineIdentity, useWorkspaceMachineRef } from '../../../hooks/useMachineIdentity'
+import { otherMachineRef, useMachineIdentity, useWorkspaceMachineRef } from '../../../hooks/useMachineIdentity'
 import { selectModuleEnabled } from '../../../modules'
 import { useWorkspaceStore } from '../../../store/workspaceStore'
 import type { Workspace } from '../../../types/workspace'
@@ -67,15 +67,16 @@ export function useConversationStripFacts({
   // machine a workspace was born on). This computer is no machine to mark:
   // the panel says nothing about it.
   const environmentLabel = transport.environment.label
-  const workspaceRef = useWorkspaceMachineRef(environmentLabel ? null : workspace)
-  const ref = useMemo<MachineRef | null>(
-    () => (environmentLabel ? { kind: 'paired', name: environmentLabel } : workspaceRef),
-    [environmentLabel, workspaceRef],
+  // An SSH machine's chat is named by its environment and marked by the host
+  // every device keys it by (`sshMachineRef`); a paired machine's by its name.
+  const pairedName = environmentLabel && !workspace?.environment ? environmentLabel : null
+  const workspaceRef = useWorkspaceMachineRef(pairedName ? null : workspace)
+  const named = useMemo<MachineRef | null>(
+    () => (pairedName ? { kind: 'paired', name: pairedName } : otherMachineRef(workspaceRef)),
+    [pairedName, workspaceRef],
   )
-  // A workspace's machine ref is the WSL/SSH routing term design-wsl-ssh-direct deletes.
-  const named = ref && ref.kind !== 'local' ? ref : null // chat-locality-allow: machine ref (design-wsl-ssh-direct)
   const identity = useMachineIdentity(named)
-  const machineName = named ? stripMachineName(named, environmentLabel ? null : workspace) : null
+  const machineName = named ? stripMachineName(named, pairedName ? null : workspace) : null
   // Held from render to render, as the chat renders on every token and the
   // panel it publishes these to redraws when one is a new object.
   const machine = useMemo(

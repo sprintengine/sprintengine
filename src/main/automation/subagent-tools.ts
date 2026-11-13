@@ -1,3 +1,4 @@
+import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
 import { LAUNCH_PROMPT_READS_AS_OPTION_MESSAGE, launchPromptReadsAsOption } from '../../shared/agent-launch'
 import type { AgentState } from '../../shared/agent-state'
 import { parseCliPermissionPreset, type CliPermissionPreset } from '../../shared/cli-permission-preset'
@@ -74,7 +75,11 @@ const READ_ONLY_BY_CLI: Readonly<Record<string, { preset: CliPermissionPreset; m
   codex: { preset: 'manual', mode: 'ask' },
 }
 
-export type SubagentChatControl = Pick<ConversationChatControl, 'session' | 'now' | 'sleep'> & {
+// A sub-agent runs on this desktop, beside the chat that started it: its
+// session is read here, at once.
+export type SubagentChatControl = Pick<ConversationChatControl, 'now' | 'sleep'> & {
+  /** The sub-agent's live (or resting) session, if it has one. */
+  session(workspaceId: string, agentId: string): ConversationSessionSummary | undefined
   /** The chat agents of a workspace, by id, as its record holds them. */
   agentsOf(workspaceId: string): Readonly<Record<string, AgentState>> | null
 }

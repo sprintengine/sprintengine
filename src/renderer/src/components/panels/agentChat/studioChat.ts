@@ -249,6 +249,27 @@ export function createStudioChatServices(
   watchOpen: (listener: () => void) => () => void = () => () => undefined,
 ): ChatServices {
   return {
+    // The chat's own Studio's push topics, followed again whenever its client opens anew.
+    followPush: (input) => {
+      let alive = true
+      let stop: (() => void) | null = null
+      const follow = () => {
+        void client()
+          .then((opened) => {
+            if (!alive || !opened.supports(input.capability)) return
+            stop?.()
+            stop = opened.subscribe(input.topic, input.params, { onPayload: input.onPayload })
+          })
+          .catch(() => undefined)
+      }
+      follow()
+      const unwatch = watchOpen(follow)
+      return () => {
+        alive = false
+        unwatch()
+        stop?.()
+      }
+    },
     providers: {
       list: (input) =>
         outcome(

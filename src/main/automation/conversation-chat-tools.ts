@@ -70,10 +70,16 @@ export type ConversationChatControl = {
   resolveKey(workspaceId: string, agentId: string): ConversationKey | null
   /** The chat's name, as its sidebar row shows it. */
   chatTitle(workspaceId: string): string | undefined
-  /** The chat's live (or resting) session, if it has one. */
-  session(workspaceId: string, agentId: string): ConversationSessionSummary | undefined
+  /**
+   * The chat's live (or resting) session, if it has one. Asked of the
+   * environment that holds the chat, so it may be answered later.
+   */
+  session(
+    workspaceId: string,
+    agentId: string,
+  ): ConversationSessionSummary | undefined | Promise<ConversationSessionSummary | undefined>
   /** The preset the chat runs on now, or would resume on. */
-  permissionOf(key: ConversationKey): ConversationPermissionPreset
+  permissionOf(key: ConversationKey): ConversationPermissionPreset | Promise<ConversationPermissionPreset>
   /** Carry out one command as a paired device's would be: resuming, holding, steering. */
   command(
     key: ConversationKey,
@@ -247,10 +253,10 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
         if (isCallersOwnChat(context, target))
           return toolError('own_chat', 'This is your own chat; a message to it would wait on the turn sending it.')
         const ceiling = launchPermissionCeiling(context, deps.resolveAgentPermissionPreset)
-        const refused = refuseDrivingLooserChat(chats.permissionOf(target.key), ceiling)
+        const refused = refuseDrivingLooserChat(await chats.permissionOf(target.key), ceiling)
         if (refused) return toolError(refused.code, refused.message)
         const message = headedMessage(chats, context, args.message)
-        const working = chatStateOf(chats.session(target.workspaceId, target.agentId))
+        const working = chatStateOf(await chats.session(target.workspaceId, target.agentId))
         const steer = args.mode === 'steer'
         const sentAt = (chats.now ?? Date.now)()
         const send = (hold: boolean) =>
@@ -341,7 +347,7 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
           workspaceId: target.workspaceId,
           agentId: target.agentId,
           title: chats.chatTitle(target.workspaceId) ?? null,
-          state: chatStateOf(chats.session(target.workspaceId, target.agentId)),
+          state: chatStateOf(await chats.session(target.workspaceId, target.agentId)),
           messages,
           omitted,
           hasMore: page.hasMore,
@@ -400,7 +406,7 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
         if (isCallersOwnChat(context, target))
           return toolError('own_chat', 'This is your own chat; it cannot finish while you wait on it.')
         for (;;) {
-          const summary = chats.session(target.workspaceId, target.agentId)
+          const summary = await chats.session(target.workspaceId, target.agentId)
           const state = chatStateOf(summary)
           const reached = waitReached(until, state, since)
           const elapsed = now() - started
@@ -438,7 +444,7 @@ export function createConversationChatTools(deps: ConversationChatToolsDeps): Mc
         const { target } = resolved
         if (isCallersOwnChat(context, target))
           return toolError('own_chat', 'This is your own chat; end your turn instead.')
-        const state = chatStateOf(chats.session(target.workspaceId, target.agentId))
+        const state = chatStateOf(await chats.session(target.workspaceId, target.agentId))
         if (!state.working && !state.needsInput)
           return toolSuccess({
             ok: true,

@@ -1,3 +1,9 @@
+import type {
+  StudioCapability,
+  StudioPushTopic,
+  StudioTopicParams,
+  StudioTopicPayload,
+} from '../../../../../../packages/studio-protocol/src/public'
 import type { ConversationCommandCatalog } from '../../../../../shared/conversation/commands'
 import type {
   ConversationSearchInput,
@@ -110,7 +116,20 @@ export type ChatCommandSource = {
   onChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
 }
 
+/**
+ * Follow one of a chat's push topics on the Studio that holds it: every
+ * payload, followed again on each new connection. Returns the unsubscriber.
+ */
+export type ChatPushFollower = <T extends StudioPushTopic>(input: {
+  topic: T
+  params: StudioTopicParams<T>
+  capability: StudioCapability
+  onPayload: (payload: StudioTopicPayload<T>) => void
+}) => () => void
+
 export type ChatServices = {
+  /** The chat's own Studio's push topics (held and scheduled messages, usage limits); absent where it serves none. */
+  followPush?: ChatPushFollower
   providers: ChatProviderSource
   files: ChatFileSource
   planDocument(input: ConversationPlanDocumentInput): Promise<ConversationPlanDocumentResult>

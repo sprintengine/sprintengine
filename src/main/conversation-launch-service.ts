@@ -377,11 +377,6 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     | { ok: true; folderPath: string; worktree: WorkspaceWorktree; dependencyInstall?: StartedDependencyInstall }
     | { ok: false; message: string }
   > {
-    // A folder on an SSH machine is not this computer's to fork: a window's
-    // New chat does not offer the worktree there either.
-    if (isMachinePath(folderPath)) {
-      return { ok: false, message: 'A chat on an SSH machine starts in its folder there; it cannot have a worktree.' }
-    }
     if (!deps.getRepoRoot || !deps.createWorktree) {
       return { ok: false, message: 'This Studio cannot make worktrees for the chats it starts.' }
     }
@@ -434,9 +429,6 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
   ): Promise<
     { ok: true; worktree: { folderPath: string; marker: WorkspaceWorktree } | null } | { ok: false; message: string }
   > {
-    if (isMachinePath(folderPath)) {
-      return { ok: false, message: 'A chat on an SSH machine starts in its folder there; it cannot pick a worktree.' }
-    }
     if (!deps.getRepoRoot || !deps.listWorktrees) {
       return { ok: false, message: 'This Studio cannot start a chat in an existing worktree.' }
     }
@@ -493,6 +485,16 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         ok: false,
         code: 'workspace_folder_missing',
         message: `Workspace "${workspace.id}" has no project folder, so there is nowhere to start the chat.`,
+      }
+    }
+    // A folder on an SSH machine (`ssh://…`) is that machine's Studio's: its
+    // chats start there, as a client of it asks (design-wsl-ssh-direct PR 1d),
+    // never in this core's runtime.
+    if (isMachinePath(workspaceRoot)) {
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: 'That folder is on an SSH machine: its chats start on that machine’s Studio, not on this computer.',
       }
     }
 
@@ -574,7 +576,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // behind, as a window's New chat that fails after cutting one does; a pool
     // slot comes back with the pool's return sweep, which takes back a lease
     // no chat has been seen to hold.
-    let chatFolder = workspaceRoot
+    let chatFolder: string = workspaceRoot
     let chatWorktree = workspace.worktree ?? null
     let installing: StartedDependencyInstall | null = null
     // The worktree the new chat runs in, for the answer: one cut for it here,
@@ -606,9 +608,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // be written is only reported — the runtime installs a missing skill again
     // when the first message attaches it.
     const skills = [...new Set((request.skills ?? []).map((id) => id.trim()).filter(Boolean))]
-    // A folder on an SSH machine (`ssh://…`) is not this computer's to write
-    // a skill into: the machine's own runtime attaches skills there.
-    if (deps.ensureSkillInstalled && !isMachinePath(workingRoot)) {
+    if (deps.ensureSkillInstalled) {
       for (const skillId of skills) {
         const installed = await deps
           .ensureSkillInstalled(workingRoot, skillId)

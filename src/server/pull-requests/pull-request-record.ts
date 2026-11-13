@@ -256,6 +256,16 @@ export type PullRequestUntoldSource = {
   forget(conversation: PullRequestConversationKey): void
 }
 
+/** One pull request as a hand-over carries it (`environment.adopt`'s `pull-request` body). */
+export type PullRequestHandOver = {
+  workspaceId: string
+  agentId: string
+  url: string
+  title?: string
+  watched: boolean
+  untold?: unknown[]
+}
+
 /** A watch's news, for the conversation whose agent asked for it. */
 export type PullRequestWatchNewsEvent = { conversation: PullRequestConversationKey; wake: PullRequestWake }
 
@@ -298,6 +308,20 @@ export type PullRequestRecord = {
    * Git only; never a lookup.
    */
   noteCheckout(key: PullRequestConversationKey, checkout: PullRequestCheckout): void
+  /**
+   * The pull requests the chats of these workspaces opened, as a hand-over
+   * carries them to the Studio that holds those chats now: who opened it,
+   * whether it is watched, and the news its watch has not told yet.
+   */
+  handingOver(workspaceIds: ReadonlySet<string>): PullRequestHandOver[]
+  /** Forget these pull requests here: their chats' Studio keeps and watches them now. */
+  letGo(urls: readonly string[]): void
+  /**
+   * News another Studio's watch of this pull request found and did not tell
+   * the conversation (a hand-over, `environment.adopt`), as that record
+   * stored it: told from here as this record's own untold news is.
+   */
+  keepUntold(conversation: PullRequestConversationKey, url: string, stored: unknown): void
   /** The conversation's own checkout, as last noted. */
   homeOf(key: PullRequestConversationKey): PullRequestCheckout | null
   /** Re-read one pull request's state by URL. Unsettled leaves the last reading standing. */
@@ -1184,6 +1208,61 @@ export function createPullRequestRecord(options: PullRequestRecordOptions): Pull
     },
     watchedUrls() {
       return watch.watchedKeys()
+    },
+    handingOver(workspaceIds) {
+      const rows: PullRequestHandOver[] = []
+      for (const entry of entries.values()) {
+        const owner = ownerOf(entry)
+        if (!owner || !workspaceIds.has(owner.workspaceId)) continue
+        const news = untold.of(entry.url)
+        rows.push({
+          workspaceId: owner.workspaceId,
+          agentId: owner.agentId,
+          url: entry.url,
+          ...(entry.title ? { title: entry.title } : {}),
+          watched: watches.has(entry.url),
+          ...(news.length > 0 ? { untold: news } : {}),
+        })
+      }
+      return rows
+    },
+    letGo(urls) {
+      let changed = false
+      for (const url of urls) {
+        const entry = entries.get(url)
+        if (!entry) continue
+        changed = true
+        unindex(entry)
+        entries.delete(url)
+        untold.drop(url)
+        watches.delete(url)
+        endedWatches.delete(url)
+        watch.disarm(url)
+        emitFor(entry)
+      }
+      if (changed) persist()
+    },
+    keepUntold(conversation, url, stored) {
+      if (!options.onWatchNews || disposed || !Array.isArray(stored)) return
+      // Its row came from another Studio's record (a hand-over): what that
+      // one's watch had found and not told is told from here, after any news
+      // this record already has for it.
+      untold.load(url, [...untold.of(url), ...stored])
+      const last = untold
+        .of(url)
+        .filter(
+          (news) =>
+            news.conversation.workspaceId === conversation.workspaceId &&
+            news.conversation.agentId === conversation.agentId,
+        )
+        .at(-1)
+      if (!last) return
+      persist()
+      try {
+        options.onWatchNews({ conversation: last.conversation, wake: last.wake })
+      } catch (error) {
+        warn('a pull request watch listener failed', error)
+      }
     },
     untoldWakes: {
       async chats() {
