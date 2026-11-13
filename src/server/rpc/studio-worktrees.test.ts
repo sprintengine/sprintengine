@@ -65,6 +65,10 @@ function fakePool() {
         return settings
       },
       action: async (input: unknown) => (asked.push(['action', input]), { ok: true as const, message: null }),
+      load: async () => undefined,
+      measure: async () => undefined,
+      snapshots: async () => [],
+      ownsPath: () => false,
     },
     installer: {
       list: () => [],
@@ -212,12 +216,11 @@ test('a branch the new worktree would take that git would read as an option is r
   )
 })
 
-test('a folder on an SSH machine is refused in words, never read on this disk', async () => {
+test('an agent worktree step on an SSH machine is refused in words, and the inventory leaves such a project out', async () => {
   const { started } = await serve()
   const owner = await client(started.path, OWNER_TOKEN)
   const app = 'ssh://build-box/home/dev/app'
   for (const [method, params] of [
-    ['worktrees.poolSnapshot', { repoRoot: app }],
     [
       'worktrees.create',
       {
@@ -237,6 +240,8 @@ test('a folder on an SSH machine is refused in words, never read on this disk', 
     assert.deepEqual([method, codeOf(answer)], [method, 'unavailable'])
     assert.match(String((answer as Frame).error?.message), /Not available for SSH machines yet/)
   }
+  const inventory = resultOf<{ projects: unknown[] }>(await owner.request('worktrees.inventory', { repoRoots: [app] }))
+  assert.deepEqual(inventory.projects, [])
 })
 
 test('a window’s restore of a worktree waits for a removal of its path under way, holding it shared', async () => {
