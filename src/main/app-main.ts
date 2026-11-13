@@ -1,5 +1,5 @@
 import { app, ipcMain, protocol, session, shell } from 'electron'
-import { createShellCardMarketplace, shellTrash } from './cards/shell-marketplace'
+import { shellTrash } from './cards/shell-trash'
 import { buildStamp as mainBuildStamp } from 'virtual:sprintengine-build-stamp'
 import { withoutDeepLinks } from '../shared/deep-link-scheme'
 import { parseAuthCallbackFromArgv } from './auth-service'
@@ -17,10 +17,9 @@ import { SCHEDULED_AGENTS_MANIFEST, scheduledAgentsSwitchModule } from './module
 import { isLoadEligible, type ModuleTrustContext } from './modules/module-signature'
 import { readModuleTrustContextSync } from './modules/trust-context'
 import {
-  decodeThirdPartyLaunchSession,
-  encodeThirdPartyLaunchSession,
   planThirdPartyMainModules,
   readThirdPartyMainLaunchSnapshot,
+  thirdPartyLaunchSession,
   recordThirdPartyMainLaunchReport,
 } from './modules/third-party-main-loader'
 import { registerAppRestartIpc } from './ipc/app-restart-ipc'
@@ -29,10 +28,8 @@ import { join } from 'node:path'
 import { MODULE_ASSET_SCHEME } from '../shared/modules/assets'
 import { createModuleAssetOriginResolver } from './modules/module-asset-origins'
 import { createModuleAssetHandler, isAllowedModuleAssetRequest } from './modules/module-assets'
-import { registerThirdPartyRendererEntryIpc } from './modules/third-party-renderer-entries'
 import { defaultUserModuleRoot, discoverUserModules, discoverUserModulesSync } from './modules/user-module-registry'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
-import { notifyRendererModulesChanged } from './modules/notify-renderer-modules-changed'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
 import { markStartup } from './startup-timeline'
@@ -58,8 +55,6 @@ import { registerStudioServerIpc } from './ipc/studio-server-ipc'
 import { STUDIO_SERVER_CHANNELS } from '../shared/studio-server-status'
 import { createDesktopServerHost } from './server-supervisor/desktop-server-host'
 import { channelForVersion } from './update-channel-store'
-import { createDefaultMarketplaceRegistryClient } from './ipc/marketplace-registry-ipc'
-import { toThirdPartyModuleView } from './ipc/third-party-module-ipc'
 
 /** How long the boot's workspace pass waits for the Studio server out of process. */
 const BOOT_SERVER_WAIT_MS = 15_000
@@ -118,15 +113,6 @@ if (serverHost) {
 const services = createAppServices(DIAGNOSTICS_ENABLED, serverHost?.link ?? null)
 
 const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
-  // Which third-party main halves this session loaded: the server's, out of
-  // process, where they run; otherwise this process's own. Read only when
-  // Settings lists the modules, long after `moduleLoad` below exists.
-  readThirdPartyLaunchSession: async () =>
-    decodeThirdPartyLaunchSession(
-      serverHost
-        ? await serverHost.supervisor.call(SERVER_METHODS.thirdPartyLaunchSession)
-        : encodeThirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), moduleLoad.kernel.mcpToolRegistrations()),
-    ),
   ...(serverHost
     ? {
         server: {
@@ -248,7 +234,12 @@ if (!serverHost)
     createModuleLifecycle({
       dataDir: app.getPath('userData'),
       moduleRoot: defaultUserModuleRoot,
-      changed: () => notifyRendererModulesChanged(),
+      changed: () => services.moduleHub.deliverChanged(),
+      // What this session's kernel loaded, read only when an extension list is
+      // asked for, long after `moduleLoad` exists.
+      launchSession: () =>
+        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), moduleLoad.kernel.mcpToolRegistrations()),
+      registry: services.moduleRegistryMirror,
       applyEnablement: async (overrides) => {
         const report = await moduleLoad.applyEnablement(overrides, {
           liveModuleIds: liveModuleIds(Object.keys(thirdPartyMainLoad.moduleRoots), moduleLoad.report.errors),
@@ -300,13 +291,6 @@ recordThirdPartyMainLaunchReport(
   moduleLoad.report,
 )
 const moduleAssetOrigin = createModuleAssetOriginResolver(app.getPath('userData'))
-// Trusted third-party entry.renderer bundles are served on demand (the trust
-// store is re-read per request, so revoking trust takes effect immediately).
-registerThirdPartyRendererEntryIpc(ipcMain, {
-  discoverModules: () => discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext()),
-  trustContext: readModuleTrustContext,
-  assetOrigin: moduleAssetOrigin,
-})
 void app.whenReady().then(() => {
   // The hosted relay's leftover pairings and push tokens (retired-relay-state.ts).
   // Best effort and off the startup path; tailnet pairings are never touched.
@@ -444,25 +428,11 @@ if (serverHost) {
     relaunchApp([SERVER_FALLBACK_ARGUMENT])
   })
   // What the server asks of the shell: the keychain, notices, terminal
-  // launches, the integrations gate, and the two caches only the shell keeps.
-  const cardMarketplace = createShellCardMarketplace(services.mcpConfigService)
+  // launches, the integrations gate, a removed skill's Trash, and Studio's
+  // own plugin in a workspace, which the shell installs.
   serverHost.serveShell(services.shellBridge, {
-    marketplaceRead: (input) => createDefaultMarketplaceRegistryClient().read(input as never),
-    // A card's `install.module` and a removed skill's Trash, which the server asks of the shell.
-    marketplaceReceipts: () => cardMarketplace.listMarketplaceReceipts(),
-    marketplaceInstall: (input) => cardMarketplace.installMarketplaceEntry(input as never),
     trash: (path) => shellTrash(path),
-    thirdPartyModules: async () => {
-      const { modules, rejected } = await discoverUserModules(defaultUserModuleRoot(), readModuleTrustContext())
-      return { modules: modules.map((module) => toThirdPartyModuleView(module)), rejected }
-    },
-  })
-  // What is installed or trusted on the server changed: the windows load their extensions again.
-  serverHost.link.rpc.on(SERVER_EVENTS.modulesChanged, () => notifyRendererModulesChanged())
-  // A restarted server starts without the renderer's module registry; it is sent again.
-  serverHost.supervisor.onReady(() => {
-    const snapshot = services.moduleRegistryMirror.read()
-    if (snapshot) serverHost.link.rpc.emit(SERVER_EVENTS.moduleRegistrySnapshot, snapshot)
+    studioPluginStatus: (workspaceRoot) => services.studioPluginStatus(workspaceRoot),
   })
 }
 
@@ -501,7 +471,15 @@ registerAppLifecycle({
     ? async () => {
         if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.skillSourcesCheck)
       }
-    : () => services.skillsService.checkSourceUpdates(),
+    : () => services.skillsService?.checkSourceUpdates() ?? Promise.resolve(),
+  // The hosted feeds are the Studio's: out of process the server fetches them.
+  refreshHostedFeeds: serverHost
+    ? async () => {
+        if (serverHost.link.isServing()) await serverHost.link.rpc.call(SERVER_METHODS.hostedFeedsRefresh)
+      }
+    : async () => {
+        await services.studioCore.extensions?.feeds.refresh()
+      },
   startDeferredBootJobs: services.startDeferredBootJobs,
   // Out of process the workspaces to prepare arrive with the server's first
   // snapshot; the pass waits for it, inside the same boot budget.

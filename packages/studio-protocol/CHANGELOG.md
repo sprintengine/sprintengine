@@ -57,6 +57,22 @@
   at once. `conversation.scheduleSend` carries `untilLimitReset` from the
   conversation contract.
 
+### Added (extensions)
+
+- **What a desktop's Studio is extended with is the protocol's**
+  (`extensions.ts`, capability `extensions`): `marketplace.read` and
+  `.updateStates`, `cliPlugins.list`, `.availability` and `.launchPreview`,
+  `cardFeed.get` with the `cardFeed.changed` stream and `sourcesFeed.get`
+  (`providers:read`); `studioPlugin.status` (`files:read`); and an owner's
+  `marketplace.verify`, `.install`, `.update`, `.uninstall`, `.resolveGithub`,
+  `.installGithub` (`STUDIO_MARKETPLACE_OWNER`) and `extensionScaffold.home`,
+  `.target`, `.create` (`STUDIO_SCAFFOLD_OWNER`). The installs are mutations
+  under their `commandId`. Their shapes are in `extensions-types.ts`.
+- **The installed extensions are listed and loaded through the Studio**:
+  `module.installed` and `module.rendererEntries` (`modules:read`),
+  `module.setAppState` (`settings:write`), `module.reportRegistry`
+  (`modules:operate`), and the `module.changed` stream.
+
 ### Added (the phone's reads)
 
 - **Backlogs, shares and pull request reads are protocol methods.**

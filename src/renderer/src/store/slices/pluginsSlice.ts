@@ -2,6 +2,7 @@ import { isDraft, original } from 'immer'
 
 import type { PluginCatalogEntry, PluginCatalogStatus } from '../../types/workspace'
 import { reuseUnchanged } from '../../utils/reuseUnchanged'
+import { extensionsApi, type ExtensionsApi, windowHasStudio } from '../../studio/extensions'
 
 // `resumeCapabilitiesForCli` moved to the shared resume-capability module
 // (main-process consumers resolve caps from
@@ -31,12 +32,10 @@ export type PluginsSlice = PluginsSliceState & PluginsSliceActions
 
 type PluginsSliceSet = (mutator: (state: PluginsSliceState) => void) => void
 
-type PluginsApi = Pick<Window['api'], 'pluginsList'>
+type PluginsApi = Pick<ExtensionsApi, 'pluginsList'>
 
 function getPluginsApi(): PluginsApi | null {
-  if (typeof window === 'undefined') return null
-  const api = window.api
-  return api && typeof api.pluginsList === 'function' ? api : null
+  return windowHasStudio() ? extensionsApi : null
 }
 
 function formatError(error: unknown): string {

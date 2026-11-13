@@ -7,6 +7,12 @@ import {
   type StudioTopicTable,
 } from './contract.js'
 import { STUDIO_MODULES_CAPABILITY } from './handshake.js'
+import type {
+  ModuleRegistrySnapshot,
+  ModuleRegistrySnapshotWriteResult,
+  ThirdPartyModuleListResult,
+  ThirdPartyRendererEntriesResult,
+} from './extensions-types.js'
 
 // What a Studio's modules say to its clients. A module is a capability its
 // server runs (a bundled one, or an extension the person installed and
@@ -43,6 +49,17 @@ import { STUDIO_MODULES_CAPABILITY } from './handshake.js'
 //   answers the server's own outcome as its result. Installing, trusting and
 //   uninstalling change what the server loads at its next start; switching a
 //   module on or off applies at once where its main half can load live.
+//
+// - `module.installed`: every extension installed here, with its trust, where
+//   it came from and whether it runs; what Settings and the Extensions door
+//   list. `module.rendererEntries`: the trusted extensions' window halves, for
+//   a desktop window of this Studio to run. `module.changed`: what is
+//   installed or trusted here changed, so a window lists and loads them again.
+// - `module.setAppState`: the person's values for the modules' Settings
+//   sections, which their main halves read here (`settings:write`).
+//   `module.reportRegistry`: the module registry a window resolved, its window
+//   halves included, which the Studio's own `module.*` agent tools report
+//   (`modules:operate`).
 //
 // The streams, the calls and the list need `modules:read` (`module.operate`,
 // `modules:operate`, which carries it); none is held to an owner's
@@ -193,6 +210,20 @@ export type StudioModulesMethodMap = {
     params: { moduleId: string; commandId: string }
     result: { ok: true; removedModuleIds: string[] } | StudioModuleUninstallRefusal
   }
+  /** Every extension installed here, with its trust, origin and launch state. */
+  'module.installed': { params: Record<string, never>; result: ThirdPartyModuleListResult }
+  /** The trusted extensions' window halves, read and checked against their verified bytes now. */
+  'module.rendererEntries': { params: Record<string, never>; result: ThirdPartyRendererEntriesResult }
+  /** The person's values for the modules' Settings sections, by `module:<id>` namespace. */
+  'module.setAppState': {
+    params: { state: Record<string, Record<string, unknown>>; commandId: string }
+    result: Record<string, never>
+  }
+  /** The module registry a window resolved; refused, with why, when it is not one. */
+  'module.reportRegistry': {
+    params: { snapshot: ModuleRegistrySnapshot; commandId: string }
+    result: ModuleRegistrySnapshotWriteResult
+  }
 }
 
 /** `module.events` params: every module's events, or one module's. */
@@ -201,6 +232,8 @@ export type StudioModuleEventsParams = { moduleId?: string }
 export type StudioModulesTopicMap = {
   'module.events': { params: StudioModuleEventsParams; payload: StudioModuleEvent; stream: 'push' }
   'module.notifications': { params: Record<string, never>; payload: StudioModuleNotification; stream: 'push' }
+  /** What is installed or trusted here changed: list and load the extensions again. */
+  'module.changed': { params: Record<string, never>; payload: Record<string, never>; stream: 'push' }
 }
 
 /** A manifest id, as the module kernel accepts one. */
@@ -307,6 +340,50 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     },
   },
   'module.uninstall': { ...lifecycle, params: namedModule },
+  'module.installed': {
+    scope: 'modules:read',
+    mutation: false,
+    capability: STUDIO_MODULES_CAPABILITY,
+    params: studioNoParams,
+  },
+  'module.rendererEntries': {
+    scope: 'modules:read',
+    mutation: false,
+    capability: STUDIO_MODULES_CAPABILITY,
+    params: studioNoParams,
+  },
+  'module.setAppState': {
+    scope: 'settings:write',
+    mutation: true,
+    capability: STUDIO_MODULES_CAPABILITY,
+    params: (value) => {
+      const command = commandIdOf(value)
+      if (!command.ok) return command
+      const state = value.state
+      if (
+        state === null ||
+        typeof state !== 'object' ||
+        Array.isArray(state) ||
+        !Object.values(state).every((bag) => bag !== null && typeof bag === 'object' && !Array.isArray(bag))
+      )
+        return studioParamsRefused('"state" is each module section\'s values by its namespace.')
+      return studioParams({ state: state as Record<string, Record<string, unknown>>, commandId: command.params })
+    },
+  },
+  'module.reportRegistry': {
+    scope: 'modules:operate',
+    mutation: true,
+    capability: STUDIO_MODULES_CAPABILITY,
+    params: (value) => {
+      const command = commandIdOf(value)
+      if (!command.ok) return command
+      const snapshot = value.snapshot
+      // The Studio's own reader holds every member to its shape; here, that there is one.
+      if (snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot))
+        return studioParamsRefused('"snapshot" is the module registry the window resolved.')
+      return studioParams({ snapshot: snapshot as ModuleRegistrySnapshot, commandId: command.params })
+    },
+  },
 }
 
 export const STUDIO_MODULES_TOPICS: StudioTopicTable<StudioModulesTopicMap> = {
@@ -326,6 +403,12 @@ export const STUDIO_MODULES_TOPICS: StudioTopicTable<StudioModulesTopicMap> = {
     },
   },
   'module.notifications': {
+    scope: 'modules:read',
+    capability: STUDIO_MODULES_CAPABILITY,
+    push: true,
+    params: studioNoParams,
+  },
+  'module.changed': {
     scope: 'modules:read',
     capability: STUDIO_MODULES_CAPABILITY,
     push: true,

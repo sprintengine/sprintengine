@@ -257,6 +257,16 @@ export const STUDIO_WORKTREES_CAPABILITY = 'worktrees' as const
 export const STUDIO_CHAT_LIFECYCLE_CAPABILITY = 'chat-lifecycle' as const
 
 /**
+ * What a Studio is extended with beyond its modules (`extensions.ts`): the
+ * marketplace and installing from it or from GitHub (`marketplace.*`), the
+ * agent CLIs' plugin catalogue (`cliPlugins.*`), Studio's own plugin in a
+ * workspace (`studioPlugin.status`), building an extension
+ * (`extensionScaffold.*`), and the hosted feeds (`cardFeed.*`,
+ * `sourcesFeed.get`). Offered where the Studio holds them.
+ */
+export const STUDIO_EXTENSIONS_CAPABILITY = 'extensions' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -307,6 +317,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
   STUDIO_CANVAS_BOARDS_CAPABILITY,
   STUDIO_CHAT_EXPORT_CAPABILITY,
+  STUDIO_EXTENSIONS_CAPABILITY,
 ] as const
 
 /**

@@ -53,13 +53,10 @@ import { createDesktopShellTools } from './desktop-shell-tools'
 import { liveGatewayLaunchTokens, onGatewayLaunchTokenChange } from '../server/core/gateway-launch-tokens'
 import { readStudioEnv } from '../shared/studio-env'
 import type { McpToolContribution } from './module-host/main-host'
-import { createDefaultMarketplaceRegistryClient } from './ipc/marketplace-registry-ipc'
-import { toThirdPartyModuleView } from './ipc/third-party-module-ipc'
 import { getGitRepoWatch } from '../server/git/checkout-watch'
 import { announceChangelistsChanged } from '../server/git/changelist-events'
 import { createModuleRegistryMirror } from './modules/registry-mirror'
-import { readModuleTrustContextSync } from './modules/trust-context'
-import { defaultUserModuleRoot, discoverUserModules } from './modules/user-module-registry'
+import type { StudioPluginStatus } from '../../packages/studio-protocol/src/public'
 import type { ScheduledAgentsService } from './scheduled-agents/service'
 import {
   ensureSkillInstalled,
@@ -74,7 +71,7 @@ import {
 import { SprintEngineAuthBridge } from './auth-service'
 import { createMainDiagnostics } from './main-diagnostics'
 import { listKnownWorkspaceRoots, uniqueResolvedRoots } from './workspace-roots'
-import { createSkillsService, type SkillsService } from './skills'
+import type { SkillsService } from './skills'
 import { createWorkspaceExtensionsReader } from './workspace-extensions'
 import {
   getBundledAgentStateReporterPath,
@@ -83,12 +80,9 @@ import {
   getBundledStatusLineForwarderPath,
   getBundledStudioPluginRoot,
 } from './bundled-resources'
-import { createGitTransportProbe } from './git-transport-probe'
-import { sharedGhRunner } from './github/gh'
-import { createGhHostTokenResolver } from './github/host-token'
 import type { HostAgentIntegration } from './hosts/execution-host'
 import { hostRegistry } from './hosts/host-registry'
-import { createShellCardMarketplace, shellTrash } from './cards/shell-marketplace'
+import { shellTrash } from './cards/shell-trash'
 import { createStudioAgentServices } from '../server/core/studio-agent-services'
 import { createBackgroundModeStore } from './background-mode-store'
 import { createQuitConfirmationStore } from './quit-confirmation-store'
@@ -143,7 +137,7 @@ import { createVisualTools } from './automation/visual-tools'
 import { createElectronVisualPreview } from './visual/visual-preview-window'
 import { createExtensionTools } from './automation/extension-tools'
 import { createPluginTools } from './automation/plugin-tools'
-import { createExtensionScaffoldHandlers, resolveScaffoldRoots } from './ipc/extension-scaffold-ipc'
+import { resolveScaffoldRoots } from './extension-scaffold'
 import { createAppTourService } from './tours/tour-app'
 import { canvasBoardStoreDir } from './canvas/canvas-board-store'
 import { createCanvasService } from './canvas/canvas-service'
@@ -689,6 +683,24 @@ export function createAppServices(
       void writeDiagnosticLog({ ...diagnostic, source: 'workspace' })
     },
   })
+  // The catalogue's row for Studio's own plugin in a workspace
+  // (`studioPlugin.status`): what this build ships, and what this process
+  // installed there this run ('' until it has).
+  const studioPluginStatus = async (workspaceRoot: string | null): Promise<StudioPluginStatus> => {
+    const root = workspaceRoot?.trim() ?? ''
+    const [bundledVersion, hooksAcknowledgedAt] = await Promise.all([
+      studioPluginService.bundledVersion(),
+      studioPluginService.hooksAcknowledgedAt(),
+    ])
+    const record = root === '' ? null : studioPluginService.installed(root)
+    return {
+      bundledVersion,
+      hooksAcknowledgedAt,
+      installedVersion: record?.version ?? '',
+      skillDirNames: record?.skillDirNames ?? [],
+      claudePluginKey: record?.claudePluginKey ?? '',
+    }
+  }
 
   // The core this process serves from: launch settings and machines, the
   // workspace registry, the conversation runtime and the backend chats are
@@ -894,8 +906,8 @@ export function createAppServices(
         },
         agentServices,
         // What the shell adds to the agents' skills and cards: the token its
-        // store keeps, git once the window is up, its window focus, its Trash
-        // and the marketplace a card's `install.module` goes through.
+        // store keeps, git once the window is up, its window focus and its
+        // Trash. A card's `install.module` goes through the core's marketplace.
         agentSkills: {
           resolveGitHubToken: () => githubTokenStore.resolveToken(),
           whenGitMayRun: Promise.all([app.whenReady(), bootJobsGate]),
@@ -904,7 +916,13 @@ export function createAppServices(
             return () => app.off('browser-window-focus', listener)
           },
           trash: shellTrash,
-          marketplace: createShellCardMarketplace(mcpConfigService),
+        },
+        // This desktop's Studio holds the marketplace, the CLI catalogue, the
+        // extension scaffold and the hosted feeds; Studio's own plugin in a
+        // workspace is this shell's, which installs it.
+        extensions: {
+          studioPluginStatus: (workspaceRoot) => studioPluginStatus(workspaceRoot),
+          changed: () => moduleHub.deliverChanged(),
         },
         ...(ssh
           ? {
@@ -1121,13 +1139,11 @@ export function createAppServices(
   // The renderer's module registry, mirrored here. Empty until a
   // window pushes one; consumers report "not yet known" rather than "no
   // modules", the same rule the enablement mirror follows.
-  const moduleRegistryMirror = createModuleRegistryMirror(
-    server ? { onWrite: (snapshot) => server.rpc.emit(SERVER_EVENTS.moduleRegistrySnapshot, snapshot) } : {},
-  )
-  // The marketplace index reader the `marketplace.list` tool answers from —
-  // same client, same on-disk cache, same bundled-first policy as the
-  // Extensions storefront's IPC.
-  const marketplaceRegistryReader = createDefaultMarketplaceRegistryClient()
+  // In process, the Studio's own (`module.reportRegistry`); out of process the
+  // server keeps its own and this one stays empty.
+  const moduleRegistryMirror = createModuleRegistryMirror()
+  // The marketplace, the scaffold and the feeds, where this process's core holds them.
+  const coreExtensions = 'extensions' in core ? core.extensions : null
 
   // Agent changelists: an agent's own list, holding exactly the lines it wrote.
   // The feed owns every rule about WHICH checkout a claim belongs to and what it
@@ -1194,39 +1210,9 @@ export function createAppServices(
         minRegistryIntervalMs: 10_000,
       })
   // The skill sources, their scans and installs are the core's
-  // (studio-agent-skills.ts): in process this one's, out of process the
-  // server's. There the shell keeps a reader of its own over the same files,
-  // for its `plugin` toolset, which lists the sources and reads their scans.
-  const skillsService = server ? shellSkillsReader() : core.agents.skills.skills
-  function shellSkillsReader(): SkillsService {
-    // Repositories are read over git, not the GitHub API: the API's anonymous
-    // limit capped a Sync at twenty linked repositories. The probe waits for
-    // the window: on a Mac without the command line tools `git --version`
-    // raises Apple's install dialog, which must never be the first thing a
-    // person sees.
-    const skillRepoCacheDir = join(app.getPath('userData'), 'skill-repos')
-    const gitTransport = createGitTransportProbe({
-      cacheDir: skillRepoCacheDir,
-      resolveToken: () => githubTokenStore.resolveToken(),
-      // A self-hosted GitHub's source reads with the GitHub CLI's sign-in for that host.
-      resolveHostToken: createGhHostTokenResolver(sharedGhRunner()),
-    })
-    void Promise.all([app.whenReady(), bootJobsGate]).then(() => gitTransport.refresh())
-    return createSkillsService(app.getPath('userData'), {
-      resolveToken: () => githubTokenStore.resolveToken(),
-      get repoReader() {
-        return gitTransport.reader
-      },
-      get repoTransport() {
-        return gitTransport.reader ? ('git' as const) : ('api' as const)
-      },
-      get gitInstalled() {
-        return gitTransport.installed
-      },
-      refreshTransport: () => gitTransport.refresh(),
-      studioMarketplaceSeedRoot: getBundledStudioPluginRoot,
-    })
-  }
+  // (studio-agent-skills.ts): in process this one's; out of process the
+  // server's, whose `plugin` tools and hourly check read them there.
+  const skillsService: SkillsService | null = 'agents' in core ? core.agents.skills.skills : null
   // The `tailnet.*` tools configure the service that (transitively) owns them,
   // so the tool set cannot capture it at construction. Assigned immediately
   // below; until then those tools answer that they are not wired up yet.
@@ -1496,20 +1482,19 @@ export function createAppServices(
       workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
   })
   // `extension.create` and `extension.guide`: a project made on this machine's
-  // disk, by the New chat door's own scaffold, and the guide shipped beside the
-  // app. In process the gateway's own; out of process the shell's `extension`
-  // toolset.
-  const extensionTools = createExtensionTools({
-    scaffold: createExtensionScaffoldHandlers(),
-    guideRoot: () => resolveScaffoldRoots().guideRoot,
-  })
-  // `plugin.search` and `plugin.offer`: the plugin sources the Extensions door
-  // lists, which main keeps. In process the gateway's own; out of process the
-  // shell's `plugin` toolset.
-  const pluginTools = createPluginTools({
-    listSources: () => skillsService.listSources(),
-    getScan: (input) => skillsService.getScan(input),
-  })
+  // disk, by the scaffold a window's New chat door uses, and the guide shipped
+  // beside the app. `plugin.search` and `plugin.offer`: the plugin sources the
+  // Extensions door lists. In process the gateway's own; out of process the
+  // server's (desktop-server.ts).
+  const extensionTools = coreExtensions
+    ? createExtensionTools({ scaffold: coreExtensions.scaffold, guideRoot: () => resolveScaffoldRoots().guideRoot })
+    : []
+  const pluginTools = skillsService
+    ? createPluginTools({
+        listSources: () => skillsService.listSources(),
+        getScan: (input) => skillsService.getScan(input),
+      })
+    : []
 
   // Instance-global SprintEngine Studio MCP surface: reads come from the
   // workspace-sync snapshot and terminal runtime, and mutations go straight to
@@ -1592,28 +1577,26 @@ export function createAppServices(
               studioDataDirs: () => [app.getPath('userData')],
               getScheduledAgents: () => resolveScheduledAgents(),
               ...launchSettingsGatewayDeps(agentLaunchSettings),
-              // module.*/marketplace.*. The registry snapshot is the
-              // renderer's mirror — main's own module list omits every renderer-only
-              // module, so reporting from it would be wrong by construction. Trust
-              // and launch readiness stay main-owned (signature verification and the
-              // trust store live here), and the marketplace read goes through the
-              // same client the Extensions storefront's IPC uses, cache included.
+              // module.*/marketplace.*. The registry snapshot is the one a
+              // window reported (`module.reportRegistry`): the kernel's own list
+              // omits every window-only module, so reporting from it would be
+              // wrong by construction. The installed extensions and the
+              // marketplace are read as a window's `module.installed` and
+              // `marketplace.read` are, cache included.
               getModuleRegistrySnapshot: () => moduleRegistryMirror.read(),
-              listInstalledThirdPartyModules: async () => {
-                const { modules, rejected } = await discoverUserModules(
-                  defaultUserModuleRoot(),
-                  readModuleTrustContextSync(app.getPath('userData')),
-                )
-                return { modules: modules.map((module) => toThirdPartyModuleView(module)), rejected }
-              },
+              listInstalledThirdPartyModules: async () =>
+                (await moduleHub.lifecycle()?.installed()) ?? { modules: [], rejected: [] },
               listModuleContributedTools: () =>
                 resolveModuleMcpTools().map((tool) => ({ moduleId: tool.moduleId, toolName: tool.registration.name })),
-              readMarketplaceRegistry: (input) => marketplaceRegistryReader.read(input),
+              readMarketplaceRegistry: (input) =>
+                coreExtensions
+                  ? coreExtensions.marketplace.read(input)
+                  : Promise.reject(new Error('This Studio holds no marketplace.')),
               // What a paired machine's composer offers a chat here.
               readWorkspaceExtensions: createWorkspaceExtensionsReader({
                 listWorkspaceSkills: (input) => core.agents.skills.workspaceSkills.listWorkspaceSkills(input),
                 agentCapabilities: (input) => core.agents.skills.agentCapabilities.resolve(input),
-                listSources: () => skillsService.listSources(),
+                listSources: () => core.agents.skills.skills.listSources(),
               }),
             }),
           ),
@@ -1793,7 +1776,7 @@ export function createAppServices(
           version: app.getVersion(),
           // Out of process the server serves none of these itself (phase 6,
           // 6.3, decision R78): the browser and the canvas, the editor and
-          // tours. The terminal and agent tools are the server's own, as the
+          // tours, previews and artifacts. The terminal and agent tools are the server's own, as the
           // terminals are.
           toolsets: [
             { name: 'browser', registrations: browserTools, enabled: browserToolsOffered },
@@ -1802,8 +1785,6 @@ export function createAppServices(
             { name: 'tour', registrations: tourTools },
             { name: 'visual', registrations: visualTools },
             { name: 'artifacts', registrations: artifactsTools },
-            { name: 'extension', registrations: extensionTools },
-            { name: 'plugin', registrations: pluginTools },
           ],
           focus: desktopFocus,
           log: logDesktopTools,
@@ -2176,6 +2157,7 @@ export function createAppServices(
     setTourAttention: tours.setAttention,
     builtinSkillManager,
     studioPluginService,
+    studioPluginStatus,
     studioAreaSkillStore,
     studioCore: core,
     // Read when a module asks, not here: out of process the core is the

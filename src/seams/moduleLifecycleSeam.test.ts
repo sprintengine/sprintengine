@@ -19,7 +19,12 @@ import { AGENT_RUNTIME_MANIFEST, createAgentRuntimeModule } from '../main/module
 import { applyHostApiGate } from '../main/modules/host-api-gate'
 import { createModuleLifecycle, liveModuleIds } from '../main/modules/module-lifecycle'
 import { computeModuleFileDigestsSync } from '../main/modules/module-signature'
-import { planThirdPartyMainModules } from '../main/modules/third-party-main-loader'
+import {
+  planThirdPartyMainModules,
+  readThirdPartyMainLaunchSnapshot,
+  thirdPartyLaunchSession,
+} from '../main/modules/third-party-main-loader'
+import { createModuleRegistryMirror } from '../main/modules/registry-mirror'
 import { readModuleTrustContextSync } from '../main/modules/trust-context'
 import { discoverUserModulesSync } from '../main/modules/user-module-registry'
 import { createWorkspaceRegistryService } from '../main/workspace-registry-service'
@@ -269,7 +274,10 @@ async function startServer() {
     createModuleLifecycle({
       dataDir,
       moduleRoot: () => moduleRoot,
-      changed: () => undefined,
+      changed: () => hub.deliverChanged(),
+      launchSession: () =>
+        thirdPartyLaunchSession(readThirdPartyMainLaunchSnapshot(), load.kernel.mcpToolRegistrations()),
+      registry: createModuleRegistryMirror(),
       applyEnablement: async (overrides) => {
         await load.applyEnablement(overrides, {
           liveModuleIds: liveModuleIds(Object.keys(thirdParty.moduleRoots), load.report.errors),
@@ -323,9 +331,19 @@ test('an extension is installed, trusted, called, heard, switched off and on aga
   const first = await startServer()
   const settings = await windowOn(first.path)
   const lifecycle = moduleLifecycleOver(async () => settings)
+  let changes = 0
+  settings.subscribe('module.changed', {}, { onPayload: () => void changes++ })
   const installed = await lifecycle.install(source)
   assert.deepEqual(installed, { ok: true, moduleId: ID, trust: 'signed' }, 'a test key is not a trusted publisher')
+  const listedInstalled = await settings.request('module.installed', {})
+  assert.deepEqual(
+    listedInstalled.modules.map((module) => [module.manifest.id, module.trust, module.origin?.kind]),
+    [[ID, 'signed', 'folder']],
+    'the server lists what is on its disk, with its trust and where it came from',
+  )
   assert.deepEqual(await lifecycle.setTrust(ID, true), { ok: true })
+  for (let tries = 0; changes < 2 && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(changes, 2, 'each install and trust is told to the windows following module.changed')
   assert.equal(await listed(settings), undefined, 'what is installed loads at the next start')
   await first.stop()
 

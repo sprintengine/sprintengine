@@ -5,6 +5,11 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { AppUpdateState, CliVersionAdvisory, CliVersionHostAdvisories } from '../../../../shared/electron-api'
 import type { ExecutionHostId, HostsListResult } from '../../../../shared/execution-host'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 // The update badges inside Settings (owner ruling 2026-09-25), through the real
 // panel: General wears the app update, Agents the CLI updates of every machine,

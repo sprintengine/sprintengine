@@ -84,6 +84,8 @@ import {
   type ConversationSessionSummary,
 } from '../../shared/conversation-runtime'
 import { installedStudioPlatform, installStudioPlatform, type StudioPlatform } from '../platform/platform'
+import { createStudioExtensions, type StudioExtensionsDeps } from '../extensions/extensions-domain'
+import { listKnownWorkspaceRoots } from '../../main/workspace-roots'
 import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
@@ -166,8 +168,17 @@ export type StudioCoreOptions = {
    * core builds its own (studio-agent-services.ts).
    */
   agentServices?: StudioAgentServices
-  /** What the desktop's shell adds to the agents' skills and cards: its Trash, its marketplace, its window focus. */
+  /** What the desktop's shell adds to the agents' skills and cards: its Trash and its window focus. */
   agentSkills?: Omit<StudioAgentSkillsDeps, 'mcpConfig'>
+  /**
+   * What a desktop's Studio is extended with (`extensions`): given, the core
+   * holds the marketplace, the CLI catalogue, the extension scaffold and the
+   * hosted feeds, and a card's `install.module` goes through its marketplace.
+   * The shell adds Studio's own plugin in a workspace, which it installs, and
+   * is told when what is installed changes. Absent (a server on a WSL or SSH
+   * machine), none of it is served.
+   */
+  extensions?: Pick<StudioExtensionsDeps, 'studioPluginStatus' | 'changed'>
   /**
    * Who turns the scheduler on. A process with a module kernel (the desktop,
    * in process and out) turns it on and off with the person's Scheduled
@@ -266,10 +277,27 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   })
   // The agent CLIs on this machine and what they are set up with, served by
   // every Studio (`agent-runtimes`, `agent-setup`).
+  // What a desktop's Studio is extended with, built before the agents so a
+  // card's `install.module` goes through the same marketplace a window's does.
+  const extensions = options.extensions
+    ? createStudioExtensions({
+        paths: platform.paths,
+        mcpConfig: () => agents.services.mcpConfig,
+        openWorkspaceRoots: () => listKnownWorkspaceRoots(workspaceSyncService.getSnapshot()),
+        ...options.extensions,
+      })
+    : null
   const agents = createStudioAgents(platform, {
     agentLaunchSettings,
     ...(options.agentServices ? { services: options.agentServices } : {}),
-    ...(options.agentSkills ? { skills: options.agentSkills } : {}),
+    ...(options.agentSkills || extensions
+      ? {
+          skills: {
+            ...options.agentSkills,
+            ...(extensions ? { marketplace: extensions.marketplace.cardMarketplace } : {}),
+          },
+        }
+      : {}),
   })
 
   // The authoritative workspace registry. Routing lives in the record, so no
@@ -1360,6 +1388,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     textGenerationSettings,
     /** The agent CLIs (detection, installs, the version check) and their setup (studio-agent-services.ts). */
     agents,
+    /** The marketplace, the CLI catalogue, the scaffold and the feeds; null where this Studio serves none. */
+    extensions,
     /** The composer's `/` lists, which a window's IPC and a paired desktop's reads share. */
     conversationCommands,
     stopUsageLimitResumes,

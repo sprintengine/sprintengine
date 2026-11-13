@@ -35,6 +35,7 @@ import { GhostButton, InlineNotice, SettingCard, Spinner } from '../../../../ui'
 import { ConnectorRow, ConnectorSectionHeading } from '../../../../panels/ConnectorsPanel/ConnectorRow'
 import { SourceMonogram } from '../skills/SourceMonogram'
 import { agentSkillsApi } from '../../../../../studio/agentSkills'
+import { extensionsApi, windowHasStudio } from '../../../../../studio/extensions'
 
 /** What a recommendation's `kind` is called on the row. */
 const KIND_LABEL: Record<HostedSource['kind'], string> = {
@@ -81,12 +82,12 @@ export function RecommendedSources({
   // network — the poller's feed leg is what keeps that copy fresh — so opening
   // the door never waits on GitHub to draw this.
   useEffect(() => {
-    if (typeof window.api.hostedSourcesFeedGet !== 'function') {
+    if (!windowHasStudio()) {
       setLoad({ status: 'unavailable' })
       return undefined
     }
     let cancelled = false
-    void window.api
+    void extensionsApi
       .hostedSourcesFeedGet()
       .then((result) => {
         if (cancelled) return

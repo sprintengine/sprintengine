@@ -14,6 +14,13 @@ import type { CapabilityManifest, ThirdPartyModuleView } from '../../../../share
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { ConfirmDialogProvider } from '../ui/ConfirmDialog'
 import { ModulesSettingsTab } from './ModulesSettingsTab'
+import { COMING_SOON_IDS, MODULE_CATEGORY_GROUPS } from './ModuleControls'
+import type { StudioModuleSummary } from '../../../../../packages/studio-protocol/src/public'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 const registry = {
   getWorkspaceTypeModule: () => null,
@@ -38,7 +45,10 @@ vi.mock('../../modules', async (importOriginal) => ({
 // `module.uninstall`); this stands in for the window's connection.
 vi.mock('../../studio/moduleLifecycle', () => ({
   windowModuleLifecycle: () => ({
-    setEnabled: async () => ({ ok: true, module: null }),
+    setEnabled: async (id: string, enabled: boolean | null) => {
+      enableCalls.push([id, enabled])
+      return setEnabledAnswer
+    },
     install: async () => ({ ok: false, message: 'not here' }),
     setTrust: async (id: string, trusted: boolean) => {
       trustCalls.push([id, trusted])
@@ -141,6 +151,8 @@ const UPDATES: MarketplaceUpdateStatesResult = {
 } as MarketplaceUpdateStatesResult
 
 let installed: ThirdPartyModuleView[] = []
+const enableCalls: Array<[string, boolean | null]> = []
+let setEnabledAnswer: { ok: true; module: null } | { ok: false; message: string } = { ok: true, module: null }
 const trustCalls: Array<[string, boolean]> = []
 const uninstallCalls: string[] = []
 const pluginUninstallCalls: MarketplacePluginUninstallInput[] = []
@@ -152,6 +164,8 @@ beforeEach(() => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   installed = [INSIGHTS, SIGNED, DECISION_LOG, PR_RADAR, WEATHER, TAMPERED]
   trustCalls.length = 0
+  enableCalls.length = 0
+  setEnabledAnswer = { ok: true, module: null }
   uninstallCalls.length = 0
   pluginUninstallCalls.length = 0
   restartApp.mockClear()
@@ -394,6 +408,43 @@ test('built-in modules are folded away until asked for', async () => {
   expect(toggle.getAttribute('aria-expanded')).toBe('true')
   expect(list('Built in')!.closest('[hidden]')).toBeNull()
   expect(list('Built in')!.textContent).toContain('Always on')
+})
+
+test('a built-in row shows what the Studio runs, and a switch the Studio refused says so and changes nothing', async () => {
+  const manifest = MODULE_CATEGORY_GROUPS.flatMap((group) => group.manifests).find(
+    (candidate) => !candidate.core && !COMING_SOON_IDS.has(candidate.id),
+  )!
+  // The window's copy says off; the Studio holds it on, and it does not run there.
+  useWorkspaceStore.getState().setModuleEnabled(manifest.id, false)
+  const api = (window as unknown as { api: Record<string, unknown> }).api
+  api.listStudioModules = async (): Promise<StudioModuleSummary[]> => [
+    {
+      id: manifest.id,
+      name: manifest.displayName,
+      version: manifest.version,
+      source: 'bundled',
+      enabled: true,
+      running: false,
+      blocked: 'A module it needs is switched off.',
+      methods: [],
+    },
+  ]
+  await mount()
+  await click(button('Built in', panel()))
+  const row = [...list('Built in')!.querySelectorAll('li')].find((li) =>
+    li.textContent?.includes(manifest.displayName),
+  )!
+  expect(row.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('true')
+  expect(row.querySelector('[data-testid="module-not-running"]')?.textContent).toBe(
+    'A module it needs is switched off.',
+  )
+  expect(useWorkspaceStore.getState().appSettings.modules?.[manifest.id]).toBe(true)
+
+  setEnabledAnswer = { ok: false, message: 'The choice could not be saved.' }
+  await click(row.querySelector('[role="switch"]'))
+  expect(enableCalls).toContainEqual([manifest.id, false])
+  expect(panel().textContent).toContain('The choice could not be saved.')
+  expect(useWorkspaceStore.getState().appSettings.modules?.[manifest.id]).toBe(true)
 })
 
 test('a module added from a folder is uninstalled by the Studio, and forgotten here', async () => {

@@ -163,7 +163,6 @@ import { scheduledAgentsSwitchModule } from './modules/scheduled-agents-switch'
 import { AGENT_RUNTIME_MANIFEST } from './modules/agent-runtime-module'
 import { computeModuleFileDigestsSync, manifestFingerprint } from './modules/module-signature'
 import { planThirdPartyMainModules } from './modules/third-party-main-loader'
-import { registerThirdPartyRendererEntryIpc } from './modules/third-party-renderer-entries'
 import { discoverUserModulesSync } from './modules/user-module-registry'
 import { registerCoreIpc } from './register-core-ipc'
 import { attachStartupTimeline } from './startup-timeline'
@@ -177,7 +176,7 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   conversations: 0,
   terminals: 3,
   modules: 0,
-  extensions: 30,
+  extensions: 5,
   'paired-machines': 52,
   access: 45,
   workspaces: 47,
@@ -367,8 +366,6 @@ test('what main and the server register, and what the preload uses, is the inven
   })
   assert.deepEqual(modules.report.errors, [])
   assert.ok(modules.report.loaded.includes('weather-deck'), 'the installed extension loads')
-  // The renderer-entry channel is the shell's own, with the server's modules loaded in the server.
-  registerThirdPartyRendererEntryIpc(shell, anything())
 
   // ── The preload: every member, with stand-ins ──
   const usedBy = new Map<string, Set<string>>()

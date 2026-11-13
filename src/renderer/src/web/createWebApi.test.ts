@@ -124,5 +124,4 @@ test('the clipboard and links act in the browser, never on the server', async ()
 test('boot reads find empty states', async () => {
   const api = createWebApi()
   expect((await api.authGetState()).status).toBe('signed_out')
-  expect((await api.listThirdPartyRendererEntries()).entries).toEqual([])
 })

@@ -159,6 +159,7 @@ import { isImeKey } from '../../../utils/imeKey'
 import { preloadAgentPanelChunks } from '../../panels/agentPanelChunks'
 import { filesApi } from '../../../studio/files'
 import { gitApi } from '../../../studio/git'
+import { extensionsApi, windowHasStudio } from '../../../studio/extensions'
 
 export type NewAgentLaunch = AgentComposerConfirm & {
   /** The agent's startup prompt. Empty means "start with nothing typed". */
@@ -578,7 +579,7 @@ export default function NewAgentPanel({
     status: 'loading' | 'ready' | 'error'
   } | null>(null)
   React.useEffect(() => {
-    if (!isWslHostId(hostId) || typeof window.api.pluginsDetectAvailability !== 'function') {
+    if (!isWslHostId(hostId) || !windowHasStudio()) {
       setHostAvailability(null)
       return
     }
@@ -591,7 +592,7 @@ export default function NewAgentPanel({
         .filter(Boolean)
         .map((cli) => [cli, { command: commands[cli] ?? '', hostId }]),
     )
-    void window.api
+    void extensionsApi
       .pluginsDetectAvailability({ cliRuntimes })
       .then((result) => {
         if (cancelled) return
@@ -1422,7 +1423,7 @@ export default function NewAgentPanel({
       return
     }
     let cancelled = false
-    void window.api
+    void extensionsApi
       .agentLaunchPreview(request)
       .then((result) => {
         if (cancelled) return
@@ -1459,9 +1460,9 @@ export default function NewAgentPanel({
   const [extensionFolder, setExtensionFolder] = React.useState<string | null>(null)
   const [extensionHome, setExtensionHome] = React.useState<string | null>(null)
   React.useEffect(() => {
-    if (!extensionMode || typeof window.api.extensionScaffoldHome !== 'function') return
+    if (!extensionMode || !windowHasStudio()) return
     let cancelled = false
-    void window.api
+    void extensionsApi
       .extensionScaffoldHome()
       .then((home) => {
         if (!cancelled) setExtensionHome(home)
@@ -1490,10 +1491,10 @@ export default function NewAgentPanel({
   const extensionTargetKey =
     extensionMode && extensionName && !extensionNameProblem ? `${extensionFolder ?? ''}\u0000${extensionName}` : null
   React.useEffect(() => {
-    if (!extensionTargetKey || typeof window.api.extensionScaffoldTarget !== 'function') return
+    if (!extensionTargetKey || !windowHasStudio()) return
     let cancelled = false
     const timer = window.setTimeout(() => {
-      void window.api
+      void extensionsApi
         .extensionScaffoldTarget({ id: extensionName, ...(extensionFolder ? { folder: extensionFolder } : {}) })
         .then((target) => {
           if (!cancelled && target) setExtensionTarget({ key: extensionTargetKey, state: target.state })

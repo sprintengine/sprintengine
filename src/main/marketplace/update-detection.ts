@@ -40,7 +40,7 @@ export async function readMarketplaceUpdateStates(
   const receiptOwnedModuleIds = new Set<string>()
   for (const receipt of receiptsRead.receipts) {
     // An extension installed from a GitHub URL updates from its repository
-    // (extensions:github:check-update), not the registry: a registry entry
+    // (a new `marketplace.resolveGithub` review), not the registry: a registry entry
     // that happens to share its id says nothing about it.
     if (receipt.source?.kind !== 'github') {
       installed.push({ id: receipt.id, displayName: receipt.displayName, installedVersion: receipt.version })

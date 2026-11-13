@@ -13,7 +13,6 @@ import { registerAuthIpc } from './ipc/auth-ipc'
 import { registerStudioWindowTicketIpc, type StudioWindowTicketIssuer } from './ipc/studio-window-ticket-ipc'
 import { assertAppSender } from './ipc/ipc-sender'
 import { registerAppMenuIpc } from './app-menu'
-import { registerStudioPluginIpc } from './ipc/studio-plugin-ipc'
 import { registerClipboardIpc } from './ipc/clipboard-ipc'
 import { registerChatExportIpc } from './ipc/chat-export-ipc'
 import { getPluginRegistry } from './plugin-registry-instance'
@@ -27,17 +26,9 @@ import { createFolderOpenIpcDependencies, registerFolderOpenIpc } from './ipc/fo
 import { registerGitShellIpc } from './ipc/git-shell-ipc'
 import { registerMenuDialogIpc } from './ipc/menu-dialog-ipc'
 import { registerProjectlessChatsIpc } from './ipc/projectless-chats-ipc'
-import { registerMarketplacePluginIpc } from './ipc/marketplace-plugin-ipc'
-import { registerMarketplaceRegistryIpc } from './ipc/marketplace-registry-ipc'
-import { registerHostedSourcesFeedIpc } from './ipc/hosted-feed-ipc'
-import { registerHostedCardFeedIpc } from './ipc/card-feed-ipc'
-import { registerModuleAppStateIpc } from './ipc/module-app-state-ipc'
-import { registerModuleRegistryIpc } from './ipc/module-registry-ipc'
-import { registerPluginIpc } from './ipc/plugins-ipc'
 import { registerPullRequestIpc } from './ipc/pull-request-ipc'
 import { webContentsIdOfWindowKey } from './ipc/studio-window-ticket-ipc'
 import { registerThirdPartyModuleIpc } from './ipc/third-party-module-ipc'
-import type { ThirdPartyLaunchSession } from './modules/third-party-main-loader'
 import { registerUpdateIpc } from './ipc/update-ipc'
 import { registerWindowIpc } from './ipc/window-ipc'
 import { registerPanePopOutIpc } from './ipc/pane-popout-ipc'
@@ -51,7 +42,6 @@ import { createNodeCanvasFs } from './canvas/canvas-node-fs'
 import { registerEditorRevealIpc } from './ipc/editor-reveal-ipc'
 import { registerToursIpc } from './ipc/tours-ipc'
 import { pickCanvasExportDirectory, revealCanvasBoardFile } from './ipc/canvas-export-dialog'
-import { registerExtensionScaffoldIpc } from './ipc/extension-scaffold-ipc'
 import {
   confirmWorkspaceWindowClose,
   createDiagnosticsWindow,
@@ -68,8 +58,6 @@ import { openDiagnosticsLogsFolder } from './diagnostics-folder'
 import { writeDiagnosticLog } from './diagnostics-service'
 
 export type CoreIpcOptions = {
-  /** What this session's third-party main halves did, for Settings → Extensions. */
-  readThirdPartyLaunchSession?: () => Promise<ThirdPartyLaunchSession>
   /**
    * The Studio server in a process of its own: its domains register there, on
    * its IPC tunnel, and it mints the tickets a window's protocol connection to it presents.
@@ -164,7 +152,6 @@ export function registerCoreIpc(
     },
   })
   registerAuthIpc(ipcMain, services.sprintengineAuth)
-  registerStudioPluginIpc(ipcMain, services.studioPluginService)
   // Revealing a file and opening one in another app stay this computer's
   // (shell channels); reading and changing files is the Studio protocol's.
   const filesystemReadHandlers = createFilesystemReadHandlers({ opener: shell })
@@ -218,9 +205,6 @@ export function registerCoreIpc(
   registerGitShellIpc(ipcMain)
   registerMenuDialogIpc(ipcMain)
   registerProjectlessChatsIpc(ipcMain)
-  // Module app state (Settings section values), mirrored for `entry.main`.
-  registerModuleAppStateIpc(ipcMain)
-  registerModuleRegistryIpc(ipcMain, services.moduleRegistryMirror)
   registerAppearanceIpc(ipcMain)
   registerBackgroundModeIpc(ipcMain, services.backgroundModeStore)
   registerTelemetryIpc(ipcMain, services.telemetryConsentStore)
@@ -235,11 +219,6 @@ export function registerCoreIpc(
     setUp: services.setUpArtifacts,
     consent: services.artifactsSetupConsent,
   })
-  registerMarketplaceRegistryIpc(ipcMain)
-  registerHostedSourcesFeedIpc(ipcMain)
-  registerHostedCardFeedIpc(ipcMain)
-  registerMarketplacePluginIpc(ipcMain, services)
-  registerPluginIpc(ipcMain)
   // The domains the Studio server owns: registered here while it runs in
   // process, and by the server itself on its IPC tunnel when it runs in a
   // process of its own (src/server/desktop/server-ipc.ts).
@@ -257,9 +236,8 @@ export function registerCoreIpc(
         })
       : // The server registers them, and disposes its own command lists.
         { conversationCommands: { dispose: async () => undefined } }
-  registerThirdPartyModuleIpc(ipcMain, {
-    ...(options.readThirdPartyLaunchSession ? { readLaunchSession: options.readThirdPartyLaunchSession } : {}),
-  })
+  // Showing an installed extension's folder in this computer's file manager.
+  registerThirdPartyModuleIpc(ipcMain)
 
   // Terminals are served over the Studio protocol (src/server/terminals/),
   // and a pane terminal moves between windows by re-attaching: the last
@@ -286,8 +264,5 @@ export function registerCoreIpc(
   registerPullRequestIpc(machineIpc, {
     refreshPullRequestsForSession: (sessionId) => services.refreshPullRequestsForSession(sessionId),
   })
-  // ── extension-platform additions ──
-  // Build your own extension: the SDK's templates, the machine check, the project.
-  registerExtensionScaffoldIpc(machineIpc)
   return { conversationCommands }
 }

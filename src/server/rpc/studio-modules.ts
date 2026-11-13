@@ -26,6 +26,11 @@ import type { ModuleLifecycle } from '../../main/modules/module-lifecycle'
 // `.install`, `.setTrust`, `.uninstall`) is the lifecycle's, served once the
 // kernel exists (`serveLifecycleFrom`).
 //
+// What is installed or trusted here changing (the lifecycle's install, trust
+// and uninstall, a marketplace install) is told to every connection following
+// `module.changed` (`deliverChanged`), so its windows list and load the
+// extensions again.
+//
 // Delivery is best effort per listener: one connection whose send throws does
 // not keep the row or event from the others.
 
@@ -63,6 +68,10 @@ export type StudioModules = {
   deliverNotification(notification: StudioModuleNotification): void
   /** Hear each event from now on; returns the unsubscriber. */
   onEvent(listener: (event: StudioModuleEvent) => void): () => void
+  /** What is installed or trusted here changed, to every listener. */
+  deliverChanged(): void
+  /** Hear each change of what is installed or trusted; returns the unsubscriber. */
+  onChanged(listener: () => void): () => void
   /** Hear each bell row from now on; returns the unsubscriber. */
   onNotification(listener: (notification: StudioModuleNotification) => void): () => void
   /** The rows the kernel still keeps, oldest first, as copies. Empty before a kernel is wired. */
@@ -74,6 +83,7 @@ export type StudioModules = {
 export function createStudioModuleHub(options: { log?: (message: string) => void } = {}): StudioModules {
   const eventListeners = new Set<(event: StudioModuleEvent) => void>()
   const notificationListeners = new Set<(notification: StudioModuleNotification) => void>()
+  const changedListeners = new Set<(value: null) => void>()
   let readRecent: () => ReadonlyArray<StudioModuleNotification> = () => []
   let serve: ((request: StudioModuleCallRequest) => Promise<StudioModuleCallOutcome>) | null = null
   let readHostServices: ((moduleId: string) => ModuleHostServicesOutcome) | null = null
@@ -123,6 +133,14 @@ export function createStudioModuleHub(options: { log?: (message: string) => void
     },
     deliverEvent: (event) => each(eventListeners, event, 'event'),
     deliverNotification: (notification) => each(notificationListeners, notification, 'notification'),
+    deliverChanged: () => each(changedListeners, null, 'change'),
+    onChanged(listener) {
+      const heard = () => listener()
+      changedListeners.add(heard)
+      return () => {
+        changedListeners.delete(heard)
+      }
+    },
     onEvent(listener) {
       eventListeners.add(listener)
       return () => {

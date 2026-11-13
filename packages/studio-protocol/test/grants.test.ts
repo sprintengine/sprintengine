@@ -39,7 +39,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * configuration, the memory activity hook); a plugin's install and
  * uninstall (its hooks and MCP servers), a design bundle's lint (it runs the
  * bundle's own script) and a card's Go (modules, plugins and MCP servers in
- * one press). In git: what moves a branch, rewrites history or discards
+ * one press); an extension's code fetched, reviewed, installed, updated or
+ * removed, and a new extension project written on this disk. In git: what moves a branch, rewrites history or discards
  * work, what reaches a remote with this machine's credentials, removing or
  * unlocking agents' worktrees, and the GitHub account Studio holds. A chat's
  * Create PR (`pull-request-create`): its forge, its push, its drafting CLI. The
@@ -65,7 +66,18 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'mcp.sync',
   'memoryActivity.install',
   'memoryActivity.uninstall',
-  // What extensions run here: installed, trusted, switched on or off.
+  // What extensions run here: installed, trusted, switched on or off;
+  // reviewed, installed, updated or removed from a marketplace or GitHub;
+  // and a new extension project written on this disk.
+  'extensionScaffold.create',
+  'extensionScaffold.home',
+  'extensionScaffold.target',
+  'marketplace.install',
+  'marketplace.installGithub',
+  'marketplace.resolveGithub',
+  'marketplace.uninstall',
+  'marketplace.update',
+  'marketplace.verify',
   'module.install',
   'module.setEnabled',
   'module.setTrust',

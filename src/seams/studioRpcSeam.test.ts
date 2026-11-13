@@ -23,6 +23,7 @@ import {
   STUDIO_WORKTREES_METHODS,
   STUDIO_CHAT_LIFECYCLE_METHODS,
   STUDIO_CANVAS_METHODS,
+  STUDIO_EXTENSIONS_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -38,6 +39,7 @@ import {
   type StudioFileSystemMethod,
   type StudioGitMethod,
   type StudioWorktreesMethod,
+  type StudioExtensionsMethodMap,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -406,6 +408,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     'module.install': 'request',
     'module.setTrust': 'request',
     'module.uninstall': 'request',
+    // The extensions installed there, their window halves, and what a window sets for them.
+    'module.installed': 'request',
+    'module.rendererEntries': 'request',
+    'module.setAppState': 'request',
+    'module.reportRegistry': 'request',
     // The host's services a renderer half calls, by name too.
     'moduleBacklog.location': 'request',
     'moduleBacklog.create': 'request',
@@ -497,6 +504,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // on (`canvas.ts`), called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CANVAS_METHODS).map((method) => [method, 'request'])) as Record<
       StudioCanvasMethod,
+      string
+    >),
+    // And what it is extended with, which its Extensions door, Settings and New chat use, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_EXTENSIONS_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioExtensionsMethodMap,
       string
     >),
   }

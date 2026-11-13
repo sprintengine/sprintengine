@@ -10,39 +10,23 @@
  * plugin), by its folder (and only that folder) when not — and forgets its
  * trust, enablement choice and secrets with it.
  *
- * The handlers run for real against a scratch userData and module root; GitHub
+ * The Studio's marketplace runs for real against a scratch data folder and
+ * module root; GitHub
  * is the recorded repository in marketplace/__fixtures__/github-extension-repo.ts.
  */
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { test, vi } from 'vitest'
+import { test } from 'vitest'
 
-import type {
-  GithubExtensionCheckUpdateResult,
-  GithubExtensionResolveResult,
-  MarketplacePluginRegistryInstallResult,
-  MarketplacePluginVerifyResult,
-  MarketplaceRegistryReadResult,
-  MarketplacePluginUninstallResult,
-} from '../../shared/electron-api'
-import { PLUGIN_JSON, SHA, extensionRepo, github, type Served } from '../marketplace/__fixtures__/github-extension-repo'
+import type { MarketplaceRegistryReadResult } from '../../../packages/studio-protocol/src/public'
+import type { McpConfigService } from '../mcp-config-service'
+import { PLUGIN_JSON, SHA, extensionRepo, github, type Served } from './__fixtures__/github-extension-repo'
+import { createStudioMarketplace } from './studio-marketplace'
 
-vi.mock('electron', () => import('../../../tests/stubs/electron'))
-
-test('extension install and uninstall IPC', async () => {
-  type Handler = (event: unknown, input: unknown) => Promise<unknown>
-  const { webContents } = await import('../../../tests/stubs/electron')
-  delete process.env['ELECTRON_RENDERER_URL']
-  const appEvent = {
-    sender: webContents,
-    senderFrame: { parent: null, url: pathToFileURL('/Applications/Studio.app/out/renderer/index.html').href },
-  }
-  const subframeEvent = { ...appEvent, senderFrame: { ...appEvent.senderFrame, parent: {} } }
-
-  const userData = mkdtempSync(join(tmpdir(), 'mc-extension-install-ipc-'))
+test('an extension installed from GitHub, and uninstalled however it arrived', async () => {
+  const userData = mkdtempSync(join(tmpdir(), 'studio-marketplace-github-'))
   const moduleRoot = join(userData, 'modules')
   const openWorkspace = join(userData, 'workspace')
   mkdirSync(openWorkspace, { recursive: true })
@@ -50,7 +34,6 @@ test('extension install and uninstall IPC', async () => {
   process.env.SPRINTENGINE_USER_MODULE_ROOT = moduleRoot
 
   try {
-    const { registerMarketplacePluginIpc } = await import('./marketplace-plugin-ipc')
     const { createModuleLifecycle } = await import('../modules/module-lifecycle')
     const { readTrustedModulesSync, setModuleTrust } = await import('../modules/trust-store')
     const { readModuleOverridesSync, writeModuleOverrides } = await import('../module-host/enablement-store')
@@ -96,15 +79,10 @@ test('extension install and uninstall IPC', async () => {
         ],
       },
     }
-    const services = {
-      mcpConfigService: { sync: () => ({ ok: true, targets: [] }) },
-      workspaceSyncService: { getSnapshot: () => ({ state: { workspaces: [{ folderPath: openWorkspace }] } }) },
-    } as unknown as Parameters<typeof registerMarketplacePluginIpc>[1]
-    const handlers = new Map<string, Handler>()
-    const ipcMain = { handle: (channel: string, fn: Handler) => handlers.set(channel, fn) } as unknown as Parameters<
-      typeof registerMarketplacePluginIpc
-    >[0]
-    registerMarketplacePluginIpc(ipcMain, services, {
+    const studio = createStudioMarketplace({
+      dataDir: () => userData,
+      mcpConfig: () => ({ sync: () => ({ ok: true, targets: [] }) }) as unknown as McpConfigService,
+      openWorkspaceRoots: () => [openWorkspace],
       registryReader: { read: async () => registry },
       fetcher: (url, init) => repo.fetcher(url, init),
     })
@@ -114,32 +92,17 @@ test('extension install and uninstall IPC', async () => {
       view: () => null,
       applyEnablement: async () => ({ ok: true }),
       changed: () => undefined,
+      launchSession: () => ({
+        snapshot: { loaded: new Set(), manifestOnly: new Set(), errors: new Map() },
+        mcpTools: new Map(),
+      }),
+      registry: { write: () => ({ ok: true }) },
     })
 
-    for (const channel of [
-      'extensions:github:resolve',
-      'extensions:github:install',
-      'extensions:github:check-update',
-      'marketplace:plugins:uninstall',
-    ]) {
-      assert.ok(handlers.has(channel), `${channel} is registered`)
-    }
-    const resolve = (event: unknown, input: unknown) =>
-      handlers.get('extensions:github:resolve')!(event, input) as Promise<GithubExtensionResolveResult>
-    const install = (event: unknown, input: unknown) =>
-      handlers.get('extensions:github:install')!(event, input) as Promise<MarketplacePluginRegistryInstallResult>
-    const checkUpdate = (input: unknown) =>
-      handlers.get('extensions:github:check-update')!(appEvent, input) as Promise<GithubExtensionCheckUpdateResult>
-    const uninstallPlugin = (event: unknown, input: unknown) =>
-      handlers.get('marketplace:plugins:uninstall')!(event, input) as Promise<MarketplacePluginUninstallResult>
+    // ── resolve: only a GitHub URL ───────────────────────────────────────────────
+    assert.equal((await studio.resolveGithub('')).ok, false)
 
-    // ── resolve: only the app window, only a GitHub URL ──────────────────────────
-    const foreign = await resolve(subframeEvent, { url: 'https://github.com/acme/notes-ext' })
-    assert.equal(foreign.ok, false)
-    assert.match(foreign.ok ? '' : foreign.message, /did not come from a SprintEngine Studio window/)
-    assert.equal((await resolve(appEvent, { url: '' })).ok, false)
-
-    const reviewed = await resolve(appEvent, { url: 'https://github.com/acme/notes-ext' })
+    const reviewed = await studio.resolveGithub('https://github.com/acme/notes-ext')
     assert.equal(reviewed.ok, true, reviewed.ok ? '' : reviewed.message)
     if (!reviewed.ok) return
     assert.equal(reviewed.preview.id, 'notes-ext')
@@ -154,53 +117,42 @@ test('extension install and uninstall IPC', async () => {
     assert.equal(reviewed.preview.installed, undefined)
 
     // ── install: unsigned code needs "I trust this code", and the token is spent
-    const unconfirmed = await install(appEvent, { trustToken: reviewed.trustToken })
+    const unconfirmed = await studio.installGithub({ trustToken: reviewed.trustToken })
     assert.equal(unconfirmed.ok, false)
     assert.match(unconfirmed.ok ? '' : unconfirmed.message, /confirm you trust the code/)
-    const replayed = await install(appEvent, { trustToken: reviewed.trustToken, trustCode: true })
+    const replayed = await studio.installGithub({ trustToken: reviewed.trustToken, trustCode: true })
     assert.equal(replayed.ok, false, 'the refused request spent the token')
     assert.match(replayed.ok ? '' : replayed.message, /expired or was already used/)
 
     // A registry verify's token does not install here.
-    const registryVerify = (await handlers.get('marketplace:plugins:verify')!(appEvent, {
-      id: 'inline-mcp-plugin',
-    })) as MarketplacePluginVerifyResult
-    const crossed = await install(appEvent, { trustToken: registryVerify.trustToken, trustCode: true })
+    const registryVerify = await studio.verify('inline-mcp-plugin')
+    assert.ok(registryVerify.trustToken)
+    const crossed = await studio.installGithub({ trustToken: registryVerify.trustToken ?? '', trustCode: true })
     assert.equal(crossed.ok, false)
 
-    const again = await resolve(appEvent, { url: 'acme/notes-ext' })
+    const again = await studio.resolveGithub('acme/notes-ext')
     assert.ok(again.ok)
-    const fromSubframe = await install(subframeEvent, { trustToken: again.trustToken, trustCode: true })
-    assert.equal(fromSubframe.ok, false)
-    const installed = await install(appEvent, { trustToken: again.trustToken, trustCode: true })
+    const installed = await studio.installGithub({ trustToken: again.trustToken, trustCode: true })
     assert.equal(installed.ok, true, installed.ok ? '' : installed.message)
     assert.ok(existsSync(join(moduleRoot, 'notes-ext', 'manifest.json')))
     assert.ok(readTrustedModulesSync(userData).has('notes-ext'), 'the review was the trust decision')
 
-    // ── updates compare the branch's commit, and ask again only on change ───────
-    const current = await checkUpdate({ id: 'notes-ext' })
-    assert.deepEqual(current, { ok: true, state: 'current', sha: SHA })
-
+    // ── a review of an installed one says what it changes, and asks again only on change
     const moved = 'b2c3d4e'.padEnd(40, '0')
     repo = github(extensionRepo(), { sha: moved })
-    const quiet = await checkUpdate({ id: 'notes-ext' })
-    assert.equal(quiet.ok && quiet.state, 'available')
-    if (quiet.ok && quiet.state === 'available') {
-      assert.equal(quiet.reviewRequired, false, 'same permissions, servers and signing: no second prompt')
+    const quiet = await studio.resolveGithub('acme/notes-ext')
+    assert.ok(quiet.ok)
+    if (quiet.ok) {
       assert.equal(quiet.preview.verify.pin?.commitSha, moved)
-      assert.deepEqual(quiet.preview.installed?.changes, [])
+      assert.deepEqual(quiet.preview.installed?.changes, [], 'same permissions, servers and signing: no second prompt')
       assert.equal(quiet.preview.installed?.sha, SHA)
     }
 
     const widened = JSON.stringify({ ...JSON.parse(PLUGIN_JSON), permissions: ['storage', 'network'] })
     repo = github(extensionRepo({ 'plugin.json': widened }), { sha: moved })
-    const loud = await checkUpdate({ id: 'notes-ext' })
-    assert.equal(loud.ok && loud.state, 'available')
-    if (loud.ok && loud.state === 'available') {
-      assert.equal(loud.reviewRequired, true)
-      assert.deepEqual(loud.preview.installed?.changes, ['permissions'])
-    }
-    assert.equal((await checkUpdate({ id: 'inline-mcp-plugin' })).ok, false, 'not a GitHub install')
+    const loud = await studio.resolveGithub('acme/notes-ext')
+    assert.ok(loud.ok)
+    if (loud.ok) assert.deepEqual(loud.preview.installed?.changes, ['permissions'])
 
     // ── uninstall: a receipt-owned module goes out through its plugin ──────────
     await writeModuleOverrides(userData, { 'notes-ext': true })
@@ -208,8 +160,7 @@ test('extension install and uninstall IPC', async () => {
     assert.equal(owned.ok, false)
     assert.equal(!owned.ok && owned.pluginId, 'notes-ext', 'the Studio names the plugin that owns it')
     assert.ok(existsSync(join(moduleRoot, 'notes-ext')), 'and leaves it to that plugin')
-    assert.equal((await uninstallPlugin(subframeEvent, { pluginId: 'notes-ext' })).ok, false)
-    const removed = await uninstallPlugin(appEvent, { pluginId: 'notes-ext' })
+    const removed = await studio.uninstall({ pluginId: 'notes-ext' })
     assert.equal(removed.ok, true, removed.ok ? '' : removed.message)
     assert.deepEqual(
       removed.ok && removed.removed.filter((component) => component.kind === 'module').map((component) => component.id),

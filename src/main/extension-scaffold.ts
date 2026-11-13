@@ -1,5 +1,6 @@
-// "Build an extension" (the New chat door's extension mode): see whether a
-// name is free where the extension goes, and scaffold the project there.
+// "Build an extension" (the New chat door's extension mode, and the agents'
+// `extension.create`): see whether a name is free where the extension goes, and
+// scaffold the project there, on the Studio's machine (`extensionScaffold.*`).
 //
 // The project is written by the SDK's own scaffolder — the one
 // `sprintengine-module init` runs — from the templates the app ships beside
@@ -26,16 +27,15 @@
 // anything else is refused. So nothing that exists is ever overwritten.
 
 import { existsSync, lstatSync, mkdirSync, readdirSync, statSync, type Stats } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-
-import { app, type IpcMain } from 'electron'
 
 import {
   scaffoldModuleProject,
   type ScaffoldModuleOptions,
   type ScaffoldModuleResult,
-} from '../../../packages/module-sdk/src/scaffold'
-import sdkPackage from '../../../packages/module-sdk/package.json'
+} from '../../packages/module-sdk/src/scaffold'
+import sdkPackage from '../../packages/module-sdk/package.json'
 import {
   EXTENSION_START_TEMPLATE_ID,
   extensionDisplayName,
@@ -45,13 +45,9 @@ import {
   type ExtensionScaffoldTarget,
   type ExtensionScaffoldTargetInput,
   type ExtensionScaffoldTargetState,
-} from '../../shared/extension-scaffold'
-import { defaultUserModuleRoot } from '../modules/user-module-registry'
-import { assertAppSender } from './ipc-sender'
-
-export const EXTENSION_SCAFFOLD_TARGET_CHANNEL = 'extensions:scaffold:target'
-export const EXTENSION_SCAFFOLD_CREATE_CHANNEL = 'extensions:scaffold:create'
-export const EXTENSION_SCAFFOLD_HOME_CHANNEL = 'extensions:scaffold:home'
+} from '../shared/extension-scaffold'
+import { installedStudioPlatform } from '../server/platform/platform'
+import { defaultUserModuleRoot } from './modules/user-module-registry'
 
 /** The SDK version a scaffolded project depends on: this build's own. */
 export const SCAFFOLD_SDK_VERSION: string = sdkPackage.version
@@ -75,11 +71,7 @@ export type ScaffoldRoots = {
  * packaged; the SDK package, and the tarball sdk:bundle packs, in a checkout.
  */
 export function resolveScaffoldRoots(
-  env: { isPackaged: boolean; resourcesPath: string; appPath: string } = {
-    isPackaged: app.isPackaged,
-    resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath(),
-  },
+  env: { isPackaged: boolean; resourcesPath: string; appPath: string } = studioEnv(),
 ): ScaffoldRoots {
   if (env.isPackaged) {
     return {
@@ -93,6 +85,16 @@ export function resolveScaffoldRoots(
     templatesRoot: join(sdk, 'templates'),
     guideRoot: join(sdk, 'guide'),
     sdkTarball: join(env.appPath, 'resources', 'module-sdk', SCAFFOLD_SDK_TARBALL),
+  }
+}
+
+/** Where this process's Studio unpacked its resources, and its own root: the installed platform's. */
+function studioEnv(): { isPackaged: boolean; resourcesPath: string; appPath: string } {
+  const paths = installedStudioPlatform()?.paths
+  return {
+    isPackaged: paths?.isPackaged() ?? false,
+    resourcesPath: paths?.resourcesDir() ?? '',
+    appPath: paths?.appRoot() ?? process.cwd(),
   }
 }
 
@@ -122,13 +124,7 @@ function defaultDeps(): ExtensionScaffoldDeps {
  * extensions are copied into.
  */
 export function defaultExtensionsHome(): string {
-  let documents: string
-  try {
-    documents = app.getPath('documents')
-  } catch {
-    documents = app.getPath('home')
-  }
-  return join(documents, 'SprintEngine', 'Extensions')
+  return join(homedir(), 'Documents', 'SprintEngine', 'Extensions')
 }
 
 function isString(value: unknown): value is string {
@@ -277,19 +273,4 @@ export function createExtensionScaffoldHandlers(overrides: Partial<ExtensionScaf
       return { ok: true, folder, existing: false, ...(result.notes?.length ? { notes: result.notes } : {}) }
     },
   }
-}
-
-export function registerExtensionScaffoldIpc(
-  ipcMain: IpcMain,
-  handlers: ReturnType<typeof createExtensionScaffoldHandlers> = createExtensionScaffoldHandlers(),
-): void {
-  ipcMain.handle(EXTENSION_SCAFFOLD_HOME_CHANNEL, () => handlers.home())
-  ipcMain.handle(EXTENSION_SCAFFOLD_TARGET_CHANNEL, (_event, input: ExtensionScaffoldTargetInput | undefined) =>
-    handlers.target(input),
-  )
-  // Writing files answers only the app's own window.
-  ipcMain.handle(EXTENSION_SCAFFOLD_CREATE_CHANNEL, (event, input: ExtensionScaffoldCreateInput | undefined) => {
-    assertAppSender(event)
-    return handlers.create(input)
-  })
 }

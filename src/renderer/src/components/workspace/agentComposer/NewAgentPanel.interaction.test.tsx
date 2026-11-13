@@ -4,6 +4,11 @@ import { JSDOM } from 'jsdom'
 import { standInImageDecoding } from '../../../../../../tests/image-decoding'
 import { composerDisabled, composerField, composerText, typeIntoComposer } from '../../../../../../tests/composer-field'
 import { test, vi } from 'vitest'
+import { adoptExtensionsDouble } from '../../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../../studio/extensions', () => import('../../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 vi.mock('../../../studio/agentSkills', () => import('../../../studio/agentSkills.double'))
 
 // The "+" menu as the panel renders it, counted: a pass-through behind the

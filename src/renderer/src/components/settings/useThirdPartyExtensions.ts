@@ -13,6 +13,7 @@ import { windowModuleLifecycle } from '../../studio/moduleLifecycle'
 import { addThirdPartyModuleFromFolder } from './addThirdPartyModuleFromFolder'
 import type { ExtensionUpdate } from './extensionsModel'
 import { classifyVerification, summarizeInstallResult } from './installFlow'
+import { extensionsApi, windowHasStudio } from '../../studio/extensions'
 
 // Settings → Extensions, the third-party half. It lists (the shell's view of
 // what is on disk) and updates (the marketplace's); it installs, trusts,
@@ -56,12 +57,12 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   const [lifecycle] = useState(() => windowModuleLifecycle())
 
   const load = useCallback(async () => {
-    if (typeof window.api.listThirdPartyModules !== 'function') {
+    if (!windowHasStudio()) {
       setLoaded(true)
       return
     }
     try {
-      const result = await window.api.listThirdPartyModules()
+      const result = await extensionsApi.listThirdPartyModules()
       setModules(result.modules)
       setRejected(result.rejected)
     } catch (error) {
@@ -72,10 +73,10 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   }, [])
 
   const loadUpdateStates = useCallback(async (forceRefresh = false) => {
-    if (typeof window.api.readMarketplacePluginUpdateStates !== 'function') return
+    if (!windowHasStudio()) return
     try {
       setUpdateStates(
-        await window.api.readMarketplacePluginUpdateStates(forceRefresh ? { forceRefresh: true } : undefined),
+        await extensionsApi.readMarketplacePluginUpdateStates(forceRefresh ? { forceRefresh: true } : undefined),
       )
     } catch {
       setUpdateStates(null)
@@ -178,9 +179,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // window keeps for it is dropped.
   const removeThroughPlugin = useCallback(
     async (pluginId: string): Promise<{ ok: true; removedModuleIds: string[] } | { ok: false; message: string }> => {
-      if (typeof window.api.uninstallMarketplacePlugin !== 'function')
-        return { ok: false, message: 'Uninstalling plugins needs a newer build.' }
-      const result = await window.api.uninstallMarketplacePlugin({
+      if (!windowHasStudio()) return { ok: false, message: 'Uninstalling plugins needs a newer build.' }
+      const result = await extensionsApi.uninstallMarketplacePlugin({
         pluginId,
         ...(workspaceRoot ? { workspaceRoot } : {}),
         mcpSettings,
@@ -260,7 +260,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // Never a silent grant and never a fake success.
   const runUpdate = useCallback(
     async (module: ThirdPartyModuleView, update: ExtensionUpdate, trustToken?: string) => {
-      if (typeof window.api.updateMarketplacePluginFromRegistry !== 'function') {
+      if (!windowHasStudio()) {
         setMessage({ tone: 'error', text: 'Updating extensions needs a newer build.' })
         return
       }
@@ -268,8 +268,8 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
       setMessage(null)
       try {
         let token = trustToken
-        if (!token && typeof window.api.verifyMarketplacePlugin === 'function') {
-          const verify = await window.api.verifyMarketplacePlugin({ id: update.pluginId })
+        if (!token && windowHasStudio()) {
+          const verify = await extensionsApi.verifyMarketplacePlugin({ id: update.pluginId })
           // A module bundle is code: the unsigned split treats it as such even
           // if the verifier's own flag were missing.
           const outcome = classifyVerification(verify, ['module'])
@@ -283,7 +283,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
           }
           token = outcome.trustToken
         }
-        const result = await window.api.updateMarketplacePluginFromRegistry({
+        const result = await extensionsApi.updateMarketplacePluginFromRegistry({
           id: update.pluginId,
           ...(token ? { trustToken: token } : {}),
           workspaceRoot: workspaceRoot ?? undefined,

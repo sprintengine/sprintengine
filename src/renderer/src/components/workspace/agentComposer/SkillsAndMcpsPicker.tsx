@@ -37,6 +37,7 @@ import type { AgentComposerConnector } from './useAgentComposer'
 import { isImeKey } from '../../../utils/imeKey'
 import { agentSetupApi } from '../../../studio/agentSetup'
 import { agentSkillsApi } from '../../../studio/agentSkills'
+import { extensionsApi } from '../../../studio/extensions'
 
 // The composer's one picker for what a new agent starts with (browser-pane
 // epic, child 7): the skills this workspace has, the skills it could have,
@@ -936,8 +937,8 @@ function MarketplaceList({ query, onOpen }: { query: string; onOpen: () => void 
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      window.api.readMarketplaceRegistry(),
-      window.api.readMarketplacePluginUpdateStates().catch(() => null),
+      extensionsApi.readMarketplaceRegistry(),
+      extensionsApi.readMarketplacePluginUpdateStates().catch(() => null),
     ])
       .then(([registry, states]) => {
         if (cancelled) return

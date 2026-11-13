@@ -61,6 +61,8 @@ import type { StudioGit } from '../git/studio-git-types'
 import { createStudioGitHandlers } from './studio-git'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 import { createStudioWorktreesHandlers } from './studio-worktrees'
+import type { StudioExtensions } from '../extensions/extensions-domain'
+import { createStudioExtensionsHandlers } from './studio-extensions'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -185,6 +187,8 @@ export type StudioRpcRouterOptions = {
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats; without it, `worktrees.*` and `settledChats.*` are answered `unavailable`. */
   worktrees?: StudioWorktrees
+  /** The marketplace, the CLI catalogue, the scaffold and the feeds; without it, `extensions` is answered `unavailable`. */
+  extensions?: StudioExtensions
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here (`pull-request-create`); absent, its methods are unavailable. */
@@ -804,7 +808,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   }
   /** A change to what runs here, carried out once under its id by the modules' lifecycle. */
   function lifecycleCommand<
-    M extends 'module.setEnabled' | 'module.install' | 'module.setTrust' | 'module.uninstall',
+    M extends
+      | 'module.setEnabled'
+      | 'module.install'
+      | 'module.setTrust'
+      | 'module.uninstall'
+      | 'module.setAppState'
+      | 'module.reportRegistry',
     R,
   >(method: M, context: Asking, commandId: string, work: (lifecycle: ModuleLifecycle) => Promise<R>) {
     const modules = options.modules
@@ -882,6 +892,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     runtimeId,
   })
   const keptId = (method: StudioMethod, grant: StudioGrant, id: string) => `${method}:${runtimeId(grant, id)}`
+  const extensionsRouting = createStudioExtensionsHandlers({
+    ...(options.extensions ? { extensions: options.extensions } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+    mayName,
+  })
   // A session command's receipt keeps what it was, across a restart too.
   const stamp = (fingerprint: string | undefined) => (fingerprint ? { commandFingerprint: fingerprint } : {})
   // An upload is the client's; its budget is this connection's. Staging needs
@@ -1823,6 +1839,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── The worktrees its agents run in, and settled chats ─────────────────
 
     ...worktreesHandlers,
+
+    // ── What the Studio is extended with ───────────────────────────────────
+
+    ...extensionsRouting,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules
@@ -1881,6 +1901,25 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       lifecycleCommand('module.setTrust', context, commandId, (lifecycle) => lifecycle.setTrust(moduleId, trusted)),
     'module.uninstall': ({ moduleId, commandId }, context) =>
       lifecycleCommand('module.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
+    // The installed extensions and their window halves, read now; what a
+    // window sets for them and the registry it resolved, kept here.
+    'module.installed': async () => {
+      const lifecycle = options.modules?.lifecycle()
+      return lifecycle ? { ok: true, result: await lifecycle.installed() } : unserved('module.installed')
+    },
+    'module.rendererEntries': async () => {
+      const lifecycle = options.modules?.lifecycle()
+      return lifecycle ? { ok: true, result: await lifecycle.rendererEntries() } : unserved('module.rendererEntries')
+    },
+    'module.setAppState': ({ state, commandId }, context) =>
+      lifecycleCommand('module.setAppState', context, commandId, async (lifecycle) => {
+        lifecycle.setAppState(state)
+        return {}
+      }),
+    'module.reportRegistry': ({ snapshot, commandId }, context) =>
+      lifecycleCommand('module.reportRegistry', context, commandId, async (lifecycle) =>
+        lifecycle.reportRegistry(snapshot),
+      ),
 
     // The host's services a module's window half calls, under its own id;
     // the service checks the module's permission. A write is carried out

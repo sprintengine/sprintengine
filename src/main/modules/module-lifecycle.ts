@@ -2,9 +2,12 @@ import { lstat, realpath, rm } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 
 import type {
+  ModuleRegistrySnapshotWriteResult,
   StudioModuleDeclaredMethod,
   StudioModulesMethodMap,
   StudioModuleSummary,
+  ThirdPartyModuleListResult,
+  ThirdPartyRendererEntriesResult,
 } from '../../../packages/studio-protocol/src/public'
 import {
   LIVE_ENABLED_MODULE_IDS,
@@ -12,12 +15,18 @@ import {
   type ModuleResolutionErrorCode,
 } from '../../shared/modules/manifest'
 import { readModuleOverridesSync, writeModuleOverrides } from '../module-host/enablement-store'
+import { moduleAppStateMirrorFor } from '../module-host/module-app-state-mirror'
 import {
   defaultMarketplacePluginInstallStorePath,
   readMarketplacePluginInstallReceipts,
 } from '../marketplace/plugin-lifecycle'
 import { forgetModules, isModuleIdSegment } from './forget-modules'
+import { createModuleAssetOriginResolver } from './module-asset-origins'
 import { manifestFingerprint } from './module-signature'
+import type { ModuleRegistryMirror } from './registry-mirror'
+import type { ThirdPartyLaunchSession } from './third-party-main-loader'
+import { moduleOriginsFromReceipts, toThirdPartyModuleView } from './third-party-module-view'
+import { collectThirdPartyRendererEntries } from './third-party-renderer-entries'
 import { readModuleTrustContextSync } from './trust-context'
 import { setModuleTrust } from './trust-store'
 import { discoverUserModules, installModuleFolder } from './user-module-registry'
@@ -35,6 +44,13 @@ import { discoverUserModules, installModuleFolder } from './user-module-registry
 // - Installing, trusting and uninstalling change what is on disk and in the
 //   trust store; the kernel reads them at its next start. `changed` tells the
 //   windows, which load a trusted extension's window half again.
+// - Listing the installed extensions (`module.installed`) reads the disk, the
+//   trust store and the receipts now, with what this server run loaded; the
+//   window halves (`module.rendererEntries`) are read and checked against
+//   their verified bytes per request, so revoking trust applies at once.
+// - The modules' Settings values (`module.setAppState`) are kept in the data
+//   folder for their main halves; the registry a window resolved
+//   (`module.reportRegistry`) is kept in memory for the agents' tools.
 // - A module a marketplace or GitHub install put in place belongs to that
 //   plugin: uninstalling it here is refused with the plugin's id, and the
 //   plugin's own uninstall removes it with the rest of its bundle.
@@ -82,6 +98,10 @@ export type ModuleLifecycleDeps = {
   applyEnablement: (overrides: Record<string, boolean>) => Promise<{ ok: true } | { ok: false; message: string }>
   /** What is installed or trusted changed: tell the windows. */
   changed: () => void
+  /** What this server run's kernel loaded of the extensions' main halves, and their tools. */
+  launchSession: () => ThirdPartyLaunchSession
+  /** The registry a window resolved, kept for the agents' `module.*` tools. */
+  registry: Pick<ModuleRegistryMirror, 'write'>
 }
 
 export type ModuleLifecycle = {
@@ -90,6 +110,10 @@ export type ModuleLifecycle = {
   install(path: string): Promise<Answer<'module.install'>>
   setTrust(moduleId: string, trusted: boolean): Promise<Answer<'module.setTrust'>>
   uninstall(moduleId: string): Promise<Answer<'module.uninstall'>>
+  installed(): Promise<ThirdPartyModuleListResult>
+  rendererEntries(): Promise<ThirdPartyRendererEntriesResult>
+  setAppState(state: Record<string, Record<string, unknown>>): void
+  reportRegistry(snapshot: unknown): ModuleRegistrySnapshotWriteResult
 }
 
 const INELIGIBLE_WORDS: Record<ModuleResolutionErrorCode, string> = {
@@ -143,11 +167,48 @@ export function createModuleLifecycle(deps: ModuleLifecycleDeps): ModuleLifecycl
     message: error instanceof Error ? error.message : String(error),
   })
 
+  // Built when first asked: the secret it keeps is written on first use.
+  let assetOrigin: ((moduleId: string) => string) | undefined
+  const assetOriginOf = (moduleId: string) => (assetOrigin ??= createModuleAssetOriginResolver(deps.dataDir))(moduleId)
+
   return {
     list() {
       const view = deps.view()
       return view ? summarizeModules(view) : []
     },
+
+    async installed() {
+      const [{ modules, rejected }, receipts] = await Promise.all([
+        discoverUserModules(deps.moduleRoot(), trustContext()),
+        readMarketplacePluginInstallReceipts(defaultMarketplacePluginInstallStorePath(deps.dataDir)),
+      ])
+      const session = deps.launchSession()
+      const overrides = readModuleOverridesSync(deps.dataDir)
+      // An unreadable receipt store leaves origins unknown rather than calling
+      // every module a folder install.
+      const origins = receipts.ok ? moduleOriginsFromReceipts(receipts.receipts) : null
+      return {
+        modules: modules.map((module) =>
+          toThirdPartyModuleView(module, session.snapshot, overrides, {
+            ...(origins ? { origin: origins.get(module.manifest.id) ?? { kind: 'folder' } } : {}),
+            mcpTools: session.mcpTools.get(module.manifest.id) ?? [],
+          }),
+        ),
+        rejected,
+      }
+    },
+
+    async rendererEntries() {
+      const context = trustContext()
+      const { modules } = await discoverUserModules(deps.moduleRoot(), context)
+      return collectThirdPartyRendererEntries(modules, context, assetOriginOf)
+    },
+
+    setAppState(state) {
+      moduleAppStateMirrorFor(deps.dataDir).set(state)
+    },
+
+    reportRegistry: (snapshot) => deps.registry.write(snapshot),
 
     setEnabled: (moduleId, enabled) =>
       oneAtATime(async () => {

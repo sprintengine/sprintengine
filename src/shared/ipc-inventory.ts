@@ -62,7 +62,7 @@ const CHAT_LINK = shell("A chat link from the operating system, opened in one of
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
 /** Moves to the protocol: the module kernel: its host services and enablement. */
-/** Moves to the protocol: installing, trusting and listing extensions; the marketplace, plugins, the extension scaffold, artifacts and the hosted feeds. */
+/** Moves to the protocol: publishing artifacts (the rest of the extensions area is the Studio protocol's `extensions` and `module.*`). */
 const extensions = server('extensions')
 /** Moves to the protocol: a chat or a canvas on a paired desktop. */
 const pairedMachines = server('paired-machines')
@@ -273,31 +273,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'artifacts:setup-answer': extensions('send'),
   'artifacts:setup-question': extensions('push'),
   'artifacts:setup-question-closed': extensions('push'),
-  'extensions:github:check-update': extensions('invoke'),
-  'extensions:github:install': extensions('invoke'),
-  'extensions:github:resolve': extensions('invoke'),
-  'extensions:scaffold:create': extensions('invoke'),
-  'extensions:scaffold:home': extensions('invoke'),
-  'extensions:scaffold:target': extensions('invoke'),
-  'hosted-card-feed:changed': extensions('push'),
-  'hosted-card-feed:get': extensions('invoke'),
-  'hosted-card-feed:refresh': extensions('invoke'),
-  'hosted-sources-feed:get': extensions('invoke'),
-  'marketplace:plugins:install-entry': extensions('invoke'),
-  'marketplace:plugins:uninstall': extensions('invoke'),
-  'marketplace:plugins:update-entry': extensions('invoke'),
-  'marketplace:plugins:update-states': extensions('invoke'),
-  'marketplace:plugins:verify': extensions('invoke'),
-  'marketplace:registry:read': extensions('invoke'),
-  'modules:set-app-state': extensions('invoke'),
-  'modules:set-registry-snapshot': extensions('invoke'),
-  'modules:third-party:changed': extensions('push'),
-  'modules:third-party:list': extensions('invoke'),
-  'modules:third-party:renderer-entries': extensions('invoke'),
-  'plugins:detect-availability': extensions('invoke'),
-  'plugins:launch-preview': extensions('invoke'),
-  'plugins:list': extensions('invoke'),
-  'studio-plugin:status': extensions('invoke'),
   'canvas:remote-access': pairedMachines('invoke'),
   'canvas:remote-close': pairedMachines('invoke'),
   'canvas:remote-commit': pairedMachines('invoke'),

@@ -5,7 +5,6 @@ import { dirname, join } from 'node:path'
 
 import type { MarketplaceRegistryReadResult } from '../../shared/electron-api'
 import type { MarketplaceIndex } from '../../shared/marketplace'
-import { registerMarketplaceRegistryIpc } from '../ipc/marketplace-registry-ipc'
 import {
   DEFAULT_MARKETPLACE_REGISTRY_URL,
   MarketplaceRegistryClient,
@@ -19,7 +18,6 @@ test('registry-client', async () => {
   const REGISTRY_URL = 'https://example.com/marketplace.json'
   const VALID_SIGNATURE = { algorithm: 'ed25519' as const, publicKey: 'YWJj', signature: 'ZGVm' }
 
-  type Handler = (event: unknown, ...args: unknown[]) => unknown
   type FetchRequest = { url: string; init: RequestInit }
 
   async function main(): Promise<void> {
@@ -43,7 +41,7 @@ test('registry-client', async () => {
     await testMarketplaceResourceResolutionOrder()
     await testInvalidSchemaDoesNotSilentlyUseCache()
     await testRejectsNonHttpsRegistryUrl()
-    await testRegistryIpcChannel()
+    await testStudioReadAnswersAThrowInWords()
 
     console.log('marketplace registry client tests passed')
   }
@@ -747,42 +745,26 @@ test('registry-client', async () => {
     })
   }
 
-  async function testRegistryIpcChannel(): Promise<void> {
-    const expected: MarketplaceRegistryReadResult = {
-      ok: true,
-      state: 'empty',
-      registryUrl: REGISTRY_URL,
-      source: 'network',
-      stale: false,
-      fetchedAt: '2026-06-16T00:00:00.000Z',
-      marketplace: validMarketplace([]),
-    }
-    const ipcMain = createIpcMain()
-    registerMarketplaceRegistryIpc(ipcMain as unknown as Parameters<typeof registerMarketplaceRegistryIpc>[0], {
-      read: async (input) => {
-        assert.deepEqual(input, { forceRefresh: true })
-        return expected
+  // The Studio's read answers a registry it could not reach in the same shape, never a throw.
+  async function testStudioReadAnswersAThrowInWords(): Promise<void> {
+    const { createStudioMarketplace } = await import('./studio-marketplace')
+    const marketplace = createStudioMarketplace({
+      dataDir: () => tmpdir(),
+      mcpConfig: () => {
+        throw new Error('not used')
+      },
+      openWorkspaceRoots: () => [],
+      registryReader: {
+        read: async () => {
+          throw new Error('socket hang up')
+        },
       },
     })
-
-    const handler = ipcMain.handlers.get('marketplace:registry:read')
-    assert.ok(handler, 'marketplace registry channel should be registered')
-
-    const result = (await handler?.(null, { forceRefresh: true })) as MarketplaceRegistryReadResult
-    assert.deepEqual(result, expected)
-
-    const invalid = (await handler?.(null, 'bad-input')) as MarketplaceRegistryReadResult
-    assert.equal(invalid.ok, false)
-    assert.equal(invalid.state, 'fetch-error')
-  }
-
-  function createIpcMain(): { handle(channel: string, handler: Handler): void; handlers: Map<string, Handler> } {
-    const handlers = new Map<string, Handler>()
-    return {
-      handle(channel, handler): void {
-        handlers.set(channel, handler)
-      },
-      handlers,
+    const result = await marketplace.read({ forceRefresh: true })
+    assert.equal(result.ok, false)
+    if (!result.ok) {
+      assert.equal(result.state, 'fetch-error')
+      assert.equal(result.message, 'socket hang up')
     }
   }
 

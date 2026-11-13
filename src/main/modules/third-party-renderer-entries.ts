@@ -2,23 +2,20 @@ import { createHash } from 'crypto'
 import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 
-import {
-  THIRD_PARTY_RENDERER_ENTRIES_CHANNEL,
-  type ThirdPartyRendererEntriesResult,
-  type ThirdPartyRendererEntryView,
-} from '../../shared/modules/manifest'
+import type { ThirdPartyRendererEntriesResult, ThirdPartyRendererEntryView } from '../../shared/modules/manifest'
 import { checkHostApiCompatibility } from '../../shared/modules/host-api'
-import type { IpcMain } from 'electron'
 import { resolveContainedEntry, sanitizeEntryMessage } from './entry-containment'
 import { isLoadEligible, isTrustedByPublisher, type ModuleTrustContext } from './module-signature'
-import type { InstalledModule, UserModuleListResult } from './user-module-registry'
+import type { InstalledModule } from './user-module-registry'
 
 // Serves trusted third-party modules' `entry.renderer` bundles to the renderer
 // loader. Same trust gate as entry.main: only isLoadEligible (i.e. 'trusted')
 // modules whose entry resolves inside the module root are servable; unsigned,
 // signed-pending, and invalid modules stay blocked with their existing
-// statuses. Bundle content travels over IPC (the renderer dynamic-imports it
-// as a blob URL) — no file:// or custom-protocol exposure of the module root.
+// statuses. Bundle content travels over the Studio protocol
+// (`module.rendererEntries`; the window dynamic-imports it as a blob URL), so
+// a window loads the extensions of the Studio it is connected to, and the
+// module root is never exposed as file:// or a custom protocol.
 //
 // `entry.preload` is intentionally not served here (v1 deferral; see
 // ModuleEntry in src/shared/modules/manifest.ts).
@@ -122,22 +119,4 @@ export async function collectThirdPartyRendererEntries(
     }
   }
   return result
-}
-
-// Registers the serving channel on the shell's own `ipcMain`, once: it is the
-// shell's (it serves the window the bundles it loads), not a module's, so no
-// module kernel registers it. Discovery is injected because the module root
-// and trust store live with the caller (and tests provide fixtures without electron).
-export function registerThirdPartyRendererEntryIpc(
-  ipc: Pick<IpcMain, 'handle'>,
-  options: {
-    discoverModules: () => Promise<UserModuleListResult>
-    trustContext?: () => ModuleTrustContext
-    assetOrigin?: (moduleId: string) => string
-  },
-): void {
-  ipc.handle(THIRD_PARTY_RENDERER_ENTRIES_CHANNEL, async (): Promise<ThirdPartyRendererEntriesResult> => {
-    const { modules } = await options.discoverModules()
-    return collectThirdPartyRendererEntries(modules, options.trustContext?.(), options.assetOrigin)
-  })
 }

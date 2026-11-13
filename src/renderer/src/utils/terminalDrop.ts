@@ -8,6 +8,7 @@ import { powerShellSingleQuoted } from '../../../shared/powershell-quote'
 import { listTerminals, writeTerminal } from '../studio/terminals'
 import { agentSetupApi } from '../studio/agentSetup'
 import { agentSkillsApi } from '../studio/agentSkills'
+import { extensionsApi } from '../studio/extensions'
 
 export const SPRINTENGINE_FILE_DROP_MIME = 'application/x-sprintengine-file-drop'
 const SPRINTENGINE_COMMIT_DROP_MIME = 'application/x-sprintengine-commit-drop'
@@ -176,7 +177,7 @@ export async function sendSkillToTerminal(input: {
   let reachable: AgentSkill | undefined
   try {
     const [pluginsResult, capabilities] = await Promise.all([
-      window.api.pluginsList(),
+      extensionsApi.pluginsList(),
       agentSkillsApi.agentCapabilities({ workspaceRoot: input.workspaceRoot, pluginId: session.cli }),
     ])
     // Either read failing leaves the form of the invocation unknown, and a
@@ -341,7 +342,7 @@ async function resolveBacklogSkillInvocation(
         workspaceRoot: payload.rootPath,
         skillId: BACKLOG_SKILL_ID,
       }),
-      window.api.pluginsList(),
+      extensionsApi.pluginsList(),
     ])
     if (!status.ok || !pluginsResult.ok) return null
     return backlogSkillInvocationForDrop(payload, session, pluginsResult.plugins, status.targets)

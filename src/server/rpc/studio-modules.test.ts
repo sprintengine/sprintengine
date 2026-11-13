@@ -524,6 +524,10 @@ test('a change to what runs is an owner’s: a paired client holding modules:ope
     install: async () => ({ ok: false, message: 'no' }),
     setTrust: async () => ({ ok: true }),
     uninstall: async () => ({ ok: true, removedModuleIds: [] }),
+    installed: async () => ({ modules: [], rejected: [] }),
+    rendererEntries: async () => ({ entries: [], failures: {} }),
+    setAppState: () => undefined,
+    reportRegistry: () => ({ ok: true }),
   })
   const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['modules:operate']))
   assert.deepEqual(answerOf(await paired.request('module.list', {})), { modules: [] })

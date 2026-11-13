@@ -142,6 +142,9 @@ export function createStudioRpc(
     // The worktrees its agents run in, from the pool this core keeps, and
     // deleting settled chats, whose worktrees go back to it.
     worktrees: createStudioWorktrees(core.worktrees),
+    // What a desktop's Studio is extended with: its marketplace, the CLI
+    // catalogue, the extension scaffold and the hosted feeds.
+    ...(core.extensions ? { extensions: core.extensions } : {}),
     // What the conversations' branches have on GitHub, which every client
     // displays and none decides.
     pullRequests: core.pullRequests,

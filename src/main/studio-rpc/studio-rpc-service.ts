@@ -43,6 +43,7 @@ import type { StudioFileSystem } from '../../server/files/studio-file-system'
 import type { StudioMachineCall } from '../../server/rpc/studio-file-system'
 import type { StudioGit } from '../../server/git/studio-git-types'
 import type { StudioWorktrees } from '../../server/worktrees/studio-worktrees-types'
+import type { StudioExtensions } from '../../server/extensions/extensions-domain'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../../server/local-servers/local-server-domain'
 import type { StudioTerminals } from '../../server/terminals/studio-terminals'
@@ -183,6 +184,8 @@ export type StudioRpcServiceOptions = {
   git?: StudioGit
   /** The worktrees its agents run in, and deleting settled chats (`worktrees`). */
   worktrees?: StudioWorktrees
+  /** The marketplace, the CLI catalogue, the scaffold and the feeds (`extensions`). */
+  extensions?: StudioExtensions
   /** The pull requests the conversations opened, for owners (`pull-requests`). */
   pullRequests?: StudioPullRequests
   /** A chat's "Create PR" in its checkout here, for owners (`pull-request-create`). */
@@ -411,6 +414,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.machine ? { machine: options.machine } : {}),
       ...(options.git ? { git: options.git } : {}),
       ...(options.worktrees ? { worktrees: options.worktrees } : {}),
+      ...(options.extensions ? { extensions: options.extensions } : {}),
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.pullRequestCreation ? { pullRequestCreation: options.pullRequestCreation } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),

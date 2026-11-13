@@ -14,6 +14,11 @@ import {
   installedStateLine,
   type InstallFromGitHubDialogProps,
 } from './InstallFromGitHubDialog'
+import { adoptExtensionsDouble } from '../../studio/extensions.double'
+
+// What the window's Studio is extended with: answered from this test's own stand-in for the window.
+vi.mock('../../studio/extensions', () => import('../../studio/extensions.double'))
+adoptExtensionsDouble(() => (window as unknown as { api?: object }).api)
 
 // The install resolves renderer-only modules after main answers; here main's
 // answer is the whole story.

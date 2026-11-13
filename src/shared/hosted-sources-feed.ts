@@ -22,7 +22,10 @@
 // `schemaVersion` is not one this build knows is rejected whole, and the client
 // keeps its last good copy.
 
+import type { HostedSource, HostedSourceKind, HostedSourcesFeed } from '../../packages/studio-protocol/src/public'
 import { isRecord } from './records'
+
+export type { HostedSource, HostedSourceKind, HostedSourcesFeed } from '../../packages/studio-protocol/src/public'
 
 const HOSTED_SOURCES_FEED_SCHEMA_VERSION = 1 as const
 
@@ -39,28 +42,7 @@ export const HOSTED_SOURCES_FEED_URL =
  * understands — and a row whose `kind` turns out to be wrong is a wrong label
  * on a source that still scans correctly, never a broken add.
  */
-export const HOSTED_SOURCE_KINDS = ['claude-marketplace', 'skills'] as const
-export type HostedSourceKind = (typeof HOSTED_SOURCE_KINDS)[number]
-
-export type HostedSource = {
-  /** Stable id for the row itself. Not the skill-source id — see `hostedSourceId`. */
-  id: string
-  /** `owner/name`, and nothing else: a repository, never a URL. */
-  repo: string
-  kind: HostedSourceKind
-  /** One or two sentences saying what is in there and who it is for. */
-  description: string
-}
-
-export type HostedSourcesFeed = {
-  schemaVersion: typeof HOSTED_SOURCES_FEED_SCHEMA_VERSION
-  /**
-   * Bumped on every edit. The tie-break between a bundled seed and a disk
-   * cache: whichever was edited later wins, regardless of when it was fetched.
-   */
-  updatedAt: string
-  sources: HostedSource[]
-}
+export const HOSTED_SOURCE_KINDS: readonly HostedSourceKind[] = ['claude-marketplace', 'skills']
 
 export type HostedSourcesFeedParse = { ok: true; feed: HostedSourcesFeed } | { ok: false; message: string }
 

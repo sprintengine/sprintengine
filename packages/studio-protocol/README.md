@@ -130,7 +130,20 @@ The `welcome`'s `grant` is what the connection may do:
   `module.setTrust` and `module.uninstall` are an owner's
   (`STUDIO_MODULES_OWNER`), because each installs, trusts, starts or stops an
   extension's code on that machine. `module.list`, what runs there, needs
-  `modules:read`.
+  `modules:read`, as do `module.installed` (every installed extension, with
+  its trust and origin), `module.rendererEntries` (their window halves) and
+  the `module.changed` stream. `module.setAppState` (the modules' Settings
+  values) needs `settings:write`; `module.reportRegistry` (the registry a
+  window resolved), `modules:operate`.
+- No scope installs code either: the marketplace's reviews, installs, updates
+  and uninstalls, a GitHub repository's review and install
+  (`marketplace.verify`, `.install`, `.update`, `.uninstall`,
+  `.resolveGithub`, `.installGithub`, `STUDIO_MARKETPLACE_OWNER`) and a new
+  extension project (`extensionScaffold.*`, `STUDIO_SCAFFOLD_OWNER`) are an
+  owner's. What could be installed and what can run (`marketplace.read`,
+  `.updateStates`, `cliPlugins.*`, `cardFeed.get`, `sourcesFeed.get`) is
+  `providers:read`; Studio's plugin in a workspace (`studioPlugin.status`),
+  `files:read`.
 - `workspaces:operate` — change this Studio's scheduled agents: make,
   change, run now, pause, resume and close one (`schedules.create`,
   `.update`, `.runNow`, `.pause`, `.resume`, `.delete`, under the `schedules`
@@ -314,7 +327,8 @@ and with the chat surface `conversation-folders`, `conversation-sessions`,
 `session.send` attach files by path), `conversation-handoff`,
 `session-controls`, `session-terminal-handoff`, `conversation-history`,
 `approval-rules` and `provider-settings` (`STUDIO_CHAT_CAPABILITIES`);
-`files-mention`, `file-system`, `git` and `worktrees` from every Studio's core. The
+`files-mention`, `file-system`, `git` and `worktrees` from every Studio's core,
+and `extensions` from a desktop's. The
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's
 `docs/compatibility.md`.

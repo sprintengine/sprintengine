@@ -123,8 +123,6 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   }
   const bridge = shellBridge()
   serveShellBridge(shellRpc, bridge)
-  shellRpc.handle(SHELL_METHODS.marketplaceRead, () => ({ ok: true, entries: [] }))
-  shellRpc.handle(SHELL_METHODS.thirdPartyModules, () => ({ modules: [], rejected: [] }))
   // A terminal agent the shell launched before this server started holds this token.
   const terminalAgent = { workspaceId: 'acme', agentId: 'agent-1' }
   const tokenDigest = createHash('sha256').update('terminal-agent-token').digest('hex')

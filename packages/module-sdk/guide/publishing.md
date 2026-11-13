@@ -54,11 +54,11 @@ npx sprintengine-module pack module --out packed/<id>                     # an i
 
 ## Where people get it
 
-| Channel | What they do | What you need |
-| --- | --- | --- |
-| Folder | Settings → Modules → "Install a module from a folder", pointing at `module/` (or `packed/<id>`) | Nothing more |
-| GitHub | Install from GitHub with the repository URL | `plugin.json` at the repo root, `module/dist` committed — below |
-| Marketplace | Find it in the Extensions door's Plugins view | A signed bundle and a registry pull request (below) |
+| Channel     | What they do                                                                                    | What you need                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Folder      | Settings → Modules → "Install a module from a folder", pointing at `module/` (or `packed/<id>`) | Nothing more                                                    |
+| GitHub      | Install from GitHub with the repository URL                                                     | `plugin.json` at the repo root, `module/dist` committed — below |
+| Marketplace | Find it in the Extensions door's Plugins view                                                   | A signed bundle and a registry pull request (below)             |
 
 ## The marketplace registry
 
@@ -144,11 +144,12 @@ A `module/` whose files do not match its manifest's `files` is refused as
 tampered, so never commit a rebuild without the manifest it produced — build,
 then commit both.
 
-Under the hood Studio resolves with `extensions:github:resolve` (the commit,
-`plugin.json` there, and what it discloses), installs that exact commit with
-`extensions:github:install`, and removes it with its plugin
-(`marketplace:plugins:uninstall`, Settings → Modules → Uninstall). A module
-added from a folder is removed by the Studio server (`module.uninstall`).
+Under the hood the Studio server resolves with `marketplace.resolveGithub`
+(the commit, `plugin.json` there, and what it discloses), installs that exact
+commit with `marketplace.installGithub`, and removes it with its plugin
+(`marketplace.uninstall`, Settings → Modules → Uninstall). A module added from
+a folder is removed by the Studio server too (`module.uninstall`). Each is an
+owner's: only the person's own Studio windows may install or remove code.
 
 ### Signed or not
 

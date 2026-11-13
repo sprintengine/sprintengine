@@ -37,8 +37,6 @@ import { createConversationAttentionListener } from './conversation-attention'
 import type { ConversationEvent } from '../shared/conversation-runtime'
 import { createHostedFeedPoller, type HostedFeedPoller } from './hosted-feed/poller'
 import { isCanvasWorkerWindow } from './canvas/canvas-worker-window'
-import { readHostedCardFeed } from './hosted-feed/card-feed-service'
-import { readHostedSourcesFeed } from './hosted-feed/sources-feed-service'
 import { detectCliMachines, readCliVersionAdvisories } from './cli-version-advisory-service'
 import { hostRegistry } from './hosts/host-registry'
 import { recordIntegrationWrite } from './integrations/ledger'
@@ -214,6 +212,8 @@ type RegisterAppLifecycleOptions = {
   agentKeepAwake?: Pick<AgentKeepAwake, 'onAgentPhase' | 'dispose'>
   /** The plugin-source update check (skills service); rides the hourly feed leg. */
   checkPluginSourceUpdates?: () => Promise<unknown>
+  /** Fetch the Studio's hosted feeds when due (the cards and the recommended sources); the hourly feed leg. */
+  refreshHostedFeeds: () => Promise<unknown>
   /**
    * Opens the gate on the boot jobs nothing on screen needs (the git probe and
    * the rest). Called once the main window reveals, so they never compete with
@@ -279,6 +279,7 @@ export function registerAppLifecycle({
   quitConfirmation,
   agentKeepAwake,
   checkPluginSourceUpdates,
+  refreshHostedFeeds,
   startDeferredBootJobs,
   prepareWorkspacesAtBoot,
   onAgentAttentionReady,
@@ -579,9 +580,11 @@ export function registerAppLifecycle({
       // the same reason — this is the ONLY thing in the app that ever fetches
       // the card feed, and without it a shipped machine serves the bundled seed
       // until the next release, which is the whole point of hosting the file.
-      // The sources feed rides it for the same reason again: its IPC
+      // The sources feed rides it for the same reason again: a client's read
       // only ever reads disk, so this leg is the only thing that refreshes the
-      // recommended list a machine offers.
+      // recommended list a machine offers. Both feeds are the Studio's
+      // (`cardFeed.get`, `sourcesFeed.get`): out of process the server
+      // fetches them when this leg asks.
       //
       // The tick is a heartbeat and not a schedule: every rider owns its own
       // window, so an hourly knock on a feed fetched forty minutes ago costs
@@ -596,8 +599,7 @@ export function registerAppLifecycle({
       // poller still reports the leg as failed.
       refreshFeed: async () => {
         const failures: unknown[] = []
-        await readHostedCardFeed().catch((error) => void failures.push(error))
-        await readHostedSourcesFeed().catch((error) => void failures.push(error))
+        await refreshHostedFeeds().catch((error: unknown) => void failures.push(error))
         await checkPluginSourceUpdates?.().catch(() => undefined)
         if (failures.length > 0) throw failures[0]
       },

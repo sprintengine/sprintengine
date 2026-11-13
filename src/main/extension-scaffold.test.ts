@@ -1,4 +1,4 @@
-// The door's two questions to main: what is at <project>/<name> as the name is
+// The door's two questions to its Studio: what is at <project>/<name> as the name is
 // typed, and make the project there — always a new folder, never written over.
 //
 // The templates are the SDK's real ones and the scaffold is the real
@@ -8,21 +8,15 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 
-import { afterEach, beforeEach, describe, test, vi } from 'vitest'
-
-vi.mock('electron', () => import('../../../tests/stubs/electron'))
+import { afterEach, beforeEach, describe, test } from 'vitest'
 
 import {
   createExtensionScaffoldHandlers,
-  EXTENSION_SCAFFOLD_CREATE_CHANNEL,
-  EXTENSION_SCAFFOLD_TARGET_CHANNEL,
-  registerExtensionScaffoldIpc,
   resolveScaffoldRoots,
   SCAFFOLD_SDK_TARBALL,
   SCAFFOLD_SDK_VERSION,
-} from './extension-scaffold-ipc'
+} from './extension-scaffold'
 
 const SDK = join(process.cwd(), 'packages', 'module-sdk')
 
@@ -30,7 +24,7 @@ let parent = ''
 let sdkTarball = ''
 
 beforeEach(() => {
-  parent = mkdtempSync(join(tmpdir(), 'extension-scaffold-ipc-'))
+  parent = mkdtempSync(join(tmpdir(), 'extension-scaffold-'))
   // Not written unless a test ships it.
   sdkTarball = join(parent, 'shipped', SCAFFOLD_SDK_TARBALL)
 })
@@ -47,7 +41,7 @@ function handlers() {
   })
 }
 
-describe('extensions:scaffold:target', () => {
+describe('extensionScaffold.target', () => {
   test('says whether the name is free, an extension to carry on, or taken', async () => {
     const h = handlers()
     assert.deepEqual(h.target({ parentDir: parent, id: 'pr-radar' }), {
@@ -132,7 +126,7 @@ describe('where the extension goes', () => {
   })
 })
 
-describe('extensions:scaffold:create', () => {
+describe('extensionScaffold.create', () => {
   test('writes a new project into <project>/<name>, on this build’s SDK version, with the brief', async () => {
     const result = await handlers().create({
       parentDir: parent,
@@ -215,29 +209,5 @@ test('reads the shipped copies when packaged and the SDK package in a checkout',
     templatesRoot: join('/repo', 'packages', 'module-sdk', 'templates'),
     guideRoot: join('/repo', 'packages', 'module-sdk', 'guide'),
     sdkTarball: join('/repo', 'resources', 'module-sdk', SCAFFOLD_SDK_TARBALL),
-  })
-})
-
-describe('registerExtensionScaffoldIpc', () => {
-  test('writing the project answers only the app’s own window', async () => {
-    type Handler = (event: unknown, ...args: unknown[]) => unknown
-    const registered = new Map<string, Handler>()
-    const ipcMain = { handle: (channel: string, handler: Handler) => registered.set(channel, handler) }
-    registerExtensionScaffoldIpc(ipcMain as unknown as Parameters<typeof registerExtensionScaffoldIpc>[0], handlers())
-
-    const appEvent = {
-      sender: {},
-      senderFrame: { parent: null, url: pathToFileURL('/Applications/Studio.app/out/renderer/index.html').href },
-    }
-    const subframe = { ...appEvent, senderFrame: { ...appEvent.senderFrame, parent: {} } }
-
-    const create = registered.get(EXTENSION_SCAFFOLD_CREATE_CHANNEL)!
-    await assert.rejects(
-      async () => create(subframe, { parentDir: parent, id: 'x' }),
-      /did not come from a SprintEngine Studio window/,
-    )
-    assert.equal(existsSync(join(parent, 'x')), false)
-    const target = registered.get(EXTENSION_SCAFFOLD_TARGET_CHANNEL)!
-    assert.equal(((await target(appEvent, { parentDir: parent, id: 'x' })) as { state: string }).state, 'free')
   })
 })

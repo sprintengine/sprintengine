@@ -31,6 +31,7 @@ import { resolveIconUrl } from '../settings/BrowseStorefront'
 import { commandMatchesQuery, orderPaletteCommands, type PaletteCommandGroup } from '../commandPaletteSearch'
 import type { PaletteCommand, PaletteResultProvider, PaletteRowIcon } from './paletteProvider'
 import { agentSkillsApi, type AgentSkillsApi } from '../../studio/agentSkills'
+import { extensionsApi, type ExtensionsApi } from '../../studio/extensions'
 
 /** The slot size the palette draws a row's mark at (an avatar asks for 2×). */
 export const PALETTE_ROW_ICON_SIZE = 20
@@ -78,7 +79,7 @@ export function sourceHasBeenRead(source: Pick<SkillSource, 'scannedAt'>): boole
 
 /** Only the calls this module makes, so a test can hand it four functions. */
 export type ExtensionsCatalogueApi = Pick<AgentSkillsApi, 'skillsListSources' | 'skillsGetScan'> &
-  Pick<typeof window.api, 'readMarketplaceRegistry'>
+  Pick<ExtensionsApi, 'readMarketplaceRegistry'>
 
 /**
  * One round of reads, run when the palette opens.
@@ -455,7 +456,7 @@ export function createExtensionsProvider(deps: ExtensionsProviderDeps): PaletteR
   const api: ExtensionsCatalogueApi = deps.api ?? {
     skillsListSources: () => agentSkillsApi.skillsListSources(),
     skillsGetScan: (input) => agentSkillsApi.skillsGetScan(input),
-    readMarketplaceRegistry: (input) => window.api.readMarketplaceRegistry(input),
+    readMarketplaceRegistry: (input) => extensionsApi.readMarketplaceRegistry(input),
   }
   let catalogue: ExtensionsCatalogue | null = null
   // Rows are rebuilt only when what they are built FROM changes — the catalogue

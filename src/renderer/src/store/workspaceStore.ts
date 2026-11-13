@@ -142,7 +142,8 @@ import type {
   WorkspaceRegistryEmptyState,
   WorkspaceWorktree,
 } from '../types/workspace'
-import { windowModuleLifecycle } from '../studio/moduleLifecycle'
+import { windowModuleSwitches, type ModuleSwitchStore } from '../studio/moduleSwitches'
+import { windowHasStudio } from '../studio/extensions'
 import { configureTerminals, listTerminals } from '../studio/terminals'
 import { watchWindowStudio, windowStudioState } from '../studio/windowStudioClient'
 import { agentSettingsApi } from '../studio/agentSettings'
@@ -1496,7 +1497,7 @@ export const useWorkspaceStore: WorkspaceStoreHook = create<WorkspaceStore>()(
 
 function scheduleInitialPluginCatalogRefresh(): void {
   if (typeof window === 'undefined') return
-  if (!window.api || typeof window.api.pluginsList !== 'function') return
+  if (!windowHasStudio()) return
   queueMicrotask(() => {
     const store = useWorkspaceStore.getState()
     void store.refreshPluginCatalog()
@@ -1504,39 +1505,28 @@ function scheduleInitialPluginCatalogRefresh(): void {
     // pickers/defaults can hide and avoid defaulting to uninstalled agents.
     // After main's launch settings are in, so the probe runs each CLI's real
     // command and WSL switch rather than the defaults.
-    if (typeof window.api?.pluginsDetectAvailability === 'function') {
-      void launchSettingsClient.ready.then(() => {
-        const current = useWorkspaceStore.getState()
-        return current.refreshCliAvailability({
-          cliRuntimes: current.appSettings.cliRuntimes,
-        })
+    void launchSettingsClient.ready.then(() => {
+      const current = useWorkspaceStore.getState()
+      return current.refreshCliAvailability({
+        cliRuntimes: current.appSettings.cliRuntimes,
       })
-    }
+    })
   })
 }
 
 scheduleInitialPluginCatalogRefresh()
 
-// The person's module switches, sent to the window's Studio, which keeps them
-// and starts or stops what runs there (`module.setEnabled`). Settings is
-// where they are switched; only a switch that changed is sent, so a client
-// whose own copy is older never overrides the Studio's. Guarded for bundles
-// with no Studio connection (node test harnesses).
-function syncModuleEnablementToStudio(): void {
-  if (typeof window === 'undefined') return
-  const lifecycle = windowModuleLifecycle()
-  if (!lifecycle) return
-
-  let sent: Record<string, boolean> = { ...useWorkspaceStore.getState().appSettings.modules }
-  const push = (next: Record<string, boolean>): void => {
-    for (const id of new Set([...Object.keys(sent), ...Object.keys(next)])) {
-      if (sent[id] !== next[id]) void lifecycle.setEnabled(id, next[id] ?? null)
-    }
-    sent = { ...next }
-  }
-  useWorkspaceStore.subscribe((state) => push(state.appSettings.modules ?? {}))
+// The person's module switches, as the window's Studio holds them: read at
+// every open of the window's connection and every change of what is
+// installed, and the Studio's choice taken for each module it lists
+// (studio/moduleSwitches.ts). Settings switches a module through the same
+// object, which waits for the Studio before the window's copy changes.
+// Guarded for bundles with no Studio connection (node test harnesses).
+export const studioModuleSwitchStore: ModuleSwitchStore = {
+  overrides: () => useWorkspaceStore.getState().appSettings.modules ?? {},
+  set: (moduleId, enabled) => useWorkspaceStore.getState().setModuleEnabled(moduleId, enabled),
 }
-syncModuleEnablementToStudio()
+windowModuleSwitches(studioModuleSwitchStore)
 
 // Mirror the "Pause idle terminals after" setting (minutes → ms) and the
 // "Always keep running" recency floor to the Studio's reaper (`terminal.configure`),
