@@ -212,13 +212,12 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   const versions = await shellRpc.call<{ ok: boolean; advisories?: unknown }>(SERVER_METHODS.cliVersionsRefresh)
   assert.deepEqual([versions.ok, versions.advisories], [true, {}])
 
-  // The worktree pool is this server's: a window's Settings ▸ Worktrees and
-  // the installs are answered over the tunnel, and the shell's `agent.launch`
-  // has its worktree cut here, from the pool, and listed among its leases.
-  const poolSettings = await window.invoke('worktree-pool:settings-get')
-  assert.equal(poolSettings.ok, true, JSON.stringify(poolSettings))
-  assert.equal(typeof poolSettings.value.enabled, 'boolean')
-  assert.deepEqual((await window.invoke('worktree-install:list')).value, [])
+  // The worktree pool is this server's: the shell's `agent.launch` has its
+  // worktree cut here, from the pool, and listed among its leases. A window
+  // reaches the pool over the Studio protocol (`worktrees.*`), never this
+  // tunnel.
+  const tunnelled = await window.invoke('worktree-pool:settings-get')
+  assert.equal(tunnelled.ok, false, JSON.stringify(tunnelled))
   const repo = await gitProject(join(scratch, 'repos'))
   const cut = await shellRpc.call<{ worktreePath?: string; branch?: string; error?: string }>(
     SERVER_METHODS.createAgentWorktree,
@@ -231,12 +230,6 @@ test('the desktop server composes, serves a window over the tunnel and the shell
     leases.map((slot) => slot.path),
     [cut.worktreePath],
   )
-  // The agent worktree steps a window takes reach the same pool; a path on
-  // an SSH machine is refused in words, never read on this disk.
-  const pooled = await window.invoke('worktree-pool:snapshot', repo)
-  assert.equal(pooled.value.slots[0].path, cut.worktreePath)
-  const onMachine = await window.invoke('git:worktree:create', { repoRoot: 'ssh://build-box/home/dev/app' })
-  assert.match(String(onMachine.error?.message ?? onMachine.error), /Not available for SSH machines yet/)
 
   // An agent this server's shell launched calls `worktree.lease` and
   // `worktree.release` over the gateway socket, as this very orchestration's
@@ -273,11 +266,10 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.equal(leasedOverMcp.result?.isError ?? false, false, JSON.stringify(leasedOverMcp))
   const leasedPath = (leasedOverMcp.result?.structuredContent as { path: string; branch: string }).path
   assert.equal((leasedOverMcp.result?.structuredContent as { branch: string }).branch, 'agent/over-mcp')
-  const afterLease = await window.invoke('worktree-pool:snapshot', repo)
-  assert.equal(
-    afterLease.value.slots.find((slot: { path: string }) => slot.path === leasedPath)?.lease?.agentId,
-    'agent-lease',
+  const afterLease = await shellRpc.call<Array<{ path: string; lease: { agentId: string | null } | null }>>(
+    SERVER_METHODS.worktreeLeases,
   )
+  assert.equal(afterLease.find((slot) => slot.path === leasedPath)?.lease?.agentId, 'agent-lease')
   const releasedOverMcp = await mcp.call('tools/call', { name: 'worktree.release', arguments: { path: leasedPath } })
   assert.equal(
     (releasedOverMcp.result?.structuredContent as { released: boolean }).released,

@@ -61,3 +61,5 @@ afterEach(() => {
 vi.mock('../src/renderer/src/studio/files', () => import('../src/renderer/src/studio/files.double'))
 // The window's git (`src/renderer/src/studio/git.ts`), the same way.
 vi.mock('../src/renderer/src/studio/git', () => import('../src/renderer/src/studio/git.double'))
+// The worktrees its agents run in and settled chats (`src/renderer/src/studio/worktrees.ts`), the same way.
+vi.mock('../src/renderer/src/studio/worktrees', () => import('../src/renderer/src/studio/worktrees.double'))

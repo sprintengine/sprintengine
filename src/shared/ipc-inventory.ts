@@ -24,15 +24,7 @@ export type IpcDirection = 'invoke' | 'send' | 'push'
 
 /** Where a server channel goes: the area of the Studio protocol that replaces it. */
 export type IpcServerArea =
-  | 'conversations'
-  | 'terminals'
-  | 'modules'
-  | 'extensions'
-  | 'paired-machines'
-  | 'access'
-  | 'workspaces'
-  | 'worktree-pool'
-  | 'web-tab'
+  'conversations' | 'terminals' | 'modules' | 'extensions' | 'paired-machines' | 'access' | 'workspaces' | 'web-tab'
 
 export type IpcInventoryRow =
   | { readonly dir: IpcDirection; readonly shell: string }
@@ -79,8 +71,6 @@ const pairedMachines = server('paired-machines')
 const access = server('access')
 /** Moves to the protocol: projects and their chats, the backlog, scheduled agents and the machines a project runs on. */
 const workspaces = server('workspaces')
-/** Moves to the protocol: the worktree pool, its installs and settled chats. */
-const worktreePool = server('worktree-pool')
 /** Moves to the protocol: what a browser tab asks its server for: folders, previews, local servers. */
 const webTab = server('web-tab')
 
@@ -455,22 +445,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'workspace-sync:mark-unread': workspaces('invoke'),
   'workspace-sync:set-module-run-states': workspaces('invoke'),
   'workspace-sync:set-settled-chats-settings': workspaces('invoke'),
-  'git:worktree:cleanup-agents': worktreePool('invoke'),
-  'git:worktree:create': worktreePool('invoke'),
-  'git:worktree:remove': worktreePool('invoke'),
-  'git:worktree:restore': worktreePool('invoke'),
-  'settled-chats:delete': worktreePool('invoke'),
-  'settled-chats:plan-delete': worktreePool('invoke'),
-  'worktree-install:cancel': worktreePool('invoke'),
-  'worktree-install:changed': worktreePool('push'),
-  'worktree-install:list': worktreePool('invoke'),
-  'worktree-pool:action': worktreePool('invoke'),
-  'worktree-pool:changed': worktreePool('push'),
-  'worktree-pool:inventory': worktreePool('invoke'),
-  'worktree-pool:remove-other': worktreePool('invoke'),
-  'worktree-pool:settings-get': worktreePool('invoke'),
-  'worktree-pool:settings-set': worktreePool('invoke'),
-  'worktree-pool:snapshot': worktreePool('invoke'),
   'browser:local-servers': webTab('invoke'),
   'web:browse-folders': webTab('invoke'),
   'web:previews:changed': webTab('push'),

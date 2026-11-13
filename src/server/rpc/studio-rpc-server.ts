@@ -12,6 +12,7 @@ import {
   STUDIO_BOARD_FILES_CAPABILITY,
   STUDIO_FILE_SYSTEM_CAPABILITY,
   STUDIO_GIT_CAPABILITY,
+  STUDIO_WORKTREES_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   STUDIO_PULL_REQUESTS_CAPABILITY,
   STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY,
@@ -46,6 +47,7 @@ import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioMachineCall } from './studio-file-system'
 import type { StudioGit } from '../git/studio-git-types'
+import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 import type { StudioPullRequests } from '../pull-requests/pull-request-domain'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioLocalServers } from '../local-servers/local-server-domain'
@@ -166,6 +168,8 @@ export type StudioRpcServerOptions = {
   machine?: StudioMachineCall
   /** Git on this machine. Advertised as `git` only when given; every Studio's core gives it. */
   git?: StudioGit
+  /** The worktrees its agents run in, and settled chats. Advertised as `worktrees` only when given; every Studio's core gives it. */
+  worktrees?: StudioWorktrees
   /** The pull requests the conversations opened, for owners. Advertised as `pull-requests` and `pull-request-tool-calls` only when given. */
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners. Advertised as `local-servers` only when given. */
@@ -248,6 +252,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         ((capability !== STUDIO_FILE_SYSTEM_CAPABILITY && capability !== STUDIO_FILES_CAPABILITY) ||
           options.fileSystem !== undefined) &&
         (capability !== STUDIO_GIT_CAPABILITY || options.git !== undefined) &&
+        (capability !== STUDIO_WORKTREES_CAPABILITY || options.worktrees !== undefined) &&
         ((capability !== STUDIO_PULL_REQUESTS_CAPABILITY &&
           capability !== STUDIO_PULL_REQUEST_TOOL_CALLS_CAPABILITY &&
           capability !== STUDIO_PULL_REQUEST_LINK_CAPABILITY) ||
@@ -288,6 +293,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
     ...(options.machine ? { machine: options.machine } : {}),
     ...(options.git ? { git: options.git } : {}),
+    ...(options.worktrees ? { worktrees: options.worktrees } : {}),
     ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),

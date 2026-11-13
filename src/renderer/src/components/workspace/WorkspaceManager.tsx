@@ -322,6 +322,7 @@ import { agentSettingsApi, windowHasStudio } from '../../studio/agentSettings'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
 import { gitApi } from '../../studio/git'
+import { worktreesApi } from '../../studio/worktrees'
 
 // The pre-creation New Chat panel — agent + engine chooser that creates nothing
 // until the user starts the chat. Code-split out of the eager boot chunk;
@@ -1823,13 +1824,13 @@ export default function WorkspaceManager() {
   // ends, and one bell row, from the primary window, for one that failed.
   const reportsWorktreeInstalls = useRef(isPrimaryWorkspaceWindow)
   reportsWorktreeInstalls.current = isPrimaryWorkspaceWindow
-  useEffect(() => {
-    const api = typeof window === 'undefined' ? null : window.api
-    if (!api || typeof api.onWorktreeInstallChanged !== 'function') return
-    return api.onWorktreeInstallChanged((view) =>
-      showWorktreeInstallToast(view, { report: reportsWorktreeInstalls.current }),
-    )
-  }, [])
+  useEffect(
+    () =>
+      worktreesApi.onWorktreeInstallChanged((view) =>
+        showWorktreeInstallToast(view, { report: reportsWorktreeInstalls.current }),
+      ),
+    [],
+  )
 
   useEffect(
     () =>
@@ -2683,7 +2684,7 @@ export default function WorkspaceManager() {
     }
     // From the worktree pool, on the default branch (main's git.ts): a
     // reused slot keeps the last agent's installed dependencies.
-    const result = await window.api.createGitWorktree({
+    const result = await worktreesApi.createGitWorktree({
       repoRoot,
       containerPath: paths.containerPath,
       destinationPath: paths.destinationPath,

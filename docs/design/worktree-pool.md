@@ -177,10 +177,10 @@ were settled:
 - **The server's.** The pool, its installs, `worktree.*` and the chat-folder
   guard are composed by the Studio core (`server/core/studio-worktree-pool.ts`)
   in every mode: the desktop's main in process, the desktop's server out of
-  process, a WSL or SSH machine's server, each with a pool of its own. The
-  windows reach it over the server's IPC domains (`worktree-pool:*`,
-  `worktree-install:*`, `settled-chats:*` and the git panel's
-  `git:worktree:create|restore|remove|cleanup-agents`), the shell's
+  process, a WSL or SSH machine's server, each with a pool of its own. Every
+  client reaches it over the Studio protocol (`worktrees.*` with the
+  `worktrees.poolChanged` and `worktrees.installChanged` streams, and
+  `settledChats.*`; `packages/studio-protocol/src/worktrees.ts`), the shell's
   agents' `agent.launch` cuts its worktree there, and nothing else keeps one,
   so a chat's turns, the terminals (the core's too, studio-agent-terminals.ts)
   and the pool take their path holds in one process: a terminal still starting

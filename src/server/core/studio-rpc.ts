@@ -17,6 +17,7 @@ import { createStudioFiles } from '../rpc/studio-files'
 import { createStudioFileSystem, type StudioFileSystemShell } from '../files/studio-file-system'
 import { knownFolders, workspaceFolders } from '../files/known-folders'
 import { createStudioGit } from '../git/studio-git'
+import { createStudioWorktrees } from '../worktrees/studio-worktrees'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
 import { isMachinePath } from '../../shared/machine-paths'
@@ -125,6 +126,9 @@ export function createStudioRpc(
       dataDir: () => core.platform.paths.dataDir(),
       ...(options.githubTokens ? { githubTokens: options.githubTokens } : {}),
     }),
+    // The worktrees its agents run in, from the pool this core keeps, and
+    // deleting settled chats, whose worktrees go back to it.
+    worktrees: createStudioWorktrees(core.worktrees),
     // What the conversations' branches have on GitHub, which every client
     // displays and none decides.
     pullRequests: core.pullRequests,

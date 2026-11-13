@@ -35,6 +35,7 @@ import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioMachineCall } from './studio-file-system'
 import type { StudioGit } from '../git/studio-git-types'
+import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 import type { StudioUpdates } from '../update/studio-updates'
 import type {
   StudioAuditEntry,
@@ -369,6 +370,7 @@ export async function startTestServer(
     fileSystem?: StudioFileSystem
     machine?: StudioMachineCall
     git?: StudioGit
+    worktrees?: StudioWorktrees
     pullRequests?: StudioPullRequests
     localServers?: StudioLocalServers
     discovery?: StudioDiscovery
@@ -415,6 +417,7 @@ export async function startTestServer(
     ...(input.fileSystem ? { fileSystem: input.fileSystem } : {}),
     ...(input.machine ? { machine: input.machine } : {}),
     ...(input.git ? { git: input.git } : {}),
+    ...(input.worktrees ? { worktrees: input.worktrees } : {}),
     ...(input.pullRequests ? { pullRequests: input.pullRequests } : {}),
     ...(input.localServers ? { localServers: input.localServers } : {}),
     ...(input.discovery ? { discovery: input.discovery } : {}),

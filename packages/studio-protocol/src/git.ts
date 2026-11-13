@@ -298,7 +298,9 @@ function newProjectInput(value: unknown): value is NewProjectInput {
 const MOVES_WORK =
   'It moves a branch, rewrites history or discards work in a checkout, which only Studio’s own connections may.'
 const USES_REMOTE = 'It reaches the repository’s remote with this machine’s git credentials.'
-const AGENT_WORKTREES = 'It removes or unlocks the worktrees Studio’s agents run in.'
+/** Why removing or unlocking the agents' worktrees is an owner's; `worktrees.ts` gives the same reason. */
+export const STUDIO_AGENT_WORKTREES_OWNER = 'It removes or unlocks the worktrees Studio’s agents run in.'
+const AGENT_WORKTREES = STUDIO_AGENT_WORKTREES_OWNER
 const GITHUB_ACCOUNT = 'It is this Studio’s GitHub account: its token, and what that account can see and create.'
 
 const held = (scope: StudioScope, mutation: boolean) =>

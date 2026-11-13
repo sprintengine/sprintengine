@@ -68,6 +68,8 @@ import {
 } from './worktreesSettingsModel'
 import { isImeKey } from '../../utils/imeKey'
 import { gitApi } from '../../studio/git'
+import { worktreesApi } from '../../studio/worktrees'
+import { windowStudioIsAnotherMachine } from '../../studio/windowStudioClient'
 
 /**
  * Settings ▸ Worktrees (owner, 2026-10-05): every worktree Studio's agents
@@ -136,8 +138,9 @@ export function forgetWorktreeInventoryForTests(): void {
 /** Sizes measured this recently are shown as they are; opening the page measures only older ones. */
 const SIZES_FRESH_MS = 15 * 60_000
 
+/** A desktop window reaches its own Studio's worktrees; a web tab's Studio keeps them to the desktop. */
 function hasApi(): boolean {
-  return typeof window.api?.getWorktreeInventory === 'function'
+  return !windowStudioIsAnotherMachine()
 }
 
 export function WorktreesSettingsTab({
@@ -184,7 +187,7 @@ export function WorktreesSettingsTab({
       setMeasuring(true)
     }
     try {
-      const next = await window.api.getWorktreeInventory({ repoRoots, measure })
+      const next = await worktreesApi.getWorktreeInventory({ repoRoots, measure })
       if (!mounted.current) return
       if (sequence < appliedRead.current) {
         // A measurement overtaken by a quicker read: its sizes are kept in
@@ -215,8 +218,8 @@ export function WorktreesSettingsTab({
       const measuredAt = lastInventory?.measuredAt ?? null
       if (measuredAt === null || Date.now() - measuredAt > SIZES_FRESH_MS) void read(true)
     })
-    void window.api
-      ?.getWorktreePoolSettings?.()
+    void worktreesApi
+      .getWorktreePoolSettings()
       .then((value) => mounted.current && setSettings(value))
       // The controls below would otherwise show the defaults as if they were saved.
       .catch(
@@ -228,7 +231,7 @@ export function WorktreesSettingsTab({
           }),
       )
     let timer: ReturnType<typeof setTimeout> | null = null
-    const unsubscribe = window.api?.onWorktreePoolChanged?.(() => {
+    const unsubscribe = worktreesApi.onWorktreePoolChanged(() => {
       // A measurement under way answers with the pools as they are after it.
       if (measuringNow.current > 0) return
       // A lease or a return moves several records in a row; one re-read covers them.
@@ -238,17 +241,17 @@ export function WorktreesSettingsTab({
     return () => {
       mounted.current = false
       if (timer) clearTimeout(timer)
-      unsubscribe?.()
+      unsubscribe()
     }
   }, [read])
 
   useEffect(() => {
     let live = true
-    const unsubscribe = window.api?.onWorktreeInstallChanged?.((view) => {
+    const unsubscribe = worktreesApi.onWorktreeInstallChanged((view) => {
       setInstalls((current) => applyInstallChange(current, view))
     })
-    void window.api
-      ?.listWorktreeInstalls?.()
+    void worktreesApi
+      .listWorktreeInstalls()
       .then((views) => {
         if (live) setInstalls((current) => views.reduce(applyInstallChange, current))
       })
@@ -257,7 +260,7 @@ export function WorktreesSettingsTab({
       .catch((error: unknown) => console.warn('[worktrees] could not list the running installs', error))
     return () => {
       live = false
-      unsubscribe?.()
+      unsubscribe()
     }
   }, [])
 
@@ -276,7 +279,7 @@ export function WorktreesSettingsTab({
   const updateSettings = async (patch: Partial<WorktreePoolSettings>) => {
     setSettings((current) => ({ ...current, ...patch }))
     try {
-      setSettings(await window.api.setWorktreePoolSettings(patch))
+      setSettings(await worktreesApi.setWorktreePoolSettings(patch))
       // A lower limit removes worktrees at once.
       void read(false)
     } catch (error) {
@@ -310,7 +313,7 @@ export function WorktreesSettingsTab({
     void updateSettings({ dependencyInstall: withDependencyInstall(settings.dependencyInstall, repoRoot, setting) })
 
   const cancelInstall = async (install: WorktreeDependencyInstallView) => {
-    const stopped = await window.api.cancelWorktreeInstall(install.id).catch(() => false)
+    const stopped = await worktreesApi.cancelWorktreeInstall(install.id).catch(() => false)
     setResult(
       stopped
         ? { tone: 'info', text: `Stopped ${install.command}. The agent starts without it.` }
@@ -346,12 +349,12 @@ export function WorktreesSettingsTab({
   }
 
   const poolAction = (row: WorktreeRow, input: WorktreePoolActionInput, done: string) =>
-    run([row.key], () => window.api.worktreePoolAction(input), done)
+    run([row.key], () => worktreesApi.worktreePoolAction(input), done)
 
   const removeOne = (row: WorktreeRow) =>
     row.removal === 'evict' && row.slot
-      ? window.api.worktreePoolAction({ kind: 'evict', repoRoot: row.repoRoot, slotId: row.slot.id })
-      : window.api.removeOtherWorktree({ repoRoot: row.repoRoot, path: row.path })
+      ? worktreesApi.worktreePoolAction({ kind: 'evict', repoRoot: row.repoRoot, slotId: row.slot.id })
+      : worktreesApi.removeOtherWorktree({ repoRoot: row.repoRoot, path: row.path })
 
   const confirmRemove = async (row: WorktreeRow) => {
     const unmerged = row.entry?.merged === false && row.branch

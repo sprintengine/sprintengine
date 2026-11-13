@@ -269,28 +269,7 @@ import type {
   BacklogTriageInput,
 } from './ipc/backlog'
 import type { DiagnosticLogEntry, DiagnosticLogInput } from './ipc/diagnostics'
-import type {
-  GitCommandResult,
-  GitPatchSaveResult,
-  GitWorktreeCreateInput,
-  GitWorktreeCreated,
-  GitWorktreeOperationResult,
-  GitWorktreeRemoveInput,
-  GitWorktreeRestoreInput,
-  GitWorktreeRestoreResult,
-  AgentWorktreeCleanupInput,
-  AgentWorktreeCleanupReport,
-} from './ipc/git'
-import type {
-  WorktreeDependencyInstallView,
-  WorktreeInventory,
-  WorktreeInventoryInput,
-  WorktreePoolActionInput,
-  WorktreePoolActionResult,
-  WorktreePoolSettings,
-  WorktreePoolSnapshot,
-} from './ipc/worktree-pool'
-import type { SettledChatDeletionOutcome, SettledChatDeletionPlan } from './ipc/settled-chats'
+import type { GitPatchSaveResult } from './ipc/git'
 import type { HostedCardFeedReadInput, HostedCardFeedReadResult, HostedSourcesFeedReadResult } from './ipc/hosted-feeds'
 import type {
   GithubExtensionCheckUpdateInput,
@@ -1372,45 +1351,6 @@ export type ElectronApi = {
    * Main reads the chat; the window names it and the format.
    */
   exportChat: (input: ChatExportInput) => Promise<ChatExportResult>
-  /** Remove agent worktrees that are clean and merged; report (and keep) the rest. */
-  cleanupAgentWorktrees: (input: AgentWorktreeCleanupInput) => Promise<AgentWorktreeCleanupReport>
-  /** A repository's worktree pool (main's worktree-pool/), or null when it has none. */
-  getWorktreePoolSnapshot: (repoRoot: string) => Promise<WorktreePoolSnapshot | null>
-  /** Every change to any pool's slots, as that pool's snapshot. */
-  onWorktreePoolChanged: (cb: (snapshot: WorktreePoolSnapshot) => void) => () => void
-  /** A person's decision on a held pool worktree, or the removal or clearing of an idle one. */
-  worktreePoolAction: (input: WorktreePoolActionInput) => Promise<WorktreePoolActionResult>
-  /**
-   * Remove a worktree the pool does not own, checked as a pool eviction is:
-   * kept, with the reason, when something works in it or it may hold work.
-   */
-  removeOtherWorktree: (input: { repoRoot: string; path: string }) => Promise<WorktreePoolActionResult>
-  /**
-   * What deleting each of these settled chats would do: its worktree's fate,
-   * its changes and unpushed commits, and why a chat cannot go. For the
-   * confirmation; the delete checks it all again.
-   */
-  planSettledChatDeletion: (workspaceIds: string[]) => Promise<SettledChatDeletionPlan[]>
-  /**
-   * Delete settled chats for good: their history, their records, and the
-   * worktree each owns (given back to the pool, or removed), branches kept.
-   * A paired machine's chat loses only this computer's record.
-   */
-  deleteSettledChats: (workspaceIds: string[]) => Promise<SettledChatDeletionOutcome[]>
-  getWorktreePoolSettings: () => Promise<WorktreePoolSettings>
-  setWorktreePoolSettings: (patch: Partial<WorktreePoolSettings>) => Promise<WorktreePoolSettings>
-  /** Every worktree of these projects and of every pool, for Settings ▸ Worktrees. */
-  getWorktreeInventory: (input: WorktreeInventoryInput) => Promise<WorktreeInventory>
-  /** The dependency installs leased worktrees are running now. */
-  listWorktreeInstalls: () => Promise<WorktreeDependencyInstallView[]>
-  /** A leased worktree's dependency install started, moved on, or ended. */
-  onWorktreeInstallChanged: (cb: (view: WorktreeDependencyInstallView) => void) => () => void
-  /** Stop a running install; its agent starts as after a failed one. False when it had already ended. */
-  cancelWorktreeInstall: (id: string) => Promise<boolean>
-  createGitWorktree: (input: GitWorktreeCreateInput) => Promise<GitWorktreeOperationResult<GitWorktreeCreated>>
-  /** Recreate a chat's worktree the cleanup gave back, at its old path, from the branch it kept. */
-  restoreGitWorktree: (input: GitWorktreeRestoreInput) => Promise<GitWorktreeRestoreResult>
-  removeGitWorktree: (input: GitWorktreeRemoveInput) => Promise<GitWorktreeOperationResult<GitCommandResult>>
   /** The same text, through the OS save dialog. */
   saveGitPatch: (repoRoot: string, patch: string, defaultFileName?: string) => Promise<GitPatchSaveResult>
   // The chat's "Create PR" (src/main/pull-request-create.ts): whether it may

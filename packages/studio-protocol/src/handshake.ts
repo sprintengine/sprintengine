@@ -217,6 +217,16 @@ export const STUDIO_FILE_SYSTEM_CAPABILITY = 'file-system' as const
 export const STUDIO_GIT_CAPABILITY = 'git' as const
 
 /**
+ * The worktrees Studio's agents run in (`worktrees.ts`): the worktree pool,
+ * its dependency installs, Settings ▸ Worktrees' inventory and the agents'
+ * worktree steps (`worktrees.*`, with the `worktrees.poolChanged` and
+ * `worktrees.installChanged` streams), and deleting settled chats, whose
+ * worktrees go back to that pool (`settledChats.*`). Every Studio's core
+ * serves it.
+ */
+export const STUDIO_WORKTREES_CAPABILITY = 'worktrees' as const
+
+/**
  * Every Studio capability this version of the package knows, in the order
  * they shipped. A Studio advertises the ones it serves; a client reads a name
  * it does not know as a feature it does not use.
@@ -262,6 +272,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_SHARES_CAPABILITY,
   STUDIO_PULL_REQUEST_READS_CAPABILITY,
   STUDIO_GIT_CAPABILITY,
+  STUDIO_WORKTREES_CAPABILITY,
 ] as const
 
 /**
