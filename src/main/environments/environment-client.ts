@@ -15,9 +15,19 @@ export function createEnvironmentClients(deps: {
       id: string,
       capability?: StudioCapability | null,
     ): Promise<{ ok: true; client: StudioClient; label: string } | { ok: false; code: string; message: string }>
+    onConnected(listener: (connection: { key: string }) => void): void
   } | null
 }): EnvironmentClients {
+  const listeners = new Set<(route: string) => void>()
+  // The machine's key is its route (`ssh:<id>`).
+  deps.ssh?.onConnected((connection) => {
+    for (const listener of listeners) listener(connection.key)
+  })
   return {
+    onConnected(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     async clientFor(route, capability = null) {
       const parsed = parseEnvironmentRoute(route)
       if (parsed?.kind === 'ssh' && deps.ssh) {

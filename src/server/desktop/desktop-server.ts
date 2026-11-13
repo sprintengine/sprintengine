@@ -212,7 +212,10 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   if (shellSsh)
     rpc.on(SERVER_EVENTS.sshConnected, (payload) => {
       const key = (payload as { key?: unknown } | null)?.key
-      if (typeof key === 'string' && /^ssh:[A-Za-z0-9_-]+$/u.test(key)) shellSsh.machineConnected(key)
+      if (typeof key === 'string' && /^ssh:[A-Za-z0-9_-]+$/u.test(key)) {
+        shellSsh.machineConnected(key)
+        shellEnvironments?.machineConnected(key)
+      }
     })
 
   // The terminal agents' pull request marks (below), bound once the Studio

@@ -30,8 +30,11 @@ const PORT_WAIT_MS = 5_000
 const HELLO_MS = 15_000
 const PING_MS = 10_000
 
-export function createShellEnvironmentClients(deps: ShellEnvironmentClientsDeps): EnvironmentClients {
+export function createShellEnvironmentClients(
+  deps: ShellEnvironmentClientsDeps,
+): EnvironmentClients & { machineConnected(route: string): void } {
   const live = new Map<string, { client: Promise<StudioClient>; label: string }>()
+  const listeners = new Set<(route: string) => void>()
 
   async function stream(route: string): Promise<{ stream: Duplex; label: string }> {
     const { clientId, label } = await deps.open(route)
@@ -78,6 +81,14 @@ export function createShellEnvironmentClients(deps: ShellEnvironmentClientsDeps)
   }
 
   return {
+    /** Main said the machine's server connected anew (`SERVER_EVENTS.sshConnected`): an old client of it is spent. */
+    machineConnected(route) {
+      for (const listener of listeners) listener(route)
+    },
+    onConnected(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
     async clientFor(route, capability: StudioCapability | null = null) {
       const parsed = parseEnvironmentRoute(route)
       if (parsed?.kind !== 'ssh')

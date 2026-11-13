@@ -17,6 +17,8 @@ export type EnvironmentClientAnswer =
 export type EnvironmentClients = {
   /** The client of the environment a route names, connected now if it must be, its paths spelled for this computer. */
   clientFor(route: string, capability?: StudioCapability | null): Promise<EnvironmentClientAnswer>
+  /** Hear each route whose machine has just connected (a new server connection). Returns the unsubscriber. */
+  onConnected(listener: (route: string) => void): () => void
 }
 
 /**

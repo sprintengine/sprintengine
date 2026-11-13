@@ -92,6 +92,7 @@ import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
 import { localConversationBackend, refuseMachinePaths, type ConversationBackend } from './conversation-backend'
 import type { EnvironmentClients } from '../../shared/environment-clients'
+import { createEnvironmentReplicas } from '../environment/environment-replicas'
 import {
   createRoutedConversationBackend,
   type SshRoutedConnection,
@@ -330,6 +331,19 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     registry: workspaceRegistry,
     resolveResumeCapabilities: cliResumeCapabilities,
   })
+  // This desktop's copies of the chats an SSH machine holds, written only from
+  // what that machine's Studio says (environment-replicas.ts), and followed
+  // from each time it connects.
+  const environmentReplicas = options.environmentClients
+    ? createEnvironmentReplicas({
+        clients: options.environmentClients,
+        sync: workspaceSyncService,
+        log: (message) => {
+          void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })
+        },
+      })
+    : null
+  options.environmentClients?.onConnected((route) => void environmentReplicas?.follow(route))
 
   // Git for a repository runs on the machine of the open workspace holding
   // it, which is where its agents run theirs: a `C:\` folder of a WSL
@@ -1371,6 +1385,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   return {
     /** Other environments' Studios, as this desktop's callers reach a chat one holds; null where it reaches none. */
     environmentClients: options.environmentClients ?? null,
+    /** This desktop's copies of the chats other environments hold; null where it reaches none. */
+    environmentReplicas,
     platform,
     role: options.role,
     /** Null only in a desktop that could not take the directory and carried on, as builds before the lock did. */
