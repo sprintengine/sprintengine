@@ -154,14 +154,17 @@ function startPresence(): (() => void) | null {
     })
     .catch(() => {})
 
+  // Revisions count within one server's lifetime. `current` is the state as
+  // it stands when the stream (re)opens, so it is applied whatever its
+  // revision: after the server restarts, its count starts again below ours.
   const offTailnet = tailnetApi.onTailnetEvent((payload) => {
-    if (payload.revision < tailnetRevision) return
+    if (payload.event.kind !== 'current' && payload.revision < tailnetRevision) return
     tailnetRevision = payload.revision
     statusPushed = true
     updatePresence(() => ({ status: payload.status, live: payload.live }))
   })
   const offMesh = tailnetApi.onMeshEvent((event) => {
-    if (event.revision < meshRevision) return
+    if (event.kind !== 'current' && event.revision < meshRevision) return
     meshRevision = event.revision
     if (event.kind === 'machine-paired' || event.kind === 'machine-forgotten') {
       readConnections()

@@ -11,6 +11,9 @@ import {
   type TailnetRemoteStatus,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioTailnetDomain, TailnetAnswerVia } from './studio-tailnet'
+import { createStudioTailnetDomain } from '../core/studio-rpc'
+import type { StudioGateway } from '../core/studio-gateway'
+import type { TailnetShareService } from '../../main/automation/tailnet/tailnet-share-service'
 import type { StudioRpcAttachOptions } from './studio-rpc-server'
 import {
   connectLineClient,
@@ -339,4 +342,50 @@ test('a Studio given no tailnet domain offers no tailnet and answers it unavaila
   const window = await attached(started.server, { ownWindow: true, windowKey: 'w1' })
   assert.ok(!(window.welcome.capabilities as string[]).includes('tailnet'))
   assert.equal(errorCode(await window.request('tailnet.status', {})), 'unavailable')
+})
+
+test('the server’s composition answers a window’s approval as the window’s, the one door that may let an MCP client sign in', async () => {
+  // `createStudioRpc` wires the family to the gateway. The device store lets
+  // an MCP client's OAuth sign-in in only on an answer that came `via:
+  // 'window'` (tailnet-oauth.test.ts); this holds the composition to passing
+  // exactly that for the window-only approve, and nothing for anyone else.
+  const { tailnet } = stub()
+  const approvals: Array<{ id: string; via?: string }> = []
+  const declines: Array<string | undefined> = []
+  const gateway = {
+    approveTailnetPairRequest: (input: { id: string; via?: string }) => {
+      approvals.push({ id: input.id, ...(input.via !== undefined ? { via: input.via } : {}) })
+      return { ok: false, code: 'request_not_found', message: 'gone', status: tailnet.status() }
+    },
+    denyTailnetPairRequest: (_id: string, via?: string) => {
+      declines.push(via)
+      return tailnet.status()
+    },
+    getTailnetStatus: () => tailnet.status(),
+    getTailnetLiveState: () => tailnet.liveState(),
+    onTailnetChanged: (listener: (payload: TailnetPushPayload) => void) => tailnet.onChanged(listener),
+    onMeshChanged: (listener: (event: MeshEvent) => void) => tailnet.mesh.onChanged(listener),
+    mesh: () => ({ getLiveState: () => tailnet.mesh.liveState(), listConnections: () => [] }),
+  } as unknown as StudioGateway
+  const domain = createStudioTailnetDomain(gateway, {} as TailnetShareService)
+  const started = await startTestServer({ tailnet: domain })
+  cleanups.push(() => started.dispose())
+
+  const window = await attached(started.server, { ownWindow: true, windowKey: 'w1' })
+  const tab = await attached(started.server, { ownWindow: true, browser: true, audited: true })
+  const owner = await lineClient(started.path, OWNER_TOKEN)
+  for (const caller of [tab, owner])
+    assert.equal(
+      errorCode(await caller.request('tailnet.approvePairRequest', CALLS['tailnet.approvePairRequest'])),
+      'owner_required',
+    )
+  assert.deepEqual(approvals, [], 'a refused approval never reaches the gateway')
+
+  assert.equal(errorCode(await window.request('tailnet.approvePairRequest', CALLS['tailnet.approvePairRequest'])), null)
+  assert.deepEqual(approvals, [{ id: 'q1', via: 'window' }])
+
+  // A decline keeps the door it came through, so it is audited once.
+  await window.request('tailnet.denyPairRequest', { commandId: 'd1', id: 'q1' })
+  await tab.request('tailnet.denyPairRequest', { commandId: 'd2', id: 'q1' })
+  assert.deepEqual(declines, ['window', 'tool'])
 })

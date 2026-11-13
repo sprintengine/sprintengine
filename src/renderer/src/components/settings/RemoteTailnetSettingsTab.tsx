@@ -96,7 +96,9 @@ export function RemoteTailnetSettingsTab() {
   // surface — lands here without a refetch.
   useEffect(() => {
     return tailnetApi.onTailnetEvent((payload) => {
-      if (payload.revision < appliedRevision.current) return
+      // `current` is the listener as it stands when the stream (re)opens:
+      // applied whatever its revision, which restarts with the server.
+      if (payload.event.kind !== 'current' && payload.revision < appliedRevision.current) return
       appliedRevision.current = payload.revision
       setStatus(payload.status)
       // The local offer holds the one-time TOKEN (main never re-serves it),

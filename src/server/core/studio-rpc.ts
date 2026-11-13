@@ -347,7 +347,7 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
 }
 
 /** The tailnet family's domain over the gateway's listener and mesh, and this machine's shared dev servers. */
-function createStudioTailnetDomain(gateway: StudioGateway, shares: TailnetShareService): StudioTailnetDomain {
+export function createStudioTailnetDomain(gateway: StudioGateway, shares: TailnetShareService): StudioTailnetDomain {
   return {
     status: () => gateway.getTailnetStatus(),
     liveState: () => gateway.getTailnetLiveState(),

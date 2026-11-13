@@ -310,7 +310,8 @@ export type TailnetLiveEvent =
   | { kind: 'devices-changed' }
   /**
    * Nothing happened: the listener as it stands, delivered when a client
-   * follows `tailnet.changed`, and so again after it reconnects.
+   * follows `tailnet.changed`, and so again after it reconnects. Applied
+   * whatever its revision, which counts within one server's lifetime.
    */
   | { kind: 'current' }
 
@@ -568,7 +569,8 @@ export type MeshEvent =
   /**
    * Nothing happened: the requests waiting and each machine's last
    * reachability as they stand, delivered when a client follows
-   * `mesh.changed`, and so again after it reconnects.
+   * `mesh.changed`, and so again after it reconnects. Applied whatever its
+   * revision, which counts within one server's lifetime.
    */
   | ({ kind: 'current' } & MeshLiveState)
 
