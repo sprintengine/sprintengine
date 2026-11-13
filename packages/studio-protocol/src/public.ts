@@ -29,6 +29,9 @@ export * from './agent-settings.js'
 // What a Studio's agents are set up with beyond their CLIs.
 export * from './agent-setup.js'
 export * from './chat-stores.js'
+// The projects' backlogs, the pages the machine shares, and a pull request read in full.
+export * from './backlog.js'
+export * from './pull-request-reads.js'
 // The skills, design systems and cards they are given.
 export * from './agent-skills.js'
 // A Studio's scheduled agents.

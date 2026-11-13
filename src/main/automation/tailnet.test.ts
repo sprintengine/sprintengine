@@ -990,21 +990,10 @@ test('tailnet', async () => {
     // The catch-all family, including a tool this mapping has never seen.
     assert.equal(requiredScopeForTool('review_submit_brief', true), 'workspace:operate')
     assert.equal(requiredScopeForTool('some.future.tool', true), 'workspace:operate')
-    // The mobile companion lane: the snapshot is a plain read; the command
-    // envelope is classified a mutation, so a paired phone needs
-    // workspace:operate to drive it and every dispatch is audited.
-    assert.equal(
-      requiredScopeForTool('workspace.snapshot', isStudioGatewayMutation('workspace.snapshot')),
-      'workspace:read',
-    )
     // checkout-and-branch-on-remote-create: the checkout facts are a plain read.
     assert.equal(
       requiredScopeForTool('workspace.checkout', isStudioGatewayMutation('workspace.checkout')),
       'workspace:read',
-    )
-    assert.equal(
-      requiredScopeForTool('workspace.mobile_command', isStudioGatewayMutation('workspace.mobile_command')),
-      'workspace:operate',
     )
 
     const harness = await startHarness()

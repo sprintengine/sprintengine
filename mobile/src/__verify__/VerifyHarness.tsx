@@ -383,7 +383,6 @@ function VerifyShell() {
       refreshFleet: noop,
       backlogCapabilities: { canUpdate: true },
       sendBacklogUpdate: asyncNoop,
-      sendBacklogCreate: async () => ({ ok: true } as never),
       selectSession: noop,
       removeSession: noop,
       renameSession: noop,

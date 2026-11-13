@@ -57,6 +57,7 @@ import type { CliRuntimes } from '../../main/cli-runtimes'
 import type { StudioAgentSettings } from '../agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../agent-setup/agent-setup-domain'
 import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
+import type { StudioPhoneReads } from '../backlog/backlog-domain'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../core/studio-agent-skills'
 import type {
@@ -175,6 +176,8 @@ export type StudioRpcConnectionOptions = {
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats: the `usageLimits.changed`, `usageLimitResumes.changed` and `scheduledMessages.changed` streams. */
   chatStores?: StudioChatStores
+  /** The projects' backlogs: the `backlog.changed` stream. */
+  phoneReads?: StudioPhoneReads
   agentSkills?: StudioAgentSkills
   /** The scheduled agents: the `schedules.changed` stream. */
   schedules?: StudioSchedulesDomain
@@ -1365,6 +1368,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'usageLimitResumes.changed', options.chatStores?.onUsageLimitResumesChanged ?? null),
     'scheduledMessages.changed': (id) =>
       subscribeFeed(id, 'scheduledMessages.changed', options.chatStores?.onScheduledMessagesChanged ?? null),
+    'backlog.changed': (id) => subscribeFeed(id, 'backlog.changed', options.phoneReads?.backlog.onChanged ?? null),
     'skillSources.updated': (id) =>
       subscribeFeed(id, 'skillSources.updated', options.agentSkills?.onSourcesUpdated ?? null),
     'schedules.changed': (id) => subscribeFeed(id, 'schedules.changed', options.schedules?.onChanged ?? null),

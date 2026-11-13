@@ -21,10 +21,6 @@ import {
   type LaunchedAgentLink,
   type LaunchLinkResult,
 } from '../agent-launch-notices'
-import {
-  mobileSnapshotCollections,
-  retiredMobileSnapshotCollections,
-} from '../../../packages/studio-protocol/src/mobile-control'
 import { workspaceStoresRoot } from '../workspace-store'
 import { refuseWorkspaceFolder } from './workspace-folder-guard'
 import type { Workspace } from '../../renderer/src/types/workspace'
@@ -322,29 +318,7 @@ export type AutomationBackends = {
    * — one source of truth, not a second fetch path.
    */
   readMarketplaceRegistry(input?: MarketplaceRegistryReadInput): Promise<MarketplaceRegistryReadResult>
-  /**
-   * The mobile companion's read model and command lane. The phone pairs with
-   * and talks to this desktop only over the tailnet gateway, so this is the
-   * whole of its connection: snapshots come back in path-token form — the
-   * phone round-trips `ws_` tokens, never local paths — and commands run
-   * through the MobileControlCommandService.
-   */
-  mobileControl: {
-    readSnapshot(input: {
-      include?: string[]
-      knownSnapshotVersion?: string
-    }): Promise<{ unchanged: true; snapshotVersion: string } | { unchanged: false; snapshot: Record<string, unknown> }>
-    dispatchCommand(input: {
-      type: string
-      payload: Record<string, unknown>
-      deviceId: string
-      idempotencyKey: string
-      expectedSnapshotVersion?: string
-    }): Promise<
-      | { ok: true; commandId: string; commandType: string; executedAt: string; data: unknown }
-      | { ok: false; code: string; message: string }
-    >
-  }
+
   now?: () => number
   sleep?: (ms: number) => Promise<void>
 }
@@ -982,125 +956,6 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
         workspaces,
         activeWorkspaceId: state.activeWorkspaceId,
         primaryWindowId: state.primaryWorkspaceWindowId,
-      })
-    },
-  }
-
-  // ── Mobile companion over the gateway ────────────────────────────────────
-  // The phone's snapshot and command lane, and its only one: the companion
-  // pairs over the tailnet and reaches the desktop through these two tools. The
-  // command allowlist is deliberately narrow; widening it is a decision, not a
-  // default.
-  // The pull request reads only read (2026-10-30): the phone's viewer.
-  const MOBILE_GATEWAY_COMMAND_TYPES = ['backlog.update', 'pullRequest.read', 'pullRequest.diff'] as const
-
-  const workspaceSnapshot: McpToolRegistration = {
-    name: 'workspace.snapshot',
-    description:
-      'The mobile companion snapshot: backlog and the dev servers published on the tailnet as one ' +
-      'versioned document, in path-token form (ws_ tokens round-trip; local paths never leave ' +
-      'the desktop). Pass knownSnapshotVersion from the previous read to get an {unchanged: true} marker ' +
-      'instead of the full document when nothing moved.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        include: {
-          type: 'array',
-          items: { type: 'string', enum: [...mobileSnapshotCollections, ...retiredMobileSnapshotCollections] },
-          description:
-            `Collections to include (${mobileSnapshotCollections.join(', ')}). Defaults to all of them. ` +
-            `${retiredMobileSnapshotCollections.join(', ')} is retired: accepted, and answered with nothing.`,
-        },
-        knownSnapshotVersion: { type: 'string', description: 'The snapshotVersion returned by the previous read.' },
-      },
-      additionalProperties: false,
-    },
-    handler: async (args) => {
-      const invalidArray = firstInvalidStringArray(args, ['include'])
-      if (invalidArray) return invalidArray
-      // Checked here rather than left to the bridge, which drops unknown names:
-      // a caller that misspells a collection would otherwise get no hint that
-      // its scope was ignored. A retired name is not a misspelling — phones
-      // built before automations left the wire still ask for them on every
-      // read — so it is accepted and serves nothing.
-      const collections: readonly string[] = [...mobileSnapshotCollections, ...retiredMobileSnapshotCollections]
-      const unknownCollection = optionalStringArray(args.include)?.find((entry) => !collections.includes(entry))
-      if (unknownCollection !== undefined) {
-        return failure(
-          'invalid_arguments',
-          `"include" names "${unknownCollection}", which is not a snapshot collection. ` +
-            `Collections: ${mobileSnapshotCollections.join(', ')}.`,
-        )
-      }
-      const invalidString = firstInvalidOptionalString(args, ['knownSnapshotVersion'])
-      if (invalidString) return invalidString
-      const result = await backends.mobileControl.readSnapshot({
-        include: optionalStringArray(args.include),
-        knownSnapshotVersion: optionalString(args.knownSnapshotVersion),
-      })
-      return success(result)
-    },
-  }
-
-  const workspaceMobileCommand: McpToolRegistration = {
-    name: 'workspace.mobile_command',
-    description:
-      'Dispatch one mobile-control command envelope from a paired companion device. ' +
-      `Served types: ${MOBILE_GATEWAY_COMMAND_TYPES.join(', ')}. ` +
-      'The device identity comes from the transport, never from the arguments.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        type: { type: 'string', description: `One of: ${MOBILE_GATEWAY_COMMAND_TYPES.join(', ')}.` },
-        payload: {
-          type: 'object',
-          description: 'The command payload, exactly as the mobile-control protocol defines it.',
-        },
-        idempotencyKey: { type: 'string', description: 'Client-chosen key; replays return the recorded result.' },
-        expectedSnapshotVersion: { type: 'string' },
-      },
-      required: ['type', 'payload', 'idempotencyKey'],
-      additionalProperties: false,
-    },
-    handler: async (args, context) => {
-      const type = requireString(args, 'type')
-      if (typeof type !== 'string') return type
-      const idempotencyKey = requireString(args, 'idempotencyKey')
-      if (typeof idempotencyKey !== 'string') return idempotencyKey
-      const invalidString = firstInvalidOptionalString(args, ['expectedSnapshotVersion'])
-      if (invalidString) return invalidString
-      if (!(MOBILE_GATEWAY_COMMAND_TYPES as readonly string[]).includes(type)) {
-        return failure(
-          'command_not_supported',
-          `Mobile command "${type}" is not served over the gateway (served: ${MOBILE_GATEWAY_COMMAND_TYPES.join(', ')}).`,
-        )
-      }
-      const payload = args.payload
-      if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-        return failure('invalid_arguments', '"payload" must be an object.')
-      }
-      // The transport proved which paired device is calling (remote-tailnet
-      // metadata is set server-side); a local-socket caller is the owner's own
-      // machine and is labelled as such rather than trusted to name a device.
-      const metadata = context?.metadata
-      const deviceId =
-        metadata?.kind === 'remote-tailnet' && metadata.deviceId
-          ? metadata.deviceId
-          : `local:${metadata?.kind ?? 'unknown'}`
-      const result = await backends.mobileControl.dispatchCommand({
-        type,
-        payload: payload as Record<string, unknown>,
-        deviceId,
-        idempotencyKey,
-        expectedSnapshotVersion: optionalString(args.expectedSnapshotVersion),
-      })
-      if (!result.ok) return failure(result.code, result.message)
-      return success({
-        ok: true,
-        commandId: result.commandId,
-        commandType: result.commandType,
-        executedAt: result.executedAt,
-        data: (result.data ?? null) as Record<string, unknown> | null,
       })
     },
   }
@@ -2920,8 +2775,6 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     workspaceExtensions,
     workspaceCreate,
     workspaceList,
-    workspaceMobileCommand,
-    workspaceSnapshot,
     workspaceStatus,
     agentLaunch,
     agentStatus,
@@ -3292,21 +3145,6 @@ function requireString(args: Record<string, unknown>, key: string): string | Mcp
     return failure('invalid_arguments', `"${key}" must be a non-empty string.`)
   }
   return value.trim()
-}
-
-function firstInvalidStringArray(args: Record<string, unknown>, keys: string[]): McpToolResult | null {
-  for (const key of keys) {
-    const value = args[key]
-    if (value === undefined) continue
-    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim().length === 0)) {
-      return failure('invalid_arguments', `"${key}" must be an array of non-empty strings.`)
-    }
-  }
-  return null
-}
-
-function optionalStringArray(value: unknown): string[] | undefined {
-  return Array.isArray(value) ? (value as string[]) : undefined
 }
 
 function optionalString(value: unknown): string | undefined {

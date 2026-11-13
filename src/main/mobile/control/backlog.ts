@@ -18,10 +18,10 @@ import { formatBacklogDisplayId, isValidBacklogKey, parseBacklogNumericId } from
 import type { BacklogFrontmatterFields } from '../../backlog-service'
 import type { BacklogObjectRecordPayload } from '../../../shared/electron-api'
 import type {
-  MobileControlBacklogEpicSnapshot,
-  MobileControlBacklogItemSnapshot,
-  MobileControlBacklogWorkspaceSnapshot,
-} from '../../../../packages/studio-protocol/src/mobile-control'
+  StudioBacklogEpic,
+  StudioBacklogItem,
+  StudioBacklogWorkspace,
+} from '../../../../packages/studio-protocol/src/public'
 import { MobileControlCommandError } from './command-error'
 import {
   backlogAbsolutePath,
@@ -43,7 +43,7 @@ const maxExcerptCharacters = 280
 export async function readMobileBacklogWorkspaceSnapshot(
   workspaceRoot: string,
   generatedAt: string,
-): Promise<MobileControlBacklogWorkspaceSnapshot | null> {
+): Promise<StudioBacklogWorkspace | null> {
   const root = resolve(workspaceRoot)
   const backlogLocation = await readBacklogLocation(root)
   const { items, present } = await readActiveBacklogItems(root, backlogLocation)
@@ -99,8 +99,8 @@ async function readBacklogWorkspaceKey(root: string): Promise<string> {
 async function buildBacklogEpics(
   root: string,
   backlogLocation: BacklogLocation,
-  items: MobileControlBacklogItemSnapshot[],
-): Promise<MobileControlBacklogEpicSnapshot[]> {
+  items: StudioBacklogItem[],
+): Promise<StudioBacklogEpic[]> {
   const epicsDir = backlogAbsolutePath(backlogLocation, EPICS_RELATIVE_PATH)
   let epicFiles: string[]
   try {
@@ -120,7 +120,7 @@ async function buildBacklogEpics(
     rollups.set(item.epic, rollup)
   }
 
-  const epics: MobileControlBacklogEpicSnapshot[] = []
+  const epics: StudioBacklogEpic[] = []
   const key = await readBacklogWorkspaceKey(root)
   for (const file of epicFiles.sort()) {
     const slug = file.replace(/\.mdx?$/i, '')
@@ -154,7 +154,7 @@ async function buildBacklogEpics(
 async function readActiveBacklogItems(
   root: string,
   backlogLocation: BacklogLocation,
-): Promise<{ items: MobileControlBacklogItemSnapshot[]; present: boolean }> {
+): Promise<{ items: StudioBacklogItem[]; present: boolean }> {
   const scannedPaths = await scanBacklogMarkdownPaths(backlogLocation)
   const storeResult = await readBacklogObjectStore(root)
   let records: BacklogObjectRecordPayload[] = storeResult.ok ? storeResult.store.items : []
@@ -235,7 +235,7 @@ async function scanBacklogMarkdownPaths(backlogLocation: BacklogLocation): Promi
 async function toBacklogItemSnapshot(
   backlogLocation: BacklogLocation,
   record: BacklogObjectRecordPayload,
-): Promise<MobileControlBacklogItemSnapshot> {
+): Promise<StudioBacklogItem> {
   let raw: string | null = null
   try {
     const source = backlogAbsolutePath(backlogLocation, record.source.relativePath)
@@ -274,7 +274,7 @@ async function toBacklogItemSnapshot(
   }
 }
 
-function emptyBacklogWorkspaceSnapshot(root: string, generatedAt: string): MobileControlBacklogWorkspaceSnapshot {
+function emptyBacklogWorkspaceSnapshot(root: string, generatedAt: string): StudioBacklogWorkspace {
   return {
     workspaceId: `backlog:${root}`,
     workspacePath: root,
@@ -300,7 +300,7 @@ function extractExcerpt(body: string): string {
   return excerpt.length > maxExcerptCharacters ? `${excerpt.slice(0, maxExcerptCharacters - 1)}…` : excerpt
 }
 
-const statusOrder: Record<MobileControlBacklogItemSnapshot['status'], number> = {
+const statusOrder: Record<StudioBacklogItem['status'], number> = {
   needs_input: 0,
   in_progress: 1,
   ready: 2,
@@ -309,7 +309,7 @@ const statusOrder: Record<MobileControlBacklogItemSnapshot['status'], number> = 
   archived: 5,
 }
 
-function compareBacklogItems(left: MobileControlBacklogItemSnapshot, right: MobileControlBacklogItemSnapshot): number {
+function compareBacklogItems(left: StudioBacklogItem, right: StudioBacklogItem): number {
   const statusDelta = statusOrder[left.status] - statusOrder[right.status]
   if (statusDelta !== 0) return statusDelta
   const leftTime = left.updatedAt ? Date.parse(left.updatedAt) : 0
@@ -318,7 +318,7 @@ function compareBacklogItems(left: MobileControlBacklogItemSnapshot, right: Mobi
   return left.relativePath.localeCompare(right.relativePath)
 }
 
-function latestTimestamp(items: MobileControlBacklogItemSnapshot[]): string | null {
+function latestTimestamp(items: StudioBacklogItem[]): string | null {
   let latest: string | null = null
   for (const item of items) {
     if (item.updatedAt && (!latest || item.updatedAt > latest)) {

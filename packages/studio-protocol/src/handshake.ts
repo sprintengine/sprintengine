@@ -176,6 +176,18 @@ export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' a
  */
 export const STUDIO_CHAT_STORES_CAPABILITY = 'chat-stores' as const
 
+/** The backlogs of the projects a Studio holds (`backlog.ts`): `backlog.list`, `.update` and `backlog.changed`. */
+export const STUDIO_BACKLOG_CAPABILITY = 'backlog' as const
+
+/** The web pages a Studio's machine publishes on the tailnet (`shares.list`). */
+export const STUDIO_SHARES_CAPABILITY = 'shares' as const
+
+/**
+ * One pull request read in full, by its URL: its checks, reviews and files
+ * (`pullRequests.detail`), and a page of one file's diff (`pullRequests.diff`).
+ */
+export const STUDIO_PULL_REQUEST_READS_CAPABILITY = 'pull-request-reads' as const
+
 /**
  * The skills, design systems and cards a Studio's agents are given:
  * `skillSources.*`, `skills.*`, `skillPlugins.*`, `workspaceSkills.list`,
@@ -239,6 +251,9 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_AGENT_SKILLS_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,
   STUDIO_FILE_SYSTEM_CAPABILITY,
+  STUDIO_BACKLOG_CAPABILITY,
+  STUDIO_SHARES_CAPABILITY,
+  STUDIO_PULL_REQUEST_READS_CAPABILITY,
 ] as const
 
 /**

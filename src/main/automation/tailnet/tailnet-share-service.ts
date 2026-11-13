@@ -1,4 +1,4 @@
-import type { MobileControlWebTargetSnapshot } from '../../../../packages/studio-protocol/src/mobile-control'
+import type { StudioShare } from '../../../../packages/studio-protocol/src/public'
 import {
   EMPTY_TAILNET_SHARE_STATUS,
   type TailnetShareResult,
@@ -120,7 +120,7 @@ export function createTailnetShareService(deps: TailscaleServeDeps = {}): Tailne
  * Never throws. A snapshot that cannot reach Tailscale is a snapshot with no
  * web targets, not a failed snapshot.
  */
-export async function readTailnetWebTargets(service: TailnetShareService): Promise<MobileControlWebTargetSnapshot[]> {
+export async function readTailnetWebTargets(service: TailnetShareService): Promise<StudioShare[]> {
   try {
     const status = await service.readStatus()
     if (!status.available || !status.dnsName) return []

@@ -41,6 +41,7 @@ function harness() {
   let provided = null;
   const reads = { snapshot: 0 };
   const intervals = new Map();
+  const backlogWatchers = new Set();
   let nextTimer = 0;
   const appState = new Set();
   const react = {
@@ -111,17 +112,19 @@ function harness() {
             },
           };
         if (name.endsWith("/components/Toast")) return { useToast: () => ({ show() {} }) };
-        if (name.endsWith("/api/tailnetControlClient")) {
-          const real = localRequire(name);
+        if (name.endsWith("/api/desktopReads")) {
           return {
-            ...real,
-            tailnetClientForSession: () => ({
-              readSnapshot: async () => {
-                reads.snapshot++;
-                await tick();
-                return { ok: true, data: { unchanged: true } };
-              },
-            }),
+            readDesktopSnapshot: async () => {
+              reads.snapshot++;
+              await tick();
+              return { ok: true, data: { backlog: [], webTargets: [], canUpdateBacklog: false, canReadPullRequests: false } };
+            },
+            // The desktop's `backlog.changed`, heard while a screen draws from the snapshot.
+            watchDesktopBacklog: (_target, onChanged) => {
+              backlogWatchers.add(onChanged);
+              return () => backlogWatchers.delete(onChanged);
+            },
+            updateDesktopBacklogItem: async () => ({ ok: true, data: { item: null } }),
           };
         }
         return localRequire(name);
@@ -157,10 +160,15 @@ function harness() {
   return {
     render,
     reads,
-    /** Twenty seconds pass: every polling interval fires once. */
+    /** Twenty seconds pass: every interval fires once (none should be set). */
     poll() {
       for (const fn of [...intervals.values()]) fn();
     },
+    /** The desktop says a backlog moved. */
+    desktopSays() {
+      for (const fn of [...backlogWatchers]) fn();
+    },
+    backlogWatchers,
     foreground() {
       for (const listener of [...appState]) listener("active");
     },
@@ -188,7 +196,7 @@ test("a phone on the chat list does not read the desktop snapshot nothing on it 
   assert.equal(h.reads.snapshot, 0);
 });
 
-test("a screen that draws from the snapshot has it read at once, polled while open, and let go when it closes", async () => {
+test("a screen that draws from the snapshot has it read at once, again when the desktop says it moved, and let go when it closes", async () => {
   const h = harness();
   h.render();
   await tick();
@@ -199,17 +207,21 @@ test("a screen that draws from the snapshot has it read at once, polled while op
   assert.equal(h.reads.snapshot, 1, "read when the screen opens");
   h.poll();
   await tick();
+  assert.equal(h.reads.snapshot, 1, "nothing polls");
+  h.desktopSays();
+  await tick();
   h.foreground();
   await tick();
   h.render();
-  assert.equal(h.reads.snapshot, 3, "polled, and read on foreground, while it is open");
+  assert.equal(h.reads.snapshot, 3, "read when the desktop says it moved, and on foreground, while it is open");
   release();
   release();
   h.render();
-  h.poll();
+  h.desktopSays();
   h.foreground();
   await tick();
   h.render();
   assert.equal(h.reads.snapshot, 3, "nothing once it has closed");
+  assert.equal(h.backlogWatchers.size, 0, "the desktop is no longer listened to");
   assert.equal(h.render().snapshotState, "ready", "what was read stays");
 });

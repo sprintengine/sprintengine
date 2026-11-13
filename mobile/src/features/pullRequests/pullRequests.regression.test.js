@@ -1,5 +1,5 @@
 /* global __dirname */
-// The pull request viewer: the two reads it sends the desktop, how their
+// The pull request viewer: the two reads it asks the desktop's Studio, how their
 // answers are read, how a desktop too old to serve them is told apart, and the
 // words the screen says about checks, reviews and files.
 const assert = require("node:assert/strict");
@@ -24,10 +24,10 @@ const {
   remarksSummaryWords,
   reviewSummaryWords,
 } = require(path.join(buildRoot, "src/features/pullRequests/pullRequestView.js"));
-const { tailnetGrantAllows, readSnapshotCommands } = require(path.join(buildRoot, "src/api/tailnetControlClient.js"));
+const { closeDesktopStudios } = require(path.join(buildRoot, "src/api/desktopStudio.js"));
+const { fakeDesktopStudio } = require(path.join(buildRoot, "src/__verify__/fakeDesktopStudio.js"));
 const packageBuild = path.resolve(buildRoot, "../packages/studio-protocol/src");
-const { mobileControlProtocolVersion } = require(path.join(packageBuild, "mobile-control.js"));
-const { validateMobileControlCommand } = require(path.join(packageBuild, "mobile-control-commands.js"));
+const { STUDIO_PULL_REQUEST_READS_METHODS } = require(path.join(packageBuild, "pull-request-reads.js"));
 
 const URL = "https://github.com/acme/app/pull/42";
 const detail = (overrides = {}) => ({
@@ -114,73 +114,39 @@ test("a diff page is read only for the file asked about, and pages join into one
   assert.deepEqual(diffProgress([]), { more: false, read: 0, total: 0 });
 });
 
-test("the reads go to the desktop as mobile-control commands, and a desktop without them is told apart", async () => {
-  const sent = [];
-  let answer = { ok: true, data: detail() };
-  const api = createPullRequestApi({
-    async sendCommand(command) {
-      sent.push(command);
-      return typeof answer === "function" ? answer(command) : answer;
-    },
-  });
-  assert.equal((await api.read(URL)).data.number, 42);
-  assert.deepEqual(sent[0], { type: "pullRequest.read", payload: { url: URL } });
+let desktops = 0;
+const target = () => ({ baseUrl: `http://mac-mini-${++desktops}:4100`, deviceToken: "mctn_example" });
 
-  answer = (command) => ({
-    ok: true,
-    data: {
-      path: command.payload.path,
-      patch: "x",
-      offset: command.payload.offset ?? 0,
-      nextOffset: null,
-      totalLines: 1,
-    },
-  });
+test("the reads are the desktop's pullRequests.detail and .diff, and a desktop without them is told apart", async () => {
+  let answer = () => detail();
+  const desktop = fakeDesktopStudio({ answer: (method, params) => answer(method, params) });
+  const api = createPullRequestApi(target(), { fetchImpl: desktop.fetchImpl, WebSocket: desktop.WebSocket });
+  assert.equal((await api.read(URL)).data.number, 42);
+  assert.deepEqual(desktop.requests[0], { method: "pullRequests.detail", params: { url: URL } });
+
+  answer = (_method, params) => ({ url: URL, path: params.path, patch: "x", offset: params.offset ?? 0, nextOffset: null, totalLines: 1 });
   await api.diff(URL, "src/a.ts");
   await api.diff(URL, "src/a.ts", 300);
-  assert.deepEqual(sent[1].payload, { url: URL, path: "src/a.ts" });
-  assert.deepEqual(sent[2].payload, { url: URL, path: "src/a.ts", offset: 300 });
+  assert.deepEqual(desktop.requests[1], { method: "pullRequests.diff", params: { url: URL, path: "src/a.ts" } });
+  assert.deepEqual(desktop.requests[2].params, { url: URL, path: "src/a.ts", offset: 300 });
 
-  answer = { ok: true, data: { nonsense: true } };
+  answer = () => ({ nonsense: true });
   assert.equal((await api.read(URL)).ok, false, "an answer out of shape is no answer");
 
-  // An older desktop: its validator does not know the command, or its gateway does not serve it.
-  assert.equal(
-    pullRequestReadsUnsupported({
-      ok: false,
-      errorCode: "invalid_payload",
-      message: "command.type must be a supported mobile-control command",
-    }),
-    true,
-  );
-  assert.equal(pullRequestReadsUnsupported({ ok: false, errorCode: "command_not_supported" }), true);
-  assert.equal(
-    pullRequestReadsUnsupported({ ok: false, errorCode: "internal_error", message: "GitHub did not answer in time." }),
-    false,
-  );
+  // A desktop from before the protocol, or without the reads: one to update.
+  answer = () => ({ error: { code: "unknown_method", message: "No method." } });
+  assert.equal(pullRequestReadsUnsupported(await api.read(URL)), true);
+  answer = () => ({ error: { code: "unavailable", message: "GitHub did not answer in time." } });
+  assert.equal(pullRequestReadsUnsupported(await api.read(URL)), false);
+  closeDesktopStudios();
 });
 
-test("the viewer is offered where the grant covers the reads, and the phone's protocol knows them", () => {
-  assert.equal(tailnetGrantAllows(["workspace:operate"], "pullRequest.read"), true);
-  assert.equal(tailnetGrantAllows(["workspace:read", "conversation:read"], "pullRequest.read"), false);
-  assert.deepEqual(
-    [...readSnapshotCommands(["pullRequest.read", "pullRequest.diff", "later.thing"])],
-    ["pullRequest.read", "pullRequest.diff"],
-  );
-  const command = (type, payload) => ({
-    protocolVersion: mobileControlProtocolVersion,
-    commandId: "c1",
-    type,
-    issuedAt: "2026-10-30T12:00:00.000Z",
-    deviceId: "android-phone",
-    payload,
-  });
-  assert.equal(validateMobileControlCommand(command("pullRequest.diff", { url: URL, path: "f", offset: 3 })).ok, true);
-  assert.equal(
-    validateMobileControlCommand(command("pullRequest.diff", { url: URL, path: "f", offset: 1.5 })).ok,
-    false,
-  );
-  assert.equal(validateMobileControlCommand(command("pullRequest.read", {})).ok, false);
+test("the reads' params are held to the protocol's own rules", () => {
+  const diff = STUDIO_PULL_REQUEST_READS_METHODS["pullRequests.diff"].params;
+  const read = STUDIO_PULL_REQUEST_READS_METHODS["pullRequests.detail"].params;
+  assert.equal(diff({ url: URL, path: "f", offset: 3 }).ok, true);
+  assert.equal(diff({ url: URL, path: "f", offset: 1.5 }).ok, false);
+  assert.equal(read({}).ok, false);
 });
 
 test("the viewer's words: state, checks, reviews, comments, branches and files", () => {

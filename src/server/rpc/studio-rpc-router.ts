@@ -56,6 +56,8 @@ import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
 import type { StudioSchedulesDomain } from '../schedules/schedules-domain'
 import { createStudioSchedulesHandlers } from './studio-schedules'
+import type { StudioPhoneReads } from '../backlog/backlog-domain'
+import { createStudioPhoneReadsHandlers } from './studio-phone-reads'
 import {
   externalStudioUpdates,
   MANUAL_UPDATE_WORDS,
@@ -181,6 +183,8 @@ export type StudioRpcRouterOptions = {
   chatStores?: StudioChatStores
   /** The scheduled agents this Studio runs; without them, `schedules.*` is answered `unavailable`. */
   schedules?: StudioSchedulesDomain
+  /** The projects' backlogs, the machine's shares and the pull request reads; without them, `backlog.*`, `shares.list` and `pullRequests.detail`/`.diff` are answered `unavailable`. */
+  phoneReads?: StudioPhoneReads
   uploads?: StudioUploads
   /** How this Studio is updated; without it, by hand (`update.status` says so, `update.start` is refused). */
   updates?: StudioUpdates
@@ -1690,6 +1694,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 
     ...createStudioSchedulesHandlers({
       ...(options.schedules ? { schedules: options.schedules } : {}),
+      kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+    }),
+
+    // ── Backlogs, shares, pull request reads ───────────────────────────────
+
+    ...createStudioPhoneReadsHandlers({
+      ...(options.phoneReads ? { reads: options.phoneReads } : {}),
       kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
     }),
 

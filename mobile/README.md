@@ -223,9 +223,14 @@ under `/tailnet/v1/`:
 - **Pairing and identity:** `pair` spends the one-time link for a device token;
   `identity` reports what the desktop speaks and whether the pairing still
   stands (`src/api/tailnetControlClient.ts`, `src/api/tailnetTransport.ts`).
-- **Tools:** `mcp` takes JSON-RPC tool calls such as `workspace.list`,
-  `workspace.snapshot` and `conversation.create`
-  (`src/api/tailnetWorkspaces.ts`, `src/api/conversationLaunch.ts`).
+- **The Studio protocol:** `studio`, one socket per desktop opened with a
+  short-lived ticket, carries the projects and New chat, the backlogs and
+  shares (`backlog.*`, `shares.list`, heard moving by `backlog.changed`), the
+  pull request viewer (`src/api/desktopStudio.ts`,
+  `src/api/desktopReads.ts`, `src/api/tailnetWorkspaces.ts`,
+  `src/api/conversationLaunch.ts`).
+- **Tools:** `mcp` takes the JSON-RPC tool calls the phone has not yet moved
+  onto the protocol.
 - **Live chats:** a WebSocket per open chat, opened with a short-lived ticket
   from `ws-ticket`, streams the conversation's events
   (`src/api/tailnetConversations.ts`, `src/api/conversationWire.ts`).
@@ -237,8 +242,8 @@ packages, imported from the repository's `packages/` folder as source:
 a frame, event or listed chat this build does not know is passed over or listed
 as unknown rather than refused. Metro
 watches that folder (`metro.config.js`), and the test build compiles it beside
-the app (`tsconfig.test.json`). The mobile-control wire is imported the same
-way, from `packages/studio-protocol/src/mobile-control.ts`. The policy for wire
+the app (`tsconfig.test.json`). The Studio protocol is imported the same
+way, from `packages/studio-protocol`. The policy for wire
 changes is `docs/compatibility.md` at the repository root.
 
 `docs/conversations.md` describes how the chat list and a chat behave in

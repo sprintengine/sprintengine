@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added (the phone's reads)
+
+- **Backlogs, shares and pull request reads are protocol methods.**
+  `backlog.list` with the `backlog.changed` stream (`backlog:read`) and
+  `backlog.update` (`backlog:operate`, a mutation under its `commandId`), behind
+  `backlog`; `shares.list` (`workspaces:read`) behind `shares`;
+  `pullRequests.detail` and `.diff` (`workspaces:operate`) behind
+  `pull-request-reads`. New scopes `backlog:read` and `backlog:operate`
+  (operate carries read) and `workspaces:operate`.
+
+### Removed
+
+- **The mobile-control wire** (`src/mobile-control.ts` and
+  `src/mobile-control-commands.ts`): its snapshot, command envelope, version
+  window and validators. Its backlog and pull request shapes live on as
+  `StudioBacklog*` (`backlog.ts`) and `StudioPullRequestDetail` /
+  `StudioPullRequestDiffPage` (`pull-request-reads.ts`).
+
 ### Added (modules)
 
 - **What runs on a Studio is changed through it.** `module.list` (scope

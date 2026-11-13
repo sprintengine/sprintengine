@@ -27,6 +27,9 @@ import { createStudioAgentSettings } from '../agent-settings/agent-settings-doma
 import { createStudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioSchedulesDomain } from '../schedules/schedules-domain'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
+import { createStudioPhoneReads } from '../backlog/backlog-domain'
+import { createTailnetShareService, readTailnetWebTargets } from '../../main/automation/tailnet/tailnet-share-service'
+import { listKnownWorkspaceRoots, uniqueResolvedRoots } from '../../main/workspace-roots'
 
 // The Studio RPC over a core: the owner socket in `<dataDir>/run` that local
 // applications follow, drive and start chats through. It serves the same
@@ -159,6 +162,16 @@ export function createStudioRpc(
         null,
       defaultCli: () => effectiveAgentLaunchSettings(core.agentLaunchSettings.get()).lastSelectedCli ?? null,
     }),
+    // What the phone reads beside its chats: the projects' backlogs (each
+    // item's status and triage it may change), the pages this machine shares
+    // on the tailnet, and a pull request read in full. No local path leaves.
+    phoneReads: (() => {
+      const shareService = createTailnetShareService()
+      return createStudioPhoneReads({
+        roots: () => uniqueResolvedRoots(listKnownWorkspaceRoots(core.workspaceSyncService.getSnapshot())),
+        readShares: () => readTailnetWebTargets(shareService),
+      })
+    })(),
     log: (message) => {
       void writeDiagnosticLog({ level: 'warning', source: 'workspace', title: 'Local app socket', message })
     },

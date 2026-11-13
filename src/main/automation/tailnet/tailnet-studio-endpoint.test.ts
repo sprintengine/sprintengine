@@ -216,7 +216,7 @@ async function until(check: () => boolean, what: string): Promise<void> {
   assert.fail(`timed out waiting for ${what}`)
 }
 
-test('a device is never an owner, and its scopes carry only the chat and workspace reach it was paired with', () => {
+test('a device is never an owner, and its scopes carry only the chat, workspace and backlog reach it was paired with', () => {
   const base = { id: 'd1', name: 'android-phone', createdAt: '', lastSeenAt: null, origin: { kind: 'code', by: null } }
   const full = tailnetDeviceGrant({
     ...base,
@@ -224,6 +224,8 @@ test('a device is never an owner, and its scopes carry only the chat and workspa
   } as never)
   assert.equal(full.owner, false)
   assert.deepEqual([...full.scopes].sort(), [
+    'backlog:operate',
+    'backlog:read',
     'conversation:create',
     'conversation:operate',
     'conversation:read',

@@ -47,6 +47,7 @@ import type { CliRuntimes } from '../cli-runtimes'
 import type { StudioAgentSettings } from '../../server/agent-settings/agent-settings-domain'
 import type { StudioAgentSetup } from '../../server/agent-setup/agent-setup-domain'
 import type { StudioSchedulesDomain } from '../../server/schedules/schedules-domain'
+import type { StudioPhoneReads } from '../../server/backlog/backlog-domain'
 import type { StudioChatStores } from '../../server/chat-stores/chat-stores-domain'
 import type { StudioAgentSkills } from '../../server/core/studio-agent-skills'
 import type { StudioUpdates } from '../../server/update/studio-updates'
@@ -191,6 +192,8 @@ export type StudioRpcServiceOptions = {
   agentSetup?: StudioAgentSetup
   /** What the Studio keeps beside its chats (`chat-stores`). */
   chatStores?: StudioChatStores
+  /** The projects' backlogs, the machine's shares and the pull request reads. */
+  phoneReads?: StudioPhoneReads
   /** The skills, design systems and cards the agents are given (`agent-skills`): the core's, which every Studio gives. */
   agentSkills?: StudioAgentSkills
   /** The scheduled agents this Studio runs (`schedules`). */
@@ -400,6 +403,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.agentSettings ? { agentSettings: options.agentSettings } : {}),
       ...(options.agentSetup ? { agentSetup: options.agentSetup } : {}),
       ...(options.chatStores ? { chatStores: options.chatStores } : {}),
+      ...(options.phoneReads ? { phoneReads: options.phoneReads } : {}),
       ...(options.agentSkills ? { agentSkills: options.agentSkills } : {}),
       ...(options.schedules ? { schedules: options.schedules } : {}),
       ...(options.updates ? { updates: options.updates } : {}),

@@ -441,6 +441,12 @@ test('every method the server serves has its call in the SDK, under the same sco
       StudioChatStoresMethod,
       string
     >),
+    // The phone's reads beside its chats (`backlog.ts`, `pull-request-reads.ts`), called by name.
+    'backlog.list': 'request',
+    'backlog.update': 'request',
+    'shares.list': 'request',
+    'pullRequests.detail': 'request',
+    'pullRequests.diff': 'request',
     // And the skills, design systems and cards they are given.
     ...(Object.fromEntries(Object.keys(STUDIO_AGENT_SKILLS_METHODS).map((method) => [method, 'request'])) as Record<
       StudioAgentSkillsMethod,
