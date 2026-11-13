@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { createReadStream, existsSync } from 'node:fs'
+import { chmod, copyFile, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import {
+  MAX_ADOPTED_PART_BYTES,
   MAX_ADOPTED_RECORDS,
   STUDIO_MAX_UPLOAD_BYTES,
   type StudioAdoptedRecord,
@@ -16,6 +17,7 @@ import type { EnvironmentClients } from '../../shared/environment-clients'
 import { machinePathsIn } from '../../shared/machine-path-edge'
 import { machineSpellingOf, type MachineSpelling } from '../../shared/machine-spelling'
 import { adoptedRecordDigest } from './environment-adoption'
+import type { ChatSourceFile } from './environment-chat-sources'
 
 // The hand-over of what this desktop kept for the chats another environment
 // holds (design-environment-migration's "Hand-over spec"; design-wsl-ssh-direct
@@ -61,6 +63,12 @@ export type MigratingRecord = {
     images?: Array<{ path: string; name: string; mediaType: string; promptPath?: string }>
     files?: Array<{ path: string; name: string }>
   }
+  /**
+   * A chat this desktop ran itself: the files it keeps here, carried in
+   * parts. Not copied ahead like a message's: this desktop's copies stay
+   * where they are, never written again, so they are read where they lie.
+   */
+  chatFiles?: ChatSourceFile[]
 }
 
 export type EnvironmentMigrationStores = {
@@ -109,6 +117,8 @@ type PendingCopy = {
   digest: string
   body: Record<string, unknown>
   files: Array<{ sha256: string; name: string; mediaType: string | null; bytes: number }>
+  /** A chat's files, where they lie on this disk, by the digest the machine checks each against. */
+  chatSources?: Array<{ sha256: string; source: string; bytes: number; parts: string[] }>
 }
 
 const JOURNAL_FILE = 'environment-migration.json'
@@ -164,6 +174,33 @@ export function createEnvironmentMigration(deps: {
     journal = next
   }
 
+  /** A file's sha-256, size, and the sha-256 of each part it goes in, read once without copying it. */
+  async function digestInParts(path: string): Promise<{ sha256: string; bytes: number; parts: string[] }> {
+    const whole = createHash('sha256')
+    const parts: string[] = []
+    let part = createHash('sha256')
+    let inPart = 0
+    let bytes = 0
+    for await (const chunk of createReadStream(path, { highWaterMark: 1024 * 1024 })) {
+      let data = chunk as Buffer
+      whole.update(data)
+      bytes += data.length
+      while (data.length > 0) {
+        const take = Math.min(data.length, MAX_ADOPTED_PART_BYTES - inPart)
+        part.update(data.subarray(0, take))
+        inPart += take
+        data = data.subarray(take)
+        if (inPart === MAX_ADOPTED_PART_BYTES) {
+          parts.push(part.digest('hex'))
+          part = createHash('sha256')
+          inPart = 0
+        }
+      }
+    }
+    if (inPart > 0) parts.push(part.digest('hex'))
+    return { sha256: whole.digest('hex'), bytes, parts }
+  }
+
   /** The record as the machine keeps it: its paths in the machine's spelling, nothing that says where it lives. */
   function forMachine(record: MigratingRecord): Record<string, unknown> {
     const body =
@@ -173,7 +210,15 @@ export function createEnvironmentMigration(deps: {
           ? (({ hostId: _h, nextRunAt: _n, waiting: _w, ...rest }) => rest)(record.body)
           : record.body
     const spelling = spellingOf(record.route)
-    return spelling ? machinePathsIn(spelling, body) : body
+    const spelled = spelling ? machinePathsIn(spelling, body) : body
+    // A saved approval's words name its folder too: said again in the machine's spelling.
+    if (record.kind === 'approval-rule') {
+      const before = (body.matcher as { prefix?: unknown } | undefined)?.prefix
+      const after = (spelled.matcher as { prefix?: unknown } | undefined)?.prefix
+      if (typeof before === 'string' && typeof after === 'string' && typeof spelled.label === 'string')
+        return { ...spelled, label: spelled.label.split(before).join(after) }
+    }
+    return spelled
   }
 
   /** Copy a record and what it carries under the migration's pending folder. */
@@ -214,9 +259,26 @@ export function createEnvironmentMigration(deps: {
         ...(attached.length ? { files: attached } : {}),
       }
     }
+    const chatSources: NonNullable<PendingCopy['chatSources']> = []
+    if (record.chatFiles) {
+      const listed: Array<Record<string, unknown>> = []
+      for (const entry of record.chatFiles) {
+        const read = await digestInParts(entry.source)
+        chatSources.push({ sha256: read.sha256, source: entry.source, bytes: read.bytes, parts: read.parts })
+        listed.push({ place: entry.place, path: entry.path, sha256: read.sha256, bytes: read.bytes, parts: read.parts })
+      }
+      body.files = listed
+    }
     const digest = adoptedRecordDigest(body)
     const file = `${record.kind}-${safeName(record.id)}.json`
-    const copy: PendingCopy = { kind: record.kind, id: record.id, digest, body, files }
+    const copy: PendingCopy = {
+      kind: record.kind,
+      id: record.id,
+      digest,
+      body,
+      files,
+      ...(chatSources.length ? { chatSources } : {}),
+    }
     await writeFile(join(folder, `${file}.tmp`), JSON.stringify(copy), { mode: 0o600 })
     await rename(join(folder, `${file}.tmp`), join(folder, file))
     return { kind: record.kind, id: record.id, digest, file }
@@ -276,12 +338,65 @@ export function createEnvironmentMigration(deps: {
 
   /** Stage one file through `uploads.*`, answering its upload id. */
   async function upload(client: StudioClient, folder: string, file: PendingCopy['files'][number]): Promise<string> {
-    const bytes = await readFile(join(folder, 'files', file.sha256))
+    return uploadBytes(client, await readFile(join(folder, 'files', file.sha256)), file.name, file.mediaType)
+  }
+
+  /**
+   * Stage the parts of the chats in `copies` for the machine to put back
+   * together, a few to a call (inside what a connection may stage at once),
+   * each read where it lies and checked against the digest it was planned
+   * with. A file changed since then stops the delivery; it is planned again.
+   */
+  async function stageChatParts(client: StudioClient, migrationId: string, copies: PendingCopy[]): Promise<void> {
+    let staged: Array<{ uploadId: string; digest: string }> = []
+    let stagedBytes = 0
+    let calls = 0
+    const flush = async () => {
+      if (staged.length === 0) return
+      await client.request('environment.adopt', {
+        commandId: `${migrationId}-parts-${Date.now()}-${calls++}`,
+        migrationId,
+        records: [],
+        files: staged,
+      })
+      staged = []
+      stagedBytes = 0
+    }
+    const sent = new Set<string>()
+    for (const copy of copies)
+      for (const source of copy.chatSources ?? []) {
+        const handle = await open(source.source, 'r')
+        try {
+          for (const [index, digest] of source.parts.entries()) {
+            if (sent.has(digest)) continue
+            const length = Math.min(MAX_ADOPTED_PART_BYTES, source.bytes - index * MAX_ADOPTED_PART_BYTES)
+            const bytes = Buffer.alloc(length)
+            await handle.read(bytes, 0, length, index * MAX_ADOPTED_PART_BYTES)
+            if (createHash('sha256').update(bytes).digest('hex') !== digest)
+              throw new Error(`${source.source} changed since it was planned.`)
+            if (staged.length >= 5 || stagedBytes + length > 4 * STUDIO_MAX_UPLOAD_BYTES) await flush()
+            staged.push({ uploadId: await uploadBytes(client, bytes, 'part', null), digest })
+            stagedBytes += length
+            sent.add(digest)
+          }
+        } finally {
+          await handle.close()
+        }
+      }
+    await flush()
+  }
+
+  async function uploadBytes(
+    client: StudioClient,
+    bytes: Buffer,
+    name: string,
+    mediaType: string | null,
+  ): Promise<string> {
     const begun = await client.request('uploads.begin', {
-      mediaType: file.mediaType ?? 'application/octet-stream',
+      mediaType: mediaType ?? 'application/octet-stream',
       byteLength: bytes.length,
-      name: file.name,
-      purpose: file.mediaType?.startsWith('image/') ? 'picture' : 'attachment',
+      name,
+      purpose: mediaType?.startsWith('image/') ? 'picture' : 'attachment',
     })
     for (let offset = 0; offset < bytes.length; offset += begun.chunkBytes)
       await client.request('uploads.append', {
@@ -319,6 +434,8 @@ export function createEnvironmentMigration(deps: {
           let partBytes = 0
           const send = async () => {
             if (part.length === 0) return
+            // A chat's parts go ahead of it, in calls that name no record.
+            await stageChatParts(reached.client, working.migrationId, part)
             const files: Array<{ uploadId: string; digest: string }> = []
             for (const copy of part)
               for (const file of copy.files) {

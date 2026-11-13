@@ -27,6 +27,7 @@ import { createStudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
 import type { GitHubTokenStore } from '../../main/github-token-store'
 import { createStudioDiscovery } from './studio-discovery'
 import type { StudioDiscovery } from '../rpc/studio-rpc-types'
+import { conversationWorkingRoot } from '../../shared/agent-state'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { backgroundWorkOf } from './background-work'
 import { chatsAreWorking } from './chats-working'
@@ -351,6 +352,10 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
       },
       workspaces: {
         has: (workspaceId) => core.workspaceRegistry.getRecord(workspaceId) !== null,
+        chatRoot: (workspaceId, agentId) => {
+          const record = core.workspaceRegistry.getRecord(workspaceId)
+          return record ? conversationWorkingRoot(record.agents[agentId], record.folderPath) : null
+        },
         // As a window's create is: the sync bus validates it and the registry normalizes and stamps it.
         adopt: (record) => {
           const windowId = primaryWindow()

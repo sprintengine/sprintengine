@@ -94,6 +94,7 @@ import { localConversationBackend, refuseOtherEnvironments, type ConversationBac
 import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/environment-clients'
 import { createEnvironmentReplicas } from '../environment/environment-replicas'
 import { createEnvironmentMigration } from '../environment/environment-migration'
+import { chatSourceFiles } from '../environment/environment-chat-sources'
 import { studioMigrationStores } from '../environment/environment-migration-stores'
 import { combineEnvironmentClients, createWslEnvironmentClients } from '../wsl/wsl-environment-clients'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
@@ -1264,6 +1265,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           usageLimitResumes,
           pullRequests: pullRequests.record,
           scheduledImages: (prompt) => keptImagesIn(prompt, dataDir),
+          chatSources: (chat) => chatSourceFiles({ dataDir, ...chat }),
+          approvalRules,
         }),
         log: (message) => {
           void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'Another machine', message })

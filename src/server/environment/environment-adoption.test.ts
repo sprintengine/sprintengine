@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -41,6 +41,8 @@ function fakeStores() {
     },
     workspaces: {
       has: (id) => workspaces.has(id),
+      // Every chat here works in the one folder the tests name.
+      chatRoot: (id) => (workspaces.has(id) ? '/home/dev/repo' : null),
       adopt(record) {
         calls.push(`workspace ${String(record.id)}`)
         workspaces.add(String(record.id))
@@ -517,6 +519,9 @@ test('a chat the desktop ran comes in parts, and is put back together where its 
     )
     if (process.platform !== 'win32') assert.equal(statSync(join(store, 'a1.jsonl')).mode & 0o777, 0o600)
 
+    // Its parts were let go once it was held, not left for the sweep.
+    assert.deepEqual(readdirSync(join(dataDir, 'environment-adoptions', 'parts', 'm-1')), [])
+
     // The same hand-over again is held, nothing written twice.
     const again = await adoption.adopt({ migrationId: 'm-1', records: [chat] })
     assert.deepEqual(again, { held: [{ kind: 'chat', id: 'ws-1:a1' }], conflicts: [] })
@@ -604,6 +609,13 @@ test('a chat names only its own files in its own places, and only in a workspace
       assert.equal(answer.held.length, 0, `${place} ${path}`)
       assert.match(answer.conflicts[0]!.reason, /one of its own names/, `${place} ${path}`)
     }
+    const elsewhere = await adoption.adopt({
+      migrationId: 'm-1',
+      records: [
+        record('chat', 'ws-1:a1', { workspaceId: 'ws-1', agentId: 'a1', workspaceRoot: '/home/dev/other', files: [] }),
+      ],
+    })
+    assert.match(elsewhere.conflicts[0]!.reason, /folder its record here does not/)
     const windowsRoot = record('chat', 'ws-1:a1', {
       workspaceId: 'ws-1',
       agentId: 'a1',
