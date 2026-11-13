@@ -39,6 +39,9 @@ export class MuxEndpoint {
   close(reason?: string): void
 }
 
+/** What an owner stream is refused with when the server never answered its front door. */
+export const FRONT_DOOR_TIMED_OUT: string
+
 export function enterFrontDoorAsRelay(
   socket: Socket,
   options: { token: string; purpose: string; via: string; client: string | null; timeoutMs?: number },

@@ -46,6 +46,11 @@ examples call it `build-box`, with a user `dev`.
    Expect: within a few seconds the machine leaves "Connected" ("Reconnecting
    to build-box…"), the server is started again without a dialog (the key in
    ssh-agent), and the chat shows its whole history and takes a new message.
+5. Hang the server on build-box instead: `kill -STOP <pid>`, the same pid.
+   Expect: within half a minute Settings › Machines says "The Studio server on
+   build-box is running but not answering. Stop it there, or restart build-box.
+   Studio keeps trying." Studio does not start a second server beside it. Then
+   `kill -CONT <pid>`: the machine reads "Connected" again, on the same server.
 
 ## 3. The pane
 

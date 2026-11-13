@@ -14,7 +14,13 @@ import { afterAll, beforeAll, test } from 'vitest'
 import { WSL_NODE_VERSION } from '../../hosts/wsl-node-runtime'
 import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS, type SshEnvironmentSettings } from '../../../shared/ssh-environments'
-import { DEFAULT_TIMING, installFailureWords, SshEnvironment, type SshEnvironmentDeps } from './ssh-environment'
+import {
+  DEFAULT_TIMING,
+  installFailureWords,
+  serverNotAnsweringWords,
+  SshEnvironment,
+  type SshEnvironmentDeps,
+} from './ssh-environment'
 import { serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
 
@@ -178,6 +184,65 @@ test('connect: installed, started, connected; a second client attaches; a lost s
       }
     }, 20_000),
   )
+})
+
+test('a server that stays hung is not replaced, and the machine says so in words until it answers', async () => {
+  const home = join(scratch, 'hung')
+  mkdirSync(home)
+  const said: string[] = []
+  const machine = harness(home, {
+    timing: { backoff: { baseMs: 50, maxMs: 200 }, giveUpMs: 60_000, livenessMs: 500, pingMs: 500, handshakeMs: 1_500 },
+    log: (line) => said.push(line),
+  })
+  const serverPid = () =>
+    (
+      JSON.parse(
+        readFileSync(join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run', 'server.json'), 'utf8'),
+      ) as { pid: number }
+    ).pid
+  await machine.env.connect({ interactive: true })
+  const hung = serverPid()
+  pids.add(hung)
+  const words = serverNotAnsweringWords('build-box')
+  assert.equal(
+    words,
+    'The Studio server on build-box is running but not answering. Stop it there, or restart build-box.',
+  )
+
+  // Stopped, and left stopped: alive to the probe, so each try attaches to it
+  // again and hears nothing. The machine says what will help, not only that it
+  // is reconnecting.
+  process.kill(hung, 'SIGSTOP')
+  try {
+    assert.ok(
+      await until(() => machine.env.summary().stateText === `${words} Studio keeps trying.`, 20_000),
+      machine.changes.join('\n'),
+    )
+    assert.equal(machine.env.summary().state, 'reconnecting')
+    assert.equal(machine.env.current(), null)
+    assert.ok(
+      said.some((line) => line.startsWith(`${words} (attached;`)),
+      said.join('\n'),
+    )
+    // A chat asking meanwhile is told the same words.
+    await assert.rejects(machine.env.connect({ interactive: false }), { message: words })
+    // It keeps saying so on the next tries, and the server is never replaced under it.
+    const tries = machine.spawned.length
+    assert.ok(await until(() => machine.spawned.length > tries + 1, 20_000), 'it keeps trying')
+    assert.equal(machine.env.summary().stateText, `${words} Studio keeps trying.`)
+    assert.equal(serverPid(), hung)
+  } finally {
+    process.kill(hung, 'SIGCONT')
+  }
+  // Answering again, the same server is reached and the words go.
+  assert.ok(
+    await until(() => machine.env.summary().state === 'connected' && machine.env.current() !== null, 30_000),
+    machine.changes.join('\n'),
+  )
+  assert.equal(machine.env.summary().stateText, 'Connected')
+  assert.equal(serverPid(), hung)
+  machine.env.disconnect()
+  await machine.env.stopServer().catch(() => undefined)
 })
 
 test('the server dying or hanging under a live SSH session is noticed by its own connection, and the server started again', async () => {

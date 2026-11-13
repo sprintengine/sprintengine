@@ -1015,6 +1015,12 @@ pane-forward.ts`): an HTTP proxy bound to the literal `127.0.0.1` on a port
   is up. A server killed, crashed or hung under a live session is then
   reconnected like a dropped session (BatchMode, probe, start or attach),
   which starts it again, and every client resumes by its cursor.
+  A server that is still running but never answers (hung or deadlocked) is
+  attached to again on each try, since the probe finds it alive, and cannot
+  be replaced from here: when an attach hears nothing (the front door's
+  deadline, or the handshake's), the machine's state says "The Studio server
+  on <machine> is running but not answering. Stop it there, or restart
+  <machine>." on every try until it answers or a start replaces it.
 - **Mid-stream death**: the relay dies with the session; the server sees its
   logical connections close and keeps every conversation and agent running.
   An upload in flight is restarted from its start (uploads are bounded at the

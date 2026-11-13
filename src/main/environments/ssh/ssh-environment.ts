@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 
-import type { MuxEndpoint } from '../../../../resources/wsl-server/relay-mux.mjs'
+import { FRONT_DOOR_TIMED_OUT, type MuxEndpoint } from '../../../../resources/wsl-server/relay-mux.mjs'
 import { commitFailure } from '../../hosts/remote-install'
 import { remoteNodeDigests, type RemoteNodeTarget } from '../../hosts/wsl-node-runtime'
 import { connectRemoteConversationBackend, type RemoteConversationBackend } from '../../../server/wsl/backend-wire'
@@ -178,6 +178,24 @@ class StepError extends Error {
   }
 }
 
+/** The handshake heard nothing back from the server it reached within its deadline. */
+class NoAnswerError extends StepError {}
+
+/**
+ * The server the probe found running (an attach) did not answer the
+ * handshake: alive, but hung or deadlocked. Reconnecting attaches to it again
+ * and cannot replace it, so the words say what will: stopping it there.
+ */
+class ServerNotAnsweringError extends StepError {
+  constructor(label: string) {
+    super('failed', serverNotAnsweringWords(label))
+  }
+}
+
+export function serverNotAnsweringWords(label: string): string {
+  return `The Studio server on ${label} is running but not answering. Stop it there, or restart ${label}.`
+}
+
 /** Any failure as a step's: what the bootstrap threw, or a loss's reason, in words. */
 function asStep(error: unknown): StepError {
   return error instanceof StepError ? error : new StepError('failed', messageOf(error))
@@ -241,6 +259,12 @@ export class SshEnvironment {
   private lastReachedAt: number | null = null
   /** Whether the failure that put the machine on hold ended a reconnect (its words differ). */
   private heldWhileReconnecting = false
+  /**
+   * The words for a server the probe found running that did not answer, until
+   * it answers or a start replaces it: every try after says them, since each
+   * attaches to the same server.
+   */
+  private notAnswering: string | null = null
   /** Stop server, while it runs: a connect asked for meanwhile joins it rather than start the server under it. */
   private stopping: Promise<never> | null = null
   private upgradeAsked = false
@@ -572,6 +596,8 @@ export class SshEnvironment {
           decision = `start ${idle} ${by}`
           deadline = this.timing.startMs
         } else decision = 'attach'
+        // A server started or upgraded is a new one: what the last said no longer holds.
+        if (decision !== 'attach') this.notAnswering = null
         // The probe's end and SEND can come in two reads: wait for SEND itself.
         await current.waitForSend(10_000)
         current.send(decision)
@@ -580,7 +606,17 @@ export class SshEnvironment {
             throw this.relayFailure(current, error, label, diagnostics)
           }),
         )
-        return await timed('handshake', () => this.handshake(current, relay.ready, relay.endpoint, label, attempt))
+        return await timed('handshake', () =>
+          this.handshake(current, relay.ready, relay.endpoint, label, attempt).catch((error: unknown) => {
+            // Running, by the probe, and silent: say what the person can do,
+            // here and on every try after, until it answers or is replaced.
+            if (decision !== 'attach' || !(error instanceof NoAnswerError)) throw error
+            const words = new ServerNotAnsweringError(label)
+            this.notAnswering = words.message
+            this.log(`${words.message} (attached; the handshake had no answer in ${this.timing.handshakeMs} ms)`)
+            throw words
+          }),
+        )
       }
     } catch (error) {
       session?.kill()
@@ -594,6 +630,7 @@ export class SshEnvironment {
   }
 
   private reconnectingText(label: string): string {
+    if (this.notAnswering) return `${this.notAnswering} Studio keeps trying.`
     return this.lastReachedAt !== null
       ? `Reconnecting to ${label} — last reached ${minutesAgo(this.now() - this.lastReachedAt)}`
       : `Reconnecting to ${label}…`
@@ -729,7 +766,9 @@ export class SshEnvironment {
     if (!server)
       throw new StepError('failed', `No Studio server is running on ${label} after it was started; see its log there.`)
     const stream = await endpoint.open({ kind: 'owner', purpose: 'backend' }).catch((error: Error) => {
-      throw new StepError('failed', `The Studio server on ${label} did not let Studio in: ${error.message}`)
+      const words = `The Studio server on ${label} did not let Studio in: ${error.message}`
+      // It took the connection and never answered its front door.
+      throw error.message === FRONT_DOOR_TIMED_OUT ? new NoAnswerError('failed', words) : new StepError('failed', words)
     })
     const backend = connectRemoteConversationBackend(stream, { log: this.log })
     // The owner connection is made once the wire answers, so one opened for a
@@ -746,7 +785,7 @@ export class SshEnvironment {
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           timedOut = true
-          reject(new StepError('failed', `The Studio server on ${label} did not answer.`))
+          reject(new NoAnswerError('failed', `The Studio server on ${label} did not answer.`))
         }, this.timing.handshakeMs)
       }),
     ])
@@ -824,6 +863,7 @@ export class SshEnvironment {
   private announce(live: LiveSession): void {
     this.announced = live
     this.lastReachedAt = this.now()
+    this.notAnswering = null
     this.set({
       state: 'connected',
       stateText: 'Connected',

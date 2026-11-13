@@ -354,6 +354,13 @@ function sameProof(expected, presented) {
  * leaves the machine. `via` and `client` go in the opening line for the
  * server's audit log.
  */
+/**
+ * What an owner stream is refused with when the server took the connection
+ * and never answered the front door: alive, but not answering. The desktop
+ * tells this apart by these words (an older relay says the same).
+ */
+export const FRONT_DOOR_TIMED_OUT = 'The handshake with the Studio server timed out.'
+
 export function enterFrontDoorAsRelay(socket, { token, purpose, via, client, timeoutMs = 10_000 }) {
   const hash = tokenHash(token)
   const nonce = randomBytes(32).toString('base64url')
@@ -414,7 +421,7 @@ export function enterFrontDoorAsRelay(socket, { token, purpose, via, client, tim
         return
       }
     }
-    const timer = setTimeout(() => finish(new Error('The handshake with the Studio server timed out.')), timeoutMs)
+    const timer = setTimeout(() => finish(new Error(FRONT_DOOR_TIMED_OUT)), timeoutMs)
     socket.on('data', onData)
     socket.on('error', onError)
     socket.on('close', onClose)
