@@ -1,5 +1,6 @@
 import type { StudioClient } from '../../packages/client-runtime/src/public'
 import type { StudioCapability } from '../../packages/studio-protocol/src/handshake'
+import { formatEnvironmentRoute } from '../../packages/studio-protocol/src/environment'
 
 // The desktop's own client of another environment's Studio, as the callers on
 // this computer that act on a chat there ask for it (orchestrator ruling 1,
@@ -16,4 +17,16 @@ export type EnvironmentClientAnswer =
 export type EnvironmentClients = {
   /** The client of the environment a route names, connected now if it must be, its paths spelled for this computer. */
   clientFor(route: string, capability?: StudioCapability | null): Promise<EnvironmentClientAnswer>
+}
+
+/**
+ * The route of the environment a chat's record here says holds it, or null
+ * for a chat this desktop's own Studio holds: an SSH machine's chat is that
+ * machine's (design-wsl-ssh-direct PR 1d), its record here only a copy.
+ */
+export function environmentRouteOfRecord(
+  record: { environment?: { kind: 'ssh'; id: string } | null } | null | undefined,
+): string | null {
+  const environment = record?.environment
+  return environment?.kind === 'ssh' ? formatEnvironmentRoute({ kind: 'ssh', machine: environment.id }) : null
 }

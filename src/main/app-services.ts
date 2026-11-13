@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage } from 'electron'
+import { createEnvironmentClients } from './environments/environment-client'
 import { desktopFileSystemShell } from './desktop-file-system-shell'
 import { createHash } from 'crypto'
 import { homedir } from 'os'
@@ -930,6 +931,9 @@ export function createAppServices(
           askNatively: askToSetUpArtifacts,
           resolveGitHubToken: () => githubTokenStore.resolveToken(),
         },
+        // A chat an SSH machine holds is acted on there, on main's own
+        // client of that machine's Studio.
+        ...(ssh ? { environmentClients: createEnvironmentClients({ ssh: ssh.environments }) } : {}),
         ...(ssh
           ? {
               sshServers: {

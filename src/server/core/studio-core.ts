@@ -91,6 +91,7 @@ import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
 import { createLocalServerDomain } from '../local-servers/local-server-domain'
 import { localConversationBackend, refuseMachinePaths, type ConversationBackend } from './conversation-backend'
+import type { EnvironmentClients } from '../../shared/environment-clients'
 import {
   createRoutedConversationBackend,
   type SshRoutedConnection,
@@ -206,6 +207,12 @@ export type StudioCoreOptions = {
    * their prompts. Given, a workspace recorded on one runs its chats there.
    * In process only: out of process, main's sessions are not this core's.
    */
+  /**
+   * Other environments' Studios (an SSH machine's), as the desktop's own
+   * callers reach a chat one holds: the gateway's tools and modules act on it
+   * there, as a client of that machine (design-wsl-ssh-direct PR 1d).
+   */
+  environmentClients?: EnvironmentClients | null
   sshServers?: {
     servers: SshRoutedServers
     onConnected(listener: (connection: SshRoutedConnection) => void): void
@@ -1362,6 +1369,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   }
 
   return {
+    /** Other environments' Studios, as this desktop's callers reach a chat one holds; null where it reaches none. */
+    environmentClients: options.environmentClients ?? null,
     platform,
     role: options.role,
     /** Null only in a desktop that could not take the directory and carried on, as builds before the lock did. */
