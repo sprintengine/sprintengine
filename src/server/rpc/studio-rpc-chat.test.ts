@@ -463,7 +463,7 @@ test('a client that is not an owner reads the always-allow rules by project, nev
     {
       id: 'rule-1',
       workspaceRoot: '/Users/dev/app',
-      toolKind: 'edit' as const,
+      toolKind: 'file_edit' as const,
       toolName: 'Write',
       matcher: { type: 'path' as const, prefix: '/Users/dev/app' },
       label: 'Write: files within /Users/dev/app except .git',
@@ -472,7 +472,7 @@ test('a client that is not an owner reads the always-allow rules by project, nev
     {
       id: 'rule-2',
       workspaceRoot: '/Users/dev/app',
-      toolKind: 'execute' as const,
+      toolKind: 'command' as const,
       toolName: 'Bash',
       matcher: { type: 'command' as const, program: 'npm', subcommand: 'test' },
       label: 'Bash: npm test',
