@@ -18,7 +18,6 @@ import { registerPullRequestCreateIpc } from './ipc/pull-request-create-ipc'
 import { registerClipboardIpc } from './ipc/clipboard-ipc'
 import { registerChatExportIpc } from './ipc/chat-export-ipc'
 import { getPluginRegistry } from './plugin-registry-instance'
-import type { ConversationTranscriptInput } from '../shared/conversation-runtime'
 import { registerConversationPeekIpc } from './ipc/conversation-peek-ipc'
 import { registerAgentCompactIpc } from './ipc/agent-compact-ipc'
 import { registerDiagnosticsIpc } from './ipc/diagnostics-ipc'
@@ -78,8 +77,6 @@ export type CoreIpcOptions = {
    */
   server?: {
     windowTickets: StudioWindowTicketIssuer
-    /** A chat's transcript and pictures for Export chat, read by the server, which holds the chats. */
-    readChatExportSource(key: ConversationTranscriptInput): Promise<unknown>
   }
 }
 
@@ -153,25 +150,13 @@ export function registerCoreIpc(
   if (windowTickets) registerStudioWindowTicketIpc(ipcMain, windowTickets)
   registerAppMenuIpc(ipcMain)
   registerClipboardIpc(ipcMain)
-  // Export chat (a chat tab's menu): the chat read where the chats run, written
-  // or copied here, where the window and its dialogs are.
+  // Export chat (a chat tab's menu): the chat read by the window from its
+  // Studio, written or copied here, where the window and its dialogs are.
   registerChatExportIpc(ipcMain, {
     run: async (input, sender) => {
-      const [{ exportChat }, { parseChatExportSourceWire, readChatExportSource }] = await Promise.all([
-        import('./chat-export/chat-export-electron'),
-        import('./chat-export/chat-export-source'),
-      ])
+      const { exportChat } = await import('./chat-export/chat-export-electron')
       return exportChat(input, {
         sender,
-        workspaces: () => services.workspaceSyncService.getSnapshot().state.workspaces,
-        readSource: async (key) => {
-          if (!options.server) return readChatExportSource(services.conversations, key)
-          const answer = await options.server.readChatExportSource(key)
-          const source = parseChatExportSourceWire((answer as { source?: unknown } | null)?.source)
-          if (source) return { ok: true, source }
-          const message = (answer as { message?: unknown } | null)?.message
-          return { ok: false, message: typeof message === 'string' ? message : 'The chat could not be read.' }
-        },
         cliDisplayName: (cli) =>
           getPluginRegistry()
             .loaded()

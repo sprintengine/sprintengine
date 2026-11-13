@@ -15,7 +15,6 @@ import type {
   ConversationSideQuestionInput,
   ConversationSetPermissionInput,
   ConversationStartSessionInput,
-  ConversationTranscriptInput,
 } from '../shared/conversation-runtime'
 import { CONVERSATION_PERMISSION_PRESETS } from '../shared/conversation-runtime'
 import { isConversationApprovalDecision } from '../../packages/conversation-protocol/src/public'
@@ -95,17 +94,6 @@ export function parseStartSessionInput(
       ...(Array.isArray(allowedTools) ? { allowedTools: allowedTools as string[] } : {}),
     },
   }
-}
-
-export function parseTranscriptInput(
-  input: unknown,
-): { ok: true; input: ConversationTranscriptInput } | { ok: false; message: string } {
-  if (!isRecord(input)) return { ok: false, message: 'Transcript input must be an object.' }
-  const { workspaceRoot, workspaceId, agentId } = input
-  if (typeof workspaceRoot !== 'string') return { ok: false, message: 'workspaceRoot is required.' }
-  if (typeof workspaceId !== 'string') return { ok: false, message: 'workspaceId is required.' }
-  if (typeof agentId !== 'string') return { ok: false, message: 'agentId is required.' }
-  return { ok: true, input: { workspaceRoot, workspaceId, agentId } }
 }
 
 // Image attachments accepted on a send-turn. The media-type set, the per-image

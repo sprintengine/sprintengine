@@ -18,11 +18,6 @@ export const SERVER_METHODS = {
   githubToken: 'github.token',
   /** `{ sessionId }` → the peek card's events, or null for a session the server does not have. */
   conversationPeekEvents: 'conversations.peek-events',
-  /**
-   * `{ workspaceRoot, workspaceId, agentId }` → `{ ok, source }` (`ChatExportSourceWire`) or
-   * `{ ok: false, message }`: a chat's whole transcript and its pictures, for Export chat.
-   */
-  conversationExportSource: 'conversations.export-source',
   /** → the folders the chats live in, for diagnostics. */
   conversationRoots: 'conversations.live-roots',
   /**

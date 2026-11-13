@@ -26,6 +26,14 @@
   `workspaces:read`, drawing `workspaces:operate`. Advertised only by a Studio
   given the machine's canvas service.
 
+### Added (a chat's export)
+
+- **`conversation.exportPage`** (capability `conversation-export`, scope
+  `conversation:read`): a chat's whole export read where the chat is kept,
+  `{ chat, events, attachments, nextOffset }` (`StudioChatExportPage`), paged
+  under the client's `exportId` from `offset` 0. Advertised only where the
+  chat surface reads exports.
+
 ### Added (the phone's reads)
 
 - **Backlogs, shares and pull request reads are protocol methods.**

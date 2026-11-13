@@ -45,6 +45,8 @@ export type StudioChatBackendDeps = {
   /** The (CLI, folder) list main holds, probing when it is missing or old. */
   commands(input: ConversationCommandsRequest): Promise<ConversationCommandCatalog>
   onCommandsChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
+  /** A chat's export, read where it is kept; absent, exports are not served. */
+  exportSource?: StudioChatBackend['exportSource']
 }
 
 const unavailable = (what: string): { ok: false; message: string } => ({
@@ -310,6 +312,17 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
         return { ok: false, reason: 'failed', message: failed(error).message }
       }
     },
+    ...(deps.exportSource
+      ? {
+          async exportSource(chat: { workspaceId: string; agentId: string }) {
+            try {
+              return await deps.exportSource!(chat)
+            } catch (error) {
+              return failed(error)
+            }
+          },
+        }
+      : {}),
     ...(handlers.terminalHandoff
       ? {
           async terminalHandoff(input: Parameters<NonNullable<StudioChatBackend['terminalHandoff']>>[0]) {

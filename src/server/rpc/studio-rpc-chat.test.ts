@@ -89,6 +89,7 @@ function fakeChat(): StudioChatBackend & { calls: ChatCalls } {
     rewind: async () => ({ ok: true }),
     handoff: async () => ({ ok: true, path: '/Users/dev/handoff.md' }),
     attachment: async () => ({ ok: false, message: 'No such picture.' }),
+    exportSource: async () => ({ ok: false, code: 'not_found', message: 'This chat could not be found.' }),
     planDocument: async () => ({ ok: true, path: '/Users/dev/plan.md' }),
     commands: async (input) => ({ cli: input.cli, cwd: input.cwd, commands: [], fetchedAt: 1 }),
     onCommandsChanged: (listener) => {
@@ -947,4 +948,107 @@ test('terminal handoff is advertised only where the chat surface opens terminals
   const refused = await ask(owner, 'h1', 'session.terminalHandoff', { commandId: 'c', sessionId: 's1' })
   assert.equal(!refused.ok && refused.error.code, 'unavailable')
   owner.close()
+})
+
+/** A chat backend that reads an export of `count` events, each about `size` characters, and one picture. */
+function exportingChat(count: number, size = 10) {
+  const chat = fakeChat()
+  const reads: Array<{ workspaceId: string; agentId: string }> = []
+  chat.exportSource = async (key) => {
+    reads.push(key)
+    if (key.agentId !== 'agent-1') return { ok: false, code: 'not_found', message: 'This chat could not be found.' }
+    return {
+      ok: true,
+      chat: { title: 'Atlas', project: 'app', providerId: 'mock', modelId: 'mock', workspaceRoot: '/Users/dev/app' },
+      events: Array.from({ length: count }, (_, index) => ({
+        id: `e${index}`,
+        seq: index + 1,
+        type: 'assistant_message',
+        sessionId: 's1',
+        workspaceId: 'ws-1',
+        agentId: 'agent-1',
+        providerId: 'mock',
+        modelId: 'mock',
+        createdAt: index,
+        payload: { text: 'x'.repeat(size), authorization: 'Bearer abc' },
+      })) as never,
+      attachments: { 'attachments/a.png': { mediaType: 'image/png', dataBase64: 'iVBORw0KGgo=' } },
+    }
+  }
+  return { chat, reads }
+}
+
+test('a chat’s export is read once where it is kept and paged to the client, pictures after the events', async () => {
+  const { chat, reads } = exportingChat(5, 1024 * 1024)
+  const { server, path, auth } = await served({ chat })
+  const window = await windowClient(server)
+  const key = { workspaceId: 'ws-1', agentId: 'agent-1' }
+  const events: number[] = []
+  let pictures: string[] = []
+  let offset: number | null = 0
+  for (let page = 0; offset !== null; page++) {
+    const answer = await ask(window, `x${page}`, 'conversation.exportPage', { key, exportId: 'export-1', offset })
+    assert.ok(answer.ok, JSON.stringify(answer))
+    const result = answer.result as {
+      chat: { title: string }
+      events: Array<{ seq: number }>
+      attachments: Record<string, unknown>
+      nextOffset: number | null
+    }
+    assert.equal(result.chat.title, 'Atlas')
+    events.push(...result.events.map((event) => event.seq))
+    pictures = [...pictures, ...Object.keys(result.attachments)]
+    offset = result.nextOffset
+  }
+  // A megabyte an event: several pages, each event once and in order, the picture last.
+  assert.deepEqual(events, [1, 2, 3, 4, 5])
+  assert.deepEqual(pictures, ['attachments/a.png'])
+  assert.equal(reads.length, 1, 'the transcript was read once, for the first page')
+  // The last page let it go: a later page is refused, and starting again reads again.
+  const late = await ask(window, 'late', 'conversation.exportPage', { key, exportId: 'export-1', offset: 3 })
+  assert.equal(!late.ok && late.error.code, 'not_found')
+
+  // A paired client that follows chats reads one too, redacted as everything it reads.
+  const reader = await socketClient(path, pairFakeClient(auth, 'reader', ['conversation:read']))
+  const first = await ask(reader, 'r1', 'conversation.exportPage', { key, exportId: 'mine', offset: 0 })
+  assert.ok(first.ok)
+  assert.ok(!JSON.stringify(first.result).includes('Bearer abc'), 'a secret-shaped member is redacted')
+  // Another client's held export is not this one's.
+  const theirs = await ask(reader, 'r2', 'conversation.exportPage', { key, exportId: 'export-2', offset: 1 })
+  assert.equal(!theirs.ok && theirs.error.code, 'not_found')
+  // A client that follows no chats reads none.
+  const stranger = await socketClient(path, pairFakeClient(auth, 'stranger', ['workspaces:read']))
+  const refused = await ask(stranger, 's1', 'conversation.exportPage', { key, exportId: 'x', offset: 0 })
+  assert.equal(!refused.ok && refused.error.code, 'scope_required')
+  // A chat that is not a conversation here is not found.
+  const missing = await ask(window, 'm', 'conversation.exportPage', {
+    key: { workspaceId: 'ws-1', agentId: 'nobody' },
+    exportId: 'export-3',
+    offset: 0,
+  })
+  assert.equal(!missing.ok && missing.error.code, 'not_found')
+})
+
+test('a Studio says it serves exports only where its chat surface reads them', async () => {
+  const unread = fakeChat()
+  delete unread.exportSource
+  const plain = await served({ chat: unread })
+  const reading = await served({ chat: exportingChat(1).chat })
+  for (const [started, serves] of [
+    [plain, false],
+    [reading, true],
+  ] as const) {
+    const window = await windowClient(started.server)
+    const info = await ask(window, 'i', 'server.info')
+    assert.equal(
+      ((info.ok && (info.result as { capabilities: string[] }).capabilities) || []).includes('conversation-export'),
+      serves,
+    )
+    const answer = await ask(window, 'x', 'conversation.exportPage', {
+      key: { workspaceId: 'ws-1', agentId: 'agent-1' },
+      exportId: 'e',
+      offset: 0,
+    })
+    assert.equal(answer.ok, serves)
+  }
 })

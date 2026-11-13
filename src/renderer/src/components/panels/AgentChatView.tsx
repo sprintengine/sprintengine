@@ -220,7 +220,7 @@ import { loadWholeConversation } from './agentChat/conversationReplay'
 import { ConversationReplayView, type ConversationReplaySource } from './agentChat/conversationReplayView'
 import { onChatReplayRequest, takeChatReplayRequest } from './agentChat/chatReplayRequests'
 import { chatExportSupported, exportChatOrToast } from './agentChat/chatExport'
-import type { ChatExportAction, ChatExportRemoteSource } from '../../../../shared/chat-export'
+import type { ChatExportAction, ChatExportSource } from '../../../../shared/chat-export'
 import { useConversationScrollRestore } from './agentChat/conversationScrollRestore'
 import { useComposerSkillReader } from './agentChat/composerSkillReader'
 import { nextConversationEffort } from './agentChat/conversationEffort'
@@ -3060,7 +3060,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const remoteOrigin = useWorkspaceStore(
     (s) => s.workspaces.find((candidate) => candidate.id === workspaceId)?.remoteOrigin ?? null,
   )
-  const remoteExportSourceRef = useRef<() => Promise<ChatExportRemoteSource>>(async () => {
+  const remoteExportSourceRef = useRef<() => Promise<ChatExportSource>>(async () => {
     throw new Error('This chat could not be read.')
   })
   remoteExportSourceRef.current = async () => {
@@ -3069,6 +3069,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     const all = await loadWholeConversation((input) => transport.loadEarlier(input), key, held)
     return {
       events: all,
+      // The pictures stay on that machine: named in the export, not drawn.
+      attachments: {},
       title: label,
       project: remoteOrigin?.workspaceName ?? null,
       providerId: conversation?.providerId || null,
@@ -3099,8 +3101,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         openSideQuestion: () => openSideQuestionRef.current(),
         ensureSession: () => ensureSessionRef.current(),
         hasMessages: () => hasMessagesRef.current,
-        // Main reads a local chat's transcript; a chat on another machine has
-        // none here to read, so this window reads it from there and hands it on.
+        // A chat is read from this window's Studio; one followed over a paired
+        // machine's lane is read from that machine by this view instead.
         ...(exportable
           ? {
               exportChat: (action: ChatExportAction) =>
