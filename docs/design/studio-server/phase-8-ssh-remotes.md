@@ -1453,10 +1453,10 @@ Not built yet:
   with the preview on in both server modes (`smoke-server-mode.mjs`), but was
   not driven through them.
 - **Files**: no watch on a machine's folder (the views refresh when asked
-  again), no file writes from the editor, and from the Git pane only staging
-  and committing: push, pull, branches, stashes, worktrees, changelists,
-  conflict resolution and patches answer "Not available for SSH machines
-  yet". Terminals and agent launches in a terminal answer the same.
+  again). Since design-wsl-ssh-direct PR 2 the Files and Git panes ask the
+  machine's own Studio with the full `files.*` and `git.*` methods; worktrees,
+  agent skills and agent setup on a machine still answer "Not available for
+  SSH machines yet", and terminals are not reached from another computer.
 - `auth.sessions.list` for SSH sessions, `server.logs.tail` in Diagnostics
   (they show the bootstrap's steps, the probe and ssh's words), `ssh -W` as a
   diagnostic, the Windows job
