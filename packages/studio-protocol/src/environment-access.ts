@@ -7,6 +7,7 @@ import {
   STUDIO_WINDOW_TICKETS_CAPABILITY,
 } from './handshake.js'
 import type { StudioScope } from './scopes.js'
+import { isEnvironmentId } from './environment.js'
 
 // What the desktop that holds a machine's Studio asks of it for the people
 // using that desktop: a ticket for one of its windows to connect, and a CLI's
@@ -70,10 +71,48 @@ export type StudioRelayedEnvironment = {
   kind: 'ssh'
   /** Whether this desktop holds a connection to its Studio now. */
   connected: boolean
-  /** How the machine draws itself: its host and port, as its marks are keyed. */
+  /**
+   * Its host and port, as its marks are keyed: answered to the owner only. A
+   * device needs the name, the mark and the route, never the address.
+   */
   machine?: { host: string; port?: number | null }
   /** Its kind and colour, as this desktop marks it (the person's choice applied); absent when it cannot be named. */
   mark?: { kind: string; color: string }
+}
+
+const RELAYED_NAME_MAX = 200
+
+/**
+ * A desktop's `environment.relayed` answer as a client may use it: each
+ * entry whose environment id is one (so its route and its socket path can be
+ * spelled), with a name, and its mark only when whole. Anything else is
+ * dropped, not refused: one bad entry from a paired desktop does not hide
+ * the rest. `machine` is never read back: a client has no use for it.
+ */
+export function relayedEnvironmentsOf(value: unknown): Array<Omit<StudioRelayedEnvironment, 'machine'>> {
+  const list = value && typeof value === 'object' ? (value as { environments?: unknown }).environments : undefined
+  if (!Array.isArray(list)) return []
+  const seen = new Set<string>()
+  const read: Array<Omit<StudioRelayedEnvironment, 'machine'>> = []
+  for (const entry of list as unknown[]) {
+    if (!entry || typeof entry !== 'object') continue
+    const { environmentId, name, kind, connected, mark } = entry as Record<string, unknown>
+    if (!isEnvironmentId(environmentId) || seen.has(environmentId)) continue
+    if (typeof name !== 'string' || !name.trim() || name.length > RELAYED_NAME_MAX) continue
+    if (kind !== 'ssh') continue
+    seen.add(environmentId)
+    const whole = mark && typeof mark === 'object' ? (mark as Record<string, unknown>) : null
+    read.push({
+      environmentId,
+      name,
+      kind,
+      connected: connected === true,
+      ...(whole && typeof whole.kind === 'string' && typeof whole.color === 'string'
+        ? { mark: { kind: whole.kind, color: whole.color } }
+        : {}),
+    })
+  }
+  return read
 }
 
 /**

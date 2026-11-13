@@ -1,7 +1,10 @@
-import { STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY } from '../../../packages/studio-protocol/src/handshake'
-import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
-import { desktopStudio, studioTargetOf, type DesktopStudioOptions } from './desktopStudio'
-import type { MobileSession } from './types'
+import { STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY } from "../../../packages/studio-protocol/src/handshake";
+import {
+  relayedEnvironmentsOf,
+  type StudioRelayedEnvironment,
+} from "../../../packages/studio-protocol/src/environment-access";
+import { desktopStudio, studioTargetOf, type DesktopStudioOptions } from "./desktopStudio";
+import type { MobileSession } from "./types";
 
 // The machines a paired desktop relays this phone to (design-wsl-ssh-direct):
 // the SSH machines it holds, whose chats are those machines' own. Each is
@@ -14,8 +17,11 @@ import type { MobileSession } from './types'
 // session's Studio asks the machine's (`studioTargetOf`).
 
 /** A machine a desktop relays this phone to, as a session: never stored, gone when the desktop stops listing it. */
-export function relayedSession(desktop: MobileSession, machine: StudioRelayedEnvironment): MobileSession {
-  const { machineMark: _desktopMark, ...rest } = desktop
+export function relayedSession(
+  desktop: MobileSession,
+  machine: Omit<StudioRelayedEnvironment, "machine">,
+): MobileSession {
+  const { machineMark: _desktopMark, ...rest } = desktop;
   return {
     ...rest,
     deviceId: `${desktop.deviceId}~${machine.environmentId}`,
@@ -24,8 +30,8 @@ export function relayedSession(desktop: MobileSession, machine: StudioRelayedEnv
     relayedEnvironmentId: machine.environmentId,
     relayedVia: desktop.deviceId,
     ...(machine.mark ? { machineMark: { kind: machine.mark.kind, color: machine.mark.color } } : {}),
-    status: desktop.status === 'revoked' ? 'revoked' : machine.connected ? desktop.status : 'offline',
-  }
+    status: desktop.status === "revoked" ? "revoked" : machine.connected ? desktop.status : "offline",
+  };
 }
 
 /**
@@ -37,13 +43,14 @@ export async function relayedSessions(
   desktop: MobileSession,
   options: DesktopStudioOptions = {},
 ): Promise<MobileSession[]> {
-  if (desktop.status === 'revoked' || desktop.relayedEnvironmentId) return []
+  if (desktop.status === "revoked" || desktop.relayedEnvironmentId) return [];
   try {
-    const client = await desktopStudio(studioTargetOf(desktop), options)
-    if (!client.supports(STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY)) return []
-    const { environments } = await client.request('environment.relayed', {})
-    return environments.map((machine) => relayedSession(desktop, machine))
+    const client = await desktopStudio(studioTargetOf(desktop), options);
+    if (!client.supports(STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY)) return [];
+    // Read through the protocol's own reader: each id becomes a ticket's body and a socket path.
+    const answer = await client.request("environment.relayed", {});
+    return relayedEnvironmentsOf(answer).map((machine) => relayedSession(desktop, machine));
   } catch {
-    return []
+    return [];
   }
 }

@@ -95,17 +95,19 @@ export type EnvironmentRouteKind = EnvironmentRoute['kind']
 
 /**
  * The route kinds, best first: this machine; a server on this PC over
- * loopback; a direct socket over the tailnet; a paired desktop's relay over
- * the tailnet, one hop more; then an SSH tunnel, which costs a session and a
- * forward. The order decides which of an environment's
- * routes a client tries first.
+ * loopback; a direct socket over the tailnet; an SSH tunnel, which costs a
+ * session and a forward; then a paired desktop's relay, last because it
+ * admits this client as that desktop's device, held to the relayed ceiling,
+ * where every route above is this client's own. A machine this desktop holds
+ * over SSH and a paired desktop also relays is reached as its owner. The
+ * order decides which of an environment's routes a client tries first.
  */
 export const ENVIRONMENT_ROUTE_KINDS = [
   'local',
   'wsl',
   'tailnet',
-  'relay',
   'ssh',
+  'relay',
 ] as const satisfies readonly EnvironmentRouteKind[]
 
 // The names WSL accepts for a distribution: letters, digits, `.`, `_` and `-`.

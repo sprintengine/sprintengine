@@ -1239,11 +1239,15 @@ Its scopes are exactly those named, each of them one of
 `relayed-environments` (2026-11-13) adds `environment.relayed` (`{}` →
 `{ environments: [{ environmentId, name, kind: 'ssh', connected, machine?, mark? }] }`,
 `conversation:read`, devices included): the machines a desktop relays its paired
-devices to. A device reaches one at `/tailnet/v1/environments/<environmentId>/studio`
+devices to. `machine` (the host and port) is answered to the owner only; a device gets
+the name, the mark and the route, which is all it needs. A client reads the list with
+`relayedEnvironmentsOf`, which drops an entry it cannot use. A device reaches one at
+`/tailnet/v1/environments/<environmentId>/studio`
 on the desktop's tailnet listener with a ticket from `ws-ticket` naming the
 `environmentId`; a paired desktop names it as the route
-`relay:<pairing>.<environmentId>` (ranked after `tailnet`, before `ssh`). A desktop
-without it relays nothing, and a client lists no relayed machines.
+`relay:<pairing>.<environmentId>`, ranked last (after `ssh`: a relay admits the client
+as a device, so a machine this desktop also holds over SSH is reached as its owner). A
+desktop without it relays nothing, and a client lists no relayed machines.
 `environment-adopt` (2026-11-13) adds `environment.adopt` (`{ commandId, migrationId,
 records: [{ kind, id, digest, body }] }` → `{ held, conflicts }`, the shell's): the records a
 desktop kept for a machine's chats, kept by that machine's Studio from then on. The kinds are

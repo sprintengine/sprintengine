@@ -525,7 +525,6 @@ export type MeshMachineReachability = {
     environmentId: string
     name: string
     connected: boolean
-    machine?: { host: string; port?: number | null }
   }>
 }
 

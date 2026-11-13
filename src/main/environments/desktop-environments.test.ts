@@ -246,7 +246,7 @@ test('a machine a paired desktop relays this one to is listed as a relay route t
     checkedAt: 20,
     lastReachedAt: 20,
     detail: null,
-    relayed: [{ environmentId: BOX, name: 'build-box', connected: true, machine: { host: 'build-box', port: 22 } }],
+    relayed: [{ environmentId: BOX, name: 'build-box', connected: true }],
   }
   const reach = owned<MeshMachineReachability>([answering])
   const checked: string[] = []
@@ -281,4 +281,42 @@ test('a machine a paired desktop relays this one to is listed as a relay route t
   reach.set([{ ...answering, relayed: [] }])
   await settle()
   assert.equal(environments.environmentOfRoute({ kind: 'relay', via: 'tnc_1', environment: BOX }), null)
+})
+
+test('a machine this desktop holds over SSH is reached as its owner, before a paired desktop relays it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'desktop-environments-'))
+  directories.push(dir)
+  const BOX = '7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f'
+  const ssh = owned<{ id: string; label: string; destination: string; resolved: null; environmentId: string | null }>([
+    { id: 'm_box', label: 'build-box', destination: 'dev@build-box', resolved: null, environmentId: BOX },
+  ])
+  const mesh = owned<{ id: string; machineName: string; environmentId?: string }>([
+    { id: 'tnc_1', machineName: 'mac-mini', environmentId: MINI },
+  ])
+  const reach = owned<MeshMachineReachability>([
+    {
+      connectionId: 'tnc_1',
+      machineName: 'mac-mini',
+      checking: false,
+      reachable: true,
+      unauthorized: false,
+      checkedAt: 20,
+      lastReachedAt: 20,
+      detail: null,
+      relayed: [{ environmentId: BOX, name: 'their build-box', connected: true }],
+    },
+  ])
+  const environments = createDesktopEnvironments({
+    userDataDir: dir,
+    platform: 'darwin',
+    hosts: { get: () => ({}), onChanged: () => () => undefined },
+    ssh,
+    mesh,
+    meshReachability: { ...reach, check: async () => undefined },
+  })
+  await settle()
+  const box = environments.get(BOX)
+  // The relay admits this desktop as a device; its own SSH route is the owner's.
+  assert.deepEqual(box?.routes.map(formatEnvironmentRoute), ['ssh:m_box', `relay:tnc_1.${BOX}`])
+  assert.equal(box?.displayName, 'build-box')
 })

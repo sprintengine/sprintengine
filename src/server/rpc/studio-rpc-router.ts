@@ -2064,10 +2064,15 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // (from their prompts) and watched pull requests, which are the chats'
     // business, so a grant that cannot read chats is told none of it.
     // The machines this desktop relays devices to: reaching one still takes
-    // its own ticket, held there to the device's grant.
-    'environment.relayed': async (_params, { voice }) => {
+    // its own ticket, held there to the device's grant. A device is told what
+    // it needs to name and reach one (its name, mark and environment id),
+    // never its address: host and port are the owner's.
+    'environment.relayed': async (_params, { grant, voice }) => {
       if (!options.relayedEnvironments) return unserved('environment.relayed')
-      return { ok: true, result: voice.redact({ environments: await options.relayedEnvironments() }) }
+      const environments = (await options.relayedEnvironments()).map(({ machine, ...entry }) =>
+        grant.owner && machine ? { ...entry, machine } : entry,
+      )
+      return { ok: true, result: voice.redact({ environments }) }
     },
     'environment.readiness': async (_params, { grant, voice }) => {
       if (!options.readiness) return unserved('environment.readiness')

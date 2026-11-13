@@ -74,6 +74,7 @@ import { tailnetPeerSupports } from './tailnet-routes'
 import { createPeerStudios, peerRefusal, peerStudioTicket, type PeerStudioTarget } from './tailnet-peer-studio'
 import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
 import { STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY } from '../../../../packages/studio-protocol/src/handshake'
+import { relayedEnvironmentsOf } from '../../../../packages/studio-protocol/src/environment-access'
 import {
   callRemoteTool,
   fetchRemoteConversationImage,
@@ -1072,15 +1073,12 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
   async function readRelayed(connection: StoredMeshConnection): Promise<void> {
     let relayed: NonNullable<MeshMachineReachability['relayed']>
     try {
+      // Read through the protocol's own reader: what a paired desktop says
+      // becomes a route here, so an entry that cannot be one is dropped.
       relayed = await peerStudios.ask(peerTarget(connection), async (client) =>
         client.supports(STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY)
-          ? (await client.request('environment.relayed', {})).environments.map(
-              ({ environmentId, name, connected, machine }) => ({
-                environmentId,
-                name,
-                connected,
-                ...(machine ? { machine } : {}),
-              }),
+          ? relayedEnvironmentsOf(await client.request('environment.relayed', {})).map(
+              ({ environmentId, name, connected }) => ({ environmentId, name, connected }),
             )
           : [],
       )
