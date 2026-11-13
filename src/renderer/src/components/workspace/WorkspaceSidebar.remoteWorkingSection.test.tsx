@@ -117,12 +117,17 @@ async function createHarness() {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
+    meshConversationList: async () => ({
+      ok: true,
+      conversations,
+      access: 'operate',
+      capabilities: [],
+    }),
+  }
+  // That machine's Studio, as this window's own client of it reaches it.
+  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  fakePairedStudios(domWindow.api as object, {
+    'workspaces.list': () => ({
       workspaces: ['rw1', 'rw2', 'rw3', 'rw4'].map((id) => ({
         id,
         name: id,
@@ -130,19 +135,9 @@ async function createHarness() {
         folderPath: id === 'rw4' ? '/Users/dev/quiet-project' : '/Users/dev/demo-app',
         repository: null,
       })),
-      gaps: [],
     }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations,
-      access: 'operate',
-      capabilities: [],
-      lifecycle: true,
-      rowMenu: true,
-      markUnread: true,
-    }),
-    meshVisitConversation: async () => ({ ok: true, workspaceId: 'rw1', lastVisitedAt: Date.now() }),
-  }
+    'conversation.visit': () => ({ lastVisitedAt: Date.now() }),
+  })
 
   const React = await import('react')
   const { act } = React

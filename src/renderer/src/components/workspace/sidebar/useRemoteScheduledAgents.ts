@@ -5,11 +5,13 @@ import type { MeshConnection, MeshScheduledAgentAction } from '../../../../../sh
 import type { TailnetScope } from '../../../../../shared/tailnet'
 import { tailnetScopeGrantsAccess } from '../../../../../shared/tailnet'
 import type { RemoteBrowseEntry } from '../remoteBand/remoteSessionsModel'
+import { pairedStudioAvailable } from '../../../studio/pairedStudio'
+import { pairedScheduledAgents } from '../../../studio/pairedSchedules'
 
 // Each paired machine's scheduled agents, for the sidebar's Scheduled section.
 // A schedule there runs on that machine, by that machine's scheduler, so it is
-// listed and controlled from here over the `schedule.*` tools the machine
-// serves to a paired device: on `workspace:read` to list, `workspace:operate`
+// listed and controlled from here on that machine's Studio (`schedules.*`),
+// asked by this window itself: on `workspace:read` to list, `workspace:operate`
 // to run, pause, resume or close one.
 //
 // Read on the same beat as the machine's rows: whenever its browse settles —
@@ -125,7 +127,7 @@ export function useRemoteScheduledAgents({
   const [lists, setLists] = useState<
     ReadonlyMap<string, { agents: ScheduledAgentView[]; pausedAll: ScheduledAgentsPause | null }>
   >(() => new Map())
-  const bridge = typeof window !== 'undefined' && typeof window.api?.meshScheduledAgents === 'function'
+  const bridge = pairedStudioAvailable()
   // The machines that may be asked, and when each was last browsed: the beat.
   const readable = useMemo(
     () =>
@@ -139,11 +141,14 @@ export function useRemoteScheduledAgents({
     [bridge, browses, connections, enabled],
   )
   const asking = useRef(new Set<string>())
+  const machinesRef = useRef(connections)
+  machinesRef.current = connections
   const read = useCallback((connectionId: string) => {
     if (asking.current.has(connectionId)) return
     asking.current.add(connectionId)
-    void window.api
-      .meshScheduledAgents({ connectionId })
+    const machineName =
+      machinesRef.current.find((connection) => connection.id === connectionId)?.machineName ?? 'That machine'
+    void pairedScheduledAgents({ id: connectionId, machineName })
       .then((result) => {
         // A machine that did not answer keeps what it last said, as its rows do.
         if (!result.ok) return

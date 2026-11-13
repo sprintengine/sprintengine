@@ -1,4 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
+import { changePairedChat } from '../../../studio/pairedChats'
 
 import {
   negotiateChatCapabilities,
@@ -98,7 +99,7 @@ export type ConversationTransport = {
   /** The paired machine the conversation runs on, for a remote transport. */
   machineName?: string
   /** Where a remote chat's skills and MCP servers are listed: the machine and the project there. */
-  remoteExtensions?: { connectionId: string; workspaceId: string }
+  remoteExtensions?: { connectionId: string; workspaceId: string; machineName?: string }
   /**
    * What a remote chat's `/` list is kept under in this window, in place of a
    * folder (`remoteCommandsFolder`): no folder of this disk names it.
@@ -154,9 +155,9 @@ export type ConversationTransport = {
   cancelQueued?(input: { key: ConversationKey; queuedId: string }): Promise<ConversationTransportResult>
   /**
    * Stop the machine the chat runs on watching one of its pull requests
-   * (`chat-unwatch-pull-request`). Absent here, where the window's own Studio
-   * keeps the watch. A pull request is listed as watched only by a machine
-   * that takes this, and an older one is refused in words.
+   * (`pullRequests.unwatch` on its Studio). Absent here, where the window's own
+   * Studio keeps the watch. A machine whose Studio does not take it is refused
+   * in words.
    */
   unwatchPullRequest?(input: { url: string }): Promise<ConversationTransportResult>
   /**
@@ -512,7 +513,7 @@ export function createRemoteConversationTransport(input: {
     },
     // A paired desktop over the lane says no environment id.
     environmentId: null,
-    remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId },
+    remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId, machineName: input.machineName },
     commandsFolder: remoteCommandsFolder(key),
     pullRequestHost: remotePullRequestHost(key, () => input.onPullRequestRecorded?.()),
     subscribe: (subscription, cb) =>
@@ -595,11 +596,12 @@ export function createRemoteConversationTransport(input: {
           ...(resume.always ? { always: true } : {}),
         }),
       ),
-    unwatchPullRequest: async (input) => {
-      const answer = await window.api.meshChangeConversation({
-        connectionId: key.connectionId,
-        workspaceId: key.workspaceId,
-        change: { kind: 'unwatch-pull-request', agentId: key.agentId, url: input.url },
+    unwatchPullRequest: async (asked) => {
+      // The pull request's, on that machine's Studio, asked by this window itself.
+      const answer = await changePairedChat({ id: key.connectionId, machineName: input.machineName }, key.workspaceId, {
+        kind: 'unwatch-pull-request',
+        agentId: key.agentId,
+        url: asked.url,
       })
       return answer.ok ? { ok: true } : { ok: false, message: answer.message }
     },

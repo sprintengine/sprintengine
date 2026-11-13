@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from 'vitest'
 
+import { StudioError } from '../../../../../packages/client-runtime/src/public'
+import { fakePairedStudios } from '../../studio/pairedStudio.double'
 import { createRemoteConversationHistoryProvider } from './remoteConversationHistoryProvider'
 import { registerRemoteChatOpener } from '../workspace/remoteBand/remoteChatSearch'
 import { clearConversationJump, usePendingConversationJump } from '../../utils/conversationHistoryNavigation'
@@ -18,29 +20,28 @@ afterEach(() => {
 })
 
 test('each machine is asked once, and its chats are rows that open at the match', async () => {
-  const asked: unknown[] = []
-  ;(window as unknown as { api: unknown }).api = {
-    meshConversationSearch: async (input: { connectionId: string }) => {
-      asked.push(input)
-      return input.connectionId === 'c1'
-        ? {
-            ok: true,
-            chats: [
-              {
-                workspaceId: 'rw1',
-                chatTitle: 'Parser review',
-                hits: [
-                  { agentId: 'agent-1', seq: 9, snippet: 'agent said parser', from: 'agent' },
-                  { agentId: 'agent-1', seq: 4, snippet: 'you said parser', from: 'person' },
-                ],
-                count: 5,
-              },
+  const api = {}
+  ;(window as unknown as { api: unknown }).api = api
+  const studio = fakePairedStudios(api, {
+    'conversation.searchChats': (_params, connectionId) => {
+      // build-box's Studio is from before the search.
+      if (connectionId !== 'c1') throw new StudioError('unknown_method', 'No such method.')
+      return {
+        chats: [
+          {
+            workspaceId: 'rw1',
+            chatTitle: 'Parser review',
+            hits: [
+              { agentId: 'agent-1', seq: 9, snippet: 'agent said parser', from: 'agent' },
+              { agentId: 'agent-1', seq: 4, snippet: 'you said parser', from: 'person' },
             ],
-            truncated: false,
-          }
-        : { ok: false, code: 'search_unsupported', message: 'build-box cannot search its chats from here yet.' }
+            count: 5,
+          },
+        ],
+        truncated: false,
+      }
     },
-  }
+  })
   const provider = createRemoteConversationHistoryProvider({
     getMachines: () => [
       { connectionId: 'c1', machineName: 'mac-mini' },
@@ -48,7 +49,7 @@ test('each machine is asked once, and its chats are rows that open at the match'
     ],
   })
   const rows = await provider.load('parser', context, undefined)
-  expect(asked).toEqual([
+  expect(studio.calls.map(({ connectionId, params }) => ({ connectionId, query: params.query }))).toEqual([
     { connectionId: 'c1', query: 'parser' },
     { connectionId: 'c2', query: 'parser' },
   ])
@@ -86,9 +87,13 @@ test('each machine is asked once, and its chats are rows that open at the match'
 })
 
 test('no machine able to answer is said as the palette says a failed search', async () => {
-  ;(window as unknown as { api: unknown }).api = {
-    meshConversationSearch: async () => ({ ok: false, code: 'unreachable', message: 'mac-mini is not answering.' }),
-  }
+  const api = {}
+  ;(window as unknown as { api: unknown }).api = api
+  fakePairedStudios(api, {
+    'conversation.searchChats': () => {
+      throw new StudioError('unavailable', 'mac-mini is not answering.')
+    },
+  })
   const provider = createRemoteConversationHistoryProvider({
     getMachines: () => [{ connectionId: 'c1', machineName: 'mac-mini' }],
   })

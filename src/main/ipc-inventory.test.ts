@@ -177,8 +177,8 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   terminals: 3,
   modules: 0,
   extensions: 0,
-  'paired-machines': 52,
-  access: 45,
+  'paired-machines': 26,
+  access: 44,
   workspaces: 47,
   'web-tab': 6,
 }

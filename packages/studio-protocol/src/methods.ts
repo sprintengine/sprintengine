@@ -243,6 +243,8 @@ export type StudioCreatedConversation = {
   /** The preset the chat runs on: the one asked for, lowered to the client's ceiling. */
   permissionPreset?: ConversationWirePermissionPreset
   permissionMode?: string
+  /** The worktree it runs in, when that is one (cut for it, or named by `inWorktree`), with its branch. */
+  worktree?: { path: string; branch: string | null }
 }
 
 /** What `server.info` answers: the welcome without the per-connection parts. */

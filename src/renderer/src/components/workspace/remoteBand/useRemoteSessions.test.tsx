@@ -54,23 +54,19 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, attachments: [], requests: [], reachability: [] }),
-    meshBrowse: async () => {
-      calls.browse += 1
-      return {
-        connectionId: 'c1',
-        reachable: true,
-        unreachableReason: null,
-        unauthorized: false,
-        scopes: connection.scopes,
-        workspaces: [],
-        gaps: [],
-      }
-    },
     meshConversationList: async () => {
       calls.list += 1
       return { ok: true, conversations: [], access: 'read', capabilities: [] }
     },
   }
+  // That machine's Studio, as this window's own client of it reaches it: a browse is its project list.
+  const { fakePairedStudios } = await import('../../../studio/pairedStudio.double')
+  fakePairedStudios((dom.window as unknown as { api: object }).api, {
+    'workspaces.list': () => {
+      calls.browse += 1
+      return { workspaces: [] }
+    },
+  })
 
   let latest: RemoteSessions | null = null
   function Probe() {

@@ -47,7 +47,7 @@ import {
   CANVAS_PUSH_RETRY_MS,
 } from './canvasSync'
 import type { CanvasBoardExporter } from './canvasExport'
-import type { CanvasBoardClient } from './canvasBoardSource'
+import { onCanvasScene, type CanvasBoardClient } from './canvasBoardSource'
 import { canvasLinkAction } from './canvasLinks'
 
 // The live editor, and the ONE file in the tree that imports
@@ -499,11 +499,11 @@ export default function CanvasEditor({
     commitTimerRef.current = window.setTimeout(flushCommit, CANVAS_COMMIT_DEBOUNCE_MS)
   }, [cancelCommitTimer, flushCommit, flushPendingPush])
 
-  // Scenes from main. Subscribed as soon as this component exists rather than
+  // Scenes from main, or from this window's paired boards. Subscribed as soon as this component exists rather than
   // when the API handle arrives: a push that lands in between is buffered and
   // applied by the effect below once there is an editor to apply it to.
   useEffect(() => {
-    return window.api.onCanvasScene((push) => {
+    return onCanvasScene((push) => {
       if (!canvasPushMatchesBoard(push, board)) return
       if (!shouldApplyCanvasPush(push.revision, appliedRevisionRef.current)) return
       const editor = apiRef.current

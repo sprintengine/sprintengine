@@ -3,7 +3,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWindowPageVisible } from '../../../utils/windowActivity'
 import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPresence'
 import { publishRemoteConversationList } from './remoteConversationFacts'
-import { remoteLinkStateOf, shouldBrowse, type RemoteBrowseEntry, type RemoteLinkState } from './remoteSessionsModel'
+import { browsePairedMachine } from '../../../studio/pairedDiscovery'
+import { pairedStudioAvailable } from '../../../studio/pairedStudio'
+import {
+  chatManageOf,
+  remoteLinkStateOf,
+  shouldBrowse,
+  type RemoteBrowseEntry,
+  type RemoteLinkState,
+} from './remoteSessionsModel'
 
 // The reads behind the sidebar's Remote band (remote-sessions-in-the-sidebar,
 // epic decision 2): an expanded band IS the ask, and the asking is bounded —
@@ -71,13 +79,16 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
   const [browses, setBrowses] = useState<ReadonlyMap<string, RemoteBrowseEntry>>(() => new Map())
   const browsesRef = useRef(browses)
   browsesRef.current = browses
+  // The paired machines as the presence lists them, for what a read asks by.
+  const machinesRef = useRef(presence.mesh)
+  machinesRef.current = presence.mesh
   /** Machines being read right now, and what was asked for while each read was out. */
   const inFlight = useRef(new Map<string, ReadonlySet<ReadPart>>())
   const queued = useRef(new Map<string, Set<ReadPart>>())
   // A host without the mesh bridge (partial test harnesses, narrower
   // preloads) gets a band that draws what the rows already know and asks
   // nothing — never a throw inside an effect.
-  const bridge = typeof window !== 'undefined' && typeof window.api?.meshBrowse === 'function'
+  const bridge = pairedStudioAvailable()
   const conversationBridge = bridge && typeof window.api?.meshConversationList === 'function'
   const visible = useWindowPageVisible()
 
@@ -99,7 +110,12 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
       if (wantBrowse)
         setBrowses((current) => withEntry(current, connectionId, (entry) => ({ ...entry, loading: true })))
       void (async () => {
-        const result = wantBrowse ? await window.api.meshBrowse(connectionId) : null
+        // What it holds, and what of its chats' records it keeps for this
+        // one, asked of its Studio by this window itself.
+        const machine = machinesRef.current.find((connection) => connection.id === connectionId)
+        const result = wantBrowse
+          ? await browsePairedMachine(machine ?? { id: connectionId, machineName: 'That machine', scopes: [] })
+          : null
         // Its chats too, once it has answered: the list is a short socket
         // on the conversation lane. A pairing that may not read them, or a
         // machine that does not serve them, lists none.
@@ -120,21 +136,17 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
                   ? []
                   : entry.conversations
               : entry.conversations
-            // Whether the machine keeps its chats' rest, and what this pairing
-            // may do with them, as its newest list said.
-            const lifecycle = listed?.ok ? listed.lifecycle === true : entry.lifecycle
+            // What this pairing may do with its chats, as its newest list said.
             const access = listed?.ok ? listed.access : entry.access
-            // …and whether it takes its chats' row menu and Mark unread from here.
-            const rowMenu = listed?.ok ? listed.rowMenu === true : entry.rowMenu
-            const markUnread = listed?.ok ? listed.markUnread === true : entry.markUnread
-            // …and what of its chats' management it takes from here.
-            const manage = listed?.ok ? listed.manage : entry.manage
+            // What of its chats' records the machine keeps for this one, as
+            // its Studio's welcome said on the newest browse that reached it.
+            const record = result?.chatRecord
+            const lifecycle = record ? record.lifecycle : entry.lifecycle
+            const manage = record ? chatManageOf(record) : entry.manage
             const listedParts = {
               ...(conversations ? { conversations } : {}),
               ...(lifecycle !== undefined ? { lifecycle } : {}),
               ...(access !== undefined ? { access } : {}),
-              ...(rowMenu !== undefined ? { rowMenu } : {}),
-              ...(markUnread !== undefined ? { markUnread } : {}),
               ...(manage !== undefined ? { manage } : {}),
             }
             if (!result) return { ...entry, at: Date.now(), ...listedParts }

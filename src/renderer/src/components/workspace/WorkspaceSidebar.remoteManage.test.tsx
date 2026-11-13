@@ -90,7 +90,6 @@ test('WorkspaceSidebar.remoteManage', async () => {
     }),
     chat({ workspaceId: 'rw4', chatTitle: 'Another chat', autoCompact: true, pullRequests: [watchedPr(8)] }),
   ]
-  const changes: Array<{ connectionId: string; workspaceId: string; change: Record<string, unknown> }> = []
 
   domWindow.api = {
     platform: 'darwin',
@@ -113,12 +112,18 @@ test('WorkspaceSidebar.remoteManage', async () => {
     tailnetGetLiveState: async () => ({ revision: 1, devices: [] }),
     meshListConnections: async () => [connection],
     meshGetLiveState: async () => ({ revision: 1, requests: [], reachability: [] }),
-    meshBrowse: async () => ({
-      connectionId: 'c1',
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes: connection.scopes,
+    meshConversationList: async () => ({
+      ok: true,
+      conversations: listed,
+      access: 'operate',
+      capabilities: [],
+    }),
+  }
+  // That machine's Studio, as this window's own client of it reaches it: it
+  // keeps its chats' records and takes Stop watching.
+  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  const studio = fakePairedStudios(domWindow.api as object, {
+    'workspaces.list': () => ({
       workspaces: ['rw1', 'rw4'].map((id) => ({
         id,
         name: 'parser',
@@ -126,28 +131,18 @@ test('WorkspaceSidebar.remoteManage', async () => {
         folderPath: '/Users/dev/parser',
         repository: null,
       })),
-      gaps: [],
     }),
-    meshConversationList: async () => ({
-      ok: true,
-      conversations: listed,
-      access: 'operate',
-      capabilities: [],
-      lifecycle: true,
-      rowMenu: true,
-      markUnread: true,
-      manage: { rename: true, autoCompact: true, unwatchPullRequest: true },
-    }),
-    meshChangeConversation: async (input: (typeof changes)[number]) => {
-      changes.push(input)
+    'conversation.rename': (params) => {
       // The machine writes it, and its next list says so.
-      if (input.change.kind === 'rename')
-        listed = listed.map((entry) =>
-          entry.workspaceId === input.workspaceId ? { ...entry, chatTitle: input.change.name as string } : entry,
-        )
-      return { ok: true, workspaceId: input.workspaceId }
+      listed = listed.map((entry) =>
+        entry.workspaceId === params.workspaceId ? { ...entry, chatTitle: params.name as string } : entry,
+      )
+      return { name: params.name }
     },
-  }
+    'conversation.setAutoCompact': (params) => ({ enabled: params.enabled }),
+    'pullRequests.unwatch': () => ({ watched: true }),
+  })
+  const last = () => studio.writes().at(-1)
 
   const React = await import('react')
   const { act } = React
@@ -282,10 +277,10 @@ test('WorkspaceSidebar.remoteManage', async () => {
     assert.equal(field.value, 'Review the parser')
     await typeInto(field, 'Parser, reviewed')
     await settle()
-    assert.deepEqual(changes.at(-1), {
+    assert.deepEqual(last(), {
       connectionId: 'c1',
-      workspaceId: 'rw1',
-      change: { kind: 'rename', name: 'Parser, reviewed' },
+      method: 'conversation.rename',
+      params: { workspaceId: 'rw1', name: 'Parser, reviewed' },
     })
     assert.ok(remoteRowOf('Parser, reviewed'), 'the row reads the new name')
 
@@ -296,10 +291,10 @@ test('WorkspaceSidebar.remoteManage', async () => {
     assert.ok(followedField, 'the opened row turns into a field')
     await typeInto(followedField, 'Another chat, renamed')
     await settle()
-    assert.deepEqual(changes.at(-1), {
+    assert.deepEqual(last(), {
       connectionId: 'c1',
-      workspaceId: 'rw4',
-      change: { kind: 'rename', name: 'Another chat, renamed' },
+      method: 'conversation.rename',
+      params: { workspaceId: 'rw4', name: 'Another chat, renamed' },
     })
     assert.deepEqual(renamed, [{ id: 'w-followed', name: 'Another chat, renamed' }])
     assert.ok(
@@ -317,36 +312,42 @@ test('WorkspaceSidebar.remoteManage', async () => {
     await escape()
     const compactMenu = await openMenuOn(remoteRowOf('Parser, reviewed'))
     await click(compactMenu, 'Auto compact')
-    assert.deepEqual(changes.at(-1), {
+    assert.deepEqual(last(), {
       connectionId: 'c1',
-      workspaceId: 'rw1',
-      change: { kind: 'auto-compact', enabled: true },
+      method: 'conversation.setAutoCompact',
+      params: { workspaceId: 'rw1', enabled: true },
     })
     assert.ok(menu(), 'the switch leaves the menu open to show it flip, as on a local row')
     await escape()
     const followedCompact = await openMenuOn(followedRow())
     await click(followedCompact, 'Auto compact')
-    assert.deepEqual(changes.at(-1), {
+    assert.deepEqual(last(), {
       connectionId: 'c1',
-      workspaceId: 'rw4',
-      change: { kind: 'auto-compact', enabled: false },
+      method: 'conversation.setAutoCompact',
+      params: { workspaceId: 'rw4', enabled: false },
     })
     await escape()
 
     // ── Stop watching ──
     const watchMenu = await openMenuOn(remoteRowOf('Parser, reviewed'))
     await click(watchMenu, 'Stop watching #7')
-    assert.deepEqual(changes.at(-1), {
+    assert.deepEqual(last(), {
       connectionId: 'c1',
-      workspaceId: 'rw1',
-      change: { kind: 'unwatch-pull-request', agentId: 'agent-1', url: 'https://github.com/acme/parser/pull/7' },
+      method: 'pullRequests.unwatch',
+      params: {
+        conversation: { workspaceId: 'rw1', agentId: 'agent-1' },
+        url: 'https://github.com/acme/parser/pull/7',
+      },
     })
     const followedWatch = await openMenuOn(followedRow())
     await click(followedWatch, 'Stop watching #8')
-    assert.deepEqual(changes.at(-1), {
+    assert.deepEqual(last(), {
       connectionId: 'c1',
-      workspaceId: 'rw4',
-      change: { kind: 'unwatch-pull-request', agentId: 'agent-1', url: 'https://github.com/acme/parser/pull/8' },
+      method: 'pullRequests.unwatch',
+      params: {
+        conversation: { workspaceId: 'rw4', agentId: 'agent-1' },
+        url: 'https://github.com/acme/parser/pull/8',
+      },
     })
 
     // ── New chat in project ──

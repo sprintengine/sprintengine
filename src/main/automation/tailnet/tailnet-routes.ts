@@ -401,14 +401,6 @@ export const TAILNET_CAPABILITIES = [
   // They name the chat, never a folder. A client that does not see it draws
   // no Create PR under this machine's chats, as before.
   'chat-create-pull-request',
-  // A paired desktop's Stop watching on a chat here (2026-10-25): the
-  // `conversation.pull_request_unwatch` tool, served to paired devices only,
-  // ends this machine's watch of a chat's pull request, and each listed pull
-  // request says while it is watched (`watch`), so a paired desktop offers
-  // Stop watching where this machine's own menu and strip do. A chat's marks,
-  // name, Auto compact, delete, search and always-allow rules are this
-  // machine's Studio's (`chat-lifecycle`, `approval-rules` in its welcome).
-  'chat-unwatch-pull-request',
   // An outside MCP client may sign in with OAuth (the MCP authorization spec)
   // instead of pairing: discovery from the MCP endpoint's 401.
   'mcp-oauth',

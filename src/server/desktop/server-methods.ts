@@ -67,6 +67,12 @@ export const SERVER_METHODS = {
   /** `{ connectionId }` → nothing, once the check is done: ask a paired desktop now whether it answers (the mesh is this process's). */
   meshCheckReachability: 'mesh.check-reachability',
   /**
+   * `{ connectionId, origin }` → `EnvironmentTicketResult`: a desktop window's
+   * ticket for one connection to a paired desktop's Studio, bought with the
+   * device token the mesh keeps (the window never holds it).
+   */
+  meshWindowTicket: 'mesh.window-ticket',
+  /**
    * `{ which: 'local' | 'wsl' }` → how many machines were asked: the boot's
    * detection of the agent CLIs, which the shell times and the server runs
    * (the CLIs and their version check are the core's).

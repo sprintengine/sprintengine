@@ -1,4 +1,10 @@
 import { parseMachinePath } from '../../../../../shared/machine-paths'
+import { browsePairedMachine, pairedWorkspaceCheckout } from '../../../studio/pairedDiscovery'
+import {
+  createPairedScheduledAgent,
+  pairedScheduledAgentAction,
+  updatePairedScheduledAgent,
+} from '../../../studio/pairedSchedules'
 import React from 'react'
 import type { AgentCli, CliPermissionPreset, WorkspaceSkill } from '../../../../../shared/electron-api'
 import type { MeshBrowse, MeshConnection, MeshNewChatWorktree } from '../../../../../shared/tailnet-mesh'
@@ -711,8 +717,8 @@ export default function NewAgentPanel({
       const existing = current.get(connection.id)
       return existing && existing !== 'loading' ? current : new Map(current).set(connection.id, 'loading')
     })
-    return window.api
-      .meshBrowse(connection.id)
+    // Asked of that machine's Studio by this window itself.
+    return browsePairedMachine(connection)
       .then((browse) => {
         setMachineBrowses((current) => new Map(current).set(connection.id, { browse, at: Date.now() }))
         return browse
@@ -862,11 +868,8 @@ export default function NewAgentPanel({
   // folder that is not a repository both arrive here with `repository: null`,
   // and both get the plain glyph instead.
   const remotePicked = remoteTarget?.picked ?? null
-  // A paired machine keeps a New chat's effort only where it said so
-  // (`new-chat-effort`); elsewhere the picker offers no level, since one sent
-  // to an older build would be skipped and the chat run at its own default.
-  const remoteTakesEffort = remoteTarget?.capabilities?.includes('new-chat-effort') ?? false
-  const effortOffered = !remoteTarget || remoteTakesEffort
+  // A paired machine keeps a New chat's effort once its Studio has answered.
+  const effortOffered = !remoteTarget || remoteTarget.reached
   const scopeProjectKey = remoteTarget
     ? remotePicked?.repository
       ? projectColorKey({ folderPath: null, repository: remotePicked.repository })
@@ -921,25 +924,27 @@ export default function NewAgentPanel({
       error: null,
       picked: null,
       checkout: null,
-      capabilities: null,
+      reached: false,
     })
     void browseMachine(connection).then((browse) => {
       setRemoteTarget((current) => {
         if (current?.connection.id !== connection.id) return current
-        if (!browse.reachable) {
-          return {
-            ...current,
-            workspaces: [],
-            projects: [],
-            error: browse.unreachableReason ?? 'That machine is not answering.',
-          }
-        }
+        // A refused pairing does not answer either; it is said as itself, the
+        // one failure pairing again fixes.
         if (browse.unauthorized) {
           return {
             ...current,
             workspaces: [],
             projects: [],
             error: 'That machine refused this pairing — re-pair from Settings → Remote.',
+          }
+        }
+        if (!browse.reachable) {
+          return {
+            ...current,
+            workspaces: [],
+            projects: [],
+            error: browse.unreachableReason ?? 'That machine is not answering.',
           }
         }
         // A gap is a DIFFERENT statement from an empty list: a pairing
@@ -975,7 +980,7 @@ export default function NewAgentPanel({
           editedOn?.connectionId === connection.id ? remoteProjectOfFolder(projects, editedOn.folderPath) : null
         return {
           ...current,
-          capabilities: browse.capabilities ?? null,
+          reached: true,
           workspaces: browse.workspaces,
           projects,
           // A choice already made meanwhile is never overwritten by a late answer.
@@ -992,14 +997,14 @@ export default function NewAgentPanel({
   // does not. A refusal (a read-only pairing, a machine gone quiet) leaves the
   // branch unnamed rather than guessed.
   const remoteConnectionId = remoteTarget?.connection.id ?? null
+  const remoteMachineName = remoteTarget?.connection.machineName ?? ''
   // `workspace.checkout` is keyed by workspace id, and a project's seat is one
   // of the chats standing in it — every chat in a folder answers for the folder.
   const remotePickedId = remoteTarget?.picked?.workspaceId ?? null
   React.useEffect(() => {
     if (!remoteConnectionId || !remotePickedId) return
     let cancelled = false
-    void window.api
-      .meshWorkspaceCheckout(remoteConnectionId, remotePickedId)
+    void pairedWorkspaceCheckout({ id: remoteConnectionId, machineName: remoteMachineName }, remotePickedId)
       .then((result) => {
         if (cancelled) return
         setRemoteTarget((current) => {
@@ -1012,7 +1017,7 @@ export default function NewAgentPanel({
     return () => {
       cancelled = true
     }
-  }, [remoteConnectionId, remotePickedId])
+  }, [remoteConnectionId, remoteMachineName, remotePickedId])
   const activeBranch = useWorkspaceStore((s) => {
     const ws = s.workspaces.find((w) => w.id === workspaceId)
     return ws ? (resolveWorkspaceWorktree(ws)?.branch ?? null) : null
@@ -1350,16 +1355,9 @@ export default function NewAgentPanel({
   }, [workspaceRoot])
 
   // A paired machine cuts a chat's worktree itself, from its own checkout of
-  // the project, where it said it takes one (`new-chat-worktree`) and the
-  // checkout it served is a git repository. An older build would skip the
-  // argument and start the chat in the checkout, so there the chip is absent.
-  const remoteCapabilities = remoteTarget?.capabilities ?? null
-  const remoteWorktreeOffered =
-    !extensionMode &&
-    remoteTarget?.checkout?.git === true &&
-    (remoteCapabilities?.includes('new-chat-worktree') ?? false)
-  // Its name, where that machine takes one; elsewhere it makes one up.
-  const remoteWorktreeNameable = remoteCapabilities?.includes('new-chat-worktree-name') ?? false
+  // the project, named as asked, where the checkout it served is a git
+  // repository.
+  const remoteWorktreeOffered = !extensionMode && remoteTarget?.checkout?.git === true
   // Worktree is offered only inside a git repository, for an agent: absent,
   // not disabled. On this machine, a repository here; on a paired machine,
   // one there that said it cuts worktrees for a chat started from here. An
@@ -1620,8 +1618,7 @@ export default function NewAgentPanel({
     if (confirm.kind !== 'conversation' || !confirm.cli) return
     setScheduleBusy(true)
     try {
-      const result = await window.api.meshCreateScheduledAgent({
-        connectionId: target.connection.id,
+      const result = await createPairedScheduledAgent(target.connection, {
         workspaceId: picked.workspaceId,
         prompt: body,
         cron,
@@ -1683,21 +1680,23 @@ export default function NewAgentPanel({
     const picked = remoteTarget?.picked ?? null
     setScheduleBusy(true)
     try {
-      const result = await window.api.meshUpdateScheduledAgent({
-        connectionId: on.connectionId,
-        id: agent.id,
-        ...(remoteProjectMoved(picked, agent.folderPath) ? { workspaceId: picked.workspaceId } : {}),
-        prompt: body,
-        cron,
-        timezone: scheduleTimezone,
-        ...(once !== null ? { once } : {}),
-        cli: confirm.cli,
-        model: confirm.model ?? null,
-        permissionPreset: effectivePreset,
-        worktreeName: confirm.worktree ? confirm.worktree.name : null,
-        skills: (confirm.skills ?? []).map((skill) => skill.id),
-        mcpServers: composer.mcpServers.map((server) => server.id),
-      })
+      const result = await updatePairedScheduledAgent(
+        { id: on.connectionId, machineName },
+        {
+          id: agent.id,
+          ...(remoteProjectMoved(picked, agent.folderPath) ? { workspaceId: picked.workspaceId } : {}),
+          prompt: body,
+          cron,
+          timezone: scheduleTimezone,
+          ...(once !== null ? { once } : {}),
+          cli: confirm.cli,
+          model: confirm.model ?? null,
+          permissionPreset: effectivePreset,
+          worktreeName: confirm.worktree ? confirm.worktree.name : null,
+          skills: (confirm.skills ?? []).map((skill) => skill.id),
+          mcpServers: composer.mcpServers.map((server) => server.id),
+        },
+      )
       if (!result.ok) {
         showToast({ tone: 'error', title: 'Not saved', description: result.message })
         return
@@ -1794,12 +1793,11 @@ export default function NewAgentPanel({
   const runSavedNow = async () => {
     if (!editing) return
     if (editingRemote) {
-      const ran = await window.api
-        .meshScheduledAgentAction({ connectionId: editingRemote.connectionId, id: editing.id, action: 'run' })
-        .catch((error: unknown) => ({
-          ok: false as const,
-          message: error instanceof Error ? error.message : String(error),
-        }))
+      const ran = await pairedScheduledAgentAction(
+        { id: editingRemote.connectionId, machineName: editingRemote.machineName },
+        editing.id,
+        'run',
+      )
       showToast(
         ran.ok
           ? { tone: 'good', title: 'Started', description: remoteScheduleActionWords('run', editingRemote.machineName) }
@@ -1832,12 +1830,11 @@ export default function NewAgentPanel({
       return
     }
     const action = paused ? 'pause' : 'resume'
-    const result = await window.api
-      .meshScheduledAgentAction({ connectionId: editingRemote.connectionId, id: agent.id, action })
-      .catch((error: unknown) => ({
-        ok: false as const,
-        message: error instanceof Error ? error.message : String(error),
-      }))
+    const result = await pairedScheduledAgentAction(
+      { id: editingRemote.connectionId, machineName: editingRemote.machineName },
+      agent.id,
+      action,
+    )
     showToast(
       result.ok
         ? {
@@ -1952,13 +1949,10 @@ export default function NewAgentPanel({
         cli: confirm.cli,
         cliModel: confirm.model ?? null,
         permissionPreset: effectivePreset,
-        ...(remoteTakesEffort && confirm.reasoning ? { effort: confirm.reasoning } : {}),
+        ...(confirm.reasoning ? { effort: confirm.reasoning } : {}),
         branch: remoteTarget.checkout?.branch ?? null,
-        // A worktree cut for it from the default branch on origin, named only
-        // where the machine takes a name.
-        ...(confirm.worktree
-          ? { worktree: { kind: 'new' as const, name: remoteWorktreeNameable ? confirm.worktree.name.trim() : '' } }
-          : {}),
+        // A worktree cut for it from the default branch on origin, by its name.
+        ...(confirm.worktree ? { worktree: { kind: 'new' as const, name: confirm.worktree.name.trim() } } : {}),
         remoteRepository: remoteTarget.picked.repository,
         ...(images.length > 0 ? { images: images.map(remoteImage) } : {}),
         ...(confirm.skills?.length ? { skills: confirm.skills.map((skill) => skill.id) } : {}),
@@ -2321,9 +2315,9 @@ export default function NewAgentPanel({
   const remoteSkillsSource = React.useMemo(
     () =>
       remotePickedConnection && remotePickedWorkspace
-        ? { connectionId: remotePickedConnection, workspaceId: remotePickedWorkspace }
+        ? { connectionId: remotePickedConnection, workspaceId: remotePickedWorkspace, machineName: remoteMachineName }
         : null,
-    [remotePickedConnection, remotePickedWorkspace],
+    [remotePickedConnection, remotePickedWorkspace, remoteMachineName],
   )
   const plusSkills = React.useMemo(
     () =>
@@ -2435,7 +2429,7 @@ export default function NewAgentPanel({
       target={remoteTarget}
       color={scopeProjectColor}
       // A scheduled agent's runs start in a project over there, by its scheduler.
-      noProjectOffered={!scheduled && (remoteTarget.capabilities?.includes('new-chat-no-project') ?? false)}
+      noProjectOffered={!scheduled && remoteTarget.reached}
       onPick={(project) => {
         setRemoteTarget((current) => (current ? { ...current, picked: project, checkout: null } : current))
       }}
@@ -2974,13 +2968,7 @@ export default function NewAgentPanel({
             {/* Worktree, off until turned on or named, else the branch the
                 launch runs on. Set apart from the project by the strip's
                 spacing alone, with no rule between. */}
-            {worktreeOffered ? (
-              <WorktreeChip
-                name={composer.worktreeName}
-                onChange={composer.setWorktreeName}
-                nameable={!remoteTarget || remoteWorktreeNameable}
-              />
-            ) : null}
+            {worktreeOffered ? <WorktreeChip name={composer.worktreeName} onChange={composer.setWorktreeName} /> : null}
             {stripBranch ? (
               // The one item on the strip that may shrink: it gives its front
               // away first, so the end of the name — the part that says what

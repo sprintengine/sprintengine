@@ -77,7 +77,6 @@ type CanvasPaneApi = Pick<
   | 'onCanvasScene'
   | 'onCanvasPresence'
   | 'onCanvasOpenRequest'
-  | 'canvasRemoteAccess'
 >
 
 export function webCanvasPaneApi(): CanvasPaneApi {
@@ -129,12 +128,5 @@ export function webCanvasPaneApi(): CanvasPaneApi {
     onCanvasOpenRequest: (callback) => listen('canvas:open-request', callback),
     // A tab carries no lane of its own to another machine: a paired chat's
     // board is drawn as the picture that machine renders, and the pane says so.
-    canvasRemoteAccess: async () => ({
-      ok: true,
-      live: false,
-      canEdit: false,
-      reason:
-        "A browser tab shows a paired machine's boards as pictures. Open the chat in the desktop app to edit them.",
-    }),
   }
 }

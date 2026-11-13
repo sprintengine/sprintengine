@@ -90,7 +90,7 @@ test('NewAgentPanel', async () => {
   // The mesh the remote-machine tests drive (remote-sessions-ux /
   // new-chat-on-a-remote-machine). Reassigned per check.
   let meshConnections: Array<Record<string, unknown>> = []
-  let meshBrowseAnswer: (connectionId: string) => Record<string, unknown> = () => ({
+  let machineBrowse: (connectionId: string) => Record<string, unknown> = () => ({
     connectionId: 'c',
     reachable: true,
     unreachableReason: null,
@@ -103,10 +103,7 @@ test('NewAgentPanel', async () => {
   // Which repository a local folder is (one-project-across-machines); null = no remote.
   let localIdentityAnswer: (folderPath: string) => Record<string, unknown> | null = () => null
   // The picked remote project's checkout facts (checkout-and-branch-on-remote-create).
-  let meshCheckoutAnswer: (connectionId: string, workspaceId: string) => Record<string, unknown> = (
-    _c,
-    workspaceId,
-  ) => ({
+  let machineCheckout: (connectionId: string, workspaceId: string) => Record<string, unknown> = (_c, workspaceId) => ({
     ok: true,
     checkout: {
       workspaceId,
@@ -138,9 +135,6 @@ test('NewAgentPanel', async () => {
     },
     getGitRepoRoot: async () => '/proj',
     meshListConnections: async () => meshConnections,
-    meshBrowse: async (connectionId: string) => meshBrowseAnswer(connectionId),
-    meshWorkspaceCheckout: async (connectionId: string, workspaceId: string) =>
-      meshCheckoutAnswer(connectionId, workspaceId),
     getGitRepositoryIdentity: async (folderPath: string) => localIdentityAnswer(folderPath),
     onMeshEvent: () => () => {},
     defaultWorkspaceParentDir: async () => '/w',
@@ -194,6 +188,31 @@ test('NewAgentPanel', async () => {
         issues: [],
       }
     },
+  }
+  // Each paired machine's Studio, as this window's own client of it reaches
+  // it: its projects as `machineBrowse` says them, and a project's checkout as
+  // `machineCheckout` does.
+  const { fakePairedStudios } = await import('../../../studio/pairedStudio.double')
+  const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
+  const pairedStudio = fakePairedStudios((dom.window as unknown as { api: object }).api, {
+    'workspaces.list': (_params, connectionId) => {
+      const browse = machineBrowse(connectionId)
+      const gap = (browse.gaps as Array<{ code: string; message: string }> | undefined)?.[0]
+      if (gap) throw new StudioError(gap.code, gap.message)
+      return { workspaces: browse.workspaces }
+    },
+    'workspaces.checkout': (params, connectionId) => {
+      const answer = machineCheckout(connectionId, params.workspaceId as string)
+      if (answer.ok !== true) throw new StudioError(String(answer.code), String(answer.message))
+      return answer.checkout
+    },
+  })
+  // A machine that refuses the pairing, or is away, does not connect at all.
+  pairedStudio.refuse = (connectionId) => {
+    const browse = machineBrowse(connectionId)
+    if (browse.unauthorized === true) return new StudioError('unauthorized', 'That machine refused this pairing.')
+    if (browse.reachable === false) return new StudioError('unavailable', String(browse.unreachableReason))
+    return null
   }
   Object.assign(agentSetupDouble, (dom.window as unknown as { api: object }).api)
   // The MCP server these checks pick. It is INSTALLED — since the third-party
@@ -1543,7 +1562,7 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air'), machine('m2', 'Mini')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -1593,7 +1612,7 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air'), machine('m2', 'Mini')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -1616,13 +1635,12 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air'), machine('m2', 'Mini')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
           unauthorized: false,
           scopes: [],
-          capabilities: ['conversations'],
           workspaces: [workspace('w1', 'alpha'), workspace('w2', 'beta')],
           gaps: [],
         })
@@ -1632,16 +1650,19 @@ test('NewAgentPanel', async () => {
           localUpdates.push(args)
           return { ok: false, message: 'not here' }
         }
+        // That machine's Studio: what is saved and asked of its schedules there.
         const remoteUpdates: Array<Record<string, unknown>> = []
-        api.meshUpdateScheduledAgent = async (input: Record<string, unknown>) => {
-          remoteUpdates.push(input)
-          return { ok: true, agent: { ...agent, prompt: input.prompt } }
+        pairedStudio.answers['schedules.update'] = (params) => {
+          remoteUpdates.push(params)
+          return { schedule: { ...agent, prompt: params.prompt } }
         }
-        const actions: Array<Record<string, unknown>> = []
-        api.meshScheduledAgentAction = async (input: Record<string, unknown>) => {
-          actions.push(input)
-          return { ok: true, id: input.id, action: input.action }
-        }
+        pairedStudio.answers['schedules.pause'] = () => ({ schedule: agent })
+        pairedStudio.answers['schedules.runNow'] = () => ({ workspaceId: 'w-run' })
+        const actions = () =>
+          pairedStudio
+            .writes()
+            .filter((call) => call.method !== 'schedules.update')
+            .map((call) => [call.connectionId, call.params.id, call.method])
         const agent = {
           id: 'sa-7',
           prompt: 'Look over the open pull requests.',
@@ -1688,32 +1709,33 @@ test('NewAgentPanel', async () => {
         assert.equal(localUpdates.length, 0, 'never saved on this computer')
         assert.equal(remoteUpdates.length, 1)
         assert.deepEqual(
-          { ...remoteUpdates[0], skills: undefined, mcpServers: undefined, permissionPreset: undefined },
+          { ...remoteUpdates[0], commandId: undefined, permissionPreset: undefined },
           {
-            connectionId: 'm2',
             id: 'sa-7',
             prompt: 'Look over the open pull requests, and label them.',
             cron: '0 9 * * 1-5',
             timezone: 'UTC',
             cli: 'claude-code',
-            model: null,
-            worktreeName: null,
-            skills: undefined,
-            mcpServers: undefined,
+            model: '',
+            worktree: false,
+            skills: [],
+            mcpServers: [],
+            commandId: undefined,
             permissionPreset: undefined,
           },
-          'saved there, in the project it runs in',
+          'saved there, whole, in the project it runs in',
         )
+        assert.equal(pairedStudio.calls.find((call) => call.method === 'schedules.update')?.connectionId, 'm2')
         assert.equal(saved.length, 1, 'the host is told it saved')
 
         await click(view.container.querySelector('[data-schedule-editor-pause]'))
         await click(buttonWithText(view.container, 'Run now'))
         await settle()
         assert.deepEqual(
-          actions.map((action) => [action.connectionId, action.id, action.action]),
+          actions(),
           [
-            ['m2', 'sa-7', 'pause'],
-            ['m2', 'sa-7', 'run'],
+            ['m2', 'sa-7', 'schedules.pause'],
+            ['m2', 'sa-7', 'schedules.runNow'],
           ],
           'pause and Run now are asked of that machine',
         )
@@ -1745,7 +1767,7 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -1770,6 +1792,8 @@ test('NewAgentPanel', async () => {
           [...row.querySelectorAll('span.block')].map((span) => span.textContent?.trim()),
         )
         assert.deepEqual(rows, [
+          // A chat under no project, which every machine on the protocol takes.
+          ['No project', 'Chat in a folder of its own'],
           ['alpha', '/Users/dev/alpha'],
           ['beta', '/Users/dev/beta'],
         ])
@@ -2006,7 +2030,7 @@ test('NewAgentPanel', async () => {
       seedStore()
       resetRememberedMachineForTests()
       meshConnections = [machine('down', 'Down'), machine('revoked', 'Revoked'), machine('gap', 'Gap')]
-      meshBrowseAnswer = (id) => ({
+      machineBrowse = (id) => ({
         connectionId: id,
         reachable: id !== 'down',
         unreachableReason: id === 'down' ? 'Down is asleep.' : null,
@@ -2043,7 +2067,7 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -2155,7 +2179,7 @@ test('NewAgentPanel', async () => {
       resetNewChatDraftsForTests()
       writeNewChatDraft('win-files', { prompt: 'summarise', files: ['/Users/dev/Desktop/Q3 budget.xlsx'] })
       meshConnections = [machine('m1', 'Air')]
-      meshBrowseAnswer = (id) => ({
+      machineBrowse = (id) => ({
         connectionId: id,
         reachable: true,
         unreachableReason: null,
@@ -2236,15 +2260,15 @@ test('NewAgentPanel', async () => {
       },
     )
 
-    await check('a paired machine is sent the picked effort only where it keeps one', async () => {
+    await check('a paired machine is sent the picked effort', async () => {
       const { writeNewChatDraft, resetNewChatDraftsForTests } = await import('./newChatDraft')
-      for (const keeps of [true, false]) {
+      {
         seedStore()
         resetRememberedMachineForTests()
         resetNewChatDraftsForTests()
         writeNewChatDraft('win-effort', { engine: { cli: 'claude-code', model: null, reasoning: 'high' } })
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -2252,7 +2276,6 @@ test('NewAgentPanel', async () => {
           scopes: [],
           workspaces: [workspace('w1', 'alpha', '/srv/alpha')],
           gaps: [],
-          capabilities: keeps ? ['conversations', 'new-chat-effort'] : ['conversations'],
         })
         const remoteLaunches: Array<Record<string, unknown>> = []
         const view = await remoteRender({
@@ -2269,11 +2292,7 @@ test('NewAgentPanel', async () => {
           )
         assert.match(engineChip()?.textContent ?? '', /· high/, 'here, the chip names the level')
         await pickMachine(view, 'Air')
-        assert.equal(
-          /· high/.test(engineChip()?.textContent ?? ''),
-          keeps,
-          keeps ? 'a machine that keeps it shows the level' : 'one that does not names no level',
-        )
+        assert.match(engineChip()?.textContent ?? '', /· high/, 'the machine keeps it, and the chip shows the level')
         const field = composerField(view.container)
         await act(async () => {
           typeIntoComposer(field, 'fix the build')
@@ -2284,18 +2303,18 @@ test('NewAgentPanel', async () => {
           )
         })
         assert.equal(remoteLaunches.length, 1)
-        assert.equal(remoteLaunches[0]?.effort, keeps ? 'high' : undefined)
+        assert.equal(remoteLaunches[0]?.effort, 'high')
         view.unmount()
       }
       resetNewChatDraftsForTests()
     })
 
-    await check('a paired machine offers No project where it takes one, even with no project open', async () => {
-      for (const takes of [true, false]) {
+    await check('a paired machine offers No project, even with no project open', async () => {
+      {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -2303,7 +2322,6 @@ test('NewAgentPanel', async () => {
           scopes: [],
           workspaces: [],
           gaps: [],
-          capabilities: takes ? ['conversations', 'new-chat-no-project'] : ['conversations'],
         })
         const remoteLaunches: Array<Record<string, unknown>> = []
         const view = await remoteRender({
@@ -2320,8 +2338,8 @@ test('NewAgentPanel', async () => {
         const row = [...dom.window.document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((option) =>
           (option.textContent ?? '').startsWith('No project'),
         )
-        assert.equal(Boolean(row), takes, takes ? 'it is offered' : 'a machine that cannot is not offered it')
-        if (takes) {
+        assert.ok(row, 'it is offered')
+        {
           await click(row!)
           await settle()
           const field = composerField(view.container)
@@ -2345,7 +2363,7 @@ test('NewAgentPanel', async () => {
       seedStore()
       resetRememberedMachineForTests()
       meshConnections = [machine('m1', 'Air')]
-      meshBrowseAnswer = (id) => ({
+      machineBrowse = (id) => ({
         connectionId: id,
         reachable: true,
         unreachableReason: null,
@@ -2390,7 +2408,7 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -2455,7 +2473,7 @@ test('NewAgentPanel', async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -2509,7 +2527,7 @@ test('NewAgentPanel', async () => {
     // A paired machine that cuts worktrees for a chat started from here: the
     // strip offers the Worktree chip as it does for this device, and a picker
     // of the worktrees the project already has there.
-    const worktreeMachineBrowse = (capabilities: string[]) => (id: string) => ({
+    const worktreeMachineBrowse = (id: string) => ({
       connectionId: id,
       reachable: true,
       unreachableReason: null,
@@ -2517,7 +2535,6 @@ test('NewAgentPanel', async () => {
       scopes: ['workspace:read', 'conversation:operate'],
       workspaces: [workspace('w1', 'alpha', '/srv/alpha')],
       gaps: [],
-      capabilities,
     })
     const checkoutWithWorktrees = (_c: string, workspaceId: string) => ({
       ok: true,
@@ -2536,12 +2553,6 @@ test('NewAgentPanel', async () => {
         ],
       },
     })
-    const ALL_WORKTREE_CAPABILITIES = [
-      'conversations',
-      'new-chat-worktree',
-      'new-chat-worktree-name',
-      'new-chat-in-worktree',
-    ]
     const sendWithEnter = async (view: Harness, text: string) => {
       const field = composerField(view.container)
       await act(async () => {
@@ -2562,8 +2573,8 @@ test('NewAgentPanel', async () => {
         resetNewChatDraftsForTests()
         writeNewChatDraft('win-remote-wt', { prompt: '' })
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = worktreeMachineBrowse(ALL_WORKTREE_CAPABILITIES)
-        meshCheckoutAnswer = checkoutWithWorktrees
+        machineBrowse = worktreeMachineBrowse
+        machineCheckout = checkoutWithWorktrees
         const remoteLaunches: Array<Record<string, unknown>> = []
         const view = await remoteRender({
           draftKey: 'win-remote-wt',
@@ -2602,48 +2613,12 @@ test('NewAgentPanel', async () => {
     )
 
     await check(
-      'a paired machine that cuts worktrees but takes no name offers the chip without a name field, and sends none',
-      async () => {
-        const { writeNewChatDraft, resetNewChatDraftsForTests } = await import('./newChatDraft')
-        seedStore()
-        resetRememberedMachineForTests()
-        resetNewChatDraftsForTests()
-        writeNewChatDraft('win-remote-unnamed', { prompt: '', worktreeName: 'typed-earlier' })
-        meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = worktreeMachineBrowse(['conversations', 'new-chat-worktree'])
-        meshCheckoutAnswer = checkoutWithWorktrees
-        const remoteLaunches: Array<Record<string, unknown>> = []
-        const view = await remoteRender({
-          draftKey: 'win-remote-unnamed',
-          onLaunchRemote: async (launch: Record<string, unknown>) => {
-            remoteLaunches.push(launch)
-          },
-        })
-        await settle()
-        await pickMachine(view, 'Air')
-        await settle()
-        const chip = view.container.querySelector('[data-worktree-chip]')
-        assert.equal(chip?.getAttribute('data-worktree-chip'), 'on')
-        assert.equal(chip?.querySelector('input'), null, 'no name field')
-        assert.equal(
-          view.container.querySelector('[data-remote-worktree-trigger="true"]'),
-          null,
-          'and no picker of existing worktrees, which that machine cannot start a chat in',
-        )
-        await sendWithEnter(view, 'fix the build')
-        assert.deepEqual(remoteLaunches[0]?.worktree, { kind: 'new', name: '' })
-        view.unmount()
-        resetNewChatDraftsForTests()
-      },
-    )
-
-    await check(
-      'a remote chat carries no checkout control: no worktree chip, and the branch the panel read rides the launch',
+      'a remote chat carries no checkout control, and the branch the panel read rides the launch',
       async () => {
         seedStore()
         resetRememberedMachineForTests()
         meshConnections = [machine('m1', 'Air')]
-        meshBrowseAnswer = (id) => ({
+        machineBrowse = (id) => ({
           connectionId: id,
           reachable: true,
           unreachableReason: null,
@@ -2653,7 +2628,7 @@ test('NewAgentPanel', async () => {
           gaps: [],
         })
         const checkoutReads: string[] = []
-        meshCheckoutAnswer = (_c, workspaceId) => {
+        machineCheckout = (_c, workspaceId) => {
           checkoutReads.push(workspaceId)
           return {
             ok: true,
@@ -2684,12 +2659,6 @@ test('NewAgentPanel', async () => {
         )
         assert.equal(view.container.querySelector('[data-branch-trigger="true"]'), null, 'and no branch picker')
 
-        assert.equal(
-          view.container.querySelector('[data-worktree-chip]'),
-          null,
-          'a machine that has not said it cuts worktrees for a chat from here offers no worktree chip',
-        )
-
         const textarea = composerField(view.container)
         await act(async () => {
           typeIntoComposer(textarea, 'fix the build')
@@ -2703,7 +2672,7 @@ test('NewAgentPanel', async () => {
         assert.equal(remoteLaunches.length, 1, 'the chat travels')
         assert.equal(remoteLaunches[0]?.branch, 'main', 'with the branch the panel read, for the row')
         assert.equal('checkout' in (remoteLaunches[0] ?? {}), false, 'and no checkout request')
-        assert.equal('worktree' in (remoteLaunches[0] ?? {}), false, 'and no worktree')
+        assert.equal('worktree' in (remoteLaunches[0] ?? {}), false, 'and no worktree, none being asked for')
         view.unmount()
       },
     )
@@ -2721,7 +2690,7 @@ test('NewAgentPanel', async () => {
         localIdentityAnswer = (folderPath) => (folderPath === '/proj' ? sprintengine : null)
         meshConnections = [machine('m1', 'Air'), machine('m2', 'Mini'), machine('m3', 'Down')]
         const browsed: string[] = []
-        meshBrowseAnswer = (id) => {
+        machineBrowse = (id) => {
           browsed.push(id)
           return {
             connectionId: id,
@@ -3061,7 +3030,7 @@ test('NewAgentPanel', async () => {
       }
       localIdentityAnswer = (folderPath) => (folderPath === '/proj' ? sprintengine : null)
       meshConnections = [machine('m1', 'Air')]
-      meshBrowseAnswer = (id) => ({
+      machineBrowse = (id) => ({
         connectionId: id,
         reachable: true,
         unreachableReason: null,
@@ -3237,7 +3206,7 @@ test('NewAgentPanel', async () => {
       meshConnections = [machine('m1', 'Air')]
       // One workspace, so it is picked without a click — and its machine reported
       // no repository, which is what an older peer and a non-repo folder both do.
-      meshBrowseAnswer = (id) => ({
+      machineBrowse = (id) => ({
         connectionId: id,
         reachable: true,
         unreachableReason: null,

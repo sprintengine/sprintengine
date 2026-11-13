@@ -16,6 +16,7 @@ import {
   canvasBoardClient,
   canvasBoardSourceOf,
   continueBoardInNewChat,
+  onCanvasScene,
   readCanvasBoardAccess,
   type CanvasOpenedBoard,
 } from './canvasBoardSource'
@@ -211,7 +212,7 @@ export function CanvasTab({ workspaceId, tab, active }: CanvasTabProps) {
   // The mounted editor applies the same pushes itself, with reconciliation.
   useEffect(() => {
     if (!path) return
-    return window.api.onCanvasScene((push) => {
+    return onCanvasScene((push) => {
       if (!canvasPushMatchesBoard(push, board)) return
       setState((previous) => {
         if (previous.kind !== 'ready') return previous

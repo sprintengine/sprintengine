@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import { hashSecret } from './secret-hash'
 import { hostname } from 'os'
 
+import type { EnvironmentTicketResult } from '../../../shared/environments'
 import { backoffDelayMs } from '../../../shared/exponentialBackoff'
 import { ConnectionSupervisor, type ConnectionAttempt } from '../../../../packages/client-runtime/src/public'
 import {
@@ -13,28 +14,16 @@ import {
   type TailnetScope,
 } from '../../../shared/tailnet'
 import {
-  type MeshBrowse,
   type MeshConnection,
   type MeshEvent,
   type MeshLiveState,
   type MeshMachineReachability,
   type MeshPairRequestPhase,
-  type MeshCreateConversationResult,
-  type MeshSettleConversationResult,
-  type MeshVisitConversationResult,
-  type MeshChangeConversationResult,
-  type MeshGap,
   type MeshPairResult,
-  type MeshWorkspace,
   type MeshCollectPairingResult,
   type MeshPairRequestView,
   type MeshRequestPairingResult,
   type MeshForgetMachineResult,
-  type MeshWorkspaceCheckoutResult,
-  type MeshCanvasBoard,
-  type MeshCanvasBoardsResult,
-  type MeshCanvasScreenshotResult,
-  type MeshWorkspaceExtensionsResult,
   type MeshPullRequestCreateResult,
   type MeshPullRequestDraftResult,
   type MeshPullRequestPushResult,
@@ -48,21 +37,7 @@ import {
   type MeshConversationListResult,
   type MeshConversationFileSearchResult,
   type MeshConversationCommandsResult,
-  type MeshConversationManage,
-  type MeshConversationDeletePlanResult,
-  type MeshConversationSearchResult,
-  type MeshApprovalRulesResult,
-  type MeshRevokeApprovalRuleResult,
-  type MeshCreateScheduledAgentInput,
-  type MeshCreateScheduledAgentResult,
-  type MeshUpdateScheduledAgentInput,
-  type MeshUpdateScheduledAgentResult,
-  type MeshScheduledAgentAction,
-  type MeshScheduledAgentActionResult,
-  type MeshScheduledAgentsResult,
 } from '../../../shared/tailnet-mesh'
-import type { SettledChatWorktreePlan } from '../../../shared/ipc/settled-chats'
-import type { ScheduledAgentLastRun, ScheduledAgentView, ScheduledAgentsPause } from '../../../shared/scheduled-agents'
 import type {
   ConversationContextBreakdownResult,
   ConversationImageAttachment,
@@ -77,10 +52,8 @@ import { parseImageAttachments } from '../../conversation-ipc-inputs'
 import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   isConversationChangedPath,
-  isConversationHighlightColor,
   parseConversationChangesSelection,
 } from '../../../../packages/conversation-protocol/src/public'
-import type { WorkspaceExtensions } from '../../../shared/workspace-extensions'
 import {
   PULL_REQUEST_BODY_MAX_CHARS,
   PULL_REQUEST_TITLE_MAX_CHARS,
@@ -89,7 +62,6 @@ import {
   type CreatePullRequestState,
 } from '../../../shared/git/pull-request-create'
 import type { PullRequestForge } from '../../../shared/git/pr-url'
-import type { WorkspaceSkill } from '../../../shared/ipc/skills'
 import { createRemoteConversationCache } from './tailnet-remote-conversation-cache'
 import {
   createRemoteConversations,
@@ -99,16 +71,7 @@ import {
 import { createTailnetMeshStore, type StoredMeshConnection, type TailnetMeshStore } from './tailnet-mesh-store'
 import type { TailnetPeerIdentity } from './tailnet-peer-identity'
 import { tailnetPeerSupports } from './tailnet-routes'
-import { createPeerStudios, peerRefusal, type PeerStudioTarget } from './tailnet-peer-studio'
-import { StudioError, type StudioClient } from '../../../../packages/client-runtime/src/public'
-import {
-  STUDIO_APPROVAL_RULES_CAPABILITY,
-  STUDIO_CHAT_LIFECYCLE_CAPABILITY,
-  STUDIO_CHAT_SEARCH_MAX_CHARS,
-  STUDIO_CHAT_SEARCH_MIN_CHARS,
-  type StudioCapability,
-} from '../../../../packages/studio-protocol/src/public'
-import type { StudioScheduleDraft, StudioSchedules } from '../../../../packages/studio-protocol/src/schedules'
+import { createPeerStudios, peerRefusal, peerStudioTicket, type PeerStudioTarget } from './tailnet-peer-studio'
 import type { UsageWireArgs } from '../../../../packages/studio-protocol/src/chat-stores'
 import {
   callRemoteTool,
@@ -144,7 +107,6 @@ import { asRecord, isRecord } from '../../../shared/records'
 import { mayHoldQuotes, quotesToPlainText } from '../../../shared/chat-quotes'
 import { parseCliPermissionPreset } from '../../../shared/cli-permission-preset'
 import { powerActivity, type PowerActivity } from '../../power-activity'
-import { createPeerCanvas, type PeerCanvas, type PeerCanvasDeps } from './tailnet-peer-canvas'
 
 // The Mesh: this Studio driving other machines.
 //
@@ -228,12 +190,6 @@ const PAIR_WAIT_GRACE_MS = 15_000
 const DEFAULT_REACHABILITY_INTERVAL_MS = 5 * 60_000
 /** A check must be cheap for a sleeping laptop too: three seconds, not the browse's ten. */
 const DEFAULT_REACHABILITY_TIMEOUT_MS = 3_000
-/**
- * How long a New chat with images waits for the chat over there to begin a
- * turn on its first message. Long enough for a CLI's slow start, as the
- * create's own wait is.
- */
-const DEFAULT_FIRST_MESSAGE_TIMEOUT_MS = 60_000
 
 export type TailnetMeshService = {
   /**
@@ -314,99 +270,13 @@ export type TailnetMeshService = {
    * state the caller asked for and the state it gets.
    */
   forgetMachine(input: { deviceId?: unknown; connectionId?: unknown }): MeshForgetMachineResult
-  browse(connectionId: unknown): Promise<MeshBrowse>
   /**
-   * Start a chat agent in a remote workspace (`conversation:operate`). The
-   * chat runs there, in that machine's conversation runtime; a pane here
-   * follows it over the conversation stream by the ids this returns.
+   * A desktop window's ticket for one connection to a paired machine's
+   * Studio, bought with the device token kept here: good once, for thirty
+   * seconds, from the window's `origin` alone. The window spends it and keeps
+   * nothing; the token never leaves this process.
    */
-  createConversation(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-    noProject?: unknown
-    cli?: unknown
-    prompt?: unknown
-    cliModel?: unknown
-    permissionPreset?: unknown
-    /** The CLI's effort level the chat keeps. Sent only to a machine that advertises `new-chat-effort`. */
-    effort?: unknown
-    /**
-     * The worktree the chat starts in there (`MeshNewChatWorktree`). Refused
-     * here, before anything is asked, for a machine that does not advertise
-     * taking it: an older handler skips the argument and starts the chat in
-     * the project's own checkout, which is the one place it was asked not to.
-     */
-    worktree?: unknown
-    /**
-     * Images that go with the first message, in the shape a chat here sends
-     * them. The chat is started without its prompt, each image goes up the
-     * machine's upload route under the new chat's session, and the prompt is
-     * then sent naming them, as a message to a followed chat is (and as the
-     * phone's New chat with pictures does). The answer comes once the chat
-     * has taken that message; a chat that could not is settled and refused.
-     */
-    attachments?: unknown
-    /**
-     * That machine's skill ids, installed into the chat's folder there and run
-     * with its first message. Refused for a machine without `new-chat-skills`.
-     */
-    skills?: unknown
-  }): Promise<MeshCreateConversationResult>
-  /**
-   * Settle a chat on a paired machine, or bring it back with `settled: false`
-   * (`conversation:operate`). That machine owns the chat's rest: it writes
-   * the same record its own row menu does, and its list leaves the chat out.
-   */
-  settleConversation(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-    settled?: unknown
-  }): Promise<MeshSettleConversationResult>
-  /**
-   * Say a chat on a paired machine is on screen here, so its "finished,
-   * unseen" mark clears on every device that shows it.
-   */
-  visitConversation(input: { connectionId: unknown; workspaceId?: unknown }): Promise<MeshVisitConversationResult>
-  /**
-   * A row menu change to a chat on a paired machine (`MeshConversationChange`):
-   * Star, Highlight color, Snooze, Auto-settle or Mark unread, written by that
-   * machine to its own record of the chat (`conversation:operate`).
-   */
-  changeConversation(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-    change?: unknown
-  }): Promise<MeshChangeConversationResult>
-  /** What deleting a settled chat on a paired machine would do, as it plans it (`chat-lifecycle`). */
-  conversationDeletePlan(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-  }): Promise<MeshConversationDeletePlanResult>
-  /** What was said in a paired machine's chats, as its own palette finds it (`chat-lifecycle`). */
-  conversationSearch(input: { connectionId: unknown; query?: unknown }): Promise<MeshConversationSearchResult>
-  /** The "always allow" rules a paired machine's chats run with (`approval-rules`). */
-  approvalRules(input: { connectionId: unknown }): Promise<MeshApprovalRulesResult>
-  /** Revoke one of them there (`approval-rules`, on `conversation:operate`). */
-  revokeApprovalRule(input: { connectionId: unknown; ruleId?: unknown }): Promise<MeshRevokeApprovalRuleResult>
-  /** A paired machine's scheduled agents, and whether it takes a schedule from here (`scheduled-agents`). */
-  scheduledAgents(input: { connectionId: unknown }): Promise<MeshScheduledAgentsResult>
-  /** Run now, pause, resume or close one of them there (`workspace:operate`). */
-  scheduledAgentAction(input: {
-    connectionId: unknown
-    id?: unknown
-    action?: unknown
-  }): Promise<MeshScheduledAgentActionResult>
-  /** Schedule an agent there, in one of its projects (`scheduled-agents`). */
-  createScheduledAgent(input: Partial<MeshCreateScheduledAgentInput>): Promise<MeshCreateScheduledAgentResult>
-  /** Save an edit to one of them there (`scheduled-agents-edit`). */
-  updateScheduledAgent(input: Partial<MeshUpdateScheduledAgentInput>): Promise<MeshUpdateScheduledAgentResult>
-  /**
-   * One remote workspace's checkout facts — branch, trunk, branches,
-   * worktrees — over `workspace.checkout` (workspace:read). A pairing that
-   * may not read them gets the refusal as its answer, never an empty list
-   * dressed as "no branches".
-   */
-  workspaceCheckout(connectionId: unknown, workspaceId: unknown): Promise<MeshWorkspaceCheckoutResult>
+  windowTicket(connectionId: unknown, origin: string): Promise<EnvironmentTicketResult>
   /**
    * The requests still waiting and each machine's last reachability answer,
    * stamped with the same revision the events carry — the initial read behind
@@ -496,25 +366,6 @@ export type TailnetMeshService = {
    */
   conversationCommandList(input: { key: unknown; refresh?: unknown }): Promise<MeshConversationCommandsResult>
   /**
-   * What a chat in one of that machine's projects can use: its skills and,
-   * for a CLI, the MCP servers that CLI is configured with there
-   * (`workspace-extensions`).
-   */
-  workspaceExtensions(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    cli?: unknown
-  }): Promise<MeshWorkspaceExtensionsResult>
-  /** A paired machine's Canvas boards (`canvas.list` there): this chat's project's, or every board on it. */
-  canvasBoards(input: { connectionId: unknown; workspaceId: unknown; scope?: unknown }): Promise<MeshCanvasBoardsResult>
-  /** A picture of one of them, named by its id (`canvas.picture` there). */
-  canvasScreenshot(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    board: unknown
-    dark?: unknown
-  }): Promise<MeshCanvasScreenshotResult>
-  /**
    * One machine's usage over a window, for this desktop's usage dashboard
    * (`usage-report`, on `workspace:read`). The handshake comes first, so a
    * machine that is away, revoked, or on a Studio without the tool is told
@@ -596,12 +447,6 @@ export type TailnetMeshService = {
    * name `conversation-message-images`.
    */
   conversationAttachment(input: { key: unknown; ref: unknown }): Promise<MeshConversationImageResult>
-  /**
-   * A paired chat's Canvas pane editing that machine's boards
-   * (tailnet-peer-canvas.ts): the same calls the pane makes of this machine's
-   * canvas service, carried to that one's Studio.
-   */
-  remoteCanvas: PeerCanvas
   shutdown(): void
 }
 
@@ -671,24 +516,17 @@ export type TailnetMeshServiceOptions = {
   pairPollMs?: number
   reachabilityIntervalMs?: number
   reachabilityTimeoutMs?: number
-  /** How long a New chat's first message with images may take to be taken; tests shorten it. */
-  firstMessageTimeoutMs?: number
   createStore?: (options: { resolveUserDataDir: () => string; log?: (message: string) => void }) => TailnetMeshStore
   /** Timing for followed conversations; tests shorten it. */
   conversations?: Pick<
     RemoteConversationsOptions,
     'retry' | 'requestTimeoutMs' | 'commandTimeoutMs' | 'listTimeoutMs' | 'livenessTimeoutMs' | 'saveDelayMs'
   >
-  /** Timing for a paired chat's boards; tests shorten it. */
-  canvas?: Pick<PeerCanvasDeps, 'lingerMs' | 'requestTimeoutMs'>
   log?: (message: string) => void
 }
 
 /** A mesh event before the service stamps its revision — distributed over the union, member by member. */
 type MeshEventBody = MeshEvent extends infer E ? (E extends MeshEvent ? Omit<E, 'revision'> : never) : never
-
-/** How long a list waits on a paired machine's Studio to say what of its chats' records it keeps. */
-const PEER_WELCOME_TIMEOUT_MS = 5_000
 
 export function createTailnetMeshService(options: TailnetMeshServiceOptions): TailnetMeshService {
   const store = (options.createStore ?? createTailnetMeshStore)({
@@ -699,7 +537,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
   const pairPollMs = Math.max(50, options.pairPollMs ?? DEFAULT_PAIR_POLL_MS)
   const reachabilityIntervalMs = Math.max(50, options.reachabilityIntervalMs ?? DEFAULT_REACHABILITY_INTERVAL_MS)
   const reachabilityTimeoutMs = Math.max(50, options.reachabilityTimeoutMs ?? DEFAULT_REACHABILITY_TIMEOUT_MS)
-  const firstMessageTimeoutMs = Math.max(50, options.firstMessageTimeoutMs ?? DEFAULT_FIRST_MESSAGE_TIMEOUT_MS)
   const activity = options.activity ?? powerActivity
   const stretch = (): number => (activity.isOnBattery() ? BATTERY_STRETCH : 1)
   /** Someone could be looking: a window is up and the screen is not locked. */
@@ -1556,13 +1393,12 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
 
   // ── Reads shared across windows ───────────────────────────────────────────
   //
-  // Every window hears the same change push and re-reads the same machine;
-  // each browse is two round trips over there and each list a socket. One
-  // read per machine is in flight at a time, and its answer is shared for a
-  // moment after it lands. A push for that kind of change drops the shared
-  // answer, so the re-read it prompts goes to the machine.
+  // Every window hears the same change push and re-reads the same machine's
+  // chats, each list a socket. One read per machine is in flight at a time,
+  // and its answer is shared for a moment after it lands. A conversation push
+  // drops the shared answer, so the re-read it prompts goes to the machine.
+  // (What a machine holds, a window asks its Studio itself.)
   type SharedRead<T> = { promise: Promise<T>; settledAt: number | null }
-  const sharedBrowses = new Map<string, SharedRead<MeshBrowse>>()
   const sharedLists = new Map<string, SharedRead<MeshConversationListResult>>()
 
   function shareRead<T>(reads: Map<string, SharedRead<T>>, connectionId: string, read: () => Promise<T>): Promise<T> {
@@ -1584,7 +1420,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
 
   /** Drop what is shared for a machine: all of it, or what one kind of change makes stale. */
   function forgetSharedReads(connectionId: string, what?: ChangeKind): void {
-    if (what !== 'conversations') sharedBrowses.delete(connectionId)
     if (what === undefined || what === 'conversations') sharedLists.delete(connectionId)
   }
 
@@ -1629,129 +1464,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     for (const watch of watches.values()) watch.supervisor.wake()
   }
 
-  function browse(connectionId: unknown): Promise<MeshBrowse> {
-    const connection = connectionFor(connectionId)
-    if (!connection) return Promise.resolve(unknownConnectionBrowse(connectionId))
-    return shareRead(sharedBrowses, connection.id, () => browseNow(connection))
-  }
-
-  async function browseNow(connection: StoredMeshConnection): Promise<MeshBrowse> {
-    // Identity first: it is the cheapest authenticated call, so it separates
-    // "asleep" from "revoked" before anything else is attempted, and it returns
-    // the scopes as they are NOW rather than as they were at pairing.
-    const identity = await readRemoteIdentity({ endpoint: endpointOf(connection), token: connection.deviceToken })
-    if (!identity.ok) {
-      recordReachability(connection, {
-        reachable: false,
-        unauthorized: identity.code === 'unauthorized',
-        detail: identity.message,
-      })
-      return {
-        connectionId: connection.id,
-        reachable: false,
-        unreachableReason: identity.message,
-        unauthorized: identity.code === 'unauthorized',
-        scopes: connection.scopes,
-        workspaces: [],
-        gaps: [],
-      }
-    }
-    store.updateScopes(connection.id, identity.value.scopes)
-    store.markConnected(connection.id)
-    rememberIdentity(connection.id, identity.value)
-    recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
-    const scopes = identity.value.scopes
-
-    const gaps: MeshGap[] = []
-    const workspaces = await readWorkspaces(connection, scopes, gaps)
-
-    return {
-      connectionId: connection.id,
-      reachable: true,
-      unreachableReason: null,
-      unauthorized: false,
-      scopes,
-      workspaces,
-      gaps,
-      capabilities: identity.value.capabilities,
-    }
-  }
-
-  async function readWorkspaces(
-    connection: StoredMeshConnection,
-    scopes: TailnetScope[],
-    gaps: MeshGap[],
-  ): Promise<MeshWorkspace[]> {
-    // Asked for only when the grant allows it. A refusal is a real answer and is
-    // reported as one — an empty list would say "that machine has no
-    // workspaces", which is a different and false statement.
-    if (!scopes.some((scope) => scope.startsWith('workspace:'))) {
-      gaps.push({
-        part: 'workspaces',
-        code: 'scope_required',
-        message: "This pairing may not read that machine's workspaces.",
-      })
-      return []
-    }
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'workspace.list',
-    })
-    if (!answer.ok) {
-      gaps.push({ part: 'workspaces', code: answer.code, message: answer.message })
-      return []
-    }
-    const entries = Array.isArray(answer.value.workspaces) ? answer.value.workspaces : []
-    return entries.flatMap((entry) => {
-      const record = asRecord(entry)
-      if (!record || typeof record.id !== 'string') return []
-      const repository = asRecord(record.repository)
-      return [
-        {
-          id: record.id,
-          name: typeof record.name === 'string' ? record.name : record.id,
-          mode: typeof record.mode === 'string' ? record.mode : null,
-          folderPath: typeof record.folderPath === 'string' ? record.folderPath : null,
-          repository:
-            repository && typeof repository.canonicalKey === 'string' && repository.canonicalKey
-              ? {
-                  canonicalKey: repository.canonicalKey,
-                  remoteUrl: typeof repository.remoteUrl === 'string' ? repository.remoteUrl : '',
-                  name: typeof repository.name === 'string' ? repository.name : repository.canonicalKey,
-                }
-              : null,
-          settledAt:
-            typeof record.settledAt === 'number' && Number.isFinite(record.settledAt) ? record.settledAt : null,
-        },
-      ]
-    })
-  }
-
-  async function workspaceExtensions(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    cli?: unknown
-  }): Promise<MeshWorkspaceExtensionsResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    if (typeof input.workspaceId !== 'string' || !input.workspaceId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose skills to list.' }
-    if (!tailnetPeerSupports(peerCapabilities.get(connection.id), 'workspace-extensions'))
-      return { ok: false, code: 'skills_unsupported', message: skillsUnsupported(connection) }
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'workspace.extensions',
-      args: {
-        workspaceId: input.workspaceId,
-        ...(typeof input.cli === 'string' && input.cli ? { cli: input.cli } : {}),
-      },
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
-    return { ok: true, extensions: readWorkspaceExtensions(answer.value) }
-  }
-
   /** A machine's published capabilities, asked of it when this run has not heard them yet. */
   async function knownCapabilities(connection: StoredMeshConnection): Promise<string[] | null | undefined> {
     const known = peerCapabilities.get(connection.id)
@@ -1759,87 +1471,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     const identity = await readRemoteIdentity({ endpoint: endpointOf(connection), token: connection.deviceToken })
     if (identity.ok) rememberIdentity(connection.id, identity.value)
     return peerCapabilities.get(connection.id)
-  }
-
-  /** A failed ask of a paired machine's boards, in the words the pane shows. */
-  function canvasRefused(
-    connection: StoredMeshConnection,
-    error: unknown,
-  ): { ok: false; code: string; message: string } {
-    const refused = peerRefusal(connection, error)
-    return {
-      ok: false,
-      code: refused.code,
-      message:
-        refused.kind === 'outdated'
-          ? `${connection.machineName} runs a Studio that does not serve its boards here. Update SprintEngine Studio there.`
-          : refused.code === 'unavailable' && /does not serve canvas/u.test(refused.message)
-            ? `${connection.machineName} is not offering its boards right now. Open SprintEngine Studio there and try again.`
-            : refused.message,
-    }
-  }
-
-  async function canvasBoards(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    scope?: unknown
-  }): Promise<MeshCanvasBoardsResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    if (typeof input.workspaceId !== 'string' || !input.workspaceId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose boards to list.' }
-    const workspaceId = input.workspaceId
-    const allBoards = input.scope === 'machine'
-    try {
-      const listed = await peerStudios.ask(peerTarget(connection), (client) =>
-        client.request('canvas.list', { workspaceId }),
-      )
-      const boards: MeshCanvasBoard[] = listed.boards
-        .filter((board) => allBoards || board.here)
-        .map((board) => ({
-          id: board.id,
-          path: board.path,
-          name: board.name,
-          project: board.project,
-          workspaceId: allBoards ? board.workspaceId : workspaceId,
-          modifiedAt: board.modifiedAt,
-          elementCount: board.elementCount,
-          here: board.here,
-        }))
-      return { ok: true, boards, allBoards, note: listed.note }
-    } catch (error) {
-      return canvasRefused(connection, error)
-    }
-  }
-
-  async function canvasScreenshot(input: {
-    connectionId: unknown
-    workspaceId: unknown
-    board: unknown
-    dark?: unknown
-  }): Promise<MeshCanvasScreenshotResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    if (typeof input.workspaceId !== 'string' || !input.workspaceId || typeof input.board !== 'string' || !input.board)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the board to show.' }
-    const params = { workspaceId: input.workspaceId, board: input.board, dark: input.dark === true }
-    try {
-      const picture = await peerStudios.ask(
-        peerTarget(connection),
-        (client) => client.request('canvas.picture', params),
-        // Drawn in a hidden window over there; the picture's own wait, not a read's.
-        45_000,
-      )
-      return {
-        ok: true,
-        mimeType: picture.mimeType,
-        data: picture.dataBase64,
-        width: picture.width,
-        height: picture.height,
-      }
-    } catch (error) {
-      return canvasRefused(connection, error)
-    }
   }
 
   async function readUsage(input: {
@@ -2032,644 +1663,24 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     return outcome
   }
 
-  async function workspaceCheckout(connectionId: unknown, workspaceId: unknown): Promise<MeshWorkspaceCheckoutResult> {
-    const connection = connectionFor(connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    if (typeof workspaceId !== 'string' || !workspaceId) {
-      return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose checkout to read.' }
-    }
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'workspace.checkout',
-      args: { workspaceId },
-    })
-    if (!answer.ok) return { ok: false, code: answer.code, message: answer.message }
-    const branches = Array.isArray(answer.value.branches) ? answer.value.branches : []
-    const worktrees = Array.isArray(answer.value.worktrees) ? answer.value.worktrees : []
-    return {
-      ok: true,
-      checkout: {
-        workspaceId,
-        git: answer.value.git === true,
-        branch: typeof answer.value.branch === 'string' ? answer.value.branch : null,
-        defaultBranch: typeof answer.value.defaultBranch === 'string' ? answer.value.defaultBranch : null,
-        branches: branches.flatMap((entry) => {
-          const record = asRecord(entry)
-          if (!record || typeof record.name !== 'string') return []
-          return [{ name: record.name, current: record.current === true }]
-        }),
-        worktrees: worktrees.flatMap((entry) => {
-          const record = asRecord(entry)
-          if (!record || typeof record.path !== 'string') return []
-          return [
-            {
-              path: record.path,
-              branch: typeof record.branch === 'string' ? record.branch : null,
-              isMain: record.isMain === true,
-            },
-          ]
-        }),
-      },
-    }
-  }
-
-  async function createConversation(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-    noProject?: unknown
-    cli?: unknown
-    prompt?: unknown
-    cliModel?: unknown
-    permissionPreset?: unknown
-    effort?: unknown
-    worktree?: unknown
-    attachments?: unknown
-    skills?: unknown
-  }): Promise<MeshCreateConversationResult> {
-    const connection = connectionFor(input.connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    const noProject = input.noProject === true
-    if (noProject && !tailnetPeerSupports(peerCapabilities.get(connection.id), 'new-chat-no-project')) {
-      return {
-        ok: false,
-        code: 'no_project_unsupported',
-        message: `${connection.machineName} cannot start a chat without a project yet. Update SprintEngine Studio there to use it.`,
-      }
-    }
-    if (!noProject && (typeof input.workspaceId !== 'string' || !input.workspaceId)) {
-      return { ok: false, code: 'invalid_arguments', message: 'Name the remote workspace to start the chat in.' }
-    }
-    const presetRefusal = permissionModeRefusal(connection, input.permissionPreset)
-    if (presetRefusal) return presetRefusal
-    const worktree = newChatWorktreeArgs(connection, input.worktree)
-    if ('refused' in worktree) return worktree.refused
-    const skills = parseSkillIds(input.skills)
-    if (!skills.ok) return { ok: false, code: 'invalid_arguments', message: skills.message }
-    // Refused, never dropped: a handler from before `skills` skips it, and the
-    // chat would start without the skills its chips showed.
-    if (skills.ids.length > 0 && !tailnetPeerSupports(peerCapabilities.get(connection.id), 'new-chat-skills'))
-      return { ok: false, code: 'skills_unsupported', message: skillsUnsupported(connection) }
-    // The images are checked before anything is made over there: what the
-    // local boundary refuses, and a machine that has said it takes no
-    // uploads, are refused with no chat left behind.
-    let images: ConversationImageAttachment[] = []
-    if (input.attachments !== undefined) {
-      const parsed = parseImageAttachments(input.attachments)
-      if (!parsed.ok) return { ok: false, code: 'invalid_arguments', message: parsed.message }
-      images = parsed.attachments
-    }
-    if (images.length > 0) {
-      const capabilities = peerCapabilities.get(connection.id)
-      if (capabilities && !tailnetPeerSupports(capabilities, 'upload'))
-        return { ok: false, code: 'images_unsupported', message: uploadsUnsupported(connection) }
-    }
-    // Forwarded verbatim: the remote validates every field, and its refusal
-    // reaches the caller word for word. The workspace names the project the
-    // picker chose, not a chat to join, so the chat is asked for as a new one.
-    const args = {
-      ...(noProject ? { noProject: true } : { workspaceId: input.workspaceId }),
-      ...(typeof input.cli === 'string' && input.cli ? { cli: input.cli } : {}),
-      // With images the prompt is the first message's words, sent once the
-      // images are up: an upload is kept for the chat's session, which only
-      // exists once the chat does.
-      ...(typeof input.prompt === 'string' && input.prompt && images.length === 0 ? { prompt: input.prompt } : {}),
-      ...(typeof input.cliModel === 'string' && input.cliModel ? { cliModel: input.cliModel } : {}),
-      ...(typeof input.permissionPreset === 'string' && input.permissionPreset
-        ? { permissionPreset: input.permissionPreset }
-        : {}),
-      // Only where the machine said it keeps one: an older build's handler
-      // skips an argument it does not know, and the chat would run at its
-      // own default while this machine showed the level picked.
-      ...(typeof input.effort === 'string' &&
-      input.effort &&
-      tailnetPeerSupports(peerCapabilities.get(connection.id), 'new-chat-effort')
-        ? { effort: input.effort }
-        : {}),
-      ...worktree.args,
-      // Installed into the chat's folder there and kept on the chat; run with
-      // the first message, whichever way it goes.
-      ...(skills.ids.length > 0 ? { skills: skills.ids } : {}),
-    }
-    const create = (newChat: boolean) =>
-      callRemoteTool({
-        endpoint: endpointOf(connection),
-        token: connection.deviceToken,
-        tool: 'conversation.create',
-        args: newChat ? { ...args, newChat: true } : args,
-        // Starting a chat starts its CLI over there; a healthy slow start is not a failure.
-        timeoutMs: 60_000,
-      })
-    // A chat under no project is new by what it is, and names no workspace.
-    let answer = await create(!noProject)
-    // A machine that refuses the argument by name is asked the way it was
-    // before there was one, and adds the chat to that workspace. One from
-    // before the argument that ignores it does the same without asking. Not
-    // with a worktree, which only a new chat is born in: a machine that knows
-    // no `newChat` advertises no worktree either, so it is not asked one.
-    if (
-      !answer.ok &&
-      answer.code === 'invalid_arguments' &&
-      /newChat/u.test(answer.message) &&
-      Object.keys(worktree.args).length === 0
-    )
-      answer = await create(false)
-    if (!answer.ok) {
-      // A machine on a build from before `conversation.create` does not have
-      // the tool; say that rather than pass on the gateway's bare refusal.
-      if (answer.code === 'rpc_error' && /Unknown tool/u.test(answer.message)) {
-        return {
-          ok: false,
-          code: answer.code,
-          message: `${connection.machineName} cannot start chat agents yet. Update SprintEngine Studio there to start one from here.`,
-        }
-      }
-      return { ok: false, code: answer.code, message: answer.message }
-    }
-    const conversation = asRecord(answer.value.conversation)
-    const workspaceId = typeof conversation?.workspaceId === 'string' ? conversation.workspaceId : ''
-    const agentId = typeof conversation?.agentId === 'string' ? conversation.agentId : ''
-    if (!workspaceId || !agentId) {
-      return {
-        ok: false,
-        code: 'unreadable_result',
-        message: 'That machine started the chat but did not say which one it is, so it cannot be opened.',
-      }
-    }
-    if (images.length > 0) {
-      const prompt = typeof input.prompt === 'string' ? input.prompt : ''
-      const first = await sendFirstMessage(connection, { workspaceId, agentId }, prompt, images, skills.ids)
-      if (!first.ok) {
-        // An empty chat nobody asked for is put to rest, where the machine
-        // keeps rest, so it does not sit in its list. The draft stays here.
-        void settleConversation({ connectionId: connection.id, workspaceId }).catch(() => undefined)
-        return {
-          ok: false,
-          code: first.code,
-          message: `Its first message did not go: ${first.message}`,
-        }
-      }
-    }
-    const ranIn = asRecord(answer.value.worktree)
-    return {
-      ok: true,
-      workspaceId,
-      agentId,
-      title: typeof conversation?.name === 'string' && conversation.name ? conversation.name : 'Chat',
-      providerId: typeof conversation?.providerId === 'string' ? conversation.providerId : '',
-      modelId: typeof conversation?.modelId === 'string' ? conversation.modelId : '',
-      worktree:
-        ranIn && typeof ranIn.path === 'string' && ranIn.path
-          ? { path: ranIn.path, branch: typeof ranIn.branch === 'string' && ranIn.branch ? ranIn.branch : null }
-          : null,
-    }
-  }
-
-  // The `conversation.create` arguments a New chat's worktree is asked with,
-  // or the refusal for a machine that has not said it takes them. Each part
-  // has its own capability, as each arrived on its own: a worktree cut there
-  // (`new-chat-worktree`), the name it is cut under (`new-chat-worktree-name`),
-  // and a worktree the project already has (`new-chat-in-worktree`).
-  function newChatWorktreeArgs(
-    connection: StoredMeshConnection,
-    requested: unknown,
-  ): { args: Record<string, unknown> } | { refused: { ok: false; code: string; message: string } } {
-    const record = asRecord(requested)
-    if (!record) return { args: {} }
-    const capabilities = peerCapabilities.get(connection.id)
-    const refuse = (what: string) => ({
-      refused: {
-        ok: false as const,
-        code: 'worktree_unsupported',
-        message: `${connection.machineName} cannot ${what} for a chat started from here. Update SprintEngine Studio there, or start the chat in the project's folder.`,
-      },
-    })
-    if (record.kind === 'new') {
-      if (!tailnetPeerSupports(capabilities, 'new-chat-worktree')) return refuse('make a worktree')
-      const name = typeof record.name === 'string' ? record.name.trim() : ''
-      if (name && !tailnetPeerSupports(capabilities, 'new-chat-worktree-name')) return refuse('name a worktree')
-      return { args: { worktree: true, ...(name ? { worktreeName: name } : {}) } }
-    }
-    if (record.kind === 'existing') {
-      const path = typeof record.path === 'string' ? record.path.trim() : ''
-      if (!path) {
-        return {
-          refused: { ok: false, code: 'invalid_arguments', message: 'Name the worktree to start the chat in.' },
-        }
-      }
-      if (!tailnetPeerSupports(capabilities, 'new-chat-in-worktree')) return refuse('start a chat in a worktree')
-      return { args: { inWorktree: path } }
-    }
-    return { refused: { ok: false, code: 'invalid_arguments', message: 'That is not a worktree to start a chat in.' } }
-  }
-
-  // A new chat's first message with its images, sent the way a pane here
-  // sends one to a chat it follows: up the upload route under the chat's live
-  // session, then a `send` naming them over the chat's conversation socket.
-  // The socket is this call's own follow, shared with any pane that opens the
-  // chat meanwhile. A send is answered when its turn ends, so the message
-  // counts as taken once the chat says it began a turn on it; the follow is
-  // let go when the send is answered, or when nothing came of it in time.
-  async function sendFirstMessage(
-    connection: StoredMeshConnection,
-    chat: { workspaceId: string; agentId: string },
-    message: string,
-    images: ConversationImageAttachment[],
-    skills: string[] = [],
-  ): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
-    // The list that names the chat's session is read fresh: one read before
-    // the chat existed would not list it.
-    forgetSharedReads(connection.id, 'conversations')
-    const uploaded = await uploadConversationImages(connection, chat, images)
-    if (!uploaded.ok) return uploaded
-    const key = { connectionId: connection.id, ...chat }
-    const followId = `new-chat-${randomBytes(9).toString('base64url')}`
-    let taken: () => void = () => undefined
-    const began = new Promise<{ ok: true }>((resolve) => (taken = () => resolve({ ok: true })))
-    const followed = await remoteConversations.follow({
-      followId,
-      key,
-      emit: (frame) => {
-        if (frame.type === 'event' && (frame.event.type === 'user_message' || frame.event.type === 'turn_started'))
-          taken()
-      },
-    })
-    if (!followed.ok) {
-      remoteConversations.unfollow(followId)
-      return followed
-    }
-    const sent = conversationCommand({
-      key,
-      command: {
-        kind: 'send',
-        message,
-        uploadIds: uploaded.uploadIds,
-        ...(skills.length > 0 && tailnetPeerSupports(peerCapabilities.get(connection.id), 'conversation-send-skills')
-          ? { skills }
-          : {}),
-      },
-    })
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const late = new Promise<{ ok: false; code: string; message: string }>((resolve) => {
-      timer = setTimeout(
-        () =>
-          resolve({
-            ok: false,
-            code: 'timeout',
-            message: `${connection.machineName} did not take it in time.`,
-          }),
-        firstMessageTimeoutMs,
-      )
-      timer.unref?.()
-    })
-    const outcome = await Promise.race([sent, began, late])
-    if (timer) clearTimeout(timer)
-    // Let go once the send is answered; at once when it was not taken, which
-    // also withdraws a send still waiting for the socket.
-    if (outcome.ok) void sent.finally(() => remoteConversations.unfollow(followId))
-    else remoteConversations.unfollow(followId)
-    return outcome
-  }
-
-  // ── What a paired machine's Studio is asked ─────────────────────────────
+  // ── A window's own connection to a paired machine's Studio ──────────────
   //
-  // One ask of a paired machine's Studio (tailnet-peer-studio.ts), held to a
-  // capability its welcome must name: a machine whose Studio does not serve
-  // it, or that has no Studio yet, is told to update, in words about what was
-  // asked. Any other refusal comes back with that machine's code and words.
-  type PeerAnswer<T> =
-    { ok: true; connection: StoredMeshConnection; value: T } | { ok: false; code: string; message: string }
-  async function askPeer<T>(
-    connectionId: unknown,
-    capability: StudioCapability,
-    unsupported: (machineName: string) => { code: string; message: string },
-    work: (client: StudioClient) => Promise<T>,
-    timeoutMs?: number,
-  ): Promise<PeerAnswer<T>> {
+  // The window asks that machine's Studio itself (design-lane-on-protocol D1);
+  // what it needs from here is a ticket for each connection, bought with the
+  // device token kept here, good once and from its origin alone.
+  async function windowTicket(connectionId: unknown, origin: string): Promise<EnvironmentTicketResult> {
     const connection = connectionFor(connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
+    if (!connection) return { ok: false, code: 'unknown_route', message: 'That machine is not paired here.' }
     try {
-      const value = await peerStudios.ask(
-        peerTarget(connection),
-        async (client) => {
-          if (!client.supports(capability)) throw new StudioError('outdated', '')
-          return work(client)
-        },
-        timeoutMs,
-      )
-      return { ok: true, connection, value }
+      return { ok: true, ...(await peerStudioTicket(peerTarget(connection), origin)) }
     } catch (error) {
       const refused = peerRefusal(connection, error)
-      return refused.kind === 'outdated'
-        ? { ok: false, ...unsupported(connection.machineName) }
-        : { ok: false, code: refused.code, message: refused.message }
+      // A pairing that machine no longer knows is one this machine shows as
+      // signed out, as any other read that heard it would.
+      if (refused.kind === 'unauthorized')
+        recordReachability(connection, { reachable: false, unauthorized: true, detail: refused.message })
+      return { ok: false, code: refused.code, message: refused.message }
     }
-  }
-
-  /** A command id for one change asked of a paired machine: a retry of the ask is the same change there. */
-  const commandId = () => randomBytes(12).toString('base64url')
-
-  // ── A remote chat's rest and visit clock ────────────────────────────────
-  //
-  // Both are that machine's to keep, on its Studio (`conversation.settle`,
-  // `conversation.visit`), by the chat's workspace there. A settle carries a
-  // command id; a visit, which only moves forward, none.
-  const lifecycleUnsupported = (doing: string) => (machineName: string) => ({
-    code: 'lifecycle_unsupported',
-    message: `${machineName} cannot ${doing} from here yet. Update SprintEngine Studio there to do it from here.`,
-  })
-
-  async function settleConversation(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-    settled?: unknown
-  }): Promise<MeshSettleConversationResult> {
-    const workspaceId = input.workspaceId
-    if (typeof workspaceId !== 'string' || !workspaceId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-    const settled = input.settled !== false
-    const answer = await askPeer(
-      input.connectionId,
-      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
-      lifecycleUnsupported(settled ? 'settle its chats' : 'bring its chats back'),
-      (client) =>
-        client.rpc['conversation.settle']({
-          workspaceId,
-          commandId: commandId(),
-          ...(settled ? {} : { settled: false }),
-        }),
-    )
-    return answer.ok ? { ok: true, workspaceId, settledAt: answer.value.settledAt } : answer
-  }
-
-  async function visitConversation(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-  }): Promise<MeshVisitConversationResult> {
-    const workspaceId = input.workspaceId
-    if (typeof workspaceId !== 'string' || !workspaceId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-    // No time is sent: the visit is now, and the far end stamps it with its
-    // own clock. One read here could run behind that machine's, and a visit
-    // stamped earlier than a finish there would never clear it.
-    const answer = await askPeer(
-      input.connectionId,
-      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
-      lifecycleUnsupported('keep its chats’ read state for a chat read here'),
-      (client) => client.rpc['conversation.visit']({ workspaceId }),
-    )
-    return answer.ok ? { ok: true, workspaceId, lastVisitedAt: answer.value.lastVisitedAt } : answer
-  }
-
-  // ── A remote chat's row menu and management ─────────────────────────────
-  //
-  // Star, Highlight color, Snooze, Auto-settle, Mark unread, Rename, Auto
-  // compact and Delete are that machine's record of the chat, each its own
-  // method there under a command id. Stop watching is still that machine's
-  // gateway tool (a pull request's, not the record's).
-  async function changeConversation(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-    change?: unknown
-  }): Promise<MeshChangeConversationResult> {
-    const workspaceId = input.workspaceId
-    if (typeof workspaceId !== 'string' || !workspaceId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-    const unwatch = unwatchCallOf(input.change)
-    if (unwatch) return unwatchPullRequest(input.connectionId, workspaceId, unwatch)
-    const call = chatChangeOf(input.change)
-    if (!call) return { ok: false, code: 'invalid_arguments', message: 'That is not a change a chat takes.' }
-    const answer = await askPeer(
-      input.connectionId,
-      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
-      (machineName) => ({
-        code: 'row_menu_unsupported',
-        message: `${machineName} cannot ${call.ask} from here yet. Update SprintEngine Studio there to do it from here.`,
-      }),
-      (client) => call.send(client, { workspaceId, commandId: commandId() }),
-    )
-    return answer.ok ? { ok: true, workspaceId } : answer
-  }
-
-  async function unwatchPullRequest(
-    connectionId: unknown,
-    workspaceId: string,
-    call: { args: Record<string, unknown> },
-  ): Promise<MeshChangeConversationResult> {
-    const connection = connectionFor(connectionId)
-    if (!connection) return { ok: false, code: 'unknown_connection', message: 'That machine is not paired here.' }
-    const unsupported = {
-      ok: false as const,
-      code: 'row_menu_unsupported',
-      message: `${connection.machineName} cannot stop watching its chats' pull requests from here yet. Update SprintEngine Studio there to do it from here.`,
-    }
-    const capabilities = peerCapabilities.get(connection.id)
-    if (capabilities && !tailnetPeerSupports(capabilities, 'chat-unwatch-pull-request')) return unsupported
-    const answer = await callRemoteTool({
-      endpoint: endpointOf(connection),
-      token: connection.deviceToken,
-      tool: 'conversation.pull_request_unwatch',
-      args: { workspaceId, ...call.args },
-    })
-    if (!answer.ok) {
-      if (answer.code === 'rpc_error' && /Unknown tool/u.test(answer.message)) return unsupported
-      return { ok: false, code: answer.code, message: answer.message }
-    }
-    return { ok: true, workspaceId }
-  }
-
-  const deleteUnsupported = (machineName: string) => ({
-    code: 'delete_unsupported',
-    message: `${machineName} cannot delete its chats from here yet. Update SprintEngine Studio there to do it from here.`,
-  })
-
-  async function conversationDeletePlan(input: {
-    connectionId: unknown
-    workspaceId?: unknown
-  }): Promise<MeshConversationDeletePlanResult> {
-    const workspaceId = input.workspaceId
-    if (typeof workspaceId !== 'string' || !workspaceId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-    const answer = await askPeer(input.connectionId, STUDIO_CHAT_LIFECYCLE_CAPABILITY, deleteUnsupported, (client) =>
-      client.rpc['conversation.deletePlan']({ workspaceId }),
-    )
-    return answer.ok ? deletePlanOf(workspaceId, answer.value as unknown as Record<string, unknown>) : answer
-  }
-
-  async function conversationSearch(input: {
-    connectionId: unknown
-    query?: unknown
-  }): Promise<MeshConversationSearchResult> {
-    const query = typeof input.query === 'string' ? input.query.trim() : ''
-    if (query.length < STUDIO_CHAT_SEARCH_MIN_CHARS || query.length > STUDIO_CHAT_SEARCH_MAX_CHARS) {
-      return {
-        ok: false,
-        code: 'invalid_arguments',
-        message: `Search for ${STUDIO_CHAT_SEARCH_MIN_CHARS} to ${STUDIO_CHAT_SEARCH_MAX_CHARS} characters.`,
-      }
-    }
-    const answer = await askPeer(
-      input.connectionId,
-      STUDIO_CHAT_LIFECYCLE_CAPABILITY,
-      (machineName) => ({
-        code: 'search_unsupported',
-        message: `${machineName} cannot search its chats from here yet. Update SprintEngine Studio there to do it from here.`,
-      }),
-      (client) => client.rpc['conversation.searchChats']({ query }),
-    )
-    return answer.ok ? searchAnswerOf(answer.value as unknown as Record<string, unknown>) : answer
-  }
-
-  // A paired machine's "always allow" rules, which its Settings lists and
-  // revokes, on its Studio (`approval-rules`).
-  const rulesUnsupported = (machineName: string) => ({
-    code: 'approval_rules_unsupported',
-    message: `${machineName} does not share its chat permissions yet. Update SprintEngine Studio there to see them from here.`,
-  })
-
-  async function approvalRules(input: { connectionId: unknown }): Promise<MeshApprovalRulesResult> {
-    const answer = await askPeer(input.connectionId, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
-      client.rpc['conversation.approvalRules']({}),
-    )
-    if (!answer.ok) return answer
-    if (!answer.value.ok) return { ok: false, code: 'unavailable', message: answer.value.message }
-    return approvalRulesOf(answer.value.rules)
-  }
-
-  async function revokeApprovalRule(input: {
-    connectionId: unknown
-    ruleId?: unknown
-  }): Promise<MeshRevokeApprovalRuleResult> {
-    const ruleId = input.ruleId
-    if (typeof ruleId !== 'string' || !ruleId)
-      return { ok: false, code: 'invalid_arguments', message: 'Name the rule.' }
-    const answer = await askPeer(input.connectionId, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
-      client.rpc['conversation.revokeApprovalRule']({ commandId: commandId(), ruleId }),
-    )
-    if (!answer.ok) return answer
-    return answer.value.ok ? { ok: true, ruleId } : { ok: false, code: 'unavailable', message: answer.value.message }
-  }
-
-  // A paired machine's scheduled agents, on its Studio's `schedules.*`:
-  // listed on `workspace:read`, made, changed, run, paused, resumed and
-  // closed on `workspace:operate`, each change once per command id, so a
-  // retried Run now starts one chat there.
-  async function askSchedules<T>(
-    connectionId: unknown,
-    work: (client: StudioClient) => Promise<T>,
-    timeoutMs?: number,
-  ): Promise<{ ok: true; value: T } | { ok: false; code: string; message: string }> {
-    return askPeer(
-      connectionId,
-      'schedules',
-      (machineName) => ({
-        code: 'scheduled_agents_unsupported',
-        message: `${machineName} cannot take schedules from here yet. Update SprintEngine Studio there to use its schedules from here.`,
-      }),
-      work,
-      timeoutMs,
-    )
-  }
-
-  async function scheduledAgents(input: { connectionId: unknown }): Promise<MeshScheduledAgentsResult> {
-    const answer = await askSchedules(input.connectionId, (client) => client.rpc['schedules.list']({}))
-    if (!answer.ok) return answer
-    return { ...scheduledAgentsOf(answer.value), canCreate: true, canEdit: true }
-  }
-
-  async function scheduledAgentAction(input: {
-    connectionId: unknown
-    id?: unknown
-    action?: unknown
-  }): Promise<MeshScheduledAgentActionResult> {
-    if (typeof input.id !== 'string' || !input.id) {
-      return { ok: false, code: 'invalid_arguments', message: 'Name the scheduled agent.' }
-    }
-    const id = input.id
-    const action = SCHEDULED_AGENT_ACTIONS.has(input.action as MeshScheduledAgentAction)
-      ? (input.action as MeshScheduledAgentAction)
-      : null
-    if (!action) return { ok: false, code: 'invalid_arguments', message: 'Run, pause, resume or delete it.' }
-    const commandId = randomBytes(12).toString('base64url')
-    const answer = await askSchedules<unknown>(
-      input.connectionId,
-      (client) =>
-        action === 'run'
-          ? client.rpc['schedules.runNow']({ id, commandId })
-          : action === 'pause'
-            ? client.rpc['schedules.pause']({ id, commandId })
-            : action === 'resume'
-              ? client.rpc['schedules.resume']({ id, commandId })
-              : client.rpc['schedules.delete']({ id, commandId }),
-      // A run waits on the chat starting over there, a CLI and all.
-      action === 'run' ? 60_000 : undefined,
-    )
-    return answer.ok ? { ok: true, id, action } : answer
-  }
-
-  async function createScheduledAgent(
-    input: Partial<MeshCreateScheduledAgentInput>,
-  ): Promise<MeshCreateScheduledAgentResult> {
-    const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
-    const workspaceId = text(input.workspaceId)
-    const prompt = text(input.prompt)
-    const cron = text(input.cron)
-    const cli = text(input.cli)
-    if (!workspaceId || !prompt || !cron || !cli) {
-      return {
-        ok: false,
-        code: 'invalid_arguments',
-        message: 'A schedule needs a project, a prompt, a time and a CLI.',
-      }
-    }
-    const draft = { workspaceId, ...scheduleDraftOf(input, { prompt, cron, cli }) }
-    const commandId = randomBytes(12).toString('base64url')
-    const answer = await askSchedules(input.connectionId, (client) =>
-      client.rpc['schedules.create']({ ...draft, commandId }),
-    )
-    if (!answer.ok) return answer
-    const agent = scheduledAgentViewOf(answer.value.schedule)
-    return agent
-      ? { ok: true, agent }
-      : {
-          ok: false,
-          code: 'unreadable_result',
-          message: 'That machine scheduled it, in a shape this build cannot read.',
-        }
-  }
-
-  async function updateScheduledAgent(
-    input: Partial<MeshUpdateScheduledAgentInput>,
-  ): Promise<MeshUpdateScheduledAgentResult> {
-    const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
-    const id = text(input.id)
-    const prompt = text(input.prompt)
-    const cron = text(input.cron)
-    const cli = text(input.cli)
-    if (!id || !prompt || !cron || !cli) {
-      return { ok: false, code: 'invalid_arguments', message: 'A schedule needs a prompt, a time and a CLI.' }
-    }
-    const workspaceId = text(input.workspaceId)
-    const change = {
-      id,
-      ...(workspaceId ? { workspaceId } : {}),
-      ...scheduleDraftOf(input, { prompt, cron, cli }),
-      // What the editor shows is the whole of it: a model, a worktree, a
-      // skill or a server taken off there is taken off, not kept.
-      model: text(input.model) ?? '',
-      ...(input.worktreeName === null || input.worktreeName === undefined ? { worktree: false } : {}),
-      skills: scheduleIds(input.skills),
-      mcpServers: scheduleIds(input.mcpServers),
-    }
-    const commandId = randomBytes(12).toString('base64url')
-    const answer = await askSchedules(input.connectionId, (client) =>
-      client.rpc['schedules.update']({ ...change, commandId }),
-    )
-    if (!answer.ok) return answer
-    const agent = scheduledAgentViewOf(answer.value.schedule)
-    return agent
-      ? { ok: true, agent }
-      : { ok: false, code: 'unreadable_result', message: 'That machine saved it, in a shape this build cannot read.' }
   }
 
   function getLiveState(): MeshLiveState {
@@ -2677,23 +1688,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       revision,
       requests: [...outboundRequests.values()].map((request) => ({ ...request.view })),
       reachability: [...reachability.values()].map((entry) => ({ ...entry })),
-    }
-  }
-
-  /**
-   * Whether a paired machine's Studio keeps its chats' records for this one
-   * (`chat-lifecycle`): read off its welcome, on the connection kept to it.
-   * A machine with no Studio yet, or one that does not answer soon, does not.
-   */
-  async function servesChatLifecycle(connection: StoredMeshConnection): Promise<boolean> {
-    try {
-      return await peerStudios.ask(
-        peerTarget(connection),
-        async (client) => client.supports(STUDIO_CHAT_LIFECYCLE_CAPABILITY),
-        PEER_WELCOME_TIMEOUT_MS,
-      )
-    } catch {
-      return false
     }
   }
 
@@ -2720,23 +1714,15 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         message: `${connection.machineName} does not serve conversations. Update Studio there to follow them from here.`,
       }
     }
-    // A chat's record (its marks, name, Auto compact, delete and a search of
-    // them all) is that machine's Studio's: asked beside the list, whether it
-    // keeps them for this one, so its menus offer them where it does.
-    const keepsRecord = servesChatLifecycle(connection)
     // What the machine publishes of itself goes to the window whole: a chat
     // pane reads what it may offer off it (`negotiateChatCapabilities`), as a
-    // window reads its own Studio's welcome.
+    // window reads its own Studio's welcome. What of a chat's record it keeps
+    // for this one the window reads off its Studio itself.
     const listed = await remoteConversations.list(connection.id)
-    const serves = await keepsRecord
     return listed.ok
       ? {
           ...listed,
           capabilities: [...(identity.value.capabilities ?? [])],
-          lifecycle: tailnetPeerSupports(identity.value.capabilities, 'conversation-lifecycle'),
-          rowMenu: serves,
-          markUnread: serves,
-          manage: chatManageOf(serves, identity.value.capabilities),
         }
       : listed
   }
@@ -3206,7 +2192,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     // Its followed conversations end, and what was kept of them goes too: a
     // transcript from a machine no longer paired is not this machine's to keep.
     void remoteConversations.forgetConnection(connectionId, 'This machine was removed from your mesh.')
-    remoteCanvas.forget(connectionId)
     peerStudios.forget(connectionId)
     store.forget(connectionId)
     syncReachabilityTimer()
@@ -3226,18 +2211,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
     machineName: connection.machineName,
   })
 
-  const remoteCanvas = createPeerCanvas({
-    target: (connectionId) => {
-      const connection = connectionFor(connectionId)
-      return connection ? peerTarget(connection) : null
-    },
-    studios: peerStudios,
-    ...(options.canvas ? options.canvas : {}),
-    log: options.log,
-  })
-
   return {
-    remoteCanvas,
     start,
     onWake,
     async checkReachability(connectionId): Promise<MeshLiveState> {
@@ -3281,23 +2255,7 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       if (typeof connectionId === 'string') forgetConnection(connectionId)
       return store.list()
     },
-    browse,
-    createConversation,
-    settleConversation,
-    visitConversation,
-    changeConversation,
-    conversationDeletePlan,
-    conversationSearch,
-    approvalRules,
-    revokeApprovalRule,
-    scheduledAgents,
-    scheduledAgentAction,
-    createScheduledAgent,
-    updateScheduledAgent,
-    workspaceCheckout,
-    workspaceExtensions,
-    canvasBoards,
-    canvasScreenshot,
+    windowTicket,
     readUsage,
     conversationPullRequestState,
     conversationPullRequestDraft,
@@ -3666,7 +2624,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       for (const connectionId of [...awayMachines.keys()]) forgetAway(connectionId)
       supervising = false
       remoteConversations.shutdown()
-      remoteCanvas.shutdown()
       for (const connectionId of [...watches.keys()]) stopWatch(connectionId)
       if (reachabilityTimer) clearInterval(reachabilityTimer)
       reachabilityTimer = null
@@ -3678,18 +2635,6 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
       }
       outboundRequests.clear()
     },
-  }
-}
-
-function unknownConnectionBrowse(connectionId: unknown): MeshBrowse {
-  return {
-    connectionId: typeof connectionId === 'string' ? connectionId : '',
-    reachable: false,
-    unreachableReason: 'That machine is not paired here.',
-    unauthorized: false,
-    scopes: [],
-    workspaces: [],
-    gaps: [],
   }
 }
 
@@ -3764,64 +2709,6 @@ function parseSkillRefIds(value: unknown): { ok: true; ids: string[] } | { ok: f
 
 function skillsUnsupported(connection: { machineName: string }): string {
   return `${connection.machineName} cannot take skills from here yet. Update SprintEngine Studio there, or remove the skills.`
-}
-
-const SKILL_SOURCES = new Set(['builtin', 'custom', 'plugin'])
-const SKILL_STATES = new Set(['installed', 'available', 'update-available'])
-const SERVER_STATUSES = new Set(['connected', 'pending', 'needs-auth', 'failed', 'disabled'])
-const SERVER_SCOPES = new Set(['workspace', 'user', 'session'])
-const shortText = (value: unknown, max = 500) =>
-  typeof value === 'string' && value.length > 0 ? value.slice(0, max) : undefined
-
-/**
- * `workspace.extensions`' answer, read member by member: another machine's
- * words are not trusted to be the shape they claim.
- */
-function readWorkspaceExtensions(value: Record<string, unknown>): WorkspaceExtensions {
-  const skills = (Array.isArray(value.skills) ? value.skills : []).flatMap((entry): WorkspaceSkill[] => {
-    const record = asRecord(entry)
-    const id = typeof record?.id === 'string' && SKILL_ID.test(record.id) ? record.id : null
-    if (!record || !id) return []
-    const description = shortText(record.description)
-    const sourceRepo = shortText(record.sourceRepo, 200)
-    return [
-      {
-        id,
-        name: shortText(record.name, 200) ?? id,
-        ...(description ? { description } : {}),
-        source: (SKILL_SOURCES.has(record.source as string) ? record.source : 'custom') as WorkspaceSkill['source'],
-        harnesses: [],
-        installState: (SKILL_STATES.has(record.installState as string)
-          ? record.installState
-          : 'installed') as WorkspaceSkill['installState'],
-        ...(sourceRepo && /^[\w.-]+\/[\w.-]+$/.test(sourceRepo) ? { sourceRepo } : {}),
-      },
-    ]
-  })
-  const servers = (Array.isArray(value.servers) ? value.servers : []).flatMap(
-    (entry): WorkspaceExtensions['servers'] => {
-      const record = asRecord(entry)
-      const id = shortText(record?.id, 200)
-      if (!record || !id) return []
-      const error = shortText(record.error)
-      return [
-        {
-          id,
-          transport: shortText(record.transport, 40) ?? '',
-          scope: (SERVER_SCOPES.has(record.scope as string) ? record.scope : 'session') as
-            'workspace' | 'user' | 'session',
-          ...(SERVER_STATUSES.has(record.status as string)
-            ? { status: record.status as NonNullable<WorkspaceExtensions['servers'][number]['status']> }
-            : {}),
-          ...(error ? { error } : {}),
-          ...(typeof record.toolCount === 'number' && Number.isSafeInteger(record.toolCount) && record.toolCount >= 0
-            ? { toolCount: record.toolCount }
-            : {}),
-        },
-      ]
-    },
-  )
-  return { skills, servers }
 }
 
 // How long each Create PR step is waited for: the state may ask the forge's
@@ -3937,336 +2824,4 @@ function readCreatePullRequestOutcome(value: Record<string, unknown>): MeshPullR
     default:
       return unreadable
   }
-}
-
-/** A change to a chat's record there: the method it is on that machine's Studio, and what it asks, in words. */
-export type ChatChange = {
-  send(client: StudioClient, chat: { workspaceId: string; commandId: string }): Promise<unknown>
-  /** What is asked, for a machine that cannot be: "snooze its chats". */
-  ask: string
-}
-
-/**
- * The Studio method a row menu or management change is on the chat's
- * machine, with what it carries; null for anything that is not one, and for
- * Stop watching, which is that machine's gateway tool (`unwatchCallOf`).
- */
-export function chatChangeOf(change: unknown): ChatChange | null {
-  if (!change || typeof change !== 'object') return null
-  const value = change as Record<string, unknown>
-  switch (value.kind) {
-    case 'snooze': {
-      if (value.until !== null && !(typeof value.until === 'number' && Number.isFinite(value.until))) return null
-      const until = value.until === null ? null : Math.trunc(value.until as number)
-      return {
-        send: (client, chat) => client.rpc['conversation.snooze']({ ...chat, until }),
-        ask: until === null ? 'wake its chats' : 'snooze its chats',
-      }
-    }
-    case 'highlight': {
-      const starred = typeof value.starred === 'boolean' ? value.starred : undefined
-      const color = value.color === null || isConversationHighlightColor(value.color) ? value.color : undefined
-      if (starred === undefined && color === undefined) return null
-      return {
-        send: (client, chat) =>
-          client.rpc['conversation.highlight']({
-            ...chat,
-            ...(starred !== undefined ? { starred } : {}),
-            ...(color !== undefined ? { color } : {}),
-          }),
-        ask: starred !== undefined && color === undefined ? 'star its chats' : 'highlight its chats',
-      }
-    }
-    case 'auto-settle': {
-      const enabled = value.enabled
-      if (typeof enabled !== 'boolean') return null
-      return {
-        send: (client, chat) => client.rpc['conversation.setAutoSettle']({ ...chat, enabled }),
-        ask: 'switch Auto-settle on its chats',
-      }
-    }
-    case 'mark-unread':
-      return { send: (client, chat) => client.rpc['conversation.markUnread'](chat), ask: 'mark its chats unread' }
-    case 'rename': {
-      const name = typeof value.name === 'string' ? value.name.trim() : ''
-      if (!name) return null
-      return { send: (client, chat) => client.rpc['conversation.rename']({ ...chat, name }), ask: 'rename its chats' }
-    }
-    case 'auto-compact': {
-      const enabled = value.enabled
-      if (typeof enabled !== 'boolean') return null
-      return {
-        send: (client, chat) => client.rpc['conversation.setAutoCompact']({ ...chat, enabled }),
-        ask: 'switch Auto compact on its chats',
-      }
-    }
-    case 'delete':
-      return { send: (client, chat) => client.rpc['conversation.delete'](chat), ask: 'delete its chats' }
-    default:
-      return null
-  }
-}
-
-/** Stop watching a chat's pull request there, as that machine's gateway tool takes it; null for any other change. */
-export function unwatchCallOf(change: unknown): { args: Record<string, unknown> } | null {
-  if (!change || typeof change !== 'object') return null
-  const value = change as Record<string, unknown>
-  if (value.kind !== 'unwatch-pull-request') return null
-  if (typeof value.agentId !== 'string' || !value.agentId) return null
-  if (value.url !== undefined && (typeof value.url !== 'string' || !value.url)) return null
-  return { args: { agentId: value.agentId, ...(typeof value.url === 'string' ? { url: value.url } : {}) } }
-}
-
-/**
- * What of a chat's management a paired machine takes from here: all of its
- * record where its Studio serves `chat-lifecycle`; Stop watching where it
- * advertises its tool.
- */
-export function chatManageOf(
-  serves: boolean,
-  capabilities: readonly string[] | null | undefined,
-): MeshConversationManage {
-  return {
-    rename: serves,
-    autoCompact: serves,
-    unwatchPullRequest: tailnetPeerSupports(capabilities, 'chat-unwatch-pull-request'),
-    deleteSettled: serves,
-    search: serves,
-  }
-}
-
-const PLAN_FATES = new Set(['remove', 'keep'])
-const KEPT_BECAUSE = new Set(['changes', 'shared', 'not-made-here', 'other-machine', 'unreadable'])
-
-/** A machine's delete plan as it answered, kept to what this build reads; null members are left as null. */
-export function deletePlanOf(workspaceId: string, value: Record<string, unknown>): MeshConversationDeletePlanResult {
-  const count = (entry: unknown) =>
-    typeof entry === 'number' && Number.isSafeInteger(entry) && entry >= 0 ? entry : null
-  const worktrees = (Array.isArray(value.worktrees) ? value.worktrees : []).flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return []
-    const worktree = entry as Record<string, unknown>
-    if (typeof worktree.name !== 'string' || !PLAN_FATES.has(worktree.fate as string)) return []
-    return [
-      {
-        name: worktree.name,
-        branch: typeof worktree.branch === 'string' ? worktree.branch : null,
-        pooled: worktree.pooled === true,
-        changedPaths: count(worktree.changedPaths),
-        unpushedCommits: count(worktree.unpushedCommits),
-        fate: worktree.fate as 'remove' | 'keep',
-        ...(KEPT_BECAUSE.has(worktree.keptBecause as string)
-          ? { keptBecause: worktree.keptBecause as Omit<SettledChatWorktreePlan, 'path'>['keptBecause'] }
-          : {}),
-      },
-    ]
-  })
-  return {
-    ok: true,
-    workspaceId,
-    ...(value.gone === true ? { gone: true as const } : {}),
-    ...(typeof value.refused === 'string' && value.refused ? { refused: value.refused } : {}),
-    worktrees,
-  }
-}
-
-/**
- * A machine's rules as it listed them, kept to the ones this build can read:
- * each project by its folder's name, never the path on that machine.
- */
-export function approvalRulesOf(listed: unknown): MeshApprovalRulesResult {
-  const text = (entry: unknown): entry is string =>
-    typeof entry === 'string' && entry.length > 0 && entry.length <= 2_000
-  const rules = (Array.isArray(listed) ? listed : []).slice(0, 2_000).flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return []
-    const rule = entry as Record<string, unknown>
-    if (!text(rule.id) || !text(rule.label)) return []
-    const root = typeof rule.workspaceRoot === 'string' ? rule.workspaceRoot : ''
-    return [
-      {
-        id: rule.id,
-        label: rule.label,
-        toolName: text(rule.toolName) ? rule.toolName : '',
-        toolKind: text(rule.toolKind) ? rule.toolKind : 'other',
-        project: root.split(/[\\/]/u).filter(Boolean).at(-1) ?? '',
-        createdAt: typeof rule.createdAt === 'number' && Number.isFinite(rule.createdAt) ? rule.createdAt : 0,
-      },
-    ]
-  })
-  return { ok: true, rules }
-}
-
-const SCHEDULED_AGENT_ACTIONS: ReadonlySet<MeshScheduledAgentAction> = new Set(['run', 'pause', 'resume', 'delete'])
-
-/** An ISO instant (or epoch ms) as epoch ms; null for anything else. */
-function instantOf(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value !== 'string' || !value) return null
-  const at = Date.parse(value)
-  return Number.isFinite(at) ? at : null
-}
-
-function attachmentsOf(value: unknown): Array<{ id: string; name: string }> {
-  return (Array.isArray(value) ? value : []).flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return []
-    const attachment = entry as Record<string, unknown>
-    if (typeof attachment.id !== 'string' || !attachment.id) return []
-    return [{ id: attachment.id, name: typeof attachment.name === 'string' ? attachment.name : attachment.id }]
-  })
-}
-
-function scheduleIds(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && id.length > 0) : []
-}
-
-/**
- * What `schedules.create` and `schedules.update` both take of a schedule saved
- * from here, besides its project: the prompt, the time, the engine and what
- * each run is started with.
- */
-function scheduleDraftOf(
-  input: Partial<MeshCreateScheduledAgentInput | MeshUpdateScheduledAgentInput>,
-  required: { prompt: string; cron: string; cli: string },
-): Omit<StudioScheduleDraft, 'workspaceId'> {
-  const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
-  const preset = input.permissionPreset ? parseCliPermissionPreset(input.permissionPreset) : null
-  const once = typeof input.once === 'number' && Number.isSafeInteger(input.once) && input.once >= 0 ? input.once : null
-  const timezone = text(input.timezone)
-  const model = text(input.model)
-  return {
-    prompt: required.prompt,
-    cron: required.cron,
-    ...(timezone ? { timezone } : {}),
-    ...(once !== null ? { once } : {}),
-    cli: required.cli,
-    ...(model ? { model } : {}),
-    ...(preset ? { permissionPreset: preset } : {}),
-    ...(typeof input.worktreeName === 'string'
-      ? input.worktreeName.trim()
-        ? { worktreeName: input.worktreeName.trim() }
-        : { worktree: true }
-      : {}),
-    ...(scheduleIds(input.skills).length > 0 ? { skills: scheduleIds(input.skills) } : {}),
-    ...(scheduleIds(input.mcpServers).length > 0 ? { mcpServers: scheduleIds(input.mcpServers) } : {}),
-  }
-}
-
-/**
- * One scheduled agent as a paired machine's `schedules.list` serves it, read
- * member by member into the shape this machine's own list has: what another
- * machine sends is read, not trusted. Null for one without what a row needs —
- * an id, a prompt, a cron.
- */
-export function scheduledAgentViewOf(value: unknown): ScheduledAgentView | null {
-  if (!value || typeof value !== 'object') return null
-  const agent = value as Record<string, unknown>
-  const schedule =
-    agent.schedule && typeof agent.schedule === 'object' ? (agent.schedule as Record<string, unknown>) : null
-  if (typeof agent.id !== 'string' || !agent.id || typeof agent.prompt !== 'string') return null
-  if (!schedule || typeof schedule.cron !== 'string') return null
-  const once = instantOf(schedule.once)
-  const lastRunRecord =
-    agent.lastRun && typeof agent.lastRun === 'object' ? (agent.lastRun as Record<string, unknown>) : null
-  const lastRunAt = instantOf(lastRunRecord?.at)
-  let lastRun: ScheduledAgentLastRun | null = null
-  if (lastRunRecord && lastRunAt !== null) {
-    if (lastRunRecord.ok === true && typeof lastRunRecord.workspaceId === 'string') {
-      lastRun = {
-        at: lastRunAt,
-        ok: true,
-        workspaceId: lastRunRecord.workspaceId,
-        ...(typeof lastRunRecord.agentId === 'string' ? { agentId: lastRunRecord.agentId } : {}),
-      }
-    } else if (lastRunRecord.ok === false) {
-      lastRun = {
-        at: lastRunAt,
-        ok: false,
-        message: typeof lastRunRecord.message === 'string' ? lastRunRecord.message : 'The run did not start.',
-      }
-    }
-  }
-  const pausedAt = instantOf(agent.pausedAt)
-  const text = (entry: unknown) => (typeof entry === 'string' && entry ? entry : undefined)
-  return {
-    id: agent.id,
-    ...(text(agent.name) ? { name: text(agent.name) } : {}),
-    prompt: agent.prompt,
-    schedule: {
-      cron: schedule.cron,
-      timezone: typeof schedule.timezone === 'string' ? schedule.timezone : 'UTC',
-      ...(once !== null ? { once } : {}),
-    },
-    folderPath: typeof agent.folderPath === 'string' ? agent.folderPath : '',
-    // A machine there (one of its WSL distributions) names nothing here.
-    hostId: null,
-    cli: typeof agent.cli === 'string' ? agent.cli : '',
-    cliModel: text(agent.cliModel) ?? null,
-    permissionPreset: agent.permissionPreset ? parseCliPermissionPreset(agent.permissionPreset) : null,
-    skills: attachmentsOf(agent.skills),
-    mcpServers: attachmentsOf(agent.mcpServers),
-    worktree:
-      agent.worktree && typeof agent.worktree === 'object'
-        ? { name: text((agent.worktree as Record<string, unknown>).name) ?? '' }
-        : null,
-    ownerModuleId: text(agent.ownerModuleId) ?? null,
-    createdAt: instantOf(agent.createdAt) ?? 0,
-    updatedAt: instantOf(agent.updatedAt) ?? 0,
-    lastRun,
-    lastFailureSeenAt: instantOf(agent.lastFailureSeenAt),
-    ...(pausedAt !== null ? { pausedAt } : {}),
-    nextRunAt: instantOf(agent.nextRunAt),
-    // Why that machine cannot run it now, in its words: a time that passes
-    // there without a run is not a failure.
-    ...(typeof agent.waiting === 'string' && agent.waiting ? { waiting: agent.waiting.slice(0, 500) } : {}),
-  }
-}
-
-/** A paired machine's `schedules.list` answer, kept to the rows this build can read. */
-export function scheduledAgentsOf(value: StudioSchedules | Record<string, unknown>): {
-  ok: true
-  agents: ScheduledAgentView[]
-  pausedAll: ScheduledAgentsPause | null
-} {
-  const rows: unknown = (value as Record<string, unknown>).schedules
-  const agents = (Array.isArray(rows) ? rows : []).slice(0, 500).flatMap((entry) => scheduledAgentViewOf(entry) ?? [])
-  const paused: unknown = (value as Record<string, unknown>).pausedAll
-  const pause = paused && typeof paused === 'object' ? (paused as Record<string, unknown>) : null
-  const since = instantOf(pause?.since)
-  return { ok: true, agents, pausedAll: pause && since !== null ? { since, until: instantOf(pause.until) } : null }
-}
-
-const HIT_FROM = new Set(['person', 'agent', 'studio'])
-
-/** A machine's search answer, kept to the chats and matches this build can read. */
-export function searchAnswerOf(value: Record<string, unknown>): MeshConversationSearchResult {
-  const chats = (Array.isArray(value.chats) ? value.chats : []).slice(0, 50).flatMap((entry) => {
-    if (!entry || typeof entry !== 'object') return []
-    const chat = entry as Record<string, unknown>
-    if (typeof chat.workspaceId !== 'string' || !chat.workspaceId) return []
-    const hits = (Array.isArray(chat.hits) ? chat.hits : []).slice(0, 20).flatMap((hit) => {
-      if (!hit || typeof hit !== 'object') return []
-      const found = hit as Record<string, unknown>
-      if (typeof found.agentId !== 'string' || !found.agentId) return []
-      if (typeof found.seq !== 'number' || !Number.isSafeInteger(found.seq)) return []
-      if (typeof found.snippet !== 'string') return []
-      return [
-        {
-          agentId: found.agentId,
-          seq: found.seq,
-          snippet: found.snippet.slice(0, 1_000),
-          ...(HIT_FROM.has(found.from as string) ? { from: found.from as 'person' | 'agent' | 'studio' } : {}),
-        },
-      ]
-    })
-    if (hits.length === 0) return []
-    const count = typeof chat.count === 'number' && Number.isSafeInteger(chat.count) ? chat.count : hits.length
-    return [
-      {
-        workspaceId: chat.workspaceId,
-        chatTitle: typeof chat.chatTitle === 'string' && chat.chatTitle.trim() ? chat.chatTitle : 'Chat',
-        hits,
-        count: Math.max(count, hits.length),
-      },
-    ]
-  })
-  return { ok: true, chats, truncated: value.truncated === true }
 }

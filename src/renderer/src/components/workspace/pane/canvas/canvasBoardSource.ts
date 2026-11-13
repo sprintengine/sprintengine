@@ -1,4 +1,14 @@
 import { isRecord } from '../../../../../../shared/records'
+import {
+  PAIRED_CANVAS_LINK,
+  PAIRED_CANVAS_OPEN_REQUEST,
+  WINDOW_CANVAS_VIEWER,
+  listPairedBoards,
+  onPairedCanvasPush,
+  windowPairedCanvas,
+} from '../../../../studio/pairedCanvas'
+import { createPairedChat } from '../../../../studio/pairedDiscovery'
+import { pairedStudioAvailable } from '../../../../studio/pairedStudio'
 import { canvasContinuePrompt, parseCanvasBoardId } from '../../../../../../shared/canvas/paths'
 import type {
   CanvasBoardRef,
@@ -10,6 +20,7 @@ import type {
   CanvasRemoteAccess,
   CanvasRemoteLink,
   CanvasResult,
+  CanvasScenePush,
 } from '../../../../../../shared/canvas/types'
 import { canvasFail, canvasOk } from '../../../../../../shared/canvas/types'
 import { SOLO_CHAT_TEMPLATE_ID } from '../../../../../../shared/layouts/templates'
@@ -23,7 +34,7 @@ import { remoteOriginChatWorkspaceId } from '../../remoteBand/remoteSessionsMode
 //
 // A chat's boards are on the machine the chat runs on. Here they are read from
 // this machine's canvas service; for a paired chat they are read from that
-// machine's, through the mesh. The picker and the tab are told which by a
+// machine's, by this window's own client of its Studio. The picker and the tab are told which by a
 // source, and everything they draw from it is the same row (AGENTS.md: a chat
 // looks and behaves the same whichever machine it runs on), so this is the one
 // module that knows there are two machines involved.
@@ -65,11 +76,11 @@ async function listPaired(
   source: Extract<CanvasBoardSource, { kind: 'paired' }>,
   scope: CanvasBoardScope,
 ): Promise<CanvasResult<CanvasBoardList>> {
-  const answer = await window.api.meshCanvasBoards({
-    connectionId: source.connectionId,
-    workspaceId: source.remoteWorkspaceId,
-    scope: scope === 'all' ? 'machine' : 'workspace',
-  })
+  const answer = await listPairedBoards(
+    pairedMachineOf(source),
+    source.remoteWorkspaceId,
+    scope === 'all' ? 'machine' : 'workspace',
+  )
   if (!answer.ok) return canvasFail('forbidden', answer.message)
   return canvasOk({
     note: answer.note,
@@ -172,29 +183,64 @@ const HERE_CLIENT: CanvasBoardClient = {
 const sameBoard = (a: CanvasBoardRef, b: CanvasBoardRef): boolean =>
   a.workspaceId === b.workspaceId && (a.store ?? '') === (b.store ?? '') && a.path === b.path
 
-/** The board calls for a source. Stable per source's strings, so an effect that names it runs once. */
+/** A paired source's machine, as this window's own client of it names it. */
+function pairedMachineOf(source: Extract<CanvasBoardSource, { kind: 'paired' }>) {
+  return { id: source.connectionId, machineName: source.machineName }
+}
+
+/**
+ * The board calls for a source. Stable per source's strings, so an effect that
+ * names it runs once. A paired chat's boards are this window's to coordinate,
+ * over its own client of that machine's Studio (`pairedCanvas.ts`).
+ */
 export function canvasBoardClient(source: CanvasBoardSource): CanvasBoardClient {
   if (source.kind === 'here') return HERE_CLIENT
   const far = { connectionId: source.connectionId, remoteWorkspaceId: source.remoteWorkspaceId }
+  const canvas = () => windowPairedCanvas(pairedMachineOf(source))
   return {
-    open: (ref) => window.api.canvasRemoteOpen({ ...ref, ...far }),
-    close: (ref) => void window.api.canvasRemoteClose({ ...ref, ...far }),
-    commit: (input) => window.api.canvasRemoteCommit({ ...input, ...far }),
-    noteHumanInput: (ref) => window.api.canvasRemoteNoteHumanInput({ ...ref, ...far }),
-    // Its folder is picked on this machine, so nothing of it is suggested.
-    exportBoard: ({ defaultDirectory: _unused, ...input }) => window.api.canvasRemoteExport({ ...input, ...far }),
+    open: (ref) => canvas().open(WINDOW_CANVAS_VIEWER, { ...ref, ...far }),
+    close: (ref) => canvas().close(WINDOW_CANVAS_VIEWER, { ...ref, ...far }),
+    commit: (input) => canvas().commit(WINDOW_CANVAS_VIEWER, { ...input, ...far }),
+    noteHumanInput: (ref) => canvas().noteHumanInput(WINDOW_CANVAS_VIEWER, { ...ref, ...far }),
+    // The board as this window holds it, after the tab's last change, written
+    // into a folder the person picks here (so nothing of it is suggested): the
+    // copy is theirs, on their disk.
+    exportBoard: async ({ defaultDirectory: _unused, images, ...ref }) => {
+      const snapshot = canvas().snapshot({ ...ref, ...far })
+      if (!snapshot.ok) return snapshot
+      return window.api.canvasExportScene({ ...snapshot.value, images })
+    },
     onLink: (ref, callback) =>
-      window.api.onCanvasRemoteLink((link) => {
-        if (sameBoard(link, ref)) callback(link)
+      onPairedCanvasPush(PAIRED_CANVAS_LINK, (link) => {
+        if (sameBoard(link as CanvasRemoteLink, ref)) callback(link as CanvasRemoteLink)
       }),
+  }
+}
+
+/** Hear a board's scene pushes, here or on a paired machine: one feed, as the tab and the editor read it. */
+export function onCanvasScene(callback: (push: CanvasScenePush) => void): () => void {
+  const stopHere = window.api.onCanvasScene(callback)
+  const stopPaired = onPairedCanvasPush('canvas:scene', (push) => callback(push as CanvasScenePush))
+  return () => {
+    stopHere()
+    stopPaired()
   }
 }
 
 /** Whether a source's boards open in the editor: always here; on a paired machine, as it says. */
 export async function readCanvasBoardAccess(source: CanvasBoardSource): Promise<CanvasRemoteAccess> {
   if (source.kind === 'here') return { ok: true, live: true, canEdit: true }
+  // A page that reaches no paired machine itself (a browser tab) shows its boards as pictures.
+  if (!pairedStudioAvailable())
+    return {
+      ok: true,
+      live: false,
+      canEdit: false,
+      reason:
+        "A browser tab shows a paired machine's boards as pictures. Open the chat in the desktop app to edit them.",
+    }
   try {
-    return await window.api.canvasRemoteAccess(source.connectionId)
+    return await windowPairedCanvas(pairedMachineOf(source)).access(source.connectionId)
   } catch {
     return { ok: false, message: `${source.machineName} could not be reached.` }
   }
@@ -209,14 +255,16 @@ export function watchPairedCanvasOpens(
   onOpen: (board: { path: string; store?: string }) => void,
 ): () => void {
   const target = { connectionId: source.connectionId, workspaceId: source.remoteWorkspaceId }
-  const stop = window.api.onCanvasRemoteOpenRequest((request) => {
+  const canvas = windowPairedCanvas(pairedMachineOf(source))
+  const stop = onPairedCanvasPush(PAIRED_CANVAS_OPEN_REQUEST, (pushed) => {
+    const request = pushed as { connectionId: string; workspaceId: string; path: string; store?: string }
     if (request.connectionId !== target.connectionId || request.workspaceId !== target.workspaceId) return
     onOpen({ path: request.path, ...(request.store ? { store: request.store } : {}) })
   })
-  void window.api.canvasRemoteWatch(target).catch(() => undefined)
+  canvas.watch(WINDOW_CANVAS_VIEWER, target)
   return () => {
     stop()
-    void window.api.canvasRemoteUnwatch(target).catch(() => undefined)
+    canvas.unwatch(WINDOW_CANVAS_VIEWER, target)
   }
 }
 
@@ -256,11 +304,13 @@ async function continuePaired(
   workspaceId: string,
   board: CanvasPickerBoard,
 ): Promise<CanvasResult<void>> {
-  const created = await window.api.meshCreateConversation({
-    connectionId: source.connectionId,
-    workspaceId: board.workspaceId ?? source.remoteWorkspaceId,
-    prompt: canvasContinuePrompt(board.name, board.id ?? board.path),
-  })
+  const created = await createPairedChat(
+    { id: source.connectionId, machineName: source.machineName },
+    {
+      workspaceId: board.workspaceId ?? source.remoteWorkspaceId,
+      prompt: canvasContinuePrompt(board.name, board.id ?? board.path),
+    },
+  )
   if (!created.ok) return canvasFail('forbidden', created.message)
   const store = useWorkspaceStore.getState()
   const origin = store.workspaces.find((candidate) => candidate.id === workspaceId)?.remoteOrigin

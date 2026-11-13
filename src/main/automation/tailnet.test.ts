@@ -818,7 +818,6 @@ test('tailnet', async () => {
         'workspace-extensions',
         'new-chat-skills',
         'chat-create-pull-request',
-        'chat-unwatch-pull-request',
         'mcp-oauth',
       ])
 
@@ -947,7 +946,6 @@ test('tailnet', async () => {
         'workspace-extensions',
         'new-chat-skills',
         'chat-create-pull-request',
-        'chat-unwatch-pull-request',
         'mcp-oauth',
       ])
       // Every one the wire defines but shrinking an upload, which only a

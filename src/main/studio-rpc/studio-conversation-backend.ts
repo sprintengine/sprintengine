@@ -171,6 +171,8 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
           modelId: launched.modelId,
           ...(preset ? { permissionPreset: preset } : {}),
           ...(preset && record?.cliPermissionMode ? { permissionMode: record.cliPermissionMode } : {}),
+          // Where it runs, when that is a worktree: a paired desktop names its branch.
+          ...(launched.worktree ? { worktree: launched.worktree } : {}),
         },
       }
     },

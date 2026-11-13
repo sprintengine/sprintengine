@@ -75,7 +75,24 @@ export const ENVIRONMENT_CHANNELS = {
   changed: 'environments:changed',
   /** `{ route }` (`formatEnvironmentRoute`) → nothing: ask that route's owner to try it again now. */
   retry: 'environments:retry',
+  /** `{ route }` → `EnvironmentTicketResult`: one connection's ticket to that environment's Studio, for this window. */
+  ticket: 'environments:ticket',
 } as const
+
+/**
+ * A window's ticket for one connection to an environment's Studio
+ * (design-lane-on-protocol D1): where the socket goes and the credential its
+ * hello presents, good once, for thirty seconds, from that window's origin.
+ * Main keeps the long-lived credential (a paired desktop's device token) and
+ * buys a ticket with it for each connection; the window spends the ticket and
+ * keeps nothing. A refusal says why, in the client runtime's codes:
+ * `unauthorized` (the pairing is gone there), `outdated` (a Studio from before
+ * the protocol), `unavailable` (it did not answer), `unknown_route` (no
+ * environment this desktop knows), `unsupported_route` (a kind of route the
+ * window does not connect to itself yet).
+ */
+export type EnvironmentTicketResult =
+  { ok: true; url: string; token: string } | { ok: false; code: string; message: string }
 
 /**
  * A key every entry has, for React: the environment's id, or, for one that

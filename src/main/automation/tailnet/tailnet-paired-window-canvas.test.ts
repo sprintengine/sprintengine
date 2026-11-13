@@ -1,25 +1,32 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
-import { createSecretCipherStandIn } from '../../../../tests/stubs/secret-cipher'
 import type { CanvasElement, CanvasRemoteLink } from '../../../shared/canvas/types'
 import type { TailnetScope } from '../../../shared/tailnet'
 import { FAR_CHAT, MACHINE, element, farMachine, waitFor, type FarMachine } from './tailnet-canvas.test-helper'
-import { createTailnetMeshService } from './tailnet-mesh-service'
-import { createTailnetMeshStore } from './tailnet-mesh-store'
-import { CANVAS_REMOTE_LINK_CHANNEL, createPeerCanvas, type PeerCanvas } from './tailnet-peer-canvas'
-import { createPeerStudios } from './tailnet-peer-studio'
-import { pairingUrl } from './tailnet-service'
+import { deviceWindowApi, pairedWindow } from '../../../../tests/paired-window'
+import {
+  PAIRED_CANVAS_LINK,
+  PAIRED_CANVAS_OPEN_REQUEST,
+  WINDOW_CANVAS_VIEWER,
+  createPairedCanvas,
+  listPairedBoards,
+  onPairedCanvasPush,
+  pairedBoardPicture,
+  windowPairedCanvas,
+  type PairedCanvas,
+} from '../../../renderer/src/studio/pairedCanvas'
+import { closePairedStudios, pairedStudios } from '../../../renderer/src/studio/pairedStudio'
 
 // A paired desktop's Canvas pane on the boards of the machine a chat runs on,
 // with both ends real and over loopback: on one side the tailnet listener, the
 // Studio server and the canvas service over a real folder; on the other this
-// desktop's half (tailnet-peer-canvas.ts) on its one Studio connection to that
-// machine, with a paired device's token. What a window here would be is a
-// viewer that records what it is pushed; what a window over there would be is
+// desktop's window's half (src/renderer/src/studio/pairedCanvas.ts) on its own
+// Studio connection to that machine, its tickets bought with a paired device's
+// token for a window's origin. What a tab here would be is a viewer that
+// records what it is pushed; what a window over there would be is
 // a subscriber of the far service that records the same.
 
 let cleanups: Array<() => Promise<void> | void> = []
@@ -39,12 +46,11 @@ async function machine(options: { canvas?: boolean } = {}): Promise<FarMachine> 
 /** This desktop: its half of the pane, holding a paired device's token for the far machine. */
 function pairedDesktop(far: FarMachine, scopes: TailnetScope[] = ['workspace:read', 'workspace:operate']) {
   const device = far.rig.pair(scopes, 'dev-macbook-air')
-  const studios = createPeerStudios({ idleCloseMs: 50 })
-  cleanups.push(() => studios.closeAll())
-  const lane: PeerCanvas = createPeerCanvas({
-    target: (id) =>
-      id === 'conn-1' ? { id, endpoint: far.endpoint, deviceToken: device.token, machineName: MACHINE } : null,
-    studios,
+  const api = deviceWindowApi({ endpoint: far.endpoint, deviceToken: device.token, machineName: MACHINE })
+  cleanups.push(() => closePairedStudios(api))
+  const lane: PairedCanvas = createPairedCanvas({
+    target: (id) => (id === 'conn-1' ? { id, machineName: MACHINE } : null),
+    studios: pairedStudios(api),
     lingerMs: 20,
     requestTimeoutMs: 5_000,
   })
@@ -70,7 +76,7 @@ const scenesFor = (pushes: Push[], viewer: number) =>
   pushes.filter((push) => push.viewer === viewer && push.channel === 'canvas:scene').map((push) => push.payload)
 const linksOf = (pushes: Push[]) =>
   pushes
-    .filter((push) => push.channel === CANVAS_REMOTE_LINK_CHANNEL)
+    .filter((push) => push.channel === PAIRED_CANVAS_LINK)
     .map((push) => push.payload as unknown as CanvasRemoteLink)
 
 test('a paired desktop makes a board over there, draws on it, and that machine keeps it', async () => {
@@ -350,7 +356,7 @@ test("an agent's canvas.open over there opens the board here, for the window sho
   // The window opens what it is asked to, which is what tells the agent it was shown.
   viewer.send = (channel, payload) => {
     send(channel, payload)
-    if (channel === 'canvas:remote-open-request')
+    if (channel === PAIRED_CANVAS_OPEN_REQUEST)
       asked = here.lane.open(viewer, here.board((payload as { path: string }).path))
   }
   here.lane.watch(viewer, { connectionId: 'conn-1', workspaceId: FAR_CHAT })
@@ -360,60 +366,63 @@ test("an agent's canvas.open over there opens the board here, for the window sho
   await asked
   assert.ok(revealed.ok)
   assert.equal(revealed.value.revealed, true, 'the agent is told the board was shown')
-  const request = here.pushes.find((push) => push.channel === 'canvas:remote-open-request')!.payload
+  const request = here.pushes.find((push) => push.channel === PAIRED_CANVAS_OPEN_REQUEST)!.payload
   assert.deepEqual(request, { connectionId: 'conn-1', workspaceId: FAR_CHAT, path: 'plan.excalidraw' })
 })
 
-test('the mesh carries a paired machine’s boards, list, picture and pane, end to end', async () => {
+test('a desktop window carries a paired machine’s boards, list, picture and pane, end to end', async () => {
   const far = await machine()
-  const localDir = mkdtempSync(join(tmpdir(), 'peer-canvas-local-'))
-  cleanups.push(() => rmSync(localDir, { recursive: true, force: true }))
-  const mesh = createTailnetMeshService({
-    resolveUserDataDir: () => localDir,
-    createStore: (options) => createTailnetMeshStore({ ...options, cipher: createSecretCipherStandIn() }),
-    resolveDeviceName: () => 'dev-macbook-air',
-    resolvePeerName: async () => null,
-    canvas: { lingerMs: 20 },
-  })
-  cleanups.push(() => mesh.shutdown())
-  const offer = far.rig.devices.offerPairing({ scopes: ['workspace:read', 'workspace:operate'] })
-  const paired = await mesh.pair({ pairingUrl: pairingUrl('127.0.0.1', far.port, offer.token) })
-  assert.ok(paired.ok, paired.ok ? '' : paired.message)
-  const connectionId = paired.connection.id
-  assert.deepEqual(await mesh.remoteCanvas.access(connectionId), { ok: true, live: true, canEdit: true })
+  const window = await pairedWindow({ port: () => far.port, devices: far.rig.devices }, [
+    'workspace:read',
+    'workspace:operate',
+  ])
+  cleanups.push(() => window.close())
+  const machineHere = window.machine
+  const connectionId = machineHere.id
+  const canvas = windowPairedCanvas(machineHere)
+  assert.deepEqual(await canvas.access(connectionId), { ok: true, live: true, canEdit: true })
   const pushes: Push[] = []
-  const viewer = {
-    id: 1,
-    send: (channel: string, payload: unknown) =>
-      pushes.push({ viewer: 1, channel, payload: payload as Record<string, unknown> }),
-  }
+  for (const channel of ['canvas:scene', PAIRED_CANVAS_LINK])
+    cleanups.push(
+      onPairedCanvasPush(channel, (payload) =>
+        pushes.push({ viewer: 1, channel, payload: payload as Record<string, unknown> }),
+      ),
+    )
   const ref = { connectionId, remoteWorkspaceId: FAR_CHAT, workspaceId: 'local-chat', path: 'plan' }
-  const opened = await mesh.remoteCanvas.open(viewer, { ...ref, create: true })
+  const opened = await canvas.open(WINDOW_CANVAS_VIEWER, { ...ref, create: true })
   assert.ok(opened.ok, opened.ok ? '' : opened.error.message)
-  const committed = await mesh.remoteCanvas.commit(viewer, {
+  const committed = await canvas.commit(WINDOW_CANVAS_VIEWER, {
     ...ref,
     baseRevision: 0,
-    elements: [element('via-mesh')],
+    elements: [element('via-window')],
     appState: {},
     files: {},
   })
   assert.ok(committed.ok)
   assert.deepEqual(
     far.sceneOnDisk('plan').map((item) => item.id),
-    ['via-mesh'],
+    ['via-window'],
   )
   // The picker's list, every board on the machine, and the picture of one.
-  const listed = await mesh.canvasBoards({ connectionId, workspaceId: FAR_CHAT, scope: 'machine' })
+  const listed = await listPairedBoards(machineHere, FAR_CHAT, 'machine')
   assert.ok(listed.ok, listed.ok ? '' : listed.message)
   assert.equal(listed.allBoards, true)
   assert.deepEqual(
     listed.boards.map((row) => [row.name, row.project, row.here]),
     [['plan', basename(far.project), true]],
   )
-  const picture = await mesh.canvasScreenshot({ connectionId, workspaceId: FAR_CHAT, board: listed.boards[0]!.id! })
+  const picture = await pairedBoardPicture(machineHere, {
+    workspaceId: FAR_CHAT,
+    board: listed.boards[0]!.id!,
+    dark: false,
+  })
   assert.ok(picture.ok, picture.ok ? '' : picture.message)
   assert.equal(picture.mimeType, 'image/png')
-  // Forgetting the machine ends the pane, and the window is told.
-  mesh.forget(connectionId)
-  assert.ok(pushes.some((push) => push.channel === CANVAS_REMOTE_LINK_CHANNEL && push.payload.state === 'gone'))
+  // Forgetting the machine here ends the pane, and the tab is told.
+  window.mesh.forget(connectionId)
+  window.environmentsChanged()
+  await waitFor(
+    () => pushes.some((push) => push.channel === PAIRED_CANVAS_LINK && push.payload.state === 'gone'),
+    'the tab is told the board is gone',
+  )
 })

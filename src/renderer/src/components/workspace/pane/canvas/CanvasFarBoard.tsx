@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 
+import { pairedBoardPicture } from '../../../../studio/pairedCanvas'
 import { canvasBoardId, canvasBoardName } from '../../../../../../shared/canvas/paths'
 import { useResolvedColorScheme } from '../../../../hooks/useAppTheme'
 import { showToast } from '../../../../store/toastStore'
@@ -43,28 +44,25 @@ export function CanvasFarBoard({
   useEffect(() => {
     let cancelled = false
     setPicture({ kind: 'loading' })
-    void window.api
-      .meshCanvasScreenshot({
-        connectionId: source.connectionId,
-        workspaceId: source.remoteWorkspaceId,
-        board: id ?? board.path,
-        dark: theme === 'dark',
-      })
-      .then(
-        (answer) => {
-          if (cancelled) return
-          const url = answer.ok ? canvasPictureUrl(answer) : null
-          if (url) setPicture({ kind: 'ready', url })
-          else
-            setPicture({
-              kind: 'error',
-              message: answer.ok ? `${source.machineName} sent no picture of this board.` : answer.message,
-            })
-        },
-        () => {
-          if (!cancelled) setPicture({ kind: 'error', message: `${source.machineName} could not be reached.` })
-        },
-      )
+    // Drawn over there and asked of that machine's Studio by this window itself.
+    void pairedBoardPicture(
+      { id: source.connectionId, machineName: source.machineName },
+      { workspaceId: source.remoteWorkspaceId, board: id ?? board.path, dark: theme === 'dark' },
+    ).then(
+      (answer) => {
+        if (cancelled) return
+        const url = answer.ok ? canvasPictureUrl(answer) : null
+        if (url) setPicture({ kind: 'ready', url })
+        else
+          setPicture({
+            kind: 'error',
+            message: answer.ok ? `${source.machineName} sent no picture of this board.` : answer.message,
+          })
+      },
+      () => {
+        if (!cancelled) setPicture({ kind: 'error', message: `${source.machineName} could not be reached.` })
+      },
+    )
     return () => {
       cancelled = true
     }
