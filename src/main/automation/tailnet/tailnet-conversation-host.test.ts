@@ -366,6 +366,11 @@ test('a queued send asked again under its command id is held once: at once, besi
     const after = await f.host.command(f.key, 'laptop', 'queued-1', send)
     assert.deepEqual([first, beside, after], [{ ok: true }, { ok: true }, { ok: true }])
     assert.equal(memory.holds.length, 1, 'held once')
+    // A repeat that crossed the stale line on its way is answered held, not
+    // refused into the window sending it again itself.
+    const late = await f.host.command(f.key, 'laptop', 'queued-1', { ...send, composedAt: Date.now() - 23 * 3_600_000 })
+    assert.deepEqual(late, { ok: true })
+    assert.equal(memory.holds.length, 1, 'still held once')
     // Another command is another message.
     assert.deepEqual(await f.host.command(f.key, 'laptop', 'queued-2', send), { ok: true })
     assert.equal(memory.holds.length, 2)
