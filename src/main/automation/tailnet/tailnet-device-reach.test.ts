@@ -401,6 +401,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ],
       ],
       [
+        'where this machine publishes agents’ pages: the setting and the token it holds, a set-up that signs in to the host, and the person’s set-up question: an owner’s (a device lists, searches and reads the site through the gateway’s `artifacts.*` read tools; publishing, changing, removing and setting up stay on the local socket)',
+        ['artifacts.settings', 'artifacts.setUp', 'artifacts.answerSetupQuestion', 'artifacts.setupQuestions'],
+      ],
+      [
         'what extensions run here, installed, trusted or switched: an owner’s',
         ['module.setEnabled', 'module.install', 'module.setTrust', 'module.uninstall'],
       ],

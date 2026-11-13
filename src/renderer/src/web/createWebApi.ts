@@ -142,8 +142,6 @@ const browserEmptyStates = {
   getKeepAwake: async () => null,
   setKeepAwake: async () => null,
   // Nor the desktop's disk and credentials to publish an artifact with.
-  getArtifactsSettings: async () => null,
-  setUpArtifacts: async () => null,
   // The tab's own console is its diagnostics log.
   logDiagnostic: async (input) => {
     console.info('[diagnostics]', input)

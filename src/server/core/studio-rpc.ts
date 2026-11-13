@@ -145,6 +145,8 @@ export function createStudioRpc(
     // What a desktop's Studio is extended with: its marketplace, the CLI
     // catalogue, the extension scaffold and the hosted feeds.
     ...(core.extensions ? { extensions: core.extensions } : {}),
+    // Where a desktop's Studio publishes its agents' pages.
+    ...(core.artifacts ? { artifacts: core.artifacts } : {}),
     // What the conversations' branches have on GitHub, which every client
     // displays and none decides.
     pullRequests: core.pullRequests,

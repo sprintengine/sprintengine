@@ -85,6 +85,7 @@ import {
 } from '../../shared/conversation-runtime'
 import { installedStudioPlatform, installStudioPlatform, type StudioPlatform } from '../platform/platform'
 import { createStudioExtensions, type StudioExtensionsDeps } from '../extensions/extensions-domain'
+import { createStudioArtifacts, type StudioArtifactsShell } from '../artifacts/artifacts-domain'
 import { listKnownWorkspaceRoots } from '../../main/workspace-roots'
 import type { StudioPaths } from '../platform/studio-paths'
 import { createPullRequestDomain } from '../pull-requests/pull-request-domain'
@@ -179,6 +180,14 @@ export type StudioCoreOptions = {
    * machine), none of it is served.
    */
   extensions?: Pick<StudioExtensionsDeps, 'studioPluginStatus' | 'changed'>
+  /**
+   * Where a desktop's Studio publishes its agents' pages (`artifacts`): given,
+   * the core holds Settings ▸ Artifacts, its set-up and the agents'
+   * `artifacts.*` tools. The shell adds a page's picture and asks the person
+   * natively when no window is showing; the GitHub token is the process's.
+   * Absent (a server on a WSL or SSH machine), none of it is served.
+   */
+  artifacts?: StudioArtifactsShell & { resolveGitHubToken(): Promise<string> }
   /**
    * Who turns the scheduler on. A process with a module kernel (the desktop,
    * in process and out) turns it on and off with the person's Scheduled
@@ -345,6 +354,18 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // holds it until it is live, through the same holds the pool takes.
     listTerminalSessions: () => agentTerminals?.list() ?? [],
   })
+
+  // Where a desktop's Studio publishes its agents' pages: an agent publishes
+  // from its chat's folders, its pool worktree among them.
+  const artifacts = options.artifacts
+    ? createStudioArtifacts({
+        ...options.artifacts,
+        paths: platform.paths,
+        findWorkspace: (workspaceId) =>
+          workspaceSyncService.getSnapshot().state.workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
+        poolWorktrees: async () => (await worktrees.pool.snapshots()).flatMap((snapshot) => snapshot.slots),
+      })
+    : null
 
   // The conversation runtime: chat sessions and the providers and agent CLI
   // children behind them, transcripts, the thread index and checkpoints. Owned
@@ -1390,6 +1411,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     agents,
     /** The marketplace, the CLI catalogue, the scaffold and the feeds; null where this Studio serves none. */
     extensions,
+    /** Settings ▸ Artifacts, its set-up question and the `artifacts.*` tools; null where this Studio serves none. */
+    artifacts,
     /** The composer's `/` lists, which a window's IPC and a paired desktop's reads share. */
     conversationCommands,
     stopUsageLimitResumes,

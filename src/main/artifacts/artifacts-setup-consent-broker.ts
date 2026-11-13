@@ -4,29 +4,33 @@ import type { ArtifactsSetupQuestionView } from '../../shared/artifacts'
 import type { ArtifactsSetupConsent } from './artifacts-setup-consent'
 
 // Where the set-up question is put to the person: in Studio's own window, as
-// a confirmation dialog, the way main asks what ssh asks (SshPromptDialog).
-// Main broadcasts the question to every workspace window; the first answer
-// from one of them settles it, and every window is told it is closed. With
-// no window open, the native message box asks instead
-// (artifacts-setup-consent-electron.ts).
+// a confirmation dialog, the way the app asks what ssh asks (SshPromptDialog).
+// The Studio holds the questions open now; the windows follow them over the
+// protocol (`artifacts.setupQuestions`, an owner's stream) and the first
+// answer (`artifacts.answerSetupQuestion`, an owner's method) settles one, and
+// every window then hears it is gone. With no window showing, the desktop's
+// shell asks natively instead (artifacts-setup-consent-electron.ts).
 //
-// Only an explicit yes from a Studio workspace window counts. Anything else
-// that sends an answer (a page in the embedded browser) is not heard; an answer
-// for a question that is not open, or a second answer, does nothing; the
-// question expiring and the call being cancelled are a no.
+// Only an owner's connection hears or answers a question: the router holds
+// both to one, so a page in the embedded browser, a paired device or a web
+// tab without the owner's grant neither sees it nor says yes. An answer for a
+// question that is not open, or a second answer, does nothing; the question
+// expiring and the call being cancelled are a no.
 
-export const ARTIFACTS_SETUP_QUESTION_CHANNEL = 'artifacts:setup-question'
-export const ARTIFACTS_SETUP_QUESTION_CLOSED_CHANNEL = 'artifacts:setup-question-closed'
-export const ARTIFACTS_SETUP_ANSWER_CHANNEL = 'artifacts:setup-answer'
+export type ArtifactsSetupQuestions = (questions: ArtifactsSetupQuestionView[]) => void
 
 export type ArtifactsSetupConsentBroker = {
   ask: ArtifactsSetupConsent
-  /** An answer from a renderer; `fromWorkspaceWindow` is main's own check of the sender. */
-  answer(id: unknown, confirmed: unknown, fromWorkspaceWindow: boolean): void
+  /** The questions open now, oldest first. */
+  questions(): ArtifactsSetupQuestionView[]
+  /** Hear the open questions, whole: now, and on every change. Returns the unsubscriber. */
+  onQuestions(listener: ArtifactsSetupQuestions): () => void
+  /** The person's answer, from an owner's connection; whether it settled an open question. */
+  answer(id: string, confirmed: boolean): boolean
 }
 
 export function createArtifactsSetupConsentBroker(deps: {
-  broadcast: (channel: string, payload: unknown) => void
+  /** Whether one of the desktop's windows is showing, to ask in. */
   hasWindow: () => boolean
   /** The question asked natively, when no window could show it. */
   fallback: ArtifactsSetupConsent
@@ -34,7 +38,13 @@ export function createArtifactsSetupConsentBroker(deps: {
   now?: () => number
 }): ArtifactsSetupConsentBroker {
   const now = deps.now ?? Date.now
-  const open = new Map<string, (confirmed: boolean) => void>()
+  const open = new Map<string, { view: ArtifactsSetupQuestionView; settle: (confirmed: boolean) => void }>()
+  const listeners = new Set<ArtifactsSetupQuestions>()
+  const questions = () => [...open.values()].map((entry) => entry.view)
+  const changed = () => {
+    const current = questions()
+    for (const listener of [...listeners]) listener(current)
+  }
 
   return {
     ask(question, signal) {
@@ -46,23 +56,28 @@ export function createArtifactsSetupConsentBroker(deps: {
           open.delete(id)
           clearTimeout(timer)
           signal.removeEventListener('abort', onAbort)
-          deps.broadcast(ARTIFACTS_SETUP_QUESTION_CLOSED_CHANNEL, { id })
+          changed()
           resolve(confirmed)
         }
         const onAbort = () => settle(false)
         const timer = setTimeout(() => settle(false), deps.timeoutMs)
-        open.set(id, settle)
+        open.set(id, { view: { id, ...question, expiresAt: now() + deps.timeoutMs }, settle })
         signal.addEventListener('abort', onAbort, { once: true })
         if (signal.aborted) return settle(false)
-        const view: ArtifactsSetupQuestionView = { id, ...question, expiresAt: now() + deps.timeoutMs }
-        deps.broadcast(ARTIFACTS_SETUP_QUESTION_CHANNEL, view)
+        changed()
       })
     },
-    answer(id, confirmed, fromWorkspaceWindow) {
-      // Anything else that could send this (a page in the embedded browser)
-      // is not listened to at all: it can neither say yes nor close the question.
-      if (!fromWorkspaceWindow || typeof id !== 'string') return
-      open.get(id)?.(confirmed === true)
+    questions,
+    onQuestions(listener) {
+      listeners.add(listener)
+      listener(questions())
+      return () => void listeners.delete(listener)
+    },
+    answer(id, confirmed) {
+      const entry = open.get(id)
+      if (!entry) return false
+      entry.settle(confirmed)
+      return true
     },
   }
 }

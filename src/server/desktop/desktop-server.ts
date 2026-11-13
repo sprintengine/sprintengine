@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { backgroundWorkOf, quitStopsOf } from '../core/background-work'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
+import { shellArtifactsOverControl } from '../artifacts/artifacts-shell-bridge'
 import type { AgentLaunchRequest, AgentLaunchResult } from '../../shared/agent-launch'
 import { isRecord } from '../../shared/records'
 import { applyGatewayLaunchTokenChange, type LaunchTokenChange } from '../core/gateway-launch-tokens'
@@ -73,7 +74,6 @@ import {
   type ServerMirrorLaunchSettings,
   type ServerMirrorRegistry,
   type ServerMirrorState,
-  type ServerWorktreeLease,
 } from './server-methods'
 import { createServerModules } from './server-modules'
 import { serveAgentWorktrees } from './agent-worktree-rpc'
@@ -141,9 +141,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
 
   // Hints from the shell (6.3): what windows show and whether one has focus.
   let anyWindowVisible = true
+  let workspaceWindowVisible = true
   let appFocused = false
   rpc.on(SERVER_EVENTS.hintVisibility, (payload) => {
-    anyWindowVisible = (payload as { anyWindowVisible?: unknown })?.anyWindowVisible !== false
+    const hint = payload as { anyWindowVisible?: unknown; workspaceWindowVisible?: unknown } | null
+    anyWindowVisible = hint?.anyWindowVisible !== false
+    workspaceWindowVisible = hint?.workspaceWindowVisible !== false
   })
   rpc.on(SERVER_EVENTS.hintFocus, (payload) => {
     appFocused = (payload as { appFocused?: unknown })?.appFocused === true
@@ -223,6 +226,18 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       extensions: {
         studioPluginStatus: (workspaceRoot) => rpc.call(SHELL_METHODS.studioPluginStatus, { workspaceRoot }),
         changed: () => modules.hub.deliverChanged(),
+      },
+      // Where this desktop publishes its agents' pages: Settings ▸ Artifacts,
+      // its set-up and the `artifacts.*` tools are this process's. A page's
+      // picture and the question asked with no window showing are the
+      // shell's, asked for over the control channel. The question is asked
+      // in a window only while a workspace window shows, since a pop-out
+      // cannot show it, as in process. The GitHub token is
+      // this process's own store's, and the Cloudflare token is sealed with
+      // this process's cipher.
+      artifacts: {
+        ...shellArtifactsOverControl(rpc, () => workspaceWindowVisible),
+        resolveGitHubToken: () => githubTokenStore.resolveToken(),
       },
       ...(shellSsh
         ? { sshServers: { servers: shellSsh.servers, onConnected: (listener) => shellSsh.onConnected(listener) } }
@@ -311,6 +326,8 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // A desktop's Studio is given its extensions above, so they are here.
   const extensions = core.extensions
   if (!extensions) throw new Error('A desktop’s Studio holds its extensions.')
+  const artifacts = core.artifacts
+  if (!artifacts) throw new Error('A desktop’s Studio publishes its artifacts.')
   const modules = createServerModules({
     platform,
     core,
@@ -383,6 +400,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           readMarketplaceRegistry: (input) => extensions.marketplace.read(input),
         }),
       ),
+      // `artifacts.*`: publishing agents' pages from this machine's disk, over
+      // the service Settings ▸ Artifacts sets up.
+      ...artifacts.tools,
       // `extension.*` and `plugin.*`: a project made on this machine by the
       // scaffold a window's New chat door uses, and the plugin sources the
       // Extensions door lists, both this Studio's own.
@@ -843,14 +863,6 @@ function serveShellRequests(deps: {
   rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
   // The shell's `agent.launch` cuts its worktree here, from this process's pool.
   serveAgentWorktrees(rpc, core.worktrees.installer)
-  rpc.handle(SERVER_METHODS.worktreeLeases, async (): Promise<ServerWorktreeLease[]> =>
-    (await core.worktrees.pool.snapshots())
-      .flatMap((snapshot) => snapshot.slots)
-      .map((slot) => ({
-        path: slot.path,
-        lease: slot.lease ? { workspaceId: slot.lease.workspaceId, agentId: slot.lease.agentId } : null,
-      })),
-  )
   // The hourly refresh of the hosted feeds, which the shell times.
   rpc.handle(SERVER_METHODS.hostedFeedsRefresh, () => core.extensions?.feeds.refresh())
   rpc.handle(SERVER_METHODS.quitStops, async () => {

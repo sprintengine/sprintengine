@@ -21,6 +21,9 @@ import {
   type ShellConnectResult,
 } from '../../server/desktop/server-methods'
 import { serveShellBridge } from '../../server/shell-bridge/serve-shell-bridge'
+import { serveArtifactsShell } from '../../server/artifacts/artifacts-shell-bridge'
+import type { ArtifactThumbnailer } from '../artifacts/artifacts-service'
+import type { ArtifactsSetupConsent } from '../artifacts/artifacts-setup-consent'
 import type { ShellBridge } from '../../server/shell-bridge/shell-bridge'
 import type { StudioWindowTicket } from '../../shared/studio-connection'
 import type { StudioWindowTicketIssuer } from '../ipc/studio-window-ticket-ipc'
@@ -53,12 +56,17 @@ export type DesktopServerHost = {
   log: ServerLog
   /** Fork the server and start sending hints. At app ready. */
   start(): void
-  /** Answer the server's requests of the shell: the bridge, its Trash, and Studio's plugin it installs. */
+  /**
+   * Answer the server's requests of the shell: the bridge, its Trash, Studio's
+   * plugin it installs, and for artifacts a page's picture and the set-up
+   * question asked natively.
+   */
   serveShell(
     bridge: ShellBridge,
     caches: {
       trash(path: string): Promise<void>
       studioPluginStatus(workspaceRoot: string | null): Promise<unknown>
+      artifacts: { thumbnailer: ArtifactThumbnailer; askNatively: ArtifactsSetupConsent }
     },
   ): void
   /** Tickets for the windows' connections to the server's window listener, once it is serving. */
@@ -143,8 +151,11 @@ export function createDesktopServerHost(options: {
 
   function sendWindowHints(): void {
     const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed() && !isCanvasWorkerWindow(win))
+    const showing = windows.filter((win) => win.isVisible() && !win.isMinimized())
     supervisor.rpc.emit(SERVER_EVENTS.hintVisibility, {
-      anyWindowVisible: windows.some((win) => win.isVisible() && !win.isMinimized()),
+      anyWindowVisible: showing.length > 0,
+      // Only a workspace window can answer an artifacts set-up question; a pop-out cannot.
+      workspaceWindowVisible: showing.some((win) => isWorkspaceWindowWebContents(win.webContents)),
     })
     supervisor.rpc.emit(SERVER_EVENTS.hintFocus, { appFocused: windows.some((win) => win.isFocused()) })
   }
@@ -216,6 +227,7 @@ export function createDesktopServerHost(options: {
         if (typeof path !== 'string' || path.length === 0) throw new Error('No folder to move to the Trash.')
         await caches.trash(path)
       })
+      serveArtifactsShell(supervisor.rpc, caches.artifacts)
     },
     windowTickets: {
       async windowTicket(request) {

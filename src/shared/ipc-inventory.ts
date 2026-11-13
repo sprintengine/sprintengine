@@ -61,9 +61,6 @@ const CHAT_LINK = shell("A chat link from the operating system, opened in one of
 /** Moves to the protocol: chats and what hangs off them: sessions, providers, secrets, import, held and scheduled messages, usage limits, export, pull request creation. */
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
-/** Moves to the protocol: the module kernel: its host services and enablement. */
-/** Moves to the protocol: publishing artifacts (the rest of the extensions area is the Studio protocol's `extensions` and `module.*`). */
-const extensions = server('extensions')
 /** Moves to the protocol: a chat or a canvas on a paired desktop. */
 const pairedMachines = server('paired-machines')
 /** Moves to the protocol: who may reach this machine: the tailnet, pairing, MCP endpoints, local apps, browsers and embeds. */
@@ -268,11 +265,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),
-  'artifacts:get-settings': extensions('invoke'),
-  'artifacts:set-up': extensions('invoke'),
-  'artifacts:setup-answer': extensions('send'),
-  'artifacts:setup-question': extensions('push'),
-  'artifacts:setup-question-closed': extensions('push'),
   'canvas:remote-access': pairedMachines('invoke'),
   'canvas:remote-close': pairedMachines('invoke'),
   'canvas:remote-commit': pairedMachines('invoke'),

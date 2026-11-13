@@ -24,6 +24,7 @@ import {
   STUDIO_CHAT_LIFECYCLE_METHODS,
   STUDIO_CANVAS_METHODS,
   STUDIO_EXTENSIONS_METHODS,
+  STUDIO_ARTIFACTS_METHODS,
   STUDIO_CHAT_METHODS,
   STUDIO_FOLLOWED_METHODS,
   STUDIO_METHODS,
@@ -40,6 +41,7 @@ import {
   type StudioGitMethod,
   type StudioWorktreesMethod,
   type StudioExtensionsMethodMap,
+  type StudioArtifactsMethodMap,
   type StudioChatMethod,
   type StudioMethod,
 } from '../../packages/studio-protocol/src/public'
@@ -509,6 +511,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     // And what it is extended with, which its Extensions door, Settings and New chat use, by name.
     ...(Object.fromEntries(Object.keys(STUDIO_EXTENSIONS_METHODS).map((method) => [method, 'request'])) as Record<
       keyof StudioExtensionsMethodMap,
+      string
+    >),
+    // And where it publishes its agents' pages, which its Settings ▸ Artifacts uses, by name.
+    ...(Object.fromEntries(Object.keys(STUDIO_ARTIFACTS_METHODS).map((method) => [method, 'request'])) as Record<
+      keyof StudioArtifactsMethodMap,
       string
     >),
   }
