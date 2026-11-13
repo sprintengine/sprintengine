@@ -138,6 +138,7 @@ const resultOf = (frame: StudioParsedServerFrame) => (frame.t === 'res' && frame
 
 /** Every keyed method, with params that are its documented shape. */
 const CALLS: Record<keyof typeof STUDIO_FOLLOWED_METHODS, Record<string, unknown>> = {
+  'conversation.fork': { key: KEY, commandId: 'c-fork', newAgentId: 'agent-2', side: 'assistant', turnId: 't1' },
   'conversation.askSideQuestion': { key: KEY, commandId: 'c-ask', questionId: 'q1', question: 'Why?' },
   'conversation.cancelSideQuestion': { questionId: 'q1' },
   'conversation.contextBreakdown': { key: KEY },
@@ -170,6 +171,7 @@ test('the socket withholds no conversation capability but its handshake, its upl
     'conversation-commands',
     'conversation-permanent-approvals',
     'conversation-quote-tokens',
+    'conversation-fork',
   ])
     assert.ok(info.conversation.capabilities.includes(capability), capability)
   for (const capability of STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES)
@@ -181,12 +183,64 @@ test('the socket withholds no conversation capability but its handshake, its upl
   assert.ok(bare.includes('conversation-permanent-approvals'))
 })
 
+test('a fork is the host’s, joined to the chat’s records, and answered with where it is and what it is called', async () => {
+  const started = await serve()
+  const owner = await client(started.path, OWNER_TOKEN)
+  // A fork is a new chat: `conversation:create` (a device's operate carries it).
+  const paired = await client(
+    started.path,
+    pairFakeClient(started.auth, 'tablet', ['conversation:read', 'conversation:operate', 'conversation:create']),
+  )
+  const reader = await client(started.path, pairFakeClient(started.auth, 'watch', ['conversation:read']))
+  const fork = { key: KEY, commandId: 'c-fork', newAgentId: 'agent-2', side: 'user', turnSeq: 3, title: 'Mine' }
+  for (const c of [owner, paired]) {
+    const answer = await ask(c, 'conversation.fork', fork)
+    assert.deepEqual(resultOf(answer), {
+      ok: true,
+      address: { environmentId: 'env-test', chatId: 'ws-1', agentId: 'agent-2' },
+      name: 'Atlas (fork)',
+    })
+  }
+  // The host's command, under each client's own id; the Studio names it, so
+  // a title an older client sends is not carried.
+  const forks = started.backend.commands.filter(({ command }) => command.kind === 'fork')
+  assert.deepEqual(
+    forks.map(({ clientId, command }) => [clientId, command]),
+    [
+      ['owner', { kind: 'fork', newAgentId: 'agent-2', side: 'user', turnSeq: 3 }],
+      ['tablet', { kind: 'fork', newAgentId: 'agent-2', side: 'user', turnSeq: 3 }],
+    ],
+  )
+  // Asked again after a dropped connection: the same fork, not a second.
+  const again = await ask(owner, 'conversation.fork', fork)
+  assert.equal((resultOf(again) as { name?: string }).name, 'Atlas (fork)')
+  assert.equal(started.backend.commands.filter(({ command }) => command.kind === 'fork').length, 2)
+  // Following a chat is not starting one.
+  assert.equal(errorOf(await ask(reader, 'conversation.fork', { ...fork, commandId: 'c-fork-2' })), 'scope_required')
+})
+
+test('a fork the host made but did not name is refused, not answered without a name', async () => {
+  const started = await serve()
+  const command = started.backend.command.bind(started.backend)
+  started.backend.command = async (key, clientId, commandId, carried, fingerprint) =>
+    carried.kind === 'fork' ? { ok: true } : command(key, clientId, commandId, carried, fingerprint)
+  const owner = await client(started.path, OWNER_TOKEN)
+  const answer = await ask(owner, 'conversation.fork', {
+    key: KEY,
+    commandId: 'c-fork',
+    newAgentId: 'agent-2',
+    side: 'assistant',
+    turnId: 't1',
+  })
+  assert.equal(errorOf(answer), 'unavailable')
+})
+
 test('each keyed method reaches the host for an owner and a paired client that may operate', async () => {
   const started = await serve()
   const owner = await client(started.path, OWNER_TOKEN)
   const paired = await client(
     started.path,
-    pairFakeClient(started.auth, 'tablet', ['conversation:read', 'conversation:operate']),
+    pairFakeClient(started.auth, 'tablet', ['conversation:read', 'conversation:operate', 'conversation:create']),
   )
   for (const c of [owner, paired])
     for (const [method, params] of Object.entries(CALLS)) {
@@ -225,7 +279,7 @@ test('a read-only grant reads the chat but is refused what runs its agent or wri
   }
   assert.deepEqual(
     Object.keys(CALLS).filter((method) => !studioGrantAllows({ owner: false, scopes: ['conversation:read'] }, method)),
-    ['conversation.askSideQuestion', 'conversation.settle', 'conversation.visit'],
+    ['conversation.fork', 'conversation.askSideQuestion', 'conversation.settle', 'conversation.visit'],
   )
   // A refresh of the command list starts the chat's CLI: refused here, as
   // the lane's refresh was.
@@ -385,8 +439,9 @@ test('a Studio whose host serves none of them answers each unavailable', async (
   const started = await startTestServer()
   cleanups.push(() => started.dispose())
   const owner = await client(started.path, OWNER_TOKEN)
+  // A fork is a command every host takes; one that keeps no records refuses it in words.
   for (const [method, params] of Object.entries(CALLS))
-    assert.equal(errorOf(await ask(owner, method, params)), 'unavailable', method)
+    if (method !== 'conversation.fork') assert.equal(errorOf(await ask(owner, method, params)), 'unavailable', method)
   owner.send({ t: 'sub', id: 's', topic: 'conversation.queued', params: { key: KEY } })
   const failed = await owner.next((frame) => frame.t === 'subFailed')
   assert.equal(failed.t === 'subFailed' && failed.code, 'unavailable')

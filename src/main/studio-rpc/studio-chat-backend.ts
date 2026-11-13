@@ -176,13 +176,6 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
         return failed(error)
       }
     },
-    async fork(input) {
-      try {
-        return (await handlers.forkAtTurn?.(input)) ?? { ok: false, message: 'Forking a conversation is unavailable.' }
-      } catch (error) {
-        return failed(error)
-      }
-    },
     async attachment(ref) {
       try {
         return (await handlers.readAttachment?.(ref)) ?? { ok: false, message: 'Attachments are unavailable.' }

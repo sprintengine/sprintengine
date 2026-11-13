@@ -125,11 +125,6 @@ function chatOver(api: Api) {
       get handoffConversation() {
         return has(api, 'conversationHandoff') ? (input: unknown) => call(api, 'conversationHandoff', input) : undefined
       },
-      get forkAtTurn() {
-        return has(api, 'conversationForkAtTurn')
-          ? (input: unknown) => call(api, 'conversationForkAtTurn', input)
-          : undefined
-      },
       get readAttachment() {
         return has(api, 'conversationAttachment')
           ? (ref: string) => call(api, 'conversationAttachment', { ref })

@@ -3581,8 +3581,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // open the fork in a tab. A provider that branches only the session it is
   // running (an ACP agent's `session/fork`, `forkFromLiveSession`) has this
   // chat's session started first for a fork at the newest reply; any other
-  // is not started for nothing. A paired machine's chat is forked over there,
-  // never started here, and the fork opens as a pane onto that machine.
+  // is not started for nothing. The chat's Studio answers where the fork is,
+  // and it opens there. A paired machine's chat followed over the tailnet lane
+  // is forked over there, never started here, and the fork opens as a pane
+  // onto that machine (`forkRemoteChat`), until that lane is the protocol.
   const forkRef = useRef<(target: ForkFromHereTarget) => Promise<void>>(async () => undefined)
   forkRef.current = async (target) => {
     if (transport.kind === 'remote') {
@@ -3604,7 +3606,13 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       transport.capabilities.startSession
     )
       await ensureSession()
-    await forkChat({ transport, key: { workspaceRoot, workspaceId, agentId }, target })
+    if (!conversation?.providerId) throw new Error('This chat cannot be forked here.')
+    await forkChat({
+      transport,
+      key: { workspaceRoot, workspaceId, agentId },
+      providerId: conversation.providerId,
+      target,
+    })
   }
   const forkFromHere = useCallback((target: ForkFromHereTarget) => forkRef.current(target), [])
   const onFork =

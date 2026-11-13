@@ -27,7 +27,6 @@ import {
   type ConversationSideQuestionResult,
   type ConversationTerminalHandoffResult,
   type ConversationThreadsResult,
-  type ConversationForkResult,
   type ConversationHandoffResult,
   type ConversationApprovalDecision,
   type ConversationSendRequest,
@@ -151,13 +150,6 @@ export type StudioSessionRespondParams = {
   requestKind?: string
 }
 
-export type StudioForkParams = {
-  commandId: string
-  key: StudioConversationKey
-  newAgentId: string
-  title?: string
-} & ({ side: 'assistant'; turnId: string } | { side: 'user'; turnSeq: number })
-
 /** A path on Studio's disk, as `files.stat` answers by an absolute path. */
 export type StudioPathStat = {
   isFile: boolean
@@ -251,7 +243,6 @@ export type StudioChatMethodMap = {
     result: ConversationRewindResult
     errors: 'not_found'
   }
-  'conversation.fork': { params: StudioForkParams; result: ConversationForkResult; errors: 'not_found' }
   /** Hand a chat off to a fresh session pointed at a file of its messages; answers that file's path. */
   'conversation.handoff': {
     params: { commandId: string; key: StudioConversationKey }
@@ -773,27 +764,6 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       if (!at.ok) return at
       if (!(integer(value.turnSeq) && value.turnSeq >= 1)) return refuse('"turnSeq" is the message to go back to.')
       return studioParams({ ...at.params, turnSeq: value.turnSeq })
-    },
-  },
-  'conversation.fork': {
-    ...held('conversation:create', STUDIO_CHECKPOINTS_CAPABILITY, true),
-    params: (value) => {
-      const at = addressed(value)
-      if (!at.ok) return at
-      if (!(id(value.newAgentId) && value.newAgentId.trim())) return refuse('"newAgentId" names the new chat.')
-      if (!optional(value.title, (v): v is string => text(v, 500))) return refuse('"title" is the new chat’s name.')
-      const common = {
-        ...at.params,
-        newAgentId: value.newAgentId,
-        ...(value.title === undefined ? {} : { title: value.title as string }),
-      }
-      if (value.side === 'user') {
-        if (!(integer(value.turnSeq) && value.turnSeq >= 1)) return refuse('"turnSeq" is the message to fork before.')
-        return studioParams({ ...common, side: 'user' as const, turnSeq: value.turnSeq })
-      }
-      if (value.side === 'assistant' && id(value.turnId))
-        return studioParams({ ...common, side: 'assistant' as const, turnId: value.turnId })
-      return refuse('A fork is { side: "assistant", turnId } or { side: "user", turnSeq }.')
     },
   },
   'conversation.handoff': { ...held('conversation:operate', STUDIO_HANDOFF_CAPABILITY, true), params: addressed },

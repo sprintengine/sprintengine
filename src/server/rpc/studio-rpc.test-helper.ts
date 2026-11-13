@@ -174,7 +174,9 @@ export function createFakeBackend(agentIds: string[] = ['agent-1']): FakeBackend
         return { ok: false, code: 'busy', message: 'A send to this chat is being prepared.', retryAfterMs: 400 }
       backend.commands.push({ clientId, commandId, command })
       if (command.kind === 'setPermissionPreset') backend.presets.set(key.agentId, command.preset)
-      const outcome: StudioCommandOutcome = { ok: true }
+      // A fork joins the chat's records under the name the host gives it.
+      const outcome: StudioCommandOutcome =
+        command.kind === 'fork' ? { ok: true, data: { name: 'Atlas (fork)' } } : { ok: true }
       receipts.set(commandId, outcome)
       return outcome
     },

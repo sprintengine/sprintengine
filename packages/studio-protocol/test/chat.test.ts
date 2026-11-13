@@ -186,6 +186,8 @@ test('revert, rewind and fork take a conversation and a turn; a fork is from a r
       newAgentId: 'a2',
       side: 'assistant',
       turnId: 't',
+      // An older client's name for it: the Studio names a fork itself.
+      title: 'Mine',
     }),
     { ok: true, params: { commandId: 'c', key, newAgentId: 'a2', side: 'assistant', turnId: 't' } },
   )

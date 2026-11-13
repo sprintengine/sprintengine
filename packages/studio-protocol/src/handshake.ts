@@ -28,7 +28,7 @@ export const STUDIO_CONVERSATION_FOLDERS_CAPABILITY = 'conversation-folders' as 
 export const STUDIO_SESSIONS_CAPABILITY = 'conversation-sessions' as const
 /** Read a sent picture back (`conversation.attachment`) and open a proposed plan as a file (`conversation.planDocument`). */
 export const STUDIO_CONVERSATION_FILES_CAPABILITY = 'conversation-files' as const
-/** Revert a turn's files from its checkpoint, take a chat back to an earlier message, or fork it there. */
+/** Revert a turn's files from its checkpoint, or take a chat back to an earlier message. */
 export const STUDIO_CHECKPOINTS_CAPABILITY = 'conversation-checkpoints' as const
 /** The `/` command list a chat's CLI reports for a folder: `conversation.commands` and its stream. */
 export const STUDIO_COMMANDS_CAPABILITY = 'conversation-commands' as const

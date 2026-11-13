@@ -82,7 +82,8 @@ test("a device's fork is cut by the runtime under the fork's name, then joins th
   try {
     const cut = vi.spyOn(f.runtime, 'forkAtTurn').mockResolvedValue({ ok: true })
     const forked = await f.host.command(f.key, 'laptop', 'fork-1', fork())
-    assert.deepEqual(forked, { ok: true })
+    // Answered with what it was called, for a client that opens it by name.
+    assert.deepEqual(forked, { ok: true, data: { name: 'Atlas (fork)' } })
     assert.deepEqual(cut.mock.calls, [
       [
         {
