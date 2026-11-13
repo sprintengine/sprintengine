@@ -255,7 +255,9 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
   }
 
   async function clientOf(session: Session): Promise<StudioClient> {
-    return session.client ?? (await withTimeout(session.hold.client, `${machineOf(session.connectionId)} did not answer.`))
+    return (
+      session.client ?? (await withTimeout(session.hold.client, `${machineOf(session.connectionId)} did not answer.`))
+    )
   }
 
   const remoteKey = (ref: StudioCanvasRef): string => `${ref.workspaceId}\u0000${ref.store ?? ''}\u0000${ref.path}`
@@ -531,7 +533,11 @@ export function createPeerCanvas(deps: PeerCanvasDeps): PeerCanvas {
     const client = await clientOf(session)
     const files = Object.fromEntries(Object.entries(change.files).filter(([id]) => !board.peerFiles.has(id)))
     const body = { elements: change.elements, appState: change.appState, files }
-    const base = { ...board.ref, commandId: `canvas-${randomUUID()}`, baseRevision: Math.max(0, change.baseRevision - board.offset) }
+    const base = {
+      ...board.ref,
+      commandId: `canvas-${randomUUID()}`,
+      baseRevision: Math.max(0, change.baseRevision - board.offset),
+    }
     const text = JSON.stringify(body)
     let answer: { revision: number; elements: unknown[] | null }
     if (Buffer.byteLength(text, 'utf8') <= STUDIO_CANVAS_LIMITS.inlineBodyBytes) {

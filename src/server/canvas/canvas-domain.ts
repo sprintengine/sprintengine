@@ -45,7 +45,10 @@ export type StudioCanvasHost = {
   unsubscribe(subscriberId: number): void
   /** An agent's `canvas.open`, for the clients that follow its workspace. */
   onOpenRequest(listener: (ref: CanvasBoardRef) => void): () => void
-  openBoard(ref: CanvasBoardRef, opts: { create: boolean; subscriberId: number }): Promise<CanvasResult<CanvasBoardState>>
+  openBoard(
+    ref: CanvasBoardRef,
+    opts: { create: boolean; subscriberId: number },
+  ): Promise<CanvasResult<CanvasBoardState>>
   readBoard(ref: CanvasBoardRef): Promise<CanvasResult<CanvasBoardState>>
   commitScene(
     input: CanvasBoardRef & {
@@ -107,7 +110,13 @@ export type StudioCanvasDomain = {
 /** How long a stage nobody commits is kept. */
 const STAGE_TTL_MS = 5 * 60_000
 
-type Stage = { key: string; total: number; parts: Map<number, string>; bytes: number; timer: ReturnType<typeof setTimeout> }
+type Stage = {
+  key: string
+  total: number
+  parts: Map<number, string>
+  bytes: number
+  timer: ReturnType<typeof setTimeout>
+}
 
 const CODES: Readonly<Record<CanvasErrorCode, StudioCanvasRefusal['code']>> = {
   no_workspace: 'not_found',
@@ -192,7 +201,8 @@ export function createStudioCanvasDomain(host: StudioCanvasHost): StudioCanvasDo
     }
   }
 
-  const subscriberOf = (connectionId: string, key: string): number | undefined => held.get(connectionId)?.get(key)?.at(-1)
+  const subscriberOf = (connectionId: string, key: string): number | undefined =>
+    held.get(connectionId)?.get(key)?.at(-1)
 
   function tool(name: string): McpToolRegistration | undefined {
     return host.tools().find((entry) => entry.name === name)
@@ -237,7 +247,10 @@ export function createStudioCanvasDomain(host: StudioCanvasHost): StudioCanvasDo
       try {
         answer = await host.openBoard(ref.value, { create: params.create === true && canEdit, subscriberId })
       } catch (error) {
-        answer = { ok: false, error: { code: 'worker_unavailable', message: error instanceof Error ? error.message : String(error) } }
+        answer = {
+          ok: false,
+          error: { code: 'worker_unavailable', message: error instanceof Error ? error.message : String(error) },
+        }
       }
       if (!answer.ok) {
         closed = true
@@ -371,7 +384,11 @@ export function createStudioCanvasDomain(host: StudioCanvasHost): StudioCanvasDo
       let own = stages.get(connectionId)
       let stage = own?.get(params.stageId)
       if (stage && (stage.key !== key || stage.total !== params.total))
-        return { ok: false, code: 'invalid_params', message: 'That stage was begun for another board or another length.' }
+        return {
+          ok: false,
+          code: 'invalid_params',
+          message: 'That stage was begun for another board or another length.',
+        }
       const before = stage?.parts.get(params.index)?.length ?? 0
       if (stagedBytes(connectionId) - before + params.text.length > STUDIO_CANVAS_LIMITS.stagedBytesPerConnection) {
         dropStage(connectionId, params.stageId)
@@ -415,7 +432,8 @@ export function createStudioCanvasDomain(host: StudioCanvasHost): StudioCanvasDo
           return { ok: false, code: 'invalid_params', message: 'The staged change was not one this Studio reads.' }
         }
         body = parseStudioCanvasCommitBody(parsed)
-        if (!body) return { ok: false, code: 'invalid_params', message: 'The staged change is { elements, appState, files }.' }
+        if (!body)
+          return { ok: false, code: 'invalid_params', message: 'The staged change is { elements, appState, files }.' }
       }
       if (!body) return { ok: false, code: 'invalid_params', message: 'A commit carries its body.' }
       const checked = canvasCommitOf({ ...ref.value, baseRevision: params.baseRevision, ...body })

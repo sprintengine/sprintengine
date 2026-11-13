@@ -173,12 +173,9 @@ test('each upgrade path names its route, and every declared route is one some re
   assert.equal(tailnetUpgradeRouteOf(TAILNET_MCP_PATH), null)
   // No entry in the table goes unconsulted: each is what some request is judged by.
   const resolved = new Set<string>([
-    ...[
-      TAILNET_STREAM_PATH,
-      TAILNET_EVENTS_PATH,
-      TAILNET_CONVERSATION_PATH,
-      TAILNET_STUDIO_PATH,
-    ].map((path) => tailnetUpgradeRouteOf(path)!),
+    ...[TAILNET_STREAM_PATH, TAILNET_EVENTS_PATH, TAILNET_CONVERSATION_PATH, TAILNET_STUDIO_PATH].map((path) =>
+      tailnetUpgradeRouteOf(path)!,
+    ),
     tailnetDeviceRouteOf('GET', TAILNET_IDENTITY_PATH)!,
     tailnetDeviceRouteOf('POST', TAILNET_UPLOAD_PATH)!,
     tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_IMAGE_PATH)!,

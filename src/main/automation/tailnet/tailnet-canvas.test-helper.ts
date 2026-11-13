@@ -75,7 +75,8 @@ export async function freePort(): Promise<number> {
 }
 
 /** The picture the far machine draws, without a hidden window: a fixed PNG. */
-export const PICTURE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+export const PICTURE_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
 export type FarMachine = Awaited<ReturnType<typeof farMachine>>
 

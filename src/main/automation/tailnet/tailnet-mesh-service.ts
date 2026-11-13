@@ -1762,7 +1762,10 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
   }
 
   /** A failed ask of a paired machine's boards, in the words the pane shows. */
-  function canvasRefused(connection: StoredMeshConnection, error: unknown): { ok: false; code: string; message: string } {
+  function canvasRefused(
+    connection: StoredMeshConnection,
+    error: unknown,
+  ): { ok: false; code: string; message: string } {
     const refused = peerRefusal(connection, error)
     return {
       ok: false,

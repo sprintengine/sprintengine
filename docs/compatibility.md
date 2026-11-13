@@ -11,13 +11,13 @@ a private data structure, and changing one is not a local edit.**
 
 ## What is versioned
 
-| Wire                                                                                  | Version                                  | Window                                               | Declared in                                      |
-| ------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
-| Tailnet transport — Studio driving another Studio                                     | `TAILNET_TRANSPORT_VERSION` (integer)    | `TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION` .. current | `src/main/automation/tailnet/tailnet-routes.ts`  |
-| MCP                                                                                   | dated strings, newest first              | every entry in the list                              | `src/shared/mcp/protocol.ts`                     |
-| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)             | `HOST_API_MIN_SUPPORTED` .. current                  | `src/shared/modules/host-api.ts`                 |
-| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)      | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current           | `packages/studio-protocol/src/handshake.ts`      |
-| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`)  | current only (one version of slack when 2 ships)     | `src/renderer/src/web/embed/embedProtocol.ts`    |
+| Wire                                                                                  | Version                                 | Window                                               | Declared in                                     |
+| ------------------------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------- | ----------------------------------------------- |
+| Tailnet transport — Studio driving another Studio                                     | `TAILNET_TRANSPORT_VERSION` (integer)   | `TAILNET_MIN_SUPPORTED_TRANSPORT_VERSION` .. current | `src/main/automation/tailnet/tailnet-routes.ts` |
+| MCP                                                                                   | dated strings, newest first             | every entry in the list                              | `src/shared/mcp/protocol.ts`                    |
+| Module host API — an installed extension built against `@sprintengine/module-sdk`     | `HOST_API_VERSION` (integer)            | `HOST_API_MIN_SUPPORTED` .. current                  | `src/shared/modules/host-api.ts`                |
+| Studio protocol — a client on Studio's owner socket (`@sprintengine/studio-protocol`) | `STUDIO_PROTOCOL_VERSION` (integer)     | `STUDIO_PROTOCOL_MIN_SUPPORTED` .. current           | `packages/studio-protocol/src/handshake.ts`     |
+| Embed `postMessage` — a page framing an embedded conversation (`se.embed`)            | `EMBED_PROTOCOL_VERSION` (integer, `v`) | current only (one version of slack when 2 ships)     | `src/renderer/src/web/embed/embedProtocol.ts`   |
 
 One more version number is near these and is **not** a wire window: the
 backlog item schema version is a file format, and is not negotiated with a peer.

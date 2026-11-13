@@ -184,7 +184,8 @@ function integer(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value)
 }
 
-const REF = 'A board is { workspaceId, path, store? }: its workspace there, its path, and its store when another project\'s.'
+const REF =
+  "A board is { workspaceId, path, store? }: its workspace there, its path, and its store when another project's."
 
 /** A board's ref, member by member. Its path is checked again where it is used, as the pane's are. */
 export function parseStudioCanvasRef(value: Record<string, unknown>): StudioParsed<StudioCanvasRef> {

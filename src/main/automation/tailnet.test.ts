@@ -1055,7 +1055,14 @@ test('tailnet', async () => {
     const launchers = ['agent.launch', 'backlog.work']
     // A paired device reaches the scheduled agents and the boards through the
     // Studio (`schedules.*`, `canvas.*`).
-    for (const name of [...launchers, 'tailnet.status', 'schedule.run', 'schedule.list', 'canvas.list', 'canvas.edit']) {
+    for (const name of [
+      ...launchers,
+      'tailnet.status',
+      'schedule.run',
+      'schedule.list',
+      'canvas.list',
+      'canvas.edit',
+    ]) {
       assert.notEqual(localOnlyGatewayToolReason(name), null, `${name} is local-only`)
     }
     for (const name of ['conversation.create', 'workspace.list', 'backlog.list']) {

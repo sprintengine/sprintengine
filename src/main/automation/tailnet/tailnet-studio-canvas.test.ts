@@ -6,7 +6,14 @@ import { afterEach, test } from 'vitest'
 import type { StudioClient } from '../../../../packages/client-runtime/src/public'
 import type { StudioCanvasBoardNotice } from '../../../../packages/studio-protocol/src/public'
 import { STUDIO_CANVAS_LIMITS } from '../../../../packages/studio-protocol/src/public'
-import { FAR_CHAT, PICTURE_PNG_BASE64, element, farMachine, waitFor, type FarMachine } from './tailnet-canvas.test-helper'
+import {
+  FAR_CHAT,
+  PICTURE_PNG_BASE64,
+  element,
+  farMachine,
+  waitFor,
+  type FarMachine,
+} from './tailnet-canvas.test-helper'
 import { refusalOf } from './tailnet-studio.test-helper'
 
 // A machine's boards for a paired device, on `/tailnet/v1/studio` (`canvas.*`):
@@ -187,9 +194,7 @@ test('a pairing that may only look reads boards, and is refused every change', a
     'scope_required',
   )
   assert.equal(
-    await refusalOf(
-      client.request('canvas.stage', { ...board('plan'), stageId: 's', index: 0, total: 1, text: '{}' }),
-    ),
+    await refusalOf(client.request('canvas.stage', { ...board('plan'), stageId: 's', index: 0, total: 1, text: '{}' })),
     'scope_required',
   )
   assert.equal(await refusalOf(client.request('canvas.takePen', board('plan'))), 'scope_required')
@@ -214,7 +219,9 @@ test('a chats-only pairing reaches no board; a narrowed one is refused at once; 
   far.rig.devices.updateDeviceScopes(device.id, ['workspace:read'])
   const change = { elements: [element('late')], appState: {}, files: {} }
   assert.equal(
-    await refusalOf(client.request('canvas.commit', { ...board('plan'), commandId: 'n', baseRevision: 0, body: change })),
+    await refusalOf(
+      client.request('canvas.commit', { ...board('plan'), commandId: 'n', baseRevision: 0, body: change }),
+    ),
     'scope_required',
   )
   far.rig.devices.revokeDevice(device.id)
@@ -249,10 +256,19 @@ test('a crafted path reaches nothing but a board in its store or its project', a
   for (const ref of crafted) {
     const change = { elements: [element('x')], appState: {}, files: {} }
     const code = await refusalOf(
-      client.request('canvas.commit', { ...(ref as never), commandId: `c-${Math.random()}`, baseRevision: 0, body: change }),
+      client.request('canvas.commit', {
+        ...(ref as never),
+        commandId: `c-${Math.random()}`,
+        baseRevision: 0,
+        body: change,
+      }),
     )
     assert.notEqual(code, null, `commit refused: ${JSON.stringify(ref)}`)
-    assert.notEqual(await refusalOf(client.request('canvas.read', ref as never)), null, `read refused: ${JSON.stringify(ref)}`)
+    assert.notEqual(
+      await refusalOf(client.request('canvas.read', ref as never)),
+      null,
+      `read refused: ${JSON.stringify(ref)}`,
+    )
     const opened = follow(client, ref as never, true)
     await waitFor(() => opened.ended.length > 0, `open refused: ${JSON.stringify(ref)}`)
   }
@@ -277,9 +293,15 @@ test("an agent's canvas.open reaches a device following that chat's workspace, a
   const client = await far.rig.client(far.rig.pair(['workspace:read']).token)
   const here: unknown[] = []
   const elsewhere: unknown[] = []
-  cleanups.push(client.subscribe('canvas.openRequests', { workspaceIds: [FAR_CHAT] }, { onPayload: (ref) => here.push(ref) }))
   cleanups.push(
-    client.subscribe('canvas.openRequests', { workspaceIds: ['other-chat'] }, { onPayload: (ref) => elsewhere.push(ref) }),
+    client.subscribe('canvas.openRequests', { workspaceIds: [FAR_CHAT] }, { onPayload: (ref) => here.push(ref) }),
+  )
+  cleanups.push(
+    client.subscribe(
+      'canvas.openRequests',
+      { workspaceIds: ['other-chat'] },
+      { onPayload: (ref) => elsewhere.push(ref) },
+    ),
   )
   await new Promise((resolve) => setTimeout(resolve, 100))
   await far.service.requestOpen(board('plan.excalidraw'))

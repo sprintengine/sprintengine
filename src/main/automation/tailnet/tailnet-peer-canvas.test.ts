@@ -43,9 +43,7 @@ function pairedDesktop(far: FarMachine, scopes: TailnetScope[] = ['workspace:rea
   cleanups.push(() => studios.closeAll())
   const lane: PeerCanvas = createPeerCanvas({
     target: (id) =>
-      id === 'conn-1'
-        ? { id, endpoint: far.endpoint, deviceToken: device.token, machineName: MACHINE }
-        : null,
+      id === 'conn-1' ? { id, endpoint: far.endpoint, deviceToken: device.token, machineName: MACHINE } : null,
     studios,
     lingerMs: 20,
     requestTimeoutMs: 5_000,
@@ -71,7 +69,9 @@ function pairedDesktop(far: FarMachine, scopes: TailnetScope[] = ['workspace:rea
 const scenesFor = (pushes: Push[], viewer: number) =>
   pushes.filter((push) => push.viewer === viewer && push.channel === 'canvas:scene').map((push) => push.payload)
 const linksOf = (pushes: Push[]) =>
-  pushes.filter((push) => push.channel === CANVAS_REMOTE_LINK_CHANNEL).map((push) => push.payload as unknown as CanvasRemoteLink)
+  pushes
+    .filter((push) => push.channel === CANVAS_REMOTE_LINK_CHANNEL)
+    .map((push) => push.payload as unknown as CanvasRemoteLink)
 
 test('a paired desktop makes a board over there, draws on it, and that machine keeps it', async () => {
   const far = await machine()
@@ -282,7 +282,10 @@ test('the link drops and comes back: what was drawn meanwhile is saved, and the 
   assert.ok(opened.ok)
 
   await far.stop()
-  await waitFor(() => linksOf(here.pushes).some((link) => link.state === 'reconnecting'), 'the window is told it is away')
+  await waitFor(
+    () => linksOf(here.pushes).some((link) => link.state === 'reconnecting'),
+    'the window is told it is away',
+  )
   assert.match(linksOf(here.pushes).at(-1)!.message ?? '', /mac-mini is out of reach\. What you draw is kept here/u)
 
   // Drawn while away: taken, and kept.
