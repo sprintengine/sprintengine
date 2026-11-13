@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 
 import { afterEach, test } from 'vitest'
 
-import { STUDIO_SCOPES } from '../../../packages/studio-protocol/src/public'
 import {
   createConversationPullRequests,
   type ConversationPullRequestToolsDeps,
@@ -11,8 +10,10 @@ import { connectLineClient, hello, OWNER_TOKEN, pairFakeClient, startTestServer 
 
 // A chat's Create PR over the Studio protocol (`pull-request-create`): every
 // step asked of the Studio that holds the chat, in the chat's own checkout
-// there, through the same steps the gateway's tools run for a paired
-// desktop. Each is an owner's: a paired app holding every scope is refused.
+// there. Each is held to the chat: a client that may drive it (a paired
+// desktop's window among them) reaches every step, one that may only follow
+// it reads whether the button may show and nothing more, and none is told a
+// path on this disk.
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => {
@@ -142,21 +143,60 @@ test('an owner reads, drafts, pushes and creates in the chat’s checkout on its
   ])
 })
 
-test('a paired app holding every scope is refused every step: they are an owner’s', async () => {
+test('a paired app that may drive the chat reaches every step, in its checkout, and is never told its path', async () => {
   const { creation, calls } = fakeCreation()
   const started = await serve(creation)
-  const paired = await client(started.path, pairFakeClient(started.auth, 'tablet', [...STUDIO_SCOPES]))
+  const paired = await client(
+    started.path,
+    pairFakeClient(started.auth, 'mac-mini', ['conversation:read', 'conversation:operate']),
+  )
+  const state = await paired.request('pullRequests.createState', { conversation: CHAT })
+  assert.ok(state.ok)
+  assert.equal((state.result as { state: { gitRoot: unknown } }).state.gitRoot, null)
+  const draft = await paired.request('pullRequests.draft', { conversation: CHAT, draftId: 'd1' })
+  assert.deepEqual(draft.ok && draft.result, { ok: true, title: 'feat: marks', body: 'Body' })
+  const cancel = await paired.request('pullRequests.draftCancel', { conversation: CHAT, draftId: 'd1' })
+  assert.ok(cancel.ok)
+  const push = await paired.request('pullRequests.push', { conversation: CHAT, commandId: 'p1', pin: PIN })
+  assert.deepEqual(push.ok && push.result, { ok: true, pushed: true })
+  const created = await paired.request('pullRequests.create', {
+    conversation: CHAT,
+    commandId: 'c1',
+    title: 'feat: marks',
+    body: 'Body',
+    pin: PIN,
+  })
+  assert.deepEqual(created.ok && created.result, {
+    ok: true,
+    kind: 'created',
+    url: 'https://github.com/acme/app/pull/40',
+    recorded: true,
+  })
+  assert.ok(!JSON.stringify([state, draft, push, created]).includes('/Users/dev/app'), 'no path crosses the wire')
+  assert.deepEqual(calls, [
+    'state:/Users/dev/app',
+    'push:/Users/dev/app:abc1234def',
+    'create:/Users/dev/app:feat: marks',
+    'link:agent-1:https://github.com/acme/app/pull/40',
+  ])
+})
+
+test('a paired app that may only follow the chat reads whether Create PR may show, and is refused every step', async () => {
+  const { creation, calls } = fakeCreation()
+  const started = await serve(creation)
+  const follower = await client(started.path, pairFakeClient(started.auth, 'tablet', ['conversation:read']))
+  const state = await follower.request('pullRequests.createState', { conversation: CHAT })
+  assert.ok(state.ok)
   for (const [method, params] of [
-    ['pullRequests.createState', { conversation: CHAT }],
     ['pullRequests.draft', { conversation: CHAT, draftId: 'd1' }],
     ['pullRequests.draftCancel', { conversation: CHAT, draftId: 'd1' }],
     ['pullRequests.push', { conversation: CHAT, commandId: 'p1' }],
     ['pullRequests.create', { conversation: CHAT, commandId: 'c1', title: 't', body: 'b' }],
   ] as const) {
-    const answer = await paired.request(method, params)
-    assert.equal(!answer.ok && answer.error.code, 'owner_required', method)
+    const answer = await follower.request(method, params)
+    assert.equal(!answer.ok && answer.error.code, 'scope_required', method)
   }
-  assert.deepEqual(calls, [])
+  assert.deepEqual(calls, ['state:/Users/dev/app'])
 })
 
 test('a chat not here is not found; one whose checkout is elsewhere has no state, and its steps say why', async () => {

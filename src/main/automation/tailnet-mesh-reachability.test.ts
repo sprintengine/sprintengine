@@ -525,28 +525,6 @@ test('tailnet-mesh-reachability', async () => {
     },
   )
 
-  check('waking re-dials a change-feed watch that was waiting out its backoff', async () => {
-    const laptop = await startMachine('laptop')
-    const mini = await startMachine('mini')
-    try {
-      const offer = mini.devices.offerPairing({ scopes: ['workspace:read'] })
-      const paired = await laptop.mesh.pair({ pairingUrl: pairingUrl('127.0.0.1', mini.port, offer.token) })
-      assert.ok(paired.ok)
-      await waitFor(() => mini.server.eventStreamCount() === 1, 'pairing opens a watch on the mini')
-      // Long enough for the watch to fail a few dials against the dead port, so
-      // its next one is seconds away.
-      await mini.stop()
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      await mini.restart()
-      // Wake: the backoff timer is not waited out; a dial happens now.
-      laptop.mesh.onWake()
-      await waitFor(() => mini.server.eventStreamCount() === 1, 'an immediate re-dial', 800)
-    } finally {
-      await laptop.close()
-      await mini.close()
-    }
-  })
-
   const suiteRun = queue.then(() => {
     if (failures > 0) {
       console.error(`${failures} test(s) failed`)

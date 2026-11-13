@@ -70,13 +70,19 @@ const messageOf = (error: unknown): string =>
       ? error.message
       : String(error)
 
-// How long a push stream waits before following a client that replaced one
-// that closed, or retrying one that could not connect.
+// How long a push stream first waits before following a client that replaced
+// one that closed, or retrying one that could not connect. Each failure in a
+// row doubles the wait, up to a minute: a connection refused or closed again
+// and again (a machine away, a socket evicted) is not asked every moment.
 const PUSH_FOLLOW_RETRY_MS = 2_000
-// How long it waits instead where the Studio is older than the protocol (a
-// paired desktop not yet updated): it is not asked again every moment, and
-// what reads it says so in words (`environmentStudioOutdated`).
+const PUSH_FOLLOW_MAX_MS = 60_000
+// How long it waits at once where the Studio is older than the protocol (a
+// paired desktop not yet updated), whether the connect said so or the stream
+// ended with it: what reads it says so in words (`environmentStudioOutdated`).
 const PUSH_FOLLOW_OUTDATED_MS = 60_000
+// A stream that stayed up this long ended for a reason of its own, not as one
+// more failure in a row: the next one waits the first wait again.
+const PUSH_FOLLOW_STEADY_MS = 30_000
 
 // Pictures go up a few at a time: each is several requests, and a send that
 // carries many must not crowd out the reads the rest of the window makes.
@@ -207,8 +213,15 @@ function followPush<T extends 'conversation.commands' | 'conversation.events'>(
   let stop: (() => void) | null = null
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | null = null
-  const later = (run: () => void, after = PUSH_FOLLOW_RETRY_MS): void => {
+  // Failures in a row: a connect refused, or a stream that ended soon after it began.
+  let failures = 0
+  const later = (run: () => void, error?: unknown): void => {
     if (stopped) return
+    failures += 1
+    const after =
+      error instanceof StudioError && error.code === 'outdated'
+        ? PUSH_FOLLOW_OUTDATED_MS
+        : Math.min(PUSH_FOLLOW_RETRY_MS * 2 ** (failures - 1), PUSH_FOLLOW_MAX_MS)
     timer = setTimeout(() => {
       timer = null
       run()
@@ -219,32 +232,38 @@ function followPush<T extends 'conversation.commands' | 'conversation.events'>(
       (connected) => {
         if (stopped) return
         const waitOut = (): void => {
-          if (connected.state === 'parked') later(waitOut)
-          else if (connected.state === 'closed' || connected.state === 'open') follow()
-          else later(waitOut)
+          // A parked client (a refused ticket) is waited out without asking
+          // for it, which would wake it only to be refused again.
+          if (connected.state === 'parked' || (connected.state !== 'closed' && connected.state !== 'open'))
+            timer = setTimeout(() => {
+              timer = null
+              if (!stopped) waitOut()
+            }, PUSH_FOLLOW_RETRY_MS)
+          else follow()
         }
+        const since = Date.now()
         stop = connected.subscribe(
           topic,
           {},
           {
-            onPayload: (payload) => listener(payload as StudioTopicPayload<T>),
-            onEnd: () => {
+            onPayload: (payload) => {
+              failures = 0
+              listener(payload as StudioTopicPayload<T>)
+            },
+            onEnd: (error) => {
               stop = null
+              if (Date.now() - since >= PUSH_FOLLOW_STEADY_MS) failures = 0
               // Read once the client has said why: a park or a close ends its
               // streams first and sets its state after.
               queueMicrotask(() => {
-                if (connected.state === 'closed') later(follow)
-                else if (connected.state !== 'open') later(waitOut)
+                if (connected.state === 'closed') later(follow, error)
+                else if (connected.state !== 'open') waitOut()
               })
             },
           },
         )
       },
-      (error: unknown) =>
-        later(
-          follow,
-          error instanceof StudioError && error.code === 'outdated' ? PUSH_FOLLOW_OUTDATED_MS : PUSH_FOLLOW_RETRY_MS,
-        ),
+      (error: unknown) => later(follow, error),
     )
   follow()
   return () => {
