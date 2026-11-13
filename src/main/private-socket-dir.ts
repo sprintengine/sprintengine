@@ -25,12 +25,26 @@ function defaultBase(env: NodeJS.ProcessEnv): string {
 
 /** A folder only this user can enter, under `base`, for sockets whose usual path is too long. */
 export function privateSocketDirectory(base: string = defaultBase(process.env)): string {
+  return privateDirectory(base, `sprintengine-${process.getuid?.() ?? 0}`)
+}
+
+/**
+ * `base/name`, made owner-only if it is not there; used only when it is a real
+ * directory this user owns that nobody else can enter, else a fresh `mkdtemp`
+ * folder beside it, the same one for the rest of this process. On Windows the
+ * temp folder is the user's own, so `base/name` is used as it is.
+ */
+export function privateDirectory(base: string, name: string): string {
+  const dir = join(base, name)
+  if (process.platform === 'win32') {
+    mkdirSync(dir, { recursive: true })
+    return dir
+  }
   const uid = process.getuid?.() ?? 0
-  const dir = join(base, `sprintengine-${uid}`)
   try {
     mkdirSync(dir, { mode: 0o700 })
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return fallback(base)
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return fallback(dir)
   }
   try {
     const found = lstatSync(dir)
@@ -38,17 +52,17 @@ export function privateSocketDirectory(base: string = defaultBase(process.env)):
   } catch {
     // Unreadable: treated as not ours.
   }
-  return fallback(base)
+  return fallback(dir)
 }
 
-function fallback(base: string): string {
-  let dir = fallbacks.get(base)
-  if (!dir) {
+function fallback(dir: string): string {
+  let instead = fallbacks.get(dir)
+  if (!instead) {
     // `mkdtemp` makes the folder 0700, with a name nobody could have guessed.
-    dir = mkdtempSync(join(base, 'sprintengine-'))
-    fallbacks.set(base, dir)
+    instead = mkdtempSync(`${dir}-`)
+    fallbacks.set(dir, instead)
   }
-  return dir
+  return instead
 }
 
 /**

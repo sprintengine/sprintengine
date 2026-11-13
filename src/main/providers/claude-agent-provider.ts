@@ -29,7 +29,7 @@ import {
 import type { ChildProcess } from 'child_process'
 import { spawnClaudeLocalProcess } from './claude-local-process'
 import { randomUUID } from 'node:crypto'
-import { cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openConfinedExistingFile, readBoundedConversationFile } from '../conversation-file-access'
@@ -37,8 +37,9 @@ import {
   projectCommandsFingerprint,
   readProjectCommands,
   skillWithoutPermissionKeys,
+  makeStagedPluginFolder,
   stageProjectCommands,
-  STAGED_PLUGIN_PREFIX,
+  stagedPluginsDirectory,
   writeProjectCommandsPlugin,
   type StagedProjectCommands,
 } from '../claude-project-commands'
@@ -2357,7 +2358,7 @@ const attachedSkillName = (id: string) => (id.includes(':') ? id : `${ATTACHED_S
 async function stageAttachedSkills(tempDir: string, workspaceRoot: string, skillIds: string[]): Promise<string | null> {
   skillIds = skillIds.filter((id) => !id.includes(':'))
   if (!skillIds.length) return null
-  const dir = await mkdtemp(join(tempDir, `${STAGED_PLUGIN_PREFIX}${process.pid}-`))
+  const dir = await makeStagedPluginFolder(tempDir)
   try {
     await mkdir(join(dir, '.claude-plugin'))
     await writeFile(
@@ -2429,23 +2430,25 @@ function withoutModelInvocationGuard(text: string): string {
 }
 
 /**
- * Remove plugin folders that no running process owns: named for a process
- * that has exited, or from before folders were named for one and older than
- * a day. A folder of this process, or of another app still running, stays.
- * Only real directories this user owns, created before this process started,
- * are ever touched.
+ * Remove plugin folders that no running process owns, from the folder they
+ * are staged in (stagedPluginsDirectory), never the whole temp folder: one
+ * with hundreds of thousands of entries took minutes to list. A folder of this
+ * process, or of another app still running, stays. Only real directories this
+ * user owns, created before this process started, are ever touched. Folders
+ * older versions staged directly in the temp folder are left to the system's
+ * own temp cleanup.
  */
 export async function sweepStaleSkillPlugins(tempDir: string): Promise<void> {
   const startedAt = Date.now() - process.uptime() * 1000
   const uid = process.getuid?.()
-  for (const name of await readdir(tempDir)) {
-    if (!name.startsWith(STAGED_PLUGIN_PREFIX)) continue
-    const path = join(tempDir, name)
+  const staged = stagedPluginsDirectory(tempDir)
+  for (const name of await readdir(staged)) {
+    const owner = /^(\d+)-/.exec(name)?.[1]
+    if (!owner || isRunning(Number(owner))) continue
+    const path = join(staged, name)
     const info = await lstat(path).catch(() => null)
     if (!info?.isDirectory() || info.isSymbolicLink() || info.mtimeMs >= startedAt) continue
     if (uid !== undefined && info.uid !== uid) continue
-    const owner = /^(\d+)-/.exec(name.slice(STAGED_PLUGIN_PREFIX.length))?.[1]
-    if (owner ? isRunning(Number(owner)) : Date.now() - info.mtimeMs < 24 * 60 * 60 * 1000) continue
     await rm(path, { recursive: true, force: true }).catch(() => undefined)
   }
 }

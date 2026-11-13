@@ -15,6 +15,7 @@ import {
   sameCommandNames,
   type ClaudeCommandsProbeDeps,
 } from './claude'
+import { stagedPluginsDirectory } from '../claude-project-commands'
 
 const FIXTURE = JSON.parse(
   readFileSync(
@@ -211,7 +212,7 @@ test("the probe is given the folder's .claude/commands as the plugin a chat ther
     expect(staged).toEqual(['deploy.md'])
     expect(commands).toEqual([{ name: 'project:deploy', description: '(project) Ship it', source: 'custom' }])
     expect(session.options?.settingSources).toEqual(['user'])
-    expect(await readdir(tempDir)).toEqual([])
+    expect(await readdir(stagedPluginsDirectory(tempDir))).toEqual([])
     expect(await readdir(join(cwd, '.claude'))).toEqual(['commands'])
   } finally {
     await rm(root, { recursive: true, force: true })

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
+import { privateDirectory } from './private-socket-dir'
 
 /**
  * A project's own slash commands (`.claude/commands/**\/*.md`), for its Claude
@@ -21,11 +22,21 @@ import { isAbsolute, join, relative, sep } from 'node:path'
 export const PROJECT_COMMANDS_PLUGIN = 'project'
 
 /**
- * Staged plugin folders are named for the process that made them, so a sweep
- * can tell one a running app still uses from one a dead process left behind
- * (sweepStaleSkillPlugins). Attached skills and project commands share it.
+ * Staged plugin folders go in a folder of their own under the temp folder,
+ * which only this user can enter, so a sweep for ones a dead process left
+ * behind (sweepStaleSkillPlugins) lists that folder and never the whole temp
+ * folder, which can hold hundreds of thousands of entries. Each is named for
+ * the process that made it, so the sweep can tell one a running app still
+ * uses. Attached skills and project commands share it.
  */
-export const STAGED_PLUGIN_PREFIX = 'sprintengine-claude-skills-'
+export function stagedPluginsDirectory(tempDir: string): string {
+  return privateDirectory(tempDir, `sprintengine-claude-plugins-${process.getuid?.() ?? 0}`)
+}
+
+/** A new, empty folder for one staged plugin, named for this process. */
+export async function makeStagedPluginFolder(tempDir: string): Promise<string> {
+  return mkdtemp(join(stagedPluginsDirectory(tempDir), `${process.pid}-`))
+}
 
 /**
  * How much of a project is copied. A commands folder is a handful of short
@@ -216,7 +227,7 @@ export async function stageProjectCommands(
 ): Promise<StagedProjectCommands | null> {
   const files = await readProjectCommands(workspaceRoot)
   if (!files.length) return null
-  const dir = await mkdtemp(join(tempDir, `${STAGED_PLUGIN_PREFIX}${process.pid}-`))
+  const dir = await makeStagedPluginFolder(tempDir)
   try {
     await writeProjectCommandsPlugin(dir, files)
     return { dir, fingerprint: projectCommandsFingerprint(files) }
