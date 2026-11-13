@@ -89,7 +89,10 @@ test('a chat on a paired machine names the machine and its project there, not an
     publishChatPanelFacts(
       WS,
       AGENT,
-      panelFacts({ remote: true, machine: { name: 'mac-mini.tail1234.ts.net', identity: MACHINE } }),
+      panelFacts({
+        environmentLabel: 'mac-mini.tail1234.ts.net',
+        machine: { name: 'mac-mini.tail1234.ts.net', identity: MACHINE },
+      }),
     ),
   )
   expect(host.querySelector('[data-panel-machine]')?.textContent).toContain('mac-mini')
@@ -105,7 +108,7 @@ test('on a paired machine what this computer cannot open says so, and nothing of
       WS,
       AGENT,
       panelFacts({
-        remote: true,
+        environmentLabel: 'mac-mini',
         machine: { name: 'mac-mini', identity: MACHINE },
         branch: { name: 'agent/calendar', worktree: false, onOpen: null },
         changes: { added: 3, removed: 1, phrase: '3 files added, 1 removed' },
@@ -144,7 +147,7 @@ test('on a paired machine that reads them, Changes opens the chat’s changes fr
       publishChatPanelFacts(
         WS,
         AGENT,
-        panelFacts({ remote: true, machine: { name: 'mac-mini', identity: MACHINE }, changes: null }),
+        panelFacts({ environmentLabel: 'mac-mini', machine: { name: 'mac-mini', identity: MACHINE }, changes: null }),
       ),
     )
     // Shown with no count to say, as a chat here shows it: the tab says what there is.
@@ -170,7 +173,7 @@ test('on a paired machine that does not read them, Changes stays its count and o
         WS,
         AGENT,
         panelFacts({
-          remote: true,
+          environmentLabel: 'mac-mini',
           machine: { name: 'mac-mini', identity: MACHINE },
           changes: { added: 3, removed: 1, phrase: '3 files added, 1 removed' },
         }),

@@ -549,7 +549,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   )
   // Who holds what the chat's server keeps for it, in words: a paired
   // machine by its name, the window's own Studio as Studio.
-  const serverName = transport.machineName ?? WINDOW_STUDIO_NAME
+  const environment = transport.environment
+  const serverName = environment.label ?? WINDOW_STUDIO_NAME
 
   const [localReadiness, setReadiness] = useState<ChatReadiness>({ kind: 'loading' })
   // A transport that decides readiness itself (a remote link) replaces this
@@ -2889,8 +2890,8 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         title: 'This chat cannot be restarted from here',
         description: !transport.capabilities.operate
           ? 'This window may read this chat but not drive it.'
-          : transport.machineName
-            ? `Update SprintEngine Studio on ${transport.machineName} to restart its chats from here.`
+          : environment.label
+            ? `Update SprintEngine Studio on ${environment.label} to restart its chats from here.`
             : 'Its server does not restart sessions for this window.',
       })
       return
@@ -3203,9 +3204,20 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     ((shellReach.dragPaths && workspaceRunsHere(binding.workspace)) ||
       (clientSupports('drag-paths') && transport.capabilities.attachFiles))
 
-  // The inventory is the window's own Studio's, except for a chat whose
-  // transport names the machine that lists its skills.
-  const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !transport.remoteExtensions)
+  // The inventory is the window's own Studio's, except for a paired desktop's
+  // chat on the tailnet lane, which that machine lists over the lane.
+  const laneSkills = useMemo(
+    () =>
+      environment.lane
+        ? {
+            connectionId: environment.lane.connectionId,
+            workspaceId: environment.lane.workspaceId,
+            ...(environment.label ? { machineName: environment.label } : {}),
+          }
+        : null,
+    [environment],
+  )
+  const skillInventory = useWorkspaceSkills(workspaceRoot, null, supportsSkills && !laneSkills)
   // Held from render to render, as the "+" menu that takes them is memoized:
   // a list rebuilt each render redrew the menu on every keystroke and token.
   const attachedSkills = useMemo(
@@ -3249,7 +3261,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
             mcpCli: chatCli,
             mcpPickable: false,
             // A chat on a paired machine lists that machine's.
-            ...(transport.remoteExtensions ? { remote: transport.remoteExtensions } : {}),
+            ...(laneSkills ? { remote: laneSkills } : {}),
             // A live chat can reconnect its servers, switch them, and sign in
             // to one, as far as its CLI lets it; one on a paired machine as
             // far as that machine takes it, which its session says.
@@ -3270,7 +3282,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       attachedSkills,
       setAttachedSkills,
       chatCli,
-      transport.remoteExtensions,
+      laneSkills,
       runMcpServerAction,
       sessionId,
       mcpServerActions,
@@ -3337,7 +3349,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     chatCli,
     localCommands
       ? workspaceRoot
-      : ((commandSource ? transport.commandsFolder : undefined) ?? binding.sessionRoot ?? null),
+      : ((commandSource ? environment.lane?.commandsKey : undefined) ?? binding.sessionRoot ?? null),
     {
       appCommands,
       discover: localCommands || Boolean(commandSource),
@@ -3358,7 +3370,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // The type-ahead reads this machine's inventory, and a remote chat's that
     // machine's, as its "+" does.
     skillsEnabled: supportsSkills,
-    remoteSkills: transport.remoteExtensions ?? null,
+    remoteSkills: laneSkills,
     // A file mention names a file in the chat's folder: on this machine's
     // disk, or, for a remote chat, in its folder over there, searched there.
     mentionsEnabled: transport.capabilities.mentions,
@@ -3641,7 +3653,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     cli: chatCli,
     allowed: capabilities?.permissionPresets,
     permissionModes: transport.capabilities.permissionModes,
-    machineName: transport.machineName,
+    ...(environment.label ? { machineName: environment.label } : {}),
   })
   // The CLI's modes under its own names. A mode of its own is offered where
   // this chat's runtime maps it: a local chat says which it maps, and a remote
@@ -4003,7 +4015,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Drawn read-only, and opened from here only where their address reaches
   // here. Another machine's are labelled with its name.
   const conversationLocalServers = binding.listed?.localServers ?? NO_LOCAL_SERVERS
-  const remoteMachineName = transport.machineName ?? null
+  const remoteMachineName = environment.label
   const stripLocalServers = useMemo(
     () =>
       conversationLocalServers.length > 0
@@ -4026,10 +4038,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // Studio's are this window's.
   const usageLimitsElsewhere = useMemo(
     () =>
-      hostUsageLimits && transport.machineName
-        ? { machineName: transport.machineName, state: hostUsageLimits.state }
+      hostUsageLimits && environment.label
+        ? { machineName: environment.label, state: hostUsageLimits.state }
         : undefined,
-    [hostUsageLimits, transport.machineName],
+    [hostUsageLimits, environment.label],
   )
   // The resume row's buttons ask the chat's server, which sends the resume;
   // a refusal is said here in its words.
@@ -4144,7 +4156,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     harnessLabel: chatCli ? labelForCliRuntime(chatCli) : assistantName,
     modelLabel: currentModelLabel,
     machine: stripFacts.machine,
-    remote: transport.kind === 'remote',
+    environmentLabel: environment.label,
     branch: stripFacts.branch,
     changes: stripFacts.changes,
     pullRequests: conversationPullRequests,

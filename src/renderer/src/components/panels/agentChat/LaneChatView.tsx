@@ -262,7 +262,7 @@ function LaneConversation({
     providerRelays: relays,
     transportRelays: transport.capabilities.agentMessages && typeof transport.messageSubagent === 'function',
     harnessName: cli ? harnessName(cli) : 'This harness',
-    ...(transport.machineName ? { machineName: transport.machineName } : {}),
+    ...(transport.environment.label ? { machineName: transport.environment.label } : {}),
   })
   const question = pending.some(coversComposer)
   const scroller = useFollowEnd(rows)

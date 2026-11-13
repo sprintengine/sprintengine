@@ -14,6 +14,7 @@ import { dispatchExtensionsSurfaceTarget } from '../../../workspace/globalSurfac
 import { useConversationLinkContext } from '../conversationLinks'
 import type { TranscriptToolEntry } from '../conversationProjection'
 import { useConversationTransport } from '../conversationTransport'
+import { useShellReach } from '../shellReach'
 import { PluginInstallDialog } from './PluginInstallDialog'
 import {
   installedRecord,
@@ -89,10 +90,12 @@ export const PluginOfferCard = memo(function PluginOfferCard({
   const pluginId = ids?.pluginId ?? ''
   const workspaceRoot = useConversationLinkContext()?.workspaceRoot ?? ''
   const transport = useConversationTransport()
-  // A chat on another machine has that machine's plugins, which this one
-  // cannot read or install; a read-only view acts on nothing; and a plugin
-  // installs into a workspace, so a chat without one has nowhere to put it.
-  const drawable = !transport.remoteExtensions && transport.capabilities.operate && workspaceRoot !== ''
+  // The card reads and installs through the window's own Studio, so only a
+  // chat that Studio runs has it: another environment's plugins are its own.
+  // A read-only view acts on nothing; and a plugin installs into a workspace,
+  // so a chat without one has nowhere to put it.
+  const { openDocument } = useShellReach()
+  const drawable = openDocument && transport.capabilities.operate && workspaceRoot !== ''
   const chat = useContext(PluginOfferChatContext)
   const openExtensionsSurface = useWorkspaceStore((state) => state.openExtensionsSurface)
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' })

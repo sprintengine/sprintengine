@@ -21,7 +21,7 @@ import { LAYOUT_TEMPLATES } from '../../../layouts/templates'
 import { addMeshConversationTabAfter } from '../../../utils/modelRegistry'
 import { composerDraftStore, type ComposerDraft } from './draftStore'
 import type { TranscriptEntry } from './conversationProjection'
-import { useConversationTransport, type ConversationTransport } from './conversationTransport'
+import { useConversationTransport, type ChatEnvironment, type ConversationTransport } from './conversationTransport'
 import { editFromHereDraft } from './editFromHere'
 import { attachedFilePaths } from '../../../utils/attachedFiles'
 
@@ -204,7 +204,7 @@ function ForkFromHereButton({
  * until that lane is the protocol.
  */
 export async function forkChat(input: {
-  transport: Pick<ConversationTransport, 'fork' | 'machineName' | 'remoteExtensions'>
+  transport: Pick<ConversationTransport, 'fork' | 'environment'>
   /** The chat as the view names it: its workspace here, and its id where it runs. */
   key: ConversationKey
   /** The chat's provider, which names the fork's id as every chat's is named. */
@@ -230,9 +230,11 @@ export async function forkChat(input: {
     await openFork(forked.address, forked.name, key.agentId, target)
     return
   }
-  if (input.transport.remoteExtensions) {
+  const { environment } = input.transport
+  if (environment.lane) {
     await openPairedFork({
-      transport: input.transport,
+      lane: environment.lane,
+      machineName: environment.label,
       workspaceId: key.workspaceId,
       agentId: key.agentId,
       newAgentId,
@@ -303,7 +305,9 @@ async function openFork(
  * on that machine's disk.
  */
 async function openPairedFork(input: {
-  transport: Pick<ConversationTransport, 'machineName' | 'remoteExtensions'>
+  /** How the paired machine is reached over the lane, and what it is called. */
+  lane: NonNullable<ChatEnvironment['lane']>
+  machineName: string | null
   /** The workspace here whose pane follows the chat. */
   workspaceId: string
   /** The chat's id over there, and the fork's. */
@@ -314,11 +318,11 @@ async function openPairedFork(input: {
   target: ForkFromHereTarget
 }): Promise<void> {
   const { target, newAgentId: agentId } = input
-  const remote = input.transport.remoteExtensions!
+  const remote = input.lane
   const origin = useWorkspaceStore
     .getState()
     .workspaces.find((candidate) => candidate.id === input.workspaceId)?.remoteOrigin
-  const machineName = input.transport.machineName ?? origin?.machineName ?? 'the other machine'
+  const machineName = input.machineName ?? origin?.machineName ?? 'the other machine'
   // What the machine called it, beside the chats of its workspace there.
   const listed = await window.api.meshConversationList(remote.connectionId).catch(() => null)
   const named = listed?.ok
