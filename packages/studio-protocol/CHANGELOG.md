@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed (an unreadable extension folder is named, not placed)
+
+- **`module.installed` tells a folder's place on disk only to a connection
+  that may name any path** (an owner's own). Anyone else, a paired app
+  holding `modules:read` included, is told each unreadable folder
+  (`rejected[].path`) by its name, and an issue's words that named its
+  place name the folder instead. The shape does not change. A launch error's
+  words (`launch.message`) are held back for a path in any position: a stack
+  frame, a `file:` URL, `C:/…` and a UNC share, not only a quoted one.
+
 ### Added (what the desktop that holds a machine's Studio asks of it)
 
 - **`environment.windowTicket`** (`environment-access.ts`, capability

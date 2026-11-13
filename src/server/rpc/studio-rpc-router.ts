@@ -26,6 +26,7 @@ import {
   type StudioRuntimeRefusalCode,
   type StudioServerInfo,
   type StudioUpdateStatus,
+  type ThirdPartyModuleListResult,
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
@@ -35,6 +36,7 @@ import { cliForConversationProvider } from '../../shared/conversation-harness'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
+import { sanitizeEntryMessage } from '../../shared/modules/entry-messages'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
 import type { ConversationEvent, ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
@@ -2069,9 +2071,13 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       lifecycleCommand('module.uninstall', context, commandId, (lifecycle) => lifecycle.uninstall(moduleId)),
     // The installed extensions and their window halves, read now; what a
     // window sets for them and the registry it resolved, kept here.
-    'module.installed': async () => {
+    'module.installed': async (_params, asking) => {
       const lifecycle = options.modules?.lifecycle()
-      return lifecycle ? { ok: true, result: await lifecycle.installed() } : unserved('module.installed')
+      if (!lifecycle) return unserved('module.installed')
+      const installed = await lifecycle.installed()
+      // Where a folder is on this disk is told only to a connection that may
+      // name any path; anyone else is told the folder by its name.
+      return { ok: true, result: namesAnyPath(asking) ? installed : withFolderNamesOnly(installed) }
     },
     'module.rendererEntries': async () => {
       const lifecycle = options.modules?.lifecycle()
@@ -2258,6 +2264,35 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
 }
 
 type PathAsker = { context: StudioRequestContext; grant: { owner: boolean } }
+
+/**
+ * The installed extensions with each unreadable folder named, not placed: its
+ * `path` (the folder, or the `manifest.json` in it) becomes the folder's name,
+ * and an issue's words that still name a place on this disk (a read error's
+ * `open '/…/manifest.json'`) say the folder's name in its stead, or a plain
+ * sentence when some other path remains.
+ */
+function withFolderNamesOnly(installed: ThirdPartyModuleListResult): ThirdPartyModuleListResult {
+  return {
+    ...installed,
+    rejected: installed.rejected.map((entry) => {
+      const segments = entry.path.split(/[\\/]/u).filter(Boolean)
+      if (segments.length > 1 && segments.at(-1) === 'manifest.json') segments.pop()
+      const name = segments.at(-1) ?? ''
+      const folder = name ? entry.path.slice(0, entry.path.lastIndexOf(name) + name.length) : ''
+      return {
+        path: name,
+        issues: entry.issues.map((issue) => ({
+          ...issue,
+          message: sanitizeEntryMessage(
+            folder ? issue.message.replaceAll(folder, name) : issue.message,
+            'Studio could not read this folder.',
+          ),
+        })),
+      }
+    }),
+  }
+}
 
 /** Whether a connection names any path on this disk: an owner's, unless it is held to the folders Studio knows. */
 function namesAnyPath(asking: PathAsker): boolean {

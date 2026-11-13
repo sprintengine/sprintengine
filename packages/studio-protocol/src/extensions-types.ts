@@ -164,7 +164,13 @@ export type ThirdPartyModuleView = {
 
 export type ModuleManifestIssue = { path: string; message: string }
 
-/** `module.installed`: every installed extension, and the folders that hold none Studio could read. */
+/**
+ * `module.installed`: every installed extension, and the folders that hold
+ * none Studio could read. A folder's `path` is its place on that disk (the
+ * folder or its `manifest.json`) for a connection that may name any path (an
+ * owner's own); anyone else is told the folder's name, and an issue's words
+ * name the folder rather than its place.
+ */
 export type ThirdPartyModuleListResult = {
   modules: ThirdPartyModuleView[]
   rejected: Array<{ path: string; issues: ModuleManifestIssue[] }>

@@ -515,6 +515,54 @@ test('before the kernel is wired the list is empty and a change is refused unava
   )
 })
 
+test('the installed list names a folder Studio could not read by its place only to an owner; a paired client gets its name', async () => {
+  const hub = createStudioModuleHub()
+  const rejected = [
+    {
+      path: '/Users/dev/Library/Application Support/SprintEngine/modules/acme-broken/manifest.json',
+      issues: [{ path: 'id', message: 'missing' }],
+    },
+    {
+      path: 'C:\\Users\\dev\\AppData\\Roaming\\SprintEngine\\modules\\acme-windows\\manifest.json',
+      issues: [
+        {
+          path: '',
+          message:
+            "ENOENT: no such file or directory, open 'C:\\Users\\dev\\AppData\\Roaming\\SprintEngine\\modules\\acme-windows\\manifest.json'",
+        },
+      ],
+    },
+    { path: '/Users/dev/modules/acme-folder/', issues: [{ path: '', message: 'see /Users/dev/elsewhere/notes.txt' }] },
+  ]
+  hub.serveLifecycleFrom({
+    list: () => [],
+    setEnabled: async () => ({ ok: true, module: null }),
+    install: async () => ({ ok: false, message: 'no' }),
+    setTrust: async () => ({ ok: true }),
+    uninstall: async () => ({ ok: true, removedModuleIds: [] }),
+    installed: async () => ({ modules: [], rejected }),
+    rendererEntries: async () => ({ entries: [], failures: {} }),
+    setAppState: () => undefined,
+    reportRegistry: () => ({ ok: true }),
+  })
+  const owner = await caller(hub)
+  assert.deepEqual(answerOf(await owner.request('module.installed', {})), { modules: [], rejected })
+  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['modules:read']))
+  const seen = answerOf(await paired.request('module.installed', {}))
+  assert.ok(!JSON.stringify(seen).includes('Users'), JSON.stringify(seen))
+  assert.deepEqual(seen, {
+    modules: [],
+    rejected: [
+      { path: 'acme-broken', issues: [{ path: 'id', message: 'missing' }] },
+      {
+        path: 'acme-windows',
+        issues: [{ path: '', message: "ENOENT: no such file or directory, open 'acme-windows\\manifest.json'" }],
+      },
+      { path: 'acme-folder', issues: [{ path: '', message: 'Studio could not read this folder.' }] },
+    ],
+  })
+})
+
 test('a change to what runs is an owner’s: a paired client holding modules:operate is refused it', async () => {
   const hub = createStudioModuleHub()
   const changes: string[] = []
