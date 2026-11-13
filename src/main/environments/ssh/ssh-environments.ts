@@ -23,9 +23,12 @@ import { wslProfileId } from '../../hosts/wsl-helper-runtime'
 import { cliForConversationProvider } from '../../../shared/conversation-harness'
 import { SIGN_IN_FLOWS } from '../../../server/machine/machine-sign-in'
 import {
+  STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
 } from '../../../../packages/studio-protocol/src/handshake'
+import type { StudioRelayedDeviceScope } from '../../../../packages/studio-protocol/src/environment-access'
+import type { StudioCapability } from '../../../../packages/studio-protocol/src/handshake'
 import { createLoopbackRoute, type LoopbackRoute } from '../environment-route'
 import {
   ASKPASS_TIMEOUT_MS,
@@ -159,6 +162,8 @@ export class SshEnvironments {
   private readonly machines = new Map<string, SshEnvironment>()
   /** Each machine's loopback route for the windows' sockets, made on the first ticket and kept for the run. */
   private readonly routes = new Map<string, LoopbackRoute>()
+  /** The machines each window document was given a ticket for, by its key: told when it goes. */
+  private readonly windowMachines = new Map<string, Set<string>>()
   private broker: Promise<AskpassBroker> | null = null
   /** The broker once it is listening; an interactive spawn waits for it (`askpass()`). */
   private brokerReady: AskpassBroker | null = null
@@ -522,17 +527,17 @@ export class SshEnvironments {
   }
 
   /**
-   * A ticket for one connection of a window to the machine's Studio
-   * (design-wsl-ssh-direct): minted by that server's own window listener,
-   * asked for over main's owner connection, and answered with this computer's
-   * loopback route to it in place of the machine's own port. Connects in the
-   * background (never a prompt) when it must; refuses in words, with the
-   * client runtime's codes, when it cannot.
+   * Main's owner connection to a machine, connected in the background (never
+   * a prompt) when it must, holding a capability its server must serve; or
+   * why not, in the client runtime's codes.
    */
-  async windowTicket(
+  private async ownerOf(
     id: string,
-    request: { windowKey: string; origin: string },
-  ): Promise<{ ok: true; url: string; token: string } | { ok: false; code: string; message: string }> {
+    capability: StudioCapability,
+  ): Promise<
+    | { ok: true; saved: SavedSshEnvironment; connection: SshServerConnection }
+    | { ok: false; code: string; message: string }
+  > {
     const saved = this.get(id)
     if (!saved)
       return {
@@ -548,23 +553,110 @@ export class SshEnvironments {
       }
     const connection = this.connection(id)
     if (!connection) return { ok: false, code: 'unavailable', message: `${saved.label} is not connected.` }
-    if (!connection.owner.supports(STUDIO_WINDOW_TICKETS_CAPABILITY))
+    if (!connection.owner.supports(capability))
       return {
         ok: false,
         code: 'outdated',
         message: `The Studio server on ${saved.label} is older than this app. Update it in Settings › Machines.`,
       }
+    return { ok: true, saved, connection }
+  }
+
+  /**
+   * A ticket for one connection of a window to the machine's Studio
+   * (design-wsl-ssh-direct): minted by that server's own window listener,
+   * asked for over main's owner connection, and answered with this computer's
+   * loopback route to it in place of the machine's own port. The window's key
+   * is kept, so the machine is told when that document goes (`revokeWindow`).
+   */
+  async windowTicket(
+    id: string,
+    request: { windowKey: string; origin: string },
+  ): Promise<{ ok: true; url: string; token: string } | { ok: false; code: string; message: string }> {
+    const owner = await this.ownerOf(id, STUDIO_WINDOW_TICKETS_CAPABILITY)
+    if (!owner.ok) return owner
     try {
-      const minted = await connection.owner.request('environment.windowTicket', request)
+      const minted = await owner.connection.owner.request('environment.windowTicket', request)
       const port = await this.routeFor(id).port()
+      let machines = this.windowMachines.get(request.windowKey)
+      if (!machines) this.windowMachines.set(request.windowKey, (machines = new Set()))
+      machines.add(id)
       return { ok: true, url: `ws://127.0.0.1:${port}${minted.path}`, token: minted.token }
     } catch (error) {
       return {
         ok: false,
         code: 'unavailable',
-        message: `${saved.label} did not give this window a ticket: ${error instanceof Error ? error.message : String(error)}`,
+        message: `${owner.saved.label} did not give this window a ticket: ${error instanceof Error ? error.message : String(error)}`,
       }
     }
+  }
+
+  /**
+   * A window's document has gone (closed, reloaded, crashed): every machine
+   * it was given a ticket for voids its unspent tickets and ends its
+   * connections. Best effort: a machine not connected now holds none of its
+   * connections, and its tickets lapse in thirty seconds.
+   */
+  revokeWindow(windowKey: string): void {
+    const machines = this.windowMachines.get(windowKey)
+    this.windowMachines.delete(windowKey)
+    for (const id of machines ?? []) {
+      const connection = this.connection(id)
+      if (!connection?.owner.supports(STUDIO_WINDOW_TICKETS_CAPABILITY)) continue
+      void connection.owner
+        .request('environment.revokeWindow', { windowKey })
+        .catch((error: unknown) =>
+          this.log(
+            `A closed window's connections to ${connection.label} were not ended there: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        )
+    }
+  }
+
+  /** The saved machine whose server is this environment, if it is one of these. */
+  private machineOfEnvironment(environmentId: string): SavedSshEnvironment | null {
+    return this.saved.find((entry) => entry.environmentId === environmentId) ?? null
+  }
+
+  /**
+   * A ticket for one connection of a paired device this desktop relays to
+   * the machine whose environment this is: never an owner's, with exactly the
+   * scopes named, which the machine holds to the relayed ceiling.
+   */
+  async deviceTicket(
+    environmentId: string,
+    device: { deviceId: string; name: string; scopes: StudioRelayedDeviceScope[] },
+  ): Promise<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }> {
+    const saved = this.machineOfEnvironment(environmentId)
+    if (!saved) return { ok: false, code: 'unknown_route', message: 'This desktop holds no machine by that id.' }
+    const owner = await this.ownerOf(saved.id, STUDIO_DEVICE_TICKETS_CAPABILITY)
+    if (!owner.ok) return owner
+    // The machine answering now must be the one the device asked for.
+    if (owner.connection.environmentId !== environmentId)
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: `${saved.label} now runs another Studio than the one asked for.`,
+      }
+    try {
+      const minted = await owner.connection.owner.request('environment.deviceTicket', device)
+      return { ok: true, token: minted.token, path: minted.path }
+    } catch (error) {
+      return {
+        ok: false,
+        code: 'unavailable',
+        message: `${saved.label} did not give this device a ticket: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+  }
+
+  /** A fresh stream to the window listener of the machine whose environment this is (the front door's `ws`). */
+  async openEnvironment(environmentId: string): Promise<Duplex> {
+    const saved = this.machineOfEnvironment(environmentId)
+    const connection = saved ? this.connection(saved.id) : null
+    if (!saved || !connection || connection.environmentId !== environmentId)
+      throw new Error('That machine is not connected to this desktop.')
+    return connection.open('ws')
   }
 
   /** The machine's loopback route: each socket onto a fresh `ws` stream of the session up now. */

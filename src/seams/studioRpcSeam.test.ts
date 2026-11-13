@@ -458,6 +458,8 @@ test('every method the server serves has its call in the SDK, under the same sco
     // What the machine lacks for its schedules and watches, asked like any read.
     'environment.readiness': 'request',
     'environment.windowTicket': 'request',
+    'environment.revokeWindow': 'request',
+    'environment.deviceTicket': 'request',
     'providers.signInStart': 'request',
     'providers.signInPaste': 'request',
     'providers.signInWait': 'request',

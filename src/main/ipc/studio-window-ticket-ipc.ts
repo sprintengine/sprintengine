@@ -32,10 +32,20 @@ export function webContentsIdOfWindowKey(windowKey: string): number | null {
   return match ? Number(match[1]) : null
 }
 
-export function registerStudioWindowTicketIpc(ipcMain: IpcMain, issuer: StudioWindowTicketIssuer): void {
+/**
+ * Each window document, named afresh when it loads (`window-<id>-<generation>`),
+ * and `onGone` told the moment it goes: a navigation or reload, a crashed
+ * renderer, a closed window. A server that keys a window's connections by
+ * this name ends them then, rather than whenever their sockets time out.
+ */
+export function createWindowDocuments(onGone: (windowKey: string) => void): {
+  /** The document's key, watched from its first ask. */
+  keyOf(sender: WebContents): string
+  /** Whether the key still names a live document. */
+  isCurrent(sender: WebContents, windowKey: string): boolean
+} {
   const windows = new Map<number, Watched>()
   let generations = 0
-
   function watch(sender: WebContents): Watched {
     const known = windows.get(sender.id)
     if (known) return known
@@ -47,7 +57,7 @@ export function registerStudioWindowTicketIpc(ipcMain: IpcMain, issuer: StudioWi
       sender.off('render-process-gone', end)
       sender.off('did-navigate', end)
       if (windows.get(sender.id) === watched) windows.delete(sender.id)
-      issuer.revokeWindow(watched.key)
+      onGone(watched.key)
     }
     // `did-navigate` is the top-level document replaced: a navigation that
     // committed, a reload included. It is not `did-start-navigation`, which
@@ -61,18 +71,26 @@ export function registerStudioWindowTicketIpc(ipcMain: IpcMain, issuer: StudioWi
     sender.on('did-navigate', end)
     return watched
   }
+  return {
+    keyOf: (sender) => watch(sender).key,
+    isCurrent: (sender, windowKey) => windows.get(sender.id)?.key === windowKey,
+  }
+}
+
+export function registerStudioWindowTicketIpc(ipcMain: IpcMain, issuer: StudioWindowTicketIssuer): void {
+  const documents = createWindowDocuments((windowKey) => issuer.revokeWindow(windowKey))
 
   ipcMain.handle(STUDIO_WINDOW_TICKET_CHANNEL, async (event: IpcMainInvokeEvent): Promise<StudioWindowTicket> => {
     assertAppSender(event)
     const origin = studioWindowOrigin(event.senderFrame?.url ?? '')
     if (!origin) throw new Error('This window has no origin Studio can admit.')
-    const watched = watch(event.sender)
-    const ticket = await issuer.windowTicket({ windowKey: watched.key, origin })
+    const windowKey = documents.keyOf(event.sender)
+    const ticket = await issuer.windowTicket({ windowKey, origin })
     // The document may have gone while the server minted it (or while a
     // server still starting was waited for, when a revoke reaches nothing):
     // revoke again now the server can hear it, so the ticket is void too.
-    if (windows.get(event.sender.id) !== watched) {
-      issuer.revokeWindow(watched.key)
+    if (!documents.isCurrent(event.sender, windowKey)) {
+      issuer.revokeWindow(windowKey)
       throw new Error('This window changed while it was connecting to Studio.')
     }
     return ticket

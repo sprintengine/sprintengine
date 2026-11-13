@@ -30,7 +30,6 @@ import {
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
-import type { StudioWindowTicketGrant } from '../../../packages/studio-protocol/src/environment-access'
 import type { SignIns } from '../machine/machine-sign-in'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import { createHash, randomBytes } from 'node:crypto'
@@ -97,6 +96,7 @@ import type {
   StudioConversationBackend,
   StudioRequestContext,
   StudioChatExportRead,
+  StudioEnvironmentAccess,
 } from './studio-rpc-types'
 
 // The Studio RPC's methods, transport-free: given the grant a client holds at
@@ -219,7 +219,7 @@ export type StudioRpcRouterOptions = {
    * Studio (`environment.windowTicket`); without it, that method is answered
    * `unavailable`. Asked only by the desktop's own shell connection.
    */
-  windowTickets?: (request: { windowKey: string; origin: string }) => Promise<StudioWindowTicketGrant>
+  environmentAccess?: StudioEnvironmentAccess
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
   signIns?: () => Promise<SignIns>
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
@@ -2024,9 +2024,23 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // Only the shell's own connection reaches here (the dispatch refuses
     // every other with `shell` in the table).
     'environment.windowTicket': async (params) => {
-      if (!options.windowTickets) return unserved('environment.windowTicket')
+      if (!options.environmentAccess) return unserved('environment.windowTicket')
       try {
-        return { ok: true, result: await options.windowTickets(params) }
+        return { ok: true, result: await options.environmentAccess.windowTicket(params) }
+      } catch (error) {
+        return refuse('unavailable', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.revokeWindow': async ({ windowKey }) => {
+      if (!options.environmentAccess) return unserved('environment.revokeWindow')
+      options.environmentAccess.revokeWindow(windowKey)
+      return { ok: true, result: { revoked: true } }
+    },
+    // The validator held the scopes to the relayed ceiling; the grant is never an owner's.
+    'environment.deviceTicket': async (params) => {
+      if (!options.environmentAccess) return unserved('environment.deviceTicket')
+      try {
+        return { ok: true, result: await options.environmentAccess.deviceTicket(params) }
       } catch (error) {
         return refuse('unavailable', error instanceof Error ? error.message : String(error))
       }

@@ -245,3 +245,98 @@ test('a window is given a ticket the machine minted, for this computer’s loopb
     store.shutdown()
   }
 })
+
+test('a closed window’s document is revoked on every machine that gave it a ticket, and only those', async () => {
+  const { store } = machines()
+  const internals = store as unknown as {
+    saved: unknown[]
+    connection: (id: string) => unknown
+    connectQuietly: (id: string, ms: number) => Promise<boolean>
+  }
+  for (const id of ['m1', 'm2'])
+    internals.saved.push({
+      id,
+      label: id,
+      destination: id,
+      environmentId: `env-${id}`,
+      settings: { ...DEFAULT_SSH_ENVIRONMENT_SETTINGS },
+      addedAt: 0,
+    })
+  const asked: Array<[string, string, unknown]> = []
+  internals.connectQuietly = async () => true
+  internals.connection = (id: string) => ({
+    label: id,
+    environmentId: `env-${id}`,
+    owner: {
+      supports: () => true,
+      request: async (method: string, params: unknown) => {
+        asked.push([id, method, params])
+        return { token: 'ticket-1', path: '/ws?ticket=ticket-1' }
+      },
+    },
+  })
+  try {
+    assert.ok((await store.windowTicket('m1', { windowKey: 'window-4-1', origin: 'file://' })).ok)
+    assert.ok((await store.windowTicket('m2', { windowKey: 'window-5-2', origin: 'file://' })).ok)
+    asked.length = 0
+    store.revokeWindow('window-4-1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(asked, [['m1', 'environment.revokeWindow', { windowKey: 'window-4-1' }]])
+    // Told once: the document is gone.
+    store.revokeWindow('window-4-1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(asked.length, 1)
+  } finally {
+    store.shutdown()
+  }
+})
+
+test('a relayed device’s ticket is asked of the machine whose environment it names, and only while that machine is it', async () => {
+  const { store } = machines()
+  const internals = store as unknown as {
+    saved: unknown[]
+    connection: (id: string) => unknown
+    connectQuietly: (id: string, ms: number) => Promise<boolean>
+  }
+  internals.saved.push({
+    id: 'm1',
+    label: 'build-box',
+    destination: 'build-box',
+    environmentId: 'env-build-box',
+    settings: { ...DEFAULT_SSH_ENVIRONMENT_SETTINGS },
+    addedAt: 0,
+  })
+  const asked: unknown[] = []
+  let answering = 'env-build-box'
+  internals.connectQuietly = async () => true
+  internals.connection = () => ({
+    label: 'build-box',
+    environmentId: answering,
+    owner: {
+      supports: (capability: string) => capability === 'device-tickets',
+      request: async (method: string, params: unknown) => {
+        asked.push([method, params])
+        return { token: 'device-1', path: '/device?ticket=device-1' }
+      },
+    },
+  })
+  try {
+    const device = { deviceId: 'phone-1', name: 'Phone', scopes: ['conversation:read' as const] }
+    assert.deepEqual(await store.deviceTicket('env-build-box', device), {
+      ok: true,
+      token: 'device-1',
+      path: '/device?ticket=device-1',
+    })
+    assert.deepEqual(asked, [['environment.deviceTicket', device]])
+    const unknown = await store.deviceTicket('env-elsewhere', device)
+    assert.equal(unknown.ok ? null : unknown.code, 'unknown_route')
+    // Its server was replaced by another Studio since the device looked.
+    answering = 'env-other'
+    const moved = await store.deviceTicket('env-build-box', device)
+    assert.equal(moved.ok ? null : moved.code, 'unavailable')
+    await assert.rejects(store.openEnvironment('env-build-box'), /not connected/u)
+    assert.equal(asked.length, 1)
+  } finally {
+    store.shutdown()
+  }
+})

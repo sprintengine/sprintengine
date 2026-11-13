@@ -186,6 +186,13 @@ export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' a
 export const STUDIO_WINDOW_TICKETS_CAPABILITY = 'window-tickets' as const
 
 /**
+ * `environment.deviceTicket` (`environment-access.ts`): a ticket for one
+ * connection of a paired device the desktop that holds this Studio relays,
+ * never an owner's, asked for by that desktop's shell alone.
+ */
+export const STUDIO_DEVICE_TICKETS_CAPABILITY = 'device-tickets' as const
+
+/**
  * `providers.signInStart`, `.signInPaste`, `.signInWait` and `.signInCancel`
  * (`environment-access.ts`): a CLI's own login on this Studio's machine, with
  * no terminal (decision R34). Served where the machine has no terminal of the
@@ -330,6 +337,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
+  STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,

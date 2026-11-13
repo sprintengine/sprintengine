@@ -12,6 +12,8 @@ import type { ShellServerLink } from '../../server-supervisor/remote-core'
 import { splicePort } from '../../../server/ipc/port-duplex'
 import { SERVER_EVENTS, SHELL_METHODS } from '../../../server/desktop/server-methods'
 import { PanePartitions } from './pane-partitions'
+import { isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
+import type { StudioRelayedDeviceScope } from '../../../../packages/studio-protocol/src/environment-access'
 import { SshEnvironments } from './ssh-environments'
 import { broadcastToAllWindows } from '../../window-broadcast'
 import { prefixedId } from '../../../shared/random-id'
@@ -128,6 +130,39 @@ function serveSshToServer(server: ShellServerLink, environments: SshEnvironments
     }
     splicePort(port1, stream)
     return { clientId, label }
+  })
+  // A paired device the server's tailnet listener relays to one of these
+  // machines: its ticket there, and its socket's stream, both held here.
+  server.rpc.handle(SHELL_METHODS.environmentDeviceTicket, async (params) => {
+    const { environmentId, device } = (params ?? {}) as { environmentId?: unknown; device?: unknown }
+    const named = device as { deviceId?: unknown; name?: unknown; scopes?: unknown } | null
+    if (
+      !isEnvironmentId(environmentId) ||
+      typeof named?.deviceId !== 'string' ||
+      typeof named.name !== 'string' ||
+      !Array.isArray(named.scopes)
+    )
+      throw new Error('That is not a relayed device’s ticket.')
+    // The machine holds the scopes to the relayed ceiling, and refuses any beyond.
+    return environments.deviceTicket(environmentId, {
+      deviceId: named.deviceId,
+      name: named.name,
+      scopes: named.scopes as StudioRelayedDeviceScope[],
+    })
+  })
+  server.rpc.handle(SHELL_METHODS.environmentOpen, async (params) => {
+    const environmentId = (params as { environmentId?: unknown } | null)?.environmentId
+    if (!isEnvironmentId(environmentId)) throw new Error('That is not an environment id.')
+    const stream = await environments.openEnvironment(environmentId)
+    const { port1, port2 } = new MessageChannelMain()
+    const clientId = prefixedId('ssh', 6)
+    if (!server.attachSshPort?.(clientId, port2)) {
+      stream.destroy()
+      port1.close()
+      throw new Error('Studio server is restarting.')
+    }
+    splicePort(port1, stream)
+    return { clientId, label: environmentId }
   })
   environments.onConnected((connection) => server.rpc.emit(SERVER_EVENTS.sshConnected, { key: connection.key }))
   server.onServing(() => {

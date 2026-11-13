@@ -25,6 +25,8 @@ import type {
   StudioWorkspaceCheckout,
   StudioWorkspaceExtensions,
   StudioChatExportPage,
+  StudioRelayedDeviceScope,
+  StudioWindowTicketGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type {
   ConversationApprovalRuleRevokeResult,
@@ -408,4 +410,22 @@ export type StudioAuditEntry = {
   ok: boolean
   code?: string
   durationMs: number
+}
+
+/**
+ * What the desktop that holds this Studio over its front door asks of it for
+ * its windows and the devices it relays (`environment-access.ts`): served
+ * only to that desktop's shell connection.
+ */
+export type StudioEnvironmentAccess = {
+  /** A ticket for one connection of one of its windows. */
+  windowTicket(request: { windowKey: string; origin: string }): Promise<StudioWindowTicketGrant>
+  /** A window of its has gone: its unspent tickets are void and its connections end. */
+  revokeWindow(windowKey: string): void
+  /** A ticket for one connection of a device it relays, never an owner's. */
+  deviceTicket(request: {
+    deviceId: string
+    name: string
+    scopes: readonly StudioRelayedDeviceScope[]
+  }): Promise<StudioWindowTicketGrant>
 }

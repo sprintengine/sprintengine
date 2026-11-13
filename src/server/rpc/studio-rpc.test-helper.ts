@@ -13,7 +13,6 @@ import {
   type ConversationWirePermissionPreset,
   type StudioCreatedConversation,
   type StudioEnvironmentReadiness,
-  type StudioWindowTicketGrant,
   type StudioGrant,
   type StudioParsedServerFrame,
   type StudioProtocolWindow,
@@ -51,6 +50,7 @@ import type {
   StudioCommandOutcome,
   StudioConversationBackend,
   StudioDiscovery,
+  StudioEnvironmentAccess,
 } from './studio-rpc-types'
 
 // Test doubles for the Studio RPC: an in-memory conversation backend with the
@@ -400,7 +400,7 @@ export async function startTestServer(
     protocol?: StudioProtocolWindow
     modules?: StudioModules
     readiness?: () => Promise<StudioEnvironmentReadiness>
-    windowTickets?: (request: { windowKey: string; origin: string }) => Promise<StudioWindowTicketGrant>
+    environmentAccess?: StudioEnvironmentAccess
     signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
@@ -454,7 +454,7 @@ export async function startTestServer(
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),
     ...(input.readiness ? { readiness: input.readiness } : {}),
-    ...(input.windowTickets ? { windowTickets: input.windowTickets } : {}),
+    ...(input.environmentAccess ? { environmentAccess: input.environmentAccess } : {}),
     ...(input.signIns ? { signIns: input.signIns } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),

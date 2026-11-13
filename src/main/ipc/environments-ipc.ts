@@ -5,6 +5,7 @@ import { ENVIRONMENT_CHANNELS, type EnvironmentTicketResult } from '../../shared
 import { studioWindowOrigin } from '../../shared/studio-connection'
 import type { DesktopEnvironments } from '../environments/desktop-environments'
 import { assertAppSender } from './ipc-sender'
+import { createWindowDocuments } from './studio-window-ticket-ipc'
 
 // The window's way to the machines this desktop knows (design-environments):
 // the one list every surface draws, a push when it reads differently, Retry,
@@ -30,8 +31,16 @@ export function registerEnvironmentsIpc(
     environments: Pick<DesktopEnvironments, 'list' | 'onChanged' | 'retry'>
     broadcast: (channel: string) => void
     ticket: EnvironmentTicketIssuer
+    /**
+     * A window document that was given tickets has gone: the machines that
+     * minted them end its connections and void what it did not spend.
+     */
+    revokeWindow?: (windowKey: string) => void
   },
 ): () => void {
+  // Each document is a window of its own to the machines it connects to,
+  // named afresh when it loads and revoked there the moment it goes.
+  const documents = createWindowDocuments((windowKey) => deps.revokeWindow?.(windowKey))
   ipcMain.handle(ENVIRONMENT_CHANNELS.list, () => deps.environments.list())
   ipcMain.handle(ENVIRONMENT_CHANNELS.retry, async (_event, payload: unknown) => {
     // Only a route the list holds is asked: a window is trusted with asking, nothing more.
@@ -50,7 +59,7 @@ export function registerEnvironmentsIpc(
       if (!origin) return { ok: false, code: 'unauthorized', message: 'This window has no origin Studio can admit.' }
       const route = parseEnvironmentRoute((payload as { route?: unknown } | null)?.route)
       if (!route) return { ok: false, code: 'unknown_route', message: 'That is not a machine this desktop knows.' }
-      return deps.ticket(route, origin, `window-${event.sender.id}`)
+      return deps.ticket(route, origin, documents.keyOf(event.sender))
     },
   )
   const off = deps.environments.onChanged(() => deps.broadcast(ENVIRONMENT_CHANNELS.changed))

@@ -1,7 +1,11 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 
-import type { StudioGrant } from '../../../../packages/studio-protocol/src/public'
+import {
+  STUDIO_RELAYED_DEVICE_SCOPES,
+  type StudioGrant,
+  type StudioRelayedDeviceScope,
+} from '../../../../packages/studio-protocol/src/public'
 import type { StudioAuthenticator } from '../../../server/rpc/studio-rpc-types'
 import { tailnetDeviceStudioScopes, type TailnetDevice } from '../../../shared/tailnet'
 import type { TailnetDeviceStore } from './tailnet-devices'
@@ -25,6 +29,29 @@ import type { TailnetDeviceStore } from './tailnet-devices'
 export type TailnetStudioHost = {
   /** Serve one device's socket under the authenticator given; it ends when the stream does. */
   attach(stream: Duplex, authenticator: StudioAuthenticator): void
+}
+
+/**
+ * The machines this desktop holds behind their front doors (an SSH
+ * machine's server, later a WSL distribution's), for a paired device to reach
+ * through this desktop (`/tailnet/v1/environments/<id>/studio`). The device
+ * proves itself here; the machine admits the socket by a device ticket this
+ * desktop asks it for, with the device's grant cut to the relayed ceiling.
+ */
+export type TailnetEnvironmentRelay = {
+  /** A device ticket on the machine whose environment id this is, or why there is none. */
+  ticket(
+    environmentId: string,
+    device: { deviceId: string; name: string; scopes: StudioRelayedDeviceScope[] },
+  ): Promise<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>
+  /** A fresh stream to that machine's window listener (the front door's `ws`). */
+  open(environmentId: string): Promise<Duplex>
+}
+
+/** What a paired device may do on a machine this desktop relays: its own scopes here, cut to the relayed ceiling. */
+export function relayedDeviceScopes(device: TailnetDevice): StudioRelayedDeviceScope[] {
+  const held = new Set<string>(tailnetDeviceStudioScopes(device.scopes))
+  return STUDIO_RELAYED_DEVICE_SCOPES.filter((scope) => held.has(scope))
 }
 
 /** A device's client id on the Studio protocol: its own, kept apart from apps and browsers. */

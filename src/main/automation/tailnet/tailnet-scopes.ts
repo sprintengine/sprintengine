@@ -43,11 +43,15 @@ export const TAILNET_ROUTE_ACCESS = {
   // topic it carries is judged by the Studio router against the device's
   // grant as it stands at that request (`tailnetDeviceStudioScopes`).
   studio: { permissions: [] },
+  // A machine this desktop relays: following its chats is the least a
+  // device reaching it does. The machine judges every request by the device's
+  // grant cut to the relayed ceiling, never an owner's.
+  relay: { permissions: ['conversation:read'] },
 } as const satisfies Readonly<Record<string, StudioAccess>>
 
 export type TailnetDeviceRoute = keyof typeof TAILNET_ROUTE_ACCESS
 /** The routes a ticket opens as a WebSocket upgrade; every other route is an HTTP request. */
-export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'events' | 'conversation' | 'studio'>
+export type TailnetUpgradeRoute = Extract<TailnetDeviceRoute, 'stream' | 'events' | 'conversation' | 'studio' | 'relay'>
 export type TailnetHttpRoute = Exclude<TailnetDeviceRoute, TailnetUpgradeRoute>
 
 const FOLLOW: StudioAccess = { permissions: ['conversation:read'] }

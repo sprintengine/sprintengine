@@ -20,6 +20,14 @@
   the desktop's own shell connection: a method spec may now say `shell` (the
   reason), always with `owner`, and the server refuses it `owner_required` to
   any other connection, an owner's included.
+- **`environment.revokeWindow`** (capability `window-tickets`, the shell's): a
+  window document of the desktop has gone; its connections end and its
+  unspent tickets are void.
+- **`environment.deviceTicket`** (capability `device-tickets`, the shell's): a
+  ticket for one connection of a paired device the desktop relays, on the
+  window listener's `/device` path, never an owner's, with exactly the scopes
+  named, each one of `STUDIO_RELAYED_DEVICE_SCOPES` (`conversation:read`,
+  `conversation:operate`, `conversation:create`, `workspaces:read`).
 - **`providers.signInStart`, `.signInPaste`, `.signInWait`, `.signInCancel`**
   (capability `provider-sign-in-flow`): a CLI's own login on the Studio's
   machine with no terminal, each step under a `commandId`, an owner's.

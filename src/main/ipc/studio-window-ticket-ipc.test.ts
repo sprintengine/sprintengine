@@ -114,3 +114,39 @@ test('a document that goes while its ticket is minted gets none, and the ticket 
   await assert.rejects(asking, /changed while it was connecting/)
   assert.deepEqual(revoked, [asked[0].windowKey, asked[0].windowKey])
 })
+
+test('a machine reached through the environments bridge keys each document afresh, and is told when it goes', async () => {
+  const { registerEnvironmentsIpc } = await import('./environments-ipc')
+  const handlers = new Map<string, (event: unknown, payload?: unknown) => Promise<unknown>>()
+  const asked: Array<{ route: string; windowKey: string }> = []
+  const revoked: string[] = []
+  registerEnvironmentsIpc(
+    {
+      handle: (channel: string, handler: (event: unknown, payload?: unknown) => Promise<unknown>) =>
+        handlers.set(channel, handler),
+      removeHandler: () => undefined,
+    } as never,
+    {
+      environments: { list: () => [], onChanged: () => () => undefined, retry: async () => undefined } as never,
+      broadcast: () => undefined,
+      ticket: async (route, _origin, windowKey) => {
+        asked.push({ route: `${route.kind}:${(route as { machine?: string }).machine ?? ''}`, windowKey })
+        return { ok: true, url: 'ws://127.0.0.1:4200/ws?ticket=t', token: 't' }
+      },
+      revokeWindow: (windowKey) => void revoked.push(windowKey),
+    },
+  )
+  const ask = handlers.get('environments:ticket')!
+  const event = windowEvent(11)
+  await ask(event, { route: 'ssh:m1' })
+  await ask(event, { route: 'ssh:m1' })
+  assert.equal(asked[0].windowKey, asked[1].windowKey, 'a reconnect is the same document')
+  assert.match(asked[0].windowKey, /^window-11-\d+$/u)
+  // A reload is a new document: the machine is told the old one went, and the new one has a name of its own.
+  event.sender.emit('did-navigate')
+  assert.deepEqual(revoked, [asked[0].windowKey])
+  await ask(event, { route: 'ssh:m1' })
+  assert.notEqual(asked[2].windowKey, asked[0].windowKey)
+  event.sender.emit('destroyed')
+  assert.deepEqual(revoked, [asked[0].windowKey, asked[2].windowKey])
+})
