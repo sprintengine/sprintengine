@@ -2128,6 +2128,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     ...createStudioPhoneReadsHandlers({
       ...(options.phoneReads ? { reads: options.phoneReads } : {}),
       kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+      mayName: (folder, asking) => mayName(folder, asking),
     }),
 
     // ── A chat's record beyond its rest ────────────────────────────────────

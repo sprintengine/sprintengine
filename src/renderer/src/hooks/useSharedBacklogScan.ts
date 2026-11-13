@@ -14,6 +14,7 @@ import { formatBacklogDisplayId } from '../../../shared/backlog/item-id'
 import { normalizeProjectRootKey } from '../utils/projectKnowledge'
 import type { BacklogItemRecordInput } from '../../../shared/electron-api'
 import { filesApi } from '../studio/files'
+import { backlogApi } from '../studio/backlog'
 
 // Project-folder-keyed shared Backlog scan, modeled on the shared-subscription
 // pattern in useGitStatus: workspaces are grouped by folder, so several
@@ -90,7 +91,7 @@ type BacklogScanRunner = (folderPath: string) => Promise<BacklogScanResult>
 async function defaultBacklogScanRunner(folderPath: string): Promise<BacklogScanResult> {
   const scanned = await scanBacklog(await backlogLocationOf(folderPath), adapter)
   let metadataError: string | null = null
-  const ensured = await window.api
+  const ensured = await backlogApi
     .ensureBacklogObjectRecords(folderPath, scanned.items.map(backlogRecordInput))
     .catch((error) => {
       metadataError = error instanceof Error ? error.message : String(error)
@@ -144,7 +145,7 @@ async function annotateBacklogDanglingMockups(
 // failure is non-fatal — the next scan retries — so the backlog stays usable.
 async function allocateBacklogItemIds(folderPath: string, result: BacklogScanResult): Promise<BacklogScanResult> {
   if (result.items.length === 0) return result
-  const allocated = await window.api
+  const allocated = await backlogApi
     .ensureBacklogItemIds({
       workspaceRoot: folderPath,
       items: result.items.map((item) => ({ relativePath: item.relativePath, numericId: item.numericId ?? null })),

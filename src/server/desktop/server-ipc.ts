@@ -3,7 +3,6 @@ import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { createConversationTerminalHandoff } from '../../main/conversation-terminal-handoff'
 import type { HostRegistry } from '../../main/hosts/host-registry'
 import { registerAutomationIpc } from '../../main/ipc/automation-ipc'
-import { registerBacklogIpc } from '../../main/ipc/backlog-ipc'
 import { createConversationService } from '../../main/conversation-service'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
@@ -30,7 +29,7 @@ import { knownFolders } from '../files/known-folders'
 // What is here: the workspace bus and registry hydration, launch settings and
 // machines, the gateway's settings and the tailnet and mesh, the paired local
 // apps, workspace backups, model discovery, the composer's command lists,
-// backlog files, the GitHub token, the chats, with the copy of the model-written titles setting the
+// the GitHub token, the chats, with the copy of the model-written titles setting the
 // server titles them by. The worktree pool and settled chats are the Studio
 // protocol's (`worktrees.*`, `settledChats.*`).
 // What is not: anything that acts on a window, a terminal or the shell's own
@@ -89,7 +88,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   // The Schedules window's: always registered, refused while the module is off.
   registerScheduledAgentsIpc(ipc, { service: deps.scheduledAgents })
   registerHostsIpc(ipc, { hosts: core.hosts })
-  registerBacklogIpc(ipc)
   // One conversation service over the core's chats, which the Studio RPC's
   // chat surface serves to every client, the app's own windows included.
   const conversationService = {

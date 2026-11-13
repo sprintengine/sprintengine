@@ -1,4 +1,5 @@
 import type {
+  StudioBacklogFolderMethodMap,
   StudioBacklogMethodMap,
   StudioGrant,
   StudioHandlerOf,
@@ -6,14 +7,21 @@ import type {
   StudioSharesMethodMap,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioPhoneReads } from '../backlog/backlog-domain'
+import { isMachinePath } from '../../shared/machine-paths'
 
 // The router's answers to `backlog.*`, `shares.list` and the pull request
 // reads, once the router has held the grant to each method's scope. An update
 // is carried out once per command id: a retry after a dropped connection is
-// answered with the first answer.
+// answered with the first answer. The backlog by its folder (the desktop's
+// own Backlog panel) is an owner's, which the router holds; a browser on the
+// tailnet is held here to the folders Studio knows, and a folder on an SSH
+// machine is refused in words.
 
 type Asking = { grant: StudioGrant }
-type Map = StudioBacklogMethodMap & StudioSharesMethodMap & StudioPullRequestReadsMethodMap
+type Map = StudioBacklogMethodMap &
+  StudioBacklogFolderMethodMap &
+  StudioSharesMethodMap &
+  StudioPullRequestReadsMethodMap
 
 export type StudioPhoneReadsHandlers<A extends Asking = Asking> = {
   readonly [M in keyof Map]: StudioHandlerOf<Map[M], A>
@@ -32,6 +40,8 @@ export type StudioPhoneReadsHandlerOptions<A extends Asking = Asking> = {
     commandId: string,
     work: () => Promise<Answer<R, C>>,
   ): Promise<Answer<R, C | 'unavailable'>>
+  /** Whether the asker may name this folder: any, for an owner's own connection; otherwise one Studio knows. */
+  mayName(folder: string, asking: A): Promise<boolean>
 }
 
 const unserved = (method: keyof Map) =>
@@ -54,11 +64,49 @@ function read<T>(
   }
 }
 
+const SSH_FOLDER = 'A backlog on an SSH machine is not served from here yet.'
+const UNKNOWN_FOLDER = 'That folder is not one of the projects Studio holds.'
+
 export function createStudioPhoneReadsHandlers<A extends Asking>(
   options: StudioPhoneReadsHandlerOptions<A>,
 ): StudioPhoneReadsHandlers<A> {
   const { reads } = options
+  /** A folder method's work, once the folder is one the asker may name; a write's once per command id. */
+  async function inFolder<R>(
+    method: keyof StudioBacklogFolderMethodMap,
+    asking: A,
+    workspaceRoot: string,
+    commandId: string | null,
+    work: (folders: StudioPhoneReads['backlog']['folders']) => Promise<R>,
+  ): Promise<Answer<R, 'invalid_params' | 'unavailable'>> {
+    if (!reads) return unserved(method)
+    if (isMachinePath(workspaceRoot)) return { ok: false, error: { code: 'unavailable', message: SSH_FOLDER } }
+    if (!(await options.mayName(workspaceRoot, asking)))
+      return { ok: false, error: { code: 'invalid_params', message: UNKNOWN_FOLDER } }
+    const run = async () => ({ ok: true as const, result: await work(reads.backlog.folders) })
+    return commandId === null ? run() : options.kept(method, asking, commandId, run)
+  }
   return {
+    'backlog.location': ({ workspaceRoot }, asking) =>
+      inFolder('backlog.location', asking, workspaceRoot, null, (folders) => folders.location(workspaceRoot)),
+    'backlog.setRoot': ({ commandId, workspaceRoot, root }, asking) =>
+      inFolder('backlog.setRoot', asking, workspaceRoot, commandId, (folders) => folders.setRoot(workspaceRoot, root)),
+    'backlog.ensureRecords': ({ commandId, workspaceRoot, items }, asking) =>
+      inFolder('backlog.ensureRecords', asking, workspaceRoot, commandId, (folders) =>
+        folders.ensureRecords(workspaceRoot, items),
+      ),
+    'backlog.ensureIds': ({ commandId, workspaceRoot, items }, asking) =>
+      inFolder('backlog.ensureIds', asking, workspaceRoot, commandId, (folders) =>
+        folders.ensureIds(workspaceRoot, items),
+      ),
+    'backlog.edit': ({ commandId, workspaceRoot, relativePath, edit }, asking) =>
+      inFolder('backlog.edit', asking, workspaceRoot, commandId, (folders) =>
+        folders.edit(workspaceRoot, relativePath, edit),
+      ),
+    'backlog.createEpic': ({ commandId, workspaceRoot, title }, asking) =>
+      inFolder('backlog.createEpic', asking, workspaceRoot, commandId, (folders) =>
+        folders.createEpic(workspaceRoot, title),
+      ),
     'backlog.list': async () =>
       reads ? { ok: true, result: { workspaces: await reads.backlog.list() } } : unserved('backlog.list'),
     'backlog.update': ({ commandId, ...update }, asking) =>

@@ -15,6 +15,7 @@ import {
   updateBacklogTriage,
   updateBacklogType,
 } from '../../main/backlog-service'
+import { createStudioBacklogFolders, type StudioBacklogFolders } from './backlog-folders'
 import { assertBacklogRelativePath, readMobileBacklogWorkspaceSnapshot } from '../../main/mobile/control/backlog'
 import { MobileControlCommandError } from '../../main/mobile/control/command-error'
 import { deepRedactLocalPaths } from '../../main/mobile/control/path-safety'
@@ -48,6 +49,8 @@ type Refusal = { ok: false; code: 'not_found' | 'invalid_params' | 'unavailable'
 type Answer<T> = { ok: true; value: T } | Refusal
 
 export type StudioBacklog = {
+  /** A project's backlog by its folder: the desktop's own windows' Backlog panel. */
+  folders: StudioBacklogFolders
   list(): Promise<StudioBacklogWorkspace[]>
   update(update: StudioBacklogUpdate): Promise<Answer<{ item: StudioBacklogItem | null }>>
   /** Hear which projects' backlogs moved. The folders are watched only while someone listens. */
@@ -230,7 +233,7 @@ export function createStudioPhoneReads(deps: StudioPhoneReadsDeps): StudioPhoneR
   }
 
   return {
-    backlog: { list, update, onChanged },
+    backlog: { folders: createStudioBacklogFolders(), list, update, onChanged },
     shares() {
       const at = now()
       if (shares && at - shares.at < SHARES_MAX_AGE_MS) return shares.read

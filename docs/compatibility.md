@@ -301,6 +301,15 @@ the snapshot. A phone from before this change is refused by the gateway
 (`Unknown tool`) and says the desktop could not answer; a current phone meeting
 an older desktop is told to update it, by the Studio handshake.
 
+The desktop's own Backlog panel reaches a project's backlog by its folder on the
+same capability (2026-11-13): `backlog.location`, and under a `commandId`
+`backlog.setRoot`, `.ensureRecords`, `.ensureIds`, `.edit` (one item's change,
+named by its `edit.kind`) and `.createEpic`. Each is an owner's, with its reason
+in the table: it names a folder on that machine and writes its files. A browser
+on the tailnet is held to the folders Studio knows, and a folder on an SSH
+machine is refused in words. Same build on both ends: the window's 17 `backlog:*`
+IPC channels are gone.
+
 ### Direct conversation lane
 
 `@sprintengine/conversation-protocol` is a separate portable package for the

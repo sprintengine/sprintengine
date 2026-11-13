@@ -194,29 +194,6 @@ import type {
   WindowMaterial,
   WorkspaceBackupWriteResult,
 } from './ipc/app'
-import type {
-  BacklogAddOrUpdateLinkInput,
-  BacklogCreateEpicInput,
-  BacklogCreateEpicResult,
-  BacklogDependenciesInput,
-  BacklogEnsureIdsInput,
-  BacklogEnsureIdsResult,
-  BacklogEpicColorInput,
-  BacklogEpicInput,
-  BacklogHighlightInput,
-  BacklogItemRecordInput,
-  BacklogLocationResult,
-  BacklogMockupsInput,
-  BacklogModuleMetadataInput,
-  BacklogMoveSourceInput,
-  BacklogMutationResult,
-  BacklogReadResult,
-  BacklogRemoveLinkInput,
-  BacklogRemoveRecordInput,
-  BacklogSetRootInput,
-  BacklogStatusInput,
-  BacklogTriageInput,
-} from './ipc/backlog'
 import type { DiagnosticLogEntry, DiagnosticLogInput } from './ipc/diagnostics'
 import type { GitPatchSaveResult } from './ipc/git'
 import type { WorkspaceBackupPayload, WorkspaceBackupReadResult } from './ipc/workspace-backup'
@@ -1191,21 +1168,4 @@ export type ElectronApi = {
   // client whose machine is not this one to keep awake (a browser tab).
   getKeepAwake: () => Promise<boolean | null>
   setKeepAwake: (enabled: boolean) => Promise<boolean | null>
-  resolveBacklogLocation: (workspaceRoot: string) => Promise<BacklogLocationResult>
-  setBacklogRoot: (input: BacklogSetRootInput) => Promise<BacklogLocationResult>
-  ensureBacklogObjectRecords: (workspaceRoot: string, items: BacklogItemRecordInput[]) => Promise<BacklogReadResult>
-  ensureBacklogItemIds: (input: BacklogEnsureIdsInput) => Promise<BacklogEnsureIdsResult>
-  updateBacklogStatus: (input: BacklogStatusInput) => Promise<BacklogMutationResult>
-  updateBacklogTriage: (input: BacklogTriageInput) => Promise<BacklogMutationResult>
-  updateBacklogHighlight: (input: BacklogHighlightInput) => Promise<BacklogMutationResult>
-  addOrUpdateBacklogLink: (input: BacklogAddOrUpdateLinkInput) => Promise<BacklogMutationResult>
-  removeBacklogLink: (input: BacklogRemoveLinkInput) => Promise<BacklogMutationResult>
-  updateBacklogModuleMetadata: (input: BacklogModuleMetadataInput) => Promise<BacklogMutationResult>
-  moveBacklogObjectSource: (input: BacklogMoveSourceInput) => Promise<BacklogMutationResult>
-  removeBacklogObjectRecord: (input: BacklogRemoveRecordInput) => Promise<BacklogMutationResult>
-  updateBacklogEpic: (input: BacklogEpicInput) => Promise<BacklogMutationResult>
-  updateBacklogEpicColor: (input: BacklogEpicColorInput) => Promise<BacklogMutationResult>
-  updateBacklogDependencies: (input: BacklogDependenciesInput) => Promise<BacklogMutationResult>
-  updateBacklogMockups: (input: BacklogMockupsInput) => Promise<BacklogMutationResult>
-  createBacklogEpic: (input: BacklogCreateEpicInput) => Promise<BacklogCreateEpicResult>
 }

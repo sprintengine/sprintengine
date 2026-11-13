@@ -48,6 +48,8 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * Create PR (`pull-request-create`): its forge, its push, its drafting CLI. The
  * worktree pool and the agents' worktrees (`worktrees.*`, with its streams):
  * this machine's checkouts, which the pool hands out, resets and removes.
+ * A project's backlog by its folder (the desktop's own Backlog panel): it
+ * names a folder on this machine and writes the files there.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -165,6 +167,13 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'worktrees.cleanupAgents',
   'worktrees.poolChanged',
   'worktrees.installChanged',
+  // A project's backlog by its folder on this machine.
+  'backlog.location',
+  'backlog.setRoot',
+  'backlog.ensureRecords',
+  'backlog.ensureIds',
+  'backlog.edit',
+  'backlog.createEpic',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [

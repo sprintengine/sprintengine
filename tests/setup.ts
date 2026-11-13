@@ -63,3 +63,5 @@ vi.mock('../src/renderer/src/studio/files', () => import('../src/renderer/src/st
 vi.mock('../src/renderer/src/studio/git', () => import('../src/renderer/src/studio/git.double'))
 // The worktrees its agents run in and settled chats (`src/renderer/src/studio/worktrees.ts`), the same way.
 vi.mock('../src/renderer/src/studio/worktrees', () => import('../src/renderer/src/studio/worktrees.double'))
+// A project's backlog by its folder (`src/renderer/src/studio/backlog.ts`), the same way.
+vi.mock('../src/renderer/src/studio/backlog', () => import('../src/renderer/src/studio/backlog.double'))

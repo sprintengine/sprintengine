@@ -471,6 +471,13 @@ test('every method the server serves has its call in the SDK, under the same sco
     // The phone's reads beside its chats (`backlog.ts`, `pull-request-reads.ts`), called by name.
     'backlog.list': 'request',
     'backlog.update': 'request',
+    // A project's backlog by its folder, which the desktop's own Backlog panel drives, called by name.
+    'backlog.location': 'request',
+    'backlog.setRoot': 'request',
+    'backlog.ensureRecords': 'request',
+    'backlog.ensureIds': 'request',
+    'backlog.edit': 'request',
+    'backlog.createEpic': 'request',
     'shares.list': 'request',
     'pullRequests.detail': 'request',
     'pullRequests.diff': 'request',

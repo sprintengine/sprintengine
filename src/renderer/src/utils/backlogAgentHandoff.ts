@@ -3,6 +3,7 @@ import { publishDiagnostic } from './diagnostics'
 import { basename } from './paths'
 import { toTitleName } from '../components/workspace/newWorkspace/helpers'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { backlogApi } from '../studio/backlog'
 
 // A readable item title from a `backlog/...` path, for the agent-side glyph
 // tooltip when the caller has no scanned title (the drag-drop path). Strips the
@@ -47,7 +48,7 @@ export async function recordBacklogAgentHandoff(input: {
 
   // Item side — canonical, persisted, best-effort.
   try {
-    const linkResult = await window.api.addOrUpdateBacklogLink({
+    const linkResult = await backlogApi.addOrUpdateBacklogLink({
       workspaceRoot: input.workspaceRoot,
       relativePath: input.relativePath,
       link: buildAgentBacklogLink({
@@ -57,7 +58,7 @@ export async function recordBacklogAgentHandoff(input: {
       }),
     })
     if (!linkResult.ok) throw new Error(linkResult.message)
-    await window.api.updateBacklogModuleMetadata({
+    await backlogApi.updateBacklogModuleMetadata({
       workspaceRoot: input.workspaceRoot,
       relativePath: input.relativePath,
       moduleId: AGENT_RUNTIME_MODULE_ID,
