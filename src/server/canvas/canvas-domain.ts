@@ -37,8 +37,15 @@ import type { McpToolRegistration, McpToolResult } from '../../shared/modules/mc
 // `canvas.screenshot` tools, asked with no connection context, so a client on
 // the protocol and an agent on MCP read one thing.
 
-/** What this needs of the machine's canvas: its service's pane-side calls, and its tools. */
+/**
+ * What this needs of the machine's canvas: its service's pane-side calls, and
+ * its tools. Every call about a board, the tools' included, is held to where
+ * the board's file really is, links followed, as it is for any client on
+ * another device; `confine` is that check alone.
+ */
 export type StudioCanvasHost = {
+  /** Whether the board's file really is inside the folder its ref is held to. */
+  confine(ref: CanvasBoardRef): Promise<CanvasResult<void>>
   /** A subscriber of the service; what it pushes for that subscriber reaches `deliver`. */
   subscribe(deliver: (channel: string, payload: unknown) => void): number
   /** The subscriber is gone: the service stops pushing to it. */
@@ -96,7 +103,7 @@ export type StudioCanvasDomain = {
   stage(
     connectionId: string,
     params: StudioCanvasRef & { stageId: string; index: number; total: number; text: string },
-  ): StudioCanvasAnswer<{ received: number }>
+  ): Promise<StudioCanvasAnswer<{ received: number }>>
   commit(
     connectionId: string,
     params: StudioCanvasRef & { baseRevision: number; body?: StudioCanvasCommitBody; stageId?: string },
@@ -377,9 +384,12 @@ export function createStudioCanvasDomain(host: StudioCanvasHost): StudioCanvasDo
       return { ok: true, value: { files, more, missing } }
     },
 
-    stage(connectionId, params) {
+    async stage(connectionId, params) {
       const ref = canvasRefOf(params)
       if (!ref.ok) return refused(ref.error)
+      // Nothing is held for a board this client could not commit to.
+      const confined = await host.confine(ref.value)
+      if (!confined.ok) return refused(confined.error)
       const key = keyOf(ref.value)
       let own = stages.get(connectionId)
       let stage = own?.get(params.stageId)

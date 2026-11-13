@@ -556,7 +556,12 @@ project's working tree unless the person puts it there.
   file. When the link drops the pane says so, what the person draws is kept here
   and sent when the machine answers, and the windows are handed the board again
   at a revision they have not seen. A pairing without `workspace:operate` opens
-  boards in the editor's view mode with a line saying why. Export writes this
+  boards in the editor's view mode with a line saying why. Every `canvas.*` call
+  from another device is held to where the board's file really is, every link
+  followed (`confineBoard`, through `canvas-remote-subscribers.ts`): a link
+  inside a project or a store that leads out of it is answered `not_found`, as
+  `files.*` answers a path outside the folders Studio knows. This machine's
+  windows and agents still name a board by its path as written. Export writes this
   desktop's copy into a folder picked here; Reveal file is left out, as the file
   is on the other machine. Where the pane cannot edit (a browser tab, or a
   machine whose Studio does not serve boards) a board is drawn as a picture from

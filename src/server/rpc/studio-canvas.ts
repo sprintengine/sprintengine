@@ -54,11 +54,13 @@ export function createStudioCanvasHandlers<A extends Asking>(
     'canvas.read': async (ref) => (canvas ? answer(await canvas.read(ref)) : unserved('canvas.read')),
     'canvas.files': async ({ ids, ...ref }) =>
       canvas ? answer(await canvas.files(ref, ids)) : unserved('canvas.files'),
-    'canvas.stage': (params, asking) => {
+    'canvas.stage': async (params, asking) => {
       if (!canvas) return unserved('canvas.stage')
-      const staged = canvas.stage(asking.context.connectionId, params)
+      const staged = await canvas.stage(asking.context.connectionId, params)
       if (staged.ok) return { ok: true, result: staged.value }
-      // A stage names no board that could be missing: what it refuses is its size or its parts.
+      // What a stage refuses is its size, its parts, or a board this client may
+      // not reach; the method names no board that could be missing, so that is
+      // `invalid_params` too, in the domain's words.
       const code = staged.code === 'too_large' || staged.code === 'unavailable' ? staged.code : 'invalid_params'
       return { ok: false, error: { code, message: staged.message } }
     },

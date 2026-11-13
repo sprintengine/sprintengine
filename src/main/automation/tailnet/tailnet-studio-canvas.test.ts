@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, test } from 'vitest'
 
@@ -321,4 +331,102 @@ test('a Studio given no canvas does not advertise boards, and answers them unava
   const far = await machine({ canvas: false })
   const client = await far.rig.client(far.rig.pair(['workspace:read', 'workspace:operate']).token)
   assert.equal(client.supports('canvas-boards'), false)
+})
+
+test('a link inside a project does not carry another device to a board outside it, by any method', async () => {
+  const far = await machine()
+  const client = await far.rig.client(far.rig.pair(['workspace:read', 'workspace:operate']).token)
+  // A board outside every project and store, with a picture in it.
+  const outside = mkdtempSync(join(tmpdir(), 'canvas-outside-'))
+  cleanups.push(() => rmSync(outside, { recursive: true, force: true }))
+  const secret = join(outside, 'secret.excalidraw')
+  const secretText = JSON.stringify({
+    type: 'excalidraw',
+    version: 2,
+    elements: [element('secret-box'), element('secret-photo', { type: 'image', fileId: 'photo' })],
+    appState: {},
+    files: { photo: { id: 'photo', mimeType: 'image/png', dataURL: 'data:image/png;base64,AAAA', created: 1 } },
+  })
+  writeFileSync(secret, secretText)
+  // Links to it: a board file in the project's folder, a folder in the
+  // project, a board in the store, and one that leads nowhere yet.
+  mkdirSync(join(far.project, 'diagrams'), { recursive: true })
+  symlinkSync(secret, join(far.project, 'diagrams', 'leak.excalidraw'))
+  symlinkSync(outside, join(far.project, 'linked'))
+  mkdirSync(far.storeDir, { recursive: true })
+  symlinkSync(secret, join(far.storeDir, 'stolen.excalidraw'))
+  symlinkSync(join(outside, 'later.excalidraw'), join(far.project, 'diagrams', 'ghost.excalidraw'))
+  // A link that stays inside the project is still the project's board.
+  writeFileSync(join(far.project, 'diagrams', 'real.excalidraw'), secretText)
+  symlinkSync(join(far.project, 'diagrams', 'real.excalidraw'), join(far.project, 'diagrams', 'alias.excalidraw'))
+
+  const ways = ['diagrams/leak.excalidraw', 'linked/secret.excalidraw', 'stolen']
+  for (const path of ways) {
+    const followed = follow(client, board(path))
+    await waitFor(() => followed.ended.length > 0, `the board at ${path} is refused`)
+    assert.equal(followed.ended[0]?.code, 'not_found', `canvas.board ${path}`)
+    assert.equal(followed.notices.length, 0, `canvas.board ${path} told nothing`)
+    assert.equal(await refusalOf(client.request('canvas.read', board(path))), 'not_found', `canvas.read ${path}`)
+    assert.equal(
+      await refusalOf(client.request('canvas.files', { ...board(path), ids: ['photo'] })),
+      'not_found',
+      `canvas.files ${path}`,
+    )
+    assert.equal(
+      await refusalOf(client.request('canvas.picture', { board: path, workspaceId: FAR_CHAT })),
+      'not_found',
+      `canvas.picture ${path}`,
+    )
+    const body = { elements: [element(`over-${path}`)], appState: {}, files: {} }
+    assert.equal(
+      await refusalOf(
+        client.request('canvas.commit', { ...board(path), commandId: `c-${path}`, baseRevision: 0, body }),
+      ),
+      'not_found',
+      `canvas.commit ${path}`,
+    )
+    const text = JSON.stringify(body)
+    assert.equal(
+      await refusalOf(
+        client.request('canvas.stage', { ...board(path), stageId: `s-${path}`, index: 0, total: 1, text }),
+      ),
+      'invalid_params',
+      `canvas.stage ${path}`,
+    )
+    assert.deepEqual(await client.request('canvas.takePen', board(path)), { taken: true })
+  }
+  // By a bare name, the picture's board is found in the project's diagrams
+  // folder when the store has none: that is held to its real path as well.
+  assert.equal(await refusalOf(client.request('canvas.picture', { board: 'leak', workspaceId: FAR_CHAT })), 'not_found')
+  // A link that leads nowhere is not made into a board where it points.
+  const ghost = follow(client, board('diagrams/ghost.excalidraw'), true)
+  await waitFor(() => ghost.ended.length > 0, 'the dangling link is refused')
+  assert.equal(ghost.ended[0]?.code, 'not_found')
+  assert.equal(
+    await refusalOf(
+      client.request('canvas.commit', {
+        ...board('diagrams/ghost.excalidraw'),
+        commandId: 'ghost-1',
+        baseRevision: 0,
+        body: { elements: [element('ghost')], appState: {}, files: {} },
+      }),
+    ),
+    'not_found',
+  )
+  assert.equal(existsSync(join(outside, 'later.excalidraw')), false, 'nothing was written where the link points')
+  assert.equal(readFileSync(secret, 'utf8'), secretText, 'the board outside is untouched')
+  assert.deepEqual(readdirSync(outside).sort(), ['secret.excalidraw'])
+  assert.equal(far.calls.filter((call) => call.method === 'read' && call.bytes > 0).length, 0, 'no scene was read')
+
+  // The project's own boards, the one behind a link that stays inside included, still open.
+  const alias = await client.request('canvas.read', board('diagrams/alias.excalidraw'))
+  assert.deepEqual(
+    alias.elements.map((item) => item.id),
+    ['secret-box', 'secret-photo'],
+  )
+  const own = follow(client, board('diagrams/real.excalidraw'))
+  await waitFor(() => own.notices.length > 0, 'the project’s own board opens')
+  assert.equal(own.notices[0]?.type, 'opened')
+  const picture = await client.request('canvas.picture', { board: 'diagrams/real.excalidraw', workspaceId: FAR_CHAT })
+  assert.equal(picture.dataBase64, PICTURE_PNG_BASE64)
 })

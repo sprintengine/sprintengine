@@ -142,6 +142,7 @@ import { resolveScaffoldRoots } from './extension-scaffold'
 import { createAppTourService } from './tours/tour-app'
 import { canvasBoardStoreDir } from './canvas/canvas-board-store'
 import { createCanvasService } from './canvas/canvas-service'
+import type { CanvasService } from './canvas/canvas-service-types'
 import { createCanvasStoreCatalogue } from './canvas/canvas-store-catalogue'
 import { createNodeCanvasFs, watchCanvasDirectory } from './canvas/canvas-node-fs'
 import { createCanvasSubscriberRegistry } from './canvas/canvas-subscribers'
@@ -1448,12 +1449,14 @@ export function createAppServices(
     hasWorkspace: (workspaceId) =>
       workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
   })
-  const canvasTools = createCanvasTools({
-    service: canvasService,
-    hasWorkspace: (workspaceId) =>
-      workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
-    isCanvasEnabled,
-  })
+  const canvasToolsOver = (service: CanvasService) =>
+    createCanvasTools({
+      service,
+      hasWorkspace: (workspaceId) =>
+        workspaceSyncService.getSnapshot().state.workspaces.some((workspace) => workspace.id === workspaceId),
+      isCanvasEnabled,
+    })
+  const canvasTools = canvasToolsOver(canvasService)
   // The editor and tour tools act on what a window shows. In process they are
   // the gateway's own; out of process the shell offers them as its `editor`
   // and `tour` toolsets (phase 6, 6.3).
@@ -1719,8 +1722,9 @@ export function createAppServices(
         githubTokens: githubTokenStore,
         // Another device's boards (a paired desktop's Canvas pane, the phone's
         // list and pictures), through the same canvas service this machine's
-        // windows and agents use, and the same tools that list and draw them.
-        canvas: canvasRemoteSubscribers.host(canvasService, () => canvasTools),
+        // windows and agents use, and the same tools that list and draw them,
+        // each held to where a board's file really is.
+        canvas: canvasRemoteSubscribers.host(canvasService, canvasToolsOver),
       })
     : null
   // Where the person's attention is, for routing a call to the window in
