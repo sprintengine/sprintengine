@@ -9,6 +9,7 @@ import type { McpToolRegistration } from '../../../shared/modules/mcp-tools'
 import { canvasBoardStoreDir } from '../../canvas/canvas-board-store'
 import { createCanvasRemoteSubscribers, isRemoteCanvasSubscriber } from '../../canvas/canvas-remote-subscribers'
 import { createCanvasService, type CanvasServiceInternal } from '../../canvas/canvas-service'
+import type { CanvasService } from '../../canvas/canvas-service-types'
 import { createCanvasStoreCatalogue } from '../../canvas/canvas-store-catalogue'
 import { createNodeCanvasFs, watchCanvasDirectory } from '../../canvas/canvas-node-fs'
 import type { CanvasWorkerHost } from '../../canvas/canvas-worker-host'
@@ -40,10 +41,24 @@ export function element(id: string, extra: Partial<CanvasElement> = {}): CanvasE
   }
 }
 
-/** A worker that answers an agent's edit with the boxes it was asked for: what an agent drawing looks like to the service. */
+/**
+ * A worker that answers an agent's edit with the boxes it was asked for, what
+ * an agent drawing looks like to the service, and draws every picture as one
+ * fixed PNG, as a hidden window would draw it.
+ */
 function agentWorker(): CanvasWorkerHost {
   return {
     call: (async (request: Record<string, unknown>) => {
+      if (request.kind === 'export-image')
+        return {
+          ok: true,
+          value: {
+            kind: 'export-image',
+            requestId: 'r',
+            ok: true,
+            image: { data: PICTURE_PNG_BASE64, mimeType: 'image/png', width: 1, height: 1 },
+          },
+        }
       if (request.kind !== 'apply-edit') return { ok: false, error: { code: 'worker_unavailable', message: 'no' } }
       const edit = request.edit as { create?: Array<{ tempId?: string }> }
       const created = (edit.create ?? []).map((_, index) => element(`agent-box-${nonce}-${index}`))
@@ -106,39 +121,37 @@ export async function farMachine(options: { canvas?: boolean } = {}) {
     watch: watchCanvasDirectory,
     worker: agentWorker(),
   })
-  const real = createCanvasTools({
-    service,
-    hasWorkspace: (id) => id === FAR_CHAT,
-    isCanvasEnabled: () => true,
-  })
   const pictures: Array<Record<string, unknown>> = []
-  // The screenshot draws in a hidden window, which a test has none of: the
-  // tool's answer, as it gives it, around a fixed picture.
-  const screenshot: McpToolRegistration = {
-    ...real.find((tool) => tool.name === 'canvas.screenshot')!,
-    handler: async (args) => {
-      pictures.push(args)
-      if (args.board === 'canvas://nowhere') {
-        return {
-          content: [{ type: 'text', text: 'No such board.' }],
-          structuredContent: { error: { code: 'not_found', message: 'There is no board "nowhere" on mac-mini.' } },
-          isError: true,
+  // The real tools, over the service as another device reaches it; the
+  // screenshot notes what it was asked, and answers a board named nowhere as a
+  // machine without it does.
+  const toolsOver = (held: CanvasService): McpToolRegistration[] => {
+    const real = createCanvasTools({
+      service: held,
+      hasWorkspace: (id) => id === FAR_CHAT,
+      isCanvasEnabled: () => true,
+    })
+    const drawn = real.find((tool) => tool.name === 'canvas.screenshot')!
+    const screenshot: McpToolRegistration = {
+      ...drawn,
+      handler: async (args, context) => {
+        pictures.push(args)
+        if (args.board === 'canvas://nowhere') {
+          return {
+            content: [{ type: 'text', text: 'No such board.' }],
+            structuredContent: { error: { code: 'not_found', message: 'There is no board "nowhere" on mac-mini.' } },
+            isError: true,
+          }
         }
-      }
-      return {
-        content: [
-          { type: 'text', text: 'plan: 1x1 image/png, 0 element(s).' },
-          { type: 'image', data: PICTURE_PNG_BASE64, mimeType: 'image/png' },
-        ],
-        structuredContent: { width: 1, height: 1, mimeType: 'image/png' },
-      }
-    },
+        return drawn.handler(args, context)
+      },
+    }
+    return [...real.filter((tool) => tool.name !== 'canvas.screenshot'), screenshot]
   }
-  const tools = [...real.filter((tool) => tool.name !== 'canvas.screenshot'), screenshot]
   const port = await freePort()
   // What crossed, call by call, with its size: what the tests count to see a picture sent once.
   const calls: Array<{ method: 'commit' | 'stage' | 'files' | 'read'; bytes: number }> = []
-  const domain = createStudioCanvasDomain(remote.host(service, () => tools))
+  const domain = createStudioCanvasDomain(remote.host(service, toolsOver))
   const counted: typeof domain = {
     ...domain,
     commit: (connectionId, params) => {
