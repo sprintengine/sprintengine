@@ -75,7 +75,19 @@ export type EnvironmentAdoption = {
 
 const LEDGER_FILE = 'environment-adoptions.json'
 
-type Ledger = { v: 1; records: Record<string, { digest: string; migrationId: string; at: number }> }
+/**
+ * What was kept under which digest. `pending` marks a record a hand-over was
+ * about to keep when the ledger was last written: one that crashed after its
+ * store's write but before the ledger's, so a repeat knows the copy already in
+ * the store is its own.
+ */
+type Ledger = {
+  v: 1
+  records: Record<string, { digest: string; migrationId: string; at: number; pending?: true }>
+}
+
+/** Why a record was not kept; `exists` says its id is already in its store. */
+type Kept = { ok: true } | { ok: false; reason: string; exists?: true }
 
 /** A body as canonical JSON: keys sorted at every depth, no spaces. Both ends digest this. */
 export function canonicalRecordJson(value: unknown): string {
@@ -141,26 +153,26 @@ export function createEnvironmentAdoption(deps: {
   }
 
   /** Keep one record in its store; a refusal says why, and nothing was written. */
-  async function keep(
-    record: StudioAdoptedRecord,
-    migrationId: string,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async function keep(record: StudioAdoptedRecord, migrationId: string): Promise<Kept> {
     const body = record.body
     // The same command again, after a crash between the store's write and the ledger's.
     const source = `adopt:${migrationId}:${record.kind}:${record.id}`
     switch (record.kind) {
       case 'workspace': {
         if (body.id !== record.id) return { ok: false, reason: 'The workspace record names another id.' }
-        if (stores.workspaces.has(record.id)) return { ok: false, reason: 'A workspace with that id is already here.' }
+        if (stores.workspaces.has(record.id))
+          return { ok: false, reason: 'A workspace with that id is already here.', exists: true }
         const kept = stores.workspaces.adopt(body)
         return kept.ok ? kept : { ok: false, reason: kept.message }
       }
       case 'schedule': {
         if (body.id !== record.id) return { ok: false, reason: 'The scheduled agent names another id.' }
         if (stores.schedules.has(record.id))
-          return { ok: false, reason: 'A scheduled agent with that id is already here.' }
+          return { ok: false, reason: 'A scheduled agent with that id is already here.', exists: true }
         const kept = await stores.schedules.adopt(body)
-        return kept.ok ? kept : { ok: false, reason: kept.message }
+        return kept.ok
+          ? kept
+          : { ok: false, reason: kept.message, ...(kept.reason === 'exists' ? { exists: true as const } : {}) }
       }
       case 'scheduled-message': {
         const chat = chatOf(body)
@@ -215,14 +227,36 @@ export function createEnvironmentAdoption(deps: {
     // A workspace first, so the chats the rest name are found.
     const order = (kind: StudioAdoptedRecordKind) => STUDIO_ADOPTED_RECORD_KINDS.indexOf(kind)
     const records = [...input.records].sort((a, b) => order(a.kind) - order(b.kind))
+    const keyOf = (record: StudioAdoptedRecord) => `${record.kind}:${record.id}`
+    // Each record left from a hand-over that stopped before its ledger was
+    // written: the digest it was about to keep.
+    const interrupted = new Map<string, string>()
+    for (const [key, entry] of Object.entries(ledger.records)) if (entry.pending) interrupted.set(key, entry.digest)
+    // What this hand-over is about to keep goes in the ledger first, as
+    // pending: a crash between a store's write and the ledger's then leaves a
+    // mark, and the repeat knows the copy in the store is its own.
+    const toKeep = records.filter((record) => {
+      const known = ledger.records[keyOf(record)]
+      return adoptedRecordDigest(record.body) === record.digest && (!known || known.pending === true)
+    })
+    if (toKeep.length) {
+      for (const record of toKeep)
+        ledger.records[keyOf(record)] = {
+          digest: record.digest,
+          migrationId: input.migrationId,
+          at: now(),
+          pending: true,
+        }
+      writeLedger(ledger)
+    }
     for (const record of records) {
-      const key = `${record.kind}:${record.id}`
+      const key = keyOf(record)
       if (adoptedRecordDigest(record.body) !== record.digest) {
         conflicts.push({ kind: record.kind, id: record.id, reason: 'Its digest does not match its body.' })
         continue
       }
       const known = ledger.records[key]
-      if (known) {
+      if (known && !known.pending) {
         if (known.digest === record.digest) held.push({ kind: record.kind, id: record.id })
         else
           conflicts.push({
@@ -232,13 +266,30 @@ export function createEnvironmentAdoption(deps: {
           })
         continue
       }
-      let kept: { ok: true } | { ok: false; reason: string }
+      let kept: Kept
       try {
         kept = await keep(record, input.migrationId)
       } catch (error) {
         kept = { ok: false, reason: error instanceof Error ? error.message : String(error) }
       }
+      const earlier = interrupted.get(key)
+      if (!kept.ok && kept.exists && earlier !== undefined) {
+        // An earlier hand-over kept it and stopped before its ledger: the copy
+        // here is that one. The same digest is this record, held; another is
+        // the machine's copy, which wins.
+        ledger.records[key] = { digest: earlier, migrationId: input.migrationId, at: now() }
+        if (earlier === record.digest) held.push({ kind: record.kind, id: record.id })
+        else
+          conflicts.push({
+            kind: record.kind,
+            id: record.id,
+            reason: 'This Studio already keeps another copy of it, and keeps that one.',
+          })
+        continue
+      }
       if (!kept.ok) {
+        // Not kept, so not in the ledger: it can go in once fixed.
+        delete ledger.records[key]
         conflicts.push({ kind: record.kind, id: record.id, reason: kept.reason })
         continue
       }
@@ -247,7 +298,8 @@ export function createEnvironmentAdoption(deps: {
     }
     // Answered only for what is on disk: each store's writes land, then the
     // ledger, then the answer. A crash before the ledger is a hand-over run
-    // again, and every way in here refuses a second copy.
+    // again: every way in here refuses a second copy, and the pending marks
+    // written first answer what it had kept as held, not as another copy.
     await stores.flush()
     writeLedger(ledger)
     if (conflicts.length)

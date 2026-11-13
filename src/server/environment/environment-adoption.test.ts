@@ -174,6 +174,32 @@ test('a hand-over repeated is held again with nothing written twice; one that di
   assert.deepEqual(calls, ['flush', 'flush'])
 })
 
+test('a hand-over that stopped after its stores but before its ledger is held when it comes again', async () => {
+  const { adoption, calls, stores, dataDir } = rig()
+  const records = [record('workspace', 'ws-1', WORKSPACE), record('schedule', 'sa-1', SCHEDULE)]
+  // The process stops once the stores have the records, before the ledger says so.
+  const flush = stores.flush
+  stores.flush = async () => {
+    throw new Error('The process stopped.')
+  }
+  await assert.rejects(adoption.adopt({ migrationId: 'm-1', records }))
+  stores.flush = flush
+  calls.length = 0
+  // The desktop's journal sends it again, to the Studio started afresh.
+  const restarted = createEnvironmentAdoption({ dataDir, stores, now: () => 2_000 })
+  const again = await restarted.adopt({ migrationId: 'm-1', records })
+  assert.deepEqual(
+    again.held.map((entry) => entry.id),
+    ['ws-1', 'sa-1'],
+  )
+  assert.deepEqual(again.conflicts, [], 'its own copies, not another way in')
+  assert.deepEqual(calls, ['flush'], 'nothing kept a second time')
+  const ledger = JSON.parse(readFileSync(join(dataDir, 'environment-adoptions.json'), 'utf8')) as {
+    records: Record<string, { pending?: true }>
+  }
+  assert.equal(ledger.records['workspace:ws-1']?.pending, undefined, 'kept, no longer pending')
+})
+
 test('what does not read, does not match its digest, or is already here by another way is reported, not kept', async () => {
   const { adoption, calls, workspaces } = rig()
   workspaces.add('ws-here')
