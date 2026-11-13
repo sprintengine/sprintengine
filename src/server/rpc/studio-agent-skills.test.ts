@@ -104,7 +104,6 @@ function stub() {
   const domain = {
     skills: {
       ...group('skills', [
-        'checkSourceUpdates',
         'addSource',
         'addLocalSource',
         'removeSource',
@@ -121,6 +120,11 @@ function stub() {
         'listInstalledPlugins',
       ]),
       listSources,
+      // An update check is always one, with its lists.
+      checkSourceUpdates: async () => {
+        asked.push('skills.checkSourceUpdates')
+        return CHECK
+      },
     },
     onSourcesUpdated: (listener: (check: SkillSourceUpdateCheck) => void) => {
       sources.add(listener)
@@ -399,6 +403,34 @@ test('a paired app names only the folders Studio knows, on what they resolve to,
     listed.sources.map((source) => source.id),
     ['github:a/b', LOCAL_HERE],
   )
+})
+
+test('an update check shows a paired app every repository source, and only the local sources it could name', async () => {
+  const { started, domain } = await serve()
+  const entry = (sourceId: string) => ({ sourceId, name: sourceId, headSha: 'abc', changed: true, checked: true })
+  const check: SkillSourceUpdateCheck = {
+    ...CHECK,
+    sources: [entry('github:a/b'), entry(LOCAL_HERE), entry(LOCAL_ELSEWHERE)],
+    changed: ['github:a/b', LOCAL_HERE, LOCAL_ELSEWHERE],
+    newlyChanged: [LOCAL_ELSEWHERE],
+    failures: [{ sourceId: LOCAL_ELSEWHERE, message: 'gone' }],
+    skipped: [{ sourceId: LOCAL_ELSEWHERE, message: 'later' }],
+  }
+  ;(domain.skills as { checkSourceUpdates: () => Promise<SkillSourceUpdateCheck> }).checkSourceUpdates = async () =>
+    check
+  const owner = await client(started.path, OWNER_TOKEN)
+  assert.deepEqual(resultOf(await owner.request('skillSources.checkUpdates', {})), check)
+  const app = await client(started.path, pairFakeClient(started.auth, 'app', ['providers:read']))
+  const seen = resultOf(await app.request('skillSources.checkUpdates', {})) as SkillSourceUpdateCheck
+  assert.ok(!JSON.stringify(seen).includes(ELSEWHERE), JSON.stringify(seen))
+  assert.deepEqual(seen, {
+    ...CHECK,
+    sources: [entry('github:a/b'), entry(LOCAL_HERE)],
+    changed: ['github:a/b', LOCAL_HERE],
+    newlyChanged: [],
+    failures: [],
+    skipped: [],
+  })
 })
 
 test('a grant that may only read chats reaches none of it', async () => {
