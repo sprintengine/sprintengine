@@ -1047,7 +1047,8 @@ export function createTailnetMeshService(options: TailnetMeshServiceOptions): Ta
         store.markConnected(connection.id)
         rememberIdentity(connection.id, identity.value)
         recordReachability(connection, { reachable: true, unauthorized: false, detail: null })
-        await readRelayed(stored)
+        // Only a desktop that says it relays devices is asked which machines.
+        if (tailnetPeerSupports(identity.value.capabilities, 'relayed-environments')) await readRelayed(stored)
         return
       }
       recordReachability(connection, {

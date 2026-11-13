@@ -427,6 +427,11 @@ export const TAILNET_CAPABILITIES = [
   // An outside MCP client may sign in with OAuth (the MCP authorization spec)
   // instead of pairing: discovery from the MCP endpoint's 401.
   'mcp-oauth',
+  // This desktop relays its paired devices to the SSH machines it holds
+  // (2026-11-13): its Studio lists them (`environment.relayed`), and a device
+  // reaches one at `/tailnet/v1/environments/<id>/studio`. A paired desktop
+  // that does not see it asks for no list.
+  'relayed-environments',
 ] as const
 
 export type TailnetCapability = (typeof TAILNET_CAPABILITIES)[number]
