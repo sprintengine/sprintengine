@@ -21,7 +21,7 @@ import { launchPermissionCeiling } from '../../main/automation/launch-permission
 import { createStudioGatewayTools } from '../../main/automation/studio-gateway-tools'
 import { writeDiagnosticLog } from '../../main/diagnostics-service'
 import { toolSuccess, toolError } from '../../shared/modules/mcp-tools'
-import type { StudioToolReach } from '../../../packages/studio-protocol/src/public'
+import type { StudioListChange, StudioToolReach } from '../../../packages/studio-protocol/src/public'
 import { createClientToolRegistry, type ClientToolRegistry } from '../tools/client-tool-registry'
 import { createClientToolGateway, type ExpectedShellToolsets } from '../tools/client-tool-gateway'
 import { cancelClientCallsAtTurnEnd } from '../tools/client-tool-turns'
@@ -290,8 +290,19 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
   // device re-reads only when told to. A patch of the clocks alone, which
   // `workspace.list` does not carry (a visit stamped every few seconds while
   // a chat is on screen), tells it nothing (`movesWorkspaceList`).
+  // Every client on the protocol hears the same as one small push
+  // (`conversations.changed`), folded to one per list per moment.
+  const listChanges = createListChangePush()
+  const workspacesChanged = (): void => {
+    automationService.notifyWorkspacesChanged()
+    listChanges.tell('workspaces')
+  }
+  const conversationsChanged = (): void => {
+    automationService.notifyConversationsChanged()
+    listChanges.tell('conversations')
+  }
   workspaceSyncService.subscribeEvents((event) => {
-    if (movesWorkspaceList(event)) automationService.notifyWorkspacesChanged()
+    if (movesWorkspaceList(event)) workspacesChanged()
   })
   // The conversation list reads the desktop's records too (a chat settled,
   // renamed, written to or looked at), so the changes it reads are the same
@@ -304,16 +315,16 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     },
   })
   workspaceSyncService.subscribeEvents((event) => {
-    if (listChanged(event)) automationService.notifyConversationsChanged()
+    if (listChanged(event)) conversationsChanged()
   })
   // A conversation's row on another machine shows its phase: running, waiting
   // on a person, done. The events that move it (never a token of a reply)
   // become the same throttled push.
   // The list names each chat's local servers too, and a server starting or
   // stopping moves none of the above: it is a push of its own.
-  core.localServers.onChanged(() => automationService.notifyConversationsChanged())
+  core.localServers.onChanged(() => conversationsChanged())
   conversations.onEvent((event) => {
-    if (CONVERSATION_LIST_EVENTS.has(event.type)) automationService.notifyConversationsChanged()
+    if (CONVERSATION_LIST_EVENTS.has(event.type)) conversationsChanged()
     // An interrupted turn stops what it was waiting on in a client too.
     cancelClientCallsAtTurnEnd(clientTools, event)
   })
@@ -338,9 +349,12 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
      * what the module host refuses a module tool name against.
      */
     coreToolNames: (): ReadonlySet<string> => resolveGatewayTools.coreToolNames(),
+    /** Hear that the chat or workspace list may read differently now (`conversations.changed`). */
+    onListChanged: listChanges.listen,
     /** Link in what the registry reads from the RPC that pairs apps. */
     linkClientTools: (links: ClientToolLinks) => Object.assign(clientToolLinks, links),
     shutdown: async () => {
+      listChanges.close()
       // Every call still waiting on a client is answered before the sockets go.
       clientTools.close()
       await automationService.shutdown()
@@ -352,6 +366,39 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     whenGatewayReady: async () => {
       await core.whenDataDirFree
       return automationService.whenGatewayReady()
+    },
+  }
+}
+
+/** How long a burst of list changes is folded into one push per list. */
+const LIST_CHANGE_FOLD_MS = 250
+
+/** The `conversations.changed` push: one per list per moment, to whoever listens. */
+function createListChangePush() {
+  type What = StudioListChange['what']
+  const listeners = new Set<(change: StudioListChange) => void>()
+  const due = new Set<What>()
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return {
+    tell(what: What): void {
+      if (listeners.size === 0) return
+      due.add(what)
+      timer ??= setTimeout(() => {
+        timer = null
+        const told = [...due]
+        due.clear()
+        for (const changed of told) for (const listener of [...listeners]) listener({ what: changed })
+      }, LIST_CHANGE_FOLD_MS)
+    },
+    listen(listener: (change: StudioListChange) => void): () => void {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    close(): void {
+      if (timer) clearTimeout(timer)
+      timer = null
+      due.clear()
+      listeners.clear()
     },
   }
 }

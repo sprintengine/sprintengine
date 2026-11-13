@@ -5,9 +5,9 @@ import { STUDIO_SCOPES } from '../../studio-protocol/src/public'
 import { negotiateChatCapabilities, type ChatCapabilities } from '../src/public'
 
 // What a chat may offer, read from what its server said: one function for the
-// window's own Studio, a paired client on a Studio, an embed and (until it is
-// on the Studio protocol) a paired desktop's lane. Tried under each grant and
-// against a Studio that serves less.
+// window's own Studio, a paired desktop's window or another client on a
+// Studio, and an embed. Tried under each grant and against a Studio that
+// serves less.
 
 const studio = (welcome: ReturnType<typeof chatWelcome>) => negotiateChatCapabilities({ via: 'studio', welcome })
 
@@ -23,8 +23,6 @@ const OPERATIONS = [
   'hostQueue',
   'skills',
   'agentMessages',
-  'optimisticTurns',
-  'reportsPreset',
 ] as const satisfies ReadonlyArray<keyof ChatCapabilities>
 
 test("the window's own Studio, on the owner's grant, offers what it serves", () => {
@@ -48,12 +46,11 @@ test("the window's own Studio, on the owner's grant, offers what it serves", () 
 test('the same grant sees the same controls: the owner flag decides only what the protocol keeps for owners', () => {
   const owner = studio(chatWelcome())
   const pairedWithEverything = studio(chatWelcome({ grant: { owner: false, scopes: [...STUDIO_SCOPES] } }))
-  // Create PR runs git and `gh` on the Studio's machine, and sign-in and Resume
-  // in terminal open a terminal there: an owner's methods
-  // (`pullRequests.create`, `terminal.open`), whatever scopes another grant holds.
+  // Sign-in and Resume in terminal open a terminal on the Studio's machine: an
+  // owner's methods (`terminal.open`), whatever scopes another grant holds.
+  // Create PR is the chat's, on `conversation:operate`.
   expect(pairedWithEverything).toEqual({
     ...owner,
-    hostPullRequests: false,
     providerSignIn: false,
     resumeInTerminal: false,
   })
@@ -109,55 +106,22 @@ test('a server that has said nothing yet is offered nothing', () => {
   expect(Object.values(nothing).every((flag) => flag === false)).toBe(true)
 })
 
-test("a paired desktop's lane offers what the machine publishes and the pairing's access reaches", () => {
-  const published = [
-    'conversation-models',
-    'conversation-steer-sends',
-    'conversation-queued-sends',
-    'conversation-quote-tokens',
-    'conversation-file-search',
-    'conversation-send-mentions',
-    'conversation-message-files',
-    'upload',
-    'conversation-send-skills',
-    'workspace-extensions',
-    'chat-create-pull-request',
-    'conversation-changes',
-  ]
-  const operate = negotiateChatCapabilities({
-    via: 'paired-lane',
-    capabilities: published,
-    access: 'operate',
-    modelCatalog: true,
-  })
-  expect(operate).toMatchObject({
-    operate: true,
-    modelSwitch: true,
-    steer: true,
-    hostQueue: true,
-    quotes: true,
+test("a paired desktop's device grant searches and lists commands by the chat's key, and opens its pull request", () => {
+  // What a device's `conversation:operate` carries on the tailnet (no files:read).
+  const device = studio(
+    chatWelcome({
+      grant: { owner: false, scopes: ['conversation:read', 'conversation:operate', 'conversation:create'] },
+    }),
+  )
+  for (const flag of OPERATIONS) expect(device[flag], flag).toBe(true)
+  expect(device).toMatchObject({
     mentions: true,
+    commandList: true,
     attachFiles: true,
-    skills: true,
     hostPullRequests: true,
     hostChanges: true,
-    // A send there resumes a session, carries no bubble id and the list
-    // names a preset only from a desktop that keeps one.
-    startSession: false,
-    optimisticTurns: false,
-    reportsPreset: false,
+    // No terminal of that machine is reached from here (owner ruling).
+    providerSignIn: false,
+    resumeInTerminal: false,
   })
-  // A chat listed without a model catalog has nothing to switch to.
-  expect(
-    negotiateChatCapabilities({ via: 'paired-lane', capabilities: published, access: 'operate', modelCatalog: false })
-      .modelSwitch,
-  ).toBe(false)
-  const reader = negotiateChatCapabilities({
-    via: 'paired-lane',
-    capabilities: published,
-    access: 'read',
-    modelCatalog: true,
-  })
-  for (const flag of OPERATIONS) expect(reader[flag], flag).toBe(false)
-  expect(reader.hostChanges).toBe(true)
 })

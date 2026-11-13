@@ -1453,6 +1453,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
   const pushSubscribers: PushSubscribers = {
     'conversation.commands': subscribeCommands,
     'conversation.events': subscribeEvents,
+    'conversations.changed': (id) => {
+      const chat = options.chat?.() ?? null
+      subscribeFeed(id, 'conversations.changed', chat?.onListChanged ? (deliver) => chat.onListChanged!(deliver) : null)
+    },
     'conversation.queued': subscribeQueued,
     'conversation.scheduled': subscribeScheduled,
     'conversation.usageLimits': subscribeUsageLimits,

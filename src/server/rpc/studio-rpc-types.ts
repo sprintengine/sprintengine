@@ -25,6 +25,7 @@ import type {
   StudioWorkspaceCheckout,
   StudioWorkspaceExtensions,
   StudioChatExportPage,
+  StudioListChange,
   StudioRelayedDeviceScope,
   StudioWindowTicketGrant,
 } from '../../../packages/studio-protocol/src/public'
@@ -325,6 +326,11 @@ export type StudioChatBackend = {
    * lifecycle and status kinds only, each without its payload.
    */
   onLifecycleEvent(listener: (event: ConversationEvent) => void): () => void
+  /**
+   * The chat or workspace list may read differently now
+   * (`conversations.changed`). Absent where nothing says so.
+   */
+  onListChanged?(listener: (change: StudioListChange) => void): () => void
 }
 
 /** Who a request came from, beyond its grant. */

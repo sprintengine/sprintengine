@@ -43,6 +43,7 @@ import {
   STUDIO_CHECKPOINTS_CAPABILITY,
   STUDIO_COMMANDS_CAPABILITY,
   STUDIO_CONVERSATION_FILES_CAPABILITY,
+  STUDIO_CONVERSATIONS_CAPABILITY,
   STUDIO_FILES_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
   STUDIO_HISTORY_CAPABILITY,
@@ -1135,7 +1136,18 @@ export type StudioChatTopicMap = {
    * per-token stream, and nothing is replayed on subscribing.
    */
   'conversation.events': { params: Record<string, never>; payload: ConversationEvent; stream: 'push' }
+  /**
+   * The chat list (`conversation.list`) or the workspace list
+   * (`workspaces.list`) may read differently now: a chat settled, renamed,
+   * marked, written to or looked at, a local server started, a project added.
+   * Says which list, never what moved; a reader reads it again. Bursts are
+   * folded into one push. Nothing is replayed on subscribing.
+   */
+  'conversations.changed': { params: Record<string, never>; payload: StudioListChange; stream: 'push' }
 }
+
+/** Which list a `conversations.changed` push says to read again. */
+export type StudioListChange = { what: 'conversations' | 'workspaces' }
 
 export const STUDIO_CHAT_TOPICS: StudioTopicTable<StudioChatTopicMap> = {
   'conversation.commands': {
@@ -1147,6 +1159,12 @@ export const STUDIO_CHAT_TOPICS: StudioTopicTable<StudioChatTopicMap> = {
   'conversation.events': {
     scope: 'conversation:read',
     capability: STUDIO_SESSION_CONTROLS_CAPABILITY,
+    push: true,
+    params: studioNoParams,
+  },
+  'conversations.changed': {
+    scope: 'conversation:read',
+    capability: STUDIO_CONVERSATIONS_CAPABILITY,
     push: true,
     params: studioNoParams,
   },

@@ -14,11 +14,13 @@ import {
 // from its own record. The steps are separate so a client can say which one
 // it is on: whether the button may show, the draft, the push, the creation.
 //
-// Every method is an owner's, each with its reason: it reads the forge or
-// pushes and opens a pull request with this machine's git and forge
-// credentials, or runs this machine's agent CLI to write the text, as the
-// git family's push and the GitHub account are an owner's. A pull request
-// created here is recorded as the chat's here, where its record lives.
+// Each is held to the chat, not to an owner: a client that may drive the chat
+// (`conversation:operate`, a paired desktop's window among them) may draft,
+// push and open its pull request, as it could over the paired lane's tools
+// before; whether the button may show is a read beside the chat's list. A
+// call reaches no checkout but the chat's own, and learns no path on this
+// disk. A pull request created here is recorded as the chat's here, where its
+// record lives.
 
 /** Why the button is not drawn, for the tests and the diagnostics line; `ready` draws it. */
 export type StudioCreatePullRequestReadiness =
@@ -167,13 +169,8 @@ export type StudioPullRequestCreateMethodMap = {
   }
 }
 
-const FORGE = "It asks the chat's forge about its branch with this machine's credentials."
-const DRAFTS = "It runs this machine's agent CLI over the chat's branch to write the text."
-const PUSHES = 'It reaches the repository’s remote with this machine’s git credentials.'
-const OPENS = "It opens a pull request with this machine's forge credentials, under its account."
-
-const held = (scope: 'conversation:read' | 'conversation:operate', mutation: boolean, owner: string) =>
-  ({ scope, mutation, capability: STUDIO_PULL_REQUEST_CREATE_CAPABILITY, owner }) as const
+const held = (scope: 'conversation:read' | 'conversation:operate', mutation: boolean) =>
+  ({ scope, mutation, capability: STUDIO_PULL_REQUEST_CREATE_CAPABILITY }) as const
 
 const CONVERSATION = '"conversation" is { workspaceId, agentId }.'
 const DRAFT_ID = '"draftId" names the draft: a string of 1 to 200 characters.'
@@ -197,14 +194,14 @@ function pinned(value: Record<string, unknown>): { pin?: StudioPullRequestChecko
 
 export const STUDIO_PULL_REQUEST_CREATE_METHODS: StudioMethodTable<StudioPullRequestCreateMethodMap> = {
   'pullRequests.createState': {
-    ...held('conversation:read', false, FORGE),
+    ...held('conversation:read', false),
     params: (value) => {
       const at = chat(value)
       return at ? studioParams(at) : refuse(CONVERSATION)
     },
   },
   'pullRequests.draft': {
-    ...held('conversation:operate', false, DRAFTS),
+    ...held('conversation:operate', false),
     params: (value) => {
       const at = chat(value)
       if (!at) return refuse(CONVERSATION)
@@ -212,7 +209,7 @@ export const STUDIO_PULL_REQUEST_CREATE_METHODS: StudioMethodTable<StudioPullReq
     },
   },
   'pullRequests.draftCancel': {
-    ...held('conversation:operate', false, DRAFTS),
+    ...held('conversation:operate', false),
     params: (value) => {
       const at = chat(value)
       if (!at) return refuse(CONVERSATION)
@@ -220,7 +217,7 @@ export const STUDIO_PULL_REQUEST_CREATE_METHODS: StudioMethodTable<StudioPullReq
     },
   },
   'pullRequests.push': {
-    ...held('conversation:operate', true, PUSHES),
+    ...held('conversation:operate', true),
     params: (value) => {
       const at = chat(value)
       if (!at) return refuse(CONVERSATION)
@@ -230,7 +227,7 @@ export const STUDIO_PULL_REQUEST_CREATE_METHODS: StudioMethodTable<StudioPullReq
     },
   },
   'pullRequests.create': {
-    ...held('conversation:operate', true, OPENS),
+    ...held('conversation:operate', true),
     params: (value) => {
       const at = chat(value)
       if (!at) return refuse(CONVERSATION)

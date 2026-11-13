@@ -73,6 +73,7 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
       hasReceipt: (sessionId, commandId) => core.conversations.hasCommandReceipt(sessionId, commandId),
       readableRoots: () => knownFolders(core.workspaceRegistry, dataDir()),
       commands: (input) => conversationCommands.list(input),
+      onListChanged: (listener) => deps.gateway.onListChanged(listener),
       // Export chat: the chat as its record says, its transcript and its
       // pictures, read here where they are kept, for any client to write out.
       exportSource: async (chat) => {

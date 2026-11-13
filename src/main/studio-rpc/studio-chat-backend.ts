@@ -1,6 +1,7 @@
 import type { ConversationCommandCatalog } from '../../shared/conversation/commands'
 import type { ConversationCommandsRequest } from '../../shared/ipc/conversation-commands'
 import type { StudioChatBackend } from '../../server/rpc/studio-rpc-types'
+import type { StudioListChange } from '../../../packages/studio-protocol/src/public'
 import type { ConversationCliRuntimeOverrides } from '../../shared/conversation-runtime'
 import { onConversationCommandsChanged } from '../conversation-commands/registry'
 import { readConversationCommandsRequest } from '../conversation-commands/request'
@@ -45,6 +46,8 @@ export type StudioChatBackendDeps = {
   /** The (CLI, folder) list main holds, probing when it is missing or old. */
   commands(input: ConversationCommandsRequest): Promise<ConversationCommandCatalog>
   onCommandsChanged?: (listener: (catalog: ConversationCommandCatalog) => void) => () => void
+  /** The chat or workspace list may read differently now (`conversations.changed`). */
+  onListChanged?: (listener: (change: StudioListChange) => void) => () => void
   /** A chat's export, read where it is kept; absent, exports are not served. */
   exportSource?: StudioChatBackend['exportSource']
 }
@@ -414,5 +417,6 @@ export function createStudioChatBackend(deps: StudioChatBackendDeps): StudioChat
       }
     },
     onLifecycleEvent: (listener) => handlers.onLifecycleEvent(listener),
+    ...(deps.onListChanged ? { onListChanged: deps.onListChanged } : {}),
   }
 }
