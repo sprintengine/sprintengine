@@ -52,9 +52,13 @@ export type MigratingRecord = {
   id: string
   /** The record as this desktop's store keeps it, its paths as this desktop spells them. */
   body: Record<string, unknown>
-  /** A held message's pictures and files, by where they are on this disk. */
+  /**
+   * A held message's pictures and files, by where they are on this disk; and
+   * a schedule's prompt pictures, each with the path its prompt names it by
+   * (`promptPath`), which the machine names its own copy by instead.
+   */
   carried?: {
-    images?: Array<{ path: string; name: string; mediaType: string }>
+    images?: Array<{ path: string; name: string; mediaType: string; promptPath?: string }>
     files?: Array<{ path: string; name: string }>
   }
 }
@@ -169,7 +173,9 @@ export function createEnvironmentMigration(deps: {
     const folder = pendingDir(migrationId)
     await mkdir(join(folder, 'files'), { recursive: true, mode: 0o700 })
     const files: PendingCopy['files'] = []
-    const carried = (list: Array<{ path: string; name: string; mediaType?: string }> | undefined) =>
+    const carried = (
+      list: Array<{ path: string; name: string; mediaType?: string; promptPath?: string }> | undefined,
+    ) =>
       Promise.all(
         (list ?? []).map(async (entry) => {
           const bytes = await readFile(entry.path)
@@ -185,6 +191,7 @@ export function createEnvironmentMigration(deps: {
             name: entry.name,
             bytes: bytes.length,
             ...(entry.mediaType ? { mediaType: entry.mediaType } : {}),
+            ...(entry.promptPath ? { promptPath: entry.promptPath } : {}),
           }
         }),
       )

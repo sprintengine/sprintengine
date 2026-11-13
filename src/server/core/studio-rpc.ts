@@ -18,6 +18,7 @@ import { workspaceStoreRoot } from '../../main/workspace-store'
 import { storePathOfLegacy } from '../../main/workspace-store-migration'
 import { createStudioFiles } from '../rpc/studio-files'
 import { createStudioFileSystem, type StudioFileSystemShell } from '../files/studio-file-system'
+import { keepScheduledImage } from '../../main/scheduled-agents/prompt-images'
 import { knownFolders, workspaceFolders } from '../files/known-folders'
 import { createStudioGit } from '../git/studio-git'
 import { createStudioWorktrees } from '../worktrees/studio-worktrees'
@@ -349,6 +350,7 @@ function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
       schedules: {
         has: (id) => core.scheduledAgents.service.get(id) !== null,
         adopt: (record) => core.scheduledAgents.service.adopt(record),
+        keepImage: (bytes, name) => keepScheduledImage(dataDir, bytes, name),
       },
       messages: {
         scheduleFrom: (chat, text, sendAt, source, untilLimitReset) =>

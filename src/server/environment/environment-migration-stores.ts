@@ -19,6 +19,8 @@ export function studioMigrationStores(stores: {
   scheduledMessages: Pick<ScheduledMessages, 'state' | 'carriedOf' | 'update'>
   usageLimitResumes: Pick<UsageLimitResumer, 'state' | 'update'>
   pullRequests: Pick<PullRequestRecord, 'whenLoaded' | 'handingOver' | 'letGo'>
+  /** The pictures a schedule's prompt names from this desktop's data directory (`keptImagesIn`). */
+  scheduledImages?: (prompt: string) => Promise<Array<{ path: string; name: string; mediaType: string }>>
 }): EnvironmentMigrationStores {
   return {
     async collect(workspacesOf) {
@@ -36,11 +38,16 @@ export function studioMigrationStores(stores: {
       for (const agent of stores.scheduledAgents.list()) {
         const machine = parseMachinePath(agent.folderPath)
         if (!machine) continue
+        // The pictures its prompt names go with it, each by the path the prompt names it by.
+        const images = (await stores.scheduledImages?.(agent.prompt)) ?? []
         found.push({
           route: formatEnvironmentRoute({ kind: 'ssh', machine: machine.id }),
           kind: 'schedule',
           id: agent.id,
           body: agent as unknown as Record<string, unknown>,
+          ...(images.length
+            ? { carried: { images: images.map((image) => ({ ...image, promptPath: image.path })) } }
+            : {}),
         })
       }
       for (const message of stores.scheduledMessages.state().messages) {
