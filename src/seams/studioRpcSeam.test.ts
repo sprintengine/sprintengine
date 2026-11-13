@@ -457,6 +457,11 @@ test('every method the server serves has its call in the SDK, under the same sco
     >),
     // What the machine lacks for its schedules and watches, asked like any read.
     'environment.readiness': 'request',
+    'environment.windowTicket': 'request',
+    'providers.signInStart': 'request',
+    'providers.signInPaste': 'request',
+    'providers.signInWait': 'request',
+    'providers.signInCancel': 'request',
     // What a Studio keeps beside its chats, which its own windows draw (the
     // trays, Settings, the usage dashboard, onboarding), called by name.
     ...(Object.fromEntries(Object.keys(STUDIO_CHAT_STORES_METHODS).map((method) => [method, 'request'])) as Record<

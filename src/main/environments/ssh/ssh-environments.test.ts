@@ -149,16 +149,20 @@ test('an empty pasted code, or one the login would not take, ends the sign-in in
   internals.askpass = async () => undefined
   const ops: string[] = []
   let pasteTaken = true
+  const commandIds = new Set<string>()
   internals.connection = () => ({
-    backend: {
-      signIn: async (params: { op: string }) => {
-        ops.push(params.op)
-        if (params.op === 'start')
-          return { ok: true, id: 'l1', url: 'https://example.test/login', code: null, paste: true }
-        if (params.op === 'paste') return { ok: pasteTaken }
-        // The login itself never finishes here, and a dropped wire would reject it.
-        if (params.op === 'wait')
-          return new Promise((_resolve, reject) => setTimeout(() => reject(new Error('gone')), 50))
+    owner: {
+      supports: (capability: string) => capability === 'provider-sign-in-flow',
+      request: async (method: string, params: { commandId: string }) => {
+        const op = method.replace('providers.signIn', '').toLowerCase()
+        ops.push(op)
+        // A step is one command: never two under one id.
+        assert.ok(!commandIds.has(params.commandId))
+        commandIds.add(params.commandId)
+        if (op === 'start') return { ok: true, id: 'l1', url: 'https://example.test/login', code: null, paste: true }
+        if (op === 'paste') return { ok: pasteTaken }
+        // The login itself never finishes here, and a dropped connection would reject it.
+        if (op === 'wait') return new Promise((_resolve, reject) => setTimeout(() => reject(new Error('gone')), 50))
         return { ok: true }
       },
     },

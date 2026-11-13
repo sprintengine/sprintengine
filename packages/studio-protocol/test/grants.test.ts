@@ -57,6 +57,7 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'commitMessage.cancel',
   'commitMessage.draft',
   'designSystem.lint',
+  'environment.windowTicket',
   'localServers.changed',
   'localServers.list',
   'localServers.remove',
@@ -91,6 +92,10 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'launchSettings.migrate',
   'launchSettings.update',
   'providers.signIn',
+  'providers.signInCancel',
+  'providers.signInPaste',
+  'providers.signInStart',
+  'providers.signInWait',
   'pullRequests.link',
   'pullRequests.noteWork',
   'pullRequests.noteToolCall',
@@ -232,4 +237,13 @@ test('a provider’s key is Settings, written only under settings:write; an appr
     studioGrantAllows({ owner: false, scopes: ['conversation:read'] }, 'conversation.revokeApprovalRule'),
     false,
   )
+})
+
+test('what only the desktop’s own shell may call is an owner’s too, so every other refusal reads it', () => {
+  const shellOnly = (Object.keys(STUDIO_METHODS) as StudioMethod[]).filter((name) => STUDIO_METHODS[name].shell)
+  assert.deepEqual(shellOnly, ['environment.windowTicket'])
+  for (const name of shellOnly) {
+    assert.ok((STUDIO_METHODS[name].shell ?? '').length > 20, `${name} says why it is the shell's`)
+    assert.ok(STUDIO_METHODS[name].owner, `${name} is an owner's`)
+  }
 })

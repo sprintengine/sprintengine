@@ -253,6 +253,7 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
     ...(options.knownFoldersOnly ? { knownFoldersOnly: true } : {}),
     ...(options.browser ? { browser: true } : {}),
     ...(options.windowKey === undefined ? {} : { windowKey: options.windowKey }),
+    ...(options.shell === true ? { shell: true } : {}),
   }
   // `incompatible`: authenticated, but the client's protocol window does not
   // meet this Studio's; only the update methods are served (`update.ts`).

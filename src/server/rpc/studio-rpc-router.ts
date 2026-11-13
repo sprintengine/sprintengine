@@ -29,6 +29,9 @@ import {
   studioScopesGrant,
 } from '../../../packages/studio-protocol/src/public'
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
+import type { StudioWindowTicketGrant } from '../../../packages/studio-protocol/src/environment-access'
+import type { SignIns } from '../machine/machine-sign-in'
+import { cliForConversationProvider } from '../../shared/conversation-harness'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
@@ -209,6 +212,14 @@ export type StudioRpcRouterOptions = {
   discovery?: StudioDiscovery
   /** What this machine has and lacks for its background work; without it, `environment.readiness` is answered `unavailable`. */
   readiness?: () => Promise<StudioEnvironmentReadiness>
+  /**
+   * A ticket for one connection of a window of the desktop that holds this
+   * Studio (`environment.windowTicket`); without it, that method is answered
+   * `unavailable`. Asked only by the desktop's own shell connection.
+   */
+  windowTickets?: (request: { windowKey: string; origin: string }) => Promise<StudioWindowTicketGrant>
+  /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
+  signIns?: () => Promise<SignIns>
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
   terminals?: StudioTerminals
   /** The CLIs on this machine; without them, `cliRuntimes.*` and `cliVersions.*` are answered `unavailable`. */
@@ -240,6 +251,7 @@ export type StudioRpcRouterOptions = {
 const MAX_KEPT_ANSWERS = 256
 
 const OWNER_ONLY = 'This is served to Studio’s own connections only.'
+const SHELL_ONLY = 'This is served only to the desktop that holds this Studio.'
 const FOLDER_OWNER_ONLY = 'Only Studio’s own connections may name a conversation by its folder.'
 const COMMAND_OWNER_ONLY = 'Only Studio’s own connections may name the program a CLI runs.'
 const NO_CONTEXT: StudioRequestContext = { connectionId: '', slot: 0, ownWindow: false }
@@ -904,6 +916,23 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     runtimeId,
   })
   const keptId = (method: StudioMethod, grant: StudioGrant, id: string) => `${method}:${runtimeId(grant, id)}`
+  /** A step of a sign-in, answered once per command id: a retried start is the same login, not a second. */
+  const signInOnce = <R>(
+    method: 'providers.signInStart' | 'providers.signInPaste' | 'providers.signInWait' | 'providers.signInCancel',
+    grant: StudioGrant,
+    commandId: string,
+    voice: Voice,
+    step: (table: SignIns) => Promise<R>,
+  ) => {
+    const signIns = options.signIns
+    if (!signIns) return unserved(method)
+    return once(
+      keptId(method, grant, commandId),
+      async () => ({ ok: true as const, result: await step(await signIns()) }),
+      voice,
+      method,
+    )
+  }
   const extensionsRouting = createStudioExtensionsHandlers({
     ...(options.extensions ? { extensions: options.extensions } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
@@ -1964,6 +1993,34 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const waiting = grant.owner || studioScopesGrant(grant.scopes, 'conversation:read') ? read.waiting : []
       return { ok: true, result: voice.redact({ ...read, waiting }) }
     },
+
+    // ── For the desktop that holds this Studio ─────────────────────────────
+
+    // Only the shell's own connection reaches here (the dispatch refuses
+    // every other with `shell` in the table).
+    'environment.windowTicket': async (params) => {
+      if (!options.windowTickets) return unserved('environment.windowTicket')
+      try {
+        return { ok: true, result: await options.windowTickets(params) }
+      } catch (error) {
+        return refuse('unavailable', error instanceof Error ? error.message : String(error))
+      }
+    },
+    // A CLI's login here: the provider names a flow this server knows, never a command line.
+    'providers.signInStart': ({ commandId, providerId }, { grant, voice }) =>
+      signInOnce('providers.signInStart', grant, commandId, voice, async (table) => {
+        const cli = cliForConversationProvider(providerId)
+        return cli ? table.start(cli) : { ok: false as const, message: 'This chat has no CLI to sign in.' }
+      }),
+    'providers.signInPaste': ({ commandId, id, code }, { grant, voice }) =>
+      signInOnce('providers.signInPaste', grant, commandId, voice, async (table) => table.paste(id, code)),
+    'providers.signInWait': ({ commandId, id }, { grant, voice }) =>
+      signInOnce('providers.signInWait', grant, commandId, voice, (table) => table.wait(id)),
+    'providers.signInCancel': ({ commandId, id }, { grant, voice }) =>
+      signInOnce('providers.signInCancel', grant, commandId, voice, async (table) => {
+        table.cancel(id)
+        return { ok: true }
+      }),
     ...createStudioAgentSkillsHandlers({ ...(options.agentSkills ? { skills: options.agentSkills } : {}), mayName }),
 
     // ── Modules ────────────────────────────────────────────────────────────
@@ -2148,6 +2205,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         return refuse('unknown_method', `No method "${method}".`)
       if (decision.ok && refusedToBrowser(spec, context.browser))
         answer = refuse('owner_required', BROWSER_NO_TERMINALS)
+      // The shell's own: an owner's other clients are refused too.
+      else if (decision.ok && spec.shell && context.shell !== true) answer = refuse('owner_required', SHELL_ONLY)
       else if (!decision.ok) {
         answer =
           decision.reason === 'permission_required'

@@ -100,6 +100,7 @@ import {
   type StudioAgentSetupTopicMap,
 } from './agent-setup.js'
 import { STUDIO_READINESS_METHODS, type StudioReadinessMethodMap } from './readiness.js'
+import { STUDIO_ENVIRONMENT_ACCESS_METHODS, type StudioEnvironmentAccessMethodMap } from './environment-access.js'
 import {
   STUDIO_CHAT_STORES_METHODS,
   STUDIO_CHAT_STORES_TOPICS,
@@ -275,6 +276,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioAgentSetupMethodMap &
   StudioWorkspacesMethodMap &
   StudioReadinessMethodMap &
+  StudioEnvironmentAccessMethodMap &
   StudioChatStoresMethodMap &
   StudioAgentSkillsMethodMap &
   StudioSchedulesMethodMap &
@@ -719,6 +721,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_AGENT_SKILLS_METHODS,
   ...STUDIO_WORKSPACES_METHODS,
   ...STUDIO_READINESS_METHODS,
+  ...STUDIO_ENVIRONMENT_ACCESS_METHODS,
   ...STUDIO_CHAT_STORES_METHODS,
   ...STUDIO_SCHEDULES_METHODS,
   ...STUDIO_FILE_SYSTEM_METHODS,

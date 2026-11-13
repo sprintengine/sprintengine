@@ -178,6 +178,22 @@ export const STUDIO_AGENT_SETUP_CAPABILITY = 'agent-setup' as const
 export const STUDIO_ENVIRONMENT_READINESS_CAPABILITY = 'environment-readiness' as const
 
 /**
+ * `environment.windowTicket` (`environment-access.ts`): a ticket for one
+ * connection of a window of the desktop that holds this Studio, asked for by
+ * that desktop's shell alone. Served by a Studio a desktop reaches over its
+ * front door (a WSL distribution's, an SSH machine's).
+ */
+export const STUDIO_WINDOW_TICKETS_CAPABILITY = 'window-tickets' as const
+
+/**
+ * `providers.signInStart`, `.signInPaste`, `.signInWait` and `.signInCancel`
+ * (`environment-access.ts`): a CLI's own login on this Studio's machine, with
+ * no terminal (decision R34). Served where the machine has no terminal of the
+ * person's beside it (a WSL distribution's, an SSH machine's Studio).
+ */
+export const STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY = 'provider-sign-in-flow' as const
+
+/**
  * What a Studio keeps beside its chats, for every chat at once:
  * `usageLimits.*`, `usageLimitResumes.*`, `usage.report`, `usage.rows`
  * and `conversationImport.*`, with their streams.
@@ -313,6 +329,8 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_AGENT_SETTINGS_CAPABILITY,
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
+  STUDIO_WINDOW_TICKETS_CAPABILITY,
+  STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,
   STUDIO_SCHEDULES_CAPABILITY,

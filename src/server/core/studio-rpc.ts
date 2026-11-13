@@ -24,6 +24,7 @@ import { createStudioDiscovery } from './studio-discovery'
 import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
+import type { SignIns } from '../machine/machine-sign-in'
 import type { StudioCore } from './studio-core'
 import { createConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
@@ -68,6 +69,8 @@ export function createStudioRpc(
      * from it (`canvas-boards`). Absent, they are not served.
      */
     canvas?: StudioCanvasHost
+    /** A CLI's login on this machine with no terminal; a Studio without it leaves `providers.signIn*` unserved. */
+    signIns?: () => Promise<SignIns>
   } = {},
 ): StudioRpcService {
   const service = createStudioRpcService({
@@ -77,6 +80,7 @@ export function createStudioRpc(
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.modules ? { modules: options.modules } : {}),
     ...(options.canvas ? { canvas: createStudioCanvasDomain(options.canvas) } : {}),
+    ...(options.signIns ? { signIns: options.signIns } : {}),
     paths: core.platform.paths,
     identity: core.platform.identity,
     clients: core.platform.clients,

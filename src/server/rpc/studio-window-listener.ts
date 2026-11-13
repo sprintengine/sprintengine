@@ -60,6 +60,13 @@ export type StudioWindowListener = {
   ticket(request: StudioWindowTicketRequest): Promise<StudioWindowTicket>
   /** The window has gone: its outstanding tickets are void and its connections end. */
   revokeWindow(windowKey: string): void
+  /**
+   * Serve a byte stream as if it had connected to the listener: a window's
+   * socket the desktop that holds this Studio carried here (the front door's
+   * `ws`). It is held to everything a socket on the port is: the path, the
+   * `Host`, the ticket and its origin.
+   */
+  accept(stream: Duplex): void
   /** Where the listener is, once it is: `ws://127.0.0.1:<port>`. */
   address(): string | null
   stop(): Promise<void>
@@ -195,6 +202,20 @@ export function createStudioWindowListener(options: StudioWindowListenerOptions)
         url: `ws://127.0.0.1:${listeningOn}${WINDOW_SOCKET_PATH}?ticket=${encodeURIComponent(ticket)}`,
         token: ticket,
       }
+    },
+    accept(stream) {
+      if (stopped) {
+        stream.destroy()
+        return
+      }
+      // An HTTP server takes any duplex as a connection (Node's 'connection' event).
+      void listen().then(
+        () => {
+          if (!server || stopped) stream.destroy()
+          else server.emit('connection', stream)
+        },
+        () => stream.destroy(),
+      )
     },
     revokeWindow(windowKey) {
       // Main names each document afresh, so a key once revoked is never asked for again.

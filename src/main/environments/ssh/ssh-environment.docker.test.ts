@@ -32,6 +32,22 @@ import { parseDestination, spawnSshSession } from './ssh-command'
 import { SshEnvironment } from './ssh-environment'
 import { ensureNodeBinary, serverTreeDigest } from './ssh-install'
 import type { SessionProcess } from './ssh-session'
+import { createLoopbackRoute } from '../environment-route'
+import {
+  connect,
+  webSocketTransport,
+  type StudioWebSocketConstructor,
+} from '../../../../packages/client-runtime/src/public'
+
+/** Node's WebSocket, saying the origin a window's would. */
+function socketFrom(origin: string): StudioWebSocketConstructor {
+  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
+  return class {
+    constructor(url: string) {
+      return new NodeWebSocket(url, { headers: { origin } }) as never
+    }
+  } as unknown as StudioWebSocketConstructor
+}
 
 const ROOT = join(__dirname, '..', '..', '..', '..')
 const VERSION = (JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string }).version
@@ -153,6 +169,50 @@ test.skipIf(!DOCKER_TESTS)(
         !fixture.exec('ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true').includes(':0 '),
         'no TCP listener',
       )
+
+      // A window reaches the machine's Studio itself: a ticket its window
+      // listener minted, asked for over main's owner connection, spent on a
+      // socket main's loopback route carries through the front door (`ws`).
+      const route = createLoopbackRoute({ open: () => connection.open('ws') })
+      try {
+        const routePort = await route.port()
+        const ticketFor = async () => {
+          const minted = await connection.owner.request('environment.windowTicket', {
+            windowKey: 'window-1-1',
+            origin: 'file://',
+          })
+          return { url: `ws://127.0.0.1:${routePort}${minted.path}`, token: minted.token }
+        }
+        const spent = await ticketFor()
+        const window = await connect({
+          transport: webSocketTransport({ ticket: async () => spent, WebSocket: socketFrom('file://') }),
+          client: { name: 'Studio window' },
+          reconnect: false,
+        })
+        assert.equal(window.grant.owner, true)
+        assert.equal(window.welcome.environment.hostKind, 'ssh')
+        assert.equal(window.welcome.environment.id, connection.owner.welcome.environment.id)
+        assert.ok((await window.request('conversation.list', {})).conversations)
+        window.close()
+        // Good once, and only from the origin it was minted for.
+        await assert.rejects(
+          connect({
+            transport: webSocketTransport({ ticket: async () => spent, WebSocket: socketFrom('file://') }),
+            client: { name: 'Studio window' },
+            reconnect: false,
+          }),
+        )
+        const fresh = await ticketFor()
+        await assert.rejects(
+          connect({
+            transport: webSocketTransport({ ticket: async () => fresh, WebSocket: socketFrom('https://example.com') }),
+            client: { name: 'Studio window' },
+            reconnect: false,
+          }),
+        )
+      } finally {
+        await route.close()
+      }
 
       // A chat on the mock provider: its turn waits on an approval.
       fixture.exec('mkdir -p /home/dev/repo', 'dev')

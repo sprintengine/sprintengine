@@ -13,6 +13,7 @@ import {
   type ConversationWirePermissionPreset,
   type StudioCreatedConversation,
   type StudioEnvironmentReadiness,
+  type StudioWindowTicketGrant,
   type StudioGrant,
   type StudioParsedServerFrame,
   type StudioProtocolWindow,
@@ -37,6 +38,7 @@ import type { StudioTerminals } from '../terminals/studio-terminals'
 import type { StudioFiles } from './studio-files'
 import type { StudioFileSystem } from '../files/studio-file-system'
 import type { StudioMachineCall } from './studio-file-system'
+import type { SignIns } from '../machine/machine-sign-in'
 import type { StudioExtensions } from '../extensions/extensions-domain'
 import type { StudioArtifacts } from '../artifacts/artifacts-domain'
 import type { StudioGit } from '../git/studio-git-types'
@@ -398,6 +400,8 @@ export async function startTestServer(
     protocol?: StudioProtocolWindow
     modules?: StudioModules
     readiness?: () => Promise<StudioEnvironmentReadiness>
+    windowTickets?: (request: { windowKey: string; origin: string }) => Promise<StudioWindowTicketGrant>
+    signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},
 ): Promise<{
@@ -450,6 +454,8 @@ export async function startTestServer(
     ...(input.protocol ? { protocol: input.protocol } : {}),
     ...(input.modules ? { modules: input.modules } : {}),
     ...(input.readiness ? { readiness: input.readiness } : {}),
+    ...(input.windowTickets ? { windowTickets: input.windowTickets } : {}),
+    ...(input.signIns ? { signIns: input.signIns } : {}),
     audit: (entry) => audit.push(entry),
     log: (message) => logs.push(message),
     resyncRetryAfterMs: () => 1_500,

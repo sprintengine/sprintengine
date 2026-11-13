@@ -169,6 +169,9 @@ test("the relay's tcp streams: opened, a closed port refused, localhost resolved
     await assert.rejects(desktop.open({ kind: 'tcp', host: 'host.invalid', port: 80 }), { code: 'unreachable' })
     await assert.rejects(desktop.open({ kind: 'tcp', host: 'a b', port: 80 }), { code: 'refused' })
     await assert.rejects(desktop.open({ kind: 'owner', purpose: 'backend' }), { code: 'no-server' })
+    // A window's socket is a purpose the server serves; anything else is refused before the server is looked for.
+    await assert.rejects(desktop.open({ kind: 'owner', purpose: 'ws' }), { code: 'no-server' })
+    await assert.rejects(desktop.open({ kind: 'owner', purpose: 'shell' as never }), { code: 'refused' })
 
     // The streams before have closed on both sides by now; only these count.
     await new Promise((resolve) => setTimeout(resolve, 100))

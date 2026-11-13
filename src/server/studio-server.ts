@@ -21,6 +21,7 @@ import { runShutdownLegs, type ShutdownLegProgress } from './bootstrap/serve'
 import { readStudioEnvironmentId } from './environment/environment-id'
 import type { WebFrontDoor, WebFrontDoorOptions } from './web/web-front-door'
 import type { StudioUpdates } from './update/studio-updates'
+import type { SignIns } from './machine/machine-sign-in'
 
 // A Studio server under plain Node: the core and its gateway, with nothing of
 // Electron. The `studio-server` entry (main.ts) runs it from a shell; a later
@@ -83,6 +84,12 @@ export type StudioServerOptions = {
   tailnetBindAddress?: string
   /** How this server is updated, as `update.status` tells clients; by hand when not said. */
   updates?: StudioUpdates
+  /**
+   * A CLI's login on this machine with no terminal (`providers.signIn*`): a
+   * server a desktop reaches over its front door, where the person has no
+   * terminal of their own. Not served when not said.
+   */
+  signIns?: () => Promise<SignIns>
 }
 
 export type StudioServerReady = {
@@ -258,6 +265,7 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
   const rpc = createStudioRpc(core, started, {
     ...(options.hostKind ? { hostKind: options.hostKind } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
+    ...(options.signIns ? { signIns: options.signIns } : {}),
   })
   let status: Awaited<ReturnType<StudioGateway['initialize']>>
   try {

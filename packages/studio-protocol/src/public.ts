@@ -56,6 +56,7 @@ export * from './artifacts-types.js'
 export * from './module-services.js'
 // What a Studio's machine has and lacks for the work it runs on its own.
 export * from './readiness.js'
+export * from './environment-access.js'
 export * from './permissions.js'
 export * from './environment.js'
 // `sprintengine://` links: the one grammar every client reads and writes.

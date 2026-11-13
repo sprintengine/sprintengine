@@ -251,3 +251,78 @@ test('after the server restarts on another port, the window comes back with a fr
   assert.ok(tickets.length >= 2)
   assert.equal(new Set(tickets).size, tickets.length, 'a ticket is never presented twice')
 })
+
+/**
+ * A stand-in for the front door's `ws`: each socket on its own port carried
+ * to the listener as a plain duplex (no socket's methods), as a mux stream is.
+ */
+async function carrier(listener: StudioWindowListener): Promise<number> {
+  const { createServer } = await import('node:net')
+  const { Duplex } = await import('node:stream')
+  const relay = createServer((socket) => {
+    const carried = new Duplex({
+      read() {
+        socket.resume()
+      },
+      write(chunk, _encoding, callback) {
+        socket.write(chunk, callback)
+      },
+      final(callback) {
+        socket.end()
+        callback()
+      },
+      destroy(error, callback) {
+        socket.destroy()
+        callback(error)
+      },
+    })
+    socket.on('data', (chunk) => {
+      if (!carried.push(chunk)) socket.pause()
+    })
+    socket.on('end', () => carried.push(null))
+    socket.on('close', () => carried.destroy())
+    listener.accept(carried)
+  })
+  await new Promise<void>((resolve) => relay.listen(0, '127.0.0.1', resolve))
+  cleanups.push(() => new Promise<void>((resolve) => relay.close(() => resolve())))
+  return (relay.address() as { port: number }).port
+}
+
+/** A ticket's URL, sent to the carrier's port in its place, as main's loopback route does. */
+const through = (url: string, port: number) => url.replace(/^ws:\/\/127\.0\.0\.1:\d+/u, `ws://127.0.0.1:${port}`)
+
+test('a window socket carried to the listener as a stream is held to everything a socket on its port is', async () => {
+  const { listener } = host()
+  const port = await carrier(listener)
+  const client = await windowClient(async () => {
+    const ticket = await listener.ticket({ windowKey: 'window-1-1', origin: APP_ORIGIN })
+    return { ...ticket, url: through(ticket.url, port) }
+  })
+  assert.equal(client.state, 'open')
+  assert.equal(client.grant.owner, true)
+
+  const once = await listener.ticket({ windowKey: 'w', origin: APP_ORIGIN })
+  assert.equal((await upgrade(through(once.url, port))).status, 101)
+  assert.deepEqual(await upgrade(through(once.url, port)), { status: 401, code: 'ticket_spent_or_expired' })
+  assert.deepEqual(await upgrade(`ws://127.0.0.1:${port}/ws`), { status: 401, code: 'ticket_required' })
+  const foreign = await listener.ticket({ windowKey: 'w', origin: APP_ORIGIN })
+  assert.deepEqual(await upgrade(through(foreign.url, port), { Origin: 'https://example.com' }), {
+    status: 403,
+    code: 'origin_refused',
+  })
+  const rebound = await listener.ticket({ windowKey: 'w', origin: APP_ORIGIN })
+  assert.deepEqual(await upgrade(through(rebound.url, port), { Host: `studio.example.com:${port}` }), {
+    status: 403,
+    code: 'wrong_host',
+  })
+})
+
+test('a stream carried to a listener that has stopped is closed, not served', async () => {
+  const { listener } = host()
+  await listener.ticket({ windowKey: 'w', origin: APP_ORIGIN })
+  await listener.stop()
+  const { PassThrough } = await import('node:stream')
+  const stream = new PassThrough()
+  listener.accept(stream)
+  await until(() => stream.destroyed)
+})

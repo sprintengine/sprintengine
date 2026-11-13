@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added (what the desktop that holds a machine's Studio asks of it)
+
+- **`environment.windowTicket`** (`environment-access.ts`, capability
+  `window-tickets`): a ticket for one connection of a window of the desktop
+  that holds this Studio, `{ token, path }`. It is the first method held to
+  the desktop's own shell connection: a method spec may now say `shell` (the
+  reason), always with `owner`, and the server refuses it `owner_required` to
+  any other connection, an owner's included.
+- **`providers.signInStart`, `.signInPaste`, `.signInWait`, `.signInCancel`**
+  (capability `provider-sign-in-flow`): a CLI's own login on the Studio's
+  machine with no terminal, each step under a `commandId`, an owner's.
+
 ### Added (Create PR on the chat's Studio)
 
 - **`pullRequests.createState`, `.draft`, `.draftCancel`, `.push` and
