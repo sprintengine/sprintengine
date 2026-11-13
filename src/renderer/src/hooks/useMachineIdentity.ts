@@ -78,7 +78,7 @@ export function useWorkspaceMachineRef(
   workspace:
     | {
         hostId?: ExecutionHostId | null
-        environment?: { kind: 'ssh'; id: string; label: string } | null
+        environment?: { kind: 'ssh' | 'wsl'; id: string; label: string } | null
         remoteOrigin?: { machineName: string } | null
       }
     | null

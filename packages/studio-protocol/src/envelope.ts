@@ -142,6 +142,13 @@ export type StudioEnvironment = {
   hostKind: 'local' | 'wsl' | 'ssh' | 'tailnet'
   os: string
   arch: string
+  /**
+   * A WSL distribution's Studio: where it mounts the Windows drives (`/mnt/`
+   * unless its wsl.conf says otherwise), or null when it mounts none. A
+   * client on Windows spells a drive path for it by this (`C:\code` is
+   * `/mnt/c/code` there). Absent elsewhere, and from a Studio before it.
+   */
+  driveMountRoot?: string | null
 }
 
 export type StudioServerIdentity = { name: string; version: string }
@@ -492,7 +499,16 @@ function grant(value: unknown): StudioGrant | null {
 function environment(value: unknown): StudioEnvironment | null {
   if (!record(value) || !id(value.id) || !text(value.os, 64) || !text(value.arch, 64)) return null
   if (!['local', 'wsl', 'ssh', 'tailnet'].includes(value.hostKind as string)) return null
-  return { id: value.id, hostKind: value.hostKind as StudioEnvironment['hostKind'], os: value.os, arch: value.arch }
+  const mount = value.driveMountRoot
+  return {
+    id: value.id,
+    hostKind: value.hostKind as StudioEnvironment['hostKind'],
+    os: value.os,
+    arch: value.arch,
+    ...(mount === null || (typeof mount === 'string' && mount.startsWith('/') && mount.length <= 256)
+      ? { driveMountRoot: mount }
+      : {}),
+  }
 }
 
 /**

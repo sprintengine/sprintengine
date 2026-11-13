@@ -51,7 +51,7 @@ export type TailnetSelfMachine = { kind: string; color: string }
 export type ConversationMachineRecord = {
   hostId?: string | null
   folderPath?: string | null
-  environment?: { kind: 'ssh'; id: string; label: string } | null
+  environment?: { kind: 'ssh' | 'wsl'; id: string; label: string } | null
   remoteOrigin?: { machineName: string } | null
 }
 

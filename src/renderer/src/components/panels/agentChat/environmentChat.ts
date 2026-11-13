@@ -1,20 +1,17 @@
 import { useSyncExternalStore } from 'react'
 
 import type { StudioClient } from '../../../../../../packages/client-runtime/src/public'
-import {
-  formatEnvironmentRoute,
-  parseEnvironmentRoute,
-} from '../../../../../../packages/studio-protocol/src/environment'
+import { formatEnvironmentRoute } from '../../../../../../packages/studio-protocol/src/environment'
 import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../studio/environmentChats'
 import type { EnvironmentTarget } from '../../../studio/environmentStudio'
-import { machineStudioClient } from '../../../../../shared/machine-studio-client'
+import { routeStudioClient } from '../../../../../shared/machine-studio-client'
 import type { WorkspaceEnvironmentRef } from '../../../types/workspace'
 import {
   localConversationTransport,
   studioConversationTransport,
   type ConversationTransport,
 } from './conversationTransport'
-import { parseMachinePath } from '../../../../../shared/machine-paths'
+import { machineRouteOfPath } from '../../../../../shared/machine-spelling'
 import { createStudioChatServices, createStudioConversationParts } from './studioChat'
 
 // A chat that another environment's Studio holds, as this window's chat view
@@ -24,19 +21,24 @@ import { createStudioChatServices, createStudioConversationParts } from './studi
 // command lists, since the chat's CLI runs there. What it may do is read off
 // that environment's welcome. One transport per route and window.
 //
-// An SSH machine's chat keeps its folder as this computer spells it,
-// `ssh://<id>/…`; its client respells at the edge (`machineStudioClient.ts`).
+// An SSH machine's or a WSL distribution's chat keeps its folder as this
+// computer spells it (`ssh://<id>/…`, `\\wsl.localhost\<distro>\…`, or a
+// drive the distribution mounts); its client respells at the edge
+// (`machine-studio-client.ts`).
 
 /** The environment a chat's record says it is on, as the route the window reaches it by; null for this machine's. */
 export function environmentTargetOf(ref: WorkspaceEnvironmentRef | null | undefined): EnvironmentTarget | null {
   if (!ref) return null
-  return { route: formatEnvironmentRoute({ kind: 'ssh', machine: ref.id }), name: ref.label }
+  const route =
+    ref.kind === 'wsl'
+      ? formatEnvironmentRoute({ kind: 'wsl', distro: ref.id })
+      : formatEnvironmentRoute({ kind: 'ssh', machine: ref.id })
+  return { route, name: ref.label }
 }
 
 /** The client the window's callers read, its paths spelled as this computer spells them on a route that needs it. */
 export function windowClientOfRoute(client: StudioClient, route: string): StudioClient {
-  const parsed = parseEnvironmentRoute(route)
-  return parsed?.kind === 'ssh' ? machineStudioClient(client, parsed.machine) : client
+  return routeStudioClient(client, route)
 }
 
 const transports = new Map<string, { source: EnvironmentChatSource; transport: ConversationTransport }>()
@@ -100,14 +102,15 @@ export function conversationTransportOfRecord(ref: WorkspaceEnvironmentRef | nul
 /**
  * The transport of the chat a key names, read off its folder alone, for a
  * caller that has no record (an aux window): an SSH machine's chat keeps its
- * folder spelled `ssh://<id>/…` here.
+ * folder spelled `ssh://<id>/…` here, a WSL distribution's by its share. (A
+ * distribution's chat in a Windows drive folder is told only by its record.)
  */
 export function conversationTransportOfKey(key: { workspaceRoot: string }): ConversationTransport {
-  const machine = parseMachinePath(key.workspaceRoot)
-  return machine
+  const route = machineRouteOfPath(key.workspaceRoot)
+  return route
     ? environmentConversationTransport({
-        route: formatEnvironmentRoute({ kind: 'ssh', machine: machine.id }),
-        name: machine.id,
+        route,
+        name: route.startsWith('wsl:') ? `WSL: ${route.slice('wsl:'.length)}` : route.slice('ssh:'.length),
       })
     : localConversationTransport
 }

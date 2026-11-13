@@ -11,6 +11,9 @@ import type { EnvironmentClients } from '../../shared/environment-clients'
 import { machineStudioClient } from '../../shared/machine-studio-client'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../../shared/workspace-registry'
 import { createEnvironmentReplicas } from './environment-replicas'
+import { machineSpellingOf } from '../../shared/machine-spelling'
+
+const ssh = (id: string) => machineSpellingOf(`ssh:${id}`)!
 
 // This desktop's copies of an SSH machine's chats: written only from what the
 // machine's own Studio says, a window's record change made there first and here
@@ -93,7 +96,7 @@ function rig(options: { machine?: Workspace[]; desktop?: Workspace[] } = {}) {
       return () => undefined
     },
   } as unknown as StudioClient
-  const client = machineStudioClient(raw, 'build-box')
+  const client = machineStudioClient(raw, ssh('build-box'))
   const clients: EnvironmentClients = {
     async clientFor(route) {
       if (route !== ROUTE) return { ok: false, code: 'unsupported_route', message: 'Not this one.' }

@@ -1,9 +1,9 @@
-import { readFileSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { captureLoginEnv } from '../../../resources/wsl-helper/lib/login-env.mjs'
 import { readStudioEnvironmentId } from '../environment/environment-id'
-import { driveMountRootFromMounts, driveMountRootFromWslConf } from '../../shared/host-paths'
+import { readDriveMountRoot } from '../wsl/drive-mount-root'
 import { chatsAreWorking } from '../core/chats-working'
 import { backgroundWorkOf, hasBackgroundWork } from '../core/background-work'
 import { externalStudioUpdates, MANUAL_UPDATE_WORDS, type StudioUpdates } from '../update/studio-updates'
@@ -73,21 +73,6 @@ export function headlessUpdates(envelope: Pick<ServerBootstrapEnvelope, 'wsl' | 
     'bootstrap',
     'This Studio server was installed over SSH by SprintEngine Studio on a desktop. Update the app on that desktop, and it updates this server when it next connects.',
   )
-}
-
-/** Where this distribution mounts the Windows drives: what is mounted, else what wsl.conf asks for. */
-export function readDriveMountRoot(read: (path: string) => string | null = readText): string | null {
-  const mounts = read('/proc/mounts')
-  const mounted = mounts ? driveMountRootFromMounts(mounts) : null
-  return mounted ?? driveMountRootFromWslConf(read('/etc/wsl.conf'))
-}
-
-function readText(path: string): string | null {
-  try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return null
-  }
 }
 
 // Loaded on first use, not at start: the desktop's bundle loads its

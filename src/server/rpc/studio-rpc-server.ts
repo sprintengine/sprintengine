@@ -71,6 +71,7 @@ import type { StudioWebDevicesDomain } from './studio-web-devices'
 import type { StudioTailnetDomain } from './studio-tailnet'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
+import { readDriveMountRoot } from '../wsl/drive-mount-root'
 import type { StudioGit } from '../git/studio-git-types'
 import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
 import type { StudioWorkspaceSync } from '../workspaces/studio-workspace-sync'
@@ -285,6 +286,9 @@ export type StudioRpcServer = StudioRpcListener & {
 }
 
 export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRpcServer {
+  // A WSL distribution's: read once, the first time a welcome says it.
+  let mountRoot: string | null | undefined
+  const driveMountRoot = () => (mountRoot === undefined ? (mountRoot = readDriveMountRoot()) : mountRoot)
   const perClient = options.maxConnectionsPerClient ?? 8
   const chat = () => options.chat?.() ?? null
   const conversationCapabilities = studioRpcConversationCapabilities(options.backend)
@@ -292,7 +296,13 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     protocolVersion: options.protocol?.protocolVersion ?? STUDIO_PROTOCOL_VERSION,
     minProtocolVersion: options.protocol?.minProtocolVersion ?? STUDIO_PROTOCOL_MIN_SUPPORTED,
     server: { name: 'SprintEngine Studio', version: options.version },
-    environment: { id: options.environmentId, hostKind: options.hostKind ?? 'local', os: platform(), arch: arch() },
+    environment: {
+      id: options.environmentId,
+      hostKind: options.hostKind ?? 'local',
+      os: platform(),
+      arch: arch(),
+      ...(options.hostKind === 'wsl' ? { driveMountRoot: driveMountRoot() } : {}),
+    },
     capabilities: STUDIO_CAPABILITIES.filter(
       (capability) =>
         (capability !== STUDIO_CLIENT_TOOLS_CAPABILITY || options.tools !== undefined) &&

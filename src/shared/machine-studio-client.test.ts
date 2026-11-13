@@ -4,6 +4,9 @@ import { test } from 'vitest'
 
 import type { StudioClient } from '../../packages/client-runtime/src/public'
 import { machineStudioClient } from './machine-studio-client'
+import { machineSpellingOf } from './machine-spelling'
+
+const ssh = (id: string) => machineSpellingOf(`ssh:${id}`)!
 
 // The one place a client of an SSH machine's Studio respells paths: a key, a
 // mention and a search root go to the machine plain; a plan's path and the
@@ -32,7 +35,7 @@ function fake() {
 
 test('what goes to the machine is spelled plain: a key, a mention, a search root', async () => {
   const { client, asked, followed } = fake()
-  const machine = machineStudioClient(client, 'build-box')
+  const machine = machineStudioClient(client, ssh('build-box'))
   await machine.request('conversation.send', {
     key: { workspaceId: 'w', agentId: 'a', workspaceRoot: 'ssh://build-box/home/dev/repo' },
     mentions: [{ path: 'ssh://build-box/home/dev/repo/src/a.ts', kind: 'file' }],
@@ -55,7 +58,7 @@ test('what goes to the machine is spelled plain: a key, a mention, a search root
 
 test("what comes back names the machine's files as this computer spells them; words are left alone", async () => {
   const { client } = fake()
-  const machine = machineStudioClient(client, 'build-box')
+  const machine = machineStudioClient(client, ssh('build-box'))
   const plan = (await machine.request('conversation.planDocument', {} as never)) as unknown as Record<string, string>
   assert.equal(plan.path, 'ssh://build-box/home/dev/repo/PLAN.md')
   assert.equal(plan.text, 'see /tmp/x')
@@ -66,5 +69,5 @@ test("what comes back names the machine's files as this computer spells them; wo
     rules: Array<{ rootPath: string }>
   }
   assert.equal(rules.rules[0]?.rootPath, 'ssh://build-box/home/dev/repo')
-  assert.equal(machineStudioClient(client, 'build-box'), machine, 'one per client and machine')
+  assert.equal(machineStudioClient(client, ssh('build-box')), machine, 'one per client and machine')
 })

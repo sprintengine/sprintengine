@@ -11,10 +11,10 @@ import {
   type StudioAdoptResult,
 } from '../../../packages/studio-protocol/src/public'
 import { STUDIO_ENVIRONMENT_ADOPT_CAPABILITY } from '../../../packages/studio-protocol/src/handshake'
-import { parseEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import type { EnvironmentClients } from '../../shared/environment-clients'
 import { machinePathsIn } from '../../shared/machine-path-edge'
+import { machineSpellingOf, type MachineSpelling } from '../../shared/machine-spelling'
 import { adoptedRecordDigest } from './environment-adoption'
 
 // The hand-over of what this desktop kept for the chats another environment
@@ -120,9 +120,17 @@ export function createEnvironmentMigration(deps: {
   dataDir: string
   stores: EnvironmentMigrationStores
   clients: EnvironmentClients
+  /**
+   * How a route's machine spells its paths, once that is known: a WSL
+   * distribution's drive mount root is its own Studio's word, so its records
+   * are planned once it has said it. An SSH machine's, and by default, from
+   * the route alone.
+   */
+  spellingOf?: (route: string) => MachineSpelling | null
   log?: (message: string) => void
   now?: () => number
 }): EnvironmentMigration {
+  const spellingOf = deps.spellingOf ?? ((route: string) => machineSpellingOf(route))
   const journalPath = join(deps.dataDir, JOURNAL_FILE)
   const pendingDir = (migrationId: string) => join(deps.dataDir, DIR, 'pending', migrationId)
   const deliveredDir = (migrationId: string) => join(deps.dataDir, DIR, 'delivered', migrationId)
@@ -158,14 +166,14 @@ export function createEnvironmentMigration(deps: {
 
   /** The record as the machine keeps it: its paths in the machine's spelling, nothing that says where it lives. */
   function forMachine(record: MigratingRecord): Record<string, unknown> {
-    const route = parseEnvironmentRoute(record.route)
     const body =
       record.kind === 'workspace'
         ? (({ environment: _e, hostId: _h, remoteOrigin: _r, ...rest }) => rest)(record.body)
         : record.kind === 'schedule'
           ? (({ hostId: _h, nextRunAt: _n, waiting: _w, ...rest }) => rest)(record.body)
           : record.body
-    return route?.kind === 'ssh' ? machinePathsIn(route.machine, body) : body
+    const spelling = spellingOf(record.route)
+    return spelling ? machinePathsIn(spelling, body) : body
   }
 
   /** Copy a record and what it carries under the migration's pending folder. */
@@ -217,7 +225,10 @@ export function createEnvironmentMigration(deps: {
   const plan = () =>
     serial(async () => {
       const current = await read()
-      const found = await deps.stores.collect((route) => !current.environments[route]?.workspacesHandedOver)
+      // A route whose spelling is not known yet is planned once it is (on its connect).
+      const found = (await deps.stores.collect((route) => !current.environments[route]?.workspacesHandedOver)).filter(
+        (record) => spellingOf(record.route) !== null,
+      )
       if (found.length === 0) return
       const next: Journal = { v: 1, environments: { ...current.environments } }
       const planned: MigratingRecord[] = []

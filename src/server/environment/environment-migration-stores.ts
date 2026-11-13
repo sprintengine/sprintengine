@@ -1,17 +1,17 @@
-import { formatEnvironmentRoute } from '../../../packages/studio-protocol/src/environment'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import type { ScheduledMessages } from '../../main/scheduled-messages/scheduled-messages'
 import type { UsageLimitResumer } from '../../main/usage-limits/resume'
 import type { WorkspaceRegistryService } from '../../main/workspace-registry-service'
 import { environmentRouteOfRecord } from '../../shared/environment-clients'
-import { parseMachinePath } from '../../shared/machine-paths'
+import { machineRouteOfPath } from '../../shared/machine-spelling'
 import type { PullRequestRecord } from '../pull-requests/pull-request-record'
 import type { EnvironmentMigrationStores, MigratingRecord } from './environment-migration'
 
 // This desktop's stores as the hand-over reads and empties them
 // (environment-migration.ts): each record that names a chat or folder another
-// environment holds, found by the chat's record here (its `environment`) or
-// by its folder (`ssh://<id>/…`), and taken out through the store's own way.
+// environment holds, found by the chat's record here (its `environment`, or
+// a WSL workspace's `hostId`) or by its folder (`ssh://<id>/…`, a WSL share),
+// and taken out through the store's own way.
 
 export function studioMigrationStores(stores: {
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecords'>
@@ -36,12 +36,14 @@ export function studioMigrationStores(stores: {
       }
       await stores.scheduledAgents.loaded()
       for (const agent of stores.scheduledAgents.list()) {
-        const machine = parseMachinePath(agent.folderPath)
-        if (!machine) continue
+        // Its folder's machine, as a chat's record says it: an SSH machine's
+        // path, or a WSL workspace's machine (its `hostId`, else its folder).
+        const route = machineRouteOfPath(agent.folderPath) ?? environmentRouteOfRecord(agent)
+        if (!route) continue
         // The pictures its prompt names go with it, each by the path the prompt names it by.
         const images = (await stores.scheduledImages?.(agent.prompt)) ?? []
         found.push({
-          route: formatEnvironmentRoute({ kind: 'ssh', machine: machine.id }),
+          route,
           kind: 'schedule',
           id: agent.id,
           body: agent as unknown as Record<string, unknown>,

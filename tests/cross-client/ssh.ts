@@ -21,6 +21,7 @@ import { conversationNewChatSeed } from '../../src/renderer/src/components/works
 import { defaultAgent } from '../../src/shared/agent-state'
 import type { ConversationSessionFrame } from '../../src/shared/conversation-runtime'
 import { machineStudioClient } from '../../src/shared/machine-studio-client'
+import { machineSpellingOf } from '../../src/shared/machine-spelling'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../src/shared/ssh-environments'
 import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
@@ -138,7 +139,7 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
   // Its chat calls go to the machine's Studio on its own owner connection,
   // the chat's paths respelled at that edge, as main's are.
   const otherParts = createStudioConversationParts(async () =>
-    machineStudioClient((await other.connect({ interactive: true })).owner, 'gate'),
+    machineStudioClient((await other.connect({ interactive: true })).owner, machineSpellingOf('ssh:gate')!),
   )
   const serverPid = () =>
     Number(
@@ -178,7 +179,7 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
         parkWhenOffline: false,
       }),
     )
-    return machineStudioClient(await windowClient, 'gate')
+    return machineStudioClient(await windowClient, machineSpellingOf('ssh:gate')!)
   }
   const parts = createStudioConversationParts(windowStudio)
   let stopFollowing: () => void = () => undefined

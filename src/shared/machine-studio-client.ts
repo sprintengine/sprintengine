@@ -1,10 +1,12 @@
 import type { StudioClient } from '../../packages/client-runtime/src/public'
 import { machinePathsIn, machinePathsOut } from './machine-path-edge'
+import { machineSpellingOf, type MachineSpelling } from './machine-spelling'
 
-// A client of one SSH machine's Studio as this computer's callers read it
-// (the window, and main for the gateway's tools and modules): the same client,
-// with the machine's paths respelled at its edge (`machine-path-edge.ts`). A
-// chat there keeps its folder as this computer spells it, `ssh://<id>/…`, in
+// A client of another machine's Studio (an SSH machine's, a WSL
+// distribution's) as this computer's callers read it (the window, the core's
+// hand-over and gateway, main): the same client, with the machine's paths
+// respelled at its edge (`machine-path-edge.ts`). A chat there keeps its
+// folder as this computer spells it (`ssh://<id>/…`, `\\wsl.localhost\…`) in
 // this computer's records and keys; the machine is handed the plain path, and
 // the folders and files it names come back spelled for this computer again.
 // This is the one place either respells them.
@@ -16,18 +18,18 @@ const ANSWER_PATHS: Partial<Record<string, ReadonlySet<string>>> = {
 
 const made = new WeakMap<StudioClient, Map<string, StudioClient>>()
 
-/** The machine `id`'s client, its paths spelled as this computer spells them. One per client and machine. */
-export function machineStudioClient(client: StudioClient, id: string): StudioClient {
-  let byId = made.get(client)
-  if (!byId) made.set(client, (byId = new Map()))
-  const known = byId.get(id)
+/** The machine's client, its paths spelled as this computer spells them. One per client and machine. */
+export function machineStudioClient(client: StudioClient, spelling: MachineSpelling): StudioClient {
+  let byRoute = made.get(client)
+  if (!byRoute) made.set(client, (byRoute = new Map()))
+  const known = byRoute.get(spelling.route)
   if (known) return known
   const request = (async (method: string, params?: unknown) =>
     machinePathsOut(
-      id,
+      spelling,
       await (client.request as (method: string, params?: unknown) => Promise<unknown>)(
         method,
-        machinePathsIn(id, params ?? {}),
+        machinePathsIn(spelling, params ?? {}),
       ),
       ANSWER_PATHS[method],
     )) as StudioClient['request']
@@ -51,7 +53,7 @@ export function machineStudioClient(client: StudioClient, id: string): StudioCli
           const value = Reflect.get(target, member, receiver) as unknown
           if (typeof value !== 'function') return value
           return (...args: unknown[]) =>
-            (value as (...given: unknown[]) => unknown).apply(target, machinePathsIn(id, args))
+            (value as (...given: unknown[]) => unknown).apply(target, machinePathsIn(spelling, args))
         },
       })
   const wrapped = new Proxy(client, {
@@ -63,6 +65,23 @@ export function machineStudioClient(client: StudioClient, id: string): StudioCli
       return typeof value === 'function' ? (value as (...given: unknown[]) => unknown).bind(target) : value
     },
   })
-  byId.set(id, wrapped)
+  byRoute.set(spelling.route, wrapped)
   return wrapped
+}
+
+/**
+ * A client of the Studio a route reaches, as this computer's callers read it:
+ * respelled for an SSH machine or a WSL distribution (a distribution's drive
+ * mount root read from its own welcome), and as it is for any other route.
+ */
+export function routeStudioClient(client: StudioClient, route: string): StudioClient {
+  const spelling = machineSpellingOf(route, () => {
+    try {
+      return client.welcome.environment.driveMountRoot
+    } catch {
+      // Not connected yet: the default root until it says.
+      return undefined
+    }
+  })
+  return spelling ? machineStudioClient(client, spelling) : client
 }
