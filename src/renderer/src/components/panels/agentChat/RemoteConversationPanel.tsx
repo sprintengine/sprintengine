@@ -36,7 +36,7 @@ import {
 import { ConversationChatBody } from '../AgentChatView'
 import { remoteFileCountsOf } from '../../workspace/terminalLines'
 import { environmentChatSourceFor, type EnvironmentChatSource } from '../../../studio/environmentChats'
-import { pairedTarget } from '../../../studio/environmentStudio'
+import { pairedTarget, type EnvironmentRefusal } from '../../../studio/environmentStudio'
 import { listPairedChats } from '../../../studio/pairedChats'
 import { ChatViewErrorBoundary } from './ChatViewErrorBoundary'
 import { useStudioChatHeld } from './chatServerHeld'
@@ -110,7 +110,20 @@ function remoteConversationReadiness(
   link: PairedLink,
   access: MeshConversationAccess | null,
   machineName: string,
+  refusal: EnvironmentRefusal | undefined,
 ): ChatReadiness {
+  // A machine whose Studio is from before the protocol (it speaks only the
+  // older paired lane) cannot be followed from here until it is updated, and
+  // a pairing it no longer admits cannot be either: said in their words, not
+  // as a connection that never comes.
+  if (link !== 'live' && refusal && (refusal.kind === 'outdated' || refusal.kind === 'unauthorized'))
+    return {
+      kind: 'error',
+      message:
+        refusal.kind === 'outdated'
+          ? `Update SprintEngine Studio on ${machineName} to follow and drive its chats from here.`
+          : refusal.message,
+    }
   if (link === 'connecting') return { kind: 'error', message: `Connecting to ${machineName}.` }
   if (link === 'away')
     return { kind: 'error', message: `${machineName} is not answering. This shows what it last said.` }
@@ -123,18 +136,26 @@ function remoteConversationReadiness(
 }
 
 /** The machine's welcome, its chat source's snapshot, and how the window reaches it: read as they change. */
-function usePairedSource(source: EnvironmentChatSource): { welcome: StudioWelcomeFrame | null; link: PairedLink } {
+function usePairedSource(source: EnvironmentChatSource): {
+  welcome: StudioWelcomeFrame | null
+  link: PairedLink
+  refusal: EnvironmentRefusal | undefined
+} {
   const welcome = useSyncExternalStore(
     (listener) => source.watchOpen(listener),
     () => source.welcome(),
     () => source.welcome(),
   )
-  const stale = useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     (listener) => source.subscribe(listener),
-    () => source.snapshot().stale,
-    () => source.snapshot().stale,
+    () => source.snapshot(),
+    () => source.snapshot(),
   )
-  return { welcome, link: !welcome ? 'connecting' : stale ? 'away' : 'live' }
+  return {
+    welcome,
+    link: !welcome ? 'connecting' : snapshot.stale ? 'away' : 'live',
+    refusal: snapshot.refusal,
+  }
 }
 
 /**
@@ -326,7 +347,7 @@ export default function RemoteConversationPanel({
     () => environmentChatSourceFor(pairedTarget({ id: connectionId, machineName })),
     [connectionId, machineName],
   )
-  const { welcome, link } = usePairedSource(source)
+  const { welcome, link, refusal } = usePairedSource(source)
   const seedThread = useMemo(() => (subagent ? threadOfSubagent(subagent.row) : null), [subagent])
   const [listedThread, setThread] = useState<MeshConversation | null>(null)
   const thread = listedThread ?? seedThread
@@ -518,7 +539,10 @@ export default function RemoteConversationPanel({
     [liveSession, thread, key, features, modelSwitch],
   )
   const engine = useMemo(() => remoteConversationEngine(thread, modelSwitch), [thread, modelSwitch])
-  const readiness = useMemo(() => remoteConversationReadiness(link, access, machineName), [link, access, machineName])
+  const readiness = useMemo(
+    () => remoteConversationReadiness(link, access, machineName, refusal),
+    [link, access, machineName, refusal],
+  )
   const binding = useMemo<ChatBinding>(
     () => ({
       agent: {

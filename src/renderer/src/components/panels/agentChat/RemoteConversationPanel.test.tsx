@@ -310,6 +310,7 @@ async function mountRemote({
   scheduledSends = false,
   usageLimits = false,
   restartSession = false,
+  refused,
 }: {
   /** What the pairing's grant there reaches: driving the chat, or following it only. */
   access: 'read' | 'operate'
@@ -370,6 +371,8 @@ async function mountRemote({
   usageLimits?: boolean
   /** The machine ends one of its chats' agent sessions from here (`conversation-restart-session`). */
   restartSession?: boolean
+  /** Why this window's connection to that machine is refused, where it is: it then follows nothing. */
+  refused?: StudioError
 }) {
   const dom = new JSDOM('<!doctype html><body></body>', { url: 'http://localhost', pretendToBeVisual: true })
   const previous = Object.getOwnPropertyDescriptors(globalThis)
@@ -498,6 +501,7 @@ async function mountRemote({
         : ['workspaces:read', 'conversation:read']) satisfies StudioScope[],
     },
   )
+  if (refused) studio.refuse = () => refused
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')
   const { default: RemoteConversationPanel } = await import('./RemoteConversationPanel')
@@ -554,10 +558,11 @@ async function mountRemote({
     for (let i = 0; i < 4; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
   }
   await settleReads()
-  await act(async () => {
-    studio.frame({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null }, generation: 'g' })
-    studio.frame({ type: 'synchronized', seq: events.at(-1)!.seq!, generation: 'g' })
-  })
+  if (!refused)
+    await act(async () => {
+      studio.frame({ type: 'snapshot', page: { events, hasMore: false, beforeCursor: null }, generation: 'g' })
+      studio.frame({ type: 'synchronized', seq: events.at(-1)!.seq!, generation: 'g' })
+    })
   // The composer is an editor: its editable element takes the keys, and the
   // draft is the editor's document.
   const composer = () => host.querySelector<HTMLElement>('.cm-content')!
@@ -2098,6 +2103,39 @@ test('a link that drops does not list the machine; one that comes back live does
     await chat.settleReads()
     expect(reads()).toBe(before + 1)
     expect(chat.host.textContent).not.toContain('mac-mini is not answering.')
+  } finally {
+    await chat.unmount()
+  }
+})
+
+test('a paired desktop on a build that speaks only the older lane is told to update Studio there, in the chat', async () => {
+  // Its ticket answer names no Studio socket: the window's connection is refused `outdated`.
+  const chat = await mountRemote({
+    access: 'operate',
+    refused: new StudioError('outdated', 'mac-mini runs a SprintEngine Studio from before this one.'),
+  })
+  try {
+    expect(chat.host.textContent).toContain(
+      'Update SprintEngine Studio on mac-mini to follow and drive its chats from here.',
+    )
+    expect(chat.host.textContent).not.toContain('Connecting to mac-mini.')
+    expect(chat.composer().getAttribute('contenteditable')).toBe('false')
+    // Nothing is asked of it, and no chat is followed there.
+    expect(chat.studio.calls).toEqual([])
+    expect(chat.followed).toEqual([])
+  } finally {
+    await chat.unmount()
+  }
+})
+
+test('a pairing that machine no longer admits says so in the chat, rather than connecting forever', async () => {
+  const chat = await mountRemote({
+    access: 'operate',
+    refused: new StudioError('unauthorized', 'mac-mini no longer admits this pairing. Pair again to reach it.'),
+  })
+  try {
+    expect(chat.host.textContent).toContain('mac-mini no longer admits this pairing. Pair again to reach it.')
+    expect(chat.host.textContent).not.toContain('Connecting to mac-mini.')
   } finally {
     await chat.unmount()
   }
