@@ -2,12 +2,17 @@
 import { appendFileSync, mkdtempSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 /** The run's own folder under the OS temp folder, set by the global setup. */
 export const RUN_TEMP_ENV = 'SE_TEST_RUN_TEMP'
 
-/** In the run's folder: one line per test file, `<its folder>\t<the file>`. */
+/**
+ * In the run's folder: a line `<its folder>\tmade\t<the file>` when a test
+ * file's folder is made, and `<its folder>\tremoved\t<the file>` once the
+ * file's cleanup has run. A file whose tests are all skipped runs no hooks, so
+ * its folder is left to the end of the run.
+ */
 export const TEMP_FOLDER_LOG = 'files.tsv'
 
 /**
@@ -26,7 +31,10 @@ export function useFileTempFolder(testFile: string): () => Promise<void> {
   const root = process.env[RUN_TEMP_ENV]
   // `f` keeps the path short: POSIX socket paths hold about a hundred bytes.
   const folder = mkdtempSync(root ? join(root, 'f') : join(tmpdir(), 'se-test-file-'))
-  if (root) appendFileSync(join(root, TEMP_FOLDER_LOG), `${folder.slice(root.length + 1)}\t${testFile}\n`)
+  const log = (event: string) => {
+    if (root) appendFileSync(join(root, TEMP_FOLDER_LOG), `${basename(folder)}\t${event}\t${testFile}\n`)
+  }
+  log('made')
   const before = ['TMPDIR', 'TMP', 'TEMP'].map((name) => [name, process.env[name]] as const)
   for (const [name] of before) process.env[name] = folder
   return async () => {
@@ -37,5 +45,6 @@ export function useFileTempFolder(testFile: string): () => Promise<void> {
       else process.env[name] = value
     }
     await rm(folder, TEMP_REMOVAL).catch(() => undefined)
+    log('removed')
   }
 }

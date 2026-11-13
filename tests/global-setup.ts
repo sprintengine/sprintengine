@@ -59,28 +59,38 @@ interface Leftover {
   entries: string[]
 }
 
-/** The per-file folders still present in the run's folder, by the test file that owned each. */
+/**
+ * What is in the run's folder although its test file's cleanup has run (or
+ * was written outside any test file), by the file that owned it. The folder of
+ * a file whose hooks never ran (all its tests skipped) is not counted: it is
+ * removed with the run's folder.
+ */
 function leftovers(root: string): Leftover[] {
   const owners = new Map<string, string>()
+  const removed = new Set<string>()
   const log = join(root, TEMP_FOLDER_LOG)
   if (existsSync(log)) {
     for (const line of readFileSync(log, 'utf8').split('\n')) {
-      const tab = line.indexOf('\t')
-      if (tab > 0) owners.set(line.slice(0, tab), line.slice(tab + 1))
+      const [name, event, file] = line.split('\t')
+      if (!name || !file) continue
+      owners.set(name, file)
+      if (event === 'removed') removed.add(name)
     }
   }
   const found: Leftover[] = []
   for (const name of readdirSync(root)) {
     if (name === TEMP_FOLDER_LOG) continue
+    if (owners.has(name) && !removed.has(name)) continue
     let entries: string[] = []
     try {
       entries = readdirSync(join(root, name))
     } catch {
       entries = []
     }
-    // A per-file folder emptied but not yet removed is not a leak of anything.
-    if (owners.has(name) && entries.length === 0) continue
-    found.push({ file: owners.get(name) ?? name, entries: entries.length > 0 ? entries.slice(0, 5) : [name] })
+    found.push({
+      file: owners.get(name) ?? '(outside any test file)',
+      entries: entries.length > 0 ? entries.slice(0, 5) : [name],
+    })
   }
   return found
 }

@@ -80,6 +80,11 @@ test. `tests/` holds what they share: the setup every worker runs
 (`tests/stubs/`, `tests/stand-in.ts`) and fixtures. Each test runs with the
 app's own `SPRINTENGINE_*` variables removed from its
 environment, so the suite behaves the same from a Studio terminal as from CI.
+Each test file's `tmpdir()` is a scratch folder of its own, removed once the
+file is done (`tests/temp-folders.ts`), so a test need not remove what it
+makes there; it must stop the servers and processes it starts, because the
+run fails, naming the file, when something is still writing there at the end
+(`tests/global-setup.ts`).
 The suites that assert on timing run in a `serial` project, one file at a time,
 after the rest. The release-script tests under `scripts/release/` run as
 `npm run test:release`, and the lint guard probes as part of `npm run lint` —
