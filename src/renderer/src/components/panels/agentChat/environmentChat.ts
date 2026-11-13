@@ -50,6 +50,7 @@ export function environmentConversationTransport(target: EnvironmentTarget): Con
   const parts = createStudioConversationParts(client)
   const services = createStudioChatServices(client, (listener) => source.watchOpen(listener))
   const transport = studioConversationTransport(() => source.welcome(), {
+    label: target.name,
     parts: () => parts,
     services,
     unwatchPullRequest: async ({ key, url }) => {

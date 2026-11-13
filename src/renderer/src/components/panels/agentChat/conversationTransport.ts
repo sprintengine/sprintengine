@@ -7,6 +7,7 @@ import {
   type ChatServerOffer,
 } from '../../../../../../packages/client-runtime/src/public'
 import { watchWindowStudioWelcome, windowStudioWelcome } from '../../../studio/windowStudioClient'
+import { followWindowStudioPush } from '../../../studio/windowStudioPush'
 import type { EnvironmentId, StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
 
 import type { ChatServices } from './chatServices'
@@ -338,6 +339,7 @@ const localParts = () => studioImplementation().parts
 // is made; the object itself never changes, so what is keyed by it (a shared
 // subscription, a picture cache) stays put.
 const windowServices: ChatServices = {
+  followPush: followWindowStudioPush,
   providers: {
     list: (input) => windowChatServices().providers.list(input),
     models: (input) => windowChatServices().providers.models(input),
@@ -392,6 +394,8 @@ export type StudioTransportImplementation = {
   unwatchPullRequest(input: { key: ConversationKey; url: string }): Promise<ConversationTransportResult>
   /** Where Create PR does its work, for a Studio whose checkout this window's shell reaches. */
   pullRequestHost?(key: ConversationKey): PullRequestHost
+  /** What the person calls the machine (`ChatEnvironment.label`); absent for the window's own Studio. */
+  label?: string
 }
 
 /**
@@ -417,7 +421,7 @@ export function studioConversationTransport(
     },
     get environment() {
       const id = welcome()?.environment.id ?? null
-      if (where?.id !== id) where = { id, label: null, lane: null }
+      if (where?.id !== id) where = { id, label: implementation.label ?? null, lane: null }
       return where
     },
   }

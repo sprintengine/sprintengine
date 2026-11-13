@@ -11,6 +11,7 @@ import type {
 } from '../../../../../shared/tailnet-mesh'
 import { followWindowStudioPush } from '../../../studio/windowStudioPush'
 import type { ChatBinding } from './chatBinding'
+import type { ChatPushFollower } from './chatServices'
 import { hostUsageLimitsOf } from './hostUsageLimits'
 
 // What the window's own Studio holds for one of its chats: the messages it
@@ -28,6 +29,9 @@ const NO_MESSAGES: never[] = []
 
 export function useStudioChatHeld(
   key: StudioConversationKey | null,
+  // The chat's own Studio: the window's, or the environment's that holds it.
+  follow: ChatPushFollower = followWindowStudioPush,
+  holder: string = WINDOW_STUDIO_NAME,
 ): Pick<ChatBinding, 'hostQueue' | 'hostSchedule' | 'hostUsageLimits'> {
   const workspaceId = key?.workspaceId ?? null
   const agentId = key?.agentId ?? null
@@ -42,19 +46,19 @@ export function useStudioChatHeld(
     if (workspaceId === null || agentId === null) return
     const params = { key: { workspaceId, agentId, ...(workspaceRoot ? { workspaceRoot } : {}) } }
     const stops = [
-      followWindowStudioPush({
+      follow({
         topic: 'conversation.queued',
         params,
         capability: STUDIO_CONVERSATIONS_CAPABILITY,
         onPayload: (frame) => setQueued(frame.messages),
       }),
-      followWindowStudioPush({
+      follow({
         topic: 'conversation.scheduled',
         params,
         capability: STUDIO_CONVERSATIONS_CAPABILITY,
         onPayload: (frame) => setScheduled(frame.messages),
       }),
-      followWindowStudioPush({
+      follow({
         topic: 'conversation.usageLimits',
         params,
         capability: STUDIO_CONVERSATIONS_CAPABILITY,
@@ -64,13 +68,13 @@ export function useStudioChatHeld(
     return () => {
       for (const stop of stops) stop()
     }
-  }, [workspaceId, agentId, workspaceRoot])
+  }, [workspaceId, agentId, workspaceRoot, follow])
   return useMemo(
     () => ({
-      hostQueue: { machineName: WINDOW_STUDIO_NAME, messages: queued },
-      hostSchedule: { machineName: WINDOW_STUDIO_NAME, messages: scheduled },
-      ...(usage ? { hostUsageLimits: hostUsageLimitsOf(WINDOW_STUDIO_NAME, usage) } : {}),
+      hostQueue: { machineName: holder, messages: queued },
+      hostSchedule: { machineName: holder, messages: scheduled },
+      ...(usage ? { hostUsageLimits: hostUsageLimitsOf(holder, usage) } : {}),
     }),
-    [queued, scheduled, usage],
+    [queued, scheduled, usage, holder],
   )
 }
