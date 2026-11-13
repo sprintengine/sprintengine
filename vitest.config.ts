@@ -50,6 +50,9 @@ export default defineConfig({
     alias: { '@renderer': new URL('./src/renderer/src', import.meta.url).pathname },
   },
   test: {
+    // The run's own temp folder, removed at the end; each file gets one inside
+    // it (tests/global-setup.ts, tests/setup.ts).
+    globalSetup: ['./tests/global-setup.ts'],
     setupFiles: ['./tests/setup.ts'],
     environment: 'node',
     // Nearly every file is one test that walks all of its cases in order (see

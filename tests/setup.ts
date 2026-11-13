@@ -1,8 +1,9 @@
 // Runs in every test worker before each test file.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, vi } from 'vitest'
+import { afterAll, afterEach, expect, vi } from 'vitest'
+import { useFileTempFolder } from './temp-folders'
 
 // The app exports its own SPRINTENGINE_* / SPRINTENGINE_* variables into every
 // terminal it opens, and this repository is developed in the app — so a suite
@@ -13,18 +14,18 @@ for (const name of Object.keys(process.env)) {
   if (name.startsWith('SPRINTENGINE_') || name.startsWith('SPRINTENGINE_')) delete process.env[name]
 }
 
+// Every `tmpdir()` the file makes lands in a scratch folder of its own, which
+// is removed once the file is done, passed or failed (tests/temp-folders.ts).
+// Registered first, this `afterAll` runs after the file's own, so the servers
+// and processes a file stops in its hooks are stopped before the removal.
+afterAll(useFileTempFolder(expect.getState().testPath ?? 'an unnamed test file'))
+
 // The one variable set back: the home the app keeps each project's store in
 // (`~/.sprintengine/workspaces`, main/workspace-store.ts). Every chat a suite
 // runs writes its transcript there, so without this the suite would fill the
-// home of whoever ran it. One folder per worker process, which runs file after
-// file; a test that needs a store of its own sets the variable itself.
-const worker = process as NodeJS.Process & { seStoreHome?: string }
-if (!worker.seStoreHome) {
-  const home = mkdtempSync(join(tmpdir(), 'se-store-home-'))
-  worker.seStoreHome = home
-  process.once('exit', () => rmSync(home, { recursive: true, force: true }))
-}
-process.env.SPRINTENGINE_STORE_HOME = worker.seStoreHome
+// home of whoever ran it. One folder per test file, in its scratch folder; a
+// test that needs a store of its own sets the variable itself.
+process.env.SPRINTENGINE_STORE_HOME = mkdtempSync(join(tmpdir(), 'se-store-home-'))
 
 // `DEV` is false, as the app's own build compiles it; Vitest's default is a dev
 // build. `PROD` is left false on purpose: the renderer keys its production
