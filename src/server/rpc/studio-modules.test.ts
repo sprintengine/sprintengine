@@ -541,3 +541,26 @@ test('a change to what runs is an owner’s: a paired client holding modules:ope
   await owner.request('module.setEnabled', params)
   assert.deepEqual(changes, ['acme'], 'a retried change is carried out once')
 })
+
+test('the window’s module report is an owner’s: a paired client holding modules:operate cannot replace it', async () => {
+  const hub = createStudioModuleHub()
+  const reported: unknown[] = []
+  hub.serveLifecycleFrom({
+    list: () => [],
+    setEnabled: async () => ({ ok: true, module: null }),
+    install: async () => ({ ok: false, message: 'no' }),
+    setTrust: async () => ({ ok: true }),
+    uninstall: async () => ({ ok: true, removedModuleIds: [] }),
+    installed: async () => ({ modules: [], rejected: [] }),
+    rendererEntries: async () => ({ entries: [], failures: {} }),
+    setAppState: () => undefined,
+    reportRegistry: (snapshot) => (reported.push(snapshot), { ok: true }),
+  })
+  const snapshot = { modules: [] }
+  const paired = await caller(hub, (started) => pairFakeClient(started.auth, 'tablet', ['modules:operate']))
+  assert.equal(codeOf(await paired.request('module.reportRegistry', { snapshot, commandId: 'r1' })), 'owner_required')
+  assert.deepEqual(reported, [], 'nothing a paired client sent was kept')
+  const owner = await caller(hub)
+  assert.deepEqual(answerOf(await owner.request('module.reportRegistry', { snapshot, commandId: 'r2' })), { ok: true })
+  assert.deepEqual(reported, [snapshot])
+})

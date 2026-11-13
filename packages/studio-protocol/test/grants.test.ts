@@ -84,6 +84,7 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'marketplace.update',
   'marketplace.verify',
   'module.install',
+  'module.reportRegistry',
   'module.setEnabled',
   'module.setTrust',
   'module.uninstall',

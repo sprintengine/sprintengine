@@ -133,8 +133,8 @@ The `welcome`'s `grant` is what the connection may do:
   `modules:read`, as do `module.installed` (every installed extension, with
   its trust and origin), `module.rendererEntries` (their window halves) and
   the `module.changed` stream. `module.setAppState` (the modules' Settings
-  values) needs `settings:write`; `module.reportRegistry` (the registry a
-  window resolved), `modules:operate`.
+  values) needs `settings:write`. `module.reportRegistry` (the registry a
+  window resolved) is an owner's: it is the report of the Studio's own window.
 - No scope installs code either: the marketplace's reviews, installs, updates
   and uninstalls, a GitHub repository's review and install
   (`marketplace.verify`, `.install`, `.update`, `.uninstall`,
