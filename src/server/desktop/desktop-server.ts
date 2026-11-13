@@ -76,6 +76,10 @@ import { portDuplex } from '../ipc/port-duplex'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
 import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
+import {
+  combineEnvironmentRelays,
+  type TailnetEnvironmentRelay,
+} from '../../main/automation/tailnet/tailnet-studio-endpoint'
 
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
 // its gateway and owner socket, the tunnelled window.api domains, and the
@@ -412,11 +416,13 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ...createTailnetTools({ resolveTailnet: () => tailnetFrontDoor }),
     ],
   })
-  // A paired device reaches the SSH machines main holds through this
-  // process's tailnet listener: main mints each device's ticket on the
-  // machine and opens each socket's stream, handed here as a port.
+  // A paired device reaches the SSH machines main holds and the WSL
+  // distributions this process runs through this process's tailnet listener:
+  // main mints each device's ticket on an SSH machine and opens each socket's
+  // stream, handed here as a port; a distribution's are minted and opened here.
+  const environmentRelays: TailnetEnvironmentRelay[] = []
   if (shellEnvironments)
-    gateway.linkEnvironments({
+    environmentRelays.push({
       list: () => rpc.call<StudioRelayedEnvironment[]>(SHELL_METHODS.environmentList, {}),
       ticket: (environmentId, device) =>
         rpc.call<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>(
@@ -441,6 +447,14 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         return portDuplex(port)
       },
     })
+  const wslAccess = core.wslServers?.access
+  if (wslAccess)
+    environmentRelays.push({
+      ticket: (environmentId, device) => wslAccess.deviceTicket(environmentId, device),
+      open: (environmentId) => wslAccess.openEnvironment(environmentId),
+      list: async () => wslAccess.relayedEnvironments(),
+    })
+  if (environmentRelays.length > 0) gateway.linkEnvironments(combineEnvironmentRelays(environmentRelays))
   tailnetFrontDoor = gateway
   // A chat agent in WSL reaches its own server's gateway: the shell's six
   // toolsets are offered there too, and run through this registry, and so
@@ -936,6 +950,21 @@ function serveShellRequests(deps: {
     return deps.gateway
       .mesh()
       .windowTicket(connectionId, origin, typeof environmentId === 'string' ? environmentId : undefined)
+  })
+  // A window's ticket to a WSL distribution's own Studio: the servers are
+  // this process's, so main asks here (`wsl:` routes).
+  rpc.handle(SERVER_METHODS.wslWindowTicket, async (params) => {
+    const { distro, windowKey, origin } = (params ?? {}) as { distro?: unknown; windowKey?: unknown; origin?: unknown }
+    if (typeof distro !== 'string' || typeof windowKey !== 'string' || typeof origin !== 'string')
+      throw new Error('A WSL window ticket names its distribution, its window and its origin.')
+    const access = deps.core.wslServers?.access
+    if (!access) return { ok: false, code: 'unsupported_route', message: 'This computer runs no WSL distributions.' }
+    return access.windowTicket(distro, { windowKey, origin })
+  })
+  rpc.handle(SERVER_METHODS.wslRevokeWindow, (params) => {
+    const { windowKey } = (params ?? {}) as { windowKey?: unknown }
+    if (typeof windowKey === 'string') deps.core.wslServers?.access.revokeWindow(windowKey)
+    return null
   })
   rpc.handle(SERVER_METHODS.info, (): ServerInfo => {
     const status = deps.gateway.getStatus()

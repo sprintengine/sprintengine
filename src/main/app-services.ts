@@ -20,6 +20,7 @@ import { createAgentStateService } from './agent-state-service'
 import { primeDefaultWslDistro } from './hosts/wsl-distro'
 import { configureWslHelpers } from './hosts/wsl-helper-runtime'
 import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
+import { combineEnvironmentRelays, type TailnetEnvironmentRelay } from './automation/tailnet/tailnet-studio-endpoint'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
 import { createDesktopEnvironments } from './environments/desktop-environments'
 import { registerEnvironmentsIpc } from './ipc/environments-ipc'
@@ -1640,6 +1641,8 @@ export function createAppServices(
       void writeDiagnosticLog({ level: 'info', title: 'Environments', message, source: 'workspace' })
     },
   })
+  // This PC's WSL distributions' servers, when the core runs in this process.
+  const wslServersOfCore = 'wslServers' in core ? core.wslServers : null
   registerEnvironmentsIpc(ipcMain, {
     environments,
     broadcast: (channel) => broadcastToAllWindows(channel, null),
@@ -1653,6 +1656,19 @@ export function createAppServices(
         if (!ssh)
           return { ok: false, code: 'unsupported_route', message: 'SSH machines are not turned on in this app.' }
         return ssh.environments.windowTicket(route.machine, { windowKey, origin })
+      }
+      // A WSL distribution's own window listener, asked over the owner
+      // connection the core holds; the socket goes to the core's loopback
+      // route to that distribution.
+      if (route.kind === 'wsl') {
+        if (wslServersOfCore) return wslServersOfCore.access.windowTicket(route.distro, { windowKey, origin })
+        if (server)
+          return server.rpc.call<EnvironmentTicketResult>(SERVER_METHODS.wslWindowTicket, {
+            distro: route.distro,
+            windowKey,
+            origin,
+          })
+        return { ok: false, code: 'unsupported_route', message: 'This computer runs no WSL distributions.' }
       }
       // A machine a paired desktop relays this one to: that pairing's device
       // token buys the ticket there, naming the machine's environment.
@@ -1674,12 +1690,15 @@ export function createAppServices(
         })
       return { ok: false, code: 'unavailable', message: 'Studio’s server is not running yet.' }
     },
-    revokeWindow: (windowKey) => ssh?.environments.revokeWindow(windowKey),
+    revokeWindow: (windowKey) => {
+      ssh?.environments.revokeWindow(windowKey)
+      if (wslServersOfCore) wslServersOfCore.access.revokeWindow(windowKey)
+      else if (server) void server.rpc.call(SERVER_METHODS.wslRevokeWindow, { windowKey }).catch(() => undefined)
+    },
   })
   // A chat agent in WSL reaches its own server's gateway: the desktop's
   // toolsets, and this side's own tools of the families the WSL server cannot
   // serve, are offered there too, and run here (phase 7).
-  const wslServersOfCore = 'wslServers' in core ? core.wslServers : null
   // An SSH machine's agents get the pane's browser, whose tabs reach that
   // machine's network, and the canvas (phase 8).
   if (automationService && ssh)
@@ -1728,16 +1747,35 @@ export function createAppServices(
   const terminalAttachGuard: { current: ((windowKey: string, sessionId: string) => boolean) | null } = {
     current: null,
   }
-  // A paired device reaches this desktop's SSH machines through its tailnet
-  // listener: main holds their sessions, so main mints each device's ticket
-  // there and opens each socket's stream. Out of process the server asks main
-  // the same over the shell link (`environmentDeviceTicket`, `sshOpen`).
-  if (automationService && ssh)
-    automationService.linkEnvironments({
-      ticket: (environmentId, device) => ssh.environments.deviceTicket(environmentId, device),
-      open: (environmentId) => ssh.environments.openEnvironment(environmentId),
-      list: async () => ssh.environments.relayedEnvironments(),
-    })
+  // A paired device reaches this desktop's SSH machines and WSL distributions
+  // through its tailnet listener: main holds the SSH sessions and the core the
+  // WSL servers, so each mints a device's ticket on its own machines and opens
+  // each socket's stream. Out of process the server asks main the same for SSH
+  // over the shell link (`environmentDeviceTicket`, `sshOpen`).
+  const environmentRelays: TailnetEnvironmentRelay[] = [
+    ...(ssh
+      ? [
+          {
+            ticket: (environmentId: string, device: Parameters<TailnetEnvironmentRelay['ticket']>[1]) =>
+              ssh.environments.deviceTicket(environmentId, device),
+            open: (environmentId: string) => ssh.environments.openEnvironment(environmentId),
+            list: async () => ssh.environments.relayedEnvironments(),
+          },
+        ]
+      : []),
+    ...(wslServersOfCore
+      ? [
+          {
+            ticket: (environmentId: string, device: Parameters<TailnetEnvironmentRelay['ticket']>[1]) =>
+              wslServersOfCore.access.deviceTicket(environmentId, device),
+            open: (environmentId: string) => wslServersOfCore.access.openEnvironment(environmentId),
+            list: async () => wslServersOfCore.access.relayedEnvironments(),
+          },
+        ]
+      : []),
+  ]
+  if (automationService && environmentRelays.length > 0)
+    automationService.linkEnvironments(combineEnvironmentRelays(environmentRelays))
   const studioRpc = automationService
     ? createStudioRpc(core, automationService, {
         updates: desktopUpdates,

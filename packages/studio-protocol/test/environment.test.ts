@@ -125,6 +125,7 @@ test('a relay route names the pairing it goes through and the machine it reaches
 
 test("a desktop's relayed list is read as a client may use it: an entry that cannot be a route is dropped, the rest kept", () => {
   const BOX = '7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f'
+  const DISTRO = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
   const answer = {
     environments: [
       {
@@ -139,9 +140,11 @@ test("a desktop's relayed list is read as a client may use it: an entry that can
       { environmentId: 'a.b', name: 'dotted', kind: 'ssh', connected: true },
       { environmentId: '../x', name: 'climbing', kind: 'ssh', connected: true },
       { environmentId: ENV, name: '', kind: 'ssh', connected: true },
-      { environmentId: ENV, name: 'other kind', kind: 'wsl', connected: true },
+      { environmentId: DISTRO, name: 'other kind', kind: 'docker', connected: true },
       { environmentId: BOX, name: 'twice', kind: 'ssh', connected: true },
       { environmentId: ENV, name: 'half a mark', kind: 'ssh', connected: 'yes', mark: { kind: 'server' } },
+      // A WSL distribution the desktop runs.
+      { environmentId: DISTRO, name: 'WSL: Ubuntu', kind: 'wsl', connected: true },
       null,
       'build-box',
     ],
@@ -149,6 +152,7 @@ test("a desktop's relayed list is read as a client may use it: an entry that can
   assert.deepEqual(relayedEnvironmentsOf(answer), [
     { environmentId: BOX, name: 'build-box', kind: 'ssh', connected: true, mark: { kind: 'server', color: 'teal' } },
     { environmentId: ENV, name: 'half a mark', kind: 'ssh', connected: false },
+    { environmentId: DISTRO, name: 'WSL: Ubuntu', kind: 'wsl', connected: true },
   ])
   for (const bad of [null, {}, { environments: 'all' }, []]) assert.deepEqual(relayedEnvironmentsOf(bad), [])
 })

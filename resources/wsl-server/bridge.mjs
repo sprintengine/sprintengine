@@ -10,7 +10,7 @@
 // Its first words are a ready line on stdout, before it reads anything, so the
 // `sh` that exec'd it cannot have swallowed what follows on stdin as script.
 // The first line in is the socket's absolute path; every byte after that line
-// goes to the socket. Either side closing ends the bridge.
+// goes to the socket. Either side ending ends the bridge.
 //
 // With `--mux <runDir>` it is an SSH machine's relay instead (phase 8, the
 // same program by decision R21): one SSH session's stdio carries many streams
@@ -56,7 +56,13 @@ function start() {
     socket.once('connect', () => {
       if (rest.length > 0) socket.write(rest)
       process.stdin.pipe(socket)
-      socket.pipe(process.stdout)
+      socket.pipe(process.stdout, { end: false })
+      // The server ended its side (a window it revoked, a door it refused):
+      // nothing more comes from it, so the bridge ends once what it sent is
+      // out. Ending stdout is what tells the Windows side; holding the
+      // half-open socket until the Windows side ended too left a closed
+      // connection looking open there.
+      socket.once('end', () => process.stdout.write('', () => process.exit(0)))
       socket.once('close', () => process.exit(0))
     })
   }

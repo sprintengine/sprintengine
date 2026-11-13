@@ -51,6 +51,38 @@ export type TailnetEnvironmentRelay = {
   list(): Promise<StudioRelayedEnvironment[]>
 }
 
+/**
+ * One relay over the owners of each kind of machine this desktop holds: its
+ * SSH machines (main's sessions) and its WSL distributions (the core's
+ * servers). Each machine is its owner's, found by the environment ids that
+ * owner lists; a device never names an owner, only an environment.
+ */
+export function combineEnvironmentRelays(relays: ReadonlyArray<TailnetEnvironmentRelay>): TailnetEnvironmentRelay {
+  const ownerOf = async (environmentId: string): Promise<TailnetEnvironmentRelay | null> => {
+    for (const relay of relays) {
+      const listed = await relay.list().catch(() => [])
+      if (listed.some((entry) => entry.environmentId === environmentId)) return relay
+    }
+    return null
+  }
+  return {
+    async ticket(environmentId, device) {
+      const owner = await ownerOf(environmentId)
+      return owner
+        ? owner.ticket(environmentId, device)
+        : { ok: false, code: 'unknown_route', message: 'This desktop holds no machine by that id.' }
+    },
+    async open(environmentId) {
+      const owner = await ownerOf(environmentId)
+      if (!owner) throw new Error('That machine is not connected to this desktop.')
+      return owner.open(environmentId)
+    },
+    async list() {
+      return (await Promise.all(relays.map((relay) => relay.list().catch(() => [])))).flat()
+    },
+  }
+}
+
 /** What a paired device may do on a machine this desktop relays: its own scopes here, cut to the relayed ceiling. */
 export function relayedDeviceScopes(device: TailnetDevice): StudioRelayedDeviceScope[] {
   const held = new Set<string>(tailnetDeviceStudioScopes(device.scopes))

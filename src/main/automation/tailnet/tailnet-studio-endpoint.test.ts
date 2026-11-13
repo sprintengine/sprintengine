@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { connect as connectTcp } from 'node:net'
+import { PassThrough } from 'node:stream'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, test } from 'vitest'
@@ -20,7 +21,12 @@ import type { TailnetScope } from '../../../shared/tailnet'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
 import { createTailnetGatewayServer, type TailnetGatewayServer } from './tailnet-gateway-server'
 import { TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
-import { isDesktopWindowOrigin, tailnetDeviceGrant } from './tailnet-studio-endpoint'
+import {
+  combineEnvironmentRelays,
+  isDesktopWindowOrigin,
+  tailnetDeviceGrant,
+  type TailnetEnvironmentRelay,
+} from './tailnet-studio-endpoint'
 
 // A paired device on the Studio protocol: the real tailnet listener on
 // loopback, handing its socket to a real Studio server over a fake
@@ -442,4 +448,38 @@ test('a hello that presents another ticket than the socket was opened with is re
     }),
   )
   assert.equal(outcome, 'unauthorized')
+})
+
+test('a device names an environment, and the one relay that lists it mints its ticket and opens its stream', async () => {
+  const asked: string[] = []
+  const relay = (kind: 'ssh' | 'wsl', environmentId: string): TailnetEnvironmentRelay => ({
+    list: async () => [{ environmentId, name: kind, kind, connected: true }],
+    ticket: async (id) => {
+      asked.push(`${kind} ticket ${id}`)
+      return { ok: true, token: kind, path: `/device?ticket=${kind}` }
+    },
+    open: async (id) => {
+      asked.push(`${kind} open ${id}`)
+      return new PassThrough()
+    },
+  })
+  const broken: TailnetEnvironmentRelay = {
+    list: async () => {
+      throw new Error('main is not answering')
+    },
+    ticket: async () => assert.fail('never asked'),
+    open: async () => assert.fail('never asked'),
+  }
+  const combined = combineEnvironmentRelays([broken, relay('ssh', 'env-ssh'), relay('wsl', 'env-wsl')])
+  assert.deepEqual(
+    (await combined.list()).map((entry) => entry.environmentId),
+    ['env-ssh', 'env-wsl'],
+    'one owner that cannot answer hides none of the others',
+  )
+  const device = { deviceId: 'phone-1', name: 'Phone', scopes: ['conversation:read' as const] }
+  assert.deepEqual(await combined.ticket('env-wsl', device), { ok: true, token: 'wsl', path: '/device?ticket=wsl' })
+  await combined.open('env-ssh')
+  assert.deepEqual(asked, ['wsl ticket env-wsl', 'ssh open env-ssh'])
+  assert.equal((await combined.ticket('env-other', device)).ok, false)
+  await assert.rejects(combined.open('env-other'))
 })
