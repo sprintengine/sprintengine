@@ -4,7 +4,7 @@ import { useWindowPageVisible } from '../../../utils/windowActivity'
 import { useTailnetPresence, type TailnetPresence } from '../topbar/useTailnetPresence'
 import { publishRemoteConversationList } from './remoteConversationFacts'
 import { browsePairedMachine } from '../../../studio/pairedDiscovery'
-import { pairedStudioAvailable } from '../../../studio/pairedStudio'
+import { environmentStudioAvailable } from '../../../studio/environmentStudio'
 import {
   chatManageOf,
   remoteLinkStateOf,
@@ -88,7 +88,7 @@ export function useRemoteSessions({ enabled: wanted }: { enabled: boolean }): Re
   // A host without the mesh bridge (partial test harnesses, narrower
   // preloads) gets a band that draws what the rows already know and asks
   // nothing — never a throw inside an effect.
-  const bridge = pairedStudioAvailable()
+  const bridge = environmentStudioAvailable()
   const conversationBridge = bridge && typeof window.api?.meshConversationList === 'function'
   const visible = useWindowPageVisible()
 

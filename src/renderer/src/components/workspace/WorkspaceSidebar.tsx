@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { changePairedChat, settlePairedChat, visitPairedChat } from '../../studio/pairedChats'
-import { pairedStudioAvailable } from '../../studio/pairedStudio'
+import { environmentStudioAvailable } from '../../studio/environmentStudio'
 import { pairedScheduledAgentAction } from '../../studio/pairedSchedules'
 import { ChatGlyph, NewChatIcon, RemoteMachineGlyph, ScheduleGlyph, resolveEnabledWorkspaceType } from '../AppIcons'
 import CliIcon from '../CliIcon'
@@ -1690,7 +1690,7 @@ function WorkspaceSidebar({
   // the machine's own words.
   const settleRemoteConversation = useCallback(
     (conversation: RemoteConversation) => {
-      if (!pairedStudioAvailable()) return
+      if (!environmentStudioAvailable()) return
       const restore = (message: string) => {
         setSettlingRemote((current) => {
           const next = new Set(current)
@@ -1736,7 +1736,7 @@ function WorkspaceSidebar({
       marks?: RemoteChatPending,
       onTaken?: () => void,
     ) => {
-      if (!pairedStudioAvailable()) return
+      if (!environmentStudioAvailable()) return
       const key = remoteChatKey(target.connectionId, target.workspaceId)
       if (marks)
         setPendingRemoteMarks((current) =>
@@ -1856,7 +1856,7 @@ function WorkspaceSidebar({
     const origin = workspace.remoteOrigin
     if (origin) {
       const row = remoteConversationByWorkspace.get(workspace.id)?.agents[0]
-      if (!row?.lifecycle || !pairedStudioAvailable()) return null
+      if (!row?.lifecycle || !environmentStudioAvailable()) return null
       const chatWorkspaceId = remoteOriginChatWorkspaceId(origin)
       return {
         key: `remote:${origin.connectionId}:${chatWorkspaceId}`,
@@ -2025,7 +2025,7 @@ function WorkspaceSidebar({
     (workspace: Workspace, settled = true) => {
       const origin = workspace.remoteOrigin
       const here = () => (settled ? settleWorkspaceById(workspace.id) : setWorkspaceSettled(workspace.id, false))
-      if (!origin || !pairedStudioAvailable() || !remoteKeepsRest(workspace)) {
+      if (!origin || !environmentStudioAvailable() || !remoteKeepsRest(workspace)) {
         here()
         return
       }

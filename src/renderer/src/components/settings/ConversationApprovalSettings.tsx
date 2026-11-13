@@ -5,7 +5,7 @@ import { GhostButton, InlineNotice, SettingCard, SettingRow, Spinner } from '../
 import { windowChatServices } from '../panels/agentChat/windowChat'
 import { SettingsSectionTitle } from './SettingsAtoms'
 import { pairedApprovalRules, revokePairedApprovalRule } from '../../studio/pairedChats'
-import { pairedStudioAvailable } from '../../studio/pairedStudio'
+import { environmentStudioAvailable } from '../../studio/environmentStudio'
 
 export function ConversationApprovalSettings() {
   const [rules, setRules] = useState<ConversationApprovalRule[]>()
@@ -107,7 +107,7 @@ function PairedMachineApprovalRules() {
     return { connectionId: connection.id, machineName: connection.machineName, answer }
   }, [])
   const load = useCallback(async () => {
-    if (typeof window.api?.meshListConnections !== 'function' || !pairedStudioAvailable()) return
+    if (typeof window.api?.meshListConnections !== 'function' || !environmentStudioAvailable()) return
     const connections = await window.api.meshListConnections().catch(() => [])
     setMachines(Array.isArray(connections) ? await Promise.all(connections.map(read)) : [])
   }, [read])

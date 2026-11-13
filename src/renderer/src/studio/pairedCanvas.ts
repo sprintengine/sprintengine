@@ -22,22 +22,24 @@ import type {
 import { canvasFail, canvasOk } from '../../../shared/canvas/types'
 import { isRecord } from '../../../shared/records'
 import type { MeshCanvasBoard, MeshCanvasBoardsResult, MeshCanvasScreenshotResult } from '../../../shared/tailnet-mesh'
+import { parseEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
 import {
-  onPairedStudioForgotten,
-  pairedRefusal,
-  pairedStudios,
-  withPairedStudio,
-  type PairedHold,
+  environmentRefusal,
+  environmentStudios,
+  onEnvironmentStudioForgotten,
+  pairedTarget,
+  withEnvironmentStudio,
+  type EnvironmentHold,
+  type EnvironmentStudios,
   type PairedMachine,
-  type PairedStudios,
-} from './pairedStudio'
+} from './environmentStudio'
 
 // This desktop's half of a paired chat's Canvas pane: the boards of the
 // machine the chat runs on, edited with the same editor and the same calls the
 // pane makes for a board here (`canvas:open-board`, `canvas:commit-scene`, the
 // `canvas:scene` and `canvas:presence` pushes), carried over that machine's
 // Studio protocol (`canvas.*`, packages/studio-protocol/src/canvas.ts) on this
-// window's own connection to it (pairedStudio.ts). The far machine's canvas
+// window's own connection to it (environmentStudio.ts). The far machine's canvas
 // service is the one owner of each board; this end keeps a copy of what it
 // last read so a second tab, an export and a reconnect have something to read.
 //
@@ -104,7 +106,7 @@ export type PairedCanvas = {
 export type PairedCanvasDeps = {
   /** Where a paired machine is and the token this desktop holds for it; null for one not paired here. */
   target(connectionId: string): PairedMachine | null
-  studios: PairedStudios
+  studios: EnvironmentStudios
   /** How long a board nobody here shows is kept open, for the last change of a tab that just closed. */
   lingerMs?: number
   requestTimeoutMs?: number
@@ -154,7 +156,7 @@ type Board = {
 
 type Session = {
   connectionId: string
-  hold: PairedHold
+  hold: EnvironmentHold
   client: StudioClient | null
   state: StudioClientState | 'connecting'
   stopState: () => void
@@ -224,7 +226,7 @@ export function createPairedCanvas(deps: PairedCanvasDeps): PairedCanvas {
   function sessionFor(connectionId: string, target: PairedMachine): Session {
     let session = sessions.get(connectionId)
     if (session) return session
-    const hold = deps.studios.hold(target)
+    const hold = deps.studios.hold(pairedTarget(target))
     const created: Session = {
       connectionId,
       hold,
@@ -253,7 +255,7 @@ export function createPairedCanvas(deps: PairedCanvasDeps): PairedCanvas {
         if (created.state === 'connecting') created.state = client.state
       },
       (error: unknown) => {
-        created.gone = pairedRefusal(target, error).message
+        created.gone = environmentRefusal(pairedTarget(target), error).message
       },
     )
     sessions.set(connectionId, created)
@@ -476,7 +478,7 @@ export function createPairedCanvas(deps: PairedCanvasDeps): PairedCanvas {
       try {
         client = await clientOf(session)
       } catch (error) {
-        return canvasFail('forbidden', pairedRefusal({ machineName: machineOf(session.connectionId) }, error).message)
+        return canvasFail('forbidden', environmentRefusal({ name: machineOf(session.connectionId) }, error).message)
       }
       if (!client.supports(STUDIO_CANVAS_BOARDS_CAPABILITY))
         return canvasFail('forbidden', outdatedWords(session.connectionId))
@@ -699,14 +701,14 @@ export function createPairedCanvas(deps: PairedCanvasDeps): PairedCanvas {
     const target = typeof connectionId === 'string' ? deps.target(connectionId) : null
     if (typeof connectionId !== 'string' || !target) return { ok: false, message: 'That machine is not paired here.' }
     try {
-      const known = await deps.studios.ask(target, async (client) => ({
+      const known = await deps.studios.ask(pairedTarget(target), async (client) => ({
         live: client.supports(STUDIO_CANVAS_BOARDS_CAPABILITY),
         canEdit: studioGrantAllows(client.grant, 'canvas.commit'),
       }))
       lastAccess.set(connectionId, known)
       return { ok: true, ...known, ...(known.live ? {} : { reason: outdatedWords(connectionId) }) }
     } catch (error) {
-      const refusal = pairedRefusal(target, error)
+      const refusal = environmentRefusal(pairedTarget(target), error)
       if (refusal.kind === 'outdated')
         return { ok: true, live: false, canEdit: false, reason: outdatedWords(connectionId) }
       // Out of reach: what it last said decides which pane to draw, and the
@@ -974,16 +976,19 @@ export function windowPairedCanvas(machine?: PairedMachine): PairedCanvas {
   if (windowCanvas) return windowCanvas
   const made = createPairedCanvas({
     target: (connectionId) => ({ id: connectionId, machineName: machineNames.get(connectionId) ?? 'That machine' }),
-    studios: pairedStudios(),
+    studios: environmentStudios(),
   })
-  onPairedStudioForgotten((connectionId) => made.forget(connectionId))
+  onEnvironmentStudioForgotten((route) => {
+    const forgotten = parseEnvironmentRoute(route)
+    if (forgotten?.kind === 'tailnet') made.forget(forgotten.connection)
+  })
   windowCanvas = made
   return made
 }
 
 /** A far refusal of a board list or picture, in words about boards. */
 function boardsRefused(machine: PairedMachine, error: unknown): { ok: false; code: string; message: string } {
-  const refused = pairedRefusal(machine, error)
+  const refused = environmentRefusal(pairedTarget(machine), error)
   return {
     ok: false,
     code: refused.code,
@@ -1005,7 +1010,9 @@ export async function listPairedBoards(
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose boards to list.' }
   const allBoards = scope === 'machine'
   try {
-    const listed = await withPairedStudio(machine, (client) => client.request('canvas.list', { workspaceId }))
+    const listed = await withEnvironmentStudio(pairedTarget(machine), (client) =>
+      client.request('canvas.list', { workspaceId }),
+    )
     const boards: MeshCanvasBoard[] = listed.boards
       .filter((board) => allBoards || board.here)
       .map((board) => ({
@@ -1032,8 +1039,8 @@ export async function pairedBoardPicture(
   if (!input.workspaceId || !input.board)
     return { ok: false, code: 'invalid_arguments', message: 'Name the board to show.' }
   try {
-    const picture = await withPairedStudio(
-      machine,
+    const picture = await withEnvironmentStudio(
+      pairedTarget(machine),
       (client) => client.request('canvas.picture', input),
       // Drawn in a hidden window over there; the picture's own wait, not a read's.
       { timeoutMs: 45_000 },

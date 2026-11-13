@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { StudioError } from '../../../../../../../packages/client-runtime/src/public'
-import { fakePairedStudios } from '../../../../studio/pairedStudio.double'
+import { fakePairedStudios } from '../../../../studio/environmentStudio.double'
 import type { Workspace } from '../../../../types/workspace'
 
 const state = vi.hoisted(() => ({

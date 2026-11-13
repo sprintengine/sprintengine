@@ -8,7 +8,7 @@ import { CONVERSATION_SEARCH_MIN_QUERY } from './conversationHistoryProvider'
 import { bestConversationHit } from './conversationSnippet'
 import type { PaletteCommand, PaletteResultProvider } from './paletteProvider'
 import { searchPairedChats } from '../../studio/pairedChats'
-import { pairedStudioAvailable } from '../../studio/pairedStudio'
+import { environmentStudioAvailable } from '../../studio/environmentStudio'
 
 // What was said in the paired machines' chats, beside this computer's
 // (`conversationHistoryProvider.ts`): each machine that takes a search from
@@ -37,7 +37,7 @@ export function createRemoteConversationHistoryProvider(
     },
     async load(query, context, publish) {
       const epoch = ++generation
-      if (!pairedStudioAvailable()) return []
+      if (!environmentStudioAvailable()) return []
       const rows: PaletteCommand[] = []
       let failure: string | null = null
       let answered = false

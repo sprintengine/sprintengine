@@ -12,7 +12,13 @@ import type {
   MeshUpdateScheduledAgentInput,
   MeshUpdateScheduledAgentResult,
 } from '../../../shared/tailnet-mesh'
-import { askPaired, pairedCommandId, type PairedAnswer, type PairedMachine } from './pairedStudio'
+import {
+  askEnvironment,
+  environmentCommandId,
+  pairedTarget,
+  type EnvironmentAnswer,
+  type PairedMachine,
+} from './environmentStudio'
 
 // A paired machine's scheduled agents, asked by this window of that machine's
 // Studio itself (`schedules.*`): listed on `workspaces:read`, made, changed,
@@ -24,9 +30,9 @@ function askSchedules<T>(
   machine: PairedMachine,
   work: (client: StudioClient) => Promise<T>,
   timeoutMs?: number,
-): Promise<PairedAnswer<T>> {
-  return askPaired(
-    machine,
+): Promise<EnvironmentAnswer<T>> {
+  return askEnvironment(
+    pairedTarget(machine),
     STUDIO_SCHEDULES_CAPABILITY,
     (machineName) => ({
       code: 'scheduled_agents_unsupported',
@@ -53,7 +59,7 @@ export async function pairedScheduledAgentAction(
   if (!id) return { ok: false, code: 'invalid_arguments', message: 'Name the scheduled agent.' }
   if (!SCHEDULED_AGENT_ACTIONS.has(action))
     return { ok: false, code: 'invalid_arguments', message: 'Run, pause, resume or delete it.' }
-  const commandId = pairedCommandId()
+  const commandId = environmentCommandId()
   const answer = await askSchedules<unknown>(
     machine,
     (client) =>
@@ -85,7 +91,7 @@ export async function createPairedScheduledAgent(
     return { ok: false, code: 'invalid_arguments', message: 'A schedule needs a project, a prompt, a time and a CLI.' }
   }
   const draft = { workspaceId, ...scheduleDraftOf(input, { prompt, cron, cli }) }
-  const commandId = pairedCommandId()
+  const commandId = environmentCommandId()
   const answer = await askSchedules(machine, (client) => client.rpc['schedules.create']({ ...draft, commandId }))
   if (!answer.ok) return answer
   const agent = scheduledAgentViewOf(answer.value.schedule)
@@ -117,7 +123,7 @@ export async function updatePairedScheduledAgent(
     skills: scheduleIds(input.skills),
     mcpServers: scheduleIds(input.mcpServers),
   }
-  const commandId = pairedCommandId()
+  const commandId = environmentCommandId()
   const answer = await askSchedules(machine, (client) => client.rpc['schedules.update']({ ...change, commandId }))
   if (!answer.ok) return answer
   const agent = scheduledAgentViewOf(answer.value.schedule)

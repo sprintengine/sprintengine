@@ -7,14 +7,18 @@ import { parseEnvironmentRoute } from '../packages/studio-protocol/src/environme
 import { createTailnetMeshService, type TailnetMeshService } from '../src/main/automation/tailnet/tailnet-mesh-service'
 import { peerStudioTicket } from '../src/main/automation/tailnet/tailnet-peer-studio'
 import { pairingUrl } from '../src/main/automation/tailnet/tailnet-service'
-import { closePairedStudio, configurePairedStudio } from '../src/renderer/src/studio/pairedStudio'
+import {
+  closeEnvironmentStudio,
+  configureEnvironmentStudio,
+  pairedRoute,
+} from '../src/renderer/src/studio/environmentStudio'
 import type { EnvironmentEntry, EnvironmentTicketResult } from '../src/shared/environments'
 import type { TailnetScope } from '../src/shared/tailnet'
 
 // A desktop window paired with another machine, for tests and the
 // cross-client gate (design-lane-on-protocol D1): this desktop's mesh pairs as
 // a person does and keeps the device token; the window's own client of that
-// machine's Studio (`src/renderer/src/studio/pairedStudio.ts`) is given each
+// machine's Studio (`src/renderer/src/studio/environmentStudio.ts`) is given each
 // connection's ticket by the mesh, for a window loaded from the app's files,
 // and opens its socket saying that origin, as Chromium does for a real window.
 
@@ -82,13 +86,13 @@ const windowApi: PairedWindow['api'] = {
     return () => changeListeners.delete(listener)
   },
 }
-configurePairedStudio(windowApi, { WebSocket: windowSocket('file://') })
+configureEnvironmentStudio(windowApi, { WebSocket: windowSocket('file://') })
 let windowBefore: unknown
 
 /**
  * A desktop window paired with the rig's machine (design-lane-on-protocol D1):
  * this desktop's mesh pairs as a person does, and the window's own client of
- * that machine's Studio (`src/renderer/src/studio/pairedStudio.ts`) is given
+ * that machine's Studio (`src/renderer/src/studio/environmentStudio.ts`) is given
  * its tickets by the mesh, for a window loaded from the app's files, and opens
  * its socket saying that origin. Installed as `window.api` while any lasts.
  */
@@ -134,7 +138,7 @@ export function openPairedWindow(mesh: TailnetMeshService, connectionId: string)
   }
   openWindows.set(connectionId, mesh)
   return () => {
-    closePairedStudio(connectionId, windowApi)
+    closeEnvironmentStudio(pairedRoute(connectionId), windowApi)
     if (!openWindows.delete(connectionId)) return
     if (openWindows.size === 0) global.window = windowBefore
   }
@@ -143,8 +147,8 @@ export function openPairedWindow(mesh: TailnetMeshService, connectionId: string)
 /**
  * A window's bridge to one machine by a device token held here, with no mesh:
  * each connection's ticket bought with that token for a `file://` window, as
- * main buys it. For a coordinator's own tests (`pairedStudios(api)`); the
- * caller closes its clients with `closePairedStudios(api)`.
+ * main buys it. For a coordinator's own tests (`environmentStudios(api)`); the
+ * caller closes its clients with `closeEnvironmentStudios(api)`.
  */
 export function deviceWindowApi(target: {
   endpoint: { host: string; port: number }
@@ -161,6 +165,6 @@ export function deviceWindowApi(target: {
       }
     },
   }
-  configurePairedStudio(api, { WebSocket: windowSocket('file://') })
+  configureEnvironmentStudio(api, { WebSocket: windowSocket('file://') })
   return api
 }

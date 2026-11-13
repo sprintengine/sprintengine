@@ -18,7 +18,7 @@ import type {
   MeshSettleConversationResult,
   MeshVisitConversationResult,
 } from '../../../shared/tailnet-mesh'
-import { askPaired, pairedCommandId, type PairedMachine } from './pairedStudio'
+import { askEnvironment, environmentCommandId, pairedTarget, type PairedMachine } from './environmentStudio'
 
 // A paired machine's chats' records, asked by this window of that machine's
 // Studio itself (`chat-lifecycle`, `approval-rules`, `pull-request-watch`):
@@ -40,14 +40,14 @@ export async function settlePairedChat(
   settled = true,
 ): Promise<MeshSettleConversationResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-  const answer = await askPaired(
-    machine,
+  const answer = await askEnvironment(
+    pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     lifecycleUnsupported(settled ? 'settle its chats' : 'bring its chats back'),
     (client) =>
       client.rpc['conversation.settle']({
         workspaceId,
-        commandId: pairedCommandId(),
+        commandId: environmentCommandId(),
         ...(settled ? {} : { settled: false }),
       }),
   )
@@ -63,8 +63,8 @@ export async function visitPairedChat(
   workspaceId: string,
 ): Promise<MeshVisitConversationResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-  const answer = await askPaired(
-    machine,
+  const answer = await askEnvironment(
+    pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     lifecycleUnsupported('keep its chats’ read state for a chat read here'),
     (client) => client.rpc['conversation.visit']({ workspaceId }),
@@ -86,8 +86,8 @@ export async function changePairedChat(
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
   if (change.kind === 'unwatch-pull-request') {
     const { agentId, url } = change
-    const answer = await askPaired(
-      machine,
+    const answer = await askEnvironment(
+      pairedTarget(machine),
       STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
       (machineName) => ({
         code: 'row_menu_unsupported',
@@ -99,14 +99,14 @@ export async function changePairedChat(
   }
   const call = chatChangeOf(change)
   if (!call) return { ok: false, code: 'invalid_arguments', message: 'That is not a change a chat takes.' }
-  const answer = await askPaired(
-    machine,
+  const answer = await askEnvironment(
+    pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'row_menu_unsupported',
       message: `${machineName} cannot ${call.ask} from here yet. Update SprintEngine Studio there to do it from here.`,
     }),
-    (client) => call.send(client, { workspaceId, commandId: pairedCommandId() }),
+    (client) => call.send(client, { workspaceId, commandId: environmentCommandId() }),
   )
   return answer.ok ? { ok: true, workspaceId } : answer
 }
@@ -122,8 +122,11 @@ export async function pairedChatDeletePlan(
   workspaceId: string,
 ): Promise<MeshConversationDeletePlanResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the remote chat.' }
-  const answer = await askPaired(machine, STUDIO_CHAT_LIFECYCLE_CAPABILITY, deleteUnsupported, (client) =>
-    client.rpc['conversation.deletePlan']({ workspaceId }),
+  const answer = await askEnvironment(
+    pairedTarget(machine),
+    STUDIO_CHAT_LIFECYCLE_CAPABILITY,
+    deleteUnsupported,
+    (client) => client.rpc['conversation.deletePlan']({ workspaceId }),
   )
   return answer.ok ? deletePlanOf(workspaceId, answer.value as unknown as Record<string, unknown>) : answer
 }
@@ -138,8 +141,8 @@ export async function searchPairedChats(machine: PairedMachine, query: string): 
       message: `Search for ${STUDIO_CHAT_SEARCH_MIN_CHARS} to ${STUDIO_CHAT_SEARCH_MAX_CHARS} characters.`,
     }
   }
-  const answer = await askPaired(
-    machine,
+  const answer = await askEnvironment(
+    pairedTarget(machine),
     STUDIO_CHAT_LIFECYCLE_CAPABILITY,
     (machineName) => ({
       code: 'search_unsupported',
@@ -157,8 +160,11 @@ const rulesUnsupported = (machineName: string) => ({
 
 /** The "always allow" rules that machine's chats run with, for Settings. */
 export async function pairedApprovalRules(machine: PairedMachine): Promise<MeshApprovalRulesResult> {
-  const answer = await askPaired(machine, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
-    client.rpc['conversation.approvalRules']({}),
+  const answer = await askEnvironment(
+    pairedTarget(machine),
+    STUDIO_APPROVAL_RULES_CAPABILITY,
+    rulesUnsupported,
+    (client) => client.rpc['conversation.approvalRules']({}),
   )
   if (!answer.ok) return answer
   if (!answer.value.ok) return { ok: false, code: 'unavailable', message: answer.value.message }
@@ -171,8 +177,11 @@ export async function revokePairedApprovalRule(
   ruleId: string,
 ): Promise<MeshRevokeApprovalRuleResult> {
   if (!ruleId) return { ok: false, code: 'invalid_arguments', message: 'Name the rule.' }
-  const answer = await askPaired(machine, STUDIO_APPROVAL_RULES_CAPABILITY, rulesUnsupported, (client) =>
-    client.rpc['conversation.revokeApprovalRule']({ commandId: pairedCommandId(), ruleId }),
+  const answer = await askEnvironment(
+    pairedTarget(machine),
+    STUDIO_APPROVAL_RULES_CAPABILITY,
+    rulesUnsupported,
+    (client) => client.rpc['conversation.revokeApprovalRule']({ commandId: environmentCommandId(), ruleId }),
   )
   if (!answer.ok) return answer
   return answer.value.ok ? { ok: true, ruleId } : { ok: false, code: 'unavailable', message: answer.value.message }

@@ -545,7 +545,7 @@ project's working tree unless the person puts it there.
   the tab and the editor a client that is this machine's `canvas:*` IPC for a chat
   here and, for a paired one, the window's own coordinator of that machine's
   boards (`src/renderer/src/studio/pairedCanvas.ts`) on the window's own Studio
-  connection to it (`pairedStudio.ts`, its tickets bought by main). Following `canvas.board` there opens the board as a
+  connection to it (`environmentStudio.ts`, its tickets bought by main). Following `canvas.board` there opens the board as a
   subscriber of that machine's canvas service, which pushes notices (a revision,
   the agent's presence) and an agent's `canvas.open` (`canvas.openRequests`);
   the scene is read with `canvas.read` and only the pictures this end lacks with

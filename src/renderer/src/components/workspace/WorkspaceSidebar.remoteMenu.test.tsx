@@ -121,7 +121,7 @@ test('WorkspaceSidebar.remoteMenu', async () => {
     }),
   }
   // That machine's Studio, as this window's own client of it reaches it.
-  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
   const studio = fakePairedStudios(domWindow.api as object, {
     'workspaces.list': () => ({
       workspaces: ['rw1', 'rw2', 'rw3', 'rw4'].map((id) => ({

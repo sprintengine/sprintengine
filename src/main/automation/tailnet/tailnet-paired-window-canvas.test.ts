@@ -18,7 +18,7 @@ import {
   windowPairedCanvas,
   type PairedCanvas,
 } from '../../../renderer/src/studio/pairedCanvas'
-import { closePairedStudios, pairedStudios } from '../../../renderer/src/studio/pairedStudio'
+import { closeEnvironmentStudios, environmentStudios } from '../../../renderer/src/studio/environmentStudio'
 
 // A paired desktop's Canvas pane on the boards of the machine a chat runs on,
 // with both ends real and over loopback: on one side the tailnet listener, the
@@ -47,10 +47,10 @@ async function machine(options: { canvas?: boolean } = {}): Promise<FarMachine> 
 function pairedDesktop(far: FarMachine, scopes: TailnetScope[] = ['workspace:read', 'workspace:operate']) {
   const device = far.rig.pair(scopes, 'dev-macbook-air')
   const api = deviceWindowApi({ endpoint: far.endpoint, deviceToken: device.token, machineName: MACHINE })
-  cleanups.push(() => closePairedStudios(api))
+  cleanups.push(() => closeEnvironmentStudios(api))
   const lane: PairedCanvas = createPairedCanvas({
     target: (id) => (id === 'conn-1' ? { id, machineName: MACHINE } : null),
-    studios: pairedStudios(api),
+    studios: environmentStudios(api),
     lingerMs: 20,
     requestTimeoutMs: 5_000,
   })
