@@ -954,7 +954,7 @@ capabilities are gone, and so are the tools a device alone used
 `chat-unwatch-pull-request` (`conversation.pull_request_unwatch`); since
 2026-11-13 it is the Studio's `pullRequests.unwatch` (`pull-request-watch`),
 and that capability and tool are gone. A desktop's window asks each paired
-machine's Studio itself, on its own connection (`pairedStudio.ts`), and reads
+machine's Studio itself, on its own connection (`environmentStudio.ts`), and reads
 which of them a machine takes off that welcome (`chat-lifecycle`,
 `pull-request-watch`); the list no longer says (`rowMenu`, `markUnread`,
 `manage` and `lifecycle` are gone from it). A machine on an older build offers

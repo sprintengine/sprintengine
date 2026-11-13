@@ -5,7 +5,7 @@ import type { MeshConnection, MeshScheduledAgentAction } from '../../../../../sh
 import type { TailnetScope } from '../../../../../shared/tailnet'
 import { tailnetScopeGrantsAccess } from '../../../../../shared/tailnet'
 import type { RemoteBrowseEntry } from '../remoteBand/remoteSessionsModel'
-import { pairedStudioAvailable } from '../../../studio/pairedStudio'
+import { environmentStudioAvailable } from '../../../studio/environmentStudio'
 import { pairedScheduledAgents } from '../../../studio/pairedSchedules'
 
 // Each paired machine's scheduled agents, for the sidebar's Scheduled section.
@@ -127,7 +127,7 @@ export function useRemoteScheduledAgents({
   const [lists, setLists] = useState<
     ReadonlyMap<string, { agents: ScheduledAgentView[]; pausedAll: ScheduledAgentsPause | null }>
   >(() => new Map())
-  const bridge = pairedStudioAvailable()
+  const bridge = environmentStudioAvailable()
   // The machines that may be asked, and when each was last browsed: the beat.
   const readable = useMemo(
     () =>

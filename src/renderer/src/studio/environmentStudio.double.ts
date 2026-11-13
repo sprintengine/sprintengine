@@ -8,10 +8,11 @@ import {
   STUDIO_WORKSPACES_CAPABILITY,
   type StudioScope,
 } from '../../../../packages/studio-protocol/src/public'
-import { closePairedStudios, configurePairedStudio } from './pairedStudio'
+import { parseEnvironmentRoute } from '../../../../packages/studio-protocol/src/environment'
+import { closeEnvironmentStudios, configureEnvironmentStudio } from './environmentStudio'
 
 // A stand-in for each paired machine's Studio as this window's own client
-// reaches it (`pairedStudio.ts`), for tests of what asks it. A test gives its
+// reaches it (`environmentStudio.ts`), for tests of what asks it. A test gives its
 // `window.api` one:
 //
 //   const studio = fakePairedStudios(window.api, {
@@ -94,9 +95,12 @@ export function fakePairedStudios(
           params,
         })),
   }
-  closePairedStudios(api as never)
-  configurePairedStudio(api, {
-    connect: async (connectionId) => {
+  closeEnvironmentStudios(api as never)
+  configureEnvironmentStudio(api, {
+    connect: async (route) => {
+      // A paired machine is asked by its pairing; any other route by its whole name.
+      const parsed = parseEnvironmentRoute(route)
+      const connectionId = parsed?.kind === 'tailnet' ? parsed.connection : route
       const refused = double.refuse(connectionId)
       if (refused) throw refused
       const ask = async (method: string, params: Record<string, unknown> = {}) => {

@@ -18,7 +18,7 @@ import { Feed } from '../feed'
 // A second desktop, paired with the server's machine: the mesh service a
 // desktop follows another machine's chats with (tailnet-mesh-service.ts), over
 // the tailnet lane, and its window's own client of that machine's Studio
-// (`src/renderer/src/studio/pairedStudio.ts`), which starts a chat there. It
+// (`src/renderer/src/studio/environmentStudio.ts`), which starts a chat there. It
 // pairs with a code the server offers, as a person does from Settings; its own
 // data directory is a fresh one.
 

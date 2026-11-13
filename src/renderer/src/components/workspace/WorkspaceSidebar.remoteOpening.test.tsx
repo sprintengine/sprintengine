@@ -105,7 +105,7 @@ test('WorkspaceSidebar.remoteOpening', async () => {
     }),
   }
   // That machine's Studio, as this window's own client of it reaches it.
-  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
   fakePairedStudios(domWindow.api as object, {
     'workspaces.list': () => ({
       workspaces: [{ id: 'rw4', name: 'parser', mode: 'standard', folderPath: '/Users/dev/parser', repository: null }],

@@ -8,7 +8,7 @@ import {
   windowPairedCanvas,
 } from '../../../../studio/pairedCanvas'
 import { createPairedChat } from '../../../../studio/pairedDiscovery'
-import { pairedStudioAvailable } from '../../../../studio/pairedStudio'
+import { environmentStudioAvailable } from '../../../../studio/environmentStudio'
 import { canvasContinuePrompt, parseCanvasBoardId } from '../../../../../../shared/canvas/paths'
 import type {
   CanvasBoardRef,
@@ -231,7 +231,7 @@ export function onCanvasScene(callback: (push: CanvasScenePush) => void): () => 
 export async function readCanvasBoardAccess(source: CanvasBoardSource): Promise<CanvasRemoteAccess> {
   if (source.kind === 'here') return { ok: true, live: true, canEdit: true }
   // A page that reaches no paired machine itself (a browser tab) shows its boards as pictures.
-  if (!pairedStudioAvailable())
+  if (!environmentStudioAvailable())
     return {
       ok: true,
       live: false,

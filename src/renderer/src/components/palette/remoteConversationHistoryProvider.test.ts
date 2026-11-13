@@ -2,7 +2,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { StudioError } from '../../../../../packages/client-runtime/src/public'
-import { fakePairedStudios } from '../../studio/pairedStudio.double'
+import { fakePairedStudios } from '../../studio/environmentStudio.double'
 import { createRemoteConversationHistoryProvider } from './remoteConversationHistoryProvider'
 import { registerRemoteChatOpener } from '../workspace/remoteBand/remoteChatSearch'
 import { clearConversationJump, usePendingConversationJump } from '../../utils/conversationHistoryNavigation'

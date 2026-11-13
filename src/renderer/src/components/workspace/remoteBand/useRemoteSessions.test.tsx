@@ -60,7 +60,7 @@ test('useRemoteSessions re-reads what a push names, and holds pushes while the w
     },
   }
   // That machine's Studio, as this window's own client of it reaches it: a browse is its project list.
-  const { fakePairedStudios } = await import('../../../studio/pairedStudio.double')
+  const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
   fakePairedStudios((dom.window as unknown as { api: object }).api, {
     'workspaces.list': () => {
       calls.browse += 1

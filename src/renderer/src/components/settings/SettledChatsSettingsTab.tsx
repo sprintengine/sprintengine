@@ -18,7 +18,7 @@ import { remoteOriginChatWorkspaceId } from '../workspace/remoteBand/remoteSessi
 import { useStableCallback } from '../../hooks/useStableCallback'
 import { useDeleteSettledChats } from '../../hooks/useDeleteSettledChats'
 import { settlePairedChat } from '../../studio/pairedChats'
-import { pairedStudioAvailable } from '../../studio/pairedStudio'
+import { environmentStudioAvailable } from '../../studio/environmentStudio'
 
 const SETTLED_PAGE = 100
 
@@ -119,7 +119,7 @@ export function SettledChatsSettingsTab({
   const unsettle = useCallback(
     (id: WorkspaceId) => {
       const origin = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === id)?.remoteOrigin
-      if (!origin || !pairedStudioAvailable()) {
+      if (!origin || !environmentStudioAvailable()) {
         setWorkspaceSettled(id, false)
         return
       }

@@ -22,13 +22,14 @@ import type { WorkspaceExtensions } from '../../../shared/workspace-extensions'
 import { createStudioConversationParts } from '../components/panels/agentChat/studioChat'
 import { settlePairedChat } from './pairedChats'
 import {
-  askPaired,
-  pairedCommandId,
-  pairedRefusal,
-  pairedStudioOutdated,
-  withPairedStudio,
+  askEnvironment,
+  environmentCommandId,
+  environmentRefusal,
+  environmentStudioOutdated,
+  pairedTarget,
+  withEnvironmentStudio,
   type PairedMachine,
-} from './pairedStudio'
+} from './environmentStudio'
 
 // What this window reads of a paired machine before it starts a chat there,
 // and the start itself, asked of that machine's Studio on the window's own
@@ -37,7 +38,10 @@ import {
 // and `conversation.create`. A machine whose Studio is from before the
 // protocol is told to update.
 
-const discoveryUnsupported = (machineName: string) => ({ code: 'outdated', message: pairedStudioOutdated(machineName) })
+const discoveryUnsupported = (machineName: string) => ({
+  code: 'outdated',
+  message: environmentStudioOutdated(machineName),
+})
 
 /**
  * The tailnet scopes a grant's Studio scopes carry: each scope the pairing
@@ -86,14 +90,14 @@ export async function browsePairedMachine(
   machine: Pick<MeshConnection, 'id' | 'machineName' | 'scopes'>,
 ): Promise<MeshBrowse> {
   try {
-    return await withPairedStudio(machine, async (client) => {
+    return await withEnvironmentStudio(pairedTarget(machine), async (client) => {
       const scopes = tailnetScopesOfGrant(client.grant.scopes)
       const gaps: MeshBrowse['gaps'] = []
       let workspaces: MeshWorkspace[] = []
       // Asked for only when the grant allows it. A refusal is a real answer and is
       // reported as one: an empty list would say "that machine has no workspaces".
       if (!client.supports(STUDIO_WORKSPACES_CAPABILITY))
-        gaps.push({ part: 'workspaces', code: 'outdated', message: pairedStudioOutdated(machine.machineName) })
+        gaps.push({ part: 'workspaces', code: 'outdated', message: environmentStudioOutdated(machine.machineName) })
       else if (!scopes.some((scope) => scope.startsWith('workspace:')))
         gaps.push({
           part: 'workspaces',
@@ -105,7 +109,7 @@ export async function browsePairedMachine(
           const listed = await client.rpc['workspaces.list']({})
           workspaces = (Array.isArray(listed.workspaces) ? listed.workspaces : []).flatMap(meshWorkspaceOf)
         } catch (error) {
-          const refused = pairedRefusal(machine, error)
+          const refused = environmentRefusal(pairedTarget(machine), error)
           gaps.push({ part: 'workspaces', code: refused.code, message: refused.message })
         }
       return {
@@ -120,7 +124,7 @@ export async function browsePairedMachine(
       }
     })
   } catch (error) {
-    const refused = pairedRefusal(machine, error)
+    const refused = environmentRefusal(pairedTarget(machine), error)
     if (refused.kind === 'outdated')
       return {
         connectionId: machine.id,
@@ -162,8 +166,11 @@ export async function pairedWorkspaceCheckout(
 ): Promise<MeshWorkspaceCheckoutResult> {
   if (!workspaceId)
     return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose checkout to read.' }
-  const answer = await askPaired(machine, STUDIO_WORKSPACES_CAPABILITY, discoveryUnsupported, (client) =>
-    client.rpc['workspaces.checkout']({ workspaceId }),
+  const answer = await askEnvironment(
+    pairedTarget(machine),
+    STUDIO_WORKSPACES_CAPABILITY,
+    discoveryUnsupported,
+    (client) => client.rpc['workspaces.checkout']({ workspaceId }),
   )
   if (!answer.ok) return answer
   const value = answer.value as Record<string, unknown>
@@ -204,8 +211,8 @@ export async function pairedWorkspaceExtensions(
   cli?: string,
 ): Promise<MeshWorkspaceExtensionsResult> {
   if (!workspaceId) return { ok: false, code: 'invalid_arguments', message: 'Name the workspace whose skills to list.' }
-  const answer = await askPaired(
-    machine,
+  const answer = await askEnvironment(
+    pairedTarget(machine),
     STUDIO_WORKSPACES_CAPABILITY,
     (machineName) => ({
       code: 'skills_unsupported',
@@ -256,7 +263,7 @@ export async function createPairedChat(
   const skills = launch.skills ?? []
   const worktreeName = launch.worktree?.kind === 'new' ? launch.worktree.name.trim() : ''
   const create = {
-    commandId: pairedCommandId(),
+    commandId: environmentCommandId(),
     // The workspace names the project the picker chose, not a chat to join,
     // so the chat is asked for as a new one; under no project it is new by what it is.
     ...(launch.noProject ? { noProject: true as const } : { workspaceId: launch.workspaceId!, newChat: true }),
@@ -270,8 +277,8 @@ export async function createPairedChat(
     ...(launch.worktree?.kind === 'existing' ? { inWorktree: launch.worktree.path.trim() } : {}),
     ...(skills.length > 0 && images.length === 0 ? { skills } : {}),
   }
-  const answer = await askPaired(
-    machine,
+  const answer = await askEnvironment(
+    pairedTarget(machine),
     STUDIO_WORKSPACES_CAPABILITY,
     (machineName) => ({
       code: 'outdated',

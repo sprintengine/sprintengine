@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fakePairedStudios } from '../studio/pairedStudio.double'
+import { fakePairedStudios } from '../studio/environmentStudio.double'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test } from 'vitest'

@@ -17,7 +17,12 @@ import {
   visitPairedChat,
 } from '../../../renderer/src/studio/pairedChats'
 import { browsePairedMachine } from '../../../renderer/src/studio/pairedDiscovery'
-import { closePairedStudio, withPairedStudio } from '../../../renderer/src/studio/pairedStudio'
+import {
+  closeEnvironmentStudio,
+  pairedRoute,
+  pairedTarget,
+  withEnvironmentStudio,
+} from '../../../renderer/src/studio/environmentStudio'
 import type { MeshConversationChange } from '../../../shared/tailnet-mesh'
 import { pairedWindow } from '../../../../tests/paired-window'
 import { deviceRig } from './tailnet-studio.test-helper'
@@ -312,7 +317,7 @@ test('Stop watching is the pull request’s own method there, by the chat’s ag
 
 /** The window's client of the paired machine, as its asks reach it. */
 function clientOf(machine: { id: string; machineName: string }): Promise<StudioClient> {
-  return withPairedStudio(machine, async (client) => client)
+  return withEnvironmentStudio(pairedTarget(machine), async (client) => client)
 }
 
 /** Whether a client closes for good within a while. */
@@ -333,7 +338,7 @@ test('each connection is opened with a ticket of its own, from the window’s or
     await visitPairedChat(machine.machine, 'ws-1')
     assert.equal(machine.window.tickets(), 1)
     // A new connection asks for a new one; the spent one opens nothing.
-    closePairedStudio(machine.machine.id)
+    closeEnvironmentStudio(pairedRoute(machine.machine.id))
     await visitPairedChat(machine.machine, 'ws-1')
     assert.equal(machine.window.tickets(), 2)
     // A ticket for no origin, or another's, is no window's: the listener refuses its socket.

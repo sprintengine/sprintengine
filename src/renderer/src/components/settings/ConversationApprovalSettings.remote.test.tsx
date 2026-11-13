@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { expect, test } from 'vitest'
 
 import { StudioError } from '../../../../../packages/client-runtime/src/public'
-import { fakePairedStudios } from '../../studio/pairedStudio.double'
+import { fakePairedStudios } from '../../studio/environmentStudio.double'
 import { ConversationApprovalSettings } from './ConversationApprovalSettings'
 
 // Settings lists the "always allow" rules each paired machine's chats run

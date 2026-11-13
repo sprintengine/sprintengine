@@ -201,7 +201,7 @@ test('NewAgentPanel interaction', async () => {
   // Each paired machine's Studio, as this window's own client of it reaches
   // it: its projects as `machineBrowse` says them, and a project's checkout as
   // `machineCheckout` does.
-  const { fakePairedStudios } = await import('../../../studio/pairedStudio.double')
+  const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
   const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
   const pairedStudio = fakePairedStudios((dom.window as unknown as { api: object }).api, {
     'workspaces.list': (_params, connectionId) => {

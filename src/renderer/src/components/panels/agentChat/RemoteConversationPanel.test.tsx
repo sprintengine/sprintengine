@@ -488,7 +488,7 @@ async function mountRemote({
     workspaceId: key.workspaceId,
     ...extensions,
   }))
-  const { fakePairedStudios } = await import('../../../studio/pairedStudio.double')
+  const { fakePairedStudios } = await import('../../../studio/environmentStudio.double')
   fakePairedStudios(api, { 'workspaces.extensions': workspaceExtensions })
   const { act, createElement } = await import('react')
   const { createRoot } = await import('react-dom/client')

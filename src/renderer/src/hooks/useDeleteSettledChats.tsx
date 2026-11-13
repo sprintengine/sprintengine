@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react'
 import { changePairedChat, pairedChatDeletePlan } from '../studio/pairedChats'
-import { pairedStudioAvailable } from '../studio/pairedStudio'
+import { environmentStudioAvailable } from '../studio/environmentStudio'
 
 import type { WorkspaceId } from '../types/workspace'
 import { useWorkspaceStore } from '../store/workspaceStore'
@@ -101,7 +101,7 @@ export function useDeleteSettledChats(): {
       const title = titleOf(workspaceId)
       const failed = (description: string) =>
         showToast({ tone: 'error', title: 'The chat was not deleted', description })
-      if (!origin || !pairedStudioAvailable()) {
+      if (!origin || !environmentStudioAvailable()) {
         failed('Deleting chats on another machine is not available here.')
         return false
       }

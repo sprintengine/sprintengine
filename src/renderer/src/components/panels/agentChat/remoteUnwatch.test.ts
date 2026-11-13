@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { expect, test } from 'vitest'
 
-import { fakePairedStudios } from '../../../studio/pairedStudio.double'
+import { fakePairedStudios } from '../../../studio/environmentStudio.double'
 import { createRemoteConversationTransport } from './conversationTransport'
 
 // Stop watching on a paired machine's chat's strip ends that machine's watch

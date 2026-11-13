@@ -121,7 +121,7 @@ test('WorkspaceSidebar.remoteManage', async () => {
   }
   // That machine's Studio, as this window's own client of it reaches it: it
   // keeps its chats' records and takes Stop watching.
-  const { fakePairedStudios } = await import('../../studio/pairedStudio.double')
+  const { fakePairedStudios } = await import('../../studio/environmentStudio.double')
   const studio = fakePairedStudios(domWindow.api as object, {
     'workspaces.list': () => ({
       workspaces: ['rw1', 'rw4'].map((id) => ({
