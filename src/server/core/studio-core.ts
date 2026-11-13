@@ -102,6 +102,7 @@ import { takeDataDir } from './take-data-dir'
 import { createStudioUsageLimitResumes, studioConversationUsageLimits } from './studio-usage-limit-resumes'
 import { studioPullRequestWakes } from './studio-pull-request-wakes'
 import { createStudioScheduledAgents } from './studio-scheduled-agents'
+import { keptImagesIn } from '../../main/scheduled-agents/prompt-images'
 import { createEnvironmentReadiness } from '../environment/environment-readiness'
 import { sharedGhRunner } from '../../main/github/gh'
 import { createPullRequestChatFolders } from '../pull-requests/pull-request-chat-folders'
@@ -1264,6 +1265,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           scheduledMessages,
           usageLimitResumes,
           pullRequests: pullRequests.record,
+          scheduledImages: (prompt) => keptImagesIn(prompt, dataDir),
         }),
         log: (message) => {
           void writeDiagnosticLog({ level: 'info', source: 'workspace', title: 'SSH machine', message })

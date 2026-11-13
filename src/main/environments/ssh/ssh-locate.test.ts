@@ -8,8 +8,7 @@ import { test } from 'vitest'
 
 import { locateServer, parseProbe, recordWindow, type Located } from './ssh-connect-script'
 
-const WIRE = 7
-const APP = { version: '1.5.0', backendWire: WIRE, window: { protocolVersion: 3, minProtocolVersion: 2 } }
+const APP = { version: '1.5.0', window: { protocolVersion: 3, minProtocolVersion: 2 } }
 
 type Record = {
   version?: string
@@ -37,7 +36,6 @@ function probe(record: Record | null, options: { alive?: boolean; failed?: objec
 const server = (version: string, window: [number, number] | null, extra: Record = {}): Record => ({
   version,
   origin: 'bootstrap',
-  backendWire: WIRE,
   ...(window ? { protocolVersion: window[0], minProtocolVersion: window[1] } : {}),
   ...extra,
 })
@@ -63,9 +61,9 @@ test('compatibility is the protocol window, not equal versions', () => {
     // This build's own server, read without its window, is not replaced by itself.
     ['the same build with no window', server('1.5.0', null), 'attach'],
     ['a server whose version does not read', server('?', null), 'blocked'],
-    // The backend wire is one more input while it carries the chat.
-    ['a newer server on another wire', server('1.6.0', [3, 2], { backendWire: WIRE + 1 }), 'blocked'],
-    ['an older desktop-started server on another wire', server('1.4.0', [3, 2], { backendWire: WIRE - 1 }), 'upgrade'],
+    // The private backend wire is no input: the protocol window decides.
+    ['the same build on another backend wire', server('1.5.0', [3, 2], { backendWire: 99 }), 'attach'],
+    ['a newer server on another backend wire that speaks ours', server('1.6.0', [3, 2], { backendWire: 1 }), 'attach'],
   ]
   for (const [name, record, expected] of rows)
     assert.equal(kind(locateServer(probe(record), APP, 'build-box')), expected, name)

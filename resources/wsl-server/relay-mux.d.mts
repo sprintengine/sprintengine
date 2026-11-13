@@ -18,8 +18,7 @@ export class FrameDecoder {
   push(chunk: Buffer): MuxFrame[]
 }
 
-export type MuxOpenRequest =
-  { kind: 'owner'; purpose: 'backend' | 'studio' | 'ws' } | { kind: 'tcp'; host: string; port: number }
+export type MuxOpenRequest = { kind: 'owner'; purpose: 'studio' | 'ws' } | { kind: 'tcp'; host: string; port: number }
 
 /** Why the relay would not open a stream: `error.code` is one of these. */
 export type MuxRefusalCode = 'refused' | 'unreachable' | 'timeout' | 'limit' | 'no-server' | 'closed'

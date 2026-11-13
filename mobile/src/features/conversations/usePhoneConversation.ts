@@ -71,6 +71,7 @@ import {
   stillHanding,
   type HandingSend,
 } from "./queuedSends";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /**
  * How long a streamed delta may wait to be drawn with the ones behind it. A
@@ -178,15 +179,8 @@ export function usePhoneConversation(
   offersOverride?: PhoneChatOffers | null,
 ) {
   const api = useMemo(
-    () =>
-      apiOverride ??
-      (session
-        ? createDesktopConversationsApi({
-            baseUrl: session.baseUrl,
-            deviceToken: session.deviceToken,
-          })
-        : null),
-    [session?.baseUrl, session?.deviceToken, apiOverride],
+    () => apiOverride ?? (session ? createDesktopConversationsApi(studioTargetOf(session)) : null),
+    [session?.baseUrl, session?.deviceToken, session?.relayedEnvironmentId, apiOverride],
   );
   // A chat opened earlier in this run draws what it held at once, on the
   // first frame, and then asks the desktop only for what followed.

@@ -22,6 +22,7 @@ import {
   remarksSummaryWords,
   reviewSummaryWords,
 } from "./pullRequestView";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 type ReadView =
   | { status: "loading" }
@@ -49,7 +50,7 @@ export function PullRequestScreen({
 }) {
   const styles = useThemedStyles(createStyles);
   const { colors } = useTheme();
-  const api = useMemo(() => (session ? createPullRequestApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }) : null), [session]);
+  const api = useMemo(() => (session ? createPullRequestApi(studioTargetOf(session)) : null), [session]);
   const [view, setView] = useState<ReadView>({ status: "loading" });
   const [refreshing, setRefreshing] = useState(false);
   const live = useRef(true);

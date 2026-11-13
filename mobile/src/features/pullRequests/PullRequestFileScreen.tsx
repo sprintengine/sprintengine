@@ -11,6 +11,7 @@ import { space, typography, type Theme } from "../../theme/tokens";
 import { UnifiedDiff } from "../conversations/ConversationFileDiffScreen";
 import { splitPath } from "../diff/unifiedDiff";
 import { diffProgress } from "./pullRequestView";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /**
  * One file of a pull request as a unified diff, read a page at a time: the
@@ -30,7 +31,7 @@ export function PullRequestFileScreen({
 }) {
   const styles = useThemedStyles(createStyles);
   const inset = useScreenBottomInset();
-  const api = useMemo(() => (session ? createPullRequestApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }) : null), [session]);
+  const api = useMemo(() => (session ? createPullRequestApi(studioTargetOf(session)) : null), [session]);
   const [pages, setPages] = useState<PullRequestDiffPage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

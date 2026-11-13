@@ -75,6 +75,7 @@ import { relayShellToolsets, sshRelayTarget } from '../wsl/wsl-tool-relay'
 import { portDuplex } from '../ipc/port-duplex'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
+import type { StudioRelayedEnvironment } from '../../../packages/studio-protocol/src/environment-access'
 
 // The desktop's own Studio server, out of process (phase 6 spec): the core,
 // its gateway and owner socket, the tunnelled window.api domains, and the
@@ -416,6 +417,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
   // machine and opens each socket's stream, handed here as a port.
   if (shellEnvironments)
     gateway.linkEnvironments({
+      list: () => rpc.call<StudioRelayedEnvironment[]>(SHELL_METHODS.environmentList, {}),
       ticket: (environmentId, device) =>
         rpc.call<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>(
           SHELL_METHODS.environmentDeviceTicket,
@@ -925,9 +927,15 @@ function serveShellRequests(deps: {
     await deps.gateway.mesh().checkReachability(typeof connectionId === 'string' ? connectionId : undefined)
   })
   rpc.handle(SERVER_METHODS.meshWindowTicket, (params) => {
-    const { connectionId, origin } = (params ?? {}) as { connectionId?: unknown; origin?: unknown }
+    const { connectionId, origin, environmentId } = (params ?? {}) as {
+      connectionId?: unknown
+      origin?: unknown
+      environmentId?: unknown
+    }
     if (typeof origin !== 'string') throw new Error('A window ticket names its window’s origin.')
-    return deps.gateway.mesh().windowTicket(connectionId, origin)
+    return deps.gateway
+      .mesh()
+      .windowTicket(connectionId, origin, typeof environmentId === 'string' ? environmentId : undefined)
   })
   rpc.handle(SERVER_METHODS.info, (): ServerInfo => {
     const status = deps.gateway.getStatus()

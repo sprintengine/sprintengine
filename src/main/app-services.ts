@@ -1654,13 +1654,23 @@ export function createAppServices(
           return { ok: false, code: 'unsupported_route', message: 'SSH machines are not turned on in this app.' }
         return ssh.environments.windowTicket(route.machine, { windowKey, origin })
       }
-      if (route.kind !== 'tailnet')
+      // A machine a paired desktop relays this one to: that pairing's device
+      // token buys the ticket there, naming the machine's environment.
+      const paired =
+        route.kind === 'tailnet'
+          ? { connection: route.connection }
+          : route.kind === 'relay'
+            ? { connection: route.via, environmentId: route.environment }
+            : null
+      if (!paired)
         return { ok: false, code: 'unsupported_route', message: 'This window reaches that machine through this one.' }
-      if (automationService) return automationService.mesh().windowTicket(route.connection, origin)
+      if (automationService)
+        return automationService.mesh().windowTicket(paired.connection, origin, paired.environmentId)
       if (server)
         return server.rpc.call<EnvironmentTicketResult>(SERVER_METHODS.meshWindowTicket, {
-          connectionId: route.connection,
+          connectionId: paired.connection,
           origin,
+          ...(paired.environmentId ? { environmentId: paired.environmentId } : {}),
         })
       return { ok: false, code: 'unavailable', message: 'Studio’s server is not running yet.' }
     },
@@ -1726,6 +1736,7 @@ export function createAppServices(
     automationService.linkEnvironments({
       ticket: (environmentId, device) => ssh.environments.deviceTicket(environmentId, device),
       open: (environmentId) => ssh.environments.openEnvironment(environmentId),
+      list: async () => ssh.environments.relayedEnvironments(),
     })
   const studioRpc = automationService
     ? createStudioRpc(core, automationService, {

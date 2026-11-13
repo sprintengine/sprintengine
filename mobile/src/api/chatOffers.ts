@@ -17,7 +17,7 @@ import {
   studioGrantAllowsTopic,
   type StudioWelcomeFrame,
 } from "../../../packages/studio-protocol/src/public";
-import { desktopStudio, desktopWelcome, onDesktopWelcome, type DesktopTarget } from "./desktopStudio";
+import { desktopStudio, desktopWelcome, onDesktopWelcome, studioTargetOf, type DesktopTarget } from "./desktopStudio";
 
 // What the phone offers in a desktop's chats, read from what that desktop's
 // Studio said in its welcome: its capabilities, its chats' and this pairing's
@@ -87,16 +87,22 @@ export function useChatOffers(
 ): PhoneChatOffers {
   const baseUrl = target?.baseUrl;
   const deviceToken = target?.deviceToken;
+  const relayedEnvironmentId = target?.relayedEnvironmentId;
+  const studio = (base: string, token: string): DesktopTarget =>
+    studioTargetOf({ baseUrl: base, deviceToken: token, ...(relayedEnvironmentId ? { relayedEnvironmentId } : {}) });
   const welcome = useSyncExternalStore(
     (changed) =>
-      baseUrl !== undefined && deviceToken !== undefined ? onDesktopWelcome({ baseUrl, deviceToken }, changed) : () => {},
-    () => (baseUrl !== undefined && deviceToken !== undefined ? desktopWelcome({ baseUrl, deviceToken }) : null),
+      baseUrl !== undefined && deviceToken !== undefined
+        ? onDesktopWelcome(studio(baseUrl, deviceToken), changed)
+        : () => {},
+    () => (baseUrl !== undefined && deviceToken !== undefined ? desktopWelcome(studio(baseUrl, deviceToken)) : null),
   );
   useEffect(() => {
     if (baseUrl === undefined || deviceToken === undefined || welcome) return;
     // Only to hear its welcome: a desktop that cannot be reached leaves the flags off.
-    desktopStudio({ baseUrl, deviceToken }).catch(() => undefined);
-  }, [baseUrl, deviceToken, welcome]);
+    desktopStudio(studio(baseUrl, deviceToken)).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl, deviceToken, relayedEnvironmentId, welcome]);
   return override ?? (welcome ? offersOf(welcome) : NOTHING);
 }
 
@@ -110,9 +116,13 @@ export function useChatOffersOf(
   override?: PhoneChatOffers | null,
 ): (target: DesktopTarget) => PhoneChatOffers {
   const [heard, setHeard] = useState(0);
-  const keys = targets.map((target) => `${target.baseUrl}\n${target.deviceToken}`).join("\n\n");
+  const keys = targets
+    .map((target) => `${target.baseUrl}\n${target.deviceToken}\n${target.relayedEnvironmentId ?? ""}`)
+    .join("\n\n");
   useEffect(() => {
-    const stops = targets.map((target) => onDesktopWelcome(target, () => setHeard((count) => count + 1)));
+    const stops = targets.map((target) =>
+      onDesktopWelcome(studioTargetOf(target), () => setHeard((count) => count + 1)),
+    );
     return () => {
       for (const stop of stops) stop();
     };
@@ -120,7 +130,7 @@ export function useChatOffersOf(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keys]);
   return useCallback(
-    (target: DesktopTarget) => override ?? chatOffersNow(target),
+    (target: DesktopTarget) => override ?? chatOffersNow(studioTargetOf(target)),
     // `heard` is what makes a new reader after a welcome.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [override, heard],

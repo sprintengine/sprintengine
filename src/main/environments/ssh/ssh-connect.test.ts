@@ -23,7 +23,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { remoteNodeDigests, WSL_NODE_VERSION } from '../../hosts/wsl-node-runtime'
-import { BACKEND_WIRE_VERSION, connectRemoteConversationBackend } from '../../../server/wsl/backend-wire'
+import { readTicket } from '../../../server/wsl/studio-door'
 import {
   assessProbe,
   buildConnectScript,
@@ -143,7 +143,7 @@ test('a fresh machine: probed, installed in one session, started, reached throug
   })
   assert.ok(again.supported)
   assert.deepEqual(again.needs, { node: false, server: false })
-  assert.deepEqual(locateServer(after, { version: VERSION, backendWire: BACKEND_WIRE_VERSION }, 'build-box'), {
+  assert.deepEqual(locateServer(after, { version: VERSION }, 'build-box'), {
     action: 'start',
   })
   await second.waitForSend(10_000)
@@ -154,10 +154,11 @@ test('a fresh machine: probed, installed in one session, started, reached throug
   const serverPid = relay.ready.server!.pid!
   pids.add(serverPid)
   assert.ok(second.lines.some((line) => line.startsWith('@@SPRINTENGINE_READY ')))
-  const backend = connectRemoteConversationBackend(await relay.endpoint.open({ kind: 'owner', purpose: 'backend' }))
-  await backend.refresh()
-  assert.ok(backend.listSessions().ok)
-  backend.close()
+  // Main's owner door answers with its one-use ticket; the WSL-only backend wire is no purpose here.
+  const door = await relay.endpoint.open({ kind: 'owner', purpose: 'studio' })
+  assert.ok(await readTicket(door, 10_000))
+  door.destroy()
+  await assert.rejects(relay.endpoint.open({ kind: 'owner', purpose: 'backend' as never }), { code: 'refused' })
   second.kill()
   await second.closed()
 
@@ -166,7 +167,7 @@ test('a fresh machine: probed, installed in one session, started, reached throug
   const running = await probeOf(third)
   assert.equal(running.lock.alive, true)
   assert.equal(running.serverRecord?.pid, serverPid)
-  assert.deepEqual(locateServer(running, { version: VERSION, backendWire: BACKEND_WIRE_VERSION }, 'build-box'), {
+  assert.deepEqual(locateServer(running, { version: VERSION }, 'build-box'), {
     action: 'attach',
   })
   await third.waitForSend(10_000)
@@ -179,7 +180,7 @@ test('a fresh machine: probed, installed in one session, started, reached throug
   // an older managed server is upgraded; a newer one that speaks ours is
   // used, one past it never touched; an external one too old is offered.
   assert.equal(typeof running.serverRecord?.protocolVersion, 'number')
-  const app = { version: VERSION, backendWire: BACKEND_WIRE_VERSION }
+  const app = { version: VERSION }
   const olderRecord = { ...running, serverRecord: { ...running.serverRecord, version: '0.0.1', origin: 'bootstrap' } }
   assert.deepEqual(locateServer(olderRecord, app, 'build-box'), { action: 'upgrade', from: '0.0.1' })
   const newerRecord = { ...running.serverRecord, version: '99.0.0' }
@@ -342,9 +343,9 @@ test("the probe finds a gh a package manager put off the plain ssh PATH, and gh 
 
 test('a home shared with another machine is refused, naming it', () => {
   const probe = probeOfFields({ hostname: 'build-box', lock_alive: '1', lock_host: 'build-box-2', lock_pid: '42' }, [
-    `@@SPRINTENGINE_PROBE server_json=${JSON.stringify({ version: VERSION, hostId: 'host:build-box-2', origin: 'bootstrap', backendWire: 1 })}`,
+    `@@SPRINTENGINE_PROBE server_json=${JSON.stringify({ version: VERSION, hostId: 'host:build-box-2', origin: 'bootstrap' })}`,
   ])
-  const located = locateServer(probe, { version: VERSION, backendWire: 1 }, 'build-box')
+  const located = locateServer(probe, { version: VERSION }, 'build-box')
   assert.equal(located.action, 'blocked')
   assert.match(located.action === 'blocked' ? located.reason : '', /on build-box-2/u)
 })
@@ -359,16 +360,16 @@ test('two nightlies are ordered by their build, so an older desktop never replac
   assert.equal(compareVersions('?', '0.5.0'), null)
   const running = (version: string) =>
     probeOfFields({ hostname: 'build-box', lock_alive: '1', lock_host: 'build-box', lock_pid: '42' }, [
-      `@@SPRINTENGINE_PROBE server_json=${JSON.stringify({ version, origin: 'bootstrap', backendWire: BACKEND_WIRE_VERSION })}`,
+      `@@SPRINTENGINE_PROBE server_json=${JSON.stringify({ version, origin: 'bootstrap' })}`,
     ])!
-  const app = (version: string) => ({ version, backendWire: BACKEND_WIRE_VERSION })
+  const app = (version: string) => ({ version })
   const fromOlder = locateServer(running(newer), app(older), 'build-box')
   assert.equal(fromOlder.action, 'blocked')
   assert.match(fromOlder.action === 'blocked' ? fromOlder.reason : '', /Update this app/u)
   assert.deepEqual(locateServer(running(older), app(newer), 'build-box'), { action: 'upgrade', from: older })
   const unknown = locateServer(
     probeOfFields({ hostname: 'build-box', lock_alive: '1', lock_host: 'build-box', lock_pid: '42' }, [
-      `@@SPRINTENGINE_PROBE server_json=${JSON.stringify({ origin: 'bootstrap', backendWire: BACKEND_WIRE_VERSION })}`,
+      `@@SPRINTENGINE_PROBE server_json=${JSON.stringify({ origin: 'bootstrap' })}`,
     ])!,
     app(newer),
     'build-box',

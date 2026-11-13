@@ -333,3 +333,37 @@ test('a hand-over is the shell’s alone, answered once per command id', async (
   const full = await shell.request('environment.adopt', { commandId: 'h-5', migrationId: 'm-1', records: many(500) })
   assert.equal((full.result as { held: unknown[] }).held.length, 500)
 })
+
+test('a device is told the machines this desktop relays by name and mark, never by address', async () => {
+  const BOX = '7d1e2f30-4a5b-4c6d-8e9f-0a1b2c3d4e5f'
+  const started = await startTestServer({
+    relayedEnvironments: async () => [
+      {
+        environmentId: BOX,
+        name: 'build-box',
+        kind: 'ssh',
+        connected: true,
+        machine: { host: 'build-box', port: 2222 },
+        mark: { kind: 'server', color: 'teal' },
+      },
+    ],
+  })
+  cleanups.push(() => started.dispose())
+
+  const phone = await lineClient(started.path, pairFakeClient(started.auth, 'phone', ['conversation:read']))
+  assert.ok((phone.welcome.capabilities as string[]).includes('relayed-environments'))
+  assert.deepEqual((await phone.request('environment.relayed', {})).result, {
+    environments: [
+      { environmentId: BOX, name: 'build-box', kind: 'ssh', connected: true, mark: { kind: 'server', color: 'teal' } },
+    ],
+  })
+  // The owner may see where it is.
+  const owner = await lineClient(started.path, OWNER_TOKEN)
+  const forOwner = (await owner.request('environment.relayed', {})).result as {
+    environments: Array<{ machine?: unknown }>
+  }
+  assert.deepEqual(forOwner.environments[0]?.machine, { host: 'build-box', port: 2222 })
+  // A device that may not read chats is told none of it.
+  const blind = await lineClient(started.path, pairFakeClient(started.auth, 'blind', ['workspaces:read']))
+  assert.equal(errorCode(await blind.request('environment.relayed', {})), 'scope_required')
+})

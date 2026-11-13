@@ -63,6 +63,7 @@ import {
 } from "./modelPickerLogic";
 import { dictatedDraft, dictationPlaceholder, joinDictation, messageWithDictation } from "../dictation/dictationLogic";
 import { useDictation } from "../dictation/useDictation";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /**
  * How long the list may take to answer after a launch before the chat opens
@@ -147,7 +148,7 @@ export function NewChatScreen({
 }) {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { sessions } = useSessionData();
+  const { chatSessions: sessions } = useSessionData();
   const { apiFor, desktops, markChatOpened } = useChats();
 
   // Where it runs. Starts as the project the person chose; "Run on" may move
@@ -359,7 +360,7 @@ export function NewChatScreen({
       setState({ status: "error", message: "That time has passed. Pick one ahead." });
       return;
     }
-    const api = createScheduledAgentsApi({ baseUrl: paired.baseUrl, deviceToken: paired.deviceToken });
+    const api = createScheduledAgentsApi(studioTargetOf(paired));
     const result = await api.create({
       workspaceId: target.workspaceId,
       prompt: draft,
@@ -384,7 +385,7 @@ export function NewChatScreen({
   const startChat = async (paired: MobileSession, draft: string, options: { worktree: boolean }) => {
     const text = draft.trim();
     const carrying = images;
-    const launchTarget = { baseUrl: paired.baseUrl, deviceToken: paired.deviceToken, machineName: target.desktopName };
+    const launchTarget = { ...studioTargetOf(paired), machineName: target.desktopName };
     const launchInput = {
       workspaceId: target.workspaceId,
       newChat: true,
@@ -407,7 +408,7 @@ export function NewChatScreen({
       // With pictures the chat starts bare, the pictures go to its session
       // from here, and the chat sends them with these words once it is live.
       // Anything that fails leaves the words and every picture in New.
-      const conversations = createDesktopConversationsApi({ baseUrl: paired.baseUrl, deviceToken: paired.deviceToken });
+      const conversations = createDesktopConversationsApi(studioTargetOf(paired));
       const launched = await launchWithPhotos(
         {
           target: { deviceId: target.deviceId, workspaceId: target.workspaceId, machineName: target.desktopName },
@@ -954,7 +955,7 @@ async function listedThread(
   session: MobileSession,
   conversation: LaunchedConversation,
 ): Promise<ConversationThread | null> {
-  const api = createDesktopConversationsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken });
+  const api = createDesktopConversationsApi(studioTargetOf(session));
   let timer: ReturnType<typeof setTimeout> | null = null;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), LISTED_THREAD_WAIT_MS);

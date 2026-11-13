@@ -7,6 +7,7 @@ import {
   type CreateConversationResult,
 } from "../../api/conversationLaunch";
 import type { MobileSession } from "../../api/types";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /**
  * Where the Canvases screens get each desktop's boards and a new chat from:
@@ -19,12 +20,9 @@ export interface CanvasSource {
 }
 
 const desktopCanvasSource: CanvasSource = {
-  boards: (session) => createCanvasBoardsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
+  boards: (session) => createCanvasBoardsApi(studioTargetOf(session)),
   startChat: (session, input) =>
-    createConversation(
-      { baseUrl: session.baseUrl, deviceToken: session.deviceToken, machineName: session.desktopName },
-      input,
-    ),
+    createConversation({ ...studioTargetOf(session), machineName: session.desktopName }, input),
 };
 
 export const CanvasSourceContext = createContext<CanvasSource>(desktopCanvasSource);

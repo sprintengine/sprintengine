@@ -10,6 +10,7 @@ import type { StudioAdoptedRecord } from '../../../packages/studio-protocol/src/
 import {
   adoptedRecordDigest,
   canonicalRecordJson,
+  carriedName,
   createEnvironmentAdoption,
   type EnvironmentAdoptionStores,
 } from './environment-adoption'
@@ -28,6 +29,7 @@ function fakeStores() {
   const calls: string[] = []
   const workspaces = new Set<string>()
   const schedules = new Set<string>()
+  const adoptedSchedules: Array<Record<string, unknown>> = []
   const sources = new Set<string>()
   let flushed = 0
   const stores: EnvironmentAdoptionStores = {
@@ -51,7 +53,12 @@ function fakeStores() {
         if ((record as { prompt?: unknown }).prompt === undefined)
           return { ok: false, reason: 'invalid', message: 'A scheduled agent has a prompt.' }
         schedules.add(id)
+        adoptedSchedules.push(record as Record<string, unknown>)
         return { ok: true }
+      },
+      async keepImage(bytes, name) {
+        calls.push(`image ${name}:${bytes.toString()}`)
+        return `/home/dev/.studio/scheduled-images/kept/${name}`
       },
     },
     messages: {
@@ -95,7 +102,7 @@ function fakeStores() {
       },
     },
   }
-  return { stores, calls, workspaces, flushed: () => flushed }
+  return { stores, calls, workspaces, adoptedSchedules, flushed: () => flushed }
 }
 
 function rig() {
@@ -345,4 +352,85 @@ test('a resume whose chat is not here is reported, not kept', async () => {
     answer.conflicts.map((entry) => entry.reason),
     ['Its chat is not on this machine.'],
   )
+})
+
+test('a schedule goes with the pictures its prompt names, kept here and named by their copies here', async () => {
+  const { adoption, calls, adoptedSchedules } = rig()
+  const desktopPath = '/Users/dev/Library/Studio/scheduled-images/abc/shot one.png'
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [
+      record('schedule', 'sa-2', {
+        id: 'sa-2',
+        workspaceId: 'ws-1',
+        prompt: `Compare with '${desktopPath}' and ${desktopPath}`,
+        carried: {
+          images: [{ sha256: sha('png bytes'), name: 'shot one.png', mediaType: 'image/png', promptPath: desktopPath }],
+        },
+      }),
+    ],
+    files: new Map([[sha('png bytes'), { bytes: Buffer.from('png bytes'), mediaType: 'image/png' }]]),
+  })
+  assert.deepEqual(answer.conflicts, [])
+  assert.deepEqual(calls.slice(0, 2), ['image shot one.png:png bytes', 'schedule sa-2'])
+  const kept = "'/home/dev/.studio/scheduled-images/kept/shot one.png'"
+  assert.deepEqual(adoptedSchedules[0], { id: 'sa-2', workspaceId: 'ws-1', prompt: `Compare with ${kept} and ${kept}` })
+})
+
+test('a schedule whose picture did not arrive whole, or that its prompt does not name, is reported and not kept', async () => {
+  const { adoption, calls } = rig()
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [
+      record('schedule', 'sa-3', {
+        id: 'sa-3',
+        prompt: 'Look at /Users/dev/a.png',
+        carried: { images: [{ sha256: sha('png bytes'), name: 'a.png', promptPath: '/Users/dev/a.png' }] },
+      }),
+      record('schedule', 'sa-4', {
+        id: 'sa-4',
+        prompt: 'No picture here',
+        carried: { images: [{ sha256: sha('gif bytes'), name: 'b.gif', promptPath: '/Users/dev/b.gif' }] },
+      }),
+    ],
+    files: new Map([
+      [sha('png bytes'), { bytes: Buffer.from('other bytes'), mediaType: 'image/png' }],
+      [sha('gif bytes'), { bytes: Buffer.from('gif bytes'), mediaType: 'image/gif' }],
+    ]),
+  })
+  assert.deepEqual(
+    answer.conflicts.map((entry) => entry.reason),
+    ['A picture its prompt names did not arrive whole.', 'A picture it carries is not one its prompt names.'],
+  )
+  assert.deepEqual(calls, ['flush'])
+})
+
+test('a carried file is kept under its last name part alone, never a path out of its folder', async () => {
+  assert.equal(carriedName('notes.txt', 'file'), 'notes.txt')
+  assert.equal(carriedName('../../etc/passwd', 'file'), 'passwd')
+  assert.equal(carriedName('C:\\Users\\dev\\shot.png', 'picture'), 'shot.png')
+  for (const name of ['..', '.', '', 'a/..', '/', 42]) assert.equal(carriedName(name, 'file'), 'file', String(name))
+
+  const { adoption, calls } = rig()
+  const answer = await adoption.adopt({
+    migrationId: 'm-1',
+    records: [
+      record('scheduled-message', 'sm-9', {
+        workspaceId: 'ws-1',
+        agentId: 'a1',
+        text: 'look',
+        queued: true,
+        carried: {
+          images: [{ sha256: sha('png bytes'), name: '../shot.png', mediaType: 'image/png' }],
+          files: [{ sha256: sha('notes'), name: '..' }],
+        },
+      }),
+    ],
+    files: new Map([
+      [sha('png bytes'), { bytes: Buffer.from('png bytes'), mediaType: 'image/png' }],
+      [sha('notes'), { bytes: Buffer.from('notes'), mediaType: 'text/plain' }],
+    ]),
+  })
+  assert.deepEqual(answer.conflicts, [])
+  assert.equal(calls[0], 'hold a1 look with shot.png:png bytes file:notes ')
 })

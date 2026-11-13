@@ -3,9 +3,11 @@ import {
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
+  STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
 } from './handshake.js'
 import type { StudioScope } from './scopes.js'
+import { isEnvironmentId } from './environment.js'
 
 // What the desktop that holds a machine's Studio asks of it for the people
 // using that desktop: a ticket for one of its windows to connect, and a CLI's
@@ -53,6 +55,65 @@ export const STUDIO_RELAYED_DEVICE_SCOPES = [
 ] as const satisfies readonly StudioScope[]
 
 export type StudioRelayedDeviceScope = (typeof STUDIO_RELAYED_DEVICE_SCOPES)[number]
+
+/**
+ * A machine this desktop relays its paired devices to: an SSH machine whose
+ * Studio this desktop holds. A device reaches it at
+ * `/tailnet/v1/environments/<environmentId>/studio` here, with a ticket from
+ * `ws-ticket` naming the environment, and is held there to its own grant cut
+ * to `STUDIO_RELAYED_DEVICE_SCOPES`. Only machines whose environment id this
+ * desktop has heard are listed.
+ */
+export type StudioRelayedEnvironment = {
+  environmentId: string
+  /** What the person called the machine here. */
+  name: string
+  kind: 'ssh'
+  /** Whether this desktop holds a connection to its Studio now. */
+  connected: boolean
+  /**
+   * Its host and port, as its marks are keyed: answered to the owner only. A
+   * device needs the name, the mark and the route, never the address.
+   */
+  machine?: { host: string; port?: number | null }
+  /** Its kind and colour, as this desktop marks it (the person's choice applied); absent when it cannot be named. */
+  mark?: { kind: string; color: string }
+}
+
+const RELAYED_NAME_MAX = 200
+
+/**
+ * A desktop's `environment.relayed` answer as a client may use it: each
+ * entry whose environment id is one (so its route and its socket path can be
+ * spelled), with a name, and its mark only when whole. Anything else is
+ * dropped, not refused: one bad entry from a paired desktop does not hide
+ * the rest. `machine` is never read back: a client has no use for it.
+ */
+export function relayedEnvironmentsOf(value: unknown): Array<Omit<StudioRelayedEnvironment, 'machine'>> {
+  const list = value && typeof value === 'object' ? (value as { environments?: unknown }).environments : undefined
+  if (!Array.isArray(list)) return []
+  const seen = new Set<string>()
+  const read: Array<Omit<StudioRelayedEnvironment, 'machine'>> = []
+  for (const entry of list as unknown[]) {
+    if (!entry || typeof entry !== 'object') continue
+    const { environmentId, name, kind, connected, mark } = entry as Record<string, unknown>
+    if (!isEnvironmentId(environmentId) || seen.has(environmentId)) continue
+    if (typeof name !== 'string' || !name.trim() || name.length > RELAYED_NAME_MAX) continue
+    if (kind !== 'ssh') continue
+    seen.add(environmentId)
+    const whole = mark && typeof mark === 'object' ? (mark as Record<string, unknown>) : null
+    read.push({
+      environmentId,
+      name,
+      kind,
+      connected: connected === true,
+      ...(whole && typeof whole.kind === 'string' && typeof whole.color === 'string'
+        ? { mark: { kind: whole.kind, color: whole.color } }
+        : {}),
+    })
+  }
+  return read
+}
 
 /**
  * The kinds of record a desktop hands over to the machine whose chats they
@@ -114,6 +175,12 @@ export type StudioSignInStarted =
 export type StudioSignInDone = { ok: true } | { ok: false; message: string }
 
 export type StudioEnvironmentAccessMethodMap = {
+  /**
+   * The machines this desktop relays its paired devices to, each one a
+   * `relay:` route for a device: listed to whoever may read chats here, since
+   * reaching one still needs its own ticket, held to that device's grant.
+   */
+  'environment.relayed': { params: Record<string, never>; result: { environments: StudioRelayedEnvironment[] } }
   /**
    * A ticket for one connection of one of the shell's windows. Only the
    * desktop's own shell connection may ask (the method is the shell's, not
@@ -182,6 +249,12 @@ const signIn = {
 } as const
 
 export const STUDIO_ENVIRONMENT_ACCESS_METHODS: StudioMethodTable<StudioEnvironmentAccessMethodMap> = {
+  'environment.relayed': {
+    scope: 'conversation:read',
+    mutation: false,
+    capability: STUDIO_RELAYED_ENVIRONMENTS_CAPABILITY,
+    params: () => studioParams({}),
+  },
   'environment.windowTicket': {
     scope: null,
     mutation: false,

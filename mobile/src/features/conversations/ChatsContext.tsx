@@ -44,6 +44,7 @@ import {
   withPendingSnoozes,
   type PendingSnoozes,
 } from "./snoozeLogic";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 /** One paired desktop whose projects this phone may read. */
 export interface ChatDesktop {
@@ -214,9 +215,7 @@ export function ChatsProvider({
         canStart: canStartChats(session, offersOf(session)),
         machineMark: session.machineMark ?? null,
       },
-      api:
-        workspacesApiOverride ??
-        createTailnetWorkspacesApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
+      api: workspacesApiOverride ?? createTailnetWorkspacesApi(studioTargetOf(session)),
     }));
   }, [activeDeviceId, sessions, workspacesApiOverride, offersOf]);
 
@@ -229,13 +228,10 @@ export function ChatsProvider({
         .filter((session) => session.status !== "revoked")
         .map((session) => ({
           session,
-          api:
-            conversationsApiOverride ??
-            createDesktopConversationsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
+          api: conversationsApiOverride ?? createDesktopConversationsApi(studioTargetOf(session)),
           // Settle, visit, Mark unread, Snooze and Wake now, on the desktop's
           // Studio, where the desktop keeps its chats' rest.
-          lifecycle:
-            lifecycleApiOverride ?? createChatLifecycleApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
+          lifecycle: lifecycleApiOverride ?? createChatLifecycleApi(studioTargetOf(session)),
         })),
     [conversationsApiOverride, lifecycleApiOverride, sessions],
   );

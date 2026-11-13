@@ -26,6 +26,11 @@ interface SessionDataValue {
   /** The active desktop with its live status folded in. */
   session: MobileSession | null;
   sessions: MobileSession[];
+  /**
+   * Every session a chat can be on: the paired desktops, and the machines
+   * they relay this phone to (never stored; `relayedMachines.ts`).
+   */
+  chatSessions: MobileSession[];
   activeDeviceId: string | null;
 
   /** Every project in the snapshot, joined across the wire's workspace collections. */
@@ -87,6 +92,8 @@ export type { SessionDataValue };
 export interface SessionDataProviderProps {
   session: MobileSession | null;
   sessions: MobileSession[];
+  /** The machines the paired desktops relay this phone to. */
+  relayed?: MobileSession[];
   activeDeviceId: string | null;
   /** The project the user last chose, from storage. Null on a cold start. */
   selectedProjectKey: string | null;
@@ -111,6 +118,7 @@ export interface SessionDataProviderProps {
 export function SessionDataProvider({
   session,
   sessions,
+  relayed,
   activeDeviceId,
   selectedProjectKey,
   starredProjectKeys,
@@ -442,6 +450,7 @@ export function SessionDataProvider({
     return {
       session: effectiveSession,
       sessions,
+      chatSessions: relayed?.length ? [...sessions, ...relayed] : sessions,
       activeDeviceId,
       projects,
       currentProject,
@@ -490,6 +499,7 @@ export function SessionDataProvider({
     canUpdateBacklog,
     sendBacklogUpdate,
     sessions,
+    relayed,
     snapshot,
     snapshotError,
     snapshotState,

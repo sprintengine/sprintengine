@@ -41,6 +41,10 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'server.ping': ANY,
   'update.status': ANY,
 
+  // The machines this desktop relays a device to (`relay:` routes): each still
+  // takes its own ticket there, held to the device's grant, never an owner's.
+  'environment.relayed': CHAT_READ,
+
   // Chat list, following a chat, its changes, side reads, search, approval rules.
   'conversation.list': CHAT_READ,
   'conversation.loadEarlier': CHAT_READ,

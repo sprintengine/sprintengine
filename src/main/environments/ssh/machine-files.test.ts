@@ -22,7 +22,6 @@ import {
 } from '../../../../packages/client-runtime/src/public'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../../shared/ssh-environments'
 import { machinePath } from '../../../shared/machine-paths'
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { WSL_NODE_VERSION } from '../../hosts/wsl-node-runtime'
 import { createLoopbackRoute } from '../environment-route'
 import { SshEnvironment } from './ssh-environment'
@@ -109,7 +108,7 @@ test('a workspace on an SSH machine: the explorer, search, git status, diffs, st
         env: { PATH: process.env.PATH, HOME: home, SHELL: '/bin/sh' },
         stdio: ['pipe', 'pipe', 'pipe'],
       }) as unknown as SessionProcess,
-    app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+    app: { version: VERSION, channel: 'latest' },
     dataName: 'data',
     startedBy: 'Studio on dev-macbook-air',
     serverTree: () => ({ dir: tree, digest }),

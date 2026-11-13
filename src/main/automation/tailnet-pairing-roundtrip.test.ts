@@ -249,6 +249,7 @@ test('tailnet-pairing-roundtrip', async () => {
         'new-chat-skills',
         'chat-create-pull-request',
         'mcp-oauth',
+        'relayed-environments',
       ])
 
       // The pairing is real only if the token it produced actually drives tools.
@@ -437,6 +438,7 @@ test('tailnet-pairing-roundtrip', async () => {
         'new-chat-skills',
         'chat-create-pull-request',
         'mcp-oauth',
+        'relayed-environments',
       ])
 
       const scanned = parsePairingUrl(harness.service.offerPairing().pairingUrl ?? '')

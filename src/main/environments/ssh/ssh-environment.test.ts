@@ -12,7 +12,6 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
 
 import { WSL_NODE_VERSION } from '../../hosts/wsl-node-runtime'
-import { BACKEND_WIRE_VERSION } from '../../../server/wsl/backend-wire'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS, type SshEnvironmentSettings } from '../../../shared/ssh-environments'
 import {
   DEFAULT_TIMING,
@@ -86,7 +85,7 @@ function harness(
       spawned.push({ interactive, child })
       return child
     },
-    app: { version: VERSION, channel: 'latest', backendWire: BACKEND_WIRE_VERSION },
+    app: { version: VERSION, channel: 'latest' },
     dataName: 'data',
     startedBy: 'Studio on dev-macbook-air',
     serverTree: () => ({ dir: tree, digest }),
@@ -126,7 +125,7 @@ test('connect: installed, started, connected; a second client attaches; a lost s
     'the person asked: ssh may ask them',
   )
   assert.equal(first.environmentIds.length, 1)
-  assert.ok((await a.backend.listThreads({ workspaceId: 'w', workspaceRoot: home } as never)) !== undefined)
+  assert.ok((await a.owner.request('conversation.list', {})).conversations)
   const record = JSON.parse(
     readFileSync(join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run', 'server.json'), 'utf8'),
   ) as { pid: number }
@@ -319,7 +318,6 @@ test('a newer server on the machine is left alone: version-blocked, in words', a
       pid: process.pid,
       version: '99.0.0',
       origin: 'bootstrap',
-      backendWire: 9,
       hostId: 'x',
       socketPath: '/nowhere.sock',
     }),
@@ -354,7 +352,6 @@ test('an update that failed before is not tried again on its own: the row says w
       origin: 'bootstrap',
       protocolVersion: 1,
       minProtocolVersion: 1,
-      backendWire: BACKEND_WIRE_VERSION,
       hostId: 'x',
       socketPath: '/nowhere.sock',
     }),

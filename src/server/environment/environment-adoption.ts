@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { respellPromptPath } from '../../main/scheduled-agents/prompt-images'
+
 import {
   MAX_SCHEDULED_MESSAGE_LENGTH,
   STUDIO_ADOPTED_RECORD_KINDS,
@@ -36,6 +38,8 @@ export type EnvironmentAdoptionStores = {
   schedules: {
     has(id: string): boolean
     adopt(record: unknown): Promise<{ ok: true } | { ok: false; reason: 'exists' | 'invalid'; message: string }>
+    /** Keep a picture a schedule's prompt names on this disk, as a pasted one is kept; answers its path here. */
+    keepImage(bytes: Buffer, name: string): Promise<string>
   }
   messages: {
     /** Schedule one for a time, once per `source`. */
@@ -145,7 +149,48 @@ function chatOf(body: Record<string, unknown>): { workspaceId: string; agentId: 
     : null
 }
 
-type CarriedEntry = { sha256?: unknown; name?: unknown; mediaType?: unknown }
+/**
+ * A carried file's name as it is kept here: its last part alone, whatever
+ * path the desktop's name held, and `fallback` for one with no name left
+ * (empty, `.`, `..`), so no name leads its write out of its folder.
+ */
+export function carriedName(value: unknown, fallback: string): string {
+  if (!text(value, 500)) return fallback
+  const base = value.split(/[\\/]/u).pop()?.trim() ?? ''
+  return base && base !== '.' && base !== '..' ? base : fallback
+}
+
+type CarriedEntry = { sha256?: unknown; name?: unknown; mediaType?: unknown; promptPath?: unknown }
+
+/**
+ * A schedule's prompt with each picture it carries kept on this disk and
+ * named by its copy here, in place of the path the desktop named it by; or why
+ * not. Every picture must arrive whole, or none is kept.
+ */
+async function promptWithPictures(
+  body: Record<string, unknown>,
+  files: AdoptedFiles,
+  keepImage: (bytes: Buffer, name: string) => Promise<string>,
+): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; reason: string }> {
+  const { carried, ...rest } = body
+  const images = (carried as { images?: unknown } | undefined)?.images
+  if (!Array.isArray(images) || images.length === 0) return { ok: true, body: rest }
+  if (typeof rest.prompt !== 'string') return { ok: false, reason: 'The scheduled agent names no prompt.' }
+  const arrived: Array<{ from: string; name: string; bytes: Buffer }> = []
+  for (const entry of images as CarriedEntry[]) {
+    const sha256 = typeof entry.sha256 === 'string' ? entry.sha256 : ''
+    const staged = files.get(sha256)
+    if (!staged || createHash('sha256').update(staged.bytes).digest('hex') !== sha256)
+      return { ok: false, reason: 'A picture its prompt names did not arrive whole.' }
+    if (!text(entry.promptPath, 4096) || !rest.prompt.includes(entry.promptPath))
+      return { ok: false, reason: 'A picture it carries is not one its prompt names.' }
+    arrived.push({ from: entry.promptPath, name: carriedName(entry.name, 'picture'), bytes: staged.bytes })
+  }
+  let prompt = rest.prompt
+  for (const picture of arrived)
+    prompt = respellPromptPath(prompt, picture.from, await keepImage(picture.bytes, picture.name))
+  return { ok: true, body: { ...rest, prompt } }
+}
 
 /**
  * A held message's `carried` as the desktop named it (each picture and file by
@@ -170,7 +215,7 @@ function carriedOf(
     const staged = bytesOf(entry)
     if (!staged) return { ok: false, reason: 'A picture it carries did not arrive whole.' }
     images.push({
-      name: text(entry.name, 500) ? entry.name : 'picture',
+      name: carriedName(entry.name, 'picture'),
       mediaType: text(entry.mediaType, 200) ? entry.mediaType : staged.mediaType,
       bytes: staged.bytes,
     })
@@ -178,7 +223,7 @@ function carriedOf(
   for (const entry of list(given.files)) {
     const staged = bytesOf(entry)
     if (!staged) return { ok: false, reason: 'A file it carries did not arrive whole.' }
-    attached.push({ name: text(entry.name, 500) ? entry.name : 'file', bytes: staged.bytes })
+    attached.push({ name: carriedName(entry.name, 'file'), bytes: staged.bytes })
   }
   const skills = Array.isArray(given.skills) ? given.skills.filter((skill): skill is string => text(skill, 200)) : []
   const mentions = Array.isArray(given.mentions) ? given.mentions : []
@@ -238,7 +283,10 @@ export function createEnvironmentAdoption(deps: {
         if (body.id !== record.id) return { ok: false, reason: 'The scheduled agent names another id.' }
         if (stores.schedules.has(record.id))
           return { ok: false, reason: 'A scheduled agent with that id is already here.', exists: true }
-        const kept = await stores.schedules.adopt(body)
+        // Its prompt's pictures, kept here first and named by their copies.
+        const pictured = await promptWithPictures(body, files, stores.schedules.keepImage)
+        if (!pictured.ok) return pictured
+        const kept = await stores.schedules.adopt(pictured.body)
         return kept.ok
           ? kept
           : { ok: false, reason: kept.message, ...(kept.reason === 'exists' ? { exists: true as const } : {}) }

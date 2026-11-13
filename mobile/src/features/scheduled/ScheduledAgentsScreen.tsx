@@ -25,6 +25,7 @@ import {
   type ScheduledAgentsApi,
 } from "../../api/scheduledAgents";
 import { canReadWorkspaces } from "../conversations/conversationListLogic";
+import { studioTargetOf } from "../../api/desktopStudio";
 
 type DesktopSchedules = {
   session: MobileSession;
@@ -65,7 +66,7 @@ export function ScheduledAgentsScreen({
     () =>
       readable.map((session) => ({
         session,
-        api: createScheduledAgentsApi({ baseUrl: session.baseUrl, deviceToken: session.deviceToken }),
+        api: createScheduledAgentsApi(studioTargetOf(session)),
       })),
     [readable],
   );

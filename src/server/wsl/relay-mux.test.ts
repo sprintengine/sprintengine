@@ -168,7 +168,9 @@ test("the relay's tcp streams: opened, a closed port refused, localhost resolved
     await assert.rejects(desktop.open({ kind: 'tcp', host: '127.0.0.1', port: closedPort }), { code: 'refused' })
     await assert.rejects(desktop.open({ kind: 'tcp', host: 'host.invalid', port: 80 }), { code: 'unreachable' })
     await assert.rejects(desktop.open({ kind: 'tcp', host: 'a b', port: 80 }), { code: 'refused' })
-    await assert.rejects(desktop.open({ kind: 'owner', purpose: 'backend' }), { code: 'no-server' })
+    await assert.rejects(desktop.open({ kind: 'owner', purpose: 'studio' }), { code: 'no-server' })
+    // The WSL-only backend wire is no purpose an SSH machine's relay opens.
+    await assert.rejects(desktop.open({ kind: 'owner', purpose: 'backend' as never }), { code: 'refused' })
     // A window's socket is a purpose the server serves; anything else is refused before the server is looked for.
     await assert.rejects(desktop.open({ kind: 'owner', purpose: 'ws' }), { code: 'no-server' })
     await assert.rejects(desktop.open({ kind: 'owner', purpose: 'shell' as never }), { code: 'refused' })
