@@ -17,6 +17,7 @@ import {
   type WslServerConnection,
   type WslServerStatus,
 } from './wsl-environment-manager'
+import { createWslEnvironmentAccess, type WslEnvironmentAccess } from './wsl-environment-access'
 
 // The WSL servers of a desktop on Windows, wired to the running app: where
 // the server tree this build ships is, the profile its data directory is
@@ -32,6 +33,8 @@ export type WslServers = {
   onConnected(listener: (connection: WslServerConnection) => void): void
   /** Who hears a status change (Settings › Machines). */
   onStatus(listener: (status: WslServerStatus) => void): void
+  /** How this desktop's windows and paired devices reach each distribution's own Studio. */
+  access: WslEnvironmentAccess
 }
 
 export type DesktopWslServersOptions = {
@@ -116,8 +119,14 @@ export function createDesktopWslServers(options: DesktopWslServersOptions): WslS
     },
     ...(options.log ? { log: options.log } : {}),
   })
+  const access = createWslEnvironmentAccess({
+    manager,
+    onConnected: (listener) => void connectedListeners.push(listener),
+    ...(options.log ? { log: options.log } : {}),
+  })
   return {
     manager,
+    access,
     chatServerOn: (distro) => (settingsOf(distro)?.chatServer ?? DEFAULT_WSL_CHAT_SERVER) === 'on',
     onConnected: (listener) => void connectedListeners.push(listener),
     onStatus: (listener) => void statusListeners.push(listener),

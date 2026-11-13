@@ -1237,7 +1237,7 @@ folders the machine knows, and never an owner's (`clientId` `relay:<deviceId>`).
 Its scopes are exactly those named, each of them one of
 `STUDIO_RELAYED_DEVICE_SCOPES`; any other is refused `invalid_params`.
 `relayed-environments` (2026-11-13) adds `environment.relayed` (`{}` →
-`{ environments: [{ environmentId, name, kind: 'ssh', connected, machine?, mark? }] }`,
+`{ environments: [{ environmentId, name, kind: 'ssh' | 'wsl', connected, machine?, mark? }] }`,
 `conversation:read`, devices included): the machines a desktop relays its paired
 devices to. `machine` (the host and port) is answered to the owner only; a device gets
 the name, the mark and the route, which is all it needs. A client reads the list with
@@ -1248,6 +1248,9 @@ on the desktop's tailnet listener with a ticket from `ws-ticket` naming the
 `relay:<pairing>.<environmentId>`, ranked last (after `ssh`: a relay admits the client
 as a device, so a machine this desktop also holds over SSH is reached as its owner). A
 desktop without it relays nothing, and a client lists no relayed machines.
+A WSL distribution a desktop runs is listed as `kind: 'wsl'` (2026-11-13) once the desktop
+has heard its server's environment id; a device's ticket starts the distribution's server
+when it is not running. An older client drops entries of a kind it does not know.
 `environment-work` (2026-11-13) adds `environment.work` (`{}` → `{ working, schedules,
 watches, messages, resumes }`, the shell's): whether a chat works on this Studio and what it
 does on its own, which a desktop asks over its owner connection to a WSL distribution's

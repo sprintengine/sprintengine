@@ -73,6 +73,15 @@ export const SERVER_METHODS = {
    */
   meshWindowTicket: 'mesh.window-ticket',
   /**
+   * `{ distro, windowKey, origin }` → `EnvironmentTicketResult`: a desktop
+   * window's ticket for one connection to a WSL distribution's own Studio,
+   * minted there over the owner connection this process holds, with this
+   * process's loopback route to it as the URL.
+   */
+  wslWindowTicket: 'wsl.window-ticket',
+  /** `{ windowKey }` → nothing: that window's document has gone; each distribution it reached ends its connections. */
+  wslRevokeWindow: 'wsl.revoke-window',
+  /**
    * `{ which: 'local' | 'wsl' }` → how many machines were asked: the boot's
    * detection of the agent CLIs, which the shell times and the server runs
    * (the CLIs and their version check are the core's).

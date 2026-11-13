@@ -58,8 +58,8 @@ export const STUDIO_RELAYED_DEVICE_SCOPES = [
 export type StudioRelayedDeviceScope = (typeof STUDIO_RELAYED_DEVICE_SCOPES)[number]
 
 /**
- * A machine this desktop relays its paired devices to: an SSH machine whose
- * Studio this desktop holds. A device reaches it at
+ * A machine this desktop relays its paired devices to: an SSH machine or a
+ * WSL distribution whose Studio this desktop holds. A device reaches it at
  * `/tailnet/v1/environments/<environmentId>/studio` here, with a ticket from
  * `ws-ticket` naming the environment, and is held there to its own grant cut
  * to `STUDIO_RELAYED_DEVICE_SCOPES`. Only machines whose environment id this
@@ -69,7 +69,7 @@ export type StudioRelayedEnvironment = {
   environmentId: string
   /** What the person called the machine here. */
   name: string
-  kind: 'ssh'
+  kind: 'ssh' | 'wsl'
   /** Whether this desktop holds a connection to its Studio now. */
   connected: boolean
   /**
@@ -100,7 +100,7 @@ export function relayedEnvironmentsOf(value: unknown): Array<Omit<StudioRelayedE
     const { environmentId, name, kind, connected, mark } = entry as Record<string, unknown>
     if (!isEnvironmentId(environmentId) || seen.has(environmentId)) continue
     if (typeof name !== 'string' || !name.trim() || name.length > RELAYED_NAME_MAX) continue
-    if (kind !== 'ssh') continue
+    if (kind !== 'ssh' && kind !== 'wsl') continue
     seen.add(environmentId)
     const whole = mark && typeof mark === 'object' ? (mark as Record<string, unknown>) : null
     read.push({

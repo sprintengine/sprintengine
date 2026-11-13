@@ -444,6 +444,7 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     shutdown: async () => {
       await Promise.all([
         wslServers?.manager.shutdown({ budgetMs: 10_000 }).catch(() => undefined),
+        wslServers?.access.close().catch(() => undefined),
         conversationRuntime.shutdown(),
       ])
     },
