@@ -17,8 +17,6 @@ import {
 import { setSessionPullRequestReader } from '../../main/terminal-session'
 import type { ShellAnalyticsEvent } from '../shell-bridge/shell-bridge'
 import { createTailnetTools, type TailnetToolsFrontDoor } from '../../main/automation/tailnet/tailnet-tools'
-import { readChatExportSource } from '../../main/chat-export/chat-export-source'
-import { parseTranscriptInput } from '../../main/conversation-ipc-inputs'
 import { createConversationAttentionListener } from '../../main/conversation-attention'
 import { setDiagnosticsLogName, writeDiagnosticLog } from '../../main/diagnostics-service'
 import { GitHubTokenStore } from '../../main/github-token-store'
@@ -827,12 +825,6 @@ function serveShellRequests(deps: {
     return core.conversations
       .readPeekTranscript({ workspaceRoot, workspaceId: summary.workspaceId, agentId: summary.agentId })
       .catch(() => [])
-  })
-  // Export chat: the shell writes the file, the chats are here.
-  rpc.handle(SERVER_METHODS.conversationExportSource, async (params) => {
-    const parsed = parseTranscriptInput(params)
-    if (!parsed.ok) return parsed
-    return readChatExportSource(core.conversations, parsed.input)
   })
   rpc.handle(SERVER_METHODS.conversationRoots, () => core.conversations.listLiveConversationRoots())
   // The shell's `agent.launch` cuts its worktree here, from this process's pool.

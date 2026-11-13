@@ -131,9 +131,6 @@ const coreIpc = registerCoreIpc(ipcMain, services, DIAGNOSTICS_ENABLED, {
     ? {
         server: {
           windowTickets: serverHost.windowTickets,
-          // A long chat is tens of megabytes, its pictures more.
-          readChatExportSource: (key) =>
-            serverHost.supervisor.call(SERVER_METHODS.conversationExportSource, key, { timeoutMs: 120_000 }),
         },
       }
     : {}),

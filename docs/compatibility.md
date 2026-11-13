@@ -1051,7 +1051,17 @@ terminals; `conversation.threads`, `conversation.search` (every hit at once,
 no partial batches) and `conversation.cancelSearch`;
 `conversation.approvalRules` and `conversation.revokeApprovalRule`; and
 `providers.signIn`, `providers.setSecret` and `providers.clearSecret`. A
-client calls each only on a Studio that advertises its capability. What a
+client calls each only on a Studio that advertises its capability.
+`conversation-export` (2026-11-13) adds `conversation.exportPage` (`key`,
+`exportId`, `offset`; `conversation:read`): a chat's whole export, read where
+the chat is kept (what its record says of it, its transcript and the pictures
+its messages attached) and answered in pages of about 4 MB, the events and
+then the pictures, `nextOffset` null on the last. The first page reads the
+chat and holds it for that client and export id for five minutes from its
+last page; a later page of one no longer held is `not_found`. The desktop's
+window reads a chat this way and hands it to its shell to write
+(`chat-export:save`); a Studio from before does not advertise the capability,
+and a window does not ask it. What a
 follower of one chat reads and does beside its stream, by the chat's key, as
 the tailnet lane served it (2026-11-12, `followed.ts`): the per-chat push
 topics `conversation.queued`, `.scheduled`, `.usageLimits`, `.subagents` and

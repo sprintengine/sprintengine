@@ -119,6 +119,14 @@ export const STUDIO_TERMINAL_HANDOFF_CAPABILITY = 'session-terminal-handoff' as 
  */
 export const STUDIO_TERMINALS_CAPABILITY = 'terminals' as const
 
+/**
+ * `conversation.exportPage`: a chat's whole transcript, with the pictures its
+ * messages attached and what its record says of it, in pages, for a client
+ * to write out as a file or put on its clipboard. Advertised only where the
+ * chat surface reads exports.
+ */
+export const STUDIO_CHAT_EXPORT_CAPABILITY = 'conversation-export' as const
+
 /** `conversation.threads` and `conversation.search`: a workspace's history and a search of it. */
 export const STUDIO_HISTORY_CAPABILITY = 'conversation-history' as const
 
@@ -290,6 +298,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_WORKTREES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
   STUDIO_CANVAS_BOARDS_CAPABILITY,
+  STUDIO_CHAT_EXPORT_CAPABILITY,
 ] as const
 
 /**
@@ -311,6 +320,7 @@ export const STUDIO_CHAT_CAPABILITIES = [
   STUDIO_HISTORY_CAPABILITY,
   STUDIO_APPROVAL_RULES_CAPABILITY,
   STUDIO_PROVIDER_SETTINGS_CAPABILITY,
+  STUDIO_CHAT_EXPORT_CAPABILITY,
 ] as const
 
 export type StudioCapability = (typeof STUDIO_CAPABILITIES)[number]

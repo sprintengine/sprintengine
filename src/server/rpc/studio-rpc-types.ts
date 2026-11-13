@@ -24,6 +24,7 @@ import type {
   StudioWorkspace,
   StudioWorkspaceCheckout,
   StudioWorkspaceExtensions,
+  StudioChatExportPage,
 } from '../../../packages/studio-protocol/src/public'
 import type {
   ConversationApprovalRuleRevokeResult,
@@ -146,6 +147,10 @@ export type StudioConversationBackend = {
   followed?: StudioFollowedBackend
 }
 
+/** A chat's export as its Studio reads it: the whole of it, paged out by the router. */
+export type StudioChatExportRead =
+  ({ ok: true } & Omit<StudioChatExportPage, 'nextOffset'>) | { ok: false; code?: 'not_found'; message: string }
+
 /** A chat by its workspace and agent: what the per-chat reads and watches are keyed by. */
 export type StudioChatRef = Pick<ConversationKey, 'workspaceId' | 'agentId'>
 
@@ -259,6 +264,12 @@ export type StudioChatBackend = {
     input: ChatInput<'session.cancelSideQuestion'>,
   ): Promise<{ ok: true } | { ok: false; message: string }>
   contextBreakdown(input: ChatInput<'session.contextBreakdown'>): Promise<ConversationContextBreakdownResult>
+  /**
+   * A chat's whole export, read where it is kept: what its record says of it,
+   * its transcript and the pictures its messages attached. Absent where
+   * Studio reads no exports (`conversation-export` is then not advertised).
+   */
+  exportSource?(chat: { workspaceId: string; agentId: string }): Promise<StudioChatExportRead>
   /** A terminal agent on this machine carrying the chat on; absent where Studio opens no terminals. */
   terminalHandoff?(
     input: { sessionId: string } | { workspaceId: string; agentId: string },

@@ -63,6 +63,8 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   // A chat's record beyond its rest: a delete's plan and a search of every chat.
   'conversation.deletePlan': CHAT_READ,
   'conversation.searchChats': CHAT_READ,
+  // A chat's whole export, read as following it is.
+  'conversation.exportPage': CHAT_READ,
   'session.list': CHAT_READ,
   'session.cancelSideQuestion': CHAT_READ,
   'session.contextBreakdown': CHAT_READ,

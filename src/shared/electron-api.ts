@@ -1348,9 +1348,10 @@ export type ElectronApi = {
   /**
    * Export chat: a chat tab's whole conversation saved as a PDF, Word or
    * Markdown file where the save dialog says, or copied to the clipboard.
-   * Main reads the chat; the window names it and the format.
+   * The window hands over the chat as its Studio read it
+   * (`conversation.exportPage`); main reads nothing, and asks where to save.
    */
-  exportChat: (input: ChatExportInput) => Promise<ChatExportResult>
+  saveChatExport: (input: ChatExportInput) => Promise<ChatExportResult>
   /** The same text, through the OS save dialog. */
   saveGitPatch: (repoRoot: string, patch: string, defaultFileName?: string) => Promise<GitPatchSaveResult>
   // The chat's "Create PR" (src/main/pull-request-create.ts): whether it may

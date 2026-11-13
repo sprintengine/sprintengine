@@ -39,6 +39,7 @@ import {
 } from './conversation.js'
 import {
   STUDIO_APPROVAL_RULES_CAPABILITY,
+  STUDIO_CHAT_EXPORT_CAPABILITY,
   STUDIO_CHECKPOINTS_CAPABILITY,
   STUDIO_COMMANDS_CAPABILITY,
   STUDIO_CONVERSATION_FILES_CAPABILITY,
@@ -150,6 +151,29 @@ export type StudioSessionRespondParams = {
   requestKind?: string
 }
 
+/** What a chat's record says of it, for an export's heading and its steps' paths. */
+export type StudioChatExportChat = {
+  title: string
+  project: string | null
+  providerId: string | null
+  modelId: string | null
+  /** The folder the chat works in, which its steps' paths are read against. */
+  workspaceRoot: string
+}
+
+/**
+ * One page of a chat's export (`conversation.exportPage`): the chat, then its
+ * transcript's events and the pictures its messages attached, in order, as
+ * many of each as fit. `nextOffset` is where the next page starts; null on
+ * the last. The pictures are keyed by the reference their message recorded.
+ */
+export type StudioChatExportPage = {
+  chat: StudioChatExportChat
+  events: ConversationEvent[]
+  attachments: Record<string, { mediaType: string; dataBase64: string }>
+  nextOffset: number | null
+}
+
 /** A path on Studio's disk, as `files.stat` answers by an absolute path. */
 export type StudioPathStat = {
   isFile: boolean
@@ -253,6 +277,18 @@ export type StudioChatMethodMap = {
   'conversation.planDocument': {
     params: { key: StudioConversationKey; plan: string; title?: string; planFilePath?: string }
     result: ConversationPlanDocumentResult
+    errors: 'not_found'
+  }
+  /**
+   * A page of the chat's export, read where the chat is (`conversation-export`).
+   * The first page (`offset` 0) reads the whole transcript once and holds it
+   * for the client under its `exportId` for a few minutes; each later page
+   * is cut from that. `not_found`: no such chat, or a later page of an export
+   * no longer held (start again from 0).
+   */
+  'conversation.exportPage': {
+    params: { key: StudioConversationKey; exportId: string; offset: number }
+    result: StudioChatExportPage
     errors: 'not_found'
   }
   'conversation.commands': {
@@ -790,6 +826,17 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
         ...(value.title === undefined ? {} : { title: value.title as string }),
         ...(value.planFilePath === undefined ? {} : { planFilePath: value.planFilePath as string }),
       })
+    },
+  },
+  // Reading a chat's export is reading the chat.
+  'conversation.exportPage': {
+    ...held('conversation:read', STUDIO_CHAT_EXPORT_CAPABILITY, false),
+    params: (value) => {
+      const key = parseStudioConversationKey(value.key)
+      if (!key) return refuse(KEY)
+      if (!id(value.exportId)) return refuse('"exportId" names this export, the same for each of its pages.')
+      if (!(integer(value.offset) && value.offset >= 0)) return refuse('"offset" is where the page starts, 0 first.')
+      return studioParams({ key, exportId: value.exportId, offset: value.offset })
     },
   },
   'conversation.commands': {

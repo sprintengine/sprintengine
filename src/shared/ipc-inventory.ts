@@ -115,6 +115,10 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'clipboard:read-text': DESKTOP('invoke'),
   'clipboard:write-rich': DESKTOP('invoke'),
   'clipboard:write-text': DESKTOP('invoke'),
+  // Export chat's writing: the chat itself is read from its Studio (`conversation.exportPage`).
+  'chat-export:save': shell(
+    "This computer's save dialog, print window, clipboard and disk, writing a chat its Studio read.",
+  )('invoke'),
   'fs:dialog:open-project-icon': DESKTOP('invoke'),
   'fs:dialog:opendir': DESKTOP('invoke'),
   'git:save-patch': DESKTOP('invoke'),
@@ -262,7 +266,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'chat-link:unready': CHAT_LINK('send'),
 
   // ── The server: moves to the Studio protocol ──
-  'chat-export:run': conversations('invoke'),
   'pull-request-create:create': conversations('invoke'),
   'pull-request-create:draft': conversations('invoke'),
   'pull-request-create:draft-cancel': conversations('invoke'),

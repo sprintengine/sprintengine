@@ -32,7 +32,7 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { ceilingAllowsUnaskedTools, clampPresetToCeiling } from '../../shared/permission-ceiling'
-import type { ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
+import type { ConversationEvent, ConversationImageAttachment, ConversationKey } from '../../shared/conversation-runtime'
 import { createStudioUploads, type StudioUploads } from './studio-uploads'
 import { BROWSER_NO_TERMINALS, refusedToBrowser } from './studio-browser-reach'
 import { boundConversationPage } from '../conversation-stream-shaping'
@@ -81,6 +81,7 @@ import type {
   StudioComposerRead,
   StudioConversationBackend,
   StudioRequestContext,
+  StudioChatExportRead,
 } from './studio-rpc-types'
 
 // The Studio RPC's methods, transport-free: given the grant a client holds at
@@ -346,6 +347,13 @@ function approvalRulesByProject(
   }
 }
 
+/** How long a chat's export read for its first page is held for the pages after it, from its last read. */
+const EXPORT_HELD_MS = 5 * 60_000
+/** The exports one client may have held at once; a newer one lets go of the oldest. */
+const EXPORTS_HELD_PER_CLIENT = 2
+/** About as much of an export as one page carries, measured as its JSON. */
+const EXPORT_PAGE_CHARS = 4 * 1024 * 1024
+
 function refuse<C extends StudioErrorCode>(code: C, message: string): Refused<C> {
   return { ok: false, error: { code, message } }
 }
@@ -456,6 +464,35 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   // restart, and this covers the rest (a create, a revert, a fork, a stop).
   const fingerprints = new Map<string, string>()
   const stopsDone = new Set<string>()
+  // A chat's export, read once for its first page and cut into the rest: by
+  // client and export id, each with the time it was last read.
+  const exportsHeld = new Map<string, { read: Extract<StudioChatExportRead, { ok: true }>; at: number }>()
+  const exportPage = (
+    read: Extract<StudioChatExportRead, { ok: true }>,
+    offset: number,
+  ): StudioMethodResult<'conversation.exportPage'> => {
+    // The events, then the pictures, as one run of items a page is cut from.
+    const pictures = Object.entries(read.attachments)
+    const total = read.events.length + pictures.length
+    const events: ConversationEvent[] = []
+    const attachments: Record<string, { mediaType: string; dataBase64: string }> = {}
+    let at = offset
+    let size = 0
+    while (at < total) {
+      const item = at < read.events.length ? read.events[at]! : pictures[at - read.events.length]!
+      const itemSize = JSON.stringify(item).length
+      // Every page carries at least one item, however big.
+      if (at > offset && size + itemSize > EXPORT_PAGE_CHARS) break
+      if (at < read.events.length) events.push(item as ConversationEvent)
+      else {
+        const [ref, picture] = item as [string, { mediaType: string; dataBase64: string }]
+        attachments[ref] = picture
+      }
+      size += itemSize
+      at++
+    }
+    return { chat: read.chat, events, attachments, nextOffset: at < total ? at : null }
+  }
   // Creates still starting, by namespaced id: a retry that arrives while the
   // first attempt is launching shares it, so one id makes one chat.
   const creating = new Map<
@@ -1301,6 +1338,35 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           ? { planFilePath }
           : {}
       return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input, ...own })) }
+    },
+    'conversation.exportPage': async ({ key: wire, exportId, offset }, { grant, voice }) => {
+      const chat = chatOr('conversation.exportPage')
+      if (isRefusal(chat)) return chat
+      if (!chat.exportSource) return unserved('conversation.exportPage')
+      const key = resolve(wire, grant)
+      if (!key) return notFound(wire)
+      // Held for this client and this chat: an export id names nothing of another's.
+      const held = [grant.clientId, key.workspaceId, key.agentId, exportId].join('\u0000')
+      const clock = now()
+      for (const [id, kept] of exportsHeld) if (clock - kept.at > EXPORT_HELD_MS) exportsHeld.delete(id)
+      let kept = exportsHeld.get(held)
+      if (offset === 0) {
+        const read = await chat.exportSource({ workspaceId: key.workspaceId, agentId: key.agentId })
+        if (!read.ok)
+          return read.code === 'not_found'
+            ? notFound(wire)
+            : voice.failed('unavailable', read.message, 'conversation.exportPage')
+        kept = { read: voice.redact(read), at: clock }
+        exportsHeld.delete(held)
+        exportsHeld.set(held, kept)
+        const own = [...exportsHeld.keys()].filter((id) => id.startsWith(`${grant.clientId}\u0000`))
+        for (const id of own.slice(0, Math.max(0, own.length - EXPORTS_HELD_PER_CLIENT))) exportsHeld.delete(id)
+      }
+      if (!kept) return refuse('not_found', 'That export is no longer held. Start it again.')
+      kept.at = clock
+      const page = exportPage(kept.read, offset)
+      if (page.nextOffset === null) exportsHeld.delete(held)
+      return { ok: true, result: page }
     },
     'conversation.commands': async (input, { context, grant, voice }) => {
       const chat = chatOr('conversation.commands')

@@ -8,6 +8,7 @@ import {
   STUDIO_CAPABILITIES,
   STUDIO_CHAT_CAPABILITIES,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,
+  STUDIO_CHAT_EXPORT_CAPABILITY,
   STUDIO_CLIENT_TOOLS_CAPABILITY,
   STUDIO_BOARD_FILES_CAPABILITY,
   STUDIO_FILE_SYSTEM_CAPABILITY,
@@ -282,7 +283,9 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_CANVAS_BOARDS_CAPABILITY || options.canvas !== undefined) &&
         (chat() !== null || !(STUDIO_CHAT_CAPABILITIES as readonly string[]).includes(capability)) &&
         // A terminal opens only where the chat surface was given a way to open one.
-        (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined),
+        (capability !== STUDIO_TERMINAL_HANDOFF_CAPABILITY || chat()?.terminalHandoff !== undefined) &&
+        // An export is read only where the chat surface was given a reader.
+        (capability !== STUDIO_CHAT_EXPORT_CAPABILITY || chat()?.exportSource !== undefined),
     ),
     conversation: {
       protocolVersion: CONVERSATION_PROTOCOL_VERSION,
