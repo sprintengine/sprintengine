@@ -1007,6 +1007,14 @@ pane-forward.ts`): an HTTP proxy bound to the literal `127.0.0.1` on a port
   (parent 5.1); a cursor the server cannot vouch for gets a reset snapshot.
   Commands in flight are retried with their `commandId`, so a send lost with
   the tunnel is applied once.
+- **The server's own liveness**: keepalive only says the path to the machine
+  is up. Main also holds an owner connection to the server itself (the
+  `studio` door, the Studio protocol), and the machine is lost when that
+  connection or the chats' wire closes, or when a `server.ping` sent after
+  10 s with nothing heard goes unanswered for 10 s more, while the SSH session
+  is up. A server killed, crashed or hung under a live session is then
+  reconnected like a dropped session (BatchMode, probe, start or attach),
+  which starts it again, and every client resumes by its cursor.
 - **Mid-stream death**: the relay dies with the session; the server sees its
   logical connections close and keeps every conversation and agent running.
   An upload in flight is restarted from its start (uploads are bounded at the

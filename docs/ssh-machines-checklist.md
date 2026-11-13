@@ -41,6 +41,11 @@ examples call it `build-box`, with a user `dev`.
 3. With the key not in ssh-agent: let the connection drop (turn Wi-Fi off and
    on). Expect: "build-box needs you to sign in." and no dialog until you click
    Connect.
+4. Mid-turn, kill the server on build-box: `kill -9 <pid>`, with the pid from
+   `~/.local/share/sprintengine-studio/data/run/server.json`.
+   Expect: within a few seconds the machine leaves "Connected" ("Reconnecting
+   to build-box…"), the server is started again without a dialog (the key in
+   ssh-agent), and the chat shows its whole history and takes a new message.
 
 ## 3. The pane
 

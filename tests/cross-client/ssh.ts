@@ -311,12 +311,12 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       )
     })
 
-    // The machine's server dies, and the desktop is kept off the machine
-    // while a second desktop starts it again and runs a turn. The first should
-    // notice the death by itself; today it does not while its SSH session
-    // stays up (a known gap), and the person's Reconnect stands in. Either
-    // way it then has to catch up by its cursor and go on, and the row says
-    // which way it went.
+    // The machine's server dies under a live SSH session, and the desktop is
+    // kept off the machine while a second desktop starts it again and runs a
+    // turn. The first notices the death by itself (its own connection to the
+    // server ends, whatever the session says), then catches up by its cursor
+    // and goes on. A desktop that did not notice is failed, after a Reconnect
+    // shows whether the rest would have held.
     await matrix.run('ssh', 'restart', async () => {
       const pid = serverPid()
       const before = mark()
@@ -330,7 +330,9 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       const stateAfter = `${machine().summary().state}: ${machine().summary().stateText}`
       if (!noticed) machine().disconnect()
       const away = 'while the desktop was away from build-box'
-      // The second desktop does not notice the death either (the same gap): it reconnects, which starts the server.
+      // The second desktop noticed too, and may be reconnecting by itself; it
+      // is made to connect now, which starts the server or attaches to the one
+      // its own reconnect started.
       other.disconnect()
       const second = await otherBackend()
       const after = serverPid()
