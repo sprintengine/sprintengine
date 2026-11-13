@@ -229,8 +229,8 @@
   the folders the Studio knows, on the path it resolves to, and so is the
   folder an id stands for: a library entry's (`designSystem.attach`,
   `.forget`) and a local source's (every method naming a `sourceId`). One
-  outside them is refused `not_found`. The design library and the source list
-  show such a client only those. The skill, design system and card shapes
+  outside them is refused `not_found`. The design library, the source list and
+  an update check (`skillSources.checkUpdates`) show such a client only those. The skill, design system and card shapes
   move here from the desktop app.
 
 - **What a Studio's agents are set up with** (`src/agent-setup.ts`), under

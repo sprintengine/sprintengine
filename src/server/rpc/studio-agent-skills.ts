@@ -113,7 +113,34 @@ export function createStudioAgentSkillsHandlers(options: StudioAgentSkillsHandle
         }
         return { ...listed, sources }
       }),
-    'skillSources.checkUpdates': () => served('skillSources.checkUpdates', (d) => d.skills.checkSourceUpdates()),
+    // As the list: every repository source, and only the local sources the
+    // asker could name, in each of the check's lists (an id is its folder).
+    'skillSources.checkUpdates': (_params, asking) =>
+      served('skillSources.checkUpdates', async (d) => {
+        const check = await d.skills.checkSourceUpdates()
+        const hidden = new Set<string>()
+        const ids = new Set([
+          ...check.sources.map((entry) => entry.sourceId),
+          ...check.changed,
+          ...check.newlyChanged,
+          ...check.failures.map((entry) => entry.sourceId),
+          ...check.skipped.map((entry) => entry.sourceId),
+        ])
+        for (const id of ids) {
+          const folder = sourceFolder(id)
+          if (folder !== null && !(await options.mayName(folder, asking))) hidden.add(id)
+        }
+        if (hidden.size === 0) return check
+        const shown = (id: string) => !hidden.has(id)
+        return {
+          ...check,
+          sources: check.sources.filter((entry) => shown(entry.sourceId)),
+          changed: check.changed.filter(shown),
+          newlyChanged: check.newlyChanged.filter(shown),
+          failures: check.failures.filter((entry) => shown(entry.sourceId)),
+          skipped: check.skipped.filter((entry) => shown(entry.sourceId)),
+        }
+      }),
     'skillSources.add': ({ commandId: _commandId, ...input }) =>
       served('skillSources.add', (d) => d.skills.addSource(input)),
     'skillSources.addLocal': ({ folder, replace }, asking) =>
