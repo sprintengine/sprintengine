@@ -22,6 +22,7 @@ import {
 import {
   createStudioWindowListener,
   type StudioWindowListener,
+  type StudioDeviceTicketRequest,
   type StudioWindowTicketRequest,
 } from '../../server/rpc/studio-window-listener'
 import type { StudioWindowTicket } from '../../shared/studio-connection'
@@ -260,8 +261,23 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
   let starting: Promise<void> | null = null
   let windows: StudioWindowListener | null = null
 
+  /** A listener's ticket as the desktop that holds this Studio is told it: the path, never this machine's port. */
+  function grantOf(minted: StudioWindowTicket): { token: string; path: string } {
+    const url = new URL(minted.url)
+    return { token: minted.token, path: `${url.pathname}${url.search}` }
+  }
+
   function windowListener(): StudioWindowListener {
     windows ??= createStudioWindowListener({
+      // A device the desktop that holds this Studio relays: a client of this
+      // server, audited, held to the folders it knows, never an owner.
+      attachDevice: (stream, deviceAuthenticator) =>
+        hub().attach(stream, {
+          authenticator: deviceAuthenticator,
+          ownWindow: false,
+          audited: true,
+          knownFoldersOnly: true,
+        }),
       attach: (stream, windowAuthenticator, windowKey) =>
         hub().attach(stream, {
           authenticator: windowAuthenticator,
@@ -440,10 +456,12 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       // for each connection's ticket here, over its own shell connection.
       ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'
         ? {
-            windowTickets: async (request: StudioWindowTicketRequest) => {
-              const minted = await windowListener().ticket(request)
-              const url = new URL(minted.url)
-              return { token: minted.token, path: `${url.pathname}${url.search}` }
+            environmentAccess: {
+              windowTicket: async (request: StudioWindowTicketRequest) =>
+                grantOf(await windowListener().ticket(request)),
+              revokeWindow: (windowKey: string) => windows?.revokeWindow(windowKey),
+              deviceTicket: async (request: StudioDeviceTicketRequest) =>
+                grantOf(await windowListener().deviceTicket(request)),
             },
           }
         : {}),

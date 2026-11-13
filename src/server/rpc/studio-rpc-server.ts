@@ -32,6 +32,7 @@ import {
   STUDIO_AGENT_SETUP_CAPABILITY,
   STUDIO_ENVIRONMENT_READINESS_CAPABILITY,
   STUDIO_WINDOW_TICKETS_CAPABILITY,
+  STUDIO_DEVICE_TICKETS_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
   STUDIO_BACKLOG_CAPABILITY,
@@ -45,7 +46,6 @@ import {
   STUDIO_PROTOCOL_VERSION,
   type StudioEnvironment,
   type StudioEnvironmentReadiness,
-  type StudioWindowTicketGrant,
   type StudioProtocolWindow,
   type StudioWelcomeFrame,
 } from '../../../packages/studio-protocol/src/public'
@@ -82,6 +82,7 @@ import type {
   StudioConversationBackend,
   StudioDiscovery,
   StudioFollowedBackend,
+  StudioEnvironmentAccess,
 } from './studio-rpc-types'
 
 // The Studio RPC as one piece: the owner socket, a connection per client, and
@@ -220,7 +221,7 @@ export type StudioRpcServerOptions = {
   /** What this machine has and lacks for its background work. Advertised as `environment-readiness` only when given. */
   readiness?: () => Promise<StudioEnvironmentReadiness>
   /** A ticket for one connection of a window of the desktop that holds this Studio. Advertised as `window-tickets` only when given. */
-  windowTickets?: (request: { windowKey: string; origin: string }) => Promise<StudioWindowTicketGrant>
+  environmentAccess?: StudioEnvironmentAccess
   /** A CLI's login on this machine with no terminal. Advertised as `provider-sign-in-flow` only when given. */
   signIns?: () => Promise<SignIns>
   resyncRetryAfterMs?: (clientId: string) => number
@@ -286,7 +287,8 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
         (capability !== STUDIO_WORKSPACES_CAPABILITY || options.discovery !== undefined) &&
         (capability !== STUDIO_MODULES_CAPABILITY || options.modules !== undefined) &&
         (capability !== STUDIO_ENVIRONMENT_READINESS_CAPABILITY || options.readiness !== undefined) &&
-        (capability !== STUDIO_WINDOW_TICKETS_CAPABILITY || options.windowTickets !== undefined) &&
+        ((capability !== STUDIO_WINDOW_TICKETS_CAPABILITY && capability !== STUDIO_DEVICE_TICKETS_CAPABILITY) ||
+          options.environmentAccess !== undefined) &&
         (capability !== STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY || options.signIns !== undefined) &&
         (capability !== STUDIO_TERMINALS_CAPABILITY || options.terminals !== undefined) &&
         (capability !== STUDIO_AGENT_RUNTIMES_CAPABILITY || options.runtimes !== undefined) &&
@@ -333,7 +335,7 @@ export function createStudioRpcServer(options: StudioRpcServerOptions): StudioRp
     ...(options.localServers ? { localServers: options.localServers } : {}),
     ...(options.discovery ? { discovery: options.discovery } : {}),
     ...(options.readiness ? { readiness: options.readiness } : {}),
-    ...(options.windowTickets ? { windowTickets: options.windowTickets } : {}),
+    ...(options.environmentAccess ? { environmentAccess: options.environmentAccess } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),
     ...(options.terminals ? { terminals: options.terminals } : {}),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),

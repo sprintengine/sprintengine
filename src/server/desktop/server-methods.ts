@@ -101,6 +101,19 @@ export const SHELL_METHODS = {
    */
   sshOpen: 'shell.ssh.open',
   /**
+   * `{ environmentId }` → `{ clientId, label }`: a stream to the window
+   * listener of the machine main holds whose environment this is (the front
+   * door's `ws`), for a paired device the tailnet listener relays there; its
+   * port follows as an `ssh-stream` attach with that client id.
+   */
+  environmentOpen: 'shell.environment.open',
+  /**
+   * `{ environmentId, device: { deviceId, name, scopes } }` → the ticket or
+   * its refusal: a relayed device's ticket on that machine, minted over
+   * main's owner connection (`environment.deviceTicket`), never an owner's.
+   */
+  environmentDeviceTicket: 'shell.environment.device-ticket',
+  /**
    * `{ targetVersion? }` → `StudioUpdateStart`: a client asked this desktop to
    * update itself (`update.start`); the app updater is the shell's.
    */

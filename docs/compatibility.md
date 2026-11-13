@@ -987,7 +987,18 @@ scope carries `workspaces:read`), never an owner's; a removed pairing closes
 the connection. The socket carries no `Origin`, except a desktop window's,
 which names its origin when it asks for the ticket and carries exactly that
 one. A ticket answer from a Studio that serves the endpoint says so with
-`studioPath`; a device that finds it missing is talking to an older Studio. It is a connection envelope — `hello` /
+`studioPath`; a device that finds it missing is talking to an older Studio.
+A machine the desktop holds behind its front door (an SSH machine's server)
+is reached the same way at `/tailnet/v1/environments/<environmentId>/studio`
+(2026-11-13): `ws-ticket` with `{ environmentId }` answers a ticket that
+machine minted and that path as `studioPath`. That ticket opens only that path.
+A ticket for this desktop opens none of a machine's paths, and a device that
+may not follow chats is given no ticket. The desktop checks the device as it
+checks it on its own path, then carries the socket to the machine. The
+machine serves it with the device's scopes cut to `conversation:read`,
+`conversation:operate`, `conversation:create` and `workspaces:read`, never an
+owner's, so never a terminal. A narrowed or removed pairing closes it, and the
+device connects again with a fresh ticket. It is a connection envelope — `hello` /
 `welcome`, requests answered by id, subscriptions keyed by id — around the
 conversation contract, which it depends on and re-exports rather than copies:
 a stream's frames are the conversation lane's own server frames, and a
@@ -1214,7 +1225,16 @@ from that origin, to `Host: 127.0.0.1`). It is the first method held to the
 desktop's own shell connection (`shell` in the table, beside `owner`): an
 owner's web tab and a paired app are refused `owner_required`, and no device
 reaches it. Served by a WSL distribution's or an SSH machine's Studio, which a
-desktop reaches over its front door.
+desktop reaches over its front door. `environment.revokeWindow` (`{ windowKey }`, also
+the shell's) ends a window document's connections there and voids its unspent
+tickets when the document goes; the desktop names each document afresh.
+`device-tickets` (2026-11-13) adds `environment.deviceTicket` (`{ deviceId, name, scopes }`
+→ `{ token, path }`, the shell's): a ticket on the window listener's `/device` path
+for a paired device the desktop relays (good once, for thirty seconds, no
+`Origin` at all, `Host: 127.0.0.1`). The connection is audited, held to the
+folders the machine knows, and never an owner's (`clientId` `relay:<deviceId>`).
+Its scopes are exactly those named, each of them one of
+`STUDIO_RELAYED_DEVICE_SCOPES`; any other is refused `invalid_params`.
 `provider-sign-in-flow` (2026-11-13) adds `providers.signInStart`, `.signInPaste`,
 `.signInWait` and `.signInCancel`, each under a `commandId`: a CLI's own login on
 that machine with no terminal (decision R34), named by provider, never by a

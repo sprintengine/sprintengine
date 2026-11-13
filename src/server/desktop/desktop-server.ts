@@ -79,6 +79,7 @@ import { createServerModules } from './server-modules'
 import { serveAgentWorktrees } from './agent-worktree-rpc'
 import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
 import { relayShellToolsets, SSH_RELAYED_TOOLSETS } from '../wsl/wsl-tool-relay'
+import { portDuplex } from '../ipc/port-duplex'
 import { createShellSshServers } from './shell-ssh-servers'
 import { readStudioEnv } from '../../shared/studio-env'
 
@@ -417,6 +418,34 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       ...createTailnetTools({ resolveTailnet: () => tailnetFrontDoor }),
     ],
   })
+  // A paired device reaches the SSH machines main holds through this
+  // process's tailnet listener: main mints each device's ticket on the
+  // machine and opens each socket's stream, handed here as a port.
+  if (shellSsh)
+    gateway.linkEnvironments({
+      ticket: (environmentId, device) =>
+        rpc.call<{ ok: true; token: string; path: string } | { ok: false; code: string; message: string }>(
+          SHELL_METHODS.environmentDeviceTicket,
+          { environmentId, device },
+          { timeoutMs: SSH_OPEN_TIMEOUT_MS },
+        ),
+      open: async (environmentId) => {
+        const { clientId } = await rpc.call<{ clientId: string }>(
+          SHELL_METHODS.environmentOpen,
+          { environmentId },
+          { timeoutMs: SSH_OPEN_TIMEOUT_MS },
+        )
+        const deadline = Date.now() + RELAY_PORT_WAIT_MS
+        let port = sshPorts.get(clientId) ?? null
+        while (!port && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          port = sshPorts.get(clientId) ?? null
+        }
+        sshPorts.delete(clientId)
+        if (!port) throw new Error('The connection to that machine did not arrive from the app.')
+        return portDuplex(port)
+      },
+    })
   tailnetFrontDoor = gateway
   // A chat agent in WSL reaches its own server's gateway: the shell's six
   // toolsets are offered there too, and run through this registry, and so
@@ -799,6 +828,8 @@ function serveShellAgentRequests(rpc: Parameters<ServerStart>[0]['rpc'], agents:
 
 /** How long main may take to open an SSH machine's stream: a first connect may install and start its server. */
 const SSH_OPEN_TIMEOUT_MS = 20 * 60_000
+/** How long a relayed device's stream may take to arrive from main once it is opened. */
+const RELAY_PORT_WAIT_MS = 5_000
 /** An SSH stream's port that no `shell.ssh.open` answer claims within this is closed. */
 const SSH_PORT_UNCLAIMED_MS = 10_000
 

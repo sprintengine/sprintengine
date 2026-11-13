@@ -1,3 +1,5 @@
+import { isEnvironmentId } from '../../../../packages/studio-protocol/src/environment'
+
 // The tailnet listener's route table, in its own module so both the gateway
 // server and the remote client can name a path without importing each other.
 
@@ -43,6 +45,27 @@ export const TAILNET_EVENTS_PATH = `${TAILNET_ROUTE_PREFIX}/events`
  * ticket and carries exactly that origin; every other socket carries none.
  */
 export const TAILNET_STUDIO_PATH = `${TAILNET_ROUTE_PREFIX}/studio`
+/**
+ * The Studio protocol of a machine this desktop holds (a WSL distribution's
+ * or an SSH machine's server), for a paired device: `<prefix><environmentId>/studio`.
+ * The device proves itself here as on `TAILNET_STUDIO_PATH`, with a ticket
+ * from `ws-ticket` that names the environment, and this desktop carries the
+ * socket to that machine's own listener, which admits it with the device's
+ * grant cut to what a relayed device may hold, never an owner's.
+ */
+const TAILNET_ENVIRONMENTS_PREFIX = `${TAILNET_ROUTE_PREFIX}/environments/`
+
+/** The path a paired device opens to reach a machine this desktop relays. */
+export function tailnetEnvironmentStudioPath(environmentId: string): string {
+  return `${TAILNET_ENVIRONMENTS_PREFIX}${environmentId}/studio`
+}
+
+/** The environment a relayed Studio path names, or null for any other path. */
+export function tailnetRelayedEnvironmentOf(path: string): string | null {
+  if (!path.startsWith(TAILNET_ENVIRONMENTS_PREFIX) || !path.endsWith('/studio')) return null
+  const id = path.slice(TAILNET_ENVIRONMENTS_PREFIX.length, -'/studio'.length)
+  return isEnvironmentId(id) ? id : null
+}
 /**
  * One image from a paired device, staged for a conversation it may operate.
  *

@@ -25,7 +25,7 @@ import { isStudioGatewayMutation } from './studio-gateway-tools'
 import { createTailnetMeshService, type TailnetMeshService } from './tailnet/tailnet-mesh-service'
 import { createTailnetRemoteService, type TailnetRemoteService } from './tailnet/tailnet-service'
 import type { ConversationGatewayHost } from './tailnet/tailnet-conversation-host'
-import type { TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
+import type { TailnetEnvironmentRelay, TailnetStudioHost } from './tailnet/tailnet-studio-endpoint'
 import type { ConversationImageDownscaler } from '../conversation-image-downscale'
 
 // Owns the always-on Studio MCP gateway lifecycle, local socket endpoint, and
@@ -104,6 +104,7 @@ export function createAutomationService(options: AutomationServiceOptions) {
   let audit: GatewayAuditStore | null = null
   let tailnet: TailnetRemoteService | null = null
   let studioHost: TailnetStudioHost | null = null
+  let environmentRelay: TailnetEnvironmentRelay | null = null
   // The outbound half. Independent of the listener above: driving
   // another machine does not require having opened your own door, and a build
   // with remote control off can still be a Mesh client.
@@ -199,6 +200,9 @@ export function createAutomationService(options: AutomationServiceOptions) {
       // Read when a device's Studio socket opens: the Studio server is built
       // after this gateway, and links itself with `linkStudio`.
       studio: () => studioHost,
+      // The machines this desktop holds behind their front doors, linked by
+      // whoever holds their sessions (main), read when a device's socket opens.
+      environments: () => environmentRelay,
       ...(options.tailnetBindAddress === undefined
         ? {}
         : { resolveBindAddress: () => options.tailnetBindAddress ?? null }),
@@ -433,6 +437,14 @@ export function createAutomationService(options: AutomationServiceOptions) {
      */
     linkStudio: (host: TailnetStudioHost): void => {
       studioHost = host
+    },
+    /**
+     * The machines a paired device reaches through this desktop on
+     * `/tailnet/v1/environments/<id>/studio`: those whose sessions this
+     * desktop holds (its SSH machines).
+     */
+    linkEnvironments: (relay: TailnetEnvironmentRelay): void => {
+      environmentRelay = relay
     },
     /** The one mutation audit, shared with every other listener (the Studio RPC's owner socket). */
     gatewayAudit: (): GatewayAuditStore => auditStore(),

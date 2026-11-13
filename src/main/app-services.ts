@@ -1680,6 +1680,7 @@ export function createAppServices(
         })
       return { ok: false, code: 'unavailable', message: 'Studio’s server is not running yet.' }
     },
+    revokeWindow: (windowKey) => ssh?.environments.revokeWindow(windowKey),
   })
   // A chat agent in WSL reaches its own server's gateway: the desktop's
   // toolsets, and this side's own tools of the families the WSL server cannot
@@ -1733,6 +1734,15 @@ export function createAppServices(
   const terminalAttachGuard: { current: ((windowKey: string, sessionId: string) => boolean) | null } = {
     current: null,
   }
+  // A paired device reaches this desktop's SSH machines through its tailnet
+  // listener: main holds their sessions, so main mints each device's ticket
+  // there and opens each socket's stream. Out of process the server asks main
+  // the same over the shell link (`environmentDeviceTicket`, `sshOpen`).
+  if (automationService && ssh)
+    automationService.linkEnvironments({
+      ticket: (environmentId, device) => ssh.environments.deviceTicket(environmentId, device),
+      open: (environmentId) => ssh.environments.openEnvironment(environmentId),
+    })
   const studioRpc = automationService
     ? createStudioRpc(core, automationService, {
         updates: desktopUpdates,

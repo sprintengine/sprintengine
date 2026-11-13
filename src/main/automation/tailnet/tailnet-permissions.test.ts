@@ -24,6 +24,7 @@ import {
   TAILNET_IDENTITY_PATH,
   TAILNET_STREAM_PATH,
   TAILNET_STUDIO_PATH,
+  tailnetEnvironmentStudioPath,
   TAILNET_MCP_PATH,
   TAILNET_UPLOAD_PATH,
   TAILNET_WS_TICKET_PATH,
@@ -113,6 +114,8 @@ const LEGACY_ROUTES: { [R in TailnetDeviceRoute]: (scopes: TailnetScope[]) => bo
   upload: (scopes) => legacy(scopes, 'conversation:operate'),
   // Newer still: the Studio protocol, whose methods are judged one by one by the Studio router.
   studio: () => true,
+  // Newest: a machine this desktop relays, which a device must at least follow chats to reach.
+  relay: (scopes) => legacy(scopes, 'conversation:read'),
 }
 
 test('each of the six scopes carries only permissions from the closed set, and none a device was never given', () => {
@@ -171,11 +174,18 @@ test('each upgrade path names its route, and every declared route is one some re
   assert.equal(tailnetUpgradeRouteOf('/tailnet/v1/canvas'), null)
   assert.equal(tailnetUpgradeRouteOf(TAILNET_STUDIO_PATH), 'studio')
   assert.equal(tailnetUpgradeRouteOf(TAILNET_MCP_PATH), null)
+  assert.equal(tailnetUpgradeRouteOf(tailnetEnvironmentStudioPath('env-build-box')), 'relay')
+  assert.equal(tailnetUpgradeRouteOf('/tailnet/v1/environments/../studio'), null)
+  assert.equal(tailnetUpgradeRouteOf('/tailnet/v1/environments/env-build-box/terminal'), null)
   // No entry in the table goes unconsulted: each is what some request is judged by.
   const resolved = new Set<string>([
-    ...[TAILNET_STREAM_PATH, TAILNET_EVENTS_PATH, TAILNET_CONVERSATION_PATH, TAILNET_STUDIO_PATH].map((path) =>
-      tailnetUpgradeRouteOf(path)!,
-    ),
+    ...[
+      TAILNET_STREAM_PATH,
+      TAILNET_EVENTS_PATH,
+      TAILNET_CONVERSATION_PATH,
+      TAILNET_STUDIO_PATH,
+      tailnetEnvironmentStudioPath('env-build-box'),
+    ].map((path) => tailnetUpgradeRouteOf(path)!),
     tailnetDeviceRouteOf('GET', TAILNET_IDENTITY_PATH)!,
     tailnetDeviceRouteOf('POST', TAILNET_UPLOAD_PATH)!,
     tailnetDeviceRouteOf('GET', TAILNET_CONVERSATION_IMAGE_PATH)!,

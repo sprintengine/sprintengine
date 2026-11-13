@@ -92,9 +92,13 @@ const errorCode = (answer: unknown) => (answer as { error?: { code?: string } })
 test('only the shell that holds this Studio is given a ticket for one of its windows', async () => {
   const asked: Array<{ windowKey: string; origin: string }> = []
   const started = await startTestServer({
-    windowTickets: async (request) => {
-      asked.push(request)
-      return { token: 'ticket-1', path: '/ws?ticket=ticket-1' }
+    environmentAccess: {
+      windowTicket: async (request) => {
+        asked.push(request)
+        return { token: 'ticket-1', path: '/ws?ticket=ticket-1' }
+      },
+      revokeWindow: () => undefined,
+      deviceTicket: async () => ({ token: 'device-1', path: '/device?ticket=device-1' }),
     },
   })
   cleanups.push(() => started.dispose())
@@ -216,4 +220,65 @@ test('a Studio with a terminal beside it offers no sign-in without one', async (
     errorCode(await owner.request('providers.signInStart', { commandId: 'c1', providerId: 'codex' })),
     'unavailable',
   )
+})
+
+test('a window is revoked and a device ticket minted only for the shell, a device never beyond the relayed ceiling', async () => {
+  const revoked: string[] = []
+  const devices: unknown[] = []
+  const started = await startTestServer({
+    environmentAccess: {
+      windowTicket: async () => ({ token: 't', path: '/ws?ticket=t' }),
+      revokeWindow: (windowKey) => revoked.push(windowKey),
+      deviceTicket: async (request) => {
+        devices.push(request)
+        return { token: 'd', path: '/device?ticket=d' }
+      },
+    },
+  })
+  cleanups.push(() => started.dispose())
+  const shell = await shellOf(started.server)
+  assert.ok((shell.welcome.capabilities as string[]).includes('device-tickets'))
+
+  assert.deepEqual((await shell.request('environment.revokeWindow', { windowKey: 'window-3-2' })).result, {
+    revoked: true,
+  })
+  assert.deepEqual(revoked, ['window-3-2'])
+
+  const minted = await shell.request('environment.deviceTicket', {
+    deviceId: 'phone-1',
+    name: 'Phone',
+    scopes: ['conversation:operate', 'conversation:read'],
+  })
+  assert.deepEqual(minted.result, { token: 'd', path: '/device?ticket=d' })
+  // Held in the ceiling's order, whatever order they were named in.
+  assert.deepEqual(devices, [
+    { deviceId: 'phone-1', name: 'Phone', scopes: ['conversation:read', 'conversation:operate'] },
+  ])
+
+  // Beyond the ceiling is refused at minting: no files, no settings, no terminals by any name.
+  for (const scopes of [['files:read'], ['conversation:read', 'settings:write'], ['environment:maintain'], []])
+    assert.equal(
+      errorCode(await shell.request('environment.deviceTicket', { deviceId: 'phone-1', name: 'Phone', scopes })),
+      'invalid_params',
+      JSON.stringify(scopes),
+    )
+  assert.equal(devices.length, 1)
+
+  const owner = await lineClient(started.path, OWNER_TOKEN)
+  assert.equal(
+    errorCode(await owner.request('environment.revokeWindow', { windowKey: 'window-3-2' })),
+    'owner_required',
+  )
+  assert.equal(
+    errorCode(
+      await owner.request('environment.deviceTicket', {
+        deviceId: 'phone-1',
+        name: 'Phone',
+        scopes: ['conversation:read'],
+      }),
+    ),
+    'owner_required',
+  )
+  assert.equal(revoked.length, 1)
+  assert.equal(devices.length, 1)
 })

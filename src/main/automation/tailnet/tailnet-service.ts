@@ -168,6 +168,8 @@ export type TailnetRemoteServiceOptions = {
   downscaleUpload?: TailnetGatewayServerOptions['downscaleUpload']
   /** This machine's Studio server, for a device's Studio socket; see the gateway's own option. */
   studio?: TailnetGatewayServerOptions['studio']
+  /** The machines this desktop relays to its paired devices; see the gateway's own option. */
+  environments?: TailnetGatewayServerOptions['environments']
   /**
    * The live-state push (remote-sessions-ux): fired on every observable change
    * — listener up/down, a pair request arriving or resolving, a device's
@@ -643,6 +645,7 @@ export function createTailnetRemoteService(options: TailnetRemoteServiceOptions)
       fileUploads: createTailnetFileUploads({ root: join(options.resolveUserDataDir(), TAILNET_UPLOADS_DIRNAME) }),
       ...(options.downscaleUpload ? { downscaleUpload: options.downscaleUpload } : {}),
       ...(options.studio ? { studio: options.studio } : {}),
+      ...(options.environments ? { environments: options.environments } : {}),
       onToolCall: options.onToolCall,
       onPairRequested: () => announcePairRequests(),
       onReverseGrant: (input) => {
