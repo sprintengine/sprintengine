@@ -14,6 +14,7 @@ import {
 import type { MeshScheduledAgentAction } from '../../../shared/tailnet-mesh'
 import { pairedWindow } from '../../../../tests/paired-window'
 import { deviceRig } from './tailnet-studio.test-helper'
+import type { StudioChatBackend } from '../../../server/rpc/studio-rpc-types'
 
 // A paired machine's scheduled agents, driven by this desktop's window over its
 // own client of that machine's Studio's
@@ -79,7 +80,9 @@ function fakeSchedules(calls: Call[]): StudioSchedulesDomain {
 
 async function pairedMachine(options: { serves?: boolean; scopes?: TailnetScope[] } = {}) {
   const calls: Call[] = []
-  const peer = await deviceRig(options.serves === false ? {} : { schedules: fakeSchedules(calls) })
+  // That machine knows its project's folder, as its chat surface says it: what starts a schedule is held to it.
+  const knows = { isKnownFolder: async (path: string) => path === '/Users/dev/app' } as unknown as StudioChatBackend
+  const peer = await deviceRig(options.serves === false ? {} : { schedules: fakeSchedules(calls), chat: knows })
   const window = await pairedWindow(peer, options.scopes ?? ['workspace:read', 'workspace:operate'])
   return {
     machine: window.machine,
@@ -120,7 +123,8 @@ test('Run, pause, resume and close are the machine’s own schedule methods', as
     }
     assert.deepEqual(
       machine.calls.map((call) => call.method),
-      ['runNow', 'pause', 'resume', 'remove'],
+      // What starts a schedule reads where it runs first, to hold it to the folders the asker may name.
+      ['list', 'runNow', 'pause', 'list', 'resume', 'remove'],
     )
     const unknown = await pairedScheduledAgentAction(machine.machine, 'sa-1', 'edit' as MeshScheduledAgentAction)
     assert.equal(!unknown.ok && unknown.code, 'invalid_arguments')
