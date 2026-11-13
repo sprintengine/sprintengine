@@ -256,12 +256,13 @@ test('a crafted path reaches nothing but a board in its store or its project', a
   for (const ref of crafted) {
     const change = { elements: [element('x')], appState: {}, files: {} }
     const code = await refusalOf(
+      // Sent as a peer that writes its own params would: whatever the ref is.
       client.request('canvas.commit', {
-        ...(ref as never),
+        ...ref,
         commandId: `c-${Math.random()}`,
         baseRevision: 0,
         body: change,
-      }),
+      } as never),
     )
     assert.notEqual(code, null, `commit refused: ${JSON.stringify(ref)}`)
     assert.notEqual(
