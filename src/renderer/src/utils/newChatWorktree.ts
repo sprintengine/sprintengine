@@ -7,6 +7,7 @@ import type { AgentId, WorkspaceId, WorkspaceWorktree } from '../types/workspace
 import { publishDiagnosticSync } from './diagnostics'
 import { agentWorktreePaths, newChatWorktreeName, workspaceProjectRootOf } from './workspaceWorktree'
 import { gitApi } from '../studio/git'
+import { worktreesApi } from '../studio/worktrees'
 
 export type NewChatWorktreeResult =
   | {
@@ -88,7 +89,7 @@ export async function createNewChatWorktree(
     // reused slot keeps the last agent's installed dependencies. A chat on a
     // WSL machine is declined by the pool and gets a fresh worktree from that
     // machine's git, forked from the same default branch.
-    const result = await window.api.createGitWorktree({
+    const result = await worktreesApi.createGitWorktree({
       repoRoot,
       containerPath: paths.containerPath,
       destinationPath: paths.destinationPath,
@@ -241,8 +242,8 @@ async function giveBackUnusedWorktree(
 ): Promise<void> {
   if (!made.made) return
   try {
-    if (made.made.leaseId) await window.api.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId })
-    else if (!hostId) await window.api.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
+    if (made.made.leaseId) await worktreesApi.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId })
+    else if (!hostId) await worktreesApi.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
   } catch {
     // Left for the sweep.
   }
@@ -433,7 +434,7 @@ function catchUpReservation(reservation: Reservation): Promise<void> {
   if (reservation.catchingUp) return reservation.catchingUp
   const leaseId = reservation.settled?.ok ? reservation.settled.made?.leaseId : null
   if (!leaseId) return Promise.resolve()
-  const run = window.api
+  const run = worktreesApi
     .worktreePoolAction({ kind: 'catch-up', leaseId })
     .then(
       (result) => {

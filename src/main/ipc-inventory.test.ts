@@ -181,7 +181,6 @@ const SERVER_ROWS: Readonly<Record<IpcServerArea, number>> = {
   'paired-machines': 52,
   access: 45,
   workspaces: 47,
-  'worktree-pool': 16,
   'web-tab': 6,
 }
 
@@ -252,13 +251,6 @@ function serverDomainStubs(dataDir: string): ServerDomainIpcDeps {
       scheduledMessages: anything(),
       textGenerationSettings: anything(),
       conversationCommands: () => anything(),
-      worktrees: {
-        pool: anything(),
-        installer: anything(),
-        liveWorkPaths: async () => [],
-        knownWorkspaceIds: () => null,
-        settledChatDeletion: () => anything(),
-      },
     } as never,
     gateway: anything(),
     studioRpc: { provideChat: () => undefined } as never,

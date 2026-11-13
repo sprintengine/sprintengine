@@ -9,6 +9,7 @@ import {
   remoteOriginChatWorkspaceId,
 } from '../components/workspace/remoteBand/remoteSessionsModel'
 import { deletionConfirmation, deletionToast } from '../utils/settledChatDeletion'
+import { worktreesApi } from '../studio/worktrees'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
@@ -19,9 +20,9 @@ function titleOf(workspaceId: string): string {
 
 /**
  * Delete settled chats, one or many, the way every surface that offers it
- * does: main says what would go (`planSettledChatDeletion`), the app's confirm
- * dialog says it to the person, and only then does main delete, checking
- * everything again. The records leave the store on main's broadcast, as a
+ * does: the Studio says what would go (`settledChats.planDelete`), the app's
+ * confirm dialog says it to the person, and only then does the Studio delete,
+ * checking everything again. The records leave the store on main's broadcast, as a
  * removal from any window does. Resolves with the ids that were deleted.
  */
 export function useDeleteSettledChats(): {
@@ -36,20 +37,15 @@ export function useDeleteSettledChats(): {
   const deleteChats = useCallback(
     async (workspaceIds: readonly WorkspaceId[]): Promise<WorkspaceId[]> => {
       if (workspaceIds.length === 0) return []
-      const api = window.api
       const failed = (description: string) =>
         showToast({
           tone: 'error',
           title: workspaceIds.length === 1 ? 'The chat was not deleted' : 'The chats were not deleted',
           description,
         })
-      if (typeof api?.planSettledChatDeletion !== 'function' || typeof api.deleteSettledChats !== 'function') {
-        failed('Deleting chats is not available here.')
-        return []
-      }
       let plans
       try {
-        plans = await api.planSettledChatDeletion([...workspaceIds])
+        plans = await worktreesApi.planSettledChatDeletion([...workspaceIds])
       } catch (error) {
         failed(errorText(error))
         return []
@@ -78,7 +74,7 @@ export function useDeleteSettledChats(): {
       const titles = new Map(ids.map((id) => [id, titleOf(id)]))
       setDeleting((current) => new Set([...current, ...ids]))
       try {
-        const outcomes = await api.deleteSettledChats(ids)
+        const outcomes = await worktreesApi.deleteSettledChats(ids)
         showToast(deletionToast(outcomes, (id) => titles.get(id) ?? 'this chat'))
         return outcomes.filter((outcome) => outcome.ok).map((outcome) => outcome.workspaceId)
       } catch (error) {
@@ -107,8 +103,7 @@ export function useDeleteSettledChats(): {
       if (
         !origin ||
         typeof api?.meshConversationDeletePlan !== 'function' ||
-        typeof api.meshChangeConversation !== 'function' ||
-        typeof api.deleteSettledChats !== 'function'
+        typeof api.meshChangeConversation !== 'function'
       ) {
         failed('Deleting chats on another machine is not available here.')
         return false
@@ -156,7 +151,7 @@ export function useDeleteSettledChats(): {
             return false
           }
         }
-        const [removed] = await api.deleteSettledChats([workspaceId])
+        const [removed] = await worktreesApi.deleteSettledChats([workspaceId])
         if (removed && !removed.ok) {
           failed(`It was deleted on ${origin.machineName}, but not removed here: ${removed.message}`)
           return false

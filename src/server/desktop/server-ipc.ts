@@ -10,10 +10,8 @@ import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
 import { registerStudioLocalAppsIpc } from '../../main/ipc/studio-local-apps-ipc'
 import { registerScheduledAgentsIpc } from '../../main/scheduled-agents/scheduled-agents-ipc'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
-import { registerSettledChatsIpc } from '../../main/ipc/settled-chats-ipc'
 import { registerWorkspaceBackupIpc } from '../../main/ipc/workspace-backup-ipc'
 import { registerWorkspaceSyncIpc } from '../../main/ipc/workspace-sync-ipc'
-import { registerWorktreePoolIpc } from '../../main/ipc/worktree-pool-ipc'
 import type { AgentLaunchSettingsStore } from '../../main/launch-settings-store'
 import { createStudioChatBackend } from '../../main/studio-rpc/studio-chat-backend'
 import type { StudioRpcService } from '../../main/studio-rpc/studio-rpc-service'
@@ -33,8 +31,8 @@ import { knownFolders } from '../files/known-folders'
 // machines, the gateway's settings and the tailnet and mesh, the paired local
 // apps, workspace backups, model discovery, the composer's command lists,
 // backlog files, the GitHub token, the chats, with the copy of the model-written titles setting the
-// server titles them by, and the worktree pool with the git panel's agent
-// worktree steps that go through it.
+// server titles them by. The worktree pool and settled chats are the Studio
+// protocol's (`worktrees.*`, `settledChats.*`).
 // What is not: anything that acts on a window, a terminal or the shell's own
 // caches (the rest of the git panel, the file explorer, skills and the marketplace,
 // modules' enablement and trust), which stays with the shell until phase 10.
@@ -56,7 +54,6 @@ export type ServerDomainIpcDeps = {
     | 'platform'
     | 'textGenerationSettings'
     | 'conversationCommands'
-    | 'worktrees'
   > & { hosts: HostRegistry; agentLaunchSettings: AgentLaunchSettingsStore }
   gateway: StudioGateway
   studioRpc: StudioRpcService
@@ -107,16 +104,5 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
       commands: (input) => conversationCommands.list(input),
     }),
   )
-  // The worktree pool the core keeps (studio-worktree-pool.ts): Settings ▸
-  // Worktrees, the installs, and the agent worktree steps that lease, bring
-  // back, remove or return one. And deleting a settled chat, whose worktree
-  // goes back to that pool.
-  registerWorktreePoolIpc(ipc, {
-    pool: core.worktrees.pool,
-    installer: core.worktrees.installer,
-    liveWorkPaths: core.worktrees.liveWorkPaths,
-    knownWorkspaceIds: core.worktrees.knownWorkspaceIds,
-  })
-  registerSettledChatsIpc(ipc, core.worktrees.settledChatDeletion('ui'))
   return { conversationCommands }
 }

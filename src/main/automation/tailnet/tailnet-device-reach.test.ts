@@ -89,6 +89,11 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'conversation.revert': CHAT_OPERATE,
   'conversation.rewind': CHAT_OPERATE,
   'conversation.handoff': CHAT_OPERATE,
+  // Delete on a settled chat here: what it would do is a chat read, the
+  // delete drives the chat, as the gateway's `conversation.delete_plan` and
+  // `conversation.delete` are on a paired desktop's lane.
+  'settledChats.planDelete': CHAT_READ,
+  'settledChats.delete': CHAT_OPERATE,
   'session.start': CHAT_OPERATE,
   'session.send': CHAT_OPERATE,
   'session.interrupt': CHAT_OPERATE,
@@ -412,6 +417,25 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'git.checkoutChanged',
           'git.changelistsChanged',
           'github.cloneProgress',
+        ],
+      ],
+      [
+        'the pool of worktrees the agents here run in, and the agents’ worktrees: an owner’s',
+        [
+          'worktrees.poolSnapshot',
+          'worktrees.poolSettings',
+          'worktrees.setPoolSettings',
+          'worktrees.inventory',
+          'worktrees.poolAction',
+          'worktrees.removeOther',
+          'worktrees.installs',
+          'worktrees.cancelInstall',
+          'worktrees.create',
+          'worktrees.restore',
+          'worktrees.remove',
+          'worktrees.cleanupAgents',
+          'worktrees.poolChanged',
+          'worktrees.installChanged',
         ],
       ],
       ['updating this Studio (environment:maintain)', ['update.start']],

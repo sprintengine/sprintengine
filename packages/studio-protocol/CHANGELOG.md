@@ -116,6 +116,20 @@
   - `versionControl.probeProviders` and `.probeHostGh` under `providers:read`.
   - A ref, branch, tag or commit may not start with `-`. The shapes move into
     the package (`git-types.ts`), with `VERSION_CONTROL_PROVIDER_IDS`.
+- **The worktrees a Studio's agents run in** (`worktrees.ts`, capability
+  `worktrees`): 14 methods and two streams.
+  - An owner's, each with its reason in the table: the pool
+    (`worktrees.poolSnapshot`, `.poolSettings`, `.setPoolSettings`,
+    `.poolAction`), the installs (`worktrees.installs`, `.cancelInstall`),
+    Settings ▸ Worktrees (`worktrees.inventory`, `.removeOther`), the agents'
+    worktree steps (`worktrees.create`, `.restore`, `.remove`,
+    `.cleanupAgents`), and `worktrees.poolChanged` and
+    `worktrees.installChanged`. Removing a worktree gives the reason
+    `git.pruneWorktrees` gives (`STUDIO_AGENT_WORKTREES_OWNER`).
+  - `settledChats.planDelete` (`conversation:read`) and `settledChats.delete`
+    (`conversation:operate`).
+  - A branch or base ref may not start with `-`. The shapes move into the
+    package (`worktree-types.ts`).
 - **`files-mention` is served by every Studio's core.** `files.search`,
   `files.cancelSearch`, `files.stat` by path, `files.readImage` and
   `files.repoRoot` no longer need the chat surface, and the capability leaves

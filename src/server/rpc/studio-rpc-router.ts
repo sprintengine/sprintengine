@@ -53,6 +53,8 @@ import type { StudioFileSystem, StudioFileSystemWatch } from '../files/studio-fi
 import { createStudioFileSystemHandlers, type StudioMachineCall } from './studio-file-system'
 import type { StudioGit } from '../git/studio-git-types'
 import { createStudioGitHandlers } from './studio-git'
+import type { StudioWorktrees } from '../worktrees/studio-worktrees-types'
+import { createStudioWorktreesHandlers } from './studio-worktrees'
 import type { StudioModuleCallOutcome, StudioModules } from './studio-modules'
 import type { StudioChatStores } from '../chat-stores/chat-stores-domain'
 import { createStudioChatStoresHandlers } from './studio-chat-stores'
@@ -145,6 +147,8 @@ export type StudioRpcRouter = {
   followCheckout: ReturnType<typeof createStudioGitHandlers>['followCheckout']
   /** Git's other streams, where this Studio serves git. */
   readonly git: StudioGit | null
+  /** The worktree pool's streams, where this Studio serves its worktrees. */
+  readonly worktrees: StudioWorktrees | null
   /** The RPC is stopping: timers stop and staged uploads go. */
   close(): void
 }
@@ -168,6 +172,8 @@ export type StudioRpcRouterOptions = {
   machine?: StudioMachineCall
   /** Git on this machine; without it, `git.*`, `github.*` and `versionControl.*` are answered `unavailable`. */
   git?: StudioGit
+  /** The worktrees its agents run in, and deleting settled chats; without it, `worktrees.*` and `settledChats.*` are answered `unavailable`. */
+  worktrees?: StudioWorktrees
   /** The pull requests the conversations opened; without it, `pullRequests.*` is answered `unavailable`. */
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started; without it, `localServers.*` is answered `unavailable`. */
@@ -787,6 +793,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     ...(options.git ? { git: options.git } : {}),
     ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
     ...(options.machine ? { machine: options.machine } : {}),
+    once: (id, work, voice, method) => once(id, work, voice as Voice, method),
+    runtimeId,
+  })
+  const worktreesHandlers = createStudioWorktreesHandlers({
+    ...(options.worktrees ? { worktrees: options.worktrees } : {}),
     once: (id, work, voice, method) => once(id, work, voice as Voice, method),
     runtimeId,
   })
@@ -1621,6 +1632,10 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     // ── Git on this machine ────────────────────────────────────────────────
 
     ...gitRouting.handlers,
+
+    // ── The worktrees its agents run in, and settled chats ─────────────────
+
+    ...worktreesHandlers,
     // ── Readiness ──────────────────────────────────────────────────────────
 
     // What the machine has is a providers read; what waits names schedules
@@ -1760,6 +1775,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     watchPath: (params, asking, listener) => fileSystem.watch(params, asking, listener),
     followCheckout: (checkoutPath, asking, listener) => gitRouting.followCheckout(checkoutPath, asking, listener),
     git: options.git ?? null,
+    worktrees: options.worktrees ?? null,
     close: () => uploads.close(),
     async handle(grant, method, params, context = NO_CONTEXT) {
       const spec = STUDIO_METHODS[method]

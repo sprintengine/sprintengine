@@ -1357,6 +1357,10 @@ export function createStudioRpcConnection(options: StudioRpcConnectionOptions): 
       subscribeFeed(id, 'git.changelistsChanged', options.router.git?.onChangelistsChanged ?? null),
     'github.cloneProgress': (id) =>
       subscribeFeed(id, 'github.cloneProgress', options.router.git?.onCloneProgress ?? null),
+    'worktrees.poolChanged': (id) =>
+      subscribeFeed(id, 'worktrees.poolChanged', options.router.worktrees?.onPoolChanged ?? null),
+    'worktrees.installChanged': (id) =>
+      subscribeFeed(id, 'worktrees.installChanged', options.router.worktrees?.onInstallChanged ?? null),
     'pullRequests.changed': subscribePullRequests,
     'localServers.changed': subscribeLocalServers,
     'module.events': subscribeModuleEvents,

@@ -41,7 +41,9 @@ const REVOKED = { owner: false, scopes: [] as string[] }
  * bundle's own script) and a card's Go (modules, plugins and MCP servers in
  * one press). In git: what moves a branch, rewrites history or discards
  * work, what reaches a remote with this machine's credentials, removing or
- * unlocking agents' worktrees, and the GitHub account Studio holds.
+ * unlocking agents' worktrees, and the GitHub account Studio holds. The
+ * worktree pool and the agents' worktrees (`worktrees.*`, with its streams):
+ * this machine's checkouts, which the pool hands out, resets and removes.
  * A method joins this list with its reason, in the change that makes it an
  * owner's; anything else reaches a paired client by its scope.
  */
@@ -116,6 +118,21 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'github.cancelClone',
   'github.newProject',
   'github.cloneProgress',
+  // The pool of worktrees Studio's agents run in, and the agents' worktrees.
+  'worktrees.poolSnapshot',
+  'worktrees.poolSettings',
+  'worktrees.setPoolSettings',
+  'worktrees.inventory',
+  'worktrees.poolAction',
+  'worktrees.removeOther',
+  'worktrees.installs',
+  'worktrees.cancelInstall',
+  'worktrees.create',
+  'worktrees.restore',
+  'worktrees.remove',
+  'worktrees.cleanupAgents',
+  'worktrees.poolChanged',
+  'worktrees.installChanged',
 ]
 
 const entries = (): Array<[StudioMethod | StudioTopic, StudioAccess, 'method' | 'topic']> => [

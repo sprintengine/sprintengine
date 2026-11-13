@@ -1234,6 +1234,19 @@ A client that is not an owner names a repository only inside the folders the
 Studio knows. Additive: an older Studio leaves `git` out. The desktop's windows
 reach git only this way, but for saving a patch through the system's save
 dialog, which stays the shell's.
+`worktrees` (2026-11-13) is the worktrees a Studio's agents run in: the
+worktree pool (`worktrees.poolSnapshot`, `.poolSettings`,
+`.setPoolSettings`, `.poolAction`), its dependency installs
+(`worktrees.installs`, `.cancelInstall`), Settings ▸ Worktrees' inventory
+(`worktrees.inventory`, `.removeOther`) and the agents' worktree steps
+(`worktrees.create`, `.restore`, `.remove`, `.cleanupAgents`), with the
+`worktrees.poolChanged` and `worktrees.installChanged` streams. All of them
+are an owner's, with the reason in the table. Deleting settled chats
+(`settledChats.planDelete` under `conversation:read`, `settledChats.delete`
+under `conversation:operate`) reaches what a paired device's Delete on a chat
+reaches. A folder on an SSH machine is refused in words. Additive: an older
+Studio leaves `worktrees` out. The desktop's windows reach the pool and
+settled-chat deletion only this way: their window IPC is gone.
 Every method names its scope in `STUDIO_METHODS`,
 typed over the method map so a method without one does not compile.
 

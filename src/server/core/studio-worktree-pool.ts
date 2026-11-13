@@ -18,8 +18,8 @@ import { createWorktreePoolService } from '../../main/worktree-pool/worktree-poo
 import { createWorktreePoolTools } from '../../main/worktree-pool/worktree-pool-tools'
 import {
   dependencyInstallSettingFor,
-  WORKTREE_INSTALL_CHANGED_CHANNEL,
-  WORKTREE_POOL_CHANGED_CHANNEL,
+  type WorktreeDependencyInstallView,
+  type WorktreePoolSnapshot,
 } from '../../shared/ipc/worktree-pool'
 import type { StudioPlatform } from '../platform/platform'
 
@@ -30,7 +30,9 @@ import type { StudioPlatform } from '../platform/platform'
 // (worktree-leases.ts) are one process's. Built by `createStudioCore` in every
 // mode: the desktop's main in process, the desktop's server out of process, a
 // standalone, WSL or SSH machine's server. One pool per data directory and
-// machine; nothing else in the app keeps one.
+// machine; nothing else in the app keeps one. Clients reach it through the
+// Studio protocol's `worktrees.*` and `settledChats.*`
+// (server/worktrees/studio-worktrees.ts).
 //
 // It does nothing on its own: reading its records is all that happens here,
 // and a pool recovers from an interrupted run the first time it is used.
@@ -49,7 +51,7 @@ export type WorktreeTerminalPaths = {
 }
 
 export type StudioWorktreePoolDeps = {
-  platform: Pick<StudioPlatform, 'paths' | 'clients'>
+  platform: Pick<StudioPlatform, 'paths'>
   workspaceRegistry: Pick<WorkspaceRegistryService, 'getRecord'>
   workspaceSyncService: WorkspaceSyncService
   /** Where a chat's session works now (a running turn, a live child). Read lazily: the backend is built after. */
@@ -98,6 +100,27 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
       ...(await liveConversationPaths()),
     ]
   }
+  // Who hears a pool move or an install run: the protocol's
+  // `worktrees.poolChanged` and `worktrees.installChanged` streams, one
+  // listener per connection that follows them.
+  const poolListeners = new Set<(snapshot: WorktreePoolSnapshot) => void>()
+  const installListeners = new Set<(view: WorktreeDependencyInstallView) => void>()
+  const tell = <T>(listeners: Set<(value: T) => void>, value: T) => {
+    for (const listener of [...listeners]) {
+      try {
+        listener(value)
+      } catch {
+        // One connection's failure is not the pool's.
+      }
+    }
+  }
+  const follow =
+    <T>(listeners: Set<(value: T) => void>) =>
+    (listener: (value: T) => void): (() => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    }
+
   // Settled chats included: a slot holding a chat's history is never removed.
   const knownWorkspaceIds = () => chatIdsOnRecord(workspaceSyncService.getSnapshot().state.workspaces)
 
@@ -110,7 +133,7 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
     liveSessionPaths: liveConversationPaths,
     // Recovery, holds and evictions are what a person asks about later.
     log: diagnosticLogger('worktree-pool'),
-    onChange: (snapshot) => platform.clients.publish(WORKTREE_POOL_CHANGED_CHANNEL, snapshot),
+    onChange: (snapshot) => tell(poolListeners, snapshot),
     seedIncludedFiles: seedWorktreeIncludedFiles,
     knownWorkspaceIds,
     // What a slot given back while its chat lives is weighed against
@@ -136,7 +159,7 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
     env: () => installEnvironment.read(),
     forgetEnv: () => installEnvironment.forget(),
     log: diagnosticLogger('worktree-install'),
-    onChange: (view) => platform.clients.publish(WORKTREE_INSTALL_CHANGED_CHANNEL, view, 'workspace-windows'),
+    onChange: (view) => tell(installListeners, view),
   })
   installDependencyInstaller(installer)
 
@@ -183,6 +206,10 @@ export function createStudioWorktreePool(deps: StudioWorktreePoolDeps) {
     prepareChatFolder,
     liveWorkPaths,
     knownWorkspaceIds,
+    /** Hear every pool's snapshot as it moves. */
+    onPoolChanged: follow(poolListeners),
+    /** Hear every dependency install as it starts, runs and ends. */
+    onInstallChanged: follow(installListeners),
     /** Deleting settled chats, their worktrees given back to this pool; the record removed as `actor`. */
     settledChatDeletion: (actor: 'ui' | 'mobile') =>
       createAppSettledChatDeletion(

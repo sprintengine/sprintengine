@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '../store/workspaceStore'
 import type { Workspace, WorkspaceId } from '../types/workspace'
 import { isSettledWorkspace } from './workspaceSettle'
 import { filesApi } from '../studio/files'
+import { worktreesApi } from '../studio/worktrees'
 
 /**
  * The way back into a chat whose worktree was given back.
@@ -92,7 +93,7 @@ async function restore(workspace: RestoreCandidate): Promise<boolean> {
   }
   const repoRoot = worktree.repoRoot?.trim() || repoRootFromWorktreePath(folderPath)
   const result = repoRoot
-    ? await window.api
+    ? await worktreesApi
         .restoreGitWorktree({
           repoRoot,
           path: folderPath,

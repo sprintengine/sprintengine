@@ -41,6 +41,7 @@ import type { StudioFiles } from '../../server/rpc/studio-files'
 import type { StudioFileSystem } from '../../server/files/studio-file-system'
 import type { StudioMachineCall } from '../../server/rpc/studio-file-system'
 import type { StudioGit } from '../../server/git/studio-git-types'
+import type { StudioWorktrees } from '../../server/worktrees/studio-worktrees-types'
 import type { StudioPullRequests } from '../../server/pull-requests/pull-request-domain'
 import type { StudioLocalServers } from '../../server/local-servers/local-server-domain'
 import type { StudioTerminals } from '../../server/terminals/studio-terminals'
@@ -177,6 +178,8 @@ export type StudioRpcServiceOptions = {
   machine?: StudioMachineCall
   /** Git on this machine (`git`). */
   git?: StudioGit
+  /** The worktrees its agents run in, and deleting settled chats (`worktrees`). */
+  worktrees?: StudioWorktrees
   /** The pull requests the conversations opened, for owners (`pull-requests`). */
   pullRequests?: StudioPullRequests
   /** The local servers the conversations started, for owners (`local-servers`). */
@@ -398,6 +401,7 @@ export function createStudioRpcService(options: StudioRpcServiceOptions): Studio
       ...(options.fileSystem ? { fileSystem: options.fileSystem } : {}),
       ...(options.machine ? { machine: options.machine } : {}),
       ...(options.git ? { git: options.git } : {}),
+      ...(options.worktrees ? { worktrees: options.worktrees } : {}),
       ...(options.pullRequests ? { pullRequests: options.pullRequests } : {}),
       ...(options.localServers ? { localServers: options.localServers } : {}),
       ...(options.discovery ? { discovery: options.discovery } : {}),
