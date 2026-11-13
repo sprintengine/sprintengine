@@ -91,7 +91,7 @@ async function ask<M extends StudioMethod>(
 }
 
 /**
- * How often a queued message is asked again after its answer was lost with
+ * How often a queued or scheduled message is asked again after its answer was lost with
  * the connection, and how long apart. The client resends what is unanswered
  * when it reconnects, but a client that is closed, replaced or parked first
  * gives the request up; asked again under the same command id, the Studio
@@ -601,9 +601,12 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
           commandId: commandId(),
         }),
       ),
+    // One command id for every try, as a queued message's: a schedule whose
+    // answer was lost is kept there once, not again when the person presses
+    // Schedule a second time under a new one.
     scheduleSend: (input) =>
       commanded(() =>
-        ask(client, 'conversation.scheduleSend', {
+        askUntilAnswered(client, 'conversation.scheduleSend', {
           key: refOf(input.key),
           message: input.message,
           sendAt: input.sendAt,
