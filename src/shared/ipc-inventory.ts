@@ -59,7 +59,6 @@ const DIAGNOSTICS = shell("This app's own logs and processes.")
 const CHAT_LINK = shell("A chat link from the operating system, opened in one of this app's windows.")
 
 /** Moves to the protocol: chats and what hangs off them: sessions, providers, secrets, import, held and scheduled messages, usage limits, export, pull request creation. */
-const conversations = server('conversations')
 /** Moves to the protocol: terminals and the agents that run in them. */
 const terminals = server('terminals')
 /** Moves to the protocol: the module kernel: its host services and enablement. */
@@ -266,11 +265,6 @@ export const IPC_INVENTORY: Readonly<Record<string, IpcInventoryRow>> = {
   'chat-link:unready': CHAT_LINK('send'),
 
   // ── The server: moves to the Studio protocol ──
-  'pull-request-create:create': conversations('invoke'),
-  'pull-request-create:draft': conversations('invoke'),
-  'pull-request-create:draft-cancel': conversations('invoke'),
-  'pull-request-create:push': conversations('invoke'),
-  'pull-request-create:state': conversations('invoke'),
   'agent:compact': terminals('invoke'),
   'conversation-peek:read': terminals('invoke'),
   'pullRequest:refreshForSession': terminals('invoke'),

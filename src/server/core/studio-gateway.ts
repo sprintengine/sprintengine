@@ -8,17 +8,10 @@ import {
 } from '../../main/automation/conversation-chat-tools'
 import { createSubagentTools } from '../../main/automation/subagent-tools'
 import { LAUNCH_NOTICE_ORIGIN } from '../../main/agent-launch-notices'
-import {
-  chatCheckoutFromRegistry,
-  createConversationPullRequestTools,
-} from '../../main/automation/conversation-pull-request-tools'
-import { knownCliAvailability } from '../../main/cli-availability'
+import { createConversationPullRequestTools } from '../../main/automation/conversation-pull-request-tools'
 import { listPluginRegistryEntries } from '../../main/plugin-registry-instance'
-import { createPullRequestCreator } from '../../main/pull-request-create'
 import { sharedGhRunner } from '../../main/github/gh'
 import { createGhHostTokenResolver } from '../../main/github/host-token'
-import { generatePullRequestText } from '../../main/text-generation/text-generation-service'
-import { resolveTextGenerationEngine } from '../../shared/text-generation/contract'
 import {
   createConversationListChangeFilter,
   latestTurnEnd,
@@ -36,6 +29,7 @@ import { cancelClientCallsAtTurnEnd } from '../tools/client-tool-turns'
 import type { McpConnectionContext } from '../../shared/modules/mcp-tools'
 import { createClientToolsetStore, type ConversationRef } from '../tools/client-toolset-store'
 import { createPullRequestTools } from '../pull-requests/pull-request-tools'
+import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import { createLocalServerTools } from '../local-servers/local-server-tools'
 import { studioBridgeScriptPath, type StudioCore } from './studio-core'
 
@@ -170,30 +164,7 @@ export function createStudioGateway(core: StudioCore, options: StudioGatewayOpti
     // A paired desktop's Create PR on one of this machine's chats: the
     // checkout, git, the forge's CLI and the drafting CLI are here, and so is
     // the record the pull request is kept in.
-    ...createConversationPullRequestTools({
-      checkoutOf: chatCheckoutFromRegistry((workspaceId) => core.workspaceRegistry.getRecord(workspaceId)),
-      creator: createPullRequestCreator(),
-      // The engine a chat here is titled with (chat-titler.ts), read as the
-      // draft starts: this machine's setting, its CLIs and their overrides.
-      draftEngine: () => {
-        const settings = core.textGenerationSettings.get()
-        const cliRuntimes = core.agentLaunchSettings.get().cliRuntimes
-        const engine = resolveTextGenerationEngine(
-          settings,
-          listPluginRegistryEntries().map((entry) => entry.id),
-          (cli) => knownCliAvailability({ cliRuntimes })[cli]?.installed,
-        )
-        return engine ? { engine, cliRuntimes, writingStyle: settings.writingStyle } : null
-      },
-      generate: (request) => generatePullRequestText(request),
-      link: async (input) => {
-        const linked = await core.pullRequests.link(input)
-        return linked.ok ? { ok: true } : { ok: false, message: linked.message }
-      },
-      log: (message) => {
-        void writeDiagnosticLog({ level: 'info', source: 'agents', title: 'Pull request text not drafted', message })
-      },
-    }),
+    ...createConversationPullRequestTools(studioPullRequestCreationDeps(core)),
     ...createPullRequestTools({
       link: (key, input) => core.pullRequests.linkForAgent(key, input),
       watch: (key, input) => core.pullRequests.watchForAgent(key, input),

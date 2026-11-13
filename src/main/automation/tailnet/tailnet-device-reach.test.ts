@@ -209,6 +209,13 @@ const REFUSED_TO_DEVICES: Readonly<Record<string, string>> = {
   'textGeneration.chatTitle': 'runs an agent CLI here outside any chat, for the window’s own boxes',
   'commitMessage.draft': 'the same, over a checkout on this disk',
   'commitMessage.cancel': 'the same',
+  // A chat's Create PR on the Studio: an owner's, as git's push and the GitHub
+  // account are. A paired desktop's Create PR goes over its lane's tools.
+  'pullRequests.createState': 'asks the forge about the chat’s branch with this machine’s credentials',
+  'pullRequests.draft': 'runs an agent CLI here over the chat’s branch',
+  'pullRequests.draftCancel': 'the same',
+  'pullRequests.push': 'reaches the remote with this machine’s git credentials',
+  'pullRequests.create': 'opens a pull request with this machine’s forge credentials',
 }
 
 /**

@@ -115,6 +115,7 @@ import {
   type StudioSharesMethodMap,
 } from './backlog.js'
 import { STUDIO_PULL_REQUEST_READS_METHODS, type StudioPullRequestReadsMethodMap } from './pull-request-reads.js'
+import { STUDIO_PULL_REQUEST_CREATE_METHODS, type StudioPullRequestCreateMethodMap } from './pull-request-create.js'
 import {
   STUDIO_AGENT_SKILLS_METHODS,
   STUDIO_AGENT_SKILLS_TOPICS,
@@ -265,6 +266,7 @@ export type StudioMethodMap = StudioConversationMethodMap &
   StudioBacklogMethodMap &
   StudioSharesMethodMap &
   StudioPullRequestReadsMethodMap &
+  StudioPullRequestCreateMethodMap &
   StudioGitMethodMap &
   StudioWorktreesMethodMap &
   StudioChatLifecycleMethodMap &
@@ -708,6 +710,7 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_BACKLOG_METHODS,
   ...STUDIO_SHARES_METHODS,
   ...STUDIO_PULL_REQUEST_READS_METHODS,
+  ...STUDIO_PULL_REQUEST_CREATE_METHODS,
   ...STUDIO_GIT_METHODS,
   ...STUDIO_WORKTREES_METHODS,
   ...STUDIO_CHAT_LIFECYCLE_METHODS,

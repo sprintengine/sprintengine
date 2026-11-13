@@ -38,14 +38,7 @@ import type {
   TourSummary,
 } from './tours/tour-types'
 import type { ConversationPeek } from './conversation-peek'
-import type { ChatTitleRequest, PullRequestTextResult } from './text-generation/contract'
-import type { TextGenerationWritingStyle } from './text-generation/writing-style'
-import type {
-  CreatePullRequestOutcome,
-  CreatePullRequestState,
-  PullRequestCheckoutPin,
-  PushForPullRequestOutcome,
-} from './git/pull-request-create'
+import type { PullRequestCheckoutPin } from './git/pull-request-create'
 
 export type { ConversationPeek, ConversationPeekMessage, ConversationPeekSource } from './conversation-peek'
 export type { HostedSource, HostedSourceKind, HostedSourcesFeed } from './hosted-sources-feed'
@@ -1354,29 +1347,6 @@ export type ElectronApi = {
   saveChatExport: (input: ChatExportInput) => Promise<ChatExportResult>
   /** The same text, through the OS save dialog. */
   saveGitPatch: (repoRoot: string, patch: string, defaultFileName?: string) => Promise<GitPatchSaveResult>
-  // The chat's "Create PR" (src/main/pull-request-create.ts): whether it may
-  // show for a checkout, a drafted title and description, the push, and the
-  // creation. This computer's checkouts only. Never rejects.
-  createPullRequestState: (cwd: string) => Promise<CreatePullRequestState | null>
-  draftPullRequestText: (request: {
-    cwd: string
-    engine: ChatTitleRequest['engine']
-    cliRuntimes?: ChatTitleRequest['cliRuntimes']
-    /** Names the draft, so `cancelPullRequestDraft` can stop its CLI. */
-    draftId?: string
-    /** Settings → Agents → Text generation's writing style. Absent matches the repository. */
-    writingStyle?: TextGenerationWritingStyle
-  }) => Promise<PullRequestTextResult>
-  /** The dialog closed while its draft was being written: the drafting CLI is stopped. */
-  cancelPullRequestDraft: (draftId: string) => Promise<void>
-  /** `pin`: the branch and commit the person confirmed; refused when the checkout has moved off it. */
-  pushForPullRequest: (cwd: string, pin?: PullRequestCheckoutPin) => Promise<PushForPullRequestOutcome>
-  createPullRequest: (input: {
-    cwd: string
-    title: string
-    body: string
-    pin?: PullRequestCheckoutPin
-  }) => Promise<CreatePullRequestOutcome>
   /** List installed third-party capability modules with trust, permissions, and launch readiness. */
   listThirdPartyModules: () => Promise<ThirdPartyModuleListResult>
   /** Open an installed third-party module's folder. Absent where there is no file manager to open it in. */

@@ -24,6 +24,8 @@ import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { StudioCore } from './studio-core'
+import { createConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
+import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
 import type { StudioGateway } from './studio-gateway'
 import type { StudioModules } from '../rpc/studio-modules'
 import { createStudioAgentSettings } from '../agent-settings/agent-settings-domain'
@@ -143,6 +145,8 @@ export function createStudioRpc(
     // What the conversations' branches have on GitHub, which every client
     // displays and none decides.
     pullRequests: core.pullRequests,
+    // A chat's "Create PR", in its checkout here, for an owner's client.
+    pullRequestCreation: createConversationPullRequests(studioPullRequestCreationDeps(core)),
     // The servers the conversations' agents started, checked here and drawn
     // by every client.
     localServers: core.localServers,

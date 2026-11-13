@@ -155,9 +155,9 @@ export type MeshCanvasScreenshotResult =
 
 /**
  * A paired machine's answers to its chat's Create PR (`chat-create-pull-request`),
- * one per step, as the shell's own channels answer them for a chat here
- * (`createPullRequestState`, `draftPullRequestText`, `pushForPullRequest`,
- * `createPullRequest`). The state carries no path on that machine: its
+ * one per step, as a Studio answers them over the protocol for a chat it
+ * holds (`pullRequests.createState`, `.draft`, `.push`, `.create`). The
+ * state carries no path on that machine: its
  * `gitRoot` is null. `text_generation_off` is a machine whose own text
  * generation is off, where the person writes the text themselves.
  */

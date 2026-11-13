@@ -197,6 +197,13 @@ export const STUDIO_SHARES_CAPABILITY = 'shares' as const
 export const STUDIO_PULL_REQUEST_READS_CAPABILITY = 'pull-request-reads' as const
 
 /**
+ * A chat's "Create PR" on the Studio that holds the chat
+ * (`pull-request-create.ts`): `pullRequests.createState`, `.draft`,
+ * `.draftCancel`, `.push` and `.create`, each an owner's.
+ */
+export const STUDIO_PULL_REQUEST_CREATE_CAPABILITY = 'pull-request-create' as const
+
+/**
  * The skills, design systems and cards a Studio's agents are given:
  * `skillSources.*`, `skills.*`, `skillPlugins.*`, `workspaceSkills.list`,
  * `installedSkills.*`, `agentCapabilities.resolve`, `agentSkills.attach`,
@@ -294,6 +301,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_BACKLOG_CAPABILITY,
   STUDIO_SHARES_CAPABILITY,
   STUDIO_PULL_REQUEST_READS_CAPABILITY,
+  STUDIO_PULL_REQUEST_CREATE_CAPABILITY,
   STUDIO_GIT_CAPABILITY,
   STUDIO_WORKTREES_CAPABILITY,
   STUDIO_CHAT_LIFECYCLE_CAPABILITY,
