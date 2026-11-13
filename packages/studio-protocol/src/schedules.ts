@@ -9,6 +9,7 @@ import {
   type StudioTopicTable,
 } from './contract.js'
 import type { CliPermissionPreset, ExecutionHostId } from './agents.js'
+import { isStudioPath } from './key.js'
 import { STUDIO_SCHEDULES_CAPABILITY } from './handshake.js'
 
 // A Studio's scheduled agents: a prompt and a schedule, and each time the
@@ -126,10 +127,26 @@ export type StudioSchedule = ScheduledAgentView & {
 /** Every schedule a Studio holds, and whether they are all paused. */
 export type StudioSchedules = { schedules: StudioSchedule[]; pausedAll: ScheduledAgentsPause | null }
 
-/** What making a schedule takes. A CLI, a model and the rest are each only where one was picked. */
-export type StudioScheduleDraft = {
-  /** The workspace whose project and machine each run starts in (`workspaces.list`). */
-  workspaceId: string
+/** A skill or MCP server a schedule attaches: by id, or by id with the name its chip shows. */
+export type StudioScheduleAttachment = string | ScheduledAgentAttachment
+
+/**
+ * Where each run starts: a workspace's project and machine (`workspaces.list`),
+ * or, for an owner, a project by its folder (`workspaceRoot`) and the machine
+ * on this computer it is on (`hostId`: `local` or `wsl:<distro>`; absent, the
+ * one the folder says). The desktop's own New chat schedules by folder.
+ */
+export type StudioSchedulePlace = { workspaceId?: string; workspaceRoot?: string; hostId?: ExecutionHostId }
+
+/**
+ * What making a schedule takes: its place (a workspace, or an owner's folder;
+ * exactly one) and its members. A CLI, a model and the rest are each only
+ * where one was picked.
+ */
+export type StudioScheduleDraft = StudioSchedulePlace & StudioScheduleDraftMembers
+
+/** A draft's members beside its place. */
+export type StudioScheduleDraftMembers = {
   /** The first message each run is sent. */
   prompt: string
   /** Five-field cron; for a one-time schedule, the cron naming the same minute. */
@@ -147,18 +164,18 @@ export type StudioScheduleDraft = {
   /** What each run's worktree and its branch are named from; implies `worktree`. */
   worktreeName?: string
   name?: string
-  /** Skill ids and installed MCP server ids attached to each run. */
-  skills?: string[]
-  mcpServers?: string[]
+  /** The skills and installed MCP servers attached to each run, by id (a name beside it is kept for its chip). */
+  skills?: StudioScheduleAttachment[]
+  mcpServers?: StudioScheduleAttachment[]
 }
 
 /**
  * What changing a schedule takes: its id and what changes. Anything left out
  * stays as it was; `model` and `name` empty clear them, `worktree` false runs
  * in the project's checkout, and a `cron` without `once` makes a one-time
- * schedule repeat.
+ * schedule repeat. A place, when given, moves it.
  */
-export type StudioScheduleChange = { id: string } & Partial<StudioScheduleDraft>
+export type StudioScheduleChange = { id: string } & Partial<StudioScheduleDraftMembers> & StudioSchedulePlace
 
 type Commanded<T> = T & { commandId: string }
 
@@ -195,6 +212,19 @@ export type StudioSchedulesMethodMap = {
   }
   /** Stop and remove it. The chats its past runs started are left as they are. */
   'schedules.delete': { params: Commanded<{ id: string }>; result: { removed: string }; errors: 'not_found' }
+  /** Its failed last run has been looked at: it no longer says "Failed". */
+  'schedules.markSeen': { params: Commanded<{ id: string }>; result: { schedule: StudioSchedule }; errors: 'not_found' }
+  /**
+   * Start no run of any of them until `until` (epoch ms), or until resumed
+   * (null). A run already going is left to finish, and each one's own pause
+   * stays as it is.
+   */
+  'schedules.pauseAll': {
+    params: Commanded<{ until: number | null }>
+    result: { pausedAll: ScheduledAgentsPause }
+  }
+  /** End the pause of them all. One paused on its own stays paused. */
+  'schedules.resumeAll': { params: { commandId: string }; result: { pausedAll: null } }
 }
 
 export type StudioSchedulesMethod = keyof StudioSchedulesMethodMap
@@ -221,17 +251,52 @@ function id(value: unknown): value is string {
 function short(value: unknown, max = 200): value is string {
   return typeof value === 'string' && value.length <= max
 }
-function ids(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length <= STUDIO_SCHEDULE_MAX_ATTACHMENTS && value.every(id)
+function attachments(value: unknown): StudioScheduleAttachment[] | null {
+  if (!Array.isArray(value) || value.length > STUDIO_SCHEDULE_MAX_ATTACHMENTS) return null
+  const read: StudioScheduleAttachment[] = []
+  for (const entry of value) {
+    if (id(entry)) read.push(entry)
+    else if (
+      typeof entry === 'object' &&
+      entry !== null &&
+      id((entry as Record<string, unknown>).id) &&
+      short((entry as Record<string, unknown>).name, 500)
+    )
+      read.push({ id: (entry as { id: string }).id, name: (entry as { name: string }).name })
+    else return null
+  }
+  return read
+}
+
+const HOST = /^(local|wsl:[^\s\\/:]{1,100})$/u
+
+type ReadPlace = StudioSchedulePlace
+
+/** Where it runs, when the request says: a workspace, or a folder with its machine; not both. */
+function placeMembers(value: Record<string, unknown>): StudioParsed<ReadPlace> {
+  const place: ReadPlace = {}
+  if (value.workspaceId !== undefined && value.workspaceRoot !== undefined)
+    return refuse('Name the project by "workspaceId" or by "workspaceRoot", not both.')
+  if (value.workspaceId !== undefined) {
+    if (!id(value.workspaceId)) return refuse('"workspaceId" names a workspace, from workspaces.list.')
+    place.workspaceId = value.workspaceId
+  }
+  if (value.workspaceRoot !== undefined) {
+    if (!isStudioPath(value.workspaceRoot)) return refuse('"workspaceRoot" is the project\'s folder.')
+    place.workspaceRoot = value.workspaceRoot
+  }
+  if (value.hostId !== undefined) {
+    if (place.workspaceRoot === undefined) return refuse('"hostId" goes with "workspaceRoot".')
+    if (typeof value.hostId !== 'string' || !HOST.test(value.hostId))
+      return refuse('"hostId" is local or wsl:<distribution>.')
+    place.hostId = value.hostId as ExecutionHostId
+  }
+  return studioParams(place)
 }
 
 /** The members a draft and a change share, each read where it was sent. */
-function draftMembers(value: Record<string, unknown>): StudioParsed<Partial<StudioScheduleDraft>> {
-  const draft: Partial<StudioScheduleDraft> = {}
-  if (value.workspaceId !== undefined) {
-    if (!id(value.workspaceId)) return refuse('"workspaceId" names a workspace, from workspaces.list.')
-    draft.workspaceId = value.workspaceId
-  }
+function draftMembers(value: Record<string, unknown>): StudioParsed<Partial<StudioScheduleDraftMembers>> {
+  const draft: Partial<StudioScheduleDraftMembers> = {}
   if (value.prompt !== undefined) {
     if (typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > STUDIO_SCHEDULE_MAX_PROMPT)
       return refuse(`"prompt" is the first message, 1 to ${STUDIO_SCHEDULE_MAX_PROMPT} characters.`)
@@ -277,12 +342,14 @@ function draftMembers(value: Record<string, unknown>): StudioParsed<Partial<Stud
     draft.name = value.name
   }
   if (value.skills !== undefined) {
-    if (!ids(value.skills)) return refuse('"skills" is a list of skill ids.')
-    draft.skills = [...value.skills]
+    const read = attachments(value.skills)
+    if (!read) return refuse('"skills" is a list of skill ids, each alone or as { id, name }.')
+    draft.skills = read
   }
   if (value.mcpServers !== undefined) {
-    if (!ids(value.mcpServers)) return refuse('"mcpServers" is a list of MCP server ids.')
-    draft.mcpServers = [...value.mcpServers]
+    const read = attachments(value.mcpServers)
+    if (!read) return refuse('"mcpServers" is a list of MCP server ids, each alone or as { id, name }.')
+    draft.mcpServers = read
   }
   return studioParams(draft)
 }
@@ -299,26 +366,41 @@ function commanded<P>(
 
 /** A draft for `schedules.create`, or why not. */
 export function parseStudioScheduleDraft(value: Record<string, unknown>): StudioParsed<StudioScheduleDraft> {
+  const place = placeMembers(value)
+  if (!place.ok) return place
   const read = draftMembers(value)
   if (!read.ok) return read
-  const { workspaceId, prompt, cron } = read.params
-  if (workspaceId === undefined || prompt === undefined || cron === undefined)
-    return refuse('A schedule needs "workspaceId", "prompt" and "cron".')
-  return studioParams({ ...read.params, workspaceId, prompt, cron })
+  const { prompt, cron } = read.params
+  const { workspaceId, workspaceRoot, hostId } = place.params
+  if ((workspaceId === undefined && workspaceRoot === undefined) || prompt === undefined || cron === undefined)
+    return refuse('A schedule needs "workspaceId" (or an owner\'s "workspaceRoot"), "prompt" and "cron".')
+  const at: StudioSchedulePlace =
+    workspaceId !== undefined ? { workspaceId } : { workspaceRoot, ...(hostId ? { hostId } : {}) }
+  return studioParams({ ...read.params, ...at, prompt, cron })
 }
 
 /** A change for `schedules.update`, or why not. */
 export function parseStudioScheduleChange(value: Record<string, unknown>): StudioParsed<StudioScheduleChange> {
   if (!id(value.id)) return refuse('"id" names the schedule, from schedules.list.')
+  const place = placeMembers(value)
+  if (!place.ok) return place
   const read = draftMembers(value)
-  return read.ok ? studioParams({ ...read.params, id: value.id }) : read
+  if (!read.ok) return read
+  const { workspaceId, workspaceRoot, hostId } = place.params
+  const at =
+    workspaceId !== undefined
+      ? { workspaceId }
+      : workspaceRoot !== undefined
+        ? { workspaceRoot, ...(hostId ? { hostId } : {}) }
+        : {}
+  return studioParams({ ...read.params, ...at, id: value.id })
 }
 
 const read = { scope: 'workspaces:read', mutation: false, capability: STUDIO_SCHEDULES_CAPABILITY } as const
 const operate = { scope: 'workspaces:operate', mutation: true, capability: STUDIO_SCHEDULES_CAPABILITY } as const
 
 type OneSchedule = StudioSchedulesMethodMap[
-  'schedules.pause' | 'schedules.resume' | 'schedules.runNow' | 'schedules.delete']
+  'schedules.pause' | 'schedules.resume' | 'schedules.runNow' | 'schedules.delete' | 'schedules.markSeen']
 
 const oneSchedule: StudioMethodDefinition<OneSchedule> = {
   ...operate,
@@ -335,6 +417,16 @@ export const STUDIO_SCHEDULES_METHODS: StudioMethodTable<StudioSchedulesMethodMa
   'schedules.resume': oneSchedule,
   'schedules.runNow': oneSchedule,
   'schedules.delete': oneSchedule,
+  'schedules.markSeen': oneSchedule,
+  'schedules.pauseAll': {
+    ...operate,
+    params: commanded((value) =>
+      value.until === null || (typeof value.until === 'number' && Number.isSafeInteger(value.until) && value.until > 0)
+        ? studioParams({ until: value.until as number | null })
+        : refuse('"until" is an instant (epoch ms), or null for until they are resumed.'),
+    ),
+  },
+  'schedules.resumeAll': { ...operate, params: commanded(() => studioParams({})) },
 }
 
 export const STUDIO_SCHEDULES_TOPICS: StudioTopicTable<StudioSchedulesTopicMap> = {

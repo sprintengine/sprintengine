@@ -149,13 +149,6 @@ import type {
   MeshConversationFileSearchResult,
   MeshConversationCommandsResult,
 } from './tailnet-mesh'
-import type {
-  ScheduledAgentDraft,
-  ScheduledAgentLastRun,
-  ScheduledAgentView,
-  ScheduledAgentWriteResult,
-  ScheduledAgentsPause,
-} from './scheduled-agents'
 // Write-back config + IPC contracts: schema owned by T10, IPC surface
 // consumed by the T11 settings UI. Re-exported through the single electron-api
 // surface like the rest of the tracker seam.
@@ -937,32 +930,6 @@ export type ElectronApi = {
     body: string
     pin?: PullRequestCheckoutPin
   }) => Promise<MeshPullRequestCreateResult>
-  // Scheduled agents: a prompt and a schedule, each run a new chat. Main owns
-  // the list and the scheduler; the renderer reads and writes through these.
-  listScheduledAgents: () => Promise<ScheduledAgentView[]>
-  createScheduledAgent: (draft: ScheduledAgentDraft) => Promise<ScheduledAgentWriteResult>
-  updateScheduledAgent: (id: string, draft: ScheduledAgentDraft) => Promise<ScheduledAgentWriteResult>
-  removeScheduledAgent: (id: string) => Promise<{ ok: true } | { ok: false; message: string }>
-  runScheduledAgentNow: (
-    id: string,
-  ) => Promise<{ ok: true; run: ScheduledAgentLastRun } | { ok: false; message: string }>
-  /** The card's "Failed" was seen: it goes back to saying when the agent runs next. */
-  markScheduledAgentFailureSeen: (id: string) => Promise<{ ok: true }>
-  /** The whole list, after every change — a write from anywhere, or a run's outcome. */
-  onScheduledAgentsChanged: (cb: (agents: ScheduledAgentView[]) => void) => () => void
-  /** No run at its times until resumed; a run already going carries on, and Run now still runs it. */
-  pauseScheduledAgent: (id: string) => Promise<ScheduledAgentWriteResult>
-  /** On its schedule again, from its next time: nothing missed while paused is made up. */
-  resumeScheduledAgent: (id: string) => Promise<ScheduledAgentWriteResult>
-  /** Every scheduled agent paused at once, and until when; null when they are not. */
-  getScheduledAgentsPause: () => Promise<ScheduledAgentsPause | null>
-  /** Pause every scheduled agent until `until` (epoch ms), or until resumed (null). */
-  pauseAllScheduledAgents: (
-    until: number | null,
-  ) => Promise<{ ok: true; pause: ScheduledAgentsPause } | { ok: false; message: string }>
-  /** End that pause; a schedule paused on its own stays paused. */
-  resumeAllScheduledAgents: () => Promise<{ ok: true } | { ok: false; message: string }>
-  onScheduledAgentsPauseChanged: (cb: (pause: ScheduledAgentsPause | null) => void) => () => void
   authGetState: () => Promise<SprintEngineAuthState>
   authLogin: (organizationId?: string | null) => Promise<{ state: string; authorizationUrl: string }>
   authLogout: () => Promise<{ loggedOut: true }>

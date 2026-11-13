@@ -10,6 +10,7 @@ import type { ScheduledAgentView, ScheduledAgentsPause } from '../../../shared/s
 import { showToast } from '../store/toastStore'
 import { formatTimeOfDay } from './clockFormat'
 import { resolveSnoozePresets } from './workspaceSnooze'
+import { schedulesApi } from '../studio/schedules'
 
 /** How long "Pause all" holds: an hour, until tomorrow morning, or until the person resumes them. */
 export type PauseAllChoiceId = 'hour' | 'tomorrow' | 'until-resumed'
@@ -73,7 +74,7 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 /** Pause or resume one, and say so. True when it took. */
 export async function setScheduledAgentPaused(agent: ScheduledAgentView, paused: boolean): Promise<boolean> {
   const result = await (
-    paused ? window.api.pauseScheduledAgent(agent.id) : window.api.resumeScheduledAgent(agent.id)
+    paused ? schedulesApi.pauseScheduledAgent(agent.id) : schedulesApi.resumeScheduledAgent(agent.id)
   ).catch((error: unknown) => ({ ok: false as const, message: errorText(error) }))
   if (!result.ok) {
     showToast({ tone: 'error', title: paused ? 'Not paused' : 'Not resumed', description: result.message })
@@ -97,7 +98,7 @@ export async function setScheduledAgentPaused(agent: ScheduledAgentView, paused:
 
 /** Pause every scheduled agent until a choice's time, and say so. */
 export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<boolean> {
-  const result = await window.api
+  const result = await schedulesApi
     .pauseAllScheduledAgents(choice.until)
     .catch((error: unknown) => ({ ok: false as const, message: errorText(error) }))
   if (!result.ok) {
@@ -114,7 +115,7 @@ export async function pauseAllScheduledAgents(choice: PauseAllChoice): Promise<b
 
 /** End the pause of them all, and say so. A schedule paused on its own stays paused. */
 export async function resumeAllScheduledAgents(): Promise<boolean> {
-  const result = await window.api
+  const result = await schedulesApi
     .resumeAllScheduledAgents()
     .catch((error: unknown) => ({ ok: false as const, message: errorText(error) }))
   if (!result.ok) {

@@ -7,8 +7,6 @@ import { createConversationService } from '../../main/conversation-service'
 import { registerHostsIpc } from '../../main/ipc/hosts-ipc'
 import { registerMeshIpc } from '../../main/ipc/mesh-ipc'
 import { registerStudioLocalAppsIpc } from '../../main/ipc/studio-local-apps-ipc'
-import { registerScheduledAgentsIpc } from '../../main/scheduled-agents/scheduled-agents-ipc'
-import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { registerWorkspaceBackupIpc } from '../../main/ipc/workspace-backup-ipc'
 import { registerWorkspaceSyncIpc } from '../../main/ipc/workspace-sync-ipc'
 import type { AgentLaunchSettingsStore } from '../../main/launch-settings-store'
@@ -60,8 +58,6 @@ export type ServerDomainIpcDeps = {
   terminalHandoff: ReturnType<typeof createConversationTerminalHandoff>['handoff']
   /** Only an app window may pair a local app: `assertAppSender` in main; the port is the check in the server. */
   assertAppSender: (event: IpcMainInvokeEvent) => void
-  /** The scheduled-agents module's service, or null while it is off; asked on every call. */
-  scheduledAgents: () => ScheduledAgentsService | null
 }
 
 export type ServerDomainIpcHandles = {
@@ -85,8 +81,6 @@ export function registerServerDomainIpc(registry: IpcRegistryLike, deps: ServerD
   registerWorkspaceBackupIpc(ipc, deps.workspaceBackup)
   // The core's own `/` lists, which every window and a paired desktop read over the protocol.
   const conversationCommands = core.conversationCommands()
-  // The Schedules window's: always registered, refused while the module is off.
-  registerScheduledAgentsIpc(ipc, { service: deps.scheduledAgents })
   registerHostsIpc(ipc, { hosts: core.hosts })
   // One conversation service over the core's chats, which the Studio RPC's
   // chat surface serves to every client, the app's own windows included.

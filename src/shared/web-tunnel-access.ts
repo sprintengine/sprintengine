@@ -55,7 +55,6 @@ const ACCESS_ADMIN =
   'Who may reach this machine (paired apps, other machines, the tailnet) is administered in the desktop app.'
 const WINDOW_STATE = 'Only a desktop window can say it: a tab would report defaults and blanks.'
 const BEYOND = 'It acts beyond this server, on another machine or account.'
-const DESKTOP = 'It is served to the desktop app only.'
 
 export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunnelChannelName]: StudioAccess } = {
   'automation:get-status': owner('workspace:read'),
@@ -94,17 +93,6 @@ export const WEB_TUNNEL_ACCESS: { readonly [C in ServerIpcChannelName | WebTunne
   'mesh:list-connections': desktopOnly(BEYOND),
   'mesh:pair': desktopOnly(BEYOND),
   'mesh:request-pairing': desktopOnly(BEYOND),
-  'scheduled-agents:create': desktopOnly(DESKTOP),
-  'scheduled-agents:list': owner('workspace:read'),
-  'scheduled-agents:mark-seen': owner('workspace:operate'),
-  'scheduled-agents:pause': desktopOnly(DESKTOP),
-  'scheduled-agents:pause-all': desktopOnly(DESKTOP),
-  'scheduled-agents:pause-state': owner('workspace:read'),
-  'scheduled-agents:remove': desktopOnly(DESKTOP),
-  'scheduled-agents:resume': desktopOnly(DESKTOP),
-  'scheduled-agents:resume-all': desktopOnly(DESKTOP),
-  'scheduled-agents:run-now': desktopOnly(DESKTOP),
-  'scheduled-agents:update': desktopOnly(DESKTOP),
   'studio-local-apps:cancel-offer': desktopOnly(ACCESS_ADMIN),
   'studio-local-apps:offer': desktopOnly(ACCESS_ADMIN),
   'studio-local-apps:revoke': desktopOnly(ACCESS_ADMIN),

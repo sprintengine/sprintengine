@@ -154,6 +154,12 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'schedules.resume': WORKSPACE_OPERATE,
   'schedules.runNow': WORKSPACE_OPERATE,
   'schedules.delete': WORKSPACE_OPERATE,
+  // A failed run looked at, and every schedule paused or resumed at once: no
+  // more than pausing, resuming or closing one, which the same scope reaches.
+  // The desktop's own Scheduled section sends them; a paired client may too.
+  'schedules.markSeen': WORKSPACE_OPERATE,
+  'schedules.pauseAll': WORKSPACE_OPERATE,
+  'schedules.resumeAll': WORKSPACE_OPERATE,
   'usage.rows': WORKSPACE,
   // The phone's Backlog and Web: the projects' backlogs on the pairing's own
   // backlog scopes, the machine's shares on a workspace read, and a pull

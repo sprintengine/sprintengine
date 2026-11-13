@@ -171,8 +171,6 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   assert.equal(hosts.ok, true, JSON.stringify(hosts))
   const snapshot = await window.invoke('workspace-sync:get-snapshot')
   assert.ok(Array.isArray(snapshot.value.state.workspaces))
-  const scheduled = await window.invoke('scheduled-agents:list')
-  assert.equal(scheduled.ok, true, JSON.stringify(scheduled))
 
   // The terminals are this server's: their list reaches the shell once it is
   // serving, and a launch the shell asks for goes through the server's own

@@ -491,7 +491,6 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       terminals ? terminals.handoff.handoff(input) : Promise.resolve({ ok: false, message: TERMINALS_UNAVAILABLE }),
     // The window's port is the check: main brokers one only to an app window.
     assertAppSender: () => undefined,
-    scheduledAgents: () => modules.scheduledAgents(),
   })
   modules.load(gateway)
 

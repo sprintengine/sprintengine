@@ -1,4 +1,9 @@
-import type { StudioScheduleChange, StudioScheduleDraft } from '../../../packages/studio-protocol/src/schedules'
+import type {
+  StudioScheduleAttachment,
+  StudioScheduleChange,
+  StudioScheduleDraft,
+  StudioSchedulePlace,
+} from '../../../packages/studio-protocol/src/schedules'
 import { LAUNCH_PROMPT_READS_AS_OPTION_MESSAGE, launchPromptReadsAsOption } from '../../shared/agent-launch'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
 import type { ExecutionHostId } from '../../shared/execution-host'
@@ -13,7 +18,8 @@ import { capScheduledAgentPreset } from '../automation/launch-permission-cap'
 //
 // A workspace names the project and the machine each run starts on: a
 // worktree's workspace schedules into its project, since each run makes its
-// own. A prompt the CLI would read as an option is refused now rather than at
+// own. An owner (the desktop's own New chat) may name the folder and its
+// machine instead, which the router allows no one else. A prompt the CLI would read as an option is refused now rather than at
 // every run, and the preset is held to the caller's ceiling, since a run
 // launches later with nobody watching.
 
@@ -81,7 +87,19 @@ function capped(
     : { ok: true, value: held.permissionPreset }
 }
 
-const attachmentsOf = (ids: readonly string[] | undefined) => (ids ?? []).map((id) => ({ id, name: id }))
+/** Where a request says it runs: its workspace's place, or the folder and machine an owner named. */
+function placeFrom(
+  deps: ScheduleRequestDeps,
+  place: StudioSchedulePlace,
+): Read<{ folderPath: string; hostId: ExecutionHostId | null }> | null {
+  if (place.workspaceId) return placeOf(deps, place.workspaceId)
+  if (place.workspaceRoot) return { ok: true, value: { folderPath: place.workspaceRoot, hostId: place.hostId ?? null } }
+  return null
+}
+
+const attachmentOf = (entry: StudioScheduleAttachment) =>
+  typeof entry === 'string' ? { id: entry, name: entry } : { id: entry.id, name: entry.name || entry.id }
+const attachmentsOf = (entries: readonly StudioScheduleAttachment[] | undefined) => (entries ?? []).map(attachmentOf)
 
 /** What `create` stores for a new schedule, or why not. */
 export function scheduleDraftOf(
@@ -91,7 +109,8 @@ export function scheduleDraftOf(
 ): Read<ScheduledAgentDraft> {
   const dashed = promptRefusal(request.prompt)
   if (dashed) return dashed
-  const place = placeOf(deps, request.workspaceId)
+  const place = placeFrom(deps, request)
+  if (!place) return refusal('unknown_workspace', 'Name the workspace each run starts in.')
   if (!place.ok) return place
   const preset = capped(request.permissionPreset ?? null, ceiling)
   if (!preset.ok) return preset
@@ -130,11 +149,9 @@ export function scheduleChangeOf(
   const dashed = promptRefusal(request.prompt)
   if (dashed) return dashed
   let place = { folderPath: existing.folderPath, hostId: existing.hostId }
-  if (request.workspaceId) {
-    const found = placeOf(deps, request.workspaceId)
-    if (!found.ok) return found
-    place = found.value
-  }
+  const moved = placeFrom(deps, request)
+  if (moved && !moved.ok) return moved
+  if (moved) place = moved.value
   // The preset it will run on, held to the caller's own ceiling whether it
   // was named here or kept: a new prompt on a looser preset is a new launch.
   const preset = capped(request.permissionPreset ?? existing.permissionPreset, ceiling)
@@ -147,9 +164,16 @@ export function scheduleChangeOf(
       : cron !== undefined
         ? { cron, timezone }
         : { ...existing.schedule, timezone }
-  // An attachment keeps the name it was saved with; a new one is named by its id.
-  const attachments = (ids: readonly string[] | undefined, kept: ScheduledAgentView['skills']) =>
-    ids ? ids.map((id) => kept.find((attachment) => attachment.id === id) ?? { id, name: id }) : kept
+  // An attachment takes the name it is sent with, else keeps the one it was
+  // saved with; a new one sent by id alone is named by its id.
+  const attachments = (sent: readonly StudioScheduleAttachment[] | undefined, kept: ScheduledAgentView['skills']) =>
+    sent
+      ? sent.map((entry) =>
+          typeof entry === 'string'
+            ? (kept.find((attachment) => attachment.id === entry) ?? { id: entry, name: entry })
+            : attachmentOf(entry),
+        )
+      : kept
   const worktreeName = request.worktreeName?.trim() ?? ''
   const worktree = worktreeName
     ? { name: worktreeName }

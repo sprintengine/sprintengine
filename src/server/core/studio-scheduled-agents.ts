@@ -20,13 +20,7 @@ import {
 import { createScheduledAgentsStore, scheduledAgentsFilePath } from '../../main/scheduled-agents/store'
 import type { ExecutionHostId } from '../../shared/execution-host'
 import type { ConversationSessionSummary } from '../../shared/conversation-runtime'
-import {
-  SCHEDULED_AGENTS_CHANGED_CHANNEL,
-  SCHEDULED_AGENTS_PAUSE_CHANGED_CHANNEL,
-  scheduledAgentTitle,
-  type ScheduledAgent,
-  type ScheduledAgentView,
-} from '../../shared/scheduled-agents'
+import { scheduledAgentTitle, type ScheduledAgent, type ScheduledAgentView } from '../../shared/scheduled-agents'
 import type { StudioPlatform } from '../platform/platform'
 
 // Scheduled agents, as every Studio server runs them: the desktop's core in
@@ -208,13 +202,9 @@ export function createStudioScheduledAgents(deps: StudioScheduledAgentsDeps): St
     scheduler,
     promptImages: createScheduledPromptImages({ dataDir }),
   })
+  // Every change, a pause ending at its time included, reaches the windows
+  // and every other client on the protocol's `schedules.changed`.
   service = scheduledAgents
-  scheduledAgents.onChanged((agents) => {
-    deps.platform.clients.publish(SCHEDULED_AGENTS_CHANGED_CHANNEL, agents)
-    // Said with every change rather than only its own: a pause ending at its
-    // time is a change too, and a window that missed one hears the next.
-    deps.platform.clients.publish(SCHEDULED_AGENTS_PAUSE_CHANGED_CHANNEL, scheduledAgents.pausedAll())
-  })
 
   let prepared: Promise<void> | null = null
   let releaseWakeOnResume: (() => void) | null = null

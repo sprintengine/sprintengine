@@ -68,24 +68,6 @@ export type ScheduledAgentDraft = Pick<
 
 export type ScheduledAgentWriteResult = { ok: true; agent: ScheduledAgentView } | { ok: false; message: string }
 
-export const SCHEDULED_AGENTS_CHANGED_CHANNEL = 'scheduled-agents:changed'
-/** Every scheduled agent paused, or not: the `ScheduledAgentsPause`, or null. */
-export const SCHEDULED_AGENTS_PAUSE_CHANGED_CHANNEL = 'scheduled-agents:pause-changed'
-
-export const SCHEDULED_AGENTS_IPC = {
-  list: 'scheduled-agents:list',
-  create: 'scheduled-agents:create',
-  update: 'scheduled-agents:update',
-  remove: 'scheduled-agents:remove',
-  runNow: 'scheduled-agents:run-now',
-  markSeen: 'scheduled-agents:mark-seen',
-  pause: 'scheduled-agents:pause',
-  resume: 'scheduled-agents:resume',
-  pauseState: 'scheduled-agents:pause-state',
-  pauseAll: 'scheduled-agents:pause-all',
-  resumeAll: 'scheduled-agents:resume-all',
-} as const
-
 /** Whether a pause of every scheduled agent holds at `now`: set, and its until not yet come. */
 export function scheduledAgentsPauseHolds(pause: ScheduledAgentsPause | null, now: number): boolean {
   return pause !== null && (pause.until === null || pause.until > now)

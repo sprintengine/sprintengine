@@ -5,7 +5,11 @@ import type {
   StudioSchedules,
 } from '../../../packages/studio-protocol/src/schedules'
 import type { CliPermissionPreset } from '../../shared/cli-permission-preset'
-import { scheduledAgentScheduleWords, type ScheduledAgentView } from '../../shared/scheduled-agents'
+import {
+  scheduledAgentScheduleWords,
+  type ScheduledAgentView,
+  type ScheduledAgentsPause,
+} from '../../shared/scheduled-agents'
 import {
   scheduleChangeOf,
   scheduleDraftOf,
@@ -57,6 +61,9 @@ export type StudioSchedulesDomain = {
     ceiling: CliPermissionPreset,
   ): Promise<Answer<{ workspaceId: string }, OnOne | 'conversation_start_failed'>>
   remove(id: string): Promise<Answer<{ removed: string }, 'not_found'>>
+  markSeen(id: string): Promise<Answer<StudioSchedule, 'not_found'>>
+  pauseAll(until: number | null): Promise<Answer<{ pausedAll: ScheduledAgentsPause }, 'invalid_params'>>
+  resumeAll(): Promise<Answer<{ pausedAll: null }, 'invalid_params'>>
   onChanged(listener: (schedules: StudioSchedules) => void): () => void
 }
 
@@ -138,6 +145,20 @@ export function createStudioSchedulesDomain(
     async remove(id) {
       const removed = await service.remove(id)
       return removed.ok ? { ok: true, value: { removed: id } } : refused('not_found', removed.message)
+    },
+    async markSeen(id) {
+      if (!service.get(id)) return missing(id)
+      await service.markFailureSeen(id)
+      const seen = service.get(id)
+      return seen ? { ok: true, value: studioScheduleOf(seen) } : missing(id)
+    },
+    async pauseAll(until) {
+      const paused = await service.pauseAll(until)
+      return paused.ok ? { ok: true, value: { pausedAll: paused.pause } } : refused('invalid_params', paused.message)
+    },
+    async resumeAll() {
+      const resumed = await service.resumeAll()
+      return resumed.ok ? { ok: true, value: { pausedAll: null } } : refused('invalid_params', resumed.message)
     },
     onChanged: (listener) => service.onChanged((agents) => listener(state(agents))),
   }

@@ -35,13 +35,7 @@ const LEGACY_EXCLUDED = new Set([
   'workspace-sync:set-settled-chats-settings',
   'workspace-sync:set-module-run-states',
 ])
-const LEGACY_SINGLE = new Set([
-  'github:token-status',
-  'github:list-repos',
-  'scheduled-agents:list',
-  'scheduled-agents:mark-seen',
-  'scheduled-agents:pause-state',
-])
+const LEGACY_SINGLE = new Set(['github:token-status', 'github:list-repos'])
 function legacyWebTunnelAllows(channel: string): boolean {
   if (Object.hasOwn(WEB_TUNNEL_CHANNELS, channel)) return true
   if (LEGACY_SINGLE.has(channel)) return true
