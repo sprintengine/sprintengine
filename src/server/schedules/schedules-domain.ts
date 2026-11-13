@@ -63,7 +63,12 @@ export type StudioSchedulesDomain = {
   remove(id: string): Promise<Answer<{ removed: string }, 'not_found'>>
   markSeen(id: string): Promise<Answer<StudioSchedule, 'not_found'>>
   pauseAll(until: number | null): Promise<Answer<{ pausedAll: ScheduledAgentsPause }, 'invalid_params'>>
-  resumeAll(): Promise<Answer<{ pausedAll: null }, 'invalid_params'>>
+  /**
+   * Lift the pause on every schedule. Refused, and nothing lifted, when one it
+   * would start again runs on a preset above `ceiling`: one schedule at a
+   * time, that one could not be resumed under it either.
+   */
+  resumeAll(ceiling: CliPermissionPreset): Promise<Answer<{ pausedAll: null }, 'invalid_params'>>
   onChanged(listener: (schedules: StudioSchedules) => void): () => void
 }
 
@@ -156,7 +161,13 @@ export function createStudioSchedulesDomain(
       const paused = await service.pauseAll(until)
       return paused.ok ? { ok: true, value: { pausedAll: paused.pause } } : refused('invalid_params', paused.message)
     },
-    async resumeAll() {
+    async resumeAll(ceiling) {
+      // Those paused on their own stay paused; every other one starts on its own preset again.
+      for (const agent of service.list()) {
+        if (agent.pausedAt !== undefined) continue
+        const escalation = refuseScheduledAgentRun(agent.permissionPreset, ceiling)
+        if (escalation) return refused('invalid_params', `${agent.name || agent.id}: ${escalation.message}`)
+      }
       const resumed = await service.resumeAll()
       return resumed.ok ? { ok: true, value: { pausedAll: null } } : refused('invalid_params', resumed.message)
     },

@@ -2191,6 +2191,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     ...createStudioSchedulesHandlers({
       ...(options.schedules ? { schedules: options.schedules } : {}),
       kept: (method, { grant, voice }, commandId, work) => once(keptId(method, grant, commandId), work, voice, method),
+      mayName: (folder, asking) => mayName(folder, asking),
     }),
 
     // ── Backlogs, shares, pull request reads ───────────────────────────────

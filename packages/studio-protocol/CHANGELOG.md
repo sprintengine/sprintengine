@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed (what starts a schedule is held to what the asker may reach)
+
+- **`schedules.resume`, `.runNow` and `.resumeAll` start no schedule in a
+  folder the asking connection may not name** (a paired device: one Studio
+  does not know), refused `invalid_params` in words. **`schedules.resumeAll`
+  is held to the grant's ceiling** as `schedules.resume` is: it is refused, and
+  every schedule stays paused, when one it would start again runs on a preset
+  above it. A schedule paused on its own does not hold it back.
+
 ### Added (the desktop's own windows' workspace registry)
 
 - **`workspaceSync.snapshot`, `.eventsAfter`, `.dispatch`, `.lifecycle`,
