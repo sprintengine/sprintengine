@@ -95,7 +95,6 @@ export function useDeleteSettledChats(): {
   // confirmation says what goes there; there is no undo on either machine.
   const deleteThere = useCallback(
     async (workspaceId: WorkspaceId): Promise<boolean> => {
-      const api = window.api
       const origin = useWorkspaceStore
         .getState()
         .workspaces.find((workspace) => workspace.id === workspaceId)?.remoteOrigin
