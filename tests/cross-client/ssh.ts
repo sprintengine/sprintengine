@@ -175,6 +175,8 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
           WebSocket: windowWebSocket(),
         }),
         client: { name: 'Studio window' },
+        // As the window's environment client (environmentStudio.ts) connects.
+        reconnect: { initialDelayMs: 500, maxDelayMs: 30_000 },
         parkWhenOffline: false,
       }),
     )
@@ -193,9 +195,13 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
      * to its `synchronized`), and nothing after `cursor` that the machine's
      * transcript has is missing, none twice, and no snapshot replaced it.
      */
-    const resumedFrom = async (before: ReturnType<typeof mark>) => {
+    const resumedFrom = async (
+      before: ReturnType<typeof mark>,
+      arrived: (each: Feed) => boolean = () => false,
+      ms = 60_000,
+    ) => {
       await feed
-        .until((each) => each.syncs > before.syncs, 'the catch-up after the machine came back', 60_000)
+        .until((each) => each.syncs > before.syncs || arrived(each), 'the catch-up after the machine came back', ms)
         .catch(async (error: unknown) => {
           const client = await (windowClient as Promise<StudioClient> | null)?.catch(() => null)
           throw new Error(
@@ -343,54 +349,16 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       if (!requestId || !resolvedAfter(feed, requestId)) throw new Error('ssh: the approval was not answered')
     })
 
-    await matrix.run('ssh', 'upload', async () => {
-      const text = 'picture on build-box'
-      sshd.exec(`echo ${PICTURE.toString('base64')} | base64 -d > /home/dev/repo/notes.png`, 'dev')
-      send(text, {
-        attachments: [
-          { id: 'picture-1', name: 'picture.png', mediaType: 'image/png', dataBase64: PICTURE.toString('base64') },
-        ],
-        files: [{ path: 'ssh://gate/home/dev/repo/notes.png' }],
-      })
-      await feed.until(
-        (each) => {
-          const message = each.find(isUserMessage(text))
-          return (
-            Array.isArray(message?.payload?.attachments) &&
-            (message.payload.attachments as unknown[]).length === 1 &&
-            Array.isArray(message.payload.files) &&
-            (message.payload.files as unknown[]).length === 1
-          )
-        },
-        `"${text}" with its picture and its file`,
-        30_000,
-      )
-      await answer(text)
-    })
-
-    await matrix.run('ssh', 'subagent', async () => {
-      send('/subagent')
-      await feed.until(
-        (each) =>
-          each.find((event) => event.type === 'subagent_status' && event.payload?.status === 'running') !== undefined,
-        'a sub-agent running',
-        30_000,
-      )
-      const toolUseId = String(feed.find((event) => event.type === 'subagent_status')!.payload?.toolUseId)
-      const text = 'note on build-box'
-      ok(await parts.messageSubagent!({ sessionId, toolUseId, message: text }), 'message the sub-agent')
-      const said = (event: GateEvent) =>
-        (event.payload?.subagentMessage as { text?: string } | undefined)?.text === text
-      await feed.until((each) => each.find(said) !== undefined, `"${text}" passed to the sub-agent`, 30_000)
-      await answer(String(feed.find(said)?.payload?.text))
-    })
-
     // The machine keeps its chats' background work: a message scheduled from
     // the window, and a pull request handed over watched, go on there with
     // this desktop gone (its window closed, its SSH session ended), and are
     // there when it comes back.
     await matrix.run('ssh', 'schedule', async () => {
       const text = 'scheduled on build-box'
+      // The chat at rest first, so the message goes at its time rather than
+      // after a turn still running.
+      await parts.interrupt({ sessionId } as never).catch(() => undefined)
+      await until(() => false, 1_500)
       ok(await parts.scheduleSend({ key, message: text, sendAt: Date.now() + 4_000 }), 'schedule a message')
       const url = 'https://github.com/example/repo/pull/7'
       const body = { workspaceId: key.workspaceId, agentId: key.agentId, url, watched: true }
@@ -442,6 +410,48 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       await answer(text)
     })
 
+    await matrix.run('ssh', 'upload', async () => {
+      const text = 'picture on build-box'
+      sshd.exec(`echo ${PICTURE.toString('base64')} | base64 -d > /home/dev/repo/notes.png`, 'dev')
+      send(text, {
+        attachments: [
+          { id: 'picture-1', name: 'picture.png', mediaType: 'image/png', dataBase64: PICTURE.toString('base64') },
+        ],
+        files: [{ path: 'ssh://gate/home/dev/repo/notes.png' }],
+      })
+      await feed.until(
+        (each) => {
+          const message = each.find(isUserMessage(text))
+          return (
+            Array.isArray(message?.payload?.attachments) &&
+            (message.payload.attachments as unknown[]).length === 1 &&
+            Array.isArray(message.payload.files) &&
+            (message.payload.files as unknown[]).length === 1
+          )
+        },
+        `"${text}" with its picture and its file`,
+        30_000,
+      )
+      await answer(text)
+    })
+
+    await matrix.run('ssh', 'subagent', async () => {
+      send('/subagent')
+      await feed.until(
+        (each) =>
+          each.find((event) => event.type === 'subagent_status' && event.payload?.status === 'running') !== undefined,
+        'a sub-agent running',
+        30_000,
+      )
+      const toolUseId = String(feed.find((event) => event.type === 'subagent_status')!.payload?.toolUseId)
+      const text = 'note on build-box'
+      ok(await parts.messageSubagent!({ sessionId, toolUseId, message: text }), 'message the sub-agent')
+      const said = (event: GateEvent) =>
+        (event.payload?.subagentMessage as { text?: string } | undefined)?.text === text
+      await feed.until((each) => each.find(said) !== undefined, `"${text}" passed to the sub-agent`, 30_000)
+      await answer(String(feed.find(said)?.payload?.text))
+    })
+
     // The machine's server dies under a live SSH session, and the desktop is
     // kept off the machine while a second desktop starts it again and runs a
     // turn. The first notices the death by itself (its own connection to the
@@ -481,7 +491,11 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
         if (!(await until(() => machine().current() !== null && machine().summary().state === 'connected', 60_000)))
           throw new Error(`ssh: the environment did not come back by itself (${machine().summary().stateText})`)
       } else await machine().connect({ interactive: true })
-      await resumedFrom(before)
+      // A server started again holds the chat anew: the client's own resume
+      // brings what it missed by its cursor, with or without a fresh fence.
+      // The window notices a server gone by its heartbeat (30 s quiet, 10 s
+      // to answer) when no socket closes, then reconnects on its backoff.
+      await resumedFrom(before, (each) => approvalAfter(each, away) !== undefined, 120_000)
       if (!approvalAfter(feed, away)) throw new Error('ssh: the catch-up did not carry the turn run while it was away')
       await answer(away)
       if (!feed.find(isUserMessage(first))) throw new Error('ssh: the chat lost its history')
