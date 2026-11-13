@@ -219,6 +219,48 @@ test('what does not read, does not match its digest, or is already here by anoth
   assert.deepEqual(retried.held, [{ kind: 'workspace', id: 'ws-here' }])
 })
 
+test('a hand-over cut short between its stores and its ledger is held on the replay, not reported as another copy', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'environment-adoption-'))
+  dirs.push(dataDir)
+  const fake = fakeStores()
+  // The stores are written, then the process goes before the ledger's last write.
+  let crash = true
+  const stores = {
+    ...fake.stores,
+    flush: async () => {
+      if (crash) {
+        crash = false
+        throw new Error('the process went')
+      }
+    },
+  }
+  const records = [record('workspace', 'ws-1', WORKSPACE), record('schedule', 'sa-1', SCHEDULE)]
+  await assert.rejects(
+    createEnvironmentAdoption({ dataDir, stores, now: () => 1_000 }).adopt({ migrationId: 'm-1', records }),
+  )
+  assert.equal(fake.workspaces.has('ws-1'), true, 'its stores were written')
+  // Restarted: the desktop's journal sends the same hand-over again.
+  const again = await createEnvironmentAdoption({ dataDir, stores, now: () => 2_000 }).adopt({
+    migrationId: 'm-1',
+    records,
+  })
+  assert.deepEqual(again.conflicts, [])
+  assert.equal(again.held.length, 2)
+  const ledger = JSON.parse(readFileSync(join(dataDir, 'environment-adoptions.json'), 'utf8'))
+  assert.equal(ledger.records['workspace:ws-1'].pending, undefined, 'kept for good now')
+  // Another record under an id already here, never named by a hand-over, is still another copy.
+  fake.workspaces.add('ws-9')
+  const other = await createEnvironmentAdoption({ dataDir, stores, now: () => 3_000 }).adopt({
+    migrationId: 'm-2',
+    records: [record('workspace', 'ws-9', { ...WORKSPACE, id: 'ws-9' })],
+  })
+  assert.match(other.conflicts[0]?.reason ?? '', /already here/u)
+  assert.equal(
+    JSON.parse(readFileSync(join(dataDir, 'environment-adoptions.json'), 'utf8')).records['workspace:ws-9'],
+    undefined,
+  )
+})
+
 test('two hand-overs at once are kept one after the other, never interleaved', async () => {
   const { adoption, calls } = rig()
   const [a, b] = await Promise.all([

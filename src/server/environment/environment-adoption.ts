@@ -75,7 +75,11 @@ export type EnvironmentAdoption = {
 
 const LEDGER_FILE = 'environment-adoptions.json'
 
-type Ledger = { v: 1; records: Record<string, { digest: string; migrationId: string; at: number }> }
+// `pending`: written before its store was, so a hand-over cut short between
+// the two finds its own record there on the replay and holds it, rather than
+// reporting it as another copy.
+type LedgerEntry = { digest: string; migrationId: string; at: number; pending?: true }
+type Ledger = { v: 1; records: Record<string, LedgerEntry> }
 
 /** A body as canonical JSON: keys sorted at every depth, no spaces. Both ends digest this. */
 export function canonicalRecordJson(value: unknown): string {
@@ -140,27 +144,30 @@ export function createEnvironmentAdoption(deps: {
     }
   }
 
-  /** Keep one record in its store; a refusal says why, and nothing was written. */
+  /** Keep one record in its store; a refusal says why, and nothing was written. `exists`: its id is already there. */
   async function keep(
     record: StudioAdoptedRecord,
     migrationId: string,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  ): Promise<{ ok: true } | { ok: false; reason: string; exists?: true }> {
     const body = record.body
     // The same command again, after a crash between the store's write and the ledger's.
     const source = `adopt:${migrationId}:${record.kind}:${record.id}`
     switch (record.kind) {
       case 'workspace': {
         if (body.id !== record.id) return { ok: false, reason: 'The workspace record names another id.' }
-        if (stores.workspaces.has(record.id)) return { ok: false, reason: 'A workspace with that id is already here.' }
+        if (stores.workspaces.has(record.id))
+          return { ok: false, reason: 'A workspace with that id is already here.', exists: true }
         const kept = stores.workspaces.adopt(body)
         return kept.ok ? kept : { ok: false, reason: kept.message }
       }
       case 'schedule': {
         if (body.id !== record.id) return { ok: false, reason: 'The scheduled agent names another id.' }
         if (stores.schedules.has(record.id))
-          return { ok: false, reason: 'A scheduled agent with that id is already here.' }
+          return { ok: false, reason: 'A scheduled agent with that id is already here.', exists: true }
         const kept = await stores.schedules.adopt(body)
-        return kept.ok ? kept : { ok: false, reason: kept.message }
+        return kept.ok
+          ? kept
+          : { ok: false, reason: kept.message, ...(kept.reason === 'exists' ? { exists: true as const } : {}) }
       }
       case 'scheduled-message': {
         const chat = chatOf(body)
@@ -215,6 +222,29 @@ export function createEnvironmentAdoption(deps: {
     // A workspace first, so the chats the rest name are found.
     const order = (kind: StudioAdoptedRecordKind) => STUDIO_ADOPTED_RECORD_KINDS.indexOf(kind)
     const records = [...input.records].sort((a, b) => order(a.kind) - order(b.kind))
+    // What a hand-over cut short before its ledger left pending, under the same digest: written here then.
+    const cutShort = new Set(
+      records
+        .filter((record) => {
+          const known = ledger.records[`${record.kind}:${record.id}`]
+          return known?.pending && known.digest === record.digest
+        })
+        .map((record) => `${record.kind}:${record.id}`),
+    )
+    // Each record about to be kept is named first, so a crash after its store
+    // and before the ledger's last write leaves it pending, not unknown.
+    const fresh = records.filter((record) => {
+      const known = ledger.records[`${record.kind}:${record.id}`]
+      return adoptedRecordDigest(record.body) === record.digest && (!known || known.pending === true)
+    })
+    for (const record of fresh)
+      ledger.records[`${record.kind}:${record.id}`] = {
+        digest: record.digest,
+        migrationId: input.migrationId,
+        at: now(),
+        pending: true,
+      }
+    if (fresh.length) writeLedger(ledger)
     for (const record of records) {
       const key = `${record.kind}:${record.id}`
       if (adoptedRecordDigest(record.body) !== record.digest) {
@@ -222,7 +252,7 @@ export function createEnvironmentAdoption(deps: {
         continue
       }
       const known = ledger.records[key]
-      if (known) {
+      if (known && !known.pending) {
         if (known.digest === record.digest) held.push({ kind: record.kind, id: record.id })
         else
           conflicts.push({
@@ -232,13 +262,16 @@ export function createEnvironmentAdoption(deps: {
           })
         continue
       }
-      let kept: { ok: true } | { ok: false; reason: string }
+      let kept: { ok: true } | { ok: false; reason: string; exists?: true }
       try {
         kept = await keep(record, input.migrationId)
       } catch (error) {
         kept = { ok: false, reason: error instanceof Error ? error.message : String(error) }
       }
+      // Already here, and named pending by the hand-over that was cut short: that one wrote it.
+      if (!kept.ok && kept.exists && cutShort.has(key)) kept = { ok: true }
       if (!kept.ok) {
+        delete ledger.records[key]
         conflicts.push({ kind: record.kind, id: record.id, reason: kept.reason })
         continue
       }

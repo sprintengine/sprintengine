@@ -1243,8 +1243,10 @@ going into its own store through that store's own way in. `digest` is the sha-25
 as canonical JSON (keys sorted, no spaces). It is safe to repeat: a ledger,
 `environment-adoptions.json` (0600), says what was kept under which digest. A record kept
 under the same digest is held again and nothing is written; one already here under another,
-or by another way in, is left as it is and reported in `conflicts`. The answer comes once the
-stores and the ledger are written. A held message that carries pictures or files is reported,
+or by another way in, is left as it is and reported in `conflicts`. Each record is named in the
+ledger as pending before its store is written, so a hand-over cut short before the ledger's last
+write is held, not reported, when it is sent again. The answer comes once the stores and the
+ledger are written. A held message that carries pictures or files is reported,
 not kept: those are not handed over yet. Served by a WSL distribution's or an SSH machine's
 Studio, which a desktop reaches over its front door.
 `provider-sign-in-flow` (2026-11-13) adds `providers.signInStart`, `.signInPaste`,

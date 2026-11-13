@@ -317,4 +317,19 @@ test('a hand-over is the shell’s alone, answered once per command id', async (
     'owner_required',
   )
   assert.equal(handed.length, 1)
+  // At most 500 records a call: a longer hand-over is sent in parts.
+  const many = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      kind: 'workspace',
+      id: `ws-${index}`,
+      digest: 'a'.repeat(64),
+      body: { id: `ws-${index}` },
+    }))
+  assert.equal(
+    errorCode(await shell.request('environment.adopt', { commandId: 'h-4', migrationId: 'm-1', records: many(501) })),
+    'invalid_params',
+  )
+  assert.equal(handed.length, 1, 'refused before it is handed over')
+  const full = await shell.request('environment.adopt', { commandId: 'h-5', migrationId: 'm-1', records: many(500) })
+  assert.equal((full.result as { held: unknown[] }).held.length, 500)
 })
