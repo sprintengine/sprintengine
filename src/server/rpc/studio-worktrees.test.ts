@@ -235,6 +235,7 @@ test('an agent worktree step on an SSH machine is refused in words, and the inve
       },
     ],
     ['worktrees.cleanupAgents', { commandId: cid(), input: { repoRoot: '/Users/dev/app', protectedPaths: [app] } }],
+    ['worktrees.removeOther', { commandId: cid(), repoRoot: app, path: `${app}-w/one` }],
   ] as const) {
     const answer = await owner.request(method, params)
     assert.deepEqual([method, codeOf(answer)], [method, 'unavailable'])

@@ -24,6 +24,7 @@ const STEPS: ReadonlySet<StudioWorktreesMethod> = new Set([
   'worktrees.create',
   'worktrees.restore',
   'worktrees.remove',
+  'worktrees.removeOther',
   'worktrees.cleanupAgents',
 ])
 
