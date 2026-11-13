@@ -62,6 +62,30 @@ function* scopeSubsets(): Generator<StudioScope[]> {
     yield STUDIO_SCOPES.filter((_scope, index) => (mask & (1 << index)) !== 0)
 }
 
+/** Every method and topic: its name, its spec, the access table's row, and the server's own check of it. */
+const ENTRIES = [
+  ...(Object.keys(STUDIO_METHODS) as StudioMethod[]).map((name) => ({
+    name,
+    spec: STUDIO_METHODS[name],
+    access: STUDIO_METHOD_ACCESS[name],
+    decide: (grant: Grant) => authorizeStudioMethod(grant, name).ok,
+  })),
+  ...(Object.keys(STUDIO_TOPICS) as StudioTopic[]).map((name) => ({
+    name: `topic ${name}`,
+    spec: STUDIO_TOPICS[name],
+    access: STUDIO_TOPIC_ACCESS[name],
+    decide: (grant: Grant) => authorizeStudioTopic(grant, name).ok,
+  })),
+]
+
+/**
+ * The every-grant checks, in slices of the sets of scopes so that no one test
+ * nears the time limit as method families are added: at 15 scopes they are
+ * 65,536 grants by every method and topic.
+ */
+const SLICES = 16
+const holding = (grant: Grant) => `${grant.owner ? 'an owner' : 'a client'} holding [${grant.scopes.join(', ')}]`
+
 test('the permission set is closed: each name once, and nothing outside it is one', () => {
   assert.equal(new Set(STUDIO_PERMISSIONS).size, STUDIO_PERMISSIONS.length)
   for (const permission of STUDIO_PERMISSIONS) assert.equal(isStudioPermission(permission), true, permission)
@@ -127,46 +151,46 @@ test('every Studio scope a grant can hold carries only permissions from the clos
       assert.equal(STUDIO_SCOPE_PERMISSIONS[scope].includes(named), scope === named, `${named} in ${scope}`)
 })
 
-test('every grant reaches exactly the methods and topics it reached before permissions', () => {
-  // All 256 sets of scopes, owner and not, against every method and topic.
-  const entries = [
-    ...(Object.keys(STUDIO_METHODS) as StudioMethod[]).map(
-      (name) => [name, STUDIO_METHODS[name], (grant: Grant) => authorizeStudioMethod(grant, name)] as const,
-    ),
-    ...(Object.keys(STUDIO_TOPICS) as StudioTopic[]).map(
-      (name) => [`topic ${name}`, STUDIO_TOPICS[name], (grant: Grant) => authorizeStudioTopic(grant, name)] as const,
-    ),
-  ]
-  let compared = 0
-  for (const scopes of scopeSubsets())
-    for (const owner of [false, true]) {
-      const grant = { owner, scopes }
-      for (const [name, spec, after_] of entries) {
-        const before = legacyAllows(grant, spec)
-        const after = after_(grant).ok
-        assert.equal(after, before, `${name} for ${owner ? 'an owner' : 'a client'} holding [${scopes.join(', ')}]`)
-        compared++
+// Two checks of every grant against every method and topic, made in one pass
+// so the server's own check is asked once for each, not once per check:
+// - every grant reaches exactly the methods and topics it reached before
+//   permissions (the frozen oracle above);
+// - the access tables a client reads say what the server decides.
+// Each row is compared; its words are written only for a row that differs.
+/** The sets of scopes a slice takes (every `SLICES`th), and so the rows it compares. */
+const setsInSlice = (slice: number) => Math.ceil(((1 << STUDIO_SCOPES.length) - slice) / SLICES)
+for (let slice = 0; slice < SLICES; slice++)
+  test(`every grant reaches what it reached before permissions, and the access tables say what the server decides (${slice + 1} of ${SLICES})`, () => {
+    let index = 0
+    let compared = 0
+    for (const scopes of scopeSubsets()) {
+      if (index++ % SLICES !== slice) continue
+      for (const owner of [false, true]) {
+        const grant = { owner, scopes }
+        const principal = studioGrantPrincipal(grant)
+        for (const entry of ENTRIES) {
+          const server = entry.decide(grant)
+          const before = legacyAllows(grant, entry.spec)
+          if (server !== before) assert.equal(server, before, `${entry.name} for ${holding(grant)}`)
+          const shown = authorizeStudioAccess(principal, entry.access).ok
+          if (shown !== server) assert.equal(shown, server, `${entry.name}'s table for ${holding(grant)}`)
+          compared++
+        }
       }
     }
-  assert.ok(compared > 256 * 2 * 50)
+    assert.equal(compared, setsInSlice(slice) * 2 * ENTRIES.length)
+  })
+
+test('the slices take every set of scopes once, so every grant is compared against every method and topic', () => {
+  let sets = 0
+  for (let slice = 0; slice < SLICES; slice++) sets += setsInSlice(slice)
+  assert.equal(sets, 1 << STUDIO_SCOPES.length)
+  assert.ok(sets * 2 * ENTRIES.length > 256 * 2 * 50)
 })
 
-test('the access tables a client reads say what the server decides, for every grant', () => {
+test('the access tables a client reads name every method and topic, and refuse what is no method', () => {
   assert.deepEqual(Object.keys(STUDIO_METHOD_ACCESS).sort(), Object.keys(STUDIO_METHODS).sort())
   assert.deepEqual(Object.keys(STUDIO_TOPIC_ACCESS).sort(), Object.keys(STUDIO_TOPICS).sort())
-  for (const scopes of scopeSubsets())
-    for (const owner of [false, true]) {
-      const grant = { owner, scopes }
-      const principal = studioGrantPrincipal(grant)
-      for (const method of Object.keys(STUDIO_METHODS) as StudioMethod[]) {
-        const decided = authorizeStudioMethod(grant, method).ok
-        assert.equal(authorizeStudioAccess(principal, STUDIO_METHOD_ACCESS[method]).ok, decided, method)
-      }
-      for (const topic of Object.keys(STUDIO_TOPICS) as StudioTopic[]) {
-        const decided = authorizeStudioTopic(grant, topic).ok
-        assert.equal(authorizeStudioAccess(principal, STUDIO_TOPIC_ACCESS[topic]).ok, decided, topic)
-      }
-    }
   const owner = { owner: true, scopes: [...STUDIO_SCOPES] }
   for (const name of ['conversation.compact', 'constructor', '__proto__', '']) {
     assert.equal(studioGrantAllows(owner, name), false, name)
