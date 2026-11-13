@@ -7,7 +7,7 @@ import {
   type ChatServerOffer,
 } from '../../../../../../packages/client-runtime/src/public'
 import { watchWindowStudioWelcome, windowStudioWelcome } from '../../../studio/windowStudioClient'
-import type { StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
+import type { EnvironmentId, StudioWelcomeFrame } from '../../../../../../packages/studio-protocol/src/public'
 
 import type { ChatServices } from './chatServices'
 import { windowChatServices, windowStudioImplementation as studioImplementation } from './windowChat'
@@ -95,30 +95,45 @@ type ConversationTransportResult =
   // `code` as the runtime names a refusal (`session_not_found`: the session is gone there).
   | { ok: false; message: string; code?: string }
 
-export type ConversationTransport = {
-  kind: 'local' | 'remote'
-  /** The paired machine the conversation runs on, for a remote transport. */
-  machineName?: string
-  /** Where a remote chat's skills and MCP servers are listed: the machine and the project there. */
-  remoteExtensions?: { connectionId: string; workspaceId: string; machineName?: string }
+/**
+ * The environment a chat runs in, as its server names it: what a chat view
+ * says of where it runs, in place of a kind. Every transport answers one.
+ */
+export type ChatEnvironment = {
   /**
-   * What a remote chat's `/` list is kept under in this window, in place of a
-   * folder (`remoteCommandsFolder`): no folder of this disk names it.
+   * The Studio's id (`welcome.environment.id`); for a paired desktop over the
+   * tailnet lane, the id that machine said of itself (`MeshConnection.environmentId`).
+   * Null where its server has not said one: before a welcome, or a paired
+   * build that does not say it. What the window and its shell reach of the
+   * chat's disk is asked of this (`useShellReach`).
    */
-  commandsFolder?: string
+  // The one identity type an environment has (env-identity), never a second.
+  readonly id: EnvironmentId | null
+  /**
+   * What the person calls the machine, where it is not the window's own
+   * Studio (a paired machine's name); null for the window's own, which the
+   * view calls Studio.
+   */
+  readonly label: string | null
+  /**
+   * How a paired desktop still on the tailnet lane is reached for what the
+   * lane serves beside the chat's own calls: its skills and MCP servers
+   * (`useRemoteExtensions`), the key its `/` list is kept under here (no
+   * folder of this disk names it), and the pane a fork it made opens as
+   * (`openPairedFork`). Null for every Studio on the protocol. Goes with the
+   * lane (design-lane-on-protocol).
+   */
+  readonly lane: { connectionId: string; workspaceId: string; commandsKey: string } | null
+}
+
+export type ConversationTransport = {
   /**
    * Where the chat's Create PR does its work: the server it runs on, in its
    * own checkout there. Used where `capabilities.hostPullRequests` is.
    */
   pullRequestHost?(key: ConversationKey): PullRequestHost
   capabilities: ConversationTransportCapabilities
-  /**
-   * The environment the chat runs in, by its Studio's id
-   * (`welcome.environment.id`); null where its server has not said one (a
-   * paired desktop over the lane, or before a welcome). What the window and
-   * its shell reach of the chat's disk is asked of this (`useShellReach`).
-   */
-  readonly environmentId: string | null
+  readonly environment: ChatEnvironment
   subscribe(input: ConversationSubscribeInput, cb: (frame: ConversationSessionFrame) => void): () => void
   loadEarlier(input: ConversationLoadEarlierInput): Promise<ConversationPageResult>
   toolDetail(input: ConversationToolDetailInput): Promise<ConversationToolDetailResult>
@@ -377,6 +392,8 @@ export function studioConversationTransport(
   welcome: () => Pick<StudioWelcomeFrame, 'capabilities' | 'conversation' | 'grant' | 'environment'> | null,
 ): ConversationTransport {
   let said: { welcome: object | null; capabilities: ConversationTransportCapabilities } | null = null
+  // Held while the id is, as views key memos on it.
+  let where: ChatEnvironment | null = null
   return {
     ...windowConversationCalls,
     get capabilities() {
@@ -385,14 +402,15 @@ export function studioConversationTransport(
         said = { welcome: now, capabilities: negotiateChatCapabilities(now ? { via: 'studio', welcome: now } : null) }
       return said.capabilities
     },
-    get environmentId() {
-      return welcome()?.environment.id ?? null
+    get environment() {
+      const id = welcome()?.environment.id ?? null
+      if (where?.id !== id) where = { id, label: null, lane: null }
+      return where
     },
   }
 }
 
-const windowConversationCalls: Omit<ConversationTransport, 'capabilities' | 'environmentId'> = {
-  kind: 'local',
+const windowConversationCalls: Omit<ConversationTransport, 'capabilities' | 'environment'> = {
   subscribe: (input, cb) => localParts().subscribe(input, cb),
   loadEarlier: (input) => localParts().loadEarlier(input),
   toolDetail: (input) => localParts().toolDetail(input),
@@ -495,6 +513,11 @@ export function createRemoteConversationTransport(input: {
   key: MeshConversationKey
   machineName: string
   /**
+   * The id that machine's Studio said it is, read whenever the environment
+   * is; null until it has said one.
+   */
+  environmentId?: () => EnvironmentId | null
+  /**
    * What the machine last said of itself and what this pairing may do there,
    * read whenever the capabilities are; null before it has said anything.
    */
@@ -510,9 +533,9 @@ export function createRemoteConversationTransport(input: {
   const { key } = input
   let said: { offer: ChatServerOffer | null; capabilities: ConversationTransportCapabilities } | null = null
   const pullRequests = remotePullRequestHost(key, () => input.onPullRequestRecorded?.())
+  const lane = { connectionId: key.connectionId, workspaceId: key.workspaceId, commandsKey: remoteCommandsFolder(key) }
+  let where: ChatEnvironment | null = null
   return {
-    kind: 'remote',
-    machineName: input.machineName,
     // Read off what the machine last said of itself, each time asked: the
     // pane hears its list again on a grant change or a reconnect.
     get capabilities() {
@@ -520,10 +543,13 @@ export function createRemoteConversationTransport(input: {
       if (said?.offer !== offer) said = { offer, capabilities: negotiateChatCapabilities(offer) }
       return said.capabilities
     },
-    // A paired desktop over the lane says no environment id.
-    environmentId: null,
-    remoteExtensions: { connectionId: key.connectionId, workspaceId: key.workspaceId, machineName: input.machineName },
-    commandsFolder: remoteCommandsFolder(key),
+    // Named by what the person calls the machine, and by the id its Studio
+    // said, once it has: held while that id is, as views key memos on it.
+    get environment() {
+      const id = input.environmentId?.() ?? null
+      if (where?.id !== id) where = { id, label: input.machineName, lane }
+      return where
+    },
     // Every step over there, under the chat's key there, whatever the view names.
     pullRequestHost: () => pullRequests,
     subscribe: (subscription, cb) =>

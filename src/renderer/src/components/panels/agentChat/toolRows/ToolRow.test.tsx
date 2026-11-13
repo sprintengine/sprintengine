@@ -11,6 +11,7 @@ import {
 } from './ToolRow'
 import { ConversationLinkProvider } from '../conversationLinks'
 import type { TranscriptToolEntry } from '../conversationProjection'
+import type { ChatEnvironment, ConversationTransport } from '../conversationTransport'
 import { JSDOM } from 'jsdom'
 import {
   IncrementalCodeTokenizer,
@@ -459,7 +460,8 @@ async function withToolDetailDom(
   detail: (toolUseId: string) => { output: string },
   run: (harness: {
     calls: string[]
-    show: (row: TranscriptToolEntry) => Promise<void>
+    /** Drawn under the window's own transport, or one naming `environment` in its place. */
+    show: (row: TranscriptToolEntry, environment?: ChatEnvironment) => Promise<void>
     hide: () => Promise<void>
     click: (label: string) => Promise<void>
     expand: () => Promise<void>
@@ -497,12 +499,16 @@ async function withToolDetailDom(
   dom.window.document.body.appendChild(host)
   const root = createRoot(host)
   const workspaceId = `tool-detail-${Math.random()}`
+  const { ConversationTransportProvider, localConversationTransport } = await import('../conversationTransport')
+  // The window's transport, under another environment's name: its calls the same.
+  const elsewhere = (environment: ChatEnvironment): ConversationTransport =>
+    Object.defineProperty({ ...localConversationTransport }, 'environment', { value: environment })
   try {
     await run({
       calls,
-      show: (row) =>
-        act(async () =>
-          root.render(
+      show: (row, environment) =>
+        act(async () => {
+          const shown = (
             <ConversationLinkProvider
               workspaceId={workspaceId}
               workspaceRoot="/workspace/app"
@@ -510,9 +516,16 @@ async function withToolDetailDom(
               agentId="agent"
             >
               <ToolRow tool={row} />
-            </ConversationLinkProvider>,
-          ),
-        ),
+            </ConversationLinkProvider>
+          )
+          root.render(
+            environment ? (
+              <ConversationTransportProvider value={elsewhere(environment)}>{shown}</ConversationTransportProvider>
+            ) : (
+              shown
+            ),
+          )
+        }),
       hide: () => act(async () => root.render(<div />)),
       click: (label) =>
         act(async () => {
@@ -558,6 +571,31 @@ test('fetched output is cached by size: a few very large outputs push the oldest
       await show(truncatedCommand('first'))
       await click('Show full output')
       expect(calls).toEqual(['first', 'second', 'third', 'first'])
+    },
+  )
+})
+
+test('fetched output is kept per environment: the same ids in another Studio are another step', async () => {
+  await withToolDetailDom(
+    (id) => ({ output: `full output of ${id}` }),
+    async ({ calls, show, hide, click, expand }) => {
+      const other = { id: 'another-studio', label: 'mac-mini', lane: null }
+      await show(truncatedCommand('shared'))
+      await expand()
+      await click('Show full output')
+      await hide()
+      expect(calls).toEqual(['shared'])
+      // The same workspace, agent and step ids, in another environment: not the step fetched.
+      await show(truncatedCommand('shared'), other)
+      await click('Show full output')
+      await hide()
+      expect(calls).toEqual(['shared', 'shared'])
+      // Each environment's is kept for its own next mount.
+      await show(truncatedCommand('shared'))
+      await hide()
+      await show(truncatedCommand('shared'), other)
+      await hide()
+      expect(calls).toHaveLength(2)
     },
   )
 })

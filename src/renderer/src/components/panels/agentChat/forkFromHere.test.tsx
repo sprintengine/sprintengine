@@ -69,6 +69,7 @@ function setup(answer: Answer = 'studio') {
   registerModel(WS, model)
   const forks: ChatForkInput[] = []
   const transport = {
+    environment: { id: 'env-studio', label: null, lane: null },
     fork: async (input: ChatForkInput): Promise<ChatForkResult> => {
       forks.push(input)
       if (answer !== 'studio') return answer
@@ -326,8 +327,11 @@ function remoteSetup(options: { mounted?: boolean; listedTitle?: string } = {}) 
   Object.assign(globalThis.window as object, { api: { meshConversationList: listed } })
   const forks: ChatForkInput[] = []
   const transport = {
-    machineName: 'mac-mini',
-    remoteExtensions: { connectionId: 'connection', workspaceId: 'remote-workspace' },
+    environment: {
+      id: null,
+      label: 'mac-mini',
+      lane: { connectionId: 'connection', workspaceId: 'remote-workspace', commandsKey: 'mesh:connection' },
+    },
     fork: async (input: ChatForkInput) => {
       forks.push(input)
       return { ok: true as const }

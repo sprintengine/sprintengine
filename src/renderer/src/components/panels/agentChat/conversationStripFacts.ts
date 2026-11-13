@@ -52,7 +52,7 @@ export function useConversationStripFacts({
   agentId: string
   workspace: ChatWorkspace | null
   workspaceRoot: string | null
-  transport: Pick<ConversationTransport, 'kind' | 'machineName' | 'capabilities'>
+  transport: Pick<ConversationTransport, 'environment'>
   /** Where a remote chat works, as the machine running it lists it. */
   listed?: Pick<NonNullable<ChatBinding['listed']>, 'branch' | 'worktree' | 'files'> | null
 }): {
@@ -61,19 +61,21 @@ export function useConversationStripFacts({
   changes: ChatPanelChanges | null
 } {
   // ── The machine ───────────────────────────────────────────────────────────
-  // A chat on a paired machine is named by its link; a local chat by the
-  // machine its workspace runs on (an SSH machine, a WSL distribution, or the
-  // paired machine a workspace was born on). This computer is no machine to
-  // mark: the panel says nothing about it.
-  const workspaceRef = useWorkspaceMachineRef(transport.kind === 'remote' ? null : workspace)
-  const remoteName = transport.kind === 'remote' ? (transport.machineName ?? null) : null
+  // A chat in an environment the person named (a paired machine) is named by
+  // its environment; one on the window's own Studio by the machine its
+  // workspace runs on (an SSH machine, a WSL distribution, or the paired
+  // machine a workspace was born on). This computer is no machine to mark:
+  // the panel says nothing about it.
+  const environmentLabel = transport.environment.label
+  const workspaceRef = useWorkspaceMachineRef(environmentLabel ? null : workspace)
   const ref = useMemo<MachineRef | null>(
-    () => (remoteName ? { kind: 'paired', name: remoteName } : workspaceRef),
-    [remoteName, workspaceRef],
+    () => (environmentLabel ? { kind: 'paired', name: environmentLabel } : workspaceRef),
+    [environmentLabel, workspaceRef],
   )
-  const identity = useMachineIdentity(ref && ref.kind !== 'local' ? ref : null)
-  const machineName =
-    ref && ref.kind !== 'local' ? stripMachineName(ref, transport.kind === 'remote' ? null : workspace) : null
+  // A workspace's machine ref is the WSL/SSH routing term design-wsl-ssh-direct deletes.
+  const named = ref && ref.kind !== 'local' ? ref : null // chat-locality-allow: machine ref (design-wsl-ssh-direct)
+  const identity = useMachineIdentity(named)
+  const machineName = named ? stripMachineName(named, environmentLabel ? null : workspace) : null
   // Held from render to render, as the chat renders on every token and the
   // panel it publishes these to redraws when one is a new object.
   const machine = useMemo(

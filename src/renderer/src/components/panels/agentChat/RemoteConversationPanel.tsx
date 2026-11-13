@@ -19,6 +19,9 @@ import {
   type StudioLocalServer,
 } from '../../../../../../packages/studio-protocol/src/public'
 import { negotiateChatCapabilities } from '../../../../../../packages/client-runtime/src/public'
+import { environmentOfRoute } from '../../../../../shared/environments'
+import { environmentRouteOfMeshConnection } from '../../../../../shared/environment-keys'
+import { useEnvironments } from '../../../hooks/useEnvironments'
 import type {
   MeshConversation,
   MeshConversationAccess,
@@ -340,12 +343,19 @@ export default function RemoteConversationPanel({
   // and dialled again. Its capabilities read the offer as it is now.
   const offerRef = useRef(offer)
   offerRef.current = offer
+  // The id that machine's Studio said it is, as this desktop keeps its
+  // environments: what the chat's environment is named by once it has.
+  const environments = useEnvironments()
+  const environmentIdRef = useRef<string | null>(null)
+  environmentIdRef.current =
+    environmentOfRoute(environments, environmentRouteOfMeshConnection(connectionId))?.environmentId ?? null
   const threadRef = useRef(thread)
   threadRef.current = thread
   const transport = useMemo(() => {
     const base = createRemoteConversationTransport({
       key,
       machineName,
+      environmentId: () => environmentIdRef.current,
       offer: () => offerRef.current,
       onLink: setLink,
       onQueued: setHostQueued,
@@ -361,8 +371,8 @@ export default function RemoteConversationPanel({
     const setEffort = base.setReasoningEffort
     const send = base.send
     const unwatchPullRequest = base.unwatchPullRequest
-    // Spread with its own getter kept: `...base` would copy the capabilities
-    // as they are now.
+    // Spread with its own getters kept: `...base` would copy the capabilities
+    // and the environment as they are now.
     return Object.defineProperties(
       {
         ...base,
@@ -407,7 +417,10 @@ export default function RemoteConversationPanel({
             }
           : {}),
       },
-      { capabilities: Object.getOwnPropertyDescriptor(base, 'capabilities')! },
+      {
+        capabilities: Object.getOwnPropertyDescriptor(base, 'capabilities')!,
+        environment: Object.getOwnPropertyDescriptor(base, 'environment')!,
+      },
     ) as ConversationTransport
   }, [key, machineName])
 
@@ -423,6 +436,7 @@ export default function RemoteConversationPanel({
       const transport = createRemoteConversationTransport({
         key: { ...key, agentId },
         machineName,
+        environmentId: () => environmentIdRef.current,
         offer: () => offerRef.current,
       })
       made.set(agentId, transport)

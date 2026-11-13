@@ -17,7 +17,7 @@ export const panelFacts = (patch: Partial<ChatPanelFacts> = {}): ChatPanelFacts 
   harnessLabel: 'Claude Code',
   modelLabel: 'Opus 5.5',
   machine: null,
-  remote: false,
+  environmentLabel: null,
   branch: null,
   changes: null,
   pullRequests: NO_PULL_REQUESTS,

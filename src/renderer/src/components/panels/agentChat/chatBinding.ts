@@ -189,7 +189,7 @@ export function useLocalChatBinding(workspaceId: string, agentId: string): ChatB
   // through this one (WSL, SSH): its agent and its readings are over there,
   // and this Studio's scheduler does not reach it (design-wsl-ssh-direct).
   const machineRef = useWorkspaceMachineRef(workspace)
-  const runsHere = machineRef === null || machineRef.kind === 'local'
+  const runsHere = machineRef === null || machineRef.kind === 'local' // chat-locality-allow: machine ref (design-wsl-ssh-direct)
   const workingRoot =
     agent?.conversation && !pendingGate && runsHere ? conversationWorkingRoot(agent, workspace?.folderPath) : null
   const heldKey = useMemo(

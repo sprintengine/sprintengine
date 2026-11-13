@@ -8,6 +8,7 @@ import { deriveConversationTimelineRows } from '../../components/panels/agentCha
 import {
   ConversationTransportProvider,
   type ConversationTransport,
+  type ChatEnvironment,
   type ConversationTransportCapabilities,
 } from '../../components/panels/agentChat/conversationTransport'
 import {
@@ -57,15 +58,18 @@ function embedTransport(client: StudioClient): ConversationTransport {
     ...input,
     key: { ...input.key, workspaceRoot: noFolder },
   })
+  let where: ChatEnvironment | null = null
   return {
-    kind: 'remote',
     get capabilities() {
       if (said?.welcome !== client.welcome)
         said = { welcome: client.welcome, capabilities: readOnlyCapabilities(client) }
       return said.capabilities
     },
-    get environmentId() {
-      return client.welcome.environment.id
+    // The Studio it was let into, which is its own: no machine to name.
+    get environment() {
+      const id = client.welcome.environment.id
+      if (where?.id !== id) where = { id, label: null, lane: null }
+      return where
     },
     subscribe: (input, cb) => parts.subscribe(keyed(input), cb),
     loadEarlier: (input) => parts.loadEarlier(keyed(input)),

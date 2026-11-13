@@ -385,10 +385,11 @@ export function ConversationPermissionCard({
     () => (entry.defaultToNo ? denyRef.current : containerRef.current),
     `Permission request: ${permissionActionLabel(entry.action)}. Shift+Tab from the message box to review it.`,
   )
-  // The folder a remembered rule is scoped to, for its words. A chat on a
-  // paired machine has none here: that machine scopes the rule to its own
-  // folder when it saves it, and the folder the request runs in names it.
-  const ruleRoot = workspaceRoot ?? (transport.kind === 'remote' ? entry.cwd : undefined)
+  // The folder a remembered rule is scoped to, for its words: the chat's
+  // workspace, else the folder the request runs in, which is the one its
+  // server scopes the rule to when it saves it (a paired machine's chat has
+  // no workspace folder here).
+  const ruleRoot = workspaceRoot ?? entry.cwd
   const rememberable = ruleRoot
     ? approvalRuleCandidate(
         {

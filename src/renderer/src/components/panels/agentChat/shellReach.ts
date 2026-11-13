@@ -10,7 +10,7 @@ import { useConversationTransport } from './conversationTransport'
 
 // What this window and its shell reach of a chat's disk: the one place the
 // chat view asks where a chat runs. A chat names its environment
-// (`transport.environmentId`); the window reaches the files of the
+// (`transport.environment.id`); the window reaches the files of the
 // environment its own Studio is (its services read them over the protocol),
 // and the shell the disk of the environment it started. Nothing else in the
 // chat view asks whether a chat is here or elsewhere.
@@ -58,5 +58,5 @@ export function shellReachOf(environmentId: string | null, api: object | null = 
 export function useShellReach(): ShellReach {
   const transport = useConversationTransport()
   useSyncExternalStore(watchWelcome, readWelcome, readWelcome)
-  return shellReachOf(transport.environmentId)
+  return shellReachOf(transport.environment.id)
 }

@@ -390,7 +390,7 @@ export function createStudioChatServices(
 // Every call the transport makes of a chat, its session's optional ones
 // included: a Studio of this build serves each of them, and the window's
 // local transport calls each one, so a missing one fails typecheck.
-export type StudioTransportParts = Omit<ConversationTransport, 'kind' | 'capabilities' | 'environmentId' | 'services'> &
+export type StudioTransportParts = Omit<ConversationTransport, 'capabilities' | 'environment' | 'services'> &
   Required<
     Pick<
       ConversationTransport,

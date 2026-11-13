@@ -64,3 +64,28 @@ test('a queued message goes as the same request, held there, under the chat key 
   await transport.queue?.({ key: viewKey, message: 'next', skills: [{ id: 'review' }] })
   expect(meshConversationSend.mock.calls).toEqual([[{ key, message: 'next', skills: [{ id: 'review' }], queue: true }]])
 })
+
+test('a paired chat names its environment: the machine as the person calls it, the id its Studio said once it has', () => {
+  vi.stubGlobal('window', { api: {} })
+  let said: string | null = null
+  const transport = createRemoteConversationTransport({
+    key,
+    machineName: 'mac-mini',
+    environmentId: () => said,
+    offer: () => null,
+  })
+  const before = transport.environment
+  expect(before).toEqual({
+    id: null,
+    label: 'mac-mini',
+    lane: { connectionId: 'connection', workspaceId: 'remote-workspace', commandsKey: expect.any(String) },
+  })
+  // Held while the id is, as views key memos on it.
+  expect(transport.environment).toBe(before)
+  said = 'env-mac-mini'
+  expect(transport.environment.id).toBe('env-mac-mini')
+  expect(transport.environment).not.toBe(before)
+  // No transport says a kind, or the old identity fields.
+  for (const field of ['kind', 'machineName', 'remoteExtensions', 'commandsFolder', 'environmentId'])
+    expect(field in transport, field).toBe(false)
+})
