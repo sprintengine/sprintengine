@@ -33,7 +33,8 @@ import {
   type WslServerStatus,
 } from './wsl-environment-manager'
 import { readTreeBuild } from './desktop-wsl-servers'
-import { lineTransport, readTicket, relayShellToolsets } from './wsl-tool-relay'
+import { lineTransport, readTicket } from './studio-door'
+import { relayShellToolsets } from './wsl-tool-relay'
 import type { ConversationEvent } from '../../shared/conversation-runtime'
 import type { ConversationBackend } from '../core/conversation-backend'
 import { createRoutedConversationBackend } from '../core/routed-conversation-backend'

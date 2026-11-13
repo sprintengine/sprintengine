@@ -59,12 +59,6 @@ export const KNOWN_GAPS: Partial<Record<`${ClientId}:${ScenarioId}`, KnownGap>> 
     closedBy: 'a contract that starts a chat by provider as well as by CLI, or a fake CLI runtime in the gate',
     expect: /cannot run as a chat/u,
   },
-  'ssh:restart': {
-    reason:
-      "the desktop does not notice an SSH machine's server dying while the SSH session stays up: it reads Connected over a dead backend until the session drops. The gate checks that a Reconnect then brings the server and the chat back by its cursor",
-    closedBy: 'the change that makes SSH machines environments a client connects to, watched by the connection itself',
-    expect: /did not notice its server die .* a Reconnect brought it back, by its cursor/u,
-  },
   'ssh:schedule': {
     reason:
       "a scheduled send into an SSH machine's chat is kept by the desktop's scheduler, which this leg does not run",

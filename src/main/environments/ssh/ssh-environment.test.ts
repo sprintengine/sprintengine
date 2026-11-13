@@ -180,6 +180,64 @@ test('connect: installed, started, connected; a second client attaches; a lost s
   )
 })
 
+test('the server dying or hanging under a live SSH session is noticed by its own connection, and the server started again', async () => {
+  const home = join(scratch, 'liveness')
+  mkdirSync(home)
+  const lost: string[] = []
+  const machine = harness(home, {
+    timing: { backoff: { baseMs: 50, maxMs: 200 }, giveUpMs: 60_000, livenessMs: 500, pingMs: 500 },
+    log: (line) => lost.push(line),
+  })
+  const serverPid = () =>
+    (
+      JSON.parse(
+        readFileSync(join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run', 'server.json'), 'utf8'),
+      ) as { pid: number }
+    ).pid
+  const first = await machine.env.connect({ interactive: true })
+  const killed = serverPid()
+  pids.add(killed)
+  const sessions = machine.spawned.length
+
+  // Killed: its connections end while the session (and the relay in it) live on.
+  process.kill(killed, 'SIGKILL')
+  assert.ok(
+    await until(() => machine.env.summary().state !== 'connected' || machine.env.current() !== first, 5_000),
+    'the machine still reads Connected over a dead server',
+  )
+  assert.ok(
+    lost.some((line) => /The connection to build-box was lost \(The Studio server on build-box/u.test(line)),
+    lost.join('\n'),
+  )
+  assert.ok(
+    await until(() => machine.env.summary().state === 'connected' && machine.env.current() !== null, 30_000),
+    machine.changes.join('\n'),
+  )
+  const restarted = serverPid()
+  pids.add(restarted)
+  assert.notEqual(restarted, killed, 'the reconnect started the server again')
+  assert.ok(machine.spawned.length > sessions, 'a new session brought it back')
+  assert.equal(machine.spawned.at(-1)!.interactive, false, 'a background reconnect never prompts')
+
+  // Hung (stopped, its socket still open): the pings go unanswered and it is lost all the same.
+  const second = machine.env.current()!
+  process.kill(restarted, 'SIGSTOP')
+  try {
+    assert.ok(
+      await until(() => machine.env.current() !== second, 5_000),
+      `a server that does not answer was kept: ${machine.env.summary().stateText}`,
+    )
+  } finally {
+    process.kill(restarted, 'SIGCONT')
+  }
+  assert.ok(
+    await until(() => machine.env.summary().state === 'connected' && machine.env.current() !== null, 30_000),
+    machine.changes.join('\n'),
+  )
+  machine.env.disconnect()
+  await machine.env.stopServer().catch(() => undefined)
+})
+
 test('a newer server on the machine is left alone: version-blocked, in words', async () => {
   const home = join(scratch, 'newer')
   const run = join(home, '.local', 'share', 'sprintengine-studio', 'data', 'run')

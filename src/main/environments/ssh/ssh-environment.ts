@@ -6,6 +6,7 @@ import { commitFailure } from '../../hosts/remote-install'
 import { remoteNodeDigests, type RemoteNodeTarget } from '../../hosts/wsl-node-runtime'
 import { connectRemoteConversationBackend, type RemoteConversationBackend } from '../../../server/wsl/backend-wire'
 import type { FrontDoorPurpose } from '../../../server/wsl/front-door-proof'
+import { lineTransport, readTicket } from '../../../server/wsl/studio-door'
 import type {
   SshEnvironmentSettings,
   SshEnvironmentState,
@@ -28,10 +29,12 @@ import {
 import { buildInstallArchive } from './ssh-install'
 import { RemoteSession, SessionClosedError, type SessionProcess } from './ssh-session'
 import {
+  connect,
   ConnectionSupervisor,
   ConnectTimeoutError,
   type ConnectionAttempt,
   type ConnectionState,
+  type StudioClient,
 } from '../../../../packages/client-runtime/src/public'
 
 // One SSH machine's connection, in main (phase 8 spec, 5.6). Serialised: a
@@ -64,6 +67,17 @@ import {
 // instead of waiting out the keepalive on a dead socket: one that answers is
 // kept, one that does not is restarted. A wake also lets a machine shown
 // Disconnected try at once, since the network it was waiting for may be back.
+//
+// Liveness is the server's, not the session's: ssh's keepalive only says the
+// path to the machine is up, and a server that died (or hangs) under a live
+// session would read Connected over a dead connection. So main holds an owner
+// connection to the server itself (the `studio` door, the Studio protocol),
+// and the machine is lost when that connection or the chats' wire closes,
+// session up or not, or when the server leaves a `server.ping` unanswered:
+// one is asked after `pingMs` with nothing heard, and the connection is given
+// up when `pingMs` more pass in silence. A lost machine is reconnected the way
+// a dropped session is (a new session in BatchMode, probe, start or attach),
+// which starts a server that is gone.
 
 export type SshServerConnection = {
   /** The router's key for this machine: `ssh:<saved id>`. */
@@ -71,6 +85,11 @@ export type SshServerConnection = {
   id: string
   label: string
   backend: RemoteConversationBackend
+  /**
+   * Main's own connection to the machine's server, as its owner (the `studio`
+   * door): what says the server is alive, whatever the SSH session says.
+   */
+  owner: StudioClient
   environmentId: string | null
   serverVersion: string | null
   /** A fresh, admitted Studio-server connection for `purpose`, over the same session. */
@@ -119,6 +138,12 @@ export const DEFAULT_TIMING = {
   disconnectedRetryMs: 5 * 60_000,
   /** How long a wake waits for a connected session to answer before calling it dead. */
   livenessMs: 10_000,
+  /**
+   * The server's own liveness: after this long with nothing heard on main's
+   * owner connection, a `server.ping`; this long again unanswered, the server is
+   * taken for lost even while the SSH session stays up.
+   */
+  pingMs: 10_000,
   /** The backstop on one whole bootstrap; every step inside it has a shorter deadline of its own. */
   bootstrapMs: 45 * 60_000,
 }
@@ -191,6 +216,8 @@ type LiveSession = {
   endpoint: MuxEndpoint
   session: RemoteSession
   server: NonNullable<RelayReady['server']>
+  /** Let go already: a loss heard after that is the same loss. */
+  released?: boolean
 }
 
 export class SshEnvironment {
@@ -239,8 +266,8 @@ export class SshEnvironment {
         live.endpoint.close(reason)
         this.release(live)
       },
-      // A backend snapshot is what a session that answers can always give.
-      ping: (live) => live.connection.backend.refresh(),
+      // The server's own answer, on main's owner connection to it.
+      ping: (live) => live.connection.owner.request('server.ping', {}),
       classify: (error, { reconnecting }) => {
         const step = this.stepOf(error)
         this.heldWhileReconnecting = reconnecting
@@ -705,31 +732,59 @@ export class SshEnvironment {
       throw new StepError('failed', `The Studio server on ${label} did not let Studio in: ${error.message}`)
     })
     const backend = connectRemoteConversationBackend(stream, { log: this.log })
-    await Promise.race([
-      backend.refresh(),
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new StepError('failed', `The Studio server on ${label} did not answer.`)),
-          this.timing.handshakeMs,
-        ),
-      ),
+    // The owner connection is made once the wire answers, so one opened for a
+    // handshake that then times out is closed when it arrives, not left open.
+    let timedOut = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const opening = backend.refresh().then(() => this.openOwner(endpoint))
+    void opening.then(
+      (late) => timedOut && late.close(),
+      () => undefined,
+    )
+    const owner = await Promise.race([
+      opening,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true
+          reject(new StepError('failed', `The Studio server on ${label} did not answer.`))
+        }, this.timing.handshakeMs)
+      }),
     ])
+      .catch((error: unknown) => {
+        backend.close()
+        throw error
+      })
+      .finally(() => clearTimeout(timer))
     const connection: SshServerConnection = {
       key: this.key,
       id: this.deps.id,
       label,
       backend,
+      owner,
       environmentId: server.environmentId,
       serverVersion: server.version,
       open: (purpose) => endpoint.open({ kind: 'owner', purpose }),
       openTcp: (host, port) => endpoint.open({ kind: 'tcp', host, port }),
     }
     const live: LiveSession = { connection, endpoint, session, server }
-    endpoint.onClosed((reason) => {
+    // Lost when the session goes, and also when the server's own connections
+    // end or it stops answering while the session stays up: the server died,
+    // or was stopped, under a live SSH session.
+    const lose = (reason: string) => {
+      if (live.released) return
       this.release(live)
       if (attempt.current()) this.log(`The connection to ${label} was lost (${reason}); reconnecting.`)
       attempt.lost(new StepError('failed', reason))
-    })
+    }
+    endpoint.onClosed(lose)
+    backend.onClose(() => lose(`The Studio server on ${label} closed the chats' connection.`))
+    void owner.closed.then(
+      () => lose(`The Studio server on ${label} closed its connection.`),
+      (error: unknown) =>
+        lose(
+          `The Studio server on ${label} went away${error instanceof Error && error.message ? ` (${error.message})` : ''}.`,
+        ),
+    )
     void session.closed().then(() => endpoint.close('The SSH session ended.'))
     // Up from here, not a turn of the event loop later: given up on meanwhile,
     // the supervisor closes it now.
@@ -737,9 +792,30 @@ export class SshEnvironment {
     return live
   }
 
+  /**
+   * Main's owner connection to the server, over the `studio` door: the door's
+   * one-use ticket, then the Studio protocol. It does not reconnect: its end is
+   * the server's, and the supervisor makes the next one.
+   */
+  private openOwner(endpoint: MuxEndpoint): Promise<StudioClient> {
+    return connect({
+      transport: async () => {
+        const stream = await endpoint.open({ kind: 'owner', purpose: 'studio' })
+        return lineTransport(stream, await readTicket(stream, this.timing.handshakeMs))
+      },
+      client: { name: 'SprintEngine Studio', kind: 'desktop' },
+      reconnect: false,
+      helloTimeoutMs: this.timing.handshakeMs,
+      heartbeat: { intervalMs: this.timing.pingMs, timeoutMs: this.timing.pingMs },
+    })
+  }
+
   /** A session that ended or was let go: its backend, its ssh, and the supervisor's hold on it. */
   private release(live: LiveSession): void {
+    if (live.released) return
+    live.released = true
     live.connection.backend.close()
+    live.connection.owner.close()
     live.session.kill()
     if (this.announced === live) this.announced = null
   }
