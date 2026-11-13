@@ -376,7 +376,6 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
           'module.installed',
           'module.rendererEntries',
           'module.changed',
-          'module.reportRegistry',
         ],
       ],
       [
@@ -416,8 +415,8 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['artifacts.settings', 'artifacts.setUp', 'artifacts.answerSetupQuestion', 'artifacts.setupQuestions'],
       ],
       [
-        'what extensions run here, installed, trusted or switched: an owner’s',
-        ['module.setEnabled', 'module.install', 'module.setTrust', 'module.uninstall'],
+        'what extensions run here, installed, trusted or switched, and the window’s own report of what it resolved: an owner’s',
+        ['module.setEnabled', 'module.install', 'module.setTrust', 'module.uninstall', 'module.reportRegistry'],
       ],
       [
         'what Studio’s own agents report, and importing chats from disk: an owner’s',

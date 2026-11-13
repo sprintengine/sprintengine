@@ -1317,7 +1317,7 @@ the folders the Studio knows. A review's one-time approval is spent by the
 install it approves, and checked by the Studio as strictly as before. The
 `modules` capability gains `module.installed` and `module.rendererEntries`
 (`modules:read`), `module.setAppState` (`settings:write`),
-`module.reportRegistry` (`modules:operate`) and the `module.changed` stream.
+`module.reportRegistry` (an owner's: the Studio's own window reports it) and the `module.changed` stream.
 Additive: a Studio without a desktop around it (a WSL or SSH server) leaves
 `extensions` out. The desktop's windows reach all of these only this way:
 their window IPC is gone, but for showing an extension's folder in the file

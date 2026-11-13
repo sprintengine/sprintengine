@@ -8,8 +8,9 @@ import {
   STUDIO_SCAFFOLD_OWNER,
 } from '../src/extensions'
 import { STUDIO_EXTENSIONS_CAPABILITY, STUDIO_MODULES_CAPABILITY } from '../src/handshake'
-import { STUDIO_METHODS, STUDIO_TOPICS, parseStudioMethodParams } from '../src/methods'
-import { STUDIO_MODULES_METHODS, STUDIO_MODULES_TOPICS } from '../src/modules'
+import { STUDIO_METHODS, STUDIO_TOPICS, authorizeStudioMethod, parseStudioMethodParams } from '../src/methods'
+import { STUDIO_MODULES_METHODS, STUDIO_MODULES_REPORT_OWNER, STUDIO_MODULES_TOPICS } from '../src/modules'
+import { STUDIO_SCOPES } from '../src/scopes'
 
 const refusal = (parsed: { ok: boolean; code?: string }) => (parsed.ok ? null : parsed.code)
 
@@ -62,16 +63,18 @@ test('the installed extensions are listed and loaded under modules:read; what a 
   assert.equal(STUDIO_MODULES_METHODS['module.installed'].scope, 'modules:read')
   assert.equal(STUDIO_MODULES_METHODS['module.rendererEntries'].scope, 'modules:read')
   assert.equal(STUDIO_MODULES_METHODS['module.setAppState'].scope, 'settings:write')
-  assert.equal(STUDIO_MODULES_METHODS['module.reportRegistry'].scope, 'modules:operate')
-  for (const method of [
-    'module.installed',
-    'module.rendererEntries',
-    'module.setAppState',
-    'module.reportRegistry',
-  ] as const) {
+  for (const method of ['module.installed', 'module.rendererEntries', 'module.setAppState'] as const) {
     assert.equal(STUDIO_MODULES_METHODS[method].owner, undefined, method)
     assert.equal(STUDIO_MODULES_METHODS[method].capability, STUDIO_MODULES_CAPABILITY, method)
   }
+  // The window's own report of the modules it resolved: an owner's, with its reason.
+  const report = STUDIO_MODULES_METHODS['module.reportRegistry']
+  assert.equal(report.scope, null)
+  assert.equal(report.owner, STUDIO_MODULES_REPORT_OWNER)
+  assert.match(STUDIO_MODULES_REPORT_OWNER, /this Studio’s own window/)
+  assert.equal(report.capability, STUDIO_MODULES_CAPABILITY)
+  assert.equal(authorizeStudioMethod({ owner: false, scopes: [...STUDIO_SCOPES] }, 'module.reportRegistry').ok, false)
+  assert.equal(authorizeStudioMethod({ owner: true, scopes: [] }, 'module.reportRegistry').ok, true)
   assert.equal(STUDIO_MODULES_TOPICS['module.changed'].scope, 'modules:read')
 })
 

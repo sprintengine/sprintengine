@@ -25,6 +25,14 @@
   the writes carry a `commandId`. The shapes move into the package
   (`backlog-types.ts`).
 
+### Changed (the window's module report is an owner's)
+
+- **`module.reportRegistry` is an owner's only**, with its reason
+  (`STUDIO_MODULES_REPORT_OWNER`): it is the report of the Studio's own
+  window, the modules it resolved, which the agents' `module.*` tools read. A
+  paired app holding `modules:operate` could replace it; it is now refused
+  `owner_required`. A window on another machine never sent it.
+
 ### Added (Create PR on the chat's Studio)
 
 - **`pullRequests.createState`, `.draft`, `.draftCancel`, `.push` and

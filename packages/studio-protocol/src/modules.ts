@@ -58,11 +58,13 @@ import type {
 // - `module.setAppState`: the person's values for the modules' Settings
 //   sections, which their main halves read here (`settings:write`).
 //   `module.reportRegistry`: the module registry a window resolved, its window
-//   halves included, which the Studio's own `module.*` agent tools report
-//   (`modules:operate`).
+//   halves included, which the Studio's own `module.*` agent tools report. It
+//   is the window's own report, so an owner's only
+//   (`STUDIO_MODULES_REPORT_OWNER`): a paired app has no window of this
+//   Studio's to report.
 //
 // The streams, the calls and the list need `modules:read` (`module.operate`,
-// `modules:operate`, which carries it); none is held to an owner's
+// `modules:operate`, which carries it); none of those is held to an owner's
 // connection. The family is offered under the `modules` capability only where
 // a module kernel runs.
 
@@ -134,6 +136,10 @@ export type StudioModuleAnswer = { ok: true; result: unknown } | { ok: false; co
 /** Why changing what runs on a Studio is an owner's. */
 export const STUDIO_MODULES_OWNER =
   'It changes what runs on this machine: an extension’s code is installed, trusted, started or stopped.'
+
+/** Why `module.reportRegistry` is an owner's only. */
+export const STUDIO_MODULES_REPORT_OWNER =
+  'It is the report of this Studio’s own window: which modules it resolved, which the agents’ module tools read.'
 
 /** A method a module declares, by name and access. */
 export type StudioModuleDeclaredMethod = { name: string; access: 'read' | 'operate' }
@@ -371,7 +377,8 @@ export const STUDIO_MODULES_METHODS: StudioMethodTable<StudioModulesMethodMap> =
     },
   },
   'module.reportRegistry': {
-    scope: 'modules:operate',
+    scope: null,
+    owner: STUDIO_MODULES_REPORT_OWNER,
     mutation: true,
     capability: STUDIO_MODULES_CAPABILITY,
     params: (value) => {
