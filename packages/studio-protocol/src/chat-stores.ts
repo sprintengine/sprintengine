@@ -193,11 +193,6 @@ export type ScheduledMessageUpdate =
   | { kind: 'send-now'; id: string }
   | { kind: 'delete'; id: string }
 
-/** A message a chat's composer queued while its turn ran, for the Studio to hold and send when the turn ends. */
-export type ScheduledMessageHoldRequest = ScheduledMessageChat & { text: string }
-
-export type ScheduledMessageHoldAnswer = { ok: true; id: string } | { ok: false; reason: string }
-
 /** A message is a turn a person typed; this keeps a pasted novel out of a small file. */
 export const MAX_SCHEDULED_MESSAGE_LENGTH = 100_000
 
@@ -486,12 +481,6 @@ export type StudioChatStoresMethodMap = {
   'scheduledMessages.get': { params: Record<string, never>; result: ScheduledMessagesState }
   /** Schedule, move, send now or delete one. Answered with the state after it. */
   'scheduledMessages.update': { params: Commanded<{ update: ScheduledMessageUpdate }>; result: ScheduledMessagesState }
-  /**
-   * Hold a message the chat's composer queued while its turn ran, and send it
-   * when the turn ends: a window's queue is gone with a reload, the Studio's
-   * file is not. Held once per command id, so a retried ask holds it once.
-   */
-  'scheduledMessages.hold': { params: Commanded<ScheduledMessageHoldRequest>; result: ScheduledMessageHoldAnswer }
   /** Every agent's token use and its price, on this machine and on the machines paired with it. */
   'usage.report': { params: UsageReportRequest; result: UsageReportResult }
   /** This machine's own usage rows over a window, for a paired desktop's dashboard to count with its own. */
@@ -675,17 +664,6 @@ export const STUDIO_CHAT_STORES_METHODS: StudioMethodTable<StudioChatStoresMetho
         : refuse(
             '"update" is { kind: "schedule", workspaceId, agentId, text, sendAt, untilLimitReset? }, or { kind: "reschedule", id, sendAt }, { kind: "send-now", id } or { kind: "delete", id }.',
           )
-    }),
-  },
-  'scheduledMessages.hold': {
-    ...held('conversation:operate', true),
-    params: commanded((value) => {
-      const at = chat(value)
-      if (!at.ok) return at
-      const text = words(value.text)
-      return text
-        ? studioParams({ ...at.params, text })
-        : refuse(`"text" is the message, 1 to ${MAX_SCHEDULED_MESSAGE_LENGTH} characters.`)
     }),
   },
   'usage.report': { ...held('providers:read', false), owner: USAGE_REPORT_OWNER, params: usageReport },

@@ -77,28 +77,6 @@ test('a scheduled message is one of four changes, its words trimmed and bounded'
       parseStudioMethodParams('scheduledMessages.update', { commandId: 'c', update: { kind: 'unknown', id: 'm' } }),
     ),
   )
-  assert.ok(
-    refused(
-      parseStudioMethodParams('scheduledMessages.hold', {
-        commandId: 'c',
-        workspaceId: 'w',
-        agentId: 'a',
-        text: 'x'.repeat(100_001),
-      }),
-    ),
-    'too many words',
-  )
-  assert.deepEqual(
-    ok(
-      parseStudioMethodParams('scheduledMessages.hold', {
-        commandId: 'c',
-        workspaceId: 'w',
-        agentId: 'a',
-        text: ' go ',
-      }),
-    ),
-    { commandId: 'c', workspaceId: 'w', agentId: 'a', text: 'go' },
-  )
 })
 
 test('a resume is one chat’s action; the setting is a method of its own', () => {
@@ -163,7 +141,6 @@ test('a usage report names a span and how to ask the paired machines; an import 
 
 test('reading a chat’s held messages is conversation:read, changing them drives it, and the report and the import are an owner’s', () => {
   assert.deepEqual(STUDIO_METHOD_ACCESS['scheduledMessages.get'], { permissions: ['conversation:read'] })
-  assert.deepEqual(STUDIO_METHOD_ACCESS['scheduledMessages.hold'], { permissions: ['conversation:operate'] })
   assert.deepEqual(STUDIO_METHOD_ACCESS['usageLimits.get'], { permissions: ['providers:read'] })
   assert.deepEqual(STUDIO_METHOD_ACCESS['usageLimitResumes.setAuto'], { permissions: ['settings:write'] })
   const owners = Object.keys(STUDIO_CHAT_STORES_METHODS).filter((method) => {

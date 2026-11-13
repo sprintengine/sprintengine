@@ -7,7 +7,7 @@ import type {
   ConversationSessionFrame,
   ConversationSubscribeInput,
 } from '../../../../../shared/conversation-runtime'
-import { installStudioLoopback } from '../../../../../../tests/studio-chat-loopback'
+import { installStudioLoopback, settleStudio } from '../../../../../../tests/studio-chat-loopback'
 
 // The virtual list measures a real viewport, which jsdom does not have; this
 // stand-in renders every row so the rows themselves can be driven. Like the
@@ -1240,21 +1240,40 @@ test('a queued message is a row of the composer tray, not a bubble over the tran
   }
 })
 
-test('a message queued in words on a chat here is held by main, so a reload does not lose it', async () => {
-  const turn = runningTurnSend()
-  const held: Array<Record<string, unknown>> = []
-  const chat = await mountChat({
-    sendTurn: turn.sendTurn,
-    api: {
-      scheduledMessages: async () => ({ messages: [] }),
-      updateScheduledMessage: async () => ({ messages: [] }),
-      onScheduledMessagesChanged: () => () => undefined,
-      holdQueuedMessage: vi.fn(async (request: Record<string, unknown>) => {
-        held.push(request)
-        return { ok: true, id: 'held-1' }
-      }),
+/** A Studio that holds and keeps a chat's messages, and says what it holds, as the chat's server does. */
+function heldStudio(answer: (command: Record<string, unknown>) => { ok: boolean; message?: string }) {
+  const commands: Array<Record<string, unknown>> = []
+  const queued = new Set<(messages: unknown[]) => void>()
+  const scheduled = new Set<(messages: unknown[]) => void>()
+  const api = {
+    conversationCommand: vi.fn(async (input: { command: Record<string, unknown> }) => {
+      commands.push(input.command)
+      return answer(input.command)
+    }),
+    onConversationQueued: (_chat: unknown, listener: (messages: unknown[]) => void) => {
+      queued.add(listener)
+      listener([])
+      return () => queued.delete(listener)
     },
-  })
+    onConversationScheduled: (_chat: unknown, listener: (messages: unknown[]) => void) => {
+      scheduled.add(listener)
+      listener([])
+      return () => scheduled.delete(listener)
+    },
+  }
+  return {
+    api,
+    commands,
+    sayScheduled: (messages: unknown[]) => {
+      for (const listener of scheduled) listener(messages)
+    },
+  }
+}
+
+test('a message queued in words on a chat here is held by its Studio, so a reload does not lose it', async () => {
+  const turn = runningTurnSend()
+  const studio = heldStudio(() => ({ ok: true }))
+  const chat = await mountChat({ sendTurn: turn.sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Investigate the flaky test'))
     await chat.act(async () => chat.enter())
@@ -1265,9 +1284,8 @@ test('a message queued in words on a chat here is held by main, so a reload does
     })
     await chat.act(async () => chat.type('Use the staging config'))
     await chat.act(async () => chat.enter())
-    expect(held).toHaveLength(1)
-    expect(held[0]).toMatchObject({ text: 'Use the staging config' })
-    expect(chat.host.querySelector('[aria-label="Queued message"]'), 'not kept in the view').toBeNull()
+    await settleStudio(chat.act)
+    expect(studio.commands).toEqual([{ kind: 'send', message: 'Use the staging config', queue: true }])
     expect(turn.sendTurn).toHaveBeenCalledOnce()
   } finally {
     turn.release()
@@ -1275,17 +1293,10 @@ test('a message queued in words on a chat here is held by main, so a reload does
   }
 })
 
-test('a message main could not hold waits in the view, whole, and says why', async () => {
+test('a message its Studio could not hold waits in the view, whole, and says why', async () => {
   const turn = runningTurnSend()
-  const chat = await mountChat({
-    sendTurn: turn.sendTurn,
-    api: {
-      scheduledMessages: async () => ({ messages: [] }),
-      updateScheduledMessage: async () => ({ messages: [] }),
-      onScheduledMessagesChanged: () => () => undefined,
-      holdQueuedMessage: async () => ({ ok: false, reason: 'Too many messages are waiting in this chat.' }),
-    },
-  })
+  const studio = heldStudio(() => ({ ok: false, message: 'Too many messages are waiting in this chat.' }))
+  const chat = await mountChat({ sendTurn: turn.sendTurn, api: studio.api })
   try {
     await chat.act(async () => chat.type('Investigate the flaky test'))
     await chat.act(async () => chat.enter())
@@ -1296,8 +1307,9 @@ test('a message main could not hold waits in the view, whole, and says why', asy
     })
     await chat.act(async () => chat.type('Use the staging config'))
     await chat.act(async () => chat.enter())
+    await settleStudio(chat.act)
     expect(chat.host.querySelector('[aria-label="Queued message"]')?.textContent).toContain('Use the staging config')
-    expect(chat.host.textContent).toContain('Too many messages are waiting in this chat')
+    expect(chat.host.textContent).toContain('could not hold the message')
   } finally {
     turn.release()
     await chat.unmount()
@@ -2367,38 +2379,17 @@ test('the composer row is the New chat’s: the "+" opens attach and skills, wit
   }
 })
 
-test('the "+" schedules the next message: Enter hands it to main for its time, and the tray says when it goes', async () => {
+test('the "+" schedules the next message: Enter hands it to the chat\'s Studio for its time, and the tray says when it goes', async () => {
   const sendTurn = vi.fn<SendTurn>(async () => ({ ok: true }))
-  type Message = { id: string; workspaceId: string; agentId: string; text: string; sendAt: number; createdAt: number }
-  let state: { messages: Message[] } = { messages: [] }
-  const updates: Array<Record<string, unknown>> = []
-  const chat = await mountChat({
-    capabilities: { skills: 'workspace' },
-    sendTurn,
-    api: {
-      scheduledMessages: async () => state,
-      onScheduledMessagesChanged: () => () => undefined,
-      updateScheduledMessage: async (update: Record<string, unknown>) => {
-        updates.push(update)
-        if (update.kind === 'schedule')
-          state = {
-            messages: [
-              {
-                id: 'sm-1',
-                workspaceId: update.workspaceId as string,
-                agentId: update.agentId as string,
-                text: update.text as string,
-                sendAt: update.sendAt as number,
-                createdAt: Date.now(),
-              },
-            ],
-          }
-        if (update.kind === 'delete') state = { messages: state.messages.filter((entry) => entry.id !== update.id) }
-        return state
-      },
-    },
+  const studio = heldStudio((command) => {
+    if (command.kind === 'scheduleSend')
+      studio.sayScheduled([{ id: 'sm-1', text: command.message, sendAt: command.sendAt, createdAt: Date.now() }])
+    if (command.kind === 'cancelScheduled') studio.sayScheduled([])
+    return { ok: true }
   })
+  const chat = await mountChat({ capabilities: { skills: 'workspace' }, sendTurn, api: studio.api })
   try {
+    await settleStudio(chat.act)
     const doc = chat.dom.window.document
     const plus = Array.from(doc.querySelectorAll('button')).find(
       (item) => item.getAttribute('aria-label') === 'Options',
@@ -2412,26 +2403,20 @@ test('the "+" schedules the next message: Enter hands it to main for its time, a
 
     await chat.act(async () => chat.type('Carry on with the migration.'))
     await chat.act(async () => chat.enter())
-    await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    await settleStudio(chat.act)
     expect(sendTurn).not.toHaveBeenCalled()
-    expect(updates[0]).toMatchObject({
-      kind: 'schedule',
-      workspaceId: 'workspace',
-      agentId: 'agent',
-      text: 'Carry on with the migration.',
-    })
-    expect(updates[0]!.sendAt as number).toBeGreaterThan(Date.now())
+    expect(studio.commands[0]).toMatchObject({ kind: 'scheduleSend', message: 'Carry on with the migration.' })
+    expect(studio.commands[0]!.sendAt as number).toBeGreaterThan(Date.now())
     expect(chat.draft()).toBe('')
     expect(chat.host.querySelector('[data-send-time-tag="true"]'), 'the next message sends as usual').toBeNull()
 
     const tray = chat.host.querySelector<HTMLElement>('[role="group"][aria-label="Scheduled message"]')
     expect(tray?.textContent).toContain('Sends ')
     expect(tray?.textContent).toContain('Carry on with the migration.')
-
     const edit = Array.from(tray!.querySelectorAll('button')).find((item) => item.textContent?.trim() === 'Edit')
     await chat.act(async () => edit!.click())
-    await chat.act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
-    expect(updates[1]).toEqual({ kind: 'delete', id: 'sm-1' })
+    await settleStudio(chat.act)
+    expect(studio.commands[1]).toEqual({ kind: 'cancelScheduled', scheduledId: 'sm-1' })
     expect(chat.draft()).toBe('Carry on with the migration.')
     expect(chat.host.querySelector('[data-send-time-tag="true"]'), 'still set for its time').not.toBeNull()
     expect(chat.host.querySelector('[role="group"][aria-label="Scheduled message"]')).toBeNull()

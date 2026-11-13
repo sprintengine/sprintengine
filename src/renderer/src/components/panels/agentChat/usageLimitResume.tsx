@@ -2,20 +2,13 @@
 // it resets, and Resume at reset, which has Studio send the chat a short "carry
 // on" once it has. With the resume scheduled the row says when it goes out,
 // and Cancel takes it back. A resume the chat refused says why, with Retry.
-// Main keeps the resumes and sends them (src/main/usage-limits/resume.ts);
-// this only draws one chat's. A chat on a paired machine draws the same row
-// from what that machine says of the chat (`usageLimits` frames), and each
-// button asks that machine, which sends the resume.
+// The chat's server keeps the resumes and sends them; the row draws what it
+// says of the chat (`usageLimits` frames, `conversation.usageLimits`), and
+// each button asks it.
 
-import { memo, useEffect, type JSX } from 'react'
+import { memo, type JSX } from 'react'
 
 import { useRelativeNow } from '../../../hooks/useRelativeNow'
-import {
-  retainUsageLimitResumes,
-  selectUsageLimitResumeNotice,
-  updateUsageLimitResume,
-  useUsageLimitResumeStore,
-} from '../../../store/usageLimitResumeStore'
 import type { UsageLimitResumeNotice } from '../../../../../shared/usage-limit-resume'
 import { formatUsageResetIn, usageProviderLabel } from '../../../../../shared/usage-limits'
 import { GhostButton, LinkButton } from '../../ui'
@@ -52,33 +45,6 @@ export function usageLimitResumeWords(
 export function usageLimitResumeFailureWords(failure: string): string {
   const reason = failure.trim().replace(/\.$/u, '')
   return `Couldn't resume: ${reason ? reason.charAt(0).toLowerCase() + reason.slice(1) : 'the chat refused it'}.`
-}
-
-function UsageLimitResumeRowBody({
-  workspaceId,
-  agentId,
-}: {
-  workspaceId: string
-  agentId: string
-}): JSX.Element | null {
-  useEffect(() => retainUsageLimitResumes(), [])
-  const notice = useUsageLimitResumeStore((store) =>
-    selectUsageLimitResumeNotice(store.state, { workspaceId, agentId }),
-  )
-  const autoResume = useUsageLimitResumeStore((store) => store.state?.autoResume ?? false)
-  const chat = { workspaceId, agentId }
-  return (
-    <UsageLimitNoticeRow
-      notice={notice}
-      autoResume={autoResume}
-      onAct={(action, always) => {
-        void (async () => {
-          if (always) await updateUsageLimitResume({ kind: 'auto', enabled: true })
-          await updateUsageLimitResume({ kind: action, ...chat })
-        })()
-      }}
-    />
-  )
 }
 
 /**
@@ -176,9 +142,5 @@ export function UsageLimitNoticeRow({
 }
 
 // Memoised: the chat body commits on every streamed token, and this row
-// changes only when main says so, through its store.
-export const UsageLimitResumeRow = memo(UsageLimitResumeRowBody)
-
-// Memoised for the same reason: a paired machine's row changes only when it
-// says so, in a `usageLimits` frame.
+// changes only when the chat's server says so, in a `usageLimits` frame.
 export const HostUsageLimitNoticeRow = memo(UsageLimitNoticeRow)

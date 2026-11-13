@@ -274,15 +274,25 @@ export function parseConversationClientMessage(value: unknown): ConversationClie
     // A scheduled message is its words and its time, nothing else: what a
     // send stages beside its words is the moment's, and would be gone by then.
     if (command.kind === 'scheduleSend') {
-      const { message, sendAt } = command
+      const { message, sendAt, untilLimitReset } = command
       return id(value.commandId) &&
         typeof message === 'string' &&
         message.trim() !== '' &&
         message.length <= CONVERSATION_MAX_MESSAGE_CHARS &&
         typeof sendAt === 'number' &&
         Number.isSafeInteger(sendAt) &&
-        sendAt > 0
-        ? { type: 'command', commandId: value.commandId, command: { kind: 'scheduleSend', message, sendAt } }
+        sendAt > 0 &&
+        (untilLimitReset === undefined || id(untilLimitReset))
+        ? {
+            type: 'command',
+            commandId: value.commandId,
+            command: {
+              kind: 'scheduleSend',
+              message,
+              sendAt,
+              ...(untilLimitReset === undefined ? {} : { untilLimitReset }),
+            },
+          }
         : null
     }
     if (command.kind === 'sendScheduledNow' || command.kind === 'cancelScheduled') {

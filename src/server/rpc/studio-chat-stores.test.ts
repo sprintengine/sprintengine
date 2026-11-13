@@ -52,10 +52,6 @@ function stubs() {
       asked.push(['schedule', update])
       return { messages: [] }
     },
-    holdScheduledMessage: (chat, text, source) => {
-      asked.push(['hold', { ...chat, text, source }])
-      return { ok: true, id: 'held-1' }
-    },
     onScheduledMessagesChanged: listen(scheduled),
     usageReport: async (request) => {
       asked.push(['report', request])
@@ -131,7 +127,6 @@ const CALLS: Record<StudioChatStoresMethod, Record<string, unknown>> = {
   'usageLimitResumes.setAuto': { commandId: 'c-auto', enabled: true },
   'scheduledMessages.get': {},
   'scheduledMessages.update': { commandId: 'c-update', update: { kind: 'delete', id: 'm1' } },
-  'scheduledMessages.hold': { commandId: 'c-hold', workspaceId: 'w', agentId: 'a', text: 'after this turn' },
   'usage.report': { from: 1, to: 2 },
   'usage.rows': { from: 1, to: 2 },
   'conversationImport.scan': {},
@@ -155,7 +150,7 @@ test('a Studio with the stores advertises them; one without refuses every call a
   assert.equal(failed.t === 'subFailed' && failed.code, 'unavailable')
 })
 
-test('an owner reaches every method; a change is carried out once per command id, and a hold is kept under it', async () => {
+test('an owner reaches every method, and a change is carried out once per command id', async () => {
   const { started, asked } = await serve()
   const owner = await client(started.path, OWNER_TOKEN)
   for (const [method, params] of Object.entries(CALLS))
@@ -173,10 +168,6 @@ test('an owner reaches every method; a change is carried out once per command id
       ['resume', { kind: 'schedule', workspaceId: 'w', agentId: 'a' }],
       ['resume', { kind: 'auto', enabled: true }],
     ],
-  )
-  assert.deepEqual(
-    asked.find(([kind]) => kind === 'hold'),
-    ['hold', { workspaceId: 'w', agentId: 'a', text: 'after this turn', source: 'owner:c-hold' }],
   )
   assert.deepEqual(resultOf(await owner.request('usage.report', { from: 1, to: 2 })), { ok: false, message: 'no logs' })
 })
@@ -220,13 +211,11 @@ test('a paired app reaches what its scopes name, never the report or the import;
     asked.some(([kind]) => kind === 'report' || kind === 'import'),
     false,
   )
-  const hold = asked.find(([kind]) => kind === 'hold')
-  assert.equal((hold?.[1] as { source: string }).source, 'client:app:c-hold', 'a client’s hold is kept apart')
 
   const reader = await client(started.path, pairFakeClient(started.auth, 'reader', ['conversation:read']))
   assert.equal(codeOf(await reader.request('scheduledMessages.get', {})), null)
   assert.equal(codeOf(await reader.request('usageLimitResumes.get', {})), null)
-  for (const method of ['scheduledMessages.update', 'scheduledMessages.hold', 'usageLimitResumes.setAuto'] as const)
+  for (const method of ['scheduledMessages.update', 'usageLimitResumes.setAuto'] as const)
     assert.notEqual(codeOf(await reader.request(method, { ...CALLS[method], commandId: `r-${method}` })), null, method)
   assert.notEqual(codeOf(await reader.request('usageLimits.get', {})), null, 'the limits are the plan’s')
   assert.equal(

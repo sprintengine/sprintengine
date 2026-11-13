@@ -81,26 +81,3 @@ test('a report, a scan or an import that throws is answered with the reason', as
   expect(await stores.scanImports()).toEqual({ ok: false, message: 'No home folder.' })
   expect(await stores.importConversations({ sessions: [] })).toEqual({ ok: false, message: 'The registry is busy.' })
 })
-
-test('a hold is kept under the source it came in on, and a refusal says why', () => {
-  const held: Array<[string, string, string]> = []
-  const scheduled = {
-    hold: (chat: { workspaceId: string; agentId: string }, text: string, source: string) => {
-      held.push([`${chat.workspaceId}/${chat.agentId}`, text, source])
-      return text === 'too much' ? { ok: false, reason: 'Too many messages are waiting.' } : { ok: true, id: 'h1' }
-    },
-  } as unknown as ScheduledMessages
-  const stores = createStudioChatStores(deps({ scheduled }))
-  expect(stores.holdScheduledMessage({ workspaceId: 'w', agentId: 'a' }, 'later', 'owner:c1')).toEqual({
-    ok: true,
-    id: 'h1',
-  })
-  expect(stores.holdScheduledMessage({ workspaceId: 'w', agentId: 'a' }, 'too much', 'owner:c2')).toEqual({
-    ok: false,
-    reason: 'Too many messages are waiting.',
-  })
-  expect(held).toEqual([
-    ['w/a', 'later', 'owner:c1'],
-    ['w/a', 'too much', 'owner:c2'],
-  ])
-})

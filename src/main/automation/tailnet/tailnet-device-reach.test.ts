@@ -134,7 +134,6 @@ const DEVICE_METHODS: Readonly<Record<string, readonly TailnetScope[]>> = {
   'scheduledMessages.get': CHAT_READ,
   'usageLimitResumes.get': CHAT_READ,
   'scheduledMessages.update': CHAT_OPERATE,
-  'scheduledMessages.hold': CHAT_OPERATE,
   'usageLimitResumes.update': CHAT_OPERATE,
 
   // Discovery, and the pull requests a workspace's chats opened.

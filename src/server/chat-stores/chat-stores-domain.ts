@@ -4,8 +4,6 @@ import type {
   ConversationImportInput,
   ConversationImportResult,
   ConversationImportScanResult,
-  ScheduledMessageChat,
-  ScheduledMessageHoldAnswer,
   ScheduledMessagesState,
   ScheduledMessageUpdate,
   UsageLimitResumeState,
@@ -47,8 +45,6 @@ export type StudioChatStores = {
   onUsageLimitResumesChanged(listener: (state: UsageLimitResumeState) => void): () => void
   scheduledMessages(): ScheduledMessagesState
   updateScheduledMessage(update: ScheduledMessageUpdate): ScheduledMessagesState
-  /** Hold a composer's queued message; `source` names the command it came in on, so a retry holds it once. */
-  holdScheduledMessage(chat: ScheduledMessageChat, text: string, source: string): ScheduledMessageHoldAnswer
   onScheduledMessagesChanged(listener: (state: ScheduledMessagesState) => void): () => void
   /** Never rejects: a failure is `{ ok: false, message }`. */
   usageReport(request: UsageReportRequest): Promise<UsageReportResult>
@@ -128,10 +124,6 @@ export function createStudioChatStores(deps: StudioChatStoresDeps): StudioChatSt
     onUsageLimitResumesChanged: (listener) => deps.resumes.onChanged(listener),
     scheduledMessages: () => deps.scheduled.state(),
     updateScheduledMessage: (update) => deps.scheduled.update(update),
-    holdScheduledMessage: (chat, text, source) => {
-      const held = deps.scheduled.hold(chat, text, source)
-      return held.ok ? { ok: true, id: held.id } : { ok: false, reason: held.reason }
-    },
     onScheduledMessagesChanged: (listener) => deps.scheduled.onChanged(listener),
     usageReport: async (request) => {
       try {

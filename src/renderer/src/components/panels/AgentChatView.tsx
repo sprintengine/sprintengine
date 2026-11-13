@@ -14,7 +14,7 @@
 import { parseMachinePath } from '../../../../shared/machine-paths'
 import { workspaceHostIdOf } from '../../../../shared/execution-host'
 import { withoutStudioNoticePrefix } from '../../../../shared/studio-notice'
-import { limitResetSendAt, selectChatScheduledMessages } from '../../../../shared/scheduled-messages'
+import { limitResetSendAt } from '../../../../shared/scheduled-messages'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
@@ -147,20 +147,10 @@ import { ContextComposerButton, type ContextBreakdownSource } from './agentChat/
 import { useConversationStripFacts } from './agentChat/conversationStripFacts'
 import { useChatActivityCard } from './agentChat/ChatActivityCard'
 import { usePublishChatPanelFacts, type ChatPanelPermissions } from './agentChat/chatPanelStore'
-import { UsageLimitsComposerButton, useUsageLimitSnapshot } from './agentChat/usageLimits'
-import { HostUsageLimitNoticeRow, UsageLimitResumeRow } from './agentChat/usageLimitResume'
-import {
-  HostScheduledMessageRows,
-  ScheduledMessageRows,
-  type ScheduledMessageView,
-} from './agentChat/scheduledMessages'
-import {
-  canScheduleMessages,
-  canHoldQueuedMessages,
-  holdQueuedMessage,
-  updateScheduledMessage,
-  useScheduledMessagesStore,
-} from '../../store/scheduledMessagesStore'
+import { UsageLimitsComposerButton } from './agentChat/usageLimits'
+import { HostUsageLimitNoticeRow } from './agentChat/usageLimitResume'
+import { HostScheduledMessageRows, type ScheduledMessageView } from './agentChat/scheduledMessages'
+import { WINDOW_STUDIO_NAME } from './agentChat/chatServerHeld'
 import { SendTimeTag, type SendAtLimitReset } from '../workspace/agentComposer/schedule/SendTimeEditor'
 import { defaultSendAt } from '../workspace/agentComposer/schedule/sendTime'
 import { selectUsageLimitSnapshot, usageLimitProviderOf } from '../../store/usageLimitsStore'
@@ -549,6 +539,14 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   const label = agent.name ?? agentId
   const workspaceRoot = binding.workspaceRoot
   const { operate } = transport.capabilities
+  // The chat as its server's queue, schedule and resume calls name it.
+  const chatKey = useMemo(
+    () => ({ workspaceRoot: binding.sessionRoot ?? workspaceRoot ?? '', workspaceId, agentId }),
+    [binding.sessionRoot, workspaceRoot, workspaceId, agentId],
+  )
+  // Who holds what the chat's server keeps for it, in words: a paired
+  // machine by its name, the window's own Studio as Studio.
+  const serverName = transport.machineName ?? WINDOW_STUDIO_NAME
 
   const [localReadiness, setReadiness] = useState<ChatReadiness>({ kind: 'loading' })
   // A transport that decides readiness itself (a remote link) replaces this
@@ -709,12 +707,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // typed intent is dropped. Attachments ride the queue too — dropping them at
   // the queue boundary would silently lose what the user staged.
   const [queuedTurn, setQueuedTurn] = useState<QueuedTurn | null>(null)
-  // A chat on this computer hands a message queued in words alone to main,
-  // which holds it in its file and sends it when the turn ends, as it does a
-  // paired machine's (scheduled-messages.ts): kept in this view's state, a
-  // reload or a crash lost it. Set once the chat's machine is known, below;
-  // a chat on another machine, or one carrying more than words, queues here.
-  const holdQueueInMainRef = useRef(false)
   // When the draft is to be sent, picked from the "+" (Schedule); null sends
   // it as usual. While set, Enter and the send button schedule the draft
   // instead: main keeps it and sends it into this chat at that time, whether
@@ -1649,6 +1641,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       try {
         const files = attachedFilesOf(turn.metadata.files)
         result = await queue({
+          key: chatKey,
           message: turn.text,
           ...(turn.attachments.length ? { attachments: turn.attachments } : {}),
           ...(turn.metadata.skillIds.length ? { skills: turn.metadata.skillIds.map((id) => ({ id })) } : {}),
@@ -1665,13 +1658,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       setQueuedTurn((current) =>
         current ? queueComposerDraft(turn, current.text, current.attachments, current.metadata).turn : turn,
       )
-      const machine = transport.machineName ?? 'The other machine'
       setActionError(
-        `${machine} could not hold the message (${result.message.replace(/\.$/u, '')}). It waits here, and goes when the turn ends while this machine is awake.`,
+        `${serverName} could not hold the message (${result.message.replace(/\.$/u, '')}). It waits here, and goes when the turn ends while this window is open.`,
       )
       return false
     },
-    [transport],
+    [transport, chatKey, serverName],
   )
   // Whether a commit while the turn runs is handed to the machine running the chat.
   const handsQueueToHost =
@@ -1709,27 +1701,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   // or for one message by Primary+Enter (`commitComposerNow`). A steer the
   // turn cannot take now queues instead, and one the runtime refuses goes back
   // to the queue, so a message is never lost to the race with the turn's end.
-  // Hand a queued message to the Studio to hold. One it would not keep waits here,
-  // whole, ahead of anything queued since, as every queued message did before.
-  const holdQueuedInMain = useCallback(
-    async (turn: QueuedTurn) => {
-      let reason: string
-      try {
-        const held = await holdQueuedMessage({ workspaceId, agentId, text: turn.text })
-        if (held.ok) return
-        reason = held.reason
-      } catch (error) {
-        reason = error instanceof Error ? error.message : 'Studio did not answer'
-      }
-      setQueuedTurn((current) =>
-        current ? queueComposerDraft(turn, current.text, current.attachments, current.metadata).turn : turn,
-      )
-      setActionError(
-        `The message could not be kept for after this turn (${reason.replace(/\.$/u, '')}). It waits here instead, and goes when the turn ends.`,
-      )
-    },
-    [workspaceId, agentId],
-  )
   const commitDraft = useCallback(
     (forceQueue: boolean): boolean => {
       const text = draft.trim()
@@ -1780,19 +1751,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           void steerTurnRef.current(turn)
           return true
         }
-        if (
-          holdQueueInMainRef.current &&
-          queuedTurn === null &&
-          attachments.length === 0 &&
-          !draftMetadata.mentions.length &&
-          !draftMetadata.skillIds.length &&
-          !draftMetadata.files.length
-        ) {
-          const { turn } = queueComposerDraft(null, text, attachments, draftMetadata)
-          clearDraft()
-          void holdQueuedInMain(turn)
-          return true
-        }
         if (handsQueueToHost) {
           const { turn, dropped } = queueComposerDraft(null, text, attachments, draftMetadata)
           clearDraft()
@@ -1829,7 +1787,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       sendTurn,
       sendAt,
       handsQueueToHost,
-      holdQueuedInMain,
       handToHost,
       followUpBehavior,
       canSteer,
@@ -2413,7 +2370,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (!transport.cancelQueued || takingBackRef.current.has(message.id)) return
     takingBackRef.current.add(message.id)
     try {
-      const result = await transport.cancelQueued({ queuedId: message.id })
+      const result = await transport.cancelQueued({ key: chatKey, queuedId: message.id })
       if (!result.ok) {
         setActionError(result.message)
         return
@@ -2438,7 +2395,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     if (!transport.cancelQueued || takingBackRef.current.has(message.id)) return
     takingBackRef.current.add(message.id)
     try {
-      const result = await transport.cancelQueued({ queuedId: message.id })
+      const result = await transport.cancelQueued({ key: chatKey, queuedId: message.id })
       if (!result.ok) {
         setActionError(result.message)
         return
@@ -2842,9 +2799,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       ...(queuedTurn?.text ? [queuedTurn.text] : []),
       ...handingOff.map((turn) => turn.text),
       ...(hostQueue?.messages.map((message) => message.text) ?? []),
-      ...selectChatScheduledMessages(useScheduledMessagesStore.getState().state, { workspaceId, agentId }).map(
-        (message) => message.text,
-      ),
+      ...(binding.hostSchedule?.messages.map((message) => message.text) ?? []),
     ],
     transcriptRef,
     listRef,
@@ -3915,8 +3870,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     transport,
     listed: binding.listed ?? null,
   })
-  holdQueueInMainRef.current =
-    operate && transport.kind !== 'remote' && !stripFacts.machine && canScheduleMessages() && canHoldQueuedMessages()
   // ── What the agent touched ───────────────────────────────────────────────
   // Published for the title bar's pill (ChatActivityCard). Its Changes row
   // counts what the strip counts, so the two never disagree.
@@ -3934,31 +3887,29 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     workspaceRoot,
   })
   // ── Scheduling the next message ──────────────────────────────────────────
-  // Offered for a chat that runs on this computer, as its usage-limit resume
-  // is: main sends the message, through this computer's own chats. And for a
-  // chat on a paired machine that keeps scheduled messages itself
-  // (`hostSchedule`): that machine keeps the message and sends it, so it goes
-  // at its time whether or not this one is awake then, and the tray draws
-  // what it says it keeps.
+  // Offered where the chat's server keeps scheduled messages
+  // (`hostSchedule`): it keeps the message and sends it, so it goes at its
+  // time whether or not this window is open then, and the tray draws what it
+  // says it keeps.
   const hostSchedule =
-    transport.kind === 'remote' && transport.capabilities.hostSchedule && transport.scheduleSend
-      ? (binding.hostSchedule ?? null)
-      : null
-  const remoteSchedule = hostSchedule !== null
-  const scheduleOffered =
-    operate && (transport.kind === 'remote' ? remoteSchedule : !stripFacts.machine && canScheduleMessages())
+    transport.capabilities.hostSchedule && transport.scheduleSend ? (binding.hostSchedule ?? null) : null
+  const scheduleOffered = operate && hostSchedule !== null
   // What a scheduled message carries is its text: a picture or a file staged
   // with it is the moment's, and is not kept for later.
   const scheduleBlocked =
     attachments.length > 0 || draftMetadata.files.length > 0
       ? 'A scheduled message carries text only — remove the pictures and files first'
       : null
-  // "When my limit resets": offered for a chat on this machine whose provider
-  // meters its use and has said when a window resets. Main keeps the provider
-  // with the message and asks the limit again when its time comes.
-  const scheduleLimitProvider =
-    transport.kind !== 'remote' && !stripFacts.machine ? usageLimitProviderOf(conversation?.providerId) : null
-  const scheduleLimitSnapshot = useUsageLimitSnapshot(sendAt !== null ? scheduleLimitProvider : null)
+  // What the chat's server knows of its agents' usage limits
+  // (`hostUsageLimits`): the strip's plans, the tray's notice, and the time
+  // "When my limit resets" picks.
+  const hostUsageLimits = transport.capabilities.hostUsageLimits ? (binding.hostUsageLimits ?? null) : null
+  // "When my limit resets": offered where the chat's provider meters its use
+  // and its server has said when a window resets. The server keeps the
+  // provider with the message and asks the limit again when its time comes.
+  const scheduleLimitProvider = hostUsageLimits ? usageLimitProviderOf(conversation?.providerId) : null
+  const scheduleLimitSnapshot =
+    sendAt !== null && hostUsageLimits ? selectUsageLimitSnapshot(hostUsageLimits.state, scheduleLimitProvider) : null
   const [sendAtLimit, setSendAtLimit] = useState(false)
   const limitResetAt = limitResetSendAt(scheduleLimitSnapshot, Date.now())
   const sendAtLimitReset = useMemo<SendAtLimitReset | null>(
@@ -4003,20 +3954,19 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     async (ask: 'send' | 'delete', message: ScheduledMessageView): Promise<boolean> => {
       const call = ask === 'send' ? transport.sendScheduledNow : transport.cancelScheduled
       if (!call) return false
-      const machine = transport.machineName ?? 'The other machine'
       let result: { ok: true } | { ok: false; message: string }
       try {
-        result = await call({ scheduledId: message.id })
+        result = await call({ key: chatKey, scheduledId: message.id })
       } catch (err) {
         result = { ok: false, message: err instanceof Error ? err.message : 'It did not answer.' }
       }
       if (!result.ok)
         setActionError(
-          `${machine} could not ${ask === 'send' ? 'send' : 'delete'} the scheduled message: ${result.message.replace(/\.$/u, '')}.`,
+          `${serverName} could not ${ask === 'send' ? 'send' : 'delete'} the scheduled message: ${result.message.replace(/\.$/u, '')}.`,
         )
       return result.ok
     },
-    [transport],
+    [transport, chatKey, serverName],
   )
   const sendHostScheduledNow = useCallback(
     (message: ScheduledMessageView) => void askHostScheduled('send', message),
@@ -4028,19 +3978,16 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   )
   const editScheduledMessage = useCallback(
     (message: ScheduledMessageView & { queued?: true }) => {
-      const deleting = remoteSchedule
-        ? askHostScheduled('delete', message)
-        : updateScheduledMessage({ kind: 'delete', id: message.id })
-      void deleting.then((deleted) => {
+      void askHostScheduled('delete', message).then((deleted) => {
         if (!deleted) return
         setDraft((current) => [message.text, current].filter(Boolean).join('\n'))
-        // One a paired machine queued was set for the turn's end, not for a
-        // time: it comes back as a plain draft.
+        // One the server held for the turn's end was set for no time: it
+        // comes back as a plain draft.
         if (!message.queued) setSendAt(message.sendAt > Date.now() ? message.sendAt : defaultSendAt(Date.now()))
         composerRef.current?.focus()
       })
     },
-    [setDraft, remoteSchedule, askHostScheduled],
+    [setDraft, askHostScheduled],
   )
   scheduleDraftRef.current = async () => {
     if (sendAt === null) return
@@ -4054,37 +4001,23 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       setActionError('That time has passed — pick one ahead, or send it now.')
       return
     }
-    if (remoteSchedule) {
-      // Kept and sent by the machine the chat runs on; its tray rows come back
-      // from what it says it keeps.
-      const machine = transport.machineName ?? 'The other machine'
-      let kept: { ok: true } | { ok: false; message: string }
-      try {
-        kept = (await transport.scheduleSend?.({ message: text, sendAt })) ?? {
-          ok: false,
-          message: 'it does not schedule messages',
-        }
-      } catch (err) {
-        kept = { ok: false, message: err instanceof Error ? err.message : 'it did not answer' }
-      }
-      if (!kept.ok) {
-        setActionError(`${machine} could not schedule the message: ${kept.message.replace(/\.$/u, '')}.`)
-        return
-      }
-    } else {
-      const untilLimitReset = sendAtLimit && scheduleLimitProvider ? scheduleLimitProvider : undefined
-      const scheduled = await updateScheduledMessage({
-        kind: 'schedule',
-        workspaceId,
-        agentId,
-        text,
+    // Kept and sent by the chat's server; its tray rows come back from what
+    // it says it keeps.
+    const untilLimitReset = sendAtLimit && scheduleLimitProvider ? scheduleLimitProvider : undefined
+    let kept: { ok: true } | { ok: false; message: string }
+    try {
+      kept = (await transport.scheduleSend?.({
+        key: chatKey,
+        message: text,
         sendAt,
         ...(untilLimitReset ? { untilLimitReset } : {}),
-      })
-      if (!scheduled) {
-        setActionError('The message could not be scheduled.')
-        return
-      }
+      })) ?? { ok: false, message: 'it does not schedule messages' }
+    } catch (err) {
+      kept = { ok: false, message: err instanceof Error ? err.message : 'it did not answer' }
+    }
+    if (!kept.ok) {
+      setActionError(`${serverName} could not schedule the message: ${kept.message.replace(/\.$/u, '')}.`)
+      return
     }
     setActionError(null)
     clearDraft()
@@ -4133,44 +4066,36 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         : null
     return conversationLocalServers.length > 0 ? { workspaceId, servers: conversationLocalServers } : null
   }, [conversationLocalServers, remoteLocalServers, remoteMachineName, workspaceId])
-  // The subscription limits of the agent this chat runs on — read on this
-  // computer for a chat that runs here, and on the paired machine a remote
-  // chat runs on, where it says what its agents reported (`hostUsageLimits`).
-  // A chat on WSL or an SSH machine has its agent's readings over there, and
-  // nothing there says them.
+  // The subscription limits of the agent this chat runs on, as the chat's
+  // server says its agents reported them (`hostUsageLimits`). A chat on WSL
+  // or an SSH machine has its agent's readings over there, and nothing there
+  // says them yet.
   const usageLimitsShown = useWorkspaceStore((s) => s.appSettings.appearance.usageLimits)
-  const hostUsageLimits =
-    transport.kind === 'remote' && transport.capabilities.hostUsageLimits ? (binding.hostUsageLimits ?? null) : null
-  const usageProvider =
-    usageLimitsShown && transport.kind !== 'remote' && !stripFacts.machine
-      ? usageLimitProviderOf(conversation?.providerId)
-      : null
-  const localUsageLimits = useUsageLimitSnapshot(usageProvider)
   const hostUsageProvider = usageLimitsShown && hostUsageLimits ? usageLimitProviderOf(conversation?.providerId) : null
-  const stripUsageLimits = hostUsageLimits
-    ? selectUsageLimitSnapshot(hostUsageLimits.state, hostUsageProvider)
-    : localUsageLimits
+  const stripUsageLimits = hostUsageLimits ? selectUsageLimitSnapshot(hostUsageLimits.state, hostUsageProvider) : null
+  // Another machine's readings are labelled with its name; the window's own
+  // Studio's are this window's.
   const usageLimitsElsewhere = useMemo(
-    () => (hostUsageLimits ? { machineName: hostUsageLimits.machineName, state: hostUsageLimits.state } : undefined),
-    [hostUsageLimits],
+    () =>
+      hostUsageLimits && transport.machineName
+        ? { machineName: transport.machineName, state: hostUsageLimits.state }
+        : undefined,
+    [hostUsageLimits, transport.machineName],
   )
-  // The resume row's buttons on a remote chat ask that machine, which sends
-  // the resume; a refusal is said here in its words.
+  // The resume row's buttons ask the chat's server, which sends the resume;
+  // a refusal is said here in its words.
   const actOnHostUsageLimit = useCallback(
     (action: 'schedule' | 'cancel' | 'dismiss' | 'retry', always?: boolean) => {
       const resume = transport.usageLimitResume
       if (!resume) return
-      void resume({ action, ...(always ? { always: true } : {}) }).then(
+      void resume({ key: chatKey, action, ...(always ? { always: true } : {}) }).then(
         (result) => {
-          if (!result.ok)
-            setActionError(
-              `${transport.machineName ?? 'The other machine'} could not do that: ${result.message.replace(/\.$/u, '')}.`,
-            )
+          if (!result.ok) setActionError(`${serverName} could not do that: ${result.message.replace(/\.$/u, '')}.`)
         },
-        () => setActionError(`${transport.machineName ?? 'The other machine'} did not answer.`),
+        () => setActionError(`${serverName} did not answer.`),
       )
     },
-    [transport],
+    [transport, chatKey, serverName],
   )
   // "Create PR" is asked of the Studio that holds the chat, which does every
   // step in the chat's own checkout there (owner-only, `pull-request-create`;
@@ -4703,17 +4628,13 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
               />
 
               {/* A turn a usage limit stopped: when the limit resets, and
-                the resume Studio can send the chat then. Read on this
-                computer for a chat that runs here, and on the paired
-                machine a remote chat runs on, which sends its resume. */}
+                the resume the chat's server can send it then. */}
               {hostUsageLimits ? (
                 <HostUsageLimitNoticeRow
                   notice={hostUsageLimits.notice}
                   autoResume={hostUsageLimits.autoResume}
                   {...(operate && transport.usageLimitResume ? { onAct: actOnHostUsageLimit } : {})}
                 />
-              ) : transport.kind !== 'remote' && !stripFacts.machine ? (
-                <UsageLimitResumeRow workspaceId={workspaceId} agentId={agentId} />
               ) : null}
 
               {/* The messages scheduled into this chat from the "+": when each
@@ -4728,8 +4649,6 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
                   onEdit={editScheduledMessage}
                   onDelete={deleteHostScheduled}
                 />
-              ) : scheduleOffered ? (
-                <ScheduledMessageRows workspaceId={workspaceId} agentId={agentId} onEdit={editScheduledMessage} />
               ) : null}
 
               {/*

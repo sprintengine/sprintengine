@@ -324,8 +324,18 @@ export const meshApi = {
       MESH_CONVERSATION_CONTEXT_BREAKDOWN_CHANNEL,
       input,
     ) as Promise<ConversationContextBreakdownResult>,
-  meshConversationScheduleSend: (input: { key: MeshConversationKey; message: string; sendAt: number }) =>
-    command(input.key, { kind: 'scheduleSend', message: input.message, sendAt: input.sendAt }),
+  meshConversationScheduleSend: (input: {
+    key: MeshConversationKey
+    message: string
+    sendAt: number
+    untilLimitReset?: string
+  }) =>
+    command(input.key, {
+      kind: 'scheduleSend',
+      message: input.message,
+      sendAt: input.sendAt,
+      ...(input.untilLimitReset ? { untilLimitReset: input.untilLimitReset } : {}),
+    }),
   meshConversationSendScheduledNow: (input: { key: MeshConversationKey; scheduledId: string }) =>
     command(input.key, { kind: 'sendScheduledNow', scheduledId: input.scheduledId }),
   meshConversationCancelScheduled: (input: { key: MeshConversationKey; scheduledId: string }) =>

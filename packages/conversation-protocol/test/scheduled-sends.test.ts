@@ -35,6 +35,29 @@ test('a scheduled send is its words and its time, and nothing else rides with it
   )
 })
 
+test("a scheduled send may wait on a provider's limit, named by the provider; a malformed one is a bad frame", () => {
+  assert.deepEqual(
+    parseConversationClientMessage(
+      command({ kind: 'scheduleSend', message: 'Carry on.', sendAt: SEND_AT, untilLimitReset: 'claude' }),
+    ),
+    {
+      type: 'command',
+      commandId: 'cmd-1',
+      command: { kind: 'scheduleSend', message: 'Carry on.', sendAt: SEND_AT, untilLimitReset: 'claude' },
+    },
+  )
+  for (const untilLimitReset of ['', 7, 'x'.repeat(201)]) {
+    const frame = command({ kind: 'scheduleSend', message: 'Carry on.', sendAt: SEND_AT, untilLimitReset })
+    assert.equal(parseConversationClientMessage(frame), null, JSON.stringify(untilLimitReset))
+  }
+  const said = parseConversationServerFrame({
+    type: 'scheduled',
+    key,
+    messages: [{ id: 'sm-1', text: 'Carry on.', sendAt: SEND_AT, createdAt: SEND_AT - 1, untilLimitReset: 'codex' }],
+  })
+  assert.equal(said?.type === 'scheduled' && said.messages[0]?.untilLimitReset, 'codex')
+})
+
 test('a scheduled send without words or a time is a bad frame, not one the desktop does not know', () => {
   for (const body of [
     { message: '', sendAt: SEND_AT },

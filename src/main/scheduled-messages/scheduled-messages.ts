@@ -219,7 +219,13 @@ export type ScheduledMessages = {
    * scheduled here does. `source` names the command it came in on; the same
    * one again is the same message, scheduled once.
    */
-  scheduleFrom(chat: ScheduledMessageChat, text: string, sendAt: number, source: string): ScheduledMessageHoldResult
+  scheduleFrom(
+    chat: ScheduledMessageChat,
+    text: string,
+    sendAt: number,
+    source: string,
+    untilLimitReset?: UsageLimitProvider,
+  ): ScheduledMessageHoldResult
   /** The computer woke or was unlocked: timers stood still while it slept, so read the clock again. */
   wake(): void
   /** Chats may have been deleted: forget their messages. */
@@ -588,6 +594,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     input: string,
     sendAt: number,
     source: string,
+    untilLimitReset?: UsageLimitProvider,
   ): ScheduledMessageHoldResult {
     // The same command again is the same message, still waiting or gone.
     const scheduled = messages.find((entry) => entry.sources?.includes(source))
@@ -613,6 +620,7 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
         sendAt,
         createdAt: now(),
         sources: [source],
+        ...(untilLimitReset ? { untilLimitReset } : {}),
       },
     ]
     changed()

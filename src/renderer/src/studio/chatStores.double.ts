@@ -22,7 +22,6 @@ function blank(): Api {
     onUsageLimitResumesChanged: () => () => undefined,
     scheduledMessages: async () => ({ messages: [] }),
     updateScheduledMessage: async () => ({ messages: [] }),
-    holdQueuedMessage: async () => ({ ok: false, reason: 'Nothing is held here.' }),
     onScheduledMessagesChanged: () => () => undefined,
     usageReport: async () => ({ ok: false, message: 'No usage here.' }),
     scanImportableConversations: async () => ({ ok: true, folders: [], sources: [] }),

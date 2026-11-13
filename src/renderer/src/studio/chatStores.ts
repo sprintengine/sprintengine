@@ -3,8 +3,6 @@ import {
   type ConversationImportInput,
   type ConversationImportResult,
   type ConversationImportScanResult,
-  type ScheduledMessageHoldAnswer,
-  type ScheduledMessageHoldRequest,
   type ScheduledMessagesState,
   type ScheduledMessageUpdate,
   type StudioMethod,
@@ -40,8 +38,6 @@ export type ChatStoresApi = {
   onUsageLimitResumesChanged(listener: (state: UsageLimitResumeState) => void): () => void
   scheduledMessages(): Promise<ScheduledMessagesState>
   updateScheduledMessage(update: ScheduledMessageUpdate): Promise<ScheduledMessagesState>
-  /** Hold a message this window's chat queued, to go when the chat's turn ends. Never rejects. */
-  holdQueuedMessage(request: ScheduledMessageHoldRequest): Promise<ScheduledMessageHoldAnswer>
   onScheduledMessagesChanged(listener: (state: ScheduledMessagesState) => void): () => void
   /** The usage dashboard's report. Never rejects: a failure is `{ ok: false, message }`. */
   usageReport(request: UsageReportRequest): Promise<UsageReportResult>
@@ -121,18 +117,6 @@ export const chatStoresApi: ChatStoresApi = {
     followState('usageLimitResumes.changed', () => call('usageLimitResumes.get', {}), listener),
   scheduledMessages: () => call('scheduledMessages.get', {}),
   updateScheduledMessage: (update) => call('scheduledMessages.update', { commandId: randomId(), update }),
-  holdQueuedMessage: async (request) => {
-    try {
-      return await call('scheduledMessages.hold', {
-        commandId: randomId(),
-        workspaceId: request.workspaceId,
-        agentId: request.agentId,
-        text: request.text,
-      })
-    } catch (error) {
-      return { ok: false, reason: words(error) }
-    }
-  },
   onScheduledMessagesChanged: (listener) =>
     followState('scheduledMessages.changed', () => call('scheduledMessages.get', {}), listener),
   usageReport: async (request) => {

@@ -105,6 +105,13 @@ const refOf = (key: ConversationKey): ConversationRef => ({
   workspaceRoot: key.workspaceRoot,
 })
 
+/** A command's answer as a transport says it: accepted (with its notice), or why not. */
+const commanded = (work: () => Promise<{ notice?: string }>) =>
+  outcome(async () => {
+    const answer = await work()
+    return { ok: true as const, ...(answer.notice ? { notice: answer.notice } : {}) }
+  })
+
 /** The decoded length of base64 text, without decoding it. */
 function base64Bytes(base64: string): number {
   const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0
@@ -372,6 +379,12 @@ export type StudioTransportParts = Omit<ConversationTransport, 'kind' | 'capabil
       | 'askSideQuestion'
       | 'cancelSideQuestion'
       | 'readContextBreakdown'
+      | 'queue'
+      | 'cancelQueued'
+      | 'scheduleSend'
+      | 'sendScheduledNow'
+      | 'cancelScheduled'
+      | 'usageLimitResume'
     >
   >
 
@@ -530,6 +543,67 @@ export function createStudioConversationParts(client: ClientSource): StudioTrans
     rewind: (input) =>
       outcome(() =>
         ask(client, 'conversation.rewind', { key: refOf(input.key), turnSeq: input.turnSeq, commandId: commandId() }),
+      ),
+    // The chat's queue, scheduled messages and usage-limit resume, kept by
+    // the Studio that runs it. A held message goes as words: this connection
+    // does not carry a keyed send's pictures or files
+    // (`conversation-queued-attachments` is not served), and the view hands
+    // over only what the Studio holds.
+    queue: (input) =>
+      commanded(async () => {
+        if (input.attachments?.length || input.files?.length)
+          throw new Error('This Studio holds a queued message as words only.')
+        return ask(client, 'conversation.send', {
+          key: refOf(input.key),
+          message: input.message,
+          ...(input.skills?.length ? { skills: input.skills.map((skill) => skill.id) } : {}),
+          ...(input.mentions?.length ? { mentions: input.mentions } : {}),
+          queue: true,
+          commandId: commandId(),
+        })
+      }),
+    cancelQueued: (input) =>
+      commanded(() =>
+        ask(client, 'conversation.cancelQueued', {
+          key: refOf(input.key),
+          queuedId: input.queuedId,
+          commandId: commandId(),
+        }),
+      ),
+    scheduleSend: (input) =>
+      commanded(() =>
+        ask(client, 'conversation.scheduleSend', {
+          key: refOf(input.key),
+          message: input.message,
+          sendAt: input.sendAt,
+          ...(input.untilLimitReset ? { untilLimitReset: input.untilLimitReset } : {}),
+          commandId: commandId(),
+        }),
+      ),
+    sendScheduledNow: (input) =>
+      commanded(() =>
+        ask(client, 'conversation.sendScheduledNow', {
+          key: refOf(input.key),
+          scheduledId: input.scheduledId,
+          commandId: commandId(),
+        }),
+      ),
+    cancelScheduled: (input) =>
+      commanded(() =>
+        ask(client, 'conversation.cancelScheduled', {
+          key: refOf(input.key),
+          scheduledId: input.scheduledId,
+          commandId: commandId(),
+        }),
+      ),
+    usageLimitResume: (input) =>
+      commanded(() =>
+        ask(client, 'conversation.usageLimitResume', {
+          key: refOf(input.key),
+          action: input.action,
+          ...(input.always ? { always: true as const } : {}),
+          commandId: commandId(),
+        }),
       ),
     handoff: (input) =>
       outcome(() => ask(client, 'conversation.handoff', { key: refOf(input.key), commandId: commandId() })),

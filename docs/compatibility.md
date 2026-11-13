@@ -766,7 +766,13 @@ another machine's chat refuses them there in words first). The Studio RPC
 carries the three as owners' methods (`conversation.scheduleSend`,
 `conversation.sendScheduledNow`, `conversation.cancelScheduled`), and
 advertises the capability (2026-11-12): the per-chat topic
-`conversation.scheduled` pushes the lane's `scheduled` frame.
+`conversation.scheduled` pushes the lane's `scheduled` frame. A `scheduleSend`
+may name `untilLimitReset` (2026-11-13), the provider whose limit the message
+waits on: the desktop asks that limit again when `sendAt` comes and moves the
+message to a later reset if one stands, and its `scheduled` frame says it
+back. An older desktop's validator drops the member and keeps the message for
+`sendAt`. A Studio window holds and schedules its own chats' messages the
+same way (`scheduledMessages.hold` is gone).
 A desktop's usage limits are the `conversation-usage-limits` capability
 (2026-10-25): `{ type: 'watchUsageLimits', requestId }` has it send a
 `usageLimits` frame (`ConversationUsageLimitsFrame`: the chat's `key`, the
