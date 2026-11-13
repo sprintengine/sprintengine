@@ -760,11 +760,7 @@ test('backlog', async () => {
       /aria-label=\{`Unlink \$\{model\.label\}`\}/,
       'each secondary link exposes an accessible unlink control',
     )
-    assert.match(
-      backlogPanelSource,
-      /backlogApi\.removeBacklogLink\(/,
-      'unlink persists through the backlog methods',
-    )
+    assert.match(backlogPanelSource, /backlogApi\.removeBacklogLink\(/, 'unlink persists through the backlog methods')
     assert.match(
       backlogPanelSource,
       /The linked work itself is not deleted/,
