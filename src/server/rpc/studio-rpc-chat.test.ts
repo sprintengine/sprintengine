@@ -1029,6 +1029,34 @@ test('a chat’s export is read once where it is kept and paged to the client, p
   assert.equal(!missing.ok && missing.error.code, 'not_found')
 })
 
+test('a held export goes with the connection that read it; another connection’s stays', async () => {
+  const { chat, reads } = exportingChat(5, 1024 * 1024)
+  const { path, auth } = await served({ chat })
+  const key = { workspaceId: 'ws-1', agentId: 'agent-1' }
+  const token = pairFakeClient(auth, 'reader', ['conversation:read'])
+  const page = (answer: { ok: boolean; result?: unknown }) => answer.result as { nextOffset: number | null }
+  // Two connections of one client, each part way through an export of its own.
+  const first = await socketClient(path, token)
+  const other = await socketClient(path, token)
+  const began = await ask(first, 'a1', 'conversation.exportPage', { key, exportId: 'dropped', offset: 0 })
+  const kept = await ask(other, 'b1', 'conversation.exportPage', { key, exportId: 'kept', offset: 0 })
+  const next = page(began).nextOffset
+  assert.ok(next !== null && page(kept).nextOffset !== null, 'each has pages left')
+  // The first drops mid-export: what it held goes with it.
+  first.close()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  const again = await socketClient(path, token)
+  const late = await ask(again, 'a2', 'conversation.exportPage', { key, exportId: 'dropped', offset: next })
+  assert.equal(!late.ok && late.error.code, 'not_found')
+  // The other connection's export is still held, and read on without reading the chat again.
+  const before = reads.length
+  const on = await ask(other, 'b2', 'conversation.exportPage', { key, exportId: 'kept', offset: page(kept).nextOffset })
+  assert.ok(on.ok, JSON.stringify(on))
+  assert.equal(reads.length, before)
+  again.close()
+  other.close()
+})
+
 test('a Studio says it serves exports only where its chat surface reads them', async () => {
   const unread = fakeChat()
   delete unread.exportSource

@@ -502,8 +502,12 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
   const fingerprints = new Map<string, string>()
   const stopsDone = new Set<string>()
   // A chat's export, read once for its first page and cut into the rest: by
-  // client and export id, each with the time it was last read.
-  const exportsHeld = new Map<string, { read: Extract<StudioChatExportRead, { ok: true }>; at: number }>()
+  // client and export id, each with the time it was last read and the
+  // connection that last read it, whose close lets it go.
+  const exportsHeld = new Map<
+    string,
+    { read: Extract<StudioChatExportRead, { ok: true }>; at: number; connectionId: string }
+  >()
   const exportPage = (
     read: Extract<StudioChatExportRead, { ok: true }>,
     offset: number,
@@ -1505,7 +1509,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           : {}
       return { ok: true, result: voice.redact(await chat.planDocument({ ...key, ...input, ...own })) }
     },
-    'conversation.exportPage': async ({ key: wire, exportId, offset }, { grant, voice }) => {
+    'conversation.exportPage': async ({ key: wire, exportId, offset }, { grant, voice, context }) => {
       const chat = chatOr('conversation.exportPage')
       if (isRefusal(chat)) return chat
       if (!chat.exportSource) return unserved('conversation.exportPage')
@@ -1522,7 +1526,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
           return read.code === 'not_found'
             ? notFound(wire)
             : voice.failed('unavailable', read.message, 'conversation.exportPage')
-        kept = { read: voice.redact(read), at: clock }
+        kept = { read: voice.redact(read), at: clock, connectionId: context.connectionId }
         exportsHeld.delete(held)
         exportsHeld.set(held, kept)
         const own = [...exportsHeld.keys()].filter((id) => id.startsWith(`${grant.clientId}\u0000`))
@@ -1530,6 +1534,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       }
       if (!kept) return refuse('not_found', 'That export is no longer held. Start it again.')
       kept.at = clock
+      kept.connectionId = context.connectionId
       const page = exportPage(kept.read, offset)
       if (page.nextOffset === null) exportsHeld.delete(held)
       return { ok: true, result: page }
@@ -2184,6 +2189,8 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     updateStatus,
     connectionClosed: (connectionId, slot) => {
       uploads.release(connectionId)
+      // An export is read page by page on one connection; with it gone, its pages go too.
+      for (const [id, held] of exportsHeld) if (held.connectionId === connectionId) exportsHeld.delete(id)
       if (slot !== undefined) options.fileSystem?.releaseSlot(slot)
       options.canvas?.connectionClosed(connectionId)
     },
