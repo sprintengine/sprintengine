@@ -156,6 +156,8 @@ export type UsageLimitResumer = {
   update(update: UsageLimitResumeUpdate): UsageLimitResumeState
   onChanged(listener: (state: UsageLimitResumeState) => void): () => void
   /** Stop the timer and the listeners, and let the last write land. */
+  /** Settles once every change made so far is written to the file. */
+  flush(): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -512,6 +514,7 @@ export function createUsageLimitResumer(deps: UsageLimitResumerDeps): UsageLimit
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
+    flush: () => writing,
     async dispose() {
       running = false
       if (timer !== null) clearTimer(timer)

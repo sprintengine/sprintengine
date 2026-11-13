@@ -60,6 +60,10 @@
   window listener's `/device` path, never an owner's, with exactly the scopes
   named, each one of `STUDIO_RELAYED_DEVICE_SCOPES` (`conversation:read`,
   `conversation:operate`, `conversation:create`, `workspaces:read`).
+- **`environment.adopt`** (capability `environment-adopt`, the shell's, under a
+  `commandId`): records a desktop kept for the machine's chats
+  (`STUDIO_ADOPTED_RECORD_KINDS`), each `{ kind, id, digest, body }`, at most
+  `MAX_ADOPTED_RECORDS` per call; answered `{ held, conflicts }`.
 - **`providers.signInStart`, `.signInPaste`, `.signInWait`, `.signInCancel`**
   (capability `provider-sign-in-flow`): a CLI's own login on the Studio's
   machine with no terminal, each step under a `commandId`, an owner's.

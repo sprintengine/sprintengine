@@ -32,6 +32,7 @@ import {
 import type { StudioEnvironmentReadiness } from '../../../packages/studio-protocol/src/readiness'
 import type { SignIns } from '../machine/machine-sign-in'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
+import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
@@ -229,6 +230,8 @@ export type StudioRpcRouterOptions = {
    * `unavailable`. Asked only by the desktop's own shell connection.
    */
   environmentAccess?: StudioEnvironmentAccess
+  /** Records the desktop that holds this Studio hands over (`environment.adopt`); without it, that method is answered `unavailable`. */
+  adoption?: EnvironmentAdoption
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
   signIns?: () => Promise<SignIns>
   /** The terminals on this machine; without it, `terminal.*` is answered `unavailable`. */
@@ -2070,6 +2073,17 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       } catch (error) {
         return refuse('unavailable', error instanceof Error ? error.message : String(error))
       }
+    },
+    // Answered once per command id: a hand-over sent again is the same one.
+    'environment.adopt': ({ commandId, migrationId, records }, { grant, voice }) => {
+      const adoption = options.adoption
+      if (!adoption) return unserved('environment.adopt')
+      return once(
+        keptId('environment.adopt', grant, commandId),
+        async () => ({ ok: true as const, result: await adoption.adopt({ migrationId, records }) }),
+        voice,
+        'environment.adopt',
+      )
     },
     // A CLI's login here: the provider names a flow this server knows, never a command line.
     'providers.signInStart': ({ commandId, providerId }, { grant, voice }) =>

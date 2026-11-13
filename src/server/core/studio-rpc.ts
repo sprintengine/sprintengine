@@ -26,6 +26,8 @@ import { isMachinePath } from '../../shared/machine-paths'
 import { SIDECAR_DIR_NAME } from '../../shared/workspace-sidecar'
 import type { StudioUpdates } from '../update/studio-updates'
 import type { SignIns } from '../machine/machine-sign-in'
+import { createEnvironmentAdoption, type EnvironmentAdoption } from '../environment/environment-adoption'
+import type { UsageLimitProvider } from '../../shared/usage-limits'
 import type { StudioCore } from './studio-core'
 import { createConversationPullRequests } from '../../main/automation/conversation-pull-request-tools'
 import { studioPullRequestCreationDeps } from '../pull-requests/pull-request-creation'
@@ -82,6 +84,9 @@ export function createStudioRpc(
     ...(options.modules ? { modules: options.modules } : {}),
     ...(options.canvas ? { canvas: createStudioCanvasDomain(options.canvas) } : {}),
     ...(options.signIns ? { signIns: options.signIns } : {}),
+    // A Studio a desktop holds over its front door keeps what that desktop
+    // kept for its chats, once the desktop hands it over.
+    ...(options.hostKind === 'wsl' || options.hostKind === 'ssh' ? { adoption: environmentAdoptionOf(core) } : {}),
     paths: core.platform.paths,
     identity: core.platform.identity,
     // Who may reach the agents from this machine (`access`): the gateway's
@@ -267,4 +272,67 @@ export function createStudioRpc(
       return service.start()
     },
   }
+}
+
+/** The hand-over into this core's own stores, each through its own way in. */
+function environmentAdoptionOf(core: StudioCore): EnvironmentAdoption {
+  const primaryWindow = () => core.workspaceRegistry.getState().primaryWorkspaceWindowId
+  return createEnvironmentAdoption({
+    dataDir: core.platform.paths.dataDir(),
+    stores: {
+      flush: async () => {
+        await Promise.all([
+          core.workspaceRegistry.flush(),
+          core.scheduledMessages.flush(),
+          core.usageLimitResumes.flush(),
+          core.pullRequests.record.flush(),
+        ])
+      },
+      workspaces: {
+        has: (workspaceId) => core.workspaceRegistry.getRecord(workspaceId) !== null,
+        // As a window's create is: the sync bus validates it and the registry normalizes and stamps it.
+        adopt: (record) => {
+          const windowId = primaryWindow()
+          const result = core.workspaceSyncService.dispatch({
+            sourceWindowId: windowId,
+            command: {
+              type: 'workspace.created',
+              payload: {
+                workspace: record,
+                windowId,
+                insert: {
+                  kind: 'folder_head',
+                  folderPath: typeof record.folderPath === 'string' ? record.folderPath : null,
+                },
+                activate: false,
+              },
+            },
+          })
+          return result.ok ? { ok: true } : { ok: false, message: result.message }
+        },
+      },
+      schedules: {
+        has: (id) => core.scheduledAgents.service.get(id) !== null,
+        adopt: (record) => core.scheduledAgents.service.adopt(record),
+      },
+      messages: {
+        scheduleFrom: (chat, text, sendAt, source, untilLimitReset) =>
+          core.scheduledMessages.scheduleFrom(
+            chat,
+            text,
+            sendAt,
+            source,
+            untilLimitReset as UsageLimitProvider | undefined,
+          ),
+        hold: (chat, text, source) => core.scheduledMessages.hold(chat, text, source),
+      },
+      resumes: {
+        schedule: (chat) => void core.usageLimitResumes.update({ kind: 'schedule', ...chat }),
+      },
+      pullRequests: {
+        noteOpened: (chat, input) => core.pullRequests.record.noteOpened(chat, input),
+        watch: (chat, input) => core.pullRequests.record.watch(chat, input),
+      },
+    },
+  })
 }
