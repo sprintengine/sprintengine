@@ -425,7 +425,11 @@ test('a tools stream that fails to open is tried again while the server is up, a
       get state() {
         return backendOpen ? 'open' : 'closed'
       },
-      closed: { then: () => void closeListeners++ },
+      // Read once per close listener.
+      get closed() {
+        closeListeners++
+        return new Promise<void>(() => undefined)
+      },
     } as unknown as WslServerConnection['owner'],
     backend: {} as WslServerConnection['backend'],
     driveMountRoot: '/mnt/',
