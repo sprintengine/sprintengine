@@ -141,9 +141,12 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
 
   // Hints from the shell (6.3): what windows show and whether one has focus.
   let anyWindowVisible = true
+  let workspaceWindowVisible = true
   let appFocused = false
   rpc.on(SERVER_EVENTS.hintVisibility, (payload) => {
-    anyWindowVisible = (payload as { anyWindowVisible?: unknown })?.anyWindowVisible !== false
+    const hint = payload as { anyWindowVisible?: unknown; workspaceWindowVisible?: unknown } | null
+    anyWindowVisible = hint?.anyWindowVisible !== false
+    workspaceWindowVisible = hint?.workspaceWindowVisible !== false
   })
   rpc.on(SERVER_EVENTS.hintFocus, (payload) => {
     appFocused = (payload as { appFocused?: unknown })?.appFocused === true
@@ -227,11 +230,13 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
       // Where this desktop publishes its agents' pages: Settings ▸ Artifacts,
       // its set-up and the `artifacts.*` tools are this process's. A page's
       // picture and the question asked with no window showing are the
-      // shell's, asked for over the control channel; the GitHub token is
+      // shell's, asked for over the control channel. The question is asked
+      // in a window only while a workspace window shows, since a pop-out
+      // cannot show it, as in process. The GitHub token is
       // this process's own store's, and the Cloudflare token is sealed with
       // this process's cipher.
       artifacts: {
-        ...shellArtifactsOverControl(rpc, () => anyWindowVisible),
+        ...shellArtifactsOverControl(rpc, () => workspaceWindowVisible),
         resolveGitHubToken: () => githubTokenStore.resolveToken(),
       },
       ...(shellSsh

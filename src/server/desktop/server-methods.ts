@@ -180,6 +180,7 @@ export const SERVER_EVENTS = {
   artifactsSetupConsentClosed: 'artifacts.setup-consent-closed',
   /** Shell → server hints (6.3). */
   hintPower: 'hint.power',
+  /** `{ anyWindowVisible, workspaceWindowVisible }`: whether any app window, and whether a workspace window, shows. */
   hintVisibility: 'hint.visibility',
   hintFocus: 'hint.focus',
   hintOnline: 'hint.online',

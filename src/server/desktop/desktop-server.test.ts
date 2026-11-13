@@ -263,6 +263,8 @@ test('the desktop server composes, serves a window over the tunnel and the shell
   const leasedPath = (leasedOverMcp.result?.structuredContent as { path: string; branch: string }).path
   assert.equal((leasedOverMcp.result?.structuredContent as { branch: string }).branch, 'agent/over-mcp')
   assert.ok(worktreesOf(repo).includes(realpathSync(leasedPath)), 'a slot of the pool')
+  // The release is the holder check: it answers `released` only to the agent
+  // and chat holding the lease, so the launch token's identity is the holder.
   const releasedOverMcp = await mcp.call('tools/call', { name: 'worktree.release', arguments: { path: leasedPath } })
   assert.equal(
     (releasedOverMcp.result?.structuredContent as { released: boolean }).released,
@@ -333,7 +335,6 @@ function projectWorkspace(id: string, folderPath: string) {
   }
 }
 
-/** A project cloned from an origin of its own, as a person's checkout is. */
 /** The worktrees git lists for a repository, real paths. */
 function worktreesOf(repo: string): string[] {
   return execFileSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' })
@@ -342,6 +343,7 @@ function worktreesOf(repo: string): string[] {
     .map((line) => realpathSync(line.slice('worktree '.length)))
 }
 
+/** A project cloned from an origin of its own, as a person's checkout is. */
 async function gitProject(dir: string): Promise<string> {
   const env = {
     ...process.env,

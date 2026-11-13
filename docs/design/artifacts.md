@@ -82,9 +82,9 @@ offers to set it up in conversation.
 Studio asks them in its own window, as a confirmation dialog: the windows
 follow the open questions (`artifacts.setupQuestions`) and answer one
 (`artifacts.answerSetupQuestion`), both an owner's, so a page in the embedded
-browser or a paired device can neither see nor answer it. With no window
-showing, the desktop's shell asks in a native message box instead (as it asks
-before quitting). Either names the agent, the host, the repository or the
+browser or a paired device can neither see nor answer it. With no workspace
+window showing (a pop-out cannot show the question), the desktop's shell asks
+in a native message box instead (as it asks before quitting). Either names the agent, the host, the repository or the
 account and project, and what Studio will do; Return and Escape refuse, and no
 answer in five minutes is a refusal. Nothing is turned on, made or saved
 before the answer. The only thing done before asking is reading which accounts

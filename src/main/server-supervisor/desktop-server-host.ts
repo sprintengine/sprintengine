@@ -151,8 +151,11 @@ export function createDesktopServerHost(options: {
 
   function sendWindowHints(): void {
     const windows = BrowserWindow.getAllWindows().filter((win) => !win.isDestroyed() && !isCanvasWorkerWindow(win))
+    const showing = windows.filter((win) => win.isVisible() && !win.isMinimized())
     supervisor.rpc.emit(SERVER_EVENTS.hintVisibility, {
-      anyWindowVisible: windows.some((win) => win.isVisible() && !win.isMinimized()),
+      anyWindowVisible: showing.length > 0,
+      // Only a workspace window can answer an artifacts set-up question; a pop-out cannot.
+      workspaceWindowVisible: showing.some((win) => isWorkspaceWindowWebContents(win.webContents)),
     })
     supervisor.rpc.emit(SERVER_EVENTS.hintFocus, { appFocused: windows.some((win) => win.isFocused()) })
   }
