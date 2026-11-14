@@ -72,7 +72,7 @@ export class Matrix {
       problems.push(`${client}: ${scenario}: ${outcome.error}`)
       return 'FAILED'
     }
-    const clients = [...new Set<ClientId>(['desktop', 'peer', 'phone', 'embed', 'ssh'])]
+    const clients = [...new Set<ClientId>(['desktop', 'peer', 'phone', 'embed', 'ssh', 'wsl'])]
     const header = ['client', 'transport', ...SCENARIOS]
     const rows = clients.map((client) => [
       client,

@@ -10,8 +10,9 @@ import type { ConversationSessionFrame } from '../../../src/shared/conversation-
 import type { MeshConversationKey } from '../../../src/shared/tailnet-mesh'
 import type { Attachment, ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'
-import { openPairedWindow } from '../../paired-window'
+import { openPairedWindow, pairedWindowApi } from '../../paired-window'
 import { createPairedChat } from '../../../src/renderer/src/studio/pairedDiscovery'
+import { pairedTarget, withEnvironmentStudio } from '../../../src/renderer/src/studio/environmentStudio'
 import { createPairedChatTransport } from '../../../src/renderer/src/components/panels/agentChat/pairedChat'
 import type { ConversationTransport } from '../../../src/renderer/src/components/panels/agentChat/conversationTransport'
 import { Feed } from '../feed'
@@ -74,6 +75,17 @@ export async function peerClient(input: {
       "the peer's keychain: its pairing is sealed with the server platform's data-key cipher",
       "the chat view's resubscribe if a stream ends (a React hook): the gate subscribes again from its cursor",
     ],
+    device: {
+      // On the window's bridge itself: the embed's page takes `window` over in this process.
+      ask: (work) => withEnvironmentStudio(pairedTarget(machine), work, { api: pairedWindowApi }),
+      // The mesh buys a window's ticket for that machine's Studio; it has no
+      // way left to name an environment there.
+      async ticket() {
+        const bought = await mesh.windowTicket(connectionId, 'file://')
+        if (!bought.ok) throw new Error(`peer: no ticket: ${bought.message}`)
+        return { url: bought.url, origin: 'file://' }
+      },
+    },
     async follow(chat) {
       const feed = new Feed('peer')
       const transport = transportOf(chat)

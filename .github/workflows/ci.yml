@@ -305,10 +305,12 @@ jobs:
   # (build:server) driven by several clients at once, each the code that
   # surface runs: the desktop window over the Studio protocol, a paired desktop
   # and the phone's own protocol client over the tailnet lane, a read-only
-  # embed, and an SSH machine against the same dockerized sshd as the job
-  # above. One shared chat; create, stream, upload, approval, sub-agent,
-  # schedule, a dropped connection resumed by cursor, and the server killed and
-  # started again. Its output says what is a known gap and what is simulated.
+  # embed, a WSL-shaped distribution (`sh` for wsl.exe, which the phone and the
+  # paired desktop must not reach), and an SSH machine against the same
+  # dockerized sshd as the job above. One shared chat; create, stream, upload,
+  # approval, sub-agent, schedule, a dropped connection resumed by cursor, and
+  # the server killed and started again. Its output says what is a known gap
+  # and what is simulated.
   # Runs under the release gate too: it is where the phone is checked against
   # the build being released.
   cross-client:

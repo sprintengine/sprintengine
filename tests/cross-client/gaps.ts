@@ -18,6 +18,9 @@ export const SCENARIOS = [
   'resume',
   'restart',
   'isolation',
+  'launch',
+  'machine',
+  'unreachable',
 ] as const
 export type ScenarioId = (typeof SCENARIOS)[number]
 
@@ -32,6 +35,11 @@ export const SCENARIO_WORDS: Record<ScenarioId, string> = {
   restart:
     'the server is killed and started again; the client comes back by itself and by its cursor (no gap, no duplicate, no reset) and goes on',
   isolation: 'held to its one chat, reading: every other ask is refused',
+  launch:
+    "a terminal agent's MCP bridge reaches the machine's gateway, proven by the launch token the desktop told it; revoked, it proves nothing",
+  machine: 'git, the home and a git-directory watch by the environment methods, and the files the window reads there',
+  unreachable:
+    'the phone and a paired desktop cannot reach it: no method lists or tickets it, and no path through the desktop serves it',
 }
 
 /** Which rows each client is held to. A read-only embed is not asked to write. */
@@ -41,6 +49,7 @@ export const ROWS: Record<ClientId, readonly ScenarioId[]> = {
   phone: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
   embed: ['stream', 'resume', 'restart', 'isolation'],
   ssh: ['create', 'stream', 'upload', 'approval', 'subagent', 'schedule', 'resume', 'restart'],
+  wsl: ['create', 'stream', 'approval', 'schedule', 'restart', 'launch', 'machine', 'unreachable'],
 }
 
 /** `expect`: what the row's failure says today; failing for any other reason is a failure. */
@@ -64,9 +73,9 @@ export const KNOWN_GAPS: Partial<Record<`${ClientId}:${ScenarioId}`, KnownGap>> 
 /** What the gate cannot run on a hosted runner, and how a person checks it by hand. */
 export const NOT_RUN = [
   {
-    what: 'WSL',
+    what: 'WSL itself (the wsl row stands `sh` in for wsl.exe)',
     why: 'WSL 2 does not run on the hosted Windows runners (no nested virtualization)',
     manual:
-      'On a Windows PC with a WSL 2 distribution: build the app (npm run dist:win), turn on WSL chats, start a chat in the distribution, send a turn, answer its approval, then quit and reopen the app and send again.',
+      'On a Windows PC with a WSL 2 distribution: build the app (npm run dist:win), start a chat in the distribution, send a turn, answer its approval, open a terminal agent there, then quit and reopen the app and send again.',
   },
 ] as const

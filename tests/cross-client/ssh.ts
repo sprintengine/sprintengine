@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -10,21 +10,14 @@ import { ensureNodeBinary, serverTreeDigest } from '../../src/main/environments/
 import type { SessionProcess } from '../../src/main/environments/ssh/ssh-session'
 import { createLoopbackRoute } from '../../src/main/environments/environment-route'
 import { adoptedRecordDigest } from '../../src/server/environment/environment-adoption'
-import {
-  connect,
-  webSocketTransport,
-  type StudioClient,
-  type StudioWebSocketConstructor,
-} from '../../packages/client-runtime/src/public'
+import { connect, webSocketTransport, type StudioClient } from '../../packages/client-runtime/src/public'
 import { createStudioConversationParts } from '../../src/renderer/src/components/panels/agentChat/studioChat'
-import { conversationNewChatSeed } from '../../src/renderer/src/components/workspace/conversationSpawnOptions'
-import { defaultAgent } from '../../src/shared/agent-state'
-import type { ConversationSessionFrame } from '../../src/shared/conversation-runtime'
 import { machineStudioClient } from '../../src/shared/machine-studio-client'
 import { machineSpellingOf } from '../../src/shared/machine-spelling'
 import { DEFAULT_SSH_ENVIRONMENT_SETTINGS } from '../../src/shared/ssh-environments'
 import { GATE_WINDOW_ORIGIN, MOCK_PROVIDER } from './client'
 import { approvalAfter, Feed, isReplyTo, isUserMessage, resolvedAfter, type GateEvent } from './feed'
+import { followChat, newChatThere, okOf, until, windowWebSocket } from './machine-chat'
 import type { Matrix } from './matrix'
 
 // An SSH machine, for real: the dockerized sshd the SSH machine suites use,
@@ -41,34 +34,20 @@ import type { Matrix } from './matrix'
 
 export const SSH_TRANSPORT = 'Studio protocol (window client over the loopback route, SSH environment)'
 
-/** Node's WebSocket, saying the origin a desktop window's says. */
-function windowWebSocket(): StudioWebSocketConstructor {
-  const NodeWebSocket = (globalThis as unknown as { WebSocket: new (url: string, init: unknown) => unknown }).WebSocket
-  return class {
-    constructor(url: string) {
-      return new NodeWebSocket(url, { headers: { origin: GATE_WINDOW_ORIGIN } }) as never
-    }
-  } as unknown as StudioWebSocketConstructor
-}
-
-function ok<T>(result: unknown, what: string): T {
-  const outcome = result as { ok?: boolean; message?: string }
-  if (!outcome || outcome.ok === false) throw new Error(`ssh: ${what}: ${outcome?.message ?? 'no answer'}`)
-  return result as T
-}
-
-const until = async (check: () => boolean, ms: number) => {
-  const end = Date.now() + ms
-  while (Date.now() < end && !check()) await new Promise((resolve) => setTimeout(resolve, 200))
-  return check()
-}
+const ok = okOf('ssh')
 
 const PICTURE = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
   'base64',
 )
 
-export async function runSshLeg(input: { root: string; scratch: string; matrix: Matrix; cacheDir: string }) {
+export async function runSshLeg(input: {
+  root: string
+  /** The server tree as `npm run build:server:wsl` builds it, built on the first ask. */
+  serverTree: () => string
+  matrix: Matrix
+  cacheDir: string
+}) {
   const { matrix } = input
   matrix.client('ssh', SSH_TRANSPORT, [
     'the remote machine: a container with a real sshd and the system ssh; the server tree and Node are really installed there',
@@ -78,11 +57,7 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
     return
   }
   await prepareSshdImage()
-  const tree = join(input.scratch, 'ssh-tree')
-  execFileSync(process.execPath, [join(input.root, 'scripts', 'build-server.mjs'), '--wsl', '--out-dir', tree], {
-    cwd: input.root,
-    stdio: 'pipe',
-  })
+  const tree = input.serverTree()
   const digest = serverTreeDigest(tree)
   const version = (JSON.parse(readFileSync(join(input.root, 'package.json'), 'utf8')) as { version: string }).version
   const sshd = startSshd({ sshdOptions: ['AllowTcpForwarding no', 'AllowStreamLocalForwarding no'] })
@@ -232,78 +207,12 @@ export async function runSshLeg(input: { root: string; scratch: string; matrix: 
       await feed.until((each) => resolvedAfter(each, requestId), `"${text}" ending`, 30_000)
     }
 
-    // The window's New chat on build-box: the chat's record made in the
-    // machine's own registry (as this desktop's copy forwards it), then its
-    // session, then the chat view's follow.
-    let stopped = false
+    // The window's New chat on build-box, and the chat view's follow of it.
     const follow = () => {
-      stopped = false
-      const following = parts.subscribe(
-        {
-          key,
-          turnLimit: 50,
-          ...(feed.cursor === undefined ? {} : { afterSeq: feed.cursor }),
-          ...(feed.generation === undefined ? {} : { generation: feed.generation }),
-        },
-        (frame: ConversationSessionFrame) => {
-          if (frame.type === 'snapshot')
-            feed.snapshot(frame.page.events, {
-              ...(frame.reset ? { reset: true } : {}),
-              ...(frame.generation ? { generation: frame.generation } : {}),
-            })
-          else if (frame.type === 'event') feed.event(frame.event)
-          else if (frame.type === 'synchronized') feed.side({ syncs: feed.syncs + 1 })
-          else if (frame.type === 'error') {
-            // As the chat view does: a stream that ended is followed again from its cursor.
-            feed.side({ lastError: frame.message })
-            following()
-            if (!stopped) setTimeout(follow, 250)
-          }
-        },
-      )
-      stopFollowing = () => {
-        stopped = true
-        following()
-      }
+      stopFollowing = followChat(parts, key, feed)
     }
     await matrix.run('ssh', 'create', async () => {
-      const client = await windowStudio()
-      const seed = conversationNewChatSeed(
-        { provider: { ...MOCK_PROVIDER, modelLabel: 'Mock' } },
-        { permissionPreset: 'manual' },
-      )
-      if (!seed) throw new Error('ssh: the New chat seed names no provider')
-      const theirs = await client.request('workspaceSync.snapshot', {})
-      const windowId = String(theirs.state.primaryWorkspaceWindowId)
-      const created = await client.request('workspaceSync.dispatch', {
-        commandId: 'gate-new-chat',
-        windowId,
-        command: {
-          type: 'workspace.created',
-          payload: {
-            workspace: {
-              id: key.workspaceId,
-              name: 'repo',
-              mode: 'standard',
-              folderPath: key.workspaceRoot,
-              templateId: 'standard',
-              layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
-              agents: { [key.agentId]: { ...defaultAgent(key.agentId, key.agentId), ...seed.agentPatch } },
-              worktreeState: { containerPath: null, entries: {}, updatedAt: null },
-              memory: { relativeRoot: null },
-              editorState: { openFiles: [], activeFilePath: null },
-              createdAt: Date.now(),
-            },
-            windowId,
-            insert: { kind: 'folder_head', folderPath: key.workspaceRoot },
-          },
-        },
-      })
-      ok(created, 'New chat on build-box')
-      sessionId = ok<{ session: { sessionId: string } }>(
-        await parts.startSession!({ ...key, ...MOCK_PROVIDER }),
-        'start',
-      ).session.sessionId
+      sessionId = await newChatThere({ leg: 'ssh', label: 'build-box', client: await windowStudio(), parts, key })
       follow()
       await feed.until((each) => each.syncs > 0, 'the chat followed', 30_000)
     })

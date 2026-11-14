@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url'
 
+import type { StudioClient } from '../../../packages/client-runtime/src/public'
 import type { Attachment, ChatRef, GateClient } from '../client'
 import type { Cutter } from '../cutter'
 import { Feed, type GateEvent } from '../feed'
@@ -65,6 +66,7 @@ export type PhoneProtocol = {
     | { ok: false; title: string; message?: string }
   >
   createDesktopConversationsApi(target: { baseUrl: string; deviceToken: string }): PhoneApi
+  desktopStudio(target: { baseUrl: string; deviceToken: string }): Promise<StudioClient>
 }
 
 export async function phoneClient(input: {
@@ -111,6 +113,27 @@ export async function phoneClient(input: {
       "background and foreground: the gate cuts the phone's socket and calls the stream's foreground()",
       'the tailnet: the listener is bound to loopback and no Tailscale whois names the phone',
     ],
+    device: {
+      // The phone's one connection to the desktop's Studio, which its screens share.
+      ask: async (work) => work(await input.protocol.desktopStudio({ baseUrl, deviceToken })),
+      // Bought with its device token as the phone buys one, naming the
+      // environment as its removed relay code did.
+      async ticket(environmentId) {
+        const response = await fetch(`${baseUrl}/tailnet/v1/ws-ticket`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${deviceToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ environmentId }),
+        })
+        const body = (await response.json().catch(() => null)) as { ticket?: string; studioPath?: string } | null
+        if (!response.ok || !body?.ticket) throw new Error(`phone: no ticket (${response.status})`)
+        const socketBase = baseUrl.replace(/^http/u, 'ws')
+        return {
+          url: `${socketBase}${body.studioPath ?? '/'}?ticket=${encodeURIComponent(body.ticket)}`,
+          // React Native, told to say no origin of its own, sends an empty one.
+          origin: '',
+        }
+      },
+    },
     async follow(chat) {
       const feed = new Feed('phone')
       const results = new Map<string, (frame: PhoneFrame) => void>()

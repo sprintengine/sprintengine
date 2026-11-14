@@ -1,3 +1,4 @@
+import type { StudioClient } from '../../packages/client-runtime/src/public'
 import type { Feed } from './feed'
 
 // One client of the gate: the code a surface of Studio really runs, behind one
@@ -9,9 +10,22 @@ import type { Feed } from './feed'
 // scenario still runs for it and fails, which the gate reads against its list
 // of known gaps (gaps.ts): never skipped without a word.
 
-export type ClientId = 'desktop' | 'peer' | 'phone' | 'embed' | 'ssh'
+export type ClientId = 'desktop' | 'peer' | 'phone' | 'embed' | 'ssh' | 'wsl'
 
 export type ChatRef = { workspaceId: string; agentId: string; workspaceRoot: string }
+
+/** A paired device's own ways onto the desktop it paired with, for asks outside a chat. */
+export type DeviceReach = {
+  /** Ask the desktop's Studio something on this device's own connection to it. */
+  ask<T>(work: (client: StudioClient) => Promise<T>): Promise<T>
+  /**
+   * A ticket for one socket on the desktop's tailnet listener, bought as this
+   * device buys one, naming an environment of that desktop's as the removed
+   * relay route did where this device's code can say one. Answers the socket
+   * URL it is good for, and the origin the device's sockets say.
+   */
+  ticket(environmentId: string): Promise<{ url: string; origin: string | null }>
+}
 
 export type Attachment = { name: string; mediaType: string; bytes: Buffer; path: string }
 
@@ -22,6 +36,8 @@ export interface GateClient {
   readonly transport: string
   /** What of this client the gate stands in for, said in the output. */
   readonly simulated: readonly string[]
+  /** A paired device's own reach onto the desktop, where it is one. */
+  readonly device?: DeviceReach
   /** Follow one chat: everything it hears lands in the feed. */
   follow(chat: ChatRef): Promise<Feed>
   /** Start a chat on the fake provider, the way this client starts one. */
