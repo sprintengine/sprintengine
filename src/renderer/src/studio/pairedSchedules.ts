@@ -264,8 +264,8 @@ export function scheduledAgentViewOf(value: unknown): ScheduledAgentView | null 
   }
 }
 
-/** A paired machine's `schedules.list` answer, kept to the rows this build can read. */
-function scheduledAgentsOf(value: StudioSchedules | Record<string, unknown>): {
+/** A machine's `schedules.list` answer (or `schedules.changed` push), kept to the rows this build can read. */
+export function scheduledAgentsOf(value: StudioSchedules | Record<string, unknown>): {
   ok: true
   agents: ScheduledAgentView[]
   pausedAll: ScheduledAgentsPause | null
