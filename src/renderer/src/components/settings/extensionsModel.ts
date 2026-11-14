@@ -79,7 +79,7 @@ export function problemText(problem: ExtensionProblem): string {
   switch (problem.kind) {
     case 'host-api':
       return problem.direction === 'older'
-        ? 'Built for an older version of Studio.'
+        ? `Built for an older version of Studio. It needs updating to host API ${HOST_API_VERSION}: the Drop-in extensions guide (docs/module-authors/drop-in-extensions.md) says how. If an agent made it, ask an agent to update it.`
         : problem.direction === 'newer'
           ? 'Built for a newer version of Studio.'
           : 'Doesn’t say which version of Studio it’s built for.'

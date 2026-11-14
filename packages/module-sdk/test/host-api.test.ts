@@ -54,6 +54,9 @@ test('a module built for host API 1 is refused, told what replaced its IPC and w
   assert.match(result.message, /@sprintengine\/module-sdk 2/)
   assert.match(result.message, /registerIpc becomes registerMethods/)
   assert.match(result.message, /host\.invoke becomes host\.methods\(\)\.read or \.operate/)
+  // And where to read how, and what a person whose agent wrote it can do.
+  assert.match(result.message, /docs\/module-authors\/drop-in-extensions\.md/)
+  assert.match(result.message, /ask an agent to update it/)
 })
 
 test('a hostApi that is not a whole number is no version at all', () => {
