@@ -59,7 +59,15 @@ const browser = await chromium.connectOverCDP('http://127.0.0.1:<cdp port>')
 const page = browser.contexts()[0].pages().find((each) => each.url().includes('windowId=primary'))
 ```
 
-Close with `browser.close()`, which disconnects and leaves the app running.
+Close with `browser.close()`, which disconnects and leaves the app running. `smoke.mjs` is a worked
+example of a chat. Things that are easy to trip on:
+
+- New chat opens as a terminal on a fresh profile; **Start as a conversation instead of terminal**
+  switches it to a chat.
+- The composer is a CodeMirror editor: click `page.locator('.cm-content:visible').last()` and type
+  with `page.keyboard`.
+- The engine picker (**Engine: …**) has a column of providers (radios) and a list of runtimes
+  (options).
 
 Each desktop has a repository with one commit at `/data/projects/demo`, and every Open Folder
 answers that folder without a dialog (the app's own `SPRINTENGINE_TEST_OPEN_DIR` hook, which only
@@ -81,10 +89,10 @@ the real one. New chat offers it as the engine. It answers:
 | Message | Reply |
 |---|---|
 | anything | `Stand-in agent (no real model): you said "…"`, streamed in pieces |
-| `/slow` | a reply streamed over about 20 seconds, to try Stop |
-| `/tool` | a tool call, then a reply |
-| `/permission` | a permission request, then which option was chosen |
-| `/fail` | the turn fails |
+| `!slow` | a reply streamed over about 20 seconds, to try Stop |
+| `!tool` | a tool call, then a reply |
+| `!permission` | a permission request, then which option was chosen |
+| `!fail` | the turn fails |
 
 To test with a real agent instead, opt in when starting the stack: `STUDIO_DOCKER_ANTHROPIC_API_KEY`
 or `STUDIO_DOCKER_OPENAI_API_KEY` in the environment of `up` is passed to its desktops as

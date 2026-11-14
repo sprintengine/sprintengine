@@ -71,8 +71,8 @@ async function chatOnce(page, message, { web = false } = {}) {
       await page.getByRole('button', { name: 'Choose this folder' }).click()
     }
   }
-  const composer = page.getByRole('textbox').first()
-  await composer.click()
+  // The composer is a CodeMirror editor.
+  await page.locator('.cm-content:visible').last().click()
   await page.keyboard.type(message)
   await page.keyboard.press('Enter')
   await page.getByText(`you said "${message}"`, { exact: false }).first().waitFor({ timeout: REPLY_MS })

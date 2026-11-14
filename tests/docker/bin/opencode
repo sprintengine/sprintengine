@@ -4,12 +4,13 @@
 // (`opencode acp`), as it drives the real one. It needs no account and sends
 // nothing anywhere: every reply is made up here.
 //
-// What a message makes it do:
+// What a message makes it do (a leading `/` would open the composer's
+// command menu, so the triggers start with `!`):
 //   anything          a short reply that quotes the message, streamed in pieces
-//   /slow             a reply streamed over about 20 s (to try Stop)
-//   /tool             a tool call that reads README.md, then a reply
-//   /permission       asks for permission first, then says what was chosen
-//   /fail             the turn fails with an error
+//   !slow             a reply streamed over about 20 s (to try Stop)
+//   !tool             a tool call that reads README.md, then a reply
+//   !permission       asks for permission first, then says what was chosen
+//   !fail             the turn fails with an error
 'use strict'
 const { createInterface } = require('node:readline')
 
@@ -58,11 +59,11 @@ async function prompt({ sessionId, prompt: blocks }) {
     .join('\n')
     .trim()
   const command = text.split(/\s/u)[0]
-  if (command === '/fail')
+  if (command === '!fail')
     throw Object.assign(new Error('The stand-in agent failed this turn on purpose.'), { code: -32603 })
-  if (command === '/slow') {
+  if (command === '!slow') {
     await say(sessionId, 'This reply is slow on purpose. '.repeat(25), 150)
-  } else if (command === '/tool') {
+  } else if (command === '!tool') {
     const toolCallId = `tool-${Date.now()}`
     update(sessionId, {
       sessionUpdate: 'tool_call',
@@ -80,7 +81,7 @@ async function prompt({ sessionId, prompt: blocks }) {
       content: [{ type: 'content', content: { type: 'text', text: '(the stand-in read nothing)' } }],
     })
     await say(sessionId, 'I pretended to read README.md.', 40)
-  } else if (command === '/permission') {
+  } else if (command === '!permission') {
     const toolCallId = `tool-${Date.now()}`
     const answer = await ask('session/request_permission', {
       sessionId,
