@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, net, powerMonitor, powerSaveBlocker, safeStorage } from 'electron'
+import { machineSchedulesOf, withDefinedMachineSchedules } from '../shared/machine-schedules'
 import { createEnvironmentClients } from './environments/environment-client'
 import { desktopFileSystemShell } from './desktop-file-system-shell'
 import { createHash } from 'crypto'
@@ -1514,6 +1515,7 @@ export function createAppServices(
               createWorkspace: (input, actor) => workspaceSyncService.createWorkspace(input, actor),
               studioDataDirs: () => [app.getPath('userData')],
               getScheduledAgents: () => resolveScheduledAgents(),
+              ...withDefinedMachineSchedules(machineSchedulesOf(core)),
               ...launchSettingsGatewayDeps(agentLaunchSettings),
               // module.*/marketplace.*. The registry snapshot is the one a
               // window reported (`module.reportRegistry`): the kernel's own list

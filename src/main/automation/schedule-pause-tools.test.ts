@@ -13,6 +13,8 @@ import { schedulerWithRunRecords } from '../scheduled-agents/scheduled-runs.test
 import { createScheduledAgentsService, type ScheduledAgentsService } from '../scheduled-agents/service'
 import { createScheduledAgentsStore } from '../scheduled-agents/store'
 import { createAutomationTools, type AutomationBackends } from './automation-tools'
+import { createMachineSchedules } from '../../shared/machine-schedules'
+import type { EnvironmentClients } from '../../shared/environment-clients'
 import { isStudioGatewayMutation } from './studio-gateway-tools'
 
 // `schedule.pause` and `schedule.resume`, and what `schedule.list` says about a
@@ -38,7 +40,13 @@ type Listed = {
   pausedAll: { since: string; until: string | null } | null
 }
 
-async function harness(options: { callerPreset?: CliPermissionPreset; preset?: CliPermissionPreset } = {}) {
+async function harness(
+  options: {
+    callerPreset?: CliPermissionPreset
+    preset?: CliPermissionPreset
+    machineSchedules?: AutomationBackends['machineSchedules']
+  } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'sprintengine-schedule-pause-tools-'))
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
   const store = createScheduledAgentsStore({
@@ -90,6 +98,7 @@ async function harness(options: { callerPreset?: CliPermissionPreset; preset?: C
     resolveAgentPermissionPreset: () => options.callerPreset ?? 'bypass',
     getScheduledAgents: () => service,
     defaultChatCli: () => 'claude-code',
+    ...(options.machineSchedules ? { machineSchedules: options.machineSchedules } : {}),
   } as unknown as AutomationBackends
   const tools = createAutomationTools(backends)
   const call = (name: string, args: Record<string, unknown>, context?: McpConnectionContext) => {
@@ -239,4 +248,90 @@ test("schedule.update is refused to a scheduled run, and held to its caller's pr
     isStudioGatewayMutation('schedule.update', () => []),
     true,
   )
+})
+
+// A schedule an agent made for a machine's folder is handed to that machine
+// and runs there: the tools that list and manage schedules reach it there,
+// by the id the create answered.
+test('schedule.list lists a machine’s schedules, and run, pause, resume and delete reach one there by its id', async () => {
+  const asked: Array<{ method: string; params: Record<string, unknown> }> = []
+  let boxSchedule = {
+    id: 'sa-box',
+    prompt: 'Triage the build',
+    schedule: { cron: '* * * * *', timezone: 'UTC' },
+    folderPath: 'ssh://m1/home/dev/proj',
+    permissionPreset: 'bypass',
+    nextRunAt: NOW + 60_000,
+    scheduleWords: 'Every minute',
+  }
+  const client = {
+    request: async (method: string, params: Record<string, unknown>) => {
+      asked.push({ method, params })
+      return { schedules: [boxSchedule], pausedAll: null }
+    },
+    rpc: new Proxy(
+      {},
+      {
+        get: (_target, method: string) => async (params: Record<string, unknown>) => {
+          asked.push({ method, params })
+          if (method === 'schedules.runNow') return { workspaceId: 'ws-box-run' }
+          if (method === 'schedules.delete') return { removed: params.id }
+          boxSchedule = { ...boxSchedule, ...(method === 'schedules.pause' ? { pausedAt: NOW } : {}) }
+          return { schedule: boxSchedule }
+        },
+      },
+    ),
+  }
+  const clients: EnvironmentClients = {
+    clientFor: async (route) =>
+      route === 'ssh:m1'
+        ? { ok: true, client: client as never, name: 'dev@build-box' }
+        : { ok: false, code: 'unavailable', message: 'That SSH machine is not connected.' },
+    onConnected: () => () => undefined,
+  }
+  let ids = 0
+  const { call } = await harness({
+    callerPreset: 'manual',
+    machineSchedules: createMachineSchedules({
+      clients,
+      routes: () => ['ssh:m1', 'ssh:m1', 'ssh:away'],
+      commandId: () => `cmd-${(ids += 1)}`,
+    }),
+  })
+  const listed = (await call('schedule.list', {})).structuredContent as Listed & { unreachableMachines?: string[] }
+  assert.deepEqual(
+    listed.scheduledAgents.map((agent) => [agent.id, (agent as { machine?: string }).machine]),
+    [
+      ['sa-1', undefined],
+      ['sa-box', 'dev@build-box'],
+    ],
+    "this computer's, then the machine's, named by the machine",
+  )
+  assert.deepEqual(listed.unreachableMachines, ['That SSH machine is not connected.'], 'a machine away is said')
+
+  const paused = await call('schedule.pause', { id: 'sa-box' })
+  assert.equal(paused.isError, undefined, JSON.stringify(paused.structuredContent))
+  assert.equal((paused.structuredContent as { scheduledAgent: { paused: boolean } }).scheduledAgent.paused, true)
+  // Run and resume start runs there: held to the calling agent's ceiling, as here.
+  assert.equal(errorCode(await call('schedule.run', { id: 'sa-box' }, agentCaller('ws-1'))), 'permission_escalation')
+  assert.deepEqual((await call('schedule.run', { id: 'sa-box' })).structuredContent, {
+    workspaceId: 'ws-box-run',
+    machine: 'dev@build-box',
+  })
+  assert.equal((await call('schedule.resume', { id: 'sa-box' })).isError, undefined)
+  assert.deepEqual((await call('schedule.delete', { id: 'sa-box' })).structuredContent, {
+    removed: 'sa-box',
+    machine: 'dev@build-box',
+  })
+  assert.deepEqual(
+    asked.filter((entry) => entry.method !== 'schedules.list').map((entry) => [entry.method, entry.params.id]),
+    [
+      ['schedules.pause', 'sa-box'],
+      ['schedules.runNow', 'sa-box'],
+      ['schedules.resume', 'sa-box'],
+      ['schedules.delete', 'sa-box'],
+    ],
+    'each asked of the machine, once',
+  )
+  assert.equal(errorCode(await call('schedule.pause', { id: 'nope' })), 'unknown_scheduled_agent')
 })

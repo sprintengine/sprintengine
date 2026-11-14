@@ -97,6 +97,7 @@ import type { StartedDependencyInstall } from '../worktree-pool/dependency-insta
 import { installProjection } from './conversation-tools'
 import type { TerminalOutputTail } from '../terminal-output-tail'
 import { terminalPlainText } from './terminal-plain-text'
+import type { MachineSchedule, MachineScheduleAction, MachineSchedules } from '../../shared/machine-schedules'
 
 // The automation tool surface. v1: workspace.create / workspace.list /
 // workspace.status / agent.launch / agent.status; the read expansion adds
@@ -196,6 +197,14 @@ export type AutomationBackends = {
    * explicitly instead of buffering.
    */
   getScheduledAgents(): ScheduledAgentsService | null
+  /**
+   * The schedules of the machines this computer owns (an SSH machine's, a WSL
+   * distribution's), where a schedule made for a machine's folder is handed
+   * over and runs: `schedule.list` lists them beside this computer's, and
+   * `schedule.run`, `.pause`, `.resume` and `.delete` reach one by its id.
+   * Absent, only this computer's.
+   */
+  machineSchedules?: MachineSchedules
   /** The CLI a scheduled agent runs when its creator names none: the last one picked here. */
   defaultChatCli(): string | null
   /**
@@ -2462,6 +2471,40 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
     pausedAt: isoOrNull(agent.pausedAt),
     nextRunAt: isoOrNull(agent.nextRunAt),
   })
+  // One a machine this computer owns runs, as the machine lists it, named by that machine.
+  const machineScheduleForCaller = ({ machine, schedule }: MachineSchedule) => ({
+    ...scheduledAgentForCaller(schedule),
+    machine,
+  })
+  /**
+   * A schedule not on this computer, looked for on the machines it owns, and
+   * acted on there: what `schedule.run`, `.pause`, `.resume` and `.delete`
+   * do with an id this computer does not hold. Null when no machine lists it.
+   */
+  async function onMachine(
+    id: string,
+    action: MachineScheduleAction,
+    context: McpConnectionContext | undefined,
+  ): Promise<McpToolResult | null> {
+    const found = await backends.machineSchedules?.find(id)
+    if (!found || !backends.machineSchedules) return null
+    // What starts runs there with nobody watching is held to the caller's ceiling, as here.
+    if (action === 'run' || action === 'resume') {
+      const refusal = refuseScheduledAgentRun(
+        found.schedule.permissionPreset,
+        launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
+      )
+      if (refusal) return failure(refusal.code, refusal.message)
+    }
+    const done = await backends.machineSchedules.act(found, action)
+    if (!done.ok)
+      return failure(action === 'run' ? 'scheduled_agent_run_failed' : 'scheduled_agent_invalid', done.message)
+    if (action === 'run') return success({ workspaceId: done.workspaceId, machine: found.machine })
+    if (action === 'delete') return success({ removed: id, machine: found.machine })
+    return success({
+      scheduledAgent: machineScheduleForCaller({ ...found, schedule: done.schedule ?? found.schedule }),
+    })
+  }
 
   // A schedule's tool arguments as the request every way in shares
   // (`schedule-requests.ts`): the instant from ISO, and each optional member
@@ -2518,17 +2561,24 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
   const scheduledAgentList: McpToolRegistration = {
     name: 'schedule.list',
     description:
-      'List the scheduled agents on this computer: each is a prompt and a cron schedule, and each time the ' +
-      'schedule comes round a new chat starts in its project with that prompt. `paused` is true for one the ' +
-      'person paused; `pausedAll` says whether every scheduled agent is paused, and until when. Read-only.',
+      'List the scheduled agents on this computer and on the machines it owns (an SSH machine, a WSL ' +
+      'distribution): each is a prompt and a cron schedule, and each time the schedule comes round a new chat ' +
+      'starts in its project with that prompt. `machine` names the machine one runs on, absent for this ' +
+      "computer's. `paused` is true for one the person paused; `pausedAll` says whether every scheduled agent " +
+      'here is paused, and until when; `unreachableMachines` says which machines could not be read. Read-only.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     handler: async () => {
       const service = scheduledAgentsOrFailure()
       if (!('list' in service)) return service
       const pause = service.pausedAll()
+      const machines = await backends.machineSchedules?.list()
       return success({
-        scheduledAgents: service.list().map(scheduledAgentForCaller),
+        scheduledAgents: [
+          ...service.list().map(scheduledAgentForCaller),
+          ...(machines?.schedules ?? []).map(machineScheduleForCaller),
+        ],
         pausedAll: pause ? { since: isoOrNull(pause.since), until: isoOrNull(pause.until) } : null,
+        ...(machines?.unreachable.length ? { unreachableMachines: machines.unreachable } : {}),
       })
     },
   }
@@ -2667,7 +2717,15 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('update' in service)) return service
       const existing = service.get(id)
-      if (!existing) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!existing) {
+        const there = await backends.machineSchedules?.find(id)
+        return failure(
+          'unknown_scheduled_agent',
+          there
+            ? `Scheduled agent "${id}" runs on ${there.machine}: change it in its editor in the Scheduled section, or delete it and make it again.`
+            : `No scheduled agent "${id}".`,
+        )
+      }
       const request = scheduleRequestOfArgs(args)
       if (!request.ok) return request.refused
       const change = scheduleChangeOf(
@@ -2707,6 +2765,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (typeof id !== 'string') return id
       const service = scheduledAgentsOrFailure()
       if (!('remove' in service)) return service
+      if (!service.get(id)) {
+        const there = await onMachine(id, 'delete', context)
+        if (there) return there
+      }
       const removed = await service.remove(id)
       return removed.ok ? success({ removed: id }) : failure('unknown_scheduled_agent', removed.message)
     },
@@ -2733,7 +2795,7 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('runNow' in service)) return service
       const agent = service.get(id)
-      if (!agent) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!agent) return (await onMachine(id, 'run', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
       const refusal = refuseScheduledAgentRun(
         agent.permissionPreset,
         launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
@@ -2764,7 +2826,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (typeof id !== 'string') return id
       const service = scheduledAgentsOrFailure()
       if (!('pause' in service)) return service
-      if (!service.get(id)) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!service.get(id))
+        return (await onMachine(id, 'pause', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
       const paused = await service.pause(id)
       if (!paused.ok) return failure('scheduled_agent_invalid', paused.message)
       return success({ scheduledAgent: scheduledAgentForCaller(paused.agent) })
@@ -2792,7 +2855,8 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('resume' in service)) return service
       const agent = service.get(id)
-      if (!agent) return failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!agent)
+        return (await onMachine(id, 'resume', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
       // Resumed, it starts runs on its own preset with nobody watching, as
       // schedule.run would start one now: held to the same ceiling.
       const refusal = refuseScheduledAgentRun(

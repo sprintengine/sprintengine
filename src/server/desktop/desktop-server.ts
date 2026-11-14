@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { machineSchedulesOf, withDefinedMachineSchedules } from '../../shared/machine-schedules'
 import { backgroundWorkOf, quitStopsOf } from '../core/background-work'
 
 import { SHELL_TOOLSETS, serverAutomationTools } from './shell-toolsets'
@@ -386,6 +387,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
           createWorkspace: (input, actor) => workspaceSyncService.createWorkspace(input, actor),
           studioDataDirs: () => [envelope.dataDir],
           getScheduledAgents: () => modules.scheduledAgents(),
+          ...withDefinedMachineSchedules(machineSchedulesOf(core)),
           ...launchSettingsGatewayDeps(agentLaunchSettings),
           // The registry the windows report (`module.reportRegistry`), and
           // the extensions installed here, as `module.installed` lists them.
