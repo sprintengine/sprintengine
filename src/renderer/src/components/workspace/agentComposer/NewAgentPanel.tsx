@@ -1086,9 +1086,14 @@ export default function NewAgentPanel({
       skills: composer.skills,
       mcpServers: composer.mcpServers,
       worktreeName: composer.worktreeName,
+      // The project picked here, not only the one the door opened on: the
+      // sidebar's Drafts row names it, and read "No project" beside a
+      // composer showing the project the person had chosen.
+      folderPath: workspaceRoot ?? null,
     })
   }, [
     draftKey,
+    workspaceRoot,
     prompt,
     images,
     files,
