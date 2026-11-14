@@ -629,7 +629,9 @@ test('NewAgentPanel interaction', async () => {
       await act(async () => {
         input.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
       })
-      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+      // Staging reads the file first; waited for by its outcome, not a fixed delay a loaded machine outruns.
+      for (let waited = 0; waited < 5_000 && !view.container.querySelector('img[src^="data:image/png"]'); waited += 20)
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
       assert.ok(view.container.querySelector('img[src^="data:image/png"]'), 'the image is staged on the box')
       const field = await typeInto(view, 'look')
       await act(async () => {
