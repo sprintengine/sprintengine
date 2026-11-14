@@ -59,6 +59,28 @@ export type StudioConversationBackendDeps = {
 }
 
 /**
+ * A file a client sent up with a session's message, kept where Studio keeps a
+ * device's files (pruned with them), and attached by its path there.
+ */
+function fileKeeper(fileUploads: TailnetFileUploads | undefined): StudioFollowedBackend['keepFile'] {
+  if (!fileUploads) return undefined
+  return async (clientId, file) => {
+    const spot = fileUploads.place(clientId, file.name)
+    await writeFile(spot.path, file.bytes)
+    return {
+      path: spot.path,
+      discard: () => {
+        try {
+          spot.remove()
+        } catch {
+          // Pruned with the week's others instead.
+        }
+      },
+    }
+  }
+}
+
+/**
  * A client's finished uploads made one chat's, as the tailnet's upload route
  * makes a device's: a picture written where the host reads it into the turn
  * and removed once spent, a file kept where Studio keeps a device's files and
@@ -321,6 +343,7 @@ export function createStudioConversationBackend(deps: StudioConversationBackendD
     followed: {
       ...withDefined('picture', pictureReader(host)),
       ...withDefined('stageUploads', uploadStager(host, deps.fileUploads)),
+      ...withDefined('keepFile', fileKeeper(deps.fileUploads)),
       sentBefore: (key, clientId, commandId) => host.sentBefore(key, clientId, commandId),
       ...(host.watchQueued ? { watchQueued: (chat, listener) => host.watchQueued!(chat, listener) } : {}),
       ...(host.watchScheduled ? { watchScheduled: (chat, listener) => host.watchScheduled!(chat, listener) } : {}),

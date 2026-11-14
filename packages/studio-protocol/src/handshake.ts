@@ -93,6 +93,15 @@ export const STUDIO_LOCAL_SERVERS_CAPABILITY = 'local-servers' as const
 export const STUDIO_SESSION_FILES_CAPABILITY = 'session-files' as const
 
 /**
+ * `session.send` takes `fileUploadIds`: files from the client's own disk, sent
+ * up first (`uploads.*`, `purpose: 'attachment'`), kept on the machine that
+ * runs the chat and attached by their path there. A client whose files are not
+ * on that machine's disk (a desktop driving an SSH machine's chat) sends them
+ * so, and only where this is advertised.
+ */
+export const STUDIO_SESSION_FILE_UPLOADS_CAPABILITY = 'session-file-uploads' as const
+
+/**
  * `conversation.handoff`: hand a chat off to a fresh session of its CLI,
  * pointed at a file of the chat's messages, instead of compacting it.
  * Reached by `conversation:operate`.
@@ -395,6 +404,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_PULL_REQUEST_LINK_CAPABILITY,
   STUDIO_LOCAL_SERVERS_CAPABILITY,
   STUDIO_SESSION_FILES_CAPABILITY,
+  STUDIO_SESSION_FILE_UPLOADS_CAPABILITY,
   STUDIO_PULL_REQUEST_WATCH_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
   STUDIO_SESSION_CONTROLS_CAPABILITY,
@@ -451,6 +461,7 @@ export const STUDIO_CHAT_CAPABILITIES = [
   STUDIO_COMMANDS_CAPABILITY,
   STUDIO_PROVIDERS_CAPABILITY,
   STUDIO_SESSION_FILES_CAPABILITY,
+  STUDIO_SESSION_FILE_UPLOADS_CAPABILITY,
   STUDIO_HANDOFF_CAPABILITY,
   STUDIO_SESSION_CONTROLS_CAPABILITY,
   STUDIO_TERMINAL_HANDOFF_CAPABILITY,

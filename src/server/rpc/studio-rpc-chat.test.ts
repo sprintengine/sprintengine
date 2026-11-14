@@ -275,7 +275,13 @@ const isRes = (id: string) => (frame: StudioParsedServerFrame) => frame.t === 'r
 
 async function served(input: { chat?: ReturnType<typeof fakeChat> | null } = {}) {
   const chat = input.chat === undefined ? fakeChat() : input.chat
-  const started = await startTestServer(chat ? { chat } : {})
+  // A host that keeps files sent with a session's message, as every Studio's does.
+  const backend = createFakeBackend()
+  backend.followed = {
+    ...backend.followed,
+    keepFile: async (_clientId, file) => ({ path: `/kept/${file.name}`, discard: () => undefined }),
+  }
+  const started = await startTestServer(chat ? { chat, backend } : { backend })
   disposers.push(started.dispose)
   return { ...started, chat }
 }
@@ -692,6 +698,65 @@ test('a send resent long after its pictures went is answered from its receipt, n
   assert.equal(chat.calls.sends[1].commandId, 'owner:c1', 'the runtime answers it from the same receipt')
   assert.equal(chat.calls.sends[1].attachments, undefined)
   router.close()
+})
+
+// A desktop driving an SSH machine's chat attaches a file from its own disk:
+// the machine cannot read it by the desktop's path, so the file goes up first
+// and the machine keeps it and attaches it by its own path. Never the
+// desktop's path, which names nothing there.
+test('a file sent up with a session’s message is kept on this machine and attached by its path here, once', async () => {
+  const chat = fakeChat()
+  const kept: Array<{ clientId: string; name: string; bytes: string; discarded: boolean }> = []
+  const backend = createFakeBackend()
+  backend.followed = {
+    ...backend.followed,
+    keepFile: async (clientId, file) => {
+      const entry = { clientId, name: file.name, bytes: file.bytes.toString('utf8'), discarded: false }
+      kept.push(entry)
+      return { path: `/home/dev/.sprintengine/uploads/${kept.length}/${file.name}`, discard: () => (entry.discarded = true) }
+    },
+  }
+  const router = createStudioRpcRouter({ backend, chat: () => chat, info: () => ({}) as never })
+  disposers.push(async () => router.close())
+  const grant = studioWindowGrant()
+  const context = { connectionId: 'w1', slot: 1, ownWindow: true }
+  const call = (method: string, params: unknown) => router.handle(grant, method as never, params, context)
+  const body = Buffer.from('the notes')
+  const begun = await call('uploads.begin', {
+    mediaType: 'text/plain',
+    byteLength: body.length,
+    name: 'f1.txt',
+    purpose: 'attachment',
+  })
+  assert.ok(begun.ok)
+  const { uploadId } = begun.result as { uploadId: string }
+  assert.ok((await call('uploads.append', { uploadId, offset: 0, dataBase64: body.toString('base64') })).ok)
+  const send = { commandId: 'c1', sessionId: 's1', message: 'read it', fileUploadIds: [uploadId] }
+  assert.ok((await call('session.send', send)).ok)
+  assert.deepEqual(kept, [{ clientId: grant.clientId, name: 'f1.txt', bytes: 'the notes', discarded: false }])
+  const carried = chat.calls.sends[0]!
+  assert.deepEqual(carried.files, [{ path: '/home/dev/.sprintengine/uploads/1/f1.txt' }], 'attached by its path here')
+  assert.equal((carried as { fileUploadIds?: unknown }).fileUploadIds, undefined)
+  // The same send again is answered from its receipt, and keeps nothing more.
+  assert.ok((await call('session.send', send)).ok)
+  assert.equal(kept.length, 1)
+  assert.equal(chat.calls.sends[1]!.files, undefined)
+})
+
+test('a Studio with nowhere to keep a file sent with a message refuses it in words', async () => {
+  const chat = fakeChat()
+  const router = createStudioRpcRouter({ backend: createFakeBackend(), chat: () => chat, info: () => ({}) as never })
+  disposers.push(async () => router.close())
+  const grant = studioWindowGrant()
+  const context = { connectionId: 'w1', slot: 1, ownWindow: true }
+  const call = (method: string, params: unknown) => router.handle(grant, method as never, params, context)
+  const begun = await call('uploads.begin', { mediaType: 'text/plain', byteLength: 3, name: 'f.txt', purpose: 'attachment' })
+  assert.ok(begun.ok)
+  const { uploadId } = begun.result as { uploadId: string }
+  await call('uploads.append', { uploadId, offset: 0, dataBase64: 'AAAA' })
+  const refused = await call('session.send', { commandId: 'c1', sessionId: 's1', message: 'x', fileUploadIds: [uploadId] })
+  assert.equal(!refused.ok && refused.error.code, 'unavailable')
+  assert.equal(chat.calls.sends.length, 0)
 })
 
 test('a send with pictures resent to a session gone with its server is answered "session not found", and then from its receipt', async () => {

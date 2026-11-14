@@ -44,11 +44,13 @@ test("the lane's send and the protocol's send are the same type", () => {
     Omit<Extract<ConversationWireCommand, { kind: 'send' }>, 'kind'>,
     Pick<ConversationLaneSend, 'message' | 'uploadIds'>
   >(true)
-  // `session.send` is the request itself, addressed to the session.
+  // `session.send` is the request itself, addressed to the session, with the
+  // files a client's own disk holds sent up beside it (`fileUploadIds`).
   expectExact<
-    Omit<StudioMethodParams<'session.send'>, 'commandId' | 'sessionId'>,
+    Omit<StudioMethodParams<'session.send'>, 'commandId' | 'sessionId' | 'fileUploadIds'>,
     Omit<ConversationSendRequest, 'queue'>
   >(true)
+  expectExact<StudioMethodParams<'session.send'>['fileUploadIds'], string[] | undefined>(true)
 })
 
 test('the lane says how it carries every part of the request', () => {

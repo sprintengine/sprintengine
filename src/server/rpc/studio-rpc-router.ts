@@ -1441,7 +1441,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const chat = chatOr('session.send')
       if (isRefusal(chat)) return chat
       const { grant, voice, fingerprint } = asking
-      const { commandId, attachments, ...input } = params
+      const { commandId, attachments, fileUploadIds, ...input } = params
       // A file attached or mentioned by path is read by the agent: a client
       // that is not an owner names only what is inside the folders Studio
       // knows (a mention relative to the chat's folder stays inside it).
@@ -1461,22 +1461,46 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       // it): the runtime answers it "session not found", and the client
       // starts the chat again and sends once more under the same id, on a
       // session whose chat log has the receipt.
-      const receipt = attachments?.length
-        ? await chat.commandReceipt({ sessionId: input.sessionId, commandId: id })
-        : 'none'
+      const carries = Boolean(attachments?.length || fileUploadIds?.length)
+      const receipt = carries ? await chat.commandReceipt({ sessionId: input.sessionId, commandId: id }) : 'none'
       // The ones this attempt staged, given back: nothing is made of them.
-      if (receipt !== 'none' && attachments?.length)
-        uploads.discard(
-          grant.clientId,
-          attachments.map((attachment) => attachment.uploadId),
-        )
+      if (receipt !== 'none' && carries)
+        uploads.discard(grant.clientId, [
+          ...(attachments ?? []).map((attachment) => attachment.uploadId),
+          ...(fileUploadIds ?? []),
+        ])
+      // Files from the client's own disk, sent up beside the message: kept
+      // here, where the chat's agent reads them, and attached by their path
+      // here, never by the client's.
+      const kept: Array<{ path: string; discard: () => void }> = []
+      const unkeep = () => {
+        for (const file of kept.splice(0)) file.discard()
+      }
+      if (fileUploadIds?.length && receipt === 'none') {
+        const keepFile = followed.keepFile
+        if (!keepFile) return refuse('unavailable', 'This Studio cannot keep files sent with a message.')
+        const spent = uploads.spend(grant.clientId, fileUploadIds, id, 'attachment')
+        if (!spent.ok) return refused(spent)
+        try {
+          for (const file of spent.pictures)
+            kept.push(await keepFile(grant.clientId, { name: file.name ?? 'file', bytes: file.bytes }))
+        } catch (error) {
+          unkeep()
+          uploads.settle(grant.clientId, id, false)
+          return refuse('unavailable', `A file sent with this message could not be kept: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       if (attachments?.length && receipt === 'none') {
         const spent = uploads.spend(
           grant.clientId,
           attachments.map((attachment) => attachment.uploadId),
           id,
         )
-        if (!spent.ok) return refused(spent)
+        if (!spent.ok) {
+          unkeep()
+          uploads.settle(grant.clientId, id, false)
+          return refused(spent)
+        }
         pictures = attachments.map((attachment, index) => {
           const picture = spent.pictures[index]
           const name = attachment.name ?? picture.name
@@ -1492,6 +1516,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       const sent = await chat
         .sendTurn({
           ...input,
+          ...(kept.length ? { files: [...(input.files ?? []), ...kept.map(({ path }) => ({ path }))] } : {}),
           // What each mention names is checked by the backend, by the rules its IPC applies.
           ...(pictures ? { attachments: pictures } : {}),
           commandId: id,
@@ -1500,10 +1525,11 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
         .finally(async () => {
           // Recorded, its receipt answers every repeat and the bytes can go;
           // not recorded, nothing ran, and a retry may carry them again.
-          if (!pictures) return
+          if (!pictures && !kept.length) return
           const recorded =
             (await chat.commandReceipt({ sessionId: input.sessionId, commandId: id }).catch(() => 'none')) === 'kept'
           uploads.settle(grant.clientId, id, recorded)
+          if (!recorded) unkeep()
         })
       return { ok: true, result: voice.redact(sent) }
     },

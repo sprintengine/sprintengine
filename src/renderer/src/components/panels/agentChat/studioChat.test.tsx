@@ -433,6 +433,58 @@ test('a fork is asked only of a Studio that says where its forks are, and an ans
   expect(asked).toEqual(['conversation.fork', 'conversation.fork', 'conversation.fork'])
 })
 
+// A chat on an SSH machine: a file attached on this computer is not on that
+// machine, so its path here would name nothing there (and leak a path of this
+// disk). Its bytes go up first and the send names the upload; the machine
+// keeps it and attaches it by its own path.
+test('a file attached to another machine’s chat goes up to it, and the send names the upload, never the path here', async () => {
+  const { createStudioConversationParts } = await import('./studioChat')
+  const asked: Array<{ method: string; params: Record<string, unknown> }> = []
+  let uploads = 0
+  const client = {
+    supports: (capability: string) => capability === 'session-file-uploads' || capability === 'session-files',
+    request: async (method: string, params: Record<string, unknown>) => {
+      asked.push({ method, params })
+      if (method === 'uploads.begin') return { uploadId: `up-${++uploads}`, chunkBytes: 512 * 1024 }
+      if (method === 'uploads.append') return { received: 0 }
+      return { ok: true, session: {} }
+    },
+  }
+  const read: string[] = []
+  const parts = createStudioConversationParts(async () => client as never, {
+    filesFromThisDisk: true,
+    readFile: async (path) => {
+      read.push(path)
+      return { ok: true, name: 'f1.txt', dataBase64: Buffer.from('the notes').toString('base64') }
+    },
+  })
+  const sent = await parts.send({
+    sessionId: 'session',
+    message: 'read it',
+    files: [{ path: '/tmp/r2files/f1.txt' }],
+    commandId: 'c1',
+  })
+  expect(sent).toMatchObject({ ok: true })
+  expect(read).toEqual(['/tmp/r2files/f1.txt'])
+  expect(asked.find((entry) => entry.method === 'uploads.begin')?.params).toMatchObject({
+    name: 'f1.txt',
+    purpose: 'attachment',
+  })
+  const send = asked.find((entry) => entry.method === 'session.send')!.params
+  expect(send.fileUploadIds).toEqual(['up-1'])
+  expect(send.files).toBeUndefined()
+  expect(JSON.stringify(send)).not.toContain('/tmp/r2files')
+
+  // A machine whose Studio cannot take them says so, and nothing goes.
+  const older = createStudioConversationParts(
+    async () => ({ ...client, supports: (capability: string) => capability === 'session-files' }) as never,
+    { filesFromThisDisk: true, readFile: async () => ({ ok: false, message: 'unread' }) },
+  )
+  const refused = await older.send({ sessionId: 'session', message: 'x', files: [{ path: '/tmp/a.txt' }] })
+  expect(refused).toMatchObject({ ok: false })
+  expect(asked.filter((entry) => entry.method === 'session.send')).toHaveLength(1)
+})
+
 test('a scheduled message whose answer was lost with the connection is asked again under its command id, and kept once', async () => {
   const { StudioError } = await import('../../../../../../packages/client-runtime/src/public')
   const { createStudioConversationParts } = await import('./studioChat')

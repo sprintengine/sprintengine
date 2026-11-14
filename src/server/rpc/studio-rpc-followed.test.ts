@@ -122,6 +122,10 @@ function fakeFollowed(calls: Calls): Required<StudioFollowedBackend> & { tell(ki
     },
     // The host carried out a send under this id before (a server since
     // restarted, its uploads gone with it): held, or in the chat's log.
+    async keepFile(clientId, file) {
+      calls.push(['keepFile', clientId, file.name])
+      return { path: `/kept/${file.name}`, discard: () => undefined }
+    },
     async sentBefore(key, clientId, commandId) {
       calls.push(['sentBefore', key.agentId, clientId, commandId])
       return commandId.endsWith('sent-before-restart')
