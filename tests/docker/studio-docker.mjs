@@ -14,8 +14,9 @@
 // Every container, network and port it makes carries the label
 // `studio-harness.stack=<stack>`, so `down` removes exactly what `up` made, and
 // a failed `up` removes what it had made before it fails. Ports are published
-// on 127.0.0.1 only, on ports Docker picks (the web topology picks its own,
-// because the web client checks its origin's port).
+// on 127.0.0.1 only, on free ports `up` picks and writes into the container,
+// so they stay the same across `docker restart` (the web topology's is also
+// the same number inside, because the web client checks its origin's port).
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -180,6 +181,27 @@ function freePort() {
   })
 }
 
+/**
+ * `docker run` with each container port published on a host port chosen here,
+ * so the mapping is part of the container and survives `docker restart`: one
+ * left to Docker (`127.0.0.1::9222`) is drawn again on every start, and a
+ * restarted desktop was found on new ports. A port taken between the choice
+ * and the run is chosen again.
+ */
+async function runPublishing(container, ports, args, options = {}) {
+  for (let tries = 0; ; tries += 1) {
+    const published = []
+    for (const port of ports) published.push('-p', `127.0.0.1:${await freePort()}:${port}`)
+    try {
+      return docker([...args.slice(0, 2), ...published, ...args.slice(2)], options)
+    } catch (error) {
+      const message = String(error.stderr ?? error.message)
+      if (tries >= 4 || !/port is already allocated|address already in use/iu.test(message)) throw error
+      spawnSync('docker', ['rm', '-f', container], { stdio: 'ignore' })
+    }
+  }
+}
+
 function publishedPort(container, port) {
   const line = docker(['port', container, `${port}/tcp`]).split('\n')[0]
   return Number(line.slice(line.lastIndexOf(':') + 1))
@@ -204,7 +226,7 @@ async function waitForWindow(cdpPort, container) {
   throw new Error(`${container}: no window on its DevTools port in ${READY_MS / 1000} s`)
 }
 
-function startDesktop(stack, network, name, ip, nodes, options) {
+async function startDesktop(stack, network, name, ip, nodes, options) {
   const container = `${stack}-${name}`
   const env = {
     STUDIO_TAILNET_SELF: name,
@@ -223,7 +245,9 @@ function startDesktop(stack, network, name, ip, nodes, options) {
       : {}),
     ...(process.env.STUDIO_DOCKER_OPENAI_API_KEY ? { OPENAI_API_KEY: process.env.STUDIO_DOCKER_OPENAI_API_KEY } : {}),
   }
-  docker(
+  await runPublishing(
+    container,
+    [9222, 9230, 18471],
     [
       'run',
       '-d',
@@ -246,12 +270,6 @@ function startDesktop(stack, network, name, ip, nodes, options) {
       DESKTOP_MEMORY,
       '--cpus',
       DESKTOP_CPUS,
-      '-p',
-      '127.0.0.1::9222',
-      '-p',
-      '127.0.0.1::9230',
-      '-p',
-      '127.0.0.1::18471',
       ...Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
       ...Object.keys(keys).flatMap((key) => ['-e', key]),
       DESKTOP_IMAGE,
@@ -262,9 +280,9 @@ function startDesktop(stack, network, name, ip, nodes, options) {
   return container
 }
 
-function startSshMachine(stack, network, ip) {
+async function startSshMachine(stack, network, ip) {
   const container = `${stack}-build-box`
-  docker([
+  await runPublishing(container, [22], [
     'run',
     '-d',
     '--init',
@@ -280,8 +298,6 @@ function startSshMachine(stack, network, ip) {
     'build-box',
     '--ip',
     ip,
-    '-p',
-    '127.0.0.1::22',
     SSH_MACHINE_IMAGE,
   ])
   return container
@@ -404,12 +420,13 @@ async function up(topologyName, options) {
     const nodes = Object.entries(ips)
       .map(([name, ip]) => `${name}=${ip}`)
       .join(',')
-    const desktops = topology.desktops.map((name) =>
-      startDesktop(stack, network.name, name, ips[name], nodes, { ssh: topology.ssh }),
-    )
+    const desktops = []
+    for (const name of topology.desktops) {
+      desktops.push(await startDesktop(stack, network.name, name, ips[name], nodes, { ssh: topology.ssh }))
+    }
     let machine = null
     if (topology.ssh) {
-      machine = startSshMachine(stack, network.name, `${network.prefix}.20`)
+      machine = await startSshMachine(stack, network.name, `${network.prefix}.20`)
       await admitKey(desktops[0], machine)
     }
     const info = { stack, topology: topologyName, desktops: [], sshMachine: null }
