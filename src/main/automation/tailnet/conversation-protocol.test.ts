@@ -22,30 +22,11 @@ import {
 
 test('conversation protocol accepts bounded frames and refuses a permanent rule', () => {
   assert.equal(CONVERSATION_CAPABILITY, 'conversations')
-  assert.deepEqual(
-    parseConversationClientFrame({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' }, afterSeq: 8 }),
-    { type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' }, afterSeq: 8 },
-  )
+  // A command is the one frame a client sends; the lane's own reads are gone.
   assert.equal(
-    parseConversationClientFrame({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' }, afterSeq: -1 }),
+    parseConversationClientFrame({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' }, afterSeq: 8 }),
     null,
   )
-  // A resume cursor is a sequence plus the log generation it was read from.
-  assert.deepEqual(
-    parseConversationClientFrame({
-      type: 'subscribe',
-      key: { workspaceId: 'w', agentId: 'a' },
-      afterSeq: 8,
-      generation: 'log-1',
-      unknown: true,
-    }),
-    { type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' }, afterSeq: 8, generation: 'log-1' },
-  )
-  for (const generation of ['', 7, 'g'.repeat(201)])
-    assert.equal(
-      parseConversationClientFrame({ type: 'subscribe', key: { workspaceId: 'w', agentId: 'a' }, generation }),
-      null,
-    )
   assert.equal(
     parseConversationClientFrame({
       type: 'command',

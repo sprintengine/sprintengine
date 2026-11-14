@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { explainRejectedConversationMessage, parseConversationClientMessage } from '../src/clientFrames'
 import { CONVERSATION_CAPABILITIES, CONVERSATION_SUBAGENTS_CAPABILITY } from '../src/handshake'
 import {
   CONVERSATION_MAX_SUBAGENTS,
@@ -24,17 +23,6 @@ const row = {
   task: 'Review the calendar screen',
   startedAt: 1_000,
 }
-
-test('the capability is named, and the watch is a request of its own', () => {
-  assert.equal(CONVERSATION_SUBAGENTS_CAPABILITY, 'conversation-subagents')
-  assert.ok((CONVERSATION_CAPABILITIES as readonly string[]).includes(CONVERSATION_SUBAGENTS_CAPABILITY))
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchSubagents', requestId: 'r-1' }), {
-    type: 'watchSubagents',
-    requestId: 'r-1',
-  })
-  assert.equal(parseConversationClientMessage({ type: 'watchSubagents' }), null)
-  assert.equal(explainRejectedConversationMessage({ type: 'watchSubagents' }).code, 'invalid_frame')
-})
 
 test('a row names what a listed chat names of itself, beside what is a sub-agent’s own', () => {
   const capabilities = { images: true, approvals: true, questions: true, planMode: false, interrupt: true }
@@ -99,4 +87,9 @@ test('a frame names the newest, and one in the wrong shape is refused whole', ()
   assert.equal(parseConversationServerFrame({ type: 'subagents', key }), null)
   assert.equal(parseConversationServerFrame({ type: 'subagents', subagents: [] }), null)
   assert.ok(isKnownConversationServerFrameType({ type: 'subagents' }))
+})
+
+test('the capability is named', () => {
+  assert.equal(CONVERSATION_SUBAGENTS_CAPABILITY, 'conversation-subagents')
+  assert.ok((CONVERSATION_CAPABILITIES as readonly string[]).includes(CONVERSATION_SUBAGENTS_CAPABILITY))
 })

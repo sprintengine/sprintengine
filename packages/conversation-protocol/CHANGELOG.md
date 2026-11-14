@@ -1,6 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+The lane is gone: every client follows and drives a chat on the Studio
+protocol, and this package keeps the contract that protocol carries. Nothing
+outside this repository uses what is removed.
+
+### Removed (the lane's own frames and capabilities)
+
+- **Client frames other than `command`.** `ConversationClientFrame` is a
+  command alone; `parseConversationClientFrame` no longer reads `subscribe`,
+  `list`, `loadEarlier`, `getToolDetail`, `getEvent` or `getTurnDiff`, and
+  `parseConversationClientMessage` no longer reads `hello`, `watchQueued`,
+  `watchScheduled`, `watchUsageLimits`, `watchSubagents`, `watchChanges`,
+  `getChangesDiff`, `getChangedFile`, `askSideQuestion`, `cancelSideQuestion`
+  or `getContextBreakdown`. Their request types go with them
+  (`ConversationHelloRequest`, `ConversationWatch*Request`,
+  `ConversationChangesDiffRequest`, `ConversationChangedFileRequest`,
+  `ConversationContextBreakdownRequest`), and `parseConversationChangesRequest`
+  and `parseConversationClientCapabilities`. `parseConversationSideQuestionRequest`
+  stays: the Studio protocol reads a side question's params with it.
+- **`conversation-hello` and `conversation-image-downscale`**
+  (`CONVERSATION_HELLO_CAPABILITY`, `CONVERSATION_IMAGE_DOWNSCALE_CAPABILITY`),
+  which described the lane's own handshake and upload route, leave
+  `CONVERSATION_CAPABILITIES`. `ConversationHelloAnswer` stays: it is a
+  welcome's `conversation`.
+- **The lane's frame decoder:** `decodeConversationServerFrame`,
+  `ConversationUnknownFrame`, `ConversationDecodedFrame`,
+  `CONVERSATION_MAX_JOINED_FRAME_BYTES` and `CONVERSATION_MAX_SNAPSHOT_PARTS`.
+  `conversationUtf8Length` stays; `parseConversationServerFrame` reads a
+  frame.
+- `conciseConversationSendRequest`, which no transport uses.
 
 ### Removed (the lane's own readers)
 

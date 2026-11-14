@@ -2,7 +2,6 @@ import {
   CONVERSATION_MAX_MESSAGE_CHARS,
   explainRejectedConversationFrame,
   parseConversationClientFrame,
-  type ConversationClientFrame,
   type ConversationFrameRejection,
 } from './index.js'
 import {
@@ -16,47 +15,16 @@ import {
   parseConversationWireMentions,
   isConversationReasoningEffortId,
   type ConversationCommand,
-  type ConversationWatchQueuedRequest,
-  type ConversationWatchScheduledRequest,
-  type ConversationWatchSubagentsRequest,
-  type ConversationWatchUsageLimitsRequest,
   type ConversationUsageLimitResumeAction,
 } from './commands.js'
-import { parseConversationClientCapabilities, type ConversationHelloRequest } from './handshake.js'
-import {
-  parseConversationSideQuestionRequest,
-  type ConversationAskSideQuestionRequest,
-  type ConversationCancelSideQuestionRequest,
-  type ConversationContextBreakdownRequest,
-} from './agentReads.js'
-import {
-  parseConversationChangesRequest,
-  type ConversationChangedFileRequest,
-  type ConversationChangesDiffRequest,
-  type ConversationWatchChangesRequest,
-} from './checkoutChanges.js'
 
-// The server half of the full contract: what a desktop accepts from a client.
-// `parseConversationClientFrame` (index.ts) is the lane as it first shipped;
-// this reads the same frames
-// plus the extensions in commands.ts and handshake.ts, each of which a client
-// sends only to a desktop that advertised it.
+// The server half of the full contract: what a Studio accepts from a client.
+// `parseConversationClientFrame` (index.ts) is the contract as it first
+// shipped; this reads the same frames plus the commands in commands.ts, each
+// of which a client sends only to a Studio that advertised it.
 
 /** A client frame under the full contract. */
-export type ConversationClientMessage =
-  | Exclude<ConversationClientFrame, { type: 'command' }>
-  | { type: 'command'; commandId: string; command: ConversationCommand }
-  | ConversationHelloRequest
-  | ConversationWatchQueuedRequest
-  | ConversationAskSideQuestionRequest
-  | ConversationCancelSideQuestionRequest
-  | ConversationContextBreakdownRequest
-  | ConversationWatchScheduledRequest
-  | ConversationWatchUsageLimitsRequest
-  | ConversationWatchSubagentsRequest
-  | ConversationWatchChangesRequest
-  | ConversationChangesDiffRequest
-  | ConversationChangedFileRequest
+export type ConversationClientMessage = { type: 'command'; commandId: string; command: ConversationCommand }
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -103,35 +71,6 @@ function questionAnswers(value: unknown): value is Record<string, string> {
 /** Validate supported fields and strip unknown members, as `parseConversationClientFrame` does for the first version. */
 export function parseConversationClientMessage(value: unknown): ConversationClientMessage | null {
   if (!record(value)) return null
-  if (value.type === 'hello') {
-    if (!id(value.requestId)) return null
-    const version = value.protocolVersion
-    if (version !== undefined && !(typeof version === 'number' && Number.isSafeInteger(version) && version >= 1))
-      return null
-    const clientCapabilities = parseConversationClientCapabilities(value.clientCapabilities)
-    return {
-      type: 'hello',
-      requestId: value.requestId,
-      ...(version === undefined ? {} : { protocolVersion: version as number }),
-      ...(clientCapabilities.length ? { clientCapabilities } : {}),
-    }
-  }
-  if (value.type === 'watchQueued')
-    return id(value.requestId) ? { type: 'watchQueued', requestId: value.requestId } : null
-  // Reads that ask the chat's agent (agentReads.ts).
-  if (value.type === 'askSideQuestion' || value.type === 'cancelSideQuestion')
-    return parseConversationSideQuestionRequest(value)
-  if (value.type === 'getContextBreakdown')
-    return id(value.requestId) ? { type: 'getContextBreakdown', requestId: value.requestId } : null
-  if (value.type === 'watchScheduled')
-    return id(value.requestId) ? { type: 'watchScheduled', requestId: value.requestId } : null
-  if (value.type === 'watchUsageLimits')
-    return id(value.requestId) ? { type: 'watchUsageLimits', requestId: value.requestId } : null
-  if (value.type === 'watchSubagents')
-    return id(value.requestId) ? { type: 'watchSubagents', requestId: value.requestId } : null
-  // A chat's changes, read as the desktop's Diff tab reads them (checkoutChanges.ts).
-  if (value.type === 'watchChanges' || value.type === 'getChangesDiff' || value.type === 'getChangedFile')
-    return parseConversationChangesRequest(value)
   if (value.type === 'command' && record(value.command)) {
     const command = value.command
     // When the message was written, and whether the person confirmed one

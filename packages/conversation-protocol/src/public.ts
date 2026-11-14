@@ -21,5 +21,5 @@ export * from './sessions.js'
 export * from './messageParts.js'
 // One message a person sends a chat, every way it travels.
 export * from './send.js'
-// How a client decodes what a desktop sends, forward-compatibly, and joins what it splits.
+// The UTF-8 length a send is held to, counted the same in every client.
 export * from './decode.js'

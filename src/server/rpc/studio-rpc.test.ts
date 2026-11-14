@@ -67,13 +67,11 @@ test('a hello is welcomed with the grant, the Studio capabilities and the conver
     ceiling: 'auto',
   })
   assert.ok(welcome.t === 'welcome' && welcome.capabilities.includes('conversation-create'))
-  // The conversation lane's own answer, without the capabilities that
-  // describe the tailnet's transport.
+  // The conversation contract's capabilities, those the backend's host serves.
   assert.ok(welcome.t === 'welcome' && welcome.conversation.capabilities.includes('conversation-plans'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-images'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-message-images'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-message-files'))
-  assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-image-downscale'))
   // A send's mentions ride its validator here too; the folder reads are routes beside the tailnet's socket.
   assert.ok(welcome.t === 'welcome' && welcome.conversation.capabilities.includes('conversation-send-mentions'))
   assert.ok(welcome.t === 'welcome' && !welcome.conversation.capabilities.includes('conversation-file-search'))

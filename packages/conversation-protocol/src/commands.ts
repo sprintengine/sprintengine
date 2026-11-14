@@ -410,15 +410,6 @@ export type ConversationQueuedMessage = {
 /** What a desktop holds for one chat, at most this many. */
 export const CONVERSATION_MAX_QUEUED_MESSAGES = 20
 
-/**
- * Ask the desktop to say what it holds for the chat this socket follows:
- * answered by a `result` under `requestId`, then a `queued` frame now and on
- * every change, until the socket follows another chat or closes. Sent again
- * after each subscription's fence. A desktop without
- * `conversation-queued-sends` answers it `ok: false` with `invalid_frame`.
- */
-export type ConversationWatchQueuedRequest = { type: 'watchQueued'; requestId: string }
-
 /** What the desktop holds for `key`, whole each time: an empty list once nothing is held. */
 export type ConversationQueuedFrame = {
   type: 'queued'
@@ -459,15 +450,6 @@ export type ConversationScheduledMessage = {
 
 /** The most scheduled messages a `scheduled` frame names for one chat. */
 export const CONVERSATION_MAX_SCHEDULED_MESSAGES = 50
-
-/**
- * Ask the desktop to say what it has scheduled into the chat this socket
- * follows: answered by a `result` under `requestId`, then a `scheduled` frame
- * now and on every change, until the socket follows another chat or closes.
- * Sent again after each subscription's fence. A desktop without
- * `conversation-scheduled-sends` answers it `ok: false` with `invalid_frame`.
- */
-export type ConversationWatchScheduledRequest = { type: 'watchScheduled'; requestId: string }
 
 /** What the desktop has scheduled into `key`, soonest first, whole each time: empty once nothing is. */
 export type ConversationScheduledFrame = {
@@ -535,25 +517,6 @@ export type ConversationUsageLimitSnapshot = {
   windows: ConversationUsageLimitWindow[]
   observedAt: number
 }
-
-/**
- * Ask the desktop to say what it knows of the usage limits, for the chat this
- * socket follows: answered by a `result` under `requestId`, then a
- * `usageLimits` frame now and on every change, until the socket follows
- * another chat or closes. Sent again after each subscription's fence. A
- * desktop without `conversation-usage-limits` answers it `ok: false` with
- * `invalid_frame`.
- */
-export type ConversationWatchUsageLimitsRequest = { type: 'watchUsageLimits'; requestId: string }
-
-/**
- * Ask the desktop to say which sub-agents the chat followed has, in
- * `subagents` frames: now, and again whenever one starts, moves or ends, until
- * the socket follows another chat or closes. Sent again after each
- * subscription's fence. A desktop without `conversation-subagents` answers it
- * `ok: false` with `invalid_frame`.
- */
-export type ConversationWatchSubagentsRequest = { type: 'watchSubagents'; requestId: string }
 
 /**
  * The desktop's usage limits, whole each time: the chat's `notice` (null for

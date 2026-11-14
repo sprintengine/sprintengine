@@ -21,33 +21,6 @@ const changes = {
   hasUncommitted: true,
 }
 
-test('the capability is named, and each read is a request of its own', () => {
-  assert.equal(CONVERSATION_CHANGES_CAPABILITY, 'conversation-changes')
-  assert.ok((CONVERSATION_CAPABILITIES as readonly string[]).includes(CONVERSATION_CHANGES_CAPABILITY))
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchChanges', requestId: 'r-1' }), {
-    type: 'watchChanges',
-    requestId: 'r-1',
-  })
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchChanges', requestId: 'r-2', stop: true }), {
-    type: 'watchChanges',
-    requestId: 'r-2',
-    stop: true,
-  })
-  assert.deepEqual(
-    parseConversationClientMessage({ type: 'getChangesDiff', requestId: 'r-3', selection: { kind: 'span' } }),
-    { type: 'getChangesDiff', requestId: 'r-3', selection: { kind: 'span' } },
-  )
-  assert.deepEqual(
-    parseConversationClientMessage({
-      type: 'getChangedFile',
-      requestId: 'r-4',
-      selection: { kind: 'commit', hash },
-      path: 'src/calendar.ts',
-    }),
-    { type: 'getChangedFile', requestId: 'r-4', selection: { kind: 'commit', hash }, path: 'src/calendar.ts' },
-  )
-})
-
 test('a step names no revision but a commit, and a path names nothing outside the checkout', () => {
   const file = (selection: unknown, path: unknown) =>
     parseConversationClientMessage({ type: 'getChangedFile', requestId: 'r', selection, path })
@@ -100,4 +73,9 @@ test('a changes frame says how the checkout stands, whole, and null where there 
   assert.equal(parseConversationServerFrame({ type: 'changes', key, changes }), null)
   assert.equal(parseConversationServerFrame({ type: 'changes', changes, revision: 'r' }), null)
   assert.ok(isKnownConversationServerFrameType({ type: 'changes' }))
+})
+
+test('the capability is named', () => {
+  assert.equal(CONVERSATION_CHANGES_CAPABILITY, 'conversation-changes')
+  assert.ok((CONVERSATION_CAPABILITIES as readonly string[]).includes(CONVERSATION_CHANGES_CAPABILITY))
 })

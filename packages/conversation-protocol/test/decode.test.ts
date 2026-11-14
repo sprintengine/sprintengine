@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { decodeConversationServerFrame, readableConversationPhase } from '../src/public'
+import { parseConversationServerFrame, readableConversationPhase } from '../src/public'
 
 // How a client reads a desktop newer than itself: what it does not know is
 // passed over or dropped, never a reason to refuse what it does.
@@ -28,19 +28,12 @@ const event = (seq: number, type = 'content_delta') => ({
   modelId: 'default',
   createdAt: seq,
 })
-const decode = (value: unknown) => decodeConversationServerFrame(JSON.stringify(value))
+const decode = (value: unknown) => parseConversationServerFrame(value)
 const sessions = (rows: unknown[]) => {
   const frame = decode({ type: 'sessions', requestId: 'r', sessions: rows })
   assert.ok(frame && frame.type === 'sessions')
   return frame.sessions
 }
-
-test('a frame of a type this build does not know decodes to a marker, not to a broken frame', () => {
-  assert.deepEqual(decode({ type: 'hologram', anything: 1 }), { type: 'unknown', frameType: 'hologram' })
-  assert.equal(decode({ type: 'synchronized', seq: -1 }), null, 'a known type in the wrong shape is broken')
-  assert.equal(decodeConversationServerFrame('{not json'), null)
-  assert.equal(decode([1, 2]), null)
-})
 
 test('an event of a type this build does not know is an event: its sequence still moves the cursor', () => {
   const frame = decode({ type: 'event', event: { ...event(7, 'telepathy'), payload: { future: true }, extra: 1 } })

@@ -58,7 +58,7 @@ import { ChatComposer } from "./ChatComposer";
 import { conversationChanges } from "./composerStripLogic";
 import { contextRingLabel, contextRingValue } from "./contextUsage";
 import {
-  chatImageMaxBytes,
+  CHAT_IMAGE_MAX_BYTES,
   composerOptions,
   PHONE_START_AS,
   type AttachSource,
@@ -813,7 +813,7 @@ export function ConversationScreen({
     }
     const picked = await pickChatImages(
       source === "camera",
-      chatImageMaxBytes(chat.offers.downscale),
+      CHAT_IMAGE_MAX_BYTES,
       CONVERSATION_MAX_IMAGES - uploads.length,
     );
     if (!picked) return null;

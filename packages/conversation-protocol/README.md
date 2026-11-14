@@ -105,10 +105,11 @@ and files by upload id, its skills by id and its flags `true` or absent;
 `LANE_CARRIAGE` in `send.ts` says how it carries each part.
 
 Where an entry below names a request frame (`watchSubagents`,
-`getChangesDiff`, `askSideQuestion` and the like), the Studio protocol serves
-the same answer as a method or stream of its own (`conversation.subagents`,
-`conversation.changesDiff`, `conversation.askSideQuestion`, …), listed in its
-README.
+`getChangesDiff`, `askSideQuestion` and the like), it describes the lane that
+first carried it; this package no longer reads those frames. The Studio
+protocol serves the same answer as a method or stream of its own
+(`conversation.subagents`, `conversation.changesDiff`,
+`conversation.askSideQuestion`, …), listed in its README.
 
 The full contract reads frames with `parseConversationClientMessage`, which
 takes every first-version frame exactly as `parseConversationClientFrame` does

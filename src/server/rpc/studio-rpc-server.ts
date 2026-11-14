@@ -116,35 +116,6 @@ import type {
 // finds what it left.
 
 /**
- * The conversation capabilities the socket serves: every one the contract
- * defines, but those that describe the tailnet lane's own transport or that
- * this socket does not carry yet.
- *
- * - `conversation-hello`: the lane's `hello` frame, which here is the
- *   connection's own handshake (its welcome carries these capabilities).
- * - `conversation-image-downscale`: the lane's upload route shrinks a picture
- *   on receipt; this socket keeps an upload as it came, under the 5MB
- *   `uploads.begin` holds a picture to.
- *
- * Every other one is served by a method or topic of the protocol over the
- * same conversation host the lane uses (`followed.ts`): a chat's pictures
- * (`conversation.picture`), pictures and files on a keyed send, held or not
- * (uploads staged with `uploads.*`, named by `conversation.send`), the per-chat topics,
- * side questions and their records, context breakdown, the composer's file
- * search and command list, settle and visit (with the list in the sidebar's
- * order, settled chats left out), `always` approvals, and a fork joined to
- * the chat's records (`conversation.fork`, answered with the fork's address).
- * So is `conversation-quote-tokens`: a send's quote token is expanded for the
- * agent where the chat runs, whichever way the send came, and this socket
- * sends every client a chat as it is kept, tokens included (the lane alone
- * turns them to words for a client that did not say it reads them).
- */
-export const STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES: ReadonlySet<string> = new Set([
-  'conversation-hello',
-  'conversation-image-downscale',
-])
-
-/**
  * What each per-chat capability needs of the backend's `followed` reads: a
  * Studio whose host cannot serve one does not advertise it.
  */
@@ -166,12 +137,13 @@ const FOLLOWED_NEEDS: Readonly<Record<string, ReadonlyArray<keyof StudioFollowed
   'conversation-commands': ['listCommands'],
 }
 
-/** The conversation capabilities a socket over this backend advertises. */
+/**
+ * The conversation capabilities a socket over this backend advertises: every
+ * one the contract defines whose reads the backend's host serves.
+ */
 export function studioRpcConversationCapabilities(backend: Pick<StudioConversationBackend, 'followed'>): string[] {
-  return CONVERSATION_CAPABILITIES.filter(
-    (capability) =>
-      !STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES.has(capability) &&
-      (FOLLOWED_NEEDS[capability] ?? []).every((member) => backend.followed?.[member] !== undefined),
+  return CONVERSATION_CAPABILITIES.filter((capability) =>
+    (FOLLOWED_NEEDS[capability] ?? []).every((member) => backend.followed?.[member] !== undefined),
   )
 }
 

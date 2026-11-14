@@ -994,9 +994,8 @@ number where the passage lies in one run of words; one that runs across
 formatting or a line break is not marked rather than half marked.
 
 A quote crosses as its token only where the desktop advertises
-`conversation-quote-tokens` and `conversation-hello`: the phone then names
-the capability in a `hello` ahead of every subscription (`clientCapabilities`),
-and the desktop sends tokens back to that socket. Anywhere else the phone
+`conversation-quote-tokens`, and the desktop then sends the chat back as it
+is kept, tokens included. Anywhere else the phone
 sends the passage as a blockquote with the comment under it, the words an
 older desktop's agent reads, and reads quotes as words as it always did. A
 held or scheduled message reads its quotes as words in its bubble and row,

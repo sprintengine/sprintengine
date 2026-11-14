@@ -37,7 +37,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@sprintengine/conversation-protocol": "^0.2.0"
+    "@sprintengine/conversation-protocol": "^0.3.0"
   },
   "scripts": {
     "build": "node build.mjs",

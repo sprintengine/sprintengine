@@ -15,34 +15,6 @@
 /** Which slice of the branch a step is: everything it produced, what is uncommitted, or one commit. */
 export type ConversationChangesSelection = { kind: 'span' } | { kind: 'uncommitted' } | { kind: 'commit'; hash: string }
 
-/**
- * Have the desktop say how the followed chat's checkout stands, in `changes`
- * frames: now, and again whenever it reads differently, until `stop`, until
- * the socket follows another chat, or until it closes. Sent again after each
- * subscription's fence while the client still wants it; `stop: true` ends it.
- */
-export type ConversationWatchChangesRequest = { type: 'watchChanges'; requestId: string; stop?: true }
-
-/** The files one step changed, with their line counts. Answered with a `ConversationChangesDiff`. */
-export type ConversationChangesDiffRequest = {
-  type: 'getChangesDiff'
-  requestId: string
-  selection: ConversationChangesSelection
-}
-
-/**
- * The two sides of one file of a step, by its path in the checkout as the
- * step lists it. Answered with a `ConversationChangedFileSides`; a path the
- * step does not list is refused `not_found`, so nothing outside the change is
- * readable.
- */
-export type ConversationChangedFileRequest = {
-  type: 'getChangedFile'
-  requestId: string
-  selection: ConversationChangesSelection
-  path: string
-}
-
 /** One commit of the branch, ahead of the default branch. */
 export type ConversationChangesStep = {
   hash: string
@@ -148,23 +120,6 @@ export function isConversationChangedPath(value: unknown): value is string {
   if (typeof value !== 'string' || !value || value.length > CONVERSATION_MAX_CHANGED_PATH_CHARS) return false
   if (value.startsWith('/') || value.startsWith('\\') || /^[a-z]:/i.test(value) || value.includes('\0')) return false
   return !value.split(/[\\/]/u).some((part) => part === '..')
-}
-
-/** One of this file's client frames, or null when it is not one or is in the wrong shape. */
-export function parseConversationChangesRequest(
-  value: Record<string, unknown>,
-): ConversationWatchChangesRequest | ConversationChangesDiffRequest | ConversationChangedFileRequest | null {
-  if (!id(value.requestId)) return null
-  if (value.type === 'watchChanges') {
-    if (value.stop !== undefined && value.stop !== true) return null
-    return { type: 'watchChanges', requestId: value.requestId, ...(value.stop === true ? { stop: true } : {}) }
-  }
-  const selection = parseConversationChangesSelection(value.selection)
-  if (!selection) return null
-  if (value.type === 'getChangesDiff') return { type: 'getChangesDiff', requestId: value.requestId, selection }
-  if (value.type === 'getChangedFile' && isConversationChangedPath(value.path))
-    return { type: 'getChangedFile', requestId: value.requestId, selection, path: value.path }
-  return null
 }
 
 function step(value: unknown): ConversationChangesStep | null {

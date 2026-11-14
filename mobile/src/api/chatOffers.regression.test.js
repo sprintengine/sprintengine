@@ -49,7 +49,6 @@ test("a pairing that may drive its chats is offered what the desktop serves, and
   assert.equal(offers.sentPictures, false);
   assert.equal(offers.plans, true);
   assert.equal(offers.manage, true, "the Studio keeps its chats' rest, and the grant reaches it");
-  assert.equal(offers.downscale, false, "the Studio socket keeps a picture as it came");
 });
 
 test("a read-only pairing follows and reads, and is offered nothing that drives the chat", () => {

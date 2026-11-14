@@ -80,7 +80,10 @@ try {
     assert.equal(loaded.STUDIO_PROTOCOL_VERSION, 1)
     // The conversation contract arrives through the dependency, not a copy.
     assert.equal(loaded.CONVERSATION_CAPABILITY, 'conversations')
-    assert.equal(loaded.parseConversationClientMessage({ type: 'hello', requestId: 'h-1' }).type, 'hello')
+    assert.equal(
+      loaded.parseConversationClientMessage({ type: 'command', commandId: 'c-0', command: { kind: 'interrupt' } }).type,
+      'command',
+    )
     assert.deepEqual(
       loaded.parseStudioMethodParams('conversation.send', {
         key: { workspaceId: 'w', agentId: 'a' },

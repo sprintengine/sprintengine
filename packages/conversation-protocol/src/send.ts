@@ -108,19 +108,3 @@ export type ConversationLaneSend = Pick<ConversationSendRequest, Carried<'as-is'
 } & { [K in Carried<'by-id'>]?: ConversationSkillRef['id'][] } & { [K in Carried<'when-set'>]?: true } & {
   [K in Carried<'unless-default'>]?: Exclude<ConversationTurnMode, 'default'>
 }
-
-/**
- * A request saying only what it means, as a transport hands it on: an empty
- * list, the default mode and a flag that is off are left out, each the same
- * as saying nothing. Every other part is kept as it is.
- */
-export function conciseConversationSendRequest<R extends ConversationSendRequest<unknown>>(request: R): R {
-  const concise: Record<string, unknown> = {}
-  for (const [part, value] of Object.entries(request)) {
-    if (value === undefined || value === false) continue
-    if (Array.isArray(value) && value.length === 0) continue
-    if (part === 'mode' && value === 'default') continue
-    concise[part] = value
-  }
-  return concise as R
-}

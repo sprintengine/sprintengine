@@ -6,7 +6,6 @@ import {
   type ChatCapabilities,
 } from "../../../packages/client-runtime/src/public";
 import {
-  CONVERSATION_IMAGE_DOWNSCALE_CAPABILITY,
   CONVERSATION_MESSAGE_IMAGES_CAPABILITY,
   CONVERSATION_PLANS_CAPABILITY,
   CONVERSATION_STOP_SUBAGENT_CAPABILITY,
@@ -43,8 +42,6 @@ export type PhoneChatOffers = ChatCapabilities & {
   stopAgents: boolean;
   /** The desktop names the chat's sub-agents (the chats this one started). */
   subagents: boolean;
-  /** A picture over 5 MB is shrunk by the desktop: never on the Studio socket, which keeps one as it came. */
-  downscale: boolean;
   /** Settle, Mark unread, Snooze and visit stamps: the Studio keeps its chats' rest (`chat-lifecycle`) and the grant reaches it. */
   manage: boolean;
 };
@@ -67,7 +64,6 @@ export function phoneChatOffers(welcome: Pick<StudioWelcomeFrame, "capabilities"
     plans: serves(CONVERSATION_PLANS_CAPABILITY),
     stopAgents: !!welcome && serves(CONVERSATION_STOP_SUBAGENT_CAPABILITY) && studioOffers(welcome, "conversation.stopSubagent"),
     subagents: follow && serves(CONVERSATION_SUBAGENTS_CAPABILITY),
-    downscale: serves(CONVERSATION_IMAGE_DOWNSCALE_CAPABILITY),
     manage: !!welcome && studioOffers(welcome, "conversation.markUnread"),
   };
 }

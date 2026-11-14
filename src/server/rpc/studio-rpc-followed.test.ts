@@ -12,7 +12,7 @@ import {
 import type { StudioChatBackend, StudioFollowedBackend } from './studio-rpc-types'
 import { createStudioRpcRouter } from './studio-rpc-router'
 import { studioWindowGrant } from './studio-frame-port'
-import { STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES, studioRpcConversationCapabilities } from './studio-rpc-server'
+import { studioRpcConversationCapabilities } from './studio-rpc-server'
 import {
   OWNER_TOKEN,
   connectLineClient,
@@ -204,8 +204,6 @@ test('the socket withholds no conversation capability but its handshake, its upl
     'conversation-queued-attachments',
   ])
     assert.ok(info.conversation.capabilities.includes(capability), capability)
-  for (const capability of STUDIO_RPC_WITHHELD_CONVERSATION_CAPABILITIES)
-    assert.equal(info.conversation.capabilities.includes(capability), false, capability)
   // A Studio whose host cannot serve them does not say it does.
   const bare = studioRpcConversationCapabilities(createFakeBackend())
   assert.equal(bare.includes('conversation-side-questions'), false)

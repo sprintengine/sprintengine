@@ -101,14 +101,6 @@ test('an older desktop knows none of the kinds, and says so under the command id
   }
 })
 
-test('watchScheduled is a request of its own', () => {
-  assert.deepEqual(parseConversationClientMessage({ type: 'watchScheduled', requestId: 'r-1' }), {
-    type: 'watchScheduled',
-    requestId: 'r-1',
-  })
-  assert.equal(parseConversationClientMessage({ type: 'watchScheduled' }), null)
-})
-
 test('a scheduled frame keeps what each message says, and skips one it cannot read', () => {
   assert.equal(isKnownConversationServerFrameType({ type: 'scheduled' }), true)
   const frame = parseConversationServerFrame({

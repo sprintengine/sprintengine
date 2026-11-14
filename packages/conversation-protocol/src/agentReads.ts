@@ -54,16 +54,6 @@ export type ConversationSideQuestionAnswer = { answer: string }
 // ── The context window ──────────────────────────────────────────────────────
 
 /**
- * Read what fills the context window of the chat this socket follows
- * (`conversation-context-breakdown`), as its agent measures it. Answered by a
- * `result` whose `data` is a `ConversationContextBreakdownAnswer`. Refused in
- * words for a chat with no live session, which has no agent to ask until a
- * message starts one: a read never starts a session. Needs only
- * `conversation:read`.
- */
-export type ConversationContextBreakdownRequest = { type: 'getContextBreakdown'; requestId: string }
-
-/**
  * One row of the breakdown. `used` fills the window, `free` is what is left of
  * it, `buffer` is held back for compaction, and `deferred` is listed for
  * awareness but not in the window (tool schemas loaded on demand). A client
