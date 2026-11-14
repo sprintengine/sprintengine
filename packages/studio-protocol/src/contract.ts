@@ -54,9 +54,14 @@ export type StudioCommonErrorCode =
  * receipt on a retry while the server that carried it out runs; `durable`
  * says the receipt outlives that server too (written with the command in the
  * chat's own log, or in the record the command made), so a retry reaching a
- * restarted server is still answered from it, never carried out again. A
- * mutation without it keeps its receipts in the running server's memory
- * only, so the client sends it again only to the same boot (`bootId`).
+ * restarted server is answered from it, not carried out again. A chat's
+ * control commands (stop a turn, answer a request, set a model or a preset,
+ * end a session) write theirs once answered: a crash before that leaves none,
+ * and the retry acts again on the chat as it is then, which is safe only
+ * because each of them sets a state or finds nothing left to act on. A
+ * method is marked `durable` only where that holds. A mutation without it
+ * keeps its receipts in the running server's memory only, so the client
+ * sends it again only to the same boot (`bootId`).
  */
 export type StudioMethodReceipts = 'durable'
 
