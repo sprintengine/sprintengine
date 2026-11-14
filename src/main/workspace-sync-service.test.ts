@@ -5,7 +5,8 @@ import { createWorkspaceRegistryService } from './workspace-registry-service'
 import { createInMemoryWorkspaceRegistryStore } from './workspace-registry-store'
 import { emptyWorkspaceRegistryFile, toWorkspaceRegistryRecord } from '../shared/workspace-registry'
 import type { Workspace } from '../renderer/src/types/workspace'
-import type { WorkspaceSyncCommand, WorkspaceSyncSnapshot } from '../shared/workspace-sync'
+import { applyAgentPatch, type WorkspaceSyncCommand, type WorkspaceSyncSnapshot } from '../shared/workspace-sync'
+import { defaultAgent } from '../shared/agent-state'
 import { test } from 'vitest'
 
 test('workspace-sync-service', async () => {
@@ -471,4 +472,39 @@ test("main's own title carries the lock and never outranks a person's rename", (
 
   assert.equal(service.renameWorkspace('ws-gone', 'Anything', true, 'system').ok, false)
   assert.equal(service.renameWorkspace('ws-chat', '   ', true, 'system').ok, false)
+})
+
+test('a field main clears reaches every window as cleared, though events travel as JSON', () => {
+  const agent = { ...defaultAgent('agent-1'), chatStartupPrompt: 'fix the build' }
+  const record: Workspace = {
+    id: 'ws-one',
+    name: 'ws-one',
+    mode: 'standard',
+    folderPath: null,
+    templateId: 'standard-test',
+    layoutModel: { global: {}, borders: [], layout: { type: 'row', children: [] } },
+    agents: { 'agent-1': agent },
+    worktreeState: { containerPath: null, entries: {}, updatedAt: null },
+    memory: { relativeRoot: null },
+    editorState: { openFiles: [], activeFilePath: null },
+  } as Workspace
+  const registry = createWorkspaceRegistryService({
+    store: createInMemoryWorkspaceRegistryStore({
+      ...emptyWorkspaceRegistryFile(1),
+      revision: 1,
+      workspaces: [toWorkspaceRegistryRecord(record, 1)],
+    }),
+    now: () => 1234,
+  })
+  const service = createWorkspaceSyncService({ registry, now: () => 1234 })
+  const before = service.getSnapshot().sequence
+  assert.equal(service.updateWorkspaceAgent('ws-one', 'agent-1', { chatStartupPrompt: undefined }, 'ui').ok, true)
+  assert.equal(registry.getRecord('ws-one')?.agents['agent-1']?.chatStartupPrompt, undefined)
+  // As a window reads the event: off the wire, then applied to its own copy.
+  const [event] = JSON.parse(JSON.stringify(service.getEventsAfter(before))) as Array<{
+    payload: { patch: Record<string, unknown> }
+  }>
+  const windowCopy = { ...agent }
+  applyAgentPatch(windowCopy, event!.payload.patch)
+  assert.equal('chatStartupPrompt' in windowCopy, false, 'the window still holds the cleared first message')
 })

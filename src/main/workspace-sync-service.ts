@@ -1,4 +1,5 @@
 import {
+  agentPatchForWire,
   type WorkspaceFieldsPatch,
   type WorkspaceSyncCommand,
   type WorkspaceSyncCommandResult,
@@ -336,8 +337,11 @@ export function createWorkspaceSyncService(options: WorkspaceSyncServiceOptions)
     actor: WorkspaceMutationActor,
     configEditedAt: number = now(),
   ): WorkspaceSyncCommandResult {
+    // A field main clears with `undefined` goes as null: the event reaches
+    // windows as JSON, which would drop it, and leave their copy stale.
+    const wire = patch === null ? null : agentPatchForWire(patch)
     return emit(
-      { type: 'workspace.update_agent', payload: { workspaceId, agentId, patch, configEditedAt } },
+      { type: 'workspace.update_agent', payload: { workspaceId, agentId, patch: wire, configEditedAt } },
       registry.getState().primaryWorkspaceWindowId,
       actor,
     )
