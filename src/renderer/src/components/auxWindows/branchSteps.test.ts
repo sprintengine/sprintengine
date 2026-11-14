@@ -148,7 +148,11 @@ test('branchSteps', async () => {
   })
 
   run('only the working tree against HEAD, on this computer, has an index between its sides', () => {
-    const diff = { files: [{ path: 'a.ts', status: 'modified' as const, additions: 1, deletions: 1 }], additions: 1, deletions: 1 }
+    const diff = {
+      files: [{ path: 'a.ts', status: 'modified' as const, additions: 1, deletions: 1 }],
+      additions: 1,
+      deletions: 1,
+    }
     const against = (selection: Parameters<typeof branchItemsFrom>[1], snap: BranchStepsSnapshot, remote = false) =>
       branchItemsFrom(diff, selection, snap, '/repo', remote)[0].againstHead
     assert.equal(against({ kind: 'uncommitted' }, snapshot()), true, 'the tail is HEAD to the working tree')

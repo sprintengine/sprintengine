@@ -335,7 +335,11 @@ export async function cherryPickGitCommit(repoRoot: string, commitHash: string):
     )
   }
 
-  return explainConflictStop(repoRoot, 'cherry-pick', await runGitCommand(repoRoot, ['cherry-pick', hash], NO_EDITOR_ENV))
+  return explainConflictStop(
+    repoRoot,
+    'cherry-pick',
+    await runGitCommand(repoRoot, ['cherry-pick', hash], NO_EDITOR_ENV),
+  )
 }
 
 export async function revertGitCommit(repoRoot: string, commitHash: string): Promise<GitCommandResult> {

@@ -71,7 +71,10 @@ test('git-branch-actions', async () => {
       assert.equal(conflicted.ok, false)
       // Said as the state it is, not as git's exit status.
       assert.equal(conflicted.stoppedOnConflicts, true)
-      assert.equal(conflicted.message, 'The merge stopped on conflicts in 1 file. Resolve them, then Continue, or Abort to go back.')
+      assert.equal(
+        conflicted.message,
+        'The merge stopped on conflicts in 1 file. Resolve them, then Continue, or Abort to go back.',
+      )
       assert.equal(await getGitOperationInProgress(repo), 'merge')
 
       // Abort restores a clean tree and clears the state.

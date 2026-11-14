@@ -92,10 +92,7 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   useEffect(() => onThirdPartyRendererModulesLoaded(() => void load()), [load])
   // What is installed changed under the window: an install elsewhere, or a
   // module copied into the drop-in folder while Studio runs.
-  useEffect(
-    () => (windowHasStudio() ? extensionsApi.onThirdPartyModulesChanged(() => void load()) : undefined),
-    [load],
-  )
+  useEffect(() => (windowHasStudio() ? extensionsApi.onThirdPartyModulesChanged(() => void load()) : undefined), [load])
 
   const installFromFolder = useCallback(async () => {
     setInstalling(true)

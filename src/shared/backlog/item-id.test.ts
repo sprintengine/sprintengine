@@ -52,9 +52,12 @@ test('item-id', async () => {
   run('planBacklogIdAllocation numbers above a floor claimed outside the scanned items', () => {
     // A file renamed out of the scan still holds id 1; the new item must not reuse it.
     assert.deepEqual(planBacklogIdAllocation([{ relativePath: 'backlog/new.md' }], 1), { 'backlog/new.md': 2 })
-    assert.deepEqual(planBacklogIdAllocation([{ relativePath: 'backlog/new.md', numericId: 5 }, { relativePath: 'b.md' }], 3), {
-      'b.md': 6,
-    })
+    assert.deepEqual(
+      planBacklogIdAllocation([{ relativePath: 'backlog/new.md', numericId: 5 }, { relativePath: 'b.md' }], 3),
+      {
+        'b.md': 6,
+      },
+    )
   })
 
   run('planBacklogIdAllocation assigns missing ids oldest-first past the max', () => {
