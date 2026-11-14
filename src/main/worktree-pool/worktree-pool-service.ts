@@ -609,7 +609,7 @@ export function createWorktreePoolService(deps: WorktreePoolServiceDeps) {
   }
 
   async function action(input: WorktreePoolActionInput): Promise<WorktreePoolActionResult> {
-    if (input.kind === 'release') return releaseAction(input.leaseId)
+    if (input.kind === 'release') return releaseAction(input.leaseId, input.unused === true)
     if (input.kind === 'catch-up') return catchUpResult(await catchUp(ctx, input.leaseId))
     const pool = await poolFor(input.repoRoot, false)
     if (!pool) return { ok: false, message: 'This repository has no worktree pool.' }
@@ -625,8 +625,8 @@ export function createWorktreePoolService(deps: WorktreePoolServiceDeps) {
   }
 
   /** A lease given back by the window that took it, whose chat went before it landed. */
-  async function releaseAction(leaseId: string): Promise<WorktreePoolActionResult> {
-    const outcome = await release(ctx, leaseId)
+  async function releaseAction(leaseId: string, unused: boolean): Promise<WorktreePoolActionResult> {
+    const outcome = await release(ctx, leaseId, { dropUnusedBranch: unused })
     if (outcome === 'returned') return { ok: true, message: 'Returned to the pool.' }
     if (outcome === 'held') return { ok: true, message: 'Held: it has changes a person should look at.' }
     if (outcome === 'not-found') return { ok: false, message: 'No such lease.' }

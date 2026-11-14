@@ -25,6 +25,7 @@ import {
   ExtensionRow,
   ExtensionStateLabel,
   InstalledTrailing,
+  NeedsUpdatingTrailing,
   ReviewTrailing,
 } from './ExtensionRow'
 import {
@@ -135,6 +136,11 @@ export function ExtensionListRow({
   const rendererLoadState = getThirdPartyRendererLoadState(id)
   const contributionError = getModuleContributionError(id)
   const problem = moduleProblem(module, rendererLoadState, contributionError)
+  // Built for another host API: trusting it would not make it run (the host
+  // refuses it before trust is asked), so Review is not offered; the notice
+  // says what would.
+  const hostBlocked = problem?.kind === 'host-api' ? problem : null
+  const reviewable = !trusted && !invalid && !hostBlocked
   const state = runState(module, enabled, rendererLoadState, contributionError)
   const update = marketplaceUpdateFor(module, updateStates)
   const registry = getRendererHost()
@@ -149,6 +155,8 @@ export function ExtensionListRow({
 
   const trailing = invalid ? (
     <CannotTrustTrailing />
+  ) : !trusted && hostBlocked ? (
+    <NeedsUpdatingTrailing direction={hostBlocked.direction} />
   ) : !trusted ? (
     <ReviewTrailing name={name} onReview={() => actions.onReview(module)} />
   ) : (
@@ -172,9 +180,9 @@ export function ExtensionListRow({
             onSelect: () => actions.onSetEnabled(id, !enabled),
           },
         ]
-      : invalid
-        ? []
-        : [{ id: 'review', label: 'Review and trust', onSelect: () => actions.onReview(module) }]),
+      : reviewable
+        ? [{ id: 'review', label: 'Review and trust', onSelect: () => actions.onReview(module) }]
+        : []),
     ...(update
       ? [
           {
@@ -274,7 +282,7 @@ export function ExtensionListRow({
                 <GhostButton size="xs" disabled={pending} onClick={() => actions.onRevokeTrust(module)}>
                   Revoke trust
                 </GhostButton>
-              ) : !trusted && !invalid ? (
+              ) : reviewable ? (
                 <OutlineButton size="xs" onClick={() => actions.onReview(module)}>
                   Review and trust
                 </OutlineButton>

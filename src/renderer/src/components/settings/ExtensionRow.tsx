@@ -320,3 +320,12 @@ export function InstalledTrailing({
 export function CannotTrustTrailing(): JSX.Element {
   return <span className="whitespace-nowrap text-meta text-[color:var(--tone-error)]">Can’t be trusted</span>
 }
+
+/** Built for another host API: trusting it would not let it run, so it is not offered. */
+export function NeedsUpdatingTrailing({ direction }: { direction: 'older' | 'newer' | 'unknown' }): JSX.Element {
+  return (
+    <span className="whitespace-nowrap text-meta text-[color:var(--tone-warn)]">
+      {direction === 'newer' ? 'Needs a newer Studio' : 'Needs updating'}
+    </span>
+  )
+}

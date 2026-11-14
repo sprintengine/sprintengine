@@ -173,6 +173,8 @@ export type GitCommandResult = {
   pushedCommitCount?: number
   /** Set when git was stopped at its deadline rather than failing on its own. */
   timedOut?: true
+  /** A merge-like operation stopped on conflicts (see the protocol's GitCommandResult). */
+  stoppedOnConflicts?: boolean
 }
 
 export type GitWorktreeEntry = {

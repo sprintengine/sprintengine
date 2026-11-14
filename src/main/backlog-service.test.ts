@@ -1195,6 +1195,27 @@ test('backlog-service', async () => {
     }
   }
 
+  // An item renamed to a name without `.md` drops out of the scan but keeps its
+  // id. Creation used to mint past only the files the scan lists, so the next new
+  // item got the same number.
+  async function testIdsCountEveryFile(): Promise<void> {
+    const tempRoot = await mkdtemp(join(tmpdir(), 'sprintengine-backlog-ids-'))
+    try {
+      const first = await createBacklogItem({ workspaceRoot: tempRoot, title: 'First item' })
+      assert.equal(first.ok, true)
+      const firstPath = join(tempRoot, first.ok ? first.relativePath : '')
+      const renamed = join(dirname(firstPath), 'Renamed item')
+      await writeFile(renamed, await readFile(firstPath, 'utf-8'))
+      await rm(firstPath)
+      const second = await createBacklogItem({ workspaceRoot: tempRoot, title: 'Second item' })
+      assert.equal(second.ok, true)
+      assert.equal(first.ok ? first.numericId : 0, 1)
+      assert.equal(second.ok ? second.numericId : 0, 2, 'the renamed file still owns id 1')
+    } finally {
+      await rm(tempRoot, { force: true, recursive: true })
+    }
+  }
+
   // The sidecar was tracked and ~550KB in a real project, and a scan or a link
   // re-resolve that confirms what is already stored must not touch it. Two guards
   // hold that line: the record keeps its prior `updatedAt` when nothing else moved,
@@ -1610,6 +1631,7 @@ test('backlog-service', async () => {
     .then(() => testBacklogIntegrityRepairsAreNarrowAndIdempotent())
     .then(() => testListAndReadBacklogItemsAreReadOnly())
     .then(() => testConfirmingRewritesLeaveTheSidecarAlone())
+    .then(() => testIdsCountEveryFile())
     .then(() => testLegacySidecarMigration())
     .then(() => testNewItemsAreFiledUnderTheirEpic())
     .then(() => testListingWalksNestedEpicFolders())

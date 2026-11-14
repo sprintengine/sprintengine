@@ -6,6 +6,7 @@ import {
   backlogExcerpt,
   backlogItemSlugFromPath,
   backlogPreviewMarkdown,
+  backlogRenameFileName,
   createBacklogItem,
   nextArchiveRelativePath,
   scanBacklog,
@@ -85,6 +86,15 @@ test('backlog', async () => {
   function basename(pathValue: string): string {
     return pathValue.split('/').at(-1) ?? pathValue
   }
+
+  run('a rename keeps the item a backlog file: its extension stays unless one was typed', () => {
+    assert.equal(backlogRenameFileName('2026-11-14-second-item.md', 'Renamed item'), 'Renamed item.md')
+    assert.equal(backlogRenameFileName('mock.html', 'other'), 'other.html')
+    assert.equal(backlogRenameFileName('a.md', 'b.md'), 'b.md')
+    assert.equal(backlogRenameFileName('a.md', 'b.HTML'), 'b.HTML')
+    assert.equal(backlogRenameFileName('a.md', 'notes.txt'), 'notes.txt.md', 'another extension would hide it too')
+    assert.equal(backlogRenameFileName('a.md', '  '), '')
+  })
 
   run('missing backlog returns a typed missing-folder state', async () => {
     const result = await scanBacklog('/repo', fixture({ '/repo': { kind: 'dir' } }))

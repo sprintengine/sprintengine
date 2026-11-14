@@ -29,6 +29,13 @@ export type BranchDiffItem = DiffFileItem & {
   deletions: number
   /** The step it was read for, by which a source on another machine reads its two sides. */
   selection?: BranchStepSelection
+  /**
+   * The step is this computer's working tree against HEAD: the uncommitted
+   * tail, or a span with no commits to measure (no base, or nothing ahead of
+   * it). Only then is the index between the two sides, so only then can a
+   * file or a hunk of it be included in the next commit from here.
+   */
+  againstHead?: boolean
 }
 
 /**
@@ -124,9 +131,12 @@ export function branchItemsFrom(
   selection: BranchStepSelection,
   snapshot: BranchStepsSnapshot | null,
   repoRoot: string,
+  /** The checkout is on another machine: its index is not this computer's to write. */
+  remote = false,
 ): BranchDiffItem[] {
   if (!diff) return []
   const { originalRev, modifiedRev } = revsForSelection(selection, snapshot)
+  const againstHead = !remote && stepIsAgainstHead(selection, snapshot)
   return diff.files.map((file) => ({
     path: joinFilePath(repoRoot, file.path),
     relativePath: file.path,
@@ -137,7 +147,20 @@ export function branchItemsFrom(
     additions: file.additions,
     deletions: file.deletions,
     selection,
+    againstHead,
   }))
+}
+
+/**
+ * Whether a step's diff is HEAD against the working tree. The uncommitted tail
+ * always is; the span is too when there is nothing to measure from but HEAD (no
+ * merge-base) or the branch has no commits past its base, which is the case for
+ * a chat working straight on the default branch.
+ */
+export function stepIsAgainstHead(selection: BranchStepSelection, snapshot: BranchStepsSnapshot | null): boolean {
+  if (selection.kind === 'uncommitted') return true
+  if (selection.kind === 'commit') return false
+  return snapshot !== null && (snapshot.baseOid === null || snapshot.steps.length === 0)
 }
 
 /**

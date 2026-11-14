@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Input } from './Input'
 import { Modal, ModalBody, ModalButton, ModalFooter, ModalHeader } from './Modal'
 
@@ -29,6 +29,18 @@ export type PromptDialogOptions = ConfirmDialogBase & {
   placeholder?: string
   required?: boolean
   validate?: (value: string) => string | null | undefined
+  /**
+   * A file name is offered with its name part selected and its extension not,
+   * so typing replaces `untitled` and keeps `.ts`. Absent, the caret lands at
+   * the end of the value as before.
+   */
+  selectFileStem?: boolean
+}
+
+/** Where a file name's stem ends: before its last dot, unless the name starts with it. */
+function fileStemEnd(name: string): number {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? dot : name.length
 }
 
 type DialogRequest =
@@ -203,6 +215,19 @@ function PromptDialog({
   const inputId = useId()
   const [value, setValue] = useState(options.initialValue ?? '')
   const [touched, setTouched] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const selectFileStem = options.selectFileStem === true
+  // After the dialog's own focus handling has put the caret in the field.
+  useEffect(() => {
+    if (!selectFileStem) return
+    const frame = window.requestAnimationFrame(() => {
+      const input = inputRef.current
+      if (!input) return
+      input.focus()
+      input.setSelectionRange(0, fileStemEnd(input.value))
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [selectFileStem])
   const trimmed = value.trim()
   const missing = Boolean(options.required) && trimmed.length === 0
   const validationError = options.validate?.(value) ?? null
@@ -237,6 +262,7 @@ function PromptDialog({
               `--bg-field` ground, the hover edge, the `aria-invalid` edge and
               the disabled state the bare input here used to lack. */}
           <Input
+            ref={inputRef}
             id={inputId}
             size="md"
             value={value}

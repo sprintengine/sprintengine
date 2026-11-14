@@ -464,10 +464,20 @@ test('a lease given back by the window that took it is returned at once, with no
   assert.deepEqual(released, { ok: true, message: 'Returned to the pool.' })
   assert.equal((await slotAt(harness, 'app-01')).state, 'idle')
   assert.equal(await lockReason(leased.path), null, 'unlocked')
+  // A plain release keeps the branch: a chat brought back later needs it.
+  assert.notEqual(await git(repo, 'branch', '--list', leased.branch), '', 'its branch is kept')
   assert.deepEqual(await harness.service.action({ kind: 'release', leaseId: leased.leaseId }), {
     ok: false,
     message: 'No such lease.',
   })
+})
+
+test('a lease given back as unused takes its empty branch with it', async () => {
+  const harness = makeService()
+  const leased = await lease(harness, 'worktree-off')
+  const released = await harness.service.action({ kind: 'release', leaseId: leased.leaseId, unused: true })
+  assert.deepEqual(released, { ok: true, message: 'Returned to the pool.' })
+  assert.equal(await git(repo, 'branch', '--list', leased.branch), '', 'its unused branch is deleted')
 })
 
 test('a lease nobody has worked in catches up to origin/main as it is now', async () => {

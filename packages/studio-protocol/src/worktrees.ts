@@ -205,6 +205,13 @@ function poolAction(value: unknown): StudioParsed<WorktreePoolActionInput> {
   if (!record(value)) return refuse('"action" is an object.')
   switch (value.kind) {
     case 'release':
+      if (!id(value.leaseId)) return refuse('"leaseId" names the lease.')
+      if (value.unused !== undefined && typeof value.unused !== 'boolean') return refuse('"unused" is true or false.')
+      return studioParams({
+        kind: 'release',
+        leaseId: value.leaseId,
+        ...(value.unused === true ? { unused: true } : {}),
+      })
     case 'catch-up':
       return id(value.leaseId)
         ? studioParams({ kind: value.kind, leaseId: value.leaseId })

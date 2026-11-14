@@ -158,7 +158,17 @@ export type WorktreePoolActionInput =
    * was being made has no one to use the slot (utils/newChatWorktree.ts).
    * The same return a sweep makes, so a slot with changes is held, not reset.
    */
-  | { kind: 'release'; leaseId: string }
+  | {
+      kind: 'release'
+      leaseId: string
+      /**
+       * Nobody ever worked in it (a New chat's reservation, given back when
+       * Worktree was turned off): its branch, made for the lease and still where
+       * the lease began, is deleted with it. Absent, the branch is kept, as a
+       * chat that is brought back later needs it.
+       */
+      unused?: boolean
+    }
   /**
    * Bring a lease nobody has worked in yet to the default branch as origin has
    * it now: the worktree a New chat made while the person typed, before the

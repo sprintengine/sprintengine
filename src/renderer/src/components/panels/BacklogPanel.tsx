@@ -43,6 +43,7 @@ import { isEditableTarget } from '../../utils/keyboard'
 import { resolveFirstMockupCandidate } from '../../utils/backlogMockups'
 import { HtmlArtifactFrame } from '../htmlArtifact/HtmlArtifactFrame'
 import { focusOrAddFileTab, remapFileTabsForPath, removeFileTabsForPath } from '../../utils/modelRegistry'
+import { announcePathRemoved } from '../../utils/openFileSurface'
 import { sendFileDropToTerminal, setFileDropData, type FileDropPayload } from '../../utils/terminalDrop'
 import { recordBacklogAgentHandoff } from '../../utils/backlogAgentHandoff'
 import { canHandBacklogItemToAgent } from '../../utils/backlogHandoff'
@@ -52,6 +53,7 @@ import { findDuplicateBacklogIds } from '../../../../shared/backlog/item-id'
 import {
   backlogItemSlugFromPath,
   backlogPreviewMarkdown,
+  backlogRenameFileName,
   nextArchiveRelativePath,
   normalizeRelativePath,
   stableBacklogObjectId,
@@ -1013,15 +1015,15 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
       runAction(async () => {
         if (!folderPath) return
         const current = basename(item.relativePath)
-        const next = (
-          await dialog.prompt({
-            title: 'Rename item',
-            inputLabel: 'File name',
-            initialValue: current,
-            confirmLabel: 'Rename',
-            required: true,
-          })
-        )?.trim()
+        const typed = await dialog.prompt({
+          title: 'Rename item',
+          inputLabel: 'File name',
+          initialValue: current,
+          confirmLabel: 'Rename',
+          required: true,
+          selectFileStem: true,
+        })
+        const next = typed ? backlogRenameFileName(current, typed) : ''
         if (!next || next === current) return
         // renamePath stays in the same directory and rejects an existing name.
         const newPath = await filesApi.renamePath(item.path, next)
@@ -1152,6 +1154,7 @@ export default function BacklogPanel({ workspaceId }: WorkspacePanelProps): JSX.
           removeOpenFilesForPath(workspaceId, item.path)
           removeFileTabsForPath(workspaceId, item.path)
         }
+        announcePathRemoved(item.path)
         if (folderPath) {
           const removed = await backlogApi.removeBacklogObjectRecord({
             workspaceRoot: folderPath,

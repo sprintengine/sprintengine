@@ -466,6 +466,12 @@ export type GitCommandResult = {
   stderr: string
   message: string | null
   pushedCommitCount?: number
+  /**
+   * A merge, rebase, cherry-pick or revert that stopped on conflicts, as git
+   * expects to: not a failure to report but a state to resolve, and `message`
+   * says so in words rather than as git's exit status.
+   */
+  stoppedOnConflicts?: boolean
 }
 
 export type GitWorktreeEntry = {

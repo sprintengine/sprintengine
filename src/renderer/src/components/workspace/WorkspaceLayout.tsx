@@ -50,6 +50,7 @@ import {
   ensureStandInPane,
   holdsMeshConversationPane,
   registerModel,
+  removeGitConflictTab,
   restoreRailWidthFractions,
   unregisterModel,
 } from '../../utils/modelRegistry'
@@ -785,7 +786,11 @@ function WorkspaceLayoutBody({
           return gitEnabled && config?.repoRoot && config.filePath
             ? timedPanel(
                 'GitConflictResolverPanel',
-                <GitConflictResolverPanel repoRoot={config.repoRoot} filePath={config.filePath} />,
+                <GitConflictResolverPanel
+                  repoRoot={config.repoRoot}
+                  filePath={config.filePath}
+                  onFinished={() => removeGitConflictTab(workspaceId, config.repoRoot!, config.filePath!)}
+                />,
               )
             : DISABLED_SURFACE
         case 'terminal':

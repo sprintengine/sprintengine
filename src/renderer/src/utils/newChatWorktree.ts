@@ -256,7 +256,8 @@ async function giveBackUnusedWorktree(
 ): Promise<void> {
   if (!made.made) return
   try {
-    if (made.made.leaseId) await worktreesApi.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId })
+    if (made.made.leaseId)
+      await worktreesApi.worktreePoolAction({ kind: 'release', leaseId: made.made.leaseId, unused: true })
     else if (!hostId) await worktreesApi.removeGitWorktree({ repoRoot: made.made.repoRoot, path: made.folderPath })
   } catch {
     // Left for the sweep.
@@ -290,8 +291,8 @@ export function startPendingNewChatInProject(workspaceId: WorkspaceId): boolean 
 // computer, on a branch named at random: a name typed into the chip is a
 // different branch, so it is made on Enter as before. Turning Worktree off,
 // moving to another project or closing New chat gives the slot back to the
-// pool, clean, for the next chat; its empty branch goes at the next cleanup
-// sweep, like any other of Studio's with no work of its own.
+// pool, clean, for the next chat, and the pool deletes its empty branch then
+// (pool-return.ts `dropUnusedBranch`).
 //
 // Kept current while it waits: every chat starts on the latest origin/main
 // (owner ruling 2026-10-17), and the person may type for minutes after the

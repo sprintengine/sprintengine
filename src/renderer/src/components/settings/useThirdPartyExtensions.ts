@@ -90,6 +90,9 @@ export function useThirdPartyExtensions(onSetEnabled: (moduleId: string, enabled
   // A renderer batch that landed after the first list (trust granted, a slow
   // boot) changes what the rows say about running.
   useEffect(() => onThirdPartyRendererModulesLoaded(() => void load()), [load])
+  // What is installed changed under the window: an install elsewhere, or a
+  // module copied into the drop-in folder while Studio runs.
+  useEffect(() => (windowHasStudio() ? extensionsApi.onThirdPartyModulesChanged(() => void load()) : undefined), [load])
 
   const installFromFolder = useCallback(async () => {
     setInstalling(true)

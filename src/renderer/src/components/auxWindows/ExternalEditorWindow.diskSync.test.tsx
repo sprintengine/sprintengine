@@ -20,6 +20,8 @@ const FILE = `${ROOT}/src/app.ts`
 const disk = new Map<string, string>()
 const writes: Array<{ path: string; content: string }> = []
 const watchers: Array<{ path: string; cb: (event: FileWatchEvent) => void; stopped: boolean }> = []
+let pathsRemoved: ((paths: string[]) => void) | null = null
+const windowClose = vi.fn(async () => undefined)
 
 ;(window as unknown as { api: unknown }).api = new Proxy(
   {
@@ -44,6 +46,13 @@ const watchers: Array<{ path: string; cb: (event: FileWatchEvent) => void; stopp
     },
     getGitRepoRoot: async () => null,
     checkIgnored: async () => [],
+    windowClose,
+    onPathsRemoved: (cb: (paths: string[]) => void) => {
+      pathsRemoved = cb
+      return () => {
+        if (pathsRemoved === cb) pathsRemoved = null
+      }
+    },
   } as Record<string, unknown>,
   {
     get(target, key) {
@@ -65,6 +74,7 @@ beforeEach(() => {
   writes.length = 0
   watchers.length = 0
   fakeMonaco.editors.length = 0
+  windowClose.mockClear()
 })
 
 afterEach(async () => {
@@ -139,6 +149,24 @@ test('a clean tab takes an agent’s edit over the changed lines', async () => {
   assert.equal(editor.fullReplaces, 0, 'never a whole-text replace')
   assert.equal(unsavedMark(), false)
   assert.equal(notice(), null)
+})
+
+test('Studio deleting the file from another window closes a clean tab, and keeps one with unsaved edits', async () => {
+  await openWindow('gone soon\n')
+  assert.ok(pathsRemoved, 'the window listens for deletions')
+  await act(async () => pathsRemoved?.([`${ROOT}/elsewhere`]))
+  assert.equal(windowClose.mock.calls.length, 0, 'an unrelated path closes nothing')
+  // Its only tab closing closes the window.
+  await act(async () => pathsRemoved?.([`${ROOT}/src`]))
+  assert.equal(windowClose.mock.calls.length, 1)
+})
+
+test('a deleted file with unsaved edits keeps its tab', async () => {
+  const editor = await openWindow('keep\n')
+  await act(async () => editor.type('keep // mine\n'))
+  await act(async () => pathsRemoved?.([FILE]))
+  assert.equal(windowClose.mock.calls.length, 0)
+  assert.equal(unsavedMark(), true)
 })
 
 test('a dirty tab asks; Keep mine, then ⌘S, writes the person’s version on purpose', async () => {

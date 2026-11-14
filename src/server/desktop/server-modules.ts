@@ -15,6 +15,7 @@ import {
 } from '../../main/modules/third-party-main-loader'
 import { readModuleTrustContextSync } from '../../main/modules/trust-context'
 import { defaultUserModuleRoot, discoverUserModulesSync } from '../../main/modules/user-module-registry'
+import { watchUserModuleRoot } from '../../main/modules/user-module-watch'
 import type { ScheduledAgentsService } from '../../main/scheduled-agents/service'
 import { createStudioModuleHub, type StudioModules } from '../rpc/studio-modules'
 import { createModuleRegistryMirror, type ModuleRegistryMirror } from '../../main/modules/registry-mirror'
@@ -87,6 +88,7 @@ export function createServerModules(deps: {
   )
   let load: LoadMainModulesResult | null = null
   let gateway: StudioGateway | null = null
+  let stopWatchingModules: (() => void) | null = null
   let manifests: CapabilityManifest[] = []
   let ineligible: Record<string, ModuleResolutionErrorCode> = {}
   // The installed extensions, by id: each is switched on and off live.
@@ -230,8 +232,15 @@ export function createServerModules(deps: {
     startup() {
       const current = load
       if (current) void current.ready.then(() => current.kernel.runStartup())
+      // A module copied into the drop-in folder while Studio runs is listed
+      // at once, not after a reload.
+      stopWatchingModules ??= watchUserModuleRoot(defaultUserModuleRoot(), () => hub.deliverChanged())
     },
     shutdownBegin: () => load?.kernel.runShutdownBegin() ?? Promise.resolve(),
-    shutdown: () => load?.kernel.runShutdown() ?? Promise.resolve(),
+    shutdown: () => {
+      stopWatchingModules?.()
+      stopWatchingModules = null
+      return load?.kernel.runShutdown() ?? Promise.resolve()
+    },
   }
 }

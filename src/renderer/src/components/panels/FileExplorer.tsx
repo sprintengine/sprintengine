@@ -37,7 +37,7 @@ import { isPathOrChild } from '../../utils/paths'
 import type { FileSearchEngine } from '../../../../shared/ipc/filesystem'
 import { openGitDiff } from '../../utils/openGitDiff'
 import { openDiffWindow } from '../auxWindows/openDiffWindow'
-import { openFileSurface } from '../../utils/openFileSurface'
+import { announcePathRemoved, openFileSurface } from '../../utils/openFileSurface'
 import { fileExplorerSelectionFromVerticalRange, fileExplorerSelectionRange } from '../../utils/fileExplorerSelection'
 import { setFileDropData } from '../../utils/terminalDrop'
 import { consumePendingFileReveal, subscribeFileReveal } from '../../utils/fileReveal'
@@ -971,6 +971,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       initialValue: defaultName,
       confirmLabel: 'Create',
       required: true,
+      selectFileStem: kind === 'file',
     })
     const name = rawName?.trim()
     if (!name) return
@@ -1029,6 +1030,7 @@ export const FileExplorerTree = forwardRef<FileExplorerTreeHandle, FileExplorerT
       removeFileTabsForPath(workspaceId, path)
     }
     onPathRemoved?.(path)
+    announcePathRemoved(path)
   }
 
   const startRename = (entry: Entry) => {
