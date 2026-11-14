@@ -3764,6 +3764,36 @@ test('NewAgentPanel', async () => {
       door.view.unmount()
     })
 
+    await check('a scheduled agent\'s draft keeps its kind and its schedule when it is reopened', async () => {
+      seedStore()
+      const { readNewChatDraft, resetNewChatDraftsForTests } = await import('./newChatDraft')
+      resetNewChatDraftsForTests()
+      try {
+        const door = await scheduleDoor({ draftKey: 'win-sched' })
+        const field = await door.type('Sweep for dead code. /schedule sundays 9pm')
+        await door.enter(field)
+        door.view.unmount()
+        const parked = readNewChatDraft('win-sched')
+        assert.equal(parked?.prompt, 'Sweep for dead code.')
+        assert.ok(parked?.schedule, 'the draft says it is a scheduled agent')
+        assert.equal(parked?.schedule?.once, null, 'on repeats, not once')
+        // The host reopens a scheduled draft in scheduled mode (WorkspaceManager.presentNewChatPanel).
+        const reopened = await scheduleDoor({ draftKey: 'win-sched', initialMode: 'scheduled' })
+        assert.ok(reopened.view.container.querySelector('[data-schedule-tag="true"]'), 'the schedule chip is back')
+        assert.equal(sendButton(reopened.view)?.textContent?.trim(), 'Schedule', 'and so is the Schedule button')
+        assert.ok(reopened.view.text().includes('Every Sunday at 9:00 PM'), 'on the schedule it was left with')
+        // Turned back into a chat, the draft is a chat's again.
+        const toggle = await scheduleRow(reopened.view)
+        await act(async () => {
+          toggle!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }))
+        })
+        assert.equal(readNewChatDraft('win-sched')?.schedule, null, 'unscheduled, the draft is a chat')
+        reopened.view.unmount()
+      } finally {
+        resetNewChatDraftsForTests()
+      }
+    })
+
     await check('a scheduled agent opened from its card saves rather than creates', async () => {
       seedStore()
       const api = (dom.window as unknown as { api: Record<string, unknown> }).api
