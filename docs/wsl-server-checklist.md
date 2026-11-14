@@ -67,6 +67,10 @@ watch a pull request in another if you can.
    within a few seconds, with no chat opened: a distribution with chats is
    started at the desktop's start. Windows' diagnostics log has no
    "kept its own" line for these chats.
+   Repeat once with a fresh copy of the last release's data: quit the app
+   within a few seconds of its start, while the hand-over is running (the
+   distribution's server log shows `environment.adopt` calls), and start it
+   again. **Expect:** the same as above, and each chat listed once in step 2.
 2. Open each of the three chats.
    **Expect:** the whole transcript, both pictures, the plan (open it), and
    the folder as before. The sidebar places each where it was.
@@ -231,6 +235,11 @@ watch a pull request in another if you can.
    send in that chat.
    **Expect:** a readable message saying the distribution is not installed,
    with no stray characters between the letters.
+   Quit and start the app with that chat still in the sidebar (and again with
+   the WSL 1 distribution of step 2).
+   **Expect:** the chat says why. Windows' diagnostics log has one attempt
+   for each at the start, and later ones only as the open chat retries, ever
+   further apart; `wsl -l -v` never shows the WSL 1 distribution `Running`.
 4. V8: **PowerShell:** `wsl --manage <distro> --set-default-user <other>`,
    then send in a server chat.
    **Expect:** the server runs as the new user, in that user's home, with its
@@ -254,7 +263,7 @@ watch a pull request in another if you can.
 3. Open Settings › Machines.
    **Expect:** the "Studio server" row for each distribution, as in process.
 
-## I. Files, Git and terminals of a WSL workspace
+## H. Files, Git and terminals of a WSL workspace
 
 1. In a `\\wsl.localhost\…` workspace, open the Files pane, open and save a
    file, and open the Git pane: stage, commit, and look at a diff.
@@ -270,7 +279,7 @@ watch a pull request in another if you can.
    **Expect:** the chat reconnects; in the distribution's server log, the
    closed window's connection ended.
 
-## H. Defender (spec V11)
+## I. Defender (spec V11)
 
 1. With real-time protection on, in a fresh distribution, time the first
    install and the first chat. The install is the Node
