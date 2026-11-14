@@ -57,7 +57,7 @@ import { createNodeStudioPaths } from '../platform/studio-paths'
 import { createRemoteShellBridge } from '../shell-bridge/remote'
 import { createShellSecretCipher, meshSealedTokens } from '../shell-bridge/shell-cipher'
 import { createServerGatewayBackends, launchSettingsGatewayDeps } from './gateway-backends'
-import { registerServerDomainIpc } from './server-ipc'
+import { provideServerChat } from './server-ipc'
 import {
   SERVER_EVENTS,
   SERVER_METHODS,
@@ -518,7 +518,7 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
     },
     githubTokens: githubTokenStore,
   })
-  const domains = registerServerDomainIpc(tunnel.registry as unknown as Parameters<typeof registerServerDomainIpc>[0], {
+  const domains = provideServerChat({
     core,
     gateway,
     studioRpc,

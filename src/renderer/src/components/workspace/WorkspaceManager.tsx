@@ -324,6 +324,7 @@ import { agentSettingsApi, windowHasStudio } from '../../studio/agentSettings'
 import { agentSetupApi } from '../../studio/agentSetup'
 import { agentSkillsApi } from '../../studio/agentSkills'
 import { gitApi } from '../../studio/git'
+import { hostsApi } from '../../studio/hosts'
 import { worktreesApi } from '../../studio/worktrees'
 import { extensionsApi } from '../../studio/extensions'
 import { workspaceSyncApi } from '../../studio/workspaceSync'
@@ -3707,14 +3708,11 @@ export default function WorkspaceManager() {
     if (root) openNewChatPanel(root)
   })
   // The folder picker opens where the machine the door stands on keeps its
-  // files: a WSL machine's Linux home (`\\wsl.localhost\<distro>\home\…`),
-  // this machine's usual place otherwise.
+  // files: a WSL machine's own (`\\wsl.localhost\<distro>\home\…`, as its
+  // Studio says), this machine's usual place otherwise.
   const browseNewChatProject = async (hostId?: ExecutionHostId | null) => {
     let defaultPath: string | undefined
-    if (isWslHostId(hostId) && typeof window.api.hostsHome === 'function') {
-      const home = await window.api.hostsHome(hostId).catch(() => null)
-      if (home?.ok) defaultPath = home.native
-    }
+    if (isWslHostId(hostId)) defaultPath = (await hostsApi.hostsHome(hostId).catch(() => null)) ?? undefined
     const dir = await window.api.openDir(defaultPath ? { defaultPath } : undefined)
     if (!dir) return
     setNewChatPanelState((prev) => (prev ? { ...prev, folderPath: dir, folderLabel: newChatFolderLabel(dir) } : prev))

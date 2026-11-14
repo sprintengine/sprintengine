@@ -48,7 +48,7 @@ import {
   openPanePopOutWindow,
 } from './window-factory'
 import type { AppServices } from './app-services'
-import { registerServerDomainIpc } from '../server/desktop/server-ipc'
+import { provideServerChat } from '../server/desktop/server-ipc'
 import { createFilesystemReadHandlers } from './filesystem-read'
 import { openDiagnosticsLogsFolder } from './diagnostics-folder'
 import { writeDiagnosticLog } from './diagnostics-service'
@@ -200,19 +200,19 @@ export function registerCoreIpc(
     void services.desktopShell?.refreshToolsets()
   })
   registerKeepAwakeIpc(ipcMain, services.keepAwakeStore, () => services.agentKeepAwake.refresh())
-  // The domains the Studio server owns: registered here while it runs in
-  // process, and by the server itself on its IPC tunnel when it runs in a
-  // process of its own (src/server/desktop/server-ipc.ts).
+  // The chat surface the Studio server serves: set up here while it runs in
+  // process, and by the server itself when it runs in a process of its own
+  // (src/server/desktop/server-ipc.ts).
   const { automationService, studioRpcService, conversationTerminalHandoff } = services
   const { conversationCommands } =
     !options.server && automationService && studioRpcService && conversationTerminalHandoff
-      ? registerServerDomainIpc(ipcMain, {
+      ? provideServerChat({
           core: services.studioCore,
           gateway: automationService,
           studioRpc: studioRpcService,
           terminalHandoff: (input) => conversationTerminalHandoff.handoff(input),
         })
-      : // The server registers them, and disposes its own command lists.
+      : // The server sets it up, and disposes its own command lists.
         { conversationCommands: { dispose: async () => undefined } }
   // Showing an installed extension's folder in this computer's file manager.
   registerThirdPartyModuleIpc(ipcMain)

@@ -253,9 +253,9 @@ test('a listener added once hears one push, from either side', () => {
   const port = fakePort()
   router.attachPort(port as unknown as RouterPort)
   const heard: unknown[] = []
-  router.once('hosts:changed', ((_event: unknown, payload: unknown) => heard.push(payload)) as never)
-  port.deliver({ t: 'ipc.push', channel: 'hosts:changed', args: ['first'] })
-  renderer.emit('hosts:changed', 'second')
+  router.once('example:changed', ((_event: unknown, payload: unknown) => heard.push(payload)) as never)
+  port.deliver({ t: 'ipc.push', channel: 'example:changed', args: ['first'] })
+  renderer.emit('example:changed', 'second')
   assert.deepEqual(heard, ['first'])
 })
 

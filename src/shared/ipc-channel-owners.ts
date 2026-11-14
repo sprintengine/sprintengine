@@ -25,10 +25,9 @@ export type ServerIpcSubscription = { unsubscribe: string; id: 'argument' | 'res
 
 export type ServerIpcChannel = { retry?: 'once'; subscription?: ServerIpcSubscription }
 
-const SERVER_IPC_CHANNEL_TABLE = {
-  // The Schedules window's (registered with the server's domains, refused
-  // while scheduled agents is off).
-} as const satisfies Readonly<Record<string, ServerIpcChannel>>
+// Empty since the machines this computer offers moved to `hosts.*` on the
+// Studio protocol: no window channel is routed to the server any more.
+const SERVER_IPC_CHANNEL_TABLE = {} as const satisfies Readonly<Record<string, ServerIpcChannel>>
 
 /** Every channel the server owns, by name: what a table keyed by channel must cover (`WEB_TUNNEL_ACCESS`). */
 export type ServerIpcChannelName = keyof typeof SERVER_IPC_CHANNEL_TABLE

@@ -25,7 +25,7 @@ function fakePort() {
 }
 
 test('a web tab reaches the domains it draws, and not the ones that act beyond this server', () => {
-  for (const channel of ['hosts:list', 'hosts:home', 'web:previews:open'])
+  for (const channel of ['web:previews:list', 'web:browse-folders', 'web:previews:open'])
     expect(webTunnelAllows(channel), channel).toBe(true)
   for (const channel of ['conversation:secrets:set', 'github:set-token', 'github:clone'])
     expect(webTunnelAllows(channel), channel).toBe(false)
@@ -61,7 +61,7 @@ test('a call that changes something is audited with its outcome; a read is not',
   })
   guarded.on('message', () => undefined)
   inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'web:previews:open', args: [{ port: 5173, workspaceId: 'ws-1' }] })
-  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'hosts:list', args: [] })
+  inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'web:previews:list', args: [] })
   guarded.postMessage({ t: 'ipc.result', id: 1, ok: true, value: {} })
   guarded.postMessage({ t: 'ipc.result', id: 2, ok: true, value: {} })
   expect(audit.map(({ channel, ok, workspaceId }) => ({ channel, ok, workspaceId }))).toEqual([
@@ -130,9 +130,9 @@ test('a browser that is not the owner reaches no tunnel channel, whatever it sen
     audit: () => undefined,
   })
   guarded.on('message', (event) => heard.push(event.data))
-  inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'hosts:list', args: [] })
+  inner.deliver({ t: 'ipc.invoke', id: 1, channel: 'web:previews:list', args: [] })
   inner.deliver({ t: 'ipc.invoke', id: 2, channel: 'web:previews:open', args: [{}] })
-  inner.deliver({ t: 'ipc.send', channel: 'hosts:home', args: [{}] })
+  inner.deliver({ t: 'ipc.send', channel: 'web:browse-folders', args: [{}] })
   expect(heard).toEqual([])
   expect(inner.posted).toMatchObject([
     { t: 'ipc.result', id: 1, ok: false, error: { name: 'DesktopOnly' } },

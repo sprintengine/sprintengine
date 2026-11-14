@@ -195,7 +195,12 @@ watch a pull request in another if you can.
 5. In the same New chat, pick WSL: Ubuntu-24.04 again, then a second
    distribution if one is enabled.
    **Expect:** the second distribution is greyed out with "WSL: <name>
-   cannot open a folder inside Ubuntu-24.04."
+   cannot open a folder inside Ubuntu-24.04." With WSL: Ubuntu-24.04
+   picked, choose Browse… for the project.
+   **Expect:** the folder dialog opens at
+   `\\wsl.localhost\Ubuntu-24.04\home\<you>\Documents`, or at
+   `…\home\<you>` when there is no Documents folder (the distribution's own
+   Studio says where).
 6. **distro:** add `[automount]` and `root = /win/` to `/etc/wsl.conf`.
    **PowerShell:** `wsl --terminate Ubuntu-24.04`. Send in a `C:\`
    workspace's server chat.
