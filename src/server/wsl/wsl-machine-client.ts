@@ -1,5 +1,5 @@
 import type { WslMachineAccess } from '../../main/hosts/wsl-host'
-import type { WslEnvironmentManager } from './wsl-environment-manager'
+import type { WslEnvironmentManager, WslServerConnection } from './wsl-environment-manager'
 
 // This desktop's side of what a WSL distribution's Studio does on its machine
 // for it (`distribution-machine.ts`), over the owner connection: git in a
@@ -9,9 +9,17 @@ import type { WslEnvironmentManager } from './wsl-environment-manager'
 // connection may point at any folder, with nothing left out.
 //
 // Each starts the distribution's server if it is not running, as the WSL
-// helper these replace was started for them.
+// helper these replace was started for them. A watch outlives the connection
+// it was placed on: when that connection goes (the server stopped for being
+// idle, restarted, or its owner connection was made again), the watch is
+// placed again on the next one, without starting a server for it, and says
+// something changed, since what changed meanwhile went unheard.
 
-type Manager = Pick<WslEnvironmentManager, 'connect'>
+type Manager = Pick<WslEnvironmentManager, 'connect' | 'current'>
+type Owner = WslServerConnection['owner']
+
+// How often a watch whose connection went looks for the server's next one.
+const REARM_POLL_MS = 5_000
 
 // Git ends at its own deadline in the distribution; this is how much longer
 // the answer is waited for, from when the server was reached.
@@ -54,14 +62,22 @@ export function createWslMachineAccess(
     watchPath(distro, path, recursive, listener, onError) {
       let closed = false
       let unsubscribe: (() => void) | null = null
+      let rearm: ReturnType<typeof setInterval> | null = null
+      const stop = () => {
+        closed = true
+        unsubscribe?.()
+        unsubscribe = null
+        if (rearm) clearInterval(rearm)
+        rearm = null
+      }
       const fail = () => {
         if (closed) return
-        closed = true
+        stop()
         onError()
       }
-      void connect(distro).then((connection) => {
+      const place = (owner: Owner, again: boolean) => {
         if (closed) return
-        unsubscribe = connection.owner.subscribe(
+        unsubscribe = owner.subscribe(
           'files.watchPath',
           { path, includeIgnored: true },
           {
@@ -77,16 +93,30 @@ export function createWslMachineAccess(
               // hears only its own entries, as `fs.watch` without `recursive`.
               for (const name of paths) if (recursive || !name.includes('/')) listener(name)
             },
-            onEnd: fail,
+            onEnd() {
+              unsubscribe = null
+              if (closed) return
+              // Refused while its connection stays open: this folder cannot be watched.
+              if (owner.state === 'open') fail()
+              else awaitNextConnection(owner)
+            },
           },
         )
-      }, fail)
-      return {
-        close() {
-          closed = true
-          unsubscribe?.()
-        },
+        if (again) listener(null)
       }
+      // Never starts the server: a watch alone does not keep the VM awake.
+      const awaitNextConnection = (gone: Owner) => {
+        rearm = setInterval(() => {
+          const next = manager()?.current(distro)
+          if (closed || !next || next.owner === gone || next.owner.state !== 'open') return
+          if (rearm) clearInterval(rearm)
+          rearm = null
+          place(next.owner, true)
+        }, REARM_POLL_MS)
+        rearm.unref?.()
+      }
+      void connect(distro).then((connection) => place(connection.owner, false), fail)
+      return { close: stop }
     },
   }
 }

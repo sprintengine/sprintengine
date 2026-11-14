@@ -166,7 +166,12 @@ export type WslDistributionLink = {
 export type WslMachineAccess = {
   git(distro: string, ask: StudioEnvironmentGitAsk): Promise<StudioEnvironmentRunOutcome>
   home(distro: string): Promise<StudioEnvironmentHome>
-  /** A folder's changed names (null: something changed), until closed; `onError` once it stops hearing. Absent where nothing watches. */
+  /**
+   * A folder's changed names (null: something changed), until closed;
+   * `onError` once the folder cannot be watched. A lost connection to the
+   * distribution's server is not that: the watch is placed again on the next.
+   * Absent where nothing watches.
+   */
   watchPath?(
     distro: string,
     path: string,
