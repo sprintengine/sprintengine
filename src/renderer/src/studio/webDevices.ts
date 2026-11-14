@@ -1,5 +1,5 @@
 import { STUDIO_WEB_DEVICES_CAPABILITY, type WebDevicesStatus } from '../../../../packages/studio-protocol/src/public'
-import { followWindowStudioPush } from './windowStudioPush'
+import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
 
 // A web tab's way to the browsers paired with its server's web listener
@@ -44,5 +44,6 @@ export const webDevicesApi: WebDevicesApi = {
       params: {},
       capability: STUDIO_WEB_DEVICES_CAPABILITY,
       onPayload: cb,
+      onReopen: rereadOnReopen(async () => (await served()).request('webDevices.status', {}), cb),
     }),
 }

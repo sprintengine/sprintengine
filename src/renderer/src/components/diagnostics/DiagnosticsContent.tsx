@@ -226,8 +226,12 @@ function useWorkspaceSyncContext(): SyncContext {
     }
     refresh()
     // Workspace sync events are infrequent (window/workspace lifecycle, active
-    // switches); refetch the compact snapshot on each rather than diffing.
-    const unsubscribe = workspaceSyncApi.onWorkspaceSyncEvent(() => refresh())
+    // switches); refetch the compact snapshot on each rather than diffing, and
+    // on each reconnect, which may be to a Studio that restarted.
+    const unsubscribe = workspaceSyncApi.onWorkspaceSyncEvent(
+      () => refresh(),
+      () => refresh(),
+    )
     return () => {
       cancelled = true
       unsubscribe()

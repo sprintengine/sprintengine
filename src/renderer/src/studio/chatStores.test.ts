@@ -97,3 +97,25 @@ test('each change carries a command id of its own, kept on the request a resend 
   assert.ok(ids.every((id) => typeof id === 'string' && id.length > 0))
   assert.notEqual(ids[0], ids[1])
 })
+
+test('the schedules list is read again when the connection comes back, as every store that follows a feed is', async () => {
+  // The real module: every suite else gets its double (tests/setup.ts).
+  const { schedulesApi } = await vi.importActual<typeof import('./schedules')>('./schedules')
+  const lists: unknown[] = []
+  const pauses: unknown[] = []
+  const stopList = schedulesApi.onScheduledAgentsChanged((schedules) => lists.push(schedules))
+  const stopPause = schedulesApi.onScheduledAgentsPauseChanged((pause) => pauses.push(pause))
+  await settle()
+  // A run the server's start recovered changed the list while the window was away.
+  fake.answer = { schedules: [{ id: 'sa-1' }], pausedAll: null }
+  await becomes('reconnecting')
+  await becomes('open')
+  assert.deepEqual(
+    fake.requests.map((request) => request.method),
+    ['schedules.list', 'schedules.list'],
+  )
+  assert.deepEqual(lists, [[{ id: 'sa-1' }]])
+  assert.deepEqual(pauses, [null])
+  stopList()
+  stopPause()
+})

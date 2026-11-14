@@ -74,3 +74,29 @@ test('a stream the client ended is followed again when the connection next opens
   await becomes('open')
   assert.equal(fake.subscriptions.length, 2, 'nothing is followed once the caller stopped')
 })
+
+test('a follow is told each time the connection opens again, after it was lost, and not on its first open', async () => {
+  let reopened = 0
+  const stop = followWindowStudioPush({
+    topic: 'schedules.changed',
+    params: {},
+    capability: 'schedules',
+    onPayload: () => undefined,
+    onReopen: () => reopened++,
+    api,
+  })
+  await settle()
+  await becomes('open')
+  assert.equal(reopened, 0, 'open all along: nothing was missed')
+  // Its Studio restarts: the connection drops and comes back.
+  await becomes('reconnecting')
+  await becomes('open')
+  assert.equal(reopened, 1, 'read again once it is back')
+  await becomes('reconnecting')
+  await becomes('open')
+  assert.equal(reopened, 2)
+  stop()
+  await becomes('reconnecting')
+  await becomes('open')
+  assert.equal(reopened, 2, 'not once the caller stopped')
+})

@@ -465,6 +465,32 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     await recoverSequenceGap(api, event)
   }
 
+  // The window's connection opened again. Its Studio may have restarted
+  // (out of process), and a new run numbers its changes from the start: every
+  // event it sends would be at or below what this window applied, and passed
+  // over. So main's registry is read again and adopted whatever its sequence,
+  // and the baseline is its sequence; queued with the events, so one that
+  // arrives meanwhile is weighed against the new baseline.
+  const resync = (): Promise<void> => {
+    eventQueue = eventQueue
+      .then(async () => {
+        const api = deps.getApi()
+        if (!api) return
+        const snapshot = await api.workspaceSyncGetSnapshot()
+        if (!Number.isFinite(snapshot?.sequence)) return
+        deps.applyRegistrySnapshot(snapshot)
+        lastAppliedSequence = snapshot.sequence
+      })
+      .catch(() => {
+        log({
+          phase: 'snapshot',
+          reason: 'snapshot_failed',
+          message: 'Failed to read the workspace sync snapshot after a reconnect.',
+        })
+      })
+    return eventQueue
+  }
+
   const enqueueEvent = (event: WorkspaceSyncEvent): Promise<void> => {
     eventQueue = eventQueue
       .then(() => processEvent(event))
@@ -488,9 +514,12 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
     }
 
     try {
-      unsubscribe = api.onWorkspaceSyncEvent((event) => {
-        void enqueueEvent(event)
-      })
+      unsubscribe = api.onWorkspaceSyncEvent(
+        (event) => {
+          void enqueueEvent(event)
+        },
+        () => void resync(),
+      )
     } catch {
       log({ phase: 'listener', reason: 'subscribe_failed', message: 'Failed to subscribe to workspace sync events.' })
       unsubscribe = null

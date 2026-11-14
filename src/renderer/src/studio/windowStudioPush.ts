@@ -16,6 +16,15 @@ export type WindowStudioPushInput<T extends StudioPushTopic> = {
   /** The capability the topic is served under: a Studio that does not advertise it is not asked. */
   capability: StudioCapability
   onPayload: (payload: StudioTopicPayload<T>) => void
+  /**
+   * Called each time the window's connection opens again after it was not
+   * open, once the topic is followed again there. A push feed carries
+   * changes, not what is: whatever changed while the window was away (its
+   * Studio restarted, and every push of the old run went with it) is not
+   * pushed again, so a caller that holds state from the feed reads it
+   * afresh here. The one place a window re-reads on reconnect.
+   */
+  onReopen?: () => void
   /** The window's api; `window.api` unless given (tests). */
   api?: TicketApi
 }
@@ -25,8 +34,9 @@ export type WindowStudioPushInput<T extends StudioPushTopic> = {
  * wants it. The client resubscribes by itself across a reconnect; a stream
  * that ended (the client parked on a refused credential, say) and a client
  * that closed for good and was replaced are followed again once the window's
- * connection opens. A window with no Studio, or a Studio that
- * does not serve the capability, hears nothing. Returns the unsubscriber.
+ * connection opens, and `onReopen` is called then. A window with no Studio,
+ * or a Studio that does not serve the capability, hears nothing. Returns the
+ * unsubscriber.
  */
 export function followWindowStudioPush<T extends StudioPushTopic>(input: WindowStudioPushInput<T>): () => void {
   const api = input.api ?? (typeof window === 'undefined' ? undefined : window.api)
@@ -57,12 +67,24 @@ export function followWindowStudioPush<T extends StudioPushTopic>(input: WindowS
       })
   }
   follow()
+  let wasOpen = windowStudioState(api) === 'open'
   const unwatch = watchWindowStudio(api, () => {
-    if (windowStudioState(api) === 'open') follow()
+    const open = windowStudioState(api) === 'open'
+    if (open) follow()
+    if (open && !wasOpen && alive) input.onReopen?.()
+    wasOpen = open
   })
   return () => {
     alive = false
     stop?.()
     unwatch()
   }
+}
+
+/**
+ * An `onReopen` that reads a topic's state afresh and hands it on as a push
+ * would be; a read that fails is passed over (the next push or reopen tries).
+ */
+export function rereadOnReopen<T>(read: () => Promise<T>, deliver: (state: T) => void): () => void {
+  return () => void read().then(deliver, () => undefined)
 }

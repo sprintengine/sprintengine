@@ -22,7 +22,7 @@ import {
   type WorktreePoolSettings,
   type WorktreePoolSnapshot,
 } from '../../../../packages/studio-protocol/src/public'
-import { followWindowStudioPush } from './windowStudioPush'
+import { followWindowStudioPush, rereadOnReopen } from './windowStudioPush'
 import { windowStudioClient } from './windowStudioClient'
 
 // The window's way to the worktrees its Studio's agents run in: the Studio
@@ -107,6 +107,11 @@ export const worktreesApi: WorktreesApi = {
       params: {},
       capability: STUDIO_WORKTREES_CAPABILITY,
       onPayload: cb,
+      // The installs running now, each as its own change.
+      onReopen: rereadOnReopen(
+        async () => (await call('worktrees.installs', {})).installs,
+        (installs) => installs.forEach(cb),
+      ),
     }),
   cancelWorktreeInstall: async (id) => (await act('worktrees.cancelInstall', { id })).cancelled,
   createGitWorktree: (input) => act('worktrees.create', { input }),

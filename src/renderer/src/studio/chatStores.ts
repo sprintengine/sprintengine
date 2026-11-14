@@ -15,7 +15,7 @@ import {
   type UsageReportResult,
 } from '../../../../packages/studio-protocol/src/public'
 import { followWindowStudioPush } from './windowStudioPush'
-import { watchWindowStudio, windowStudioClient, windowStudioState } from './windowStudioClient'
+import { windowStudioClient } from './windowStudioClient'
 
 // The window's way to what its Studio keeps beside its chats: the Studio
 // protocol's `usageLimits.*`, `usageLimitResumes.*`, `usage.report` and `conversationImport.*`, over the window's own
@@ -58,14 +58,12 @@ async function call<M extends StudioMethod>(method: M, params: StudioMethodParam
   return client.request(method, params)
 }
 
-/** A topic's pushes, and its state read again whenever the window's connection opens. */
+/** A topic's pushes, and its state read again whenever the window's connection opens again. */
 function followState<T extends StudioPushTopic>(
   topic: T,
   read: () => Promise<StudioTopicPayload<T>>,
   listener: (state: StudioTopicPayload<T>) => void,
 ): () => void {
-  const api = typeof window === 'undefined' ? undefined : window.api
-  if (typeof api?.studioWindowTicket !== 'function') return () => undefined
   let alive = true
   const stopPush = followWindowStudioPush({
     topic,
@@ -74,23 +72,17 @@ function followState<T extends StudioPushTopic>(
     onPayload: (state) => {
       if (alive) listener(state)
     },
-  })
-  let wasOpen = windowStudioState(api) === 'open'
-  const unwatch = watchWindowStudio(api, () => {
-    const open = windowStudioState(api) === 'open'
-    if (open && !wasOpen)
+    onReopen: () =>
       void read().then(
         (state) => {
           if (alive) listener(state)
         },
         () => undefined,
-      )
-    wasOpen = open
+      ),
   })
   return () => {
     alive = false
     stopPush()
-    unwatch()
   }
 }
 
