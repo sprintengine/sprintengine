@@ -49,6 +49,17 @@ export type StudioCommonErrorCode =
   | 'too_large'
   | 'command_id_conflict'
 
+/**
+ * Where a mutation's receipts are kept. Every mutation is answered from its
+ * receipt on a retry while the server that carried it out runs; `durable`
+ * says the receipt outlives that server too (written with the command in the
+ * chat's own log, or in the record the command made), so a retry reaching a
+ * restarted server is still answered from it, never carried out again. A
+ * mutation without it keeps its receipts in the running server's memory
+ * only, so the client sends it again only to the same boot (`bootId`).
+ */
+export type StudioMethodReceipts = 'durable'
+
 /** How a method is held: the scope a grant needs, whether it mutates, the capability that offers it. */
 export type StudioMethodSpec = {
   /** The scope a client asks to be granted for it; null for what any authenticated client may ask. */
@@ -59,8 +70,6 @@ export type StudioMethodSpec = {
    * carries, never less.
    */
   extraPermissions?: readonly StudioPermission[]
-  /** A mutation carries a `commandId`, is audited, and is answered from its receipt on a retry. */
-  mutation: boolean
   /** The capability a client checks before calling it. */
   capability: StudioCapability | null
   /**
@@ -85,7 +94,18 @@ export type StudioMethodSpec = {
    * an app or script holding the owner's credential, and the shell.
    */
   window?: string
-}
+} & (
+  | {
+      /** A mutation carries a `commandId`, is audited, and is answered from its receipt on a retry. */
+      mutation: boolean
+      receipts?: never
+    }
+  | {
+      mutation: true
+      /** Only a mutation has receipts to keep (`StudioMethodReceipts`). */
+      receipts: StudioMethodReceipts
+    }
+)
 
 /**
  * Why a request's params were refused: not in the method's shape, over a

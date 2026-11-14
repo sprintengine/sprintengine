@@ -59,6 +59,8 @@ function window(
   options: {
     follow?: FakeBackend['follow']
     rewrite?: (frame: Record<string, unknown>) => Record<string, unknown>
+    /** More of the chat surface than the commands list, for a case that calls it. */
+    chat?: Partial<StudioChatBackend>
   } = {},
 ): Window {
   const backend = createFakeBackend()
@@ -70,6 +72,7 @@ function window(
       return () => commandListeners.delete(listener)
     },
     releaseFileSearches: () => undefined,
+    ...options.chat,
   } as unknown as StudioChatBackend
   const make = (environmentId: string) => {
     const made = createStudioRpcServer({
@@ -537,4 +540,90 @@ test('a server restarted on another port is found again by the next ticket, and 
   await until(() => texts.length === 3)
   assert.deepEqual(texts, ['one', 'two', 'three'])
   assert.equal(client.welcome.environment.id, 'env-test')
+})
+
+// ── A mutation in flight across a reconnect ─────────────────────────────────
+// Its answer is lost with the connection. Sent again, it is answered from its
+// receipt, where that receipt still is: on the same run of the server, or in
+// the chat's own log for a command whose receipts outlive the server.
+
+/** A revert counted each time it is carried out, and the first answer to a request of `method` lost with its connection. */
+function lostAnswer(method: string) {
+  const state = { reverts: 0, lost: null as string | null, target: null as Window | null }
+  const target = window({
+    chat: {
+      revert: async () => {
+        state.reverts++
+        return { ok: true, files: [], reverted: true }
+      },
+    },
+    rewrite: (frame) => {
+      if (frame.t !== 'res' || state.lost !== null) return frame
+      const asked = state.target?.sent.find((sent) => sent.t === 'req' && sent.id === frame.id)
+      if (asked?.method !== method) return frame
+      state.lost = frame.id as string
+      return { t: 'held' }
+    },
+  })
+  state.target = target
+  return { target, state }
+}
+
+const revert = { key: { workspaceId: 'ws-1', agentId: 'agent-1' }, commandId: 'revert-1', turnSeq: 1, confirmed: true }
+
+const resentAfter = (target: Window, method: string) => {
+  const hello = target.sent.findLastIndex((frame) => frame.t === 'hello')
+  return target.sent.slice(hello).filter((frame) => frame.t === 'req' && frame.method === method).length
+}
+
+test('a mutation in flight when the server restarts is not carried out again: it is refused as of unknown outcome', async () => {
+  const { target, state } = lostAnswer('conversation.revert')
+  const client = await connected(target)
+  const firstBoot = client.welcome.bootId
+  assert.ok(firstBoot, 'the welcome names this run of the server')
+  const reverted = client.request('conversation.revert', revert).then(
+    () => 'answered',
+    (error: { code?: string; message?: string }) => error,
+  )
+  await until(() => state.reverts === 1 && state.lost !== null)
+  await target.restart()
+  await until(() => client.state === 'open' && target.port === 2)
+  const outcome = await reverted
+  assert.notEqual(outcome, 'answered')
+  assert.equal((outcome as { code?: string }).code, 'unknown_outcome')
+  assert.match(String((outcome as { message?: string }).message), /restarted.*unknown.*Check/s)
+  assert.notEqual(client.welcome.bootId, firstBoot, 'a restart is a new boot')
+  await sleep(30)
+  assert.equal(resentAfter(target, 'conversation.revert'), 0, 'not sent to the new boot')
+  assert.equal(state.reverts, 1, 'carried out once')
+})
+
+test('a mutation in flight across a plain reconnect to the same boot is answered from its receipt, once', async () => {
+  const { target, state } = lostAnswer('conversation.revert')
+  const client = await connected(target)
+  const boot = client.welcome.bootId
+  const reverted = client.request('conversation.revert', revert)
+  await until(() => state.reverts === 1 && state.lost !== null)
+  target.drop()
+  assert.deepEqual(await reverted, { ok: true, files: [], reverted: true })
+  assert.equal(client.welcome.bootId, boot)
+  assert.equal(resentAfter(target, 'conversation.revert'), 1, 'sent again on the new connection')
+  assert.equal(state.reverts, 1, 'and answered from the first attempt, not carried out again')
+})
+
+test('a chat command, whose receipt is in the chat’s log, is sent again after a restart and answered from it', async () => {
+  const { target, state } = lostAnswer('conversation.interrupt')
+  const client = await connected(target)
+  const ref = { workspaceId: 'ws-1', agentId: 'agent-1' }
+  const interrupted = client.request('conversation.interrupt', { key: ref, commandId: 'stop-1' })
+  await until(() => state.lost !== null)
+  await target.restart()
+  await interrupted
+  assert.equal(target.port, 2)
+  assert.equal(resentAfter(target, 'conversation.interrupt'), 1, 'sent again to the new boot')
+  assert.deepEqual(
+    target.backend.commands.map((entry) => entry.command.kind),
+    ['interrupt'],
+    'carried out once: the second is answered from its receipt',
+  )
 })

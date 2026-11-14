@@ -132,6 +132,17 @@ test('a welcome is read whole, with the conversation hello answer nested unchang
   assert.equal(parseStudioServerFrame({ ...welcome, pairing: { token: TOKEN } })?.t === 'welcome', true)
 })
 
+test('a welcome’s boot id is kept; one in the wrong shape, or none from an older server, reads as absent', () => {
+  const bootOf = (frame: unknown) => {
+    const parsed = parseStudioServerFrame(frame)
+    return parsed?.t === 'welcome' ? parsed.bootId : 'unparsed'
+  }
+  assert.equal(bootOf({ ...welcome, bootId: 'boot-1' }), 'boot-1')
+  assert.equal(bootOf(welcome), undefined)
+  assert.equal(bootOf({ ...welcome, bootId: 7 }), undefined)
+  assert.equal(bootOf({ ...welcome, bootId: '' }), undefined)
+})
+
 test('a stream frame is the conversation lane’s frame, validated by the lane’s own parser', () => {
   const synchronized = { t: 'frame', sub: 's1', frame: { type: 'synchronized', seq: 4, generation: 'log-1' } }
   assert.deepEqual(parseStudioServerFrame(synchronized), {

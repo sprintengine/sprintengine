@@ -3,6 +3,7 @@ import {
   studioParams,
   studioParamsRefused as refuse,
   type StudioMethodDefinition,
+  type StudioMethodSpec,
   type StudioMethodTable,
   type StudioTopicTable,
 } from './contract.js'
@@ -528,6 +529,11 @@ const held = (scope: StudioScope, capability: StudioCapability, mutation: boolea
   capability,
 })
 const sessions = held('conversation:operate', STUDIO_SESSIONS_CAPABILITY, true)
+// A session's commands the runtime carries out under a receipt written to the
+// chat's own log: a retry after a restart is answered from it, never carried
+// out again. A start, and the session controls below but a stop, keep theirs
+// in the running server's memory.
+const durableSessions: StudioMethodSpec = { ...sessions, mutation: true, receipts: 'durable' }
 // Staging bytes changes nothing anyone sees until a send names them, and an
 // append is idempotent by its offset, so neither carries a command id;
 // discarding unsent bytes is as safe to repeat as staging them.
@@ -540,6 +546,7 @@ const files = held('files:read', STUDIO_FILES_CAPABILITY, false)
 // Reading a session changes nothing; acting on one carries a command id.
 const sessionReads = held('conversation:read', STUDIO_SESSION_CONTROLS_CAPABILITY, false)
 const sessionControls = held('conversation:operate', STUDIO_SESSION_CONTROLS_CAPABILITY, true)
+const durableSessionControls: StudioMethodSpec = { ...sessionControls, mutation: true, receipts: 'durable' }
 const history = held('conversation:read', STUDIO_HISTORY_CAPABILITY, false)
 
 const MCP_SERVER_ACTIONS: readonly ConversationMcpServerAction[] = ['reconnect', 'enable', 'disable', 'sign-in']
@@ -610,7 +617,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'session.send': {
-    ...sessions,
+    ...durableSessions,
     params: (value) => {
       const session = sessionCommand(value)
       if (!session.ok) return session
@@ -678,9 +685,9 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       })
     },
   },
-  'session.interrupt': { ...sessions, params: sessionCommand },
+  'session.interrupt': { ...durableSessions, params: sessionCommand },
   'session.respond': {
-    ...sessions,
+    ...durableSessions,
     params: (value) => {
       const session = sessionCommand(value)
       if (!session.ok) return session
@@ -710,7 +717,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'session.setPermission': {
-    ...sessions,
+    ...durableSessions,
     params: (value) => {
       const session = sessionCommand(value)
       if (!session.ok) return session
@@ -725,7 +732,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
     },
   },
   'session.setModel': {
-    ...sessions,
+    ...durableSessions,
     params: (value) => {
       const session = sessionCommand(value)
       if (!session.ok) return session
@@ -968,7 +975,7 @@ export const STUDIO_CHAT_METHODS: StudioMethodTable<StudioChatMethodMap> = {
       })
     },
   },
-  'session.stop': { ...sessionControls, params: sessionCommand },
+  'session.stop': { ...durableSessionControls, params: sessionCommand },
   'session.suspend': { ...sessionControls, params: sessionCommand },
   'session.mcpServerAction': {
     ...sessionControls,

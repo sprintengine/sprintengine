@@ -37,7 +37,7 @@ client → Studio
   { t: 'unsub', id }
 
 Studio → client
-  { t: 'welcome', protocolVersion, minProtocolVersion, server, environment, capabilities, conversation, grant, pairing? }
+  { t: 'welcome', protocolVersion, minProtocolVersion, server, bootId?, environment, capabilities, conversation, grant, pairing? }
   { t: 'res', id, ok: true, result } | { t: 'res', id, ok: false, error: { code, message, retryAfterMs? } }
   { t: 'frame', sub, frame }                       // a conversation server frame: snapshot, event, synchronized
   { t: 'push', sub, payload }                      // one message of a stream with no cursor
@@ -259,11 +259,19 @@ started in a run worktree), where the Studio serves `conversation-folders`.
 A command's params are the conversation contract's command plus its `key` and
 `commandId`, read by that contract's validator (`parseStudioCommand`), so a
 command means the same thing on every connection. Every mutation
-carries a `commandId`, recorded as a durable receipt before the work starts: a
-retry with the same id, on the same connection or after a reconnect or a
-restart of the app, is answered with the first attempt's result and never
-carried out twice. A create's `commandId` is kept on the chat it made, so a
-retried create finds that chat. Command ids are namespaced per client by
+carries a `commandId`, and a retry with the same id is answered with the first
+attempt's result and never carried out twice, for as long as its receipt is
+kept. Where that is is the method's own (`receipts` in `STUDIO_METHODS`). A
+`durable` method's receipt outlives the server: the runtime's chat commands
+(send, interrupt, answering a request, a preset or model switch, a scheduled
+send, a session's stop) write theirs to the chat's own log with the command,
+and a create's `commandId` is kept on the chat it made, so a retried create
+finds that chat. Every other mutation's receipt is kept in the running
+server's memory, and goes with it. The welcome's `bootId` names that run, so a
+client sends an unanswered mutation again after a reconnect only to the same
+boot, or anywhere for a durable one (`studioResendableAfterRestart`); one sent
+to a server that has since restarted is refused to its caller
+`unknown_outcome`, for the person to check. Command ids are namespaced per client by
 Studio, so one client can neither collide with nor answer from another's. An
 id names one command: sent again with different params, or for another method,
 it is refused `command_id_conflict` rather than answered with the first

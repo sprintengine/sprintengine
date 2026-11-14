@@ -287,6 +287,8 @@ export type StudioServerInfo = {
   protocolVersion: number
   minProtocolVersion: number
   server: StudioServerIdentity
+  /** As the welcome says it: this run of the server. */
+  bootId?: string
   environment: StudioEnvironment
   capabilities: string[]
   conversation: ConversationHelloAnswer
@@ -563,12 +565,19 @@ const operate: StudioMethodSpec = {
   mutation: true,
   capability: STUDIO_CONVERSATIONS_CAPABILITY,
 }
+// A command the runtime carries out under a receipt written to the chat's own
+// log (`runCommand`), or one whose effect keeps its command id where it is
+// kept (a scheduled message's `sources`): a retry after a restart is answered
+// from that, never carried out again. Every other command's receipt is held
+// in the running server's memory.
+const operateDurably: StudioMethodSpec = { ...operate, mutation: true, receipts: 'durable' }
 
 function command<K extends ConversationCommand['kind'], M extends StudioCommandMethod>(
   method: M,
   kind: K,
+  spec: StudioMethodSpec = operate,
 ): StudioMethodDefinition<{ params: CommandParams<K>; result: unknown }> {
-  return { ...operate, params: commandParams(method, kind) }
+  return { ...spec, params: commandParams(method, kind) }
 }
 
 const noParams = (): StudioParsed<Record<string, never>> => studioParams({})
@@ -659,6 +668,8 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
   'conversation.create': {
     scope: 'conversation:create',
     mutation: true,
+    // Found again by the chat record it made (its `launchCommandId`).
+    receipts: 'durable',
     capability: STUDIO_CONVERSATION_CREATE_CAPABILITY,
     params: (value) => {
       if (!id(value.commandId)) return refuse('invalid_params', COMMAND_ID)
@@ -668,20 +679,20 @@ const STUDIO_CONVERSATION_METHODS: StudioMethodTable<StudioConversationMethodMap
         : refuse('invalid_params', parsed.message)
     },
   },
-  'conversation.send': command('conversation.send', 'send'),
-  'conversation.interrupt': command('conversation.interrupt', 'interrupt'),
-  'conversation.resolveApproval': command('conversation.resolveApproval', 'resolveApproval'),
-  'conversation.answerQuestion': command('conversation.answerQuestion', 'answerQuestion'),
-  'conversation.resolvePlan': command('conversation.resolvePlan', 'resolvePlan'),
-  'conversation.setPermissionPreset': command('conversation.setPermissionPreset', 'setPermissionPreset'),
-  'conversation.setModel': command('conversation.setModel', 'setModel'),
+  'conversation.send': command('conversation.send', 'send', operateDurably),
+  'conversation.interrupt': command('conversation.interrupt', 'interrupt', operateDurably),
+  'conversation.resolveApproval': command('conversation.resolveApproval', 'resolveApproval', operateDurably),
+  'conversation.answerQuestion': command('conversation.answerQuestion', 'answerQuestion', operateDurably),
+  'conversation.resolvePlan': command('conversation.resolvePlan', 'resolvePlan', operateDurably),
+  'conversation.setPermissionPreset': command('conversation.setPermissionPreset', 'setPermissionPreset', operateDurably),
+  'conversation.setModel': command('conversation.setModel', 'setModel', operateDurably),
   'conversation.cancelQueued': command('conversation.cancelQueued', 'cancelQueued'),
   'conversation.stopSubagent': command('conversation.stopSubagent', 'stopSubagent'),
   'conversation.messageSubagent': command('conversation.messageSubagent', 'messageSubagent'),
   'conversation.setReasoningEffort': command('conversation.setReasoningEffort', 'setReasoningEffort'),
   'conversation.mcpServerAction': command('conversation.mcpServerAction', 'mcpServerAction'),
   'conversation.restartSession': command('conversation.restartSession', 'restartSession'),
-  'conversation.scheduleSend': command('conversation.scheduleSend', 'scheduleSend'),
+  'conversation.scheduleSend': command('conversation.scheduleSend', 'scheduleSend', operateDurably),
   'conversation.sendScheduledNow': command('conversation.sendScheduledNow', 'sendScheduledNow'),
   'conversation.cancelScheduled': command('conversation.cancelScheduled', 'cancelScheduled'),
   'conversation.usageLimitResume': command('conversation.usageLimitResume', 'usageLimitResume'),
@@ -779,6 +790,18 @@ export const STUDIO_METHODS: StudioMethodTable<StudioMethodMap> = {
   ...STUDIO_WEB_DEVICES_METHODS,
   ...STUDIO_TAILNET_METHODS,
   ...STUDIO_HOSTS_METHODS,
+}
+
+/**
+ * Whether a request may be sent again to a server that is not the one it was
+ * sent to: a read always may; a mutation only where its receipts are durable
+ * (`StudioMethodReceipts`), since any other's receipt went with the server
+ * that carried it out, and sent again it would be carried out twice. A method
+ * this version does not define is held to be a mutation.
+ */
+export function studioResendableAfterRestart(method: string): boolean {
+  const spec = isStudioMethod(method) ? STUDIO_METHODS[method] : null
+  return spec !== null && (!spec.mutation || spec.receipts === 'durable')
 }
 
 /** Whether a string names a method this version of the protocol defines. */

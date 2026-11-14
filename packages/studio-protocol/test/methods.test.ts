@@ -8,6 +8,7 @@ import {
   isStudioMethod,
   parseStudioMethodParams,
   parseStudioTopicParams,
+  studioResendableAfterRestart,
   type StudioMethod,
 } from '../src/methods'
 import { CONVERSATION_COMMAND_KINDS, CONVERSATION_MAX_MESSAGE_CHARS } from '../src/conversation'
@@ -41,6 +42,41 @@ test('every mutation is a method that carries a commandId, and every reader is n
     const withoutId = parseStudioMethodParams(method as StudioMethod, { key, message: 'hi', workspaceId: 'ws-1' })
     if (spec.mutation) assert.equal(withoutId.ok, false, method)
   }
+})
+
+test('only the mutations whose receipts outlive the server are sent again to a restarted one', () => {
+  // Each is answered from a receipt kept where a restart leaves it: the
+  // chat's own log (the runtime's commands), the chat record a create made,
+  // or a scheduled message's own sources. Adding one here is a claim about
+  // the server, to be checked there first.
+  const durable = (Object.keys(STUDIO_METHODS) as StudioMethod[]).filter(
+    (method) => STUDIO_METHODS[method].receipts === 'durable',
+  )
+  assert.deepEqual(durable.sort(), [
+    'conversation.answerQuestion',
+    'conversation.create',
+    'conversation.interrupt',
+    'conversation.resolveApproval',
+    'conversation.resolvePlan',
+    'conversation.scheduleSend',
+    'conversation.send',
+    'conversation.setModel',
+    'conversation.setPermissionPreset',
+    'session.interrupt',
+    'session.respond',
+    'session.send',
+    'session.setModel',
+    'session.setPermission',
+    'session.stop',
+  ])
+  for (const method of Object.keys(STUDIO_METHODS) as StudioMethod[]) {
+    const spec = STUDIO_METHODS[method]
+    assert.equal(studioResendableAfterRestart(method), !spec.mutation || spec.receipts === 'durable', method)
+  }
+  // Kept only in the running server's memory: sent again to the same boot alone.
+  for (const method of ['conversation.fork', 'conversation.revert', 'conversation.stop', 'git.commit', 'files.write'])
+    assert.equal(studioResendableAfterRestart(method), false, method)
+  assert.equal(studioResendableAfterRestart('no.such.method'), false)
 })
 
 test('every conversation command kind has its method, so the socket drives a chat as fully as the tailnet', () => {

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added (where a mutation's receipts are kept, and which run of the server answered)
+
+- **`welcome.bootId`** (and `server.info`'s): this run of the server, minted
+  each time it starts. Optional: a server before it sends none, which a client
+  reads as a boot it cannot recognise.
+- **`receipts: 'durable'`** on a method's spec, allowed only on a mutation by
+  its type: its receipts outlive the server. Marked on `conversation.create`,
+  `conversation.send`, `.interrupt`, `.resolveApproval`, `.answerQuestion`,
+  `.resolvePlan`, `.setPermissionPreset`, `.setModel`, `.scheduleSend`, and
+  `session.send`, `.interrupt`, `.respond`, `.setPermission`, `.setModel`,
+  `.stop`. `studioResendableAfterRestart(method)` reads it.
+
 ### Added (the machines a desktop's computer offers)
 
 - **`hosts.list` and the `hosts.changed` stream** (`hosts.ts`, capability

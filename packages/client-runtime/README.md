@@ -10,7 +10,9 @@ window, a web page, a script through
   stream multiplexed on it: requests typed by the protocol's method table
   (`client.request`, or `client.rpc`, one call per method), conversation
   streams resumed from their cursors after a drop, mutations resent under
-  their command ids, push topics, tools offered to Studio's agents, a
+  their command ids where that cannot carry them out twice (to the same
+  server boot, or anywhere for a method whose receipts are durable; otherwise
+  refused `unknown_outcome`), push topics, tools offered to Studio's agents, a
   heartbeat, and backpressure from a consumer that falls behind.
 - **`ConnectionSupervisor`**: one owner for a connection that has to stay up:
   an explicit state machine (`idle`, `connecting`, `up`, `backoff`,
