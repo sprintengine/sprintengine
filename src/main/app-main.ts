@@ -31,6 +31,7 @@ import { MODULE_ASSET_SCHEME } from '../shared/modules/assets'
 import { createModuleAssetOriginResolver } from './modules/module-asset-origins'
 import { createModuleAssetHandler, isAllowedModuleAssetRequest } from './modules/module-assets'
 import { defaultUserModuleRoot, discoverUserModules, discoverUserModulesSync } from './modules/user-module-registry'
+import { watchUserModuleRoot } from './modules/user-module-watch'
 import { createModuleLifecycle, liveModuleIds } from './modules/module-lifecycle'
 import { attachBuildSkewWatch, createBuildSkewWatch } from './build-skew'
 import { registerCoreIpc } from './register-core-ipc'
@@ -273,6 +274,12 @@ if (!serverHost)
       },
     }),
   )
+// A module copied into the drop-in folder while Studio runs is listed at once,
+// not after a reload. Out of process the server watches (server-modules.ts).
+if (!serverHost) {
+  const stopWatchingModules = watchUserModuleRoot(defaultUserModuleRoot(), () => services.moduleHub.deliverChanged())
+  app.once('will-quit', stopWatchingModules)
+}
 // Automation server ← Scheduled agents module: resolved per tool call so a live
 // module disable/enable cycle is reflected immediately (service absent ⇒ the
 // scheduled-agent tools say the module is off).
