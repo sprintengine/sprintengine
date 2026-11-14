@@ -94,6 +94,61 @@ test('a third-party module reaches a service that names a module only as itself'
   assert.equal(kernel.hostFor('bundled').requireService(serviceTokens.ModuleStorageToken), storage)
 })
 
+test('reflection on a service a third-party module holds reaches only its guarded calls', async () => {
+  const kernel = kernelWith(bundled, thirdParty, otherThirdParty)
+  const calls: string[] = []
+  const handle = { send: (what: string) => calls.push(`handle:${what}`) }
+  class Ledger {
+    constructor(private readonly name: string) {}
+    write(what: string) {
+      calls.push(`${this.name}:${what}`)
+    }
+  }
+  const secrets = {
+    fetchWithSecret: (moduleId: string, name: string) => {
+      calls.push(`fetch:${moduleId}:${name}`)
+      return name
+    },
+    open: (moduleId: string) => {
+      calls.push(`open:${moduleId}`)
+      return handle
+    },
+    later: async (moduleId: string) => {
+      calls.push(`later:${moduleId}`)
+      return handle
+    },
+    ledgers: { first: new Ledger('first'), second: new Ledger('second') },
+  }
+  kernel.hostFor('@host').provideService(serviceTokens.ModuleSecretsServiceToken, () => secrets as never)
+  const kept = kernel.hostFor('acme-deck')
+  const service = kept.requireService(serviceTokens.ModuleSecretsServiceToken) as unknown as typeof secrets
+
+  // The method the descriptor holds is the guarded one, not the service's own.
+  const descriptor = Object.getOwnPropertyDescriptor(service, 'fetchWithSecret')
+  const reached = (descriptor?.value ?? descriptor?.get?.call(service)) as typeof secrets.fetchWithSecret
+  assert.notEqual(reached, secrets.fetchWithSecret)
+  assert.throws(() => reached('acme-other', 'their-key'), /only as itself/)
+  for (const name of Reflect.ownKeys(service)) {
+    const member = Reflect.get(service, name) as unknown
+    assert.notEqual(member, Reflect.get(secrets, name), `${String(name)} is not the service's own`)
+  }
+  assert.equal(Object.getPrototypeOf(service), null, 'no way back to the service through its prototype')
+
+  // What it holds and what it hands back are guarded too.
+  const opened = service.open('acme-deck')
+  const settled = await service.later('acme-deck')
+  service.ledgers.first.write('one')
+  service.ledgers.second.write('two')
+  assert.deepEqual(calls, ['open:acme-deck', 'later:acme-deck', 'first:one', 'second:two'])
+  await kernel.unregisterModule('acme-deck')
+  calls.length = 0
+  assert.throws(() => reached('acme-deck', 'mine'), /switched off/)
+  assert.throws(() => opened.send('late'), /switched off/, 'a handle it was handed')
+  assert.throws(() => settled.send('late'), /switched off/, 'a handle a promise handed it')
+  assert.throws(() => service.ledgers.first.write('late'), /switched off/, 'an object the service holds')
+  assert.deepEqual(calls, [])
+})
+
 test('a third-party module switched off reaches no service through the host or the services it kept', async () => {
   const kernel = kernelWith(bundled, thirdParty, otherThirdParty)
   const calls: string[] = []
