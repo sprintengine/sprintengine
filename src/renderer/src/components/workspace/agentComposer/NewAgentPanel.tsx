@@ -424,8 +424,9 @@ export type RemoteNewChatLaunch = {
   skills?: string[]
   /**
    * The images staged with the prompt, as their bytes: the files that hold
-   * them here name nothing on that machine, so the bytes go up its upload
-   * route and the first message names them there.
+   * them here name nothing on that machine, so the bytes go up on this
+   * window's connection to it (`uploads.*`) and the first message names them
+   * there.
    */
   images?: ConversationImageAttachment[]
 }

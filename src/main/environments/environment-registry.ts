@@ -43,8 +43,9 @@ import { writeFileAtomicSync } from '../../server/platform/atomic-file'
 // so a state recorded before this app was updated is never stale.
 //
 // A route never reached yet is listed on its own, with no id. The registry
-// reaches nothing itself, and no call is routed through it yet: it is the
-// list the cut-overs to direct environments read.
+// reaches nothing itself: windows read it to list the machines and to let go
+// of a connection whose route it no longer holds, and a route's owner issues
+// the ticket that opens one (`environments-ipc.ts`).
 
 export const ENVIRONMENTS_FILENAME = 'environments.json'
 const FILE_VERSION = 1

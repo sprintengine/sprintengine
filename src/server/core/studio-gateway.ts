@@ -36,8 +36,8 @@ import { environmentRouteOfRecord } from '../../shared/environment-clients'
 import { environmentCommand, environmentPage, launchWhereItLives } from './environment-chat-calls'
 
 // The Studio MCP gateway over a core: the always-on socket agents reach the
-// app through, the opt-in tailnet listener, and the conversation lane paired
-// devices follow chats on. Composed beside the core rather than inside it,
+// app through, and the opt-in tailnet listener, where paired devices speak the
+// Studio protocol. Composed beside the core rather than inside it,
 // because the desktop adds tools that act on what only it has (windows,
 // terminals, the browser pane, the canvas worker); a standalone server serves
 // the core's own tools alone.

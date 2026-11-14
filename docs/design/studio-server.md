@@ -4,9 +4,18 @@ Status: proposed, 2026-10-01. Phases 1 (the Electron seams), 2 (the Studio
 RPC), 3 (the Electron-free core and the `studio-server` entry) and 4 (the chat
 view over the protocol, at first behind the `SPRINTENGINE_CHAT_TRANSPORT=studio`
 environment variable) have landed (section 13, "As
-landed"); nothing after them is. Since 2026-11-12 the chat view runs on the
+landed"). Since 2026-11-12 the chat view runs on the
 protocol only: the variable, the window's conversation IPC and the
-`chat-over-studio` test project are gone. Phases 5 to 10 were replanned on 2026-10-02
+`chat-over-studio` test project are gone. Phases 5 to 9 were built too, each
+recorded in its own spec: client tools (`client-tools`, 2026-10-02), the local
+server out of process (behind the Advanced toggle, in process still the
+default), a server inside each WSL distribution, SSH machines, and the web
+listener with its client (2026-10-03). Since 2026-11-13 every WSL distribution
+and SSH machine is an environment of its own, reached on the Studio protocol,
+and since 2026-11-14 the tailnet's conversation lane is gone: a paired device
+speaks the Studio protocol too (`docs/compatibility.md`). Where this file
+describes the lane as a live wire, the WSL helper, or a phase as still to
+come, it is history. Phases 5 to 10 were replanned on 2026-10-02
 for a server with no browser and no canvas (section 1.1). This file replaces
 the remaining steps of the agent SDK plan on `feat/studio-agent-sdk` (the work
 after the protocol package and the tailnet lane and module service that speak
@@ -362,9 +371,12 @@ Consequences:
 ### 5.1 Shape
 
 One WebSocket per client connection, multiplexing every namespace. (The tailnet
-conversation lane opens one socket per conversation; that stays as the phone's
-wire until phase 10 folds it in.) Frames are JSON text; images and uploads go
-over HTTP beside the socket.
+conversation lane opened one socket per conversation and was planned to stay as
+the phone's wire until phase 10 folded it in. Superseded on 2026-11-14: the
+lane is gone, and a paired device speaks this protocol at
+`/tailnet/v1/studio`.) Frames are JSON text; images and uploads go
+over HTTP beside the socket. (Superseded: uploads go on the socket too, in
+pieces a frame can hold, `uploads.*`.)
 
 ```
 client → server
@@ -448,18 +460,18 @@ grants on every frame.
   protocolVersion, minProtocolVersion,            // STUDIO_PROTOCOL_VERSION window
   server: { version, buildStamp },
   environment: { id, label, os, arch, hostKind: 'local' | 'wsl' | 'ssh' | 'tailnet', home },
-  capabilities: [ 'conversations', 'conversation-create', 'files-mention', 'client-tools', 'previews', … ],
+  capabilities: [ 'conversations', 'conversation-create', 'files-mention', 'client-tools', … ],
   conversation: { protocolVersion, minProtocolVersion, capabilities },   // the existing conversation hello answer
   grant: { scopes, owner: boolean },
 }
 ```
 
-- `STUDIO_PROTOCOL_VERSION` is an integer with one version of slack, refused at
-  the handshake by an error that names both numbers — the policy in
-  `docs/compatibility.md`, which gains a row for this wire. The conversation
-  protocol's own version and capability list nest inside, unchanged, so a
-  client that only speaks conversations reads exactly what it reads from the
-  tailnet lane today.
+- `STUDIO_PROTOCOL_VERSION` is an integer with a window of versions a Studio
+  still serves (`STUDIO_PROTOCOL_MIN_SUPPORTED`; both are 1 today, so the
+  window is that one version), a peer outside it refused at the handshake by
+  an error that names both numbers — the policy in `docs/compatibility.md`,
+  which gains a row for this wire. The conversation protocol's own version and
+  capability list nest inside, unchanged, in `welcome.conversation`.
 - Features are asked about by capability, never by version. A purely additive
   namespace or method ships as a capability with no bump.
 - `environment.id` is a stable random id minted when a data directory is
@@ -471,8 +483,8 @@ grants on every frame.
 - An unauthenticated `GET /.well-known/sprintengine-studio` answers the
   product, `server.version`, the protocol window and the auth methods it
   accepts, and nothing else (no label, no paths), so a client can tell "wrong
-  version" from "wrong credentials" before it pairs. It is the tailnet lane's
-  `health` route, generalised.
+  version" from "wrong credentials" before it pairs. It is the tailnet
+  listener's `health` route, generalised.
 - A client outside the window that asked to be kept (`update-session` in its
   hello, and a token) is answered with an `incompatible` frame instead of the
   welcome: who the Studio is, which side is behind, and how it is updated
@@ -492,8 +504,10 @@ grants on every frame.
 The protocol is `@sprintengine/studio-protocol` (owner ruling 2026-10-01), a
 package of its own that depends on `@sprintengine/conversation-protocol` and
 re-exports all of it, so a client imports one package. The conversation
-package stays the conversation lane on its own, the phone's subset, and its
-five pinned files are untouched: the Studio protocol adds the connection around
+package was to stay the conversation lane on its own, the phone's subset, with
+its five pinned files untouched. Since the lane went (2026-11-14) it is the
+conversation contract alone, with no transport of its own, which every client
+reads through this protocol. The Studio protocol adds the connection around
 the contract rather than growing inside it. In this repository the protocol's
 one bridging file re-exports the conversation package's source by path, and
 its build swaps that file for the published dependency; the pack check
@@ -1125,7 +1139,11 @@ version } }` on stdout once its listeners are bound, and
 
 ### 10.2 Inside WSL, on the pinned Node
 
-This is what "a chat on WSL" becomes:
+This is what "a chat on WSL" becomes. (The table's "Today" column, and the
+helper this section still compares against, are history: the WSL helper was
+retired on 2026-11-14, its CLI detection and runs moving to the
+distribution's own Studio on the `environment-machine` capability, and every
+WSL chat is that Studio's. See `studio-server/phase-7-wsl-server.md`.)
 
 | Today                                                                                                               | With a server in WSL                                                        |
 | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -1261,13 +1279,13 @@ and a paired machine's rows in the sidebar read the same status.
 - `npm run build:server` builds `out/server/server.mjs`, a single Node ESM
   bundle of `src/server/` and its dependencies, with the pure-JS dependencies
   inlined (`@anthropic-ai/claude-agent-sdk`, `@agentclientprotocol/sdk`,
-  `diff`, `ignore`, `nanoid`, the protocol packages). _As of phase 3 it builds
-  `out/server/server.cjs` instead: CommonJS, as the main bundle the same source
-  goes into is, with every dependency left in `node_modules`. That is what a
-  desktop-spawned server (phase 6, inside the app archive) needs; inlining for
-  hosts with no `node_modules` (WSL, SSH) is phases 7 and 8's packaging, and
-  is where the ESM question is decided, against how the agent SDK finds its
-  own files once inlined._
+  `diff`, `ignore`, `nanoid`, the protocol packages). _Superseded: it builds
+  `out/server/server.cjs`, CommonJS, as the main bundle the same source goes
+  into is, with every dependency left in `node_modules`, which is what a
+  desktop-spawned server (phase 6, inside the app archive) needs. For hosts
+  with no `node_modules` (WSL, SSH), `--wsl` builds `out/wsl-server/`, whose
+  `server.cjs` is CommonJS too, with every dependency inlined
+  (`scripts/build-server.mjs`). No bundle is ESM._
 - Beside it: `resources/` (plugins, hooks, the studio plugin, built-in skills,
   `automation/mcp-stdio-bridge.mjs`), the ripgrep binary for the target
   os/arch, and the web client (section 11), which carries the canvas worker
@@ -1536,7 +1554,9 @@ rpcSocket, secrets}}` or `{"fatal":{code, message}}`; everything for a
     to reach: its helper is a shell concern, so a launch into a distribution
     fails with "the WSL helper is not available in this process", and a chat's
     gateway entry is null for a WSL host. The server for a distribution runs
-    inside it (phase 7).
+    inside it (phase 7). _Superseded on 2026-11-14: the helper and that
+    refusal are gone; a WSL chat is its distribution's own Studio's, which
+    the desktop reaches on the Studio protocol._
   - _Two cores on one data directory._ Every core takes
     `<dataDir>/run/studio.lock` (pid, host, a token; written whole under
     another name and linked into place, so a full disk leaves no half lock)
@@ -1830,6 +1850,9 @@ It replaces "The render host (L)", withdrawn by ruling (f).
   the git panel and file explorer data (ruling c); backlog, scheduled agents,
   tours, design; the tailnet conversation lane folded into the single
   multiplexed socket with the old lane kept for the phone's window.
+  _Superseded on 2026-11-14: the lane went whole, with no window kept for the
+  phone; every paired device speaks the Studio protocol, and a build that
+  does not is told to update (tailnet transport 3)._
 - **Tests.** Per domain, the handler object tested directly and through the
   router.
 - **Risks.** Scope creep; each domain is its own reviewable unit and ships

@@ -15,8 +15,9 @@ import { createEnvironmentRegistry, type EnvironmentRegistry } from './environme
 // reachability, the distributions' states. This desktop's own id is its data
 // directory's, the one its Studio server says in its welcome.
 //
-// When the machines become direct environments, their connection supervisors
-// report instead of these owners; nothing that reads the list changes.
+// The machines are direct environments: each is its own Studio, reached on the
+// Studio protocol. These owners are what name them and say how their
+// connections stand.
 
 /** A list and its change hook, as each owner exposes it. */
 export type ObservedList<T> = { list(): T[]; onChanged(listener: () => void): () => void }

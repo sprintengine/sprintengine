@@ -1,9 +1,9 @@
 # Phase 9 — the web client and the embeddable conversation view
 
-Status: scoped, 2026-10-01. Nothing here is implemented. This file hardens
-phase 9 of `docs/design/studio-server.md` (sections 9, 11 and 13). Where the
-two disagree, this file states the change the parent needs, in section 12, and
-the parent is updated in the same change that lands the work.
+Status: scoped, 2026-10-01; built on 2026-10-03, as section 14 records. This
+file hardens phase 9 of `docs/design/studio-server.md` (sections 9, 11 and
+13). Where the two disagree, this file states the change the parent needs, in
+section 12, and the parent is updated in the same change that lands the work.
 
 Amended 2026-10-02 for the owner ruling of that date: the server has no
 browser and no canvas. The screencast pane is gone. The web client shows an
