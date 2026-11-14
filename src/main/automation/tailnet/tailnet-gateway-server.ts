@@ -140,6 +140,8 @@ const MAX_MCP_BODY_BYTES = 1024 * 1024
 const MAX_CONTROL_BODY_BYTES = 64 * 1024
 /** Long enough to open a socket, short enough that a leaked URL is worthless. */
 const WS_TICKET_TTL_MS = 30_000
+/** A WebSocket key as RFC 6455 has it: sixteen random bytes in base64. */
+const WEBSOCKET_KEY = /^[A-Za-z0-9+/]{22}==$/u
 
 export type TailnetGatewayServerOptions = {
   bindAddress: string
@@ -1118,6 +1120,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       return rejectUpgrade(socket, 400, 'unsupported_websocket_version')
     const key = headerOf(request, 'sec-websocket-key')
     if (!key) return rejectUpgrade(socket, 400, 'missing_websocket_key')
+    // Sixteen bytes in base64 (RFC 6455), nothing else, before the ticket is spent.
+    if (!WEBSOCKET_KEY.test(key)) return rejectUpgrade(socket, 400, 'invalid_websocket_key')
 
     const query = queryOf(request.url)
     const presentedTicket = query.get('ticket')
