@@ -10,7 +10,6 @@ import { afterAll, beforeAll, test } from 'vitest'
 
 import {
   STUB_AGENT_STATE_SOCKET,
-  STUB_HELPER_INFO,
   STUB_PLUGIN_COPY,
   STUB_SERVER_DATA_DIR,
   STUB_SERVER_FACTS,
@@ -21,11 +20,17 @@ import {
   type StubTerminalHostHandlers,
   stubWslDistributionLink,
   stubWslHelper,
+  stubWslMachine,
 } from '../../../tests/wsl-helper-stub'
 import { createPluginRegistry } from '../plugin-registry'
 import { __resetPluginRegistryForTest, __setPluginRegistryForTest } from '../plugin-registry-instance'
 import { createWslHost, nativeGitOutput, wslGitArg, wslHostState } from './wsl-host'
-import type { StudioTerminalPluginCopy } from '../../../packages/studio-protocol/src/environment-access'
+import type {
+  StudioEnvironmentGitAsk,
+  StudioEnvironmentHome,
+  StudioEnvironmentRunOutcome,
+  StudioTerminalPluginCopy,
+} from '../../../packages/studio-protocol/src/environment-access'
 import { WslSetupError } from './wsl-setup-error'
 
 let temp = ''
@@ -65,6 +70,15 @@ function hostWith(
   } = {},
 ) {
   const helper = stubWslHelper('Debian', handlers)
+  // The distribution's Studio answers git and the home: the same handlers.
+  const known = handlers as {
+    git?: (ask: StudioEnvironmentGitAsk) => StudioEnvironmentRunOutcome
+    home?: () => { home: string; env?: StudioEnvironmentHome['env'] }
+  }
+  const machine = stubWslMachine({
+    ...(known.git ? { git: known.git } : {}),
+    ...(known.home ? { home: () => ({ env: {}, ...known.home!() }) } : {}),
+  })
   const distribution = distributionLink(extra.socket, {
     pluginCopy: () => {
       if (extra.plugin === 'fails') throw new Error('the server could not write it')
@@ -77,6 +91,7 @@ function hostWith(
     readSettings: () => undefined,
     listed: () => undefined,
     helper,
+    machine,
     distribution,
     enabledSkills: extra.skills ?? (() => []),
     survivorDelayMs: 0,
@@ -86,7 +101,7 @@ function hostWith(
     },
   })
   const pluginAsks = () => distribution.asked.filter((ask) => ask.method === 'pluginCopy')
-  return { helper, host, distribution, pluginAsks, launchers }
+  return { helper, machine, host, distribution, pluginAsks, launchers }
 }
 
 test('a git argument that is a Windows path crosses as the path in the distribution', () => {
@@ -170,18 +185,26 @@ test("git's subcommand is read past its global options, so a -c value is never t
   )
 })
 
-test("git's stdin crosses to the helper as base64, byte for byte", async () => {
-  const { helper, host } = hostWith({ git: () => ({ code: 0, stdout: 'a\0', stderr: '', timedOut: false }) })
+test("git's stdin crosses to the distribution's Studio as base64, byte for byte", async () => {
+  const { machine, host } = hostWith({ git: () => ({ code: 0, stdout: 'a\0', stderr: '', timedOut: false }) })
   const patch = 'diff --git a/x b/x\r\n--- a/x\r\n+++ b/x\r\n@@ -1 +1 @@\r\n-é\r\n+ü\r\n'
   await host.runGit('\\\\wsl.localhost\\Debian\\home\\dev\\repo', ['apply', '--cached', '-'], {
     timeoutMs: null,
     env: {},
     stdin: patch,
   })
-  const params = helper.requests[0].params as { stdinB64?: string }
-  assert.equal(Buffer.from(params.stdinB64 ?? '', 'base64').toString('utf8'), patch)
+  assert.equal(Buffer.from(machine.asked[0].ask?.stdinB64 ?? '', 'base64').toString('utf8'), patch)
   await host.runGit('\\\\wsl.localhost\\Debian\\home\\dev\\repo', ['status'], { timeoutMs: 1_000, env: {} })
-  assert.equal('stdinB64' in (helper.requests[1].params as object), false, 'no stdin, no field')
+  assert.equal('stdinB64' in (machine.asked[1].ask ?? {}), false, 'no stdin, no field')
+  // More than one frame carries is refused here, in words, never half sent.
+  const big = await host.runGit('\\\\wsl.localhost\\Debian\\home\\dev\\repo', ['apply', '-'], {
+    timeoutMs: null,
+    env: {},
+    stdin: 'x'.repeat(800 * 1024),
+  })
+  assert.equal(big.spawnFailed, true)
+  assert.match(big.stderr, /too large to send/u)
+  assert.equal(machine.asked.length, 2)
 })
 
 test('a distribution row reads as a host state', () => {
@@ -191,8 +214,8 @@ test('a distribution row reads as a host state', () => {
   assert.equal(wslHostState(undefined).state, 'unavailable')
 })
 
-test('git runs through the helper with Linux paths, the runner env and its deadline; a write keeps none', async () => {
-  const { helper, host } = hostWith({
+test("git runs in the distribution's Studio with Linux paths, the runner env and its deadline; a write keeps none", async () => {
+  const { machine, host } = hostWith({
     git: () => ({ code: 0, stdout: '/home/dev/repo\n', stderr: '', timedOut: false }),
   })
   const git = await host.runGit('\\\\wsl.localhost\\Debian\\home\\dev\\repo', ['rev-parse', '--show-toplevel'], {
@@ -200,19 +223,18 @@ test('git runs through the helper with Linux paths, the runner env and its deadl
     env: { LC_ALL: 'C' },
   })
   assert.equal(git.stdout, '//wsl.localhost/Debian/home/dev/repo\n')
-  assert.deepEqual(helper.requests[0], {
+  assert.deepEqual(machine.asked[0], {
     method: 'git',
-    params: { cwd: '/home/dev/repo', args: ['rev-parse', '--show-toplevel'], timeoutMs: 15_000, env: { LC_ALL: 'C' } },
-    timeoutMs: 25_000,
+    distro: 'Debian',
+    ask: { cwd: '/home/dev/repo', args: ['rev-parse', '--show-toplevel'], timeoutMs: 15_000, env: { LC_ALL: 'C' } },
   })
   await host.runGit('C:\\repo', ['worktree', 'add', 'C:\\repo\\wt'], { timeoutMs: null, env: {} })
-  assert.deepEqual(helper.requests[1].params, {
+  assert.deepEqual(machine.asked[1].ask, {
     cwd: '/mnt/c/repo',
     args: ['worktree', 'add', '/mnt/c/repo/wt'],
     timeoutMs: null,
     env: {},
   })
-  assert.equal(helper.requests[1].timeoutMs, null, 'main waits as long as the write takes')
 })
 
 test('a command is an argv run by the helper, and a helper that cannot start is a failed run, not a throw', async () => {
@@ -403,12 +425,14 @@ test("a launcher that could not be written leaves hooks and the gateway naming t
   assert.deepEqual(integration.studioMcpEntry.args, [`${STUB_SERVER_RESOURCES}/automation/mcp-stdio-bridge.mjs`])
 })
 
-test('a helper that cannot start fails prepare with its reason, and one without the copy still launches', async () => {
-  const { helper, host } = hostWith({}, { plugin: 'fails' })
-  helper.failWith = new WslSetupError("Couldn't set up WSL: WSL is not installed on this PC.", {
-    fatal: true,
-    code: 'wsl-missing',
-  })
+test("a distribution's server that cannot start fails prepare with its reason, and one without the copy still launches", async () => {
+  const { host, distribution } = hostWith({}, { plugin: 'fails' })
+  distribution.connect = async () => {
+    throw new WslSetupError("Couldn't set up WSL: WSL is not installed on this PC.", {
+      fatal: true,
+      code: 'wsl-missing',
+    })
+  }
   await assert.rejects(host.prepare(), /WSL is not installed on this PC/u)
   assert.equal(host.agentIntegration(), null)
 
@@ -419,57 +443,6 @@ test('a helper that cannot start fails prepare with its reason, and one without 
     [],
     'no copy, no --plugin-dir: the workspace install carries it',
   )
-})
-
-test('prepare does not finish on a preparation for a helper that restarted under it', async () => {
-  // The helper restarts while `home` is being read: the first preparation is
-  // for a helper that is gone, and a launch must not go ahead without hooks,
-  // socket or gateway because of it.
-  const first = { ...STUB_HELPER_INFO }
-  const second = { ...STUB_HELPER_INFO, appDir: '/home/dev/.local/share/sprintengine-studio/0.4.1' }
-  let current = first
-  let homes = 0
-  const helper = stubWslHelper('Debian', {
-    home: () => {
-      homes += 1
-      if (homes === 1) current = second
-      return { home: '/home/dev' }
-    },
-  })
-  helper.info = () => current
-  helper.start = async () => current
-  const host = createWslHost('Debian', {
-    readSettings: () => undefined,
-    listed: () => undefined,
-    helper,
-    distribution: distributionLink(),
-    enabledSkills: () => [],
-    survivorDelayMs: 0,
-  })
-  await host.prepare()
-  assert.equal(homes, 2, 'prepared again for the helper that is running now')
-  assert.equal(host.agentIntegration()?.home.host, '/home/dev', 'and is ready for it')
-  assert.equal(host.agentIntegration()?.agentStateSocketPath, STUB_AGENT_STATE_SOCKET)
-
-  // One that keeps restarting fails with a reason rather than looping.
-  let flips = 0
-  const flapping = stubWslHelper('Debian', {
-    home: () => {
-      flips += 1
-      current = { ...STUB_HELPER_INFO, appDir: `/run/flip-${flips}` }
-      return { home: '/home/dev' }
-    },
-  })
-  flapping.info = () => current
-  flapping.start = async () => current
-  const unstable = createWslHost('Debian', {
-    readSettings: () => undefined,
-    listed: () => undefined,
-    helper: flapping,
-    distribution: distributionLink(),
-    enabledSkills: () => [],
-  })
-  await assert.rejects(unstable.prepare(), /kept restarting/u)
 })
 
 test("a launch is prepared against the distribution's server, and a server that changed builds its copy again", async () => {
@@ -492,8 +465,12 @@ test("a launch is prepared against the distribution's server, and a server that 
 })
 
 test('a host with no distribution server prepares no launch, and still reads the home', async () => {
-  const helper = stubWslHelper('Debian', { home: () => ({ home: '/home/dev' }) })
-  const host = createWslHost('Debian', { readSettings: () => undefined, listed: () => undefined, helper })
+  const host = createWslHost('Debian', {
+    readSettings: () => undefined,
+    listed: () => undefined,
+    helper: stubWslHelper('Debian'),
+    machine: stubWslMachine({ home: () => ({ home: '/home/dev', env: {} }) }),
+  })
   await assert.rejects(host.prepare(), /WSL terminals start where Studio's server runs/u)
   assert.equal(host.agentIntegration(), null)
   assert.equal((await host.homeDir())?.host, '/home/dev', 'the home needs no launch')
@@ -553,8 +530,8 @@ test('at quit the survivor kill gives no grace and starts nothing', async () => 
   )
   assert.ok(Date.now() - started < 1_000)
 })
-test("a WSL host's launch tokens are its distribution server's, and its directory watches its helper's", async () => {
-  const { helper, host, distribution } = hostWith({})
+test("a WSL host's launch tokens and directory watches are its distribution server's", async () => {
+  const { machine, host, distribution } = hostWith({})
   assert.equal(host.issueChannelToken?.(null), undefined, 'a launch with no agent has nothing to prove')
   const identity = { workspaceId: 'ws-1', agentId: 'agent-1', cliId: 'codex' }
   const token = host.issueChannelToken?.(identity) ?? ''
@@ -566,14 +543,14 @@ test("a WSL host's launch tokens are its distribution server's, and its director
   assert.ok(watcher)
   const errors: Error[] = []
   watcher.on('error', (error) => errors.push(error))
-  assert.equal(helper.watches[0].path, '/home/dev/repo/.git', 'watched as Linux names it')
-  assert.equal(helper.watches[0].recursive, true)
-  helper.watches[0].listener('HEAD')
+  assert.equal(machine.watches[0].path, '/home/dev/repo/.git', 'watched as Linux names it')
+  assert.equal(machine.watches[0].recursive, true)
+  machine.watches[0].listener('HEAD')
   assert.deepEqual(heard, ['HEAD'])
-  helper.watches[0].onError()
+  machine.watches[0].onError()
   assert.equal(errors.length, 1)
   watcher.close()
-  assert.equal(helper.watches[0].closed, true)
+  assert.equal(machine.watches[0].closed, true)
 })
 
 test("a session holds the distribution's server, and lets it go", () => {

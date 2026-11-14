@@ -3,19 +3,20 @@
 // What this host answers comes from two places inside the distribution, while
 // the WSL helper is being retired (design-wsl-ssh-direct PR 4):
 //   - the distribution's own Studio server, which this desktop's core starts
-//     and holds (`WslDistributionLink`): the socket a terminal agent's hooks
-//     report to, relayed back to this PC; a terminal's launch files, the
-//     processes it leaves, and the plugin copy its agent loads, built there
-//     from that server's own resources; a WSL terminal holds that server up;
+//     and holds: through `WslDistributionLink`, the socket a terminal agent's
+//     hooks report to, a terminal's launch files, the processes it leaves and
+//     the plugin copy its agent loads (a WSL terminal holds that server up);
+//     through `WslMachineAccess`, git in a folder there, the home, and
+//     watches on git directories, which a watch Windows places on a
+//     `\\wsl.localhost` path never hears;
 //   - the helper (`resources/wsl-helper/`), over the one `wsl.exe` stdio
-//     channel its client holds (`wsl-helper-client.ts`), for the rest: CLI
-//     detection, the home folder, running a program, git, and watches.
-// Anything that needs the host starts the helper first if it is stopped, and a
-// launch waits for that. There is no second path: when the helper cannot
-// start, the host says why (`WslSetupError`) and the launch fails with that
-// reason.
+//     channel its client holds (`wsl-helper-client.ts`), for CLI detection and
+//     running a program.
+// Each starts what it needs if it is stopped. There is no second path: when
+// that cannot start, the host says why (`WslSetupError`) and the work fails
+// with that reason.
 //
-// The one thing not run by the helper is the terminal itself: its pty is
+// The one thing not run inside the distribution is the terminal itself: its pty is
 // `wsl.exe -d <distro> -e bash -li <startup script>` (terminal-launch),
 // because that is what gives the agent a real terminal. The distribution's
 // server writes that script into its private launch directory first
@@ -41,10 +42,14 @@ import { cliProbeRequest, detectResultFromHelper, type HelperProbeAnswer } from 
 import { splitSubcommand } from '../git-run'
 import type { RunOutcome } from '../process-run'
 import type { GatewayLaunchIdentity } from '../../server/core/gateway-launch-tokens'
-import type {
-  StudioLaunchFile,
-  StudioTerminalPluginCopy,
-  StudioTerminalProcessesAsk,
+import {
+  MAX_ENVIRONMENT_GIT_STDIN_BYTES,
+  type StudioEnvironmentGitAsk,
+  type StudioEnvironmentHome,
+  type StudioEnvironmentRunOutcome,
+  type StudioLaunchFile,
+  type StudioTerminalPluginCopy,
+  type StudioTerminalProcessesAsk,
 } from '../../../packages/studio-protocol/src/environment-access'
 import type { SubtreeLiveReason } from '../terminal-subtree-probe'
 import type {
@@ -55,7 +60,7 @@ import type {
   HostSettingsReader,
 } from './execution-host'
 import { wslSessionPidKey, type WslDistro } from './wsl-distro'
-import type { WslHelperClient, WslHelperInfo } from './wsl-helper-client'
+import type { WslHelperClient } from './wsl-helper-client'
 import { createDefaultWslHelperClient } from './wsl-helper-runtime'
 import { WslSetupError } from './wsl-setup-error'
 import { WSL_DATA_REL } from './wsl-install'
@@ -153,6 +158,29 @@ export type WslDistributionLink = {
   terminalHost(distro: string, options: { start: boolean }): Promise<WslTerminalHostClient | null>
 }
 
+/**
+ * What a WSL distribution's own Studio does on its machine for this desktop
+ * (`distribution-machine.ts`, `wsl-machine-client.ts`): the core's over its
+ * owner connections, main's (out of process) through the core.
+ */
+export type WslMachineAccess = {
+  git(distro: string, ask: StudioEnvironmentGitAsk): Promise<StudioEnvironmentRunOutcome>
+  home(distro: string): Promise<StudioEnvironmentHome>
+  /**
+   * A folder's changed names (null: something changed), until closed;
+   * `onError` once the folder cannot be watched. A lost connection to the
+   * distribution's server is not that: the watch is placed again on the next.
+   * Absent where nothing watches.
+   */
+  watchPath?(
+    distro: string,
+    path: string,
+    recursive: boolean,
+    listener: (filename: string | null) => void,
+    onError: () => void,
+  ): { close(): void }
+}
+
 /** The terminal host of a distribution's server, over this desktop's owner connection to it. */
 export type WslTerminalHostClient = {
   launchFiles(params: { write?: StudioLaunchFile[]; remove?: string[] }): Promise<{ paths: string[] }>
@@ -181,6 +209,8 @@ export type WslHostDeps = {
   readSettings: HostSettingsReader
   /** The distribution's own Studio server; absent, no launch is prepared here. */
   distribution?: WslDistributionLink | null
+  /** Git, the home and watches in the distribution, by its own Studio; absent, none of them is reached. */
+  machine?: WslMachineAccess | null
   /** What the last `wsl --list` said about this distribution; undefined when it was not listed. */
   listed: () => WslDistro | undefined
   /** The helper client; tests pass a stand-in. Absent is the real one. */
@@ -200,13 +230,11 @@ function isPackagedProcess(): boolean {
 
 type HelperRunOutcome = RunOutcome & { truncated?: boolean }
 
-// The helper enforces a deadline itself; this is how much longer main waits
-// for its answer before giving up on it.
+// The helper and the distribution's Studio enforce a command's deadline
+// themselves; this is how much longer this side waits for the answer.
 const ANSWER_SLACK_MS = 10_000
 const SNAPSHOT_TIMEOUT_MS = 20_000
 const DETECT_TIMEOUT_MS = 60_000
-const HOME_TIMEOUT_MS = 45_000
-const MAX_PREPARE_ROUNDS = 4
 
 /** `work`'s answer, or a rejection once `ms` pass without one. */
 function withDeadline<T>(work: Promise<T> | undefined, ms: number): Promise<T | undefined> {
@@ -263,33 +291,35 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   const settings = () => deps.readSettings(id)
   const toNativePath = (hostPath: string) => wslToWindowsPath(hostPath, { distro })
 
-  // Per running helper: what `home` said, and the plugin copy the
+  // What the last launch preparation found: the home, and the plugin copy the
   // distribution's server built — for the Studio skills chosen when it was
   // made (`skills`) and that server's socket, Node and resources. A skill
   // switched on or off since, or another server, is a different copy, so the
   // next launch prepares again.
   let prepared: {
-    info: WslHelperInfo
     skills: string
     server: PreparedServer
     home: HostHome
     plugin: StudioTerminalPluginCopy | null
     launcherReady: boolean
   } | null = null
-  // The preparation in flight, and the helper, socket and skill choice it is for.
-  let preparing: { info: WslHelperInfo; skills: string; server: PreparedServer; done: Promise<void> } | null = null
+  // The preparation in flight, and the server and skill choice it is for.
+  let preparing: { skills: string; server: PreparedServer; done: Promise<void> } | null = null
   const skillChoice = (): string => enabledSkills().join(',')
-  const isPrepared = (info: WslHelperInfo | null, server: PreparedServer): boolean =>
-    info !== null && prepared?.info === info && prepared.skills === skillChoice() && sameServer(prepared.server, server)
+  const isPrepared = (server: PreparedServer): boolean =>
+    prepared !== null && prepared.skills === skillChoice() && sameServer(prepared.server, server)
 
   async function readHome(): Promise<HostHome> {
-    // The first `home` after a start waits on the login-shell read, which has
-    // its own deadline inside the helper; this one is longer than that.
-    const answer = await helper.request<{ home: string; env?: Record<string, string> }>('home', undefined, {
-      timeoutMs: HOME_TIMEOUT_MS,
-    })
+    if (!deps.machine) {
+      throw new WslSetupError(`This process cannot reach the Studio server in ${distro}.`, {
+        fatal: true,
+        code: 'start',
+      })
+    }
+    // The first ask may start (or install) the distribution's server.
+    const answer = await deps.machine.home(distro)
     const env: Record<string, string> = {}
-    for (const [name, value] of Object.entries(answer.env ?? {})) {
+    for (const [name, value] of Object.entries(answer.env)) {
       if (typeof value === 'string' && value.startsWith('/')) env[name] = toNativePath(value)
     }
     return { host: answer.home, native: toNativePath(answer.home), env }
@@ -353,11 +383,10 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     return host ? host.pluginCopy(skills) : null
   }
 
-  function prepareFor(info: WslHelperInfo, server: PreparedServer): Promise<void> {
+  function prepareFor(server: PreparedServer): Promise<void> {
     const chosen = enabledSkills()
     const skills = chosen.join(',')
-    if (preparing?.info === info && preparing.skills === skills && sameServer(preparing.server, server))
-      return preparing.done
+    if (preparing?.skills === skills && sameServer(preparing.server, server)) return preparing.done
     const done = (async () => {
       const home = await readHome()
       // The launcher and its pointer, before anything that names them is
@@ -367,9 +396,9 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       // that CLI falls back to the workspace install, so a failure here is
       // not the launch's failure.
       const plugin = await ensurePluginCopy(chosen).catch(() => null)
-      if (helper.info() === info) prepared = { info, skills, server, home, plugin, launcherReady }
+      prepared = { skills, server, home, plugin, launcherReady }
     })()
-    const entry = { info, skills, server, done }
+    const entry = { skills, server, done }
     preparing = entry
     void done
       .finally(() => {
@@ -379,23 +408,10 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     return done
   }
 
-  // Resolves only once what was prepared belongs to the helper running now.
-  // A helper that restarts part-way (`wsl --shutdown`, a crash) leaves a
-  // preparation for one that is gone; waiting on that alone would let a
-  // launch go ahead with no hooks, socket or gateway. Bounded, because a
-  // helper that keeps restarting is its own failure.
   async function prepare(): Promise<void> {
     const server = await distributionServer()
-    for (let round = 0; round < MAX_PREPARE_ROUNDS; round += 1) {
-      const info = await helper.start()
-      if (isPrepared(info, server)) return
-      await prepareFor(info, server)
-      if (isPrepared(helper.info(), server)) return
-    }
-    throw new WslSetupError(`The WSL helper for ${distro} kept restarting while it was being set up.`, {
-      fatal: false,
-      code: 'start',
-    })
+    if (isPrepared(server)) return
+    await prepareFor(server)
   }
 
   // The distribution's server, started for the launch: its agent-state
@@ -429,8 +445,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   }
 
   function integration(): HostAgentIntegration | null {
-    const info = helper.info()
-    if (!info || !prepared || prepared.info !== info) return null
+    if (!prepared) return null
     // The distribution's own Studio launcher: hooks and the gateway written for
     // this machine name it, never the pinned Node or this version's payload
     // folder, which the next update prunes (see `integrations/launcher.ts`).
@@ -481,10 +496,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
   }
 
   // The server a launch was prepared against, while that preparation stands.
-  const preparedServer = (): PreparedServer | null => {
-    const info = helper.info()
-    return info && prepared?.info === info ? prepared.server : null
-  }
+  const preparedServer = (): PreparedServer | null => prepared?.server ?? null
 
   const terminalHost = (start: boolean) =>
     deps.distribution ? deps.distribution.terminalHost(distro, { start }) : Promise.resolve(null)
@@ -510,11 +522,10 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     toHostPath: (nativePath) => toWslPath(nativePath),
     toNativePath,
     async homeDir() {
-      // Only the home: a launch's preparation (the server, the plugin copy)
-      // is the launch's, and a host with no server reaches the home anyway.
+      // Only the home: a launch's preparation (the launcher, the plugin
+      // copy) is the launch's own.
       try {
-        const info = helper.info() ?? (await helper.start())
-        return prepared?.info === info ? prepared.home : await readHome()
+        return prepared?.home ?? (await readHome())
       } catch {
         return null
       }
@@ -572,18 +583,22 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       return token
     },
     revokeChannelToken: (token) => deps.distribution?.revokeLaunchToken(distro, token),
-    watchDir(nativePath, recursive, listener) {
-      const watchers = new EventEmitter() as EventEmitter & { close(): void }
-      const handle = helper.watch(toWslPath(nativePath), recursive, listener, () => {
-        // Asynchronous by construction (the helper answers later), so the
-        // caller's error listener is already attached.
-        if (watchers.listenerCount('error') > 0) {
-          watchers.emit('error', new Error(`${nativePath} cannot be watched inside ${distro}.`))
+    ...(deps.machine?.watchPath
+      ? {
+          watchDir(nativePath: string, recursive: boolean, listener: (filename: string | null) => void) {
+            const watchers = new EventEmitter() as EventEmitter & { close(): void }
+            const handle = deps.machine!.watchPath!(distro, toWslPath(nativePath), recursive, listener, () => {
+              // Asynchronous by construction (the server answers later), so
+              // the caller's error listener is already attached.
+              if (watchers.listenerCount('error') > 0) {
+                watchers.emit('error', new Error(`${nativePath} cannot be watched inside ${distro}.`))
+              }
+            })
+            watchers.close = () => handle.close()
+            return watchers
+          },
         }
-      })
-      watchers.close = () => handle.close()
-      return watchers
-    },
+      : {}),
     cliRuntime(cli, runtime): CliRuntimeSettings {
       return {
         command: (settings()?.cliCommands[cli] ?? '').trim(),
@@ -680,21 +695,23 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
       }
     },
     async runGit(cwd, args, options) {
+      if (!deps.machine) return failedRun(new Error(`This process cannot run git in ${distro}.`))
+      if (options.stdin !== undefined && Buffer.byteLength(options.stdin, 'utf8') > MAX_ENVIRONMENT_GIT_STDIN_BYTES) {
+        return failedRun(new Error(`What git was to read is too large to send into ${distro}.`))
+      }
       try {
-        const outcome = await helper.request<HelperRunOutcome>(
-          'git',
-          {
-            cwd: toWslPath(cwd),
-            args: args.map(wslGitArg),
-            timeoutMs: options.timeoutMs,
-            env: options.env,
-            // Base64, so a patch's CRLFs and a pathspec list's NULs cross the
-            // JSON wire byte for byte.
-            ...(options.stdin !== undefined ? { stdinB64: Buffer.from(options.stdin, 'utf8').toString('base64') } : {}),
-          },
-          { timeoutMs: options.timeoutMs === null ? null : options.timeoutMs + ANSWER_SLACK_MS },
-        )
-        return { ...outcome, stdout: nativeGitOutput(args, outcome.stdout, distro) }
+        // The distribution's Studio ends git at its deadline; the access waits
+        // a little past that for the answer, once the server is reached.
+        const answer = await deps.machine.git(distro, {
+          cwd: toWslPath(cwd),
+          args: args.map(wslGitArg),
+          timeoutMs: options.timeoutMs,
+          ...(options.env ? { env: options.env } : {}),
+          // Base64, so a patch's CRLFs and a pathspec list's NULs cross the
+          // wire byte for byte.
+          ...(options.stdin !== undefined ? { stdinB64: Buffer.from(options.stdin, 'utf8').toString('base64') } : {}),
+        })
+        return { ...answer, stdout: nativeGitOutput(args, answer.stdout, distro) }
       } catch (error) {
         return failedRun(error)
       }

@@ -307,65 +307,6 @@ test('a helper that dies is started again on the next need, after a backoff that
   await client.shutdown()
 })
 
-test('a helper watch is registered with each helper that starts, and never starts one itself', async () => {
-  let adds = 0
-  const removes: unknown[] = []
-  const answers = {
-    'watch.add': () => {
-      adds += 1
-      return { id: 100 + adds }
-    },
-    'watch.remove': (params: unknown) => {
-      removes.push(params)
-      return {}
-    },
-  }
-  const h = harness([healthy(answers), healthy(answers)])
-  const client = createWslHelperClient(h.deps)
-  const heard: Array<string | null> = []
-  let errors = 0
-  const watch = client.watch(
-    '/home/dev/repo/.git',
-    false,
-    (name) => heard.push(name),
-    () => (errors += 1),
-  )
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(h.spawned.length, 0, 'a watch alone does not start the helper')
-  await client.start()
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(adds, 1)
-  h.spawned[0].send({ t: 'ev', event: 'watch', id: 101, filename: 'HEAD' })
-  h.spawned[0].send({ t: 'ev', event: 'watch', id: 999, filename: 'index' })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.deepEqual(heard, ['HEAD'], 'only its own events')
-  // The helper goes; the next one is given the watch again.
-  h.spawned[0].close(1)
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  await client.start()
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(adds, 2)
-  h.spawned[1].send({ t: 'ev', event: 'watch', id: 102, filename: 'index' })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.deepEqual(heard, ['HEAD', 'index'])
-  watch.close()
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.deepEqual(removes, [{ id: 102 }])
-  // A helper that cannot watch a directory says so once; the watch is dead.
-  const failing = client.watch(
-    '/home/dev/repo/.git/worktrees',
-    false,
-    () => undefined,
-    () => (errors += 1),
-  )
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  h.spawned[1].send({ t: 'ev', event: 'watchError', id: 103 })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(errors, 1)
-  failing.close()
-  await client.shutdown()
-})
-
 test("wsl.exe's own failures are sorted into transient and fatal", () => {
   assert.equal(classifyWslFailure('WSL_E_DISTRO_NOT_FOUND', 1).code, 'distro-missing')
   assert.equal(classifyWslFailure('Windows Subsystem for Linux has no installed distributions.', 1).fatal, true)

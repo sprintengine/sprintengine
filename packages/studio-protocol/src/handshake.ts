@@ -216,6 +216,15 @@ export const STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY = 'environment-launch-t
 export const STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY = 'environment-terminal-host' as const
 
 /**
+ * `environment.git` and `environment.home` (`environment-access.ts`): the
+ * desktop's own uses of a WSL distribution it holds, asked of that
+ * distribution's Studio: git on a folder there (a WSL terminal workspace's
+ * worktrees, checkpoints and Git pane), and the home and config-home
+ * variables its login shell sets.
+ */
+export const STUDIO_ENVIRONMENT_MACHINE_CAPABILITY = 'environment-machine' as const
+
+/**
  * `providers.signInStart`, `.signInPaste`, `.signInWait` and `.signInCancel`
  * (`environment-access.ts`): a CLI's own login on this Studio's machine, with
  * no terminal (decision R34). Served where the machine has no terminal of the
@@ -406,6 +415,7 @@ export const STUDIO_CAPABILITIES = [
   STUDIO_ENVIRONMENT_ADOPT_CAPABILITY,
   STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY,
   STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY,
+  STUDIO_ENVIRONMENT_MACHINE_CAPABILITY,
   STUDIO_PROVIDER_SIGN_IN_FLOW_CAPABILITY,
   STUDIO_CHAT_STORES_CAPABILITY,
   STUDIO_AGENT_SKILLS_CAPABILITY,

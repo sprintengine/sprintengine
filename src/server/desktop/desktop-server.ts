@@ -72,6 +72,9 @@ import { createServerModules } from './server-modules'
 import { serveAgentWorktrees } from './agent-worktree-rpc'
 import { createDesktopWslServers } from '../wsl/desktop-wsl-servers'
 import { relayShellToolsets, sshRelayTarget } from '../wsl/wsl-tool-relay'
+import { createWslMachineAccess } from '../wsl/wsl-machine-client'
+import { WslSetupError } from '../../main/hosts/wsl-setup-error'
+import type { StudioEnvironmentGitAsk } from '../../../packages/studio-protocol/src/environment-access'
 import { createShellEnvironmentClients } from './shell-environment-clients'
 import { readStudioEnv } from '../../shared/studio-env'
 
@@ -899,6 +902,21 @@ function serveShellRequests(deps: {
     const access = deps.core.wslServers?.access
     if (!access) return { ok: false, code: 'unsupported_route', message: 'This computer runs no WSL distributions.' }
     return access.windowTicket(distro, { windowKey, origin })
+  })
+  // The shell's own git and home lookups on a WSL distribution (main's host
+  // registry holds no WSL servers): the core's owner connections answer.
+  const wslMachine = createWslMachineAccess(
+    () => deps.core.wslServers?.manager ?? null,
+    (distro) =>
+      new WslSetupError(`Studio cannot start a server in ${distro} on this computer.`, { fatal: true, code: 'start' }),
+  )
+  rpc.handle(SERVER_METHODS.wslMachine, async (params) => {
+    const { distro, method, ask } = (params ?? {}) as { distro?: unknown; method?: unknown; ask?: unknown }
+    if (typeof distro !== 'string' || !distro) throw new Error('A WSL machine ask names its distribution.')
+    if (method === 'home') return wslMachine.home(distro)
+    if (method === 'git' && ask && typeof ask === 'object')
+      return wslMachine.git(distro, ask as StudioEnvironmentGitAsk)
+    throw new Error('A WSL machine ask is git or home.')
   })
   rpc.handle(SERVER_METHODS.wslRevokeWindow, (params) => {
     const { windowKey } = (params ?? {}) as { windowKey?: unknown }

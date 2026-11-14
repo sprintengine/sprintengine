@@ -642,6 +642,12 @@ directory, and says where it is (all empty when its build shipped no plugin). Se
 distribution's Studio only. The envelope's `wsl`
 gained `profile`, and the `ready` frame's `frontDoor` gained `sessionDir` and `pidDir`
 (private to the desktop and the server it starts, one build).
+`environment-machine` (2026-11-14) adds `environment.git` (`{ cwd, args, timeoutMs, env?,
+stdinB64? }` → `{ code, stdout, stderr, timedOut, spawnFailed?, truncated? }`) and
+`environment.home` (`{}` → `{ home, env }`), both the shell's: git in a folder of a WSL
+distribution, and its home and config-home variables, asked of its own Studio by the desktop
+that holds it. Served by a WSL distribution's Studio only. The desktop also follows a git
+directory there with the owner's `files.watchPath` (`includeIgnored`).
 The welcome's `environment` gained an optional `driveMountRoot` (2026-11-13): a
 WSL distribution's Studio says where it mounts the Windows drives (`/mnt/` unless
 its wsl.conf says otherwise, null when it mounts none), so a client on Windows

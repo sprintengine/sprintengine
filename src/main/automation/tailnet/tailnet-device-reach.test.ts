@@ -258,6 +258,10 @@ const NOT_FOR_DEVICES: Readonly<Record<string, string>> = Object.fromEntries(
         ['environment.launchFiles', 'environment.terminalProcesses', 'environment.pluginCopy'],
       ],
       [
+        'git and the home on a WSL distribution for the desktop that holds it, the shell’s alone',
+        ['environment.git', 'environment.home'],
+      ],
+      [
         'a CLI’s login on the machine, an owner’s: it runs the login there and keeps its credential',
         ['providers.signInStart', 'providers.signInPaste', 'providers.signInWait', 'providers.signInCancel'],
       ],

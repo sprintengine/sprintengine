@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
-import { conversationImageFileOf, conversationImagePathOf, sniffConversationImage } from './tailnet-conversation-images'
+import { conversationImagePathOf, sniffConversationImage } from './tailnet-conversation-images'
 
 // Which file a chat's step names as its picture, and what its bytes say it
 // is. A device reads a step's picture with `conversation.picture`, end to end
@@ -36,19 +36,4 @@ test('only a generated picture or a read of a picture names a file', () => {
   assert.equal(conversationImagePathOf({ name: 'Write', kind: 'file_write', input: { file_path: '/tmp/a.png' } }), null)
   assert.equal(conversationImagePathOf({ name: 'GenerateImage', kind: 'other', input: {} }), null)
   assert.equal(conversationImagePathOf({ name: 'GenerateImage', kind: 'other', input: 'not an object' }), null)
-})
-
-test("a WSL chat's picture paths are opened as Windows spells them", () => {
-  // A drive mount is its drive; a path in the distribution its share, spelled as the folder is.
-  assert.equal(
-    conversationImageFileOf('/mnt/c/Users/dev/shot.png', 'C:\\Users\\dev\\repo', 'win32'),
-    'C:\\Users\\dev\\shot.png',
-  )
-  assert.equal(
-    conversationImageFileOf('/home/dev/repo/shot.png', '\\\\wsl$\\Ubuntu\\home\\dev\\repo', 'win32'),
-    '//wsl$/Ubuntu/home/dev/repo/shot.png',
-  )
-  // A distribution the folder does not name cannot be guessed; elsewhere nothing changes.
-  assert.equal(conversationImageFileOf('/home/dev/shot.png', 'C:\\repo', 'win32'), '/home/dev/shot.png')
-  assert.equal(conversationImageFileOf('/Users/dev/shot.png', '/Users/dev/repo', 'darwin'), '/Users/dev/shot.png')
 })

@@ -37,6 +37,7 @@ import type {
 } from '../../../packages/studio-protocol/src/environment-access'
 import type { SignIns } from '../machine/machine-sign-in'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
+import type { DistributionMachine } from '../wsl/distribution-machine'
 import { cliForConversationProvider } from '../../shared/conversation-harness'
 import type { EnvironmentAdoption } from '../environment/environment-adoption'
 import { createHash, randomBytes } from 'node:crypto'
@@ -257,6 +258,8 @@ export type StudioRpcRouterOptions = {
   work?: () => StudioEnvironmentWork
   /** What a WSL distribution does for the desktop's WSL terminals (`environment.launchFiles`, `.terminalProcesses`, `.pluginCopy`). */
   terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
+  /** What a WSL distribution does on its machine for the desktop (`environment.git`, `.home`). */
+  machine?: Pick<DistributionMachine, 'git' | 'home'>
   /** The desktop's WSL terminal agents' launch tokens (`environment.launchTokens`); without it, answered `unavailable`. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
@@ -2133,6 +2136,18 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       } catch (error) {
         return refuse('unavailable', error instanceof Error ? error.message : String(error))
       }
+    },
+    'environment.git': async (params) => {
+      if (!options.machine) return unserved('environment.git')
+      try {
+        return { ok: true, result: await options.machine.git(params) }
+      } catch (error) {
+        return refuse('invalid_params', error instanceof Error ? error.message : String(error))
+      }
+    },
+    'environment.home': () => {
+      if (!options.machine) return unserved('environment.home')
+      return { ok: true, result: options.machine.home() }
     },
     'environment.launchTokens': (params) => {
       if (!options.launchTokens) return unserved('environment.launchTokens')

@@ -351,6 +351,18 @@ distribution's own Studio server. Run every step that is listed.
     Node; the launcher's `payload=` names the server tree's `resources`; in the
     agent, `/backlog` is offered and its status line shows. Turn the skill off
     and start another agent: the copy no longer holds it.
+13. Open a WSL terminal workspace's Git pane, and in that distribution's
+    terminal run `git -C <repo> commit --allow-empty -m probe`.
+    **Expect:** the pane shows the new commit within a few seconds, with no
+    reload. Stage one hunk from the pane: it is staged (`git diff --cached`).
+14. With no WSL chat or terminal open, open Settings › Skills for a CLI on the
+    WSL machine.
+    **Expect:** it lists what that CLI has installed in the distribution (its
+    `CLAUDE_CONFIG_DIR` or `CODEX_HOME` respected), and the distribution's
+    Studio server was started to answer.
+15. Quit the app, start it with "Run Studio server in its own process" on,
+    and repeat 13 and 14.
+    **Expect:** the same.
 
 ## Throughput
 

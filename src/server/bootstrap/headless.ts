@@ -12,6 +12,7 @@ import type { SignIns } from '../machine/machine-sign-in'
 import { startFrontDoorListeners, type FrontDoorListeners } from '../wsl/front-door-listener'
 import { createAgentStateRelay, type AgentStateRelay } from '../wsl/agent-state-relay'
 import { createDistributionTerminalHost, type DistributionTerminalHost } from '../wsl/distribution-terminal-host'
+import { createDistributionMachine } from '../wsl/distribution-machine'
 import { createAgentStateListener, type AgentStateListener } from '../terminals/agent-state-listener'
 import { resolveAgentStateSocketPath } from '../../main/agent-state-service'
 import type { FrontDoorPurpose } from '../wsl/front-door-proof'
@@ -208,6 +209,8 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
   const serverOptions = {
     ...headlessServerOptions(envelope, log),
     ...(envelope.wsl ? distributionTerminals({ ...envelope, wsl: envelope.wsl }, log) : {}),
+    // Inside WSL: git and the home for the desktop that holds this Studio.
+    ...(envelope.wsl ? { machine: createDistributionMachine() } : {}),
   }
   const server = await startStudioServer({
     ...serverOptions,
@@ -319,6 +322,7 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
       if (doors) await runShutdownLegs([['front door', () => doors?.close()]], onLeg)
       agentStateRelay?.close()
       await agentStateListener?.stop()
+      serverOptions.machine?.close()
       await server.stop(onLeg)
     },
   }

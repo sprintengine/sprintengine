@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DistributionTerminalHost } from '../wsl/distribution-terminal-host'
+import type { DistributionMachine } from '../wsl/distribution-machine'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { basename, join } from 'node:path'
@@ -93,6 +94,8 @@ export function createStudioRpc(
     signIns?: () => Promise<SignIns>
     /** A WSL distribution's: what it does for the desktop's WSL terminals. */
     terminalHost?: DistributionTerminalHost
+    /** A WSL distribution's: what it does on its machine for the desktop (git, the home). */
+    machine?: DistributionMachine
   } = {},
 ): StudioRpcService {
   // The dev servers this machine publishes on the tailnet: Settings and the
@@ -113,6 +116,7 @@ export function createStudioRpc(
     // inside it by their launch tokens, which the desktop says by digest.
     ...(options.hostKind === 'wsl' ? { launchTokens: applyGatewayLaunchTokenChanges } : {}),
     ...(options.hostKind === 'wsl' && options.terminalHost ? { terminalHost: options.terminalHost } : {}),
+    ...(options.hostKind === 'wsl' && options.machine ? { machine: options.machine } : {}),
     // And says what stopping it would end, which that desktop asks before it
     // stops a WSL server for being idle and for its quit question.
     ...(options.hostKind === 'wsl' || options.hostKind === 'ssh'

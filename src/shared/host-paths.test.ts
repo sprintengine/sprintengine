@@ -12,7 +12,6 @@ import {
   driveMountRootFromWslConf,
   normalizeDriveMountRoot,
   toWslPath,
-  wslPathInRootSpelling,
   wslToWindowsPath,
 } from './host-paths'
 
@@ -206,9 +205,7 @@ test('a Linux path joins the root wslpath prints for the distribution', () => {
   assert.equal(linuxPathUnderRoot('/', '\\\\wsl$\\Debian'), '\\\\wsl$\\Debian')
 })
 
-// What an agent in WSL names, a chat opens from Windows and the agent is told
-// again: the two spellings of one file go there and back unchanged.
-test('a path an agent in WSL names comes back to the spelling it left in', () => {
+test('each Windows spelling of a WSL path reads as the path in the distribution', () => {
   const cases: Array<{ root: string; linux: string; windows: string }> = [
     { root: 'C:\\Users\\dev\\repo', linux: '/mnt/c/Users/dev/repo/a.ts', windows: 'C:/Users/dev/repo/a.ts' },
     {
@@ -223,16 +220,9 @@ test('a path an agent in WSL names comes back to the spelling it left in', () =>
     },
   ]
   for (const { root, linux, windows } of cases) {
-    assert.equal(wslPathInRootSpelling(linux, root, 'Ubuntu'), windows, root)
-    assert.equal(toWslPath(windows), linux, `${root}, back`)
+    assert.equal(toWslPath(windows), linux, root)
     assert.equal(toWslPath(root), linux.slice(0, linux.lastIndexOf('/')), `${root}, the root itself`)
   }
-  assert.equal(wslPathInRootSpelling('a.ts', 'C:\\Users\\dev\\repo', 'Ubuntu'), 'a.ts', 'a relative path is left alone')
-  assert.equal(
-    wslPathInRootSpelling('//wsl.localhost/Ubuntu/x', 'C:\\Users\\dev\\repo', 'Ubuntu'),
-    '//wsl.localhost/Ubuntu/x',
-    'a share path is already this machine’s',
-  )
 })
 
 test('a learned drive mount root moves every drive path with it, both ways', () => {

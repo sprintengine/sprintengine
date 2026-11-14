@@ -16,11 +16,11 @@
 // that server's gateway (`src/server/wsl/wsl-launch-tokens.ts`), which also
 // writes each launch's startup script and reads and ends the processes a
 // session leaves, and builds the app's plugin copy its agent loads
-// (`src/server/wsl/distribution-terminal-host.ts`). The helper
-// answers main's questions about the distribution that are left: which CLIs
-// are installed, the home folder, and running a program or git, and watches
-// git directories for the Git pane, because a watch Windows places on a
-// `\\wsl.localhost` path hears nothing.
+// (`src/server/wsl/distribution-terminal-host.ts`), and runs git, says the
+// home and watches git directories for the desktop
+// (`src/server/wsl/distribution-machine.ts`). The helper answers main's
+// questions about the distribution that are left: which CLIs are installed,
+// and running a program.
 //
 // Lifetime. It exits when its stdin closes (main quit, crashed, or killed the
 // `wsl.exe`), when main says `shutdown`, or on a signal, and on the way out it
@@ -29,7 +29,7 @@
 // dependencies: it runs on the pinned Linux Node main installed next to it,
 // never on the person's own.
 
-import { readFileSync, watch as fsWatch } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -37,22 +37,17 @@ import { fileURLToPath } from 'node:url'
 import { createCliDetector } from './lib/cli-detect.mjs'
 import { createLineDecoder, decodeFrame, encodeFrame, PROTOCOL_VERSION } from './lib/frames.mjs'
 import { captureLoginEnv } from './lib/login-env.mjs'
-import { checkRunRequest, childEnv, decodeStdin, killAllChildren, runArgv } from './lib/run.mjs'
+import { checkRunRequest, childEnv, killAllChildren, runArgv } from './lib/run.mjs'
 
-// Main's own frames can carry a patch on git's stdin, so the cap is generous;
-// it is still a cap, because a broken writer should end the helper rather than
-// fill its memory.
-const MAX_MAIN_LINE_BYTES = 64 * 1024 * 1024
+// A cap on main's frames, because a broken writer should end the helper rather
+// than fill its memory.
+const MAX_MAIN_LINE_BYTES = 4 * 1024 * 1024
 const HELLO_TIMEOUT_MS = 30_000
-// The Git pane watches a handful of directories per open checkout.
-const MAX_WATCHES = 512
 
 const uid = typeof process.getuid === 'function' ? process.getuid() : -1
 const helperDir = dirname(fileURLToPath(import.meta.url))
 const appDir = dirname(helperDir)
 let exiting = false
-const watches = new Map()
-let nextWatchId = 1
 function send(frame) {
   if (exiting) return
   try {
@@ -75,23 +70,11 @@ const detector = createCliDetector({
   onPathsChanged: () => send({ t: 'ev', event: 'pathsChanged' }),
 })
 
-function closeWatch(id) {
-  const watcher = watches.get(id)
-  if (!watcher) return
-  watches.delete(id)
-  try {
-    watcher.close()
-  } catch {
-    // Already closed.
-  }
-}
-
 async function shutdown(code) {
   if (exiting) return
   exiting = true
   killAllChildren()
   detector.close()
-  for (const id of [...watches.keys()]) closeWatch(id)
   process.exit(code)
 }
 
@@ -100,7 +83,7 @@ for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => v
 async function start(hello) {
   const profile = String(hello.profile ?? '')
   const home = process.env.HOME || homedir()
-  // Read in the background now; the first CLI check or git command waits on it.
+  // Read in the background now; the first CLI check or run waits on it.
   void loginEnv()
   return {
     uid,
@@ -114,18 +97,6 @@ async function start(hello) {
 
 const methods = {
   ping: async () => ({}),
-  async home() {
-    const env = await loginEnv()
-    const home = env.HOME || process.env.HOME || homedir()
-    return {
-      home,
-      env: {
-        ...(env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR.split(',')[0] } : {}),
-        ...(env.CODEX_HOME ? { CODEX_HOME: env.CODEX_HOME } : {}),
-        ...(env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: env.XDG_CONFIG_HOME } : {}),
-      },
-    }
-  },
   async 'cli.detect'(params) {
     const requests = Array.isArray(params?.requests) ? params.requests : []
     return { results: await detector.detect(requests, { force: params?.force === true }) }
@@ -140,42 +111,6 @@ const methods = {
       env: childEnv(await loginEnv(), params.env),
       timeoutMs: params.timeoutMs,
     })
-  },
-  async git(params) {
-    const args = Array.isArray(params?.args) ? params.args : null
-    const request = {
-      argv: ['git', '-C', params?.cwd, ...(args ?? [])],
-      cwd: params?.cwd,
-      timeoutMs: params?.timeoutMs,
-      env: params?.env,
-    }
-    const problem = args ? checkRunRequest(request) : 'args must be an array.'
-    if (problem) throw new Error(problem)
-    const stdin = decodeStdin(params.stdinB64)
-    if (stdin === null) throw new Error('stdinB64 must be base64 text.')
-    return runArgv({ ...request, env: childEnv(await loginEnv(), params.env), stdin })
-  },
-  async 'watch.add'(params) {
-    const path = params?.path
-    if (typeof path !== 'string' || !path.startsWith('/') || path.includes('\0')) {
-      throw new Error('path must be an absolute path.')
-    }
-    if (watches.size >= MAX_WATCHES) throw new Error('Too many directories are watched already.')
-    const id = nextWatchId
-    nextWatchId += 1
-    const watcher = fsWatch(path, { recursive: params?.recursive === true, persistent: true }, (_event, filename) => {
-      send({ t: 'ev', event: 'watch', id, filename: typeof filename === 'string' ? filename : null })
-    })
-    watcher.on('error', () => {
-      closeWatch(id)
-      send({ t: 'ev', event: 'watchError', id })
-    })
-    watches.set(id, watcher)
-    return { id }
-  },
-  async 'watch.remove'(params) {
-    if (Number.isInteger(params?.id)) closeWatch(params.id)
-    return {}
   },
 }
 

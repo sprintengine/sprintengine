@@ -101,6 +101,7 @@ import type { WslServers } from '../wsl/desktop-wsl-servers'
 import { followRelayedAgentState } from '../wsl/agent-state-relay'
 import { createWslLaunchTokens } from '../wsl/wsl-launch-tokens'
 import { createWslTerminalSessions, terminalHostOf, type WslTerminalSessions } from '../wsl/wsl-terminal-host-client'
+import { createWslMachineAccess } from '../wsl/wsl-machine-client'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
@@ -281,6 +282,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   )
   const hosts = createHostRegistry({
     readHostSettings: () => agentLaunchSettings.get().hosts,
+    // Git, the home and watches in a distribution are its own Studio's.
+    machine: createWslMachineAccess(() => wslServersForHosts?.manager ?? null, noWslServers),
     // A WSL terminal agent's plugin copy carries the Studio skills chosen here.
     enabledSkills: () => agents.services.areaSkills.enabledSkillDirs(),
     server: (distro) => {

@@ -24,7 +24,7 @@ import {
 import type { ExecutionHost } from './execution-host'
 import { createPosixLocalHost } from './posix-local-host'
 import { createWindowsHost } from './windows-host'
-import { createWslHost, type WslDistributionLink } from './wsl-host'
+import { createWslHost, type WslDistributionLink, type WslMachineAccess } from './wsl-host'
 import { knownWslListing, listWslDistros, type WslListing } from './wsl-distro'
 import type { WslHelperClient } from './wsl-helper-client'
 
@@ -44,6 +44,8 @@ export type HostRegistryDeps = {
    * launch is prepared in this process.
    */
   distribution?: WslDistributionLink
+  /** Git, the home and watches in each distribution, by its own Studio: the core's, or main's through the core. */
+  machine?: WslMachineAccess
   /** The Studio skills the person chose, by id: what a WSL terminal agent's plugin copy carries. */
   enabledSkills?: () => readonly string[]
 }
@@ -95,6 +97,7 @@ export function createHostRegistry(deps: HostRegistryDeps): HostRegistry {
       listed: () => knownListing()?.distros?.find((entry) => entry.name === distro),
       ...(deps.distribution ? { distribution: deps.distribution } : {}),
       ...(deps.enabledSkills ? { enabledSkills: deps.enabledSkills } : {}),
+      ...(deps.machine ? { machine: deps.machine } : {}),
       ...(deps.createWslHelper ? { helper: deps.createWslHelper(distro) } : {}),
     })
     wslHosts.set(distro, host)

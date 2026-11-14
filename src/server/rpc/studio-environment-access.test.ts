@@ -418,6 +418,53 @@ test("a WSL terminal's launch files and processes are the shell's alone to ask o
   assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-terminal-host'), false)
 })
 
+test("git and the home on a WSL distribution are the shell's alone to ask of its Studio", async () => {
+  const asked: unknown[] = []
+  const started = await startTestServer({
+    machine: {
+      git: async (ask) => {
+        asked.push(ask)
+        return { code: 0, stdout: 'true\n', stderr: '', timedOut: false }
+      },
+      home: () => ({ home: '/home/dev', env: { CODEX_HOME: '/home/dev/.codex' } }),
+    },
+  })
+  cleanups.push(() => started.dispose())
+  const shell = await shellOf(started.server)
+  assert.ok((shell.welcome.capabilities as string[]).includes('environment-machine'))
+  const ask = { cwd: '/home/dev/repo', args: ['rev-parse', '--is-inside-work-tree'], timeoutMs: 10_000 }
+  assert.deepEqual((await shell.request('environment.git', ask)).result, {
+    code: 0,
+    stdout: 'true\n',
+    stderr: '',
+    timedOut: false,
+  })
+  assert.deepEqual(asked, [ask])
+  assert.deepEqual((await shell.request('environment.home', {})).result, {
+    home: '/home/dev',
+    env: { CODEX_HOME: '/home/dev/.codex' },
+  })
+  for (const params of [
+    { ...ask, cwd: 'C:\\repo' },
+    { ...ask, args: 'status' },
+    { ...ask, args: ['a\0b'] },
+    { ...ask, timeoutMs: 0 },
+    { ...ask, env: { 'BAD-NAME': 'x' } },
+    { ...ask, stdinB64: '***' },
+  ])
+    assert.equal(errorCode(await shell.request('environment.git', params)), 'invalid_params')
+  assert.equal(asked.length, 1, 'nothing refused reached the distribution')
+  const owner = await lineClient(started.path, OWNER_TOKEN)
+  assert.equal(errorCode(await owner.request('environment.git', ask)), 'owner_required')
+  assert.equal(errorCode(await owner.request('environment.home', {})), 'owner_required')
+  assert.equal(asked.length, 1)
+
+  const plain = await startTestServer()
+  cleanups.push(() => plain.dispose())
+  const plainShell = await shellOf(plain.server)
+  assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-machine'), false)
+})
+
 test('a hand-over is the shell’s alone, answered once per command id', async () => {
   const handed: unknown[] = []
   const started = await startTestServer({

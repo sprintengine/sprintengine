@@ -13,7 +13,7 @@ import { test } from 'vitest'
 import type { TerminalViewer } from '../server/terminals/terminal-viewer'
 import type { McpSettings } from '../shared/electron-api'
 import { standIn } from '../../tests/stand-in'
-import { stubWslHelper, stubWslDistributionLink } from '../../tests/wsl-helper-stub'
+import { stubWslHelper, stubWslMachine, stubWslDistributionLink } from '../../tests/wsl-helper-stub'
 import type { SubtreeLiveReason } from './terminal-subtree-probe'
 import { wslSessionPidKey } from './hosts/wsl-distro'
 
@@ -62,9 +62,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
     // The distribution's Studio server, standing in: its /proc read answers
     // from `verdicts`, and a read can be made to fail.
     let verdicts: Record<string, SubtreeLiveReason | null> | null = null
-    const helper = stubWslHelper('Ubuntu', {
-      home: () => ({ home: '/home/dev' }),
-    })
+    const helper = stubWslHelper('Ubuntu')
     const distribution = stubWslDistributionLink(undefined, {
       processes: (ask) => {
         if (ask.op !== 'snapshot') return { killed: [] }
@@ -81,6 +79,7 @@ test('an idle WSL agent is suspended once its distribution says it is at rest, a
         readHostSettings: () => ({}),
         createWslHelper: () => helper,
         distribution,
+        machine: stubWslMachine(),
       }),
     )
     const runtimeModule = await import('./terminal-runtime')

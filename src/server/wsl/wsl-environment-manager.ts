@@ -581,6 +581,9 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
       },
       client: { name: 'SprintEngine Studio', kind: 'desktop' },
       reconnect: false,
+      // No read deadline of the client's own: a git write with hooks runs as
+      // long as it runs, and each caller here bounds what it waits for.
+      readTimeoutMs: 0,
       helloTimeoutMs: OWNER_HELLO_MS,
       heartbeat: { intervalMs: deps.ownerPingMs ?? OWNER_PING_MS, timeoutMs: deps.ownerPingMs ?? OWNER_PING_MS },
     })

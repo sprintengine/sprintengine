@@ -69,6 +69,8 @@ const OWNER_ONLY: ReadonlyArray<StudioMethod | StudioTopic> = [
   'commitMessage.draft',
   'designSystem.lint',
   'environment.adopt',
+  'environment.git',
+  'environment.home',
   'environment.launchFiles',
   'environment.launchTokens',
   'environment.pluginCopy',
@@ -354,6 +356,8 @@ test('what only the desktop’s own shell may call is an owner’s too, so every
   const shellOnly = (Object.keys(STUDIO_METHODS) as StudioMethod[]).filter((name) => STUDIO_METHODS[name].shell)
   assert.deepEqual(shellOnly.sort(), [
     'environment.adopt',
+    'environment.git',
+    'environment.home',
     'environment.launchFiles',
     'environment.launchTokens',
     'environment.pluginCopy',
