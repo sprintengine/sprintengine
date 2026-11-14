@@ -333,17 +333,18 @@ connection stays open.
 
 ## Versioning
 
-`STUDIO_PROTOCOL_VERSION` is 1, with one version of slack
-(`STUDIO_PROTOCOL_MIN_SUPPORTED`), refused at the handshake by an error naming
-both numbers. Features are asked about by capability (`studioPeerSupports`),
+`STUDIO_PROTOCOL_VERSION` is 1, and so is the oldest version a Studio still
+serves (`STUDIO_PROTOCOL_MIN_SUPPORTED`): a peer outside that window is
+refused at the handshake by an error naming both numbers. Features are asked about by capability (`studioPeerSupports`),
 never by version: `conversations`, `conversation-create`, `local-pairing`,
 and with the chat surface `conversation-folders`, `conversation-sessions`,
 `conversation-files`, `conversation-checkpoints`, `conversation-commands`,
-`providers`, `workspaces`, `session-files` (it lets
+`providers`, `session-files` (it lets
 `session.send` attach files by path), `conversation-handoff`,
 `session-controls`, `session-terminal-handoff`, `conversation-history`,
-`approval-rules` and `provider-settings` (`STUDIO_CHAT_CAPABILITIES`);
-`files-mention`, `file-system`, `git` and `worktrees` from every Studio's core,
+`approval-rules`, `provider-settings` and `conversation-export`
+(`STUDIO_CHAT_CAPABILITIES`); `workspaces` with the reads before a chat
+starts; `files-mention`, `file-system`, `git` and `worktrees` from every Studio's core,
 and `extensions` and `artifacts` from a desktop's. The
 conversation contract's own version and capabilities travel in
 `welcome.conversation`, unchanged. The policy is the repository's

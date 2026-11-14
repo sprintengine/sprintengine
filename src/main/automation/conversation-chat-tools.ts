@@ -41,7 +41,7 @@ import { launchPermissionCeiling, refuseDrivingLooserChat, type AgentPermissionR
 // escape the cap closes for a launch. Reading and waiting drive nothing, and
 // stopping a turn gives the caller nothing it did not have, so only a send is
 // held to it. None of these is served to a paired device, which follows and
-// drives this machine's chats over its own conversation lane.
+// drives this machine's chats on the Studio protocol.
 
 /** As much as one message an agent sends may hold; a paired device's send holds no more. */
 export const CHAT_SEND_MAX_CHARS = 100_000

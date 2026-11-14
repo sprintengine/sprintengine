@@ -43,5 +43,6 @@ same files pass in both suites.
 
 A transport is anything that carries whole frames both ways
 (`StudioTransport`): Node's owner socket (`@sprintengine/agent-sdk/node`), a
-WebSocket, a window's port, or a test double. `StudioTransportFactory` is
+WebSocket (a desktop window's too, to its server's window listener), or a test
+double. `StudioTransportFactory` is
 called again for every reconnect, so it may find Studio somewhere new.

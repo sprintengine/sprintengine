@@ -4,7 +4,9 @@ Status: scoped, 2026-10-01; built 2026-10-03 as section 14 says. This expands ph
 of `docs/design/studio-server.md` (section 13) and sections 9.4 and 10.3 that it
 builds on. Where this file and the parent disagree, section 12 below lists what
 the parent should change. When code and this file disagree, fix one of them in
-the same change.
+the same change. Where the scope below names `server.mjs`, the bundle as built
+is `server.cjs` (the parent's 10.4), and the relay is `bridge.mjs --mux` (5.4,
+as built).
 
 Amended 2026-10-02 for the owner ruling of that date: the server has no
 browser and no canvas. The remote gets no Chromium; the desktop's own pane
@@ -653,8 +655,11 @@ detached-start.ts`), run by the connect script with stdin on `/dev/null`.
   it stops itself.
 - No systemd unit is used: decision R29 rules that out unasked, so the managed
   server is always the detached process, with the caveat of 6.4.
-- The "protocol window" is the private backend wire's version
-  (`BACKEND_WIRE_VERSION`) together with the app version (5.6, as built).
+- The "protocol window" is the Studio protocol's: the `protocolVersion` and
+  `minProtocolVersion` the server's record carries, read with
+  `studioCompatibility` (5.6, as built). Until 2026-11-13 it was the private
+  backend wire's version (`BACKEND_WIRE_VERSION`) together with the app
+  version; that wire is gone.
 
 ## 6. The remote, in detail
 

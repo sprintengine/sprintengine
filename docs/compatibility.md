@@ -52,11 +52,15 @@ per-distribution switch sent them there. It went on 2026-11-13 with the router
 and the switch (design-wsl-ssh-direct PR 3c): every WSL chat is the
 distribution's own Studio's, reached on the Studio protocol like an SSH
 machine's. The front door's purposes are now `studio` (the desktop's owner
-connection) and `ws` (2026-11-13): a window's socket, which the desktop's
-loopback route for that machine carries to the server's own window listener.
-The proof says only that the stream came through the front door; the listener
-admits it by the ticket it minted, as it admits a local window. A server tree
-refuses an unknown purpose in words, and the desktop updates it.
+connection), `ws` (2026-11-13): a window's socket, which the desktop's
+loopback route for that machine carries to the server's own window listener,
+and `agent-state` (2026-11-14): a WSL distribution's terminal agents' phase
+reports, which its Studio relays to the desktop that holds it as lines, and
+which any other server ends at once (`FrontDoorPurpose` in
+`src/server/wsl/front-door-proof.ts`). The proof says only that the stream
+came through the front door; the listener admits a window's socket by the
+ticket it minted, as it admits a local window. A server tree refuses an
+unknown purpose in words, and the desktop updates it.
 
 A session's summary, which every Studio pushes with every chat event, carries
 three optional clocks a reader must not count on: `lastTurnEndedAt` (when
@@ -365,7 +369,12 @@ the device whose token bought it), whose `hello` presents that ticket. The
 device's grant is its pairing's scopes as they stand at each request
 (`conversation:operate` carries `conversation:create`, either `workspace`
 scope carries `workspaces:read`), never an owner's; a removed pairing closes
-the connection. The socket carries no `Origin`, except a desktop window's,
+the connection. One device may hold at most 32 of these sockets at once
+(`MAX_STUDIO_SOCKETS_PER_DEVICE` in `tailnet-gateway-server.ts`): a paired
+desktop holds one per window that reads this machine and its server one more,
+and a window lets its socket go after five idle minutes. A 33rd socket closes
+the device's oldest, which covers a client that leaks them or a phone's
+half-open socket. The socket carries no `Origin`, except a desktop window's,
 which names its origin when it asks for the ticket and carries exactly that
 one. A ticket answer from a Studio that serves the endpoint says so with
 `studioPath`; a device that finds it missing is talking to an older Studio.
@@ -407,6 +416,21 @@ capability: a client meeting a server before it reads every reconnect as a
 new boot, so it sends again only a mutation whose receipts are durable
 (`receipts` in `STUDIO_METHODS`), refusing the others `unknown_outcome`; a
 client before it ignores it and resends as it always did.
+The chat surface's first capabilities name what a client may ask of it
+beside the conversation contract: `conversation-folders`, a chat addressed by
+its folder as well as its workspace (`key.workspaceRoot`, which only an owner
+names); `conversation-sessions`, a chat's live session driven by its id
+(`session.*`) and the pieces a message's pictures and files go up in first
+(`uploads.*`); `conversation-files`, a sent picture read back
+(`conversation.attachment`) and a proposed plan opened as a file
+(`conversation.planDocument`); `conversation-checkpoints`, a turn's files
+reverted from its checkpoint, or a chat taken back to an earlier message
+(`conversation.revert`, `conversation.rewind`); `conversation-commands`, the
+`/` list a chat's CLI reports for a folder (`conversation.commands`, a method
+and a stream); and `providers`, the conversation providers, their models and
+whether each has its key (`providers.*`). A Studio advertises them only with
+its chat surface (`STUDIO_CHAT_CAPABILITIES`), and a client asks for none its
+Studio leaves out.
 `workspaces` is what a client reads before it starts a chat:
 `workspaces.list`, `cliRuntimes.list`, `workspaces.checkout` and
 `workspaces.extensions`, answered by the gateway tools of the same purpose

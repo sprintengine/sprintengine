@@ -1,11 +1,10 @@
 // What a client and a Studio say about themselves before anything else.
 //
-// The rule is the conversation lane's, one level up: features are asked about
-// by capability, and the version integer exists only to refuse a peer outright
-// when a change could not be additive, naming both numbers when it does. The
-// conversation contract's own version and capabilities travel inside the
-// welcome unchanged, so a client that speaks only conversations reads exactly
-// what it reads from the tailnet lane.
+// The rule is the conversation contract's, one level up: features are asked
+// about by capability, and the version integer exists only to refuse a peer
+// outright when a change could not be additive, naming both numbers when it
+// does. The conversation contract's own version and capabilities travel inside
+// the welcome unchanged (`welcome.conversation`).
 
 /** The envelope, handshake and method table this package describes. */
 export const STUDIO_PROTOCOL_VERSION = 1
@@ -441,7 +440,7 @@ export const STUDIO_CAPABILITIES = [
 
 /**
  * The capabilities a Studio serves only with the chat surface beside the
- * conversation lane, in `STUDIO_CAPABILITIES` order. A Studio that has no chat
+ * conversation contract, in `STUDIO_CAPABILITIES` order. A Studio that has no chat
  * surface (a test double, a future headless build without one) leaves them out.
  */
 export const STUDIO_CHAT_CAPABILITIES = [

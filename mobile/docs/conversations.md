@@ -102,11 +102,12 @@ project with no remote sent each pooled worktree in a colour of its own; the
 phone paints every workspace of the project in its checkout's hue where the
 checkout is listed, else the first worktree's (`oneHuePerProject`). Every row
 shows its colour at rest; a row with none draws its folder in the row's ink.
-Where a chat runs somewhere other than the desktop itself (a WSL distribution,
-an SSH machine), that machine's mark leads the project line in the folder's
-ink, as on the desktop's sidebar, and its name is in the row's spoken label;
-in the project view, where the row has no project line, the mark keeps its
-name beside it. Rows are filed by what the desktop's list says on each read,
+A desktop lists only the chats its own Studio runs: a chat on one of its WSL
+distributions or SSH machines is reached only from that desktop, so the phone
+never lists one. Where a desktop's list does name another machine for a chat,
+that machine's mark leads the project line in the folder's ink, as on the
+desktop's sidebar, and its name is in the row's spoken label; in the project
+view, where the row has no project line, the mark keeps its name beside it. Rows are filed by what the desktop's list says on each read,
 so a project renamed there regroups on the next one.
 
 The phone has no Working section and no By status view, so the desktop's
@@ -679,10 +680,10 @@ phone) stops the chat and asks for a new pairing, without marking the desktop
 as having revoked the phone. Only a token the desktop no longer knows is a
 revocation.
 
-A chat on a Studio server that restarted (a WSL distribution's, an SSH
-machine's, or the desktop's own when it runs out of process) can have a send
-refused because the session it went to is gone (`session_not_found`, or the
-runtime's "Conversation session is invalid." where no code came with it). The phone
+A chat on a Studio server that restarted (the desktop's own, when it runs out
+of process) can have a send refused because the session it went to is gone
+(`session_not_found`, or the runtime's "Conversation session is invalid."
+where no code came with it). The phone
 offers that send once more under the same command id, and the desktop resumes
 the chat from its transcript and sends it there. A second refusal stands. An
 answer to a request on a lost session says the request ended with it.

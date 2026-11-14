@@ -968,30 +968,35 @@ over the tailnet, with the machine on the tab and above the transcript.
 New chat starts one there too: with Chat agent picked, the machine dropdown
 offers the paired machines, and launching on one asks it to start the chat in
 the chosen project and opens that same pane on it. Attached images go with
-the first message: the chat is started without its words, each image goes up
-that machine's upload route under the new chat's session, and the words are
-sent naming them, as a message to a followed chat is. That chat reads them
-exactly as one started there would. A chat that cannot take them (a machine
-without uploads, a CLI whose chat reads no images) is refused with the reason,
-and an empty chat it left behind is settled. Skills and attached files are this
+the first message: the chat is started without its words, and the words are
+then sent with the images, which go up on the same connection first
+(`uploads.*`), as a message to a followed chat's do. That chat reads them
+exactly as one started there would. A first message that does not go (a CLI
+whose chat reads no images, say) is refused with the reason, and the empty
+chat it left behind is settled. Skills and attached files are this
 machine's and do not travel yet; the launcher says so rather than dropping
-them. A WSL distribution is still not offered for a chat, which runs
-in the app's own process.
+them. A paired machine's WSL distributions and SSH machines are not offered:
+each is reached only from the desktop that holds it.
 
-- **The copy is kept.** Main follows over one socket per conversation, shared
-  by every window showing it, and keeps the transcript tail with its cursor
-  (log generation and last sequence) in the app profile. A dropped link or an
-  app restart shows the conversation at once and asks only for what came after
-  the cursor; another generation, or a cursor too far behind, gets a reset
-  snapshot that replaces the copy. Forgetting the machine deletes its copies.
-- **Every frame is validated** against the protocol before it touches the copy.
-  A frame of a known type in the wrong shape ends the follow with a sentence
-  rather than being skipped, since skipping an event and moving the cursor past
-  it would lose it.
-- **The link follows the host's advice.** A resync close waits the delay it
-  names, a wake does not cut that short, `busy` is retried after its delay under
-  the same id, a revoked device or a lost read grant ends the follow without
-  retrying, and a socket silent past two of the host's pings is re-dialled.
+- **The window follows on its own connection** (2026-11-14). The pane reads
+  and drives the chat over this window's own client of that machine's Studio
+  (`pairedChat.ts`, on the route `tailnet:<pairing>`), the client the Remote
+  band reads that machine's list on. Main follows nothing and keeps no copy.
+  The view holds the transcript with its cursor (log generation and last
+  sequence), and after a dropped link the client resumes the stream from that
+  cursor; another generation, or a cursor too far behind, comes back as a
+  reset snapshot that replaces what the view held. A window lets its
+  connection go after five idle minutes, and forgetting the machine closes it.
+- **Every frame is read against the protocol** before the view sees it. A
+  frame of a known type in the wrong shape drops the connection, which then
+  resumes from the cursor, since skipping an event and moving the cursor past
+  it would lose it. A frame type the client does not know is a newer Studio's,
+  and is skipped.
+- **The link follows the client runtime's rules**, the ones every Studio
+  client keeps: a retry backs off and never comes sooner than the delay the
+  machine names, `busy` is retried after its delay under the same command id,
+  a wake pings a live connection instead of closing it, and a revoked pairing
+  parks the connection rather than retrying.
 - **What the view offers is what the grant and the machine's welcome allow.** A pairing
   without `conversation:operate` sees the conversation with the composer,
   approvals and stop closed. A remote view offers a permanent approval rule
@@ -1000,8 +1005,9 @@ in the app's own process.
   workspace; and never a checkpoint revert, or this machine's skills and files: what its
   composer offers of skills, mentions and commands is that machine's (below).
   Images it
-  does offer, where the machine lists the chat as taking them: main puts each
-  in that machine's upload store, as the phone does, and the send names them. It
+  does offer, where the machine lists the chat as taking them: each goes up on
+  the window's connection first (`uploads.*`), as the phone's do, and the send
+  names them. It
   offers the same two-preset switcher a local chat does, reading the preset the
   machine's list names; a desktop built before the list carried the preset
   leaves the switcher hidden rather than guessing. Its engine chip is the same
@@ -1018,7 +1024,7 @@ in the app's own process.
   `conversation-queued-sends`: that machine holds it among its scheduled
   messages, shows it in the chat's own tray, and sends it when the turn ends,
   whether or not this machine is still awake. The pane draws the rows from
-  what that machine says it holds (`watchQueued`, `queued` frames); Edit takes
+  what that machine says it holds (the `conversation.queued` topic); Edit takes
   it back from there. Where that machine takes a steer, the row's Send now
   (and Primary+Enter with nothing typed) takes the message back and steers it
   into the running turn (2026-10-24); elsewhere it is Stop and send, which
@@ -1104,13 +1110,13 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   by its path in that folder (`mentions`), which that machine resolves as its
   own composer's chips are, refusing one outside the folder, behind a link, or
   gone. Where it advertises `conversation-commands`, the `/` menu lists what
-  the chat's CLI runs in that folder (`GET conversation-commands`), asked when
+  the chat's CLI runs in that folder (`conversation.listCommands`), asked when
   the menu opens rather than as the chat does, since each ask may start the
   CLI over there; asking again (`refresh`) needs `conversation:operate`. A `$`
   lists that machine's skills, as the "+" does. Where it advertises
   `conversation-message-files`, a file attached here by its path is a card, as
-  in a local chat: main reads it (25 MB at most), puts it in that machine's
-  store with `upload?kind=file` under the chat's live session, and the send
+  in a local chat: the window reads it (25 MB at most, `readAttachedFile`),
+  sends it up on its connection (`uploads.*`, as an attachment), and the send
   names it, so the agent reads it there by that path. A chat at rest there
   takes files once a message has woken it, as it takes pictures. A machine
   without one of these leaves that part of the composer as before: no @, the
@@ -1156,7 +1162,7 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   (`scheduleSend`): it keeps it among its own scheduled messages, shows it in
   the chat's own tray there, and sends it at its time whether or not this
   machine is awake. The tray here draws what that machine says it keeps
-  (`watchScheduled`, `scheduled` frames), and its Send now, Retry, Delete and
+  (the `conversation.scheduled` topic), and its Send now, Retry, Delete and
   Edit ask that machine; Edit deletes it there and puts it back in this
   composer, still set for its time. A machine without the capability, and a
   pairing that may only follow, offer no Schedule.
@@ -1166,15 +1172,15 @@ conversation-files`, on `conversation:read`), the picker ranks the matches
   every plan there, named as that machine's; the tray draws the notice a usage
   limit left on the chat's turn there, with Resume at reset, Always resume at
   reset, Cancel, Retry and Dismiss asking that machine, which sends the
-  resume (`watchUsageLimits`, `usageLimits` frames, `usageLimitResume`). A
+  resume (the `conversation.usageLimits` topic, `conversation.usageLimitResume`). A
   pairing that may only follow sees the notice without its buttons; a machine
   without the capability draws neither, as before.
 - **Its sub-agents are the other machine's** (2026-11-07). Where the machine
   advertises `conversation-subagents`, the right-hand panel's Subagents section
   lists a chat's sub-agents as that machine's own panel does, each with its
-  harness's logo and how it stands, live (`watchSubagents`, `subagents` frames).
+  harness's logo and how it stands, live (the `conversation.subagents` topic).
   The row in the transcript opens the same one. Opened, a sub-agent is followed
-  as a chat of its own, over a socket of its own, in the main pane, so its steps,
+  as a chat of its own, on the window's same connection, in the main pane, so its steps,
   its report and what it asks are read from it and answered there, and a message
   in its box goes straight to it, resuming it if it is at rest. What it asks is
   also answered above its parent's box. A pairing that may only follow sees a

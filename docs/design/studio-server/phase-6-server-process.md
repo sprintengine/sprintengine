@@ -399,6 +399,9 @@ Notes:
   host fails with "the WSL helper is not available in this process", as do
   the server's git and model discovery for that machine (and no second
   helper is ever started). WSL servers (phase 7) bring it back.
+  _Superseded on 2026-11-14: the helper and that refusal are gone. A WSL
+  chat is its distribution's own Studio's in either mode, and that Studio
+  detects and runs the machine's CLIs itself (`environment-machine`)._
 
 ### 5.2 The pull request record moves to the server (2026-10-03)
 

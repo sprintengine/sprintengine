@@ -1,6 +1,8 @@
 # Phase 5 — client tools: scoping spec
 
-Status: scoped, 2026-10-02. Nothing here is implemented. This file replaces
+Status: scoped, 2026-10-02; built from 2026-10-02 (the `client-tools`
+capability, the `tools.*` methods and frames, and the desktop's toolsets
+offered by its shell, `offer-gateway-tools.ts`). This file replaces
 the earlier phase 5 spec, "headless rendering", which planned a browser and a
 canvas renderer inside the server. The owner ruling of 2026-10-02 withdrew
 that plan, and this spec implements the ruling against the code as it stands
