@@ -1,6 +1,7 @@
 import {
   StudioError,
   connect,
+  isStudioVersionFailure,
   presentStudioFailure,
   webSocketTransport,
   type StudioClient,
@@ -197,7 +198,10 @@ export type PeerRefusal = {
 export function peerRefusal(target: { machineName: string }, error: unknown): PeerRefusal {
   const code = error instanceof StudioError ? error.code : 'unavailable'
   const failure = presentStudioFailure(error)
-  const message = error instanceof Error && error.message ? failure.message : `${target.machineName} could not answer.`
+  const message =
+    isStudioVersionFailure(failure.kind) || (error instanceof Error && error.message)
+      ? failure.message
+      : `${target.machineName} could not answer.`
   switch (failure.kind) {
     case 'server-outdated':
       return {

@@ -1,6 +1,7 @@
 import {
   StudioError,
   connect,
+  isStudioVersionFailure,
   presentStudioFailure,
   webSocketTransport,
   type StudioClient,
@@ -228,7 +229,8 @@ export function closeDesktopStudios(): void {
 export function studioFailure(error: unknown): { errorCode: ApiErrorCode; message: string; code: string | null } {
   const code = error instanceof StudioError ? error.code : null;
   const failure = presentStudioFailure(error);
-  const message = error instanceof Error && error.message ? failure.message : "The desktop could not answer.";
+  const message =
+    isStudioVersionFailure(failure.kind) || (error instanceof Error && error.message) ? failure.message : "The desktop could not answer.";
   switch (failure.kind) {
     case "server-outdated":
       // A desktop whose Studio predates what was asked: said about the desktop.

@@ -1,6 +1,7 @@
 import {
   StudioError,
   connect,
+  isStudioVersionFailure,
   presentStudioFailure,
   webSocketTransport,
   type StudioClient,
@@ -357,7 +358,10 @@ export type EnvironmentRefusal = {
 export function environmentRefusal(target: { name: string }, error: unknown): EnvironmentRefusal {
   const code = error instanceof StudioError ? error.code : 'unavailable'
   const failure = presentStudioFailure(error)
-  const message = error instanceof Error && error.message ? failure.message : `${target.name} could not answer.`
+  const message =
+    isStudioVersionFailure(failure.kind) || (error instanceof Error && error.message)
+      ? failure.message
+      : `${target.name} could not answer.`
   switch (failure.kind) {
     case 'server-outdated':
       // A version refusal says so in the Studio's words; an older Studio
