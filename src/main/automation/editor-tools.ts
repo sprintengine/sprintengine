@@ -21,6 +21,7 @@ import type { McpConnectionContext, McpToolRegistration, McpToolResult } from '.
 import {
   classifyAgentPath,
   displayPathFor,
+  hasSecondName,
   isInsideComparable,
   resolveAgentPath,
   type AgentPathContext,
@@ -683,7 +684,14 @@ export function createEditorTools(deps: EditorToolsDeps): McpToolRegistration[] 
     const outside = new Set<string>()
     for (const relative of changed) {
       const real = await deps.fs.realpath(joinRepo(repoRoot, relative)).catch(() => null)
-      if (real && !roots.some((root) => isInsideComparable(root, real))) outside.add(relative)
+      if (!real) continue
+      if (!roots.some((root) => isInsideComparable(root, real))) outside.add(relative)
+      // A paired device is not shown a file with a second name (a hard link)
+      // either: that name may be anywhere on the disk, as `editor.open` holds.
+      else if (scope.remote) {
+        const stat = await deps.fs.stat(real).catch(() => null)
+        if (stat?.isFile() && hasSecondName(stat)) outside.add(relative)
+      }
     }
     return outside
   }

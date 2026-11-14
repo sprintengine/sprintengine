@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -183,8 +183,15 @@ test.runIf(process.platform !== 'win32')(
   async () => {
     const escape = join(repo, 'src', 'escape.txt')
     await symlink(join(outside, 'other.txt'), escape).catch(() => undefined)
+    // A second name (a hard link) for the same file elsewhere: no real path shows it.
+    const secondName = join(repo, 'src', 'second-name.txt')
+    await link(join(outside, 'other.txt'), secondName).catch(() => undefined)
     const workingTree = async () =>
-      ['src/escape.txt', 'src/a.ts'].map((relativePath) => ({ relativePath, staged: false, unstaged: true }))
+      ['src/escape.txt', 'src/second-name.txt', 'src/a.ts'].map((relativePath) => ({
+        relativePath,
+        staged: false,
+        unstaged: true,
+      }))
     const { tool, reveals } = build({
       diff: {
         workingTree,
@@ -220,10 +227,14 @@ test.runIf(process.platform !== 'win32')(
     await tool('editor.open_diff').handler({ only: 'all' }, remote)
     assert.deepEqual(reveals[1]?.diff?.paths, ['src/a.ts'])
     assert.equal(reveals[1]?.diff?.focusPath, `${repo}/src/a.ts`)
-    // An agent here is held to its own checkouts the same way.
+    // An agent here is held to its own checkouts the same way; it runs as the
+    // person, so a second name is shown to it.
     await tool('editor.open_diff').handler({ only: 'all' }, agent)
-    assert.deepEqual(reveals[2]?.diff?.paths, ['src/a.ts'])
+    assert.deepEqual(reveals[2]?.diff?.paths, ['src/second-name.txt', 'src/a.ts'])
+    const linked = await tool('editor.open_diff').handler({ only: 'all', paths: ['src/second-name.txt'] }, remote)
+    assert.equal((structured(linked).error as { code: string }).code, 'outside_workspace')
     await rm(escape)
+    await rm(secondName)
   },
 )
 

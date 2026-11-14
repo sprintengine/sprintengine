@@ -24,6 +24,9 @@
 //
 // A paired remote device gets tier 1 only: it is a different machine asking,
 // and "this agent wrote it" is a claim about a local session it does not have.
+// Nor is it shown a file with a second name (a hard link): that name can be
+// anywhere on the same disk, so the workspace's file may really be one of the
+// person's files elsewhere, and no real path can tell.
 //
 // WSL: an agent in a distribution speaks Linux paths. A relative path is joined
 // onto its working directory in LINUX form first (joining `src/a.ts` onto a
@@ -39,7 +42,7 @@ import type { EditorRevealReason } from '../../shared/editor-reveal'
 /** The file-system reads the policy needs, injected so the tiers are testable. */
 export type PathPolicyFs = {
   realpath(path: string): Promise<string>
-  stat(path: string): Promise<{ isFile(): boolean; size: number }>
+  stat(path: string): Promise<{ isFile(): boolean; size: number; nlink?: number }>
   readFile(path: string): Promise<Buffer>
 }
 
@@ -210,6 +213,17 @@ async function wroteThisFile(
  * is touched and again after the real path is known, so neither a direct
  * spelling nor a symlink reaches one.
  */
+const REMOTE_HARD_LINK_REFUSAL: PathClassification = {
+  status: 'refused',
+  reason: 'outside_workspace',
+  message: 'A paired device cannot show a file with a second name elsewhere on this disk (a hard link).',
+}
+
+/** Whether a paired device is kept from a file for its second name (a hard link), whatever folder names it. */
+export function hasSecondName(stat: { nlink?: number }): boolean {
+  return (stat.nlink ?? 1) > 1
+}
+
 export async function classifyAgentPath(path: string, trust: PathTrust, fs: PathPolicyFs): Promise<PathClassification> {
   if (isSensitivePath(path, trust)) {
     return { status: 'refused', reason: 'sensitive_path', message: 'Credential stores and app data are never shown.' }
@@ -231,6 +245,7 @@ export async function classifyAgentPath(path: string, trust: PathTrust, fs: Path
   try {
     const stat = await fs.stat(realPath)
     if (!stat.isFile()) return { status: 'refused', reason: 'not_found', message: 'That path is a folder, not a file.' }
+    if (trust.remote && hasSecondName(stat)) return REMOTE_HARD_LINK_REFUSAL
     size = stat.size
   } catch {
     return { status: 'refused', reason: 'not_found', message: 'No file at that path.' }
