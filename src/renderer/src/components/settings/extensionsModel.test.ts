@@ -85,7 +85,11 @@ test('a module built for another host API says which way, in words', () => {
   // It says so before trust: trusting it would not make it run.
   expect(moduleProblem({ ...newer, trust: 'unsigned' }, undefined)).toEqual({ kind: 'host-api', direction: 'newer' })
   const older = view({ manifest: { engines: { hostApi: 0 } }, launch: { status: 'blocked_host_api' } })
-  expect(problemText(moduleProblem(older, undefined)!)).toBe('Built for an older version of Studio.')
+  // It says what to do about it: update it, where the guide is, and that an agent can do it.
+  const said = problemText(moduleProblem(older, undefined)!)
+  expect(said).toMatch(/^Built for an older version of Studio\. It needs updating to host API 2/)
+  expect(said).toContain('docs/module-authors/drop-in-extensions.md')
+  expect(said).toContain('ask an agent to update it')
 })
 
 test('an invalid signature can never be trusted, and the row says so', () => {

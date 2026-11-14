@@ -25,6 +25,10 @@ const RETIRED_HOST_APIS: Readonly<Record<number, string>> = {
   1: "Host API 2 replaced its IPC channels with declared methods. Rebuild it against @sprintengine/module-sdk 2: MainHost.registerIpc becomes registerMethods, and the window's host.invoke becomes host.methods().read or .operate.",
 }
 
+/** Where a refused module's author is sent, and what someone whose agent wrote it can do. */
+const UPDATE_HELP =
+  'The Drop-in extensions guide (docs/module-authors/drop-in-extensions.md) says how. If an agent made it, ask an agent to update it.'
+
 /**
  * A feature a module can ask the running host about with `host.supports(...)`
  * before it relies on it. The version number says which contract a module was
@@ -181,7 +185,7 @@ export function checkHostApiCompatibility(
     return {
       ok: false,
       code: 'host_api_too_old',
-      message: `The module was built for host API ${hostApi}, and this version of the app loads ${HOST_API_MIN_SUPPORTED} or newer. ${RETIRED_HOST_APIS[hostApi] ?? 'Rebuild it against a current SDK.'}`,
+      message: `The module was built for host API ${hostApi}, and this version of the app loads ${HOST_API_MIN_SUPPORTED} or newer. ${RETIRED_HOST_APIS[hostApi] ?? 'Rebuild it against a current SDK.'} ${UPDATE_HELP}`,
     }
   }
   return { ok: true }
