@@ -39,6 +39,7 @@ type Harness = {
   runtime: ReturnType<(typeof import('./terminal-runtime'))['createTerminalRuntime']>
   spawn(payload: Record<string, unknown>): Promise<{ ok: boolean; message?: string }>
   workspaceRoot: string
+  distribution: ReturnType<typeof stubWslDistributionLink>
 }
 
 let restore: (() => void) | null = null
