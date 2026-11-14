@@ -44,9 +44,9 @@ export type RemoteScheduledMachine = {
   /** The route this window asks it by (`formatEnvironmentRoute`). */
   route: string
   /**
-   * Its pairing here, for a paired desktop, whose schedules open in New chat's
-   * editor; null for another environment's (an SSH machine's), whose rows run,
-   * pause, resume and close them there.
+   * Its pairing here, for a paired desktop; null for another environment's
+   * (an SSH machine's). Either's schedules open in New chat's editor, which
+   * saves them there.
    */
   connectionId: string | null
   machineName: string
@@ -109,35 +109,33 @@ function subscribePublishedMachines(listener: () => void): () => void {
   }
 }
 
-/** One of a paired machine's schedules as the Scheduled section holds it now, with its machine. */
+/** One of another machine's schedules as the Scheduled section holds it now, with its machine, by its route. */
 export function remoteScheduledAgentNow(
-  connectionId: string,
+  route: string,
   id: string,
 ): { agent: ScheduledAgentView; machine: RemoteScheduledMachine } | null {
-  const machine = publishedMachines.find((candidate) => candidate.connectionId === connectionId)
+  const machine = publishedMachines.find((candidate) => candidate.route === route)
   const agent = machine?.agents.find((candidate) => candidate.id === id)
   return machine && agent ? { agent, machine } : null
 }
 
 /**
- * One of a paired machine's schedules as the Scheduled section last read it.
+ * One of another machine's schedules as the Scheduled section last read it, by its route.
  * `machine` null is a machine not read just now (asleep, off the tailnet),
  * which says nothing of the schedule; `agent` null under a machine that was
  * read is a schedule gone from it.
  */
-export function useRemoteScheduledAgent(ref: { connectionId: string; id: string } | null): {
+export function useRemoteScheduledAgent(ref: { route: string; id: string } | null): {
   machine: RemoteScheduledMachine | null
   agent: ScheduledAgentView | null
 } {
   const machines = useSyncExternalStore(subscribePublishedMachines, () => publishedMachines)
-  const connectionId = ref?.connectionId ?? null
+  const route = ref?.route ?? null
   const id = ref?.id ?? null
   return useMemo(() => {
-    const machine = connectionId
-      ? (machines.find((candidate) => candidate.connectionId === connectionId) ?? null)
-      : null
+    const machine = route ? (machines.find((candidate) => candidate.route === route) ?? null) : null
     return { machine, agent: machine?.agents.find((candidate) => candidate.id === id) ?? null }
-  }, [machines, connectionId, id])
+  }, [machines, route, id])
 }
 
 /** What moves when an environment's chat list does: a chat more or fewer, one that moved, the client away or back. */

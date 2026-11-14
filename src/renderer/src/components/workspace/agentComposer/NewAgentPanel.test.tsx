@@ -1686,7 +1686,12 @@ test('NewAgentPanel', async () => {
         const view = await remoteRender({
           folderPath: null,
           editingScheduledAgent: agent,
-          editingScheduledAgentRemote: { connectionId: 'm2', machineName: 'Mini', pausedAll: null },
+          editingScheduledAgentRemote: {
+            route: 'tailnet:m2',
+            connectionId: 'm2',
+            machineName: 'Mini',
+            pausedAll: null,
+          },
           onScheduled: (saved_: unknown) => saved.push(saved_),
         })
         await settle()
@@ -3621,6 +3626,27 @@ test('NewAgentPanel', async () => {
             'the strip names the machine the project is on',
           )
           assert.equal(machineTrigger(door.view), undefined, 'and offers no machine to pick in its place')
+          // Saved, it is made on that machine, by its folder there: never in this desktop's store.
+          const made: Array<{ connectionId: string; params: Record<string, unknown> }> = []
+          pairedStudio.answers['schedules.create'] = (params, connectionId) => {
+            made.push({ connectionId, params })
+            return {
+              schedule: {
+                id: 'sa-m1',
+                prompt: params.prompt,
+                schedule: { cron: params.cron, timezone: params.timezone },
+                folderPath: '/home/dev/proj',
+                cli: params.cli,
+              },
+            }
+          }
+          await door.enter(await door.type('Triage the new issues.'))
+          await settle()
+          assert.equal(door.drafts.length, 0, 'not saved in this desktop’s store')
+          assert.equal(made.length, 1, 'made on the machine')
+          assert.equal(made[0]!.connectionId, 'ssh:m1', 'addressed to that machine')
+          assert.equal(made[0]!.params.workspaceRoot, '/home/dev/proj', 'in its folder as that machine spells it')
+          assert.equal(made[0]!.params.prompt, 'Triage the new issues.')
           door.view.unmount()
         } finally {
           api.sshMachinesEnabled = before.enabled
@@ -3628,6 +3654,58 @@ test('NewAgentPanel', async () => {
         }
       },
     )
+
+    await check('an SSH machine’s schedule opened here is saved on that machine, by its route', async () => {
+      seedStore()
+      const api = (dom.window as unknown as { api: Record<string, unknown> }).api
+      const localUpdates: unknown[] = []
+      api.updateScheduledAgent = async (...args: unknown[]) => {
+        localUpdates.push(args)
+        return { ok: false, message: 'not here' }
+      }
+      const agent = {
+        id: 'sa-box',
+        prompt: 'Nightly triage.',
+        schedule: { cron: '0 2 * * *', timezone: 'UTC' },
+        folderPath: '/home/dev/proj',
+        hostId: null,
+        cli: 'claude-code',
+        cliModel: null,
+        permissionPreset: null,
+        skills: [],
+        mcpServers: [],
+        worktree: null,
+        ownerModuleId: null,
+        createdAt: 0,
+        updatedAt: 0,
+        lastRun: null,
+        lastFailureSeenAt: null,
+        nextRunAt: null,
+      }
+      const updated: Array<{ connectionId: string; params: Record<string, unknown> }> = []
+      pairedStudio.answers['schedules.update'] = (params, connectionId) => {
+        updated.push({ connectionId, params })
+        return { schedule: { ...agent, prompt: params.prompt } }
+      }
+      const door = await scheduleDoor({
+        folderPath: null,
+        editingScheduledAgent: agent,
+        editingScheduledAgentRemote: {
+          route: 'ssh:m1',
+          connectionId: null,
+          machineName: 'dev@build-box',
+          pausedAll: null,
+        },
+      })
+      await settle()
+      await door.enter(await door.type('Nightly triage, and label them.'))
+      await settle()
+      assert.equal(localUpdates.length, 0, 'never saved on this computer')
+      assert.equal(updated.length, 1)
+      assert.equal(updated[0]!.connectionId, 'ssh:m1', 'addressed to that machine')
+      assert.equal(updated[0]!.params.id, 'sa-box')
+      door.view.unmount()
+    })
 
     await check('Schedule is greyed for a terminal agent, and a terminal hides the model', async () => {
       seedStore()

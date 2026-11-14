@@ -85,19 +85,29 @@ export async function pairedScheduledAgentAction(
 
 const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
 
-/** Schedule an agent there, in one of its projects. */
+/**
+ * Schedule an agent there, in one of its projects: a paired desktop's by its
+ * workspace, another environment's (an SSH machine's, which this desktop
+ * reaches as its owner) by its folder as that machine spells it
+ * (`workspaceRoot`). Saved there, it is that machine's from the first: it is
+ * never in this desktop's store, nor run from it.
+ */
 export async function createPairedScheduledAgent(
-  machine: PairedMachine,
-  input: Partial<MeshCreateScheduledAgentInput>,
+  machine: PairedMachine | EnvironmentTarget,
+  input: Partial<MeshCreateScheduledAgentInput> & { workspaceRoot?: string },
 ): Promise<MeshCreateScheduledAgentResult> {
   const workspaceId = text(input.workspaceId)
+  const workspaceRoot = text(input.workspaceRoot)
   const prompt = text(input.prompt)
   const cron = text(input.cron)
   const cli = text(input.cli)
-  if (!workspaceId || !prompt || !cron || !cli) {
+  if ((!workspaceId && !workspaceRoot) || !prompt || !cron || !cli) {
     return { ok: false, code: 'invalid_arguments', message: 'A schedule needs a project, a prompt, a time and a CLI.' }
   }
-  const draft = { workspaceId, ...scheduleDraftOf(input, { prompt, cron, cli }) }
+  const draft = {
+    ...(workspaceId ? { workspaceId } : { workspaceRoot: workspaceRoot! }),
+    ...scheduleDraftOf(input, { prompt, cron, cli }),
+  }
   const commandId = environmentCommandId()
   const answer = await askSchedules(machine, (client) => client.rpc['schedules.create']({ ...draft, commandId }))
   if (!answer.ok) return answer
@@ -109,7 +119,7 @@ export async function createPairedScheduledAgent(
 
 /** Save an edit to one of them there. What the editor shows is the whole of it. */
 export async function updatePairedScheduledAgent(
-  machine: PairedMachine,
+  machine: PairedMachine | EnvironmentTarget,
   input: Partial<MeshUpdateScheduledAgentInput>,
 ): Promise<MeshUpdateScheduledAgentResult> {
   const id = text(input.id)

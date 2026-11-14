@@ -767,7 +767,12 @@ export default function WorkspaceManager() {
     // Opened on a paired machine's scheduled agent: the panel edits that one,
     // and saves it there. The record is as its row had it when opened, until
     // the Scheduled section reads that machine again.
-    editingRemoteScheduledAgent?: { connectionId: string; machineName: string; agent: ScheduledAgentView } | null
+    editingRemoteScheduledAgent?: {
+      route: string
+      connectionId: string | null
+      machineName: string
+      agent: ScheduledAgentView
+    } | null
     // Opened on a paired machine's project ("New chat in project" on its chat
     // or header): the panel starts on that machine and project.
     remoteProject?: { connectionId: string; workspaceId: string } | null
@@ -3166,7 +3171,7 @@ export default function WorkspaceManager() {
   // what it last said.
   const editingRemote = newChatPanelState?.editingRemoteScheduledAgent ?? null
   const editingRemoteRef = useMemo(
-    () => (editingRemote ? { connectionId: editingRemote.connectionId, id: editingRemote.agent.id } : null),
+    () => (editingRemote ? { route: editingRemote.route, id: editingRemote.agent.id } : null),
     [editingRemote],
   )
   const remoteEditingRead = useRemoteScheduledAgent(editingRemoteRef)
@@ -3180,6 +3185,7 @@ export default function WorkspaceManager() {
     () =>
       editingRemote
         ? {
+            route: editingRemote.route,
             connectionId: editingRemote.connectionId,
             machineName: editingRemote.machineName,
             pausedAll: remoteEditingRead.machine?.pausedAll ?? null,
@@ -4981,10 +4987,10 @@ export default function WorkspaceManager() {
       editingScheduledAgentId: id,
     })
   })
-  // A paired machine's, from its row in the same section: the same panel,
-  // editing it on that machine, on its project there.
-  const sidebarOpenRemoteScheduledAgent = useStableCallback((connectionId: string, id: string) => {
-    const found = remoteScheduledAgentNow(connectionId, id)
+  // Another machine's, from its row in the same section: the same panel,
+  // editing it on that machine (a paired desktop's on its project there).
+  const sidebarOpenRemoteScheduledAgent = useStableCallback((route: string, id: string) => {
+    const found = remoteScheduledAgentNow(route, id)
     if (!found) return
     closeGlobalSurface()
     closeModalSurface()
@@ -4996,7 +5002,12 @@ export default function WorkspaceManager() {
       connector: null,
       forcedSelection: null,
       mode: 'scheduled',
-      editingRemoteScheduledAgent: { connectionId, machineName: found.machine.machineName, agent: found.agent },
+      editingRemoteScheduledAgent: {
+        route,
+        connectionId: found.machine.connectionId,
+        machineName: found.machine.machineName,
+        agent: found.agent,
+      },
     })
   })
   // A kept draft from the sidebar's Drafts: made this window's, and New chat
@@ -5482,7 +5493,7 @@ export default function WorkspaceManager() {
                         open panel must remount; keyed on identity, so removing
                         the chip never does. */}
                             <NewAgentPanel
-                              key={`${newChatPanelState.connector?.id ?? 'plain'}:${newChatPanelState.forcedSelection?.kind ?? 'remembered'}:${newChatPanelState.mode ?? 'chat'}:${newChatPanelState.editingScheduledAgentId ?? ''}:${editingRemoteRef ? `${editingRemoteRef.connectionId}/${editingRemoteRef.id}` : ''}:${newChatPanelState.remoteProject ? `${newChatPanelState.remoteProject.connectionId}/${newChatPanelState.remoteProject.workspaceId}` : ''}:${newChatDraftGeneration}`}
+                              key={`${newChatPanelState.connector?.id ?? 'plain'}:${newChatPanelState.forcedSelection?.kind ?? 'remembered'}:${newChatPanelState.mode ?? 'chat'}:${newChatPanelState.editingScheduledAgentId ?? ''}:${editingRemoteRef ? `${editingRemoteRef.route}/${editingRemoteRef.id}` : ''}:${newChatPanelState.remoteProject ? `${newChatPanelState.remoteProject.connectionId}/${newChatPanelState.remoteProject.workspaceId}` : ''}:${newChatDraftGeneration}`}
                               remoteProject={newChatPanelState.remoteProject ?? null}
                               initialMcpServers={newChatPanelState.connector ? [newChatPanelState.connector] : null}
                               workspaceId={windowActiveWorkspaceId ?? ''}

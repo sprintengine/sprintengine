@@ -106,7 +106,11 @@ import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/
 import { createEnvironmentReplicas } from '../environment/environment-replicas'
 import { createEnvironmentMigration } from '../environment/environment-migration'
 import { chatSourceFiles } from '../environment/environment-chat-sources'
-import { handOverSchedulesWhenSaved, studioMigrationStores } from '../environment/environment-migration-stores'
+import {
+  handOverSchedulesWhenSaved,
+  scheduleWaitsForHandOver,
+  studioMigrationStores,
+} from '../environment/environment-migration-stores'
 import { combineEnvironmentClients, createWslEnvironmentClients } from '../wsl/wsl-environment-clients'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
 import { followRelayedAgentState } from '../wsl/agent-state-relay'
@@ -1399,7 +1403,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     gitHost: (hostId) => (hostId ? hosts.get(hostId) : null),
     // Run now goes past a sign-in this machine only believes is missing: the
     // CLI then says for itself whether it is signed in.
-    waitingFor: (agent, context) => readiness.scheduleWaitingFor(agent, { signIn: !context?.asked }),
+    // One saved here for another machine's folder is that machine's: it never
+    // runs here, Run now included, while it waits to be handed over.
+    waitingFor: (agent, context) =>
+      (environmentClients ? scheduleWaitsForHandOver(agent) : null) ??
+      readiness.scheduleWaitingFor(agent, { signIn: !context?.asked }),
   })
   if ((options.scheduledAgentsSwitch ?? 'core') === 'core') void scheduledAgents.start({ after: firstPlan })
 
