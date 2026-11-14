@@ -52,6 +52,74 @@ const MIRRORED_FIELDS = [
   'visitRewoundAt',
 ] as const satisfies readonly (keyof WorkspaceFieldsPatch)[]
 
+/** The rest of a record's fields a copy takes as the machine has them, beside those written below. */
+const COPIED_FIELDS = [
+  ...MIRRORED_FIELDS,
+  'titleLocked',
+  'scheduledAgentId',
+  'lastActiveAgentId',
+] as const satisfies readonly (keyof Workspace)[]
+
+/**
+ * An agent's launch fields a window acts on once, with this desktop's own
+ * files: New chat's first message and the images and files it reads from this
+ * disk to send with it.
+ */
+const ONE_SHOT_LAUNCH_FIELDS = ['chatStartupPrompt', 'chatStartupImages', 'chatStartupFiles'] as const
+
+const launchKey = (workspaceId: string, agentId: string) => `${workspaceId}\u0000${agentId}`
+
+/** The tab components a copy's layout keeps: a chat's agents, and the picker an empty chat shows. */
+const COPIED_TAB_COMPONENTS: ReadonlySet<string> = new Set(['agent', 'new-agent'])
+
+/**
+ * A copy's layout, from the machine's: its rows, tab sets and the tabs of its
+ * own agents, each with only the agent it shows. No other tab and no other
+ * config: a tab's config names what a window here opens (a file, a conflict
+ * to resolve, a terminal), and a machine never names that.
+ */
+function copyLayout(given: unknown, agentIds: ReadonlySet<string>): Workspace['layoutModel'] {
+  const layout = isRecord(given) ? given : {}
+  const global: Record<string, unknown> = {}
+  if (isRecord(layout.global))
+    for (const [key, value] of Object.entries(layout.global))
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') global[key] = value
+  const root = copyLayoutNode(layout.layout, agentIds)
+  return {
+    global,
+    borders: [],
+    layout: root && root.type === 'row' ? root : { type: 'row', children: root ? [root] : [] },
+  } as Workspace['layoutModel']
+}
+
+function copyLayoutNode(node: unknown, agentIds: ReadonlySet<string>): Record<string, unknown> | null {
+  if (!isRecord(node) || typeof node.type !== 'string') return null
+  const base: Record<string, unknown> = { type: node.type }
+  if (typeof node.id === 'string') base.id = node.id
+  if (typeof node.weight === 'number') base.weight = node.weight
+  if (node.type === 'tab') {
+    if (typeof node.component !== 'string' || !COPIED_TAB_COMPONENTS.has(node.component)) return null
+    base.component = node.component
+    if (typeof node.name === 'string') base.name = node.name
+    if (node.component === 'agent') {
+      const agentId = isRecord(node.config) ? node.config.agentId : undefined
+      if (typeof agentId !== 'string' || !agentIds.has(agentId)) return null
+      base.config = { agentId }
+    }
+    return base
+  }
+  if (node.type !== 'row' && node.type !== 'tabset') return null
+  if (typeof node.selected === 'number') base.selected = node.selected
+  if (node.type === 'tabset' && typeof node.active === 'boolean') base.active = node.active
+  const children = Array.isArray(node.children)
+    ? node.children.map((child) => copyLayoutNode(child, agentIds)).filter((child) => child !== null)
+    : []
+  if (node.type === 'tabset' && typeof base.selected === 'number' && (base.selected as number) >= children.length)
+    base.selected = Math.max(0, children.length - 1)
+  base.children = children
+  return base
+}
+
 /** The registry changes a window makes to a chat's record; every other command is its arrangement, kept here. */
 const RECORD_COMMANDS: ReadonlySet<string> = new Set([
   'workspace.created',
@@ -128,6 +196,9 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
   // a reconnect never interleave their writes to the same copies.
   const queues = new Map<string, Promise<unknown>>()
   let closed = false
+  // The one-shot launch fields a window here set on a copy's agent, by
+  // workspace and agent: the only ones its copy carries (`copyAgents`).
+  const launchFieldsSent = new Map<string, Record<string, unknown>>()
 
   const serial = <T>(route: string, work: () => Promise<T>): Promise<T> => {
     const run = (queues.get(route) ?? Promise.resolve()).then(work, work)
@@ -147,37 +218,99 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
     return deps.clients.clientFor(route, STUDIO_WORKSPACE_SYNC_CAPABILITY)
   }
 
-  /** The machine's records as this desktop keeps its copies of them: its paths respelled, stamped where they live. */
+  /**
+   * The machine's records as this desktop keeps its copies of them: its paths
+   * respelled, stamped where they live, and built from the fields the machine
+   * owns, named one by one (`copyOf`). Nothing else it sends is taken: not the
+   * window's own state of a chat (its editor, file tree, Git panel, panes,
+   * backlog and modules), not a pane's config in its layout (a tab names a
+   * file on this desktop to open), and not an agent's one-shot launch fields
+   * (a New chat's images and files, read from this desktop's disk and sent
+   * with its first message) unless a window here set them.
+   */
   function copyOf(route: string, name: string, workspace: Workspace): Workspace {
     const machine = parseEnvironmentRoute(route)
-    // The window's own state of a chat (its editor, file tree, Git panel,
-    // panes, backlog and modules) is this desktop's, never taken from the
-    // machine: what a window here opens is never named by another machine.
-    const {
-      hostId: _hostId,
-      remoteOrigin: _remoteOrigin,
-      editorState: _editor,
-      fileExplorerState: _files,
-      gitPanelState: _git,
-      paneState: _panes,
-      backlogState: _backlog,
-      moduleState: _modules,
-      ...rest
-    } = workspace
-    if (machine?.kind === 'wsl')
-      return {
-        ...rest,
-        editorState: { openFiles: [], activeFilePath: null },
-        environment: { kind: 'wsl', id: machine.distro, label: name },
-        // A WSL chat's terminals are still this PC's, run in the distribution
-        // through `wsl.exe` (design-wsl-ssh-direct PR 4), as is the git this
-        // desktop runs on its folder: its machine stays its `hostId`.
-        hostId: `wsl:${machine.distro}`,
-      }
+    const hostId = machine?.kind === 'wsl' ? (`wsl:${machine.distro}` as const) : null
+    const agents = copyAgents(workspace.id, workspace.agents, hostId)
+    const own = workspace as unknown as Record<string, unknown>
+    const kept: Record<string, unknown> = {}
+    for (const field of COPIED_FIELDS) if (own[field] !== undefined) kept[field] = own[field]
+    const editedName = (own.fieldEditedAt as { name?: unknown } | undefined)?.name
     return {
-      ...rest,
+      ...(kept as Partial<Workspace>),
+      id: workspace.id,
+      name: typeof workspace.name === 'string' ? workspace.name : workspace.id,
+      mode: workspace.mode,
+      folderPath: typeof workspace.folderPath === 'string' ? workspace.folderPath : null,
+      templateId: typeof workspace.templateId === 'string' ? workspace.templateId : '',
+      createdAt: typeof workspace.createdAt === 'number' ? workspace.createdAt : 0,
+      ...(typeof editedName === 'number' ? ({ fieldEditedAt: { name: editedName } } as object) : {}),
+      layoutModel: copyLayout(workspace.layoutModel, new Set(Object.keys(agents))),
+      agents,
+      worktreeState: { containerPath: null, entries: {}, updatedAt: null },
+      memory: isRecord(workspace.memory) ? workspace.memory : { relativeRoot: null },
       editorState: { openFiles: [], activeFilePath: null },
-      environment: { kind: 'ssh', id: machine?.kind === 'ssh' ? machine.machine : route, label: name },
+      ...(machine?.kind === 'wsl'
+        ? {
+            environment: { kind: 'wsl', id: machine.distro, label: name },
+            // A WSL chat's terminals are still this PC's, run in the distribution
+            // through `wsl.exe` (design-wsl-ssh-direct PR 4), as is the git this
+            // desktop runs on its folder: its machine stays its `hostId`.
+            hostId: hostId!,
+          }
+        : { environment: { kind: 'ssh', id: machine?.kind === 'ssh' ? machine.machine : route, label: name } }),
+    }
+  }
+
+  /**
+   * A copy's agents: each runs where the chat lives (a WSL chat's in its
+   * distribution, never on this PC; an SSH chat's on that machine), and carries
+   * a one-shot launch field only when a window here set it for that agent.
+   */
+  function copyAgents(workspaceId: string, given: unknown, hostId: `wsl:${string}` | null): Record<string, AgentState> {
+    const agents: Record<string, AgentState> = {}
+    if (!isRecord(given)) return agents
+    for (const [agentId, agent] of Object.entries(given)) {
+      if (!isRecord(agent)) continue
+      // Written out as absent rather than left out: a copy's agent is updated
+      // by merging, and a field left out would keep what it was here.
+      const copy: Record<string, unknown> = { ...agent, hostId: hostId ?? undefined }
+      const sent = launchFieldsSent.get(launchKey(workspaceId, agentId))
+      for (const field of ONE_SHOT_LAUNCH_FIELDS)
+        copy[field] = sent && field in sent && same(sent[field], agent[field]) ? sent[field] : undefined
+      agents[agentId] = copy as AgentState
+    }
+    return agents
+  }
+
+  /** Remember the one-shot launch fields a window here sets on a copy's agent, for its copy to keep. */
+  function rememberLaunchFields(command: Record<string, unknown>): void {
+    const payload = isRecord(command.payload) ? command.payload : null
+    if (!payload) return
+    const remember = (workspaceId: string, agentId: string, fields: Record<string, unknown> | null) => {
+      const key = launchKey(workspaceId, agentId)
+      const before = launchFieldsSent.get(key) ?? {}
+      const after: Record<string, unknown> = { ...before }
+      for (const field of ONE_SHOT_LAUNCH_FIELDS) {
+        if (fields === null) delete after[field]
+        else if (field in fields) {
+          if (fields[field] === undefined || fields[field] === null) delete after[field]
+          else after[field] = fields[field]
+        }
+      }
+      if (Object.keys(after).length > 0) launchFieldsSent.set(key, after)
+      else launchFieldsSent.delete(key)
+    }
+    if (command.type === 'workspace.update_agent' && typeof payload.workspaceId === 'string') {
+      if (typeof payload.agentId === 'string')
+        remember(payload.workspaceId, payload.agentId, isRecord(payload.patch) ? payload.patch : null)
+      return
+    }
+    if (command.type === 'workspace.created' && isRecord(payload.workspace)) {
+      const created = payload.workspace
+      if (typeof created.id !== 'string' || !isRecord(created.agents)) return
+      for (const [agentId, agent] of Object.entries(created.agents))
+        if (isRecord(agent)) remember(created.id, agentId, agent)
     }
   }
 
@@ -330,6 +463,7 @@ export function createEnvironmentReplicas(deps: EnvironmentReplicaDeps): Environ
     const target = routeOfCommand(command)
     if (!target) return null
     const { route, id } = target
+    rememberLaunchFields(command)
     return serial(route, async (): Promise<StudioWorkspaceSyncCommandResult> => {
       const refuse = (reason: string, message: string): StudioWorkspaceSyncCommandResult => ({
         ok: false,
