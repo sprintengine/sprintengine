@@ -315,6 +315,11 @@ test('a send that loses the turn, or finds the folder held, is busy, and the sam
   let open: () => void = () => undefined
   let gate = Promise.resolve()
   let folderBusy = false
+  // The first send's turn starting: the second send's hold waits for it, so
+  // the first always takes the turn, however slow the machine.
+  let turnBegan: () => void = () => undefined
+  const began = new Promise<void>((resolve) => (turnBegan = resolve))
+  let race: { holds: number } | null = null
   const leases = createWorktreeLeases()
   const runtime = new ConversationRuntime({
     // A turn that ends when the test lets it.
@@ -323,6 +328,7 @@ test('a send that loses the turn, or finds the folder held, is busy, and the sam
         ...mock,
         sendTurn: (input) =>
           (async function* () {
+            turnBegan()
             await gate
             yield* mock.sendTurn({ ...input, message: '/tools' }) as Iterable<never>
           })(),
@@ -331,9 +337,14 @@ test('a send that loses the turn, or finds the folder held, is busy, and the sam
     getProviderById: () => undefined,
     worktreeLeases: {
       ...leases,
-      // A moment's wait for every hold, so both sends below look at a resting chat.
+      // A moment's wait for every hold, so both sends below look at a resting
+      // chat; the second of the race waits until the first's turn has begun.
       acquireShared: async (path, options) => {
         await new Promise((resolve) => setTimeout(resolve, 5))
+        if (race && ++race.holds === 2) {
+          race = null
+          await began
+        }
         return folderBusy ? { busy: 'The worktree is being put back.' } : leases.acquireShared(path, options)
       },
     },
@@ -345,6 +356,7 @@ test('a send that loses the turn, or finds the folder held, is busy, and the sam
     const sessionId = started.session.sessionId
     gate = new Promise<void>((resolve) => (open = resolve))
     // Both look at a resting chat; the first takes the turn.
+    race = { holds: 0 }
     const first = runtime.sendTurn({ sessionId, commandId: 'first', message: 'one' })
     const second = await runtime.sendTurn({ sessionId, commandId: 'second', message: 'two' })
     assert.equal(second.ok ? null : second.code, 'busy', 'the loser is busy, not refused for good')
