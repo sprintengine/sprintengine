@@ -27,6 +27,10 @@ if [ "$(id -u)" = 0 ]; then
     chmod 644 /tmp/studio-tailnet.json
     echo "$address" > /tmp/studio-tailnet-address
   fi
+  # A container that stopped (Restart now, `docker restart`) keeps the last
+  # display's lock and socket in /tmp, and the pid in the lock may be a live
+  # process now: Xvfb would refuse to start, and the app with it.
+  rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
   exec setpriv --reuid=tester --regid=tester --init-groups --inh-caps=-all \
     env HOME=/home/tester USER=tester LOGNAME=tester "$0" "$@"
 fi
