@@ -18,7 +18,6 @@ import {
 } from './agent-integration-home'
 import { createAgentStateService } from './agent-state-service'
 import { primeDefaultWslDistro } from './hosts/wsl-distro'
-import { configureWslHelpers } from './hosts/wsl-helper-runtime'
 import { createDesktopWslServers } from '../server/wsl/desktop-wsl-servers'
 import { createDesktopSsh, type DesktopSsh } from './environments/ssh/desktop-ssh'
 import { createDesktopEnvironments } from './environments/desktop-environments'
@@ -30,8 +29,6 @@ import type { WorkspaceEnvironmentRef } from '../renderer/src/types/workspace'
 import { sessionSshPreview } from './environments/ssh/ssh-preview'
 import { relayShellToolsets, sshRelayTarget } from '../server/wsl/wsl-tool-relay'
 import { cliTakesLaunchPlugins } from './agent-launch-render'
-import { invalidateCliAvailabilityOnHost } from './cli-availability'
-import { wslHostId } from '../shared/execution-host'
 import {
   appLaunchPluginsActive,
   launchCarriesAppPluginsFor,
@@ -425,32 +422,6 @@ export function createAppServices(
   const studioAreaSkillStore = agentServices.areaSkills
   // Out of process the server takes the choices; this copy adopts each one.
   server?.rpc.on(SERVER_EVENTS.mirrorAreaSkills, (choices) => studioAreaSkillStore.adopt(choices))
-
-  // WSL machines: each distribution's helper says when PATH changes there
-  // (hosts/wsl-helper-*.ts). Their terminal agents' hook frames and MCP
-  // bridges go to the distribution's own Studio server, which the core holds
-  // (wsl/agent-state-relay.ts, wsl/wsl-launch-tokens.ts).
-  // Configured on every platform because it costs nothing; only Windows ever
-  // starts a helper.
-  configureWslHelpers({
-    appVersion: platform.identity.version(),
-    userDataDir: app.getPath('userData'),
-    resources: () => {
-      const helperDir = getBundledResourceDir('wsl-helper')
-      return helperDir ? { helperDir } : null
-    },
-    // What a launch knows of that machine's CLIs is the core's to forget.
-    onPathsChanged: (distro) => {
-      if (server) server.rpc.emit(SERVER_EVENTS.cliPathsChanged, { hostId: wslHostId(distro) })
-      else invalidateCliAvailabilityOnHost(wslHostId(distro))
-    },
-    // Chromium's network stack, so the one-time Node.js download honours the
-    // system proxy the way the rest of the app's requests do.
-    fetch: (url, init) => net.fetch(url, init),
-    log: (message) => {
-      void writeDiagnosticLog({ level: 'info', title: 'WSL helper', message, source: 'terminal' })
-    },
-  })
 
   // Boot jobs that nothing on screen needs — the git probe and the rest — wait
   // for the main window to reveal, so they do not compete with the renderer's

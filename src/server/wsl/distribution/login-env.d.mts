@@ -1,6 +1,6 @@
-// Types for login-env.mjs, which the Studio server inside a WSL distribution
-// bundles too (phase 7): the same capture of the person's login environment,
-// shared rather than copied.
+// Types for login-env.mjs: the capture of the person's login environment that
+// a Studio server started over `wsl.exe` or SSH adopts, and a worktree's
+// dependency install reads.
 
 export function keepVariable(name: string): boolean
 export function parseEnvDump(bytes: Buffer | string, keep?: (name: string) => boolean): Record<string, string> | null

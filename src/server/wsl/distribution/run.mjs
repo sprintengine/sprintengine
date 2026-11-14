@@ -1,8 +1,8 @@
-// Running a program for main: an argv, never a shell string, always bounded.
+// Running a program for the desktop: an argv, never a shell string, always bounded.
 //
 // Each child is its own process group, so a deadline ends everything it
 // started (a git hook, an installer's subprocesses) and not just the first
-// process. Every live group is also ended when the helper exits, so nothing it
+// process. Every live group is also ended when the server stops, so nothing it
 // started outlives it and keeps the WSL VM awake.
 
 import { spawn } from 'node:child_process'
@@ -14,7 +14,7 @@ const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u
 
 const liveGroups = new Set()
 
-/** A process group the helper started some other way, ended on the way out too. */
+/** A process group this process started some other way, ended on the way out too. */
 export function trackGroup(pid) {
   if (pid) liveGroups.add(pid)
 }

@@ -16,10 +16,10 @@ import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import { afterAll, afterEach, beforeAll, test } from 'vitest'
 
-import type { HelperProcess } from '../../main/hosts/wsl-helper-client'
+import type { WslStdioProcess } from '../../main/hosts/wsl-process'
 import type { WslListing } from '../../main/hosts/wsl-distro'
 import { streamedAppPayload, WSL_DATA_REL, type StreamedPayload } from '../../main/hosts/wsl-install'
-import { installTree, wslNodeDigests } from '../../main/hosts/wsl-helper-runtime'
+import { installTree, wslNodeDigests } from '../../main/hosts/wsl-tree-install'
 import { WSL_NODE_VERSION } from '../../main/hosts/wsl-node-runtime'
 import type { WslRunner } from '../../main/hosts/wsl-runner'
 import type { RunOutcome } from '../../main/process-run'
@@ -112,7 +112,7 @@ function fakeRunner(
 ): WslRunner & { spawned: number } {
   const env = (distro: string) => ({ PATH: process.env.PATH, HOME: homes[distro], WSL_DISTRO_NAME: distro })
   let skipKills = extra.skipKills ?? 0
-  const asProcess = (child: ReturnType<typeof spawn>): HelperProcess => {
+  const asProcess = (child: ReturnType<typeof spawn>): WslStdioProcess => {
     child.stdin?.on('error', () => undefined)
     return {
       stdin: child.stdin!,
@@ -135,7 +135,7 @@ function fakeRunner(
                 setTimeout(() => (listener as (...args: unknown[]) => void)(...args), closeDelayMs)
             : (listener as (...args: unknown[]) => void),
         ),
-    } as HelperProcess
+    } as WslStdioProcess
   }
   const run = (distro: string, file: string, args: string[], body: Buffer | Readable): Promise<RunOutcome> =>
     new Promise((resolve) => {

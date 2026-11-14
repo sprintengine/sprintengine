@@ -64,6 +64,8 @@ async function shellOf(server: Awaited<ReturnType<typeof startTestServer>>['serv
   let sequence = 0
   return {
     welcome,
+    send: (frame: Record<string, unknown>) => void toServer.write(`${JSON.stringify(frame)}\n`),
+    until,
     async request(method: string, params: Record<string, unknown>) {
       const id = `s${++sequence}`
       toServer.write(`${JSON.stringify({ t: 'req', id, method, params })}\n`)
@@ -418,8 +420,9 @@ test("a WSL terminal's launch files and processes are the shell's alone to ask o
   assert.equal((plainShell.welcome.capabilities as string[]).includes('environment-terminal-host'), false)
 })
 
-test("git and the home on a WSL distribution are the shell's alone to ask of its Studio", async () => {
+test("git, the home, CLI detection and runs on a WSL distribution are the shell's alone to ask of its Studio", async () => {
   const asked: unknown[] = []
+  const pathListeners = new Set<() => void>()
   const started = await startTestServer({
     machine: {
       git: async (ask) => {
@@ -427,6 +430,18 @@ test("git and the home on a WSL distribution are the shell's alone to ask of its
         return { code: 0, stdout: 'true\n', stderr: '', timedOut: false }
       },
       home: () => ({ home: '/home/dev', env: { CODEX_HOME: '/home/dev/.codex' } }),
+      detectClis: async (requests, options) => {
+        asked.push({ requests, options })
+        return [{ found: false }]
+      },
+      run: async (ask) => {
+        asked.push(ask)
+        return { code: 0, stdout: 'gh version 2\n', stderr: '', timedOut: false }
+      },
+      onPathsChanged: (listener) => {
+        pathListeners.add(listener)
+        return () => void pathListeners.delete(listener)
+      },
     },
   })
   cleanups.push(() => started.dispose())
@@ -444,6 +459,26 @@ test("git and the home on a WSL distribution are the shell's alone to ask of its
     home: '/home/dev',
     env: { CODEX_HOME: '/home/dev/.codex' },
   })
+  assert.deepEqual(
+    (await shell.request('environment.detectClis', { requests: [{ binary: 'claude' }], force: true })).result,
+    { results: [{ found: false }] },
+  )
+  assert.deepEqual(asked.at(-1), { requests: [{ binary: 'claude' }], options: { force: true } })
+  const run = { argv: ['gh', '--version'], timeoutMs: 5_000 }
+  assert.deepEqual((await shell.request('environment.run', run)).result, {
+    code: 0,
+    stdout: 'gh version 2\n',
+    stderr: '',
+    timedOut: false,
+  })
+  // A run always has a deadline, and an argv, never a shell string.
+  for (const params of [{ argv: ['gh'] }, { argv: 'gh --version', timeoutMs: 5_000 }, { argv: [], timeoutMs: 5_000 }])
+    assert.equal(errorCode(await shell.request('environment.run', params)), 'invalid_params')
+  assert.equal(
+    errorCode(await shell.request('environment.detectClis', { requests: [{ binary: '' }] })),
+    'invalid_params',
+  )
+  asked.length = 1
   for (const params of [
     { ...ask, cwd: 'C:\\repo' },
     { ...ask, args: 'status' },
@@ -457,7 +492,16 @@ test("git and the home on a WSL distribution are the shell's alone to ask of its
   const owner = await lineClient(started.path, OWNER_TOKEN)
   assert.equal(errorCode(await owner.request('environment.git', ask)), 'owner_required')
   assert.equal(errorCode(await owner.request('environment.home', {})), 'owner_required')
+  assert.equal(errorCode(await owner.request('environment.run', run)), 'owner_required')
   assert.equal(asked.length, 1)
+  // A CLI installed on the PATH is said on a stream the desktop follows.
+  shell.send({ t: 'sub', id: 'p1', topic: 'environment.cliPathsChanged', params: {} })
+  for (let tries = 0; tries < 100 && pathListeners.size === 0; tries++)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.equal(pathListeners.size, 1)
+  for (const listener of pathListeners) listener()
+  const pushed = await shell.until((frame) => frame.t === 'push' && (frame as { sub?: string }).sub === 'p1')
+  assert.deepEqual((pushed as { payload?: unknown }).payload, {})
 
   const plain = await startTestServer()
   cleanups.push(() => plain.dispose())

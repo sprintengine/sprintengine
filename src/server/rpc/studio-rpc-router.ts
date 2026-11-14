@@ -192,6 +192,8 @@ export type StudioRpcRouter = {
   readonly workspaceSync: StudioWorkspaceSync | null
   /** The `hosts.changed` stream, where this Studio lists its computer's machines. */
   readonly hosts: StudioHosts | null
+  /** A WSL distribution's: what it says when a CLI may have come or gone on its PATH. */
+  readonly onCliPathsChanged: ((listener: () => void) => () => void) | null
   /** The RPC is stopping: timers stop and staged uploads go. */
   close(): void
 }
@@ -259,7 +261,7 @@ export type StudioRpcRouterOptions = {
   /** What a WSL distribution does for the desktop's WSL terminals (`environment.launchFiles`, `.terminalProcesses`, `.pluginCopy`). */
   terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
   /** What a WSL distribution does on its machine for the desktop (`environment.git`, `.home`). */
-  machine?: Pick<DistributionMachine, 'git' | 'home'>
+  machine?: Pick<DistributionMachine, 'git' | 'home' | 'detectClis' | 'run' | 'onPathsChanged'>
   /** The desktop's WSL terminal agents' launch tokens (`environment.launchTokens`); without it, answered `unavailable`. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
@@ -2149,6 +2151,21 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
       if (!options.machine) return unserved('environment.home')
       return { ok: true, result: options.machine.home() }
     },
+    'environment.detectClis': async (params) => {
+      if (!options.machine) return unserved('environment.detectClis')
+      return {
+        ok: true,
+        result: { results: await options.machine.detectClis(params.requests, { force: params.force === true }) },
+      }
+    },
+    'environment.run': async (params) => {
+      if (!options.machine) return unserved('environment.run')
+      try {
+        return { ok: true, result: await options.machine.run(params) }
+      } catch (error) {
+        return refuse('invalid_params', error instanceof Error ? error.message : String(error))
+      }
+    },
     'environment.launchTokens': (params) => {
       if (!options.launchTokens) return unserved('environment.launchTokens')
       return { ok: true, result: { held: options.launchTokens(params) } }
@@ -2403,6 +2420,7 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     worktrees: options.worktrees ?? null,
     workspaceSync: options.workspaceSync ?? null,
     hosts: options.hosts ?? null,
+    onCliPathsChanged: options.machine ? (listener) => options.machine!.onPathsChanged(listener) : null,
     close: () => {
       if (exportSweep) clearTimeout(exportSweep)
       exportSweep = null

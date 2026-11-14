@@ -178,11 +178,11 @@ export type TerminalRuntimeOptions = {
     pruneUnlistedServers?: boolean
     executionPathStyle?: TerminalPathStyle
     // The machine the CLI runs on: it decides the gateway entry (this app's
-    // own binary here, the pinned Node and the helper's bridge in WSL).
+    // own binary here, the distribution server's Node and bridge in WSL).
     hostId?: string
     // What that machine's `agentIntegration()` said when this launch was
     // prepared. The sync answers from it rather than asking again, so a
-    // helper restarting mid-launch cannot make the gateway entry and the
+    // server restarting mid-launch cannot make the gateway entry and the
     // launch disagree.
     integration?: HostAgentIntegration | null
   }): Promise<{ ok: true } | { ok: false; message: string }>
@@ -1303,14 +1303,14 @@ function disposeTerminal(sessionId: string): void {
 // The session's machine ends what it left running: `ps` by `--session-id` on
 // macOS and Linux, CIM on Windows, and inside the distribution for WSL, where
 // killing `wsl.exe` on the Windows side does not reach the Linux processes.
-// There the helper also ends the session shell's whole subtree (found through
+// There the distribution's Studio server also ends the session shell's whole subtree (found through
 // its pid file), so a plain WSL terminal that carries no CLI session id still
 // leaves nothing behind.
 function killSessionSurvivors(session: TerminalSession): void {
   const host = hostRegistry().get(session.hostId)
   if (!session.cliSessionId && host.kind !== 'wsl') return
   // A suspended WSL session had its survivors ended when it was suspended.
-  // Closing it later must not start a stopped helper (and wake the VM) to look
+  // Closing it later must not start a stopped server (and wake the VM) to look
   // again for what is already gone.
   if (host.kind === 'wsl' && session.suspended) return
   void host
@@ -1319,7 +1319,7 @@ function killSessionSurvivors(session: TerminalSession): void {
 }
 
 // A session holds its machine while its pty lives: for WSL that keeps the
-// helper running, and the last release lets it stop a while later so the VM
+// distribution's Studio server running, and the last release lets it stop a while later so the VM
 // can idle. Keyed per pty, so a relaunch under the same session id never has
 // its hold dropped by the old pty's late exit.
 let nextHostLease = 1
@@ -1815,8 +1815,8 @@ async function buildReapGuardHolds(
 ): Promise<Map<string, string>> {
   const holds = new Map<string, string>()
   // Grouped by machine, one read per machine: `ps` on macOS and Linux, CIM for
-  // native Windows, and the helper's /proc read for each WSL distribution,
-  // whose pty pid is only `wsl.exe` (the helper finds the session shell from
+  // native Windows, and the distribution server's /proc read for each WSL
+  // distribution, whose pty pid is only `wsl.exe` (it finds the session shell from
   // the pid file its startup script wrote).
   const byHost = new Map<string, HostProcessRef[]>()
   const probed: string[] = []
@@ -1933,11 +1933,11 @@ async function disposeAllTerminals(): Promise<void> {
   })
   await Promise.all(sessions.map((session) => waitForTerminalExit(session, 500)))
   // A WSL terminal's pty is the Windows `wsl.exe`; ending it does not reach
-  // the Linux processes under it, so each machine's helper ends what its
+  // the Linux processes under it, so each distribution's server ends what its
   // sessions left running (by pid file and `--session-id`), with no grace:
   // the ptys were just waited on. A suspended session's were ended when it
-  // was suspended. Bounded, so a wedged helper cannot hold the quit; the
-  // helper's own shutdown, which follows, ends every session it knows of too.
+  // was suspended. Bounded, so a wedged server cannot hold the quit; the
+  // core's quit, which follows, ends every session it launched there too.
   const survivorKills = sessions.flatMap((session) => {
     const host = hostRegistry().get(session.hostId)
     if (host.kind !== 'wsl' || session.suspended) return []
@@ -3240,7 +3240,7 @@ async function spawnTerminalNow(
     ? cliRuntimes
     : { ...cliRuntimes, [agentCli]: host.cliRuntime(agentCli, cliRuntimes?.[agentCli]) }
 
-  // A WSL machine needs its helper before anything is launched there: it
+  // A WSL machine needs its Studio server before anything is launched there: it
   // writes the startup script inside the distribution (nothing is run through
   // a `/mnt/<drive>` mount), and an agent's hooks, status line and MCP bridge
   // all report through it. Every launch there, a plain terminal's too, waits
@@ -3538,7 +3538,7 @@ async function spawnTerminalNow(
         )
     unownedLaunchPromptPath = launchPromptPath
     // A WSL launch's startup script (and host-context file) are written inside
-    // the distribution by its helper, and the terminal runs them from there.
+    // the distribution by its Studio server, and the terminal runs them from there.
     if (hostFiles && hostFiles.length > 0) {
       const label = host.summary().label
       if (!host.writeLaunchFiles) throw new Error(`${label} cannot take this terminal's startup script.`)

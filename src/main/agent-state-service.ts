@@ -62,7 +62,7 @@ export type AgentStateServiceOptions = {
   // every event, and the person's repository keeps none of it. Absent ⇒ nothing
   // is launch-injected, which is the behaviour from before the flag existed.
   // Asked with the launch's machine: a WSL launch carries the copy inside its
-  // distribution only once the helper has written it there. `integration` is
+  // distribution only once its Studio server has written it there. `integration` is
   // what that machine said when the launch prepared it, so this answer and the
   // launch's own flags come from one reading.
   resolveLaunchInjectsPlugins?: (cli: string, hostId?: string, integration?: HostAgentIntegration | null) => boolean
@@ -142,8 +142,8 @@ export function createAgentStateService(options: AgentStateServiceOptions) {
   // so it can never block or break the launch that awaits it.
   //
   // A launch on another host (WSL) passes that host's `integration`: its hooks
-  // run the host's own Node on the host's paths and report to the helper's
-  // socket, and a user-scoped registration goes into the host's home.
+  // run the host's own Node on the host's paths and report to the socket its
+  // Studio server listens on, and a user-scoped registration goes into the host's home.
   async function installForWorkspace(
     workspaceRoot: string,
     cli: string,
@@ -188,11 +188,11 @@ export function createAgentStateService(options: AgentStateServiceOptions) {
     if (userScoped && pathStyle !== 'wsl') await tidyWorkspaceRegistration(root, spec)
     const integration = pathStyle === 'wsl' ? execution.integration : null
     if (pathStyle === 'wsl' && !integration) {
-      // The launch waits for the helper before it gets here; without it there
-      // is no socket in the distribution to point a hook at.
+      // The launch waits for the distribution's Studio server before it gets
+      // here; without it there is no socket there to point a hook at.
       warn(
         'Agent-state hook not installed',
-        `The WSL helper was not running when ${cli} launched, so its hook could not be written. It is tried again on the next launch.`,
+        `The Studio server in WSL was not running when ${cli} launched, so its hook could not be written. It is tried again on the next launch.`,
       )
       return
     }

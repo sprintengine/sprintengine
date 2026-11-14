@@ -1,6 +1,6 @@
-// The WSL helper's launch-side pieces, as plain Node on macOS and Linux: the
+// A WSL distribution's Studio's launch-side pieces, as plain Node on macOS and Linux: the
 // private directory each launch's startup script is written into, ending
-// every session on quit, and stdin for a git the helper runs.
+// every session on quit, and stdin for a git it runs.
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -21,11 +21,10 @@ import { afterAll, beforeAll, test } from 'vitest'
 
 import {
   loadDistributionModule,
-  loadHelperModule,
   type ProcModule,
   type RunModule,
   type SessionsModule,
-} from '../../../../tests/wsl-helper-modules'
+} from '../../../../tests/wsl-distribution-modules'
 
 let temp = ''
 let sessions: SessionsModule
@@ -41,7 +40,7 @@ beforeAll(async () => {
   temp = shortTemp('se-launch-')
   sessions = await loadDistributionModule<SessionsModule>('sessions.mjs')
   proc = await loadDistributionModule<ProcModule>('proc.mjs')
-  run = await loadHelperModule<RunModule>('lib/run.mjs')
+  run = await loadDistributionModule<RunModule>('run.mjs')
 })
 
 afterAll(() => rmSync(temp, { recursive: true, force: true }))
@@ -51,7 +50,7 @@ const mode = (path: string) => statSync(path).mode & 0o777
 
 // ── Launch files ────────────────────────────────────────────────────────────
 
-test('the launch directory is private at every level the helper makes, and a loose one is narrowed', () => {
+test('the launch directory is private at every level the server makes, and a loose one is narrowed', () => {
   const home = join(temp, 'home-a')
   mkdirSync(join(home, '.local', 'share', 'sprintengine-studio'), { recursive: true })
   // Made by something with a looser umask: it is ours, so it is narrowed.

@@ -295,8 +295,8 @@ watch a pull request in another if you can.
 
 ## J. WSL terminal agents, without the helper
 
-The WSL helper is being retired: each step below moves a job of it onto the
-distribution's own Studio server. Run every step that is listed.
+The WSL helper is retired: each step below checks a job it did, now the
+distribution's own Studio server's. Run every step that is listed.
 
 1. Start an agent in a terminal of a WSL workspace and give it a task.
    **Expect:** the sidebar shows it working, then waiting, as on this PC.
@@ -363,6 +363,16 @@ distribution's own Studio server. Run every step that is listed.
 15. Quit the app, start it with "Run Studio server in its own process" on,
     and repeat 13 and 14.
     **Expect:** the same.
+16. In a WSL distribution's terminal, install or remove an agent CLI (for
+    example `npm i -g @openai/codex`), then open the agent picker for a WSL
+    workspace.
+    **Expect:** within a few seconds it shows the change, with no Re-check.
+    **distro:** `ls ~/.local/share/sprintengine-studio/` lists no
+    `<version>/` folder holding `wsl-helper/` once the server was installed
+    again, and `pgrep -af helper.mjs` lists nothing.
+17. Settings › Agents › Re-check, and the GitHub status of a WSL workspace.
+    **Expect:** both answer for the distribution, with "Run Studio server in
+    its own process" on and off.
 
 ## Throughput
 

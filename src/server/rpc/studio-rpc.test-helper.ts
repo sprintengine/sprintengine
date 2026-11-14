@@ -418,7 +418,7 @@ export async function startTestServer(
     work?: () => StudioEnvironmentWork
     launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
     terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
-    machine?: Pick<DistributionMachine, 'git' | 'home'>
+    machine?: Pick<DistributionMachine, 'git' | 'home' | 'detectClis' | 'run' | 'onPathsChanged'>
     signIns?: () => Promise<SignIns>
     hostKind?: 'local' | 'wsl' | 'ssh'
   } = {},

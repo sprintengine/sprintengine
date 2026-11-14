@@ -152,7 +152,7 @@ export function classifyGitDirEntry(filename: string | null, isCommonDir: boolea
   return null
 }
 
-/** The part of `fs.FSWatcher` this module uses, so a watch run elsewhere (a WSL helper's) can stand in. */
+/** The part of `fs.FSWatcher` this module uses, so a watch run elsewhere (a WSL distribution's Studio's) can stand in. */
 export type GitDirWatcher = Pick<FSWatcher, 'close'> & {
   on?(event: 'error', listener: (error: Error) => void): unknown
 }

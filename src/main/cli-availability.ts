@@ -16,7 +16,7 @@ import { listPluginRegistryEntries } from './plugin-registry-instance'
 // Binary detection starts a process per installed CLI (its `--version`) on macOS
 // and Linux, after one login shell per app session has said what PATH the
 // person has; on Windows it is one process per target (see `detectCliBatch`),
-// and on a WSL machine one request to its helper. None of that is worth
+// and on a WSL machine one request to its own Studio server. None of that is worth
 // repeating to learn nothing, so detection runs at startup, when the person
 // presses Re-check in Settings ▸ Agents (`force`), and for one CLI after an
 // install or update the app ran, or when that CLI's own row asks
@@ -24,7 +24,7 @@ import { listPluginRegistryEntries } from './plugin-registry-instance'
 //
 // Every definitive probe is therefore held until something says it is stale,
 // keyed by the exact (cli, command, machine) it ran against: a forced refresh,
-// an install, a WSL helper reporting that a PATH directory changed. Window
+// an install, a WSL distribution's Studio saying a PATH directory changed. Window
 // focus and visibility refresh the pickers in every window, model discovery
 // and text generation ask as well, and all of them read this answer rather than
 // starting a process. The hourly version check does not even do that much: it
@@ -146,8 +146,8 @@ export function invalidateCliAvailability(cli?: AgentCli): void {
   }
 }
 
-// Drop cached availability for everything on one machine: a WSL helper saw a
-// PATH directory change there (a CLI installed or removed from a terminal).
+// Drop cached availability for everything on one machine: a WSL distribution's
+// Studio saw a PATH directory change there (a CLI installed or removed from a terminal).
 export function invalidateCliAvailabilityOnHost(hostId: ExecutionHostId): void {
   const suffix = `${KEY_SEP}${hostId}`
   for (const key of [...cache.keys()]) {

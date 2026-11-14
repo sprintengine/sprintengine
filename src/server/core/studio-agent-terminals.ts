@@ -428,7 +428,7 @@ export function createStudioAgentTerminals(deps: StudioAgentTerminalsDeps) {
 
   return {
     runtime,
-    /** The reporter's listener: a WSL helper's relayed lines go to `ingestLine`. */
+    /** The reporter's listener: a WSL distribution's relayed lines go to `ingestLine`. */
     agentState,
     controlPlane,
     launchNotices,

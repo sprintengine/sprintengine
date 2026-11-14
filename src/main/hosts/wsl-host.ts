@@ -1,20 +1,18 @@
 // One WSL distribution, as a machine of its own ("WSL: Ubuntu").
 //
-// What this host answers comes from two places inside the distribution, while
-// the WSL helper is being retired (design-wsl-ssh-direct PR 4):
-//   - the distribution's own Studio server, which this desktop's core starts
-//     and holds: through `WslDistributionLink`, the socket a terminal agent's
-//     hooks report to, a terminal's launch files, the processes it leaves and
-//     the plugin copy its agent loads (a WSL terminal holds that server up);
-//     through `WslMachineAccess`, git in a folder there, the home, and
-//     watches on git directories, which a watch Windows places on a
-//     `\\wsl.localhost` path never hears;
-//   - the helper (`resources/wsl-helper/`), over the one `wsl.exe` stdio
-//     channel its client holds (`wsl-helper-client.ts`), for CLI detection and
-//     running a program.
-// Each starts what it needs if it is stopped. There is no second path: when
-// that cannot start, the host says why (`WslSetupError`) and the work fails
-// with that reason.
+// Everything this host answers comes from inside the distribution, from its
+// own Studio server, which this desktop's core starts and holds:
+//   - through `WslDistributionLink`, what this desktop's WSL terminals need:
+//     the socket a terminal agent's hooks report to, a terminal's launch
+//     files, the processes it leaves and the plugin copy its agent loads (a
+//     WSL terminal holds that server up);
+//   - through `WslMachineAccess`, the desktop's own uses of the machine: git
+//     in a folder there, the home, watches on git directories (a watch Windows
+//     places on a `\\wsl.localhost` path never hears), which CLIs are
+//     installed, and running a program.
+// Each starts the server if it is stopped. There is no second path: when it
+// cannot start, the host says why (`WslSetupError`) and the work fails with
+// that reason.
 //
 // The one thing not run inside the distribution is the terminal itself: its pty is
 // `wsl.exe -d <distro> -e bash -li <startup script>` (terminal-launch),
@@ -38,13 +36,16 @@ import {
 } from '../../shared/execution-host'
 import { isWindowsPath, toWslPath, wslToWindowsPath } from '../../shared/host-paths'
 import { MCP_CHANNEL_TOKEN_ENV } from '../../shared/studio-env'
-import { cliProbeRequest, detectResultFromHelper, type HelperProbeAnswer } from '../cli-runtime-install'
+import { cliProbeRequest, detectResultFromProbe } from '../cli-runtime-install'
 import { splitSubcommand } from '../git-run'
 import type { RunOutcome } from '../process-run'
 import type { GatewayLaunchIdentity } from '../../server/core/gateway-launch-tokens'
 import {
   MAX_ENVIRONMENT_GIT_STDIN_BYTES,
+  type StudioCliProbeAnswer,
+  type StudioCliProbeAsk,
   type StudioEnvironmentGitAsk,
+  type StudioEnvironmentRunAsk,
   type StudioEnvironmentHome,
   type StudioEnvironmentRunOutcome,
   type StudioLaunchFile,
@@ -60,8 +61,6 @@ import type {
   HostSettingsReader,
 } from './execution-host'
 import { wslSessionPidKey, type WslDistro } from './wsl-distro'
-import type { WslHelperClient } from './wsl-helper-client'
-import { createDefaultWslHelperClient } from './wsl-helper-runtime'
 import { WslSetupError } from './wsl-setup-error'
 import { WSL_DATA_REL } from './wsl-install'
 import { migrateHostEntries } from '../integrations/integration-boot'
@@ -166,6 +165,8 @@ export type WslDistributionLink = {
 export type WslMachineAccess = {
   git(distro: string, ask: StudioEnvironmentGitAsk): Promise<StudioEnvironmentRunOutcome>
   home(distro: string): Promise<StudioEnvironmentHome>
+  detectClis(distro: string, requests: StudioCliProbeAsk[], force: boolean): Promise<StudioCliProbeAnswer[]>
+  run(distro: string, ask: StudioEnvironmentRunAsk): Promise<StudioEnvironmentRunOutcome>
   /**
    * A folder's changed names (null: something changed), until closed;
    * `onError` once the folder cannot be watched. A lost connection to the
@@ -213,8 +214,6 @@ export type WslHostDeps = {
   machine?: WslMachineAccess | null
   /** What the last `wsl --list` said about this distribution; undefined when it was not listed. */
   listed: () => WslDistro | undefined
-  /** The helper client; tests pass a stand-in. Absent is the real one. */
-  helper?: WslHelperClient
   /** The Studio skills the person chose, by id, which the plugin copy carries. Absent: none. */
   enabledSkills?: () => readonly string[]
   /** How long the survivor kill waits for a killed pty's children to go on their own. */
@@ -228,13 +227,7 @@ function isPackagedProcess(): boolean {
   return (process as NodeJS.Process & { defaultApp?: boolean }).defaultApp !== true
 }
 
-type HelperRunOutcome = RunOutcome & { truncated?: boolean }
-
-// The helper and the distribution's Studio enforce a command's deadline
-// themselves; this is how much longer this side waits for the answer.
-const ANSWER_SLACK_MS = 10_000
 const SNAPSHOT_TIMEOUT_MS = 20_000
-const DETECT_TIMEOUT_MS = 60_000
 
 /** `work`'s answer, or a rejection once `ms` pass without one. */
 function withDeadline<T>(work: Promise<T> | undefined, ms: number): Promise<T | undefined> {
@@ -285,7 +278,6 @@ const sameServer = (a: PreparedServer, b: PreparedServer) =>
 
 export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost {
   const id: ExecutionHostId = wslHostId(distro)
-  const helper = deps.helper ?? createDefaultWslHelperClient(distro)
   const enabledSkills = deps.enabledSkills ?? (() => [])
   const survivorDelayMs = deps.survivorDelayMs ?? 2_000
   const settings = () => deps.readSettings(id)
@@ -507,13 +499,12 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     pathStyle: 'wsl',
     summary(): ExecutionHostSummary {
       const listed = deps.listed()
-      const failure = helper.lastError()
       return {
         id,
         kind: 'wsl',
         label: executionHostLabel(id, 'win32'),
         pathStyle: 'wsl',
-        ...(failure ? { state: 'unavailable' as const, reason: failure.message } : wslHostState(listed)),
+        ...wslHostState(listed),
         isDefaultDistro: listed?.isDefault ?? false,
         enabled: settings()?.enabled === true,
         wslVersion: listed?.version ?? null,
@@ -658,38 +649,37 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
     async detectClis(requests, options = {}) {
       const probes = requests.map(({ cli, runtime }) => cliProbeRequest(cli, { ...runtime, hostId: id }))
       const asked = probes.flatMap((probe) => ('error' in probe ? [] : [probe]))
-      let answers: HelperProbeAnswer[] = []
-      let failure: string | null = null
-      if (asked.length > 0) {
+      let answers: StudioCliProbeAnswer[] = []
+      let failure: string | null = deps.machine ? null : `This process cannot reach the Studio server in ${distro}.`
+      if (asked.length > 0 && deps.machine) {
         try {
-          const reply = await helper.request<{ results: HelperProbeAnswer[] }>(
-            'cli.detect',
-            {
-              requests: asked.map((probe) => ({ binary: probe.binary, versionArgs: probe.versionArgs })),
-              ...(options.force ? { force: true } : {}),
-            },
-            { timeoutMs: DETECT_TIMEOUT_MS },
+          answers = await deps.machine.detectClis(
+            distro,
+            asked.map((probe) => ({ binary: probe.binary, versionArgs: probe.versionArgs })),
+            options.force === true,
           )
-          answers = reply.results
         } catch (error) {
           failure = error instanceof Error ? error.message : String(error)
         }
       }
       let next = 0
       return probes.map((probe): CliDetectResult => {
-        if ('error' in probe) return detectResultFromHelper(probe, { error: probe.error }, id)
-        const answer = failure ? { error: failure } : (answers[next] ?? { error: 'The helper gave no answer.' })
+        if ('error' in probe) return detectResultFromProbe(probe, { error: probe.error }, id)
+        const answer = failure
+          ? { error: failure }
+          : (answers[next] ?? { error: `The Studio server in ${distro} gave no answer.` })
         next += 1
-        return detectResultFromHelper(probe, answer, id)
+        return detectResultFromProbe(probe, answer, id)
       })
     },
     async runCommand(argv, options): Promise<RunOutcome> {
+      if (!deps.machine) return failedRun(new Error(`This process cannot run a program in ${distro}.`))
       try {
-        return await helper.request<HelperRunOutcome>(
-          'run',
-          { argv: [...argv], ...(options.cwd ? { cwd: toWslPath(options.cwd) } : {}), timeoutMs: options.timeoutMs },
-          { timeoutMs: options.timeoutMs + ANSWER_SLACK_MS },
-        )
+        return await deps.machine.run(distro, {
+          argv: [...argv],
+          ...(options.cwd ? { cwd: toWslPath(options.cwd) } : {}),
+          timeoutMs: options.timeoutMs,
+        })
       } catch (error) {
         return failedRun(error)
       }
@@ -716,6 +706,7 @@ export function createWslHost(distro: string, deps: WslHostDeps): ExecutionHost 
         return failedRun(error)
       }
     },
-    dispose: () => helper.shutdown(),
+    // Nothing of its own runs: the distribution's server is the core's.
+    dispose: async () => undefined,
   }
 }

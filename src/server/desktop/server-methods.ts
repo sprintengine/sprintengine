@@ -82,8 +82,9 @@ export const SERVER_METHODS = {
   /** `{ windowKey }` → nothing: that window's document has gone; each distribution it reached ends its connections. */
   wslRevokeWindow: 'wsl.revoke-window',
   /**
-   * `{ distro, method: 'git', ask }` → the run's outcome, `{ distro, method:
-   * 'home' }` → the home: the shell's git and home lookups on a WSL
+   * `{ distro, method: 'git' | 'run', ask }` → the run's outcome, `{ distro,
+   * method: 'home' }` → the home, `{ distro, method: 'detectClis', ask: {
+   * requests, force } }` → the answers: the shell's uses of a WSL
    * distribution, asked of its own Studio over the owner connection this
    * process holds (`WslMachineAccess`). Nothing else is forwarded.
    */
@@ -105,7 +106,7 @@ export const SHELL_METHODS = {
   /** `{ workspaceRoot }` → `StudioPluginStatus`: Studio's own plugin in a workspace, which the shell installs. */
   studioPluginStatus: 'shell.studio-plugin.status',
   /**
-   * → every live launch token the shell issued (its WSL helper's channels), by digest
+   * → every live launch token the shell issued (its WSL terminal agents'), by digest
    * (`LaunchTokenChange[]`, decision R87). Asked before the gateway listens,
    * so a bridge that reconnects the moment the socket is back is proven.
    */
@@ -167,11 +168,6 @@ export const SERVER_EVENTS = {
    * own readers see (tours, keep-awake, the tray, the quit's count).
    */
   terminalSessions: 'terminals.sessions',
-  /**
-   * Shell → server: `{ hostId }`, a WSL distribution's PATH changed, as its
-   * helper (the shell's) saw it; what the server knows of its CLIs is stale.
-   */
-  cliPathsChanged: 'cli.paths-changed',
   /**
    * Server → shell: the area skills the person opted into
    * (`StudioAreaSkillChoices`), on every change: the shell's plugin copies

@@ -765,8 +765,6 @@ export function createWslEnvironmentManager(deps: WslEnvironmentManagerDeps): Ws
             appVersion: deps.app.version,
             nodeDigests: deps.nodeDigests(),
             appDigest: payload.digest,
-            profile: deps.profile.id,
-            entry: 'server',
           }),
         install: async (report) => {
           if (report.node) await deps.installNode(handle.distro, report)

@@ -14,9 +14,7 @@
 //   - `WindowsHost`: this PC, natively (PowerShell, CIM process reads).
 //   - `WslHost`: one per WSL distribution. What it answers comes from inside
 //     the distribution: its own Studio server for launches, git, the home and
-//     watches (`wsl-host.ts`), and, until it is retired, a helper reached over
-//     the stdio of one `wsl.exe` (`wsl-helper-client.ts`) for CLI detection and
-//     running a program.
+//     watches, CLI detection and running a program (`wsl-host.ts`).
 //
 // A host also says how an agent there reports back (`agentIntegration`): the
 // socket its hooks write to, the Node that runs them, the MCP gateway entry,
@@ -53,7 +51,7 @@ export type HostLaunchTarget =
       env: Record<string, string>
       /** The shell a terminal ends in. Absent is `bash -li`. */
       shell?: string
-      /** How an agent here reports back; null before the helper is up. */
+      /** How an agent here reports back; null before a launch was prepared. */
       integration?: HostAgentIntegration | null
       /**
        * The launch's agent identity (`SPRINTENGINE_AGENT_ID` and the rest),
@@ -63,13 +61,13 @@ export type HostLaunchTarget =
        */
       identity?: Record<string, string>
       /**
-       * The helper's private directory for launch files, as Linux names it. The
+       * The distribution server's private directory for launch files, as Linux names it. The
        * startup script and the host-context file are written there (through
-       * the helper) and run from there, never through a `/mnt/<drive>` mount.
-       * Absent while the helper is not up; a WSL launch cannot start then.
+       * that server) and run from there, never through a `/mnt/<drive>` mount.
+       * Absent before a launch was prepared; a WSL launch cannot start then.
        */
       sessionDir?: string
-      /** The helper's private directory the startup script records its shell's pid in. */
+      /** That server's private directory the startup script records its shell's pid in. */
       pidDir?: string
       /** This launch's MCP channel token, exported by the startup script (`MCP_CHANNEL_TOKEN_ENV`). */
       channelToken?: string
@@ -162,7 +160,7 @@ export interface ExecutionHost {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /**
-   * Gets the host ready for a launch: for WSL, starts the helper (installing
+   * Gets the host ready for a launch: for WSL, starts its Studio server (installing
    * it on first use) and materialises the plugin copy. Rejects with a
    * `WslSetupError` whose message says why the machine cannot be used. The
    * local hosts are always ready.
@@ -170,7 +168,7 @@ export interface ExecutionHost {
   prepare(): Promise<void>
   /** Holds the host while a session lives on it. Keyed, so a second call is harmless. */
   retainSession(leaseId: string): void
-  /** Lets go of a session's hold; the helper stops a while after the last one. */
+  /** Lets go of a session's hold; the server may stop a while after the last one. */
   releaseSession(leaseId: string): void
   /** How an agent here reports back; null on the local hosts, and on WSL before `prepare`. */
   agentIntegration(): HostAgentIntegration | null
@@ -181,14 +179,14 @@ export interface ExecutionHost {
   launchTarget(): HostLaunchTarget
   /**
    * Writes a launch's files on the host before its terminal starts. Only a host
-   * whose launch target names a `sessionDir` (WSL, through its helper) has
+   * whose launch target names a `sessionDir` (WSL, through its Studio server) has
    * this; the local hosts' builders write their own files. Rejects with the
    * reason when the files could not be written.
    */
   writeLaunchFiles?(files: readonly HostLaunchFile[]): Promise<void>
   /**
    * Removes launch files by the paths `writeLaunchFiles` wrote. Best-effort,
-   * and never starts anything: a stopped helper's files go when the app next
+   * and never starts anything: a stopped server's files go when the app next
    * starts it.
    */
   discardLaunchFiles?(paths: ReadonlyArray<string | undefined>): void
@@ -261,7 +259,7 @@ export interface ExecutionHost {
     options: { timeoutMs: number | null; env: Record<string, string>; stdin?: string },
   ): Promise<RunOutcome>
 
-  /** Stops whatever the host keeps running for itself: the WSL helper. */
+  /** Lets go of whatever the host keeps for itself. */
   dispose(): Promise<void>
 }
 

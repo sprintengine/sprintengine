@@ -1,13 +1,15 @@
-// A stand-in for one distribution's helper client, for tests of what main does
-// with a WSL machine. Each method the helper answers is a handler the test
-// supplies; every request is recorded.
+// Stand-ins for a WSL distribution's own Studio as this desktop reaches it,
+// for tests of what the desktop does with a WSL machine: its terminal host and
+// launch tokens (`stubWslDistributionLink`), and git, the home, watches, CLI
+// detection and runs (`stubWslMachine`). Every ask is recorded.
 
-import type { WslHelperClient, WslHelperInfo } from '../src/main/hosts/wsl-helper-client'
-import type { WslSetupError } from '../src/main/hosts/wsl-setup-error'
 import type { WslDistributionFacts, WslDistributionLink, WslMachineAccess } from '../src/main/hosts/wsl-host'
 import type { SubtreeLiveReason } from '../src/main/terminal-subtree-probe'
 import type {
+  StudioCliProbeAnswer,
+  StudioCliProbeAsk,
   StudioEnvironmentGitAsk,
+  StudioEnvironmentRunAsk,
   StudioEnvironmentHome,
   StudioEnvironmentRunOutcome,
   StudioLaunchFile,
@@ -15,59 +17,6 @@ import type {
   StudioTerminalProcessesAsk,
 } from '../packages/studio-protocol/src/environment-access'
 import type { GatewayLaunchIdentity } from '../src/server/core/gateway-launch-tokens'
-
-export const STUB_HELPER_INFO: WslHelperInfo = {
-  uid: 1000,
-  profile: 'abc123def456',
-  home: '/home/dev',
-  arch: 'x64',
-  nodePath: '/home/dev/.local/share/sprintengine-studio/runtime/node-v24.21.0/bin/node',
-  appDir: '/home/dev/.local/share/sprintengine-studio/0.4.0',
-}
-
-export type StubHelper = WslHelperClient & {
-  requests: Array<{ method: string; params: unknown; timeoutMs: number | null | undefined }>
-  starts: number
-  failWith: WslSetupError | null
-}
-
-export function stubWslHelper(
-  distro: string,
-  handlers: Record<string, (params: never) => unknown> = {},
-  info: WslHelperInfo = STUB_HELPER_INFO,
-): StubHelper {
-  let running = false
-  const stub: StubHelper = {
-    distro,
-    requests: [],
-    starts: 0,
-    failWith: null,
-    state: () => (running ? 'ready' : 'stopped'),
-    info: () => (running ? info : null),
-    lastError: () => stub.failWith,
-    async start() {
-      stub.starts += 1
-      if (stub.failWith) throw stub.failWith
-      running = true
-      return info
-    },
-    async request<T>(method: string, params?: unknown, options: { timeoutMs?: number | null } = {}): Promise<T> {
-      await stub.start()
-      stub.requests.push({ method, params, timeoutMs: options.timeoutMs })
-      const handler = handlers[method]
-      if (!handler) throw new Error(`The stub helper has no ${method}.`)
-      return (await handler(params as never)) as T
-    },
-    async requestIfRunning<T>(method: string, params?: unknown): Promise<T | null> {
-      if (!running) return null
-      return stub.request<T>(method, params)
-    },
-    async shutdown() {
-      running = false
-    },
-  }
-  return stub
-}
 
 /** The socket a stand-in distribution's Studio server says its terminal agents report to. */
 export const STUB_AGENT_STATE_SOCKET = '/home/dev/.local/share/sprintengine-studio/data/agent-state.sock'
@@ -180,7 +129,11 @@ export type StubWatch = {
 
 export type StubMachine = WslMachineAccess & {
   /** What the distribution's Studio was asked, in order. */
-  asked: Array<{ method: 'git' | 'home'; distro: string; ask?: StudioEnvironmentGitAsk }>
+  asked: Array<{
+    method: 'git' | 'home' | 'detectClis' | 'run'
+    distro: string
+    ask?: StudioEnvironmentGitAsk | StudioEnvironmentRunAsk | { requests: StudioCliProbeAsk[]; force: boolean }
+  }>
   watches: StubWatch[]
 }
 
@@ -189,6 +142,11 @@ export function stubWslMachine(
   handlers: {
     git?: (ask: StudioEnvironmentGitAsk) => StudioEnvironmentRunOutcome | Promise<StudioEnvironmentRunOutcome>
     home?: () => StudioEnvironmentHome | Promise<StudioEnvironmentHome>
+    detectClis?: (
+      requests: StudioCliProbeAsk[],
+      force: boolean,
+    ) => StudioCliProbeAnswer[] | Promise<StudioCliProbeAnswer[]>
+    run?: (ask: StudioEnvironmentRunAsk) => StudioEnvironmentRunOutcome | Promise<StudioEnvironmentRunOutcome>
   } = {},
 ): StubMachine {
   const machine: StubMachine = {
@@ -202,6 +160,16 @@ export function stubWslMachine(
     async home(distro) {
       machine.asked.push({ method: 'home', distro })
       return handlers.home ? handlers.home() : { home: '/home/dev', env: {} }
+    },
+    async detectClis(distro, requests, force) {
+      machine.asked.push({ method: 'detectClis', distro, ask: { requests, force } })
+      if (!handlers.detectClis) throw new Error('The stub machine detects no CLIs.')
+      return handlers.detectClis(requests, force)
+    },
+    async run(distro, ask) {
+      machine.asked.push({ method: 'run', distro, ask })
+      if (!handlers.run) throw new Error('The stub machine runs nothing.')
+      return handlers.run(ask)
     },
     watchPath(_distro, path, recursive, listener, onError) {
       const entry: StubWatch = { path, recursive, listener, onError, closed: false }

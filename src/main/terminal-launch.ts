@@ -244,11 +244,10 @@ export function setLaunchPluginDirsResolver(resolver: (() => string[]) | null): 
  * This launch's plugin directories, in the path style the launched shell reads.
  *
  * On this machine they are the copy app-services materialised under userData.
- * A WSL launch gets the copy its helper wrote inside the distribution, with
- * Linux paths substituted into it (the pinned Node, the helper's bridge and
- * socket): converting this machine's directory would not convert the paths
+ * A WSL launch gets the copy the distribution's Studio server built inside it,
+ * with its Linux paths substituted into it (its Node, its bridge and socket): converting this machine's directory would not convert the paths
  * inside its files, and a Linux `claude` would run `node "C:/…"` for every
- * hook. Until the helper has written it, a WSL launch passes none, and the
+ * hook. Until that server has written it, a WSL launch passes none, and the
  * workspace installer (which asks the same host) carries agent state instead.
  *
  * A native Windows launch takes this machine's copy, as macOS and Linux do;
@@ -1575,7 +1574,7 @@ export function getShellLaunchConfig(
      * `-c` overrides), its environment (OpenCode's `OPENCODE_CONFIG_CONTENT`),
      * settings for the one `--settings` document and plugin directories beside
      * the app's own (`integrations/launch-integration.ts`). This machine only:
-     * a WSL launch is built from what its helper wrote inside the distribution.
+     * a WSL launch is built from what its Studio server wrote inside the distribution.
      */
     integration?: LaunchIntegrationRender
   } = {},

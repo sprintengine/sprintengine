@@ -7,7 +7,12 @@ import { getWorkspaceChangeSummary } from '../../main/workspace-change-summary'
 import { isMachinePath } from '../../shared/machine-paths'
 import { isWorkspaceTombstoned } from '../../shared/workspace-registry'
 import { effectiveAgentLaunchSettings } from '../../shared/launch-settings'
-import { gitHostIdForPath, type ExecutionHostId, type ExecutionHostSettings } from '../../shared/execution-host'
+import {
+  gitHostIdForPath,
+  wslHostId,
+  type ExecutionHostId,
+  type ExecutionHostSettings,
+} from '../../shared/execution-host'
 import { ensureSkillInstalled, resolveSkillById } from '../../main/builtin-skills'
 import { cliResumeCapabilities } from '../../main/cli-resume-capabilities'
 import {
@@ -66,7 +71,7 @@ import { createWorkspaceRegistryService } from '../../main/workspace-registry-se
 import { createWorkspaceRegistryStore } from '../../main/workspace-registry-store'
 import { createWorkspaceSyncService } from '../../main/workspace-sync-service'
 import { startWorkspaceStoreMigration } from '../../main/workspace-store-migration'
-import { knownCliAvailability } from '../../main/cli-availability'
+import { invalidateCliAvailabilityOnHost, knownCliAvailability } from '../../main/cli-availability'
 import { createChatTitler } from '../../main/text-generation/chat-titler'
 import { generateChatTitle } from '../../main/text-generation/text-generation-service'
 import { createTextGenerationSettingsStore } from '../../main/text-generation/text-generation-settings-store'
@@ -101,7 +106,7 @@ import type { WslServers } from '../wsl/desktop-wsl-servers'
 import { followRelayedAgentState } from '../wsl/agent-state-relay'
 import { createWslLaunchTokens } from '../wsl/wsl-launch-tokens'
 import { createWslTerminalSessions, terminalHostOf, type WslTerminalSessions } from '../wsl/wsl-terminal-host-client'
-import { createWslMachineAccess } from '../wsl/wsl-machine-client'
+import { createWslMachineAccess, followCliPathsChanged } from '../wsl/wsl-machine-client'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
 import type { StudioRole } from './data-dir'
 import { takeDataDir } from './take-data-dir'
@@ -394,6 +399,11 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     // The run's first connection to a distribution ends what an earlier run's
     // WSL terminals left running there.
     wslServers.onConnected((connection) => wslTerminalSessions?.connected(connection))
+    // A CLI installed or removed in a distribution: what a launch knows of
+    // that machine's CLIs is forgotten, and read again when next asked.
+    wslServers.onConnected((connection) =>
+      followCliPathsChanged(connection, (distro) => invalidateCliAvailabilityOnHost(wslHostId(distro))),
+    )
   }
   const environmentClients = combineEnvironmentClients(
     wslServers

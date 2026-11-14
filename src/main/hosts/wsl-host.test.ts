@@ -1,4 +1,4 @@
-// A WSL machine answers through its helper and its distribution's Studio
+// A WSL machine answers through its distribution's Studio
 // server. These cases pin what main asks each (and in which form: Linux paths,
 // argv arrays, deadlines) and how its answers come back, with stand-ins.
 
@@ -19,14 +19,16 @@ import {
   STUB_PID_DIR,
   type StubTerminalHostHandlers,
   stubWslDistributionLink,
-  stubWslHelper,
   stubWslMachine,
-} from '../../../tests/wsl-helper-stub'
+} from '../../../tests/wsl-distribution-stub'
 import { createPluginRegistry } from '../plugin-registry'
 import { __resetPluginRegistryForTest, __setPluginRegistryForTest } from '../plugin-registry-instance'
 import { createWslHost, nativeGitOutput, wslGitArg, wslHostState } from './wsl-host'
 import type {
+  StudioCliProbeAnswer,
+  StudioCliProbeAsk,
   StudioEnvironmentGitAsk,
+  StudioEnvironmentRunAsk,
   StudioEnvironmentHome,
   StudioEnvironmentRunOutcome,
   StudioTerminalPluginCopy,
@@ -58,8 +60,15 @@ function distributionLink(
   return stubWslDistributionLink(() => ({ ...STUB_SERVER_FACTS, agentStateSocket: socket() }), terminal)
 }
 
+type MachineHandlers = {
+  git?: (ask: StudioEnvironmentGitAsk) => StudioEnvironmentRunOutcome
+  home?: () => { home: string; env?: StudioEnvironmentHome['env'] }
+  detectClis?: (requests: StudioCliProbeAsk[], force: boolean) => StudioCliProbeAnswer[]
+  run?: (ask: StudioEnvironmentRunAsk) => StudioEnvironmentRunOutcome
+}
+
 function hostWith(
-  handlers: Parameters<typeof stubWslHelper>[1],
+  handlers: MachineHandlers,
   extra: {
     /** What the server's plugin copy answers; 'fails' throws. */
     plugin?: StudioTerminalPluginCopy | 'fails'
@@ -69,16 +78,8 @@ function hostWith(
     terminal?: StubTerminalHostHandlers
   } = {},
 ) {
-  const helper = stubWslHelper('Debian', handlers)
-  // The distribution's Studio answers git and the home: the same handlers.
-  const known = handlers as {
-    git?: (ask: StudioEnvironmentGitAsk) => StudioEnvironmentRunOutcome
-    home?: () => { home: string; env?: StudioEnvironmentHome['env'] }
-  }
-  const machine = stubWslMachine({
-    ...(known.git ? { git: known.git } : {}),
-    ...(known.home ? { home: () => ({ env: {}, ...known.home!() }) } : {}),
-  })
+  const { home, ...rest } = handlers
+  const machine = stubWslMachine({ ...rest, ...(home ? { home: () => ({ env: {}, ...home() }) } : {}) })
   const distribution = distributionLink(extra.socket, {
     pluginCopy: () => {
       if (extra.plugin === 'fails') throw new Error('the server could not write it')
@@ -90,7 +91,6 @@ function hostWith(
   const host = createWslHost('Debian', {
     readSettings: () => undefined,
     listed: () => undefined,
-    helper,
     machine,
     distribution,
     enabledSkills: extra.skills ?? (() => []),
@@ -101,7 +101,7 @@ function hostWith(
     },
   })
   const pluginAsks = () => distribution.asked.filter((ask) => ask.method === 'pluginCopy')
-  return { helper, machine, host, distribution, pluginAsks, launchers }
+  return { machine, host, distribution, pluginAsks, launchers }
 }
 
 test('a git argument that is a Windows path crosses as the path in the distribution', () => {
@@ -193,7 +193,8 @@ test("git's stdin crosses to the distribution's Studio as base64, byte for byte"
     env: {},
     stdin: patch,
   })
-  assert.equal(Buffer.from(machine.asked[0].ask?.stdinB64 ?? '', 'base64').toString('utf8'), patch)
+  const first = machine.asked[0].ask as StudioEnvironmentGitAsk
+  assert.equal(Buffer.from(first.stdinB64 ?? '', 'base64').toString('utf8'), patch)
   await host.runGit('\\\\wsl.localhost\\Debian\\home\\dev\\repo', ['status'], { timeoutMs: 1_000, env: {} })
   assert.equal('stdinB64' in (machine.asked[1].ask ?? {}), false, 'no stdin, no field')
   // More than one frame carries is refused here, in words, never half sent.
@@ -237,23 +238,29 @@ test("git runs in the distribution's Studio with Linux paths, the runner env and
   })
 })
 
-test('a command is an argv run by the helper, and a helper that cannot start is a failed run, not a throw', async () => {
-  const { helper, host } = hostWith({
-    run: () => ({ code: 0, stdout: 'git version 2.43.0\n', stderr: '', timedOut: false }),
+test("a command is an argv run by the distribution's Studio, and one that cannot be reached is a failed run, not a throw", async () => {
+  let reachable = true
+  const { machine, host } = hostWith({
+    run: () => {
+      if (!reachable)
+        throw new WslSetupError("Couldn't set up WSL: no network to download Node.js", {
+          fatal: true,
+          code: 'node-download',
+        })
+      return { code: 0, stdout: 'git version 2.43.0\n', stderr: '', timedOut: false }
+    },
   })
   const outcome = await host.runCommand(['git', '--version'], { timeoutMs: 5_000, cwd: 'C:\\repo' })
   assert.equal(outcome.stdout, 'git version 2.43.0\n')
-  assert.deepEqual(helper.requests[0].params, { argv: ['git', '--version'], cwd: '/mnt/c/repo', timeoutMs: 5_000 })
-  helper.failWith = new WslSetupError("Couldn't set up WSL: no network to download Node.js", {
-    fatal: true,
-    code: 'node-download',
+  assert.deepEqual(machine.asked[0], {
+    method: 'run',
+    distro: 'Debian',
+    ask: { argv: ['git', '--version'], cwd: '/mnt/c/repo', timeoutMs: 5_000 },
   })
-  await helper.shutdown()
+  reachable = false
   const failed = await host.runCommand(['git', '--version'], { timeoutMs: 5_000 })
   assert.equal(failed.spawnFailed, true)
   assert.match(failed.stderr, /no network to download Node\.js/u)
-  assert.equal(host.summary().state, 'unavailable', 'the machine says why it cannot be used')
-  assert.match(host.summary().reason ?? '', /no network/u)
 })
 
 test("the reaper reads sessions by pid-file key from the distribution's server; a failed read, or none running, holds them all", async () => {
@@ -305,14 +312,12 @@ test('the survivor kill names the session id and the pid file, and does nothing 
   assert.equal(distribution.asked.length, 2)
 })
 test('CLI detection is one request, read with the same parser as every probe', async () => {
-  const { helper, host } = hostWith({
-    'cli.detect': () => ({
-      results: [
-        { found: true, path: '/home/dev/.local/bin/claude', output: 'Welcome\n2.1.4 (Claude Code)', timedOut: false },
-        { found: false },
-        { error: 'EACCES' },
-      ],
-    }),
+  const { machine, host } = hostWith({
+    detectClis: () => [
+      { found: true, path: '/home/dev/.local/bin/claude', output: 'Welcome\n2.1.4 (Claude Code)', timedOut: false },
+      { found: false },
+      { error: 'EACCES' },
+    ],
   })
   const results = await host.detectClis([
     { cli: 'claude-code' },
@@ -320,7 +325,7 @@ test('CLI detection is one request, read with the same parser as every probe', a
     { cli: 'opencode' },
     { cli: 'not-a-cli' },
   ])
-  const asked = (helper.requests[0].params as { requests: Array<{ binary: string }> }).requests
+  const asked = (machine.asked[0].ask as { requests: StudioCliProbeAsk[] }).requests
   assert.deepEqual(
     asked.map((request) => request.binary),
     ['claude', '/opt/codex/bin/codex', 'opencode'],
@@ -337,16 +342,16 @@ test('CLI detection is one request, read with the same parser as every probe', a
   assert.equal(results[1].error, null, 'not found is an answer')
   assert.equal(results[2].error, 'EACCES', 'a failed check is not "not installed"')
   assert.match(results[3].error ?? '', /No plugin manifest/u)
-  assert.equal('force' in (helper.requests[0].params as object), false, 'a plain read may reuse remembered versions')
+  assert.equal((machine.asked[0].ask as { force: boolean }).force, false, 'a plain read may reuse remembered versions')
 })
 
-// The helper keeps each binary's `--version` while its size and mtime stand
+// The distribution's Studio keeps each binary's `--version` while its size and mtime stand
 // still, and an npm update can leave both of a launcher script unchanged: the
 // check after an update, and Re-check, must make it run `--version` again.
-test('a forced detection tells the helper to look again', async () => {
-  const { helper, host } = hostWith({ 'cli.detect': () => ({ results: [{ found: false }] }) })
+test("a forced detection tells the distribution's Studio to look again", async () => {
+  const { machine, host } = hostWith({ detectClis: () => [{ found: false }] })
   await host.detectClis([{ cli: 'claude-code' }], { force: true })
-  assert.equal((helper.requests[0].params as { force?: boolean }).force, true)
+  assert.equal((machine.asked[0].ask as { force: boolean }).force, true)
 })
 
 test("prepare asks the distribution's server for the plugin copy with the chosen skills, and exposes the integration", async () => {
@@ -355,7 +360,7 @@ test("prepare asks the distribution's server for the plugin copy with the chosen
     { home: () => ({ home: '/home/dev', env: { CLAUDE_CONFIG_DIR: '/home/dev/.claude-work', BAD: 'relative' } }) },
     { skills: () => skills },
   )
-  assert.equal(host.agentIntegration(), null, 'nothing before the helper is up')
+  assert.equal(host.agentIntegration(), null, 'nothing before a launch is prepared')
   await host.prepare()
   // The server builds it from its own resources: only the skill ids cross.
   assert.deepEqual(
@@ -406,7 +411,7 @@ test("prepare asks the distribution's server for the plugin copy with the chosen
   assert.equal(target.kind === 'wsl' && target.sessionDir, STUB_SESSION_DIR)
   assert.equal(target.kind === 'wsl' && target.pidDir, STUB_PID_DIR)
 
-  // A second prepare against the same helper and server does nothing again.
+  // A second prepare against the same server does nothing again.
   await host.prepare()
   assert.equal(pluginAsks().length, 1)
   // A skill switched on since is a different copy: the next launch asks again.
@@ -468,7 +473,6 @@ test('a host with no distribution server prepares no launch, and still reads the
   const host = createWslHost('Debian', {
     readSettings: () => undefined,
     listed: () => undefined,
-    helper: stubWslHelper('Debian'),
     machine: stubWslMachine({ home: () => ({ home: '/home/dev', env: {} }) }),
   })
   await assert.rejects(host.prepare(), /WSL terminals start where Studio's server runs/u)
@@ -565,7 +569,6 @@ test("a WSL host's CLI runtime is its own command, tagged with the machine", () 
   const host = createWslHost('Ubuntu', {
     readSettings: () => ({ enabled: true, cliCommands: { codex: ' /home/dev/.local/bin/codex ' }, env: {} }),
     listed: () => undefined,
-    helper: stubWslHelper('Ubuntu'),
   })
   assert.deepEqual(host.cliRuntime('codex', { command: 'C:\\tools\\codex.cmd' }), {
     command: '/home/dev/.local/bin/codex',

@@ -181,7 +181,8 @@ it names the app directly.
   WSL distribution, the same script under that distribution's home. The app
   rewrites a small pointer file beside it (`current`: the Node to run, and the
   directory holding `hooks/` and `automation/`) on every start, and a WSL
-  distribution's whenever its helper is prepared. When the app is gone the
+  distribution's whenever a WSL terminal's launch is prepared (it names that
+  distribution's Studio server's Node and its tree's `resources/`). When the app is gone the
   launcher does the harmless thing: a hook drains its input and exits 0, and
   the MCP target answers `initialize` with a server that has no tools, which
   Claude Code and OpenCode report as connected rather than failed
@@ -270,7 +271,7 @@ choice, not pollution.
 
 - **WSL launches** keep the workspace writers for every CLI but the Claude
   family: the per-launch channels above name files on this machine, and a
-  Linux CLI would need them written inside the distribution by its helper, as
+  Linux CLI would need them written inside the distribution by its Studio, as
   the Claude plugin copy already is. The knowledge-activity hook of a
   workspace inside a distribution stays in its settings for the same reason.
 - **Connector launches** keep writing their worktree's MCP config: the

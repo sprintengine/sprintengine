@@ -1,7 +1,7 @@
 import { StringDecoder } from 'node:string_decoder'
 
-import type { HelperProcess } from '../../main/hosts/wsl-helper-client'
-import { classifyWslFailure } from '../../main/hosts/wsl-helper-client'
+import type { WslStdioProcess } from '../../main/hosts/wsl-process'
+import { classifyWslFailure } from '../../main/hosts/wsl-process'
 import { decodeWslOutput } from '../../main/hosts/wsl-distro'
 import { NEEDS_INSTALL_EXIT, parseNeedReport, WSL_DATA_REL, type NeedReport } from '../../main/hosts/wsl-install'
 import { WslSetupError } from '../../main/hosts/wsl-setup-error'
@@ -10,9 +10,9 @@ import { SERVER_EXIT, type ServerBoot, type ServerBootstrapEnvelope, type Server
 // Starting one Studio server inside a WSL distribution (phase 7 spec, 3.3):
 //
 //   1. `wsl.exe -d <distro> --cd ~ --exec sh -s` runs the launch script
-//      (`wsl-install.ts`, entry `server`), which either execs the server on
-//      the pinned Node or says what has to be installed first. Installs run,
-//      and the start is tried again, as the helper's are.
+//      (`wsl-install.ts`), which either execs the server on the pinned Node
+//      or says what has to be installed first. Installs run, and the start is
+//      tried again.
 //   2. The server says `boot` before it reads anything, naming its home and
 //      its own files. Only then is the envelope written, built for those
 //      paths, so the `sh` that exec'd the server cannot have read part of it,
@@ -28,7 +28,7 @@ import { SERVER_EXIT, type ServerBoot, type ServerBootstrapEnvelope, type Server
 
 export type WslServerStartDeps = {
   distro: string
-  spawnShell(): HelperProcess
+  spawnShell(): WslStdioProcess
   launchScript(): Promise<string>
   /** Installs what the launch script said is missing. Throws `WslSetupError`. */
   install(report: NeedReport): Promise<void>
@@ -121,7 +121,7 @@ class Attempt {
   private stderrBytes = Buffer.alloc(0)
   private stderrNote = ''
   exit: { code: number | null; signal: NodeJS.Signals | null } | null = null
-  constructor(readonly process: HelperProcess) {
+  constructor(readonly process: WslStdioProcess) {
     let buffer = ''
     // Decoded across chunk edges: a home or a folder named in a non-ASCII
     // script can split between two reads, and the path built from it with it.
@@ -193,7 +193,7 @@ class Attempt {
   }
 }
 
-function write(process: HelperProcess, frame: unknown): void {
+function write(process: WslStdioProcess, frame: unknown): void {
   if (process.stdin.destroyed || !process.stdin.writable) return
   process.stdin.write(`${JSON.stringify(frame)}\n`)
 }

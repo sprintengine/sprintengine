@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { afterEach, test } from 'vitest'
 
-import type { HelperProcess } from '../../main/hosts/wsl-helper-client'
+import type { WslStdioProcess } from '../../main/hosts/wsl-process'
 import { BRIDGE_READY, connectLoopback, openBridge } from './front-door-client'
 import {
   assertFrontDoorBindAddress,
@@ -236,7 +236,7 @@ test('the stdio bridge carries the proof and the bytes after it, through a real 
   const doors = await listeners(admitted, { loopback: false })
   assert.equal(doors.port, null)
   const home = shortTemp()
-  const spawnShell = (): HelperProcess =>
+  const spawnShell = (): WslStdioProcess =>
     spawn('sh', ['-s'], { cwd: home, env: { PATH: process.env.PATH, HOME: home }, stdio: ['pipe', 'pipe', 'pipe'] })
   // A profile that prints before the relay starts is read past, not taken as bytes.
   const script = `echo 'motd from a login profile'\nexec '${process.execPath}' '${BRIDGE}'`
@@ -255,7 +255,7 @@ test('the stdio bridge carries the proof and the bytes after it, through a real 
 test('the bridge refuses anything but a socket path, and the marker matches the relay', async () => {
   assert.ok(readFileSync(BRIDGE, 'utf8').includes(`const BRIDGE_READY = '${BRIDGE_READY}'`))
   const home = shortTemp()
-  const spawnShell = (): HelperProcess =>
+  const spawnShell = (): WslStdioProcess =>
     spawn('sh', ['-s'], { cwd: home, env: { PATH: process.env.PATH, HOME: home }, stdio: ['pipe', 'pipe', 'pipe'] })
   await assert.rejects(openBridge(spawnShell, 'exit 0', 'relative.sock'), /absolute Linux path/u)
   await assert.rejects(

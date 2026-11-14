@@ -17,7 +17,7 @@ import {
   type SshPromptRequest,
   type SshResolveResult,
 } from '../../../shared/ssh-environments'
-import { wslProfileId } from '../../hosts/wsl-helper-runtime'
+import { wslProfileId } from '../../hosts/wsl-tree-install'
 import { cliForConversationProvider } from '../../../shared/conversation-harness'
 import { SIGN_IN_FLOWS } from '../../../server/machine/machine-sign-in'
 import {

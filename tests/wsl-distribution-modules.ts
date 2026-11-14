@@ -1,23 +1,9 @@
-// Typed handles on the WSL helper's own modules, for the tests that exercise
-// them. The helper is plain Node that ships as `.mjs` under resources/ and
-// runs inside Linux, so the tests load it by path rather than through the
-// TypeScript build.
+// Typed handles on the plain-Node modules a WSL distribution's Studio runs for
+// the desktop (`src/server/wsl/distribution/`), for the tests that exercise
+// them by path, as they run inside Linux.
 
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-
-export const HELPER_DIR = join(process.cwd(), 'resources', 'wsl-helper')
-export const HELPER_ENTRY = join(HELPER_DIR, 'helper.mjs')
-
-export type FramesModule = {
-  PROTOCOL_VERSION: number
-  createLineDecoder(options: { maxLineBytes: number; onLine(line: string): void; onOverflow?(): void }): {
-    push(chunk: Buffer | string): void
-    pendingBytes(): number
-  }
-  encodeFrame(frame: unknown): string
-  decodeFrame(line: string): Record<string, unknown> | null
-}
 
 export type ProcRowLike = { pid: number; ppid: number; ticks: number; command: string }
 
@@ -96,13 +82,9 @@ export type CliDetectModule = {
   resolveBinary(binary: string, env: Record<string, string>): { path: string } | null
 }
 
-/** Where the libraries a WSL distribution's Studio runs for the desktop's terminals now live. */
+/** Where those modules live. */
 export const DISTRIBUTION_DIR = join(process.cwd(), 'src', 'server', 'wsl', 'distribution')
 
 export async function loadDistributionModule<T>(name: string): Promise<T> {
   return (await import(pathToFileURL(join(DISTRIBUTION_DIR, name)).href)) as T
-}
-
-export async function loadHelperModule<T>(relative: string): Promise<T> {
-  return (await import(pathToFileURL(join(HELPER_DIR, relative)).href)) as T
 }
