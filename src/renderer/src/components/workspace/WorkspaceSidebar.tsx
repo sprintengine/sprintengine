@@ -155,11 +155,7 @@ import {
   workspaceWokeAt,
 } from '../../utils/workspaceSnooze'
 import { workspaceRowEmphasis } from '../../utils/workspaceRowEmphasis'
-import {
-  useScheduledAgents,
-  useScheduledAgentsHeld,
-  useScheduledAgentsPause,
-} from '../../store/scheduledAgentsStore'
+import { useScheduledAgents, useScheduledAgentsHeld, useScheduledAgentsPause } from '../../store/scheduledAgentsStore'
 import { showToast } from '../../store/toastStore'
 import { regenerateStoreWorkspaceTitle } from '../../store/generatedWorkspaceTitle'
 import { inWorkingSection } from './sidebar/workingSection'

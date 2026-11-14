@@ -60,22 +60,21 @@ export function createMachineSchedules(deps: {
   const list: MachineSchedules['list'] = async () => {
     const routes = [...new Set(deps.routes())]
     const read = await Promise.all(
-      routes.map(
-        (route): Promise<{ schedules: MachineSchedule[] } | { error: string }> =>
-          within(
-            (async () => {
-              const reached = await reach(route)
-              if (!reached.ok) return { error: reached.message }
-              try {
-                const listed = await reached.client.request('schedules.list', {})
-                return { schedules: listed.schedules.map((schedule) => ({ route, machine: reached.name, schedule })) }
-              } catch (error) {
-                return { error: `${reached.name}: ${messageOf(error)}` }
-              }
-            })(),
-            deps.readTimeoutMs ?? MACHINE_READ_MS,
-            () => ({ error: `${route} did not answer in time.` }),
-          ),
+      routes.map((route): Promise<{ schedules: MachineSchedule[] } | { error: string }> =>
+        within(
+          (async () => {
+            const reached = await reach(route)
+            if (!reached.ok) return { error: reached.message }
+            try {
+              const listed = await reached.client.request('schedules.list', {})
+              return { schedules: listed.schedules.map((schedule) => ({ route, machine: reached.name, schedule })) }
+            } catch (error) {
+              return { error: `${reached.name}: ${messageOf(error)}` }
+            }
+          })(),
+          deps.readTimeoutMs ?? MACHINE_READ_MS,
+          () => ({ error: `${route} did not answer in time.` }),
+        ),
       ),
     )
     return {
@@ -132,8 +131,8 @@ export function machineSchedulesOf(core: {
 }
 
 /** `machineSchedules` for a backends object, where there are any. */
-export function withDefinedMachineSchedules(
-  machineSchedules: MachineSchedules | undefined,
-): { machineSchedules?: MachineSchedules } {
+export function withDefinedMachineSchedules(machineSchedules: MachineSchedules | undefined): {
+  machineSchedules?: MachineSchedules
+} {
   return machineSchedules ? { machineSchedules } : {}
 }

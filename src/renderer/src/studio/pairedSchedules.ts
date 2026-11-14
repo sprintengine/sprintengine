@@ -63,7 +63,10 @@ function changeRefusal<T>(answer: EnvironmentAnswer<T>, machineName: string, don
         ...answer,
         message: `${machineName} did not answer in time. It may still be ${done} there once it answers; trying again does not do it twice.`,
       }
-    : { ...answer, message: `${machineName} is not connected, so nothing was ${done} there. Try again once it is back.` }
+    : {
+        ...answer,
+        message: `${machineName} is not connected, so nothing was ${done} there. Try again once it is back.`,
+      }
 }
 
 const nameOf = (machine: PairedMachine | EnvironmentTarget) => ('route' in machine ? machine.name : machine.machineName)

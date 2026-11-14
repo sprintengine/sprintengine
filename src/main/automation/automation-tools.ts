@@ -2795,7 +2795,10 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('runNow' in service)) return service
       const agent = service.get(id)
-      if (!agent) return (await onMachine(id, 'run', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+      if (!agent)
+        return (
+          (await onMachine(id, 'run', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        )
       const refusal = refuseScheduledAgentRun(
         agent.permissionPreset,
         launchPermissionCeiling(context, backends.resolveAgentPermissionPreset),
@@ -2827,7 +2830,9 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       const service = scheduledAgentsOrFailure()
       if (!('pause' in service)) return service
       if (!service.get(id))
-        return (await onMachine(id, 'pause', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        return (
+          (await onMachine(id, 'pause', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        )
       const paused = await service.pause(id)
       if (!paused.ok) return failure('scheduled_agent_invalid', paused.message)
       return success({ scheduledAgent: scheduledAgentForCaller(paused.agent) })
@@ -2856,7 +2861,9 @@ export function createAutomationTools(backends: AutomationBackends): McpToolRegi
       if (!('resume' in service)) return service
       const agent = service.get(id)
       if (!agent)
-        return (await onMachine(id, 'resume', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        return (
+          (await onMachine(id, 'resume', context)) ?? failure('unknown_scheduled_agent', `No scheduled agent "${id}".`)
+        )
       // Resumed, it starts runs on its own preset with nobody watching, as
       // schedule.run would start one now: held to the same ceiling.
       const refusal = refuseScheduledAgentRun(

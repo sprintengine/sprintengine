@@ -264,18 +264,15 @@ export async function withEnvironmentStudio<T>(
         return work(client)
       }),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () => {
-            over = true
-            // Never connected in that time, a connected-only ask asked nothing.
-            reject(
-              options.onlyWhenConnected && !started
-                ? away()
-                : new StudioError('unavailable', `${target.name} did not answer in time.`),
-            )
-          },
-          options.timeoutMs ?? ASK_TIMEOUT_MS,
-        )
+        timer = setTimeout(() => {
+          over = true
+          // Never connected in that time, a connected-only ask asked nothing.
+          reject(
+            options.onlyWhenConnected && !started
+              ? away()
+              : new StudioError('unavailable', `${target.name} did not answer in time.`),
+          )
+        }, options.timeoutMs ?? ASK_TIMEOUT_MS)
       }),
     ])
   } finally {
