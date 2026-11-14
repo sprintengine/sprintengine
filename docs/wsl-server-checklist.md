@@ -343,6 +343,14 @@ distribution's own Studio server. Run every step that is listed.
     **Expect:** nothing the terminal started is left running. Start the app
     again with a stray session left on purpose (`kill -9` the app instead of
     quitting): the first WSL launch after the restart ends it.
+12. Turn on a Studio skill in Settings (for example the canvas one), then
+    start a Claude agent in a WSL terminal. **distro:**
+    `ls ~/.local/share/sprintengine-studio/data/terminal-plugin/sprintengine-studio/skills/`
+    and `cat ~/.sprintengine/bin/current`.
+    **Expect:** the copy holds that skill and its hooks name the server's own
+    Node; the launcher's `payload=` names the server tree's `resources`; in the
+    agent, `/backlog` is offered and its status line shows. Turn the skill off
+    and start another agent: the copy no longer holds it.
 
 ## Throughput
 

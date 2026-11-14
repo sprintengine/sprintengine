@@ -4,8 +4,10 @@ import { join } from 'node:path'
 import type {
   StudioLaunchFile,
   StudioSubtreeLiveReason,
+  StudioTerminalPluginCopy,
   StudioTerminalProcessesAsk,
 } from '../../../packages/studio-protocol/src/environment-access'
+import { createDistributionPluginCopies } from './distribution-plugin-copy'
 import { endAllSessions, snapshot, survivorPids } from './distribution/proc.mjs'
 import { clearSessionDir, ensureSessionDir, removeSessionEntries, writeSessionFiles } from './distribution/sessions.mjs'
 import { ensurePrivateDir, ensureSocketDir } from './distribution/sockets.mjs'
@@ -22,7 +24,10 @@ import { ensurePrivateDir, ensureSocketDir } from './distribution/sockets.mjs'
 //   - each startup script records its shell's Linux pid in a private
 //     directory, which the idle reaper's verdicts and the survivor kill read
 //     against /proc (`distribution/proc.mjs`): closing `wsl.exe` does not
-//     reliably end the Linux processes under it.
+//     reliably end the Linux processes under it;
+//   - the app's Claude plugin copy a terminal's agent loads is built here from
+//     this server's own resources and written under its data directory
+//     (`distribution-plugin-copy.ts`, `environment.pluginCopy`).
 //
 // Both directories are said to the desktop in the `ready` frame, so the
 // startup scripts it writes name them.
@@ -36,11 +41,19 @@ export type DistributionTerminalHost = {
   processes(
     ask: StudioTerminalProcessesAsk,
   ): Promise<{ verdicts?: Record<string, StudioSubtreeLiveReason | null>; killed?: number[] }>
+  /** The plugin copy with the Studio skills the person chose, written if it changed. */
+  pluginCopy(enabledSkills: readonly string[]): Promise<StudioTerminalPluginCopy>
 }
 
 export type DistributionTerminalHostOptions = {
   /** The desktop profile this server serves: its directories are that profile's own. */
   profile: string
+  /**
+   * What the plugin copy is built from and for: this server's resources
+   * directory (null: none, so no copy), its data directory, where the copy is
+   * written and its gateway's discovery file is, and its agent-state socket.
+   */
+  plugin: { resourcesDir: string | null; dataDir: string; agentStateSocketPath: string; nodeCommand?: string }
   home?: string
   env?: Record<string, string | undefined>
   uid?: number
@@ -63,10 +76,12 @@ export function createDistributionTerminalHost(options: DistributionTerminalHost
     ...(options.runtimeBase ? { base: options.runtimeBase } : {}),
   })
   const pidDir = ensurePrivateDir(join(runtimeDir, 'sessions'), uid)
+  const plugins = createDistributionPluginCopies(options.plugin)
 
   return {
     sessionDir,
     pidDir,
+    pluginCopy: (enabledSkills) => plugins.ensure(enabledSkills),
     launchFiles({ write, remove }) {
       if (remove) removeSessionEntries(sessionDir, remove)
       return { paths: write ? writeSessionFiles(sessionDir, write) : [] }

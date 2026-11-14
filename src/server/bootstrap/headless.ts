@@ -62,11 +62,20 @@ export function headlessServerOptions(
  * launch says so.
  */
 function distributionTerminals(
-  profile: string,
+  envelope: ServerBootstrapEnvelope & { wsl: NonNullable<ServerBootstrapEnvelope['wsl']> },
   log: (message: string) => void,
 ): { terminalHost?: DistributionTerminalHost } {
   try {
-    return { terminalHost: createDistributionTerminalHost({ profile }) }
+    return {
+      terminalHost: createDistributionTerminalHost({
+        profile: envelope.wsl.profile,
+        plugin: {
+          resourcesDir: envelope.paths.resourcesDir,
+          dataDir: envelope.dataDir,
+          agentStateSocketPath: resolveAgentStateSocketPath(envelope.dataDir),
+        },
+      }),
+    }
   } catch (error) {
     log(`WSL terminals cannot start here: ${error instanceof Error ? error.message : String(error)}`)
     return {}
@@ -198,7 +207,7 @@ export const startHeadlessServer: ServerStart = async ({ envelope, log, requestE
   // Made here, not with the options: it makes its private directories.
   const serverOptions = {
     ...headlessServerOptions(envelope, log),
-    ...(envelope.wsl ? distributionTerminals(envelope.wsl.profile, log) : {}),
+    ...(envelope.wsl ? distributionTerminals({ ...envelope, wsl: envelope.wsl }, log) : {}),
   }
   const server = await startStudioServer({
     ...serverOptions,

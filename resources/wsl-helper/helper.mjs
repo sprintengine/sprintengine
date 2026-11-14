@@ -15,7 +15,8 @@
 // (`src/server/wsl/agent-state-relay.ts`), and an agent's MCP bridge reaches
 // that server's gateway (`src/server/wsl/wsl-launch-tokens.ts`), which also
 // writes each launch's startup script and reads and ends the processes a
-// session leaves (`src/server/wsl/distribution-terminal-host.ts`). The helper
+// session leaves, and builds the app's plugin copy its agent loads
+// (`src/server/wsl/distribution-terminal-host.ts`). The helper
 // answers main's questions about the distribution that are left: which CLIs
 // are installed, the home folder, and running a program or git, and watches
 // git directories for the Git pane, because a watch Windows places on a
@@ -34,14 +35,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createCliDetector } from './lib/cli-detect.mjs'
-import { ensureTree } from './lib/files.mjs'
 import { createLineDecoder, decodeFrame, encodeFrame, PROTOCOL_VERSION } from './lib/frames.mjs'
 import { captureLoginEnv } from './lib/login-env.mjs'
 import { checkRunRequest, childEnv, decodeStdin, killAllChildren, runArgv } from './lib/run.mjs'
 
-// Main's own frames can carry a plugin copy, so the cap is generous; it is
-// still a cap, because a broken writer should end the helper rather than fill
-// its memory.
+// Main's own frames can carry a patch on git's stdin, so the cap is generous;
+// it is still a cap, because a broken writer should end the helper rather than
+// fill its memory.
 const MAX_MAIN_LINE_BYTES = 64 * 1024 * 1024
 const HELLO_TIMEOUT_MS = 30_000
 // The Git pane watches a handful of directories per open checkout.
@@ -154,9 +154,6 @@ const methods = {
     const stdin = decodeStdin(params.stdinB64)
     if (stdin === null) throw new Error('stdinB64 must be base64 text.')
     return runArgv({ ...request, env: childEnv(await loginEnv(), params.env), stdin })
-  },
-  async 'files.ensureTree'(params) {
-    return ensureTree({ appDir, name: params?.name, digest: params?.digest, files: params?.files })
   },
   async 'watch.add'(params) {
     const path = params?.path

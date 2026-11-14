@@ -6,7 +6,11 @@ import type { WslHelperClient, WslHelperInfo } from '../src/main/hosts/wsl-helpe
 import type { WslSetupError } from '../src/main/hosts/wsl-setup-error'
 import type { WslDistributionFacts, WslDistributionLink } from '../src/main/hosts/wsl-host'
 import type { SubtreeLiveReason } from '../src/main/terminal-subtree-probe'
-import type { StudioLaunchFile, StudioTerminalProcessesAsk } from '../packages/studio-protocol/src/environment-access'
+import type {
+  StudioLaunchFile,
+  StudioTerminalPluginCopy,
+  StudioTerminalProcessesAsk,
+} from '../packages/studio-protocol/src/environment-access'
 import type { GatewayLaunchIdentity } from '../src/server/core/gateway-launch-tokens'
 
 export const STUB_HELPER_INFO: WslHelperInfo = {
@@ -90,6 +94,27 @@ export const STUB_SERVER_DATA_DIR = '/home/dev/.local/share/sprintengine-studio/
 export const STUB_SESSION_DIR = '/home/dev/.local/share/sprintengine-studio/sessions/abc123def456'
 export const STUB_PID_DIR = '/run/user/1000/sprintengine/abc123def456/sessions'
 
+/** The Node that server runs on, and its tree's resources (which hold `hooks/` and `automation/`). */
+export const STUB_SERVER_NODE = '/home/dev/.local/share/sprintengine-studio/runtime/node-v24.21.0/bin/node'
+export const STUB_SERVER_RESOURCES = '/home/dev/.local/share/sprintengine-studio/server-0.4.0/resources'
+
+/** What a stand-in server answers `pluginCopy` with unless told otherwise. */
+export const STUB_PLUGIN_COPY: StudioTerminalPluginCopy = {
+  pluginDirs: [`${STUB_SERVER_DATA_DIR}/terminal-plugin/sprintengine-studio`],
+  skillPluginDirs: { backlog: `${STUB_SERVER_DATA_DIR}/terminal-plugin/launch-skills/backlog` },
+  statusLineScriptPath: `${STUB_SERVER_DATA_DIR}/terminal-plugin/sprintengine-studio/hooks/status-line.mjs`,
+}
+
+/** The facts a stand-in distribution's server gives a launch. */
+export const STUB_SERVER_FACTS = {
+  agentStateSocket: STUB_AGENT_STATE_SOCKET,
+  dataDir: STUB_SERVER_DATA_DIR,
+  sessionDir: STUB_SESSION_DIR,
+  pidDir: STUB_PID_DIR,
+  nodePath: STUB_SERVER_NODE,
+  resourcesDir: STUB_SERVER_RESOURCES,
+} as const
+
 export type StubTerminalHostHandlers = {
   launchFiles?: (params: { write?: StudioLaunchFile[]; remove?: string[] }) => { paths: string[] }
   processes?: (
@@ -97,6 +122,7 @@ export type StubTerminalHostHandlers = {
   ) =>
     | { verdicts?: Record<string, SubtreeLiveReason | null>; killed?: number[] }
     | Promise<{ verdicts?: Record<string, SubtreeLiveReason | null>; killed?: number[] }>
+  pluginCopy?: (enabledSkills: readonly string[]) => StudioTerminalPluginCopy | Promise<StudioTerminalPluginCopy>
 }
 
 export type StubDistributionLink = WslDistributionLink & {
@@ -105,19 +131,14 @@ export type StubDistributionLink = WslDistributionLink & {
   tokens: Map<string, GatewayLaunchIdentity>
   connects: () => number
   /** What its terminal host was asked, in order. */
-  asked: Array<{ method: 'launchFiles' | 'processes'; params: unknown; started: boolean }>
+  asked: Array<{ method: 'launchFiles' | 'processes' | 'pluginCopy'; params: unknown; started: boolean }>
   /** Whether its server runs: one that does not is reached only with `start`. */
   running: boolean
 }
 
 /** A stand-in for the core's WSL servers, as a WSL host reaches them: holds, tokens and terminal host asks recorded. */
 export function stubWslDistributionLink(
-  facts: () => WslDistributionFacts = () => ({
-    agentStateSocket: STUB_AGENT_STATE_SOCKET,
-    dataDir: STUB_SERVER_DATA_DIR,
-    sessionDir: STUB_SESSION_DIR,
-    pidDir: STUB_PID_DIR,
-  }),
+  facts: () => WslDistributionFacts = () => ({ ...STUB_SERVER_FACTS }),
   handlers: StubTerminalHostHandlers = {},
 ): StubDistributionLink {
   const holds = new Set<string>()
@@ -154,6 +175,10 @@ export function stubWslDistributionLink(
         processes: async (ask) => {
           link.asked.push({ method: 'processes', params: ask, started: start })
           return handlers.processes ? await handlers.processes(ask) : {}
+        },
+        pluginCopy: async (enabledSkills) => {
+          link.asked.push({ method: 'pluginCopy', params: [...enabledSkills], started: start })
+          return handlers.pluginCopy ? await handlers.pluginCopy(enabledSkills) : STUB_PLUGIN_COPY
         },
       }
     },

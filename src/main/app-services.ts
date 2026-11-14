@@ -437,17 +437,8 @@ export function createAppServices(
     userDataDir: app.getPath('userData'),
     resources: () => {
       const helperDir = getBundledResourceDir('wsl-helper')
-      const hooksDir = getBundledResourceDir('hooks')
-      const automationDir = getBundledResourceDir('automation')
-      return helperDir && hooksDir && automationDir ? { helperDir, hooksDir, automationDir } : null
+      return helperDir ? { helperDir } : null
     },
-    pluginSources: () => ({
-      templateRoot: getBundledStudioPluginRoot(),
-      reporterSourcePath: getBundledAgentStateReporterPath(),
-      statusLineSourcePath: getBundledStatusLineForwarderPath(),
-      enabledSkillDirs: studioAreaSkillStore.enabledSkillDirs(),
-      launchSkillsSourceRoot: getBundledResourceDir(BUILTIN_SKILLS_RESOURCE_DIR),
-    }),
     // What a launch knows of that machine's CLIs is the core's to forget.
     onPathsChanged: (distro) => {
       if (server) server.rpc.emit(SERVER_EVENTS.cliPathsChanged, { hostId: wslHostId(distro) })

@@ -251,7 +251,7 @@ export type StudioRpcServerOptions = {
   adoption?: EnvironmentAdoption
   work?: () => StudioEnvironmentWork
   /** What a WSL distribution does for the desktop's terminals. Advertised as `environment-terminal-host` only when given. */
-  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
+  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
   /** The desktop's WSL terminal agents' launch tokens, by digest. Advertised as `environment-launch-tokens` only when given. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal. Advertised as `provider-sign-in-flow` only when given. */

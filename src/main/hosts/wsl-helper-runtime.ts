@@ -31,16 +31,13 @@ import {
   type NeedReport,
 } from './wsl-install'
 import { ensureWslNodeArchive, wslNodeArch, wslNodePackage, WSL_NODE_VERSION } from './wsl-node-runtime'
-import type { WslPluginSources } from './wsl-plugin-copy'
 import { WslSetupError } from './wsl-setup-error'
 
 export type WslHelperEnvironment = {
   appVersion: string
   userDataDir: string
-  /** `resources/wsl-helper`, `resources/hooks` and `resources/automation` in this build. */
-  resources: () => { helperDir: string; hooksDir: string; automationDir: string } | null
-  /** What the plugin copy for a distribution is built from. */
-  pluginSources: () => WslPluginSources
+  /** `resources/wsl-helper` in this build. */
+  resources: () => { helperDir: string } | null
   onPathsChanged: (distro: string) => void
   fetch?: (url: string, init?: { signal?: AbortSignal }) => Promise<Response>
   log?: (message: string) => void
@@ -51,10 +48,6 @@ let environment: WslHelperEnvironment | null = null
 export function configureWslHelpers(next: WslHelperEnvironment | null): void {
   environment = next
   payloadCache = null
-}
-
-export function wslHelperEnvironment(): WslHelperEnvironment | null {
-  return environment
 }
 
 /** A profile's id for its socket directory: the same hash its own sockets use. */
@@ -75,8 +68,6 @@ function appPayload(env: WslHelperEnvironment): AppPayload {
   }
   payloadCache = buildAppPayload([
     { dir: dirs.helperDir, into: 'wsl-helper', filter: (path) => path.endsWith('.mjs') },
-    { dir: dirs.hooksDir, into: 'hooks', filter: (path) => path.endsWith('.mjs') && !path.includes('/') },
-    { dir: dirs.automationDir, into: 'automation', filter: (path) => path === 'mcp-stdio-bridge.mjs' },
   ])
   return payloadCache
 }

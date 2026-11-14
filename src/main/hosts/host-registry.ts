@@ -44,6 +44,8 @@ export type HostRegistryDeps = {
    * launch is prepared in this process.
    */
   distribution?: WslDistributionLink
+  /** The Studio skills the person chose, by id: what a WSL terminal agent's plugin copy carries. */
+  enabledSkills?: () => readonly string[]
 }
 
 export type HostListing = HostsListResult
@@ -92,6 +94,7 @@ export function createHostRegistry(deps: HostRegistryDeps): HostRegistry {
       readSettings,
       listed: () => knownListing()?.distros?.find((entry) => entry.name === distro),
       ...(deps.distribution ? { distribution: deps.distribution } : {}),
+      ...(deps.enabledSkills ? { enabledSkills: deps.enabledSkills } : {}),
       ...(deps.createWslHelper ? { helper: deps.createWslHelper(distro) } : {}),
     })
     wslHosts.set(distro, host)

@@ -255,8 +255,8 @@ export type StudioRpcRouterOptions = {
   adoption?: EnvironmentAdoption
   /** What stopping this Studio would end (`environment.work`); without it, that method is answered `unavailable`. */
   work?: () => StudioEnvironmentWork
-  /** What a WSL distribution does for the desktop's WSL terminals (`environment.launchFiles`, `.terminalProcesses`). */
-  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes'>
+  /** What a WSL distribution does for the desktop's WSL terminals (`environment.launchFiles`, `.terminalProcesses`, `.pluginCopy`). */
+  terminalHost?: Pick<DistributionTerminalHost, 'launchFiles' | 'processes' | 'pluginCopy'>
   /** The desktop's WSL terminal agents' launch tokens (`environment.launchTokens`); without it, answered `unavailable`. */
   launchTokens?: (change: { tokens: StudioLaunchTokenChange[]; replace?: boolean }) => number
   /** A CLI's login on this machine with no terminal (`providers.signIn*`); without it, those are answered `unavailable`. */
@@ -2125,6 +2125,14 @@ export function createStudioRpcRouter(options: StudioRpcRouterOptions): StudioRp
     'environment.terminalProcesses': async (params) => {
       if (!options.terminalHost) return unserved('environment.terminalProcesses')
       return { ok: true, result: await options.terminalHost.processes(params) }
+    },
+    'environment.pluginCopy': async (params) => {
+      if (!options.terminalHost) return unserved('environment.pluginCopy')
+      try {
+        return { ok: true, result: await options.terminalHost.pluginCopy(params.enabledSkills) }
+      } catch (error) {
+        return refuse('unavailable', error instanceof Error ? error.message : String(error))
+      }
     },
     'environment.launchTokens': (params) => {
       if (!options.launchTokens) return unserved('environment.launchTokens')

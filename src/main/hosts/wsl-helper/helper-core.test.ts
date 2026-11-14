@@ -1,9 +1,9 @@
 // The WSL helper's pure pieces, run as plain Node on macOS and Linux: the
 // frame codec, the /proc readers against a fixture tree, the environment kept
-// from a login shell, the file tree writer, and the argv runner.
+// from a login shell, and the argv runner.
 
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, test } from 'vitest'
@@ -12,7 +12,6 @@ import {
   loadDistributionModule,
   loadHelperModule,
   type CliDetectModule,
-  type FilesModule,
   type FramesModule,
   type LoginEnvModule,
   type ProcModule,
@@ -25,7 +24,6 @@ let temp = ''
 let frames: FramesModule
 let proc: ProcModule
 let loginEnv: LoginEnvModule
-let files: FilesModule
 let run: RunModule
 let sockets: SocketsModule
 let detect: CliDetectModule
@@ -35,7 +33,6 @@ beforeAll(async () => {
   frames = await loadHelperModule<FramesModule>('lib/frames.mjs')
   proc = await loadDistributionModule<ProcModule>('proc.mjs')
   loginEnv = await loadHelperModule<LoginEnvModule>('lib/login-env.mjs')
-  files = await loadHelperModule<FilesModule>('lib/files.mjs')
   run = await loadHelperModule<RunModule>('lib/run.mjs')
   sockets = await loadDistributionModule<SocketsModule>('sockets.mjs')
   detect = await loadHelperModule<CliDetectModule>('lib/cli-detect.mjs')
@@ -253,36 +250,7 @@ test("the login shell is the person's from the password database, bash when it c
   assert.equal(loginEnv.loginShell(4242, passwd), '/bin/bash')
 })
 
-// ── Trees, argv runs, sockets, detection ─────────────────────────────────────
-
-test('a tree lands whole with its marker, is skipped when current, and refuses a path that leaves it', () => {
-  const appDir = join(temp, 'app')
-  mkdirSync(appDir, { recursive: true })
-  const digest = 'a'.repeat(64)
-  const tree = [
-    { path: 'sprintengine-studio/hooks/hooks.json', b64: Buffer.from('{"hooks":{}}').toString('base64') },
-    { path: 'studio-skills/skills/x/SKILL.md', b64: Buffer.from('# x').toString('base64') },
-  ]
-  assert.deepEqual(files.ensureTree({ appDir, name: 'plugin', digest }), {
-    root: join(appDir, 'plugin'),
-    current: false,
-  })
-  assert.equal(files.ensureTree({ appDir, name: 'plugin', digest, files: tree }).current, true)
-  assert.equal(readFileSync(join(appDir, 'plugin', 'studio-skills/skills/x/SKILL.md'), 'utf8'), '# x')
-  assert.equal(readFileSync(join(appDir, 'plugin', '.ready'), 'utf8'), digest)
-  assert.equal(statSync(join(appDir, 'plugin', 'sprintengine-studio/hooks/hooks.json')).mode & 0o077, 0)
-  assert.equal(files.ensureTree({ appDir, name: 'plugin', digest }).current, true)
-  // A new digest replaces the tree wholesale.
-  files.ensureTree({ appDir, name: 'plugin', digest: 'b'.repeat(64), files: [tree[0]] })
-  assert.throws(() => statSync(join(appDir, 'plugin', 'studio-skills')))
-  for (const bad of ['../x', '/etc/passwd', 'a/../../x', 'a\\b', '', 'a//b']) {
-    assert.equal(files.checkTreePath(bad), false, bad)
-    assert.throws(() =>
-      files.ensureTree({ appDir, name: 'plugin', digest: 'c'.repeat(64), files: [{ path: bad, b64: '' }] }),
-    )
-  }
-  assert.throws(() => files.ensureTree({ appDir, name: '../up', digest }), /plain token/u)
-})
+// ── Argv runs, sockets, detection ─────────────────────────────────────
 
 test('a run is an argv with a deadline that ends the whole process group', async () => {
   assert.match(run.checkRunRequest({ argv: 'ls -la', timeoutMs: 1 }) ?? '', /array/u)

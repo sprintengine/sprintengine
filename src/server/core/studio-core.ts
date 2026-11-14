@@ -281,6 +281,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   )
   const hosts = createHostRegistry({
     readHostSettings: () => agentLaunchSettings.get().hosts,
+    // A WSL terminal agent's plugin copy carries the Studio skills chosen here.
+    enabledSkills: () => agents.services.areaSkills.enabledSkillDirs(),
     server: (distro) => {
       const servers = wslServersForHosts
       if (!servers) return undefined
@@ -304,6 +306,8 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
           dataDir: connection.dataDir,
           sessionDir: connection.terminals.sessionDir,
           pidDir: connection.terminals.pidDir,
+          nodePath: connection.terminals.nodePath,
+          resourcesDir: connection.terminals.resourcesDir,
         }
       },
       terminalHost: async (distro, { start }) => {

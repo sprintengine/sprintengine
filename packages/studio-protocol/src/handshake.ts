@@ -207,10 +207,11 @@ export const STUDIO_ENVIRONMENT_ADOPT_CAPABILITY = 'environment-adopt' as const
 export const STUDIO_ENVIRONMENT_LAUNCH_TOKENS_CAPABILITY = 'environment-launch-tokens' as const
 
 /**
- * `environment.launchFiles` and `environment.terminalProcesses`
- * (`environment-access.ts`): a WSL terminal's startup files written inside the
- * distribution, and the processes its sessions leave, read and ended there,
- * for the desktop whose `wsl.exe` ptys they are.
+ * `environment.launchFiles`, `environment.terminalProcesses` and
+ * `environment.pluginCopy` (`environment-access.ts`): a WSL terminal's startup
+ * files written inside the distribution, the processes its sessions leave,
+ * read and ended there, and the app's plugin copy its agent loads, built
+ * there, for the desktop whose `wsl.exe` ptys they are.
  */
 export const STUDIO_ENVIRONMENT_TERMINAL_HOST_CAPABILITY = 'environment-terminal-host' as const
 

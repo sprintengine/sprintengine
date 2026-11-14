@@ -87,7 +87,6 @@ async function harness(terminal: StubTerminalHostHandlers = {}): Promise<Harness
   const spawned: Harness['spawned'] = []
   const helper = stubWslHelper('Ubuntu', {
     home: () => ({ home: '/home/dev' }),
-    'files.ensureTree': () => ({ current: true }),
   })
   const distribution = stubWslDistributionLink(undefined, terminal)
   current = { spawned, helper, distribution }
