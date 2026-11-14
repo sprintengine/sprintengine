@@ -95,7 +95,11 @@ export type WorkspaceSyncCommand =
       payload: {
         workspaceId: WorkspaceId
         agentId: AgentId
-        /** `null` removes the agent from the roster. */
+        /**
+         * `null` removes the agent from the roster. In a patch, a field set to
+         * `null` clears it: the wire is JSON, which drops a field set to
+         * `undefined`, so a sender spells a clear with `agentPatchForWire`.
+         */
         patch: Partial<AgentState> | null
         configEditedAt: number
       }
@@ -448,7 +452,28 @@ function applyWorkspaceAgentPatch(
   }
   const agent = findOrCreateAgent(state, payload.workspaceId, payload.agentId)
   if (!agent) return
-  Object.assign(agent, payload.patch, { configEditedAt: payload.configEditedAt })
+  applyAgentPatch(agent, payload.patch)
+  agent.configEditedAt = payload.configEditedAt
+}
+
+/**
+ * An agent patch as it travels: each field cleared with `undefined` spelled
+ * `null`, which JSON keeps. Without it a clear never reaches the registry, and
+ * the stale value comes back with the next snapshot (a restart, a reconnect).
+ */
+export function agentPatchForWire(patch: Partial<AgentState>): Partial<AgentState> {
+  const wire: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(patch)) wire[key] = value === undefined ? null : value
+  return wire as Partial<AgentState>
+}
+
+/** Apply an agent patch to an agent record: a field `null` or `undefined` in it is cleared. */
+export function applyAgentPatch(agent: AgentState, patch: Partial<AgentState>): void {
+  const record = agent as unknown as Record<string, unknown>
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null || value === undefined) delete record[key]
+    else record[key] = value
+  }
 }
 
 function removeWorkspaceFromState(state: WorkspaceSyncState, workspaceId: WorkspaceId, timestamp: number): void {

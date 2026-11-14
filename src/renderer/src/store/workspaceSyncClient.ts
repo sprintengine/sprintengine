@@ -11,6 +11,7 @@ import type {
   WorkspaceSyncEvent,
   WorkspaceSyncSnapshot,
 } from '../../../shared/workspace-sync'
+import { agentPatchForWire } from '../../../shared/workspace-sync'
 import type { AgentCli, AgentId, AgentState, Workspace, WorkspaceId, WorkspaceWindowId } from '../types/workspace'
 import { workspaceSyncApi, workspaceSyncReachable, type WorkspaceSyncApi } from '../studio/workspaceSync'
 
@@ -685,7 +686,12 @@ export function createWorkspaceSyncClient(deps: WorkspaceSyncClientDependencies)
   ): Promise<void> =>
     dispatchCommand({
       type: 'workspace.update_agent',
-      payload: { workspaceId, agentId, patch, configEditedAt: Date.now() },
+      payload: {
+        workspaceId,
+        agentId,
+        patch: patch === null ? null : agentPatchForWire(patch),
+        configEditedAt: Date.now(),
+      },
     })
 
   const dispatchRemoveWorkspace = (workspaceId: WorkspaceId): Promise<void> =>

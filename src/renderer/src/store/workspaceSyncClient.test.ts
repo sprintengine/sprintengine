@@ -277,7 +277,11 @@ test('workspaceSyncClient', async () => {
 
   // A bus that mirrors the Studio's registry methods: dispatch goes through one shared
   // service; accepted events reach every window, the source's included.
-  function createBus(snapshot: WorkspaceSyncSnapshot) {
+  //
+  // `json` carries every command, event and snapshot as the Studio protocol's
+  // socket does: through JSON, which drops a field set to `undefined`.
+  function createBus(snapshot: WorkspaceSyncSnapshot, { json = false }: { json?: boolean } = {}) {
+    const wire = <T>(value: T): T => (json ? (JSON.parse(JSON.stringify(value)) as T) : value)
     // The bus reads and writes through the registry, so a seeded test bus is a
     // seeded registry — `initialSnapshot` went with the non-authoritative mirror.
     const registry = createWorkspaceRegistryService({
@@ -299,14 +303,14 @@ test('workspaceSyncClient', async () => {
       return {
         workspaceSyncDispatch: (command: WorkspaceSyncCommand) => {
           dispatchCount += 1
-          const result = service.dispatch({ command, sourceWindowId: windowId })
+          const result = wire(service.dispatch({ command: wire(command), sourceWindowId: windowId }))
           // As the protocol's `workspaceSync.events` does: every window hears
           // it, the one that made it included, and here before its own answer
           // (the harder order), which it then takes as already applied.
           if (result.ok) for (const set of listeners.values()) for (const cb of set) cb(result.event)
           return Promise.resolve(result)
         },
-        workspaceSyncGetSnapshot: () => Promise.resolve(service.getSnapshot()),
+        workspaceSyncGetSnapshot: () => Promise.resolve(wire(service.getSnapshot())),
         workspaceSyncGetEventsAfter: (sequence: number) => Promise.resolve(service.getEventsAfter(sequence)),
         onWorkspaceSyncEvent: (cb: (event: WorkspaceSyncEvent) => void) => {
           const set = listeners.get(windowId) ?? new Set()
@@ -319,6 +323,7 @@ test('workspaceSyncClient', async () => {
 
     return {
       makeApi,
+      snapshot: () => wire(service.getSnapshot()),
       listenerCount: (windowId: string) => listeners.get(windowId)?.size ?? 0,
       get dispatchCount() {
         return dispatchCount
@@ -971,6 +976,45 @@ test('workspaceSyncClient', async () => {
     console.log('workspaceSyncClient.test.ts: a stale snapshot never clobbers a newer applied event — ok')
   }
 
+  // A field a window clears (`undefined`) is cleared in the registry, over a
+  // JSON wire too, and so in the snapshot a restarted or reconnected window
+  // reads. A New chat's worktree wait that outlived its worktree came back on
+  // every restart as "The worktree couldn't be made".
+  async function aClearedAgentFieldReachesTheRegistry(): Promise<void> {
+    const seeded = seedSnapshot()
+    seeded.state.workspaces[0]!.agents = {
+      chat: {
+        id: 'chat',
+        name: 'Chat',
+        chatPendingWorktree: { name: 'named-one', projectFolder: '/data/projects/demo' },
+        chatStartupPrompt: 'first words',
+        cliLastExitCode: 0,
+      } as unknown as AgentState,
+    }
+    const bus = createBus(seeded, { json: true })
+    const store = createFakeStore([windowState('A', ['wsA1', 'wsA2'], 'wsA1')], 'wsA1')
+    const client = createWorkspaceSyncClient(storeDeps(store, 'A', bus.makeApi('A')))
+    const stop = client.start()
+    await flush()
+
+    await client.dispatchUpdateWorkspaceAgent('wsA1', 'chat', {
+      chatPendingWorktree: undefined,
+      chatStartupPrompt: undefined,
+      name: 'Renamed',
+    })
+    await flush()
+
+    const agent = bus.snapshot().state.workspaces.find((each) => each.id === 'wsA1')!.agents.chat!
+    assert.equal('chatPendingWorktree' in agent, false, 'the cleared worktree wait is gone from the registry')
+    assert.equal('chatStartupPrompt' in agent, false, 'the cleared first message is gone from the registry')
+    assert.equal(agent.name, 'Renamed', 'a field set beside the clears is written')
+    assert.equal(agent.cliLastExitCode, 0, 'a field the patch does not name is kept')
+
+    stop()
+    client.reset()
+    console.log('workspaceSyncClient.test.ts: a cleared agent field reaches the registry over JSON — ok')
+  }
+
   async function main(): Promise<void> {
     await twoWindowSelectionDoesNotFlipOther()
     await ignoresDuplicateAndStaleEvents()
@@ -987,6 +1031,7 @@ test('workspaceSyncClient', async () => {
     await simultaneousCreationsPreserveBothWorkspaces()
     await terminalMetadataEventsRespectWorkspaceOwnership()
     await aStaleSnapshotNeverClobbersANewerAppliedEvent()
+    await aClearedAgentFieldReachesTheRegistry()
     console.log('workspaceSyncClient.test.ts: ok')
   }
 

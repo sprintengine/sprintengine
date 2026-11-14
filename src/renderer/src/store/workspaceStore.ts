@@ -97,7 +97,7 @@ import { isSettledWorkspace } from '../utils/workspaceSettle'
 import { isSnoozeUnexpired } from '../utils/workspaceSnooze'
 import { noteWorkspaceSettledElsewhere, noteWorkspaceSnoozedElsewhere } from '../utils/settledElsewhere'
 import { isPlaceholderAgentName } from '../utils/agentNames'
-import { applyWorkspaceFieldsPatch } from '../../../shared/workspace-sync'
+import { applyAgentPatch, applyWorkspaceFieldsPatch } from '../../../shared/workspace-sync'
 import { isRetiredWorkspaceMode } from '../../../shared/workspace-mode'
 import {
   configureWorkspaceSyncClient,
@@ -1830,14 +1830,10 @@ function initWorkspaceSyncClient(): void {
           // main just launched and registered; the session tick decides whether
           // it gets a tab. A snapshot never counts, so a reload reveals nothing.
           if (!workspace.agents[apply.agentId]) noteLaunchedAgentArrived(workspace.id, apply.agentId)
-          const existing = workspace.agents[apply.agentId] ?? defaultAgent(apply.agentId)
-          return {
-            ...workspace,
-            agents: {
-              ...workspace.agents,
-              [apply.agentId]: { ...existing, ...apply.patch, configEditedAt: apply.configEditedAt },
-            },
-          }
+          const agent = { ...(workspace.agents[apply.agentId] ?? defaultAgent(apply.agentId)) }
+          applyAgentPatch(agent, apply.patch)
+          agent.configEditedAt = apply.configEditedAt
+          return { ...workspace, agents: { ...workspace.agents, [apply.agentId]: agent } }
         }),
       ),
     applyWorkspaceRemoved: (apply) =>
