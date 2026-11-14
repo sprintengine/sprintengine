@@ -213,44 +213,52 @@ function startDesktop(stack, network, name, ip, nodes, options) {
     // `open-dir` changes it in a running desktop.
     SPRINTENGINE_TEST_OPEN_DIR: '/data/projects/demo',
     ...(options.ssh ? { STUDIO_SSH_MACHINES: 'on' } : {}),
-    // Opt-in, for a real agent CLI a tester installs in the container; never set by the harness.
+  }
+  // Opt-in, for a real agent CLI a tester installs in the container; never set
+  // by the harness. Named on the command line and handed over in `docker`'s
+  // own environment, so a key never shows in a process list.
+  const keys = {
     ...(process.env.STUDIO_DOCKER_ANTHROPIC_API_KEY
       ? { ANTHROPIC_API_KEY: process.env.STUDIO_DOCKER_ANTHROPIC_API_KEY }
       : {}),
     ...(process.env.STUDIO_DOCKER_OPENAI_API_KEY ? { OPENAI_API_KEY: process.env.STUDIO_DOCKER_OPENAI_API_KEY } : {}),
   }
-  docker([
-    'run',
-    '-d',
-    '--init',
-    '--name',
-    container,
-    '--hostname',
-    name,
-    '--label',
-    `${LABEL}=${stack}`,
-    '--network',
-    network,
-    '--ip',
-    ip,
-    '--cap-add',
-    'NET_ADMIN',
-    '--shm-size',
-    '512m',
-    '--memory',
-    DESKTOP_MEMORY,
-    '--cpus',
-    DESKTOP_CPUS,
-    '-p',
-    '127.0.0.1::9222',
-    '-p',
-    '127.0.0.1::9230',
-    '-p',
-    '127.0.0.1::18471',
-    ...Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
-    DESKTOP_IMAGE,
-    '--inspect=127.0.0.1:9229',
-  ])
+  docker(
+    [
+      'run',
+      '-d',
+      '--init',
+      '--name',
+      container,
+      '--hostname',
+      name,
+      '--label',
+      `${LABEL}=${stack}`,
+      '--network',
+      network,
+      '--ip',
+      ip,
+      '--cap-add',
+      'NET_ADMIN',
+      '--shm-size',
+      '512m',
+      '--memory',
+      DESKTOP_MEMORY,
+      '--cpus',
+      DESKTOP_CPUS,
+      '-p',
+      '127.0.0.1::9222',
+      '-p',
+      '127.0.0.1::9230',
+      '-p',
+      '127.0.0.1::18471',
+      ...Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
+      ...Object.keys(keys).flatMap((key) => ['-e', key]),
+      DESKTOP_IMAGE,
+      '--inspect=127.0.0.1:9229',
+    ],
+    { env: { ...process.env, ...keys } },
+  )
   return container
 }
 
