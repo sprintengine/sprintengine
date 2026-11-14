@@ -198,7 +198,7 @@ export type ScheduledMessageHoldResult = { ok: true; id: string; repeat?: true }
 export type ScheduledMessages = {
   /**
    * Read the file, follow the chats, and arm for what is due. `after`, where given, holds every send
-   * the clock or a turn's end would start until it settles: what this
+   * the clock or a turn's end would start until it resolves (for good, when it rejects): what this
    * machine hands to another environment is taken out first (the hand-over's
    * plan), so none of it goes from here as well. The person's Send now waits
    * for it too.
@@ -649,13 +649,15 @@ export function createScheduledMessages(deps: ScheduledMessagesDeps): ScheduledM
     if (running) return
     running = true
     if (options.after) {
+      // One that fails holds every send: what it would have taken out may
+      // still be listed here.
       const after = options.after.then(
-        () => undefined,
-        () => undefined,
+        () => true,
+        () => false,
       )
       holding = after
-      void after.then(() => {
-        if (holding !== after) return
+      void after.then((released) => {
+        if (!released || holding !== after) return
         holding = null
         arm()
       })

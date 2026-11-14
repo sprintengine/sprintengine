@@ -1439,11 +1439,22 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
     void firstPlan.then(() => handOverSchedulesWhenSaved(scheduledAgents.service, handOver))
     // At start: every machine this desktop holds chats or waiting records
     // for, reached if it is connected already; the rest wait for their connect.
-    // The schedulers wait for this first plan (`firstPlan`), so nothing it
-    // takes out also runs here, a crash between its journal and its release
-    // included.
-    const planned = environmentMigration.plan().catch(() => undefined)
-    void planned.then(firstPlanDone)
+    // The schedulers wait for a plan that finished (`firstPlan`), so nothing
+    // it takes out also runs here, a crash between its journal and its
+    // release included. One that failed (a journal there but unreadable)
+    // holds them, and says why; a later plan, on a machine's connect, lets
+    // them go once it finishes.
+    void environmentMigration.planned.then(firstPlanDone)
+    const planned = environmentMigration.plan().catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : String(error)
+      void writeDiagnosticLog({ level: 'error', source: 'workspace', title: 'Another machine', message: reason })
+      platform.notifier.notify({
+        key: 'hand-over:unreadable',
+        title: 'Scheduled agents and messages are paused',
+        body: reason,
+      })
+      throw error
+    })
     void planned
       .then(() => {
         const routes = new Set(environmentMigration.waiting())

@@ -85,8 +85,19 @@ export type EnvironmentMigrationStores = {
 }
 
 export type EnvironmentMigration = {
-  /** Write what names another environment's chats into the journal and out of the live stores. */
+  /**
+   * Write what names another environment's chats into the journal and out of
+   * the live stores. Rejects, having swept and released nothing, when the
+   * journal or the copies waiting aside cannot be read: an I/O failure is
+   * never read as "nothing planned".
+   */
   plan(): Promise<void>
+  /**
+   * Settles once a plan has finished, and never on a failed one: what runs
+   * this desktop's schedules and held messages waits on it, so nothing a plan
+   * would take out also runs here.
+   */
+  planned: Promise<void>
   /**
    * Hand the route's planned records to its machine, if it is reachable.
    * True once the machine has taken what it will: nothing of the route's
@@ -165,6 +176,37 @@ function carryingParts(body: Record<string, unknown>, partsOf: ReadonlyMap<strin
 
 const safeName = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 32)
 
+/** Whether a file system error says the path is not there, as opposed to there and unreadable. */
+const isAbsent = (error: unknown): boolean => (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+/**
+ * The hand-over's records could not be read from the disk (not "there are
+ * none"): nothing is planned, swept or released until they can be.
+ */
+export class EnvironmentMigrationUnreadable extends Error {
+  constructor(what: string, cause: unknown) {
+    super(
+      `${what} could not be read (${messageOf(cause)}). Nothing was handed over or taken out; scheduled agents and messages wait until it can be read.`,
+      { cause },
+    )
+    this.name = 'EnvironmentMigrationUnreadable'
+  }
+}
+
+/** A pending copy as written by `writePending`, or null for anything else (a torn or foreign file). */
+function pendingCopyIn(text: string): PendingCopy | null {
+  try {
+    const copy = JSON.parse(text) as Partial<PendingCopy> | null
+    return copy && typeof copy.kind === 'string' && typeof copy.id === 'string' && typeof copy.digest === 'string'
+      ? (copy as PendingCopy)
+      : null
+  } catch {
+    return null
+  }
+}
+
 export function createEnvironmentMigration(deps: {
   dataDir: string
   stores: EnvironmentMigrationStores
@@ -192,6 +234,11 @@ export function createEnvironmentMigration(deps: {
   const pendingDir = (migrationId: string) => join(deps.dataDir, DIR, 'pending', migrationId)
   const deliveredDir = (migrationId: string) => join(deps.dataDir, DIR, 'delivered', migrationId)
   let journal: Journal | null = null
+  // Folders a rebuilt journal could not name a route for that still hold
+  // copies: kept aside for the owner, never swept.
+  const unaccounted = new Set<string>()
+  let markPlanned: () => void = () => undefined
+  const planned = new Promise<void>((resolve) => (markPlanned = resolve))
   // One step at a time: a plan, a delivery and a retirement never write the journal together.
   let queue: Promise<unknown> = Promise.resolve()
   const serial = <T>(work: () => Promise<T>): Promise<T> => {
@@ -205,9 +252,12 @@ export function createEnvironmentMigration(deps: {
     let raw: string
     try {
       raw = await readFile(journalPath, 'utf8')
-    } catch {
+    } catch (error) {
       // None yet: a copy written aside before a first journal never was
-      // listed, and its records are still in their live stores.
+      // listed, and its records are still in their live stores. One that is
+      // there but cannot be read is not "none": its copies were taken out of
+      // the live stores, and sweeping them as unlisted would lose them.
+      if (!isAbsent(error)) throw new EnvironmentMigrationUnreadable(`The hand-over journal ${journalPath}`, error)
       return (journal = { v: 1, environments: {} })
     }
     try {
@@ -227,31 +277,61 @@ export function createEnvironmentMigration(deps: {
    * otherwise wait for nothing. What was handed over before is not known
    * again; its workspace records are planned once more, and the machine
    * answers them as its own.
+   *
+   * Only what is there and malformed is passed over: a folder or copy that
+   * cannot be read at all stops the rebuild (the journal stays as it was),
+   * and a folder holding copies whose route cannot be read is kept aside,
+   * never swept.
    */
   async function rebuilt(): Promise<Journal> {
-    const aside = `${journalPath}.unreadable-${now()}`
-    await rename(journalPath, aside).catch(() => undefined)
     const next: Journal = { v: 1, environments: {} }
     const found = new Map<string, { entry: JournalEntry; at: number }>()
-    for (const migrationId of await readdir(join(deps.dataDir, DIR, 'pending')).catch(() => [] as string[])) {
+    const unread = (what: string) => (error: unknown) => {
+      throw new EnvironmentMigrationUnreadable(what, error)
+    }
+    const pendingRoot = join(deps.dataDir, DIR, 'pending')
+    const migrationIds = await readdir(pendingRoot).catch((error: unknown) => {
+      if (isAbsent(error)) return [] as string[]
+      return unread(`The hand-over's waiting copies in ${pendingRoot}`)(error)
+    })
+    const keep = new Set<string>()
+    for (const migrationId of migrationIds) {
       const folder = pendingDir(migrationId)
-      const route = await readFile(join(folder, ROUTE_FILE), 'utf8')
-        .then((text) => (JSON.parse(text) as { route?: unknown }).route)
-        .catch(() => null)
-      if (typeof route !== 'string') continue
+      const files = await readdir(folder).catch(unread(`The hand-over's waiting copies in ${folder}`))
+      const routeText = await readFile(join(folder, ROUTE_FILE), 'utf8').catch((error: unknown) => {
+        if (isAbsent(error)) return null
+        return unread(`The route of ${folder}`)(error)
+      })
+      let route: unknown = null
+      try {
+        route = routeText === null ? null : (JSON.parse(routeText) as { route?: unknown }).route
+      } catch {
+        // Torn: read as no route.
+      }
       const records: JournalRecord[] = []
-      for (const file of await readdir(folder).catch(() => [] as string[])) {
+      for (const file of files) {
         if (!file.endsWith('.json') || file === ROUTE_FILE) continue
-        const copy = await readFile(join(folder, file), 'utf8')
-          .then((text) => JSON.parse(text) as PendingCopy)
-          .catch(() => null)
+        const copy = pendingCopyIn(await readFile(join(folder, file), 'utf8').catch(unread(join(folder, file))))
         if (copy) records.push({ kind: copy.kind, id: copy.id, digest: copy.digest, file })
       }
-      const at = (await stat(folder).catch(() => null))?.mtimeMs ?? 0
+      if (typeof route !== 'string') {
+        if (records.length) keep.add(migrationId)
+        continue
+      }
+      const at = (await stat(folder).catch(unread(folder))).mtimeMs
       const known = found.get(route)
       if (records.length && (!known || known.at < at))
         found.set(route, { entry: { state: 'planned', migrationId, records }, at })
     }
+    // Kept aside before the rebuilt journal takes its place; one that cannot
+    // be moved stays the journal, and the plan stops here.
+    const aside = `${journalPath}.unreadable-${now()}`
+    await rename(journalPath, aside).catch(unread(`The hand-over journal ${journalPath}`))
+    for (const migrationId of keep) unaccounted.add(migrationId)
+    if (keep.size)
+      deps.log?.(
+        `${keep.size} folder(s) of the hand-over's waiting copies name no machine; they are kept aside under ${pendingRoot}, not handed over.`,
+      )
     for (const [route, { entry }] of found) next.environments[route] = entry
     deps.log?.(
       `The hand-over journal could not be read; it was kept aside as ${aside}, and ${found.size} machine(s) were read back from what waits for them.`,
@@ -276,7 +356,8 @@ export function createEnvironmentMigration(deps: {
   async function sweepUnlisted(current: Journal): Promise<void> {
     const listed = new Set(Object.values(current.environments).map((entry) => entry.migrationId))
     for (const migrationId of await readdir(join(deps.dataDir, DIR, 'pending')).catch(() => [] as string[]))
-      if (!listed.has(migrationId)) await rm(pendingDir(migrationId), { recursive: true, force: true })
+      if (!listed.has(migrationId) && !unaccounted.has(migrationId))
+        await rm(pendingDir(migrationId), { recursive: true, force: true })
   }
 
   /** A file's sha-256, size, and the sha-256 of each part it goes in, read once without copying it. */
@@ -393,46 +474,51 @@ export function createEnvironmentMigration(deps: {
 
   const plan = () =>
     serial(async () => {
-      const current = await read()
-      await sweepUnlisted(current)
-      // A route whose spelling is not known yet is planned once it is (on its connect).
-      const found = (await deps.stores.collect((route) => !current.environments[route]?.workspacesHandedOver)).filter(
-        (record) => spellingOf(record.route) !== null,
-      )
-      if (found.length === 0) return
-      const next: Journal = { v: 1, environments: { ...current.environments } }
-      const planned: MigratingRecord[] = []
-      for (const record of found) {
-        let entry = next.environments[record.route]
-        if (!entry || entry.state !== 'planned') {
-          // A route whose last hand-over finished starts another; what it
-          // learned (its workspaces handed over) stays.
-          if (entry?.state === 'delivered') await retire(entry)
-          entry = {
-            state: 'planned',
-            migrationId: `${safeName(record.route).slice(0, 12)}-${randomUUID()}`,
-            records: [],
-            ...(entry?.workspacesHandedOver ? { workspacesHandedOver: true as const } : {}),
-          }
-        } else entry = { ...entry, records: [...entry.records] }
-        next.environments[record.route] = entry
-        if (!entry.records.some((known) => known.kind === record.kind && known.id === record.id)) {
-          try {
-            entry.records.push(await writePending(entry.migrationId, record))
-          } catch (error) {
-            // Left in its live store, to be planned next time: nothing is dropped.
-            deps.log?.(
-              `Could not keep ${record.kind} ${record.id} for ${record.route}: ${error instanceof Error ? error.message : String(error)}`,
-            )
-            continue
-          }
-        }
-        planned.push(record)
-      }
-      // The copies are on disk and listed: only now do the live stores let go.
-      await write(next)
-      await deps.stores.release(planned)
+      await planOnce()
+      markPlanned()
     })
+
+  async function planOnce(): Promise<void> {
+    const current = await read()
+    await sweepUnlisted(current)
+    // A route whose spelling is not known yet is planned once it is (on its connect).
+    const found = (await deps.stores.collect((route) => !current.environments[route]?.workspacesHandedOver)).filter(
+      (record) => spellingOf(record.route) !== null,
+    )
+    if (found.length === 0) return
+    const next: Journal = { v: 1, environments: { ...current.environments } }
+    const taken: MigratingRecord[] = []
+    for (const record of found) {
+      let entry = next.environments[record.route]
+      if (!entry || entry.state !== 'planned') {
+        // A route whose last hand-over finished starts another; what it
+        // learned (its workspaces handed over) stays.
+        if (entry?.state === 'delivered') await retire(entry)
+        entry = {
+          state: 'planned',
+          migrationId: `${safeName(record.route).slice(0, 12)}-${randomUUID()}`,
+          records: [],
+          ...(entry?.workspacesHandedOver ? { workspacesHandedOver: true as const } : {}),
+        }
+      } else entry = { ...entry, records: [...entry.records] }
+      next.environments[record.route] = entry
+      if (!entry.records.some((known) => known.kind === record.kind && known.id === record.id)) {
+        try {
+          entry.records.push(await writePending(entry.migrationId, record))
+        } catch (error) {
+          // Left in its live store, to be planned next time: nothing is dropped.
+          deps.log?.(
+            `Could not keep ${record.kind} ${record.id} for ${record.route}: ${error instanceof Error ? error.message : String(error)}`,
+          )
+          continue
+        }
+      }
+      taken.push(record)
+    }
+    // The copies are on disk and listed: only now do the live stores let go.
+    await write(next)
+    await deps.stores.release(taken)
+  }
 
   async function retire(entry: JournalEntry): Promise<void> {
     const from = pendingDir(entry.migrationId)
@@ -725,6 +811,7 @@ export function createEnvironmentMigration(deps: {
 
   return {
     plan,
+    planned,
     deliver,
     // Not before the journal is read; a route with nothing ever planned has
     // nothing of this desktop's to hand over.
