@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import {
-  cliRuntimesOnPlatform,
+  chatCliRuntimes,
   distroOfHostId,
   executionHostLabel,
   hostCliCommand,
@@ -177,12 +177,12 @@ test('off Windows a WSL host id names nothing: no distribution, this machine, an
     claude: { command: 'claude', hostId: 'wsl:Ubuntu' },
     codex: { command: 'codex' },
   }
-  assert.deepEqual(cliRuntimesOnPlatform(runtimes, 'linux'), {
+  // On every platform: a chat's CLI runs where its Studio runs.
+  assert.deepEqual(chatCliRuntimes(runtimes), {
     claude: { command: 'claude' },
     codex: { command: 'codex' },
   })
-  assert.equal(cliRuntimesOnPlatform(runtimes, 'win32'), runtimes, 'Windows keeps them as they are')
   const local: Record<string, Runtime> = { codex: { command: 'codex' } }
-  assert.equal(cliRuntimesOnPlatform(local, 'linux'), local, 'nothing to drop is the same object')
-  assert.equal(cliRuntimesOnPlatform(undefined, 'linux'), undefined)
+  assert.equal(chatCliRuntimes(local), local, 'nothing to drop is the same object')
+  assert.equal(chatCliRuntimes(undefined), undefined)
 })

@@ -81,8 +81,7 @@ import {
   isStaleConversationSend,
   type ConversationSideQuestionPayload,
 } from '../../packages/conversation-protocol/src/public'
-import { cliRuntimesOnPlatform, distroOfHostId, isWslHostId, type ExecutionHostId } from '../shared/execution-host'
-import { isWindowsPath, toWslPath, wslInputInRootSpelling } from '../shared/host-paths'
+import { chatCliRuntimes } from '../shared/execution-host'
 import { inferConversationToolKind } from '../shared/conversation/toolKind'
 import { isTurnlessSubagentStep, readSubagentStatus } from '../shared/conversation/subagents'
 import { readBackgroundTasks } from '../shared/conversation/backgroundTasks'
@@ -355,9 +354,9 @@ export type ConversationRuntimeOptions = {
   // rewritten (TOOL_DETAIL_WRITE_WINDOW_MS); tests shorten it.
   toolDetailWriteWindowMs?: number
   // The app's own MCP gateway for a CLI chat (Claude Code, Codex, an ACP
-  // agent), on the machine its CLI runs on (a WSL host's, or this one's). Null
-  // leaves it out; the chat runs without Studio's tools rather than not at all.
-  resolveStudioMcpServer?: (input: { hostId?: ExecutionHostId }) => Promise<ConversationMcpServer | null>
+  // agent), on this machine, where its CLI runs. Null leaves it out; the chat
+  // runs without Studio's tools rather than not at all.
+  resolveStudioMcpServer?: () => Promise<ConversationMcpServer | null>
   // Asked before a session starts and before every turn: brings the chat's
   // folder back when the worktree pool gave it back while the chat sat idle
   // (worktree-pool/chat-folder-guard.ts), so the agent never runs in a folder
@@ -371,10 +370,6 @@ export type ConversationRuntimeOptions = {
     workspaceRoot: string
     fresh?: boolean
   }) => Promise<{ ok: true } | { ok: false; message: string }>
-  // The platform this runtime runs on; tests stand in for another. Off
-  // Windows a `wsl:` host id means nothing (a WSL server is handed the
-  // runtimes a Windows front door built), so it is dropped at the start.
-  platform?: NodeJS.Platform
   // The holds on worktree paths (worktree-leases.ts). A session start, a
   // turn's start and a revert hold the chat's folder shared until the chat
   // shows among the live folders (`liveConversationWorkspaceRoots`), so the
@@ -532,7 +527,6 @@ export class ConversationRuntime {
   private readonly transcriptLimits: ConversationTranscriptLimits
   private readonly now: () => number
   private readonly randomId: () => string
-  private readonly platform: NodeJS.Platform
   private readonly resolveSkills: ConversationSkillsResolver
   private readonly prepareChatFolder: NonNullable<ConversationRuntimeOptions['prepareChatFolder']>
   private readonly heldChatMode: ConversationRuntimeOptions['heldChatMode']
@@ -629,7 +623,6 @@ export class ConversationRuntime {
       this.adapters.set(adapter.id, adapter)
     }
     this.stat = options.stat ?? stat
-    this.platform = options.platform ?? process.platform
     this.eventLog = new ConversationEventLog({
       onError: (filePath, error) => {
         console.warn(
@@ -779,7 +772,7 @@ export class ConversationRuntime {
       return { ok: false, message: 'Conversation lifecycle operation is already in progress.' }
     const inherited = input.mcpServers === undefined ? this.forkedMcpServers.get(path) : undefined
     if (inherited) input = { ...input, mcpServers: inherited }
-    const cliRuntimes = cliRuntimesOnPlatform(input.cliRuntimes, this.platform)
+    const cliRuntimes = chatCliRuntimes(input.cliRuntimes)
     if (cliRuntimes !== input.cliRuntimes) input = { ...input, cliRuntimes }
     this.startingTranscripts.add(path)
     try {
@@ -1388,7 +1381,7 @@ export class ConversationRuntime {
       try {
         await this.enableCheckpointsIfRepository(session)
         const storedAttachments = await this.saveAttachments(session, attachments)
-        const imagesContext = this.attachedImagesContext(session, storedAttachments)
+        const imagesContext = this.attachedImagesContext(storedAttachments)
         if (files.length > 0 && this.uploadRoots.length > 0)
           await noteUploadsSent(
             this.uploadRoots,
@@ -1754,18 +1747,14 @@ export class ConversationRuntime {
   // Where each image sent with a turn is kept, said after the words the way a
   // file attached by path is: the model sees the picture, and the agent can
   // also read its bytes off the disk to do something with it (attach it to a
-  // pull request, put it in the repository). Paths as the agent's own host
-  // spells them, so a chat whose CLI runs in WSL reads them there.
-  private attachedImagesContext(session: RuntimeSession, stored: ConversationStoredImageAttachment[]): string {
-    const wsl = isWslHostId(session.cliRuntimes?.[cliForConversationProvider(session.providerId) ?? '']?.hostId)
+  // pull request, put it in the repository).
+  private attachedImagesContext(stored: ConversationStoredImageAttachment[]): string {
     return stored
       .flatMap((image, index) => {
         const path = this.attachmentStore.pathFor(image.ref)
         if (!path) return []
         const name = image.name?.trim() || `image ${index + 1}`
-        return [
-          `Attached image ${JSON.stringify(name)} (shown above), saved at: ${wsl && isWindowsPath(path) ? toWslPath(path) : path}`,
-        ]
+        return [`Attached image ${JSON.stringify(name)} (shown above), saved at: ${path}`]
       })
       .join('\n')
   }
@@ -2018,20 +2007,6 @@ export class ConversationRuntime {
       }),
     )
     return { ok: true, session: this.toSummary(session), ...(applied.notice ? { notice: applied.notice } : {}) }
-  }
-
-  // The input approval checks place a request by. An agent running in WSL names
-  // files the Linux way and the workspace root is a Windows path, so its paths
-  // are respelled as the root spells them first — or every file in the
-  // workspace reads as outside it, and Auto and "always allow" answer nothing.
-  // Only for a session whose agent the provider runs in WSL; the event the
-  // person sees and the answer the agent gets keep the input as it was sent.
-  private approvalCheckInput(session: RuntimeSession, input: unknown): unknown {
-    const cli = this.getAdapterForProviderId(session.providerId)?.executionHostCli
-    // Only on Windows: a Linux server holding a stray `wsl:` id would respell
-    // its own paths into UNC ones, and Auto would approve nothing.
-    const distro = cli ? distroOfHostId(session.cliRuntimes?.[cli]?.hostId, this.platform) : null
-    return distro ? wslInputInRootSpelling(input, session.workspaceRoot, distro) : input
   }
 
   // A mode chosen while requests wait answers the ones it covers, as it would
@@ -2897,7 +2872,7 @@ export class ConversationRuntime {
     if (stamped.type === 'approval_requested' && typeof stamped.payload?.requestId === 'string') {
       const request: PermissionModeRequest = {
         action: String(stamped.payload.action ?? ''),
-        input: this.approvalCheckInput(session, stamped.payload.input),
+        input: stamped.payload.input,
         toolKind: stamped.payload.toolKind as PermissionModeRequest['toolKind'],
         requestKind: String(stamped.payload.kind ?? 'tool'),
         defaultToNo: stamped.payload.defaultToNo === true,
