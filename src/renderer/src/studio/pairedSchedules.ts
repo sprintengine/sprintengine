@@ -17,6 +17,7 @@ import {
   environmentCommandId,
   pairedTarget,
   type EnvironmentAnswer,
+  type EnvironmentTarget,
   type PairedMachine,
 } from './environmentStudio'
 
@@ -27,12 +28,12 @@ import {
 // runs on that machine, by its scheduler.
 
 function askSchedules<T>(
-  machine: PairedMachine,
+  machine: PairedMachine | EnvironmentTarget,
   work: (client: StudioClient) => Promise<T>,
   timeoutMs?: number,
 ): Promise<EnvironmentAnswer<T>> {
   return askEnvironment(
-    pairedTarget(machine),
+    'route' in machine ? machine : pairedTarget(machine),
     STUDIO_SCHEDULES_CAPABILITY,
     (machineName) => ({
       code: 'scheduled_agents_unsupported',
@@ -43,8 +44,14 @@ function askSchedules<T>(
   )
 }
 
-/** That machine's scheduled agents, and whether it takes a schedule from here. */
-export async function pairedScheduledAgents(machine: PairedMachine): Promise<MeshScheduledAgentsResult> {
+/**
+ * That machine's scheduled agents, and whether it takes a schedule from here:
+ * a paired desktop's by its pairing, any other environment's (an SSH
+ * machine's, a WSL distribution's) by the route this window reaches it by.
+ */
+export async function pairedScheduledAgents(
+  machine: PairedMachine | EnvironmentTarget,
+): Promise<MeshScheduledAgentsResult> {
   const answer = await askSchedules(machine, (client) => client.rpc['schedules.list']({}))
   if (!answer.ok) return answer
   return { ...scheduledAgentsOf(answer.value), canCreate: true, canEdit: true }
@@ -52,7 +59,7 @@ export async function pairedScheduledAgents(machine: PairedMachine): Promise<Mes
 
 /** Run now, pause, resume or close one of them there. */
 export async function pairedScheduledAgentAction(
-  machine: PairedMachine,
+  machine: PairedMachine | EnvironmentTarget,
   id: string,
   action: MeshScheduledAgentAction,
 ): Promise<MeshScheduledAgentActionResult> {

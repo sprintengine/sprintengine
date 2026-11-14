@@ -25,6 +25,7 @@ import type { AgentCliAvailabilityMap } from '../../../../../shared/electron-api
 import { useExecutionHosts } from '../../../hooks/useExecutionHosts'
 import { useFileDropTarget } from '../../../hooks/useFileDropTarget'
 import { useSshMachines } from '../../settings/SshMachinesSection'
+import { sshMachineRef } from '../../../hooks/useMachineIdentity'
 import { FolderIdentityIcon } from '../FolderIdentityIcon'
 import { useProjectColor } from '../../../hooks/useProjectColors'
 import { projectColorKey } from '../../../utils/projectColor'
@@ -2368,8 +2369,18 @@ export default function NewAgentPanel({
   // Where the launch runs: the machine, the project, the worktree and the
   // branch. It replaces the machine · project line that sat above the box and
   // the Worktree chip that sat on its row (owner ruling 2026-10-04).
+  // A scheduled agent made in a project on an SSH machine runs on that
+  // machine: core hands it over as it is saved (environment-migration.ts), and
+  // the machine's scheduler runs it. The strip names that machine, as a line,
+  // where the picker would offer only this computer.
+  const scheduleMachinePath =
+    scheduled && !editingRemote && !remoteTarget ? parseMachinePath(workspaceRoot ?? '') : null
+  const scheduleMachine = scheduleMachinePath
+    ? (sshMachinesAll.find((machine) => machine.id === scheduleMachinePath.id) ?? null)
+    : null
   const machinePickerShown =
     !editingRemote &&
+    !scheduleMachine &&
     ((remoteSelectable && remoteMachines.length > 0) || localHosts.length > 1 || sshMachines.length > 0)
   // The branch the launch runs on: the remote project's as its machine read
   // it, else this checkout's. An SSH machine's folder is typed, not read.
@@ -2478,7 +2489,12 @@ export default function NewAgentPanel({
     </span>
   ) : null
   const stripShown =
-    machinePickerShown || editingRemote !== null || projectControl !== null || worktreeOffered || Boolean(stripBranch)
+    machinePickerShown ||
+    editingRemote !== null ||
+    scheduleMachine !== null ||
+    projectControl !== null ||
+    worktreeOffered ||
+    Boolean(stripBranch)
 
   // The second line of the send's tooltip, where the door can stay: the chord
   // as this platform spells it, for the person who starts several in a row.
@@ -2906,6 +2922,9 @@ export default function NewAgentPanel({
                 2026-09-03 — no separate Local/Remote switch). Shown whenever
                 there is another machine to pick. */}
             {editingRemote ? <FixedMachineLine machineName={editingRemote.machineName} /> : null}
+            {scheduleMachine ? (
+              <FixedMachineLine machineName={scheduleMachine.label} machine={sshMachineRef(scheduleMachine)} />
+            ) : null}
             {machinePickerShown ? (
               <MachineScopePicker
                 // A new scheduled agent may run on a paired machine, by that

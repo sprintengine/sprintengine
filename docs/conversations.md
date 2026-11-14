@@ -562,7 +562,12 @@ that every reader passes over (`conversation-command-receipts.ts`).
   resumes: the desktop's (in process or out), a standalone server, a WSL
   distribution's and an SSH machine's (`server/core/studio-scheduled-agents.ts`,
   composed by `createStudioCore`). A schedule runs on the server whose store
-  holds it, in its chats, from its worktree pool. Where a module kernel runs,
+  holds it, in its chats, from its worktree pool. One saved on the desktop for
+  a machine's folder is handed over to that machine as it is saved
+  (`environment-migration-stores.ts`, `handOverSchedulesWhenSaved`), and the
+  desktop's Scheduled section lists each machine's schedules from that
+  machine's own server, on the route the window follows its chats on
+  (`sidebar/useRemoteScheduledAgents.ts`). Where a module kernel runs,
   the person's Scheduled agents switch turns the scheduler on and off
   (`modules/scheduled-agents-switch.ts`). A watch an agent asks for is kept by
   the server its gateway belongs to; where that server holds no record of the

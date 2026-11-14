@@ -281,3 +281,32 @@ test("a schedule goes with its folder's machine; one picked to run on This PC in
     ['on-ssh ssh:build-box'],
   )
 })
+
+test('a schedule saved for a machine is handed over at once, each machine once a list; one that runs here is not', async () => {
+  const { handOverSchedulesWhenSaved } = await import('./environment-migration-stores')
+  const schedule = (id: string, folderPath: string, hostId: string | null = null) => ({ id, folderPath, hostId })
+  let publish: (agents: never[]) => void = () => undefined
+  const handedOver: string[] = []
+  const stop = handOverSchedulesWhenSaved(
+    {
+      onChanged: (listener) => {
+        publish = listener as never
+        return () => (publish = () => undefined)
+      },
+    },
+    async (route) => {
+      handedOver.push(route)
+    },
+  )
+  publish([schedule('here', '/Users/dev/repo')] as never[])
+  assert.deepEqual(handedOver, [], 'a schedule of this computer stays')
+  publish([
+    schedule('here', '/Users/dev/repo'),
+    schedule('nightly', 'ssh://build-box/home/dev/repo'),
+    schedule('weekly', 'ssh://build-box/home/dev/other'),
+  ] as never[])
+  assert.deepEqual(handedOver, ['ssh:build-box'], 'its machine is asked once for both')
+  stop()
+  publish([schedule('nightly', 'ssh://build-box/home/dev/repo')] as never[])
+  assert.deepEqual(handedOver, ['ssh:build-box'], 'nothing after it stops')
+})

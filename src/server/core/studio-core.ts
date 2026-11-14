@@ -106,7 +106,7 @@ import { environmentRouteOfRecord, type EnvironmentClients } from '../../shared/
 import { createEnvironmentReplicas } from '../environment/environment-replicas'
 import { createEnvironmentMigration } from '../environment/environment-migration'
 import { chatSourceFiles } from '../environment/environment-chat-sources'
-import { studioMigrationStores } from '../environment/environment-migration-stores'
+import { handOverSchedulesWhenSaved, studioMigrationStores } from '../environment/environment-migration-stores'
 import { combineEnvironmentClients, createWslEnvironmentClients } from '../wsl/wsl-environment-clients'
 import type { WslServers } from '../wsl/desktop-wsl-servers'
 import { followRelayedAgentState } from '../wsl/agent-state-relay'
@@ -1431,6 +1431,12 @@ export function createStudioCore(platform: StudioPlatform, options: StudioCoreOp
   }
   if (environmentMigration && environmentClients) {
     environmentClients.onConnected((route) => void handOver(route).catch(() => undefined))
+    // A schedule saved here for a machine's folder (New scheduled agent in a
+    // project on an SSH machine) is that machine's at once: planned now, so it
+    // never waits in this desktop's store nor runs from it, and delivered now
+    // if the machine is connected, else on its next connect. Its own planning
+    // takes it out of the store, which changes the list again, without it.
+    void firstPlan.then(() => handOverSchedulesWhenSaved(scheduledAgents.service, handOver))
     // At start: every machine this desktop holds chats or waiting records
     // for, reached if it is connected already; the rest wait for their connect.
     // The schedulers wait for this first plan (`firstPlan`), so nothing it

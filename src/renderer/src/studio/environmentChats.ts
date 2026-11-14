@@ -309,6 +309,11 @@ export function followedEnvironmentChats(): EnvironmentChatSource[] {
   return [...followed.values()].map((entry) => entry.source)
 }
 
+/** The environments this window follows now, each as it is asked: its route and its name. */
+export function followedEnvironmentTargets(): EnvironmentTarget[] {
+  return [...followed.values()].map((entry) => entry.target)
+}
+
 /** Hear the followed set change, or any followed source's list. Returns the unsubscriber. */
 export function onFollowedEnvironmentChats(listener: () => void): () => void {
   followedListeners.add(listener)
