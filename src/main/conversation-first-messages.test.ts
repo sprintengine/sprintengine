@@ -18,6 +18,17 @@ import {
 } from './conversation-first-messages'
 import { createMockConversationProvider } from './providers/mock-conversation-provider'
 
+// Waits for what a launch does in the background (its send, the write that
+// lets a first message go) by its outcome, not a fixed delay a loaded machine
+// can outrun.
+async function until(done: () => boolean | Promise<boolean>, what: string, ms = 5_000): Promise<void> {
+  const deadline = Date.now() + ms
+  while (!(await done())) {
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}.`)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
 test('a created chat’s first message is written down before the launch answers, and let go of once it is answered', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'first-messages-'))
   const filePath = join(dir, 'first.json')
@@ -57,7 +68,7 @@ test('a created chat’s first message is written down before the launch answers
     })
     assert.equal(launched.ok, true)
     const commandId = firstMessageCommandId('client:phone:c1')
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await until(() => sends.length > 0, 'the first message to be sent')
     assert.deepEqual(sends, [commandId], 'sent under its launch’s own id')
     // The next process reads it from disk.
     const kept = await createPendingFirstMessages({ filePath }).all()
@@ -66,8 +77,10 @@ test('a created chat’s first message is written down before the launch answers
     assert.equal(kept[commandId]!.launchCommandId, 'client:phone:c1')
     // Answered, it is let go of.
     answer({ ok: true } as ConversationSessionActionResult)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    assert.deepEqual(await createPendingFirstMessages({ filePath }).all(), {})
+    await until(
+      async () => Object.keys(await createPendingFirstMessages({ filePath }).all()).length === 0,
+      'the answered first message to be let go of',
+    )
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
