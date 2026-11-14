@@ -174,6 +174,33 @@ const MODULE_ID_FIRST_SERVICE_KEYS: ReadonlySet<string> = new Set(
   [...THIRD_PARTY_SERVICE_KEYS].filter((key) => key !== 'core.workspace' && key !== 'core.workspace-context'),
 )
 
+/** Every member a service offers: its own and its class's, never Object's own. */
+function memberNames(target: object): PropertyKey[] {
+  const names = new Set<PropertyKey>()
+  for (
+    let level: object | null = target;
+    level && level !== Object.prototype && level !== Function.prototype;
+    level = Object.getPrototypeOf(level) as object | null
+  )
+    for (const name of Reflect.ownKeys(level)) if (name !== 'constructor') names.add(name)
+  return [...names]
+}
+
+/**
+ * What a call hands back that is a capability rather than data: an object
+ * literal (or one with no prototype) that carries a function. A class's
+ * instance (a Map, a Date) is passed as it is, as a caller relies on it being
+ * one; data is passed as it is.
+ */
+function isCapability(value: unknown): value is object {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value) as unknown
+  if (prototype !== Object.prototype && prototype !== null) return false
+  return Reflect.ownKeys(value).some(
+    (name) => typeof Reflect.getOwnPropertyDescriptor(value, name)?.value === 'function',
+  )
+}
+
 // The declarations that let a third-party module serve methods to clients:
 // its own scope, and the broad legacy one it was split out of.
 const METHOD_PERMISSIONS: ReadonlySet<string> = new Set(['module:bridge', 'ipc:invoke'])
@@ -882,14 +909,20 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
 
   /**
    * The service as one load of `moduleId` reaches it: as is for a first-party
-   * module; for a third-party one, a view that cannot be written to, whose
-   * methods refuse every call once that load is switched off, and, for a
-   * service that names a module, a call naming any module but this one.
+   * module; for a third-party one, a facade of its own that cannot be written
+   * to, whose methods refuse every call once that load is switched off, and,
+   * for a service that names a module, a call naming any module but this one.
+   *
+   * A facade, not a view onto the service: a proxy forwards whatever it has no
+   * trap for, and `Object.getOwnPropertyDescriptor` on one handed back the
+   * service's own unguarded method. The facade holds no reference a module can
+   * reach but its guarded functions. What those hand back that can be called
+   * (a function, or a plain object of them, now or once a promise settles) is
+   * guarded the same way, as is an object the service holds as a member.
    */
   function asCaller<T>(moduleId: string, key: string, value: T, load: ModuleLoad): T {
     if (!isThirdParty(moduleId)) return value
     if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
-    const pinned = MODULE_ID_FIRST_SERVICE_KEYS.has(key)
     const target = value as object
     let views = callerViews.get(target)
     if (!views) {
@@ -899,30 +932,91 @@ export function createMainKernel(options: MainKernelOptions = {}): MainKernel {
     const viewKey = `${key}\u0000${moduleId}\u0000${load.generation}`
     const known = views.get(viewKey)
     if (known !== undefined) return known as T
+    const view = guardedServiceView(moduleId, key, target, load, MODULE_ID_FIRST_SERVICE_KEYS.has(key))
+    views.set(viewKey, view)
+    return view as T
+  }
+
+  // A guarded stand-in for a service, or for what one hands back: every
+  // callable reached through it checks the load and, where `pinned`, that
+  // its first argument is the module itself.
+  function guardedServiceView(moduleId: string, key: string, root: object, load: ModuleLoad, pinned: boolean) {
     const readOnly = (): never => {
       throw new Error(`Module "${moduleId}" cannot change service "${key}".`)
     }
-    const view = new Proxy(target, {
-      get(service, property) {
-        const member: unknown = Reflect.get(service, property, service)
-        if (typeof member !== 'function') return member
-        return (...args: unknown[]) => {
-          if (load.retired()) throw new Error(switchedOff(moduleId, `no longer reaches service "${key}"`))
-          if (pinned && args[0] !== moduleId) {
-            throw new Error(
-              `Module "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
-            )
-          }
-          return (member as (...given: unknown[]) => unknown).apply(service, args)
+    // One guarded stand-in per member and the object it is called on, so a
+    // member read twice is the same one (a class's method is shared by every
+    // instance, and each instance's is its own); kept apart by whether its
+    // first argument is held to the module.
+    const guarded = new WeakMap<object, Map<boolean, WeakMap<object, unknown>>>()
+    const unbound = {}
+    const cacheFor = (self: unknown, pinFirst: boolean): WeakMap<object, unknown> => {
+      const owner = typeof self === 'object' && self !== null ? self : unbound
+      let byPinning = guarded.get(owner)
+      if (!byPinning) guarded.set(owner, (byPinning = new Map()))
+      let cache = byPinning.get(pinFirst)
+      if (!cache) byPinning.set(pinFirst, (cache = new WeakMap()))
+      return cache
+    }
+    const live = () => {
+      if (load.retired()) throw new Error(switchedOff(moduleId, `no longer reaches service "${key}"`))
+    }
+
+    function guardFunction(fn: (...given: unknown[]) => unknown, self: unknown, pinFirst: boolean): unknown {
+      return (...args: unknown[]) => {
+        live()
+        if (pinFirst && args[0] !== moduleId) {
+          throw new Error(
+            `Module "${moduleId}" called service "${key}" as module "${String(args[0])}": a module reaches it only as itself.`,
+          )
         }
-      },
-      set: readOnly,
-      defineProperty: readOnly,
-      deleteProperty: readOnly,
-      setPrototypeOf: readOnly,
-    })
-    views.set(viewKey, view)
-    return view as T
+        return guardResult(fn.apply(self, args))
+      }
+    }
+
+    // What a call hands back: a capability is guarded, data is passed through.
+    function guardResult(result: unknown): unknown {
+      if (result instanceof Promise) return result.then(guardResult)
+      if (typeof result === 'function') return guardMember(result, undefined, false)
+      if (isCapability(result)) return guardMember(result, undefined, false)
+      return result
+    }
+
+    function guardMember(member: unknown, self: unknown, pinFirst: boolean): unknown {
+      if (member === null || (typeof member !== 'object' && typeof member !== 'function')) return member
+      const cache = cacheFor(self, pinFirst)
+      const known = cache.get(member)
+      if (known !== undefined) return known
+      const made =
+        typeof member === 'function'
+          ? guardFunction(member as (...given: unknown[]) => unknown, self, pinFirst)
+          : facadeOf(member, false)
+      cache.set(member, made)
+      return made
+    }
+
+    function facadeOf(target: object, pinFirst: boolean): object {
+      const facade = Object.create(null) as Record<PropertyKey, unknown>
+      for (const property of memberNames(target)) {
+        Object.defineProperty(facade, property, {
+          enumerable: true,
+          get: () => {
+            const member: unknown = Reflect.get(target, property, target)
+            if (typeof member === 'function') return guardMember(member, target, pinFirst)
+            // An object the service holds is reached through a facade of its
+            // own, whatever it holds; a value or a list is read as it is now.
+            if (member !== null && typeof member === 'object' && !Array.isArray(member) && !ArrayBuffer.isView(member))
+              return guardMember(member, target, false)
+            return member
+          },
+          set: readOnly,
+        })
+      }
+      return Object.freeze(facade)
+    }
+
+    // A service that is itself a function is that function, guarded.
+    return typeof root === 'function' ? guardMember(root, undefined, pinned) : facadeOf(root, pinned)
   }
 
   // A module asset by path: the same refusals `moduleAssetUrl` makes, then
