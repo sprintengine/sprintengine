@@ -20,10 +20,12 @@ import type { TailnetScope } from '../../../shared/tailnet'
 import { createTailnetDeviceStore, type TailnetDeviceStore } from './tailnet-devices'
 import {
   createTailnetGatewayServer,
-  MAX_STUDIO_SOCKETS_PER_DEVICE,
+  MAX_SOCKETS_PER_DEVICE,
+  MAX_STREAM_QUEUED_MESSAGES,
+  MAX_TICKETS_PER_DEVICE,
   type TailnetGatewayServer,
 } from './tailnet-gateway-server'
-import { TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
+import { TAILNET_STREAM_PATH, TAILNET_STUDIO_PATH, TAILNET_WS_TICKET_PATH } from './tailnet-routes'
 import { isDesktopWindowOrigin, tailnetDeviceGrant } from './tailnet-studio-endpoint'
 
 // A paired device on the Studio protocol: the real tailnet listener on
@@ -359,7 +361,7 @@ test('every window of a paired desktop keeps a socket of its own; past the cap t
   const desktop = r.pair(['workspace:read', 'conversation:read'], 'mac-mini')
   // A desktop with many windows, each reading this machine, and its server's own client beside them.
   const windows: Array<{ client: StudioClient; states: StudioClientState[] }> = []
-  for (let index = 0; index < MAX_STUDIO_SOCKETS_PER_DEVICE; index++) {
+  for (let index = 0; index < MAX_SOCKETS_PER_DEVICE; index++) {
     const states: StudioClientState[] = []
     windows.push({ client: await deviceClient(r, desktop.token, { origin: 'file://', states }), states })
   }
@@ -371,6 +373,112 @@ test('every window of a paired desktop keeps a socket of its own; past the cap t
   assert.ok(await extra.rpc['workspaces.list']({}))
   await until(() => windows[0]!.states.includes('reconnecting'), 'the oldest socket to be let go')
   assert.ok(windows.slice(1).every(({ states }) => !states.includes('reconnecting')))
+})
+
+/** A tool stream opened as a device (no origin), answering its close code once it closes. */
+async function toolStream(port: number, token: string): Promise<{ socket: WebSocket; closed: Promise<number> }> {
+  const minted = await ticketFor(port, token)
+  if (!minted.body.ticket) throw new Error(`ticket refused: ${minted.status}`)
+  const socket = new WebSocket(
+    `ws://127.0.0.1:${port}${TAILNET_STREAM_PATH}?ticket=${encodeURIComponent(minted.body.ticket)}`,
+  )
+  const closed = new Promise<number>((resolve) => socket.addEventListener('close', (event) => resolve(event.code)))
+  await new Promise<void>((resolve, reject) => {
+    socket.addEventListener('open', () => resolve())
+    socket.addEventListener('error', () => reject(new Error('the stream did not open')))
+  })
+  cleanups.push(() => socket.close())
+  return { socket, closed }
+}
+
+test("a device's tool streams and Studio sockets share one budget: past it the oldest of either kind goes", async () => {
+  const r = await rig()
+  const desktop = r.pair(['workspace:read', 'conversation:read'], 'mac-mini')
+  const streams: Array<{ socket: WebSocket; closed: Promise<number>; code: number | null }> = []
+  for (let index = 0; index < MAX_SOCKETS_PER_DEVICE; index++) {
+    const stream = { ...(await toolStream(r.port(), desktop.token)), code: null as number | null }
+    void stream.closed.then((code) => (stream.code = code))
+    streams.push(stream)
+  }
+  assert.equal(r.gateway.streamCount(), MAX_SOCKETS_PER_DEVICE)
+  // A Studio socket past the budget lets the oldest stream go, not a newer one.
+  const states: StudioClientState[] = []
+  const window = await deviceClient(r, desktop.token, { origin: 'file://', states })
+  assert.ok(await window.rpc['workspaces.list']({}))
+  assert.equal(await streams[0]!.closed, 1001)
+  await until(() => r.gateway.streamCount() === MAX_SOCKETS_PER_DEVICE - 1, 'the oldest stream to be dropped')
+  assert.ok(streams.slice(1).every((stream) => stream.code === null))
+  // And a stream past it lets the oldest go, which is now the oldest stream.
+  const extra = await toolStream(r.port(), desktop.token)
+  assert.equal(await streams[1]!.closed, 1001)
+  assert.ok(!states.includes('reconnecting'), 'the newer Studio socket stays')
+  extra.socket.close()
+  // Another device's budget is its own.
+  const phone = r.pair(['workspace:read'])
+  const its = await toolStream(r.port(), phone.token)
+  assert.equal(its.socket.readyState, WebSocket.OPEN)
+})
+
+test('a device holds only its newest tickets', async () => {
+  const r = await rig()
+  const phone = r.pair(['workspace:read'])
+  const tickets: string[] = []
+  for (let index = 0; index < MAX_TICKETS_PER_DEVICE + 1; index++)
+    tickets.push((await ticketFor(r.port(), phone.token)).body.ticket!)
+  assert.match(
+    await rawUpgrade(r.port(), `${TAILNET_STREAM_PATH}?ticket=${encodeURIComponent(tickets[0]!)}`),
+    / 401 /,
+    'the oldest was let go',
+  )
+  assert.match(
+    await rawUpgrade(r.port(), `${TAILNET_STREAM_PATH}?ticket=${encodeURIComponent(tickets.at(-1)!)}`),
+    / 101 /,
+  )
+})
+
+test('a tool stream that sends faster than it is answered is closed, not queued for without end', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tailnet-stream-queue-'))
+  const devices = createTailnetDeviceStore({ resolveUserDataDir: () => dir })
+  let started = 0
+  const never = new Promise<never>(() => undefined)
+  const gateway = createTailnetGatewayServer({
+    bindAddress: '127.0.0.1',
+    port: 0,
+    serverName: 'sprintengine-studio',
+    serverVersion: '9.9.9',
+    resolveTools: () => [
+      {
+        name: 'workspace.stall',
+        description: 'Answers never.',
+        inputSchema: { type: 'object', properties: {} },
+        handler: async () => {
+          started += 1
+          return never
+        },
+      },
+    ],
+    isMutation: () => false,
+    devices,
+    peers: { identify: async () => null, resolve: async () => null },
+  })
+  await gateway.start()
+  cleanups.push(async () => {
+    await gateway.stop()
+    rmSync(dir, { recursive: true, force: true })
+  })
+  const minted = devices.mintDevice({
+    name: 'android-phone',
+    scopes: ['workspace:read'],
+    origin: { kind: 'code', by: null },
+  })
+  const { socket, closed } = await toolStream(gateway.address()!.port, minted.deviceToken)
+  for (let id = 1; id <= MAX_STREAM_QUEUED_MESSAGES + 1; id++)
+    socket.send(
+      JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'workspace.stall', arguments: {} } }),
+    )
+  assert.equal(await closed, 1008)
+  assert.equal(started, 1, 'answered one at a time: the rest only waited')
+  await until(() => gateway.streamCount() === 0, 'the stream to be dropped')
 })
 
 test('a dropped device socket comes back and resumes its chat by cursor: no gap, no repeat', async () => {

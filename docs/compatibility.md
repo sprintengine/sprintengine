@@ -369,12 +369,15 @@ the device whose token bought it), whose `hello` presents that ticket. The
 device's grant is its pairing's scopes as they stand at each request
 (`conversation:operate` carries `conversation:create`, either `workspace`
 scope carries `workspaces:read`), never an owner's; a removed pairing closes
-the connection. One device may hold at most 32 of these sockets at once
-(`MAX_STUDIO_SOCKETS_PER_DEVICE` in `tailnet-gateway-server.ts`): a paired
-desktop holds one per window that reads this machine and its server one more,
-and a window lets its socket go after five idle minutes. A 33rd socket closes
-the device's oldest, which covers a client that leaks them or a phone's
-half-open socket. The socket carries no `Origin`, except a desktop window's,
+the connection. One device may hold at most 32 sockets at once, these and its
+tool streams at `/tailnet/v1/stream` counted together
+(`MAX_SOCKETS_PER_DEVICE` in `tailnet-gateway-server.ts`): a paired desktop
+holds one per window that reads this machine and its server one more, and a
+window lets its socket go after five idle minutes. A 33rd socket of either
+kind closes the device's oldest, which covers a client that leaks them or a
+phone's half-open socket. A device holds at most 32 unspent tickets, and a
+tool stream closes when 64 of its requests are waiting for an answer or 8 MiB
+of answers wait for a client that is not reading. The socket carries no `Origin`, except a desktop window's,
 which names its origin when it asks for the ticket and carries exactly that
 one. A ticket answer from a Studio that serves the endpoint says so with
 `studioPath`; a device that finds it missing is talking to an older Studio.

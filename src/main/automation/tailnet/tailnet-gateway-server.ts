@@ -250,6 +250,10 @@ export type TailnetGatewayServer = {
 type StreamSession = {
   socket: Duplex
   deviceId: string
+  /** When it was opened, against every socket of the device (`admitDeviceSocket`). */
+  opened: number
+  /** Its messages read and not yet answered. */
+  queued: number
   /** The device as authenticated at upgrade, for the close announcement. */
   device: TailnetDevice
   context: McpConnectionContext
@@ -258,17 +262,35 @@ type StreamSession = {
 }
 
 /** A device's Studio protocol socket, for revocation, shutdown and the connected state. */
-type StudioSocket = { peer: WebSocketPeer; deviceId: string }
+type StudioSocket = { peer: WebSocketPeer; deviceId: string; opened: number }
 
 /**
- * Studio sockets one device may hold at once. A paired desktop holds one per
- * window that reads this machine (each window has its own client: the band,
- * its open chats, a diff window), and its server one more; a window lets its
- * socket go after five idle minutes. Past this the oldest goes, for a client
- * that leaks them or a phone's half-open socket. At eight, a ninth window
- * evicted the first, whose reconnect evicted the next, round and round.
+ * Sockets one device may hold at once, its Studio sockets and its tool
+ * streams together: one budget, so neither route opens around it. A paired
+ * desktop holds one Studio socket per window that reads this machine (each
+ * window has its own client: the band, its open chats, a diff window), and
+ * its server one more; a window lets its socket go after five idle minutes.
+ * Past this the oldest goes, of either kind, for a client that leaks them or
+ * a phone's half-open socket. At eight, a ninth window evicted the first,
+ * whose reconnect evicted the next, round and round.
  */
-export const MAX_STUDIO_SOCKETS_PER_DEVICE = 32
+export const MAX_SOCKETS_PER_DEVICE = 32
+
+/** Unspent upgrade tickets one device may hold; asking for another lets its oldest go. */
+export const MAX_TICKETS_PER_DEVICE = 32
+
+/**
+ * A tool stream's messages read and not yet answered. They are answered one
+ * at a time, in order; a client that sends faster than that is closed, rather
+ * than queued for without end.
+ */
+export const MAX_STREAM_QUEUED_MESSAGES = 64
+
+/** What a tool stream may have waiting to be written to a client that is not reading, before it is closed. */
+export const MAX_STREAM_UNSENT_BYTES = 8 * 1024 * 1024
+
+/** RFC 6455 §7.4.1: the endpoint is closing because the peer broke its policy. */
+const WEBSOCKET_CLOSE_POLICY = 1008
 
 export function createTailnetGatewayServer(options: TailnetGatewayServerOptions): TailnetGatewayServer {
   const now = options.now ?? (() => Date.now())
@@ -280,6 +302,8 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
   // the ticket was asked for; null for every other socket, which says none.
   const tickets = new Map<string, { deviceId: string; expiresAtMs: number; origin: string | null }>()
   const studioSockets = new Set<StudioSocket>()
+  // Each socket's place in its device's budget: newer is larger.
+  let socketsOpened = 0
   // Streamable HTTP sessions of the revisions that keep one (2025-03-26 to
   // 2025-11-25), minted on `initialize`. A session holds one connection
   // context, so a client's `notifications/cancelled` finds the call it names;
@@ -657,6 +681,9 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
       const ticket = `mctk_${randomBytes(24).toString('base64url')}`
       const expiresAtMs = now() + WS_TICKET_TTL_MS
       pruneTickets()
+      // A device asking for ticket after ticket holds only its newest few.
+      const held = [...tickets].filter(([, entry]) => entry.deviceId === device.id)
+      for (const [stale] of held.slice(0, Math.max(0, held.length - MAX_TICKETS_PER_DEVICE + 1))) tickets.delete(stale)
       tickets.set(ticket, { deviceId: device.id, expiresAtMs, origin: origin ?? null })
       // `studioPath` says this machine serves the Studio protocol: a device
       // that finds it missing is talking to a build from before it.
@@ -1154,9 +1181,17 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     }
 
     options.devices.recordSeen(device.id, peerNode)
+    admitDeviceSocket(device.id)
     acceptUpgrade(socket, key)
 
-    const session: StreamSession = { socket, deviceId: device.id, device, context: contextFor(device, peerNode) }
+    const session: StreamSession = {
+      socket,
+      deviceId: device.id,
+      opened: ++socketsOpened,
+      queued: 0,
+      device,
+      context: contextFor(device, peerNode),
+    }
     streams.add(session)
     session.untrack = options.clientTools?.track(session.context, () =>
       sendStream(session, { jsonrpc: '2.0', method: 'notifications/tools/list_changed' }),
@@ -1183,11 +1218,19 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
         }
         if (frame.kind !== 'text') continue
         const text = frame.text
+        if (session.queued >= MAX_STREAM_QUEUED_MESSAGES) {
+          closeStream(session, WEBSOCKET_CLOSE_POLICY, 'Too many requests are waiting for an answer.')
+          return
+        }
+        session.queued += 1
         // One message that throws must not skip every message after it.
         pending = pending
           .then(() => handleStreamMessage(session, text))
           .catch((error: unknown) => {
             options.log?.(`tailnet stream message failed: ${message(error)}`)
+          })
+          .finally(() => {
+            session.queued -= 1
           })
       }
     }
@@ -1280,11 +1323,9 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
     host: TailnetStudioHost,
     peer: TailnetGatewayPeer,
   ): void {
-    const held = [...studioSockets].filter((entry) => entry.deviceId === device.id)
-    for (const stale of held.slice(0, Math.max(0, held.length - MAX_STUDIO_SOCKETS_PER_DEVICE + 1)))
-      stale.peer.close(WEBSOCKET_CLOSE_GOING_AWAY, 'This device opened a newer connection.')
+    admitDeviceSocket(device.id)
     const webSocket = acceptWebSocket(socket, key, head)
-    const entry: StudioSocket = { peer: webSocket, deviceId: device.id }
+    const entry: StudioSocket = { peer: webSocket, deviceId: device.id, opened: ++socketsOpened }
     studioSockets.add(entry)
     options.onActivity?.({ kind: 'stream', device, open: true, ...peer })
     webSocket.onClose(() => {
@@ -1299,6 +1340,28 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
         peerNode: peer.peerNode,
       }),
     )
+  }
+
+  /**
+   * Make room for one more of a device's sockets: past its budget, its oldest
+   * goes, a Studio socket or a tool stream alike.
+   */
+  function admitDeviceSocket(deviceId: string): void {
+    const held = [
+      ...[...studioSockets]
+        .filter((entry) => entry.deviceId === deviceId)
+        .map((entry) => ({
+          opened: entry.opened,
+          close: () => entry.peer.close(WEBSOCKET_CLOSE_GOING_AWAY, 'This device opened a newer connection.'),
+        })),
+      ...[...streams]
+        .filter((entry) => entry.deviceId === deviceId)
+        .map((entry) => ({
+          opened: entry.opened,
+          close: () => closeStream(entry, WEBSOCKET_CLOSE_GOING_AWAY, 'This device opened a newer connection.'),
+        })),
+    ].sort((a, b) => a.opened - b.opened)
+    for (const stale of held.slice(0, Math.max(0, held.length - MAX_SOCKETS_PER_DEVICE + 1))) stale.close()
   }
 
   function pruneTickets(): void {
@@ -1358,6 +1421,12 @@ export function createTailnetGatewayServer(options: TailnetGatewayServerOptions)
 
   function sendStream(session: StreamSession, payload: Record<string, unknown>): void {
     if (session.socket.destroyed) return
+    // A client that does not read what it asked for is let go, not written to without end.
+    if (session.socket.writableLength > MAX_STREAM_UNSENT_BYTES) {
+      dropStream(session)
+      session.socket.destroy()
+      return
+    }
     session.socket.write(encodeTextFrame(JSON.stringify(payload)))
   }
 
