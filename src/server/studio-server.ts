@@ -1,6 +1,5 @@
 import { mkdirSync } from 'node:fs'
 
-import { isWslHostId } from '../shared/execution-host'
 import { STUDIO_MCP_SERVER_ID, STUDIO_MCP_SERVER_NAME } from '../shared/product-identity'
 import { resolveSocketPath } from '../main/automation/automation-service'
 import {
@@ -230,10 +229,8 @@ export async function startStudioServer(options: StudioServerOptions): Promise<S
       role: 'server',
       // A chat's agent (Claude Code, Codex, an ACP agent) is handed this
       // server's gateway: the stdio bridge, run by the Node this server runs
-      // on. A WSL machine is not this server's to reach; a server runs inside
-      // the distribution instead (phase 7).
-      resolveStudioMcpServer: async ({ hostId }) => {
-        if (isWslHostId(hostId)) return null
+      // on, the machine its CLI runs on.
+      resolveStudioMcpServer: async () => {
         await gateway?.whenGatewayReady()
         return {
           id: STUDIO_MCP_SERVER_ID,

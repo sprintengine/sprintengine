@@ -76,8 +76,11 @@ watch a pull request in another if you can.
    the folder as before. The sidebar places each where it was.
 3. Send a message in each.
    **Expect:** a reply. **distro:** `ps -ef | grep -E 'claude|codex'`: the
-   agents run in the distribution; **PowerShell:** no `claude`/`node`
-   process for them on Windows.
+   agents run in the distribution, children of `server.cjs`, with the
+   Studio tools listed (ask the agent). **PowerShell:** no `claude`/`node`
+   process for them on Windows, and no `wsl.exe` per chat:
+   `Get-CimInstance Win32_Process -Filter "Name='wsl.exe'" | Select CommandLine`
+   shows none with `eval $(echo`.
 4. Repeat the approved action in each.
    **Expect:** not asked again (the saved approval moved with the chat).
    Settings › approvals on the desktop no longer lists it; it is the

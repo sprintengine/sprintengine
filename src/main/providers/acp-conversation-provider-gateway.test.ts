@@ -25,13 +25,6 @@ const LOCAL_GATEWAY: ConversationMcpServer = {
   args: ['mcp'],
   env: { SPRINTENGINE_USER_DATA_DIR: '/Users/dev/Library/Application Support/SprintEngine Studio' },
 }
-// And as a WSL machine's: the token is named, never carried, since it is the CLI's own there.
-const WSL_GATEWAY: ConversationMcpServer = {
-  ...LOCAL_GATEWAY,
-  command: '/home/dev/.sprintengine/bin/studio',
-  env: { SPRINTENGINE_USER_DATA_DIR: '/home/dev/.local/share/sprintengine-studio' },
-  envVarNames: [TOKEN_ENV],
-}
 const OWN_SERVER: ConversationMcpServer = {
   id: 'railway',
   name: 'Railway',
@@ -91,8 +84,8 @@ function localProvider(profile: AcpProfile, spawned: Spawned[], asked: unknown[]
   return createAcpConversationProvider({ ...profile, authenticate: undefined } satisfies AcpProfile, {
     detect: async () => `/usr/local/bin/${profile.cli}`,
     buildEnv: async () => ({ PATH: process.env.PATH }),
-    resolveStudioMcpServer: async (input) => {
-      asked.push(input)
+    resolveStudioMcpServer: async () => {
+      asked.push('gateway')
       return LOCAL_GATEWAY
     },
     spawnChild: ((file: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
@@ -125,7 +118,7 @@ for (const profile of ACP_PROFILES) {
     try {
       await provider.startSession(input)
       const told = await report(provider, input)
-      expect(asked).toEqual([{}])
+      expect(asked).toEqual(['gateway'])
       const servers = told.told[0]!.mcpServers
       // The gateway first and once, the person's own server after it, and nothing else under the gateway's name.
       expect(servers.map((server) => server.name)).toEqual([STUDIO_ID, 'railway'])
@@ -221,66 +214,3 @@ test('an ACP chat whose gateway cannot be resolved still starts, with only its o
     provider.disposeAll?.()
   }
 })
-
-function decodedScript(args: readonly string[]): string {
-  const encoded = /echo (\S+)\|base64 -d/u.exec(args.at(-1) ?? '')?.[1] ?? ''
-  return Buffer.from(encoded, 'base64').toString('utf8')
-}
-
-for (const profile of ACP_PROFILES) {
-  test(`a ${profile.displayName} chat on a WSL machine carries its channel token on the gateway's entry, never on argv`, async () => {
-    const token = `acp_${profile.cli}_gateway_token_0123456789`
-    const issued: Array<GatewayLaunchIdentity | null | undefined> = []
-    const revoked: string[] = []
-    const asked: unknown[] = []
-    const spawned: Spawned[] = []
-    const provider = createAcpConversationProvider({ ...profile, authenticate: undefined } satisfies AcpProfile, {
-      prepareWslTarget: async () => ({
-        distro: 'Ubuntu',
-        agentStateSocketPath: null,
-        issueChannelToken: (identity) => {
-          issued.push(identity)
-          return { token, revoke: () => revoked.push(token) }
-        },
-      }),
-      detect: async () => `/home/dev/.local/bin/${profile.cli}`,
-      buildEnv: async () => ({}),
-      resolveStudioMcpServer: async (input) => {
-        asked.push(input)
-        return WSL_GATEWAY
-      },
-      spawnChild: ((file: string, args: string[], options: { env: NodeJS.ProcessEnv }) => {
-        spawned.push({ file, args, env: options.env })
-        return spawn(process.execPath, ['-e', agent(true)], { stdio: ['pipe', 'pipe', 'pipe'] })
-      }) as unknown as typeof spawn,
-      startupTimeoutMs: 5_000,
-    })
-    const input = sessionInput(profile, {
-      workspaceRoot: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo',
-      cliRuntimes: { [profile.cli]: { command: '', hostId: 'wsl:Ubuntu' as const } },
-    })
-    try {
-      await provider.startSession(input)
-      const told = await report(provider, input)
-      expect(asked).toEqual([{ hostId: 'wsl:Ubuntu' }])
-      // Issued for this chat, and handed to the child on stdin as before.
-      expect(issued).toEqual([{ workspaceId: 'workspace', agentId: `agent-${profile.cli}`, cliId: profile.cli }])
-      expect(told.token).toBe(token)
-      const servers = told.told[0]!.mcpServers
-      expect(servers.map((server) => server.name)).toEqual([STUDIO_ID, 'railway'])
-      const gateway = servers[0]!
-      expect(gateway.command).toBe(WSL_GATEWAY.command)
-      expect(gateway.env.filter(({ name }) => name === TOKEN_ENV)).toEqual([{ name: TOKEN_ENV, value: token }])
-      expect(envOf(gateway)).toMatchObject({ SPRINTENGINE_AGENT_ID: `agent-${profile.cli}` })
-      // Never on `wsl.exe`'s command line, nor in its environment, nor through WSLENV.
-      expect(spawned[0]!.file).toBe('wsl.exe')
-      expect(spawned[0]!.args.join(' ')).not.toContain(token)
-      expect(decodedScript(spawned[0]!.args)).not.toContain(token)
-      expect(spawned[0]!.env[TOKEN_ENV]).toBeUndefined()
-      expect(spawned[0]!.env.WSLENV ?? '').not.toContain(TOKEN_ENV)
-    } finally {
-      provider.disposeAll?.()
-    }
-    await expect.poll(() => revoked).toEqual([token])
-  })
-}

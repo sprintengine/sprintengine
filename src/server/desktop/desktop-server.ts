@@ -281,10 +281,9 @@ export const startDesktopServer: ServerStart = async ({ envelope, rpc, log, requ
         }),
       // A Claude chat's child is handed the gateway itself, through the
       // launcher the shell writes (decision R63), or this build's binary run
-      // as Node when the launcher could not be written. A chat on a WSL
-      // machine with its server on runs there, with that server's gateway.
-      resolveStudioMcpServer: async ({ hostId }) => {
-        if (isWslHostId(hostId ?? null)) return null
+      // as Node when the launcher could not be written. A chat in a WSL
+      // distribution runs on its own Studio there, with that Studio's gateway.
+      resolveStudioMcpServer: async () => {
         await whenAgentLaunchReady()
         const launcher = usableLocalLauncherRef(homedir())
         const entry: { command: string; args: string[]; env: Record<string, string> } = launcher

@@ -47,8 +47,6 @@ import { builtinSkillSourceRoot, findBuiltinSkill } from '../builtin-skills'
 import { isOwnSkillEntry, skillDirStaysInRoot } from '../skills/skill-dir-containment'
 import { asRecord } from '../../shared/records'
 import { CONVERSATION_DEFAULT_MODEL_ID, conversationPermissionModes } from '../../shared/conversation-harness'
-import { isWslHostId, type ExecutionHostId } from '../../shared/execution-host'
-import { isWindowsPath, toWslPath } from '../../shared/host-paths'
 import { isLooserCliPermissionPreset } from '../../shared/cli-permission-preset'
 import { AGENT_IDENTITY_ENV_KEYS, MCP_CHANNEL_TOKEN_ENV, MCP_SECRET_ENV_PREFIX } from '../../shared/studio-env'
 import { inferConversationToolKind } from '../../shared/conversation/toolKind'
@@ -77,12 +75,6 @@ import {
   publishConversationCommands,
   touchConversationCommands,
 } from '../conversation-commands/registry'
-import {
-  prepareWslClaudeTarget,
-  spawnWslClaude,
-  type ClaudeSpawnRequest,
-  type WslClaudeTarget,
-} from './claude-wsl-child'
 import { raiseChildOomScore } from '../agent-oom-score'
 import { localLaunchToken } from './cli-host-child'
 import { launchIdentityOfEnv } from '../../server/core/gateway-launch-tokens'
@@ -183,10 +175,6 @@ export type ClaudeAgentProviderOptions = {
   now?: () => number
   // Where attached-skill plugins are staged; tests point it at their own folder.
   tempDir?: string
-  // Readies a WSL machine for a chat whose `claude` runs there; tests stand in.
-  prepareWslTarget?: (hostId: ExecutionHostId) => Promise<WslClaudeTarget>
-  // Starts the child inside that machine; tests stand in.
-  spawnWslChild?: (target: WslClaudeTarget, request: ClaudeSpawnRequest) => ChildProcess
   // How long a child has to answer a stop or a mode switch before it is taken
   // to be wedged. Tests shorten it.
   childAnswerTimeoutMs?: number
@@ -197,9 +185,9 @@ export type ClaudeAgentProviderOptions = {
   claudeTaskOutputRoot?: (env: Record<string, string>) => string | null
   // How often a running command's output file is read. Tests shorten it.
   commandOutputPollMs?: number
-  // The app's own MCP gateway on the machine the child runs on, handed to
-  // every child. Null or absent leaves it out.
-  resolveStudioMcpServer?: (input: { hostId?: ExecutionHostId }) => Promise<ConversationMcpServer | null>
+  // The app's own MCP gateway on this machine, handed to every child. Null or
+  // absent leaves it out.
+  resolveStudioMcpServer?: () => Promise<ConversationMcpServer | null>
 }
 
 export type ClaudeAgentProviderAdapter = ConversationProviderAdapter & {
@@ -526,8 +514,6 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
   const buildEnv = options.buildEnv ?? defaultBuildEnv
   const now = options.now ?? Date.now
   const tempDir = options.tempDir ?? tmpdir()
-  const prepareWslTarget = options.prepareWslTarget ?? prepareWslClaudeTarget
-  const spawnWslChild = options.spawnWslChild ?? spawnWslClaude
   const childAnswerTimeoutMs = options.childAnswerTimeoutMs ?? UNRESPONSIVE_CHILD_MS
   const mcpRegistrationTimeoutMs = options.mcpRegistrationTimeoutMs ?? MCP_REGISTRATION_TIMEOUT_MS
   const sessions = new Map<string, SessionState>()
@@ -1054,12 +1040,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
   }
 
   async function spawnQuery(state: SessionState): Promise<void> {
-    // A chat on a WSL machine runs that machine's `claude`, with the login
-    // and settings under its Linux home; everything below is the same.
     const generation = state.spawnGeneration
-    const hostId = state.cliRuntimes?.['claude-code']?.hostId
-    const wslTarget = isWslHostId(hostId) ? await prepareWslTarget(hostId) : null
-    assertSpawnWanted(state, generation)
     const executablePath = await resolveExecutable(state.cliRuntimes)
     assertSpawnWanted(state, generation)
     const sdkQuery = await loadQuery()
@@ -1070,15 +1051,10 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     })
     assertSpawnWanted(state, generation)
     const instructions = await readWorkspaceInstructions(state.workspaceRoot)
-    // A WSL gateway entry names its channel token (`envVarNames`) and never
-    // carries it: the gateway rides the child's command line. The child is
-    // issued the token on stdin (spawnWslClaude) and the bridge it starts
-    // inherits it, as a WSL terminal's `claude` hands it on.
-    const studioGateway = await options.resolveStudioMcpServer?.({ ...(hostId ? { hostId } : {}) }).catch(() => null)
+    const studioGateway = await options.resolveStudioMcpServer?.().catch(() => null)
     const mcpServers = claudeMcpLaunch(
       studioGateway ? withAgentIdentity(studioGateway, env) : null,
       state.mcpServers ?? [],
-      { wsl: wslTarget !== null },
     )
     // Only a chat that has the gateway has the pool's tools, and only one in a
     // git checkout has a repository to lease a worktree of.
@@ -1111,10 +1087,9 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     state.projectCommands = projectCommands
     const plugins = [skillPlugin, projectCommands?.dir].filter((dir): dir is string => Boolean(dir))
     // A resume walks the session file back from its newest entry; a gap a
-    // crash left in it would bring back only the messages after the gap. A
-    // WSL machine's file is under its own Linux home, out of reach here.
+    // crash left in it would bring back only the messages after the gap.
     let savedCostUsd = 0
-    if (state.providerSessionId && !wslTarget) {
+    if (state.providerSessionId) {
       const configDir = resolveClaudeConfigDir(homedir(), env)
       const check = await ensureResumableTranscript(configDir, state.workspaceRoot, state.providerSessionId)
       state.resumeNote = transcriptCheckNote(check)
@@ -1199,9 +1174,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
       // know, and the child exits on it. There is nothing to skip anyway: the
       // staged plugins are written here with no `.mcp.json` and no
       // `mcpServers`, so they carry skills and commands and nothing else.
-      ...(plugins.length
-        ? { plugins: plugins.map((dir) => ({ type: 'local' as const, path: wslTarget ? toWslPath(dir) : dir })) }
-        : {}),
+      ...(plugins.length ? { plugins: plugins.map((dir) => ({ type: 'local' as const, path: dir })) } : {}),
       ...(state.skillIds?.length ? { skills: state.skillIds.map(attachedSkillName) } : {}),
       // The values the command line's MCP servers name by reference (claudeMcpLaunch).
       env: withClaudeTaskTools({ ...env, ...mcpServers.env }),
@@ -1260,11 +1233,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
       // PID is known: process-tree diagnostics attribute the headless child to
       // this session, and the SDK exposes no PID of its own.
       spawnClaudeCodeProcess: (spawnInput: SpawnOptions): SpawnedProcess =>
-        spawnTrackedChild(
-          state,
-          wslTarget ? () => spawnWslChild(wslTarget, spawnInput) : () => spawnLocalChild(spawnInput),
-          now,
-        ),
+        spawnTrackedChild(state, () => spawnLocalChild(spawnInput), now),
       ...(state.providerSessionId ? { resume: state.providerSessionId } : {}),
       // After a rewind the child forks the session at the kept turn's last
       // entry, so the turns after it leave the context and the session they
@@ -1273,9 +1242,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
     }
     const q = sdkQuery({ prompt: inputQueue, options: queryOptions })
     state.query = q
-    // A child in WSL writes its files inside that machine; only a local
-    // child's are read here.
-    const taskOutputRoot = wslTarget ? null : (options.claudeTaskOutputRoot ?? claudeTaskOutputRoot)(env)
+    const taskOutputRoot = (options.claudeTaskOutputRoot ?? claudeTaskOutputRoot)(env)
     state.commandOutputTails?.stopAll()
     state.commandOutputTails = taskOutputRoot
       ? createClaudeCommandOutput({
@@ -1323,8 +1290,7 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
   }
 
   // The SDK would put these on the child's command line, one `--mcp-config`
-  // argument that every user of the machine can read (`ps`), and for a WSL
-  // child on `wsl.exe`'s too. A connector's server carries its secrets there:
+  // argument that every user of the machine can read (`ps`). A connector's server carries its secrets there:
   // an API key in its `env`, a token in its `headers` or its `args`. So they
   // go over the child's stdin, before its first message is sent; the CLI
   // answers once each has connected or given up, so their tools are there
@@ -1637,7 +1603,6 @@ export function createClaudeAgentProvider(options: ClaudeAgentProviderOptions = 
   const adapter: ClaudeAgentProviderAdapter = {
     id: CLAUDE_AGENT_PROVIDER_ID,
     displayName: 'Claude Code',
-    executionHostCli: 'claude-code',
     capabilities: {
       permissionModes: [...conversationPermissionModes('claude-code')],
       tools: true,
@@ -2900,13 +2865,6 @@ async function defaultResolveExecutable(cliRuntimes?: ConversationCliRuntimeOver
   const runtime = cliRuntimes?.['claude-code']
   const found = await resolveCliExecutable('claude-code', runtime)
   if (!found.path) {
-    if (isWslHostId(runtime?.hostId)) {
-      const machine = runtime.hostId.replace(/^wsl:/u, 'WSL: ')
-      throw new Error(
-        `Claude Code CLI was not found on ${machine}. Install it in that distribution (or set its command for that machine in Settings) to chat there.` +
-          (found.error ? ` ${found.error}` : ''),
-      )
-    }
     throw new Error(
       'Claude Code CLI is not installed. Install it (or set a command override in Settings) to use Claude conversation agents.',
     )
@@ -4034,11 +3992,9 @@ function subagentLaneFields(
 // later rewind can go back to it (ConversationProviderCursor). Absent until
 // this process has seen an entry of the session: a point it cannot name is no
 // point to go back to.
-// The file a handoff saved, as the agent's own machine spells it: a chat whose
-// `claude` runs in WSL reads this computer's files under `/mnt/<drive>`.
-function handoffAgentPath(state: Pick<SessionState, 'handoff' | 'cliRuntimes'>): string {
-  const path = state.handoff?.path ?? ''
-  return isWslHostId(state.cliRuntimes?.['claude-code']?.hostId) && isWindowsPath(path) ? toWslPath(path) : path
+// The file a handoff saved.
+function handoffAgentPath(state: Pick<SessionState, 'handoff'>): string {
+  return state.handoff?.path ?? ''
 }
 
 /**
@@ -4046,7 +4002,7 @@ function handoffAgentPath(state: Pick<SessionState, 'handoff' | 'cliRuntimes'>):
  * following after a blank line. The wording is the person's choice (owner
  * ruling 2026-10-21) and nothing is added to it.
  */
-function handoffSeedText(state: Pick<SessionState, 'handoff' | 'cliRuntimes'>): string {
+function handoffSeedText(state: Pick<SessionState, 'handoff'>): string {
   return `You're picking up a conversation from an earlier session, which was handed off to save cost. The text of that conversation (messages only, no tool calls) is at \`${handoffAgentPath(state)}\`. Read it to see where things stood.`
 }
 
@@ -4061,16 +4017,15 @@ function handoffSeedText(state: Pick<SessionState, 'handoff' | 'cliRuntimes'>): 
  * (a home folder or a store location with one in its name) gets no rule, and
  * the read asks like any other.
  */
-function handoffReadRule(state: Pick<SessionState, 'handoff' | 'cliRuntimes'>): string | null {
+function handoffReadRule(state: Pick<SessionState, 'handoff'>): string | null {
   if (!state.handoff) return null
   return absoluteReadRule(handoffAgentPath(state), '')
 }
 
 /** A `Read` allow rule for each folder the session may read outside its workspace, and everything in it. */
-function readableDirectoryRules(state: Pick<SessionState, 'readableDirectories' | 'cliRuntimes'>): string[] {
-  const wsl = isWslHostId(state.cliRuntimes?.['claude-code']?.hostId)
+function readableDirectoryRules(state: Pick<SessionState, 'readableDirectories'>): string[] {
   return (state.readableDirectories ?? []).flatMap((directory) => {
-    const rule = absoluteReadRule(wsl && isWindowsPath(directory) ? toWslPath(directory) : directory, '/**')
+    const rule = absoluteReadRule(directory, '/**')
     return rule ? [rule] : []
   })
 }
@@ -4262,22 +4217,17 @@ function finiteNumber(value: unknown): number | undefined {
  * The SDK's `mcpServers` for a child: each server as Claude Code's own
  * `.mcp.json` writer renders it (mcp-config-service.ts), keyed by id. A bearer
  * token named by `envVarNames` stays a `${NAME}` reference, which the CLI
- * expands from its own environment. A child in WSL gets a stdio server's
- * Windows paths as the distribution sees them.
+ * expands from its own environment.
  */
-export function claudeMcpServers(
-  servers: readonly ConversationMcpServer[],
-  options: { wsl?: boolean } = {},
-): NonNullable<Options['mcpServers']> {
-  const hostPath = (value: string): string => (options.wsl && isWindowsPath(value) ? toWslPath(value) : value)
+export function claudeMcpServers(servers: readonly ConversationMcpServer[]): NonNullable<Options['mcpServers']> {
   const out: NonNullable<Options['mcpServers']> = {}
   for (const server of servers) {
     if (server.transport === 'stdio') {
       if (!server.command) continue
       out[server.id] = {
         type: 'stdio',
-        command: hostPath(server.command),
-        args: (server.args ?? []).map(hostPath),
+        command: server.command,
+        args: [...(server.args ?? [])],
         ...(server.env ? { env: server.env } : {}),
       }
       continue
@@ -4309,16 +4259,15 @@ export function claudeMcpServers(
 export function claudeMcpLaunch(
   gateway: ConversationMcpServer | null,
   sessionServers: readonly ConversationMcpServer[],
-  options: { wsl?: boolean } = {},
 ): {
   commandLine: NonNullable<Options['mcpServers']>
   control: NonNullable<Options['mcpServers']>
   env: Record<string, string>
 } {
-  const commandLine = claudeMcpServers(gateway ? [gateway] : [], options)
+  const commandLine = claudeMcpServers(gateway ? [gateway] : [])
   const control: NonNullable<Options['mcpServers']> = {}
   const env: Record<string, string> = {}
-  for (const [id, server] of Object.entries(claudeMcpServers(sessionServers, options))) {
+  for (const [id, server] of Object.entries(claudeMcpServers(sessionServers))) {
     // A session server of the gateway's own name stands in its place, as it
     // always did.
     delete commandLine[id]
@@ -4334,12 +4283,12 @@ type SdkMcpServer = NonNullable<Options['mcpServers']>[string]
  * `server` with each literal arg, env value and header value moved into `env`
  * under a name of Studio's own and replaced by a `${NAME}` reference to it,
  * which the CLI expands from its environment. A value that already holds a
- * reference is the person's own and stays; so does one that spans lines, which
- * a WSL child could not be handed on stdin.
+ * reference is the person's own and stays; so does one with a NUL, which no
+ * environment variable can hold.
  */
 function withValuesByReference(server: SdkMcpServer, env: Record<string, string>): SdkMcpServer {
   const reference = (value: string): string => {
-    if (value.includes('${') || /[\r\n\0]/u.test(value)) return value
+    if (value.includes('${') || value.includes('\0')) return value
     let index = 1
     while (`${MCP_SECRET_ENV_PREFIX}${index}` in env) index += 1
     const name = `${MCP_SECRET_ENV_PREFIX}${index}`

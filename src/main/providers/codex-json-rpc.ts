@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
 import { terminateCliChild } from './cli-child-process'
-import { spawnCliHostChild, type WslCliChild } from './cli-host-child'
+import { spawnCliHostChild } from './cli-host-child'
 
 export type RpcMessage = {
   id?: string | number
@@ -34,9 +34,6 @@ export type CodexRpcOptions = {
   timeoutMs?: number
   spawnChild?: typeof spawn
   platform?: NodeJS.Platform
-  // Set when the app-server runs inside a WSL distribution: `command` is its
-  // Linux path there and `cwd` the folder as this machine names it.
-  wsl?: WslCliChild | null
 }
 
 /** Codex answered the request with an error, as opposed to the request never
@@ -110,15 +107,14 @@ export function codexAppServerArgs(value: string | undefined): string[] {
 
 /** JSONL framing is confined here; protocol events never share stderr or shell parsing. */
 export function createCodexRpcTransport(options: CodexRpcOptions): CodexRpcTransport {
-  // In WSL the child is issued its own MCP channel token: Codex hands it to the
-  // app's gateway, whose entry names it (`env_vars`).
+  // The child is issued its own MCP channel token when it is a conversation's:
+  // Codex hands it to the app's gateway, whose entry names it (`env_vars`).
   const child = spawnCliHostChild(
     {
       command: options.command,
       args: ['app-server', '--listen', 'stdio://', ...(options.args ?? [])],
       cwd: options.cwd,
       env: options.env,
-      wsl: options.wsl,
     },
     { platform: options.platform, spawn: options.spawnChild ?? spawn },
   )

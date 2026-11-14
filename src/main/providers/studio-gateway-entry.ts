@@ -15,13 +15,12 @@
 // Codex merges a `-c` override into the table of the same name, and OpenCode
 // replaces a configured server with a session's of the same name.
 
-import type { ExecutionHostId } from '../../shared/execution-host'
 import type { ConversationMcpServer } from '../../shared/conversation-runtime'
 import { STUDIO_MCP_SERVER_ID } from '../../shared/product-identity'
 import { MCP_CHANNEL_TOKEN_ENV } from '../../shared/studio-env'
 
-/** The app's gateway on the machine a chat's CLI runs on (a WSL host's, or this one's); null leaves it out. */
-export type StudioMcpServerResolver = (input: { hostId?: ExecutionHostId }) => Promise<ConversationMcpServer | null>
+/** This machine's gateway, where a chat's CLI runs; null leaves it out. */
+export type StudioMcpServerResolver = () => Promise<ConversationMcpServer | null>
 
 /** Who a chat's gateway connection says it is; the launch token is what proves it. */
 export type StudioGatewayIdentity = { workspaceId?: string; agentId?: string; cli: string }

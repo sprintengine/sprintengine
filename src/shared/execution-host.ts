@@ -140,17 +140,17 @@ export function normalizeExecutionHostId(value: unknown, platform?: string): Exe
 }
 
 /**
- * A chat's CLI runtimes as a process on `platform` may act on them: off
- * Windows every `wsl:` host id is dropped, so the CLI runs on this machine.
- * A WSL server is handed the runtimes the Windows side built for a WSL
- * workspace, and a stray id there would send a provider looking for
- * `wsl.exe`, or make an approval check respell Linux paths into UNC ones.
+ * A chat's CLI runtimes with every host id dropped: a chat's CLI always runs
+ * on the machine of the Studio that runs the chat. A chat in a WSL
+ * distribution is that distribution's Studio's, which starts its CLI there as
+ * its own (design-wsl-ssh-direct). An id a window or an older peer still
+ * sends would send the CLI's lookup into a distribution from Windows, or
+ * looking for `wsl.exe` from Linux.
  */
-export function cliRuntimesOnPlatform<T extends { hostId?: ExecutionHostId }>(
+export function chatCliRuntimes<T extends { hostId?: ExecutionHostId }>(
   cliRuntimes: Record<string, T | undefined> | undefined,
-  platform: string,
 ): Record<string, T | undefined> | undefined {
-  if (!cliRuntimes || platform === 'win32') return cliRuntimes
+  if (!cliRuntimes) return cliRuntimes
   let changed = false
   const out: Record<string, T | undefined> = {}
   for (const [cli, runtime] of Object.entries(cliRuntimes)) {

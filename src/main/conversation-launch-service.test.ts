@@ -375,10 +375,10 @@ test('a chat born in a folder gets a workspace of its own there, on its machine 
   assert.equal(created.name, deriveWorkspaceTitle('triage new issues'))
   assert.equal(created.titleLocked, undefined)
   assert.equal(starts[0]!.workspaceRoot, '/Users/dev/.worktrees/app/nightly-20260930-2100')
-  // The chat runs on the machine it was born on: its CLI, whichever chat CLI
-  // it is, is that distribution's.
-  assert.deepEqual(starts[0]!.cliRuntimes?.['claude-code'], { command: '', hostId: 'wsl:Ubuntu' })
-  assert.deepEqual(starts[0]!.cliRuntimes?.codex, { command: '', hostId: 'wsl:Ubuntu' })
+  // Its CLI, whichever chat CLI it is, is that distribution's command, and
+  // runs where the chat's Studio runs: no host id goes with it.
+  assert.deepEqual(starts[0]!.cliRuntimes?.['claude-code'], { command: '' })
+  assert.deepEqual(starts[0]!.cliRuntimes?.codex, { command: '' })
 })
 
 test("a scheduled run's chat carries its schedule's id on its workspace, through a restart", async () => {
@@ -430,7 +430,7 @@ test('a chat launched in the background joins the list without becoming the acti
   assert.equal(primary?.activeWorkspaceId, front.workspaceId)
 })
 
-test("a WSL chat runs that distribution's CLI, whichever chat CLI it is", async () => {
+test("a WSL chat is handed that distribution's commands, whichever chat CLI it is, and no machine", async () => {
   const settings = {
     cliRuntimes: { 'claude-code': { command: 'claude-local' }, codex: { command: 'codex-local' } },
     hosts: {
@@ -447,10 +447,11 @@ test("a WSL chat runs that distribution's CLI, whichever chat CLI it is", async 
   })
   await wsl.service.launch({ workspaceId: 'ws-1', cli: 'codex' })
   const runtimes = wsl.record.starts[0]!.cliRuntimes
-  assert.deepEqual(runtimes?.['claude-code'], { command: '/home/dev/.local/bin/claude', hostId: 'wsl:Ubuntu' })
-  assert.deepEqual(runtimes?.codex, { command: '/home/dev/.local/bin/codex', hostId: 'wsl:Ubuntu' })
+  // The distribution's Studio runs the chat and starts its CLI as its own.
+  assert.deepEqual(runtimes?.['claude-code'], { command: '/home/dev/.local/bin/claude' })
+  assert.deepEqual(runtimes?.codex, { command: '/home/dev/.local/bin/codex' })
   // A CLI with no command set there is found on that machine's PATH, never this one's.
-  assert.deepEqual(runtimes?.grok, { command: '', hostId: 'wsl:Ubuntu' })
+  assert.deepEqual(runtimes?.grok, { command: '' })
 
   const local = harness({ settings })
   await local.service.launch({ workspaceId: 'ws-1', cli: 'claude-code' })
@@ -468,10 +469,7 @@ test('a chat in a folder inside a distribution runs where its workspace runs: th
   // CLI is that distribution's too, not this PC's against the same folder.
   const older = harness({ settings, workspace: { id: 'ws-1', folderPath, agents: {} } })
   await older.service.launch({ workspaceId: 'ws-1', cli: 'codex' })
-  assert.deepEqual(older.record.starts[0]!.cliRuntimes?.codex, {
-    command: '/home/dev/.local/bin/codex',
-    hostId: 'wsl:Ubuntu',
-  })
+  assert.deepEqual(older.record.starts[0]!.cliRuntimes?.codex, { command: '/home/dev/.local/bin/codex' })
   const onThisPc = harness({ settings, workspace: { id: 'ws-1', folderPath, hostId: 'local', agents: {} } })
   await onThisPc.service.launch({ workspaceId: 'ws-1', cli: 'codex' })
   assert.deepEqual(onThisPc.record.starts[0]!.cliRuntimes, settings.cliRuntimes, "This PC picked runs this PC's CLI")

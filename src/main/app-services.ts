@@ -842,14 +842,14 @@ export function createAppServices(
         // The person's Scheduled agents switch turns the scheduler on and off,
         // through the module kernel (modules/scheduled-agents-switch.ts).
         scheduledAgentsSwitch: 'modules',
-        // A chat's agent is handed the gateway itself, on the machine its CLI
-        // runs on: a Claude chat's child loads no project settings, so the
+        // A chat's agent is handed the gateway itself, on this machine, where
+        // its CLI runs: a Claude chat's child loads no project settings, so the
         // gateway pinned into a workspace's `.mcp.json` never reached it, and a
         // Codex or ACP chat would otherwise have only what a terminal launch left
         // pinned in the folder, with no identity.
-        resolveStudioMcpServer: async ({ hostId }) => {
+        resolveStudioMcpServer: async () => {
           await whenAgentLaunchReady()
-          const gateway = studioGatewayFor(hostId ?? null)
+          const gateway = studioGatewayFor(null)
           if (!gateway) return null
           return {
             id: STUDIO_MCP_SERVER_ID,

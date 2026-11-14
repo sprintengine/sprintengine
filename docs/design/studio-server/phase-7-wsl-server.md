@@ -8,8 +8,10 @@ distribution is an environment of its own: its Studio holds its chats, the
 desktop reaches it on the Studio protocol over its owner connection and a
 loopback route per window, and the chats that ran one process each were
 handed over to it (`environment.adopt`). WSL 1 chats are refused with the
-conversion command (R70). Where this file describes the router, the switch
-or the backend wire, it is history.
+conversion command (R70). The per-process path (one `wsl.exe` per chat,
+section 7's release plan) was deleted in the PR after. Where this file
+describes the router, the switch, the backend wire or the per-process path,
+it is history.
 Owner rulings of 2026-10-02 (decisions R70–R74, R78, R87) and of 2026-10-03
 (R88: any folder runs on the machine picked) are applied throughout. This file hardens
 phase 7 of `docs/design/studio-server.md` (sections 10.2 and 13) and assumes

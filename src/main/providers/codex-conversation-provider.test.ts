@@ -1164,11 +1164,11 @@ test('a resume that is never answered fails the turn instead of dropping the thr
 })
 
 test('a start Codex never answers says what to run, and names a large log database', async () => {
-  const asked: Array<string | null> = []
+  const asked: NodeJS.ProcessEnv[] = []
   const f = fixture({
     initializeTimesOut: true,
-    readCodexLogBytes: async (distro) => {
-      asked.push(distro)
+    readCodexLogBytes: async (env) => {
+      asked.push(env)
       return 2.5 * 1024 ** 3
     },
   })
@@ -1180,8 +1180,8 @@ test('a start Codex never answers says what to run, and names a large log databa
   expect(words).toContain("Codex didn't answer in 30 s. Run `codex` in a terminal on")
   expect(words).toContain("Codex's own log database is 2.5 GB, which can make it slow to start.")
   expect(words).toContain('Moving `~/.codex/logs_*.sqlite*` aside fixes it.')
-  // Read on the machine the chat ran on: this one, here.
-  expect(asked).toEqual([null])
+  // Read once, with the chat's own environment (its CODEX_HOME).
+  expect(asked).toHaveLength(1)
 })
 
 const EPERM_EXIT = 'Codex process exited (1): Error: EPERM: operation not permitted, uv_cwd.'
@@ -1967,8 +1967,8 @@ const GATEWAY: ConversationMcpServer = {
 test("a Codex chat is handed the app's gateway once, with its identity, and its token only by name", async () => {
   const asked: unknown[] = []
   const f = fixture({
-    resolveStudioMcpServer: async (input) => {
-      asked.push(input)
+    resolveStudioMcpServer: async () => {
+      asked.push('gateway')
       return GATEWAY
     },
   })
@@ -1980,7 +1980,7 @@ test("a Codex chat is handed the app's gateway once, with its identity, and its 
     ],
   })
   await runTurn(f, [])
-  expect(asked).toEqual([{}])
+  expect(asked).toEqual(['gateway'])
   const overrides = f.connection.args!.filter((arg) => arg.startsWith('mcp_servers.'))
   // One override under the name a terminal launch pins the gateway into
   // `.codex/config.toml` with: Codex merges it into that entry rather than
