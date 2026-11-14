@@ -1,5 +1,6 @@
 import { parseMachinePath } from '../../../../../shared/machine-paths'
 import { browsePairedMachine, pairedWorkspaceCheckout } from '../../../studio/pairedDiscovery'
+import { environmentCommandId } from '../../../studio/environmentStudio'
 import {
   createPairedScheduledAgent,
   pairedScheduledAgentAction,
@@ -1600,6 +1601,20 @@ export default function NewAgentPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId])
 
+  // One command id per schedule asked of another machine, kept while the
+  // draft is the same: a retry after an answer that did not come in time is
+  // answered there from the first try's receipt, and makes no second
+  // schedule. A changed draft is another command; a saved one is done.
+  const remoteCommandRef = React.useRef<{ draft: string; id: string } | null>(null)
+  const remoteCommandId = (where: unknown, draft: unknown): string => {
+    const key = JSON.stringify([where, draft])
+    if (remoteCommandRef.current?.draft !== key) remoteCommandRef.current = { draft: key, id: environmentCommandId() }
+    return remoteCommandRef.current.id
+  }
+  const remoteCommandDone = () => {
+    remoteCommandRef.current = null
+  }
+
   // A scheduled agent on a paired machine: its project there, and its
   // scheduler, which starts each run whether or not this computer is awake.
   const scheduleRemote = async (text: string, target: RemoteTargetState) => {
@@ -1640,7 +1655,7 @@ export default function NewAgentPanel({
     if (confirm.kind !== 'conversation' || !confirm.cli) return
     setScheduleBusy(true)
     try {
-      const result = await createPairedScheduledAgent(target.connection, {
+      const draft = {
         workspaceId: picked.workspaceId,
         prompt: body,
         cron,
@@ -1652,11 +1667,17 @@ export default function NewAgentPanel({
         worktreeName: confirm.worktree ? confirm.worktree.name : null,
         skills: (confirm.skills ?? []).map((skill) => skill.id),
         mcpServers: composer.mcpServers.map((server) => server.id),
-      })
+      }
+      const result = await createPairedScheduledAgent(
+        target.connection,
+        draft,
+        remoteCommandId(target.connection.id, draft),
+      )
       if (!result.ok) {
         showToast({ tone: 'error', title: 'Not scheduled', description: result.message })
         return
       }
+      remoteCommandDone()
       if (once === null) rememberSchedule(cron)
       announceRemoteScheduledChange(target.connection.id)
       onScheduled?.(result.agent)
@@ -1703,26 +1724,32 @@ export default function NewAgentPanel({
     if (confirm.kind !== 'conversation' || !confirm.cli) return
     setScheduleBusy(true)
     try {
+      const route = `ssh:${onMachine.id}`
+      const draft = {
+        workspaceRoot: onMachine.path,
+        prompt: body,
+        cron,
+        timezone: scheduleTimezone,
+        ...(once !== null ? { once } : {}),
+        cli: confirm.cli,
+        model: confirm.model ?? null,
+        permissionPreset: effectivePreset,
+        worktreeName: confirm.worktree ? confirm.worktree.name : null,
+        skills: (confirm.skills ?? []).map((skill) => skill.id),
+        mcpServers: composer.mcpServers.map((server) => server.id),
+      }
+      // Made now or not at all: a machine away refuses it here, and nothing
+      // is made there on its return (`createPairedScheduledAgent`).
       const result = await createPairedScheduledAgent(
-        { route: `ssh:${onMachine.id}`, name: machineName },
-        {
-          workspaceRoot: onMachine.path,
-          prompt: body,
-          cron,
-          timezone: scheduleTimezone,
-          ...(once !== null ? { once } : {}),
-          cli: confirm.cli,
-          model: confirm.model ?? null,
-          permissionPreset: effectivePreset,
-          worktreeName: confirm.worktree ? confirm.worktree.name : null,
-          skills: (confirm.skills ?? []).map((skill) => skill.id),
-          mcpServers: composer.mcpServers.map((server) => server.id),
-        },
+        { route, name: machineName },
+        draft,
+        remoteCommandId(route, draft),
       )
       if (!result.ok) {
         showToast({ tone: 'error', title: 'Not scheduled', description: result.message })
         return
       }
+      remoteCommandDone()
       if (once === null) rememberSchedule(cron)
       onScheduled?.(result.agent)
     } catch (error) {
@@ -1767,27 +1794,30 @@ export default function NewAgentPanel({
     const picked = remoteTarget?.picked ?? null
     setScheduleBusy(true)
     try {
+      const change = {
+        id: agent.id,
+        ...(remoteProjectMoved(picked, agent.folderPath) ? { workspaceId: picked.workspaceId } : {}),
+        prompt: body,
+        cron,
+        timezone: scheduleTimezone,
+        ...(once !== null ? { once } : {}),
+        cli: confirm.cli,
+        model: confirm.model ?? null,
+        permissionPreset: effectivePreset,
+        worktreeName: confirm.worktree ? confirm.worktree.name : null,
+        skills: (confirm.skills ?? []).map((skill) => skill.id),
+        mcpServers: composer.mcpServers.map((server) => server.id),
+      }
       const result = await updatePairedScheduledAgent(
         on.connectionId ? { id: on.connectionId, machineName } : { route: on.route, name: machineName },
-        {
-          id: agent.id,
-          ...(remoteProjectMoved(picked, agent.folderPath) ? { workspaceId: picked.workspaceId } : {}),
-          prompt: body,
-          cron,
-          timezone: scheduleTimezone,
-          ...(once !== null ? { once } : {}),
-          cli: confirm.cli,
-          model: confirm.model ?? null,
-          permissionPreset: effectivePreset,
-          worktreeName: confirm.worktree ? confirm.worktree.name : null,
-          skills: (confirm.skills ?? []).map((skill) => skill.id),
-          mcpServers: composer.mcpServers.map((server) => server.id),
-        },
+        change,
+        remoteCommandId(on.route, change),
       )
       if (!result.ok) {
         showToast({ tone: 'error', title: 'Not saved', description: result.message })
         return
       }
+      remoteCommandDone()
       if (once === null) rememberSchedule(cron)
       announceEditedOn(on)
       onScheduled?.(result.agent)

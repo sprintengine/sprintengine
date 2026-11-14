@@ -3628,8 +3628,11 @@ test('NewAgentPanel', async () => {
           assert.equal(machineTrigger(door.view), undefined, 'and offers no machine to pick in its place')
           // Saved, it is made on that machine, by its folder there: never in this desktop's store.
           const made: Array<{ connectionId: string; params: Record<string, unknown> }> = []
+          // The first try's answer is lost: the retry is the same command there.
+          let lost = 1
           pairedStudio.answers['schedules.create'] = (params, connectionId) => {
             made.push({ connectionId, params })
+            if (lost-- > 0) throw new Error('dev@build-box did not answer in time.')
             return {
               schedule: {
                 id: 'sa-m1',
@@ -3640,8 +3643,19 @@ test('NewAgentPanel', async () => {
               },
             }
           }
-          await door.enter(await door.type('Triage the new issues.'))
+          const field = await door.type('Triage the new issues.')
+          await door.enter(field)
           await settle()
+          assert.equal(made.length, 1, 'asked once')
+          await door.enter(field)
+          await settle()
+          assert.equal(made.length, 2, 'and again when the person tries again')
+          assert.equal(
+            made[1]!.params.commandId,
+            made[0]!.params.commandId,
+            'under the same command id, so the machine makes it once',
+          )
+          made.shift()
           assert.equal(door.drafts.length, 0, 'not saved in this desktop’s store')
           assert.equal(made.length, 1, 'made on the machine')
           assert.equal(made[0]!.connectionId, 'ssh:m1', 'addressed to that machine')
