@@ -351,7 +351,7 @@ test('a server with a front door lets in only a proven front door, and serves it
       listeners: { gateway: true, tailnet: 'off', frontDoor: { loopback: true } },
       secrets: { kind: 'key-file' },
       flags: {},
-      wsl: { distro: 'Ubuntu-24.04' },
+      wsl: { distro: 'Ubuntu-24.04', profile: '0123456789ab' },
     })}\n`,
   )
   const ready = await next()
