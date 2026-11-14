@@ -63,7 +63,7 @@ import type { McpServerConfig } from '../shared/ipc/mcp'
 import { SOLO_CHAT_TEMPLATE_AGENT_ID, SOLO_CHAT_TEMPLATE_ID } from '../shared/layouts/templates'
 import { deriveWorkspaceTitle, nextNewChatName } from '../shared/workspace-title'
 import { agentWorktreePaths, newChatWorktreeName, workspaceProjectRootOf } from '../shared/worktree-paths'
-import { firstMessageCommandId, type PendingFirstMessages } from './conversation-first-messages'
+import { firstMessageCommandId, firstMessageSettled, type PendingFirstMessages } from './conversation-first-messages'
 import type { WorkspaceWorktree } from '../renderer/src/types/workspace'
 import type { WorkspaceCreateRequest } from './workspace-registry-service'
 import { isMachinePath } from '../shared/machine-paths'
@@ -290,6 +290,12 @@ export type ConversationLaunchServiceDeps = {
    * (`conversation-first-messages.ts`). Absent, a stop loses it.
    */
   firstMessages?: PendingFirstMessages
+  /**
+   * Whether a session's command has a receipt in its chat's log
+   * (`ConversationRuntime.commandReceipt`): a refused first message is let go
+   * of only when the chat recorded the refusal. Absent, a refusal keeps it.
+   */
+  commandReceipt?: (sessionId: string, commandId: string) => Promise<'kept' | 'none' | 'no_session'>
   send: (
     input: Pick<
       ConversationSendTurnInput,
@@ -672,6 +678,53 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         ? { scheduledAgentTag: request.scheduledAgentTag.trim() }
         : {}),
     }
+    // The first message, whole (its pictures too), is written down and
+    // flushed before the chat is: the launch answers only once nothing it
+    // promised can be lost to a stop, and the next start sends one a stop cut
+    // off under the id it was meant to go under. One that cannot be written
+    // refuses the launch, before anything is made. A scheduled run keeps its
+    // own record.
+    const prompt = request.prompt?.trim()
+    const firstCommandId =
+      request.firstCommandId ??
+      (request.launchCommandId ? firstMessageCommandId(request.launchCommandId) : newCommandId())
+    const kept =
+      prompt &&
+      request.sendFirst !== false &&
+      deps.firstMessages &&
+      request.launchCommandId &&
+      !request.scheduledAgentId
+        ? deps.firstMessages
+        : null
+    if (kept) {
+      const written = await kept
+        .keep(
+          firstCommandId,
+          {
+            launchCommandId: request.launchCommandId!,
+            message: prompt!,
+            ...(skills.length > 0 ? { skills } : {}),
+            ...(turnMode ? { mode: turnMode } : {}),
+            ...(subagentOf ? { subagentTask: true as const } : {}),
+            at: Date.now(),
+          },
+          request.attachments ?? [],
+        )
+        .then(
+          () => null,
+          (error: unknown) => (error instanceof Error ? error.message : String(error)),
+        )
+      if (written !== null)
+        return {
+          ok: false,
+          code: 'agent_write_failed',
+          message: `The chat's first message could not be saved, so the chat was not made: ${written}`,
+        }
+    }
+    // Let go of the first message of a launch refused from here on: no chat holds it.
+    const unkeep = () => {
+      if (kept) void kept.done(firstCommandId).catch(() => undefined)
+    }
     let chatWorkspaceId = workspace.id
     if (newChat) {
       // Named after the message it is about to be sent, so the chat has its
@@ -704,11 +757,15 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         templateAgentIds: { [SOLO_CHAT_TEMPLATE_AGENT_ID]: agentId },
         agents: { [agentId]: agent },
       })
-      if (!created.ok) return { ok: false, code: 'workspace_create_failed', message: created.message }
+      if (!created.ok) {
+        unkeep()
+        return { ok: false, code: 'workspace_create_failed', message: created.message }
+      }
       chatWorkspaceId = created.workspaceId
     } else {
       const written = deps.writeAgent(workspace.id, agentId, agent)
       if (!written.ok) {
+        unkeep()
         return {
           ok: false,
           code: 'agent_write_failed',
@@ -747,6 +804,7 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         message: error instanceof Error ? error.message : 'The conversation could not start.',
       }))
     if (!started.ok) {
+      unkeep()
       if (newChat) deps.removeWorkspace(chatWorkspaceId)
       else deps.writeAgent(workspace.id, agentId, null)
       return { ok: false, code: 'conversation_start_failed', message: started.message }
@@ -756,7 +814,6 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
     // worktree this chat may have been given.
     if (request.newChat === true) deps.recordProjectUse?.(workspaceRoot)
 
-    const prompt = request.prompt?.trim()
     if (prompt && request.sendFirst !== false) {
       const sessionId = started.session.sessionId
       const failed = (message: string): void => {
@@ -781,35 +838,20 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
         reasoningEffort && started.session.capabilities?.reasoningEfforts?.includes(reasoningEffort)
           ? reasoningEffort
           : undefined
-      // Under its launch's own id where it has one, so the next start can send
-      // it again and the chat's receipt answers that if it already went.
-      const firstCommandId =
-        request.firstCommandId ??
-        (request.launchCommandId ? firstMessageCommandId(request.launchCommandId) : newCommandId())
-      // Written down before the launch answers, so a stop before it goes does
-      // not lose it while a resent create is answered "made". A scheduled run
-      // keeps its own record; a message with pictures is not written down.
-      const kept =
-        deps.firstMessages && request.launchCommandId && !request.scheduledAgentId && !request.attachments?.length
-          ? deps.firstMessages
-          : null
-      if (kept)
-        await kept
-          .keep(firstCommandId, {
-            launchCommandId: request.launchCommandId!,
-            message: prompt,
-            ...(skills.length > 0 ? { skills } : {}),
-            ...(turnMode ? { mode: turnMode } : {}),
-            ...(subagentOf ? { subagentTask: true as const } : {}),
-            at: Date.now(),
-          })
-          .catch((error: unknown) =>
-            deps.warn?.(
-              `The first message of chat "${agentId}" could not be written down: ${error instanceof Error ? error.message : String(error)}`,
-            ),
-          )
-      const letGo = () => {
-        if (kept) void kept.done(firstCommandId).catch(() => undefined)
+      // Let go of once the chat has answered it for good: taken, or refused
+      // in an answer its log keeps. A refusal it did not keep (the chat busy,
+      // its agent not starting, a failure on the way) leaves it kept, and the
+      // next start sends it again (`firstMessageSettled`).
+      const settle = async (sent: ConversationSessionActionResult | null): Promise<boolean> => {
+        if (!kept) return true
+        const settled = sent
+          ? await firstMessageSettled(sent, async () => {
+              const receipt = await deps.commandReceipt?.(sessionId, firstCommandId)
+              return receipt === 'kept'
+            })
+          : false
+        if (settled) await kept.done(firstCommandId).catch(() => undefined)
+        return settled
       }
       void ready
         .then(async (go) => {
@@ -824,12 +866,15 @@ export function createConversationLaunchService(deps: ConversationLaunchServiceD
             ...(skills.length > 0 ? { skills: skills.map((id) => ({ id })) } : {}),
             ...(request.attachments?.length ? { attachments: request.attachments } : {}),
           })
-          letGo()
-          if (!sent.ok) failed(`The first message of chat "${agentId}" was refused: ${sent.message}`)
+          const settled = await settle(sent)
+          if (!sent.ok)
+            failed(
+              `The first message of chat "${agentId}" was refused: ${sent.message}${settled ? '' : ' It is sent again when Studio next starts.'}`,
+            )
           else request.onFirstSent?.()
         })
-        .catch((error: unknown) => {
-          letGo()
+        .catch(async (error: unknown) => {
+          await settle(null)
           failed(
             `The first message of chat "${agentId}" failed: ${error instanceof Error ? error.message : String(error)}`,
           )

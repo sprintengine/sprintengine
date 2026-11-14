@@ -89,7 +89,11 @@ function renameIsRetryable(error: unknown, attempt: number): boolean {
 const renameRetryDelayMs = (attempt: number): number => 25 * (attempt + 1)
 
 /** Replace `path` with `data` through a temporary file and a rename. */
-export async function writeFileAtomic(path: string, data: string, options: AtomicWriteOptions = {}): Promise<void> {
+export async function writeFileAtomic(
+  path: string,
+  data: string | Uint8Array,
+  options: AtomicWriteOptions = {},
+): Promise<void> {
   const temporary = stagingPath(path)
   try {
     await writeFile(temporary, data, {
