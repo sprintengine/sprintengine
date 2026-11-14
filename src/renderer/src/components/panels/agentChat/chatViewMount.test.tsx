@@ -1214,6 +1214,33 @@ function runningTurnSend() {
   return { sendTurn, calls, release: () => release() }
 }
 
+test('a sent draft is let go once its message is in the log, not when its turn ends', async () => {
+  // The send answers when the turn ends. A reload before then read the kept
+  // copy back into the composer, beside the message already sent.
+  const turn = runningTurnSend()
+  const chat = await mountChat({ sendTurn: turn.sendTurn })
+  const { composerDraftStore } = await import('./draftStore')
+  const saved = () => composerDraftStore().getState().read('workspace', 'agent').text
+  try {
+    await chat.act(async () => chat.type('Run the whole suite'))
+    await chat.act(async () => chat.enter())
+    expect(saved(), 'kept while the send has not landed').toBe('Run the whole suite')
+    const { localTurnId } = turn.calls[0] as { localTurnId: string }
+    await chat.act(async () => {
+      chat.emit({
+        type: 'event',
+        event: event('user_message', { turnId: 't1', text: 'Run the whole suite', localTurnId }),
+      })
+      chat.emit({ type: 'event', event: event('turn_started', { turnId: 't1' }) })
+    })
+    expect(saved(), "the message is the chat's now").toBe('')
+    expect(chat.draft()).toBe('')
+  } finally {
+    turn.release()
+    await chat.unmount()
+  }
+})
+
 test('a queued message is a row of the composer tray, not a bubble over the transcript', async () => {
   const turn = runningTurnSend()
   // An agent that cannot take a message mid-turn: what is sent while it works waits.

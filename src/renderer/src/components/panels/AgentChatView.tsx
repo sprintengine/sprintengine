@@ -697,6 +697,12 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     startupPending &&
     (readiness.kind === 'ready' || readiness.kind === 'loading' || readiness.kind === 'preparing-worktree')
   const sendInFlightRef = useRef(false)
+  // Drafts sent and not yet answered, by the turn id the send carries. The
+  // send answers when its turn ends, which may be minutes away; the message is
+  // the chat's once its `user_message` is in the log, so the draft kept for
+  // it is let go then. Kept longer, a reload or a remount mid-turn put the
+  // sent message back in the composer.
+  const unlandedDraftSendsRef = useRef(new Map<string, symbol>())
   // The ref's value as state, so what waits on a send (the queue's flush) runs
   // again once it settles; the ref stays the synchronous re-entry guard.
   const [sendInFlight, setSendInFlight] = useState(false)
@@ -911,6 +917,24 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
     // Only a new message can land one: keyed on the transcript's shape.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureRevision, userTurns, transport])
+  // A sent draft whose message has landed in the log is the chat's, not the
+  // composer's: the copy kept in case the send failed is let go.
+  useEffect(() => {
+    const unlanded = unlandedDraftSendsRef.current
+    if (!unlanded.size) return
+    const stop = Math.max(0, events.length - 2_000)
+    for (let index = events.length - 1; index >= stop && unlanded.size; index--) {
+      const event = events[index]!
+      if (event.type !== 'user_message') continue
+      const localTurnId = readString(event.payload, 'localTurnId')
+      const token = localTurnId ? unlanded.get(localTurnId) : undefined
+      if (!token) continue
+      unlanded.delete(localTurnId!)
+      finishDraftSend(token, true)
+    }
+    // Only a new message can land one: keyed on the transcript's shape.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureRevision, finishDraftSend])
   const previousRowsRef = useRef<ReturnType<typeof deriveConversationTimelineRows>>([])
   const requestedTurnRowRef = useRef<RequestedTurnRowCache>(null)
   const timelineRows = useMemo(() => {
@@ -1541,6 +1565,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
         return
       }
       const draftSend = fromDraft ? beginDraftSend(message) : null
+      if (draftSend) unlandedDraftSendsRef.current.set(localTurnId, draftSend)
       setPending('sending')
       recordUserMessage?.(Date.now())
       try {
@@ -1600,6 +1625,7 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
           retry: thisSend,
         })
       } finally {
+        unlandedDraftSendsRef.current.delete(localTurnId)
         sendInFlightRef.current = false
         setSendInFlight(false)
         setPending(null)
