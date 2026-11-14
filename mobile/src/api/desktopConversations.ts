@@ -1,6 +1,6 @@
 import * as LegacyFileSystem from "expo-file-system/legacy";
 
-import { StudioError, type StudioClient } from "../../../packages/client-runtime/src/public";
+import { StudioError, isStudioVersionFailure, presentStudioFailure, type StudioClient } from "../../../packages/client-runtime/src/public";
 import type {
   ConversationCommand,
   ConversationListedThread,
@@ -643,8 +643,11 @@ function openStream(input: {
     if (code === "unauthorized" || code === "revoked") return stop("revoked", "This phone is no longer paired with the desktop.");
     if (code === "peer_mismatch") return stop("blocked", message);
     if (code === "scope_required") return stop("blocked", "This device no longer has access to this conversation.");
-    if (code === "outdated" || code === "unknown_method" || code === "incompatible")
-      return stop("unavailable", DESKTOP_STUDIO_OUTDATED);
+    // A version mismatch is final until one side updates: said, with which
+    // side, and not tried again.
+    const failure = presentStudioFailure(error);
+    if (isStudioVersionFailure(failure.kind))
+      return stop("unavailable", code === "unsupported_protocol_version" ? failure.message : DESKTOP_STUDIO_OUTDATED);
     if (code === "not_found") return stop("unavailable", message);
     // Anything else may pass: the desktop asleep, the network gone, a
     // connection closed for good. Tried again, from a second up to half a minute.

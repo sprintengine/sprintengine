@@ -92,14 +92,20 @@ test('the welcome says where this Studio runs: local unless its server was start
   }
 })
 
-test('a client outside the version window is refused with both numbers named', async () => {
+test("a client outside the version window is refused with both numbers named, and this Studio's window", async () => {
   const { path, auth } = await serve()
   const token = pairFakeClient(auth, 'future', ['conversation:read'])
   const c = await client(path)
   c.send(hello({ token }, { protocolVersion: 5, minProtocolVersion: 4 }))
   const bye = await c.next(isT('bye'))
   assert.equal(bye.t === 'bye' && bye.code, 'unsupported_protocol_version')
-  assert.match(bye.t === 'bye' ? bye.message : '', /4 or newer.*speaks 1/)
+  // In the client's words, as the incompatible frame says it: the Studio is the side behind.
+  assert.equal(
+    bye.t === 'bye' ? bye.message : '',
+    'This Studio speaks Studio protocol 1, and this app needs 4 or newer. Update the Studio.',
+  )
+  // Its window, for the client to judge which side is behind.
+  assert.deepEqual(bye.t === 'bye' && [bye.protocolVersion, bye.minProtocolVersion], [1, 1])
   // Nothing about this Studio before it has authenticated: not its version.
   assert.doesNotMatch(bye.t === 'bye' ? bye.message : '', /0\.0\.0-test/)
   await c.closed

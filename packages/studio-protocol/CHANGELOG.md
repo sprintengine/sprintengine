@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed (a version refusal says which side is behind)
+
+- **`bye unsupported_protocol_version`** names Studio's own window
+  (`protocolVersion`, `minProtocolVersion`, optional), so a client judges which
+  side to update from the numbers rather than the words. Its words are now the
+  client's (`studioIncompatibility`: "Update this app" or "Update the
+  Studio"); they were Studio's own ("Update this end"), which a client read as
+  itself. `parseStudioServerFrame` keeps the two, both or neither.
+- `studioIncompatibility`'s `server.version` is optional: without it (a bye,
+  before the client has authenticated) the words name the protocol numbers
+  alone.
+
 ### Added (where a mutation's receipts are kept, and which run of the server answered)
 
 - **`welcome.bootId`** (and `server.info`'s): this run of the server, minted

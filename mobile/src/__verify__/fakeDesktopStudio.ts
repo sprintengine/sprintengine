@@ -6,6 +6,8 @@ import {
   STUDIO_CAPABILITIES,
   STUDIO_PROTOCOL_MIN_SUPPORTED,
   STUDIO_PROTOCOL_VERSION,
+  studioIncompatibility,
+  type StudioProtocolWindow,
   type StudioScope,
 } from "../../../packages/studio-protocol/src/public";
 import type { StudioWebSocketConstructor } from "../../../packages/client-runtime/src/public";
@@ -49,6 +51,12 @@ export function fakeDesktopStudio(input: {
   ticketStatus?: () => number;
   /** A desktop from before the Studio protocol: its tickets name no Studio path. */
   outdated?: boolean;
+  /**
+   * The protocol window its Studio speaks; the phone's unless given. A hello
+   * outside it is closed as the desktop closes one: `bye`
+   * `unsupported_protocol_version`, naming this window.
+   */
+  window?: StudioProtocolWindow;
   /** What its chats serve (`conversation.capabilities` in its welcome). */
   conversationCapabilities?: string[];
   /** A chat followed: the frames it answers with at once (a snapshot or the missed events, then a fence). */
@@ -136,10 +144,16 @@ export function fakeDesktopStudio(input: {
           this.reply({ t: "bye", code: "unauthorized", message: "Wrong ticket." });
           return;
         }
+        const window = input.window ?? { protocolVersion: STUDIO_PROTOCOL_VERSION, minProtocolVersion: STUDIO_PROTOCOL_MIN_SUPPORTED };
+        const refused = studioIncompatibility(window, frame as StudioProtocolWindow);
+        if (refused) {
+          this.reply({ t: "bye", code: "unsupported_protocol_version", message: refused.message, ...window });
+          setTimeout(() => this.close(1000, refused.message), 1);
+          return;
+        }
         this.reply({
           t: "welcome",
-          protocolVersion: STUDIO_PROTOCOL_VERSION,
-          minProtocolVersion: STUDIO_PROTOCOL_MIN_SUPPORTED,
+          ...window,
           server: { name: "SprintEngine Studio", version: "9.9.9" },
           environment: { id: "env-mac-mini", hostKind: "local", os: "darwin", arch: "arm64" },
           capabilities: [...STUDIO_CAPABILITIES],

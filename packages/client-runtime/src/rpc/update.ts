@@ -16,7 +16,7 @@ import {
   type StudioUpdateStatus,
   type StudioWelcomeFrame,
 } from '../protocol.js'
-import { StudioError } from './errors.js'
+import { StudioError, byeError } from './errors.js'
 import type { StudioTransportFactory } from './transport.js'
 
 // Reaching a Studio to see how it stands and update it, whatever protocol it
@@ -105,7 +105,7 @@ export async function openStudioUpdateSession(options: StudioUpdateSessionOption
         greet?.(frame)
         return
       case 'bye':
-        failAll(new StudioError(frame.code, frame.message, frame.retryAfterMs))
+        failAll(byeError(frame))
         return
       case 'chunk': {
         const step = assembler.push(frame)

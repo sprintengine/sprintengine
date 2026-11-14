@@ -113,10 +113,14 @@ function remoteConversationReadiness(
   refusal: EnvironmentRefusal | undefined,
 ): ChatReadiness {
   // A machine whose Studio is from before the protocol (it speaks only the
-  // older paired lane) cannot be followed from here until it is updated, and
-  // a pairing it no longer admits cannot be either: said in their words, not
-  // as a connection that never comes.
-  if (link !== 'live' && refusal && (refusal.kind === 'outdated' || refusal.kind === 'unauthorized'))
+  // older paired lane) cannot be followed from here until it is updated, nor
+  // one this app is too old for, nor by a pairing it no longer admits: said in
+  // their words, not as a connection that never comes.
+  if (
+    link !== 'live' &&
+    refusal &&
+    (refusal.kind === 'outdated' || refusal.kind === 'incompatible' || refusal.kind === 'unauthorized')
+  )
     return {
       kind: 'error',
       message:

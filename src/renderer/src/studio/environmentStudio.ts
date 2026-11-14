@@ -1,6 +1,7 @@
 import {
   StudioError,
   connect,
+  presentStudioFailure,
   webSocketTransport,
   type StudioClient,
   type StudioClientState,
@@ -336,36 +337,49 @@ export function environmentStudioOutdated(name: string): string {
   return `Update SprintEngine Studio on ${name} to use this from here.`
 }
 
-/** Why an environment did not answer, in the kinds a caller tells apart. */
+/**
+ * Why an environment did not answer, in the kinds a caller tells apart.
+ * `outdated` is that machine's Studio behind this window; `incompatible` a
+ * protocol mismatch where it is not, or not known to be (this app behind it),
+ * whose words say which side to update.
+ */
 export type EnvironmentRefusal = {
-  kind: 'outdated' | 'unauthorized' | 'unavailable' | 'refused'
+  kind: 'outdated' | 'incompatible' | 'unauthorized' | 'unavailable' | 'refused'
   /** The refusal's own code, for a caller that names it. */
   code: string
   message: string
 }
 
-/** A failed ask, read: an older Studio, a route it refuses, a machine away, or a refusal of what was asked. */
+/**
+ * A failed ask, read (`presentStudioFailure`): an older Studio, an older app,
+ * a route it refuses, a machine away, or a refusal of what was asked.
+ */
 export function environmentRefusal(target: { name: string }, error: unknown): EnvironmentRefusal {
   const code = error instanceof StudioError ? error.code : 'unavailable'
-  const message = error instanceof Error && error.message ? error.message : `${target.name} could not answer.`
-  switch (code) {
-    case 'outdated':
-    case 'unknown_method':
-    case 'unsupported_protocol_version':
-      return { kind: 'outdated', code, message: environmentStudioOutdated(target.name) }
+  const failure = presentStudioFailure(error)
+  const message = error instanceof Error && error.message ? failure.message : `${target.name} could not answer.`
+  switch (failure.kind) {
+    case 'server-outdated':
+      // A version refusal says so in the Studio's words; an older Studio
+      // without the method or capability asked, in words about that machine.
+      return {
+        kind: 'outdated',
+        code,
+        message: code === 'unsupported_protocol_version' ? message : environmentStudioOutdated(target.name),
+      }
+    case 'client-outdated':
+    case 'incompatible':
+      return { kind: 'incompatible', code, message }
     case 'unauthorized':
-    case 'revoked':
-    case 'peer_mismatch':
-    case 'scope_required':
-    case 'owner_required':
+    case 'forbidden':
       return { kind: 'unauthorized', code, message }
-    case 'unavailable':
-    case 'closed':
-    case 'timeout':
-    case 'disconnected':
-      return { kind: 'unavailable', code, message }
     default:
-      return { kind: 'refused', code, message }
+      // A machine away is said `unavailable` here too, by the ticket that could not be bought.
+      return {
+        kind: failure.kind === 'connection' || code === 'unavailable' ? 'unavailable' : 'refused',
+        code,
+        message,
+      }
   }
 }
 

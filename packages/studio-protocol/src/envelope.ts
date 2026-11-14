@@ -220,8 +220,21 @@ export type StudioSubscriptionFailedFrame = {
 /** A logical frame over `STUDIO_MAX_FRAME_BYTES`: its `json` strings, in `index` order, concatenate to it. */
 export type StudioChunkFrame = { t: 'chunk'; frameId: string; index: number; total: number; json: string }
 
-/** Studio is closing the connection, and why. With `retryAfterMs`, reconnect after that long. */
-export type StudioByeFrame = { t: 'bye'; code: string; message: string; retryAfterMs?: number }
+/**
+ * Studio is closing the connection, and why. With `retryAfterMs`, reconnect
+ * after that long. An `unsupported_protocol_version` names Studio's own
+ * protocol window (`protocolVersion`, `minProtocolVersion`), so the client
+ * can judge which side is behind (`studioCompatibility`); a Studio before
+ * they were added names neither.
+ */
+export type StudioByeFrame = {
+  t: 'bye'
+  code: string
+  message: string
+  retryAfterMs?: number
+  protocolVersion?: number
+  minProtocolVersion?: number
+}
 
 export type StudioServerFrame =
   | StudioWelcomeFrame
@@ -605,7 +618,16 @@ export function parseStudioServerFrame(value: unknown): StudioParsedServerFrame 
         : null
     case 'bye':
       return code(frame.code) && text(frame.message)
-        ? { t: 'bye', code: frame.code, message: frame.message, ...retry(frame) }
+        ? {
+            t: 'bye',
+            code: frame.code,
+            message: frame.message,
+            ...retry(frame),
+            // Both or neither: half a window judges nothing.
+            ...(version(frame.protocolVersion) && version(frame.minProtocolVersion)
+              ? { protocolVersion: frame.protocolVersion, minProtocolVersion: frame.minProtocolVersion }
+              : {}),
+          }
         : null
     case 'call':
       return parseStudioCallFrame(frame)

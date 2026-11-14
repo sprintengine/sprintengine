@@ -943,8 +943,10 @@ side), why in words naming both numbers, and how the Studio is updated
 (`update`, the `update.status` answer). The connection then serves only
 `update.status` and `update.start`; anything else is refused
 `unsupported_protocol_version`, a subscription not retryable. A client that
-does not list the capability is closed with `bye` as before, and a pairing
-code is never spent on a client that could not use the token.
+does not list the capability is closed with `bye` as before, naming the
+Studio's own `protocolVersion` and `minProtocolVersion` so it can still tell
+which side is behind (`presentStudioFailure` in the client runtime), and a
+pairing code is never spent on a client that could not use the token.
 `studioCompatibility` reads the same four states (`compatible`,
 `client-outdated`, `server-outdated`, `unknown`) from any window a client has
 heard: a welcome, this frame, a discovery file.
