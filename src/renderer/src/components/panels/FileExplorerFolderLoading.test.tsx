@@ -132,3 +132,36 @@ test('a folder that lists quickly simply opens', async () => {
   expect(row('local').getAttribute('aria-expanded')).toBe('true')
   expect(document.querySelector('[aria-label="Loading folder"]')).toBeNull()
 })
+
+test('a chat on an SSH machine says its files open in a later version, and offers no folder of this computer', async () => {
+  const workspaceId = useWorkspaceStore.getState().addWorkspace(template, {
+    name: 'Proj',
+    folderPath: 'ssh://machine-1/home/dev/proj',
+  })
+  useWorkspaceStore.setState((state) => ({
+    workspaces: state.workspaces.map((workspace) =>
+      workspace.id === workspaceId
+        ? { ...workspace, environment: { kind: 'ssh', id: 'machine-1', label: 'dev@build-box' } }
+        : workspace,
+    ),
+  }))
+  host = document.createElement('div')
+  document.body.appendChild(host)
+  root = createRoot(host)
+  await act(async () =>
+    root?.render(
+      <ConfirmDialogProvider>
+        <FileExplorer workspaceId={workspaceId} />
+      </ConfirmDialogProvider>,
+    ),
+  )
+  await settle()
+
+  expect(host.textContent).toContain('Files on dev@build-box open in a later version')
+  expect(host.textContent).not.toContain('No folder open')
+  const buttons = Array.from(host.querySelectorAll('button')).map((button) => button.textContent?.trim())
+  expect(buttons).not.toContain('Open folder')
+  expect(useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === workspaceId)?.folderPath).toBe(
+    'ssh://machine-1/home/dev/proj',
+  )
+})

@@ -242,6 +242,7 @@ import { BackgroundTasksTrayRow } from './agentChat/backgroundTasksRow'
 import { GoalTrayRow } from './agentChat/goalTrayRow'
 import { WorktreeInstallTrayRow } from './agentChat/worktreeInstallRow'
 import { StudioConnectionNotice } from './agentChat/studioConnectionNotice'
+import { firstTellingOfTurnFailure } from './agentChat/turnFailureNotices'
 import { ConversationTodoStrip } from './agentChat/todoProgressStrip'
 import { TimelineRow, type TimelineChrome } from './agentChat/timelineRows'
 import { UnreadDivider } from './agentChat/turnMeta'
@@ -1264,17 +1265,14 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
   }, [timelineRows, atBottomRef])
 
   // Surface turn failures (streamed via `turn_failed`) to the app Notifications
-  // panel, deduped on the message so a single failure is logged once.
-  const lastNotifiedErrorRef = useRef<string | null>(null)
+  // panel, once each: a failure is its event (`lastErrorId`), so the same
+  // failure read again whole (a reconnect, a server restarted under the chat,
+  // the view mounted again) is not told twice, and a later turn failing with
+  // the same words still is.
   useEffect(() => {
     const message = projection.lastError
-    // Clear on recovery so an identical error on a later turn notifies again.
-    if (!message) {
-      lastNotifiedErrorRef.current = null
-      return
-    }
-    if (message === lastNotifiedErrorRef.current) return
-    lastNotifiedErrorRef.current = message
+    if (!message) return
+    if (!firstTellingOfTurnFailure(workspaceId, agentId, projection.lastErrorId ?? message)) return
     publishDiagnosticSync({
       level: 'error',
       source: 'workspace',
@@ -1287,7 +1285,15 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
       workspaceName: workspace?.name,
       agentId,
     })
-  }, [projection.lastError, projection.lastErrorDetail, label, workspaceId, workspace?.name, agentId])
+  }, [
+    projection.lastError,
+    projection.lastErrorDetail,
+    projection.lastErrorId,
+    label,
+    workspaceId,
+    workspace?.name,
+    agentId,
+  ])
 
   // Surface session/send action errors (start failure, missing key, IPC error)
   // the same way — these never reach the event stream.
@@ -4398,9 +4404,10 @@ export function ConversationChatBody({ workspaceId, agentId, binding }: Props & 
              * changed, stay beside it.
              */}
             <ComposerTray>
-              {/* A window on the Studio protocol whose connection is down
-                says so, in words, while the transcript stays as it was. */}
-              <StudioConnectionNotice />
+              {/* A chat whose Studio is out of reach (the window's own, or
+                the machine the chat runs on) says so, in words, while the
+                transcript stays as it was. */}
+              <StudioConnectionNotice environment={environment} />
               {/* The chat's worktree still installing its dependencies: the
                 first message a chat started from outside a window waits for it. */}
               <WorktreeInstallTrayRow folder={workspaceRoot} />

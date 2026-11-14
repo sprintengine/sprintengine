@@ -374,6 +374,10 @@ export type ConversationProjection = {
   // The failure's full provider message (payload `message`); lastError is
   // often only its short code ('provider'), which says nothing in a log.
   lastErrorDetail: string | null
+  // The id of the event that failed the turn: what a failure is told apart
+  // by, since the same words fail many turns and the same failure is read
+  // again whole after a reconnect.
+  lastErrorId: string | null
   // Credential source the CLI child reported on init ('none' = subscription
   // login, the guaranteed path). Anything else means the session is billing
   // outside the subscription and the chat must say so.
@@ -832,6 +836,7 @@ export function projectConversation(
   let usage: ConversationUsage | null = null
   let lastError: string | null = null
   let lastErrorDetail: string | null = null
+  let lastErrorId: string | null = null
   let apiKeySource: string | null = null
   let sessionNotice: string | null = null
   let backgroundTasks: ConversationBackgroundTask[] = []
@@ -989,6 +994,7 @@ export function projectConversation(
           rewinds.push({ fromSeq: rewoundFrom, beforeSeq: event.seq ?? highestSeq + 1 })
           // A failure is only ever the latest turn's, and that turn is gone.
           lastError = null
+          lastErrorId = null
         }
         const reverted = readNumber(event.payload, 'revertedAfterSeq')
         if (reverted !== undefined) {
@@ -1443,6 +1449,7 @@ export function projectConversation(
         if (!interrupted) {
           lastError = reason ?? 'The turn failed.'
           lastErrorDetail = readString(event.payload, 'message') ?? null
+          lastErrorId = event.id
         }
         break
       }
@@ -1576,6 +1583,7 @@ export function projectConversation(
     usage,
     lastError,
     lastErrorDetail,
+    lastErrorId,
     apiKeySource,
     sessionNotice,
     backgroundTasks,

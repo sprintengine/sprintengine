@@ -15,6 +15,27 @@ export function useWorkspaceMachine(workspaceId: string): string | null {
   })
 }
 
+/** The machine another environment's workspace is on (an SSH machine, a WSL distribution), by its label; null for this computer's. */
+export function useWorkspaceEnvironmentLabel(workspaceId: string): string | null {
+  return useWorkspaceStore(
+    (state) => state.workspaces.find((workspace) => workspace.id === workspaceId)?.environment?.label ?? null,
+  )
+}
+
+/**
+ * What Files says in a chat on another machine: its folder is that machine's,
+ * which this version does not open from here. No folder of this computer's is
+ * offered in its place: picking one would move the chat off its machine.
+ */
+export function FilesOnMachineLater({ machine }: { machine: string }): JSX.Element {
+  return (
+    <EmptyState
+      title={`Files on ${machine} open in a later version`}
+      body={`This chat works in a folder on ${machine}. Browsing that machine's files from here comes in a later version of Studio.`}
+    />
+  )
+}
+
 export function NotOnMachineYet({ what, machine }: { what: string; machine: string }): JSX.Element {
   return (
     <EmptyState

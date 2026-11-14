@@ -71,3 +71,24 @@ test('an earlier page read after the rewind is still hidden by it', () => {
   expect(shown([rewind])).toEqual([])
   expect(shown([...one.events, ...two.events, rewind])).toEqual([])
 })
+
+test('a failure is told apart by its event: read again whole it is the same one, a later one with the same words is not', async () => {
+  const { firstTellingOfTurnFailure, resetTurnFailureNoticesForTests } = await import('./turnFailureNotices')
+  resetTurnFailureNoticesForTests()
+  const failed = turn('t1', 'fail please', 'turn_failed')
+  const first = projectConversation(failed.events)
+  expect(first.lastError).toBe('provider')
+  expect(first.lastErrorId).toBe(failed.events.at(-1)!.id)
+  // The same log read again (a reconnect, a server restarted under the chat).
+  const again = projectConversation([...failed.events])
+  expect(again.lastErrorId).toBe(first.lastErrorId)
+  expect(firstTellingOfTurnFailure('workspace', 'agent', first.lastErrorId!)).toBe(true)
+  expect(firstTellingOfTurnFailure('workspace', 'agent', again.lastErrorId!), 'told once').toBe(false)
+  // A later turn failing with the same words is a new failure.
+  const later = projectConversation([...failed.events, ...turn('t2', 'again', 'turn_failed').events])
+  expect(later.lastError).toBe(first.lastError)
+  expect(later.lastErrorId).not.toBe(first.lastErrorId)
+  expect(firstTellingOfTurnFailure('workspace', 'agent', later.lastErrorId!)).toBe(true)
+  // Another chat's failure is its own.
+  expect(firstTellingOfTurnFailure('workspace', 'agent-2', first.lastErrorId!)).toBe(true)
+})

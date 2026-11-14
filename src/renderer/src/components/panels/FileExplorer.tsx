@@ -18,6 +18,7 @@ import {
 } from './fileExplorerModuleActions'
 import { getGitEntry, normalizePathKey, useGitStatus } from '../../hooks/useGitStatus'
 import { useWorkspaceFolderStatus } from '../../hooks/useWorkspaceFolderStatus'
+import { FilesOnMachineLater, useWorkspaceEnvironmentLabel } from '../environments/NotOnMachineYet'
 import { useSlowFolderLoads } from '../../hooks/useSlowFolderLoads'
 import { getGitStatusAppearance } from '../../utils/gitStatusAppearance'
 import {
@@ -2514,6 +2515,8 @@ interface Props {
 export default function FileExplorer({ workspaceId }: Props) {
   const { folderPath, folderReadyPath, folderMissing, checkingFolder, recheckFolder } =
     useWorkspaceFolderStatus(workspaceId)
+  // A chat on another machine: its folder is there, not here (phase 8).
+  const machine = useWorkspaceEnvironmentLabel(workspaceId)
   const setFolderPath = useWorkspaceStore((s) => s.setFolderPath)
   const activeFilePath = useWorkspaceStore(
     (s) => s.workspaces.find((workspace) => workspace.id === workspaceId)?.editorState?.activeFilePath ?? null,
@@ -2678,6 +2681,8 @@ export default function FileExplorer({ workspaceId }: Props) {
             refreshGitStatus={refreshGitStatus}
             onOpenFile={handleOpenFile}
           />
+        ) : machine ? (
+          <FilesOnMachineLater machine={machine} />
         ) : checkingFolder ? (
           <FileExplorerSkeleton />
         ) : folderMissing && folderPath ? (
